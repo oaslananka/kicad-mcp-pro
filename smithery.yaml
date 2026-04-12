@@ -1,0 +1,49 @@
+name: kicad-mcp-pro
+displayName: KiCad MCP Pro Server
+description: >
+  Professional Model Context Protocol server for KiCad EDA with project setup,
+  PCB editing, schematic tooling, validation, and manufacturing exports.
+version: "1.0.0"
+icon: https://raw.githubusercontent.com/oaslananka/kicad-mcp-pro/main/docs/assets/icon.png
+categories:
+  - engineering
+  - eda
+  - hardware-design
+  - productivity
+tags:
+  - kicad
+  - pcb
+  - schematic
+  - electronics
+  - gerber
+  - hardware
+license: MIT
+author:
+  name: Osman Aslan
+  github: oaslananka
+repository: https://github.com/oaslananka/kicad-mcp-pro
+documentation: https://oaslananka.github.io/kicad-mcp-pro
+startCommand:
+  type: stdio
+  command: uvx
+  args: ["kicad-mcp-pro"]
+config:
+  - key: KICAD_MCP_PROJECT_DIR
+    description: Path to your KiCad project directory
+    required: false
+    type: string
+  - key: KICAD_MCP_KICAD_CLI
+    description: Path to kicad-cli (auto-detected if omitted)
+    required: false
+    type: string
+  - key: KICAD_MCP_PROFILE
+    description: Server profile (full, minimal, pcb, schematic, manufacturing)
+    required: false
+    type: string
+requirements:
+  - name: KiCad
+    version: ">=9.0"
+    url: https://www.kicad.org/download/
+    notes: KiCad must be installed. For IPC tools, keep KiCad open or enable headless use.
+  - name: Python
+    version: ">=3.11"

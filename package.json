@@ -1,0 +1,24 @@
+{
+  "name": "kicad-mcp-pro-hooks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare": "husky",
+    "version:bump": "uv run python scripts/bump_version.py",
+    "check:lint": "uv run ruff check src/ tests/",
+    "check:type": "uv run python -m mypy src/kicad_mcp/",
+    "check:test": "uv run python -m pytest tests/unit/ tests/integration/ tests/e2e/ -q --cov=kicad_mcp --cov-report=term-missing --cov-fail-under=80",
+    "check:bandit": "uv run python -m bandit -r src/ -ll",
+    "check:audit": "uv run python -m pip_audit --skip-editable --progress-spinner off",
+    "check:ci": "npm run check:lint && npm run check:type && npm run check:test",
+    "hooks:pre-commit": "npm run check:lint && npm run check:type",
+    "hooks:pre-push": "npm run check:test",
+    "hooks:security": "npm run check:bandit && npm run check:audit"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

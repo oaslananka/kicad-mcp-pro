@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  kicad-mcp-pro:
+    build: .
+    ports:
+      - "3334:3334"
+    environment:
+      KICAD_MCP_PROJECT_DIR: /projects
+      KICAD_MCP_LOG_LEVEL: INFO
+      KICAD_MCP_LOG_FORMAT: json
+      KICAD_MCP_TRANSPORT: http
+    volumes:
+      - ${KICAD_PROJECT_DIR:-./example}:/projects:ro

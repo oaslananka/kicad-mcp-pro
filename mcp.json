@@ -1,0 +1,20 @@
+{
+  "name": "io.github.oaslananka/kicad-mcp-pro",
+  "displayName": "KiCad MCP Pro Server",
+  "description": "Compatibility metadata for KiCad MCP Pro. Prefer server.json for official MCP Registry publication.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "repository": "https://github.com/oaslananka/kicad-mcp-pro",
+  "homepage": "https://oaslananka.github.io/kicad-mcp-pro",
+  "transports": [
+    "stdio",
+    "streamable-http"
+  ],
+  "resources": true,
+  "prompts": true,
+  "platforms": [
+    "windows",
+    "macos",
+    "linux"
+  ]
+}

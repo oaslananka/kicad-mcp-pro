@@ -1,0 +1,111 @@
+name: Publish to PyPI
+
+# Manual fallback only.
+# Azure DevOps is the canonical CI/CD and release system for this repository.
+# Use this workflow only if you intentionally want a GitHub-based manual release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.0.0)'
+        required: true
+        type: string
+      target_index:
+        description: 'Target package index'
+        required: true
+        type: choice
+        options:
+          - TestPyPI
+          - PyPI
+        default: TestPyPI
+      skip_tests:
+        description: 'Skip pre-publish tests? (not recommended)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  # ── Build ───────────────────────────────────────────────────────────────────
+  build:
+    name: Build package
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: ${{ steps.set-artifact.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Explain execution mode
+        run: echo "Primary release flow runs in Azure DevOps. This GitHub workflow is manual fallback only."
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run tests (pre-publish gate)
+        if: ${{ !inputs.skip_tests }}
+        run: uv run python -m pytest tests/unit/ tests/integration/ -v
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Inspect artifacts
+        run: |
+          echo "Built artifacts:"
+          ls -lh dist/
+
+      - id: set-artifact
+        run: echo "name=dist-${{ inputs.target_index }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.set-artifact.outputs.name }}
+          path: dist/
+          retention-days: 3
+
+  # ── Publish ─────────────────────────────────────────────────────────────────
+  # The "release" environment has a required reviewer configured in
+  # Settings → Environments → release → Required reviewers.
+  # The pipeline pauses here until you approve it in the GitHub UI.
+  publish:
+    name: Publish to ${{ inputs.target_index }}
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release          # ← manual approval gate
+    permissions:
+      id-token: write             # for PyPI trusted publishing (OIDC)
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ inputs.target_index }}
+          path: dist/
+
+      - name: List artifacts to publish
+        run: ls -lh dist/
+
+      # Trusted publishing (OIDC) — no token needed for PyPI
+      - name: Publish to PyPI (OIDC trusted publishing)
+        if: inputs.target_index == 'PyPI'
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      # Test PyPI uses a token from repository secrets
+      - name: Publish to TestPyPI
+        if: inputs.target_index == 'TestPyPI'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          password: ${{ secrets.TEST_PYPI_TOKEN }}
+
+      - name: Post-publish summary
+        run: |
+          if [ "${{ inputs.target_index }}" = "TestPyPI" ]; then
+            echo "Published to TestPyPI: https://test.pypi.org/project/kicad-mcp-pro/"
+            echo "Install: pip install --index-url https://test.pypi.org/simple/ kicad-mcp-pro"
+          else
+            echo "Published to PyPI: https://pypi.org/project/kicad-mcp-pro/"
+            echo "Install: pip install kicad-mcp-pro  OR  uvx kicad-mcp-pro"
+          fi

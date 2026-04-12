@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+site/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+node_modules/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+
+# Linting
+.ruff_cache/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+!.env.example
+
+# Build artifacts
+*.whl
+*.tar.gz
+
+# KiCad output (generated files)
+output/
+kicad_output/
+
+# Azure Pipelines local cache
+.azure/local/

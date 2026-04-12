@@ -1,0 +1,50 @@
+site_name: KiCad MCP Pro
+site_url: https://oaslananka.github.io/kicad-mcp-pro
+repo_url: https://github.com/oaslananka/kicad-mcp-pro
+repo_name: oaslananka/kicad-mcp-pro
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.sections
+    - content.code.copy
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - src
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Client Configuration: client-configuration.md
+  - Configuration: configuration.md
+  - Tools Reference: tools-reference.md
+  - Workflows:
+      - First PCB: workflows/first-pcb.md
+      - Schematic to PCB: workflows/schematic-to-pcb.md
+      - Manufacturing Export: workflows/manufacturing-export.md
+  - Development:
+      - Contributing: development/contributing.md
+      - Architecture: development/architecture.md

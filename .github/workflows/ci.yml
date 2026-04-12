@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Manual CI Fallback
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Explain execution mode
+        run: echo "GitHub Actions is manual-only. Azure DevOps is the primary CI/CD system for this repository."
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
+      - run: uv sync --all-extras
+      - run: uv run ruff check src/ tests/
+      - run: uv run python -m mypy src/kicad_mcp/
+      - run: uv run python -m pytest tests/unit/ tests/integration/ tests/e2e/ -q --cov=kicad_mcp --cov-report=term-missing --cov-fail-under=80
