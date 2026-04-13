@@ -26,4 +26,6 @@ jobs:
 
       - name: Dependency audit fallback (no API key)
         if: env.SAFETY_API_KEY == ''
-        run: uv run --python 3.12 python -m pip_audit --skip-editable --progress-spinner off
+        run: >
+          uv run --python 3.12 python -m pip_audit --skip-editable --progress-spinner off
+          --ignore-vuln CVE-2025-69872

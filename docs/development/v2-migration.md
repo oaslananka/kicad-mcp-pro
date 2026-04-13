@@ -25,3 +25,18 @@ standard local profile.
 
 `nexar` and `digikey` require external credentials and are intended for
 authenticated deployments.
+
+## Simulation Surface
+
+v2 also adds a dedicated SPICE simulation category:
+
+- `sim_run_operating_point`
+- `sim_run_ac_analysis`
+- `sim_run_transient`
+- `sim_run_dc_sweep`
+- `sim_check_stability`
+- `sim_add_spice_directive`
+
+The preferred backend is `InSpice` when the `simulation` extra is installed.
+When that path is unavailable, the server falls back to direct `ngspice` CLI
+execution.

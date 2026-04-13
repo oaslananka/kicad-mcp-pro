@@ -188,6 +188,17 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "tune_diff_pair_length",
         ],
     },
+    "simulation": {
+        "description": "Run SPICE operating-point, AC, transient, DC sweep, and stability checks.",
+        "tools": [
+            "sim_run_operating_point",
+            "sim_run_ac_analysis",
+            "sim_run_transient",
+            "sim_run_dc_sweep",
+            "sim_check_stability",
+            "sim_add_spice_directive",
+        ],
+    },
 }
 
 PROFILE_CATEGORIES: dict[str, tuple[str, ...]] = {

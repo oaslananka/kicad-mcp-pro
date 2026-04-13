@@ -39,6 +39,7 @@ class KiCadMCPConfig(BaseSettings):
     freerouting_image: str = Field(default="ghcr.io/freerouting/freerouting:latest")
     docker_executable: str = Field(default="docker")
     java_executable: str = Field(default="java")
+    ngspice_cli: Path | None = Field(default=None)
     kicad_socket_path: Path | None = Field(default=None)
     kicad_token: str | None = Field(default=None)
 
@@ -85,6 +86,7 @@ class KiCadMCPConfig(BaseSettings):
     @field_validator(
         "kicad_cli",
         "freerouting_jar",
+        "ngspice_cli",
         "kicad_socket_path",
         "project_dir",
         "project_file",

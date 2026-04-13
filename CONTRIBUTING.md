@@ -24,6 +24,7 @@ npm run check:ci
 - `pre-commit` runs `ruff` and `mypy`.
 - `pre-push` runs the coverage-gated pytest command used by CI.
 - `npm run hooks:security` runs `bandit` and `pip-audit` when you want the manual security audit locally.
+  The current audit command ignores `CVE-2025-69872` because it is a no-fix transitive `diskcache` advisory pulled in only by the optional `simulation` extra through `InSpice`.
 
 ## Release Version Bump
 

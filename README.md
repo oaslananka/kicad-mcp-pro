@@ -20,6 +20,7 @@ Primary CI/CD and release automation runs in Azure DevOps. GitHub Actions in thi
 - Library tools for symbol search, footprint search, datasheet lookup, footprint assignment, and custom symbol generation.
 - Validation tools for DRC, ERC, DFM, courtyard issues, silk overlaps, and schematic-versus-PCB footprint checks.
 - Export tools for Gerber, drill, BOM, PDF, netlist, STEP, render, pick-and-place, IPC-2581, SVG, and DXF.
+- Simulation tools for SPICE operating-point, AC, transient, DC sweep, and loop-stability checks.
 - MCP resources for live board/project state and prompts for first-board, schematic-to-PCB, and manufacturing workflows.
 - Server profiles (`full`, `minimal`, `pcb`, `schematic`, `manufacturing`) to reduce tool surface for clients.
 
@@ -128,6 +129,8 @@ HTTP transports are available in [Client Configuration](docs/client-configuratio
 - Python 3.12+.
 - For live IPC tools, KiCad must be running with the IPC API available.
 - For HTTP transport, install the `http` extra: `pip install "kicad-mcp-pro[http]"`.
+- For SPICE simulation tools, install the `simulation` extra:
+  `pip install "kicad-mcp-pro[simulation]"`.
 
 ## Docker Limitations
 
@@ -142,6 +145,7 @@ HTTP transports are available in [Client Configuration](docs/client-configuratio
 | Variable                              | Description                                  | Default            |
 | ------------------------------------- | -------------------------------------------- | ------------------ |
 | `KICAD_MCP_KICAD_CLI`                 | Path to `kicad-cli`                          | Auto-detected      |
+| `KICAD_MCP_NGSPICE_CLI`               | Path to `ngspice`                            | Auto-detected      |
 | `KICAD_MCP_KICAD_SOCKET_PATH`         | Optional KiCad IPC socket path               | Unset              |
 | `KICAD_MCP_KICAD_TOKEN`               | Optional KiCad IPC token                     | Unset              |
 | `KICAD_MCP_PROJECT_DIR`               | Active project directory                     | Unset              |
@@ -320,6 +324,20 @@ Important limitation: KiCad 10 still does not expose a stable headless Specctra
 export/import flow through `kicad-cli` on all installations. `route_export_dsn`
 and `route_import_ses` therefore support staging existing `.dsn` / `.ses` files
 and explain the remaining manual KiCad PCB Editor step when needed.
+
+### Simulation
+
+- `sim_run_operating_point`
+- `sim_run_ac_analysis`
+- `sim_run_transient`
+- `sim_run_dc_sweep`
+- `sim_check_stability`
+- `sim_add_spice_directive`
+
+Simulation tools prefer `InSpice` when the `simulation` extra is installed and
+fall back to direct `ngspice` CLI execution when needed. `sim_add_spice_directive`
+stores a project-local sidecar file used by future MCP simulation runs, which is
+useful for reusable `.param`, `.include`, or `.options` lines.
 
 ## Workflows
 

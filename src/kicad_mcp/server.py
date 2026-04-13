@@ -12,7 +12,7 @@ from . import __version__
 from .config import get_config, reset_config
 from .prompts import workflows
 from .resources import board_state
-from .tools import export, library, pcb, project, router, routing, schematic, validation
+from .tools import export, library, pcb, project, router, routing, schematic, simulation, validation
 from .tools.router import categories_for_profile
 from .utils.logging import setup_logging
 
@@ -54,6 +54,8 @@ def build_server(profile: str | None = None) -> FastMCP:
         validation.register(server)
     if "routing" in enabled:
         routing.register(server)
+    if "simulation" in enabled:
+        simulation.register(server)
 
     board_state.register(server)
     workflows.register(server)
