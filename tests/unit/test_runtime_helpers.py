@@ -176,7 +176,7 @@ def test_cli_capabilities_are_cached(tmp_path: Path, monkeypatch) -> None:
     second = get_cli_capabilities(cli)
 
     assert first == second
-    assert len(calls) == 4
+    assert len(calls) == 5
 
 
 def test_board_transaction_uses_reentrant_lock() -> None:

@@ -31,6 +31,8 @@ class CliCapabilities:
     supports_step: bool = False
     supports_render: bool = False
     supports_spice_netlist: bool = False
+    supports_specctra_export: bool = False
+    supports_specctra_import: bool = False
 
 
 def _candidate_cli_paths() -> list[Path]:
@@ -128,6 +130,7 @@ def get_cli_capabilities(cli_path: Path) -> CliCapabilities:
     help_outputs: list[str] = []
     commands = (
         [str(cli_path), "pcb", "export", "--help"],
+        [str(cli_path), "pcb", "import", "--help"],
         [str(cli_path), "sch", "export", "--help"],
         [str(cli_path), "pcb", "--help"],
     )
@@ -159,6 +162,8 @@ def get_cli_capabilities(cli_path: Path) -> CliCapabilities:
         supports_step=" export step" in blob or " step " in blob,
         supports_render=" render " in blob,
         supports_spice_netlist="spice" in blob,
+        supports_specctra_export="specctra" in blob or " dsn " in blob,
+        supports_specctra_import="specctra" in blob or " ses " in blob,
     )
 
 

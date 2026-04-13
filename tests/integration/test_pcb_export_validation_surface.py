@@ -27,6 +27,22 @@ def _configure_mock_board(mock_board) -> None:
         net=SimpleNamespace(name="NET1"),
         id=SimpleNamespace(value="track-12345678"),
     )
+    track_usb_p = SimpleNamespace(
+        start=SimpleNamespace(x_nm=0, y_nm=1_000_000),
+        end=SimpleNamespace(x_nm=10_000_000, y_nm=1_000_000),
+        layer=BoardLayer.BL_F_Cu,
+        width=200_000,
+        net=SimpleNamespace(name="USB_DP"),
+        id=SimpleNamespace(value="track-usb-dp"),
+    )
+    track_usb_n = SimpleNamespace(
+        start=SimpleNamespace(x_nm=0, y_nm=2_000_000),
+        end=SimpleNamespace(x_nm=9_700_000, y_nm=2_000_000),
+        layer=BoardLayer.BL_F_Cu,
+        width=200_000,
+        net=SimpleNamespace(name="USB_DN"),
+        id=SimpleNamespace(value="track-usb-dn"),
+    )
     via = SimpleNamespace(
         position=SimpleNamespace(x_nm=500_000, y_nm=500_000),
         diameter=800_000,
@@ -72,10 +88,16 @@ def _configure_mock_board(mock_board) -> None:
         layers=[SimpleNamespace(layer=BoardLayer.BL_F_Cu, thickness=35_000, material_name="Copper")]
     )
 
-    mock_board.get_tracks.return_value = [track]
+    mock_board.get_tracks.return_value = [track, track_usb_p, track_usb_n]
     mock_board.get_vias.return_value = [via]
     mock_board.get_footprints.return_value = [footprint_1, footprint_2]
-    mock_board.get_nets.return_value = [SimpleNamespace(name="NET1"), SimpleNamespace(name="GND")]
+    mock_board.get_nets.return_value = [
+        SimpleNamespace(name="NET1"),
+        SimpleNamespace(name="GND"),
+        SimpleNamespace(name="USB_DP"),
+        SimpleNamespace(name="USB_DN"),
+        SimpleNamespace(name="HS"),
+    ]
     mock_board.get_zones.return_value = [zone]
     mock_board.get_shapes.return_value = [shape]
     mock_board.get_pads.return_value = [pad_1, pad_2]
@@ -190,10 +212,41 @@ def _fake_cli_run_factory(sample_project: Path):
 
 
 @pytest.mark.anyio
-async def test_pcb_and_routing_surface(sample_project: Path, mock_board) -> None:
+async def test_pcb_and_routing_surface(
+    sample_project: Path,
+    mock_board,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _configure_mock_board(mock_board)
     server = build_server("pcb")
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    (sample_project / "demo.dsn").write_text("dsn", encoding="utf-8")
+
+    def fake_freerouting_run(
+        cmd: list[str],
+        capture_output: bool,
+        text: bool,
+        timeout: float,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        _ = (capture_output, text, timeout, check)
+        if "--version" in cmd:
+            return subprocess.CompletedProcess(cmd, 0, stdout="KiCad 10.0.1", stderr="")
+        if "--help" in cmd:
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                stdout="gerbers positions ipc2581 svg dxf step render spice",
+                stderr="",
+            )
+        ses_path = Path(cmd[cmd.index("-do") + 1])
+        if "docker" in cmd[0]:
+            ses_path = sample_project / "output" / "routing" / ses_path.name
+        ses_path.parent.mkdir(parents=True, exist_ok=True)
+        ses_path.write_text("ses", encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, stdout="autorouted", stderr="")
+
+    monkeypatch.setattr("kicad_mcp.utils.freerouting.subprocess.run", fake_freerouting_run)
 
     cfg = get_config()
     cfg.enable_experimental_tools = True
@@ -214,7 +267,7 @@ async def test_pcb_and_routing_surface(sample_project: Path, mock_board) -> None
     rules = await call_tool_text(server, "pcb_get_design_rules", {})
 
     assert "Board summary" in summary
-    assert "Tracks (1 total)" in tracks
+    assert "Tracks (3 total)" in tracks
     assert "Vias (1 total)" in vias
     assert "Footprints (2 total)" in footprints
     assert "NET1" in nets
@@ -306,10 +359,63 @@ async def test_pcb_and_routing_surface(sample_project: Path, mock_board) -> None
             "route_from_pad_to_pad",
             {"ref1": "R1", "pad1": "1", "ref2": "U2", "pad2": "3", "layer": "F_Cu"},
         ),
+    ]
+
+    assert any("successfully" in result.lower() for result in add_results)
+    assert any("route from" in result.lower() for result in add_results)
+    assert mock_board.create_items.called
+    assert mock_board.remove_items_by_id.called
+    assert mock_board.save.called
+    assert mock_board.refill_zones.called
+
+    routing_results = [
+        await call_tool_text(
+            server,
+            "route_export_dsn",
+            {"output_path": "output/routing/board.dsn"},
+        ),
+        await call_tool_text(
+            server,
+            "route_autoroute_freerouting",
+            {
+                "dsn_path": "output/routing/board.dsn",
+                "ses_path": "output/routing/board.ses",
+                "net_classes_to_ignore": ["GND", "PWR"],
+                "use_docker": True,
+            },
+        ),
+        await call_tool_text(server, "route_import_ses", {"ses_path": "output/routing/board.ses"}),
+        await call_tool_text(
+            server,
+            "route_set_net_class_rules",
+            {
+                "net_class": "HS",
+                "width_mm": 0.2,
+                "clearance_mm": 0.15,
+                "via_diameter_mm": 0.5,
+                "via_drill_mm": 0.25,
+            },
+        ),
         await call_tool_text(
             server,
             "route_differential_pair",
-            {"ref1": "R1", "pad1": "1", "ref2": "U2", "pad2": "3", "layer": "F_Cu"},
+            {
+                "net_p": "USB_DP",
+                "net_n": "USB_DN",
+                "layer": "F_Cu",
+                "width_mm": 0.2,
+                "gap_mm": 0.18,
+                "length_tolerance_mm": 0.1,
+            },
+        ),
+        await call_tool_text(
+            server,
+            "route_tune_length",
+            {
+                "net_name": "NET1",
+                "target_mm": 5.0,
+                "meander_amplitude_mm": 0.8,
+            },
         ),
         await call_tool_text(
             server, "tune_track_length", {"net_name": "NET1", "target_length_mm": 5.0}
@@ -321,14 +427,15 @@ async def test_pcb_and_routing_surface(sample_project: Path, mock_board) -> None
         ),
     ]
 
-    assert any("successfully" in result.lower() for result in add_results)
-    assert any(
-        "experimental" in result.lower() or "stable ki" in result.lower() for result in add_results
-    )
-    assert mock_board.create_items.called
-    assert mock_board.remove_items_by_id.called
-    assert mock_board.save.called
-    assert mock_board.refill_zones.called
+    joined_routing = "\n".join(routing_results)
+    assert "Specctra DSN ready" in joined_routing
+    assert "FreeRouting completed successfully" in joined_routing
+    assert "Specctra SES session staged" in joined_routing
+    assert "Net-class routing rule" in joined_routing
+    assert "Differential-pair routing rule" in joined_routing
+    assert "Length-tuning rule" in joined_routing
+    assert "Differential-pair length rules updated" in joined_routing
+    assert (sample_project / "demo.kicad_dru").read_text(encoding="utf-8").count("(rule ") >= 4
 
 
 @pytest.mark.anyio

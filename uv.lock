@@ -517,6 +517,20 @@ wheels = [
 ]
 
 [[package]]
+name = "docker"
+version = "7.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
+    { name = "requests" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/91/9b/4a2ea29aeba62471211598dac5d96825bb49348fa07e906ea930394a83ce/docker-7.1.0.tar.gz", hash = "sha256:ad8c70e6e3f8926cb8a92619b832b4ea5299e2831c14284663184e200546fa6c", size = 117834, upload-time = "2024-05-23T11:13:57.216Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e3/26/57c6fb270950d476074c087527a558ccb6f4436657314bfb6cdf484114c4/docker-7.1.0-py3-none-any.whl", hash = "sha256:c96b93b7f0a746f9e77d325bcfb87422a3d8bd4f03136ae8a85b37f1898d5fc0", size = 147774, upload-time = "2024-05-23T11:13:55.01Z" },
+]
+
+[[package]]
 name = "docstring-parser"
 version = "0.17.0"
 source = { registry = "https://pypi.org/simple" }
@@ -897,6 +911,9 @@ dev = [
     { name = "ruff" },
     { name = "safety" },
 ]
+freerouting = [
+    { name = "docker" },
+]
 http = [
     { name = "httpx" },
     { name = "uvicorn", extra = ["standard"] },
@@ -906,6 +923,7 @@ http = [
 requires-dist = [
     { name = "anyio", specifier = ">=4.4.0" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7.9" },
+    { name = "docker", marker = "extra == 'freerouting'", specifier = ">=7.0.0" },
     { name = "httpx", marker = "extra == 'http'", specifier = ">=0.27.0" },
     { name = "kicad-python", specifier = ">=0.6,<0.7" },
     { name = "kicad-sch-api", specifier = ">=0.5.0,<0.6" },
@@ -926,7 +944,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12.0" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'http'", specifier = ">=0.30.0" },
 ]
-provides-extras = ["dev", "http"]
+provides-extras = ["dev", "freerouting", "http"]
 
 [[package]]
 name = "kicad-python"

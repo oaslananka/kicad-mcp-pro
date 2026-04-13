@@ -295,12 +295,25 @@ LCSC helpers generate browser URLs only. They do not perform live network search
 
 - `route_single_track`
 - `route_from_pad_to_pad`
-- `route_differential_pair` `[EXPERIMENTAL]`
-- `tune_track_length` `[EXPERIMENTAL]`
-- `tune_diff_pair_length` `[EXPERIMENTAL]`
+- `route_export_dsn`
+- `route_import_ses`
+- `route_autoroute_freerouting`
+- `route_set_net_class_rules`
+- `route_differential_pair`
+- `route_tune_length`
+- `tune_track_length` (deprecated alias)
+- `tune_diff_pair_length`
 
-The experimental routing entries above remain capability markers and currently return
-boundary/status guidance instead of full automation.
+Routing helpers now cover three layers:
+
+- direct IPC routing for simple single-track and pad-to-pad paths
+- rule-file authoring for net class, differential pair, and length-tuning constraints
+- FreeRouting orchestration around Specctra `.dsn` / `.ses` files
+
+Important limitation: KiCad 10 still does not expose a stable headless Specctra
+export/import flow through `kicad-cli` on all installations. `route_export_dsn`
+and `route_import_ses` therefore support staging existing `.dsn` / `.ses` files
+and explain the remaining manual KiCad PCB Editor step when needed.
 
 ## Workflows
 

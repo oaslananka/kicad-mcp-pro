@@ -12,3 +12,8 @@ services:
       KICAD_MCP_TRANSPORT: http
     volumes:
       - ${KICAD_PROJECT_DIR:-./example}:/projects:ro
+
+  freerouting:
+    image: ghcr.io/freerouting/freerouting:latest
+    volumes:
+      - ${KICAD_PROJECT_DIR:-./example}:/data

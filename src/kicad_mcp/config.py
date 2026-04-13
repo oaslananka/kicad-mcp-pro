@@ -35,6 +35,10 @@ class KiCadMCPConfig(BaseSettings):
         default_factory=discover_kicad_cli,
         description="Path to the kicad-cli executable.",
     )
+    freerouting_jar: Path | None = Field(default=None)
+    freerouting_image: str = Field(default="ghcr.io/freerouting/freerouting:latest")
+    docker_executable: str = Field(default="docker")
+    java_executable: str = Field(default="java")
     kicad_socket_path: Path | None = Field(default=None)
     kicad_token: str | None = Field(default=None)
 
@@ -80,6 +84,7 @@ class KiCadMCPConfig(BaseSettings):
 
     @field_validator(
         "kicad_cli",
+        "freerouting_jar",
         "kicad_socket_path",
         "project_dir",
         "project_file",

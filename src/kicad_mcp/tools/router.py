@@ -14,10 +14,8 @@ class ToolCategory(TypedDict):
     tools: list[str]
 
 
-EXPERIMENTAL_TOOL_NAMES = frozenset(
-    {"route_differential_pair", "tune_track_length", "tune_diff_pair_length"}
-)
-DEPRECATED_TOOL_NAMES = frozenset({"lib_search_lcsc"})
+EXPERIMENTAL_TOOL_NAMES: frozenset[str] = frozenset()
+DEPRECATED_TOOL_NAMES: frozenset[str] = frozenset({"lib_search_lcsc", "tune_track_length"})
 
 
 def _display_tool_name(tool_name: str) -> str:
@@ -171,13 +169,17 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
     },
     "routing": {
         "description": (
-            "Advanced routing helpers. Differential pair and length-tuning entries remain "
-            "experimental capability markers."
+            "Advanced routing helpers including FreeRouting orchestration and rule-file tuning."
         ),
         "tools": [
             "route_single_track",
             "route_from_pad_to_pad",
+            "route_export_dsn",
+            "route_import_ses",
+            "route_autoroute_freerouting",
+            "route_set_net_class_rules",
             "route_differential_pair",
+            "route_tune_length",
             "tune_track_length",
             "tune_diff_pair_length",
         ],

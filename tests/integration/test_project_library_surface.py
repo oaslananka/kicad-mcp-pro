@@ -56,7 +56,9 @@ async def test_project_resources_prompts_and_library_surface(
     assert "kicad_get_version" in category_tools
     assert "lib_get_lcsc_search_url" in library_tools
     assert "lib_search_lcsc [DEPRECATED]" in library_tools
-    assert "route_differential_pair [EXPERIMENTAL]" in routing_tools
+    assert "route_autoroute_freerouting" in routing_tools
+    assert "route_differential_pair" in routing_tools
+    assert "tune_track_length [DEPRECATED]" in routing_tools
 
     created = await call_tool_text(
         server,
