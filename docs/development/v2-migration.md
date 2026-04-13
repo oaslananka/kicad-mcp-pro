@@ -139,3 +139,17 @@ setup block so later impedance checks can reuse the same dielectric data.
 Blind and microvia helpers stay IPC-backed because they create live board
 items, while the impedance and creepage tools provide fast rule-of-thumb review
 for multilayer layout planning.
+
+## Version Control Surface
+
+v2 adds a Git-backed checkpoint surface:
+
+- `vcs_init_git`
+- `vcs_commit_checkpoint`
+- `vcs_list_checkpoints`
+- `vcs_restore_checkpoint`
+- `vcs_diff_with_checkpoint`
+
+The restore path is intentionally conservative: when the project is dirty, the
+tool first creates a stash backup for the project scope and only then restores
+files from the requested checkpoint commit.

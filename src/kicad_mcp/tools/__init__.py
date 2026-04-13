@@ -14,6 +14,7 @@ from . import (
     signal_integrity,
     simulation,
     validation,
+    version_control,
 )
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "signal_integrity",
     "simulation",
     "validation",
+    "version_control",
 ]

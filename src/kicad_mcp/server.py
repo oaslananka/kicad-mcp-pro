@@ -26,6 +26,7 @@ from .tools import (
     signal_integrity,
     simulation,
     validation,
+    version_control,
 )
 from .tools.router import categories_for_profile
 from .utils.logging import setup_logging
@@ -78,6 +79,8 @@ def build_server(profile: str | None = None) -> FastMCP:
         signal_integrity.register(server)
     if "simulation" in enabled:
         simulation.register(server)
+    if "version_control" in enabled:
+        version_control.register(server)
 
     board_state.register(server)
     workflows.register(server)

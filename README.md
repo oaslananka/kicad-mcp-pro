@@ -134,6 +134,8 @@ HTTP transports are available in [Client Configuration](docs/client-configuratio
 - For HTTP transport, install the `http` extra: `pip install "kicad-mcp-pro[http]"`.
 - For SPICE simulation tools, install the `simulation` extra:
   `pip install "kicad-mcp-pro[simulation]"`.
+- For Git checkpoint tools, install the `vcs` extra:
+  `pip install "kicad-mcp-pro[vcs]"`.
 
 ## Docker Limitations
 
@@ -422,6 +424,18 @@ thermal stitching is likely needed around hotter regions.
 
 These EMC helpers use board-state heuristics so an agent can quickly flag likely
 return-path, stitching, plane, and decoupling problems before a manual SI/EMI review.
+
+### Version Control
+
+- `vcs_init_git`
+- `vcs_commit_checkpoint`
+- `vcs_list_checkpoints`
+- `vcs_restore_checkpoint`
+- `vcs_diff_with_checkpoint`
+
+These tools scope Git actions to the active KiCad project directory, add local
+identity defaults when needed, and protect restores by stashing dirty project
+state before rolling files back to a checkpoint commit.
 
 ## Workflows
 

@@ -262,6 +262,16 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "sim_add_spice_directive",
         ],
     },
+    "version_control": {
+        "description": "Create Git checkpoints, inspect diffs, and safely restore project files.",
+        "tools": [
+            "vcs_init_git",
+            "vcs_commit_checkpoint",
+            "vcs_list_checkpoints",
+            "vcs_restore_checkpoint",
+            "vcs_diff_with_checkpoint",
+        ],
+    },
 }
 
 PROFILE_CATEGORIES: dict[str, tuple[str, ...]] = {
