@@ -46,6 +46,9 @@ async def test_project_resources_prompts_and_library_surface(
     routing_tools = await call_tool_text(
         server, "kicad_get_tools_in_category", {"category": "routing"}
     )
+    pcb_write_tools = await call_tool_text(
+        server, "kicad_get_tools_in_category", {"category": "pcb_write"}
+    )
     simulation_tools = await call_tool_text(
         server, "kicad_get_tools_in_category", {"category": "simulation"}
     )
@@ -65,6 +68,9 @@ async def test_project_resources_prompts_and_library_surface(
     assert "Quick Start" in help_text
     assert "pcb_read" in categories
     assert "kicad_get_version" in category_tools
+    assert "pcb_auto_place_by_schematic" in pcb_write_tools
+    assert "pcb_set_keepout_zone" in pcb_write_tools
+    assert "pcb_add_teardrops" in pcb_write_tools
     assert "lib_search_components" in library_tools
     assert "lib_get_component_details" in library_tools
     assert "lib_get_bom_with_pricing" in library_tools
@@ -403,4 +409,4 @@ async def test_schematic_surface(sample_project: Path, mock_kicad) -> None:
     assert "reload" in reload_text.lower() or "updated" in reload_text.lower()
     assert '(symbol "power:GND"' in sch_text
     assert '(symbol "GND_0_1"' in sch_text
-    assert 'power:GND_0_1' not in sch_text
+    assert "power:GND_0_1" not in sch_text

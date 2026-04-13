@@ -209,6 +209,14 @@ HTTP transports are available in [Client Configuration](docs/client-configuratio
 - `pcb_add_rectangle`
 - `pcb_add_text`
 - `pcb_set_board_outline`
+- `pcb_auto_place_by_schematic`
+- `pcb_place_decoupling_caps`
+- `pcb_group_by_function`
+- `pcb_align_footprints`
+- `pcb_set_keepout_zone`
+- `pcb_add_mounting_holes`
+- `pcb_add_fiducial_marks`
+- `pcb_add_teardrops`
 - `pcb_delete_items`
 - `pcb_save`
 - `pcb_refill_zones`
@@ -252,6 +260,14 @@ intended for initial board bring-up and footprint sync, not for full autorouting
 It preserves existing footprints by default, can replace wrong footprint names in place
 with `replace_mismatched=true`, and performs a lightweight overlap-avoidance pass for
 newly added footprints.
+
+v2 also adds board bring-up helpers on top of that sync path. `pcb_auto_place_by_schematic`
+can lay out the first board in `cluster`, `linear`, or `star` mode, while
+`pcb_group_by_function`, `pcb_align_footprints`, and `pcb_place_decoupling_caps`
+help refine the initial placement without opening the PCB editor. `pcb_add_mounting_holes`
+and `pcb_add_fiducial_marks` append simple manufacturing footprints, `pcb_set_keepout_zone`
+creates a real rule-area keepout on the active board, and `pcb_add_teardrops` adds
+small copper helper zones at basic pad-to-track junctions when the board is open over IPC.
 
 ### Library
 

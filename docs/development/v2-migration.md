@@ -86,3 +86,21 @@ v2 adds EMC-oriented board heuristics and a bundled sweep:
 
 The bundled compliance sweep runs ten named checks and returns pass/warn/fail
 text so agents can surface EMC risk early in the layout cycle.
+
+## PCB Bring-Up Surface
+
+v2 expands the PCB write category with first-layout helpers:
+
+- `pcb_auto_place_by_schematic`
+- `pcb_place_decoupling_caps`
+- `pcb_group_by_function`
+- `pcb_align_footprints`
+- `pcb_set_keepout_zone`
+- `pcb_add_mounting_holes`
+- `pcb_add_fiducial_marks`
+- `pcb_add_teardrops`
+
+These tools sit on top of the existing file-based footprint sync flow. They are
+meant to accelerate initial board bring-up, cluster related references, add
+simple manufacturing markers, and create basic keepout or copper helper shapes
+before a manual refinement pass in the KiCad PCB editor.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 import subprocess
 import uuid
@@ -20,9 +21,10 @@ from kipy.board_types import (
     Net,
     Track,
     Via,
+    Zone,
 )
-from kipy.geometry import Angle, Vector2
-from kipy.proto.board.board_types_pb2 import BoardLayer, ViaType
+from kipy.geometry import Angle, PolygonWithHoles, PolyLine, PolyLineNode, Vector2
+from kipy.proto.board.board_types_pb2 import BoardLayer, ViaType, ZoneType
 from kipy.proto.common import types as common_types
 from mcp.server.fastmcp import FastMCP
 
@@ -31,12 +33,20 @@ from ..connection import KiCadConnectionError, board_transaction, get_board
 from ..models.common import _FootprintLike, _PadLike
 from ..models.pcb import (
     AddCircleInput,
+    AddFiducialMarksInput,
+    AddMountingHolesInput,
     AddRectangleInput,
     AddSegmentInput,
+    AddTeardropsInput,
     AddTextInput,
     AddTrackInput,
     AddViaInput,
+    AlignFootprintsInput,
+    AutoPlaceBySchematicInput,
     BulkTrackItem,
+    GroupFootprintsInput,
+    KeepoutZoneInput,
+    PlaceDecouplingCapsInput,
     SetBoardOutlineInput,
     SyncPcbFromSchematicInput,
 )
@@ -226,6 +236,18 @@ def _bbox_from_block(block: str) -> tuple[float, float]:
         xs.extend([float(line.group(1)), float(line.group(3))])
         ys.extend([float(line.group(2)), float(line.group(4))])
 
+    for circle in re.finditer(
+        rf"\(fp_circle\s+\(center\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\)\s+\(end\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\)",
+        block,
+    ):
+        center_x = float(circle.group(1))
+        center_y = float(circle.group(2))
+        end_x = float(circle.group(3))
+        end_y = float(circle.group(4))
+        radius = math.hypot(end_x - center_x, end_y - center_y)
+        xs.extend([center_x - radius, center_x + radius])
+        ys.extend([center_y - radius, center_y + radius])
+
     for pad_block in _iter_blocks(block, "pad"):
         at_match = re.search(
             rf"\(at\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})(?:\s+{FLOAT_PATTERN})?\)",
@@ -264,10 +286,11 @@ def _parse_board_footprint_blocks(content: str) -> dict[str, dict[str, Any]]:
             block, length = _extract_block(content, cursor)
             if block:
                 ref_match = re.search(rf'\(property\s+"Reference"\s+{STRING_PATTERN}', block)
-                name_match = re.match(rf'\(footprint\s+{STRING_PATTERN}', block.lstrip())
+                name_match = re.match(rf"\(footprint\s+{STRING_PATTERN}", block.lstrip())
                 if ref_match and name_match:
                     root_at = _parse_root_at(block)
                     width_mm, height_mm = _bbox_from_block(block)
+                    layer_match = re.search(r'\(layer\s+"([^"]+)"\)', block)
                     footprints[ref_match.group(1)] = {
                         "name": name_match.group(1),
                         "block": block,
@@ -278,11 +301,291 @@ def _parse_board_footprint_blocks(content: str) -> dict[str, dict[str, Any]]:
                         "rotation": root_at[2] if root_at else 0,
                         "width_mm": width_mm,
                         "height_mm": height_mm,
+                        "layer_name": layer_match.group(1) if layer_match else "F.Cu",
                     }
                 cursor += length
                 continue
         cursor += 1
     return footprints
+
+
+def _replace_root_at(block: str, *, x_mm: float, y_mm: float, rotation: int) -> str:
+    lines = block.splitlines()
+    for index, line in enumerate(lines[:20]):
+        match = re.match(
+            rf"(\s*)\(at\s+{FLOAT_PATTERN}\s+{FLOAT_PATTERN}(?:\s+{FLOAT_PATTERN})?\)",
+            line,
+        )
+        if match:
+            indent = match.group(1)
+            lines[index] = f"{indent}(at {x_mm:.4f} {y_mm:.4f} {rotation})"
+            return "\n".join(lines)
+    return _inject_root_placement(block, x_mm=x_mm, y_mm=y_mm, rotation=rotation)
+
+
+def _collect_occupied_boxes(
+    footprints: dict[str, dict[str, Any]],
+    *,
+    exclude_refs: set[str] | None = None,
+) -> list[dict[str, float]]:
+    excluded = exclude_refs or set()
+    return [
+        {
+            "x_mm": float(entry["x_mm"]),
+            "y_mm": float(entry["y_mm"]),
+            "width_mm": float(entry["width_mm"]),
+            "height_mm": float(entry["height_mm"]),
+        }
+        for reference, entry in footprints.items()
+        if reference not in excluded and entry["x_mm"] is not None and entry["y_mm"] is not None
+    ]
+
+
+def _edge_cuts_bounds(content: str) -> tuple[float, float, float, float] | None:
+    xs: list[float] = []
+    ys: list[float] = []
+    patterns = [
+        rf"\(gr_line\s+\(start\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\)\s+\(end\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\)[^\)]*\(layer\s+\"Edge\.Cuts\"\)",
+        rf"\(gr_rect\s+\(start\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\)\s+\(end\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\)[^\)]*\(layer\s+\"Edge\.Cuts\"\)",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, content):
+            xs.extend([float(match.group(1)), float(match.group(3))])
+            ys.extend([float(match.group(2)), float(match.group(4))])
+    if not xs or not ys:
+        return None
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _board_frame_mm(
+    content: str,
+    footprints: dict[str, dict[str, Any]],
+) -> tuple[float, float, float, float]:
+    if (outline := _edge_cuts_bounds(content)) is not None:
+        return outline
+
+    xs: list[float] = []
+    ys: list[float] = []
+    for entry in footprints.values():
+        if entry["x_mm"] is None or entry["y_mm"] is None:
+            continue
+        x_mm = float(entry["x_mm"])
+        y_mm = float(entry["y_mm"])
+        width_mm = float(entry["width_mm"])
+        height_mm = float(entry["height_mm"])
+        xs.extend([x_mm - (width_mm / 2), x_mm + (width_mm / 2)])
+        ys.extend([y_mm - (height_mm / 2), y_mm + (height_mm / 2)])
+    if xs and ys:
+        return min(xs) - 10.0, min(ys) - 10.0, max(xs) + 10.0, max(ys) + 10.0
+    return 0.0, 0.0, 100.0, 80.0
+
+
+def _guard_file_based_board_edit(operation: str, allow_open_board: bool) -> str | None:
+    if _board_is_open() and not allow_open_board:
+        return (
+            f"Refusing file-based {operation} while a board is open in KiCad. "
+            "Close the board first, or rerun with allow_open_board=True if you want "
+            "KiCad to reload the updated file from disk."
+        )
+    return None
+
+
+def _finalize_file_based_board_edit(allow_open_board: bool) -> str:
+    if allow_open_board and _board_is_open():
+        return _reload_board_after_file_sync()
+    return "The PCB file was updated. Reload it manually in KiCad if needed."
+
+
+def _strategy_board_positions(
+    components: list[dict[str, Any]],
+    payload: AutoPlaceBySchematicInput,
+    occupied_boxes: list[dict[str, float]],
+) -> dict[str, tuple[float, float]]:
+    sync_payload = SyncPcbFromSchematicInput(
+        origin_x_mm=payload.origin_x_mm,
+        origin_y_mm=payload.origin_y_mm,
+        scale_x=payload.scale_x,
+        scale_y=payload.scale_y,
+        grid_mm=payload.grid_mm,
+        allow_open_board=payload.allow_open_board,
+    )
+    if payload.strategy == "cluster":
+        return _planned_board_positions(components, sync_payload, occupied_boxes)
+
+    positions: dict[str, tuple[float, float]] = {}
+    occupied = list(occupied_boxes)
+    ordered = sorted(components, key=lambda item: str(item["reference"]))
+
+    if payload.strategy == "linear":
+        cursor_x_mm = payload.origin_x_mm
+        base_y_mm = payload.origin_y_mm
+        for component in ordered:
+            width_mm, height_mm = _footprint_size_from_assignment(str(component["footprint"]))
+            resolved_x_mm, resolved_y_mm = _find_open_position(
+                cursor_x_mm,
+                base_y_mm,
+                width_mm,
+                height_mm,
+                sync_payload,
+                occupied,
+            )
+            positions[str(component["reference"])] = (resolved_x_mm, resolved_y_mm)
+            occupied.append(
+                {
+                    "x_mm": resolved_x_mm,
+                    "y_mm": resolved_y_mm,
+                    "width_mm": width_mm,
+                    "height_mm": height_mm,
+                }
+            )
+            cursor_x_mm = resolved_x_mm + width_mm + payload.grid_mm + PLACEMENT_MARGIN_MM
+        return positions
+
+    angle_step = (2 * math.pi) / max(6, len(ordered) - 1)
+    for index, component in enumerate(ordered):
+        width_mm, height_mm = _footprint_size_from_assignment(str(component["footprint"]))
+        if index == 0:
+            seed_x_mm = payload.origin_x_mm
+            seed_y_mm = payload.origin_y_mm
+        else:
+            ring = ((index - 1) // 6) + 1
+            angle = (index - 1) * angle_step
+            radius_mm = ring * max(10.0, payload.grid_mm * 6)
+            seed_x_mm = payload.origin_x_mm + (math.cos(angle) * radius_mm)
+            seed_y_mm = payload.origin_y_mm + (math.sin(angle) * radius_mm)
+        resolved_x_mm, resolved_y_mm = _find_open_position(
+            seed_x_mm,
+            seed_y_mm,
+            width_mm,
+            height_mm,
+            sync_payload,
+            occupied,
+        )
+        positions[str(component["reference"])] = (resolved_x_mm, resolved_y_mm)
+        occupied.append(
+            {
+                "x_mm": resolved_x_mm,
+                "y_mm": resolved_y_mm,
+                "width_mm": width_mm,
+                "height_mm": height_mm,
+            }
+        )
+    return positions
+
+
+def _mounting_hole_block(
+    reference: str,
+    x_mm: float,
+    y_mm: float,
+    diameter_mm: float,
+    clearance_mm: float,
+) -> str:
+    outer_radius_mm = max((diameter_mm / 2) + clearance_mm, diameter_mm)
+    outer_size_mm = diameter_mm + (clearance_mm * 2)
+    return "\n".join(
+        [
+            f'(footprint "MountingHole_{diameter_mm:.2f}mm"',
+            '\t(layer "F.Cu")',
+            f'\t(uuid "{uuid.uuid4()}")',
+            f"\t(at {x_mm:.4f} {y_mm:.4f} 0)",
+            f'\t(property "Reference" "{reference}"',
+            "\t\t(at 0 -4.0 0)",
+            '\t\t(layer "F.SilkS")',
+            "\t)",
+            f'\t(property "Value" "MountingHole_{diameter_mm:.2f}mm"',
+            "\t\t(at 0 4.0 0)",
+            '\t\t(layer "F.Fab")',
+            "\t)",
+            "\t(attr board_only exclude_from_pos_files exclude_from_bom)",
+            (
+                f"\t(fp_circle (center 0 0) (end {outer_radius_mm:.4f} 0) "
+                '(stroke (width 0.05) (type solid)) (fill none) (layer "F.CrtYd"))'
+            ),
+            (
+                f"\t(fp_circle (center 0 0) (end {(diameter_mm / 2):.4f} 0) "
+                '(stroke (width 0.1) (type solid)) (fill none) (layer "Cmts.User"))'
+            ),
+            (
+                f'\t(pad "" np_thru_hole circle (at 0 0) '
+                f"(size {outer_size_mm:.4f} {outer_size_mm:.4f}) "
+                f'(drill {diameter_mm:.4f}) (layers "*.Cu" "*.Mask"))'
+            ),
+            ")",
+        ]
+    )
+
+
+def _fiducial_block(reference: str, x_mm: float, y_mm: float, diameter_mm: float) -> str:
+    courtyard_radius_mm = max((diameter_mm / 2) + 0.5, diameter_mm)
+    return "\n".join(
+        [
+            f'(footprint "Fiducial_{diameter_mm:.2f}mm"',
+            '\t(layer "F.Cu")',
+            f'\t(uuid "{uuid.uuid4()}")',
+            f"\t(at {x_mm:.4f} {y_mm:.4f} 0)",
+            f'\t(property "Reference" "{reference}"',
+            "\t\t(at 0 -2.2 0)",
+            '\t\t(layer "F.SilkS")',
+            "\t)",
+            f'\t(property "Value" "Fiducial_{diameter_mm:.2f}mm"',
+            "\t\t(at 0 2.2 0)",
+            '\t\t(layer "F.Fab")',
+            "\t)",
+            "\t(attr smd board_only exclude_from_pos_files exclude_from_bom)",
+            (
+                f"\t(fp_circle (center 0 0) (end {courtyard_radius_mm:.4f} 0) "
+                '(stroke (width 0.05) (type solid)) (fill none) (layer "F.CrtYd"))'
+            ),
+            (
+                f'\t(pad "1" smd circle (at 0 0) (size {diameter_mm:.4f} {diameter_mm:.4f}) '
+                '(layers "F.Cu" "F.Mask"))'
+            ),
+            ")",
+        ]
+    )
+
+
+def _next_reference(existing_refs: set[str], prefix: str) -> str:
+    index = 1
+    while f"{prefix}{index}" in existing_refs:
+        index += 1
+    reference = f"{prefix}{index}"
+    existing_refs.add(reference)
+    return reference
+
+
+def _rectangle_polygon(
+    x_mm: float,
+    y_mm: float,
+    width_mm: float,
+    height_mm: float,
+) -> PolygonWithHoles:
+    polygon = PolygonWithHoles()
+    outline = PolyLine()
+    left_mm = x_mm - (width_mm / 2)
+    right_mm = x_mm + (width_mm / 2)
+    top_mm = y_mm - (height_mm / 2)
+    bottom_mm = y_mm + (height_mm / 2)
+    for point_x_mm, point_y_mm in [
+        (left_mm, top_mm),
+        (right_mm, top_mm),
+        (right_mm, bottom_mm),
+        (left_mm, bottom_mm),
+    ]:
+        outline.append(PolyLineNode.from_point(Vector2.from_xy_mm(point_x_mm, point_y_mm)))
+    outline.closed = True
+    polygon.outline = outline
+    return polygon
+
+
+def _polygon_from_points(points_nm: list[tuple[int, int]]) -> PolygonWithHoles:
+    polygon = PolygonWithHoles()
+    outline = PolyLine()
+    for point_x_nm, point_y_nm in points_nm:
+        outline.append(PolyLineNode.from_point(Vector2.from_xy(point_x_nm, point_y_nm)))
+    outline.closed = True
+    polygon.outline = outline
+    return polygon
 
 
 def _append_board_blocks(content: str, blocks: list[str]) -> str:
@@ -351,7 +654,7 @@ def _replace_property_value(block: str, field_name: str, value: str) -> str:
 
 
 def _set_pad_net_name(pad_block: str, net_name: str) -> str:
-    net_pattern = re.compile(rf'(\(net\s+){STRING_PATTERN}')
+    net_pattern = re.compile(rf"(\(net\s+){STRING_PATTERN}")
     if net_pattern.search(pad_block):
         return net_pattern.sub(
             lambda match: f"{match.group(1)}{_sexpr_string(net_name)}",
@@ -363,11 +666,7 @@ def _set_pad_net_name(pad_block: str, net_name: str) -> str:
         insert_at = pad_block.rfind(")")
     if insert_at == -1:
         return pad_block
-    return (
-        pad_block[:insert_at]
-        + f"\n\t\t(net {_sexpr_string(net_name)})"
-        + pad_block[insert_at:]
-    )
+    return pad_block[:insert_at] + f"\n\t\t(net {_sexpr_string(net_name)})" + pad_block[insert_at:]
 
 
 def _assign_pad_nets(block: str, pad_nets: dict[str, str]) -> str:
@@ -377,7 +676,7 @@ def _assign_pad_nets(block: str, pad_nets: dict[str, str]) -> str:
         if block[cursor:].startswith("(pad"):
             pad_block, length = _extract_block(block, cursor)
             if pad_block:
-                pad_match = re.match(rf'\(pad\s+{STRING_PATTERN}', pad_block.lstrip())
+                pad_match = re.match(rf"\(pad\s+{STRING_PATTERN}", pad_block.lstrip())
                 if pad_match and pad_match.group(1) in pad_nets:
                     pad_block = _set_pad_net_name(pad_block, pad_nets[pad_match.group(1)])
                 rebuilt.append(pad_block)
@@ -391,8 +690,7 @@ def _assign_pad_nets(block: str, pad_nets: dict[str, str]) -> str:
 def _inject_root_placement(block: str, *, x_mm: float, y_mm: float, rotation: int) -> str:
     layer_match = re.search(r'\n(\s*\(layer\s+"[^"]+"\))', block)
     insertion = (
-        f"\n\t(uuid {_sexpr_string(str(uuid.uuid4()))})"
-        f"\n\t(at {x_mm:.4f} {y_mm:.4f} {rotation})"
+        f"\n\t(uuid {_sexpr_string(str(uuid.uuid4()))})\n\t(at {x_mm:.4f} {y_mm:.4f} {rotation})"
     )
     if layer_match:
         end = layer_match.end()
@@ -539,11 +837,11 @@ def _parse_netlist_text(content: str) -> dict[tuple[str, str], str]:
         if content[cursor:].startswith("(net"):
             block, length = _extract_block(content, cursor)
             if block:
-                name_match = re.search(rf'\(name\s+{STRING_PATTERN}\)', block)
+                name_match = re.search(rf"\(name\s+{STRING_PATTERN}\)", block)
                 if name_match is not None:
                     net_name = name_match.group(1)
                     for node in re.finditer(
-                        rf'\(node\s+\(ref\s+{STRING_PATTERN}\)\s+\(pin\s+{STRING_PATTERN}\)',
+                        rf"\(node\s+\(ref\s+{STRING_PATTERN}\)\s+\(pin\s+{STRING_PATTERN}\)",
                         block,
                     ):
                         net_map[(node.group(1), node.group(2))] = net_name
@@ -586,9 +884,7 @@ def _collect_schematic_components() -> tuple[list[dict[str, Any]], list[str]]:
         footprints = cast(set[str], component["footprints"])
         if len(footprints) > 1:
             footprint_list = ", ".join(sorted(footprints))
-            issues.append(
-                f"{reference} has conflicting footprint assignments: {footprint_list}"
-            )
+            issues.append(f"{reference} has conflicting footprint assignments: {footprint_list}")
             continue
         positions = cast(list[tuple[float, float]], component["positions"])
         rotations = cast(list[int], component["rotations"])
@@ -1261,9 +1557,7 @@ def register(mcp: FastMCP) -> None:
             if entry["x_mm"] is not None and entry["y_mm"] is not None
         ]
         components_to_add = [
-            component
-            for component in components
-            if str(component["reference"]) not in existing
+            component for component in components if str(component["reference"]) not in existing
         ]
         placements = _planned_board_positions(components_to_add, payload, occupied_boxes)
 
@@ -1300,9 +1594,7 @@ def register(mcp: FastMCP) -> None:
                     else payload.origin_y_mm
                 )
                 pad_nets = {
-                    pin: name
-                    for (ref, pin), name in net_map.items()
-                    if ref == reference and name
+                    pin: name for (ref, pin), name in net_map.items() if ref == reference and name
                 }
                 replacements[reference] = _render_board_footprint_block(
                     str(component["footprint"]),
@@ -1350,3 +1642,626 @@ def register(mcp: FastMCP) -> None:
         if reload_note:
             lines.append(reload_note)
         return "\n".join(lines)
+
+    @mcp.tool()
+    def pcb_auto_place_by_schematic(
+        strategy: str = "cluster",
+        origin_x_mm: float = 20.0,
+        origin_y_mm: float = 20.0,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+        grid_mm: float = 2.54,
+        allow_open_board: bool = False,
+        sync_missing: bool = True,
+    ) -> str:
+        """Place PCB footprints from the current schematic using deterministic heuristics."""
+        payload = AutoPlaceBySchematicInput(
+            strategy=strategy,
+            origin_x_mm=origin_x_mm,
+            origin_y_mm=origin_y_mm,
+            scale_x=scale_x,
+            scale_y=scale_y,
+            grid_mm=grid_mm,
+            allow_open_board=allow_open_board,
+            sync_missing=sync_missing,
+        )
+        if refusal := _guard_file_based_board_edit("auto-placement", payload.allow_open_board):
+            return refusal
+
+        components, issues = _collect_schematic_components()
+        if issues:
+            return "Auto-placement aborted:\n" + "\n".join(f"- {issue}" for issue in issues)
+        if not components:
+            return "No schematic symbols were found to place."
+
+        board_file = _get_pcb_file_for_sync()
+        board_content = _normalize_board_content(
+            board_file.read_text(encoding="utf-8", errors="ignore")
+        )
+        existing = _parse_board_footprint_blocks(board_content)
+        component_refs = {str(component["reference"]) for component in components}
+        occupied = _collect_occupied_boxes(existing, exclude_refs=component_refs)
+        positions = _strategy_board_positions(components, payload, occupied)
+
+        additions: list[str] = []
+        replacements: dict[str, str] = {}
+        missing_refs: list[str] = []
+        moved_existing = 0
+
+        for component in components:
+            reference = str(component["reference"])
+            x_mm, y_mm = positions[reference]
+            rotation = int(component["rotation"])
+            if reference in existing:
+                replacements[reference] = _replace_root_at(
+                    str(existing[reference]["block"]),
+                    x_mm=x_mm,
+                    y_mm=y_mm,
+                    rotation=rotation,
+                )
+                moved_existing += 1
+                continue
+            if not payload.sync_missing:
+                missing_refs.append(reference)
+                continue
+            additions.append(
+                _render_board_footprint_block(
+                    str(component["footprint"]),
+                    reference=reference,
+                    value=str(component["value"]),
+                    x_mm=x_mm,
+                    y_mm=y_mm,
+                    rotation=rotation,
+                    pad_nets={},
+                )
+            )
+
+        if replacements or additions:
+            _transactional_board_write(
+                lambda current: _replace_board_blocks(current, replacements, additions)
+            )
+
+        lines = [
+            f"Auto-placement strategy: {payload.strategy}",
+            f"Existing footprints moved: {moved_existing}",
+            f"Missing footprints added: {len(additions)}",
+        ]
+        if missing_refs:
+            lines.append("Missing schematic references left untouched:")
+            lines.extend(f"- {reference}" for reference in missing_refs[:20])
+            if len(missing_refs) > 20:
+                lines.append(f"... and {len(missing_refs) - 20} more")
+            lines.append("Rerun with sync_missing=True to add them automatically.")
+        if replacements or additions:
+            lines.append(_finalize_file_based_board_edit(payload.allow_open_board))
+        return "\n".join(lines)
+
+    @mcp.tool()
+    def pcb_place_decoupling_caps(
+        ic_ref: str,
+        cap_refs: list[str],
+        side: str = "same",
+        max_distance_mm: float = 2.0,
+        grid_mm: float = 1.27,
+        allow_open_board: bool = False,
+    ) -> str:
+        """Move capacitor footprints into a tight row near a target IC footprint."""
+        payload = PlaceDecouplingCapsInput(
+            ic_ref=ic_ref,
+            cap_refs=cap_refs,
+            side=side,
+            max_distance_mm=max_distance_mm,
+            grid_mm=grid_mm,
+            allow_open_board=allow_open_board,
+        )
+        if refusal := _guard_file_based_board_edit(
+            "decoupling capacitor placement", payload.allow_open_board
+        ):
+            return refusal
+
+        board_file = _get_pcb_file_for_sync()
+        board_content = _normalize_board_content(
+            board_file.read_text(encoding="utf-8", errors="ignore")
+        )
+        existing = _parse_board_footprint_blocks(board_content)
+        if payload.ic_ref not in existing:
+            return f"Footprint '{payload.ic_ref}' was not found on the PCB file."
+
+        missing_caps = [reference for reference in payload.cap_refs if reference not in existing]
+        if missing_caps:
+            return (
+                "Decoupling placement aborted because some capacitor references are missing:\n"
+                + "\n".join(f"- {reference}" for reference in missing_caps)
+            )
+
+        ic_entry = existing[payload.ic_ref]
+        ic_x_mm = float(ic_entry["x_mm"] or 0.0)
+        ic_y_mm = float(ic_entry["y_mm"] or 0.0)
+        ic_height_mm = float(ic_entry["height_mm"])
+        ordered_caps = [existing[reference] for reference in payload.cap_refs]
+        pitch_mm = max(float(entry["width_mm"]) for entry in ordered_caps) + payload.grid_mm
+        cap_band_y_mm = (
+            ic_y_mm - ((ic_height_mm / 2) + payload.max_distance_mm)
+            if payload.side == "same"
+            else ic_y_mm + ((ic_height_mm / 2) + payload.max_distance_mm)
+        )
+        base_x_mm = ic_x_mm - (((len(payload.cap_refs) - 1) * pitch_mm) / 2)
+        occupied = _collect_occupied_boxes(existing, exclude_refs=set(payload.cap_refs))
+
+        replacements: dict[str, str] = {}
+        moved = 0
+        for index, reference in enumerate(payload.cap_refs):
+            entry = existing[reference]
+            width_mm = float(entry["width_mm"])
+            height_mm = float(entry["height_mm"])
+            resolved_x_mm, resolved_y_mm = _find_open_position(
+                base_x_mm + (index * pitch_mm),
+                cap_band_y_mm,
+                width_mm,
+                height_mm,
+                SyncPcbFromSchematicInput(grid_mm=payload.grid_mm),
+                occupied,
+            )
+            replacements[reference] = _replace_root_at(
+                str(entry["block"]),
+                x_mm=resolved_x_mm,
+                y_mm=resolved_y_mm,
+                rotation=int(entry["rotation"]),
+            )
+            occupied.append(
+                {
+                    "x_mm": resolved_x_mm,
+                    "y_mm": resolved_y_mm,
+                    "width_mm": width_mm,
+                    "height_mm": height_mm,
+                }
+            )
+            moved += 1
+
+        _transactional_board_write(lambda current: _replace_board_blocks(current, replacements, []))
+
+        lines = [
+            f"Placed {moved} decoupling capacitor(s) near {payload.ic_ref}.",
+            f"Preferred placement band: {payload.side}.",
+        ]
+        if payload.side == "opposite":
+            lines.append(
+                "Note: file-based placement keeps the current copper side; "
+                "only the preferred placement band changes."
+            )
+        lines.append(_finalize_file_based_board_edit(payload.allow_open_board))
+        return "\n".join(lines)
+
+    @mcp.tool()
+    def pcb_group_by_function(
+        groups: dict[str, list[str]],
+        origin_x_mm: float = 20.0,
+        origin_y_mm: float = 20.0,
+        group_spacing_mm: float = 20.0,
+        item_spacing_mm: float = 5.08,
+        grid_mm: float = 1.27,
+        allow_open_board: bool = False,
+    ) -> str:
+        """Cluster existing footprints into named functional groups."""
+        payload = GroupFootprintsInput(
+            groups=groups,
+            origin_x_mm=origin_x_mm,
+            origin_y_mm=origin_y_mm,
+            group_spacing_mm=group_spacing_mm,
+            item_spacing_mm=item_spacing_mm,
+            grid_mm=grid_mm,
+            allow_open_board=allow_open_board,
+        )
+        if refusal := _guard_file_based_board_edit("functional grouping", payload.allow_open_board):
+            return refusal
+
+        board_file = _get_pcb_file_for_sync()
+        board_content = _normalize_board_content(
+            board_file.read_text(encoding="utf-8", errors="ignore")
+        )
+        existing = _parse_board_footprint_blocks(board_content)
+        occupied = _collect_occupied_boxes(existing)
+        refs_in_groups = {
+            reference for group_refs in payload.groups.values() for reference in group_refs
+        }
+        occupied = [box for box in occupied if True]
+        replacements: dict[str, str] = {}
+        missing_refs: list[str] = []
+        moved = 0
+
+        occupied = _collect_occupied_boxes(existing, exclude_refs=refs_in_groups)
+        for group_index, (_group_name, references) in enumerate(payload.groups.items()):
+            group_x_mm = payload.origin_x_mm + (group_index * payload.group_spacing_mm)
+            cursor_y_mm = payload.origin_y_mm
+            for reference in references:
+                entry = existing.get(reference)
+                if entry is None:
+                    missing_refs.append(reference)
+                    continue
+                width_mm = float(entry["width_mm"])
+                height_mm = float(entry["height_mm"])
+                resolved_x_mm, resolved_y_mm = _find_open_position(
+                    group_x_mm,
+                    cursor_y_mm,
+                    width_mm,
+                    height_mm,
+                    SyncPcbFromSchematicInput(grid_mm=payload.grid_mm),
+                    occupied,
+                )
+                replacements[reference] = _replace_root_at(
+                    str(entry["block"]),
+                    x_mm=resolved_x_mm,
+                    y_mm=resolved_y_mm,
+                    rotation=int(entry["rotation"]),
+                )
+                occupied.append(
+                    {
+                        "x_mm": resolved_x_mm,
+                        "y_mm": resolved_y_mm,
+                        "width_mm": width_mm,
+                        "height_mm": height_mm,
+                    }
+                )
+                cursor_y_mm = resolved_y_mm + height_mm + payload.item_spacing_mm
+                moved += 1
+
+        if not replacements:
+            return "No existing footprints were moved by functional grouping."
+
+        _transactional_board_write(lambda current: _replace_board_blocks(current, replacements, []))
+        lines = [
+            f"Functional groups placed: {len(payload.groups)}",
+            f"Footprints moved: {moved}",
+        ]
+        if missing_refs:
+            lines.append("Missing references:")
+            lines.extend(f"- {reference}" for reference in missing_refs[:20])
+        lines.append(_finalize_file_based_board_edit(payload.allow_open_board))
+        return "\n".join(lines)
+
+    @mcp.tool()
+    def pcb_align_footprints(
+        refs: list[str],
+        axis: str = "x",
+        spacing_mm: float = 2.54,
+        allow_open_board: bool = False,
+    ) -> str:
+        """Arrange selected footprints into a straight row or column."""
+        payload = AlignFootprintsInput(
+            refs=refs,
+            axis=axis,
+            spacing_mm=spacing_mm,
+            allow_open_board=allow_open_board,
+        )
+        if refusal := _guard_file_based_board_edit("footprint alignment", payload.allow_open_board):
+            return refusal
+
+        board_file = _get_pcb_file_for_sync()
+        board_content = _normalize_board_content(
+            board_file.read_text(encoding="utf-8", errors="ignore")
+        )
+        existing = _parse_board_footprint_blocks(board_content)
+        ordered_refs = [reference for reference in payload.refs if reference in existing]
+        missing_refs = [reference for reference in payload.refs if reference not in existing]
+        if len(ordered_refs) < 2:
+            return "At least two existing footprint references are required for alignment."
+
+        anchor = existing[ordered_refs[0]]
+        anchor_x_mm = float(anchor["x_mm"] or 0.0)
+        anchor_y_mm = float(anchor["y_mm"] or 0.0)
+        replacements: dict[str, str] = {}
+
+        for index, reference in enumerate(ordered_refs):
+            entry = existing[reference]
+            x_mm = (
+                anchor_x_mm + (index * payload.spacing_mm) if payload.axis == "x" else anchor_x_mm
+            )
+            y_mm = (
+                anchor_y_mm if payload.axis == "x" else anchor_y_mm + (index * payload.spacing_mm)
+            )
+            replacements[reference] = _replace_root_at(
+                str(entry["block"]),
+                x_mm=x_mm,
+                y_mm=y_mm,
+                rotation=int(entry["rotation"]),
+            )
+
+        _transactional_board_write(lambda current: _replace_board_blocks(current, replacements, []))
+        lines = [
+            f"Aligned {len(ordered_refs)} footprint(s) along the {payload.axis}-axis.",
+            f"Origin spacing: {payload.spacing_mm:.2f} mm",
+        ]
+        if missing_refs:
+            lines.append("Missing references:")
+            lines.extend(f"- {reference}" for reference in missing_refs[:20])
+        lines.append(_finalize_file_based_board_edit(payload.allow_open_board))
+        return "\n".join(lines)
+
+    @mcp.tool()
+    def pcb_set_keepout_zone(
+        x_mm: float,
+        y_mm: float,
+        w_mm: float,
+        h_mm: float,
+        rules: list[str] | None = None,
+        name: str = "MCP_Keepout",
+    ) -> str:
+        """Add a rectangular PCB keepout / rule area to the active board."""
+        payload = KeepoutZoneInput(
+            x_mm=x_mm,
+            y_mm=y_mm,
+            w_mm=w_mm,
+            h_mm=h_mm,
+            rules=rules or ["no_tracks", "no_vias", "no_copper"],
+            name=name,
+        )
+        zone = Zone()
+        zone.type = ZoneType.ZT_RULE_AREA
+        zone.name = payload.name
+        board = get_board()
+        copper_layers = [
+            layer for layer in board.get_enabled_layers() if "_Cu" in BoardLayer.Name(layer)
+        ]
+        zone.layers = copper_layers or [BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu]
+        zone.outline = _rectangle_polygon(
+            payload.x_mm,
+            payload.y_mm,
+            payload.w_mm,
+            payload.h_mm,
+        )
+        zone.proto.rule_area_settings.keepout_tracks = "no_tracks" in payload.rules
+        zone.proto.rule_area_settings.keepout_vias = "no_vias" in payload.rules
+        zone.proto.rule_area_settings.keepout_copper = "no_copper" in payload.rules
+        zone.proto.rule_area_settings.keepout_pads = "no_pads" in payload.rules
+        zone.proto.rule_area_settings.keepout_footprints = "no_footprints" in payload.rules
+        with board_transaction() as current_board:
+            current_board.create_items([zone])
+        return (
+            f"Added keepout zone '{payload.name}' on {len(zone.layers)} copper layer(s) "
+            f"with rules: {', '.join(payload.rules)}."
+        )
+
+    @mcp.tool()
+    def pcb_add_mounting_holes(
+        diameter_mm: float = 3.2,
+        clearance_mm: float = 6.35,
+        pattern: str = "corners",
+        margin_mm: float = 3.0,
+        allow_open_board: bool = False,
+    ) -> str:
+        """Append standard mounting-hole footprints around the current board frame."""
+        payload = AddMountingHolesInput(
+            diameter_mm=diameter_mm,
+            clearance_mm=clearance_mm,
+            pattern=pattern,
+            margin_mm=margin_mm,
+            allow_open_board=allow_open_board,
+        )
+        if refusal := _guard_file_based_board_edit(
+            "mounting-hole insertion",
+            payload.allow_open_board,
+        ):
+            return refusal
+
+        board_file = _get_pcb_file_for_sync()
+        board_content = _normalize_board_content(
+            board_file.read_text(encoding="utf-8", errors="ignore")
+        )
+        existing = _parse_board_footprint_blocks(board_content)
+        min_x_mm, min_y_mm, max_x_mm, max_y_mm = _board_frame_mm(board_content, existing)
+        positions = [
+            (min_x_mm + payload.margin_mm, min_y_mm + payload.margin_mm),
+            (max_x_mm - payload.margin_mm, min_y_mm + payload.margin_mm),
+            (min_x_mm + payload.margin_mm, max_y_mm - payload.margin_mm),
+            (max_x_mm - payload.margin_mm, max_y_mm - payload.margin_mm),
+        ]
+        if payload.pattern == "top_bottom":
+            positions = [
+                ((min_x_mm + max_x_mm) / 2, min_y_mm + payload.margin_mm),
+                ((min_x_mm + max_x_mm) / 2, max_y_mm - payload.margin_mm),
+            ]
+        elif payload.pattern == "left_right":
+            positions = [
+                (min_x_mm + payload.margin_mm, (min_y_mm + max_y_mm) / 2),
+                (max_x_mm - payload.margin_mm, (min_y_mm + max_y_mm) / 2),
+            ]
+        existing_refs = set(existing)
+        additions: list[str] = []
+        added_refs: list[str] = []
+        for x_mm, y_mm in positions:
+            reference = _next_reference(existing_refs, "H")
+            added_refs.append(reference)
+            additions.append(
+                _mounting_hole_block(
+                    reference,
+                    x_mm,
+                    y_mm,
+                    payload.diameter_mm,
+                    payload.clearance_mm,
+                )
+            )
+
+        _transactional_board_write(lambda current: _replace_board_blocks(current, {}, additions))
+        return "\n".join(
+            [
+                f"Added {len(additions)} mounting hole(s): {', '.join(added_refs)}.",
+                _finalize_file_based_board_edit(payload.allow_open_board),
+            ]
+        )
+
+    @mcp.tool()
+    def pcb_add_fiducial_marks(
+        count: int = 3,
+        diameter_mm: float = 1.0,
+        margin_mm: float = 2.0,
+        allow_open_board: bool = False,
+    ) -> str:
+        """Append simple fiducial footprints near the board corners."""
+        payload = AddFiducialMarksInput(
+            count=count,
+            diameter_mm=diameter_mm,
+            margin_mm=margin_mm,
+            allow_open_board=allow_open_board,
+        )
+        if refusal := _guard_file_based_board_edit("fiducial insertion", payload.allow_open_board):
+            return refusal
+
+        board_file = _get_pcb_file_for_sync()
+        board_content = _normalize_board_content(
+            board_file.read_text(encoding="utf-8", errors="ignore")
+        )
+        existing = _parse_board_footprint_blocks(board_content)
+        min_x_mm, min_y_mm, max_x_mm, max_y_mm = _board_frame_mm(board_content, existing)
+        candidate_positions = [
+            (min_x_mm + payload.margin_mm, min_y_mm + payload.margin_mm),
+            (max_x_mm - payload.margin_mm, min_y_mm + payload.margin_mm),
+            (min_x_mm + payload.margin_mm, max_y_mm - payload.margin_mm),
+            (max_x_mm - payload.margin_mm, max_y_mm - payload.margin_mm),
+            ((min_x_mm + max_x_mm) / 2, min_y_mm + payload.margin_mm),
+            ((min_x_mm + max_x_mm) / 2, max_y_mm - payload.margin_mm),
+        ]
+        existing_refs = set(existing)
+        additions: list[str] = []
+        added_refs: list[str] = []
+        for x_mm, y_mm in candidate_positions[: payload.count]:
+            reference = _next_reference(existing_refs, "FID")
+            added_refs.append(reference)
+            additions.append(_fiducial_block(reference, x_mm, y_mm, payload.diameter_mm))
+
+        _transactional_board_write(lambda current: _replace_board_blocks(current, {}, additions))
+        return "\n".join(
+            [
+                f"Added {len(additions)} fiducial mark(s): {', '.join(added_refs)}.",
+                _finalize_file_based_board_edit(payload.allow_open_board),
+            ]
+        )
+
+    @mcp.tool()
+    def pcb_add_teardrops(
+        net_classes: list[str] | None = None,
+        length_ratio: float = 1.4,
+        width_ratio: float = 1.2,
+        max_count: int = 100,
+    ) -> str:
+        """Create small copper helper zones at simple pad-to-track junctions."""
+        payload = AddTeardropsInput(
+            net_classes=net_classes,
+            length_ratio=length_ratio,
+            width_ratio=width_ratio,
+            max_count=max_count,
+        )
+        if not _board_is_open():
+            return (
+                "Teardrop generation requires an active PCB opened through KiCad IPC. "
+                "Open the board in KiCad and rerun this tool."
+            )
+
+        board = get_board()
+        pads = cast(list[_PadLike], board.get_pads())
+        tracks = cast(list[Track], board.get_tracks())
+        zones: list[Zone] = []
+        created = 0
+
+        for pad in pads:
+            net_name = str(getattr(getattr(pad, "net", None), "name", ""))
+            net_class_name = str(
+                getattr(getattr(pad, "net", None), "netclass_name", "")
+                or getattr(getattr(pad, "net", None), "class_name", "")
+                or net_name
+            )
+            if payload.net_classes and net_class_name not in payload.net_classes:
+                continue
+            pad_x_nm = _coord_nm(pad.position, "x")
+            pad_y_nm = _coord_nm(pad.position, "y")
+            size_vector = getattr(pad, "size", Vector2.from_xy_mm(1.0, 1.0))
+            pad_radius_nm = max(_coord_nm(size_vector, "x"), _coord_nm(size_vector, "y")) / 2
+
+            for track in tracks:
+                track_net_name = str(getattr(getattr(track, "net", None), "name", ""))
+                if track_net_name != net_name:
+                    continue
+                start_dx = _coord_nm(track.start, "x") - pad_x_nm
+                start_dy = _coord_nm(track.start, "y") - pad_y_nm
+                end_dx = _coord_nm(track.end, "x") - pad_x_nm
+                end_dy = _coord_nm(track.end, "y") - pad_y_nm
+                start_distance = math.hypot(start_dx, start_dy)
+                end_distance = math.hypot(end_dx, end_dy)
+                tolerance_nm = max(pad_radius_nm * 1.2, track.width * 2)
+
+                if start_distance > tolerance_nm and end_distance > tolerance_nm:
+                    continue
+
+                near_x_nm, near_y_nm, far_x_nm, far_y_nm = (
+                    (
+                        _coord_nm(track.start, "x"),
+                        _coord_nm(track.start, "y"),
+                        _coord_nm(track.end, "x"),
+                        _coord_nm(track.end, "y"),
+                    )
+                    if start_distance <= end_distance
+                    else (
+                        _coord_nm(track.end, "x"),
+                        _coord_nm(track.end, "y"),
+                        _coord_nm(track.start, "x"),
+                        _coord_nm(track.start, "y"),
+                    )
+                )
+                vector_x_nm = far_x_nm - pad_x_nm
+                vector_y_nm = far_y_nm - pad_y_nm
+                vector_length_nm = math.hypot(vector_x_nm, vector_y_nm)
+                if vector_length_nm == 0:
+                    continue
+                unit_x = vector_x_nm / vector_length_nm
+                unit_y = vector_y_nm / vector_length_nm
+                perp_x = -unit_y
+                perp_y = unit_x
+                base_half_nm = max((track.width * payload.width_ratio) / 2, track.width / 2)
+                tip_distance_nm = min(
+                    pad_radius_nm * payload.length_ratio,
+                    vector_length_nm * 0.9,
+                )
+                base_center_x_nm = pad_x_nm + int(round(unit_x * (pad_radius_nm * 0.6)))
+                base_center_y_nm = pad_y_nm + int(round(unit_y * (pad_radius_nm * 0.6)))
+                tip_center_x_nm = pad_x_nm + int(round(unit_x * tip_distance_nm))
+                tip_center_y_nm = pad_y_nm + int(round(unit_y * tip_distance_nm))
+                polygon = _polygon_from_points(
+                    [
+                        (
+                            int(round(base_center_x_nm + (perp_x * pad_radius_nm * 0.7))),
+                            int(round(base_center_y_nm + (perp_y * pad_radius_nm * 0.7))),
+                        ),
+                        (
+                            int(round(tip_center_x_nm + (perp_x * base_half_nm))),
+                            int(round(tip_center_y_nm + (perp_y * base_half_nm))),
+                        ),
+                        (
+                            int(round(tip_center_x_nm - (perp_x * base_half_nm))),
+                            int(round(tip_center_y_nm - (perp_y * base_half_nm))),
+                        ),
+                        (
+                            int(round(base_center_x_nm - (perp_x * pad_radius_nm * 0.7))),
+                            int(round(base_center_y_nm - (perp_y * pad_radius_nm * 0.7))),
+                        ),
+                    ]
+                )
+                zone = Zone()
+                zone.name = (
+                    f"MCP_Teardrop_{getattr(pad.parent.reference_field.text, 'value', 'PAD')}"
+                )
+                zone.layers = [track.layer]
+                zone.net = track.net if hasattr(track.net, "proto") else _find_net(track_net_name)
+                zone.outline = polygon
+                zones.append(zone)
+                created += 1
+                if created >= payload.max_count:
+                    break
+            if created >= payload.max_count:
+                break
+
+        if not zones:
+            return "No simple pad-to-track teardrop candidates were found on the active board."
+
+        with board_transaction() as current_board:
+            current_board.create_items(zones)
+            current_board.refill_zones(block=True, max_poll_seconds=60.0)
+        return f"Added {len(zones)} teardrop helper zone(s) to the active board."
