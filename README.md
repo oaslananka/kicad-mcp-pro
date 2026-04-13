@@ -258,11 +258,17 @@ newly added footprints.
 - `lib_get_footprint_3d_model`
 - `lib_assign_footprint`
 - `lib_create_custom_symbol`
-- `lib_get_lcsc_search_url`
-- `lib_search_lcsc` (deprecated alias)
+- `lib_search_components`
+- `lib_get_component_details`
+- `lib_assign_lcsc_to_symbol`
+- `lib_get_bom_with_pricing`
+- `lib_check_stock_availability`
+- `lib_find_alternative_parts`
 - `lib_get_datasheet_url`
 
-LCSC helpers generate browser URLs only. They do not perform live network search.
+Live component search now defaults to the zero-auth `jlcsearch` source. `nexar`
+and `digikey` remain available as authenticated source options for deployments
+that provide the required credentials.
 
 ### Export And Validation
 

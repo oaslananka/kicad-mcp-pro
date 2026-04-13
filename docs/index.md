@@ -15,3 +15,4 @@ Use the documentation in this folder for installation, client configuration, too
 - [Manufacturing Export Workflow](workflows/manufacturing-export.md)
 - [Architecture](development/architecture.md)
 - [Contributing](development/contributing.md)
+- [v2 Migration Notes](development/v2-migration.md)

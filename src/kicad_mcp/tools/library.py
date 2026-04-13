@@ -5,32 +5,24 @@ from __future__ import annotations
 import re
 import threading
 from pathlib import Path
-from typing import Any
-from urllib.parse import quote
+from typing import Any, cast
 
 from mcp.server.fastmcp import FastMCP
 
 from ..config import get_config
+from ..utils.component_search import (
+    ComponentRecord,
+    ComponentSearchClient,
+    DigiKeyClient,
+    JLCSearchClient,
+    NexarClient,
+    normalize_lcsc_code,
+)
 from ..utils.sexpr import _extract_block
-from .schematic import update_symbol_property
+from .schematic import get_schematic_backend, update_symbol_property
 
 _symbol_index: dict[str, dict[str, str]] | None = None
 _symbol_index_lock = threading.Lock()
-
-
-def _lcsc_search_url(query: str) -> str:
-    return f"https://www.lcsc.com/search?q={quote(query)}"
-
-
-def _render_lcsc_search_message(query: str, *, deprecated_alias: bool = False) -> str:
-    lines = [
-        "This helper does not perform a live LCSC search. It generates a browser URL you can open:",
-        _lcsc_search_url(query),
-    ]
-    if deprecated_alias:
-        lines.append("")
-        lines.append("Deprecated alias: use `lib_get_lcsc_search_url()` for new clients.")
-    return "\n".join(lines)
 
 
 def _symbol_library_dir() -> Path:
@@ -97,6 +89,145 @@ def _read_symbol_file(library: str) -> str | None:
 
 def _footprint_file(library: str, footprint: str) -> Path:
     return _footprint_library_dir() / f"{library}.pretty" / f"{footprint}.kicad_mod"
+
+
+def _component_search_client(source: str) -> ComponentSearchClient:
+    normalized = source.strip().casefold()
+    if normalized == "jlcsearch":
+        return JLCSearchClient()
+    if normalized == "nexar":
+        return NexarClient()
+    if normalized == "digikey":
+        return DigiKeyClient()
+    raise ValueError("Unknown component source. Use 'jlcsearch', 'nexar', or 'digikey'.")
+
+
+def _sort_component_results(
+    results: list[ComponentRecord],
+    *,
+    sort_by: str,
+) -> list[ComponentRecord]:
+    if sort_by == "stock":
+        return sorted(results, key=lambda item: (-item.stock, item.price or float("inf"), item.mpn))
+    if sort_by == "mpn":
+        return sorted(results, key=lambda item: (item.mpn.casefold(), item.price or float("inf")))
+    return sorted(
+        results,
+        key=lambda item: (
+            item.price is None,
+            item.price if item.price is not None else float("inf"),
+            -item.stock,
+            item.mpn.casefold(),
+        ),
+    )
+
+
+def _format_component_lines(
+    heading: str,
+    results: list[ComponentRecord],
+    *,
+    max_items: int | None = None,
+) -> str:
+    if not results:
+        return f"{heading}\nNo live component matches were found."
+    limit = max_items or get_config().max_items_per_response
+    lines = [heading]
+    for item in results[:limit]:
+        stock = f"{item.stock:,}"
+        price = f"${item.price:.6f}" if item.price is not None else "(n/a)"
+        basic = "basic" if item.is_basic else "extended"
+        preferred = " preferred" if item.is_preferred else ""
+        description = f" - {item.description}" if item.description else ""
+        lines.append(
+            f"- {item.lcsc_code} | {item.mpn} | {item.package or '(no package)'} | "
+            f"stock {stock} | {price} | {basic}{preferred}{description}"
+        )
+    if len(results) > limit:
+        lines.append(f"... and {len(results) - limit} more matches")
+    return "\n".join(lines)
+
+
+def _active_schematic_file() -> Path:
+    cfg = get_config()
+    if cfg.sch_file is None or not cfg.sch_file.exists():
+        raise FileNotFoundError(
+            "No schematic file is configured. Call kicad_set_project() before requesting BOM data."
+        )
+    return cfg.sch_file
+
+
+def _symbol_property(block: str, name: str) -> str:
+    match = re.search(
+        rf'\(property\s+"{re.escape(name)}"\s+"((?:\\.|[^"\\])*)"',
+        block,
+    )
+    if match is None:
+        return ""
+    return match.group(1).replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
+
+
+def _schematic_component_rows() -> list[dict[str, str]]:
+    sch_file = _active_schematic_file()
+    parsed = get_schematic_backend().parse_schematic_file(sch_file)
+    raw_content = sch_file.read_text(encoding="utf-8", errors="ignore")
+
+    rows_by_reference: dict[str, dict[str, str]] = {
+        str(symbol["reference"]): {
+            "reference": str(symbol["reference"]),
+            "value": str(symbol["value"]),
+            "footprint": str(symbol.get("footprint", "")),
+            "lib_id": str(symbol.get("lib_id", "")),
+            "lcsc": "",
+        }
+        for symbol in parsed["symbols"]
+        if not str(symbol["reference"]).startswith("#")
+    }
+
+    search_start = 0
+    while True:
+        block_start = raw_content.find("(symbol", search_start)
+        if block_start < 0:
+            break
+        block, consumed = _extract_block(raw_content, block_start)
+        search_start = block_start + max(consumed, 1)
+        if '(lib_id "' not in block:
+            continue
+        reference = _symbol_property(block, "Reference")
+        if not reference or reference.startswith("#") or reference not in rows_by_reference:
+            continue
+        lcsc_code = _symbol_property(block, "LCSC") or _symbol_property(block, "LCSC Part")
+        if lcsc_code:
+            rows_by_reference[reference]["lcsc"] = normalize_lcsc_code(lcsc_code)
+    return list(rows_by_reference.values())
+
+
+def _lookup_component(
+    client: ComponentSearchClient,
+    *,
+    lcsc_code: str,
+    value: str,
+) -> ComponentRecord | None:
+    identifier = lcsc_code or value
+    if not identifier:
+        return None
+    return client.get_part(identifier)
+
+
+def _group_bom_rows(symbol_rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in symbol_rows:
+        key = (row["lcsc"], row["value"], row["footprint"])
+        entry = grouped.setdefault(
+            key,
+            {
+                "lcsc": row["lcsc"],
+                "value": row["value"],
+                "footprint": row["footprint"],
+                "references": [],
+            },
+        )
+        cast(list[str], entry["references"]).append(row["reference"])
+    return list(grouped.values())
 
 
 def register(mcp: FastMCP) -> None:
@@ -286,22 +417,6 @@ def register(mcp: FastMCP) -> None:
         return f"Created custom symbol '{name}' in {library_file}."
 
     @mcp.tool()
-    def lib_get_lcsc_search_url(query: str) -> str:
-        """Generate a browser URL for LCSC component search.
-
-        Note: this tool does not perform a live search.
-        """
-        return _render_lcsc_search_message(query)
-
-    @mcp.tool()
-    def lib_search_lcsc(query: str) -> str:
-        """Deprecated alias for `lib_get_lcsc_search_url()`.
-
-        Note: this tool does not perform a live search.
-        """
-        return _render_lcsc_search_message(query, deprecated_alias=True)
-
-    @mcp.tool()
     def lib_get_datasheet_url(library: str, symbol_name: str) -> str:
         """Return a datasheet URL from the symbol library when available."""
         content = _read_symbol_file(library)
@@ -315,3 +430,184 @@ def register(mcp: FastMCP) -> None:
         if match is None or not match.group(1):
             return f"No datasheet URL was found for '{library}:{symbol_name}'."
         return match.group(1)
+
+    @mcp.tool()
+    def lib_search_components(
+        keyword: str,
+        package: str = "",
+        only_basic: bool = True,
+        source: str = "jlcsearch",
+        min_stock: int = 10,
+        sort_by: str = "price",
+    ) -> str:
+        """Search live component sources for purchasable parts."""
+        try:
+            client = _component_search_client(source)
+            results = client.search(
+                keyword,
+                package=package or None,
+                only_basic=only_basic,
+                limit=min(get_config().max_items_per_response, 20),
+            )
+        except (RuntimeError, ValueError, OSError) as exc:
+            return f"Live component search failed: {exc}"
+
+        filtered = [item for item in results if item.stock >= min_stock]
+        ordered = _sort_component_results(filtered, sort_by=sort_by)
+        return _format_component_lines(
+            f"Live component matches for '{keyword}' from {source} ({len(ordered)} total):",
+            ordered,
+        )
+
+    @mcp.tool()
+    def lib_get_component_details(lcsc_code_or_mpn: str, source: str = "jlcsearch") -> str:
+        """Return live component detail for a specific LCSC code or MPN."""
+        try:
+            client = _component_search_client(source)
+            part = client.get_part(lcsc_code_or_mpn)
+        except (RuntimeError, ValueError, OSError) as exc:
+            return f"Component detail lookup failed: {exc}"
+        if part is None:
+            return f"No component details were found for '{lcsc_code_or_mpn}'."
+
+        price = f"${part.price:.6f}" if part.price is not None else "(n/a)"
+        lines = [
+            f"Component details from {source}:",
+            f"- LCSC: {part.lcsc_code}",
+            f"- MPN: {part.mpn}",
+            f"- Package: {part.package or '(none)'}",
+            f"- Description: {part.description or '(none)'}",
+            f"- Stock: {part.stock:,}",
+            f"- Unit price: {price}",
+            f"- Basic: {'yes' if part.is_basic else 'no'}",
+            f"- Preferred: {'yes' if part.is_preferred else 'no'}",
+        ]
+        return "\n".join(lines)
+
+    @mcp.tool()
+    def lib_assign_lcsc_to_symbol(reference: str, lcsc_code: str) -> str:
+        """Assign an LCSC part code to a schematic symbol property."""
+        normalized = normalize_lcsc_code(lcsc_code)
+        update_symbol_property(reference, "LCSC", normalized)
+        return f"Assigned LCSC code '{normalized}' to '{reference}'."
+
+    @mcp.tool()
+    def lib_get_bom_with_pricing(quantity: int = 1, source: str = "jlcsearch") -> str:
+        """Generate a live BOM summary with unit and extended pricing."""
+        if quantity < 1:
+            return "Quantity must be at least 1."
+        try:
+            client = _component_search_client(source)
+            grouped_rows = _group_bom_rows(_schematic_component_rows())
+        except (RuntimeError, ValueError, FileNotFoundError, OSError) as exc:
+            return f"Live BOM generation failed: {exc}"
+
+        if not grouped_rows:
+            return "No schematic symbols were available for BOM generation."
+
+        lines = [f"Live BOM with pricing from {source}:"]
+        total_cost = 0.0
+        for row in grouped_rows[: get_config().max_items_per_response]:
+            references = cast(list[str], row["references"])
+            part = _lookup_component(
+                client,
+                lcsc_code=str(row["lcsc"]),
+                value=str(row["value"]),
+            )
+            part_label = part.lcsc_code if part is not None else "(unresolved)"
+            mpn = part.mpn if part is not None else row["value"]
+            stock = f"{part.stock:,}" if part is not None else "n/a"
+            price = part.price if part is not None else None
+            unit_price = f"${price:.6f}" if price is not None else "(n/a)"
+            extended = price * len(references) * quantity if price is not None else None
+            if extended is not None:
+                total_cost += extended
+            extended_text = f"${extended:.6f}" if extended is not None else "(n/a)"
+            total_quantity = len(references) * quantity
+            lines.append(
+                f"- {', '.join(references)} | {part_label} | {mpn} | qty {total_quantity} | "
+                f"stock {stock} | unit {unit_price} | ext {extended_text}"
+            )
+        if total_cost > 0:
+            lines.append(f"Estimated total: ${total_cost:.6f}")
+        return "\n".join(lines)
+
+    @mcp.tool()
+    def lib_check_stock_availability(refs: list[str], source: str = "jlcsearch") -> str:
+        """Check live stock availability for the requested schematic references."""
+        wanted = {ref.strip().upper() for ref in refs if ref.strip()}
+        if not wanted:
+            return "No references were supplied."
+        try:
+            client = _component_search_client(source)
+            rows = _schematic_component_rows()
+        except (RuntimeError, ValueError, FileNotFoundError, OSError) as exc:
+            return f"Stock availability check failed: {exc}"
+
+        matches = [row for row in rows if row["reference"].upper() in wanted]
+        if not matches:
+            return "None of the requested references were found in the active schematic."
+
+        lines = [f"Stock availability from {source}:"]
+        for row in matches:
+            part = _lookup_component(
+                client,
+                lcsc_code=row["lcsc"],
+                value=row["value"],
+            )
+            if part is None:
+                lines.append(f"- {row['reference']}: unresolved ({row['value']})")
+                continue
+            price = f"${part.price:.6f}" if part.price is not None else "(n/a)"
+            lines.append(
+                f"- {row['reference']}: {part.lcsc_code} | {part.mpn} | "
+                f"stock {part.stock:,} | {price}"
+            )
+        return "\n".join(lines)
+
+    @mcp.tool()
+    def lib_find_alternative_parts(
+        lcsc_code: str,
+        tolerance_percent: float = 10.0,
+        source: str = "jlcsearch",
+    ) -> str:
+        """Find nearby alternative parts for the supplied LCSC code."""
+        try:
+            client = _component_search_client(source)
+            base_part = client.get_part(lcsc_code)
+        except (RuntimeError, ValueError, OSError) as exc:
+            return f"Alternative part search failed: {exc}"
+        if base_part is None:
+            return f"No base component details were found for '{lcsc_code}'."
+
+        try:
+            candidates = client.search(
+                base_part.mpn or base_part.lcsc_code,
+                package=base_part.package or None,
+                only_basic=base_part.is_basic,
+                limit=20,
+            )
+        except (RuntimeError, ValueError, OSError) as exc:
+            return f"Alternative part search failed: {exc}"
+
+        max_price = None
+        if base_part.price is not None:
+            max_price = base_part.price * (1.0 + tolerance_percent / 100.0)
+
+        alternatives = [
+            item
+            for item in candidates
+            if item.lcsc_code != base_part.lcsc_code
+            and item.stock > 0
+            and (
+                max_price is None
+                or item.price is None
+                or item.price <= max_price
+            )
+        ]
+        ordered = _sort_component_results(alternatives, sort_by="price")
+        return _format_component_lines(
+            f"Alternative parts for {base_part.lcsc_code} from {source} ({len(ordered)} total):",
+            ordered,
+            max_items=10,
+        )

@@ -15,7 +15,7 @@ class ToolCategory(TypedDict):
 
 
 EXPERIMENTAL_TOOL_NAMES: frozenset[str] = frozenset()
-DEPRECATED_TOOL_NAMES: frozenset[str] = frozenset({"lib_search_lcsc", "tune_track_length"})
+DEPRECATED_TOOL_NAMES: frozenset[str] = frozenset({"tune_track_length"})
 
 
 def _display_tool_name(tool_name: str) -> str:
@@ -116,7 +116,7 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
         ],
     },
     "library": {
-        "description": "Search and inspect symbol and footprint libraries.",
+        "description": "Search and inspect symbol/footprint libraries plus live component data.",
         "tools": [
             "lib_search_symbols",
             "lib_get_symbol_info",
@@ -128,8 +128,12 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "lib_get_footprint_3d_model",
             "lib_assign_footprint",
             "lib_create_custom_symbol",
-            "lib_get_lcsc_search_url",
-            "lib_search_lcsc",
+            "lib_search_components",
+            "lib_get_component_details",
+            "lib_assign_lcsc_to_symbol",
+            "lib_get_bom_with_pricing",
+            "lib_check_stock_availability",
+            "lib_find_alternative_parts",
             "lib_get_datasheet_url",
         ],
     },

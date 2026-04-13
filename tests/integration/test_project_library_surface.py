@@ -7,6 +7,7 @@ import pytest
 
 from kicad_mcp import __version__
 from kicad_mcp.server import build_server
+from kicad_mcp.utils.component_search import ComponentRecord
 from tests.conftest import call_tool_text, get_prompt_text, read_resource_text
 
 
@@ -54,8 +55,9 @@ async def test_project_resources_prompts_and_library_surface(
     assert "Quick Start" in help_text
     assert "pcb_read" in categories
     assert "kicad_get_version" in category_tools
-    assert "lib_get_lcsc_search_url" in library_tools
-    assert "lib_search_lcsc [DEPRECATED]" in library_tools
+    assert "lib_search_components" in library_tools
+    assert "lib_get_component_details" in library_tools
+    assert "lib_get_bom_with_pricing" in library_tools
     assert "route_autoroute_freerouting" in routing_tools
     assert "route_differential_pair" in routing_tools
     assert "tune_track_length [DEPRECATED]" in routing_tools
@@ -85,6 +87,96 @@ async def test_project_resources_prompts_and_library_surface(
     assert "schematic capture" in schematic_to_pcb.lower()
     assert "manufacturing readiness" in manufacturing.lower()
 
+    await call_tool_text(
+        server,
+        "sch_build_circuit",
+        {
+            "symbols": [
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "x_mm": 20.0,
+                    "y_mm": 20.0,
+                    "reference": "R1",
+                    "value": "10k resistor",
+                    "footprint": "Resistor_SMD:R_0805",
+                    "rotation": 0,
+                },
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "x_mm": 35.0,
+                    "y_mm": 20.0,
+                    "reference": "R2",
+                    "value": "10k resistor",
+                    "footprint": "Resistor_SMD:R_0805",
+                    "rotation": 0,
+                },
+            ]
+        },
+    )
+
+    class FakeComponentClient:
+        def search(self, keyword, *, package=None, only_basic=True, limit=20):
+            _ = (keyword, package, only_basic, limit)
+            return [
+                ComponentRecord(
+                    source="jlcsearch",
+                    lcsc_code="C25804",
+                    mpn="0603WAF1002T5E",
+                    package="0603",
+                    description="10k resistor",
+                    stock=37_165_617,
+                    price=0.000842857,
+                    is_basic=True,
+                    is_preferred=False,
+                ),
+                ComponentRecord(
+                    source="jlcsearch",
+                    lcsc_code="C17414",
+                    mpn="0805W8F1002T5E",
+                    package="0805",
+                    description="10k resistor",
+                    stock=15_457_503,
+                    price=0.001642857,
+                    is_basic=True,
+                    is_preferred=False,
+                ),
+            ]
+
+        def get_part(self, lcsc_code_or_mpn):
+            query = str(lcsc_code_or_mpn).upper()
+            if query in {"C25804", "10K RESISTOR"}:
+                return ComponentRecord(
+                    source="jlcsearch",
+                    lcsc_code="C25804",
+                    mpn="0603WAF1002T5E",
+                    package="0603",
+                    description="10k resistor",
+                    stock=37_165_617,
+                    price=0.000842857,
+                    is_basic=True,
+                    is_preferred=False,
+                )
+            if query == "C17414":
+                return ComponentRecord(
+                    source="jlcsearch",
+                    lcsc_code="C17414",
+                    mpn="0805W8F1002T5E",
+                    package="0805",
+                    description="10k resistor",
+                    stock=15_457_503,
+                    price=0.001642857,
+                    is_basic=True,
+                    is_preferred=False,
+                )
+            return None
+
+    monkeypatch.setattr(
+        "kicad_mcp.tools.library._component_search_client",
+        lambda source: FakeComponentClient(),
+    )
+
     libraries = await call_tool_text(server, "lib_list_libraries", {})
     symbols = await call_tool_text(server, "lib_search_symbols", {"query": "resistor"})
     symbol_info = await call_tool_text(
@@ -110,8 +202,36 @@ async def test_project_resources_prompts_and_library_surface(
         "lib_get_datasheet_url",
         {"library": "Device", "symbol_name": "R"},
     )
-    lcsc_url = await call_tool_text(server, "lib_get_lcsc_search_url", {"query": "STM32"})
-    lcsc = await call_tool_text(server, "lib_search_lcsc", {"query": "STM32"})
+    assigned_lcsc = await call_tool_text(
+        server,
+        "lib_assign_lcsc_to_symbol",
+        {"reference": "R1", "lcsc_code": "25804"},
+    )
+    component_search = await call_tool_text(
+        server,
+        "lib_search_components",
+        {"keyword": "10k resistor", "source": "jlcsearch"},
+    )
+    component_details = await call_tool_text(
+        server,
+        "lib_get_component_details",
+        {"lcsc_code_or_mpn": "C25804", "source": "jlcsearch"},
+    )
+    bom = await call_tool_text(
+        server,
+        "lib_get_bom_with_pricing",
+        {"quantity": 5, "source": "jlcsearch"},
+    )
+    stock = await call_tool_text(
+        server,
+        "lib_check_stock_availability",
+        {"refs": ["R1", "R2"], "source": "jlcsearch"},
+    )
+    alternatives = await call_tool_text(
+        server,
+        "lib_find_alternative_parts",
+        {"lcsc_code": "C25804", "tolerance_percent": 100.0, "source": "jlcsearch"},
+    )
     custom = await call_tool_text(
         server,
         "lib_create_custom_symbol",
@@ -130,10 +250,15 @@ async def test_project_resources_prompts_and_library_surface(
     assert "3D model" in footprint_info
     assert "R_0805.wrl" in footprint_model
     assert datasheet == "https://example.com/r.pdf"
-    assert "browser URL" in lcsc_url
-    assert "lcsc.com" in lcsc_url
-    assert "Deprecated alias" in lcsc
-    assert "lcsc.com" in lcsc
+    assert "Assigned LCSC code 'C25804'" in assigned_lcsc
+    assert "Live component matches" in component_search
+    assert "C25804" in component_search
+    assert "Component details from jlcsearch" in component_details
+    assert "Live BOM with pricing from jlcsearch" in bom
+    assert "Estimated total" in bom
+    assert "Stock availability from jlcsearch" in stock
+    assert "Alternative parts for C25804" in alternatives
+    assert "C17414" in alternatives
     assert "Created custom symbol" in custom
 
 
