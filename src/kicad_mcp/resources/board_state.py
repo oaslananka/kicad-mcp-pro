@@ -18,6 +18,10 @@ def _queue_reason(details: Iterable[str], summary: str) -> str:
         "Connector checks:",
         "Decoupling pair checks:",
         "RF keepout checks:",
+        "Power-tree refs checked:",
+        "Analog refs checked:",
+        "Digital refs checked:",
+        "Sensor-cluster refs checked:",
         "Placement score:",
     )
     for detail in details:
@@ -38,6 +42,7 @@ def _suggested_tool(name: str) -> str:
         "Schematic connectivity": "schematic_connectivity_gate()",
         "PCB": "run_drc()",
         "Placement": "pcb_score_placement()",
+        "PCB transfer": "pcb_transfer_quality_gate()",
         "Manufacturing": "manufacturing_quality_gate()",
         "Footprint parity": "validate_footprints_vs_schematic()",
     }.get(name, "project_quality_gate()")

@@ -64,6 +64,10 @@ async def test_project_design_intent_roundtrip(sample_project: Path, mock_kicad)
             "connector_refs": ["J1"],
             "decoupling_pairs": [{"ic_ref": "U1", "cap_refs": ["C1"], "max_distance_mm": 4.0}],
             "critical_nets": ["USB_DP"],
+            "power_tree_refs": ["J1", "U1"],
+            "analog_refs": ["U2"],
+            "digital_refs": ["U1"],
+            "sensor_cluster_refs": ["U2", "U3"],
             "rf_keepout_regions": [
                 {"name": "Antenna", "x_mm": 30.0, "y_mm": 10.0, "w_mm": 8.0, "h_mm": 6.0}
             ],
@@ -76,6 +80,10 @@ async def test_project_design_intent_roundtrip(sample_project: Path, mock_kicad)
     assert "Stored project design intent" in stored
     assert "Connector refs: J1" in fetched
     assert "U1 <- C1" in fetched
+    assert "Power-tree refs: J1, U1" in fetched
+    assert "Analog refs: U2" in fetched
+    assert "Digital refs: U1" in fetched
+    assert "Sensor cluster refs: U2, U3" in fetched
     assert "Antenna" in fetched
     assert "JLCPCB / standard" in fetched
 
@@ -203,6 +211,8 @@ async def test_pcb_placement_quality_gate_passes_clean_intent_aware_board(
             "connector_refs": ["J1"],
             "decoupling_pairs": [{"ic_ref": "U1", "cap_refs": ["C1"], "max_distance_mm": 4.0}],
             "critical_nets": ["USB_DP"],
+            "power_tree_refs": ["J1", "U1", "C1"],
+            "sensor_cluster_refs": ["U1", "C1"],
             "rf_keepout_regions": [
                 {"name": "Antenna", "x_mm": 32.0, "y_mm": 6.0, "w_mm": 6.0, "h_mm": 4.0}
             ],
@@ -215,3 +225,84 @@ async def test_pcb_placement_quality_gate_passes_clean_intent_aware_board(
     assert "Placement quality gate: PASS" in gate
     assert "Placement score:" in score
     assert "- Hard failures: 0" in score
+    assert "- Power-tree refs checked: 3" in score
+    assert "- Analog refs checked: 0" in score
+    assert "- Sensor-cluster refs checked: 2" in score
+
+
+@pytest.mark.anyio
+async def test_pcb_placement_quality_gate_fails_power_tree_locality(
+    sample_project: Path,
+    mock_kicad,
+) -> None:
+    _ = mock_kicad
+    _write_board(
+        sample_project,
+        _footprint_block("J1", "USB", 2.0, 2.0, name="Connector_USB:USB_C_Receptacle_USB2.0_16P"),
+        _footprint_block("U1", "LDO", 38.0, 28.0, name="Package_TO_SOT_SMD:SOT-23-5"),
+        _footprint_block("U2", "MCU", 38.0, 2.0, name="Package_QFP:TQFP-48"),
+    )
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    await call_tool_text(
+        server,
+        "project_set_design_intent",
+        {"power_tree_refs": ["J1", "U1", "U2"]},
+    )
+
+    gate = await call_tool_text(server, "pcb_placement_quality_gate", {})
+    score = await call_tool_text(server, "pcb_score_placement", {})
+
+    assert "Placement quality gate: FAIL" in gate
+    assert "Power-tree step 'J1 -> U1' spans" in gate
+    assert "FAIL: Power-tree step 'J1 -> U1' spans" in score
+
+
+@pytest.mark.anyio
+async def test_pcb_placement_quality_gate_fails_sensor_cluster_spread(
+    sample_project: Path,
+    mock_kicad,
+) -> None:
+    _ = mock_kicad
+    _write_board(
+        sample_project,
+        _footprint_block("U1", "SensorA", 3.0, 3.0, name="Sensor_Motion:ADXL355"),
+        _footprint_block("U2", "SensorB", 37.0, 27.0, name="Sensor:BME280"),
+    )
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    await call_tool_text(
+        server,
+        "project_set_design_intent",
+        {"sensor_cluster_refs": ["U1", "U2"]},
+    )
+
+    gate = await call_tool_text(server, "pcb_placement_quality_gate", {})
+
+    assert "Placement quality gate: FAIL" in gate
+    assert "Sensor cluster spreads" in gate
+
+
+@pytest.mark.anyio
+async def test_pcb_placement_quality_gate_flags_analog_digital_proximity(
+    sample_project: Path,
+    mock_kicad,
+) -> None:
+    _ = mock_kicad
+    _write_board(
+        sample_project,
+        _footprint_block("U1", "AFE", 10.0, 10.0, name="Amplifier_Operational:MCP6002"),
+        _footprint_block("U2", "MCU", 14.2, 10.0, name="Package_QFP:TQFP-48"),
+    )
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    await call_tool_text(
+        server,
+        "project_set_design_intent",
+        {"analog_refs": ["U1"], "digital_refs": ["U2"]},
+    )
+
+    gate = await call_tool_text(server, "pcb_placement_quality_gate", {})
+
+    assert "Placement quality gate: FAIL" in gate
+    assert "Analog ref 'U1' is only" in gate

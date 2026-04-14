@@ -13,6 +13,7 @@ from mcp.server.fastmcp import FastMCP
 
 from ..config import get_config
 from ..connection import KiCadConnectionError, get_board
+from ..models.component_contracts import find_component_contract
 from .export import _ensure_output_dir, _get_pcb_file, _get_sch_file, _run_cli_variants
 from .metadata import headless_compatible
 
@@ -45,6 +46,10 @@ class PlacementAnalysis:
     checked_connectors: int = 0
     checked_decoupling_pairs: int = 0
     checked_keepouts: int = 0
+    checked_power_tree_refs: int = 0
+    checked_analog_refs: int = 0
+    checked_digital_refs: int = 0
+    checked_sensor_cluster_refs: int = 0
 
 
 def _load_report(path: Path) -> dict[str, object]:
@@ -230,6 +235,124 @@ def _footprint_parity_outcome() -> GateOutcome:
     )
 
 
+def _evaluate_pcb_transfer_gate() -> GateOutcome:
+    from .pcb import (
+        _collect_schematic_components,
+        _export_schematic_net_map,
+        _parse_board_footprint_blocks,
+    )
+
+    cfg = get_config()
+    if cfg.sch_file is None or cfg.pcb_file is None:
+        return GateOutcome(
+            name="PCB transfer",
+            status="BLOCKED",
+            summary="Both schematic and PCB files must be configured first.",
+        )
+
+    try:
+        components, issues = _collect_schematic_components()
+    except ValueError as exc:
+        return GateOutcome(
+            name="PCB transfer",
+            status="BLOCKED",
+            summary=str(exc),
+        )
+    if issues:
+        return GateOutcome(
+            name="PCB transfer",
+            status="FAIL",
+            summary="Schematic component metadata is not stable enough for pad-net transfer.",
+            details=issues[:12],
+        )
+
+    expected_map, note = _export_schematic_net_map()
+    if note:
+        return GateOutcome(
+            name="PCB transfer",
+            status="BLOCKED",
+            summary=note,
+        )
+    if not expected_map:
+        return GateOutcome(
+            name="PCB transfer",
+            status="BLOCKED",
+            summary="The schematic did not export any named pad nets to compare against the PCB.",
+        )
+
+    try:
+        board_text = cfg.pcb_file.read_text(encoding="utf-8", errors="ignore")
+    except OSError as exc:
+        return GateOutcome(
+            name="PCB transfer",
+            status="BLOCKED",
+            summary=f"Could not read the PCB file ({exc}).",
+        )
+
+    footprints = _parse_board_footprint_blocks(board_text)
+    component_refs = {str(component["reference"]) for component in components}
+    missing_refs: list[str] = []
+    mismatches: list[str] = []
+    matched_pads = 0
+    total_expected_pads = 0
+
+    for reference in sorted(component_refs):
+        expected_for_ref = sorted(
+            (pad_number, net_name)
+            for (ref, pad_number), net_name in expected_map.items()
+            if ref == reference and net_name
+        )
+        if not expected_for_ref:
+            continue
+        entry = footprints.get(reference)
+        if entry is None:
+            missing_refs.append(reference)
+            total_expected_pads += len(expected_for_ref)
+            continue
+
+        actual_pad_nets = cast(dict[str, str], entry.get("pad_nets", {}))
+        for pad_number, expected_net in expected_for_ref:
+            total_expected_pads += 1
+            actual_net = actual_pad_nets.get(pad_number, "")
+            if not actual_net:
+                mismatches.append(f"{reference}.{pad_number}: missing net '{expected_net}' on PCB.")
+                continue
+            if actual_net != expected_net:
+                mismatches.append(
+                    f"{reference}.{pad_number}: PCB has '{actual_net}', expected '{expected_net}'."
+                )
+                continue
+            matched_pads += 1
+
+    if total_expected_pads == 0:
+        return GateOutcome(
+            name="PCB transfer",
+            status="BLOCKED",
+            summary="No expected named pads were available for transfer comparison.",
+        )
+
+    coverage_pct = round((matched_pads / total_expected_pads) * 100, 1)
+    status: GateStatus = "PASS" if not missing_refs and not mismatches else "FAIL"
+    details = [
+        f"Expected named pad nets: {total_expected_pads}",
+        f"Matched pad nets on PCB: {matched_pads}",
+        f"Transfer coverage: {coverage_pct}%",
+        f"Missing footprint refs on PCB: {len(missing_refs)}",
+        f"Pad-net mismatches: {len(mismatches)}",
+    ]
+    if missing_refs:
+        details.append("Missing footprint refs: " + ", ".join(missing_refs[:20]))
+    details.extend(f"FAIL: {item}" for item in mismatches[:12])
+    return GateOutcome(
+        name="PCB transfer",
+        status=status,
+        summary="Named schematic pad nets match the PCB footprint pads."
+        if status == "PASS"
+        else "Named schematic pad nets did not transfer cleanly to the PCB.",
+        details=details,
+    )
+
+
 def _evaluate_schematic_gate() -> GateOutcome:
     from .schematic import _build_connectivity_groups, parse_schematic_file
 
@@ -371,6 +494,8 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
     zero_wire_pages = 0
     unnamed_single_pin_groups = 0
     isolated_footprint_symbols = 0
+    matched_component_contracts = 0
+    contract_violations = 0
 
     for page_name, page_path in pages:
         if not page_path.exists():
@@ -420,9 +545,13 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
 
         for symbol in cast(list[dict[str, object]], data["symbols"]):
             footprint = str(symbol.get("footprint", "")).strip()
+            lib_id = str(symbol.get("lib_id", "")).strip()
             if not footprint:
                 continue
             reference = str(symbol.get("reference", "")).strip()
+            component_contract = find_component_contract(lib_id=lib_id, footprint=footprint)
+            if component_contract is not None:
+                matched_component_contracts += 1
             relevant_groups = [
                 group
                 for group in groups
@@ -432,13 +561,30 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
                 )
             ]
             meaningful = any(group["names"] or len(group["pins"]) > 1 for group in relevant_groups)
-            if meaningful:
+            if not meaningful:
+                isolated_footprint_symbols += 1
+                failures.append(
+                    f"{page_name}: {reference} has footprint '{footprint}' but no meaningful "
+                    "net/power connectivity."
+                )
+            if component_contract is None:
                 continue
-            isolated_footprint_symbols += 1
-            failures.append(
-                f"{page_name}: {reference} has footprint '{footprint}' but no meaningful "
-                "net/power connectivity."
-            )
+            group_names_upper = {
+                str(name).upper()
+                for group in relevant_groups
+                for name in cast(list[str], group["names"])
+            }
+            missing_groups = [
+                "/".join(options)
+                for options in component_contract.required_net_groups
+                if not any(option.upper() in group_names_upper for option in options)
+            ]
+            if missing_groups:
+                contract_violations += 1
+                failures.append(
+                    f"{page_name}: {reference} matched contract '{component_contract.key}' "
+                    f"but is missing required nets: {', '.join(missing_groups)}."
+                )
 
     hierarchy_mismatches = sum("Hierarchy contract mismatch" in item for item in failures)
     details = [f"Pages analysed: {len(pages)}"]
@@ -450,6 +596,8 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
             f"Unnamed single-pin groups: {unnamed_single_pin_groups}",
             f"Isolated footprint symbols: {isolated_footprint_symbols}",
             f"Hierarchy contract mismatches: {hierarchy_mismatches}",
+            f"Matched component contracts: {matched_component_contracts}",
+            f"Component contract violations: {contract_violations}",
         ]
     )
     if blocked:
@@ -529,6 +677,55 @@ def _nearest_edge_distance(
     )
 
 
+def _entry_center(entry: dict[str, object]) -> tuple[float, float] | None:
+    if entry["x_mm"] is None or entry["y_mm"] is None:
+        return None
+    return float(cast(float, entry["x_mm"])), float(cast(float, entry["y_mm"]))
+
+
+def _bbox_gap_mm(left_entry: dict[str, object], right_entry: dict[str, object]) -> float | None:
+    left_center = _entry_center(left_entry)
+    right_center = _entry_center(right_entry)
+    if left_center is None or right_center is None:
+        return None
+    left_x, left_y = left_center
+    right_x, right_y = right_center
+    left_w = float(cast(float, left_entry["width_mm"]))
+    left_h = float(cast(float, left_entry["height_mm"]))
+    right_w = float(cast(float, right_entry["width_mm"]))
+    right_h = float(cast(float, right_entry["height_mm"]))
+    gap_x = abs(left_x - right_x) - ((left_w + right_w) / 2.0)
+    gap_y = abs(left_y - right_y) - ((left_h + right_h) / 2.0)
+    return max(max(gap_x, 0.0), max(gap_y, 0.0))
+
+
+def _group_spread_mm(
+    refs: list[str],
+    footprints: dict[str, dict[str, object]],
+) -> tuple[float, list[str]]:
+    present_refs = [
+        reference
+        for reference in refs
+        if reference in footprints and _entry_center(footprints[reference]) is not None
+    ]
+    if len(present_refs) < 2:
+        return 0.0, present_refs
+    max_spread = 0.0
+    for index, left_ref in enumerate(present_refs):
+        left_center = _entry_center(footprints[left_ref])
+        if left_center is None:
+            continue
+        for right_ref in present_refs[index + 1 :]:
+            right_center = _entry_center(footprints[right_ref])
+            if right_center is None:
+                continue
+            max_spread = max(
+                max_spread,
+                math.hypot(left_center[0] - right_center[0], left_center[1] - right_center[1]),
+            )
+    return max_spread, present_refs
+
+
 def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]:
     from .pcb import (
         _board_frame_mm,
@@ -578,6 +775,9 @@ def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]
     connector_edge_violations: list[str] = []
     decoupling_distance_violations: list[str] = []
     keepout_violations: list[str] = []
+    power_tree_violations: list[str] = []
+    sensor_cluster_violations: list[str] = []
+    analog_digital_violations: list[str] = []
     warnings: list[str] = []
 
     items = sorted(footprints.items())
@@ -585,6 +785,7 @@ def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]
         float(entry["width_mm"]) * float(entry["height_mm"]) for entry in footprints.values()
     )
     density_pct = round((footprint_area_mm2 / board_area_mm2) * 100.0, 2)
+    board_diagonal = math.hypot(board_width_mm, board_height_mm)
 
     for index, (left_ref, left_entry) in enumerate(items):
         if left_entry["x_mm"] is None or left_entry["y_mm"] is None:
@@ -696,6 +897,101 @@ def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]
                     f"{reference} overlaps RF keepout '{region.name}'."
                 )
 
+    checked_power_tree_refs = 0
+    present_power_tree: list[str] = []
+    for reference in intent.power_tree_refs:
+        entry = footprints.get(reference)
+        if entry is None:
+            power_tree_violations.append(f"Power-tree intent ref '{reference}' is missing.")
+            continue
+        if _entry_center(entry) is None:
+            power_tree_violations.append(
+                f"Power-tree intent ref '{reference}' has no resolved placement."
+            )
+            continue
+        checked_power_tree_refs += 1
+        present_power_tree.append(reference)
+    for left_ref, right_ref in zip(present_power_tree, present_power_tree[1:], strict=False):
+        left_center = _entry_center(footprints[left_ref])
+        right_center = _entry_center(footprints[right_ref])
+        if left_center is None or right_center is None:
+            continue
+        step_distance = math.hypot(
+            left_center[0] - right_center[0],
+            left_center[1] - right_center[1],
+        )
+        if step_distance > board_diagonal * 0.75:
+            power_tree_violations.append(
+                f"Power-tree step '{left_ref} -> {right_ref}' spans {step_distance:.2f} mm."
+            )
+        elif step_distance > board_diagonal * 0.5:
+            warnings.append(
+                f"Power-tree step '{left_ref} -> {right_ref}' spans {step_distance:.2f} mm."
+            )
+
+    checked_sensor_cluster_refs = 0
+    missing_sensor_refs = [
+        reference
+        for reference in intent.sensor_cluster_refs
+        if reference not in footprints or _entry_center(footprints[reference]) is None
+    ]
+    if missing_sensor_refs:
+        sensor_cluster_violations.append(
+            "Sensor-cluster refs missing or unresolved: " + ", ".join(missing_sensor_refs[:12])
+        )
+    sensor_cluster_spread, present_sensor_refs = _group_spread_mm(
+        intent.sensor_cluster_refs,
+        footprints,
+    )
+    checked_sensor_cluster_refs = len(present_sensor_refs)
+    if checked_sensor_cluster_refs >= 2:
+        if sensor_cluster_spread > board_diagonal * 0.6:
+            sensor_cluster_violations.append(
+                f"Sensor cluster spreads {sensor_cluster_spread:.2f} mm across the board."
+            )
+        elif sensor_cluster_spread > board_diagonal * 0.35:
+            warnings.append(
+                f"Sensor cluster spreads {sensor_cluster_spread:.2f} mm across the board."
+            )
+
+    analog_refs = [
+        reference
+        for reference in intent.analog_refs
+        if reference in footprints and _entry_center(footprints[reference]) is not None
+    ]
+    digital_refs = [
+        reference
+        for reference in intent.digital_refs
+        if reference in footprints and _entry_center(footprints[reference]) is not None
+    ]
+    checked_analog_refs = len(analog_refs)
+    checked_digital_refs = len(digital_refs)
+    nearest_mixed_gap: tuple[float, str, str] | None = None
+    for analog_ref in analog_refs:
+        analog_entry = footprints[analog_ref]
+        for digital_ref in digital_refs:
+            digital_entry = footprints[digital_ref]
+            gap = _bbox_gap_mm(analog_entry, digital_entry)
+            if gap is None:
+                continue
+            candidate = (gap, analog_ref, digital_ref)
+            if nearest_mixed_gap is None or candidate[0] < nearest_mixed_gap[0]:
+                nearest_mixed_gap = candidate
+    if nearest_mixed_gap is not None:
+        gap, analog_ref, digital_ref = nearest_mixed_gap
+        if gap < 1.0:
+            analog_digital_violations.append(
+                "Analog ref "
+                f"'{analog_ref}' is only {gap:.2f} mm away from digital ref "
+                f"'{digital_ref}'."
+            )
+        elif gap < 3.0:
+            warnings.append(
+                "Analog ref "
+                f"'{analog_ref}' is only {gap:.2f} mm away from digital ref "
+                f"'{digital_ref}'."
+            )
+
     if density_pct > 70.0:
         warnings.append(f"Footprint density is high ({density_pct:.2f}%).")
     elif density_pct < 5.0 and len(footprints) >= 6:
@@ -713,7 +1009,6 @@ def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]
         ):
             warnings.append("Placement spans most of the board; clustering looks weak.")
 
-    board_diagonal = math.hypot(board_width_mm, board_height_mm)
     for net_name in intent.critical_nets:
         refs = sorted(
             reference
@@ -751,6 +1046,9 @@ def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]
     hard_failures.extend(connector_edge_violations)
     hard_failures.extend(decoupling_distance_violations)
     hard_failures.extend(keepout_violations)
+    hard_failures.extend(power_tree_violations)
+    hard_failures.extend(sensor_cluster_violations)
+    hard_failures.extend(analog_digital_violations)
 
     score = 100
     score -= min(len(overlaps) * 20, 40)
@@ -758,6 +1056,9 @@ def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]
     score -= min(len(connector_edge_violations) * 15, 30)
     score -= min(len(decoupling_distance_violations) * 15, 30)
     score -= min(len(keepout_violations) * 15, 30)
+    score -= min(len(power_tree_violations) * 15, 30)
+    score -= min(len(sensor_cluster_violations) * 15, 30)
+    score -= min(len(analog_digital_violations) * 15, 30)
     score -= min(len(warnings) * 5, 20)
 
     return (
@@ -774,6 +1075,10 @@ def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]
             checked_connectors=checked_connectors,
             checked_decoupling_pairs=checked_decoupling_pairs,
             checked_keepouts=checked_keepouts,
+            checked_power_tree_refs=checked_power_tree_refs,
+            checked_analog_refs=checked_analog_refs,
+            checked_digital_refs=checked_digital_refs,
+            checked_sensor_cluster_refs=checked_sensor_cluster_refs,
         ),
         None,
     )
@@ -788,6 +1093,10 @@ def _format_placement_score(analysis: PlacementAnalysis) -> str:
         f"- Connector checks: {analysis.checked_connectors}",
         f"- Decoupling pair checks: {analysis.checked_decoupling_pairs}",
         f"- RF keepout checks: {analysis.checked_keepouts}",
+        f"- Power-tree refs checked: {analysis.checked_power_tree_refs}",
+        f"- Analog refs checked: {analysis.checked_analog_refs}",
+        f"- Digital refs checked: {analysis.checked_digital_refs}",
+        f"- Sensor-cluster refs checked: {analysis.checked_sensor_cluster_refs}",
         f"- Hard failures: {len(analysis.hard_failures)}",
         f"- Warnings: {len(analysis.warnings)}",
     ]
@@ -811,6 +1120,10 @@ def _evaluate_pcb_placement_gate() -> GateOutcome:
         f"Connector checks: {analysis.checked_connectors}",
         f"Decoupling pair checks: {analysis.checked_decoupling_pairs}",
         f"RF keepout checks: {analysis.checked_keepouts}",
+        f"Power-tree refs checked: {analysis.checked_power_tree_refs}",
+        f"Analog refs checked: {analysis.checked_analog_refs}",
+        f"Digital refs checked: {analysis.checked_digital_refs}",
+        f"Sensor-cluster refs checked: {analysis.checked_sensor_cluster_refs}",
         f"Placement score: {analysis.score}/100",
     ]
     details.extend(f"FAIL: {item}" for item in analysis.hard_failures[:12])
@@ -876,6 +1189,7 @@ def _evaluate_project_gate(
         _evaluate_schematic_connectivity_gate(),
         _evaluate_pcb_gate(),
         _evaluate_pcb_placement_gate(),
+        _evaluate_pcb_transfer_gate(),
         _evaluate_manufacturing_gate(manufacturer=manufacturer, tier=tier),
         _footprint_parity_outcome(),
     ]
@@ -996,6 +1310,12 @@ def register(mcp: FastMCP) -> None:
     def pcb_placement_quality_gate() -> str:
         """Evaluate whether footprint placement is overlap-free and inside the board frame."""
         return _format_gate(_evaluate_pcb_placement_gate())
+
+    @mcp.tool()
+    @headless_compatible
+    def pcb_transfer_quality_gate() -> str:
+        """Evaluate whether named schematic pad nets transferred cleanly onto PCB pads."""
+        return _format_gate(_evaluate_pcb_transfer_gate())
 
     @mcp.tool()
     @headless_compatible

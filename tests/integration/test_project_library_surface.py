@@ -144,11 +144,15 @@ async def test_project_resources_prompts_and_library_surface(
     assert "schematic capture" in schematic_to_pcb.lower()
     assert "manufacturing release pass" in manufacturing.lower()
     assert "project_quality_gate" in manufacturing
+    assert "pcb_transfer_quality_gate" in manufacturing
     assert "closed-loop design review" in design_review_loop.lower()
     assert "kicad://project/fix_queue" in design_review_loop
+    assert "project_get_design_intent" in design_review_loop
     assert "source of truth" in fix_blocking_issues.lower()
+    assert "project_set_design_intent" in fix_blocking_issues
     assert "gated handoff" in release_checklist.lower()
     assert "export_manufacturing_package" in release_checklist
+    assert "pcb_transfer_quality_gate" in release_checklist
 
     await call_tool_text(
         server,

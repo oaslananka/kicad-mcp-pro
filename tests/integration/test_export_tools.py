@@ -194,6 +194,15 @@ async def test_project_quality_gate_reports_failures(sample_project, monkeypatch
         ),
     )
     monkeypatch.setattr(
+        "kicad_mcp.tools.validation._evaluate_pcb_transfer_gate",
+        lambda: GateOutcome(
+            name="PCB transfer",
+            status="FAIL",
+            summary="Named schematic pad nets did not transfer cleanly to the PCB.",
+            details=["Transfer coverage: 25.0%"],
+        ),
+    )
+    monkeypatch.setattr(
         "kicad_mcp.tools.validation._footprint_parity_outcome",
         lambda: GateOutcome(
             name="Footprint parity",

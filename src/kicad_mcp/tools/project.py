@@ -58,6 +58,10 @@ class ProjectDesignIntent(BaseModel):
     connector_refs: list[str] = Field(default_factory=list)
     decoupling_pairs: list[DecouplingPairIntent] = Field(default_factory=list)
     critical_nets: list[str] = Field(default_factory=list)
+    power_tree_refs: list[str] = Field(default_factory=list)
+    analog_refs: list[str] = Field(default_factory=list)
+    digital_refs: list[str] = Field(default_factory=list)
+    sensor_cluster_refs: list[str] = Field(default_factory=list)
     rf_keepout_regions: list[RFKeepoutIntent] = Field(default_factory=list)
     manufacturer: str = Field(default="")
     manufacturer_tier: str = Field(default="")
@@ -126,6 +130,10 @@ def _normalize_design_intent(intent: ProjectDesignIntent) -> ProjectDesignIntent
                 for pair in intent.decoupling_pairs
             ],
             "critical_nets": _normalized_unique(intent.critical_nets),
+            "power_tree_refs": _normalized_unique(intent.power_tree_refs),
+            "analog_refs": _normalized_unique(intent.analog_refs),
+            "digital_refs": _normalized_unique(intent.digital_refs),
+            "sensor_cluster_refs": _normalized_unique(intent.sensor_cluster_refs),
             "rf_keepout_regions": [region.model_dump() for region in intent.rf_keepout_regions],
             "manufacturer": intent.manufacturer.strip(),
             "manufacturer_tier": intent.manufacturer_tier.strip(),
@@ -164,6 +172,25 @@ def _render_design_intent(intent: ProjectDesignIntent) -> str:
     lines.append(
         "- Critical nets: "
         + (", ".join(intent.critical_nets) if intent.critical_nets else "(none)")
+    )
+    lines.append(
+        "- Power-tree refs: "
+        + (", ".join(intent.power_tree_refs) if intent.power_tree_refs else "(none)")
+    )
+    lines.append(
+        "- Analog refs: " + (", ".join(intent.analog_refs) if intent.analog_refs else "(none)")
+    )
+    lines.append(
+        "- Digital refs: "
+        + (", ".join(intent.digital_refs) if intent.digital_refs else "(none)")
+    )
+    lines.append(
+        "- Sensor cluster refs: "
+        + (
+            ", ".join(intent.sensor_cluster_refs)
+            if intent.sensor_cluster_refs
+            else "(none)"
+        )
     )
     lines.append(
         "- Manufacturer: "
@@ -235,6 +262,10 @@ def register(mcp: FastMCP) -> None:
         connector_refs: list[str] | None = None,
         decoupling_pairs: list[dict[str, Any]] | None = None,
         critical_nets: list[str] | None = None,
+        power_tree_refs: list[str] | None = None,
+        analog_refs: list[str] | None = None,
+        digital_refs: list[str] | None = None,
+        sensor_cluster_refs: list[str] | None = None,
         rf_keepout_regions: list[dict[str, Any]] | None = None,
         manufacturer: str = "",
         manufacturer_tier: str = "",
@@ -247,6 +278,16 @@ def register(mcp: FastMCP) -> None:
                 existing.decoupling_pairs if decoupling_pairs is None else decoupling_pairs
             ),
             critical_nets=existing.critical_nets if critical_nets is None else critical_nets,
+            power_tree_refs=(
+                existing.power_tree_refs if power_tree_refs is None else power_tree_refs
+            ),
+            analog_refs=existing.analog_refs if analog_refs is None else analog_refs,
+            digital_refs=existing.digital_refs if digital_refs is None else digital_refs,
+            sensor_cluster_refs=(
+                existing.sensor_cluster_refs
+                if sensor_cluster_refs is None
+                else sensor_cluster_refs
+            ),
             rf_keepout_regions=(
                 existing.rf_keepout_regions
                 if rf_keepout_regions is None

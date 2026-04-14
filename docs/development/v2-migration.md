@@ -193,6 +193,7 @@ v2 now treats manufacturing export as a release step instead of a convenience sh
   - `schematic_connectivity_gate`
   - `pcb_quality_gate`
   - `pcb_placement_quality_gate`
+  - `pcb_transfer_quality_gate`
   - `manufacturing_quality_gate`
   - footprint parity checks
 
@@ -218,6 +219,10 @@ The persisted design-intent schema currently carries:
 - `connector_refs`
 - `decoupling_pairs`
 - `critical_nets`
+- `power_tree_refs`
+- `analog_refs`
+- `digital_refs`
+- `sensor_cluster_refs`
 - `rf_keepout_regions`
 - `manufacturer`
 - `manufacturer_tier`
@@ -230,6 +235,9 @@ The repository now includes a benchmark release corpus under:
 - `tests/fixtures/benchmark_projects/pass_sensor_node`
 - `tests/fixtures/benchmark_projects/fail_label_only_schematic`
 - `tests/fixtures/benchmark_projects/fail_footprint_overlap_board`
+- `tests/fixtures/benchmark_projects/fail_bad_decoupling_placement`
+- `tests/fixtures/benchmark_projects/fail_sensor_cluster_spread`
+- `tests/fixtures/benchmark_projects/fail_dirty_transfer_wrong_pad_nets`
 - `tests/fixtures/benchmark_projects/fail_dfm_edge_clearance`
 - `tests/fixtures/benchmark_projects/fail_sismosmart_like_hierarchy`
 

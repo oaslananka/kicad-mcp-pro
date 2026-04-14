@@ -697,7 +697,13 @@ def _endpoint_reference(endpoint: dict[str, Any]) -> str | None:
 
 
 def _endpoint_pin(endpoint: dict[str, Any]) -> str | None:
-    value = endpoint.get("pin", endpoint.get("pin_number", endpoint.get("number")))
+    value = endpoint.get(
+        "pin",
+        endpoint.get(
+            "pin_number",
+            endpoint.get("number", endpoint.get("pin_name", endpoint.get("pad"))),
+        ),
+    )
     return str(value) if value is not None else None
 
 
@@ -1109,14 +1115,75 @@ def _strip_child_symbol_blocks(block: str) -> str:
 
 
 def _extract_pin_definitions(block: str) -> dict[str, tuple[float, float]]:
-    pins: dict[str, tuple[float, float]] = {}
+    return {
+        record["number"]: (float(record["x"]), float(record["y"]))
+        for record in _extract_pin_records(block)
+    }
+
+
+def _extract_pin_records(block: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
     for match in re.finditer(
-        r'\(pin\s+\w+\s+\w+\s+\(at\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)\s+\(length\s+[-\d.]+\).*?\(number\s+"([^"]+)"',
+        r'\(pin\s+\w+\s+\w+\s+\(at\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)\s+\(length\s+[-\d.]+\).*?\(name\s+"([^"]*)"\).*?\(number\s+"([^"]+)"',
         block,
         re.DOTALL,
     ):
-        pins[match.group(4)] = (float(match.group(1)), float(match.group(2)))
-    return pins
+        records.append(
+            {
+                "x": float(match.group(1)),
+                "y": float(match.group(2)),
+                "name": match.group(4),
+                "number": match.group(5),
+            }
+        )
+    return records
+
+
+def _normalize_pin_alias(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.casefold())
+
+
+def _merge_pin_alias(
+    aliases: dict[str, tuple[float, float]],
+    conflicts: set[str],
+    alias: str,
+    point: tuple[float, float],
+) -> None:
+    if not alias:
+        return
+    existing = aliases.get(alias)
+    if existing is None:
+        aliases[alias] = point
+        return
+    if existing != point:
+        conflicts.add(alias)
+
+
+def _pin_alias_positions(
+    block: str,
+    sym_x: float,
+    sym_y: float,
+    rotation: int,
+) -> dict[str, tuple[float, float]]:
+    aliases: dict[str, tuple[float, float]] = {}
+    conflicts: set[str] = set()
+    for record in _extract_pin_records(block):
+        rx, ry = rotate_point(float(record["x"]), -float(record["y"]), rotation)
+        point = (round(sym_x + rx, 4), round(sym_y - ry, 4))
+        number = str(record["number"])
+        name = str(record["name"])
+        for alias in {
+            number,
+            name,
+            number.casefold(),
+            name.casefold(),
+            _normalize_pin_alias(number),
+            _normalize_pin_alias(name),
+        }:
+            _merge_pin_alias(aliases, conflicts, alias, point)
+    for alias in conflicts:
+        aliases.pop(alias, None)
+    return aliases
 
 
 def _available_units_from_blocks(blocks: list[str]) -> set[int]:
@@ -1182,6 +1249,58 @@ def get_pin_positions(
     return pins
 
 
+def get_pin_alias_positions(
+    library: str,
+    symbol_name: str,
+    sym_x: float,
+    sym_y: float,
+    rotation: int = 0,
+    unit: int = 1,
+) -> dict[str, tuple[float, float]]:
+    """Return a lookup for pin numbers, names, and normalized aliases."""
+    sym_file = _get_symbol_library_dir() / f"{library}.kicad_sym"
+    if not sym_file.exists():
+        return {}
+
+    content = sym_file.read_text(encoding="utf-8", errors="ignore")
+    blocks = _collect_symbol_blocks(content, symbol_name)
+    if not blocks:
+        return {}
+    available_units = _available_units_from_blocks(blocks)
+    if available_units and unit not in available_units:
+        return {}
+
+    aliases: dict[str, tuple[float, float]] = {}
+    conflicts: set[str] = set()
+    for block in blocks:
+        for alias, point in _pin_alias_positions(
+            _strip_child_symbol_blocks(block),
+            sym_x,
+            sym_y,
+            rotation,
+        ).items():
+            _merge_pin_alias(aliases, conflicts, alias, point)
+
+        block_name = _symbol_block_name(block)
+        if block_name is None:
+            continue
+        unit_prefix = f"{block_name}_{unit}_"
+        for child_name, child_block in _extract_child_symbol_blocks(block):
+            if not child_name.startswith(unit_prefix):
+                continue
+            for alias, point in _pin_alias_positions(
+                child_block,
+                sym_x,
+                sym_y,
+                rotation,
+            ).items():
+                _merge_pin_alias(aliases, conflicts, alias, point)
+
+    for alias in conflicts:
+        aliases.pop(alias, None)
+    return aliases
+
+
 def get_symbol_available_units(library: str, symbol_name: str) -> set[int]:
     """Return supported symbol units from the KiCad library."""
     sym_file = _get_symbol_library_dir() / f"{library}.kicad_sym"
@@ -1224,28 +1343,62 @@ def _resolve_net_endpoint(
     endpoint: dict[str, Any],
     net_name: str,
     symbol_points: dict[str, dict[str, tuple[float, float]]],
+    symbol_pin_aliases: dict[str, dict[str, tuple[float, float]]],
     symbol_centers: dict[str, tuple[float, float]],
     power_points: dict[str, tuple[float, float]],
     label_points: dict[str, tuple[float, float]],
-) -> tuple[float, float] | None:
+) -> tuple[tuple[float, float] | None, str | None, str]:
     reference = _endpoint_reference(endpoint)
     if reference is not None:
         pin = _endpoint_pin(endpoint)
-        if pin is not None and pin in symbol_points.get(reference, {}):
-            return symbol_points[reference][pin]
-        return symbol_centers.get(reference)
+        if reference not in symbol_centers:
+            return None, f"reference '{reference}' was not found", "missing_reference"
+        if pin is not None:
+            if pin in symbol_points.get(reference, {}):
+                return symbol_points[reference][pin], None, "pin_number"
+            alias_positions = symbol_pin_aliases.get(reference, {})
+            if pin in alias_positions:
+                return alias_positions[pin], None, "pin_alias"
+            normalized_pin = _normalize_pin_alias(pin)
+            if normalized_pin and normalized_pin in alias_positions:
+                return alias_positions[normalized_pin], None, "pin_alias"
+            return (
+                None,
+                f"pin '{pin}' was not found on symbol '{reference}'",
+                "missing_pin",
+            )
+        point = symbol_centers.get(reference)
+        if point is None:
+            return None, f"reference '{reference}' has no resolved placement", "missing_reference"
+        return point, None, "symbol_center"
 
     power = _endpoint_power(endpoint)
     if power is not None:
-        return power_points.get(power.upper())
+        point = power_points.get(power.upper())
+        if point is None:
+            return None, f"power symbol '{power}' is not placed", "missing_power"
+        return point, None, "power"
 
     label = _endpoint_label(endpoint)
     if label is not None:
-        return label_points.get(label)
+        point = label_points.get(label)
+        if point is None:
+            return None, f"label '{label}' is not placed", "missing_label"
+        return point, None, "label"
 
     if _is_power_net(net_name):
-        return power_points.get(net_name.upper())
-    return label_points.get(net_name)
+        point = power_points.get(net_name.upper())
+        if point is None:
+            return (
+                None,
+                f"net '{net_name}' expected a power symbol but none is placed",
+                "missing_power",
+            )
+        return point, None, "power"
+    point = label_points.get(net_name)
+    if point is None:
+        return None, f"net '{net_name}' expected a label but none is placed", "missing_label"
+    return point, None, "label"
 
 
 def _endpoint_specs_for_routing(
@@ -1264,19 +1417,45 @@ def _endpoint_specs_for_routing(
     return endpoints
 
 
+def _describe_net_endpoint(endpoint: dict[str, Any]) -> str:
+    reference = _endpoint_reference(endpoint)
+    if reference is not None:
+        pin = _endpoint_pin(endpoint)
+        return f"{reference}.{pin}" if pin else reference
+
+    power = _endpoint_power(endpoint)
+    if power is not None:
+        return f"power:{power}"
+
+    label = _endpoint_label(endpoint)
+    if label is not None:
+        return f"label:{label}"
+
+    return "<unresolved-endpoint>"
+
+
 def _plan_netlist_wires(
     symbols: list[AddSymbolInput],
     powers: list[PowerSymbolInput],
     labels: list[AddLabelInput],
     nets: list[dict[str, Any]],
     snap_to_grid: bool,
-) -> list[dict[str, float | bool]]:
+) -> tuple[list[dict[str, float | bool]], list[dict[str, Any]], dict[str, int]]:
     symbol_points: dict[str, dict[str, tuple[float, float]]] = {}
+    symbol_pin_aliases: dict[str, dict[str, tuple[float, float]]] = {}
     symbol_centers: dict[str, tuple[float, float]] = {}
     for symbol in symbols:
         x, y = _snap_point(symbol.x_mm, symbol.y_mm, snap_to_grid and symbol.snap_to_grid)
         symbol_centers[symbol.reference] = (x, y)
         symbol_points[symbol.reference] = get_pin_positions(
+            symbol.library,
+            symbol.symbol_name,
+            x,
+            y,
+            symbol.rotation,
+            symbol.unit,
+        )
+        symbol_pin_aliases[symbol.reference] = get_pin_alias_positions(
             symbol.library,
             symbol.symbol_name,
             x,
@@ -1296,25 +1475,52 @@ def _plan_netlist_wires(
         label_points.setdefault(label.name, (x, y))
 
     routed_segments: list[dict[str, float | bool]] = []
+    unresolved_nets: list[dict[str, Any]] = []
     seen_segments: set[tuple[tuple[float, float], tuple[float, float]]] = set()
+    resolution_stats = {
+        "resolved_endpoints": 0,
+        "unresolved_endpoints": 0,
+        "pin_alias_resolutions": 0,
+        "symbol_center_resolutions": 0,
+    }
     for net in nets:
         net_name = _net_name(net)
-        resolved_points = [
-            point
-            for endpoint in _endpoint_specs_for_routing(net, power_points, label_points)
-            if (
-                point := _resolve_net_endpoint(
-                    endpoint,
-                    net_name,
-                    symbol_points,
-                    symbol_centers,
-                    power_points,
-                    label_points,
-                )
+        endpoints = _endpoint_specs_for_routing(net, power_points, label_points)
+        resolved_points: list[tuple[float, float]] = []
+        unresolved_endpoints: list[str] = []
+        unresolved_details: list[str] = []
+        for endpoint in endpoints:
+            point, reason, resolution_kind = _resolve_net_endpoint(
+                endpoint,
+                net_name,
+                symbol_points,
+                symbol_pin_aliases,
+                symbol_centers,
+                power_points,
+                label_points,
             )
-            is not None
-        ]
+            if point is None:
+                endpoint_text = _describe_net_endpoint(endpoint)
+                unresolved_endpoints.append(endpoint_text)
+                unresolved_details.append(f"{endpoint_text}: {reason or 'unresolved endpoint'}")
+                resolution_stats["unresolved_endpoints"] += 1
+                continue
+            resolved_points.append(point)
+            resolution_stats["resolved_endpoints"] += 1
+            if resolution_kind == "pin_alias":
+                resolution_stats["pin_alias_resolutions"] += 1
+            elif resolution_kind == "symbol_center":
+                resolution_stats["symbol_center_resolutions"] += 1
         if len(resolved_points) < 2:
+            unresolved_nets.append(
+                {
+                    "name": net_name or "<unnamed>",
+                    "endpoint_count": len(endpoints),
+                    "resolved_count": len(resolved_points),
+                    "unresolved_endpoints": unresolved_endpoints,
+                    "unresolved_details": unresolved_details,
+                }
+            )
             continue
 
         anchor = resolved_points[0]
@@ -1333,7 +1539,133 @@ def _plan_netlist_wires(
                         "snap_to_grid": False,
                     }
                 )
-    return routed_segments
+    return routed_segments, unresolved_nets, resolution_stats
+
+
+def _prepare_build_circuit_inputs(
+    *,
+    symbols: list[dict[str, Any]] | None = None,
+    wires: list[dict[str, Any]] | None = None,
+    labels: list[dict[str, Any]] | None = None,
+    power_symbols: list[dict[str, Any]] | None = None,
+    nets: list[dict[str, Any]] | None = None,
+    snap_to_grid: bool = True,
+    auto_layout: bool = False,
+) -> tuple[
+    list[AddSymbolInput],
+    list[PowerSymbolInput],
+    list[AddLabelInput],
+    list[AddWireInput],
+    list[dict[str, Any]],
+    list[dict[str, float | bool]],
+    list[dict[str, Any]],
+    dict[str, int],
+]:
+    raw_symbols = [dict(item) for item in (symbols or [])]
+    raw_powers = [dict(item) for item in (power_symbols or [])]
+    raw_labels = [dict(item) for item in (labels or [])]
+    raw_wires = [dict(item) for item in (wires or [])]
+    raw_nets = [dict(item) for item in (nets or [])]
+    if auto_layout:
+        if raw_nets:
+            raw_symbols, raw_powers, raw_labels = _apply_netlist_auto_layout(
+                raw_symbols,
+                raw_powers,
+                raw_labels,
+                raw_nets,
+            )
+        else:
+            raw_symbols, raw_powers, raw_labels = _apply_basic_auto_layout(
+                raw_symbols,
+                raw_powers,
+                raw_labels,
+            )
+
+    validated_symbols = [AddSymbolInput.model_validate(item) for item in raw_symbols]
+    validated_powers = [PowerSymbolInput.model_validate(item) for item in raw_powers]
+    validated_wires = [AddWireInput.model_validate(item) for item in raw_wires]
+    validated_labels = [AddLabelInput.model_validate(item) for item in raw_labels]
+    for symbol in validated_symbols:
+        available_units = get_symbol_available_units(symbol.library, symbol.symbol_name)
+        if available_units and symbol.unit not in available_units:
+            raise ValueError(
+                f"Symbol '{symbol.library}:{symbol.symbol_name}' does not support unit "
+                f"{symbol.unit}. Available units: {_format_available_units(available_units)}."
+            )
+
+    generated_wires: list[dict[str, float | bool]] = []
+    unresolved_nets: list[dict[str, Any]] = []
+    resolution_stats = {
+        "resolved_endpoints": 0,
+        "unresolved_endpoints": 0,
+        "pin_alias_resolutions": 0,
+        "symbol_center_resolutions": 0,
+    }
+    if raw_nets:
+        generated_wires, unresolved_nets, resolution_stats = _plan_netlist_wires(
+            validated_symbols,
+            validated_powers,
+            validated_labels,
+            raw_nets,
+            snap_to_grid,
+        )
+        validated_wires.extend(AddWireInput.model_validate(item) for item in generated_wires)
+
+    return (
+        validated_symbols,
+        validated_powers,
+        validated_labels,
+        validated_wires,
+        raw_nets,
+        generated_wires,
+        unresolved_nets,
+        resolution_stats,
+    )
+
+
+def _render_net_compilation_report(
+    *,
+    symbols: list[AddSymbolInput],
+    powers: list[PowerSymbolInput],
+    labels: list[AddLabelInput],
+    explicit_wires: int,
+    nets: list[dict[str, Any]],
+    generated_wires: list[dict[str, float | bool]],
+    unresolved_nets: list[dict[str, Any]],
+    resolution_stats: dict[str, int],
+    auto_layout: bool,
+) -> str:
+    lines = ["Net compilation analysis:"]
+    lines.extend(
+        [
+            f"- Symbols: {len(symbols)}",
+            f"- Power symbols: {len(powers)}",
+            f"- Labels: {len(labels)}",
+            f"- Explicit wires supplied: {explicit_wires}",
+            f"- Nets requested: {len(nets)}",
+            f"- Routable nets: {len(nets) - len(unresolved_nets)}",
+            f"- Unresolved nets: {len(unresolved_nets)}",
+            f"- Generated wire segments: {len(generated_wires)}",
+            f"- Resolved endpoints: {resolution_stats['resolved_endpoints']}",
+            f"- Unresolved endpoints: {resolution_stats['unresolved_endpoints']}",
+            f"- Pin alias matches: {resolution_stats['pin_alias_resolutions']}",
+            f"- Symbol-center fallbacks: {resolution_stats['symbol_center_resolutions']}",
+            f"- Auto-layout: {'enabled' if auto_layout else 'disabled'}",
+        ]
+    )
+    if unresolved_nets:
+        lines.append("Unresolved nets:")
+        for item in unresolved_nets[:12]:
+            missing = ", ".join(cast(list[str], item["unresolved_endpoints"])) or "all endpoints"
+            lines.append(
+                f"- {item['name']}: resolved {item['resolved_count']}/{item['endpoint_count']} "
+                f"endpoint(s); missing {missing}"
+            )
+            for detail in cast(list[str], item.get("unresolved_details", []))[:3]:
+                lines.append(f"  - {detail}")
+    else:
+        lines.append("- All requested nets resolved to routable endpoints.")
+    return "\n".join(lines)
 
 
 def _point_key(x: float, y: float) -> tuple[float, float]:
@@ -2094,7 +2426,7 @@ def register(mcp: FastMCP) -> None:
         return f"{result}\n{_reload_schematic()}"
 
     @mcp.tool()
-    def sch_build_circuit(
+    def sch_analyze_net_compilation(
         symbols: list[dict[str, Any]] | None = None,
         wires: list[dict[str, Any]] | None = None,
         labels: list[dict[str, Any]] | None = None,
@@ -2103,55 +2435,97 @@ def register(mcp: FastMCP) -> None:
         snap_to_grid: bool = True,
         auto_layout: bool = False,
     ) -> str:
+        """Preview how netlist-aware schematic compilation will resolve endpoints and wires."""
+        (
+            validated_symbols,
+            validated_powers,
+            validated_labels,
+            validated_wires,
+            raw_nets,
+            generated_wires,
+            unresolved_nets,
+            resolution_stats,
+        ) = _prepare_build_circuit_inputs(
+            symbols=symbols,
+            wires=wires,
+            labels=labels,
+            power_symbols=power_symbols,
+            nets=nets,
+            snap_to_grid=snap_to_grid,
+            auto_layout=auto_layout,
+        )
+        return _render_net_compilation_report(
+            symbols=validated_symbols,
+            powers=validated_powers,
+            labels=validated_labels,
+            explicit_wires=len(validated_wires) - len(generated_wires),
+            nets=raw_nets,
+            generated_wires=generated_wires,
+            unresolved_nets=unresolved_nets,
+            resolution_stats=resolution_stats,
+            auto_layout=auto_layout,
+        )
+
+    @mcp.tool()
+    def sch_build_circuit(
+        symbols: list[dict[str, Any]] | None = None,
+        wires: list[dict[str, Any]] | None = None,
+        labels: list[dict[str, Any]] | None = None,
+        power_symbols: list[dict[str, Any]] | None = None,
+        nets: list[dict[str, Any]] | None = None,
+        snap_to_grid: bool = True,
+        auto_layout: bool = False,
+        ) -> str:
         """Build a schematic from structured symbol, wire, and label inputs.
 
         Coordinates are snapped to the 2.54 mm grid by default.
         Set auto_layout=True to place symbols in a readable grid. If nets are provided,
         the layout is connection-aware and generates Manhattan wire segments from symbol pins.
+        Nets that cannot resolve to at least two routable endpoints raise a clear error instead
+        of silently producing a disconnected label-only schematic.
         """
-        raw_symbols = [dict(item) for item in (symbols or [])]
-        raw_powers = [dict(item) for item in (power_symbols or [])]
-        raw_labels = [dict(item) for item in (labels or [])]
-        raw_wires = [dict(item) for item in (wires or [])]
-        raw_nets = [dict(item) for item in (nets or [])]
-        if auto_layout:
-            if raw_nets:
-                raw_symbols, raw_powers, raw_labels = _apply_netlist_auto_layout(
-                    raw_symbols,
-                    raw_powers,
-                    raw_labels,
-                    raw_nets,
-                )
-            else:
-                raw_symbols, raw_powers, raw_labels = _apply_basic_auto_layout(
-                    raw_symbols,
-                    raw_powers,
-                    raw_labels,
-                )
-
-        # Validate ALL inputs upfront so validation errors surface immediately
-        # with clear Pydantic messages — before any file I/O or dict key access.
-        validated_symbols = [AddSymbolInput.model_validate(item) for item in raw_symbols]
-        validated_powers = [PowerSymbolInput.model_validate(item) for item in raw_powers]
-        validated_wires = [AddWireInput.model_validate(item) for item in raw_wires]
-        validated_labels = [AddLabelInput.model_validate(item) for item in raw_labels]
-        for symbol in validated_symbols:
-            available_units = get_symbol_available_units(symbol.library, symbol.symbol_name)
-            if available_units and symbol.unit not in available_units:
-                raise ValueError(
-                    f"Symbol '{symbol.library}:{symbol.symbol_name}' does not support unit "
-                    f"{symbol.unit}. Available units: {_format_available_units(available_units)}."
-                )
-        generated_wires: list[dict[str, float | bool]] = []
-        if raw_nets:
-            generated_wires = _plan_netlist_wires(
-                validated_symbols,
-                validated_powers,
-                validated_labels,
-                raw_nets,
-                snap_to_grid,
+        (
+            validated_symbols,
+            validated_powers,
+            validated_labels,
+            validated_wires,
+            raw_nets,
+            generated_wires,
+            unresolved_nets,
+            resolution_stats,
+        ) = _prepare_build_circuit_inputs(
+            symbols=symbols,
+            wires=wires,
+            labels=labels,
+            power_symbols=power_symbols,
+            nets=nets,
+            snap_to_grid=snap_to_grid,
+            auto_layout=auto_layout,
+        )
+        if unresolved_nets:
+            logger.warning(
+                "schematic_netlist_routing_incomplete",
+                generated_wire_count=len(generated_wires),
+                unresolved_net_count=len(unresolved_nets),
+                unresolved_nets=unresolved_nets[:10],
             )
-            validated_wires.extend(AddWireInput.model_validate(item) for item in generated_wires)
+        if raw_nets and not generated_wires and not validated_wires:
+            examples = "; ".join(
+                (
+                    f"{item['name']} "
+                    f"(resolved {item['resolved_count']}/{item['endpoint_count']}, "
+                    f"missing: {', '.join(item['unresolved_endpoints']) or 'all'})"
+                )
+                for item in unresolved_nets[:5]
+            )
+            raise ValueError(
+                "Netlist-aware auto-layout could not generate any wire segments. "
+                "The provided nets did not resolve to at least two routable endpoints. "
+                "Use `sch_analyze_net_compilation()` to inspect unresolved nets, or "
+                "provide explicit reference+pin endpoints / explicit wires. "
+                f"Examples: {examples or 'no endpoints were routable'}. "
+                f"Alias matches: {resolution_stats['pin_alias_resolutions']}."
+            )
 
         root_uuid = new_uuid()
         cfg = get_config()

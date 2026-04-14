@@ -16,6 +16,7 @@ For agent-driven design work, these tools form the minimum safe review loop:
 - `project_quality_gate()`
 - `schematic_connectivity_gate()`
 - `pcb_placement_quality_gate()`
+- `pcb_transfer_quality_gate()`
 - `pcb_score_placement()`
 - `manufacturing_quality_gate()`
 - `validate_footprints_vs_schematic()`
@@ -35,6 +36,10 @@ Current intent fields:
 - connector references
 - decoupling pairs
 - critical nets
+- power-tree references
+- analog references
+- digital references
+- sensor-cluster references
 - RF keepout regions
 - manufacturer / manufacturer tier
 

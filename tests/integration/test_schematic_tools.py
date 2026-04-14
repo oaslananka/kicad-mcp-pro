@@ -172,6 +172,136 @@ async def test_build_circuit_netlist_auto_layout_generates_wires(
 
 
 @pytest.mark.anyio
+async def test_analyze_net_compilation_reports_routable_nets(
+    sample_project,
+    mock_kicad,
+) -> None:
+    server = build_server("schematic")
+
+    result = await call_tool_text(
+        server,
+        "sch_analyze_net_compilation",
+        {
+            "auto_layout": True,
+            "symbols": [
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "reference": "R1",
+                    "value": "10k",
+                    "footprint": "Resistor_SMD:R_0805",
+                },
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "reference": "R2",
+                    "value": "22k",
+                    "footprint": "Resistor_SMD:R_0805",
+                },
+            ],
+            "nets": [
+                {"name": "VIN", "endpoints": [{"reference": "R1", "pin": "1"}]},
+                {
+                    "name": "MID",
+                    "endpoints": [
+                        {"reference": "R1", "pin": "2"},
+                        {"reference": "R2", "pin": "1"},
+                    ],
+                },
+                {"name": "GND", "endpoints": [{"reference": "R2", "pin": "2"}]},
+            ],
+        },
+    )
+
+    assert "Net compilation analysis:" in result
+    assert "- Nets requested: 3" in result
+    assert "- Routable nets: 3" in result
+    assert "- Unresolved nets: 0" in result
+    assert "- Generated wire segments: 7" in result
+
+
+@pytest.mark.anyio
+async def test_analyze_net_compilation_reports_unresolved_endpoints(
+    sample_project,
+    mock_kicad,
+) -> None:
+    server = build_server("schematic")
+
+    result = await call_tool_text(
+        server,
+        "sch_analyze_net_compilation",
+        {
+            "auto_layout": True,
+            "symbols": [
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "reference": "R1",
+                    "value": "10k",
+                    "footprint": "Resistor_SMD:R_0805",
+                }
+            ],
+            "nets": [
+                {
+                    "name": "BROKEN_NET",
+                    "endpoints": [
+                        {"reference": "U9", "pin": "1"},
+                        {"reference": "U10", "pin": "2"},
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert "- Nets requested: 1" in result
+    assert "- Routable nets: 0" in result
+    assert "- Unresolved nets: 1" in result
+    assert "BROKEN_NET" in result
+    assert "U9.1" in result
+    assert "U10.2" in result
+
+
+@pytest.mark.anyio
+async def test_build_circuit_netlist_auto_layout_raises_when_no_wires_resolve(
+    sample_project,
+    mock_kicad,
+) -> None:
+    server = build_server("schematic")
+
+    with pytest.raises(Exception) as exc_info:
+        await server.call_tool(
+            "sch_build_circuit",
+            {
+                "auto_layout": True,
+                "symbols": [
+                    {
+                        "library": "Device",
+                        "symbol_name": "R",
+                        "reference": "R1",
+                        "value": "10k",
+                        "footprint": "Resistor_SMD:R_0805",
+                    }
+                ],
+                "nets": [
+                    {
+                        "name": "BROKEN_NET",
+                        "endpoints": [
+                            {"reference": "U9", "pin": "1"},
+                            {"reference": "U10", "pin": "2"},
+                        ],
+                    }
+                ],
+            },
+        )
+
+    error_text = str(exc_info.value)
+    assert "could not generate any wire segments" in error_text
+    assert "BROKEN_NET" in error_text
+    assert "U9.1" in error_text
+    assert "U10.2" in error_text
+
+
+@pytest.mark.anyio
 async def test_schematic_snap_to_grid_can_be_disabled(sample_project, mock_kicad) -> None:
     server = build_server("schematic")
 
@@ -435,6 +565,61 @@ async def test_build_circuit_netlist_auto_layout_uses_symbol_unit_for_routing(
 
 
 @pytest.mark.anyio
+async def test_build_circuit_netlist_auto_layout_resolves_pin_names_and_aliases(
+    sample_project,
+    mock_kicad,
+) -> None:
+    server = build_server("schematic")
+
+    result = await call_tool_text(
+        server,
+        "sch_build_circuit",
+        {
+            "auto_layout": True,
+            "symbols": [
+                {
+                    "library": "MultiUnit",
+                    "symbol_name": "DualChild",
+                    "reference": "U1",
+                    "value": "Dual",
+                    "footprint": "Package_DIP:DIP-8_W7.62mm",
+                    "unit": 1,
+                },
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "reference": "R1",
+                    "value": "10k",
+                    "footprint": "Resistor_SMD:R_0805",
+                },
+            ],
+            "nets": [
+                {
+                    "name": "OUT_ALIAS",
+                    "endpoints": [
+                        {"reference": "U1", "pin_name": "OUTA"},
+                        {"reference": "R1", "pin": "1"},
+                    ],
+                },
+                {
+                    "name": "INPUT_ALIAS",
+                    "endpoints": [
+                        {"reference": "U1", "pin": "+A"},
+                        {"reference": "R1", "pin": "2"},
+                    ],
+                },
+            ],
+        },
+    )
+
+    schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
+    assert "Applied netlist-aware auto-layout" in result
+    assert '(label "OUT_ALIAS"' in schematic
+    assert '(label "INPUT_ALIAS"' in schematic
+    assert schematic.count("(wire") >= 3
+
+
+@pytest.mark.anyio
 async def test_library_assign_footprint_updates_schematic(sample_project, mock_kicad) -> None:
     server = build_server("schematic")
     await server.call_tool(
@@ -484,6 +669,51 @@ async def test_schematic_update_property_escapes_quotes(sample_project, mock_kic
     schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
     assert "Updated R1.Value" in text
     assert '(property "Value" "10k \\"1%\\""' in schematic
+
+
+@pytest.mark.anyio
+async def test_analyze_net_compilation_reports_pin_alias_matches(
+    sample_project,
+    mock_kicad,
+) -> None:
+    server = build_server("schematic")
+
+    result = await call_tool_text(
+        server,
+        "sch_analyze_net_compilation",
+        {
+            "auto_layout": True,
+            "symbols": [
+                {
+                    "library": "MultiUnit",
+                    "symbol_name": "DualChild",
+                    "reference": "U1",
+                    "value": "Dual",
+                    "footprint": "Package_DIP:DIP-8_W7.62mm",
+                    "unit": 1,
+                },
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "reference": "R1",
+                    "value": "10k",
+                    "footprint": "Resistor_SMD:R_0805",
+                },
+            ],
+            "nets": [
+                {
+                    "name": "ALIAS_NET",
+                    "endpoints": [
+                        {"reference": "U1", "pin": "OUTA"},
+                        {"reference": "R1", "pin": "1"},
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert "- Pin alias matches: 1" in result
+    assert "- Unresolved nets: 0" in result
 
 
 @pytest.mark.anyio

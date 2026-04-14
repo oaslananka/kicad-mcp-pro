@@ -313,3 +313,49 @@ async def test_project_quality_gate_includes_connectivity_failures(
     text = await call_tool_text(server, "project_quality_gate", {})
 
     assert "Schematic connectivity quality gate: FAIL" in text
+
+
+@pytest.mark.anyio
+async def test_schematic_connectivity_gate_flags_component_contract_violation(
+    sample_project: Path,
+    mock_kicad,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = mock_kicad
+    server = build_server("schematic")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    monkeypatch.setattr("kicad_mcp.tools.validation._sheet_contracts", lambda _path: [])
+    monkeypatch.setattr(
+        "kicad_mcp.tools.schematic.parse_schematic_file",
+        lambda _path: {
+            "symbols": [
+                {
+                    "reference": "U1",
+                    "value": "ESP32-S3-WROOM-1",
+                    "footprint": "RF_Module:ESP32-S3-WROOM-1",
+                    "lib_id": "RF_Module:ESP32-S3-WROOM-1",
+                }
+            ],
+            "power_symbols": [],
+            "labels": [],
+            "wires": [],
+        },
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.schematic._build_connectivity_groups",
+        lambda _path: [
+            {
+                "names": ["GND"],
+                "points": [(0.0, 0.0)],
+                "pins": [{"reference": "U1", "pin": "1", "value": "ESP32-S3-WROOM-1"}],
+            }
+        ],
+    )
+
+    text = await call_tool_text(server, "schematic_connectivity_gate", {})
+
+    assert "Schematic connectivity quality gate: FAIL" in text
+    assert "Matched component contracts: 1" in text
+    assert "Component contract violations: 1" in text
+    assert "esp32_s3_wroom_1" in text

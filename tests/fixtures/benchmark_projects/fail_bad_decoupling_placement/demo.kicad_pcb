@@ -1,0 +1,19 @@
+(kicad_pcb
+  (version 20250216)
+  (generator "pytest")
+  (gr_rect (start 0 0) (end 40 30) (stroke (width 0.05) (type solid)) (fill no) (layer "Edge.Cuts"))
+  (footprint "Package_QFP:TQFP-48"
+    (layer "F.Cu")
+    (at 10 10 0)
+    (property "Reference" "U1" (at 0 0 0) (layer "F.SilkS"))
+    (property "Value" "MCU" (at 0 3.8 0) (layer "F.Fab"))
+    (fp_rect (start -3 -3) (end 3 3) (stroke (width 0.05) (type solid)) (fill no) (layer "F.CrtYd"))
+  )
+  (footprint "Capacitor_SMD:C_0603"
+    (layer "F.Cu")
+    (at 34 24 0)
+    (property "Reference" "C1" (at 0 0 0) (layer "F.SilkS"))
+    (property "Value" "100n" (at 0 1.5 0) (layer "F.Fab"))
+    (fp_rect (start -1 -0.6) (end 1 0.6) (stroke (width 0.05) (type solid)) (fill no) (layer "F.CrtYd"))
+  )
+)

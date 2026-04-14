@@ -675,13 +675,91 @@ def _footprint_size_from_assignment(assignment: str) -> tuple[float, float]:
     return _bbox_from_block(path.read_text(encoding="utf-8", errors="ignore"))
 
 
+def _footprint_pad_numbers_from_assignment(assignment: str) -> list[str]:
+    library, footprint = _split_footprint_assignment(assignment)
+    path = _footprint_file(library, footprint)
+    if not path.exists():
+        raise FileNotFoundError(f"Footprint '{assignment}' was not found.")
+    block = path.read_text(encoding="utf-8", errors="ignore")
+    pad_numbers: list[str] = []
+    for pad_block in _iter_blocks(block, "pad"):
+        match = re.match(rf"\(pad\s+{STRING_PATTERN}", pad_block.lstrip())
+        if match is None or not match.group(1):
+            continue
+        pad_numbers.append(match.group(1))
+    return pad_numbers
+
+
+def _schematic_pad_net_summary(
+    components: list[dict[str, Any]],
+    net_map: dict[tuple[str, str], str],
+) -> dict[str, Any]:
+    total_pads = 0
+    named_pads = 0
+    unresolved_refs: list[str] = []
+    fully_named_refs = 0
+    partial_refs = 0
+    for component in components:
+        reference = str(component["reference"])
+        pad_numbers = _footprint_pad_numbers_from_assignment(str(component["footprint"]))
+        if not pad_numbers:
+            continue
+        unresolved_count = 0
+        for pad_number in pad_numbers:
+            total_pads += 1
+            if net_map.get((reference, pad_number)):
+                named_pads += 1
+            else:
+                unresolved_count += 1
+        if unresolved_count == 0:
+            fully_named_refs += 1
+        else:
+            partial_refs += 1
+        if unresolved_count:
+            unresolved_refs.append(
+                f"{reference} ({unresolved_count}/{len(pad_numbers)} pad(s) without net names)"
+            )
+    coverage_pct = round((named_pads / total_pads) * 100, 1) if total_pads else 100.0
+    if total_pads == 0:
+        quality = "UNKNOWN"
+    elif named_pads == total_pads:
+        quality = "CLEAN"
+    elif coverage_pct >= 50.0:
+        quality = "DEGRADED"
+    else:
+        quality = "POOR"
+    return {
+        "total_pads": total_pads,
+        "named_pads": named_pads,
+        "no_net_pads": total_pads - named_pads,
+        "coverage_pct": coverage_pct,
+        "quality": quality,
+        "fully_named_refs": fully_named_refs,
+        "partial_refs": partial_refs,
+        "unresolved_refs": unresolved_refs,
+    }
+
+
 def _footprint_net_names(block: str) -> list[str]:
     names: set[str] = set()
     for pad_block in _iter_blocks(block, "pad"):
-        match = re.search(rf"\(net\s+\d+\s+{STRING_PATTERN}\)", pad_block)
+        match = re.search(rf"\(net(?:\s+\d+)?\s+{STRING_PATTERN}\)", pad_block)
         if match is not None and match.group(1):
             names.add(match.group(1))
     return sorted(names)
+
+
+def _footprint_pad_net_map(block: str) -> dict[str, str]:
+    pad_map: dict[str, str] = {}
+    for pad_block in _iter_blocks(block, "pad"):
+        pad_match = re.match(rf"\(pad\s+{STRING_PATTERN}", pad_block.lstrip())
+        net_match = re.search(rf"\(net(?:\s+\d+)?\s+{STRING_PATTERN}\)", pad_block)
+        if pad_match is None or net_match is None:
+            continue
+        if not pad_match.group(1) or not net_match.group(1):
+            continue
+        pad_map[pad_match.group(1)] = net_match.group(1)
+    return pad_map
 
 
 def _parse_board_footprint_blocks(content: str) -> dict[str, dict[str, Any]]:
@@ -709,6 +787,7 @@ def _parse_board_footprint_blocks(content: str) -> dict[str, dict[str, Any]]:
                         "height_mm": height_mm,
                         "layer_name": layer_match.group(1) if layer_match else "F.Cu",
                         "net_names": _footprint_net_names(block),
+                        "pad_nets": _footprint_pad_net_map(block),
                     }
                 cursor += length
                 continue
@@ -1223,13 +1302,16 @@ def _export_schematic_net_map() -> tuple[dict[tuple[str, str], str], str]:
     ]
     last_stderr = "unknown error"
     for variant in variants:
-        result = subprocess.run(
-            [str(cfg.kicad_cli), *variant],
-            capture_output=True,
-            text=True,
-            timeout=cfg.cli_timeout,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                [str(cfg.kicad_cli), *variant],
+                capture_output=True,
+                text=True,
+                timeout=cfg.cli_timeout,
+                check=False,
+            )
+        except OSError as exc:
+            return {}, f"Netlist export failed, so pad net names were skipped: {exc}"
         if result.returncode == 0 and out_file.exists():
             content = out_file.read_text(encoding="utf-8", errors="ignore")
             return _parse_netlist_text(content), ""
@@ -1306,6 +1388,27 @@ def _collect_schematic_components() -> tuple[list[dict[str, Any]], list[str]]:
             }
         )
     return components, issues
+
+
+def _pcb_sync_gate_failures() -> list[str]:
+    from .validation import _evaluate_schematic_connectivity_gate, _evaluate_schematic_gate
+
+    outcomes = [_evaluate_schematic_gate(), _evaluate_schematic_connectivity_gate()]
+    blocking = [outcome for outcome in outcomes if outcome.status != "PASS"]
+    if not blocking:
+        return []
+
+    lines = ["PCB sync aborted because the schematic is not ready:"]
+    for outcome in blocking:
+        lines.append(f"- {outcome.name} quality gate: {outcome.status}")
+        lines.append(f"  {outcome.summary}")
+        for detail in outcome.details[:6]:
+            lines.append(f"  {detail}")
+    lines.append(
+        "Re-run `schematic_quality_gate()` and `schematic_connectivity_gate()` after fixing "
+        "the schematic."
+    )
+    return lines
 
 
 def _planned_board_positions(
@@ -2184,6 +2287,8 @@ def register(mcp: FastMCP) -> None:
                 "Close the board first, or rerun with allow_open_board=True if you want "
                 "KiCad to reload the updated file from disk."
             )
+        if blocking_lines := _pcb_sync_gate_failures():
+            return "\n".join(blocking_lines)
 
         components, issues = _collect_schematic_components()
         if issues:
@@ -2233,6 +2338,7 @@ def register(mcp: FastMCP) -> None:
         net_note = ""
         if payload.use_net_names:
             net_map, net_note = _export_schematic_net_map()
+        pad_summary = _schematic_pad_net_summary(components, net_map)
 
         additions: list[str] = []
         replacements: dict[str, str] = {}
@@ -2317,7 +2423,21 @@ def register(mcp: FastMCP) -> None:
             f"Existing PCB footprints kept: {len(existing) - len(replacements)}",
             f"New footprints added: {len(additions)}",
             f"Mismatched footprints replaced: {len(replacements)}",
+            f"Total pads considered: {pad_summary['total_pads']}",
+            f"Pads with named nets: {pad_summary['named_pads']}",
+            f"Pads left as <no net>: {pad_summary['no_net_pads']}",
+            "Transfer quality: "
+            f"{pad_summary['quality']} ({pad_summary['coverage_pct']}% pad coverage)",
+            f"Fully net-mapped refs: {pad_summary['fully_named_refs']}",
+            f"Partially net-mapped refs: {pad_summary['partial_refs']}",
         ]
+        unresolved_refs = cast(list[str], pad_summary["unresolved_refs"])
+        lines.append(
+            "Refs with unresolved pad nets: "
+            + (", ".join(unresolved_refs[:12]) if unresolved_refs else "(none)")
+        )
+        if len(unresolved_refs) > 12:
+            lines.append(f"... and {len(unresolved_refs) - 12} more")
         if mismatches:
             lines.append("Existing footprint mismatches:")
             lines.extend(f"- {mismatch}" for mismatch in mismatches[:20])

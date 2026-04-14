@@ -14,13 +14,13 @@ Primary CI/CD and release automation runs in Azure DevOps. GitHub Actions in thi
 ## Features
 
 - Project-first workflow with `kicad_set_project()`, recent project discovery, and safe path handling.
-- Project intent helpers with `project_set_design_intent()` and `project_get_design_intent()` for connector, decoupling, RF, and fab assumptions.
+- Project intent helpers with `project_set_design_intent()` and `project_get_design_intent()` for connector, decoupling, power-tree, analog/digital partitioning, sensor clustering, RF, and fab assumptions.
 - KiCad 10.x-first runtime with best-effort 9.x support and cross-platform CLI/library discovery.
 - PCB tools for board inspection, tracks, vias, footprints, text, shapes, outline editing, and zone refill.
 - Schematic tools for symbols, wires, labels, buses, no-connect markers, property updates, annotation, netlist-aware auto-layout, and IPC reload.
 - Library tools for symbol search, footprint search, datasheet lookup, footprint assignment, and custom symbol generation.
 - Validation tools for DRC, ERC, DFM, courtyard issues, silk overlaps, and schematic-versus-PCB footprint checks.
-- Project quality gates for schematic, schematic connectivity, PCB, placement, manufacturing, and release readiness before fabrication exports.
+- Project quality gates for schematic, schematic connectivity, PCB, placement, PCB transfer, manufacturing, and release readiness before fabrication exports.
 - Export tools for Gerber, drill, BOM, PDF, netlist, STEP, render, pick-and-place, IPC-2581, SVG, and DXF.
 - Signal integrity tools for impedance synthesis, differential skew checks, stackup planning, via-stub review, and decoupling heuristics.
 - Power integrity tools for voltage-drop estimation, copper current checks, plane generation, and thermal via guidance.
@@ -363,12 +363,16 @@ that provide the required credentials.
 
 `export_manufacturing_package` is now a release-only helper. It first runs the full
 `project_quality_gate()` and hard-blocks the package when the design is still `FAIL`
-or `BLOCKED`. Use the low-level export tools for debugging artifacts while iterating,
-then use the manufacturing package only after the project gate is clean.
+or `BLOCKED`. `pcb_transfer_quality_gate()` is part of that release contract, so
+schematic pad nets must transfer cleanly onto PCB pads before fabrication exports are
+allowed. Use the low-level export tools for debugging artifacts while iterating, then
+use the manufacturing package only after the project gate is clean.
 
 `pcb_placement_quality_gate()` is the blocking geometry/context gate. `pcb_score_placement()`
 adds softer density and spread heuristics so an agent can improve layout quality before a
-hard failure happens.
+hard failure happens. Placement scoring is now intent-aware for connector edge usage,
+decoupling proximity, RF keepouts, power-tree locality, analog/digital separation, and
+sensor clustering.
 
 ### DFM
 
@@ -494,7 +498,9 @@ The resource surface now exposes:
 
 For regression coverage, the repository also ships a benchmark and failure corpus under
 `tests/fixtures/benchmark_projects/`. These fixtures are used to prove that clean projects
-can reach release export while known-bad projects stay hard-blocked.
+can reach release export while known-bad projects stay hard-blocked. The corpus includes
+label-only schematic failures, overlap/DFM failures, bad decoupling placement, wide sensor
+clusters, dirty PCB transfer cases, and SismoSmart-style hierarchy/connectivity regressions.
 
 ## Contributing
 

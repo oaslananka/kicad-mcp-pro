@@ -1,0 +1,19 @@
+(kicad_pcb
+  (version 20250216)
+  (generator "pytest")
+  (gr_rect (start 0 0) (end 40 30) (stroke (width 0.05) (type solid)) (fill no) (layer "Edge.Cuts"))
+  (footprint "Sensor_Motion:ADXL355"
+    (layer "F.Cu")
+    (at 3 3 0)
+    (property "Reference" "U1" (at 0 0 0) (layer "F.SilkS"))
+    (property "Value" "SensorA" (at 0 2 0) (layer "F.Fab"))
+    (fp_rect (start -2 -2) (end 2 2) (stroke (width 0.05) (type solid)) (fill no) (layer "F.CrtYd"))
+  )
+  (footprint "Sensor:BME280"
+    (layer "F.Cu")
+    (at 37 27 0)
+    (property "Reference" "U2" (at 0 0 0) (layer "F.SilkS"))
+    (property "Value" "SensorB" (at 0 2 0) (layer "F.Fab"))
+    (fp_rect (start -2 -2) (end 2 2) (stroke (width 0.05) (type solid)) (fill no) (layer "F.CrtYd"))
+  )
+)

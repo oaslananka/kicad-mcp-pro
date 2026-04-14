@@ -8,6 +8,7 @@ from kipy.proto.board.board_types_pb2 import BoardLayer, ViaType
 from kipy.proto.common import types as common_types
 
 from kicad_mcp.server import build_server
+from kicad_mcp.tools.validation import GateOutcome
 from kicad_mcp.utils.sexpr import _extract_block
 from tests.conftest import call_tool_text
 
@@ -77,6 +78,27 @@ def _board_text(*footprints: str) -> str:
     )
 
 
+def _allow_schematic_sync(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._evaluate_schematic_gate",
+        lambda: GateOutcome(
+            name="Schematic",
+            status="PASS",
+            summary="ERC is clean.",
+            details=["ERC violations: 0"],
+        ),
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._evaluate_schematic_connectivity_gate",
+        lambda: GateOutcome(
+            name="Schematic connectivity",
+            status="PASS",
+            summary="Connectivity is structurally sound.",
+            details=["Zero-wire pages: 0"],
+        ),
+    )
+
+
 @pytest.mark.anyio
 async def test_pcb_summary_tool(mock_board) -> None:
     server = build_server("pcb")
@@ -128,6 +150,7 @@ async def test_pcb_sync_from_schematic_adds_missing_footprints(
     mock_kicad,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _allow_schematic_sync(monkeypatch)
     monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
     monkeypatch.setattr(
         "kicad_mcp.tools.pcb._export_schematic_net_map",
@@ -174,6 +197,13 @@ async def test_pcb_sync_from_schematic_adds_missing_footprints(
     pcb_text = (sample_project / "demo.kicad_pcb").read_text(encoding="utf-8")
 
     assert "New footprints added: 2" in result
+    assert "Total pads considered: 4" in result
+    assert "Pads with named nets: 4" in result
+    assert "Pads left as <no net>: 0" in result
+    assert "Transfer quality: CLEAN (100.0% pad coverage)" in result
+    assert "Fully net-mapped refs: 2" in result
+    assert "Partially net-mapped refs: 0" in result
+    assert "Refs with unresolved pad nets: (none)" in result
     assert "(version 20250216)" in pcb_text
     assert pcb_text.count('(footprint "R_0805"') == 2
     assert '(property "Reference" "R1"' in pcb_text
@@ -189,6 +219,7 @@ async def test_pcb_sync_from_schematic_refuses_when_board_is_open(
     mock_kicad,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _allow_schematic_sync(monkeypatch)
     monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: True)
     server = build_server("pcb")
 
@@ -198,11 +229,49 @@ async def test_pcb_sync_from_schematic_refuses_when_board_is_open(
 
 
 @pytest.mark.anyio
+async def test_pcb_sync_from_schematic_blocks_on_dirty_schematic(
+    sample_project,
+    mock_kicad,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._evaluate_schematic_gate",
+        lambda: GateOutcome(
+            name="Schematic",
+            status="FAIL",
+            summary="ERC violations are still present.",
+            details=["ERC violations: 12"],
+        ),
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._evaluate_schematic_connectivity_gate",
+        lambda: GateOutcome(
+            name="Schematic connectivity",
+            status="FAIL",
+            summary="Connectivity smells suggest the schematic is not ready for PCB work.",
+            details=["Zero-wire pages: 1"],
+        ),
+    )
+    server = build_server("full")
+
+    result = await call_tool_text(server, "pcb_sync_from_schematic", {})
+    pcb_text = (sample_project / "demo.kicad_pcb").read_text(encoding="utf-8")
+
+    assert "PCB sync aborted because the schematic is not ready" in result
+    assert "Schematic quality gate: FAIL" in result
+    assert "Schematic connectivity quality gate: FAIL" in result
+    assert "schematic_quality_gate()" in result
+    assert pcb_text == "(kicad_pcb)\n"
+
+
+@pytest.mark.anyio
 async def test_pcb_sync_from_schematic_deduplicates_multi_unit_references(
     sample_project,
     mock_kicad,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _allow_schematic_sync(monkeypatch)
     monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
     monkeypatch.setattr("kicad_mcp.tools.pcb._export_schematic_net_map", lambda: ({}, ""))
     server = build_server("full")
@@ -250,6 +319,7 @@ async def test_pcb_sync_from_schematic_reports_mismatches_without_replacing(
     mock_kicad,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _allow_schematic_sync(monkeypatch)
     monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
     monkeypatch.setattr("kicad_mcp.tools.pcb._export_schematic_net_map", lambda: ({}, ""))
     (sample_project / "demo.kicad_pcb").write_text(
@@ -307,11 +377,190 @@ async def test_pcb_sync_from_schematic_reports_mismatches_without_replacing(
 
 
 @pytest.mark.anyio
+async def test_pcb_sync_from_schematic_reports_partial_transfer_quality(
+    sample_project,
+    mock_kicad,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _allow_schematic_sync(monkeypatch)
+    monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb._export_schematic_net_map",
+        lambda: (
+            {
+                ("R1", "1"): "VIN",
+                ("R1", "2"): "MID",
+                ("R2", "1"): "MID",
+            },
+            "",
+        ),
+    )
+    server = build_server("full")
+
+    await call_tool_text(
+        server,
+        "sch_build_circuit",
+        {
+            "symbols": [
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "reference": "R1",
+                    "value": "10k",
+                    "footprint": "Resistor_SMD:R_0805",
+                    "x_mm": 50.8,
+                    "y_mm": 50.8,
+                },
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "reference": "R2",
+                    "value": "22k",
+                    "footprint": "Resistor_SMD:R_0805",
+                    "x_mm": 76.2,
+                    "y_mm": 50.8,
+                },
+            ]
+        },
+    )
+
+    result = await call_tool_text(server, "pcb_sync_from_schematic", {})
+
+    assert "Pads with named nets: 3" in result
+    assert "Pads left as <no net>: 1" in result
+    assert "Transfer quality: DEGRADED (75.0% pad coverage)" in result
+    assert "Fully net-mapped refs: 1" in result
+    assert "Partially net-mapped refs: 1" in result
+    assert "R2 (1/2 pad(s) without net names)" in result
+
+
+@pytest.mark.anyio
+async def test_pcb_transfer_quality_gate_passes_for_clean_sync(
+    sample_project,
+    mock_kicad,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _allow_schematic_sync(monkeypatch)
+    monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb._export_schematic_net_map",
+        lambda: (
+            {
+                ("R1", "1"): "VIN",
+                ("R1", "2"): "MID",
+                ("R2", "1"): "MID",
+                ("R2", "2"): "GND",
+            },
+            "",
+        ),
+    )
+    server = build_server("full")
+
+    await call_tool_text(
+        server,
+        "sch_build_circuit",
+        {
+            "symbols": [
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "reference": "R1",
+                    "value": "10k",
+                    "footprint": "Resistor_SMD:R_0805",
+                    "x_mm": 50.8,
+                    "y_mm": 50.8,
+                },
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "reference": "R2",
+                    "value": "22k",
+                    "footprint": "Resistor_SMD:R_0805",
+                    "x_mm": 76.2,
+                    "y_mm": 50.8,
+                },
+            ]
+        },
+    )
+    await call_tool_text(server, "pcb_sync_from_schematic", {})
+
+    result = await call_tool_text(server, "pcb_transfer_quality_gate", {})
+
+    assert "PCB transfer quality gate: PASS" in result
+    assert "Expected named pad nets: 4" in result
+    assert "Matched pad nets on PCB: 4" in result
+    assert "Transfer coverage: 100.0%" in result
+
+
+@pytest.mark.anyio
+async def test_pcb_transfer_quality_gate_flags_pad_net_mismatch(
+    sample_project,
+    mock_kicad,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _allow_schematic_sync(monkeypatch)
+    monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb._export_schematic_net_map",
+        lambda: (
+            {
+                ("R1", "1"): "VIN",
+                ("R1", "2"): "MID",
+                ("R2", "1"): "MID",
+                ("R2", "2"): "GND",
+            },
+            "",
+        ),
+    )
+    server = build_server("full")
+
+    await call_tool_text(
+        server,
+        "sch_build_circuit",
+        {
+            "symbols": [
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "reference": "R1",
+                    "value": "10k",
+                    "footprint": "Resistor_SMD:R_0805",
+                    "x_mm": 50.8,
+                    "y_mm": 50.8,
+                },
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "reference": "R2",
+                    "value": "22k",
+                    "footprint": "Resistor_SMD:R_0805",
+                    "x_mm": 76.2,
+                    "y_mm": 50.8,
+                },
+            ]
+        },
+    )
+    await call_tool_text(server, "pcb_sync_from_schematic", {})
+
+    pcb_path = sample_project / "demo.kicad_pcb"
+    pcb_text = pcb_path.read_text(encoding="utf-8")
+    pcb_path.write_text(pcb_text.replace('(net "GND")', '(net "BROKEN")', 1), encoding="utf-8")
+
+    result = await call_tool_text(server, "pcb_transfer_quality_gate", {})
+
+    assert "PCB transfer quality gate: FAIL" in result
+    assert "Transfer coverage: 75.0%" in result
+    assert "R2.2" in result
+    assert "expected 'GND'" in result
+
+
+@pytest.mark.anyio
 async def test_pcb_sync_from_schematic_replaces_mismatched_footprints_in_place(
     sample_project,
     mock_kicad,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _allow_schematic_sync(monkeypatch)
     monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
     monkeypatch.setattr("kicad_mcp.tools.pcb._export_schematic_net_map", lambda: ({}, ""))
     (sample_project / "demo.kicad_pcb").write_text(
@@ -377,6 +626,7 @@ async def test_pcb_sync_from_schematic_avoids_simple_footprint_overlap(
     mock_kicad,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _allow_schematic_sync(monkeypatch)
     monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
     monkeypatch.setattr("kicad_mcp.tools.pcb._export_schematic_net_map", lambda: ({}, ""))
     server = build_server("full")

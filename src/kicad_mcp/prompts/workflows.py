@@ -58,17 +58,18 @@ step, not a debugging shortcut.
 
 1. `project_quality_gate()`
 2. If the gate is not `PASS`, stop and fix the blocking issues first.
-3. `run_drc()`
-4. `run_erc()`
-5. `get_board_stats()`
-6. `check_design_for_manufacture()`
-7. Use low-level export tools only for debugging if needed:
+3. `pcb_transfer_quality_gate()`
+4. `run_drc()`
+5. `run_erc()`
+6. `get_board_stats()`
+7. `check_design_for_manufacture()`
+8. Use low-level export tools only for debugging if needed:
    - `export_gerber()`
    - `export_drill()`
    - `export_bom()`
    - `export_pick_and_place()`
    - `export_ipc2581()`
-8. Only after a clean gate, call `export_manufacturing_package()`.
+9. Only after a clean gate, call `export_manufacturing_package()`.
 """.strip()
         return [TextContent(type="text", text=text)]
 
@@ -84,9 +85,11 @@ Run a closed-loop design review instead of trusting a single build pass.
    - `kicad://project/fix_queue`
    - `kicad://schematic/connectivity`
    - `kicad://board/placement_quality`
+   - `project_get_design_intent()`
 2. Call the blocking gate tools directly when you need fresh detail:
    - `project_quality_gate()`
    - `schematic_connectivity_gate()`
+   - `pcb_transfer_quality_gate()`
    - `pcb_score_placement()`
 3. Fix the highest-severity blocking issue first.
 4. Re-run the relevant gates after every fix.
@@ -104,8 +107,10 @@ Use the project fix queue as the source of truth for what to fix next.
 1. Read `kicad://project/fix_queue`.
 2. Pick item 1 unless a more severe blocker appears after re-running a gate.
 3. Use the suggested tool on that line to inspect or repair the issue.
-4. Re-run `project_quality_gate()` after the fix.
-5. Stop only when the queue says there are no blocking issues left.
+4. If the blocker is intent-aware, refresh `project_get_design_intent()` or update it with
+   `project_set_design_intent()` before moving footprints again.
+5. Re-run `project_quality_gate()` after the fix.
+6. Stop only when the queue says there are no blocking issues left.
 """.strip()
         return [TextContent(type="text", text=text)]
 
@@ -120,6 +125,7 @@ Treat manufacturing release as a gated handoff.
 3. Read `kicad://project/fix_queue` to confirm nothing actionable remains.
 4. Re-run:
    - `project_quality_gate()`
+   - `pcb_transfer_quality_gate()`
    - `run_drc()`
    - `run_erc()`
    - `check_design_for_manufacture()`

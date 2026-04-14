@@ -45,6 +45,7 @@ def _pass_outcomes() -> list[GateOutcome]:
         _pass_gate("Schematic connectivity", "Connectivity is structurally sound."),
         _pass_gate("PCB", "PCB passes DRC."),
         _pass_gate("Placement", "Placement is sane."),
+        _pass_gate("PCB transfer", "Named pad nets transferred cleanly."),
         _pass_gate("Manufacturing", "DFM checks passed."),
         _pass_gate("Footprint parity", "Schematic and PCB references align."),
     ]
@@ -58,6 +59,7 @@ def _set_non_target_gates_to_pass(
     target_map = {
         "schematic_connectivity": "_evaluate_schematic_connectivity_gate",
         "placement": "_evaluate_pcb_placement_gate",
+        "transfer": "_evaluate_pcb_transfer_gate",
         "manufacturing": "_evaluate_manufacturing_gate",
     }
     for attribute, outcome in (
@@ -68,6 +70,10 @@ def _set_non_target_gates_to_pass(
         ),
         ("_evaluate_pcb_gate", _pass_gate("PCB", "PCB passes DRC.")),
         ("_evaluate_pcb_placement_gate", _pass_gate("Placement", "Placement is sane.")),
+        (
+            "_evaluate_pcb_transfer_gate",
+            _pass_gate("PCB transfer", "Named pad nets transferred cleanly."),
+        ),
         (
             "_evaluate_manufacturing_gate",
             _pass_gate("Manufacturing", "DFM checks passed."),
@@ -128,7 +134,22 @@ def _fake_export_cli(
             "Schematic connectivity quality gate: FAIL",
         ),
         (
+            "fail_sismosmart_like_label_only",
+            "schematic_connectivity",
+            "Schematic connectivity quality gate: FAIL",
+        ),
+        (
             "fail_footprint_overlap_board",
+            "placement",
+            "Placement quality gate: FAIL",
+        ),
+        (
+            "fail_bad_decoupling_placement",
+            "placement",
+            "Placement quality gate: FAIL",
+        ),
+        (
+            "fail_sensor_cluster_spread",
             "placement",
             "Placement quality gate: FAIL",
         ),
@@ -136,6 +157,11 @@ def _fake_export_cli(
             "fail_dfm_edge_clearance",
             "manufacturing",
             "Manufacturing quality gate: FAIL",
+        ),
+        (
+            "fail_dirty_transfer_wrong_pad_nets",
+            "transfer",
+            "PCB transfer quality gate: FAIL",
         ),
         (
             "fail_sismosmart_like_hierarchy",
@@ -162,6 +188,19 @@ async def test_benchmark_fail_projects_block_release(
                 status="FAIL",
                 summary="Copper-to-edge clearance violates the active DFM profile.",
                 details=["FAIL: Copper-to-edge clearance is below the fab minimum."],
+            ),
+        )
+    elif target_gate == "transfer":
+        monkeypatch.setattr(
+            "kicad_mcp.tools.pcb._export_schematic_net_map",
+            lambda: (
+                {
+                    ("R1", "1"): "VIN",
+                    ("R1", "2"): "MID",
+                    ("R2", "1"): "MID",
+                    ("R2", "2"): "GND",
+                },
+                "",
             ),
         )
 

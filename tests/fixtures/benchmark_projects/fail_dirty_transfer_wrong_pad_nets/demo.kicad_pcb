@@ -1,0 +1,23 @@
+(kicad_pcb
+  (version 20250216)
+  (generator "pytest")
+  (gr_rect (start 0 0) (end 30 20) (stroke (width 0.05) (type solid)) (fill no) (layer "Edge.Cuts"))
+  (footprint "Resistor_SMD:R_0805"
+    (layer "F.Cu")
+    (at 10 10 0)
+    (property "Reference" "R1" (at 0 0 0) (layer "F.SilkS"))
+    (property "Value" "10k" (at 0 1.5 0) (layer "F.Fab"))
+    (fp_rect (start -1.5 -0.8) (end 1.5 0.8) (stroke (width 0.05) (type solid)) (fill no) (layer "F.CrtYd"))
+    (pad "1" smd rect (at -0.95 0) (size 0.8 1.2) (layers "F.Cu" "F.Mask" "F.Paste") (net "VIN"))
+    (pad "2" smd rect (at 0.95 0) (size 0.8 1.2) (layers "F.Cu" "F.Mask" "F.Paste") (net "MID"))
+  )
+  (footprint "Resistor_SMD:R_0805"
+    (layer "F.Cu")
+    (at 20 10 0)
+    (property "Reference" "R2" (at 0 0 0) (layer "F.SilkS"))
+    (property "Value" "22k" (at 0 1.5 0) (layer "F.Fab"))
+    (fp_rect (start -1.5 -0.8) (end 1.5 0.8) (stroke (width 0.05) (type solid)) (fill no) (layer "F.CrtYd"))
+    (pad "1" smd rect (at -0.95 0) (size 0.8 1.2) (layers "F.Cu" "F.Mask" "F.Paste") (net "MID"))
+    (pad "2" smd rect (at 0.95 0) (size 0.8 1.2) (layers "F.Cu" "F.Mask" "F.Paste") (net "BROKEN"))
+  )
+)

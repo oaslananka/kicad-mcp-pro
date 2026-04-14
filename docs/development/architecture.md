@@ -15,7 +15,8 @@ It is structured around four layers:
 
 1. Intent
    - project-scoped design assumptions persisted by `project_set_design_intent()`
-   - connector refs, decoupling pairs, RF keepouts, critical nets, and fab profile hints
+   - connector refs, decoupling pairs, power-tree refs, analog/digital groups,
+     sensor clusters, RF keepouts, critical nets, and fab profile hints
 2. Builder
    - schematic, PCB, routing, and export tools that mutate or inspect the active design
 3. Critic
@@ -31,6 +32,7 @@ It is structured around four layers:
 - `schematic_connectivity_gate()`
 - `pcb_quality_gate()`
 - `pcb_placement_quality_gate()`
+- `pcb_transfer_quality_gate()`
 - `manufacturing_quality_gate()`
 - footprint parity checks
 
@@ -57,7 +59,8 @@ inventing its own hidden state model.
 Placement review is intentionally split in two:
 
 - `pcb_placement_quality_gate()` blocks hard geometry/context failures
-- `pcb_score_placement()` reports softer heuristics such as density and spread
+- `pcb_score_placement()` reports softer heuristics such as density, spread,
+  power-tree locality, analog/digital proximity, and sensor clustering
 
 This keeps release gating deterministic while still letting agents optimize placement quality
 before a hard failure appears.

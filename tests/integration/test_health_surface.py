@@ -59,3 +59,29 @@ async def test_critic_fixer_prompts_expose_closed_loop_flow() -> None:
     assert "Re-run `project_quality_gate()` after the fix." in fix
     assert "manufacturing release as a gated handoff" in release.lower()
     assert "export_manufacturing_package()" in release
+
+
+@pytest.mark.anyio
+async def test_project_fix_queue_suggests_transfer_gate_for_transfer_failures(
+    sample_project: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._evaluate_project_gate",
+        lambda **_kwargs: [
+            GateOutcome(
+                name="PCB transfer",
+                status="FAIL",
+                summary="Named nets did not transfer cleanly.",
+                details=["FAIL: R2.2: PCB has 'BROKEN', expected 'GND'."],
+            ),
+        ],
+    )
+
+    server = build_server("full")
+    await read_resource_text(server, "kicad://project/info")
+
+    queue = await read_resource_text(server, "kicad://project/fix_queue")
+
+    assert "PCB transfer" in queue
+    assert "Suggested tool: pcb_transfer_quality_gate()" in queue
