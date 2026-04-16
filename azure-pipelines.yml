@@ -85,46 +85,42 @@ stages:
     dependsOn: Build
     condition: and(succeeded(), eq('${{ parameters.publishToPackageIndex }}', 'true'))
     jobs:
-      - deployment: publish_package
+      - job: publish_package
         displayName: Publish package
-        environment: pypi
         pool:
           vmImage: ubuntu-latest
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - download: current
-                  artifact: python-dist
-                  displayName: Download package artifacts
+        steps:
+          - download: current
+            artifact: python-dist
+            displayName: Download package artifacts
 
-                - task: UsePythonVersion@0
-                  inputs:
-                    versionSpec: "$(pythonVersion)"
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: "$(pythonVersion)"
 
-                - script: python -m pip install --upgrade pip twine
-                  displayName: Install twine
+          - script: python -m pip install --upgrade pip twine
+            displayName: Install twine
 
-                - script: |
-                    set -euo pipefail
+          - script: |
+              set -euo pipefail
 
-                    if [ "${{ parameters.packageIndex }}" = "TestPyPI" ]; then
-                      python -m twine upload \
-                        --repository-url https://test.pypi.org/legacy/ \
-                        -u __token__ \
-                        -p "$TEST_PYPI_TOKEN" \
-                        --non-interactive \
-                        --skip-existing \
-                        "$(Pipeline.Workspace)/python-dist"/*
-                    else
-                      python -m twine upload \
-                        -u __token__ \
-                        -p "$PYPI_TOKEN" \
-                        --non-interactive \
-                        --skip-existing \
-                        "$(Pipeline.Workspace)/python-dist"/*
-                    fi
-                  displayName: Publish distribution
-                  env:
-                    PYPI_TOKEN: $(PYPI_TOKEN)
-                    TEST_PYPI_TOKEN: $(TEST_PYPI_TOKEN)
+              if [ "${{ parameters.packageIndex }}" = "TestPyPI" ]; then
+                python -m twine upload \
+                  --repository-url https://test.pypi.org/legacy/ \
+                  -u __token__ \
+                  -p "$TEST_PYPI_TOKEN" \
+                  --non-interactive \
+                  --skip-existing \
+                  "$(Pipeline.Workspace)/python-dist"/*
+              else
+                python -m twine upload \
+                  -u __token__ \
+                  -p "$PYPI_TOKEN" \
+                  --non-interactive \
+                  --skip-existing \
+                  "$(Pipeline.Workspace)/python-dist"/*
+              fi
+            displayName: Publish distribution
+            env:
+              PYPI_TOKEN: $(PYPI_TOKEN)
+              TEST_PYPI_TOKEN: $(TEST_PYPI_TOKEN)
