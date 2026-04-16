@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-04-16
+
+### Changed
+
+- Aligned the release tag with the current `main` branch after Azure CI/CD stabilization changes.
+- Wired the root Azure pipeline to the shared PyPI credential group and removed the environment gate from the publish stage so automated release runs complete end-to-end.
+- Kept GitHub and Azure release automation in sync for the clean patch cut.
+
 ## [2.3.0] - 2026-04-16
 
 ### Added

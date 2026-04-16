@@ -3,7 +3,7 @@
   "name": "io.github.oaslananka/kicad-mcp-pro",
   "title": "KiCad MCP Pro Server",
   "description": "MCP server for KiCad project setup, PCB edits, schematic work, validation, and exports.",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "repository": {
     "url": "https://github.com/oaslananka/kicad-mcp-pro",
     "source": "github"
@@ -13,7 +13,7 @@
     {
       "registryType": "pypi",
       "identifier": "kicad-mcp-pro",
-      "version": "2.3.0",
+      "version": "2.3.1",
       "transport": {
         "type": "stdio"
       }
