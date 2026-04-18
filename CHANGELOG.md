@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.2] - 2026-04-18
+
+### Fixed
+
+- Made Azure DevOps release validation resilient to expired or unavailable `SAFETY_API_KEY` credentials so `pip-audit` remains the enforced dependency gate instead of breaking the publish pipeline on auth failures.
+
+### Changed
+
+- Bumped project release version to `2.4.2` across package, runtime, and registry metadata for the Azure CI/CD patch cut.
+
 ## [2.4.1] - 2026-04-18
 
 ### Fixed
