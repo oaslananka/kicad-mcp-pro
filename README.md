@@ -91,7 +91,7 @@ Repository ownership is split on purpose:
 
 The `ci.yml` and `security.yml` GitHub workflows run automatically only when the repository owner is `oaslananka-lab`. On the personal GitHub repository they remain manual fallback workflows. Azure DevOps and GitLab pipelines are manual fallback/release-support surfaces.
 
-Package publication to TestPyPI or PyPI remains manual and should be queued only after the version, changelog, and artifacts are ready. See [Repository and CI/CD Topology](docs/deployment/repository-topology.md) for the full policy.
+Package publication to TestPyPI or PyPI remains manual and should be queued only after the version, changelog, and artifacts are ready. CI/CD can use Doppler as the central secret store by adding only `DOPPLER_TOKEN` to GitHub org, Azure, or GitLab; `PYPI_TOKEN`, `TEST_PYPI_TOKEN`, `SAFETY_API_KEY`, `NPM_TOKEN`, `OVSX_PAT`, and `VSCE_PAT` are then injected with `doppler run -- ...`. See [Repository and CI/CD Topology](docs/deployment/repository-topology.md) for the full policy.
 
 ## Quick Start
 

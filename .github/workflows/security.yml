@@ -17,6 +17,7 @@ jobs:
       contents: read
     env:
       SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
+      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
     steps:
       - uses: actions/checkout@v6
       - name: Explain execution mode
@@ -31,8 +32,23 @@ jobs:
       - name: Enforced dependency audit
         run: uv run --python 3.12 python -m pip_audit --skip-editable --progress-spinner off
 
-      - name: Optional Safety scan
-        if: env.SAFETY_API_KEY != ''
+      - name: Install Doppler CLI
+        if: env.DOPPLER_TOKEN != ''
+        uses: dopplerhq/cli-action@v4
+
+      - name: Optional Safety scan via Doppler
+        if: env.DOPPLER_TOKEN != ''
+        run: |
+          set +e
+          doppler run -- sh -c 'uv run --python 3.12 python -m safety --stage cicd --key "$SAFETY_API_KEY" scan --target .'
+          safety_exit=$?
+          set -e
+          if [ "${safety_exit}" -ne 0 ]; then
+            echo "Safety scan could not complete cleanly (exit ${safety_exit}); pip-audit remains the enforced dependency gate."
+          fi
+
+      - name: Optional Safety scan via GitHub secret
+        if: env.DOPPLER_TOKEN == '' && env.SAFETY_API_KEY != ''
         run: |
           set +e
           uv run --python 3.12 python -m safety \

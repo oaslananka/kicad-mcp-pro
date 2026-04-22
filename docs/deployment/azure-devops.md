@@ -14,12 +14,23 @@ It covers:
 
 ## Recommended Azure Variables
 
-Create the following secret variables in Azure DevOps before enabling publish runs:
+Preferred setup: store a single Doppler service token in Azure DevOps and let the pipeline fetch release secrets at runtime:
 
-- `pypiToken`
-- `testPyPIToken`
+- `DOPPLER_TOKEN`
 
-You can also store them in a variable group if you want to share them across multiple pipelines.
+Doppler should contain:
+
+- `PYPI_TOKEN`
+- `TEST_PYPI_TOKEN`
+- `SAFETY_API_KEY`
+
+The root `azure-pipelines.yml` still supports native Azure variables as a fallback:
+
+- `PYPI_TOKEN`
+- `TEST_PYPI_TOKEN`
+- `SAFETY_API_KEY`
+
+You can store these in a variable group if you want to share them across multiple pipelines.
 
 ## Release Model
 

@@ -76,6 +76,24 @@ stages:
             env:
               SAFETY_API_KEY: $(SAFETY_API_KEY)
 
+          - script: |
+              set -euo pipefail
+              if [ -n "${DOPPLER_TOKEN:-}" ] && [ "${DOPPLER_TOKEN}" != '$(DOPPLER_TOKEN)' ]; then
+                (curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh || wget -t 3 -qO- https://cli.doppler.com/install.sh) | sudo sh
+                set +e
+                doppler run -- sh -c 'uv run --python $(pythonVersion) python -m safety --stage cicd --key "$SAFETY_API_KEY" scan --target .'
+                safety_exit=$?
+                set -e
+                if [ "${safety_exit}" -ne 0 ]; then
+                  echo "Doppler-backed Safety scan could not complete cleanly (exit ${safety_exit}); pip-audit remains the enforced SCA gate for this pipeline."
+                fi
+              else
+                echo "DOPPLER_TOKEN is not set; skipping Doppler-backed Safety scan."
+              fi
+            displayName: Run safety via Doppler when configured
+            env:
+              DOPPLER_TOKEN: $(DOPPLER_TOKEN)
+
       - job: windows_validate
         displayName: Windows · Ruff, mypy, and unit tests
         pool:
@@ -147,6 +165,16 @@ stages:
           - script: |
               set -euo pipefail
 
+              if [ -n "${DOPPLER_TOKEN:-}" ] && [ "${DOPPLER_TOKEN}" != '$(DOPPLER_TOKEN)' ]; then
+                (curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh || wget -t 3 -qO- https://cli.doppler.com/install.sh) | sudo sh
+                if [ "${{ parameters.packageIndex }}" = "TestPyPI" ]; then
+                  doppler run -- sh -c 'python -m twine upload --repository-url https://test.pypi.org/legacy/ -u __token__ -p "$TEST_PYPI_TOKEN" --non-interactive --skip-existing "$(Pipeline.Workspace)/python-dist"/*'
+                else
+                  doppler run -- sh -c 'python -m twine upload -u __token__ -p "$PYPI_TOKEN" --non-interactive --skip-existing "$(Pipeline.Workspace)/python-dist"/*'
+                fi
+                exit 0
+              fi
+
               if [ "${{ parameters.packageIndex }}" = "TestPyPI" ]; then
                 python -m twine upload \
                   --repository-url https://test.pypi.org/legacy/ \
@@ -167,3 +195,4 @@ stages:
             env:
               PYPI_TOKEN: $(PYPI_TOKEN)
               TEST_PYPI_TOKEN: $(TEST_PYPI_TOKEN)
+              DOPPLER_TOKEN: $(DOPPLER_TOKEN)

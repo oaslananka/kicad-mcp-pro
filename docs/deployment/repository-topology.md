@@ -37,3 +37,24 @@ git remote add gitlab <gitlab-repository-url>
 ## Publishing
 
 Package publishing to PyPI or TestPyPI must remain a deliberate manual action. Queue the publish workflow from the organization GitHub repository or from Azure DevOps only when the version, changelog, and artifacts are ready.
+
+## Doppler Secrets
+
+The recommended secret model is to store only `DOPPLER_TOKEN` in CI/CD systems and keep the actual release secrets in Doppler:
+
+- `PYPI_TOKEN`
+- `TEST_PYPI_TOKEN`
+- `SAFETY_API_KEY`
+- `NPM_TOKEN`
+- `OVSX_PAT`
+- `VSCE_PAT`
+
+GitHub organization workflows, Azure DevOps, and GitLab all use the same pattern: install the Doppler CLI, then execute sensitive commands through `doppler run -- ...` so Doppler injects secrets as environment variables at runtime.
+
+Minimum setup:
+
+- GitHub org repository secret: `DOPPLER_TOKEN`
+- Azure DevOps secret variable or variable group entry: `DOPPLER_TOKEN`
+- GitLab CI/CD variable: `DOPPLER_TOKEN`
+
+Keep old native secrets such as `PYPI_TOKEN` and `TEST_PYPI_TOKEN` only if you want fallback publishing without Doppler.
