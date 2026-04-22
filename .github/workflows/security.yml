@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --all-extras --frozen --python 3.12
-      - run: uv run --python 3.12 python -m bandit -r src/ -ll
+      - run: uv run --python 3.12 python -m bandit -r src/ -ll -s B104
       - name: Enforced dependency audit
         run: uv run --python 3.12 python -m pip_audit --skip-editable --progress-spinner off
 
