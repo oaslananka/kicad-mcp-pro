@@ -99,7 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Updated Docker, registry, Smithery, docs, and security metadata for the 2.x release line.
+- Updated Docker, registry, docs, and security metadata for the 2.x release line.
 
 ## [2.0.1] - 2026-04-13
 

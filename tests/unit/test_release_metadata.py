@@ -21,23 +21,18 @@ def test_release_metadata_is_synchronised() -> None:
     version = pyproject["project"]["version"]
     server_json = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
     mcp_json = json.loads((ROOT / "mcp.json").read_text(encoding="utf-8"))
-    smithery = (ROOT / "smithery.yaml").read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     mkdocs = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
     security = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
-    bump_script = (ROOT / "scripts" / "bump_version.py").read_text(encoding="utf-8")
 
     assert server_json["$schema"] == REGISTRY_SCHEMA
     assert server_json["version"] == version
     assert server_json["packages"][0]["version"] == version
     assert mcp_json["version"] == version
-    assert f'version: "{version}"' in smithery
-    assert 'version: ">=3.12"' in smithery
     assert "<!-- mcp-name: io.github.oaslananka/kicad-mcp-pro -->" in readme
     assert "development/v2-migration.md" in mkdocs
     assert "| `2.x`   | Yes" in security
     assert "CVE-2025-69872" in security
-    assert "smithery.yaml" in bump_script
 
 
 def test_built_distributions_include_runtime_entrypoint(tmp_path: Path) -> None:

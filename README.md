@@ -3,7 +3,6 @@
 
 [![PyPI](https://img.shields.io/pypi/v/kicad-mcp-pro.svg)](https://pypi.org/project/kicad-mcp-pro/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Smithery](https://img.shields.io/badge/Smithery-ready-blue)](https://smithery.ai/)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
 [![KiCad 10](https://img.shields.io/badge/KiCad-10-success.svg)](https://www.kicad.org)
 [![KiCad Studio](https://img.shields.io/badge/KiCad%20Studio-compatible-blue)](https://github.com/oaslananka/kicad-studio)
