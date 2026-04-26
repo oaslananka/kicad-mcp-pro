@@ -1014,14 +1014,18 @@ def _symbol_bbox_bounds(symbol: dict[str, Any]) -> tuple[float, float, float, fl
     except (TypeError, ValueError):
         return x_min, y_min, x_max, y_max
 
-    pins = get_pin_positions(
-        library=library,
-        symbol_name=symbol_name,
-        sym_x=x,
-        sym_y=y,
-        rotation=rotation,
-        unit=unit,
-    )
+    try:
+        pins = get_pin_positions(
+            library=library,
+            symbol_name=symbol_name,
+            sym_x=x,
+            sym_y=y,
+            rotation=rotation,
+            unit=unit,
+        )
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        logger.debug("symbol_bbox_pin_lookup_failed", lib_id=lib_id, error=str(exc))
+        return x_min, y_min, x_max, y_max
     if not pins:
         return x_min, y_min, x_max, y_max
 
