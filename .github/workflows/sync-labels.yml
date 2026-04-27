@@ -45,7 +45,9 @@ jobs:
           repo = os.environ["GITHUB_REPOSITORY"]
           for label in labels:
               name = label["name"]
-              color = str(label["color"]).lstrip("#")
+              raw_color = label["color"]
+              color = f"{raw_color:06x}" if isinstance(raw_color, int) else str(raw_color).lstrip("#")
+              color = color.zfill(6)
               description = label.get("description", "")
               subprocess.run(
                   [
