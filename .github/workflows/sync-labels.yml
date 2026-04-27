@@ -47,42 +47,20 @@ jobs:
               name = label["name"]
               color = str(label["color"]).lstrip("#")
               description = label.get("description", "")
-              exists = subprocess.run(
-                  ["gh", "label", "view", name, "--repo", repo],
-                  stdout=subprocess.DEVNULL,
-                  stderr=subprocess.DEVNULL,
-                  check=False,
-              ).returncode == 0
-              if exists:
-                  subprocess.run(
-                      [
-                          "gh",
-                          "label",
-                          "edit",
-                          name,
-                          "--repo",
-                          repo,
-                          "--color",
-                          color,
-                          "--description",
-                          description,
-                      ],
-                      check=True,
-                  )
-              else:
-                  subprocess.run(
-                      [
-                          "gh",
-                          "label",
-                          "create",
-                          name,
-                          "--repo",
-                          repo,
-                          "--color",
-                          color,
-                          "--description",
-                          description,
-                      ],
-                      check=True,
-                  )
+              subprocess.run(
+                  [
+                      "gh",
+                      "label",
+                      "create",
+                      name,
+                      "--repo",
+                      repo,
+                      "--color",
+                      color,
+                      "--description",
+                      description,
+                      "--force",
+                  ],
+                  check=True,
+              )
           PY
