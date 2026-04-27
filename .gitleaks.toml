@@ -1,0 +1,16 @@
+title = "kicad-mcp-pro gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Repository examples and test fixtures that intentionally contain placeholders."
+paths = [
+  '''\.env\.example$''',
+  '''docs/examples/clients/.*''',
+  '''tests/fixtures/.*''',
+]
+regexes = [
+  '''(?i)(example|placeholder|dummy|changeme|your-token|your_api_key)''',
+  '''KICAD_MCP_AUTH_TOKEN=dev-only-token''',
+]

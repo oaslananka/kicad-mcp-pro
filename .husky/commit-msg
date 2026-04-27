@@ -1,0 +1,2 @@
+#!/usr/bin/env sh
+corepack npm exec -- commitlint --edit "$1"

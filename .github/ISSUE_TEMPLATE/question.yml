@@ -1,0 +1,22 @@
+name: Question
+description: Ask for help choosing a workflow or configuration.
+title: "[Question]: "
+labels:
+  - type:question
+  - status:triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Discussions are usually the best place for questions. If this turns into a reproducible bug, a maintainer may ask you to open a bug report.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Include KiCad version, MCP client, install method, and relevant config.

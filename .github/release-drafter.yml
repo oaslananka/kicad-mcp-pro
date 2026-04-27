@@ -1,0 +1,80 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+template: |
+  ## Changes
+
+  $CHANGES
+
+categories:
+  - title: Features
+    labels:
+      - type:feature
+      - feature
+  - title: Bug Fixes
+    labels:
+      - type:bug
+      - bug
+      - fix
+  - title: Performance
+    labels:
+      - type:perf
+      - perf
+  - title: Security
+    labels:
+      - type:security
+      - security
+  - title: Dependencies
+    labels:
+      - type:deps
+      - dependencies
+  - title: Documentation
+    labels:
+      - type:docs
+      - docs
+  - title: Internal
+    labels:
+      - chore
+      - refactor
+      - type:refactor
+
+change-template: "- $TITLE @$AUTHOR (#$NUMBER)"
+change-title-escapes: '\<*_&'
+version-resolver:
+  major:
+    labels:
+      - breaking
+  minor:
+    labels:
+      - type:feature
+      - feature
+  patch:
+    labels:
+      - patch
+      - type:bug
+      - type:security
+      - type:deps
+  default: patch
+exclude-labels:
+  - skip-changelog
+autolabeler:
+  - label: type:feature
+    title:
+      - "/^feat(\\(.+\\))?:/i"
+  - label: type:bug
+    title:
+      - "/^fix(\\(.+\\))?:/i"
+  - label: type:docs
+    title:
+      - "/^docs(\\(.+\\))?:/i"
+  - label: type:security
+    title:
+      - "/^security(\\(.+\\))?:/i"
+  - label: type:deps
+    title:
+      - "/^deps(\\(.+\\))?:/i"
+  - label: type:perf
+    title:
+      - "/^perf(\\(.+\\))?:/i"
+  - label: type:refactor
+    title:
+      - "/^refactor(\\(.+\\))?:/i"

@@ -1,0 +1,24 @@
+name: Documentation issue
+description: Report missing, confusing, or incorrect documentation.
+title: "[Docs]: "
+labels:
+  - type:docs
+  - status:triage
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Page or section
+      placeholder: "docs/installation.md"
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is wrong or missing?
+    validations:
+      required: true
+  - type: textarea
+    id: suggested
+    attributes:
+      label: Suggested correction

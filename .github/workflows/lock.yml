@@ -1,0 +1,27 @@
+name: Lock Closed Threads
+
+on:
+  schedule:
+    - cron: "45 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  lock:
+    name: Lock Closed Threads
+    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: dessant/lock-threads@v6.0.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-inactive-days: "30"
+          pr-inactive-days: "30"
+          issue-comment: >
+            This closed issue has been locked after 30 days. Please open a new
+            issue with current reproduction details if the problem returned.
+          pr-comment: >
+            This closed pull request has been locked after 30 days. Please open
+            a new pull request for follow-up work.

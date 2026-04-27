@@ -1,0 +1,39 @@
+name: Static Analysis
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "10 6 * * 2"
+  workflow_dispatch:
+
+jobs:
+  static-analysis:
+    name: Static Analysis
+    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: "3.12"
+      - run: uv sync --all-extras --frozen
+      - name: Pyright
+        continue-on-error: true
+        run: uv run pyright
+      - name: Vulture
+        continue-on-error: true
+        run: uv run vulture src tests --min-confidence 90
+      - name: Radon complexity
+        continue-on-error: true
+        run: uv run radon cc src -s -n C
+      - name: Interrogate docstring coverage
+        continue-on-error: true
+        run: uvx interrogate==1.7.0 src -c pyproject.toml

@@ -22,6 +22,7 @@ node_modules/
 coverage.xml
 htmlcov/
 .tox/
+.kicad_mcp/
 
 # Type checking
 .mypy_cache/

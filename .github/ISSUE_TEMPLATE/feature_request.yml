@@ -1,0 +1,46 @@
+name: Feature request
+description: Propose a capability, workflow, or integration.
+title: "[Feature]: "
+labels:
+  - type:feature
+  - status:triage
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user workflow is blocked or painful today?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior, tool surface, docs, or workflow.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      options:
+        - PCB
+        - Schematic
+        - Export/manufacturing
+        - IPC/transport
+        - Routing
+        - Simulation
+        - Docs
+        - CI/release
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workaround or competing approach?
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
