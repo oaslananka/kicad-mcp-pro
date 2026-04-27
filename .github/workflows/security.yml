@@ -11,6 +11,7 @@ on:
 
 jobs:
   audit:
+    name: Security
     if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:

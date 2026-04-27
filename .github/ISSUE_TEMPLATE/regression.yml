@@ -1,0 +1,49 @@
+name: Regression
+description: Report behavior that worked in an earlier version and now fails.
+title: "[Regression]: "
+labels:
+  - regression
+  - type:bug
+  - status:triage
+body:
+  - type: input
+    id: last_good
+    attributes:
+      label: Last working version
+      placeholder: "3.0.1"
+    validations:
+      required: true
+  - type: input
+    id: first_bad
+    attributes:
+      label: First broken version
+      placeholder: "3.0.2"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Include project fixture details if possible.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Who is blocked and how severe is the regression?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      render: text
+      placeholder: |
+        OS:
+        KiCad:
+        Python:
+        MCP client:
+        Transport:
+    validations:
+      required: true

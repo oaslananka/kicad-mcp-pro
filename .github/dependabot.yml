@@ -1,0 +1,58 @@
+version: 2
+
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 10
+    versioning-strategy: increase-if-necessary
+    groups:
+      python-production:
+        dependency-type: production
+        patterns:
+          - "*"
+      python-development:
+        dependency-type: development
+        patterns:
+          - "*"
+    labels:
+      - type:deps
+      - area:ci
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:20"
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 5
+    versioning-strategy: auto
+    groups:
+      npm-development:
+        dependency-type: development
+        patterns:
+          - "*"
+    labels:
+      - type:deps
+      - area:ci
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:40"
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      - type:deps
+      - area:ci

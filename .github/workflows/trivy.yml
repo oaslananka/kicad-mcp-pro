@@ -1,0 +1,73 @@
+name: Trivy
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "15 7 * * 2"
+  workflow_dispatch:
+    inputs:
+      kicad_appimage_url:
+        description: "Optional KiCad 10 x86_64 AppImage URL for scanning Dockerfile.kicad10"
+        required: false
+        type: string
+
+jobs:
+  scan:
+    name: Trivy (base image)
+    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build image
+        run: docker build -f Dockerfile -t kicad-mcp-pro:base .
+      - uses: aquasecurity/trivy-action@v0.34.0
+        with:
+          image-ref: kicad-mcp-pro:base
+          format: sarif
+          output: trivy-base.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+          version: v0.70.0
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-base.sarif
+
+  scan-kicad10:
+    name: Trivy (KiCad 10 image)
+    if: >
+      (github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch') &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.kicad_appimage_url != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build image
+        run: |
+          docker build \
+            --build-arg KICAD_APPIMAGE_URL="${{ inputs.kicad_appimage_url }}" \
+            -f Dockerfile.kicad10 \
+            -t kicad-mcp-pro:kicad10 .
+      - uses: aquasecurity/trivy-action@v0.34.0
+        with:
+          image-ref: kicad-mcp-pro:kicad10
+          format: sarif
+          output: trivy-kicad10.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+          version: v0.70.0
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-kicad10.sarif

@@ -1,0 +1,120 @@
+name: Bug report
+description: Report a reproducible problem in KiCad MCP Pro.
+title: "[Bug]: "
+labels:
+  - type:bug
+  - status:triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please include enough detail for a maintainer to reproduce it without guessing your KiCad or MCP client setup.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I searched existing issues and discussions.
+          required: true
+        - label: I can reproduce this with the latest released version or current main.
+          required: false
+  - type: dropdown
+    id: kicad_version
+    attributes:
+      label: KiCad version
+      options:
+        - KiCad 10.x
+        - KiCad 9.x
+        - KiCad 8.x
+        - Nightly/master
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: python_version
+    attributes:
+      label: Python version
+      options:
+        - "3.14"
+        - "3.13"
+        - "3.12"
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: MCP client
+      options:
+        - Claude Desktop
+        - Claude Code
+        - Cursor
+        - VS Code
+        - Codex
+        - Generic MCP client
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      options:
+        - stdio
+        - streamable-http
+        - legacy SSE
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What broke?
+      placeholder: A clear one-paragraph description.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include tool calls, config snippets, and any minimal KiCad project details.
+      placeholder: |
+        1. Configure ...
+        2. Call ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include full error text. Remove tokens, secrets, paths you cannot share, and private board data.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      render: text
+      placeholder: |
+        OS:
+        kicad-mcp-pro:
+        KiCad:
+        Python:
+        Install method:
+        KICAD_MCP_PROFILE:
+        KICAD_MCP_TRANSPORT:
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Optional, but very helpful for startup, IPC, export, and validation failures.

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/oaslananka/kicad-mcp-pro/discussions
+    about: Ask usage questions, propose ideas, and share projects here.
+  - name: Security advisory
+    url: https://github.com/oaslananka/kicad-mcp-pro/security/advisories/new
+    about: Report vulnerabilities privately through GitHub Security Advisories.

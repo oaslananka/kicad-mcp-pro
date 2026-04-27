@@ -25,6 +25,12 @@ theme:
     - content.code.copy
 plugins:
   - search
+  - git-revision-date-localized:
+      enable_creation_date: true
+  - redirects
+  - minify:
+      minify_html: true
+  - glightbox
   - mkdocstrings:
       handlers:
         python:
@@ -40,7 +46,12 @@ nav:
   - Installation: installation.md
   - Client Configuration: client-configuration.md
   - Configuration: configuration.md
+  - Troubleshooting: troubleshooting.md
+  - FAQ: faq.md
+  - Comparison: comparison.md
   - Tools Reference: tools-reference.md
+  - API Stability: api-stability.md
+  - Demo Media: demo-media.md
   - KiCad 10:
       - Variants: kicad10/variants.md
       - Time-Domain Tuning: kicad10/time-domain.md
@@ -56,6 +67,8 @@ nav:
       - Docker: deployment/docker.md
       - HTTP Mode: deployment/http-mode.md
       - Security: deployment/security.md
+      - Threat Model: security/threat-model.md
+      - Release Process: release-process.md
   - Workflows:
       - First PCB: workflows/first-pcb.md
       - Schematic to PCB: workflows/schematic-to-pcb.md
@@ -64,5 +77,7 @@ nav:
       - Manufacturing Export: workflows/manufacturing-export.md
   - Development:
       - Contributing: development/contributing.md
+      - Regression Fixtures: development/contributing-fixtures.md
       - Architecture: development/architecture.md
+      - RFCs: rfcs/README.md
       - v2 Migration: development/v2-migration.md

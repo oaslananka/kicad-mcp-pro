@@ -1,0 +1,50 @@
+name: Docs
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Docs
+    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: "3.12"
+      - run: uv sync --extra dev --frozen
+      - run: uv run mkdocs build --strict
+      - uses: lycheeverse/lychee-action@v2
+        with:
+          args: --verbose --no-progress README.md docs/**/*.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy:
+    name: Deploy Docs
+    if: github.repository_owner == 'oaslananka-lab' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: "3.12"
+      - run: uv sync --extra dev --frozen
+      - run: uv run mkdocs build --strict
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site

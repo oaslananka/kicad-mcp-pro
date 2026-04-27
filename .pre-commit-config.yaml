@@ -1,0 +1,14 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.10
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: metadata-check
+        name: MCP metadata check
+        entry: uv run python scripts/sync_mcp_metadata.py --check
+        language: system
+        pass_filenames: false

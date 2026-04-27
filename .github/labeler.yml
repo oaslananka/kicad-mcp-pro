@@ -1,0 +1,59 @@
+area:pcb:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/kicad_mcp/tools/pcb.py
+          - src/kicad_mcp/models/pcb.py
+          - tests/**/*pcb*.py
+area:schematic:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/kicad_mcp/tools/schematic.py
+          - src/kicad_mcp/models/schematic.py
+          - src/kicad_mcp/utils/schematic_router.py
+          - tests/**/*schematic*.py
+area:export:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/kicad_mcp/tools/export.py
+          - src/kicad_mcp/tools/manufacturing.py
+          - tests/**/*export*.py
+          - tests/**/*manufacturing*.py
+area:ipc:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/kicad_mcp/connection.py
+          - src/kicad_mcp/discovery.py
+          - src/kicad_mcp/server.py
+          - docs/deployment/http-mode.md
+area:routing:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/kicad_mcp/tools/routing.py
+          - src/kicad_mcp/utils/freerouting.py
+          - tests/**/*routing*.py
+area:ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**/*
+          - azure-pipelines.yml
+          - .gitlab-ci.yml
+          - package.json
+          - package-lock.json
+area:docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - README.md
+          - docs/**/*
+          - mkdocs.yml
+type:docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - README.md
+          - docs/**/*
+type:deps:
+  - changed-files:
+      - any-glob-to-any-file:
+          - pyproject.toml
+          - uv.lock
+          - package.json
+          - package-lock.json
