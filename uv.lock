@@ -1016,7 +1016,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'components'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'http'", specifier = ">=0.27.0" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.100.0" },
-    { name = "kicad-python", specifier = ">=0.6,<0.7" },
+    { name = "kicad-python", specifier = ">=0.6,<0.8" },
     { name = "kicad-sch-api", specifier = ">=0.5.0,<0.6" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.23.0" },
     { name = "mkdocs-git-revision-date-localized-plugin", marker = "extra == 'dev'", specifier = ">=1.2.9" },
