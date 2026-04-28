@@ -415,6 +415,20 @@ def test_release_workflow_uses_scoped_github_publish_secrets() -> None:
     assert "doppler run --project all --config main -- bash scripts/publish.sh" not in workflow
 
 
+def test_release_workflow_installs_actionlint_before_ci_check() -> None:
+    workflow = (
+        Path(__file__).resolve().parents[2] / ".github" / "workflows" / "release.yml"
+    ).read_text(encoding="utf-8")
+
+    setup_index = workflow.index("actions/setup-go@")
+    install_index = workflow.index("Install workflow lint tools")
+    check_index = workflow.index("corepack npm run check:ci")
+
+    assert setup_index < install_index < check_index
+    assert "go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7" in workflow
+    assert 'echo "${HOME}/go/bin" >> "${GITHUB_PATH}"' in workflow
+
+
 def test_release_please_uses_service_token_for_release_prs() -> None:
     workflow = (
         Path(__file__).resolve().parents[2] / ".github" / "workflows" / "release-please.yml"

@@ -66,6 +66,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version: stable
+
+      - name: Install workflow lint tools
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          echo "${HOME}/go/bin" >> "${GITHUB_PATH}"
+
       - name: Verify required release secrets
         env:
           RELEASE_INDEX: ${{ inputs.index }}
