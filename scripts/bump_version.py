@@ -92,8 +92,8 @@ def main(argv: list[str] | None = None) -> int:
     replace_once(ROOT / "pyproject.toml", r'^version = "[^"]+"', f'version = "{version}"')
     replace_once(
         ROOT / "src" / "kicad_mcp" / "__init__.py",
-        r'^__version__ = "[^"]+"',
-        f'__version__ = "{version}"',
+        r'^__version__ = "[^"]+"(?:\s+# x-release-please-version)?',
+        f'__version__ = "{version}"  # x-release-please-version',
     )
     update_json(ROOT / "server.json", version)
     update_json(ROOT / "mcp.json", version)

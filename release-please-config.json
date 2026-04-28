@@ -1,0 +1,35 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "python",
+      "package-name": "kicad-mcp-pro",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "src/kicad_mcp/__init__.py"
+        },
+        {
+          "type": "json",
+          "path": "mcp.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "server.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "server.json",
+          "jsonpath": "$.packages[0].version"
+        }
+      ]
+    }
+  },
+  "pull-request-title-pattern": "chore: release${component} ${version}",
+  "include-component-in-tag": false,
+  "include-v-in-tag": true,
+  "separate-pull-requests": false
+}

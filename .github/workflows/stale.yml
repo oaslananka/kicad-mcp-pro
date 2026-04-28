@@ -1,0 +1,37 @@
+name: Stale
+
+on:
+  schedule:
+    - cron: "30 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  stale:
+    name: Stale
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/stale@v9
+        with:
+          days-before-stale: 60
+          days-before-close: 14
+          stale-issue-label: status:stale
+          stale-pr-label: status:stale
+          exempt-issue-labels: priority:p0,pinned,security,type:security
+          exempt-pr-labels: priority:p0,pinned,security,type:security
+          stale-issue-message: >
+            This issue has been quiet for 60 days and is marked stale. If it is
+            still reproducible, please add a short update with the current
+            KiCad MCP Pro, KiCad, Python, and client versions.
+          stale-pr-message: >
+            This pull request has been quiet for 60 days and is marked stale.
+            Please rebase and post a current test summary if it is still active.
+          close-issue-message: >
+            Closing after 14 additional days without activity. Reopen with a
+            fresh reproduction if this still affects the current release.
+          close-pr-message: >
+            Closing after 14 additional days without activity. A fresh PR is
+            welcome when the change is ready to continue.

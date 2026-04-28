@@ -1,0 +1,38 @@
+name: Docker Lint
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  hadolint:
+    name: Hadolint
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hadolint/hadolint-action@v3.3.0
+        with:
+          dockerfile: Dockerfile
+          failure-threshold: error
+      - uses: hadolint/hadolint-action@v3.3.0
+        with:
+          dockerfile: Dockerfile.kicad10
+          failure-threshold: error
+
+  compose:
+    name: Compose Validation
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config --quiet

@@ -1,0 +1,28 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  release-please:
+    name: Release Please
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - id: release_please
+        uses: googleapis/release-please-action@v5
+        continue-on-error: ${{ github.event_name == 'push' }}
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      - name: Report advisory release automation failure
+        if: steps.release_please.outcome == 'failure' && github.event_name == 'push'
+        run: |
+          echo "::warning::Release Please failed during a push-triggered run. Re-run this workflow manually when the GitHub API recovers."

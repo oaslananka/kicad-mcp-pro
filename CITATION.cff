@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use KiCad MCP Pro in research, please cite it using this metadata."
+title: "KiCad MCP Pro"
+type: software
+authors:
+  - family-names: Aslan
+    given-names: Osman
+repository-code: "https://github.com/oaslananka/kicad-mcp-pro"
+url: "https://oaslananka.github.io/kicad-mcp-pro"
+license: MIT
+version: "3.0.2"
+date-released: "2026-04-27"
+keywords:
+  - KiCad
+  - EDA
+  - Model Context Protocol
+  - PCB automation

@@ -1,0 +1,25 @@
+name: PR size labeler
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  size:
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: pascalgn/size-label-action@v0.5.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          sizes: >
+            {"0":"effort:xs","30":"effort:s","100":"effort:m","500":"effort:l","1000":"effort:xl"}

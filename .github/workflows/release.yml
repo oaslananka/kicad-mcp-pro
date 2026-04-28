@@ -1,0 +1,161 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, for example v3.0.3"
+        required: true
+      index:
+        description: "Package index"
+        type: choice
+        default: "TestPyPI"
+        options:
+          - TestPyPI
+          - PyPI
+      publish:
+        description: "Actually publish to registries"
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
+      approval:
+        description: "Type APPROVE_RELEASE to confirm publishing"
+        required: false
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.version }}
+          fetch-depth: 0
+
+      - name: Validate approval
+        run: |
+          if [ "${{ inputs.publish }}" = "true" ] && [ "${{ inputs.approval }}" != "APPROVE_RELEASE" ]; then
+            echo "Set approval=APPROVE_RELEASE to publish." >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v4
+
+      - name: Verify required secrets
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: bash scripts/verify_doppler_secrets.sh
+
+      - name: Install dependencies
+        run: |
+          corepack enable
+          corepack npm ci
+          uv sync --all-extras --frozen
+
+      - name: Test
+        run: corepack npm run check:ci
+
+      - name: Build
+        run: corepack npm run build
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: dist/bom.json
+          upload-artifact: false
+
+      - name: Calculate checksums
+        run: |
+          cd dist
+          sha256sum -- * > SHA256SUMS.txt
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/bom.json
+            dist/SHA256SUMS.txt
+
+      - name: Sign release artifacts with Sigstore
+        uses: sigstore/gh-action-sigstore-python@v3
+        with:
+          inputs: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/bom.json
+            dist/SHA256SUMS.txt
+          upload-signing-artifacts: true
+
+      - name: Publish
+        if: inputs.publish == 'true'
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          RELEASE_INDEX: ${{ inputs.index }}
+        run: doppler run --project all --config main -- bash scripts/publish.sh
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-dist-${{ inputs.version }}
+          path: dist/
+          retention-days: 14
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          target_sha="$(git rev-parse HEAD)"
+          release_args=(
+            --repo "${{ github.repository }}"
+            --title "${{ inputs.version }}"
+            --generate-notes
+          )
+          create_args=(
+            "${release_args[@]}"
+            --target "$target_sha"
+          )
+          if [ "${{ inputs.publish }}" != "true" ]; then
+            release_args+=(--draft)
+            create_args+=(--draft)
+          fi
+          assets=()
+          if compgen -G "dist/*" > /dev/null; then
+            assets+=(dist/*)
+          fi
+          if gh release view "${{ inputs.version }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release edit "${{ inputs.version }}" "${release_args[@]}"
+            if [ "${#assets[@]}" -gt 0 ]; then
+              gh release upload "${{ inputs.version }}" --repo "${{ github.repository }}" "${assets[@]}" --clobber
+            fi
+          else
+            gh release create "${{ inputs.version }}" "${create_args[@]}" "${assets[@]}"
+          fi

@@ -1,0 +1,51 @@
+name: Mirror releases back to canonical
+
+on:
+  release:
+    types:
+      - published
+      - edited
+
+permissions:
+  contents: read
+
+jobs:
+  mirror-release:
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          gh release download "${{ github.event.release.tag_name }}" \
+            --repo oaslananka-lab/kicad-mcp-pro --dir assets || true
+
+      - name: Re-publish on canonical
+        env:
+          GH_TOKEN: ${{ secrets.DOPPLER_GITHUB_SERVICE_TOKEN }}
+        run: |
+          set -euo pipefail
+          args=()
+          if compgen -G "assets/*" > /dev/null; then
+            args=(assets/*)
+          fi
+          gh release create "${{ github.event.release.tag_name }}" \
+            --repo oaslananka/kicad-mcp-pro \
+            --title "${{ github.event.release.name }}" \
+            --notes "${{ github.event.release.body }}" \
+            --target "${{ github.event.release.target_commitish }}" \
+            "${args[@]}" \
+          || if [ "${#args[@]}" -gt 0 ]; then
+               gh release upload "${{ github.event.release.tag_name }}" \
+                 --repo oaslananka/kicad-mcp-pro \
+                 "${args[@]}" --clobber
+             else
+               gh release edit "${{ github.event.release.tag_name }}" \
+                 --repo oaslananka/kicad-mcp-pro \
+                 --title "${{ github.event.release.name }}" \
+                 --notes "${{ github.event.release.body }}"
+             fi

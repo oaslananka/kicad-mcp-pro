@@ -45,6 +45,7 @@ def test_run_freerouting_docker_builds_expected_command(
         return subprocess.CompletedProcess(cmd, 0, stdout="pass 3\n100% routed\nok", stderr="")
 
     monkeypatch.setattr("kicad_mcp.utils.freerouting.subprocess.run", fake_run)
+    monkeypatch.setattr("kicad_mcp.utils.freerouting._docker_available", lambda _: True)
 
     result = FreeRoutingRunner().run_freerouting(
         dsn_path,

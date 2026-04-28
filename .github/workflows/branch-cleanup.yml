@@ -1,0 +1,61 @@
+name: Branch hygiene report
+
+on:
+  schedule:
+    - cron: "0 7 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          {
+            echo "# Branch hygiene report - $(date -u +%F)"
+            echo
+            echo "## Branches older than 90 days without open PRs"
+            gh api -X GET "/repos/${{ github.repository }}/branches?per_page=100" --jq '.[].name' \
+              | grep -Ev '^(main|master|develop|gh-pages)$' \
+              | grep -Ev '^(release|hotfix)/' \
+              | while read -r br; do
+                  open=$(gh pr list --repo "${{ github.repository }}" --head "$br" --state open --json number --jq 'length')
+                  [ "$open" -gt 0 ] && continue
+                  sha=$(gh api "/repos/${{ github.repository }}/branches/${br}" --jq '.commit.sha' 2>/dev/null) || continue
+                  last=$(gh api "/repos/${{ github.repository }}/commits/${sha}" --jq '.commit.committer.date' 2>/dev/null) || continue
+                  cutoff=$(date -d '90 days ago' --iso-8601=seconds)
+                  if [[ "$last" < "$cutoff" ]]; then
+                    echo "- \`$br\` (last commit: $last)"
+                  fi
+                done
+            echo
+            echo "## Open PRs older than 60 days"
+            gh pr list --repo "${{ github.repository }}" --state open --limit 100 \
+              --json number,title,updatedAt,author \
+              --jq '.[] | select(.updatedAt < (now - 60*86400 | todate)) | "- #\(.number) \(.title) - last: \(.updatedAt) by @\(.author.login)"'
+          } > hygiene-report.md
+
+      - name: Open or update tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          title="Monthly branch hygiene - $(date -u +%Y-%m)"
+          body="$(cat hygiene-report.md)"
+          existing=$(gh issue list --repo "${{ github.repository }}" --search "in:title \"$title\"" --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --repo "${{ github.repository }}" --body "$body"
+          else
+            gh issue create --repo "${{ github.repository }}" \
+              --title "$title" --body "$body" --label "type:chore,status:triage"
+          fi

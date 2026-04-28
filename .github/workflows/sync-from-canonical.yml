@@ -1,0 +1,54 @@
+name: Sync from canonical
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+  repository_dispatch:
+    types:
+      - canonical-push
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-from-canonical
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout org mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.DOPPLER_GITHUB_SERVICE_TOKEN }}
+
+      - name: Pull from canonical and replay
+        env:
+          MIRROR_TOKEN: ${{ secrets.DOPPLER_GITHUB_SERVICE_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "oaslananka-lab[bot]"
+          git config user.email "oaslananka-lab@users.noreply.github.com"
+
+          git remote add canonical "https://x-access-token:${MIRROR_TOKEN}@github.com/oaslananka/kicad-mcp-pro.git"
+          git fetch canonical --prune --tags
+
+          for ref in $(git for-each-ref --format='%(refname:short)' refs/remotes/canonical | sed 's|^canonical/||'); do
+            [ "$ref" = "HEAD" ] && continue
+            git push origin "refs/remotes/canonical/${ref}:refs/heads/${ref}" --force
+          done
+
+          git push origin --tags --force
+
+          for org_branch in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin); do
+            short="${org_branch#origin/}"
+            [ "$short" = "HEAD" ] && continue
+            if ! git show-ref --verify --quiet "refs/remotes/canonical/${short}"; then
+              git push origin --delete "$short" || true
+            fi
+          done

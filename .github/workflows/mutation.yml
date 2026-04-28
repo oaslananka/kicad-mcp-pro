@@ -1,0 +1,35 @@
+name: Mutation Testing
+
+on:
+  schedule:
+    - cron: "25 6 1 * *"
+  workflow_dispatch:
+
+jobs:
+  mutmut:
+    name: Mutation Testing
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --all-extras --frozen
+      - name: Run scoped mutation baseline
+        continue-on-error: true
+        run: >
+          uv run mutmut run
+          --paths-to-mutate src/kicad_mcp/utils,src/kicad_mcp/discovery.py,src/kicad_mcp/connection.py,src/kicad_mcp/tools/router.py
+      - name: Export mutation results
+        if: always()
+        run: uv run mutmut results > mutmut-results.txt || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: mutmut-results
+          path: mutmut-results.txt
+          retention-days: 30
