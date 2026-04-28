@@ -16,6 +16,9 @@
 - name: type:security
   color: b60205
   description: Security issue or hardening work.
+- name: type:chore
+  color: cccccc
+  description: Maintenance, tooling, or repository operations.
 - name: type:deps
   color: 0366d6
   description: Dependency update.
@@ -43,6 +46,12 @@
 - name: area:docs
   color: 0075ca
   description: Documentation site and README.
+- name: area:python
+  color: 3572a5
+  description: Python package, tests, and tooling.
+- name: area:js
+  color: f1e05a
+  description: JavaScript or Node-based tooling.
 - name: priority:p0
   color: b60205
   description: Data loss, security, or production blocking.
@@ -112,6 +121,9 @@
 - name: security
   color: b60205
   description: Security-sensitive item.
+- name: dependencies
+  color: 0366d6
+  description: Dependency update.
 - name: good first issue
   color: 7057ff
   description: Good for a first contribution.

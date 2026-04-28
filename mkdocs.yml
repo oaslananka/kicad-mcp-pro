@@ -63,6 +63,10 @@ nav:
       - Claude Code: integration/claude-code.md
   - Deployment:
       - Repository and CI/CD Topology: deployment/repository-topology.md
+      - Autonomy Model: autonomy.md
+      - Repository Operations: repository-operations.md
+      - Doppler Setup: doppler-setup.md
+      - Branch Protection: branch-protection.md
       - Azure DevOps CI/CD: deployment/azure-devops.md
       - Docker: deployment/docker.md
       - HTTP Mode: deployment/http-mode.md
@@ -76,6 +80,7 @@ nav:
       - High-Speed Review: workflows/high-speed-review.md
       - Manufacturing Export: workflows/manufacturing-export.md
   - Development:
+      - Local Workflow: development.md
       - Contributing: development/contributing.md
       - Regression Fixtures: development/contributing-fixtures.md
       - Architecture: development/architecture.md

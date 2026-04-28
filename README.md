@@ -98,6 +98,13 @@ Automated GitHub CI/CD runs from the `oaslananka-lab` organization mirror. Perso
 
 The project uses Dependabot, CodeQL, Gitleaks, OpenSSF Scorecard, Codecov, release-please, SBOM generation, Sigstore signing, and GitHub artifact attestations for release hardening.
 
+Operational references:
+
+- [Repository operations](docs/repository-operations.md)
+- [Autonomy model](docs/autonomy.md)
+- [Doppler setup](docs/doppler-setup.md)
+- [Branch protection](docs/branch-protection.md)
+
 ## Contributing and Support
 
 - [Contributing](CONTRIBUTING.md)

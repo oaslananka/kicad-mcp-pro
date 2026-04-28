@@ -60,3 +60,24 @@ kicad_output/
 
 TEMP_FOLDER/
 reports/
+
+# Agent-local notes; never commit these
+reports/autonomy_setup/
+reports/phase*/
+.agent/
+.agent-reports/
+AUTONOMY_RESULT.md
+SETUP_LOG.md
+
+# Build and scan artifacts regenerated in CI
+out/
+*.vsix
+junit.xml
+test-results.xml
+*.tsbuildinfo
+.vscode-test/
+sbom.cdx.json
+sbom.spdx
+requirements-audit.txt
+requirements-build.txt
+.scan-results/

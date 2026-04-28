@@ -14,14 +14,14 @@ on:
 jobs:
   static-analysis:
     name: Static Analysis
-    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
       - run: uv sync --all-extras --frozen

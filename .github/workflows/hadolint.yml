@@ -12,12 +12,12 @@ on:
 jobs:
   hadolint:
     name: Hadolint
-    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - uses: hadolint/hadolint-action@v3.3.0
         with:
           dockerfile: Dockerfile
@@ -29,10 +29,10 @@ jobs:
 
   compose:
     name: Compose Validation
-    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - run: docker compose config --quiet

@@ -8,13 +8,13 @@ on:
 jobs:
   lock:
     name: Lock Closed Threads
-    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
     runs-on: ubuntu-latest
     permissions:
       issues: write
       pull-requests: write
     steps:
-      - uses: dessant/lock-threads@v6.0.0
+      - uses: dessant/lock-threads@v5
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           issue-inactive-days: "30"

@@ -12,7 +12,7 @@ on:
 jobs:
   validate:
     name: Validate (${{ matrix.os }}, Python ${{ matrix.python-version }})
-    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
     env:
@@ -31,65 +31,68 @@ jobs:
           - "3.13"
           - "3.14"
     steps:
-      - uses: actions/checkout@v6
-      - name: Explain execution mode
-        run: |
-          echo "Automatic GitHub CI/CD is owned by oaslananka-lab."
-          echo "Personal GitHub, Azure DevOps, and GitLab are manual fallback surfaces."
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: npm
-      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: corepack enable
-      - run: corepack npm ci
-      - run: uv sync --all-extras --frozen --python ${{ matrix.python-version }}
-      - name: Lint
-        run: corepack npm run lint
-      - name: Typecheck
-        run: corepack npm run typecheck
-      - name: Unit tests
-        if: matrix.os != 'ubuntu-latest'
-        run: corepack npm run test:unit
-      - name: Full test suite
+      - name: Install dependencies
+        run: |
+          corepack enable
+          corepack npm ci
+          uv sync --all-extras --frozen
+      - name: Run full CI tasks
         if: matrix.os == 'ubuntu-latest'
-        run: corepack npm run test
+        run: corepack npm run check:ci
+      - name: Run cross-platform smoke tasks
+        if: matrix.os != 'ubuntu-latest'
+        run: |
+          corepack npm run check:metadata
+          corepack npm run lint
+          corepack npm run format:check
+          corepack npm run typecheck
+          corepack npm run test:unit
+      - name: Install Doppler CLI
+        if: matrix.os == 'ubuntu-latest'
+        uses: dopplerhq/cli-action@v4
+      - name: Load Codecov token from Doppler
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          token="$(doppler secrets get CODECOV_TOKEN --plain --project all --config main || true)"
+          if [ -n "$token" ]; then
+            echo "::add-mask::$token"
+            echo "CODECOV_TOKEN=$token" >> "$GITHUB_ENV"
+          fi
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest'
         continue-on-error: true
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v5
         with:
           files: coverage.xml
           flags: py${{ matrix.python-version }}
           fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
-      - name: Lint tool metadata
-        if: matrix.os == 'ubuntu-latest'
-        run: uv run python -m pytest tests/unit/test_tool_metadata_lint.py -q
-      - name: Check profile coverage
-        if: matrix.os == 'ubuntu-latest'
-        run: uv run python -m pytest tests/unit/test_router_profiles.py tests/unit/test_profile_matrix.py -q
-      - name: Validate callable imports
-        if: matrix.os == 'ubuntu-latest'
-        run: uv run python -m pytest tests/unit/test_fixers.py::test_all_callable_imports_resolve -q
-      - name: Benchmark latency gate
-        if: matrix.os == 'ubuntu-latest'
-        env:
-          KICAD_MCP_BENCHMARK_JSON: reports/benchmark-latency-${{ matrix.python-version }}.json
-        run: uv run python -m pytest tests/ -m benchmark -q
-      - uses: actions/upload-artifact@v7
-        if: matrix.os == 'ubuntu-latest' && always()
+          token: ${{ env.CODECOV_TOKEN }}
+      - name: Publish test results
+        if: always() && hashFiles('**/junit.xml', '**/test-results.xml') != ''
+        uses: EnricoMi/publish-unit-test-result-action@v2
         with:
-          name: benchmark-latency-${{ matrix.python-version }}
-          path: reports/benchmark-latency-${{ matrix.python-version }}.json
-          if-no-files-found: ignore
-          retention-days: 14
+          files: |
+            **/junit.xml
+            **/test-results.xml
+      - name: Test summary
+        if: always() && hashFiles('**/junit.xml') != ''
+        uses: test-summary/action@v2
+        with:
+          paths: "**/junit.xml"
 
   ci:
     name: CI
-    if: always() && (github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch')
+    if: always() && github.repository == 'oaslananka-lab/kicad-mcp-pro'
     runs-on: ubuntu-latest
     needs:
       - validate

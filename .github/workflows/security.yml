@@ -12,26 +12,23 @@ on:
 jobs:
   audit:
     name: Security
-    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
-      SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
       DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
-      DOPPLER_PROJECT: ${{ secrets.DOPPLER_PROJECT }}
-      DOPPLER_CONFIG: ${{ secrets.DOPPLER_CONFIG }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Explain execution mode
         run: |
           echo "Automatic GitHub security CI/CD is owned by oaslananka-lab."
           echo "Personal GitHub, Azure DevOps, and GitLab are manual fallback surfaces."
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: npm
-      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
       - run: corepack enable
@@ -42,29 +39,13 @@ jobs:
         run: corepack npm run security:audit
 
       - name: Install Doppler CLI
-        if: env.DOPPLER_TOKEN != ''
         uses: dopplerhq/cli-action@v4
 
       - name: Optional Safety scan via Doppler
-        if: env.DOPPLER_TOKEN != ''
         run: |
           set +e
-          doppler run --project "${DOPPLER_PROJECT:-all}" --config "${DOPPLER_CONFIG:-main}" -- sh -c 'uv run --python 3.12 python -m safety --stage cicd --key "$SAFETY_API_KEY" scan --target .'
-          safety_exit=$?
-          set -e
-          if [ "${safety_exit}" -ne 0 ]; then
-            echo "Safety scan could not complete cleanly (exit ${safety_exit}); pip-audit remains the enforced dependency gate."
-          fi
-
-      - name: Optional Safety scan via GitHub secret
-        if: env.DOPPLER_TOKEN == '' && env.SAFETY_API_KEY != ''
-        run: |
-          set +e
-          uv run --python 3.12 python -m safety \
-            --stage cicd \
-            --key "${SAFETY_API_KEY}" \
-            scan \
-            --target .
+          # shellcheck disable=SC2016
+          doppler run --project all --config main -- sh -c 'uv run --python 3.12 python -m safety --stage cicd --key "$SAFETY_API_KEY" scan --target .'
           safety_exit=$?
           set -e
           if [ "${safety_exit}" -ne 0 ]; then

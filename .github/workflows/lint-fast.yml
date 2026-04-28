@@ -1,0 +1,54 @@
+name: Lint (fast)
+
+on:
+  pull_request:
+  push:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  meta:
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        uses: raven-actions/actionlint@v2
+        with:
+          fail-on-error: true
+      - name: yamllint
+        run: |
+          pipx install yamllint || pip install --user yamllint
+          yamllint -d "{extends: relaxed, rules: {line-length: disable}}" .github/ || true
+
+  python:
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uvx ruff check .
+      - run: uvx ruff format --check .
+
+  node:
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: corepack enable
+      - run: corepack npm ci
+      - name: Metadata check
+        run: corepack npm run check:metadata

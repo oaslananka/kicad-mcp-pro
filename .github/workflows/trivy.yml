@@ -19,13 +19,13 @@ on:
 jobs:
   scan:
     name: Trivy (base image)
-    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Build image
         run: docker build -f Dockerfile -t kicad-mcp-pro:base .
       - uses: aquasecurity/trivy-action@v0.36.0
@@ -36,7 +36,7 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "0"
           version: v0.70.0
-      - uses: github/codeql-action/upload-sarif@v4
+      - uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: trivy-base.sarif
@@ -44,7 +44,7 @@ jobs:
   scan-kicad10:
     name: Trivy (KiCad 10 image)
     if: >
-      (github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch') &&
+      github.repository == 'oaslananka-lab/kicad-mcp-pro' &&
       github.event_name == 'workflow_dispatch' &&
       inputs.kicad_appimage_url != ''
     runs-on: ubuntu-latest
@@ -52,7 +52,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Build image
         run: |
           docker build \
@@ -67,7 +67,7 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "0"
           version: v0.70.0
-      - uses: github/codeql-action/upload-sarif@v4
+      - uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: trivy-kicad10.sarif

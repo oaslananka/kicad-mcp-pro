@@ -1,0 +1,90 @@
+version: "3"
+
+tasks:
+  install:
+    desc: Install all development dependencies
+    cmds:
+      - corepack enable
+      - corepack npm ci
+      - uv sync --all-extras --frozen
+
+  hooks:
+    desc: Install local git hooks
+    cmds:
+      - uvx pre-commit install --install-hooks
+      - uvx pre-commit install --hook-type commit-msg
+      - uvx pre-commit install --hook-type pre-push
+
+  format:
+    desc: Auto-format the codebase
+    cmds:
+      - corepack npm run format
+
+  lint:
+    desc: Run read-only lint and metadata checks
+    cmds:
+      - corepack npm run metadata:check
+      - corepack npm run lint
+      - corepack npm run format:check
+
+  typecheck:
+    desc: Run strict static type checking
+    cmds:
+      - corepack npm run typecheck
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - corepack npm run test:unit
+
+  test:fast:
+    desc: Run fast tests
+    cmds:
+      - corepack npm run test:unit
+
+  test:cov:
+    desc: Run the full test suite with coverage
+    cmds:
+      - corepack npm run test
+
+  security:
+    desc: Run enforced security checks
+    cmds:
+      - corepack npm run security
+
+  build:
+    desc: Build release artifacts
+    cmds:
+      - corepack npm run build
+
+  pre-push:
+    desc: Run the pre-push parity gate
+    cmds:
+      - task: typecheck
+      - task: test:fast
+      - uv run python -c "import pathlib, yaml; [yaml.safe_load(p.read_text(encoding='utf-8')) for p in pathlib.Path('.github/workflows').glob('*.yml')]"
+
+  ci:
+    desc: Run the local equivalent of CI
+    cmds:
+      - task: lint
+      - task: typecheck
+      - task: test:cov
+
+  ci:act:
+    desc: Run the GitHub Actions CI workflow locally with act
+    cmds:
+      - act -W .github/workflows/ci.yml --container-architecture linux/amd64
+
+  doppler:check:
+    desc: Verify required Doppler secrets
+    cmds:
+      - bash scripts/verify_doppler_secrets.sh
+
+  clean:
+    desc: Remove generated build and test artifacts
+    cmds:
+      - cmd: rm -rf dist build .pytest_cache .mypy_cache .ruff_cache htmlcov coverage.xml junit.xml
+        platforms: [linux, darwin]
+      - cmd: powershell -NoProfile -Command "Remove-Item -Recurse -Force dist,build,.pytest_cache,.mypy_cache,.ruff_cache,htmlcov,coverage.xml,junit.xml -ErrorAction SilentlyContinue"
+        platforms: [windows]

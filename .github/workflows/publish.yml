@@ -29,7 +29,7 @@ jobs:
   # ── Build ───────────────────────────────────────────────────────────────────
   build:
     name: Build package
-    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -39,19 +39,19 @@ jobs:
     outputs:
       artifact-name: ${{ steps.set-artifact.outputs.name }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Explain execution mode
         run: |
           echo "GitHub package release is manual and should normally be queued from oaslananka-lab."
           echo "Personal GitHub, Azure DevOps, and GitLab are manual fallback surfaces."
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: npm
 
-      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: '3.12'
 
@@ -81,11 +81,11 @@ jobs:
       - name: Calculate artifact checksums
         run: |
           cd dist
-          sha256sum * > SHA256SUMS.txt
+          sha256sum -- * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Attest build provenance
-        uses: actions/attest@v4
+        uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
             dist/*.whl
@@ -93,16 +93,8 @@ jobs:
             dist/bom.json
             dist/SHA256SUMS.txt
 
-      - name: Attest SBOM
-        uses: actions/attest@v4
-        with:
-          subject-path: |
-            dist/*.whl
-            dist/*.tar.gz
-          sbom-path: dist/bom.json
-
       - name: Sign release artifacts with Sigstore
-        uses: sigstore/gh-action-sigstore-python@v3.3.0
+        uses: sigstore/gh-action-sigstore-python@v3
         with:
           inputs: |
             dist/*.whl
@@ -132,6 +124,7 @@ jobs:
   publish:
     name: Publish to ${{ inputs.target_index }}
     needs: build
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
     runs-on: ubuntu-latest
     environment: release          # ← manual approval gate
     permissions:
@@ -139,8 +132,6 @@ jobs:
       id-token: write             # for PyPI trusted publishing (OIDC)
     env:
       DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
-      DOPPLER_PROJECT: ${{ secrets.DOPPLER_PROJECT }}
-      DOPPLER_CONFIG: ${{ secrets.DOPPLER_CONFIG }}
 
     steps:
       - uses: actions/download-artifact@v8
@@ -152,36 +143,25 @@ jobs:
         run: ls -lh dist/
 
       - name: Install Doppler CLI
-        if: env.DOPPLER_TOKEN != ''
         uses: dopplerhq/cli-action@v4
 
-      - name: Install twine for Doppler publishing
-        if: env.DOPPLER_TOKEN != ''
+      - name: Verify required Doppler secrets
+        run: bash scripts/verify_doppler_secrets.sh
+
+      - name: Install twine
         run: python -m pip install --upgrade twine
 
-      - name: Publish to PyPI via Doppler token
-        if: inputs.target_index == 'PyPI' && env.DOPPLER_TOKEN != ''
-        run: >
-          doppler run --project "${DOPPLER_PROJECT:-all}" --config "${DOPPLER_CONFIG:-main}" -- sh -c
-          'python -m twine upload -u __token__ -p "$PYPI_TOKEN" --non-interactive --skip-existing dist/*'
+      - name: Publish to PyPI via Doppler
+        if: inputs.target_index == 'PyPI'
+        run: |
+          # shellcheck disable=SC2016
+          doppler run --project all --config main -- sh -c 'python -m twine upload -u __token__ -p "$PYPI_TOKEN" --non-interactive --skip-existing dist/*.whl dist/*.tar.gz'
 
-      # Trusted publishing (OIDC) — no token needed for PyPI
-      - name: Publish to PyPI (OIDC trusted publishing)
-        if: inputs.target_index == 'PyPI' && env.DOPPLER_TOKEN == ''
-        uses: pypa/gh-action-pypi-publish@release/v1
-
-      - name: Publish to TestPyPI via Doppler token
-        if: inputs.target_index == 'TestPyPI' && env.DOPPLER_TOKEN != ''
-        run: >
-          doppler run --project "${DOPPLER_PROJECT:-all}" --config "${DOPPLER_CONFIG:-main}" -- sh -c
-          'python -m twine upload --repository-url https://test.pypi.org/legacy/ -u __token__ -p "$TEST_PYPI_TOKEN" --non-interactive --skip-existing dist/*'
-
-      - name: Publish to TestPyPI via GitHub secret
-        if: inputs.target_index == 'TestPyPI' && env.DOPPLER_TOKEN == ''
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          password: ${{ secrets.TEST_PYPI_TOKEN }}
+      - name: Publish to TestPyPI via Doppler
+        if: inputs.target_index == 'TestPyPI'
+        run: |
+          # shellcheck disable=SC2016
+          doppler run --project all --config main -- sh -c 'python -m twine upload --repository-url https://test.pypi.org/legacy/ -u __token__ -p "$TEST_PYPI_TOKEN" --non-interactive --skip-existing dist/*.whl dist/*.tar.gz'
 
       - name: Post-publish summary
         run: |

@@ -12,7 +12,7 @@ on:
 jobs:
   label:
     name: Labeler
-    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
     runs-on: ubuntu-latest
     permissions:
       contents: read

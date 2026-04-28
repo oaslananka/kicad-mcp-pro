@@ -11,7 +11,7 @@ on:
 jobs:
   analysis:
     name: Scorecard
-    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -22,10 +22,10 @@ jobs:
       pull-requests: read
       checks: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: ossf/scorecard-action@v2.4.3
+      - uses: ossf/scorecard-action@v2.4.0
         continue-on-error: true
         with:
           results_file: scorecard.sarif

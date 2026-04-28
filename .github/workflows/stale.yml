@@ -8,13 +8,13 @@ on:
 jobs:
   stale:
     name: Stale
-    if: github.repository_owner == 'oaslananka-lab' || github.event_name == 'workflow_dispatch'
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
     runs-on: ubuntu-latest
     permissions:
       issues: write
       pull-requests: write
     steps:
-      - uses: actions/stale@v10
+      - uses: actions/stale@v9
         with:
           days-before-stale: 60
           days-before-close: 14

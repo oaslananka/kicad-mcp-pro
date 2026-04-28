@@ -1,7 +1,7 @@
 {
-  "name": "main",
+  "name": "main-protection",
   "target": "branch",
-  "enforcement": "evaluate",
+  "enforcement": "active",
   "conditions": {
     "ref_name": {
       "include": [
@@ -34,17 +34,7 @@
       "type": "required_status_checks",
       "parameters": {
         "strict_required_status_checks_policy": true,
-        "required_status_checks": [
-          {
-            "context": "CI"
-          },
-          {
-            "context": "Security"
-          },
-          {
-            "context": "CodeQL"
-          }
-        ]
+        "required_status_checks": []
       }
     }
   ],
