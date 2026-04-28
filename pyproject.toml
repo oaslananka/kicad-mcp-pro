@@ -73,6 +73,7 @@ dev = [
   "ruff>=0.4.0",
   "safety>=3.2.0",
   "vulture>=2.11",
+  "zizmor>=1.24.1",
 ]
 freerouting = ["docker>=7.0.0"]
 http = ["httpx>=0.27.0", "uvicorn[standard]>=0.30.0"]

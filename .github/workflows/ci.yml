@@ -44,6 +44,15 @@ jobs:
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
         with:
           python-version: ${{ matrix.python-version }}
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          go-version: stable
+      - name: Install workflow lint tools
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          echo "${HOME}/go/bin" >> "${GITHUB_PATH}"
       - name: Install dependencies
         run: |
           corepack enable
