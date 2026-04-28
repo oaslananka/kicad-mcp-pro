@@ -1,6 +1,10 @@
 name: Sync from canonical
 
 on:
+  push:
+    branches: ["**"]
+    tags: ["**"]
+  delete:
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
@@ -16,8 +20,55 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  sync:
-    if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
+  mirror-on-canonical-change:
+    if: github.repository == 'oaslananka/kicad-mcp-pro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout canonical
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Push canonical refs to org mirror
+        env:
+          MIRROR_TOKEN: ${{ secrets.DOPPLER_GITHUB_SERVICE_TOKEN }}
+        run: |
+          set -euo pipefail
+          git remote add org "https://x-access-token:${MIRROR_TOKEN}@github.com/oaslananka-lab/kicad-mcp-pro.git"
+
+          if [ "${{ github.event_name }}" = "delete" ]; then
+            ref_name="${{ github.event.ref }}"
+            ref_type="${{ github.event.ref_type }}"
+            if [ "$ref_type" = "branch" ]; then
+              case "$ref_name" in
+                gh-pages|release-please--branches--main)
+                  echo "Skipping org-managed branch deletion: $ref_name"
+                  ;;
+                *)
+                  git push org --delete "$ref_name" || true
+                  ;;
+              esac
+            elif [ "$ref_type" = "tag" ]; then
+              git push org --delete "refs/tags/$ref_name" || true
+            fi
+            exit 0
+          fi
+
+          git fetch origin '+refs/heads/*:refs/heads/*' --tags
+          for ref in $(git for-each-ref --format='%(refname)' refs/heads); do
+            branch="${ref#refs/heads/}"
+            if [ "$branch" = "main" ]; then
+              git push org "$ref:refs/heads/$branch"
+            else
+              git push org "$ref:refs/heads/$branch" --force
+            fi
+          done
+          git push org --tags --force
+
+  scheduled-reconcile:
+    if: github.repository == 'oaslananka-lab/kicad-mcp-pro' && github.event_name != 'push' && github.event_name != 'delete'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -40,14 +91,22 @@ jobs:
 
           for ref in $(git for-each-ref --format='%(refname:short)' refs/remotes/canonical | sed 's|^canonical/||'); do
             [ "$ref" = "HEAD" ] && continue
-            git push origin "refs/remotes/canonical/${ref}:refs/heads/${ref}" --force
+            if [ "$ref" = "main" ]; then
+              git push origin "refs/remotes/canonical/${ref}:refs/heads/${ref}"
+            else
+              git push origin "refs/remotes/canonical/${ref}:refs/heads/${ref}" --force
+            fi
           done
 
           git push origin --tags --force
 
           for org_branch in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin); do
             short="${org_branch#origin/}"
-            [ "$short" = "HEAD" ] && continue
+            case "$short" in
+              HEAD|gh-pages|release-please--branches--main)
+                continue
+                ;;
+            esac
             if ! git show-ref --verify --quiet "refs/remotes/canonical/${short}"; then
               git push origin --delete "$short" || true
             fi
