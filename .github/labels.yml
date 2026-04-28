@@ -1,147 +1,147 @@
 - name: type:bug
-  color: d73a4a
+  color: "d73a4a"
   description: Reproducible defect or incorrect behavior.
 - name: type:feature
-  color: 0e8a16
+  color: "0e8a16"
   description: New user-facing capability.
 - name: type:docs
-  color: 0075ca
+  color: "0075ca"
   description: Documentation-only work.
 - name: type:refactor
-  color: cfd3d7
+  color: "cfd3d7"
   description: Internal code restructuring without behavior change.
 - name: type:perf
-  color: fbca04
+  color: "fbca04"
   description: Performance improvement or regression work.
 - name: type:security
-  color: b60205
+  color: "b60205"
   description: Security issue or hardening work.
 - name: type:chore
-  color: cccccc
+  color: "cccccc"
   description: Maintenance, tooling, or repository operations.
 - name: type:deps
-  color: 0366d6
+  color: "0366d6"
   description: Dependency update.
 - name: type:question
-  color: d876e3
+  color: "d876e3"
   description: Usage question or support request.
 - name: area:pcb
-  color: 1d76db
+  color: "1d76db"
   description: PCB tools and board state.
 - name: area:schematic
-  color: 5319e7
+  color: "5319e7"
   description: Schematic tools and connectivity.
 - name: area:export
-  color: 006b75
+  color: "006b75"
   description: Export and manufacturing handoff.
 - name: area:ipc
-  color: 0052cc
+  color: "0052cc"
   description: KiCad IPC, transport, and bridge behavior.
 - name: area:routing
-  color: 5319e7
+  color: "5319e7"
   description: Routing and tuning workflows.
 - name: area:ci
-  color: 0e8a16
+  color: "0e8a16"
   description: CI, release, packaging, and automation.
 - name: area:docs
-  color: 0075ca
+  color: "0075ca"
   description: Documentation site and README.
 - name: area:python
-  color: 3572a5
+  color: "3572a5"
   description: Python package, tests, and tooling.
 - name: area:js
-  color: f1e05a
+  color: "f1e05a"
   description: JavaScript or Node-based tooling.
 - name: priority:p0
-  color: b60205
+  color: "b60205"
   description: Data loss, security, or production blocking.
 - name: priority:p1
-  color: d93f0b
+  color: "d93f0b"
   description: Major bug or important roadmap item.
 - name: priority:p2
-  color: fbca04
+  color: "fbca04"
   description: Minor bug or normal feature.
 - name: priority:p3
-  color: c2e0c6
+  color: "c2e0c6"
   description: Nice-to-have.
 - name: status:triage
-  color: cfd3d7
+  color: "cfd3d7"
   description: Needs maintainer triage.
 - name: status:blocked
-  color: b60205
+  color: "b60205"
   description: Blocked by external input or dependency.
 - name: status:in-progress
-  color: fbca04
+  color: "fbca04"
   description: Actively being worked.
 - name: status:waiting-review
-  color: 0e8a16
+  color: "0e8a16"
   description: Ready for maintainer review.
 - name: status:waiting-feedback
-  color: fef2c0
+  color: "fef2c0"
   description: Waiting on reporter or contributor.
 - name: status:stale
-  color: cfd3d7
+  color: "cfd3d7"
   description: No recent activity and may be closed.
 - name: effort:xs
-  color: c2e0c6
+  color: "c2e0c6"
   description: Very small change.
 - name: effort:s
-  color: c2e0c6
+  color: "c2e0c6"
   description: Small change.
 - name: effort:m
-  color: fbca04
+  color: "fbca04"
   description: Medium change.
 - name: effort:l
-  color: d93f0b
+  color: "d93f0b"
   description: Large change.
 - name: effort:xl
-  color: b60205
+  color: "b60205"
   description: Very large change.
 - name: kicad:9
-  color: 5319e7
+  color: "5319e7"
   description: KiCad 9 compatibility.
 - name: kicad:10
-  color: 5319e7
+  color: "5319e7"
   description: KiCad 10 compatibility.
 - name: client:claude-desktop
-  color: 7057ff
+  color: "7057ff"
   description: Claude Desktop client.
 - name: client:cursor
-  color: 7057ff
+  color: "7057ff"
   description: Cursor MCP client.
 - name: client:vscode
-  color: 7057ff
+  color: "7057ff"
   description: VS Code MCP client.
 - name: breaking
-  color: b60205
+  color: "b60205"
   description: Breaking API, config, or workflow change.
 - name: regression
-  color: d93f0b
+  color: "d93f0b"
   description: Behavior worked before and now fails.
 - name: security
-  color: b60205
+  color: "b60205"
   description: Security-sensitive item.
 - name: dependencies
-  color: 0366d6
+  color: "0366d6"
   description: Dependency update.
 - name: good first issue
-  color: 7057ff
+  color: "7057ff"
   description: Good for a first contribution.
 - name: help wanted
-  color: 008672
+  color: "008672"
   description: Maintainer help requested.
 - name: hacktoberfest
-  color: ff6f00
+  color: "ff6f00"
   description: Hacktoberfest-friendly issue.
 - name: duplicate
-  color: cfd3d7
+  color: "cfd3d7"
   description: Duplicate of another issue or PR.
 - name: invalid
-  color: e4e669
+  color: "e4e669"
   description: Not actionable as filed.
 - name: wontfix
-  color: ffffff
+  color: "ffffff"
   description: Deliberately not planned.
 - name: pinned
-  color: 000000
+  color: "000000"
   description: Exempt from stale automation.
