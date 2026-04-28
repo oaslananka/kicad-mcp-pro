@@ -28,7 +28,6 @@ permissions:
   contents: write
   id-token: write
   attestations: write
-  artifact-metadata: write
 
 concurrency:
   group: release
