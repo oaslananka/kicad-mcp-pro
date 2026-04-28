@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/oaslananka-kicad-mcp-pro-badge.png)](https://mseep.ai/app/oaslananka-kicad-mcp-pro)
+
 # KiCad MCP Pro Server
 <!-- mcp-name: io.github.oaslananka/kicad-mcp-pro -->
 
