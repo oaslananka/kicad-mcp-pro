@@ -6,6 +6,7 @@ set -euo pipefail
 
 missing=()
 while IFS= read -r line; do
+  line="${line%$'\r'}"
   [[ -z "$line" || "$line" =~ ^# ]] && continue
   if ! doppler secrets get "$line" --plain \
         --project "$DOPPLER_PROJECT" --config "$DOPPLER_CONFIG" \
