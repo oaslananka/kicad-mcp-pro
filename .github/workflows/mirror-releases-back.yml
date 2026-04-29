@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: mirror-release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
 jobs:
   mirror-release:
     if: github.repository == 'oaslananka-lab/kicad-mcp-pro'
@@ -79,7 +83,27 @@ jobs:
               --notes-file release-notes.md
           fi
           if [ "${#args[@]}" -gt 0 ]; then
-            gh release upload "${RELEASE_TAG}" \
+            for asset in "${args[@]}"; do
+              for attempt in 1 2 3; do
+                if gh release upload "${RELEASE_TAG}" \
+                  --repo oaslananka/kicad-mcp-pro \
+                  "${asset}" --clobber; then
+                  break
+                fi
+                if [ "${attempt}" -eq 3 ]; then
+                  echo "::error::Failed to upload ${asset} after ${attempt} attempts."
+                  exit 1
+                fi
+                sleep $((attempt * 2))
+              done
+            done
+            source_count="$(find assets -maxdepth 1 -type f | wc -l | tr -d ' ')"
+            canonical_count="$(gh release view "${RELEASE_TAG}" \
               --repo oaslananka/kicad-mcp-pro \
-              "${args[@]}" --clobber
+              --json assets \
+              --jq '.assets | length')"
+            if [ "${canonical_count}" -lt "${source_count}" ]; then
+              echo "::error::Canonical release has ${canonical_count} asset(s), expected at least ${source_count}."
+              exit 1
+            fi
           fi
