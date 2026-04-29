@@ -15,6 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Checkout release tag
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.release.tag_name }}
+
       - name: Download release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -22,8 +29,30 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p assets
-          gh release download "${RELEASE_TAG}" \
-            --repo oaslananka-lab/kicad-mcp-pro --dir assets || true
+          asset_count="$(gh release view "${RELEASE_TAG}" \
+            --repo oaslananka-lab/kicad-mcp-pro \
+            --json assets \
+            --jq '.assets | length')"
+          if [ "${asset_count}" -gt 0 ]; then
+            gh release download "${RELEASE_TAG}" \
+              --repo oaslananka-lab/kicad-mcp-pro \
+              --dir assets
+          else
+            echo "No release assets found for ${RELEASE_TAG}; mirroring release metadata only."
+          fi
+
+      - name: Mirror release tag to canonical
+        env:
+          MIRROR_TOKEN: ${{ secrets.DOPPLER_GITHUB_SERVICE_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MIRROR_TOKEN}" ]; then
+            echo "::error::DOPPLER_GITHUB_SERVICE_TOKEN is required to mirror releases to oaslananka/kicad-mcp-pro."
+            exit 1
+          fi
+          git remote add canonical "https://x-access-token:${MIRROR_TOKEN}@github.com/oaslananka/kicad-mcp-pro.git"
+          git push canonical "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
 
       - name: Re-publish on canonical
         env:
@@ -31,26 +60,26 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           RELEASE_NAME: ${{ github.event.release.name }}
           RELEASE_BODY: ${{ github.event.release.body }}
-          RELEASE_TARGET: ${{ github.event.release.target_commitish }}
         run: |
           set -euo pipefail
           args=()
           if compgen -G "assets/*" > /dev/null; then
             args=(assets/*)
           fi
-          gh release create "${RELEASE_TAG}" \
-            --repo oaslananka/kicad-mcp-pro \
-            --title "${RELEASE_NAME}" \
-            --notes "${RELEASE_BODY}" \
-            --target "${RELEASE_TARGET}" \
-            "${args[@]}" \
-          || if [ "${#args[@]}" -gt 0 ]; then
-               gh release upload "${RELEASE_TAG}" \
-                 --repo oaslananka/kicad-mcp-pro \
-                 "${args[@]}" --clobber
-             else
-               gh release edit "${RELEASE_TAG}" \
-                 --repo oaslananka/kicad-mcp-pro \
-                 --title "${RELEASE_NAME}" \
-                 --notes "${RELEASE_BODY}"
-             fi
+          printf '%s' "${RELEASE_BODY}" > release-notes.md
+          if gh release view "${RELEASE_TAG}" --repo oaslananka/kicad-mcp-pro > /dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" \
+              --repo oaslananka/kicad-mcp-pro \
+              --title "${RELEASE_NAME}" \
+              --notes-file release-notes.md
+          else
+            gh release create "${RELEASE_TAG}" \
+              --repo oaslananka/kicad-mcp-pro \
+              --title "${RELEASE_NAME}" \
+              --notes-file release-notes.md
+          fi
+          if [ "${#args[@]}" -gt 0 ]; then
+            gh release upload "${RELEASE_TAG}" \
+              --repo oaslananka/kicad-mcp-pro \
+              "${args[@]}" --clobber
+          fi
