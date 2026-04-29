@@ -41,7 +41,21 @@ jobs:
           EVENT_REF_TYPE: ${{ github.event.ref_type }}
         run: |
           set -euo pipefail
+          if [ -z "${MIRROR_TOKEN:-}" ]; then
+            echo "::error::DOPPLER_GITHUB_SERVICE_TOKEN is required for canonical mirroring."
+            exit 1
+          fi
+
           git remote add org "https://x-access-token:${MIRROR_TOKEN}@github.com/oaslananka-lab/kicad-mcp-pro.git"
+
+          delete_org_ref_if_present() {
+            refspec="$1"
+            if git ls-remote --exit-code org "$refspec" >/dev/null 2>&1; then
+              git push org ":$refspec"
+            else
+              echo "Remote ref already absent in org mirror: $refspec"
+            fi
+          }
 
           if [ "${EVENT_NAME}" = "delete" ]; then
             ref_name="${EVENT_REF}"
@@ -52,11 +66,11 @@ jobs:
                   echo "Skipping org-managed branch deletion: $ref_name"
                   ;;
                 *)
-                  git push org --delete "$ref_name" || true
+                  delete_org_ref_if_present "refs/heads/$ref_name"
                   ;;
               esac
             elif [ "$ref_type" = "tag" ]; then
-              git push org --delete "refs/tags/$ref_name" || true
+              delete_org_ref_if_present "refs/tags/$ref_name"
             fi
             exit 0
           fi
@@ -91,12 +105,42 @@ jobs:
           MIRROR_TOKEN: ${{ secrets.DOPPLER_GITHUB_SERVICE_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "${MIRROR_TOKEN:-}" ]; then
+            echo "::error::DOPPLER_GITHUB_SERVICE_TOKEN is required for canonical reconciliation."
+            exit 1
+          fi
+
           git config user.name "oaslananka-lab[bot]"
           git config user.email "oaslananka-lab@users.noreply.github.com"
 
           git remote set-url origin "https://x-access-token:${MIRROR_TOKEN}@github.com/oaslananka-lab/kicad-mcp-pro.git"
           git remote add canonical "https://x-access-token:${MIRROR_TOKEN}@github.com/oaslananka/kicad-mcp-pro.git"
+          git fetch origin --prune
           git fetch canonical --prune --tags
+
+          push_canonical_branch() {
+            ref="$1"
+            source_ref="refs/remotes/canonical/${ref}"
+            target_ref="refs/heads/${ref}"
+
+            if [ "$ref" = "main" ]; then
+              if git show-ref --verify --quiet refs/remotes/origin/main; then
+                canonical_tree="$(git rev-parse "${source_ref}^{tree}")"
+                org_tree="$(git rev-parse "refs/remotes/origin/main^{tree}")"
+                if [ "$canonical_tree" = "$org_tree" ]; then
+                  echo "Skipping main mirror push; canonical and org trees already match."
+                  return 0
+                fi
+                if ! git merge-base --is-ancestor refs/remotes/origin/main "$source_ref"; then
+                  echo "::error::canonical/main is not a fast-forward of org/main and trees differ. Open a reviewed sync PR instead."
+                  exit 1
+                fi
+              fi
+              git push origin "${source_ref}:${target_ref}"
+            else
+              git push origin "${source_ref}:${target_ref}" --force
+            fi
+          }
 
           for ref in $(git for-each-ref --format='%(refname:short)' refs/remotes/canonical | sed 's|^canonical/||'); do
             case "$ref" in
@@ -104,11 +148,7 @@ jobs:
                 continue
                 ;;
             esac
-            if [ "$ref" = "main" ]; then
-              git push origin "refs/remotes/canonical/${ref}:refs/heads/${ref}"
-            else
-              git push origin "refs/remotes/canonical/${ref}:refs/heads/${ref}" --force
-            fi
+            push_canonical_branch "$ref"
           done
 
           git push origin --tags --force
@@ -116,11 +156,15 @@ jobs:
           for org_branch in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin); do
             short="${org_branch#origin/}"
             case "$short" in
-              HEAD|gh-pages|release-please--branches--main)
+              HEAD|main|gh-pages|release-please--branches--main)
                 continue
                 ;;
             esac
             if ! git show-ref --verify --quiet "refs/remotes/canonical/${short}"; then
-              git push origin --delete "$short" || true
+              if git ls-remote --exit-code --heads origin "$short" >/dev/null 2>&1; then
+                git push origin ":refs/heads/$short"
+              else
+                echo "Remote branch already absent in org mirror: $short"
+              fi
             fi
           done
