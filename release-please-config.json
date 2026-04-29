@@ -28,8 +28,7 @@
       ]
     }
   },
-  "pull-request-title-pattern": "chore: release${component} ${version}",
   "include-component-in-tag": false,
   "include-v-in-tag": true,
-  "separate-pull-requests": false
+  "separate-pull-requests": true
 }
