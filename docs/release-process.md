@@ -16,7 +16,7 @@ release PRs in organizations that block `GITHUB_TOKEN` pull-request creation.
 4. Run the manual `Release` workflow from the protected release repository.
 5. Approve the `release` environment gate.
 6. Confirm PyPI/TestPyPI publish, SBOM, checksums, Sigstore signing artifacts, and GitHub attestations.
-7. Confirm docs deploy to `gh-pages`.
+7. Confirm docs deploy to the repository `gh-pages` branch and mirror to the canonical `https://oaslananka.github.io/kicad-mcp-pro/` Pages site.
 8. Post a short GitHub Discussions announcement.
 
 ## Manual Release Workflow

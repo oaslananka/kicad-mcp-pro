@@ -477,6 +477,14 @@ class KiCadFastMCP(FastMCP):
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
         cfg = get_config()
+        if cfg.legacy_sse:
+            sse_routes = self.sse_app().routes
+            existing_paths = {getattr(route, "path", None) for route in app.routes}
+            for route in sse_routes:
+                route_path = getattr(route, "path", None)
+                if route_path in {"/sse", "/messages"} and route_path not in existing_paths:
+                    app.routes.append(route)
+                    existing_paths.add(route_path)
         origins = cfg.cors_origin_list
         if origins:
             app.add_middleware(

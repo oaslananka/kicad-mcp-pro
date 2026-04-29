@@ -36,6 +36,31 @@ def test_wellknown_routes_return_identical_payload(monkeypatch, sample_project) 
     assert dotted.json()["transport"]["endpoint"] == "http://127.0.0.1:3334/mcp"
 
 
+def test_streamable_http_legacy_sse_routes_are_opt_in(sample_project) -> None:
+    _ = sample_project
+    cfg = get_config()
+    cfg.transport = "streamable-http"
+    cfg.legacy_sse = False
+
+    default_paths = {
+        getattr(route, "path", None)
+        for route in build_server("minimal").streamable_http_app().routes
+    }
+    assert "/mcp" in default_paths
+    assert "/sse" not in default_paths
+    assert "/messages" not in default_paths
+
+    cfg.legacy_sse = True
+    legacy_paths = {
+        getattr(route, "path", None)
+        for route in build_server("minimal").streamable_http_app().routes
+    }
+
+    assert "/mcp" in legacy_paths
+    assert "/sse" in legacy_paths
+    assert "/messages" in legacy_paths
+
+
 def test_metrics_route_is_opt_in(monkeypatch, sample_project) -> None:
     _ = sample_project
     monkeypatch.setenv("KICAD_MCP_TRANSPORT", "http")

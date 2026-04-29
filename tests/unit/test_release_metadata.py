@@ -81,6 +81,17 @@ def test_release_metadata_is_synchronised() -> None:
     assert "CVE-2025-69872" in security
 
 
+def test_kicad_studio_contract_documents_current_http_bridge() -> None:
+    studio_doc = (ROOT / "docs" / "integration" / "kicad-studio.md").read_text(encoding="utf-8")
+    mkdocs = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
+
+    assert "2.7.x" in studio_doc
+    assert "http://127.0.0.1:27185/mcp" in studio_doc
+    assert "KICAD_MCP_LEGACY_SSE=true" in studio_doc
+    assert "workflows/manufacturing-export/" in studio_doc
+    assert "workflows/manufacturing-export.md" in mkdocs
+
+
 def test_built_distributions_include_runtime_entrypoint(tmp_path: Path) -> None:
     uv = shutil.which("uv")
     if uv is None:
