@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.3](https://github.com/oaslananka-lab/kicad-mcp-pro/compare/v3.1.2...v3.1.3) (2026-04-29)
+
+
+### Bug Fixes
+
+* keep task install non-admin on windows ([3b020cf](https://github.com/oaslananka-lab/kicad-mcp-pro/commit/3b020cf55e866e32e74c2834a580d5b8c36b0ae8))
+* keep task install non-admin on windows ([9d4b7b4](https://github.com/oaslananka-lab/kicad-mcp-pro/commit/9d4b7b426815f67983d219d852597eaef6554bd8))
+
 ## [3.1.2](https://github.com/oaslananka-lab/kicad-mcp-pro/compare/v3.1.1...v3.1.2) (2026-04-29)
 
 
