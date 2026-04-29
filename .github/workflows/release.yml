@@ -139,15 +139,17 @@ jobs:
       - name: Clear project virtualenv for signing action
         run: |
           rm -rf .venv
-          {
-            echo "VIRTUAL_ENV="
-            echo "UV_PYTHON="
-            echo "UV_PYTHON_INSTALL_DIR="
-            echo "UV_CACHE_DIR="
-          } >> "${GITHUB_ENV}"
 
       - name: Sign release artifacts with Sigstore
         uses: sigstore/gh-action-sigstore-python@04cffa1d795717b140764e8b640de88853c92acc
+        env:
+          # The project setup-uv step exports Python 3.12 settings for package
+          # checks. The pinned Sigstore action bootstraps its own Python 3.14
+          # environment, so isolate uv to keep the action self-contained.
+          UV_CACHE_DIR: ${{ runner.temp }}/sigstore-uv-cache
+          UV_PYTHON: "3.14"
+          UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}/sigstore-uv-python-dir
+          VIRTUAL_ENV: ""
         with:
           inputs: |
             dist/*.whl
