@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import sqlite3
 import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from kicad_mcp.tools import board_file, routing_rules, schematic_transfer
+from kicad_mcp.resources.gate_history import GateHistory, _status
+from kicad_mcp.tools import board_file, export_support, routing_rules, schematic_transfer
+from kicad_mcp.tools.gates import GateOutcome
 
 
 def test_board_file_helpers_parse_geometry_nets_and_frame() -> None:
@@ -51,6 +54,99 @@ def test_board_file_helpers_parse_geometry_nets_and_frame() -> None:
     assert board_file._board_frame_mm("(kicad_pcb)", {}) == (0.0, 0.0, 100.0, 80.0)
     assert board_file._placement_boxes_overlap(0, 0, 2, 2, 1.9, 0, 2, 2, 0.0)
     assert not board_file._placement_boxes_overlap(0, 0, 2, 2, 5, 0, 2, 2, 0.0)
+
+
+def test_export_support_retries_transient_cli_errors(
+    sample_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del sample_project
+    attempts: list[list[str]] = []
+
+    def fake_run(
+        args: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        timeout: float,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        del capture_output, text, timeout, check
+        attempts.append(args)
+        if len(attempts) == 1:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=1,
+                stdout="",
+                stderr=f"{args[0]} IPC socket timeout",
+            )
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout=f"exported by {args[0]}",
+            stderr="",
+        )
+
+    monkeypatch.setattr(export_support.subprocess, "run", fake_run)
+    monkeypatch.setattr(export_support.time, "sleep", lambda _delay: None)
+
+    code, stdout, stderr = export_support._run_cli("pcb", "export", "gerbers")
+
+    assert code == 0
+    assert stdout == "exported by kicad-cli"
+    assert stderr == ""
+    assert len(attempts) == 2
+
+
+def test_export_support_reports_missing_files_and_variant_timeouts(
+    fake_cli: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del fake_cli
+
+    with pytest.raises(ValueError, match="No PCB file"):
+        export_support._get_pcb_file()
+    with pytest.raises(ValueError, match="No schematic file"):
+        export_support._get_sch_file()
+
+    def fake_cli_run(*_args: str) -> tuple[int, str, str]:
+        raise subprocess.TimeoutExpired(cmd=["kicad-cli"], timeout=1.0)
+
+    monkeypatch.setattr(export_support, "_run_cli", fake_cli_run)
+
+    assert export_support._run_cli_variants([["sch", "export", "netlist"]]) == (
+        124,
+        "",
+        "The kicad-cli command timed out.",
+    )
+
+
+def test_gate_history_records_trends_and_regressions(tmp_path: Path) -> None:
+    history = GateHistory(tmp_path / "gate_history.db")
+    history._init()
+
+    history.record(GateOutcome("dfm", "PASS", "ok"))
+    history.record(GateOutcome("dfm", "FAIL", "failed", ["clearance"]), auto_fixed=2)
+
+    trend = history.trend("dfm", last_n=2)
+    latest = history.latest(last_n=1)
+
+    assert trend[0]["status"] == "FAIL"
+    assert trend[0]["issue_count"] == 1
+    assert trend[0]["auto_fixed"] == 2
+    assert trend[1]["status"] == "PASS"
+    assert latest[0]["gate_name"] == "dfm"
+    assert history.regression_check() == ["dfm regressed from PASS to FAIL."]
+    assert _status("unexpected") == "FAIL"
+
+
+def test_gate_history_rejects_newer_schema(tmp_path: Path) -> None:
+    db_path = tmp_path / "future_gate_history.db"
+    with sqlite3.connect(db_path) as db:
+        db.execute("PRAGMA user_version = 999")
+
+    with pytest.raises(RuntimeError, match="newer than this server supports"):
+        GateHistory(db_path)._init()
 
 
 def test_routing_rules_load_upsert_and_write(sample_project: Path) -> None:
