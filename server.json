@@ -3,7 +3,7 @@
   "name": "io.github.oaslananka/kicad-mcp-pro",
   "title": "KiCad MCP Pro Server",
   "description": "A professional Model Context Protocol server for KiCad EDA.",
-  "version": "3.1.4",
+  "version": "3.1.5",
   "repository": {
     "url": "https://github.com/oaslananka/kicad-mcp-pro",
     "source": "github"
@@ -13,7 +13,7 @@
     {
       "registryType": "pypi",
       "identifier": "kicad-mcp-pro",
-      "version": "3.1.4",
+      "version": "3.1.5",
       "transport": {
         "type": "stdio"
       }

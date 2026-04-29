@@ -2,7 +2,7 @@
   "name": "io.github.oaslananka/kicad-mcp-pro",
   "displayName": "KiCad MCP Pro Server",
   "description": "Compatibility metadata for KiCad MCP Pro. Prefer server.json for official MCP Registry publication.",
-  "version": "3.1.4",
+  "version": "3.1.5",
   "license": "MIT",
   "repository": "https://github.com/oaslananka/kicad-mcp-pro",
   "homepage": "https://oaslananka.github.io/kicad-mcp-pro",
