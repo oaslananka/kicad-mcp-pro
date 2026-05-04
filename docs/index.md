@@ -15,6 +15,7 @@ Use the documentation in this folder for installation, client configuration, too
 - [API Stability](api-stability.md)
 - [Architecture Decisions](adr/README.md)
 - [Capability Verification Levels](status/capability-levels.md)
+- [Runtime Compatibility Matrix](runtime-matrix.md)
 - [Release Process](release-process.md)
 - [Security Threat Model](security/threat-model.md)
 - [Comparison](comparison.md)
