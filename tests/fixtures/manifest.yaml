@@ -1,0 +1,116 @@
+# KiCad MCP Pro benchmark fixture manifest.
+# Each entry declares what the fixture tests and what oracle(s) exist.
+#
+# Status values:
+#   golden_bom     - golden BOM CSV exists at <fixture_dir>/golden_bom.csv
+#   golden_netlist - golden KiCad netlist exists at <fixture_dir>/golden_netlist.net
+#   golden_erc     - golden ERC summary JSON exists at <fixture_dir>/golden_erc.json
+#   golden_drc     - golden DRC summary JSON exists at <fixture_dir>/golden_drc.json
+#   regression     - this fixture is a regression test for a known bug
+
+fixtures:
+  - id: pass_minimal_mcu_board
+    dir: benchmark_projects/pass_minimal_mcu_board
+    kicad_version: ">=9.0"
+    expected_outcome: pass
+    tags: [pcb, schematic, basic]
+    oracles: []
+
+  - id: pass_sensor_node
+    dir: benchmark_projects/pass_sensor_node
+    kicad_version: ">=9.0"
+    expected_outcome: pass
+    tags: [pcb, schematic, sensors]
+    oracles: []
+
+  - id: fail_bad_decoupling_placement
+    dir: benchmark_projects/fail_bad_decoupling_placement
+    kicad_version: ">=9.0"
+    expected_outcome: fail
+    tags: [pcb, dfm, placement]
+    oracles: []
+    defect_class: dfm_placement
+
+  - id: fail_dfm_edge_clearance
+    dir: benchmark_projects/fail_dfm_edge_clearance
+    kicad_version: ">=9.0"
+    expected_outcome: fail
+    tags: [pcb, dfm, clearance]
+    oracles: []
+    defect_class: dfm_clearance
+
+  - id: fail_dirty_transfer_wrong_pad_nets
+    dir: benchmark_projects/fail_dirty_transfer_wrong_pad_nets
+    kicad_version: ">=9.0"
+    expected_outcome: fail
+    tags: [pcb, schematic, netlist]
+    oracles: []
+    defect_class: netlist_mismatch
+
+  - id: fail_footprint_overlap_board
+    dir: benchmark_projects/fail_footprint_overlap_board
+    kicad_version: ">=9.0"
+    expected_outcome: fail
+    tags: [pcb, placement]
+    oracles: []
+    defect_class: footprint_overlap
+
+  - id: fail_label_only_schematic
+    dir: benchmark_projects/fail_label_only_schematic
+    kicad_version: ">=9.0"
+    expected_outcome: fail
+    tags: [schematic, erc, labels]
+    oracles: []
+    defect_class: erc_label_only
+
+  - id: fail_sensor_cluster_spread
+    dir: benchmark_projects/fail_sensor_cluster_spread
+    kicad_version: ">=9.0"
+    expected_outcome: fail
+    tags: [pcb, placement, dfm]
+    oracles: []
+    defect_class: dfm_clustering
+
+  - id: fail_sismosmart_like_hierarchy
+    dir: benchmark_projects/fail_sismosmart_like_hierarchy
+    kicad_version: ">=9.0"
+    expected_outcome: fail
+    tags: [schematic, hierarchy, bom]
+    oracles: []
+    defect_class: multi_sheet_bom
+
+  - id: fail_sismosmart_like_label_only
+    dir: benchmark_projects/fail_sismosmart_like_label_only
+    kicad_version: ">=9.0"
+    expected_outcome: fail
+    tags: [schematic, erc, hierarchy]
+    oracles: []
+    defect_class: multi_sheet_labels
+
+  - id: kicad10_custom_drc
+    dir: benchmark_projects/kicad10_custom_drc
+    kicad_version: ">=10.0"
+    expected_outcome: pass
+    tags: [pcb, drc, kicad10]
+    oracles: []
+
+  - id: kicad10_design_blocks
+    dir: benchmark_projects/kicad10_design_blocks
+    kicad_version: ">=10.0"
+    expected_outcome: pass
+    tags: [pcb, kicad10, design_blocks]
+    oracles: []
+
+  - id: kicad10_timedomain
+    dir: benchmark_projects/kicad10_timedomain
+    kicad_version: ">=10.0"
+    expected_outcome: pass
+    tags: [pcb, kicad10, timedomain]
+    oracles: []
+
+  - id: kicad10_variants
+    dir: benchmark_projects/kicad10_variants
+    kicad_version: ">=10.0"
+    expected_outcome: pass
+    tags: [pcb, schematic, variants, kicad10]
+    oracles: []
