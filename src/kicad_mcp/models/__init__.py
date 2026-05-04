@@ -26,6 +26,17 @@ from .signal_integrity import (
     TraceWidthForImpedanceInput,
 )
 from .simulation import ACAnalysisInput, DCSweepInput, OperatingPointInput, TransientAnalysisInput
+from .state import (
+    AgentRunState,
+    BoardState,
+    CapabilityState,
+    ManufacturingState,
+    ProjectState,
+    SchematicState,
+    VerificationState,
+    WorkspaceState,
+)
+from .tool_result import ArtifactRef, StateDelta, ToolResult
 
 __all__ = [
     "ACAnalysisInput",
@@ -36,6 +47,10 @@ __all__ = [
     "AddTrackInput",
     "AddViaInput",
     "AddWireInput",
+    "AgentRunState",
+    "ArtifactRef",
+    "BoardState",
+    "CapabilityState",
     "CopperWeightCheckInput",
     "CreepageCheckInput",
     "DecouplingRecommendationInput",
@@ -46,12 +61,19 @@ __all__ = [
     "ImpedanceForTraceInput",
     "LayerViaInput",
     "LengthMatchingInput",
+    "ManufacturingState",
     "OperatingPointInput",
+    "ProjectState",
+    "SchematicState",
     "SetStackupInput",
     "StackupInput",
     "StackupLayerSpec",
+    "StateDelta",
+    "ToolResult",
     "TraceImpedanceInput",
     "TraceWidthForImpedanceInput",
     "TransientAnalysisInput",
+    "VerificationState",
     "VoltageDropInput",
+    "WorkspaceState",
 ]
