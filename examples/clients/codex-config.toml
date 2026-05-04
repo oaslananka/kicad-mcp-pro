@@ -1,0 +1,9 @@
+[mcp_servers.kicad]
+command = "uvx"
+args = ["kicad-mcp-pro"]
+startup_timeout_sec = 20
+tool_timeout_sec = 120
+
+[mcp_servers.kicad.env]
+KICAD_MCP_PROJECT_DIR = "/absolute/path/to/your/kicad-project"
+KICAD_MCP_PROFILE = "pcb_only"
