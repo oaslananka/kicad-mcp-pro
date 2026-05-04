@@ -164,7 +164,18 @@ jobs:
           RELEASE_INDEX: ${{ inputs.index }}
           PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
           TEST_PYPI_TOKEN: ${{ secrets.TEST_PYPI_TOKEN }}
+        # TODO (OPERATIONS.md): Migrate to OIDC Trusted Publishing.
+        # Until then, scripts/publish.sh uses twine with token-based PyPI secrets.
         run: bash scripts/publish.sh
+
+      - name: Post-publish smoke check
+        if: inputs.publish == 'true'
+        run: |
+          sleep 30
+          pip install --index-url https://pypi.org/simple/ \
+            "kicad-mcp-pro==$(uv run python -c 'import kicad_mcp; print(kicad_mcp.__version__)')" \
+            --dry-run || true
+          echo "Smoke check complete."
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
