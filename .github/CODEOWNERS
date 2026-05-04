@@ -1,1 +1,35 @@
-* @oaslananka
+# Default owner for everything not matched below
+*                                       @oaslananka
+
+# Workflow changes require explicit approval
+.github/workflows/**                    @oaslananka
+.github/rulesets/**                     @oaslananka
+.actrc                                  @oaslananka
+
+# Release and packaging pipeline
+scripts/release_publish.py              @oaslananka
+scripts/sync_mcp_metadata.py            @oaslananka
+scripts/bump_version.py                 @oaslananka
+pyproject.toml                          @oaslananka
+package.json                            @oaslananka
+
+# Security and policy docs
+SECURITY.md                             @oaslananka
+docs/security/**                        @oaslananka
+docs/autonomy.md                        @oaslananka
+docs/release-process.md                 @oaslananka
+docs/workflow-security.md               @oaslananka
+
+# Azure and GitLab CI
+azure-pipelines.yml                     @oaslananka
+.azure/**                               @oaslananka
+.gitlab-ci.yml                          @oaslananka
+
+# Secrets references
+.doppler/**                             @oaslananka
+.env.example                            @oaslananka
+
+# Capability and policy layer (new in this branch)
+src/kicad_mcp/capabilities.py           @oaslananka
+src/kicad_mcp/policy/**                 @oaslananka
+src/kicad_mcp/execution/**              @oaslananka

@@ -13,6 +13,8 @@ Use the documentation in this folder for installation, client configuration, too
 - [FAQ](faq.md)
 - [Tools Reference](tools-reference.md)
 - [API Stability](api-stability.md)
+- [Architecture Decisions](adr/README.md)
+- [Capability Verification Levels](status/capability-levels.md)
 - [Release Process](release-process.md)
 - [Security Threat Model](security/threat-model.md)
 - [Comparison](comparison.md)

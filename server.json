@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.oaslananka/kicad-mcp-pro",
   "title": "KiCad MCP Pro Server",
-  "description": "A professional Model Context Protocol server for KiCad EDA.",
+  "description": "A Model Context Protocol server for KiCad EDA workflows.",
   "version": "3.1.8",
   "repository": {
     "url": "https://github.com/oaslananka/kicad-mcp-pro",
