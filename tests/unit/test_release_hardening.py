@@ -156,7 +156,7 @@ def test_token_rotation_requires_current_bearer_and_updates_verifier(sample_proj
     _ = sample_project
     cfg = get_config()
     cfg.transport = "streamable-http"
-    cfg.auth_token = "old-token"  # noqa: S105 - test fixture
+    cfg.auth_token = "old-token"  # noqa: S105
     server = build_server("minimal")
     client = TestClient(server.streamable_http_app())
 
@@ -173,7 +173,7 @@ def test_token_rotation_requires_current_bearer_and_updates_verifier(sample_proj
     )
 
     assert rotated.status_code == 200
-    assert cfg.auth_token == "new-token"  # noqa: S105 - test fixture
+    assert cfg.auth_token == "new-token"  # noqa: S105
     assert asyncio.run(server._token_verifier.verify_token("old-token")) is None
     assert asyncio.run(server._token_verifier.verify_token("new-token")) is not None
 
@@ -182,7 +182,7 @@ def test_http_mcp_endpoint_requires_bearer_token(sample_project: Path) -> None:
     _ = sample_project
     cfg = get_config()
     cfg.transport = "streamable-http"
-    cfg.auth_token = "required-token"  # noqa: S105 - test fixture
+    cfg.auth_token = "required-token"  # noqa: S105
     server = build_server("minimal")
     client = TestClient(server.streamable_http_app())
 
@@ -199,7 +199,7 @@ def test_token_rotation_rejects_non_string_token(sample_project: Path) -> None:
     _ = sample_project
     cfg = get_config()
     cfg.transport = "streamable-http"
-    cfg.auth_token = "old-token"  # noqa: S105 - test fixture
+    cfg.auth_token = "old-token"  # noqa: S105
     server = build_server("minimal")
     client = TestClient(server.streamable_http_app())
 
@@ -210,7 +210,7 @@ def test_token_rotation_rejects_non_string_token(sample_project: Path) -> None:
     )
 
     assert response.status_code == 400
-    assert cfg.auth_token == "old-token"  # noqa: S105 - test fixture
+    assert cfg.auth_token == "old-token"  # noqa: S105
 
 
 @pytest.mark.anyio
@@ -547,3 +547,108 @@ async def test_export_manufacturing_package_accepts_explicit_variant(
     assert all("--variant" in command and "lite" in command for command in commands)
     active = await call_tool_text(server, "variant_list", {})
     assert '"active_variant": "default"' in active
+
+
+def test_structured_error_code_unavailable() -> None:
+    from kicad_mcp.server import _structured_tool_error_from_message
+
+    result = _structured_tool_error_from_message("kicad-cli is missing")
+    assert result.isError is True
+    assert result.structuredContent["error_code"] == "CLI_UNAVAILABLE"
+
+
+def test_health_doctor_schema_and_secret_masking(
+    sample_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ = sample_project
+    reset_config()
+    cfg = get_config()
+    cfg.auth_token = "secret-token"  # noqa: S105
+    cfg.kicad_token = "kicad-secret"  # noqa: S105
+
+    from kicad_mcp.diagnostics import build_doctor_report, build_health_report
+
+    health = build_health_report()
+    assert health.ok is True
+    config_diag = health.config
+    assert config_diag.auth_token == {"configured": True}
+    assert config_diag.kicad_token == {"configured": True}
+    # Ensure secrets are NOT in the output
+    health_json = health.model_dump_json()
+    assert "secret-token" not in health_json
+    assert "kicad-secret" not in health_json
+
+    doctor = build_doctor_report()
+    # doctor might not be 'ok' if KiCad is not running, but it should have stable keys
+    assert hasattr(doctor, "status")
+    assert hasattr(doctor, "checks")
+    doctor_json = doctor.model_dump_json()
+    assert "secret-token" not in doctor_json
+    assert "kicad-secret" not in doctor_json
+
+
+@pytest.mark.anyio
+async def test_export_path_traversal_rejection_strengthened(
+    sample_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "kicad_mcp.tools.export.get_cli_capabilities",
+        lambda _cli: CliCapabilities(
+            version="KiCad 10.0.1",
+            supports_step=True,
+        ),
+    )
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    # Test various traversal attempts
+    traversals = [
+        "../outside.step",
+        "../../outside.step",
+        "/absolute/path/board.step",
+        "nested/../../outside.step",
+        " ",
+        ".",
+        "..",
+    ]
+
+    for path in traversals:
+        result = await call_tool_text(server, "export_step", {"output_path": path})
+        assert "Invalid output path" in result or "traversal" in result.lower()
+
+
+def test_tool_registry_invariants_and_profiles() -> None:
+    from kicad_mcp.tools.router import (
+        TOOL_CATEGORIES,
+        available_profiles,
+        categories_for_profile,
+    )
+
+    # All tools in categories must exist in some way or be registered
+    for _category, info in TOOL_CATEGORIES.items():
+        assert "tools" in info
+        assert isinstance(info["tools"], list)
+
+    # Critical profiles must be stable
+    for profile in ["full", "minimal", "pcb", "schematic", "agent_full"]:
+        assert profile in available_profiles()
+        categories = categories_for_profile(profile)
+        assert len(categories) > 0
+
+
+@pytest.mark.anyio
+async def test_lazy_startup_idempotency_and_deferral() -> None:
+    from kicad_mcp.server import build_server
+
+    server = build_server("minimal", defer_registration=True)
+    assert server._lazy_registration_complete is False
+
+    # First call should trigger registration
+    tools = await server.list_tools()
+    assert server._lazy_registration_complete is True
+    count = len(tools)
+
+    # Repeated calls should be idempotent and not duplicate tools
+    tools_repeated = await server.list_tools()
+    assert server._lazy_registration_complete is True
+    assert len(tools_repeated) == count
