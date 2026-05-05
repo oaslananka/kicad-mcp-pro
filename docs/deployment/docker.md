@@ -28,16 +28,22 @@ Pass an official Linux x86_64 KiCad 10 AppImage URL from the
 docker build \
   -f Dockerfile.kicad10 \
   --build-arg KICAD_APPIMAGE_URL="https://downloads.kicad.org/path/to/KiCad-10.x-x86_64.AppImage" \
-  -t ghcr.io/oaslananka/kicad-mcp-pro:2.4.2-kicad10 .
+  -t ghcr.io/oaslananka/kicad-mcp-pro:kicad10-ci .
 ```
+
+The `:kicad10-ci` tag is intentionally neutral. It represents the local CI image
+built for runtime validation, not a published project release version.
 
 Then run a smoke test:
 
 ```bash
 docker run --rm -v "$PWD:/project" \
-  ghcr.io/oaslananka/kicad-mcp-pro:2.4.2-kicad10 \
+  ghcr.io/oaslananka/kicad-mcp-pro:kicad10-ci \
   kicad-mcp-pro --help
 ```
+
+GitHub Actions jobs that build this image should provide the KiCad AppImage URL
+through a repository variable or secret such as `KICAD_10_APPIMAGE_URL`.
 
 This image is intended for CI and release validation. Do not use it as a shared
 multi-tenant host unless you also configure bearer auth, strict CORS origins,
