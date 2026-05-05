@@ -30,7 +30,7 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
         with:
           python-version: "3.12"
       - run: corepack enable
