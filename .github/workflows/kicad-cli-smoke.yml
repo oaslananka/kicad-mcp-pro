@@ -1,0 +1,95 @@
+name: KiCad CLI Smoke
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kicad-cli-smoke:
+    name: KiCad 10 CLI smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HUSKY: 0
+      KICAD_SMOKE_ARTIFACTS: artifacts/kicad-cli-smoke
+      # Configure one of these repository variables/secrets for real KiCad 10 validation:
+      # - vars.KICAD_10_APPIMAGE_URL
+      # - secrets.KICAD_10_APPIMAGE_URL
+      KICAD_10_APPIMAGE_URL: ${{ vars.KICAD_10_APPIMAGE_URL || secrets.KICAD_10_APPIMAGE_URL }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+        with:
+          python-version: "3.12"
+
+      - name: Install project dependencies
+        run: |
+          corepack enable
+          corepack npm ci
+          uv sync --all-extras --frozen
+
+      - name: Build KiCad 10 CI image
+        if: env.KICAD_10_APPIMAGE_URL != ''
+        run: |
+          docker build \
+            -f Dockerfile.kicad10 \
+            --build-arg KICAD_APPIMAGE_URL="${KICAD_10_APPIMAGE_URL}" \
+            -t kicad-mcp-pro:kicad10-ci .
+
+      - name: Extract KiCad CLI from CI image
+        if: env.KICAD_10_APPIMAGE_URL != ''
+        run: |
+          container_id="$(docker create kicad-mcp-pro:kicad10-ci)"
+          mkdir -p .kicad10-appimage
+          docker cp "${container_id}:/opt/kicad-appimage" .kicad10-appimage/root
+          docker rm "${container_id}"
+          echo "KICAD_MCP_KICAD_CLI=${PWD}/.kicad10-appimage/root/usr/bin/kicad-cli" >> "${GITHUB_ENV}"
+
+      - name: Require KiCad 10 AppImage configuration
+        if: env.KICAD_10_APPIMAGE_URL == ''
+        run: |
+          echo "KICAD_10_APPIMAGE_URL is not configured."
+          echo "Set repository variable or secret KICAD_10_APPIMAGE_URL to an official KiCad 10 Linux x86_64 AppImage URL."
+          exit 1
+
+      - name: Run real KiCad CLI smoke tests
+        run: |
+          mkdir -p "${KICAD_SMOKE_ARTIFACTS}"
+          uv run python -m pytest tests/integration/test_kicad_cli_smoke.py \
+            -q \
+            --junitxml="${KICAD_SMOKE_ARTIFACTS}/pytest-report.xml"
+
+      - name: Collect KiCad smoke diagnostics
+        if: always()
+        run: |
+          mkdir -p "${KICAD_SMOKE_ARTIFACTS}"
+          {
+            echo "KICAD_MCP_KICAD_CLI=${KICAD_MCP_KICAD_CLI:-}"
+            if [ -n "${KICAD_MCP_KICAD_CLI:-}" ] && [ -x "${KICAD_MCP_KICAD_CLI}" ]; then
+              "${KICAD_MCP_KICAD_CLI}" version || true
+            fi
+          } > "${KICAD_SMOKE_ARTIFACTS}/kicad-cli-diagnostics.log" 2>&1
+
+      - name: Upload KiCad smoke artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kicad-cli-smoke-artifacts
+          path: artifacts/kicad-cli-smoke/
+          if-no-files-found: warn
