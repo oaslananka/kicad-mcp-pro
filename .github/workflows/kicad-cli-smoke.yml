@@ -1,0 +1,66 @@
+name: KiCad CLI Smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      kicad_appimage_url:
+        description: 'URL to KiCad 10 AppImage'
+        required: false
+        default: 'https://downloads.kicad.org/kicad/linux/nightly/KiCad-nightly-x86_64.AppImage'
+
+jobs:
+  smoke-test:
+    name: KiCad 10 CLI Smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4.2.2
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libfuse2 fuse
+
+      - name: Download and Extract KiCad 10 AppImage
+        env:
+          # Use input if provided (manual dispatch), otherwise fallback to env/secret or a default nightly for validation
+          # The objective requested documentation of where to get this URL.
+          DEFAULT_URL: 'https://downloads.kicad.org/kicad/linux/nightly/KiCad-nightly-x86_64.AppImage'
+          KICAD_APPIMAGE_URL: ${{ github.event.inputs.kicad_appimage_url || vars.KICAD_APPIMAGE_URL }}
+        run: |
+          URL="${KICAD_APPIMAGE_URL:-$DEFAULT_URL}"
+          echo "Downloading KiCad AppImage from $URL"
+          curl -fL "$URL" -o kicad.AppImage
+          chmod +x kicad.AppImage
+          ./kicad.AppImage --appimage-extract
+          sudo mv squashfs-root /opt/kicad-appimage
+          echo "/opt/kicad-appimage/usr/bin" >> $GITHUB_PATH
+
+      - name: Install uv
+        run: pip install --user uv
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Run KiCad CLI Smoke Tests
+        env:
+          KICAD_MCP_KICAD_CLI: /opt/kicad-appimage/usr/bin/kicad-cli
+        run: |
+          mkdir -p artifacts/kicad-cli-smoke
+          uv run python -m pytest tests/integration/test_kicad_cli_smoke.py --junitxml=artifacts/kicad-cli-smoke/pytest-report.xml
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.4.0
+        with:
+          name: kicad-cli-smoke-logs
+          path: |
+            artifacts/kicad-cli-smoke/
+            /tmp/pytest-of-runner/
