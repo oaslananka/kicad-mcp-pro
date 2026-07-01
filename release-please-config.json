@@ -20,6 +20,10 @@
       "extra-files": [
         {
           "type": "generic",
+          "path": "CITATION.cff"
+        },
+        {
+          "type": "generic",
           "path": "src/kicad_mcp/__init__.py"
         },
         {

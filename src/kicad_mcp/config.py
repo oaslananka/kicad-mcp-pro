@@ -405,7 +405,7 @@ class KiCadMCPConfig(BaseSettings):
         target.mkdir(parents=True, exist_ok=True)
         return target
 
-    def resolve_within_project(self, raw_path: str | Path, *, allow_absolute: bool = False) -> Path:
+    def resolve_within_project(self, raw_path: str | Path, *, allow_absolute: bool = True) -> Path:
         """Resolve a path relative to the project root and prevent traversal."""
         resolved = resolve_under(self.project_root, raw_path, allow_absolute=allow_absolute)
         self._assert_within_project(resolved)

@@ -442,8 +442,6 @@ def _tool_error_hint(message: str) -> str:
             "Use --mode=write, --mode=manufacturing,\n"
             "or --mode=experimental with appropriate access."
         )
-    if "not found" in lowered or ("symbol" in lowered and "missing" in lowered):
-        return "The requested resource was not found. Verify the name, identifier, or library path."
     if "symbol" in lowered and ("not found" in lowered or "missing" in lowered):
         return (
             "Symbol not found. Check the library name and symbol name,\n"
@@ -458,6 +456,8 @@ def _tool_error_hint(message: str) -> str:
         return (
             "Net not found. Verify the net name exists in the schematic, or check kicad_get_nets()."
         )
+    if "not found" in lowered or ("symbol" in lowered and "missing" in lowered):
+        return "The requested resource was not found. Verify the name, identifier, or library path."
     return (
         "Inspect the structured error and retry after correcting the request or project state. "
         "Run 'kicad-mcp-pro doctor' for a full diagnostic."
