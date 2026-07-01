@@ -2284,6 +2284,33 @@ async def test_build_circuit_rejects_missing_symbol(sample_project, mock_kicad) 
     assert "not found" in text.lower()
 
 
+@pytest.mark.anyio
+async def test_build_circuit_adds_pwr_flag_to_undriven_power_rail(
+    sample_project, mock_kicad
+) -> None:
+    server = build_server("schematic")
+    # Two resistors on a +3V3 rail with no power-output source: KiCad's power
+    # symbol is power_in, so ERC would report "input power pin not driven"; the
+    # builder must add a PWR_FLAG so the rail reads as driven.
+    await call_tool_text(
+        server,
+        "sch_build_circuit",
+        {
+            "symbols": [
+                {"library": "Device", "symbol_name": "R", "reference": "R1", "value": "10k"},
+                {"library": "Device", "symbol_name": "R", "reference": "R2", "value": "10k"},
+            ],
+            "nets": [
+                {"name": "+3V3", "endpoints": ["R1.1", "R2.1"]},
+                {"name": "GND", "endpoints": ["R1.2", "R2.2"]},
+            ],
+            "auto_layout": True,
+        },
+    )
+    sch = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
+    assert "PWR_FLAG" in sch
+
+
 def test_symbol_existence_validation_is_conservative() -> None:
     # An unlocatable library returns None so symbols are never false-rejected.
     from kicad_mcp.tools.schematic import _validate_symbol_resolves, symbol_exists
