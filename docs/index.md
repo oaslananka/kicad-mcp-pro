@@ -118,3 +118,15 @@ The docs are ordered from first setup to operations and maintenance.
 - [Installation Policy](development/installation-policy.md)
 - [Accessibility](accessibility.md)
 - [Internationalization](internationalization.md)
+
+
+## Repository maturity
+
+- [Repository Maturity Report](repo-maturity-report.md)
+- [OpenSSF Evidence](openssf-evidence.md)
+- [OpenSSF Gap Analysis](openssf-gap-analysis.md)
+- [OpenSSF Proposal Links](openssf-proposal-links.md)
+- [Getting Started Tutorial](tutorials/getting-started.md)
+- [How-to Guides](how-to/index.md)
+- [Reference Index](reference/index.md)
+- [Architecture Explanation](explanation/architecture.md)

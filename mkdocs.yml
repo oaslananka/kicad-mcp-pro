@@ -42,6 +42,9 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting Started:
+      - Tutorials:
+          - Getting Started Tutorial: tutorials/getting-started.md
+      - How-to Guides: how-to/index.md
       - Accessibility: accessibility.md
       - Internationalization: internationalization.md
       - Installation: installation.md
@@ -51,6 +54,7 @@ nav:
       - FAQ: faq.md
       - Comparison: comparison.md
   - Reference and Status:
+      - Diataxis Reference: reference/index.md
       - Tools Reference: tools-reference.md
       - Generated Tools Reference: tools-reference.generated.md
       - Error Catalog: errors.md
@@ -128,6 +132,10 @@ nav:
       - Release Process: release-process.md
       - OpenSSF Best Practices: openssf-best-practices.md
       - OpenSSF Silver Evidence: openssf-silver-evidence.md
+      - Repository Maturity Report: repo-maturity-report.md
+      - OpenSSF Evidence: openssf-evidence.md
+      - OpenSSF Gap Analysis: openssf-gap-analysis.md
+      - OpenSSF Proposal Links: openssf-proposal-links.md
       - Release Notes: release.md
       - Demo Media: demo-media.md
   - Security and Privacy:
@@ -156,9 +164,12 @@ nav:
       - Coding Standards: development/coding-standards.md
       - Testing Policy: development/testing-policy.md
       - Dependency Management: development/dependency-management.md
+      - Commit Conventions: development/commit-conventions.md
+      - Release Process: development/release-process.md
       - Installation Policy: development/installation-policy.md
       - Dependency Audit: development/dependency-audit-2026-06.md
       - Architecture: development/architecture.md
+      - Architecture Explanation: explanation/architecture.md
       - Architecture Decisions:
           - Overview: adr/README.md
           - Repository Topology: adr/0001-repository-topology.md

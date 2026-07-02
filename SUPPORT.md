@@ -26,3 +26,8 @@ These targets depend on maintainer availability. If a target is at risk, maintai
 - Include KiCad, Python, MCP client, transport, and install method.
 - Remove tokens, private board data, and customer-specific paths from logs.
 - For regressions, include the last working version and first broken version.
+
+
+## Repository maturity and governance
+
+Repository maturity, OpenSSF evidence, and remaining manual hardening tasks are tracked in [`docs/repo-maturity-report.md`](docs/repo-maturity-report.md), [`docs/openssf-evidence.md`](docs/openssf-evidence.md), and [`docs/openssf-gap-analysis.md`](docs/openssf-gap-analysis.md).

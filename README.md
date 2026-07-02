@@ -78,6 +78,8 @@ fraction of KiCad's programmatic surface the server drives is tracked openly in 
 | npm wrapper | [`kicad-mcp-pro`](https://www.npmjs.com/package/kicad-mcp-pro) |
 | MCP Registry name | `io.github.oaslananka/kicad-mcp-pro` |
 | Version | `3.16.0` | <!-- x-release-please-version -->
+| OSS maturity report | [`docs/repo-maturity-report.md`](docs/repo-maturity-report.md) |
+| OpenSSF evidence | [`docs/openssf-evidence.md`](docs/openssf-evidence.md) |
 
 ## Quick Start
 

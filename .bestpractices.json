@@ -1,0 +1,38 @@
+{
+  "evidence": {
+    "codingStandards": "docs/development/coding-standards.md",
+    "dependencyManagement": "docs/development/dependency-management.md",
+    "governance": "GOVERNANCE.md",
+    "maintainers": "MAINTAINERS.md",
+    "maturityReport": "docs/repo-maturity-report.md",
+    "openssfEvidence": "docs/openssf-evidence.md",
+    "openssfGapAnalysis": "docs/openssf-gap-analysis.md",
+    "openssfProposalLinks": "docs/openssf-proposal-links.md",
+    "releaseProcess": "docs/development/release-process.md",
+    "securityPolicy": "SECURITY.md",
+    "silverEvidence": "docs/openssf-silver-evidence.md",
+    "testingPolicy": "docs/development/testing-policy.md"
+  },
+  "manualActionsRequired": [
+    "Enable or verify branch rulesets or branch protection in GitHub settings.",
+    "Require independent human PR review once a second trusted maintainer exists.",
+    "Enable private vulnerability reporting, Dependabot alerts, secret scanning, and push protection where available.",
+    "Verify CODEOWNERS enforcement through repository rulesets."
+  ],
+  "project": {
+    "badgeAppProjectId": 13377,
+    "currentTarget": "Professional OSS / Mature OSS",
+    "goldClaimed": false,
+    "name": "KiCad MCP Pro",
+    "openssfTarget": "Maintain Passing/Silver evidence; Gold not claimed",
+    "repository": "https://github.com/oaslananka/kicad-mcp"
+  },
+  "schemaVersion": 1,
+  "statusLegend": [
+    "Passed",
+    "Partial",
+    "Missing",
+    "Not applicable",
+    "Needs human confirmation"
+  ]
+}

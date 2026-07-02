@@ -5,7 +5,9 @@ behavioral changes, and use Conventional Commit messages.
 
 ## Community standards
 
-By participating, contributors agree to follow [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). Security-sensitive findings must be reported privately through [`SECURITY.md`](SECURITY.md), not through public issues or pull requests.
+By participating, contributors agree to follow [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+
+Contribution mechanics are documented in [`docs/development/commit-conventions.md`](docs/development/commit-conventions.md), [`docs/development/testing-policy.md`](docs/development/testing-policy.md), and [`docs/development/release-process.md`](docs/development/release-process.md). Security-sensitive findings must be reported privately through [`SECURITY.md`](SECURITY.md), not through public issues or pull requests.
 
 ## Developer Certificate of Origin
 
