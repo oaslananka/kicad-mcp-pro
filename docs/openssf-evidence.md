@@ -24,7 +24,7 @@ This file consolidates evidence for OpenSSF Best Practices and Scorecard-style r
 | Versioned source repository | Passed | Public GitHub repo with release tags. |
 | Release notes | Passed | `CHANGELOG.md`, release-please workflow, publish workflows. |
 | Bug reporting | Passed | GitHub issue templates and support policy. |
-| Private security reports | Passed / Needs setting confirmation | `SECURITY.md`; confirm private reporting in GitHub UI. |
+| Private security reports | Passed | `SECURITY.md` exists and GitHub private reporting is enabled. |
 | Automated build/test | Passed | `ci.yml`, `package.json` scripts, `Taskfile.yml`. |
 | New functionality tests | Passed | PR template and testing policy require tests or documented justification. |
 | Static analysis | Passed | Ruff, mypy, CodeQL, Bandit, workflow-security checks. |
@@ -39,13 +39,13 @@ This file consolidates evidence for OpenSSF Best Practices and Scorecard-style r
 
 | Scorecard check | Status | Evidence / note |
 | --- | --- | --- |
-| Branch-Protection | Partial / Needs human confirmation | `.github/rulesets/main.json`; classic API returned branch not protected. |
+| Branch-Protection | Passed / accepted solo-maintainer exception | Active GitHub ruleset protects `main`; required human approval is intentionally not enforced while solo-maintained. |
 | Code-Review | Partial | PR template exists; recent sampled PRs had no recorded reviews. |
 | Maintained | Passed | Recent pushes and active PR history. |
 | Security-Policy | Passed | `SECURITY.md`. |
 | License | Passed | MIT. |
 | CI-Tests | Passed | `ci.yml` and supporting workflows. |
-| Dependency-Update-Tool | Passed / Partial | Renovate is documented; Dependabot config intentionally empty. |
+| Dependency-Update-Tool | Passed | Renovate is configured with vulnerability alerts and lockfile maintenance. |
 | Pinned-Dependencies | Passed / Partial | Actions are pinned to SHAs; continue workflow-security checks. |
 | Token-Permissions | Passed / Partial | Minimal default permissions; release jobs escalate intentionally. |
 | Dangerous-Workflow | Passed / Partial | Workflow security checks and no `pull_request_target` evidence in audit. |

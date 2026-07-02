@@ -8,7 +8,7 @@ Mode: audit + implementation PR
 
 `kicad-mcp` already has many strong professional open-source signals: README, MIT license, contribution guide, code of conduct, security policy, support policy, release automation, CI, CodeQL, Gitleaks, Scorecard, fuzzing, package metadata, OpenSSF Silver evidence, generated tool references, and documented governance.
 
-The current maturity level is **Professional OSS / Mature OSS**. This report does **not** claim Gold or foundation-grade status because several conditions need human confirmation or are not yet true: single active maintainer, no evidence of independent human PR review in sampled recent PRs, branch protection not confirmed by the classic GitHub branch-protection API, and GitHub-hosted settings that cannot be proven from files alone.
+The current maturity level is **Professional OSS / Mature OSS**. This report does **not** claim Gold or foundation-grade status because several conditions need human confirmation or are not yet true: single active maintainer, no evidence of independent human PR review in sampled recent PRs, classic branch protection is not used because an active GitHub ruleset protects `main`, and only team-growth controls remain out of scope for a solo maintainer.
 
 ## Current maturity level
 
@@ -20,7 +20,7 @@ Evidence includes public repository, MIT license, active CI, release automation,
 
 Primary target: **Professional OSS / Mature OSS**.
 
-Gold / foundation-grade is a future target only after multiple active maintainers, independent human review, enforced repository rulesets, sustainable governance, high test coverage, and repeatable release continuity are all evidenced.
+Gold / foundation-grade is not a current target for this solo-maintainer repository. If the project later grows into a multi-maintainer project, the optional Gold gap list can be revisited.
 
 ## GitHub Community Standards status
 
@@ -34,7 +34,7 @@ Gold / foundation-grade is a future target only after multiple active maintainer
 | SUPPORT | Passed | `SUPPORT.md` documents issue, discussion, security, and conduct channels. |
 | Issue templates | Passed | Bug, feature, documentation templates and config exist. |
 | Pull request template | Passed | `.github/PULL_REQUEST_TEMPLATE.md` exists. |
-| Discussions | Needs human confirmation | `SUPPORT.md` links discussions; repository setting must be confirmed. |
+| Discussions | Passed | GitHub repository settings report Discussions enabled. |
 
 ## OpenSSF Best Practices status
 
@@ -42,7 +42,7 @@ Gold / foundation-grade is a future target only after multiple active maintainer
 | --- | --- | --- |
 | Passing readiness | Passed | `docs/openssf-best-practices.md`, `docs/openssf-evidence.md`. |
 | Silver readiness | Passed / Partial | Existing Silver evidence; this PR adds consolidated evidence and gaps. |
-| Gold feasibility | Partial | Not claimed because bus factor, reviews, and settings need evidence. |
+| Gold feasibility | Not applicable | Gold is intentionally not targeted for the current solo-maintainer model. |
 | `.bestpractices.json` | Passed | Added in this PR. |
 | BadgeApp proposal links | Passed | `docs/openssf-proposal-links.md`. |
 | Evidence file | Passed | `docs/openssf-evidence.md`. |
@@ -51,13 +51,13 @@ Gold / foundation-grade is a future target only after multiple active maintainer
 
 | Check area | Status | Evidence / notes |
 | --- | --- | --- |
-| Branch protection | Partial / Needs human confirmation | `.github/rulesets/main.json` exists; classic protection API returned 404. |
-| Code review | Partial | PR template exists; sampled recent merged PRs had zero recorded reviews. |
+| Branch protection / rulesets | Passed | GitHub ruleset `main` is active for branch protection; classic branch protection is not used. |
+| Code review | Partial / Not applicable for solo maintainer | PR template and checks exist. Independent human review is optional until another trusted maintainer exists. |
 | Maintained | Passed | Recent pushes and PR activity. |
 | Security policy | Passed | `SECURITY.md`. |
 | License | Passed | MIT license. |
 | CI tests | Passed | `ci.yml` and multiple quality gates. |
-| Dependency update tool | Passed / Partial | Renovate is documented; Dependabot config intentionally delegates. |
+| Dependency update tool | Passed | Renovate is configured with vulnerability alerts, lockfile maintenance, and package update policy. |
 | Pinned dependencies | Passed / Partial | Actions are mostly SHA-pinned; workflow-security checks continue enforcement. |
 | Token permissions | Passed / Partial | Workflows default to `contents: read`; release jobs escalate intentionally. |
 | Dangerous workflows | Passed / Partial | Workflow security checks exist; keep auditing release workflows. |
@@ -80,7 +80,7 @@ Gold / foundation-grade is a future target only after multiple active maintainer
 | --- | --- | --- |
 | Semantic Versioning | Passed | `CHANGELOG.md` states SemVer. |
 | CHANGELOG | Passed | Release-please/Keep a Changelog style. |
-| GitHub Releases | Passed / Needs human confirmation | Release workflows exist; repository settings require confirmation. |
+| GitHub Releases | Passed | Release workflows and release validation exist; environment approvals remain repository-owner controlled. |
 | Release notes | Passed | `CHANGELOG.md`, release-please. |
 | Release workflow | Passed | Existing release-please/publish workflows; release validation workflow added. |
 | Checksums | Passed | Release evidence generates checksums. |
@@ -111,7 +111,7 @@ Gold / foundation-grade is a future target only after multiple active maintainer
 | Support policy | Passed | `SUPPORT.md`. |
 | Deprecation policy | Passed / Partial | Roadmap, runtime policy, release docs. |
 | Backward compatibility policy | Passed / Partial | API stability docs, tool-contract checks, compatibility matrix. |
-| Sustainable governance | Partial | Single-maintainer model blocks Gold/foundation-grade. |
+| Sustainable governance | Passed for solo maintainer / Partial for multi-maintainer | Solo-maintainer governance is documented; multi-maintainer succession remains optional future work. |
 
 ## Community maturity
 
@@ -141,11 +141,11 @@ Gold / foundation-grade is a future target only after multiple active maintainer
 | Criterion | Status | Evidence / notes |
 | --- | --- | --- |
 | SECURITY | Passed | `SECURITY.md`. |
-| Private vulnerability reporting | Needs human confirmation | Policy links private reports; setting must be enabled by owner. |
+| Private vulnerability reporting | Passed | GitHub private vulnerability reporting was enabled during this hardening pass. |
 | CodeQL | Passed | `.github/workflows/codeql.yml`. |
 | Gitleaks | Passed | `.github/workflows/gitleaks.yml`. |
 | Dependency review | Partial -> Passed | `.github/workflows/dependency-review.yml` added. |
-| Dependabot/Renovate | Passed / Partial | Renovate documented; verify app status manually. |
+| Dependabot/Renovate | Passed | Renovate configuration includes vulnerability alerts and lockfile maintenance; Dependabot security updates remain intentionally disabled to avoid duplicate PRs. |
 | OSV Scanner | Missing / optional | pip-audit exists; OSV can be future non-blocking scheduled check. |
 | SBOM | Passed / Partial | Release evidence generates SBOMs where supported. |
 | SLSA/provenance | Partial | Formal SLSA level is not claimed. |
@@ -187,4 +187,4 @@ Before this PR: `.github/workflows/dependency-review.yml` and `.github/workflows
 3. Update OpenSSF BadgeApp evidence with links from `docs/openssf-proposal-links.md`.
 4. Open the recommended issues above and label them `repo-maturity`.
 5. Re-run Scorecard after branch/ruleset settings are confirmed.
-6. Revisit Gold readiness only after independent maintainers, human review, and settings enforcement exist.
+6. Revisit Gold readiness only if the project intentionally moves beyond a solo-maintainer model.

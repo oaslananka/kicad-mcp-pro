@@ -136,6 +136,7 @@ nav:
       - OpenSSF Evidence: openssf-evidence.md
       - OpenSSF Gap Analysis: openssf-gap-analysis.md
       - OpenSSF Proposal Links: openssf-proposal-links.md
+      - Package License Inventory: legal/dependency-license-awareness.md
       - Release Notes: release.md
       - Demo Media: demo-media.md
   - Security and Privacy:

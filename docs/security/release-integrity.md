@@ -3,6 +3,13 @@
 Release integrity controls are emitted only from the canonical repository,
 `oaslananka/kicad-mcp`.
 
+
+## Release evidence target
+
+Current target: **evidence-backed professional release integrity**. The project does not claim a formal SLSA level.
+
+Each release artifact class should provide the strongest evidence supported by its ecosystem: checksums, SBOMs, GitHub artifact attestations, package-registry provenance, container digests, and post-publish verification. A future formal level can be defined per artifact class after the evidence map is stable.
+
 ## Python SBOM
 
 The Python publish workflow generates a CycloneDX SBOM as release evidence:

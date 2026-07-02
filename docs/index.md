@@ -126,6 +126,7 @@ The docs are ordered from first setup to operations and maintenance.
 - [OpenSSF Evidence](openssf-evidence.md)
 - [OpenSSF Gap Analysis](openssf-gap-analysis.md)
 - [OpenSSF Proposal Links](openssf-proposal-links.md)
+- [Package License Inventory](legal/dependency-license-awareness.md)
 - [Getting Started Tutorial](tutorials/getting-started.md)
 - [How-to Guides](how-to/index.md)
 - [Reference Index](reference/index.md)
