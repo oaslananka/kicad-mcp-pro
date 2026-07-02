@@ -128,7 +128,9 @@ class KiCadMCPConfig(BaseSettings):
     enable_experimental_tools: bool = Field(default=False)
     enable_tasks: bool = Field(
         default=False,
-        description="Opt-in to the experimental MCP Tasks extension (2026-07-28 RC).",
+        description=(
+            "Opt-in to the experimental MCP Tasks extension for draft/future MCP protocol work."
+        ),
     )
     filter_runtime_tools: bool = Field(
         default=True,

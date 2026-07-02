@@ -24,7 +24,7 @@ from ..diagnostics import build_health_report
 from ..discovery import find_kicad_version
 from ..ipc.capabilities import get_ipc_capability_state
 from ..operating_modes import active_operating_mode
-from ..tools.router import available_profiles, categories_for_profile
+from ..tools.router import available_profiles, tool_count_for_profile
 from .dashboard import DASHBOARD_HTML
 from .state import get_metrics_snapshot, get_server_handle, get_start_time
 
@@ -209,7 +209,7 @@ async def api_status(request: Request) -> JSONResponse:
     report = build_health_report()
     ipc_state = get_ipc_capability_state()
     kicad_version = find_kicad_version(cfg.kicad_cli)
-    tool_count = len(categories_for_profile(cfg.profile))
+    tool_count = tool_count_for_profile(cfg.profile)
     metrics = get_metrics_snapshot()
     uptime_seconds = round(time.time() - get_start_time(), 2)
     status = "running" if report.ok else report.status

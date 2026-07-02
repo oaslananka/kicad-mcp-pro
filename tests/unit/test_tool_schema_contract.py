@@ -171,7 +171,7 @@ def test_read_only_tools_have_read_only_hint() -> None:
 
     Some tools like kicad_set_project are tier=READ per the capability
     registry but have write-like names (set_), so infer_tool_annotations
-    does not set readOnlyHint. This gap is tracked for the 2026-07-28 RC
+    does not set readOnlyHint. This gap is tracked for future MCP output-schema work
     migration.
     """
     from kicad_mcp.capabilities import get as get_capability_record
@@ -293,7 +293,7 @@ def test_tool_discovery_schema_is_valid_json_schema() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tool annotations in tools/list response (MCP 2026-07-28 RC field)
+# Tool annotations in tools/list response (future MCP field)
 # ---------------------------------------------------------------------------
 
 

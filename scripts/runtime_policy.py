@@ -36,7 +36,7 @@ DEFAULT_VSCODE_CHANGELOG = (
     else Path("CHANGELOG.md")
 )
 DEFAULT_MCP_CHANGELOG = Path("CHANGELOG.md")
-SUPPORT_MATRIX_DOC = Path("docs/support-matrix.md")
+SUPPORT_MATRIX_DOC = Path("docs/status/runtime-policy-matrix.md")
 
 
 @dataclass(frozen=True, order=True)
@@ -565,7 +565,7 @@ def detect_runtime_drift(
                     ),
                     action=(
                         "Raise apps/vscode-extension package engines.vscode, update "
-                        "compatibility.yaml, docs/support-matrix.md, and release notes."
+                        "compatibility.yaml, docs/status/runtime-policy-matrix.md, and release notes."
                     ),
                 )
             )
@@ -625,7 +625,7 @@ def detect_runtime_drift(
                     ),
                     action=(
                         "Run KiCad canaries for the new primary line, update compatibility.yaml, "
-                        "docs/support-matrix.md, and migration notes."
+                        "docs/status/runtime-policy-matrix.md, and migration notes."
                     ),
                 )
             )
@@ -727,7 +727,7 @@ def detect_runtime_lowering(
                         "Runtime support metadata changed without updating "
                         f"{policy_paths.support_matrix_doc}."
                     ),
-                    action="Update docs/support-matrix.md in the same PR.",
+                    action="Update docs/status/runtime-policy-matrix.md in the same PR.",
                 )
             )
 

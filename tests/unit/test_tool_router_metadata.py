@@ -7,6 +7,8 @@ from kicad_mcp.tools.router import (
     TOOL_CATEGORIES,
     available_profiles,
     categories_for_profile,
+    tool_count_for_profile,
+    tools_for_profile,
 )
 
 
@@ -42,3 +44,12 @@ def test_categories_for_profile_full() -> None:
 def test_profiles_do_not_include_unknown() -> None:
     cats = categories_for_profile("nobody")
     assert len(cats) > 0  # fallback to full
+
+
+def test_tools_for_profile_returns_unique_tool_count() -> None:
+    tools = tools_for_profile("full")
+
+    assert len(tools) == len(set(tools))
+    assert tool_count_for_profile("full") == len(tools)
+    assert tool_count_for_profile("unknown-profile") == tool_count_for_profile("full")
+    assert tool_count_for_profile("minimal") < tool_count_for_profile("full")

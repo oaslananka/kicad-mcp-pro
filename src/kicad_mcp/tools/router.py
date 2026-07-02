@@ -684,6 +684,23 @@ def categories_for_profile(profile: str) -> tuple[str, ...]:
     return PROFILE_CATEGORIES.get(profile, PROFILE_CATEGORIES["full"])
 
 
+def tools_for_profile(profile: str) -> tuple[str, ...]:
+    """Return unique tool names enabled by a server profile, preserving category order."""
+    seen: set[str] = set()
+    tools: list[str] = []
+    for category in categories_for_profile(profile):
+        for tool_name in TOOL_CATEGORIES[category]["tools"]:
+            if tool_name not in seen:
+                seen.add(tool_name)
+                tools.append(tool_name)
+    return tuple(tools)
+
+
+def tool_count_for_profile(profile: str) -> int:
+    """Return the unique public tool count enabled by a server profile."""
+    return len(tools_for_profile(profile))
+
+
 def available_profiles() -> tuple[str, ...]:
     """Return the supported server profile names."""
     preferred = [

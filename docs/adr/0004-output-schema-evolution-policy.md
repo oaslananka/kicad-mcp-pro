@@ -14,7 +14,7 @@ extensions, CI pipelines) break silently when a schema changes.
 
 The MCP 2025-11-25 protocol defines `outputSchema` as an optional field on
 `Tool`, but the SDK and most clients do not enforce it. The upcoming MCP
-2026-07-28 RC adds tool annotations and stronger schema contracts, including
+A future MCP protocol draft adds tool annotations and stronger schema contracts, including
 optional versioned schemas and compatibility hints.
 
 This ADR defines how KiCad MCP Pro evolves its tool output schemas so that:
@@ -134,9 +134,9 @@ else:
     handle_unknown_schema(result)
 ```
 
-### 7. Migration to MCP 2026-07-28 RC
+### 7. Migration to future MCP output-schema requirements
 
-The 2026-07-28 RC adds `outputSchema` to `Tool` as a required hint. When the
+A future MCP protocol draft adds `outputSchema` to `Tool` as a required hint. When the
 server migrates, each tool must declare an explicit `outputSchema` using the
 existing `inputSchema` pattern (JSON Schema draft 2020-12). The migration
 path is:
@@ -154,5 +154,5 @@ path is:
 - The contract test suite (`test_tool_schema_contract.py`) prevents accidental
   drift.
 - CI pipelines should pin on `schemaVersion` to avoid breakage.
-- The 2026-07-28 RC migration will require adding `outputSchema` to all tools,
+- The future output-schema migration will require adding `outputSchema` to all tools,
   but the deprecation process smooths the transition.

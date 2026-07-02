@@ -19,6 +19,7 @@ import secrets
 import signal
 import sys
 import time
+from asyncio import LimitOverrunError
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +27,8 @@ from typing import Any
 
 import structlog
 import typer
+
+from .compatibility import MCP_PROTOCOL_VERSION
 
 logger = structlog.get_logger(__name__)
 
@@ -152,6 +155,8 @@ BRIDGE_PAIR_REFILL = 0.2  # tokens/second
 
 # JSON-RPC error returned when a caller exceeds its budget.
 RATE_LIMIT_ERROR_CODE = -32004
+BRIDGE_MESSAGE_TOO_LARGE_ERROR_CODE = -32005
+BRIDGE_MAX_MESSAGE_BYTES = 64 * 1024
 
 
 @dataclass
@@ -193,6 +198,17 @@ def _rate_limited_error(msg_id: object) -> dict[str, object]:
     }
 
 
+def _message_too_large_error(msg_id: object | None = None) -> dict[str, object]:
+    return {
+        "jsonrpc": "2.0",
+        "id": msg_id,
+        "error": {
+            "code": BRIDGE_MESSAGE_TOO_LARGE_ERROR_CODE,
+            "message": f"Bridge message exceeds {BRIDGE_MAX_MESSAGE_BYTES} bytes.",
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Bridge State
 # ---------------------------------------------------------------------------
@@ -223,9 +239,8 @@ class BridgeState:
     def uptime_seconds(self) -> float:
         return time.time() - self.start_time
 
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "pairing_code": self.pairing_code,
+    def to_dict(self, *, include_secret: bool = False) -> dict[str, object]:
+        payload: dict[str, object] = {
             "port": self.port,
             "target_url": self.target_url,
             "paired": self.paired,
@@ -235,6 +250,9 @@ class BridgeState:
             "rate_limited_count": self.rate_limited_count,
             "uptime_seconds": int(self.uptime_seconds),
         }
+        if include_secret:
+            payload["pairing_code"] = self.pairing_code
+        return payload
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +277,16 @@ async def _bridge_server(state: BridgeState) -> None:
                 data = await asyncio.wait_for(reader.readline(), timeout=300.0)
                 if not data:
                     break
+                if len(data) > BRIDGE_MAX_MESSAGE_BYTES:
+                    logger.warning(
+                        "bridge_message_too_large",
+                        size=len(data),
+                        max_size=BRIDGE_MAX_MESSAGE_BYTES,
+                    )
+                    state.error_count += 1
+                    writer.write((json.dumps(_message_too_large_error()) + "\n").encode("utf-8"))
+                    await writer.drain()
+                    continue
 
                 try:
                     message = json.loads(data.decode("utf-8").strip())
@@ -272,6 +300,16 @@ async def _bridge_server(state: BridgeState) -> None:
                 if response is not None:
                     writer.write((json.dumps(response) + "\n").encode("utf-8"))
                     await writer.drain()
+        except (LimitOverrunError, ValueError) as exc:
+            logger.warning(
+                "bridge_message_read_error", error=str(exc), max_size=BRIDGE_MAX_MESSAGE_BYTES
+            )
+            state.error_count += 1
+            try:
+                writer.write((json.dumps(_message_too_large_error()) + "\n").encode("utf-8"))
+                await writer.drain()
+            except Exception as write_err:
+                logger.debug("bridge_message_too_large_response_failed", error=str(write_err))
         except TimeoutError:
             logger.info("bridge_client_timeout", peer=peer)
         except ConnectionResetError:
@@ -287,13 +325,18 @@ async def _bridge_server(state: BridgeState) -> None:
                 logger.debug("bridge_client_close_error", error=str(close_err))
             logger.info("bridge_client_disconnected", peer=peer)
 
-    server = await asyncio.start_server(handle_client, host="127.0.0.1", port=state.port)
+    server = await asyncio.start_server(
+        handle_client,
+        host="127.0.0.1",
+        port=state.port,
+        limit=BRIDGE_MAX_MESSAGE_BYTES + 1,
+    )
     state._server = server
 
     logger.info(
         "bridge_started",
         port=state.port,
-        pairing_code=state.pairing_code,
+        pairing_code="[REDACTED]",
         target=state.target_url,
     )
 
@@ -374,7 +417,10 @@ async def _proxy_to_local(
     method = message.get("method", "")
     params = message.get("params", {}) or {}
 
-    # Build an MCP JSON-RPC call for the local server
+    # Build an MCP JSON-RPC call for the local server.  The local server
+    # enforces the Streamable HTTP Accept contract before FastMCP handles
+    # JSON-RPC, so the bridge must send the same headers as a compliant MCP
+    # HTTP client.
     local_payload = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -382,19 +428,42 @@ async def _proxy_to_local(
         "params": {"name": method, "arguments": params},
     }
 
+    headers = {
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+        "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+    }
+    auth_token = os.environ.get("KICAD_MCP_AUTH_TOKEN")
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
     try:
         async with httpx.AsyncClient(base_url=state.target_url, timeout=30.0) as client:
-            resp = await client.post("/mcp", json=local_payload)
+            resp = await client.post("/mcp", json=local_payload, headers=headers)
             resp.raise_for_status()
             result = resp.json()
-            return {"jsonrpc": "2.0", "id": msg_id, "result": result.get("result", result)}
-    except httpx.RequestError as exc:
+    except httpx.HTTPStatusError as exc:
+        state.error_count += 1
+        status_code = exc.response.status_code if exc.response is not None else 502
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "error": {
+                "code": -32003,
+                "message": f"Bridge proxy HTTP error: {status_code}",
+            },
+        }
+    except (httpx.RequestError, ValueError) as exc:
         state.error_count += 1
         return {
             "jsonrpc": "2.0",
             "id": msg_id,
             "error": {"code": -32003, "message": f"Bridge proxy error: {exc}"},
         }
+
+    if isinstance(result, dict) and isinstance(result.get("error"), dict):
+        return {"jsonrpc": "2.0", "id": msg_id, "error": result["error"]}
+    return {"jsonrpc": "2.0", "id": msg_id, "result": result.get("result", result)}
 
 
 # ---------------------------------------------------------------------------

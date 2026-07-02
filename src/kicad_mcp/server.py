@@ -105,7 +105,13 @@ from .tools import symbol as _symbol
 from .tools import upgrade as _upgrade
 from .tools.fixers import validate_callable_imports
 from .tools.metadata import get_tool_metadata, infer_tool_annotations
-from .tools.router import EXPERIMENTAL_TOOL_NAMES, available_profiles, categories_for_profile
+from .tools.router import (
+    EXPERIMENTAL_TOOL_NAMES,
+    available_profiles,
+    categories_for_profile,
+    tool_count_for_profile,
+    tools_for_profile,
+)
 from .utils import telemetry as otel
 from .utils.logging import setup_logging
 from .web.state import (
@@ -1151,6 +1157,17 @@ class _StreamableHttpContractMiddleware:
                 send=send,
             )
             return
+        if not _content_type_header_is(headers.get("content-type", ""), "application/json"):
+            await _streamable_http_error_response(
+                code=-32003,
+                message="Bad Request: Content-Type header must be application/json.",
+                rpc_id=rpc_id,
+                status_code=400,
+                scope=scope,
+                receive=replay_receive,
+                send=send,
+            )
+            return
 
         protocol_version = headers.get("mcp-protocol-version")
         if protocol_version and protocol_version != MCP_PROTOCOL_VERSION:
@@ -1298,6 +1315,10 @@ def _accept_header_includes(value: str, media_type: str) -> bool:
     return False
 
 
+def _content_type_header_is(value: str, media_type: str) -> bool:
+    return value.split(";", 1)[0].strip().casefold() == media_type.casefold()
+
+
 def _json_rpc_metadata(body: bytes) -> tuple[object | None, str | None]:
     try:
         payload = json.loads(body.decode("utf-8"))
@@ -1380,12 +1401,16 @@ class _DashboardAuthMiddleware(BaseHTTPMiddleware):
             # Check Authorization: Bearer <token> header
             token = _bearer_token(request)
             authorized = False
-            if token and token == cfg.auth_token:
+            if token and secrets.compare_digest(token, cfg.auth_token):
                 authorized = True
             else:
                 # Check query parameter ?token=<token>
                 query_token = request.query_params.get("token")
-                if cfg.allow_query_token_auth and query_token and query_token == cfg.auth_token:
+                if (
+                    cfg.allow_query_token_auth
+                    and query_token
+                    and secrets.compare_digest(query_token, cfg.auth_token)
+                ):
                     authorized = True
 
             if not authorized:
@@ -1630,12 +1655,10 @@ def build_server(profile: str | None = None, *, defer_registration: bool = False
     )
     server.operating_mode = operating_mode
     server.allow_experimental_tools = operating_mode is OperatingMode.EXPERIMENTAL
-    server.allowed_tool_names = {
-        tool_name for category in enabled for tool_name in router.TOOL_CATEGORIES[category]["tools"]
-    }
+    server.allowed_tool_names = set(tools_for_profile(selected_profile))
 
     # ------------------------------------------------------------------
-    # Experimental MCP Tasks extension (2026-07-28 RC)
+    # Experimental MCP Tasks extension for draft/future MCP protocol work
     # ------------------------------------------------------------------
     if cfg.enable_tasks:
         task_mgr = TaskManager()
@@ -2513,7 +2536,7 @@ def status(
         typer.echo("\n📁  Project:  Not set")
 
     # ── Tools ──
-    tool_count = len(categories_for_profile(cfg.profile or "default"))
+    tool_count = tool_count_for_profile(cfg.profile or "default")
     typer.echo(
         f"\n🛠️   Tools:     {tool_count} available across {len(available_profiles())} profiles"
     )

@@ -134,3 +134,12 @@ def test_docker_image_builds_and_exposes_stdio_cli_smoke() -> None:
             timeout=60,
             check=False,
         )
+
+
+def test_docker_healthcheck_uses_machine_readable_health_endpoint() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    health_path = "/api" + "/health"
+
+    assert "HEALTHCHECK" in dockerfile
+    assert health_path in dockerfile
+    assert "127.0.0.1:3334/').status" not in dockerfile

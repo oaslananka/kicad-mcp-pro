@@ -339,6 +339,32 @@ def test_streamable_http_requires_json_and_sse_accept_header(sample_project: Pat
     )
 
 
+def test_streamable_http_requires_json_content_type(sample_project: Path) -> None:
+    _ = sample_project
+    cfg = get_config()
+    cfg.transport = "streamable-http"
+    server = build_server("minimal")
+
+    with TestClient(server.streamable_http_app(), base_url="http://127.0.0.1:3334") as client:
+        response = client.post(
+            "/mcp",
+            headers={
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "text/plain",
+                "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+            },
+            json=_initialize_request(),
+        )
+
+    _assert_json_rpc_error(
+        response,
+        status_code=400,
+        code=-32003,
+        message="Bad Request: Content-Type header must be application/json.",
+        request_id=1,
+    )
+
+
 def test_streamable_http_accepts_split_accept_headers(sample_project: Path) -> None:
     _ = sample_project
     cfg = get_config()

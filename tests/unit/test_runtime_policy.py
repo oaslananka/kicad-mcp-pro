@@ -87,7 +87,7 @@ def test_runtime_lowering_requires_product_changelog() -> None:
     findings = detect_runtime_lowering(
         base=_snapshot(vscode_range="^1.120.0", python_range=">=3.13"),
         current=_snapshot(vscode_range="^1.119.0", python_range=">=3.12"),
-        changed_files=(Path("docs/support-matrix.md"),),
+        changed_files=(Path("docs/status/runtime-policy-matrix.md"),),
     )
 
     assert [finding.surface for finding in findings] == ["VS Code", "Python"]
@@ -101,7 +101,7 @@ def test_runtime_lowering_accepts_required_changelogs() -> None:
         changed_files=(
             Path("apps/vscode-extension/CHANGELOG.md"),
             Path("CHANGELOG.md"),
-            Path("docs/support-matrix.md"),
+            Path("docs/status/runtime-policy-matrix.md"),
         ),
     )
 
@@ -124,7 +124,7 @@ def test_runtime_lowering_uses_policy_changelog_paths() -> None:
         changed_files=(
             Path("custom/extension-changelog.md"),
             Path("custom/mcp-changelog.md"),
-            Path("docs/support-matrix.md"),
+            Path("docs/status/runtime-policy-matrix.md"),
         ),
         policy_paths=policy_paths,
     )

@@ -7,7 +7,7 @@ MCP 2025-11-25 defines:
   - Task/metadata extension for long-running operations
 
 These tests pin the current protocol surface so regressions in the
-2026-07-28 RC migration are caught early.
+future MCP migration are caught early.
 """
 
 from __future__ import annotations
@@ -227,7 +227,7 @@ def test_cancellation_with_session(sample_project: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Task lifecycle (MCP 2026-07-28 RC area — smoke tests for future surface)
+# Task lifecycle (future MCP area — smoke tests for experimental surface)
 # ---------------------------------------------------------------------------
 
 

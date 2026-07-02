@@ -71,7 +71,7 @@ RUN uv pip install --system --no-cache --require-hashes --requirement /tmp/dist/
 USER kicadmcp
 EXPOSE 3334
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-  CMD python -c "import urllib.request; exit(0 if urllib.request.urlopen('http://127.0.0.1:3334/').status == 200 else 1)" 2>/dev/null || exit 1
+  CMD python -c "import urllib.request; exit(0 if urllib.request.urlopen('http://127.0.0.1:3334/api/health').status == 200 else 1)" 2>/dev/null || exit 1
 ENTRYPOINT ["kicad-mcp-pro-entrypoint"]
 CMD ["--transport", "streamable-http"]
 

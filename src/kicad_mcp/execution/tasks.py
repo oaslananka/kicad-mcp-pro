@@ -1,11 +1,11 @@
-"""Task manager for the experimental MCP Tasks extension (2026-07-28 RC).
+"""Task manager for the experimental MCP Tasks extension draft surface.
 
 The MCP Tasks protocol enables servers to expose long-running operations
 as trackable ``Task`` objects with status polling and cancellation.
 
 .. warning::
 
-    The 2026-07-28 specification is Release Candidate (RC) and may change
+    The task protocol surface is experimental/draft and may change
     before reaching Final. This implementation is opt-in behind the
     ``KICAD_MCP_ENABLE_TASKS`` flag and is **not** advertised via
     ``supportedMcpProtocolVersions``.
