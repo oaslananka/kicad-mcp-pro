@@ -18,7 +18,7 @@ Use this checklist before entering any external review form.
 - [ ] Owner account is `oaslananka`.
 - [ ] Maintainer name is `Osman Aslan`.
 - [ ] Contact handle is `oaslananka`.
-- [ ] Primary domain placeholder is `oaslananka.dev`.
+- [ ] Primary docs domain is `oaslananka.github.io`; ChatGPT Apps custom-domain verification remains a manual platform step before final submission.
 - [ ] Repository URL is `https://github.com/oaslananka/kicad-mcp`.
 - [ ] Documentation URL is `https://oaslananka.github.io/kicad-mcp`.
 - [ ] Privacy URL is `https://oaslananka.github.io/kicad-mcp/privacy/`.
@@ -59,7 +59,7 @@ Use this checklist before entering any external review form.
 ## ChatGPT Apps Checklist
 
 - [ ] Use the OpenAI Developer Platform app submission area at `https://platform.openai.com/apps`.
-- [ ] Verify the domain `oaslananka.dev` using the required TXT record.
+- [ ] Verify the final ChatGPT Apps custom domain using the TXT record required by the platform before submitting the ChatGPT Apps form.
 - [ ] Use app name `KiCad MCP Pro`.
 - [ ] Use short description no longer than 80 characters.
 - [ ] Use long description no longer than 500 characters.
@@ -101,7 +101,7 @@ Use this checklist before entering any external review form.
 - [ ] Run `pnpm run mcp:manifest:check`.
 - [ ] Run `pnpm run assets:icons:check`.
 - [ ] Run `pnpm run submission:check`.
-- [ ] Run `SUBMISSION_MODE=1 pnpm run submission:check` and expect placeholder screenshots to fail before real captures.
+- [ ] Run `SUBMISSION_MODE=1 pnpm run submission:check` and require it to pass before final external submissions.
 - [ ] Run `pnpm run docs:tools:check` after the generated catalog exists.
 - [ ] Run `pnpm run release:dry-run`.
 - [ ] Run `uv run --all-extras properdocs build -f mkdocs.yml --strict`.
@@ -122,7 +122,7 @@ Use this checklist before entering any external review form.
 - [ ] Do not submit while `pnpm run submission:check` fails.
 - [ ] Do not submit while `properdocs build -f mkdocs.yml --strict` fails.
 - [ ] Do not submit while version metadata is out of sync.
-- [ ] Do not submit while screenshot placeholders are still present for final production submission.
+- [ ] Do not submit unless final public-listing screenshot assets pass `SUBMISSION_MODE=1`.
 - [ ] Do not submit with any secret value in logs or screenshots.
 - [ ] Do not submit with old organization namespace strings.
 - [ ] Confirm CI and trusted publishing workflows use GitHub-hosted runners.
@@ -137,8 +137,8 @@ Use this checklist before entering any external review form.
 - [ ] Confirm generated icon assets pass dimension checks before any dashboard upload.
 - [ ] Confirm reviewer prompt JSON remains synchronized with the human-readable prompt guide.
 - [ ] Confirm release evidence is current before referencing Sigstore or provenance in forms.
-- [ ] Confirm screenshot placeholders are replaced before final production submission.
-- [ ] Confirm placeholder screenshots are intentionally reported by `SUBMISSION_MODE=1` until replaced.
+- [ ] Confirm public-listing screenshots are committed and pass final submission mode before production submission.
+- [ ] Confirm final submission mode fails only for real blockers, not for stale placeholder media.
 - [ ] Confirm the current branch has no unrelated dirty files before merge.
 - [ ] Confirm all GitHub PR checks are green before merging to `main`.
 - [ ] Confirm the PR is merged or closed so no stale submission PR remains open.

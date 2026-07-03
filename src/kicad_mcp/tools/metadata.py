@@ -138,6 +138,7 @@ def _is_read_only_name(normalized: str) -> bool:
         or normalized.startswith("lib_search_")
         or normalized.startswith("pcb_get_")
         or normalized.startswith("sch_get_")
+        or normalized.startswith("si_get_")
         or normalized.endswith("_quality_gate")
     )
 

@@ -1,5 +1,5 @@
 schemaVersion: 1
-updated: '2026-06-26'
+updated: '2026-07-03'
 source: https://github.com/oaslananka/kicad-mcp
 kicad:
   primary: 10.0.x
@@ -29,7 +29,8 @@ kicad:
     - range: 9.x
       reason: >-
         Upstream KiCad 9.x reached end of life after KiCad 10.0.0; removal
-        executed at kicad-mcp 3.9.0.
+        is complete in the current 3.17.x release line and was introduced in
+        the 3.9.0 compatibility window.
       ci: none
       removalVersion: 3.9.0
   pcbImportWorkflows:

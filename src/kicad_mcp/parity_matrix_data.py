@@ -510,10 +510,10 @@ _RAW = r"""
         {
           "capability": "2D/3D field / EM solver for impedance & coupling",
           "kicad_channel": "file",
-          "mcp_tool": null,
-          "status": "gap",
+          "mcp_tool": "si_get_solver_capabilities",
+          "status": "partial",
           "kicad_version_introduced": "10.0.x",
-          "notes": "No field-solver integration yet; this is the Phase 3 (P3-T1/T3) accuracy upgrade."
+          "notes": "si_get_solver_capabilities exposes the configured solver seams and explicit solver-unavailable policy. No full field/EM backend is integrated yet; closed-form results remain critic-only and blocked for release signoff unless a solver-grade backend is configured."
         }
       ]
     },
@@ -692,11 +692,11 @@ _RAW = r"""
         },
         {
           "capability": "Import a logo/bitmap as board art (bitmap2component)",
-          "kicad_channel": "cli",
-          "mcp_tool": null,
-          "status": "gap",
+          "kicad_channel": "file",
+          "mcp_tool": "pcb_add_bitmap_board_art",
+          "status": "covered",
           "kicad_version_introduced": "10.0.x",
-          "notes": "KiCad's bitmap-to-silkscreen conversion has no MCP driver yet."
+          "notes": "pcb_add_bitmap_board_art imports bitmap/logo pixels into deterministic filled board-art rectangles on the requested PCB graphics layer. It intentionally avoids private paths and caps generated shape count for reviewable output."
         },
         {
           "capability": "Custom drawing-sheet (.kicad_wks) template design",

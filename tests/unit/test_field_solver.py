@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import json
+
+import pytest
+
+from kicad_mcp.server import build_server
 from kicad_mcp.tools.signal_integrity import _format_impedance_result
 from kicad_mcp.utils.field_solver import (
     CLOSED_FORM_METHOD,
@@ -9,6 +14,7 @@ from kicad_mcp.utils.field_solver import (
     impedance_method,
 )
 from kicad_mcp.utils.solver_seams import format_solver_verdict
+from tests.conftest import call_tool_text
 
 
 def test_no_field_solver_is_integrated_yet() -> None:
@@ -40,3 +46,18 @@ def test_impedance_result_states_its_method() -> None:
     assert "Solver verdict: requires-expert-solver" in text
     assert "release_signoff=blocked" in text
     assert "not a" in text.lower()
+
+
+@pytest.mark.anyio
+async def test_solver_capability_tool_reports_unavailable_policy() -> None:
+    server = build_server("full")
+    payload = json.loads(await call_tool_text(server, "si_get_solver_capabilities", {}))
+
+    assert payload["policy"]["solver_unavailable_mode"] is True
+    assert payload["policy"]["closed_form_results_are_critic_only"] is True
+    assert payload["solver_capabilities"]["trace_impedance_field_solver"]["solver_grade"] is False
+    assert (
+        payload["solver_capabilities"]["trace_impedance_field_solver"]["release_signoff"]
+        == "blocked"
+    )
+    assert payload["solver_capabilities"]["pdn_mesh_solver"]["solver_grade"] is True

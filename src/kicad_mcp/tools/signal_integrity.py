@@ -8,6 +8,7 @@ a fast first-pass review; accuracy is typically ~5-10%. A field-solver mode is p
 
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 from typing import Protocol, cast
@@ -51,7 +52,15 @@ from ..utils.impedance import (
     via_stub_risk_level,
 )
 from ..utils.ngspice import NgspiceRunner
-from ..utils.solver_seams import channel_method, format_solver_verdict
+from ..utils.solver_seams import (
+    channel_method,
+    emc_method,
+    format_solver_verdict,
+    ir_drop_method,
+    pdn_mesh_method,
+    thermal_fd_method,
+    thermal_method,
+)
 from ..utils.units import _coord_nm, nm_to_mm
 from ..verdicts import three_level_verdict, warn_max_from
 from .design_intent_state import resolve_design_intent
@@ -492,6 +501,31 @@ def _stackup_templates(manufacturer: str, layer_count: int) -> list[dict[str, st
 
 def register(mcp: FastMCP) -> None:
     """Register signal-integrity tools."""
+
+    @mcp.tool()
+    def si_get_solver_capabilities() -> str:
+        """Report configured solver-grade analysis capabilities and unavailable seams."""
+        capabilities = {
+            "trace_impedance_field_solver": impedance_method(),
+            "dc_ir_drop_field_solver": ir_drop_method(),
+            "pdn_mesh_solver": pdn_mesh_method(),
+            "thermal_closed_form": thermal_method(),
+            "thermal_plane_fd_solver": thermal_fd_method(),
+            "emc_full_wave_solver": emc_method(),
+            "high_speed_channel_closed_form": channel_method(measured=False),
+        }
+        return json.dumps(
+            {
+                "solver_capabilities": capabilities,
+                "policy": {
+                    "solver_unavailable_mode": True,
+                    "release_signoff_requires_solver_grade": True,
+                    "closed_form_results_are_critic_only": True,
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
 
     @mcp.tool()
     def si_calculate_trace_impedance(

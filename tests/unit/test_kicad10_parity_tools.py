@@ -197,3 +197,36 @@ async def test_pcb_add_barcode_accepts_code128_and_inner_layer_graphics_require_
     assert '(text "SN-001")' in pcb_text
     assert '(type "code128")' in pcb_text
     assert "at least four copper layers" in inner_layer
+
+
+@pytest.mark.anyio
+async def test_pcb_add_bitmap_board_art_imports_logo_pixels(sample_project) -> None:
+    from PIL import Image
+
+    image_path = sample_project / "logo.png"
+    image = Image.new("L", (4, 4), 255)
+    for pixel in [(0, 0), (1, 1), (2, 2), (3, 3)]:
+        image.putpixel(pixel, 0)
+    image.save(image_path)
+
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    result = await call_tool_text(
+        server,
+        "pcb_add_bitmap_board_art",
+        {
+            "source_image": str(image_path),
+            "x_mm": 12.0,
+            "y_mm": 14.0,
+            "width_mm": 4.0,
+            "layer": "F.SilkS",
+            "threshold": 128,
+            "max_pixels": 16,
+        },
+    )
+
+    pcb_text = (sample_project / "demo.kicad_pcb").read_text(encoding="utf-8")
+    assert "Bitmap board art imported" in result
+    assert "as 4 shape(s)" in result
+    assert "(gr_rect" in pcb_text
+    assert '(layer "F.SilkS")' in pcb_text

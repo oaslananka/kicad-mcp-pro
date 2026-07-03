@@ -243,6 +243,7 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "pcb_revert",
             "add_footprint_inner_layer_graphic",
             "pcb_add_barcode",
+            "pcb_add_bitmap_board_art",
             "pcb_block_create_from_selection",
             "pcb_block_place",
         ],
@@ -519,6 +520,7 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "and decoupling placement."
         ),
         "tools": [
+            "si_get_solver_capabilities",
             "si_calculate_trace_impedance",
             "si_calculate_trace_width_for_impedance",
             "si_check_differential_pair_skew",

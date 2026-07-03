@@ -4,7 +4,7 @@ Machine-generated from `docs/compatibility/capability-parity-matrix.yaml`. Refre
 
 KiCad baseline: `10.0.x` · Updated: 2026-06-17
 
-**Overall: 57 / 76 programmatically-reachable capabilities driven = 75.0%** (17 partial, 2 gap; 4 GUI-only with no KiCad API, excluded from the denominator).
+**Overall: 58 / 76 programmatically-reachable capabilities driven = 76.3%** (18 partial, 0 gap; 4 GUI-only with no KiCad API, excluded from the denominator).
 
 ## Coverage by domain
 
@@ -14,18 +14,17 @@ KiCad baseline: `10.0.x` · Updated: 2026-06-17
 | `pcb_edit` | 93.8% | 15 | 1 | 0 | 1 |
 | `routing` | 66.7% | 4 | 2 | 0 | 1 |
 | `library` | 57.1% | 4 | 3 | 0 | 0 |
-| `analysis` | 23.1% | 3 | 9 | 1 | 0 |
+| `analysis` | 23.1% | 3 | 10 | 0 | 0 |
 | `export` | 100.0% | 9 | 0 | 0 | 0 |
 | `project` | 100.0% | 5 | 0 | 0 | 0 |
-| `cosmetics` | 85.7% | 6 | 0 | 1 | 1 |
-| **Overall** | **75.0%** | 57 | 17 | 2 | 4 |
+| `cosmetics` | 100.0% | 7 | 0 | 0 | 1 |
+| **Overall** | **76.3%** | 58 | 18 | 0 | 4 |
 
 ## Closeable surface (gap, then partial)
 
 | Domain | Capability | Status | Channel | MCP tool | Notes |
 |---|---|---|---|---|---|
-| `analysis` | 2D/3D field / EM solver for impedance & coupling | `gap` | `file` | — | No field-solver integration yet; this is the Phase 3 (P3-T1/T3) accuracy upgrade. |
-| `cosmetics` | Import a logo/bitmap as board art (bitmap2component) | `gap` | `cli` | — | KiCad's bitmap-to-silkscreen conversion has no MCP driver yet. |
+| `analysis` | 2D/3D field / EM solver for impedance & coupling | `partial` | `file` | `si_get_solver_capabilities` | si_get_solver_capabilities exposes the configured solver seams and explicit solver-unavailable policy. No full field/EM backend is integrated yet; closed-form results remain critic-only and blocked for release signoff unless a solver-grade backend is configured. |
 | `analysis` | Copper-plane thermal spreading (2-D FD solve) | `partial` | `file` | `thermal_simulate_plane_spreading` | Genuine 2-D finite-difference steady-state heat-spreading solve over the copper plane (utils/thermal_solver + solver_seams.thermal_fd_method) with peak/average temperature rise and a PASS/WARN/FAIL verdict; not a 3-D FEA with airflow / board-stack conduction (full FEA remains a future upgrade). |
 | `analysis` | DC IR-drop / voltage-drop analysis | `partial` | `file` | `pdn_calculate_voltage_drop` | pdn_calculate_voltage_drop is a first-order single-trace lumped estimate, now with an IPC-2221 current-density fusing / temperature-rise PASS/WARN/FAIL verdict; check_power_integrity runs a genuine distributed multi-load resistive PDN mesh (DC drop + frequency-domain Z(f)), labeled solver-grade via the seam (utils/solver_seams.pdn_mesh_method). Remaining P3-T2 upgrade: a 2-D copper-plane field solve. |
 | `analysis` | Decoupling recommendation / power-plane generation | `partial` | `file` | `pdn_recommend_decoupling_caps` | pdn_generate_power_plane covered; frequency-domain PDN target-Z checking now delivered via check_power_integrity (pdn_mesh Z(f) vs target_impedance_ohm with violations); a full plane-capacitance field model remains a future upgrade. |
@@ -137,7 +136,7 @@ SI / PI / EMC / thermal / DFM / SPICE analysis.
 | EMC layout compliance checks | `file` | `emc_run_full_compliance` | `partial` | 10.0.x | Presence/heuristic checks with fixed Er (work order K2/K10); EM-result-based, standard-named, fail-capable checks are Phase 3 (P3-T5). |
 | DFM manufacturer checks and cost | `file` | `dfm_run_manufacturer_check` | `covered` | 10.0.x | dfm_load_manufacturer_profile, dfm_calculate_manufacturing_cost. |
 | SPICE simulation (op / AC / transient / DC sweep) | `cli` | `sim_run_transient` | `covered` | 10.0.x | ngspice engine; sim_run_operating_point/ac_analysis/dc_sweep, sim_check_stability. |
-| 2D/3D field / EM solver for impedance & coupling | `file` | — | `gap` | 10.0.x | No field-solver integration yet; this is the Phase 3 (P3-T1/T3) accuracy upgrade. |
+| 2D/3D field / EM solver for impedance & coupling | `file` | `si_get_solver_capabilities` | `partial` | 10.0.x | si_get_solver_capabilities exposes the configured solver seams and explicit solver-unavailable policy. No full field/EM backend is integrated yet; closed-form results remain critic-only and blocked for release signoff unless a solver-grade backend is configured. |
 
 ### `export`
 
@@ -179,5 +178,5 @@ Silk, board art, drawing sheet / title block, fab notes, fiducials, mounting hol
 | Add mounting holes | `ipc` | `pcb_add_mounting_holes` | `covered` | 10.0.x |  |
 | Add inner-layer graphics to a footprint | `file` | `add_footprint_inner_layer_graphic` | `covered` | 10.0.x |  |
 | Set drawing-sheet title-block fields | `ipc` | `pcb_set_title_block_info` | `covered` | 10.0.x | pcb_set_title_block_info. |
-| Import a logo/bitmap as board art (bitmap2component) | `cli` | — | `gap` | 10.0.x | KiCad's bitmap-to-silkscreen conversion has no MCP driver yet. |
+| Import a logo/bitmap as board art (bitmap2component) | `file` | `pcb_add_bitmap_board_art` | `covered` | 10.0.x | pcb_add_bitmap_board_art imports bitmap/logo pixels into deterministic filled board-art rectangles on the requested PCB graphics layer. It intentionally avoids private paths and caps generated shape count for reviewable output. |
 | Custom drawing-sheet (.kicad_wks) template design | `gui-only` | — | `gui-only-no-api` | 10.0.x | The page-layout editor is interactive; no headless drawing-sheet authoring surface. |

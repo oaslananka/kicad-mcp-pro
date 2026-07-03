@@ -1,6 +1,6 @@
 Machine-maintained catalog. Refresh with `pnpm run docs:tools`.
 
-Total public tools: 364.
+Total public tools: 366.
 
 | Tool | Profile(s) | Read-Only | Destructive | Open-World | Idempotent | Headless | Requires KiCad Running | Summary |
 |---|---|---:|---:|---:|---:|---:|---:|---|
@@ -126,6 +126,7 @@ Total public tools: 364.
 | `mfg_import_specctra` | agent_full, expert, full, manufacturing, manufacturing_release | no | yes | yes | no | yes | no | Import a Specctra DSN/SES file into a KiCad project directory. |
 | `mfg_panelize` | agent_full, expert, full, manufacturing, manufacturing_release | no | yes | yes | no | yes | no | Panelize the active PCB using KiKit. |
 | `pcb_add_barcode` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | yes | no | Add a production barcode marker to the board file using KiCad's native barcode format. |
+| `pcb_add_bitmap_board_art` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | yes | no | Import a bitmap/logo as deterministic board-art rectangles on a PCB layer. |
 | `pcb_add_blind_via` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | no | no | Add a blind or buried via between the requested copper layers. |
 | `pcb_add_circle` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | no | no | Add a board graphic circle. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
 | `pcb_add_copper_zone` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | no | yes | Backward-compatible alias for pcb_add_zone(). This KiCad MCP Pro tool supports production EDA automation workflows fo... |
@@ -327,6 +328,7 @@ Total public tools: 364.
 | `si_check_differential_pair_skew` | agent_full, analysis, critic, expert, full, high_speed | no | no | no | no | no | no | Estimate differential-pair length skew and delay mismatch from board tracks. |
 | `si_check_via_stub` | agent_full, analysis, critic, expert, full, high_speed | no | no | no | no | no | no | Estimate via-stub resonance and risk for selected vias on the active board. |
 | `si_generate_stackup` | agent_full, analysis, critic, expert, full, high_speed | no | no | no | no | no | no | Generate a practical board stackup recommendation and target trace geometry. |
+| `si_get_solver_capabilities` | agent_full, analysis, critic, expert, full, high_speed | yes | no | no | yes | no | no | Report configured solver-grade analysis capabilities and unavailable seams. This KiCad MCP Pro tool supports producti... |
 | `si_list_dielectric_materials` | agent_full, analysis, critic, expert, full, high_speed | no | no | no | no | no | no | List all built-in dielectric materials with Er, loss tangent, and frequency range. |
 | `si_synthesize_stackup_for_interfaces` | agent_full, analysis, critic, expert, full, high_speed | no | no | no | no | no | no | Synthesise a PCB stackup that meets the impedance requirements of the given interfaces. |
 | `si_validate_length_matching` | agent_full, analysis, critic, expert, full, high_speed | no | no | no | no | no | no | Validate that each net group is matched within the supplied tolerance. |
@@ -493,6 +495,7 @@ Total public tools: 364.
 - `mfg_import_specctra`: profiles=agent_full, expert, full, manufacturing, manufacturing_release; readOnly=no; destructive=yes; openWorld=yes; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `mfg_panelize`: profiles=agent_full, expert, full, manufacturing, manufacturing_release; readOnly=no; destructive=yes; openWorld=yes; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `pcb_add_barcode`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_add_bitmap_board_art`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `pcb_add_blind_via`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `pcb_add_circle`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `pcb_add_copper_zone`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
@@ -694,6 +697,7 @@ Total public tools: 364.
 - `si_check_differential_pair_skew`: profiles=agent_full, analysis, critic, expert, full, high_speed; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `si_check_via_stub`: profiles=agent_full, analysis, critic, expert, full, high_speed; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `si_generate_stackup`: profiles=agent_full, analysis, critic, expert, full, high_speed; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
+- `si_get_solver_capabilities`: profiles=agent_full, analysis, critic, expert, full, high_speed; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=no; requiresKiCadRunning=no.
 - `si_list_dielectric_materials`: profiles=agent_full, analysis, critic, expert, full, high_speed; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `si_synthesize_stackup_for_interfaces`: profiles=agent_full, analysis, critic, expert, full, high_speed; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `si_validate_length_matching`: profiles=agent_full, analysis, critic, expert, full, high_speed; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
