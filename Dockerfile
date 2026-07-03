@@ -67,6 +67,7 @@ COPY docker-entrypoint.sh /usr/local/bin/kicad-mcp-pro-entrypoint
 RUN uv pip install --system --no-cache --require-hashes --requirement /tmp/dist/requirements.txt \
   && uv pip install --system --no-cache --no-deps /tmp/dist/*.whl \
   && rm -rf /tmp/dist \
+  && rm -f /usr/local/bin/uv \
   && chmod 0755 /usr/local/bin/kicad-mcp-pro-entrypoint
 USER kicadmcp
 EXPOSE 3334
