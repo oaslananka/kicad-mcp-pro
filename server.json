@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.oaslananka/kicad-mcp-pro",
   "title": "KiCad MCP Pro",
-  "description": "Production-grade MCP server for KiCad EDA—PCB design, DRC, simulation, BOM, DFM, and manufacturing.",
+  "description": "Production-grade MCP server for KiCad EDA\u2014PCB design, DRC, simulation, BOM, DFM, and manufacturing.",
   "websiteUrl": "https://oaslananka.github.io/kicad-mcp",
   "license": "MIT",
   "icons": [
@@ -100,7 +100,7 @@
     },
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/oaslananka/kicad-mcp-pro:3.17.0",
+      "identifier": "ghcr.io/oaslananka/kicad-mcp-pro:3.17.1",
       "registry": "container",
       "image": "ghcr.io/oaslananka/kicad-mcp-pro",
       "runtimeHint": "docker",
@@ -126,7 +126,7 @@
           "type": "positional",
           "valueHint": "image",
           "description": "Docker image to run",
-          "default": "ghcr.io/oaslananka/kicad-mcp-pro:3.17.0",
+          "default": "ghcr.io/oaslananka/kicad-mcp-pro:3.17.1",
           "isRequired": true
         }
       ]
