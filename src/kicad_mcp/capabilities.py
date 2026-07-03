@@ -371,6 +371,7 @@ def _is_read_tool(name: str, category: str) -> bool:
             "project_assess_",
             "project_validate_",
             "project_gate_",
+            "si_get_",
             "sch_get_",
             "sch_list_",
             "sch_find_",

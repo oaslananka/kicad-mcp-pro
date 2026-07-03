@@ -11,10 +11,10 @@ Use this document for the ChatGPT Apps submission path.
 
 ## Domain Verification
 
-- [ ] Primary domain placeholder: `oaslananka.dev`.
+- [ ] Primary docs domain: `oaslananka.github.io`; final ChatGPT Apps custom-domain value must be verified in the platform before submission.
 - [ ] Add the TXT record exactly as shown by the OpenAI Developer Platform.
 - [ ] Do not invent the TXT token before the dashboard shows it.
-- [ ] Confirm DNS propagation with `dig TXT oaslananka.dev` or an equivalent DNS checker.
+- [ ] Confirm DNS propagation for the final platform-provided TXT record with `dig TXT <verified-domain>` or an equivalent DNS checker.
 - [ ] Keep the TXT record until the dashboard reports verified.
 - [ ] Do not put the TXT token into repository files.
 - [ ] If verification fails, check registrar DNS, Cloudflare proxy state, and record name.
@@ -64,7 +64,7 @@ Use this document for the ChatGPT Apps submission path.
 - [ ] Use `04-tools-reference.png` for tools reference capture.
 - [ ] Use `05-export-manufacturing.png` for gated manufacturing export capture.
 - [ ] Run `SUBMISSION_MODE=1 pnpm run submission:check` before final upload.
-- [ ] Replace placeholders before final public production submission.
+- [ ] Confirm public-listing media passes final submission mode before public production submission.
 
 ## Residency Note
 
@@ -98,7 +98,7 @@ Use this document for the ChatGPT Apps submission path.
 - [ ] Confirm documentation URL points to the GitHub Pages site.
 - [ ] Confirm the domain verification TXT record is copied only from the dashboard.
 - [ ] Confirm the domain verification TXT record is not committed to the repository.
-- [ ] Confirm `oaslananka.dev` remains the primary domain placeholder in docs.
+- [ ] Confirm no stale placeholder domain remains in submission docs before final upload.
 - [ ] Confirm no dashboard field references a retired owner namespace.
 - [ ] Confirm tool annotation evidence references `src/kicad_mcp/tools/metadata.py`.
 - [ ] Confirm `readOnlyHint` is present for inspection-oriented tools.
@@ -108,7 +108,7 @@ Use this document for the ChatGPT Apps submission path.
 - [ ] Confirm the complete tool catalog is generated before dashboard upload.
 - [ ] Confirm screenshots are at least 1280x800.
 - [ ] Confirm committed screenshot slots remain 1920x1080.
-- [ ] Confirm production screenshots replace placeholders before final launch.
+- [ ] Confirm committed public-listing screenshots pass final submission mode before final launch.
 - [ ] Confirm screenshot filenames match the manifest in `docs/assets/screenshots/README.md`.
 - [ ] Confirm screenshots avoid local usernames, machine names, and private paths.
 - [ ] Confirm screenshots use the fixture project or sanitized demo data only.
@@ -128,7 +128,7 @@ Use this document for the ChatGPT Apps submission path.
 - [ ] Confirm `pnpm run docs:tools:check` passes before tool evidence upload.
 - [ ] Confirm `uv run --all-extras properdocs build -f mkdocs.yml --strict` passes before docs URL review.
 - [ ] Confirm `lychee --verbose --no-progress README.md docs/**/*.md` passes before link review.
-- [ ] Confirm `SUBMISSION_MODE=1 pnpm run submission:check` fails only for placeholders before final screenshots.
+- [ ] Confirm `SUBMISSION_MODE=1 pnpm run submission:check` fails only for real blockers before final screenshots are approved.
 - [ ] Confirm `SUBMISSION_MODE=1 pnpm run submission:check` passes after real screenshots are committed.
 - [ ] Confirm the README demo GIF exists before dashboard reviewers open the repository.
 - [ ] Confirm the README demo GIF contains no real hostnames or local filesystem paths.

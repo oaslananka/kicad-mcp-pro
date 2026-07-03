@@ -406,10 +406,10 @@ domains:
         notes: "ngspice engine; sim_run_operating_point/ac_analysis/dc_sweep, sim_check_stability."
       - capability: "2D/3D field / EM solver for impedance & coupling"
         kicad_channel: file
-        mcp_tool: null
-        status: gap
+        mcp_tool: si_get_solver_capabilities
+        status: partial
         kicad_version_introduced: "10.0.x"
-        notes: "No field-solver integration yet; this is the Phase 3 (P3-T1/T3) accuracy upgrade."
+        notes: "si_get_solver_capabilities exposes the configured solver seams and explicit solver-unavailable policy. No full field/EM backend is integrated yet; closed-form results remain critic-only and blocked for release signoff unless a solver-grade backend is configured."
 
   export:
     description: "Gerber/drill/BOM/POS/STEP/ODB/IPC2581/SVG/PDF/3D manufacturing outputs."
@@ -543,11 +543,11 @@ domains:
         kicad_version_introduced: "10.0.x"
         notes: "pcb_set_title_block_info."
       - capability: "Import a logo/bitmap as board art (bitmap2component)"
-        kicad_channel: cli
-        mcp_tool: null
-        status: gap
+        kicad_channel: file
+        mcp_tool: pcb_add_bitmap_board_art
+        status: covered
         kicad_version_introduced: "10.0.x"
-        notes: "KiCad's bitmap-to-silkscreen conversion has no MCP driver yet."
+        notes: "pcb_add_bitmap_board_art imports bitmap/logo pixels into deterministic filled board-art rectangles on the requested PCB graphics layer. It intentionally avoids private paths and caps generated shape count for reviewable output."
       - capability: "Custom drawing-sheet (.kicad_wks) template design"
         kicad_channel: gui-only
         mcp_tool: null

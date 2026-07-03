@@ -1828,6 +1828,94 @@ def _polygon_from_mm_points(points_mm: list[tuple[float, float]]) -> PolygonWith
     return polygon
 
 
+def _board_art_rect_block(
+    x1_mm: float,
+    y1_mm: float,
+    x2_mm: float,
+    y2_mm: float,
+    layer: str,
+) -> str:
+    return (
+        f"(gr_rect (start {x1_mm:.4f} {y1_mm:.4f}) (end {x2_mm:.4f} {y2_mm:.4f}) "
+        "(stroke (width 0.0000) (type solid)) "
+        f"(fill yes) (layer {_sexpr_string(layer)}) (uuid {_sexpr_string(str(uuid.uuid4()))}))"
+    )
+
+
+def _bitmap_board_art_blocks(
+    image_path: Path,
+    *,
+    x_mm: float,
+    y_mm: float,
+    width_mm: float,
+    layer: str,
+    threshold: int,
+    invert: bool,
+    max_pixels: int,
+    max_rects: int,
+) -> tuple[list[str], int, int]:
+    try:
+        from PIL import Image
+    except ImportError as exc:  # pragma: no cover - depends on optional runtime extra
+        raise RuntimeError(
+            "Bitmap board-art import requires Pillow. Install the tray/dev extra or provide "
+            "a runtime with the Pillow package available."
+        ) from exc
+
+    if not image_path.is_file():
+        raise FileNotFoundError(f"Bitmap source does not exist: {image_path}")
+    if width_mm <= 0.0:
+        raise ValueError("width_mm must be positive.")
+    if not 0 <= threshold <= 255:
+        raise ValueError("threshold must be between 0 and 255.")
+    if max_pixels < 4:
+        raise ValueError("max_pixels must be at least 4.")
+    if max_rects < 1:
+        raise ValueError("max_rects must be at least 1.")
+
+    with Image.open(image_path) as source:
+        gray = source.convert("L")
+        source_w, source_h = gray.size
+        if source_w <= 0 or source_h <= 0:
+            raise ValueError("Bitmap source is empty.")
+        scale = min(1.0, max_pixels / max(source_w, source_h))
+        target_size = (max(1, round(source_w * scale)), max(1, round(source_h * scale)))
+        if target_size != gray.size:
+            gray = gray.resize(target_size)
+        width_px, height_px = gray.size
+        pixel_w = width_mm / width_px
+        pixel_h = pixel_w
+        blocks: list[str] = []
+        for row in range(height_px):
+            run_start: int | None = None
+            for col in range(width_px + 1):
+                active = False
+                if col < width_px:
+                    raw_value = gray.getpixel((col, row))
+                    if isinstance(raw_value, int):
+                        value = raw_value
+                    elif isinstance(raw_value, tuple):
+                        value = int(raw_value[0])
+                    else:
+                        value = int(raw_value or 0)
+                    active = value >= threshold if invert else value <= threshold
+                if active and run_start is None:
+                    run_start = col
+                elif (not active or col == width_px) and run_start is not None:
+                    x1 = x_mm + (run_start * pixel_w)
+                    y1 = y_mm + (row * pixel_h)
+                    x2 = x_mm + (col * pixel_w)
+                    y2 = y1 + pixel_h
+                    blocks.append(_board_art_rect_block(x1, y1, x2, y2, layer))
+                    run_start = None
+                    if len(blocks) > max_rects:
+                        raise ValueError(
+                            f"Bitmap board-art import would create more than {max_rects} shapes. "
+                            "Lower max_pixels, increase threshold, or simplify the source image."
+                        )
+    return blocks, width_px, height_px
+
+
 def _append_board_blocks(content: str, blocks: list[str]) -> str:
     normalized = _normalize_board_content(content).rstrip()
     if not normalized.endswith(")"):
@@ -3325,6 +3413,48 @@ def register(mcp: FastMCP) -> None:
         return (
             f"Barcode added at ({x_mm:.2f}, {y_mm:.2f}) mm on {layer} "
             f"with type '{normalized_type}'."
+        )
+
+    @mcp.tool()
+    @headless_compatible
+    def pcb_add_bitmap_board_art(
+        source_image: str,
+        x_mm: float,
+        y_mm: float,
+        width_mm: float = 20.0,
+        layer: str = "F.SilkS",
+        threshold: int = 128,
+        invert: bool = False,
+        max_pixels: int = 64,
+        max_rects: int = 1500,
+    ) -> str:
+        """Import a bitmap/logo as deterministic board-art rectangles on a PCB layer."""
+        try:
+            canonical_layer = resolve_layer_name(layer).replace("_", ".")
+            image_path = Path(source_image).expanduser().resolve()
+            blocks, width_px, height_px = _bitmap_board_art_blocks(
+                image_path,
+                x_mm=x_mm,
+                y_mm=y_mm,
+                width_mm=width_mm,
+                layer=canonical_layer,
+                threshold=threshold,
+                invert=invert,
+                max_pixels=max_pixels,
+                max_rects=max_rects,
+            )
+            if not blocks:
+                return (
+                    "No active bitmap pixels were found for board-art import. "
+                    "Adjust threshold or invert and retry."
+                )
+            _transactional_board_write(lambda current: _append_board_blocks(current, blocks))
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            return str(exc)
+        return (
+            f"Bitmap board art imported from '{image_path.name}' as {len(blocks)} shape(s) "
+            f"on {canonical_layer}. Source raster: {width_px}x{height_px} px; "
+            f"placed at ({x_mm:.2f}, {y_mm:.2f}) mm with width {width_mm:.2f} mm."
         )
 
     @mcp.tool()

@@ -1,29 +1,25 @@
-# Screenshot Capture Manifest
+# Public Listing Screenshot Manifest
 
-The committed PNG files in this directory are deterministic placeholders
-rendered by `scripts/render_screenshots.py`. They reserve the public listing
-slots for real client captures while keeping the repository ready for directory
-review dry runs.
+The PNG files in this directory are the committed public-listing screenshot
+slots. They are safe evidence images built from repository-owned fixtures and
+product surfaces; they must never include private board data, customer files,
+secret values, local auth state, private absolute paths, or personal usernames.
 
-Each replacement must preserve the filename and the 1920x1080 dimensions. Do not
-include private project paths, tokens, usernames, local hostnames, customer data,
-or unreleased board files in screenshots.
+Each file must preserve its filename and 1920x1080 dimensions.
 
-| File | Intended real capture | Client | Fixture project | Exact tool call |
+| File | Intended evidence | Client/surface | Fixture project | Exact tool call or surface |
 |---|---|---|---|---|
-| `01-claude-desktop-quality-gate.png` | Quality gate review with pass/fix queue visible | Claude Desktop | `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` | `project_quality_gate` |
-| `02-cursor-schematic-build.png` | Schematic construction prompt and result summary | Cursor | `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` | `sch_build_circuit` |
-| `03-vscode-pcb-inspection.png` | Board state inspection with safe read-only result | VS Code MCP | `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` | `pcb_get_board_state` |
-| `04-tools-reference.png` | Tools reference catalog page or generated tool table | Browser/docs | `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` | `kicad_list_tool_categories` |
-| `05-export-manufacturing.png` | Manufacturing export gate result showing gated release posture | Claude Desktop | `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` | `export_manufacturing_package` |
+| `01-claude-desktop-quality-gate.png` | Quality gate review with pass/fix queue visible | Claude Desktop / MCP transcript | `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` | `project_quality_gate` |
+| `02-cursor-schematic-build.png` | Schematic construction prompt and result summary | Cursor / MCP transcript | `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` | `sch_build_circuit` |
+| `03-vscode-pcb-inspection.png` | Board state inspection with safe read-only result | VS Code MCP / MCP transcript | `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` | `pcb_get_board_state` |
+| `04-tools-reference.png` | Tools reference catalog or generated tool table | Browser/docs | Repository docs | `kicad_list_tool_categories` |
+| `05-export-manufacturing.png` | Manufacturing export gate with evidence-linked posture | Claude Desktop / MCP transcript | `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` | `export_manufacturing_package` |
 
 Replacement checklist:
 
-1. Open the fixture project from the repository path, not a private board.
-2. Run the exact tool call listed above through the named client.
-3. Capture at 1920x1080 or crop/export to exactly 1920x1080.
-4. Preserve the existing filename.
-5. Re-run `pnpm run assets:screenshots` only when regenerating placeholders; do
-   not run it after adding real captures because it will overwrite them.
-6. In final submission mode, `pnpm run submission:check` with `SUBMISSION_MODE=1`
-   fails if these placeholder hashes are still present.
+1. Use only repository fixtures or public docs.
+2. Capture or render to exactly 1920x1080.
+3. Preserve the existing filename.
+4. Re-run `SUBMISSION_MODE=1 pnpm run submission:check`.
+5. Do not update `scripts/_placeholder_hashes.json`; it is retained only to
+   detect obsolete placeholder media in final submission mode.
