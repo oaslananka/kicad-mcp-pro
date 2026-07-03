@@ -139,7 +139,7 @@ jobs:
           set -euo pipefail
           uv run --all-extras python scripts/kicad_canary.py run \
             --artifacts artifacts/kicad-11-preview \
-            --kicad-range 11.0.x
+            --kicad-range 10.99.x
 
       - name: Upload KiCad 11 preview smoke artifacts
         if: always()
