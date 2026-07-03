@@ -472,21 +472,71 @@ async def _proxy_to_local(
 
 
 def _start_daemon(state: BridgeState) -> None:
-    """Fork the bridge process into the background."""
-    pid = os.fork() if hasattr(os, "fork") else 0
-    if pid == 0:
-        # Child process
-        sys.stdin.close()
-        try:
-            asyncio.run(_bridge_server(state))
-        except Exception as exc:
-            logger.error("bridge_daemon_crashed", error=str(exc))
-            sys.exit(1)
+    """Fork or spawn the bridge process into the background."""
+    if hasattr(os, "fork"):
+        fork_fn = getattr(os, "fork")  # noqa: B009
+        pid = fork_fn()
+        if pid == 0:
+            # Child process
+            sys.stdin.close()
+            try:
+                asyncio.run(_bridge_server(state))
+            except Exception as exc:
+                logger.error("bridge_daemon_crashed", error=str(exc))
+                sys.exit(1)
+        else:
+            # Parent process
+            pid_path = _bridge_pid_path()
+            pid_path.parent.mkdir(parents=True, exist_ok=True)
+            pid_path.write_text(str(pid))
+            typer.echo(f"Bridge daemon started (PID: {pid}, port: {state.port})")
+            typer.echo(f"Pairing code: {state.pairing_code}")
+            typer.echo("To stop: kicad-mcp bridge stop")
     else:
-        # Parent process
+        # Windows/Platform fallback: spawn a detached subprocess
+        import subprocess
+
+        # Extract local MCP port from target_url (e.g. http://127.0.0.1:3334)
+        mcp_port = "3334"
+        try:
+            mcp_port = state.target_url.split(":")[-1]
+        except Exception as exc:
+            logger.debug("mcp_port_extraction_failed", error=str(exc))
+
+        # We start the same CLI command but without the --daemon flag
+        args = [
+            sys.executable,
+            "-m",
+            "kicad_mcp.server",
+            "bridge",
+            "start",
+            "--port",
+            str(state.port),
+            "--code",
+            state.pairing_code,
+            "--mcp-port",
+            mcp_port,
+        ]
+
+        creationflags = 0
+        if sys.platform == "win32":
+            # DETACHED_PROCESS = 0x00000008, CREATE_NEW_PROCESS_GROUP = 0x00000200
+            creationflags = 0x00000008 | 0x00000200
+
+        proc = subprocess.Popen(
+            args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            creationflags=creationflags,
+            close_fds=True,
+        )
+
+        pid = proc.pid
         pid_path = _bridge_pid_path()
         pid_path.parent.mkdir(parents=True, exist_ok=True)
         pid_path.write_text(str(pid))
+
         typer.echo(f"Bridge daemon started (PID: {pid}, port: {state.port})")
         typer.echo(f"Pairing code: {state.pairing_code}")
         typer.echo("To stop: kicad-mcp bridge stop")

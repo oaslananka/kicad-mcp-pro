@@ -32,7 +32,8 @@ def resolve_under(root: Path, raw_path: str | Path, *, allow_absolute: bool = Tr
     reject_foreign_windows_path(raw_path)
     candidate = Path(raw_path).expanduser()
     if candidate.is_absolute():
-        _ = allow_absolute
+        if not allow_absolute:
+            raise UnsafePathError("Absolute paths are not allowed.")
         resolved = candidate.resolve()
     else:
         resolved = (root / candidate).resolve()
