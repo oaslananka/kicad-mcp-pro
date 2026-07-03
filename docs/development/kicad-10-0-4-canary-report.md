@@ -1,87 +1,85 @@
 # KiCad 10.0.4 Canary Report
 
-**Generated:** 2026-06-26
-**Source:** `kicad_canary.py`
+**Generated:** 2026-07-03  
+**Source script:** `scripts/kicad_canary.py`  
+**Evidence directory:** `docs/evidence/kicad-10-0-4/2026-07-03/`  
+**Source commit under test:** `ca9941e`  
+**Host:** `ops-vps-fra1`  
+**OS:** Ubuntu 22.04.5 LTS  
+**KiCad package source:** `ppa:kicad/kicad-10.0-releases`  
+**KiCad CLI:** `/usr/bin/kicad-cli`  
+**KiCad version:** `10.0.4`  
+**KiCad range:** `10.0.x`
 
 ## Summary
 
-| Check                    | Status |
-|--------------------------|--------|
-| KiCad CLI found          | ✓      |
-| KiCad version ≥ 10.0     | ✓      |
-| IPC server reachable     | ✓      |
-| Board stats readable     | ✓      |
-| Net count > 0            | ✓      |
-| Footprint count > 0      | ✓      |
-| Python API loadable      | ✓      |
+| Check | Status |
+|---|---|
+| KiCad CLI found | PASS |
+| KiCad version matches `10.0.x` | PASS |
+| Canary command completed | PASS |
+| Failing fixtures | none |
+| Step results | 31 PASS |
+| Intentional optional skip | 1 (`allegro-import-capability`) |
+| Manufacturing export feature gate | enabled |
+| Evidence summary archived | PASS |
 
-## Detailed Checks
+The optional Allegro import probe is recorded as a non-failing skip because the
+current KiCad 10.0.4 `kicad-cli pcb import --help` output does not advertise the
+optional `allegro` token. Required PADS import capability is present and passed.
 
-### 1. CLI Presence
+## Command
 
-```
-kicad-cli version  →  10.0.4
-```
+The canary was run as a non-root `kicadcanary` user so the read-only output test
+exercises real filesystem permissions instead of root bypass behavior:
 
-All subcommands required for the server profile are present:
-- `kicad-cli pcb export` (Gerber, drill, IPC-2581, STEP, GLB, etc.)
-- `kicad-cli sch export` (pdf, svg, bom, python-bom)
-- `kicad-cli sym` / `fp` / `jobset`
-
-### 2. IPC Connection
-
-IPC (Inter-process Communication) port 54321 is reachable:
-- KiCad board lock acquired
-- Board metadata extracted
-- Connection reset and reconnect work
-
-### 3. Board Statistics
-
-| Metric              | Value  |
-|---------------------|--------|
-| Board file          | ✓      |
-| Nets                | 12+    |
-| Footprints          | 24+    |
-| Tracks              | 48+    |
-| Vias                | 6+     |
-| Layers              | 4      |
-| Zones               | 2+     |
-
-### 4. Python API
-
-```
-pcbnew module        ✓  (10.0.4)
-Footprint lookup     ✓
-3D model path        ✓
+```bash
+.venv/bin/python scripts/kicad_canary.py run \
+  --artifacts /tmp/kicad-canary-artifacts/kicad-10-0-4-2026-07-03 \
+  --kicad-range 10.0.x
 ```
 
-### 5. Gap Coverage
+The run completed with:
 
-| Phase               | % Complete |
-|---------------------|-----------|
-| FAZ 0  – Baseline   | 100%      |
-| FAZ 1  – Discovery  | 100%      |
-| FAZ 2  – CLI Parity | 100%      |
-| FAZ 3  – IPC        | 100%      |
-| FAZ 4  – SPICE      | 100%      |
-| FAZ 5  – DRC/ERC    | 100%      |
-| FAZ 6  – Net tools  | 100%      |
-| FAZ 7  – 3D Models  | 100%      |
-| FAZ 8  – Test/Mfg   | 100%      |
-| FAZ 9  – Embed      | 100%      |
-| FAZ 10 – Variants   | 100%      |
-| FAZ 11 – Library    | 100%      |
-| FAZ 12 – DFM        | 100%      |
-| FAZ 13 – Templates  | 100%      |
-| FAZ 14 – Security   | 100%      |
-| FAZ 15 – Router     | 100%      |
-| FAZ 16 – Tests      | 100%      |
-| FAZ 17 – Canary     | 100%      |
-| FAZ 18 – Docs       | 100%      |
-| FAZ 19 – Release    | Pending   |
+```text
+KiCad canary passed for 10.0.x; artifacts written to /tmp/kicad-canary-artifacts/kicad-10-0-4-2026-07-03.
+```
 
-### 6. Snapshot Drift Gate
+## Archived Evidence
 
-The required 10.0.4 canary lane now covers ERC JSON, DRC JSON, Gerber, drill,
-IPC-2581, STEP, PDF/SVG/DXF exports, BOM/netlist output, and capability probes.
-Any missing artifact or KiCad minor-version drift fails the canary summary.
+| File | Purpose |
+|---|---|
+| `docs/evidence/kicad-10-0-4/2026-07-03/summary.json` | Normalized canary pass summary, environment, command, step counts, covered surface, and generated bundle hash. |
+| `docs/evidence/kicad-10-0-4/2026-07-03/failing-fixtures.txt` | Empty failing fixture list from the passing run. |
+
+The generated artifact bundle was 129,071 bytes with SHA-256
+`d5d918932713ab9aad09626670caf1690ab84f5a7cd1b133fcd7c66f11f74057`. The
+bundle was generated from the same command above and can be recreated from the
+checked-in source and fixture set.
+
+## Covered Surface
+
+The 2026-07-03 run covered the current required KiCad 10.0.4 CLI evidence set:
+
+- KiCad version detection.
+- Clean and dirty ERC JSON output.
+- Clean and dirty DRC JSON output.
+- Schematic PDF export.
+- Schematic PDF export with property-popup suppression.
+- PCB PDF, SVG, and DXF export.
+- BOM and KiCad S-expression netlist export.
+- Board statistics export.
+- PADS import capability probe.
+- Optional Allegro import capability probe.
+- STEP, STEPZ, BREP, GLB, STL, and render exports.
+- Gerber, drill, and IPC-2581 manufacturing exports.
+- Schematic DXF, SVG, Python BOM, and SPICE netlist exports.
+- Path-with-spaces, Unicode path, and read-only output behavior.
+
+## Release Gate Interpretation
+
+This canary evidence satisfies issue #271 for the 3.17.x release line: the
+current primary KiCad baseline is verified against KiCad CLI `10.0.4`, and the
+result evidence is archived in-repo. Future release lines should refresh this
+directory with a new date-stamped evidence folder rather than mutating this
+historical record.
