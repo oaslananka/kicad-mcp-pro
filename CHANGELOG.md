@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.17.1](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.17.0...mcp-server-v3.17.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* **container:** drop uv from runtime image ([#265](https://github.com/oaslananka/kicad-mcp/issues/265)) ([88b0907](https://github.com/oaslananka/kicad-mcp/commit/88b0907c08760c692a72c9c8c66f5dcfc50c1a15))
+
 ## [3.17.0](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.16.0...mcp-server-v3.17.0) (2026-07-03)
 
 
