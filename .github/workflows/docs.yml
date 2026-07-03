@@ -1,6 +1,5 @@
-# Deploy documentation site to GitHub Pages
-# Triggered when docs/ or mkdocs.yml change on main,
-# or on workflow_dispatch for manual deploys.
+# Deploy documentation site to GitHub Pages.
+# Build MkDocs on main and publish the generated static site to gh-pages.
 
 name: Docs
 
@@ -18,23 +17,22 @@ on:
 permissions:
   contents: read
 
-# Cancel in-progress runs for the same workflow + ref
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
-    name: Build site
+    name: Deploy to GitHub Pages
     runs-on: ubuntu-24.04
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
-          fetch-depth: 0  # needed for git-revision-date-localized plugin
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
         with:
@@ -47,26 +45,11 @@ jobs:
       - name: Build documentation
         run: uv run properdocs build -f mkdocs.yml --strict
 
-      - name: Upload pages artifact
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
+      - name: Publish static site to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: site
-
-  deploy:
-    if: (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') && github.event_name != 'pull_request'
-    name: Deploy to GitHub Pages
-    runs-on: ubuntu-24.04
-    needs: build
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./site
+          force_orphan: true
+          enable_jekyll: false
