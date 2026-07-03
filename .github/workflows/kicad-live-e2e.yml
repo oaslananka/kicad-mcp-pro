@@ -1,0 +1,150 @@
+name: KiCad Live E2E
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 3 * * 1"
+  pull_request:
+    paths:
+      - "scripts/kicad_canary.py"
+      - "tests/fixtures/**"
+      - "docs/status/kicad-10-0-4-baseline.md"
+      - "docs/compatibility/**"
+      - ".github/workflows/kicad-live-e2e.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/kicad_canary.py"
+      - "tests/fixtures/**"
+      - "docs/status/kicad-10-0-4-baseline.md"
+      - "docs/compatibility/**"
+      - ".github/workflows/kicad-live-e2e.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kicad-10-0-4-canary:
+    name: KiCad 10.0.4 canary
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: true
+          version-file: uv.toml
+
+      - name: Install KiCad 10.0.x CLI
+        run: |
+          set -euo pipefail
+          sudo add-apt-repository -y ppa:kicad/kicad-10.0-releases
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends kicad
+          test "$(kicad-cli version)" = "10.0.4"
+
+      - name: Install Python dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Run KiCad 10.0.x canary
+        run: |
+          set -euo pipefail
+          uv run --all-extras python scripts/kicad_canary.py run \
+            --artifacts artifacts/kicad-10-0-4 \
+            --kicad-range 10.0.x
+
+      - name: Upload KiCad 10.0.4 canary artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kicad-10-0-4-canary
+          path: artifacts/kicad-10-0-4
+          if-no-files-found: warn
+
+  kicad-11-preview-smoke:
+    name: KiCad 11 preview smoke
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: true
+          version-file: uv.toml
+
+      - name: Install KiCad nightly preview CLI
+        id: nightly
+        run: |
+          set -uo pipefail
+          sudo add-apt-repository -y ppa:kicad/kicad-dev-nightly || {
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "KiCad nightly PPA is not available on this runner."
+            exit 0
+          }
+          sudo apt-get update || {
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Unable to refresh package metadata for KiCad nightly."
+            exit 0
+          }
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends kicad-nightly || {
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "KiCad nightly package is not currently installable on this runner."
+            exit 0
+          }
+
+          for libdir in \
+            /usr/lib/kicad-nightly/lib \
+            /usr/lib/kicad-nightly/lib/x86_64-linux-gnu \
+            /usr/lib/x86_64-linux-gnu/kicad-nightly; do
+            if [ -d "$libdir" ]; then
+              export LD_LIBRARY_PATH="$libdir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            fi
+          done
+
+          for candidate in \
+            /usr/lib/kicad-nightly/bin/kicad-cli \
+            /usr/bin/kicad-nightly-cli \
+            /usr/bin/kicad-cli; do
+            if [ -x "$candidate" ] && "$candidate" version; then
+              echo "available=true" >> "$GITHUB_OUTPUT"
+              echo "kicad_cli=$candidate" >> "$GITHUB_OUTPUT"
+              echo "ld_library_path=${LD_LIBRARY_PATH:-}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+
+          echo "available=false" >> "$GITHUB_OUTPUT"
+          echo "KiCad nightly installed but no runnable CLI candidate was found."
+
+      - name: Install Python dependencies
+        if: steps.nightly.outputs.available == 'true'
+        run: uv sync --all-extras --frozen
+
+      - name: Run KiCad 11 preview smoke canary
+        if: steps.nightly.outputs.available == 'true'
+        env:
+          KICAD_CANARY_KICAD_CLI: ${{ steps.nightly.outputs.kicad_cli }}
+          LD_LIBRARY_PATH: ${{ steps.nightly.outputs.ld_library_path }}
+        run: |
+          set -euo pipefail
+          uv run --all-extras python scripts/kicad_canary.py run \
+            --artifacts artifacts/kicad-11-preview \
+            --kicad-range 10.99.x
+
+      - name: Upload KiCad 11 preview smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kicad-11-preview-smoke
+          path: artifacts/kicad-11-preview
+          if-no-files-found: warn
