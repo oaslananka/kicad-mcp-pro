@@ -10,6 +10,26 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.17.0](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.16.0...mcp-server-v3.17.0) (2026-07-03)
+
+
+### Features
+
+* **schematic:** auto-add PWR_FLAG to undriven power rails ([#257](https://github.com/oaslananka/kicad-mcp/issues/257)) ([db12813](https://github.com/oaslananka/kicad-mcp/commit/db1281309af364b4d663c62fd6f10b5ba7c09343))
+
+
+### Bug Fixes
+
+* **schematic:** reject non-existent symbols instead of placing them silently ([#252](https://github.com/oaslananka/kicad-mcp/issues/252)) ([d00958a](https://github.com/oaslananka/kicad-mcp/commit/d00958a74307941a1d85a464ce766e21548ba07a))
+* **schematic:** resolve +/- differential-pin names in net endpoints ([#255](https://github.com/oaslananka/kicad-mcp/issues/255)) ([1866228](https://github.com/oaslananka/kicad-mcp/commit/1866228394b4265c5f02e558cab9e124ff201114))
+* **security:** harden bridge and http contracts ([249c970](https://github.com/oaslananka/kicad-mcp/commit/249c9704a4e6a25c447b4e8f3bf17cc3c8568341))
+
+
+### Documentation
+
+* add professional oss maturity evidence ([b389904](https://github.com/oaslananka/kicad-mcp/commit/b3899046b3031a703657705f8108d9dcda2e47dc))
+* align maturity evidence for solo maintainer ([5618b8a](https://github.com/oaslananka/kicad-mcp/commit/5618b8a58f47fb02c59074220d79f6adec2b155e))
+
 ## [3.16.0](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.15.1...mcp-server-v3.16.0) (2026-06-30)
 
 
