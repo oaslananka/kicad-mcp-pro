@@ -3551,6 +3551,23 @@ def _plan_netlist_pin_terminals(
             symbol.unit,
         )
 
+    # Pin electrical types, keyed by number/name/case-fold, so a net's driver
+    # status can be judged: KiCad's plain power symbols (power:+3V3, power:GND)
+    # are power_in, so a rail with only power_in pins and no power_out source
+    # needs a PWR_FLAG or ERC reports "input power pin not driven".
+    pin_etypes: dict[str, dict[str, str]] = {}
+    for symbol in symbols:
+        emap: dict[str, str] = {}
+        for number, info in get_pin_metadata(
+            symbol.library, symbol.symbol_name, symbol.unit
+        ).items():
+            etype = str(info.get("etype", ""))
+            name = str(info.get("name", ""))
+            for key in (number, name, number.casefold(), name.casefold()):
+                if key:
+                    emap.setdefault(key, etype)
+        pin_etypes[symbol.reference] = emap
+
     power_points: dict[str, tuple[float, float]] = {}
     for power in powers:
         x, y = _snap_point(power.x_mm, power.y_mm, snap_to_grid and power.snap_to_grid)
@@ -3567,6 +3584,10 @@ def _plan_netlist_pin_terminals(
     unresolved_nets: list[dict[str, Any]] = []
     terminal_points: dict[tuple[float, float], str] = {}
     pin_points_seen: dict[tuple[float, float], str] = {}
+    net_has_power_out: dict[str, bool] = {}
+    net_needs_driver: dict[str, bool] = {}
+    net_names_seen: set[str] = set()
+    net_terminal_max_y = AUTO_LAYOUT_ORIGIN_Y_MM
     resolution_stats = {
         "resolved_endpoints": 0,
         "unresolved_endpoints": 0,
@@ -3639,11 +3660,19 @@ def _plan_netlist_pin_terminals(
                 continue
             pin_points_seen[pin_key] = net_name
 
+            pin_id = _endpoint_pin(endpoint)
+            etype = pin_etypes.get(reference, {}).get(pin_id, "") if pin_id else ""
+            if etype == "power_out":
+                net_has_power_out[net_name] = True
+            elif etype == "power_in":
+                net_needs_driver.setdefault(net_name, True)
+
             all_points = symbol_points.get(reference, {}).values()
             ux, uy = _pin_label_stub_direction(point, symbol_centers[reference], all_points)
             stub = _terminal_stub_length(net_name)
             ex = round(point[0] + ux * stub, 4)
             ey = round(point[1] + uy * stub, 4)
+            net_terminal_max_y = max(net_terminal_max_y, ey)
             end_key = _point_key(ex, ey)
             existing_terminal_net = terminal_points.get(end_key)
             if existing_terminal_net is not None and existing_terminal_net != net_name:
@@ -3683,6 +3712,7 @@ def _plan_netlist_pin_terminals(
                     }
                 )
             generated_terminal_count += 1
+            net_names_seen.add(net_name)
             resolution_stats["resolved_endpoints"] += 1
             if resolution_kind == "pin_alias":
                 resolution_stats["pin_alias_resolutions"] += 1
@@ -3697,6 +3727,39 @@ def _plan_netlist_pin_terminals(
                     "unresolved_details": unresolved_details,
                 }
             )
+
+    # Auto PWR_FLAG: a power rail whose only power pins are power_in (its own
+    # power symbol, IC supply pins) and that no power_out source drives would fail
+    # ERC's "input power pin not driven" check. Add one PWR_FLAG (a power_out
+    # symbol) per such rail, connected by name via a co-located global label, in a
+    # strip clear of the placed terminals. Rails already driven by a regulator
+    # output (power_out) are left untouched so real "undriven" errors still show.
+    flag_nets = sorted(
+        net_name
+        for net_name in net_names_seen
+        if (net_needs_driver.get(net_name) or _should_place_power_terminal_symbol(net_name))
+        and not net_has_power_out.get(net_name)
+    )
+    flag_x = AUTO_LAYOUT_ORIGIN_X_MM
+    flag_y = round(net_terminal_max_y + NETLIST_LAYOUT_ROW_SPACING_MM, 4)
+    for net_name in flag_nets:
+        fx, fy = _snap_point(flag_x, flag_y, True)
+        terminal_powers.append(
+            {"name": "PWR_FLAG", "x_mm": fx, "y_mm": fy, "rotation": 0, "snap_to_grid": False}
+        )
+        terminal_labels.append(
+            {
+                "name": net_name,
+                "x_mm": fx,
+                "y_mm": fy,
+                "rotation": 0,
+                "snap_to_grid": False,
+                "global_label": True,
+                "shape": "bidirectional",
+            }
+        )
+        flag_x += NETLIST_LAYOUT_COLUMN_SPACING_MM
+
     return terminal_wires, terminal_powers, terminal_labels, unresolved_nets, resolution_stats
 
 
