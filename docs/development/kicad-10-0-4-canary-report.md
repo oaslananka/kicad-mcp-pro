@@ -49,8 +49,9 @@ KiCad canary passed for 10.0.x; artifacts written to /tmp/kicad-canary-artifacts
 
 | File | Purpose |
 |---|---|
-| `docs/evidence/kicad-10-0-4/2026-07-03/summary.json` | Normalized canary pass summary, environment, command, step counts, covered surface, and generated bundle hash. |
-| `docs/evidence/kicad-10-0-4/2026-07-03/failing-fixtures.txt` | Empty failing fixture list from the passing run. |
+| `docs/evidence/kicad-10-0-4/2026-07-03/summary.md` | Canary pass summary, environment, command, step counts, covered surface, and generated bundle hash. |
+| `docs/evidence/kicad-10-0-4/2026-07-03/failing-fixtures.txt` | Failing fixture list from the passing run. |
+| `docs/evidence/kicad-10-0-4/2026-07-03/README.md` | Evidence directory index. |
 
 The generated artifact bundle was 129,071 bytes with SHA-256
 `d5d918932713ab9aad09626670caf1690ab84f5a7cd1b133fcd7c66f11f74057`. The
