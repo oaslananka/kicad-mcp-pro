@@ -10,6 +10,18 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.18.0](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.17.1...mcp-server-v3.18.0) (2026-07-04)
+
+
+### Features
+
+* close July release readiness gaps ([ca9941e](https://github.com/oaslananka/kicad-mcp/commit/ca9941e18f9cee8fe64df80d533e93f37a8a924d))
+
+
+### Bug Fixes
+
+* unblock release readiness checks ([99ea584](https://github.com/oaslananka/kicad-mcp/commit/99ea5842a544fd9fab62066fd2aacf67981b0bba))
+
 ## [3.17.1](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.17.0...mcp-server-v3.17.1) (2026-07-03)
 
 
