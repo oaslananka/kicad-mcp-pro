@@ -14,6 +14,23 @@ from kicad_mcp.tools.validation import GateOutcome
 from tests.conftest import call_tool_content, call_tool_text, tool_text
 
 
+def _write_manufacturing_approval(project: Path) -> str:
+    evidence_dir = project / ".kicad-mcp"
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    path = evidence_dir / "manufacturing_approval.json"
+    path.write_text(
+        json.dumps(
+            {
+                "approved_by": "Test Reviewer",
+                "approved_at_utc": "2026-07-04T00:00:00Z",
+                "approval_scope": "manufacturing release package",
+            }
+        ),
+        encoding="utf-8",
+    )
+    return ".kicad-mcp/manufacturing_approval.json"
+
+
 @pytest.mark.anyio
 async def test_export_gerber_uses_cli_variants(sample_project, monkeypatch) -> None:
     out_dir = sample_project / "output" / "gerber"
@@ -674,6 +691,57 @@ async def test_project_quality_gate_reports_failures(sample_project, monkeypatch
     assert "Placement quality gate: FAIL" in text
     assert "Manufacturing quality gate: FAIL" in text
     assert "Footprint parity quality gate: FAIL" in text
+
+
+@pytest.mark.anyio
+async def test_export_manufacturing_package_requires_approval_evidence_after_gate_pass(
+    sample_project,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._evaluate_project_gate",
+        lambda **_kwargs: [GateOutcome(name="Project", status="PASS", summary="ready")],
+    )
+
+    server = build_server("manufacturing")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    text = await call_tool_text(server, "export_manufacturing_package", {})
+
+    assert "hard-blocked" in text
+    assert "approval_evidence_path" in text
+    assert "Gerber export completed" not in text
+
+
+@pytest.mark.anyio
+async def test_export_manufacturing_package_rejects_incomplete_approval_evidence(
+    sample_project,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._evaluate_project_gate",
+        lambda **_kwargs: [GateOutcome(name="Project", status="PASS", summary="ready")],
+    )
+    evidence_dir = sample_project / ".kicad-mcp"
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    (evidence_dir / "manufacturing_approval.json").write_text(
+        json.dumps({"approved_by": "Reviewer"}),
+        encoding="utf-8",
+    )
+
+    server = build_server("manufacturing")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    text = await call_tool_text(
+        server,
+        "export_manufacturing_package",
+        {"approval_evidence_path": ".kicad-mcp/manufacturing_approval.json"},
+    )
+
+    assert "Manufacturing evidence is missing" in text
+    assert "approved_at_utc" in text
+    assert "approval_scope" in text
+    assert "Gerber export completed" not in text
 
 
 @pytest.mark.anyio

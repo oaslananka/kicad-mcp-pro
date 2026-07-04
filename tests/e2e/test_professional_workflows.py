@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,23 @@ from tests.integration.test_emc_tools import _configure_emc_board
 from tests.integration.test_pcb_export_validation_surface import _fake_cli_run_factory
 from tests.integration.test_power_integrity_tools import _configure_power_board
 from tests.integration.test_signal_integrity_tools import _configure_signal_integrity_board
+
+
+def _write_manufacturing_approval(project: Path) -> str:
+    evidence_dir = project / ".kicad-mcp"
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    path = evidence_dir / "manufacturing_approval.json"
+    path.write_text(
+        json.dumps(
+            {
+                "approved_by": "Test Reviewer",
+                "approved_at_utc": "2026-07-04T00:00:00Z",
+                "approval_scope": "manufacturing release package",
+            }
+        ),
+        encoding="utf-8",
+    )
+    return ".kicad-mcp/manufacturing_approval.json"
 
 
 class _WorkflowComponentClient:
@@ -167,7 +185,11 @@ async def test_scenario_1_mcu_board_workflow(
         "dfm_calculate_manufacturing_cost",
         {"quantity": 10, "manufacturer": "JLCPCB", "tier": "standard"},
     )
-    package = await call_tool_text(server, "export_manufacturing_package", {})
+    package = await call_tool_text(
+        server,
+        "export_manufacturing_package",
+        {"approval_evidence_path": _write_manufacturing_approval(sample_project)},
+    )
 
     assert "Live component matches" in search
     assert "Assigned LCSC code 'C25804'" in assigned
