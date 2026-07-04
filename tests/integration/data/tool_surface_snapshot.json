@@ -2449,6 +2449,27 @@
   {
     "destructive": true,
     "experimental": false,
+    "headless": true,
+    "idempotent": false,
+    "name": "pcb_add_bitmap_board_art",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "expert",
+      "full",
+      "high_speed",
+      "pcb",
+      "pcb_layout",
+      "pcb_only",
+      "power"
+    ],
+    "read_only": false,
+    "requires_kicad_running": false
+  },
+  {
+    "destructive": true,
+    "experimental": false,
     "headless": false,
     "idempotent": false,
     "name": "pcb_add_blind_via",
@@ -6898,6 +6919,24 @@
       "high_speed"
     ],
     "read_only": false,
+    "requires_kicad_running": false
+  },
+  {
+    "destructive": false,
+    "experimental": false,
+    "headless": false,
+    "idempotent": true,
+    "name": "si_get_solver_capabilities",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "analysis",
+      "critic",
+      "expert",
+      "full",
+      "high_speed"
+    ],
+    "read_only": true,
     "requires_kicad_running": false
   },
   {

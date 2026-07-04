@@ -18,6 +18,8 @@ SUITES = {
         "tests/integration/",
         "tests/e2e/",
         "-q",
+        "-m",
+        "not benchmark",
         "--cov=kicad_mcp",
         "--cov-report=term-missing",
         "--cov-report=xml",

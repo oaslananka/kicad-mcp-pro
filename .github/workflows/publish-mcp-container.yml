@@ -148,4 +148,5 @@ jobs:
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish == true)
         env:
           COSIGN_EXPERIMENTAL: "true"
-        run: cosign sign --yes "${GHCR_IMAGE}@${{ steps.build-push.outputs.digest }}"
+          IMAGE_DIGEST: ${{ steps.build-push.outputs.digest }}
+        run: cosign sign --yes "${GHCR_IMAGE}@${IMAGE_DIGEST}"
