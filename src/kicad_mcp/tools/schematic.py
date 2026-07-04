@@ -23,6 +23,7 @@ from mcp.types import CallToolResult
 from ..config import get_config
 from ..connection import KiCadConnectionError, get_kicad
 from ..discovery import is_numbered_duplicate_kicad_file
+from ..errors import SchematicWriteUnsafeError
 from ..mcp_media import image_tool_result, text_tool_result
 from ..models.schematic import (
     AddBusInput,
@@ -52,6 +53,7 @@ from ..utils.cache import clear_ttl_cache, ttl_cache
 from ..utils.field_placer import FieldSpec, autoplace_fields
 from ..utils.geometry import Box as GeoBox
 from ..utils.geometry import body_box_from_pins, text_extent
+from ..utils.schematic_roundtrip import dropped_nodes
 from ..utils.schematic_router import RouterBBox, SchematicRouter
 from ..utils.sexpr import (
     _escape_sexpr_string,
@@ -4469,6 +4471,36 @@ def _validate_schematic_text(content: str) -> None:
         )
 
 
+def _guard_schematic_structural_loss(
+    sch_file: Path,
+    before: str,
+    after: str,
+    *,
+    allow_node_loss: bool = False,
+) -> None:
+    """Refuse accidental structural loss before committing a schematic write.
+
+    Most file-backed schematic tools still apply deterministic text mutations rather
+    than a fully lossless kicad-sch-api serializer.  The same round-trip safety
+    invariant still applies: a mutator may add or move structure, but it must not
+    silently drop fragile constructs such as global labels, hierarchical labels,
+    buses, sheets, power symbols, or wires.  Intentional delete/replace workflows
+    must opt in with ``allow_node_loss=True`` so destructive behavior is explicit at
+    the call site.
+    """
+    if allow_node_loss or before == after:
+        return
+    lost = dropped_nodes(before, after)
+    if not lost:
+        return
+    detail = ", ".join(f"{kind} {b}->{a}" for kind, (b, a) in sorted(lost.items()))
+    raise SchematicWriteUnsafeError(
+        f"Refusing to write {sch_file.name}: the schematic mutation dropped structure "
+        f"({detail}). The original file was preserved; use an explicit destructive "
+        "path only for intentional delete/replace operations."
+    )
+
+
 def _find_placed_symbol_blocks(
     content: str,
     reference: str,
@@ -4544,7 +4576,12 @@ def _next_reference(prefix: str) -> str:
     return f"{prefix}{highest + 1}"
 
 
-def _transactional_write_to_schematic_file(sch_file: Path, mutator: Callable[[str], str]) -> str:
+def _transactional_write_to_schematic_file(
+    sch_file: Path,
+    mutator: Callable[[str], str],
+    *,
+    allow_node_loss: bool = False,
+) -> str:
     """Read, mutate, validate, and atomically rewrite a schematic file.
 
     File-backed schematic tools are often invoked in batches.  Keep the full
@@ -4556,6 +4593,9 @@ def _transactional_write_to_schematic_file(sch_file: Path, mutator: Callable[[st
         current = sch_file.read_text(encoding="utf-8")
         updated = _normalize_schematic_wire_connectivity(mutator(current))
         _validate_schematic_text(updated)
+        _guard_schematic_structural_loss(
+            sch_file, current, updated, allow_node_loss=allow_node_loss
+        )
         with NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=sch_file.parent) as handle:
             handle.write(updated)
             temp_path = Path(handle.name)
@@ -4573,15 +4613,30 @@ def _transactional_write_to_schematic_file(sch_file: Path, mutator: Callable[[st
         return str(sch_file)
 
 
-def _transactional_write_to_schematic(mutator: Callable[[str], str]) -> str:
+def _transactional_write_to_schematic(
+    mutator: Callable[[str], str],
+    *,
+    allow_node_loss: bool = False,
+) -> str:
     """Read, mutate, validate, and atomically rewrite the active schematic."""
-    return _transactional_write_to_schematic_file(_get_schematic_file(), mutator)
+    return _transactional_write_to_schematic_file(
+        _get_schematic_file(), mutator, allow_node_loss=allow_node_loss
+    )
 
 
-def transactional_write(mutator: Callable[[str], str], sch_file: Path | None = None) -> str:
+def transactional_write(
+    mutator: Callable[[str], str],
+    sch_file: Path | None = None,
+    *,
+    allow_node_loss: bool = False,
+) -> str:
     """Read, mutate, validate, and atomically rewrite a schematic file."""
     if sch_file is not None:
-        return _transactional_write_to_schematic_file(sch_file, mutator)
+        return _transactional_write_to_schematic_file(
+            sch_file, mutator, allow_node_loss=allow_node_loss
+        )
+    if allow_node_loss:
+        return _transactional_write_to_schematic(mutator, allow_node_loss=True)
     return get_schematic_backend().transactional_write(mutator)
 
 
@@ -6047,7 +6102,7 @@ def register(mcp: FastMCP) -> None:
             return "".join(pieces)
 
         try:
-            transactional_write(mutator)
+            transactional_write(mutator, allow_node_loss=True)
         except ValueError as exc:
             return str(exc)
         return (
@@ -6104,7 +6159,7 @@ def register(mcp: FastMCP) -> None:
             return "".join(pieces)
 
         try:
-            transactional_write(mutator)
+            transactional_write(mutator, allow_node_loss=True)
         except ValueError as exc:
             return str(exc)
 
@@ -6156,7 +6211,7 @@ def register(mcp: FastMCP) -> None:
             return "".join(pieces)
 
         try:
-            transactional_write(mutator)
+            transactional_write(mutator, allow_node_loss=True)
         except ValueError as exc:
             return str(exc)
         return (
@@ -6494,7 +6549,7 @@ def register(mcp: FastMCP) -> None:
         )
         content = _normalize_schematic_wire_connectivity(content)
         _validate_schematic_text(content)
-        transactional_write(lambda _current: content, sch_file)
+        transactional_write(lambda _current: content, sch_file, allow_node_loss=True)
         result = _reload_schematic()
         notes: list[str] = []
         if auto_layout:
