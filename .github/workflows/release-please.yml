@@ -37,20 +37,28 @@ jobs:
       # updater cannot bump (it replaces whole values, not substrings). Regenerate the
       # version-derived metadata from the bumped pyproject and push it onto the release
       # PR branch so the metadata-sync gate passes.
-      - if: ${{ steps.release.outputs.pr }}
+      - name: Detect release PR branch
+        id: release-pr-branch
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          branch="$(gh pr list --state open --head release-please--branches--main --json headRefName --jq '.[0].headRefName // ""')"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+
+      - if: ${{ steps.release-pr-branch.outputs.branch != '' }}
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
-          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          ref: ${{ steps.release-pr-branch.outputs.branch }}
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           persist-credentials: false
-      - if: ${{ steps.release.outputs.pr }}
+      - if: ${{ steps.release-pr-branch.outputs.branch != '' }}
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
         with:
           enable-cache: false
-      - if: ${{ steps.release.outputs.pr }}
+      - if: ${{ steps.release-pr-branch.outputs.branch != '' }}
         name: Sync version-derived MCP metadata onto the release PR
         env:
-          RELEASE_PR_BRANCH: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          RELEASE_PR_BRANCH: ${{ steps.release-pr-branch.outputs.branch }}
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           uv run --all-extras python scripts/sync_mcp_metadata.py --write
