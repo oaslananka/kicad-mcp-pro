@@ -29,6 +29,7 @@ from ..models.signal_integrity import (
     TraceWidthForImpedanceInput,
     ViaStubInput,
 )
+from ..models.verdict import VerdictReport
 from ..utils.channel import (
     ChannelMetrics,
     ChannelSpec,
@@ -627,7 +628,7 @@ def register(mcp: FastMCP) -> None:
         er: float = 4.2,
         trace_type: str = "microstrip",
         skew_budget_ps: float = 0.0,
-    ) -> str:
+    ) -> VerdictReport:
         """Estimate differential-pair length skew and delay mismatch from board tracks.
 
         Returns a PASS/WARN/FAIL verdict. The skew budget comes from ``skew_budget_ps``
@@ -637,9 +638,24 @@ def register(mcp: FastMCP) -> None:
         payload = DifferentialPairSkewInput(net_p=net_p, net_n=net_n, er=er, trace_type=trace_type)
         lengths = _track_lengths_by_net()
         if payload.net_p not in lengths or payload.net_n not in lengths:
-            return (
+            message = (
                 "Could not compute differential-pair skew because one or both nets "
                 "have no routed track segments on the active board."
+            )
+            return VerdictReport.from_text_verdict(
+                text=message,
+                summary=message,
+                verdict="WARN",
+                source="si_check_differential_pair_skew",
+                evidence=[
+                    {"net_p": payload.net_p, "net_n": payload.net_n, "routed_lengths": lengths}
+                ],
+                remediation=(
+                    "Route both differential-pair nets, then rerun "
+                    "si_check_differential_pair_skew()."
+                ),
+                failure_mode="configuration",
+                metadata={"domain": "signal_integrity"},
             )
 
         height_mm = _outer_dielectric_height_mm()
@@ -664,19 +680,41 @@ def register(mcp: FastMCP) -> None:
         fail_ps = warn_max_from(budget_ps)
         verdict = three_level_verdict(skew_ps, pass_max=budget_ps, warn_max=fail_ps)
 
-        return "\n".join(
-            [
-                f"Differential-pair skew analysis ({verdict}):",
-                f"- Net P: {payload.net_p} length={length_p:.3f} mm",
-                f"- Net N: {payload.net_n} length={length_n:.3f} mm",
-                f"- Skew: {skew_mm:.3f} mm",
-                f"- Estimated delay mismatch: {skew_ps:.3f} ps",
-                f"- Effective permittivity used: {effective_er:.3f}",
-                f"- Assumed outer dielectric height: {height_mm:.3f} mm",
-                f"- Skew budget: {budget_ps:.1f} ps (source: {budget_source})",
-                f"- Thresholds: PASS <= {budget_ps:.1f} ps, WARN <= {fail_ps:.1f} ps, "
-                f"FAIL > {fail_ps:.1f} ps.",
-            ]
+        lines = [
+            f"Differential-pair skew analysis ({verdict}):",
+            f"- Net P: {payload.net_p} length={length_p:.3f} mm",
+            f"- Net N: {payload.net_n} length={length_n:.3f} mm",
+            f"- Skew: {skew_mm:.3f} mm",
+            f"- Estimated delay mismatch: {skew_ps:.3f} ps",
+            f"- Effective permittivity used: {effective_er:.3f}",
+            f"- Assumed outer dielectric height: {height_mm:.3f} mm",
+            f"- Skew budget: {budget_ps:.1f} ps (source: {budget_source})",
+            f"- Thresholds: PASS <= {budget_ps:.1f} ps, WARN <= {fail_ps:.1f} ps, "
+            f"FAIL > {fail_ps:.1f} ps.",
+        ]
+        return VerdictReport.from_text_verdict(
+            text="\n".join(lines),
+            summary=(
+                f"Differential-pair skew is {skew_ps:.3f} ps against {budget_ps:.1f} ps budget."
+            ),
+            verdict=verdict,
+            source="si_check_differential_pair_skew",
+            evidence=[
+                {
+                    "net_p": payload.net_p,
+                    "net_n": payload.net_n,
+                    "length_p_mm": length_p,
+                    "length_n_mm": length_n,
+                    "skew_mm": skew_mm,
+                    "skew_ps": skew_ps,
+                    "budget_ps": budget_ps,
+                    "budget_source": budget_source,
+                }
+            ],
+            remediation="Tune pair lengths/routing, then rerun si_check_differential_pair_skew()."
+            if verdict != "PASS"
+            else "",
+            metadata={"domain": "signal_integrity"},
         )
 
     @mcp.tool()

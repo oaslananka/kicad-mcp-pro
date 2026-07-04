@@ -297,6 +297,10 @@ def _report_entry_finding(
         severity=severity,
         location=location,
         description=description,
+        evidence=[{"source": source, "entry": dict(entry)}],
+        remediation=f"Fix the {source} finding and rerun {fix_tool}(save_report=True).",
+        retryable=False,
+        failure_mode="design",
         suggested_fix=SuggestedFix(tool=fix_tool, args={"save_report": True}),
         metadata=metadata,
     )
@@ -326,12 +330,22 @@ def _finding_for_gate_detail(outcome: GateOutcome, detail: str) -> Finding:
         cleaned.removeprefix("FAIL: ").removeprefix("WARN: ").removeprefix("BLOCKED: ").strip()
         or outcome.summary
     )
+    suggested_fix = _fix_for_gate(outcome.name)
+    remediation = (
+        f"Run {suggested_fix.tool} and re-run this gate."
+        if suggested_fix is not None
+        else "Inspect this gate and re-run it after remediation."
+    )
     return Finding(
         id=stable_finding_id("gate", outcome.name, outcome.status, description),
         severity=severity,
         location=outcome.name,
         description=description,
-        suggested_fix=_fix_for_gate(outcome.name),
+        evidence=[{"gate": outcome.name, "status": outcome.status, "detail": cleaned}],
+        remediation=remediation,
+        retryable=False,
+        failure_mode="configuration" if outcome.status == "BLOCKED" else "design",
+        suggested_fix=suggested_fix,
     )
 
 
@@ -365,10 +379,17 @@ def _gate_report(outcome: GateOutcome) -> VerdictReport:
             if fixer is not None
             else "Inspect this gate and re-run it after remediation."
         )
+    failure_mode = "none" if verdict == "PASS" else "design"
+    if verdict != "PASS" and outcome.status == "BLOCKED":
+        failure_mode = "configuration"
     return VerdictReport(
         text=_format_gate(outcome),
         summary=outcome.summary,
         verdict=verdict,
+        failure_mode=failure_mode,
+        retryable=False,
+        evidence=[{"gate": outcome.name, "status": outcome.status, "details": outcome.details}],
+        remediation="" if verdict == "PASS" else next_action,
         findings=findings,
         next_action=next_action,
         metadata={"gate": outcome.name, "status": outcome.status, "details": outcome.details},
@@ -383,7 +404,7 @@ def _drc_report_payload(
     save_report: bool,
 ) -> VerdictReport:
     if report is None:
-        message = f"DRC failed: {error or 'unknown error'}"
+        message = f"DRC report unavailable: {error or 'unknown error'}"
         return VerdictReport(
             text=message,
             summary="DRC report is unavailable.",
@@ -394,11 +415,18 @@ def _drc_report_payload(
                     severity="error",
                     location=str(path),
                     description=message,
+                    evidence=[{"report_path": str(path), "error": error or "unknown error"}],
+                    remediation="Make kicad-cli/report generation available, then rerun run_drc().",
+                    retryable=True,
+                    failure_mode="environment",
                     suggested_fix=SuggestedFix(tool="run_drc", args={"save_report": True}),
                 )
             ],
+            failure_mode="environment",
+            retryable=True,
+            remediation="Make kicad-cli/report generation available, then rerun run_drc().",
             next_action="Make kicad-cli/report generation available, then rerun run_drc().",
-            metadata={"report_path": str(path), "available": False},
+            metadata={"report_path": str(path), "available": False, "failure_mode": "environment"},
         )
 
     violations = _entries(report, "violations")
@@ -442,6 +470,12 @@ def _drc_report_payload(
             else f"DRC reported {len(findings)} actionable finding(s)."
         ),
         verdict=verdict,
+        failure_mode="none" if verdict == "PASS" else "design",
+        retryable=False,
+        evidence=[{"report_path": str(path), "violations": report}],
+        remediation=(
+            "" if verdict == "PASS" else "Fix DRC findings and rerun run_drc(save_report=True)."
+        ),
         findings=findings,
         next_action=(
             "No DRC action required."
@@ -466,7 +500,7 @@ def _erc_report_payload(
     save_report: bool,
 ) -> VerdictReport:
     if report is None:
-        message = f"ERC failed: {error or 'unknown error'}"
+        message = f"ERC report unavailable: {error or 'unknown error'}"
         return VerdictReport(
             text=message,
             summary="ERC report is unavailable.",
@@ -477,11 +511,18 @@ def _erc_report_payload(
                     severity="error",
                     location=str(path),
                     description=message,
+                    evidence=[{"report_path": str(path), "error": error or "unknown error"}],
+                    remediation="Make kicad-cli/report generation available, then rerun run_erc().",
+                    retryable=True,
+                    failure_mode="environment",
                     suggested_fix=SuggestedFix(tool="run_erc", args={"save_report": True}),
                 )
             ],
+            failure_mode="environment",
+            retryable=True,
+            remediation="Make kicad-cli/report generation available, then rerun run_erc().",
             next_action="Make kicad-cli/report generation available, then rerun run_erc().",
-            metadata={"report_path": str(path), "available": False},
+            metadata={"report_path": str(path), "available": False, "failure_mode": "environment"},
         )
 
     violations = _erc_violations(report)
@@ -500,6 +541,12 @@ def _erc_report_payload(
             else f"ERC reported {len(findings)} actionable finding(s)."
         ),
         verdict=verdict,
+        failure_mode="none" if verdict == "PASS" else "design",
+        retryable=False,
+        evidence=[{"report_path": str(path), "violations": report}],
+        remediation=(
+            "" if verdict == "PASS" else "Fix ERC findings and rerun run_erc(save_report=True)."
+        ),
         findings=findings,
         next_action=(
             "No ERC action required."
