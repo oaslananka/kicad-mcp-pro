@@ -122,7 +122,7 @@ The documentation is organized from setup to operation:
 10. [Work-order audit](docs/status/work-order-audit-2026-06-17.md) — current status of the hardening work order
 
 The `kicad_capability_parity()` tool reports, per workflow domain, what fraction of
-KiCad's programmatically reachable surface this server can drive (currently **75.0%**),
+KiCad's programmatically reachable surface this server can drive (currently **76.3%**),
 keeping genuine `gap`s distinct from `gui-only-no-api` items that KiCad exposes no
 headless API for.
 
