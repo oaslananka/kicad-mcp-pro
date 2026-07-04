@@ -18,6 +18,7 @@ from mcp.server.fastmcp import FastMCP
 from ..config import get_config
 from ..connection import get_board
 from ..models.common import _FootprintLike
+from ..models.verdict import Verdict, VerdictReport
 from ..utils.impedance import propagation_delay_ps_per_mm
 from ..utils.layers import resolve_layer
 from ..utils.solver_seams import emc_method, format_solver_verdict
@@ -77,6 +78,25 @@ def _zone_net_name(zone: _ZoneLike) -> str:
 def _is_ground_like_net(net_name: str) -> bool:
     normalized = net_name.strip().upper()
     return normalized in {"GND", "AGND", "DGND", "PGND", "GROUND"} or normalized.startswith("GND_")
+
+
+def _emc_verdict_report(title: str, source: str, verdict: str, detail: str) -> VerdictReport:
+    resolved_verdict = cast(Verdict, verdict)
+    text = f"{title} ({resolved_verdict}):\n- {detail}"
+    return VerdictReport.from_text_verdict(
+        text=text,
+        summary=detail,
+        verdict=resolved_verdict,
+        source=source,
+        evidence=[{"check": source, "detail": detail}],
+        remediation=(
+            "Review layout EMC geometry, apply the recommended correction, and rerun this check."
+        )
+        if verdict != "PASS"
+        else "",
+        next_action="Treat this result as an EMC critic, not formal compliance sign-off.",
+        metadata={"domain": "emc", "check": source},
+    )
 
 
 def _footprint_reference(footprint: _FootprintLike) -> str:
@@ -427,64 +447,99 @@ def register(mcp: FastMCP) -> None:
     """Register EMC-oriented review tools."""
 
     @mcp.tool()
-    def emc_check_ground_plane_voids(max_void_area_mm2: float = 25.0) -> str:
+    def emc_check_ground_plane_voids(max_void_area_mm2: float = 25.0) -> VerdictReport:
         """Review GND plane presence and a simple void-risk proxy."""
         verdict, detail = _emc_check_ground_plane_voids_text(max_void_area_mm2)
-        return f"Ground plane void review ({verdict}):\n- {detail}"
+        return _emc_verdict_report(
+            "Ground plane void review",
+            "emc_check_ground_plane_voids",
+            verdict,
+            detail,
+        )
 
     @mcp.tool()
     def emc_check_return_path_continuity(
         signal_net: str = "",
         reference_plane_layer: str = "auto",
         search_radius_mm: float = 2.0,
-    ) -> str:
+    ) -> VerdictReport:
         """Check EMC return-path continuity for a signal or all critical high-speed nets."""
         verdict, detail = _emc_check_return_path_text(
             signal_net,
             reference_plane_layer,
             search_radius_mm,
         )
-        return f"Return path continuity ({verdict}):\n- {detail}"
+        return _emc_verdict_report(
+            "Return path continuity",
+            "emc_check_return_path_continuity",
+            verdict,
+            detail,
+        )
 
     @mcp.tool()
-    def emc_check_split_plane_crossing(signal_nets: list[str]) -> str:
+    def emc_check_split_plane_crossing(signal_nets: list[str]) -> VerdictReport:
         """Warn when routed signals share layers with split non-ground planes."""
         verdict, detail = _emc_check_split_plane_text(signal_nets)
-        return f"Split-plane crossing review ({verdict}):\n- {detail}"
+        return _emc_verdict_report(
+            "Split-plane crossing review",
+            "emc_check_split_plane_crossing",
+            verdict,
+            detail,
+        )
 
     @mcp.tool()
-    def emc_check_decoupling_placement(max_distance_mm: float = 3.0) -> str:
+    def emc_check_decoupling_placement(max_distance_mm: float = 3.0) -> VerdictReport:
         """Review whether ICs have nearby decoupling capacitors."""
         verdict, detail = _emc_check_decoupling_text(max_distance_mm)
-        return f"Decoupling placement review ({verdict}):\n- {detail}"
+        return _emc_verdict_report(
+            "Decoupling placement review",
+            "emc_check_decoupling_placement",
+            verdict,
+            detail,
+        )
 
     @mcp.tool()
-    def emc_check_via_stitching(max_gap_mm: float = 5.0, ground_net: str = "GND") -> str:
+    def emc_check_via_stitching(max_gap_mm: float = 5.0, ground_net: str = "GND") -> VerdictReport:
         """Estimate via-stitching density from existing ground vias."""
         verdict, detail = _emc_check_via_stitching_text(max_gap_mm, ground_net)
-        return f"Via stitching review ({verdict}):\n- {detail}"
+        return _emc_verdict_report(
+            "Via stitching review",
+            "emc_check_via_stitching",
+            verdict,
+            detail,
+        )
 
     @mcp.tool()
     def emc_check_differential_pair_symmetry(
         net_p: str,
         net_n: str,
         max_skew_ps: float = 10.0,
-    ) -> str:
+    ) -> VerdictReport:
         """Review diff-pair skew and width symmetry."""
         verdict, detail = _emc_check_diff_pair_text(net_p, net_n, max_skew_ps)
-        return f"Differential-pair symmetry ({verdict}):\n- {detail}"
+        return _emc_verdict_report(
+            "Differential-pair symmetry",
+            "emc_check_differential_pair_symmetry",
+            verdict,
+            detail,
+        )
 
     @mcp.tool()
     def emc_check_high_speed_routing_rules(
         net_class: str,
         max_stub_length_mm: float = 1.0,
-    ) -> str:
+    ) -> VerdictReport:
         """Review a high-speed net class for a short-stub proxy."""
         verdict, detail = _emc_check_high_speed_rules_text(net_class, max_stub_length_mm)
-        return f"High-speed routing rule review ({verdict}):\n- {detail}"
+        return _emc_verdict_report(
+            "High-speed routing rule review",
+            "emc_check_high_speed_routing_rules",
+            verdict,
+            detail,
+        )
 
     @mcp.tool()
-    def emc_run_full_compliance(standard: str = "FCC") -> str:
+    def emc_run_full_compliance(standard: str = "FCC") -> VerdictReport:
         """Run a lightweight EMC sweep with at least ten heuristic checks."""
         diff_pair = _find_diff_pair()
         signal_net = next(iter(_high_speed_nets()), "")
@@ -531,4 +586,27 @@ def register(mcp: FastMCP) -> None:
         )
         lines.append(f"- {format_solver_verdict(method)}")
         lines.append(f"- Note: {method['note']} Treat results as a critic, not a release sign-off.")
-        return "\n".join(lines)
+        overall: Verdict = "PASS"
+        if any(verdict == "FAIL" for _, verdict, _ in checks):
+            overall = "FAIL"
+        elif any(verdict == "WARN" for _, verdict, _ in checks):
+            overall = "WARN"
+        return VerdictReport.from_text_verdict(
+            text="\n".join(lines),
+            summary=f"EMC compliance sweep completed with {overall} verdict.",
+            verdict=overall,
+            source="emc_run_full_compliance",
+            evidence=[
+                {"check": name, "verdict": verdict, "detail": detail}
+                for name, verdict, detail in checks
+            ],
+            remediation=(
+                "Review WARN/FAIL EMC checks and rerun the sweep." if overall != "PASS" else ""
+            ),
+            next_action="Treat results as a critic, not formal compliance sign-off.",
+            metadata={
+                "domain": "emc",
+                "standard": standard.upper(),
+                "checks_run": len(checks),
+            },
+        )

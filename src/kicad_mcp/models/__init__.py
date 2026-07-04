@@ -37,7 +37,7 @@ from .state import (
     WorkspaceState,
 )
 from .tool_result import ArtifactRef, StateDelta, ToolResult
-from .verdict import Finding, SuggestedFix, Verdict, VerdictReport, stable_finding_id
+from .verdict import FailureMode, Finding, SuggestedFix, Verdict, VerdictReport, stable_finding_id
 
 __all__ = [
     "ACAnalysisInput",
@@ -59,6 +59,7 @@ __all__ = [
     "DifferentialPairSkewInput",
     "ExportBOMInput",
     "ExportGerberInput",
+    "FailureMode",
     "Finding",
     "ImpedanceForTraceInput",
     "LayerViaInput",

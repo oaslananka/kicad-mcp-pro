@@ -28,6 +28,7 @@ from ..models.power_integrity import (
     ThermalViaInput,
     VoltageDropInput,
 )
+from ..models.verdict import Verdict, VerdictReport
 from ..utils.impedance import copper_thickness_mm, recommended_decoupling_distance_mm
 from ..utils.layers import resolve_layer
 from ..utils.pdn_mesh import (
@@ -308,7 +309,7 @@ def register(mcp: FastMCP) -> None:
         target_impedance_ohm: float | None = None,
         decoupling_esr_mohm: float = 20.0,
         decoupling_esl_nh: float = 1.0,
-    ) -> str:
+    ) -> VerdictReport:
         """Run a lightweight PDN mesh voltage-drop check for a power net."""
         loads = [
             PdnLoad(
@@ -355,7 +356,32 @@ def register(mcp: FastMCP) -> None:
         mesh_method = pdn_mesh_method()
         lines.append(f"- Method: {mesh_method['method']} — {mesh_method['accuracy']}")
         lines.append(f"- {format_solver_verdict(mesh_method)}")
-        return "\n".join(lines)
+        verdict: Verdict = "FAIL" if result.violations or result.impedance_violations else "PASS"
+        return VerdictReport.from_text_verdict(
+            text="\n".join(lines),
+            summary=(
+                f"PDN mesh check completed for {net_name} with "
+                f"{len(result.violations) + len(result.impedance_violations)} violation(s)."
+            ),
+            verdict=verdict,
+            source="check_power_integrity",
+            evidence=[
+                {
+                    "net_name": net_name,
+                    "source_ref": source_ref,
+                    "load_refs": load_refs,
+                    "max_drop_mv": result.max_drop_mv,
+                    "violations": result.violations,
+                    "impedance_violations": result.impedance_violations,
+                }
+            ],
+            remediation=(
+                "Widen copper, shorten paths, add decoupling, then rerun check_power_integrity()."
+            )
+            if verdict != "PASS"
+            else "",
+            metadata={"domain": "power_integrity"},
+        )
 
     @mcp.tool()
     def pdn_recommend_decoupling_caps(
@@ -403,7 +429,7 @@ def register(mcp: FastMCP) -> None:
         expected_current_a: float,
         ambient_temp_c: float = 25.0,
         max_temp_rise_c: float = 10.0,
-    ) -> str:
+    ) -> VerdictReport:
         """Check whether the routed copper for a net looks sufficient for the load current."""
         payload = CopperWeightCheckInput(
             net_name=net_name,
@@ -413,7 +439,17 @@ def register(mcp: FastMCP) -> None:
         )
         tracks = _matching_tracks(payload.net_name)
         if not tracks:
-            return f"No routed tracks were found for net '{payload.net_name}'."
+            message = f"No routed tracks were found for net '{payload.net_name}'."
+            return VerdictReport.from_text_verdict(
+                text=message,
+                summary=message,
+                verdict="WARN",
+                source="pdn_check_copper_weight",
+                evidence=[{"net_name": payload.net_name, "track_count": 0}],
+                remediation="Route copper for this net, then rerun pdn_check_copper_weight().",
+                failure_mode="configuration",
+                metadata={"domain": "power_integrity"},
+            )
 
         min_width_mm = min(nm_to_mm(int(track.width)) for track in tracks)
         avg_width_mm = sum(nm_to_mm(int(track.width)) for track in tracks) / len(tracks)
@@ -432,21 +468,45 @@ def register(mcp: FastMCP) -> None:
             external=external,
             max_temp_rise_c=payload.max_temp_rise_c,
         )
-        verdict = "PASS" if capacity_a >= payload.expected_current_a else "WARN"
+        verdict: Verdict = "PASS" if capacity_a >= payload.expected_current_a else "WARN"
 
-        return "\n".join(
-            [
-                f"Copper weight check for {payload.net_name} ({verdict}):",
-                f"- Routed track count: {len(tracks)}",
-                f"- Minimum width: {min_width_mm:.3f} mm",
-                f"- Average width: {avg_width_mm:.3f} mm",
-                f"- Copper thickness: {copper_thickness:.4f} mm",
-                f"- Assumed temperature rise limit: {payload.max_temp_rise_c:.1f} C",
-                f"- Estimated conservative current capacity: {capacity_a:.3f} A",
-                f"- Expected current: {payload.expected_current_a:.3f} A",
-                f"- Recommended minimum width: {required_width_mm:.3f} mm",
-                "- Uses a conservative IPC-style current-carrying estimate for quick review.",
-            ]
+        lines = [
+            f"Copper weight check for {payload.net_name} ({verdict}):",
+            f"- Routed track count: {len(tracks)}",
+            f"- Minimum width: {min_width_mm:.3f} mm",
+            f"- Average width: {avg_width_mm:.3f} mm",
+            f"- Copper thickness: {copper_thickness:.4f} mm",
+            f"- Assumed temperature rise limit: {payload.max_temp_rise_c:.1f} C",
+            f"- Estimated conservative current capacity: {capacity_a:.3f} A",
+            f"- Expected current: {payload.expected_current_a:.3f} A",
+            f"- Recommended minimum width: {required_width_mm:.3f} mm",
+            "- Uses a conservative IPC-style current-carrying estimate for quick review.",
+        ]
+        return VerdictReport.from_text_verdict(
+            text="\n".join(lines),
+            summary=(
+                f"Copper capacity is {capacity_a:.3f} A for "
+                f"{payload.expected_current_a:.3f} A expected."
+            ),
+            verdict=verdict,
+            source="pdn_check_copper_weight",
+            evidence=[
+                {
+                    "net_name": payload.net_name,
+                    "track_count": len(tracks),
+                    "min_width_mm": min_width_mm,
+                    "capacity_a": capacity_a,
+                    "expected_current_a": payload.expected_current_a,
+                    "required_width_mm": required_width_mm,
+                }
+            ],
+            remediation=(
+                "Increase copper width/weight or reduce current, then rerun "
+                "pdn_check_copper_weight()."
+            )
+            if verdict != "PASS"
+            else "",
+            metadata={"domain": "power_integrity"},
         )
 
     @mcp.tool()
@@ -573,7 +633,7 @@ def register(mcp: FastMCP) -> None:
         net_name: str,
         expected_power_w: float,
         preferred_layer: str = "auto",
-    ) -> str:
+    ) -> VerdictReport:
         """Check whether the board already has copper pour support for the net."""
         payload = ThermalPourInput(
             net_name=net_name,
@@ -586,12 +646,27 @@ def register(mcp: FastMCP) -> None:
             if str(getattr(getattr(zone, "net", None), "name", "") or "") == payload.net_name
         ]
         if not zones:
-            return (
+            message = (
                 f"No copper pours were found for net '{payload.net_name}'. "
                 "Add a pour or plane for thermal spreading before release."
             )
+            return VerdictReport.from_text_verdict(
+                text=message,
+                summary=message,
+                verdict="WARN",
+                source="thermal_check_copper_pour",
+                evidence=[{"net_name": payload.net_name, "matching_pours": 0}],
+                remediation=(
+                    "Add a copper pour or plane for thermal spreading, then rerun "
+                    "thermal_check_copper_pour()."
+                ),
+                failure_mode="configuration",
+                metadata={"domain": "thermal"},
+            )
 
-        verdict = "PASS" if len(zones) >= max(1, math.ceil(payload.expected_power_w)) else "WARN"
+        verdict: Verdict = (
+            "PASS" if len(zones) >= max(1, math.ceil(payload.expected_power_w)) else "WARN"
+        )
         lines = [
             f"Thermal copper-pour review for {payload.net_name} ({verdict}):",
             f"- Expected dissipation: {payload.expected_power_w:.3f} W",
@@ -602,7 +677,26 @@ def register(mcp: FastMCP) -> None:
             lines.append(f"- {zone.name or '(unnamed)'} on {zone_layers or '(unknown layers)'}")
         if verdict == "WARN":
             lines.append("- Consider a wider pour, more copper area, and stitched thermal vias.")
-        return "\n".join(lines)
+        return VerdictReport.from_text_verdict(
+            text="\n".join(lines),
+            summary=f"Thermal copper support has {len(zones)} matching pour(s)/plane(s).",
+            verdict=verdict,
+            source="thermal_check_copper_pour",
+            evidence=[
+                {
+                    "net_name": payload.net_name,
+                    "expected_power_w": payload.expected_power_w,
+                    "matching_pours": len(zones),
+                }
+            ],
+            remediation=(
+                "Increase thermal copper area and stitching, then rerun "
+                "thermal_check_copper_pour()."
+            )
+            if verdict != "PASS"
+            else "",
+            metadata={"domain": "thermal"},
+        )
 
     @mcp.tool()
     def thermal_simulate_plane_spreading(
@@ -615,7 +709,7 @@ def register(mcp: FastMCP) -> None:
         ambient_c: float = 25.0,
         film_coefficient_w_per_m2_k: float = 20.0,
         max_temp_rise_c: float = 40.0,
-    ) -> str:
+    ) -> VerdictReport:
         """Solve copper-plane heat spreading with a 2-D finite-difference thermal solver.
 
         Models a hot source dissipating ``power_w`` into a copper plane that loses heat to
@@ -669,4 +763,29 @@ def register(mcp: FastMCP) -> None:
         method = thermal_fd_method()
         lines.append(f"- Method: {method['method']} — {method['accuracy']}")
         lines.append(f"- {format_solver_verdict(method)}")
-        return "\n".join(lines)
+        return VerdictReport.from_text_verdict(
+            text="\n".join(lines),
+            summary=(
+                f"Peak temperature rise is {result.peak_rise_c:.1f} C against "
+                f"{payload.max_temp_rise_c:.1f} C limit."
+            ),
+            verdict=verdict,
+            source="thermal_simulate_plane_spreading",
+            evidence=[
+                {
+                    "power_w": payload.power_w,
+                    "peak_rise_c": result.peak_rise_c,
+                    "average_rise_c": result.average_rise_c,
+                    "max_temp_rise_c": payload.max_temp_rise_c,
+                    "converged": result.converged,
+                    "iterations": result.iterations,
+                }
+            ],
+            remediation=(
+                "Increase copper area, reduce power density, or add thermal vias, then "
+                "rerun thermal_simulate_plane_spreading()."
+            )
+            if verdict != "PASS"
+            else "",
+            metadata={"domain": "thermal", "solver": method["method"]},
+        )

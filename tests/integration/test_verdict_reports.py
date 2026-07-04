@@ -187,3 +187,81 @@ async def test_pcb_board_summary_returns_verdict_report(mock_board: object) -> N
     assert payload["verdict"] == "PASS"
     assert payload["metadata"]["source"] == "live-gui"
     assert payload["metadata"]["tracks"] == 0
+
+
+@pytest.mark.anyio
+async def test_verdict_findings_include_evidence_remediation_and_retryability(
+    sample_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = {
+        "violations": [
+            {
+                "uuid": "clearance-1",
+                "severity": "error",
+                "type": "clearance",
+                "description": "Clearance violation",
+            }
+        ],
+        "unconnected_items": [],
+        "items_not_passing_courtyard": [],
+    }
+
+    def fake_run_drc(report_name: str) -> tuple[Path, dict[str, object], None]:
+        return sample_project / "output" / report_name, report, None
+
+    monkeypatch.setattr("kicad_mcp.tools.validation._run_drc_report", fake_run_drc)
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    payload = await call_tool_payload(server, "run_drc", {"save_report": True})
+
+    assert payload["schema_version"] == "verdict.v1"
+    assert payload["failure_mode"] == "design"
+    assert payload["retryable"] is False
+    assert payload["remediation"] == "Fix DRC findings and rerun run_drc(save_report=True)."
+    assert payload["evidence"][0]["report_path"].endswith("drc_report.json")
+    finding = payload["findings"][0]
+    assert finding["failure_mode"] == "design"
+    assert finding["retryable"] is False
+    assert finding["remediation"].startswith("Fix the drc finding")
+    assert finding["evidence"][0]["entry"]["uuid"] == "clearance-1"
+
+
+@pytest.mark.anyio
+async def test_environment_gate_error_is_retryable_and_distinct_from_design_failure(
+    sample_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run_erc(report_name: str) -> tuple[Path, None, str]:
+        return sample_project / "output" / report_name, None, "kicad-cli unavailable"
+
+    monkeypatch.setattr("kicad_mcp.tools.validation._run_erc_report", fake_run_erc)
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    payload = await call_tool_payload(server, "run_erc", {"save_report": True})
+
+    assert payload["verdict"] == "FAIL"
+    assert payload["failure_mode"] == "environment"
+    assert payload["retryable"] is True
+    assert payload["findings"][0]["failure_mode"] == "environment"
+    assert payload["findings"][0]["retryable"] is True
+
+
+@pytest.mark.anyio
+async def test_critic_tools_return_standard_verdict_payloads(sample_project, mock_board) -> None:
+    server = build_server("full")
+    mock_board.get_tracks.return_value = []
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    payload = await call_tool_payload(
+        server,
+        "si_check_differential_pair_skew",
+        {"net_p": "USB_DP", "net_n": "USB_DN"},
+    )
+
+    assert payload["schema_version"] == "verdict.v1"
+    assert payload["verdict"] == "WARN"
+    assert payload["failure_mode"] == "configuration"
+    assert payload["findings"][0]["remediation"].startswith("Route both differential-pair nets")

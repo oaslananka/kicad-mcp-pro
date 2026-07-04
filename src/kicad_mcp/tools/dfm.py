@@ -14,6 +14,7 @@ from kipy.proto.board.board_types_pb2 import BoardLayer
 from mcp.server.fastmcp import FastMCP
 
 from ..connection import KiCadConnectionError, get_board
+from ..models.verdict import Verdict, VerdictReport
 from ..utils.sexpr import _extract_block
 from ..utils.units import nm_to_mm
 from .export_support import _ensure_output_dir, _get_pcb_file, _run_cli_variants
@@ -210,6 +211,35 @@ def _format_status(status: str, message: str) -> str:
     return f"- {status}: {message}"
 
 
+def _status_lines_verdict(lines: list[str]) -> Verdict:
+    if any(line.startswith("- FAIL:") for line in lines):
+        return "FAIL"
+    if any(line.startswith("- WARN:") for line in lines):
+        return "WARN"
+    return "PASS"
+
+
+def _dfm_verdict_report(lines: list[str]) -> VerdictReport:
+    verdict = _status_lines_verdict(lines)
+    text = "\n".join(lines)
+    return VerdictReport.from_text_verdict(
+        text=text,
+        summary="DFM profile check passed."
+        if verdict == "PASS"
+        else "DFM profile check has actionable manufacturing findings.",
+        verdict=verdict,
+        source="dfm_run_manufacturer_check",
+        evidence=[{"lines": lines}],
+        remediation="Resolve FAIL/WARN DFM profile lines, then rerun dfm_run_manufacturer_check()."
+        if verdict != "PASS"
+        else "",
+        next_action="Resolve DFM profile findings before manufacturing handoff."
+        if verdict != "PASS"
+        else "Proceed to manufacturing_quality_gate().",
+        metadata={"profile_check": True},
+    )
+
+
 def _dfm_check_lines(
     profile: dict[str, Any],
     *,
@@ -394,10 +424,10 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @headless_compatible
-    def dfm_run_manufacturer_check() -> str:
+    def dfm_run_manufacturer_check() -> VerdictReport:
         """Run a manufacturer-aware DFM review using the active bundled profile."""
         profile = _selected_profile()
-        return "\n".join(_dfm_check_lines(profile))
+        return _dfm_verdict_report(_dfm_check_lines(profile))
 
     @mcp.tool()
     @headless_compatible
