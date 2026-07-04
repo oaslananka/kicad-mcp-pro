@@ -28,9 +28,9 @@ kicad:
   dropped:
     - range: 9.x
       reason: >-
-        Upstream KiCad 9.x reached end of life after KiCad 10.0.0; removal
-        is complete in the current 3.17.x release line and was introduced in
-        the 3.9.0 compatibility window.
+        Upstream KiCad 9.x reached end of life after KiCad 10.0.0; removal is
+        complete in the current 3.17.x release line and was introduced in the
+        3.9.0 compatibility window.
       ci: none
       removalVersion: 3.9.0
   pcbImportWorkflows:
@@ -620,7 +620,7 @@ mcp:
 products:
   kicad-mcp-pro:
     packagePath: pyproject.toml
-    version: 3.17.1
+    version: 3.18.0
     compatibleExtension:
       required: '>=1.0.0 <2.0.0'
       testedAgainst: 1.0.0
