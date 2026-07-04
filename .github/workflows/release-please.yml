@@ -51,15 +51,13 @@ jobs:
         name: Sync version-derived MCP metadata onto the release PR
         env:
           RELEASE_PR_BRANCH: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
-          RELEASE_PUSH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           uv run --all-extras python scripts/sync_mcp_metadata.py --write
           if [ -n "$(git status --porcelain)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git commit -am "chore: sync version-derived MCP metadata"
-            export GIT_CONFIG_COUNT=1
-            export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
-            export GIT_CONFIG_VALUE_0="AUTHORIZATION: bearer ${RELEASE_PUSH_TOKEN}"
+            gh auth setup-git
             git push origin "HEAD:${RELEASE_PR_BRANCH}"
           fi
