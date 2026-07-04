@@ -126,6 +126,23 @@ def test_stateful_streamable_http_requires_session_header_after_initialize(
     assert listed.json()["result"]["tools"]
 
 
+def _write_manufacturing_approval(project: Path) -> str:
+    evidence_dir = project / ".kicad-mcp"
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    path = evidence_dir / "manufacturing_approval.json"
+    path.write_text(
+        json.dumps(
+            {
+                "approved_by": "Test Reviewer",
+                "approved_at_utc": "2026-07-04T00:00:00Z",
+                "approval_scope": "manufacturing release package",
+            }
+        ),
+        encoding="utf-8",
+    )
+    return ".kicad-mcp/manufacturing_approval.json"
+
+
 @pytest.mark.anyio
 async def test_metrics_increment_after_tool_call(sample_project: Path) -> None:
     _ = sample_project
@@ -932,9 +949,25 @@ async def test_export_manufacturing_package_accepts_explicit_variant(
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
     await call_tool_text(server, "variant_create", {"name": "lite"})
 
-    result = await call_tool_text(server, "export_manufacturing_package", {"variant": "lite"})
+    approval_path = _write_manufacturing_approval(sample_project)
+    result = await call_tool_text(
+        server,
+        "export_manufacturing_package",
+        {"variant": "lite", "approval_evidence_path": approval_path},
+    )
 
     assert "Gerber export completed" in result
+    assert "Manufacturing release evidence" in result
+    assert "manufacturing_release_report.json" in result
+    report = json.loads(
+        (sample_project / "output" / "manufacturing_release_report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert report["schema_version"] == "manufacturing_release.v1"
+    assert report["approval_evidence"]["approved_by"] == "Test Reviewer"
+    assert report["artifacts"]
+    assert all("sha256" in item for item in report["artifacts"])
     assert commands
     assert all("--variant" in command and "lite" in command for command in commands)
     active = await call_tool_text(server, "variant_list", {})

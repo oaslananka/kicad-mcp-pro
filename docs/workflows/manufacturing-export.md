@@ -89,7 +89,12 @@ PASS — declare requirements with `project_set_design_intent()` first.
 ## 7. Gated release
 
 `export_manufacturing_package()` is the final step and is hard-gated on the same
-project gate, so it runs only once the gate is clean. Direct `export_*()` tools do
-not enforce the full gate — use them only for low-level debug or interchange
-artifacts, switching to a broader profile (`full`/`minimal`) if needed. Finish with
-`mfg_generate_release_manifest()` for the SHA256-signed, provenance-stamped manifest.
+project gate, so it runs only once the gate is clean **and** a project-local human
+approval evidence JSON file is supplied via `approval_evidence_path`. That file must
+include `approved_by`, `approved_at_utc`, and `approval_scope`. The export writes a
+`manufacturing_release_report.json` that links the approval evidence, quality-gate
+outcomes, exported Gerber/drill/BOM/PnP/IPC artifacts, file sizes, and SHA256 hashes.
+Direct `export_*()` tools do not enforce the full gate or approval evidence — use
+them only for low-level debug or interchange artifacts, switching to a broader
+profile (`full`/`minimal`) if needed. Finish with `mfg_generate_release_manifest()`
+for the SHA256-signed, provenance-stamped manifest.
