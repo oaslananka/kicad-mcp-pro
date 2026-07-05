@@ -234,7 +234,7 @@ _RAW = r"""
           "mcp_tool": "pcb_auto_place_by_schematic",
           "status": "partial",
           "kicad_version_introduced": "10.0.x",
-          "notes": "Force-directed placement now stops by deterministic convergence and disables the wall-clock safety valve by default (K7); remaining P4-T2 work is deeper electrical/thermal/return-path scoring beyond net-weighted placement."
+          "notes": "Force-directed placement now stops by deterministic convergence (K7); placement scoring now includes return-path constraints (high-speed interface grouping via InterfaceSpec), mechanical mount-hole clearance, connector edge-placement specs, and before/after score evidence; explainable per-category FAIL/WARN output is emitted after each auto-placement run. Current-path (multi-sink power delivery) and board-level high-speed routing constraints remain P4-T2 partial."
         },
         {
           "capability": "Run DRC and inspect violations",

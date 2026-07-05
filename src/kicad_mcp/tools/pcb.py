@@ -1637,6 +1637,8 @@ def _auto_place_force_directed_board_file(
     grid_mm: float = 1.0,
     max_seconds: float = 0.0,
 ) -> str:
+    from .validation import _format_placement_score, _placement_analysis
+
     board_file = _get_pcb_file_for_sync()
     board_content = _normalize_board_content(
         board_file.read_text(encoding="utf-8", errors="ignore")
@@ -1649,6 +1651,10 @@ def _auto_place_force_directed_board_file(
     ]
     if len(movable) < 2:
         return "Auto-placement skipped: fewer than two placed footprints."
+
+    # Capture placement score before auto-placement for before/after comparison.
+    before_analysis, _ = _placement_analysis()
+    score_before = before_analysis.score if before_analysis is not None else None
 
     x_min, y_min, x_max, y_max = _board_frame_mm(board_content, footprints)
     components = [
@@ -1697,9 +1703,18 @@ def _auto_place_force_directed_board_file(
         if stats.get("converged")
         else f"stopped after {stats.get('iterations_run')} iterations (iteration ceiling)"
     )
+
+    # Capture placement score after auto-placement for before/after evidence.
+    after_analysis, _ = _placement_analysis()
+    score_lines = ""
+    if after_analysis is not None:
+        after_analysis.score_before = score_before
+        score_lines = "\n\n" + _format_placement_score(after_analysis)
+
     return (
         "Force-directed auto-placement completed after PCB sync: "
         f"{len(replacements)} footprint(s), {len(nets)} weighted net(s); {convergence}."
+        + score_lines
     )
 
 

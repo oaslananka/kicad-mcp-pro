@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from kicad_mcp.tools.pcb import _placement_net_weight, _placement_nets_from_footprints
+from kicad_mcp.tools.validation import PlacementAnalysis, _format_placement_score
 from kicad_mcp.utils.placement import (
     BGABall,
     ForceDirectedConfig,
@@ -172,3 +173,83 @@ def test_placement_geometry_helpers_and_bga_fanout_strategies() -> None:
     assert dog_ear[0]["dog_ear_dx"] != 0.0
     assert inline[0]["track_width_mm"] == 0.15
     assert inline[0]["dog_ear_dx"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# PlacementAnalysis: new fields (issue #278)
+# ---------------------------------------------------------------------------
+
+
+def _make_analysis(**kwargs: object) -> PlacementAnalysis:
+    defaults: dict[str, object] = dict(
+        footprint_count=4,
+        board_width_mm=40.0,
+        board_height_mm=30.0,
+        board_area_mm2=1200.0,
+        footprint_area_mm2=40.0,
+        density_pct=3.3,
+        score=90,
+    )
+    defaults.update(kwargs)
+    return PlacementAnalysis(**defaults)
+
+
+def test_placement_analysis_new_fields_defaults() -> None:
+    """New P4-T2 fields have sensible zero defaults."""
+    analysis = _make_analysis()
+    assert analysis.checked_hs_interfaces == 0
+    assert analysis.hs_grouping_violations == []
+    assert analysis.return_path_warnings == []
+    assert analysis.mount_hole_violations == []
+    assert analysis.connector_edge_spec_violations == []
+    assert analysis.score_before is None
+
+
+def test_format_placement_score_includes_hs_and_mechanical_counts() -> None:
+    """_format_placement_score must emit high-speed and mechanical summary lines."""
+    analysis = _make_analysis(
+        checked_hs_interfaces=3,
+        mount_hole_violations=["U1 too close to hole at (5, 5)"],
+        connector_edge_spec_violations=["J1 is 12 mm from bottom edge (limit 5 mm)"],
+    )
+    text = _format_placement_score(analysis)
+    assert "High-speed interfaces checked: 3" in text
+    assert "Mount-hole clearance checks: 1" in text
+    assert "Connector edge-spec checks: 1" in text
+
+
+def test_format_placement_score_shows_before_after_delta() -> None:
+    """Before/after delta is shown when score_before is set."""
+    analysis = _make_analysis(score=85, score_before=70)
+    text = _format_placement_score(analysis)
+    assert "Score before auto-placement: 70/100" in text
+    assert "+15" in text
+
+
+def test_format_placement_score_negative_delta() -> None:
+    """Negative delta is shown without '+' when score degraded."""
+    analysis = _make_analysis(score=60, score_before=70)
+    text = _format_placement_score(analysis)
+    assert "Score before auto-placement: 70/100" in text
+    assert "-10" in text
+
+
+def test_placement_analysis_hs_violations_in_hard_failures() -> None:
+    """High-speed grouping violations lower the score like other hard failures."""
+    without_hs = _make_analysis(score=100)
+    with_hs = _make_analysis(
+        score=80,
+        hard_failures=["HS grouping violation: USB3 spans 45 mm"],
+        hs_grouping_violations=["USB3 spans 45 mm"],
+    )
+    assert with_hs.score < without_hs.score
+    assert len(with_hs.hard_failures) == 1
+
+
+def test_placement_analysis_return_path_warnings_in_warnings() -> None:
+    """Return-path warnings count toward the warning tally."""
+    analysis = _make_analysis(
+        warnings=["High-speed interface DDR4 (U1, U2) spans 38 mm — consider tighter grouping."],
+        return_path_warnings=["DDR4 proximity warning"],
+    )
+    assert len(analysis.warnings) == 1
