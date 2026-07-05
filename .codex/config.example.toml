@@ -1,0 +1,10 @@
+# Example Codex MCP configuration for KiCad MCP Pro.
+# Copy the [[mcp_servers]] block into your Codex config.toml and adjust paths/env if needed.
+
+[[mcp_servers]]
+name = "kicad-mcp-pro"
+command = "uvx"
+args = ["kicad-mcp-pro", "--transport", "stdio"]
+
+[mcp_servers.env]
+KICAD_MCP_TRANSPORT = "stdio"
