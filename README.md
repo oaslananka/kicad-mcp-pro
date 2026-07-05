@@ -2,6 +2,8 @@
 
 <h1>KiCad MCP Pro</h1>
 
+[![MCPize](https://mcpize.com/badge/@oaslananka/kicad-mcp-pro)](https://mcpize.com/mcp/kicad-mcp-pro)
+
 <p>
   <strong>Drive KiCad schematic, PCB, DRC/ERC, DFM, and manufacturing review from any MCP-capable AI agent.</strong>
 </p>
@@ -105,6 +107,16 @@ uvx kicad-mcp-pro --transport streamable-http --port 3334
 uvx kicad-mcp-pro dashboard --host 127.0.0.1 --port 3334 --open
 # http://127.0.0.1:3334/ui
 ```
+
+## Connect via MCPize
+
+Use this MCP server instantly with no local installation:
+
+```bash
+npx -y mcpize connect @oaslananka/kicad-mcp-pro --client claude
+```
+
+Or connect at: **https://mcpize.com/mcp/kicad-mcp-pro**
 
 ## Documentation
 
