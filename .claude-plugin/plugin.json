@@ -1,0 +1,96 @@
+{
+  "name": "kicad-pro",
+  "version": "3.19.0",
+  "description": "KiCad MCP Pro agent plugin for schematic review, PCB design assistance, DRC/ERC validation, DFM checks, and manufacturing release workflows.",
+  "author": {
+    "name": "oaslananka",
+    "url": "https://github.com/oaslananka"
+  },
+  "source": {
+    "source": "github",
+    "repo": "oaslananka/kicad-mcp"
+  },
+  "category": "engineering",
+  "tags": [
+    "kicad",
+    "pcb",
+    "eda",
+    "mcp",
+    "hardware",
+    "electronics",
+    "drc",
+    "erc",
+    "manufacturing"
+  ],
+  "mcp_servers": [
+    {
+      "name": "io.github.oaslananka/kicad-mcp-pro",
+      "title": "KiCad MCP Pro",
+      "description": "Production-grade MCP server for KiCad EDA automation.",
+      "package": {
+        "pypi": "kicad-mcp-pro",
+        "npm": "kicad-mcp-pro",
+        "oci": "ghcr.io/oaslananka/kicad-mcp-pro:3.19.0"
+      },
+      "transports": [
+        "stdio",
+        "streamable-http"
+      ],
+      "launch_examples": [
+        "uvx kicad-mcp-pro --transport stdio",
+        "uvx kicad-mcp-pro --transport streamable-http --host 127.0.0.1 --port 3334",
+        "npx kicad-mcp-pro --help"
+      ],
+      "registry_manifest": "server.json",
+      "tool_reference": "docs/tools-reference.generated.md",
+      "minimum_requirements": [
+        "Python 3.13+ when using the PyPI/uvx package.",
+        "Node.js 24.11+ and pnpm 11+ for source checkout development flows.",
+        "KiCad CLI 8.x, 9.x, or 10.x on PATH for file-backed DRC, ERC, and export tools."
+      ]
+    }
+  ],
+  "skills": [
+    {
+      "name": "kicad-design-review",
+      "path": "skills/kicad-design-review/SKILL.md",
+      "description": "Comprehensive KiCad design review workflow covering schematic, PCB, DFM, manufacturing, high-speed, and simulation checks."
+    },
+    {
+      "name": "pcb-design",
+      "path": "skills/pcb-design/SKILL.md",
+      "description": "Safe PCB design assistance workflow using KiCad MCP board, placement, routing, stackup, and quality-gate tools."
+    },
+    {
+      "name": "drc-check",
+      "path": "skills/drc-check/SKILL.md",
+      "description": "DRC/ERC execution, triage, waiver, and revalidation workflow for KiCad projects."
+    },
+    {
+      "name": "fabrication-output",
+      "path": "skills/fabrication-output/SKILL.md",
+      "description": "Manufacturing release workflow for Gerbers, drill files, BOM, pick-and-place, 3D, DFM, and release evidence."
+    },
+    {
+      "name": "schematic-review",
+      "path": "skills/schematic-review/SKILL.md",
+      "description": "Schematic inspection and review workflow using ERC, connectivity, symbol, net, and visual QA tools."
+    }
+  ],
+  "documentation": {
+    "readme": "README.md",
+    "installation": "docs/installation.md",
+    "client_configuration": "docs/client-configuration.md",
+    "tool_reference": "docs/tools-reference.generated.md",
+    "agent_plugin": "README.md#agent-plugin-and-skills"
+  },
+  "safety": {
+    "human_review_required": true,
+    "notes": [
+      "KiCad MCP Pro is an engineering assistant, not an autonomous sign-off authority.",
+      "Manufacturing output must be reviewed by a qualified human before fabrication or assembly.",
+      "ERC, DRC, DFM, export artifacts, and known waivers must be reported separately from assumptions."
+    ]
+  },
+  "status": "ready-for-catalog-validation"
+}

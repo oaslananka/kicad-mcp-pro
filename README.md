@@ -180,6 +180,58 @@ Use `kicad-mcp-pro --help` to inspect CLI commands and
 MCP client. The generated tool catalog is available in
 [`docs/tools-reference.generated.md`](docs/tools-reference.generated.md).
 
+
+## Agent plugin and skills
+
+This repository owns the product-level agent plugin and KiCad-specific skills for
+KiCad MCP Pro. The central [`agent-tools`](https://github.com/oaslananka/agent-tools)
+repository should catalog this plugin, but the manifest and workflow instructions live
+here so they stay synchronized with the actual MCP server tools.
+
+| File | Purpose |
+| --- | --- |
+| [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) | Product-level plugin manifest for compatible agent runtimes and marketplace catalogs. |
+| [`skills/kicad-design-review/SKILL.md`](skills/kicad-design-review/SKILL.md) | Comprehensive KiCad design review skill. |
+| [`skills/pcb-design/SKILL.md`](skills/pcb-design/SKILL.md) | PCB design, layout inspection, placement, routing, stackup, and board-quality workflow. |
+| [`skills/drc-check/SKILL.md`](skills/drc-check/SKILL.md) | ERC/DRC execution, triage, waiver review, and revalidation workflow. |
+| [`skills/fabrication-output/SKILL.md`](skills/fabrication-output/SKILL.md) | Manufacturing export, DFM, release evidence, and fabrication-package workflow. |
+| [`skills/schematic-review/SKILL.md`](skills/schematic-review/SKILL.md) | Schematic inspection, ERC, connectivity, power, symbol, and readability workflow. |
+
+### Agent setup
+
+KiCad MCP Pro can be launched with the published Python package, npm wrapper, or the
+container metadata declared in [`server.json`](server.json). Common local starts are:
+
+```bash
+uvx kicad-mcp-pro --transport stdio
+uvx kicad-mcp-pro --transport streamable-http --host 127.0.0.1 --port 3334
+npx kicad-mcp-pro --help
+```
+
+For source checkouts, run the normal repository validation path before publishing plugin
+changes:
+
+```bash
+corepack pnpm run metadata:check
+python3 -m json.tool .claude-plugin/plugin.json >/dev/null
+```
+
+### Validation workflow
+
+Before listing this plugin as active from `agent-tools`, verify at least one compatible
+agent runtime can:
+
+1. Discover `.claude-plugin/plugin.json`.
+2. Launch or connect to `kicad-mcp-pro` over `stdio` or Streamable HTTP.
+3. Call `kicad_get_server_info` or `kicad_get_project_info`.
+4. Load a skill from `skills/` and follow the workflow without referencing missing tools.
+5. Report ERC, DRC, DFM, export artifacts, assumptions, and human-review requirements
+   separately.
+
+KiCad MCP Pro is an engineering assistant, not an autonomous manufacturing sign-off
+authority. Generated PCB and fabrication outputs require qualified human review before
+fabrication or assembly.
+
 ## Development
 
 New contributors should start with [`ARCHITECTURE.md`](ARCHITECTURE.md), which maps
