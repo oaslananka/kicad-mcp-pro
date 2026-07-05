@@ -1,0 +1,28 @@
+# MCPize Configuration
+# Docs: https://mcpize.com/docs/mcpize-yaml
+
+version: 1
+
+name: "KiCad MCP Pro"
+slug: "kicad-mcp-pro"
+
+runtime: python
+entry: "src/kicad_mcp/server.py"
+
+build:
+  install: "pip install ."
+  dockerfile: "Dockerfile"
+
+start:
+  type: http
+  command: "python"
+  args:
+    - "-m"
+    - "kicad_mcp.server"
+
+bridge:
+  mode: http
+
+credentials:
+  - name: "KICAD_MCP_KICAD_TOKEN"
+    description: "KiCad IPC authentication token for local communication."
