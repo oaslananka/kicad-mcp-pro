@@ -191,6 +191,12 @@ here so they stay synchronized with the actual MCP server tools.
 | File | Purpose |
 | --- | --- |
 | [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) | Product-level plugin manifest for compatible agent runtimes and marketplace catalogs. |
+| [`.mcp.json`](.mcp.json) | Claude Code project-local MCP server configuration. |
+| [`.codex/config.example.toml`](.codex/config.example.toml) | Codex CLI MCP configuration example. |
+| [`.vscode/mcp.example.json`](.vscode/mcp.example.json) | VS Code / GitHub Copilot workspace MCP configuration example. |
+| [`opencode.example.jsonc`](opencode.example.jsonc) | OpenCode project MCP configuration example. |
+| [`.opencode/skills/`](.opencode/skills) | OpenCode-native mirrored skill definitions. |
+| [`docs/agent-runtime-config.md`](docs/agent-runtime-config.md) | Agent runtime setup and validation matrix. |
 | [`skills/kicad-design-review/SKILL.md`](skills/kicad-design-review/SKILL.md) | Comprehensive KiCad design review skill. |
 | [`skills/pcb-design/SKILL.md`](skills/pcb-design/SKILL.md) | PCB design, layout inspection, placement, routing, stackup, and board-quality workflow. |
 | [`skills/drc-check/SKILL.md`](skills/drc-check/SKILL.md) | ERC/DRC execution, triage, waiver review, and revalidation workflow. |

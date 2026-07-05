@@ -1,0 +1,23 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "kicad-mcp-pro": {
+      "type": "local",
+      "command": ["uvx", "kicad-mcp-pro", "--transport", "stdio"],
+      "enabled": true,
+      "environment": {
+        "KICAD_MCP_TRANSPORT": "stdio"
+      },
+      "timeout": 15000
+    }
+  },
+  "permission": {
+    "skill": {
+      "kicad-design-review": "allow",
+      "pcb-design": "allow",
+      "drc-check": "allow",
+      "fabrication-output": "allow",
+      "schematic-review": "allow"
+    }
+  }
+}
