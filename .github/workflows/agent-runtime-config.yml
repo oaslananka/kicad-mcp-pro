@@ -1,0 +1,69 @@
+name: Agent Runtime Config
+
+on:
+  pull_request:
+    paths:
+      - ".claude-plugin/plugin.json"
+      - ".mcp.json"
+      - ".vscode/mcp.example.json"
+      - ".codex/config.example.toml"
+      - "opencode.example.jsonc"
+      - "skills/**/SKILL.md"
+      - ".opencode/skills/**/SKILL.md"
+      - "docs/agent-runtime-config.md"
+      - ".github/workflows/agent-runtime-config.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".claude-plugin/plugin.json"
+      - ".mcp.json"
+      - ".vscode/mcp.example.json"
+      - ".codex/config.example.toml"
+      - "opencode.example.jsonc"
+      - "skills/**/SKILL.md"
+      - ".opencode/skills/**/SKILL.md"
+      - "docs/agent-runtime-config.md"
+      - ".github/workflows/agent-runtime-config.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate JSON files
+        run: |
+          python3 -m json.tool .claude-plugin/plugin.json >/dev/null
+          python3 -m json.tool .mcp.json >/dev/null
+          python3 -m json.tool .vscode/mcp.example.json >/dev/null
+      - name: Validate agent runtime references
+        run: |
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          root = Path('.')
+          plugin = json.loads(Path('.claude-plugin/plugin.json').read_text())
+          assert plugin.get('$schema') == 'https://anthropic.com/claude-code/plugin.schema.json'
+          skills = plugin.get('skills')
+          assert isinstance(skills, list) and skills
+          for entry in skills:
+              assert entry.startswith('./skills/')
+              skill_file = Path(entry[2:]) / 'SKILL.md'
+              assert skill_file.is_file(), skill_file
+              text = skill_file.read_text()
+              assert text.startswith('---\n'), skill_file
+              assert f'name: {Path(entry).name}' in text, skill_file
+              mirror = Path('.opencode/skills') / Path(entry).name / 'SKILL.md'
+              assert mirror.is_file(), mirror
+              mtext = mirror.read_text()
+              assert mtext.startswith('---\n'), mirror
+              assert f'name: {Path(entry).name}' in mtext, mirror
+          assert '[[mcp_servers]]' in Path('.codex/config.example.toml').read_text()
+          raw = Path('opencode.example.jsonc').read_text()
+          clean = re.sub(r',\s*([}\]])', r'\1', raw)
+          opencode = json.loads(clean)
+          assert isinstance(opencode.get('mcp'), dict) and opencode['mcp']
+          print('agent runtime config ok')
+          PY
