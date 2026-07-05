@@ -233,9 +233,6 @@ def test_unknown_package_error_lists_new_families() -> None:
         generate_footprint("FOOBAR")
 
 
-
-
-
 @pytest.mark.parametrize("family", ["SOIC", "SSOP", "TSSOP"])
 def test_soic_family_8_pins(family: str) -> None:
     fp = generate_footprint(family, pin_count=8)

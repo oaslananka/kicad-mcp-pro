@@ -490,7 +490,7 @@ def _do214(variant: str, density: DensityLevel = "B") -> str:
     )
     lines += _ref_value(-(cyard_y + 0.5), cyard_y + 0.5, 0.0)
     lines.append(_pad_smd(1, -cx, 0, pad_w, pad_h_adj))  # cathode
-    lines.append(_pad_smd(2, cx, 0, pad_w, pad_h_adj))   # anode
+    lines.append(_pad_smd(2, cx, 0, pad_w, pad_h_adj))  # anode
     lines += _rect_line(_LAYER_FAB, -body_l / 2, -body_w / 2, body_l / 2, body_w / 2)
     # Cathode bar
     lines.append(
@@ -509,9 +509,9 @@ def _do214(variant: str, density: DensityLevel = "B") -> str:
 
 # (body_L, body_W, lead_pitch, lead_len, tab_w, tab_h, y_leads, y_tab)
 _DPAK_VARIANTS: dict[str, tuple[float, float, float, float, float, float, float, float]] = {
-    "DPAK":  (6.50, 6.00, 2.286, 1.50, 5.40, 3.20,  4.10, -2.40),
-    "TO-252": (6.50, 6.00, 2.286, 1.50, 5.40, 3.20,  4.10, -2.40),
-    "D2PAK": (10.10, 8.85, 2.286, 1.50, 8.60, 5.00,  6.35, -3.90),
+    "DPAK": (6.50, 6.00, 2.286, 1.50, 5.40, 3.20, 4.10, -2.40),
+    "TO-252": (6.50, 6.00, 2.286, 1.50, 5.40, 3.20, 4.10, -2.40),
+    "D2PAK": (10.10, 8.85, 2.286, 1.50, 8.60, 5.00, 6.35, -3.90),
     "TO-263": (10.10, 8.85, 2.286, 1.50, 8.60, 5.00, 6.35, -3.90),
 }
 
@@ -542,14 +542,12 @@ def _dpak(variant: str, density: DensityLevel = "B") -> str:
     lines += _ref_value(-(cyard_y_pos + 0.6), cyard_y_pos + 0.6)
     # Pin 1 (left), Pin 2 (centre, centre lead + tab), Pin 3 (right)
     lines.append(_pad_smd(1, -pitch, y_leads, lead_pad_w, lead_pad_h))
-    lines.append(_pad_smd(2,  0.0,   y_leads, lead_pad_w, lead_pad_h))
-    lines.append(_pad_smd(3,  pitch, y_leads, lead_pad_w, lead_pad_h))
+    lines.append(_pad_smd(2, 0.0, y_leads, lead_pad_w, lead_pad_h))
+    lines.append(_pad_smd(3, pitch, y_leads, lead_pad_w, lead_pad_h))
     # Tab (exposed pad = pin 2)
     lines.append(_pad_smd(2, 0.0, y_tab, tab_pad_w, tab_pad_h))
     lines += _rect_line(_LAYER_FAB, -body_w / 2, -body_l / 2, body_w / 2, body_l / 2)
-    lines += _rect_line(
-        _LAYER_CYARD, -cyard_x, -cyard_y_neg, cyard_x, cyard_y_pos, 0.05
-    )
+    lines += _rect_line(_LAYER_CYARD, -cyard_x, -cyard_y_neg, cyard_x, cyard_y_pos, 0.05)
     lines.append(")")
     return "\n".join(lines)
 
@@ -908,22 +906,40 @@ def generate_footprint(
     if pkg_up in {"SOD-323", "SOD323"}:
         return _sod323(density)
 
-    if pkg_up in {"SMA", "SMB", "SMC", "DO-214AA", "DO214AA", "DO-214AB", "DO214AB",
-                  "DO-214AC", "DO214AC"}:
+    if pkg_up in {
+        "SMA",
+        "SMB",
+        "SMC",
+        "DO-214AA",
+        "DO214AA",
+        "DO-214AB",
+        "DO214AB",
+        "DO-214AC",
+        "DO214AC",
+    }:
         # Map the long DO-214 names to the short variant
         _do214_map = {
-            "SMA": "SMA", "SMB": "SMB", "SMC": "SMC",
-            "DO-214AB": "SMA", "DO214AB": "SMA",
-            "DO-214AC": "SMB", "DO214AC": "SMB",
-            "DO-214AA": "SMC", "DO214AA": "SMC",
+            "SMA": "SMA",
+            "SMB": "SMB",
+            "SMC": "SMC",
+            "DO-214AB": "SMA",
+            "DO214AB": "SMA",
+            "DO-214AC": "SMB",
+            "DO214AC": "SMB",
+            "DO-214AA": "SMC",
+            "DO214AA": "SMC",
         }
         return _do214(_do214_map[pkg_up], density)
 
     if pkg_up in {"DPAK", "TO-252", "TO252", "D2PAK", "TO-263", "TO263"}:
         # Normalise aliases
         _dpak_map = {
-            "DPAK": "DPAK", "TO-252": "TO-252", "TO252": "TO-252",
-            "D2PAK": "D2PAK", "TO-263": "TO-263", "TO263": "TO-263",
+            "DPAK": "DPAK",
+            "TO-252": "TO-252",
+            "TO252": "TO-252",
+            "D2PAK": "D2PAK",
+            "TO-263": "TO-263",
+            "TO263": "TO-263",
         }
         return _dpak(_dpak_map[pkg_up], density)
 
