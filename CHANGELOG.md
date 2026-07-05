@@ -10,6 +10,21 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.19.0](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.18.0...mcp-server-v3.19.0) (2026-07-05)
+
+
+### Features
+
+* expand IPC-7351 package coverage and sourcing policy gates ([#294](https://github.com/oaslananka/kicad-mcp/issues/294)) ([8c497f2](https://github.com/oaslananka/kicad-mcp/commit/8c497f22f5eb0b27e6e0edaf56a4b66449639d93))
+* expand placement scoring with return-path, HS grouping, and mechanical constraints ([#278](https://github.com/oaslananka/kicad-mcp/issues/278)) ([#295](https://github.com/oaslananka/kicad-mcp/issues/295)) ([1686e16](https://github.com/oaslananka/kicad-mcp/commit/1686e162f2faf2a2ce403b8280e23c33a9cb301a))
+* standardize structured verdict payloads ([#292](https://github.com/oaslananka/kicad-mcp/issues/292)) ([9acd69c](https://github.com/oaslananka/kicad-mcp/commit/9acd69c0d2d1905fdb6781e39232d0bb07cee154))
+
+
+### Bug Fixes
+
+* guard schematic writes against structural loss ([7dc0da0](https://github.com/oaslananka/kicad-mcp/commit/7dc0da0597e90ea4bbcffb1e28a9acdc8969bbf4))
+* hard gate manufacturing exports on approval evidence ([#293](https://github.com/oaslananka/kicad-mcp/issues/293)) ([a9d57be](https://github.com/oaslananka/kicad-mcp/commit/a9d57be69b62b38713ddc96c830c852069c0dcdf))
+
 ## [3.18.0](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.17.1...mcp-server-v3.18.0) (2026-07-04)
 
 
