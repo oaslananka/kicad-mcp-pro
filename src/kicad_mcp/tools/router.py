@@ -349,6 +349,7 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "lib_assign_lcsc_to_symbol",
             "lib_get_bom_with_pricing",
             "lib_check_stock_availability",
+            "lib_check_sourcing_policy",
             "lib_find_alternative_parts",
             "lib_get_datasheet_url",
             # v2.2.0 — generative library tools

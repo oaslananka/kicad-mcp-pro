@@ -1773,6 +1773,26 @@
     "experimental": false,
     "headless": true,
     "idempotent": true,
+    "name": "lib_check_sourcing_policy",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "expert",
+      "full",
+      "schematic",
+      "schematic_authoring",
+      "schematic_only",
+      "simulation"
+    ],
+    "read_only": true,
+    "requires_kicad_running": false
+  },
+  {
+    "destructive": false,
+    "experimental": false,
+    "headless": true,
+    "idempotent": true,
     "name": "lib_check_stock_availability",
     "open_world": false,
     "profiles": [

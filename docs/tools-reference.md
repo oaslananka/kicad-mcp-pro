@@ -131,7 +131,7 @@ Built-in prompt helpers for the critic/fixer loop:
 
 Machine-maintained catalog. Refresh with `pnpm run docs:tools`.
 
-Total public tools: 366.
+Total public tools: 367.
 
 | Tool | Profile(s) | Read-Only | Destructive | Open-World | Idempotent | Headless | Requires KiCad Running | Summary |
 |---|---|---:|---:|---:|---:|---:|---:|---|
@@ -222,6 +222,7 @@ Total public tools: 366.
 | `lib_bulk_assign_3d_models` | agent_full, builder, expert, full, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Bulk-assign a 3D model to multiple footprints matching a pattern. |
 | `lib_certify_footprint` | agent_full, builder, expert, full, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Certify a footprint against package, documentation, and standard checks (#201). |
 | `lib_check_derating` | agent_full, builder, expert, full, schematic, schematic_authoring, schematic_only, simulation | yes | no | no | yes | yes | no | Check a part choice for reliability derating and approved-vendor (AVL) compliance. |
+| `lib_check_sourcing_policy` | agent_full, builder, expert, full, schematic, schematic_authoring, schematic_only, simulation | yes | no | no | yes | yes | no | Return a structured sourcing policy verdict for one live part. |
 | `lib_check_stock_availability` | agent_full, builder, expert, full, schematic, schematic_authoring, schematic_only, simulation | yes | no | no | yes | yes | no | Check live stock availability for the requested schematic references. This KiCad MCP Pro tool supports production EDA... |
 | `lib_create_custom_symbol` | agent_full, builder, expert, full, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Create a simple custom symbol in the active project directory. |
 | `lib_find_alternative_parts` | agent_full, builder, expert, full, schematic, schematic_authoring, schematic_only, simulation | yes | no | no | yes | yes | no | Find nearby alternative parts for the supplied LCSC code. This KiCad MCP Pro tool supports production EDA automation... |
@@ -591,6 +592,7 @@ Total public tools: 366.
 - `lib_bulk_assign_3d_models`: profiles=agent_full, builder, expert, full, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `lib_certify_footprint`: profiles=agent_full, builder, expert, full, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `lib_check_derating`: profiles=agent_full, builder, expert, full, schematic, schematic_authoring, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
+- `lib_check_sourcing_policy`: profiles=agent_full, builder, expert, full, schematic, schematic_authoring, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
 - `lib_check_stock_availability`: profiles=agent_full, builder, expert, full, schematic, schematic_authoring, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
 - `lib_create_custom_symbol`: profiles=agent_full, builder, expert, full, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `lib_find_alternative_parts`: profiles=agent_full, builder, expert, full, schematic, schematic_authoring, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.

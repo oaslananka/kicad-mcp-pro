@@ -424,6 +424,7 @@ def _runtime_for_tool(name: str, category: str, tier: AccessTier) -> RuntimeRequ
     if name.startswith("lib_search_components") or name in {
         "lib_get_component_details",
         "lib_check_stock_availability",
+        "lib_check_sourcing_policy",
         "lib_find_alternative_parts",
         "lib_get_bom_with_pricing",
     }:

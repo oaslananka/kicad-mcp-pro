@@ -15,6 +15,7 @@ from mcp.server.fastmcp import FastMCP
 from ..config import get_config
 from ..models import contract_verifier as cv
 from ..models.component_contracts import find_component_contract
+from ..models.verdict import Finding, Verdict, VerdictReport, stable_finding_id
 from ..utils.cache import ttl_cache
 from ..utils.component_search import (
     ComponentRecord,
@@ -411,6 +412,36 @@ def _sort_component_results(
             -item.stock,
             item.mpn.casefold(),
         ),
+    )
+
+
+def _worst_verdict(values: list[Verdict]) -> Verdict:
+    if "FAIL" in values:
+        return "FAIL"
+    if "WARN" in values:
+        return "WARN"
+    return "PASS"
+
+
+def _policy_finding(
+    *,
+    policy: str,
+    verdict: Verdict,
+    description: str,
+    evidence: dict[str, Any],
+    remediation: str,
+) -> Finding | None:
+    if verdict == "PASS":
+        return None
+    return Finding(
+        id=stable_finding_id("sourcing_policy", policy, description),
+        severity=VerdictReport.severity_for(verdict),
+        location=policy,
+        description=description,
+        evidence=[evidence],
+        remediation=remediation,
+        retryable=False,
+        failure_mode="design",
     )
 
 
@@ -1110,6 +1141,146 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @headless_compatible
+    def lib_check_sourcing_policy(
+        lcsc_code_or_mpn: str,
+        source: str = "jlcsearch",
+        min_stock: int = 10,
+        max_unit_price: float | None = None,
+        allowed_lifecycle: list[str] | None = None,
+        require_rohs: bool = False,
+        approved_manufacturers: list[str] | None = None,
+    ) -> VerdictReport:
+        """Return a structured sourcing policy verdict for one live part."""
+        try:
+            client = _component_search_client(source)
+            part = client.get_part(lcsc_code_or_mpn)
+        except (RuntimeError, ValueError, OSError) as exc:
+            return VerdictReport.from_text_verdict(
+                text=f"Sourcing policy check failed: {exc}",
+                summary="Sourcing backend was unavailable.",
+                verdict="FAIL",
+                source="lib_check_sourcing_policy",
+                evidence=[{"source": source, "error": str(exc)}],
+                remediation="Configure the sourcing backend and retry.",
+                retryable=True,
+                failure_mode="environment",
+            )
+        if part is None:
+            return VerdictReport.from_text_verdict(
+                text=f"No component details were found for '{lcsc_code_or_mpn}'.",
+                summary="Requested part was not found.",
+                verdict="FAIL",
+                source="lib_check_sourcing_policy",
+                evidence=[{"source": source, "part": lcsc_code_or_mpn}],
+                remediation="Use a valid LCSC code or MPN from lib_search_components().",
+                failure_mode="configuration",
+            )
+        evidence = {
+            "source": source,
+            "lcsc_code": part.lcsc_code,
+            "mpn": part.mpn,
+            "stock": part.stock,
+            "price": part.price,
+            "lifecycle": part.lifecycle,
+            "rohs": part.rohs,
+        }
+        checks: list[tuple[str, Verdict, str, str]] = []
+        checks.append(
+            (
+                "stock",
+                "PASS" if part.stock >= min_stock else "FAIL",
+                f"stock {part.stock:,} / required {min_stock:,}",
+                "Select an alternative part with sufficient stock.",
+            )
+        )
+        if max_unit_price is not None:
+            price_ok = part.price is not None and part.price <= max_unit_price
+            checks.append(
+                (
+                    "price",
+                    "PASS" if price_ok else "FAIL",
+                    (
+                        f"unit price {part.price if part.price is not None else 'n/a'} "
+                        f"/ limit {max_unit_price}"
+                    ),
+                    "Select an alternative part below the price ceiling.",
+                )
+            )
+        if allowed_lifecycle:
+            allowed = [item.casefold() for item in allowed_lifecycle if item.strip()]
+            lifecycle_ok = part.lifecycle and any(
+                item in part.lifecycle.casefold() for item in allowed
+            )
+            checks.append(
+                (
+                    "lifecycle",
+                    "PASS" if lifecycle_ok else ("WARN" if not part.lifecycle else "FAIL"),
+                    f"lifecycle {part.lifecycle or 'missing'} / allowed {allowed_lifecycle}",
+                    "Choose an active/in-production part or attach lifecycle evidence.",
+                )
+            )
+        if require_rohs:
+            rohs_text = part.rohs.casefold()
+            rohs_ok = rohs_text in {"yes", "compliant", "rohs compliant"}
+            checks.append(
+                (
+                    "rohs",
+                    "PASS" if rohs_ok else ("WARN" if not rohs_text else "FAIL"),
+                    f"RoHS {part.rohs or 'missing'}",
+                    "Select a RoHS-compliant part or attach compliance evidence.",
+                )
+            )
+        if approved_manufacturers:
+            checks.append(
+                (
+                    "avl",
+                    "WARN",
+                    (
+                        "approved_manufacturers configured but provider manufacturer "
+                        "metadata is unavailable"
+                    ),
+                    (
+                        "Verify AVL status manually or use provider records with "
+                        "manufacturer metadata."
+                    ),
+                )
+            )
+        verdict = _worst_verdict([item[1] for item in checks])
+        findings = [
+            item
+            for item in (
+                _policy_finding(
+                    policy=name,
+                    verdict=status,
+                    description=detail,
+                    evidence=evidence,
+                    remediation=remediation,
+                )
+                for name, status, detail, remediation in checks
+            )
+            if item is not None
+        ]
+        lines = [f"Sourcing policy verdict: {verdict}", f"- Part: {part.lcsc_code} | {part.mpn}"]
+        lines.extend(f"- {name} [{status}]: {detail}" for name, status, detail, _ in checks)
+        return VerdictReport(
+            text="\n".join(lines),
+            summary=f"Sourcing policy check completed with {verdict} verdict.",
+            verdict=verdict,
+            severity=VerdictReport.severity_for(verdict),
+            failure_mode="none" if verdict == "PASS" else "design",
+            evidence=[evidence],
+            remediation="Resolve sourcing policy findings before binding this part."
+            if verdict != "PASS"
+            else "",
+            findings=findings,
+            next_action="Part satisfies configured sourcing policy."
+            if verdict == "PASS"
+            else "Use lib_find_alternative_parts() or relax policy constraints.",
+            metadata={"source": source, "checks": [name for name, *_ in checks]},
+        )
+
+    @mcp.tool()
+    @headless_compatible
     def lib_assign_lcsc_to_symbol(reference: str, lcsc_code: str) -> str:
         """Assign an LCSC part code to a schematic symbol property."""
         normalized = normalize_lcsc_code(lcsc_code)
@@ -1259,7 +1430,9 @@ def register(mcp: FastMCP) -> None:
         """Generate an IPC-7351B compliant KiCad footprint (.kicad_mod) and save it.
 
         Supported packages: 0201, 0402, 0603, 0805, 1206, 1210, 2512 (chip passives),
-        SOT-23, SOIC, SOP, SSOP, TSSOP (dual SMD), QFP, LQFP, TQFP (quad flat),
+        SOT-23, SOT-223, SOT-89, SOT-363/SOT-26, SC-70/SOT-323, SOD-123, SOD-323,
+        SMA/SMB/SMC (DO-214), DPAK/TO-252, D2PAK/TO-263,
+        SOIC, SOP, SSOP, TSSOP (dual SMD), QFP, LQFP, TQFP (quad flat),
         QFN, DFN (no-lead), BGA (ball grid array), PinHeader (through-hole).
 
         Args:
