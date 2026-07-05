@@ -65,6 +65,15 @@ class PlacementAnalysis:
     critical_net_proxy_density: float = 0.0
     checked_thermal_hotspot_refs: int = 0
     thermal_proximity_sum: float = 0.0
+    # High-speed interface grouping and return-path checks (P4-T2 expansion)
+    checked_hs_interfaces: int = 0
+    hs_grouping_violations: list[str] = field(default_factory=list)
+    return_path_warnings: list[str] = field(default_factory=list)
+    # Mechanical constraint checks
+    mount_hole_violations: list[str] = field(default_factory=list)
+    connector_edge_spec_violations: list[str] = field(default_factory=list)
+    # Before/after delta for auto-placement workflows
+    score_before: int | None = None
 
 
 class GateOutcomePayload(BaseModel):
@@ -1821,6 +1830,87 @@ def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]
             f"Thermal hotspots are clustered tightly (proximity sum {thermal_proximity_sum:.3f})."
         )
 
+    # ------------------------------------------------------------------
+    # High-speed interface grouping and return-path checks
+    # ------------------------------------------------------------------
+    hs_grouping_violations: list[str] = []
+    return_path_warnings: list[str] = []
+    checked_hs_interfaces = 0
+    for iface in intent.interfaces:
+        present_iface_refs = [r for r in iface.refs if r in footprints]
+        if len(present_iface_refs) < 2:
+            continue
+        checked_hs_interfaces += 1
+        centers = [_entry_center(footprints[r]) for r in present_iface_refs]
+        valid_centers = [c for c in centers if c is not None]
+        if len(valid_centers) < 2:
+            continue
+        # Measure maximum pairwise spread for grouping quality
+        max_iface_spread = 0.0
+        for idx_a, ca in enumerate(valid_centers):
+            for cb in valid_centers[idx_a + 1 :]:
+                d = math.hypot(ca[0] - cb[0], ca[1] - cb[1])
+                if d > max_iface_spread:
+                    max_iface_spread = d
+        limit_hard = board_diagonal * 0.5
+        limit_warn = board_diagonal * 0.3
+        iface_label = f"{iface.kind} ({', '.join(present_iface_refs[:4])})"
+        if max_iface_spread > limit_hard:
+            hs_grouping_violations.append(
+                f"High-speed interface {iface_label} spans {max_iface_spread:.1f} mm "
+                f"(limit {limit_hard:.1f} mm) — return current path will be long."
+            )
+        elif max_iface_spread > limit_warn:
+            return_path_warnings.append(
+                f"High-speed interface {iface_label} spans {max_iface_spread:.1f} mm "
+                f"(warn {limit_warn:.1f} mm) — consider tighter grouping."
+            )
+
+    # ------------------------------------------------------------------
+    # Mechanical constraints: mount-hole clearance and edge-placement specs
+    # ------------------------------------------------------------------
+    mount_hole_violations: list[str] = []
+    connector_edge_spec_violations: list[str] = []
+    mech = intent.mechanical
+    for hole in mech.mount_holes:
+        clearance_mm = max(hole.diameter_mm, 2.0)
+        for reference, entry in footprints.items():
+            center = _entry_center(entry)
+            if center is None:
+                continue
+            dist = math.hypot(center[0] - hole.x_mm, center[1] - hole.y_mm)
+            footprint_radius = math.hypot(
+                float(entry.get("width_mm", 0.0)) / 2,
+                float(entry.get("height_mm", 0.0)) / 2,
+            )
+            if dist < clearance_mm + footprint_radius:
+                mount_hole_violations.append(
+                    f"'{reference}' is {dist:.1f} mm from mount hole at "
+                    f"({hole.x_mm:.1f}, {hole.y_mm:.1f}) — clearance {clearance_mm:.1f} mm "
+                    f"required."
+                )
+    for edge_spec in mech.connector_placement:
+        entry = footprints.get(edge_spec.ref)
+        if entry is None:
+            continue
+        center = _entry_center(entry)
+        if center is None:
+            continue
+        cx, cy = center
+        if edge_spec.edge == "top":
+            dist_to_edge = abs(cy - min_y)
+        elif edge_spec.edge == "bottom":
+            dist_to_edge = abs(cy - max_y)
+        elif edge_spec.edge == "left":
+            dist_to_edge = abs(cx - min_x)
+        else:  # right
+            dist_to_edge = abs(cx - max_x)
+        if dist_to_edge > edge_spec.margin_mm:
+            connector_edge_spec_violations.append(
+                f"Connector '{edge_spec.ref}' is {dist_to_edge:.1f} mm from the "
+                f"{edge_spec.edge} edge (limit {edge_spec.margin_mm:.1f} mm)."
+            )
+
     hard_failures: list[str] = []
     if missing_position:
         hard_failures.append("Missing positions: " + ", ".join(missing_position[:20]))
@@ -1834,6 +1924,10 @@ def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]
     hard_failures.extend(power_tree_violations)
     hard_failures.extend(sensor_cluster_violations)
     hard_failures.extend(analog_digital_violations)
+    hard_failures.extend(hs_grouping_violations)
+    hard_failures.extend(mount_hole_violations)
+    hard_failures.extend(connector_edge_spec_violations)
+    warnings.extend(return_path_warnings)
 
     score = 100
     score -= min(len(overlaps) * 20, 40)
@@ -1847,6 +1941,9 @@ def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]
     score -= min(len(warnings) * 5, 20)
     score -= min(int(round(thermal_proximity_sum * 10.0)), 10)
     score -= min(int(critical_net_proxy_density // 20), 10)
+    score -= min(len(hs_grouping_violations) * 10, 20)
+    score -= min(len(mount_hole_violations) * 10, 20)
+    score -= min(len(connector_edge_spec_violations) * 10, 20)
 
     return (
         PlacementAnalysis(
@@ -1870,6 +1967,11 @@ def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]
             critical_net_proxy_density=critical_net_proxy_density,
             checked_thermal_hotspot_refs=len(thermal_hotspot_refs),
             thermal_proximity_sum=round(thermal_proximity_sum, 4),
+            checked_hs_interfaces=checked_hs_interfaces,
+            hs_grouping_violations=hs_grouping_violations,
+            return_path_warnings=return_path_warnings,
+            mount_hole_violations=mount_hole_violations,
+            connector_edge_spec_violations=connector_edge_spec_violations,
         ),
         None,
     )
@@ -1878,6 +1980,12 @@ def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]
 def _format_placement_score(analysis: PlacementAnalysis) -> str:
     lines = [
         f"Placement score: {analysis.score}/100",
+    ]
+    if analysis.score_before is not None:
+        delta = analysis.score - analysis.score_before
+        sign = "+" if delta >= 0 else ""
+        lines.append(f"- Score before auto-placement: {analysis.score_before}/100 ({sign}{delta})")
+    lines += [
         f"- Footprints analysed: {analysis.footprint_count}",
         f"- Board frame: {analysis.board_width_mm:.2f} x {analysis.board_height_mm:.2f} mm",
         f"- Density: {analysis.density_pct:.2f}%",
@@ -1892,6 +2000,9 @@ def _format_placement_score(analysis: PlacementAnalysis) -> str:
         f"- Critical-net proxy density: {analysis.critical_net_proxy_density:.2f} mm per 1000 mm^2",
         f"- Thermal hotspot refs checked: {analysis.checked_thermal_hotspot_refs}",
         f"- Thermal hotspot proximity: {analysis.thermal_proximity_sum:.4f}",
+        f"- High-speed interfaces checked: {analysis.checked_hs_interfaces}",
+        f"- Mount-hole clearance checks: {len(analysis.mount_hole_violations)}",
+        f"- Connector edge-spec checks: {len(analysis.connector_edge_spec_violations)}",
         f"- Hard failures: {len(analysis.hard_failures)}",
         f"- Warnings: {len(analysis.warnings)}",
     ]
