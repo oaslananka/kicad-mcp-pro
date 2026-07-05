@@ -309,7 +309,7 @@ domains:
         mcp_tool: lib_generate_footprint_ipc7351
         status: partial
         kicad_version_introduced: "10.0.x"
-        notes: "Footprint family coverage is limited (work order K10: SOT-23 implemented, SOT-223/SOT-89 not yet); datasheet/IPC validation hard-gate is Phase 4 (P4-T3)."
+        notes: "Footprint family coverage now includes chip passives, SOT-23/SOT-223/SOT-89, SOT-363/SOT-26, SC-70/SOT-323, SOD-123/SOD-323, DO-214 (SMA/SMB/SMC), DPAK/TO-252, D2PAK/TO-263, SOIC/SOP/SSOP/TSSOP, QFP, QFN/DFN, BGA, and PinHeader; datasheet/3D model consistency remains partial."
       - capability: "Assign / manage 3D models"
         kicad_channel: file
         mcp_tool: lib_set_3d_model_path
@@ -321,7 +321,7 @@ domains:
         mcp_tool: lib_search_components
         status: partial
         kicad_version_introduced: "10.0.x"
-        notes: "Live JLCPCB, Nexar, DigiKey, and Mouser sourcing clients are implemented; Nexar/DigiKey/Mouser are opt-in and auth-gated. Remaining P4-T3 work is full AVL/lifecycle policy enforcement and datasheet-grounded footprint/3D hard gates."
+        notes: "Live JLCPCB, Nexar, DigiKey, and Mouser sourcing clients are implemented; lib_check_sourcing_policy emits structured stock, price, lifecycle, RoHS, and AVL policy verdicts. Remaining P4-T3 work is datasheet-grounded footprint/3D hard gates and provider manufacturer metadata normalization."
       - capability: "Recommend / bind a part to a symbol"
         kicad_channel: file
         mcp_tool: lib_recommend_part

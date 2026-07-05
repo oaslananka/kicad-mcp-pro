@@ -6,7 +6,7 @@ import pytest
 
 from kicad_mcp.server import build_server
 from kicad_mcp.utils.component_search import ComponentRecord
-from tests.conftest import call_tool_text
+from tests.conftest import call_tool_payload, call_tool_text
 
 
 class FakeComponentClient:
@@ -22,6 +22,8 @@ class FakeComponentClient:
                 price=0.12,
                 is_basic=True,
                 is_preferred=True,
+                lifecycle="Active",
+                rohs="Compliant",
             ),
             "C456": ComponentRecord(
                 source="fake",
@@ -33,6 +35,8 @@ class FakeComponentClient:
                 price=0.18,
                 is_basic=False,
                 is_preferred=False,
+                lifecycle="NRND",
+                rohs="Non-compliant",
             ),
             "C789": ComponentRecord(
                 source="fake",
@@ -338,6 +342,29 @@ async def test_library_live_component_surface(
         "lib_get_component_details",
         {"lcsc_code_or_mpn": "C123"},
     )
+    policy_pass = await call_tool_payload(
+        server,
+        "lib_check_sourcing_policy",
+        {
+            "lcsc_code_or_mpn": "C123",
+            "min_stock": 100,
+            "max_unit_price": 0.20,
+            "allowed_lifecycle": ["Active"],
+            "require_rohs": True,
+        },
+    )
+    policy_fail = await call_tool_payload(
+        server,
+        "lib_check_sourcing_policy",
+        {
+            "lcsc_code_or_mpn": "C456",
+            "min_stock": 1000,
+            "max_unit_price": 0.10,
+            "allowed_lifecycle": ["Active"],
+            "require_rohs": True,
+            "approved_manufacturers": ["AcmeSemi"],
+        },
+    )
     missing = await call_tool_text(
         server,
         "lib_get_component_details",
@@ -387,6 +414,16 @@ async def test_library_live_component_surface(
     assert "voltage=" in capacitor_search
     assert "Component details" in details
     assert "LM1117-3.3" in details
+    assert policy_pass["schema_version"] == "verdict.v1"
+    assert policy_pass["verdict"] == "PASS"
+    assert policy_fail["verdict"] == "FAIL"
+    assert {finding["location"] for finding in policy_fail["findings"]} >= {
+        "stock",
+        "price",
+        "lifecycle",
+        "rohs",
+        "avl",
+    }
     assert "No component details" in missing
     assert "Live BOM with pricing" in bom
     assert "Estimated total" in bom

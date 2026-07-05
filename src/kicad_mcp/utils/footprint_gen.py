@@ -7,7 +7,14 @@ B (nominal, default), and C (least-land/most-compact).
 Supported families
 ------------------
 - Chip passives: 0201, 0402, 0603, 0805, 1206, 1210, 2512
-- SOT-23 (3-lead). SOT-223 / SOT-89 are not generated yet (tracked in P4-T3).
+- SOT-23 (3-lead), SOT-223 (3 leads + tab), SOT-89 (3 leads + tab).
+- SOT-363 / SOT-26 (6-lead dual SOT)
+- SC-70 / SOT-323 (3-lead small SOT)
+- SOD-123 (2-pad SMD diode)
+- SOD-323 (2-pad SMD diode, smaller)
+- DO-214 variants: SMA / SMB / SMC (2-pad high-power diode)
+- DPAK / TO-252 (3-lead + tab power package)
+- D2PAK / TO-263 (3-lead + large tab power package)
 - SOIC / SOP / SSOP / TSSOP (arbitrary pitch/pin-count)
 - QFP / LQFP / TQFP (quad flat pack)
 - QFN / DFN (quad flat no-lead with optional exposed pad)
@@ -226,7 +233,7 @@ def _chip_passive(size_code: str, density: DensityLevel = "B") -> str:
 
 
 # ---------------------------------------------------------------------------
-# SOT-23 (3 leads)
+# SOT-23 / SOT-223 / SOT-89
 # ---------------------------------------------------------------------------
 
 
@@ -246,6 +253,301 @@ def _sot23(density: DensityLevel = "B") -> str:
     lines.append(_pad_smd(3, x_r, 0.0, pad_w, pad_h))
     lines += _rect_line(_LAYER_FAB, -1.3, -0.65, 1.3, 0.65)
     lines += _rect_line(_LAYER_CYARD, -1.85, -1.25, 1.85, 1.25, 0.05)
+    lines.append(")")
+    return "\n".join(lines)
+
+
+def _sot223(density: DensityLevel = "B") -> str:
+    """Generate SOT-223 with three leads plus tab pad tied to pin 2."""
+    jt, _jh, js = _IPC_OFFSETS[density]
+    lead_w = 0.85 + 2 * js
+    lead_h = 1.50 + jt
+    tab_w = 3.40 + 2 * js
+    tab_h = 2.20 + jt
+    pitch = 2.30
+    y_lead = 3.15
+    y_tab = -2.45
+    lines = _fp_header(
+        "SOT-223-3_TabPin2", "SOT-223 3-lead with tab", "SOT-223 regulator transistor", density
+    )
+    lines += _ref_value(-4.4, 4.4)
+    lines.append(_pad_smd(1, -pitch, y_lead, lead_w, lead_h))
+    lines.append(_pad_smd(2, 0.0, y_lead, lead_w, lead_h))
+    lines.append(_pad_smd(3, pitch, y_lead, lead_w, lead_h))
+    lines.append(_pad_smd(2, 0.0, y_tab, tab_w, tab_h))
+    lines += _rect_line(_LAYER_FAB, -3.3, -2.25, 3.3, 2.25)
+    lines.append(_circle_line(_LAYER_FAB, -2.7, 1.6, 0.18, 0.08))
+    lines += _rect_line(_LAYER_CYARD, -4.05, -3.85, 4.05, 4.05, 0.05)
+    lines.append(")")
+    return "\n".join(lines)
+
+
+def _sot89(density: DensityLevel = "B") -> str:
+    """Generate SOT-89 with three leads plus tab pad tied to pin 2."""
+    jt, _jh, js = _IPC_OFFSETS[density]
+    lead_w = 0.55 + 2 * js
+    lead_h = 1.20 + jt
+    tab_w = 1.80 + 2 * js
+    tab_h = 1.80 + jt
+    pitch = 1.50
+    y_lead = 2.00
+    y_tab = -1.80
+    lines = _fp_header(
+        "SOT-89-3_TabPin2", "SOT-89 3-lead with tab", "SOT-89 regulator transistor", density
+    )
+    lines += _ref_value(-3.7, 3.7)
+    lines.append(_pad_smd(1, -pitch, y_lead, lead_w, lead_h))
+    lines.append(_pad_smd(2, 0.0, y_lead, lead_w, lead_h))
+    lines.append(_pad_smd(3, pitch, y_lead, lead_w, lead_h))
+    lines.append(_pad_smd(2, 0.0, y_tab, tab_w, tab_h))
+    lines += _rect_line(_LAYER_FAB, -2.25, -1.55, 2.25, 1.55)
+    lines.append(_circle_line(_LAYER_FAB, -1.75, 1.1, 0.15, 0.08))
+    lines += _rect_line(_LAYER_CYARD, -2.75, -2.8, 2.75, 2.75, 0.05)
+    lines.append(")")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# SOT-363 / SOT-26 (6-lead dual SOT-23)
+# ---------------------------------------------------------------------------
+
+
+def _sot363(density: DensityLevel = "B") -> str:
+    """Generate SOT-363 / SOT-26 (6-lead dual SOT-23) footprint.
+
+    Three leads per side, 0.65 mm pitch, body 2.0 × 1.25 mm.
+    """
+    jt, _jh, js = _IPC_OFFSETS[density]
+    pad_w = 0.40 + jt
+    pad_h = 0.55 + 2 * js
+    pitch = 0.65
+    x_l = -1.45
+    x_r = 1.45
+    lines = _fp_header(
+        "SOT-363", "SOT-363 / SOT-26 6-lead dual SOT", "SOT-363 SOT-26 dual transistor", density
+    )
+    lines += _ref_value(-2.2, 2.2)
+    # Left side: pins 1, 2, 3 (bottom to top)
+    for i, pin in enumerate((1, 2, 3)):
+        lines.append(_pad_smd(pin, x_l, pitch - i * pitch, pad_w, pad_h))
+    # Right side: pins 4, 5, 6 (top to bottom)
+    for i, pin in enumerate((4, 5, 6)):
+        lines.append(_pad_smd(pin, x_r, -pitch + i * pitch, pad_w, pad_h))
+    lines += _rect_line(_LAYER_FAB, -1.3, -0.65, 1.3, 0.65)
+    lines += _rect_line(_LAYER_CYARD, -1.85, -1.30, 1.85, 1.30, 0.05)
+    lines.append(")")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# SC-70 / SOT-323 (3-lead small SOT-23 variant)
+# ---------------------------------------------------------------------------
+
+
+def _sc70(density: DensityLevel = "B") -> str:
+    """Generate SC-70 / SOT-323 (3-lead, 0.65 mm pitch) footprint.
+
+    Body 2.0 × 1.25 mm; pins 1 and 2 on left side, pin 3 on right.
+    """
+    jt, _jh, js = _IPC_OFFSETS[density]
+    pad_w = 0.40 + jt
+    pad_h = 0.55 + 2 * js
+    pitch = 0.65
+    x_l = -1.15
+    x_r = 1.15
+    lines = _fp_header(
+        "SC-70-3", "SC-70 / SOT-323 3-lead small SOT", "SC-70 SOT-323 transistor", density
+    )
+    lines += _ref_value(-1.8, 1.8)
+    lines.append(_pad_smd(1, x_l, pitch / 2, pad_w, pad_h))
+    lines.append(_pad_smd(2, x_l, -pitch / 2, pad_w, pad_h))
+    lines.append(_pad_smd(3, x_r, 0.0, pad_w, pad_h))
+    lines += _rect_line(_LAYER_FAB, -1.05, -0.65, 1.05, 0.65)
+    lines += _rect_line(_LAYER_CYARD, -1.55, -1.10, 1.55, 1.10, 0.05)
+    lines.append(")")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# SOD-123 (2-pad SMD diode)
+# ---------------------------------------------------------------------------
+
+# IPC-7351 land dimensions for SOD-123 (body ≈ 4.50 × 2.68 mm)
+_SOD123_BODY_L = 4.50
+_SOD123_BODY_W = 2.68
+
+
+def _sod123(density: DensityLevel = "B") -> str:
+    """Generate SOD-123 SMD diode footprint (IPC-7351 land pattern)."""
+    jt, _jh, js = _IPC_OFFSETS[density]
+    pad_w = 1.30 + jt
+    pad_h = _SOD123_BODY_W + 2 * js
+    cx = _SOD123_BODY_L / 2 + pad_w / 2
+    cyard_x = cx + pad_w / 2 + 0.25
+    cyard_y = pad_h / 2 + 0.25
+    lines = _fp_header("SOD-123", "SOD-123 SMD diode", "diode SOD-123", density)
+    lines += _ref_value(-(cyard_y + 0.5), cyard_y + 0.5, 0.0)
+    # Pad 1 = cathode (left, marked with band), pad 2 = anode
+    lines.append(_pad_smd(1, -cx, 0, pad_w, pad_h))
+    lines.append(_pad_smd(2, cx, 0, pad_w, pad_h))
+    # Body outline on Fab
+    lines += _rect_line(
+        _LAYER_FAB,
+        -_SOD123_BODY_L / 2,
+        -_SOD123_BODY_W / 2,
+        _SOD123_BODY_L / 2,
+        _SOD123_BODY_W / 2,
+    )
+    # Cathode bar on Fab (right side = cathode band)
+    lines.append(
+        f"\t(fp_line (start {-_SOD123_BODY_L / 2 + 0.6:.4f} {-_SOD123_BODY_W / 2:.4f})"
+        f" (end {-_SOD123_BODY_L / 2 + 0.6:.4f} {_SOD123_BODY_W / 2:.4f})"
+        f" (layer {_LAYER_FAB}) (stroke (width 0.2)(type solid)))"
+    )
+    # Silk
+    lines += _rect_line(
+        _LAYER_SILK,
+        -_SOD123_BODY_L / 2 - 0.15,
+        -cyard_y + 0.1,
+        _SOD123_BODY_L / 2 + 0.15,
+        cyard_y - 0.1,
+    )
+    # Courtyard
+    lines += _rect_line(_LAYER_CYARD, -cyard_x, -cyard_y, cyard_x, cyard_y, 0.05)
+    lines.append(")")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# SOD-323 (2-pad SMD diode, smaller)
+# ---------------------------------------------------------------------------
+
+# Body ≈ 1.70 × 1.25 mm
+_SOD323_BODY_L = 1.70
+_SOD323_BODY_W = 1.25
+
+
+def _sod323(density: DensityLevel = "B") -> str:
+    """Generate SOD-323 SMD diode footprint (IPC-7351 land pattern)."""
+    jt, _jh, js = _IPC_OFFSETS[density]
+    pad_w = 0.60 + jt
+    pad_h = _SOD323_BODY_W + 2 * js
+    cx = _SOD323_BODY_L / 2 + pad_w / 2
+    cyard_x = cx + pad_w / 2 + 0.25
+    cyard_y = pad_h / 2 + 0.25
+    lines = _fp_header("SOD-323", "SOD-323 SMD diode (small)", "diode SOD-323", density)
+    lines += _ref_value(-(cyard_y + 0.5), cyard_y + 0.5, 0.0)
+    lines.append(_pad_smd(1, -cx, 0, pad_w, pad_h))
+    lines.append(_pad_smd(2, cx, 0, pad_w, pad_h))
+    lines += _rect_line(
+        _LAYER_FAB,
+        -_SOD323_BODY_L / 2,
+        -_SOD323_BODY_W / 2,
+        _SOD323_BODY_L / 2,
+        _SOD323_BODY_W / 2,
+    )
+    lines.append(
+        f"\t(fp_line (start {-_SOD323_BODY_L / 2 + 0.3:.4f} {-_SOD323_BODY_W / 2:.4f})"
+        f" (end {-_SOD323_BODY_L / 2 + 0.3:.4f} {_SOD323_BODY_W / 2:.4f})"
+        f" (layer {_LAYER_FAB}) (stroke (width 0.12)(type solid)))"
+    )
+    lines += _rect_line(_LAYER_CYARD, -cyard_x, -cyard_y, cyard_x, cyard_y, 0.05)
+    lines.append(")")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# DO-214 variants: SMA / SMB / SMC  (2-pad high-power SMD diode)
+# ---------------------------------------------------------------------------
+
+# (body_L, body_W, pad_H) for IPC-7351B density B
+_DO214_DIMS: dict[str, tuple[float, float, float]] = {
+    "SMA": (5.00, 3.60, 3.70),
+    "SMB": (5.60, 4.32, 4.45),
+    "SMC": (8.10, 6.40, 6.55),
+}
+
+
+def _do214(variant: str, density: DensityLevel = "B") -> str:
+    """Generate DO-214 variant footprint (SMA / SMB / SMC)."""
+    variant_up = variant.upper()
+    if variant_up not in _DO214_DIMS:
+        raise ValueError(f"DO-214 variant must be SMA, SMB, or SMC; got '{variant}'.")
+    body_l, body_w, pad_h = _DO214_DIMS[variant_up]
+    jt, _jh, js = _IPC_OFFSETS[density]
+    pad_w = 1.65 + jt  # land protrusion from body end
+    pad_h_adj = pad_h + 2 * js
+    cx = body_l / 2 + pad_w / 2
+    cyard_x = cx + pad_w / 2 + 0.25
+    cyard_y = pad_h_adj / 2 + 0.25
+    name = f"DO-214{variant_up[-2:]}" if len(variant_up) > 3 else f"DO-214{variant_up[2:]}"
+    name = f"D_{variant_up}"
+    lines = _fp_header(
+        name,
+        f"DO-214 {variant_up} SMD diode",
+        f"diode DO-214 {variant_up}",
+        density,
+    )
+    lines += _ref_value(-(cyard_y + 0.5), cyard_y + 0.5, 0.0)
+    lines.append(_pad_smd(1, -cx, 0, pad_w, pad_h_adj))  # cathode
+    lines.append(_pad_smd(2, cx, 0, pad_w, pad_h_adj))  # anode
+    lines += _rect_line(_LAYER_FAB, -body_l / 2, -body_w / 2, body_l / 2, body_w / 2)
+    # Cathode bar
+    lines.append(
+        f"\t(fp_line (start {-body_l / 2 + 0.8:.4f} {-body_w / 2:.4f})"
+        f" (end {-body_l / 2 + 0.8:.4f} {body_w / 2:.4f})"
+        f" (layer {_LAYER_FAB}) (stroke (width 0.2)(type solid)))"
+    )
+    lines += _rect_line(_LAYER_CYARD, -cyard_x, -cyard_y, cyard_x, cyard_y, 0.05)
+    lines.append(")")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# DPAK / TO-252 and D2PAK / TO-263 (power packages with thermal tab)
+# ---------------------------------------------------------------------------
+
+# (body_L, body_W, lead_pitch, lead_len, tab_w, tab_h, y_leads, y_tab)
+_DPAK_VARIANTS: dict[str, tuple[float, float, float, float, float, float, float, float]] = {
+    "DPAK": (6.50, 6.00, 2.286, 1.50, 5.40, 3.20, 4.10, -2.40),
+    "TO-252": (6.50, 6.00, 2.286, 1.50, 5.40, 3.20, 4.10, -2.40),
+    "D2PAK": (10.10, 8.85, 2.286, 1.50, 8.60, 5.00, 6.35, -3.90),
+    "TO-263": (10.10, 8.85, 2.286, 1.50, 8.60, 5.00, 6.35, -3.90),
+}
+
+
+def _dpak(variant: str, density: DensityLevel = "B") -> str:
+    """Generate DPAK/TO-252 or D2PAK/TO-263 (3-lead + thermal tab) footprint."""
+    variant_up = variant.upper()
+    key = variant_up
+    if key not in _DPAK_VARIANTS:
+        raise ValueError(
+            f"DPAK variant '{variant}' not recognised. Use DPAK, TO-252, D2PAK, or TO-263."
+        )
+    body_l, body_w, pitch, lead_len, tab_w, tab_h, y_leads, y_tab = _DPAK_VARIANTS[key]
+    jt, _jh, js = _IPC_OFFSETS[density]
+    lead_pad_w = 1.50 + 2 * js
+    lead_pad_h = lead_len + jt
+    tab_pad_w = tab_w + 2 * js
+    tab_pad_h = tab_h + jt
+    cyard_x = pitch + lead_pad_w / 2 + 0.25
+    cyard_y_pos = y_leads + lead_pad_h / 2 + 0.25
+    cyard_y_neg = abs(y_tab) + tab_pad_h / 2 + 0.25
+    lines = _fp_header(
+        "TO-252-3_TabPin2" if "DPAK" in key or "252" in key else "TO-263-3_TabPin2",
+        f"{variant_up} 3-lead + tab power package",
+        f"{variant_up} power transistor regulator",
+        density,
+    )
+    lines += _ref_value(-(cyard_y_pos + 0.6), cyard_y_pos + 0.6)
+    # Pin 1 (left), Pin 2 (centre, centre lead + tab), Pin 3 (right)
+    lines.append(_pad_smd(1, -pitch, y_leads, lead_pad_w, lead_pad_h))
+    lines.append(_pad_smd(2, 0.0, y_leads, lead_pad_w, lead_pad_h))
+    lines.append(_pad_smd(3, pitch, y_leads, lead_pad_w, lead_pad_h))
+    # Tab (exposed pad = pin 2)
+    lines.append(_pad_smd(2, 0.0, y_tab, tab_pad_w, tab_pad_h))
+    lines += _rect_line(_LAYER_FAB, -body_w / 2, -body_l / 2, body_w / 2, body_l / 2)
+    lines += _rect_line(_LAYER_CYARD, -cyard_x, -cyard_y_neg, cyard_x, cyard_y_pos, 0.05)
     lines.append(")")
     return "\n".join(lines)
 
@@ -545,6 +847,16 @@ def generate_footprint(
             ``"0201"``, ``"0402"``, ``"0603"``, ``"0805"``, ``"1206"``,
             ``"1210"``, ``"2512"`` — chip passives;
             ``"SOT-23"`` — SOT-23-3;
+            ``"SOT-223"`` — SOT-223-3 with thermal tab;
+            ``"SOT-89"`` — SOT-89-3 with thermal tab;
+            ``"SOT-363"`` / ``"SOT-26"`` — 6-lead dual SOT;
+            ``"SC-70"`` / ``"SOT-323"`` — 3-lead small SOT;
+            ``"SOD-123"`` — 2-pad SMD diode;
+            ``"SOD-323"`` — 2-pad small SMD diode;
+            ``"SMA"`` / ``"SMB"`` / ``"SMC"`` (or ``"DO-214AB"`` / ``"DO-214AC"``
+            / ``"DO-214AA"``) — DO-214 power diodes;
+            ``"DPAK"`` / ``"TO-252"`` — 3-lead + tab power package;
+            ``"D2PAK"`` / ``"TO-263"`` — 3-lead + large tab power package;
             ``"SOIC"``, ``"SOP"``, ``"SSOP"``, ``"TSSOP"`` — dual in-line SMD;
             ``"QFP"``, ``"LQFP"``, ``"TQFP"`` — quad flat pack;
             ``"QFN"``, ``"DFN"`` — no-lead;
@@ -575,6 +887,61 @@ def generate_footprint(
 
     if pkg_up == "SOT-23":
         return _sot23(density)
+
+    if pkg_up in {"SOT-223", "SOT223"}:
+        return _sot223(density)
+
+    if pkg_up in {"SOT-89", "SOT89"}:
+        return _sot89(density)
+
+    if pkg_up in {"SOT-363", "SOT363", "SOT-26", "SOT26"}:
+        return _sot363(density)
+
+    if pkg_up in {"SC-70", "SC70", "SOT-323", "SOT323"}:
+        return _sc70(density)
+
+    if pkg_up in {"SOD-123", "SOD123"}:
+        return _sod123(density)
+
+    if pkg_up in {"SOD-323", "SOD323"}:
+        return _sod323(density)
+
+    if pkg_up in {
+        "SMA",
+        "SMB",
+        "SMC",
+        "DO-214AA",
+        "DO214AA",
+        "DO-214AB",
+        "DO214AB",
+        "DO-214AC",
+        "DO214AC",
+    }:
+        # Map the long DO-214 names to the short variant
+        _do214_map = {
+            "SMA": "SMA",
+            "SMB": "SMB",
+            "SMC": "SMC",
+            "DO-214AB": "SMA",
+            "DO214AB": "SMA",
+            "DO-214AC": "SMB",
+            "DO214AC": "SMB",
+            "DO-214AA": "SMC",
+            "DO214AA": "SMC",
+        }
+        return _do214(_do214_map[pkg_up], density)
+
+    if pkg_up in {"DPAK", "TO-252", "TO252", "D2PAK", "TO-263", "TO263"}:
+        # Normalise aliases
+        _dpak_map = {
+            "DPAK": "DPAK",
+            "TO-252": "TO-252",
+            "TO252": "TO-252",
+            "D2PAK": "D2PAK",
+            "TO-263": "TO-263",
+            "TO263": "TO-263",
+        }
+        return _dpak(_dpak_map[pkg_up], density)
 
     if pkg_up in {"SOIC", "SOP", "SSOP", "TSSOP"}:
         if pin_count is None:
@@ -634,5 +1001,7 @@ def generate_footprint(
     raise ValueError(
         f"Unsupported package family '{package}'. "
         "Supported: chip passives (0201/0402/0603/0805/1206/1210/2512), "
-        "SOT-23, SOIC, SOP, SSOP, TSSOP, QFP, LQFP, TQFP, QFN, DFN, BGA, PinHeader."
+        "SOT-23, SOT-223, SOT-89, SOT-363/SOT-26, SC-70/SOT-323, "
+        "SOD-123, SOD-323, SMA/SMB/SMC (DO-214), DPAK/TO-252, D2PAK/TO-263, "
+        "SOIC, SOP, SSOP, TSSOP, QFP, LQFP, TQFP, QFN, DFN, BGA, PinHeader."
     )

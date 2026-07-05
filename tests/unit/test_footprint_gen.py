@@ -89,9 +89,148 @@ def test_sot23_balanced() -> None:
     assert _is_balanced(generate_footprint("SOT-23"))
 
 
+def test_sot223_pad_count_and_tab_alias() -> None:
+    fp = generate_footprint("SOT-223")
+    assert _count_pads(fp) == 4
+    assert "SOT-223-3_TabPin2" in fp
+    assert fp.count("(pad 2 ") == 2
+    assert _is_balanced(fp)
+
+
+def test_sot89_pad_count_and_density_tag() -> None:
+    fp = generate_footprint("SOT89", density="C")
+    assert _count_pads(fp) == 4
+    assert "SOT-89-3_TabPin2" in fp
+    assert "IPC7351_C" in fp
+    assert _is_balanced(fp)
+
+
 # ---------------------------------------------------------------------------
-# SOIC / SOP / SSOP / TSSOP
+# SOT-363 / SOT-26 (6-lead dual SOT)
 # ---------------------------------------------------------------------------
+
+
+def test_sot363_pad_count() -> None:
+    fp = generate_footprint("SOT-363")
+    assert _count_pads(fp) == 6
+    assert "SOT-363" in fp
+    assert _is_balanced(fp)
+
+
+def test_sot26_alias_matches_sot363() -> None:
+    fp = generate_footprint("SOT-26")
+    assert _count_pads(fp) == 6
+    assert _is_balanced(fp)
+
+
+# ---------------------------------------------------------------------------
+# SC-70 / SOT-323 (3-lead small SOT)
+# ---------------------------------------------------------------------------
+
+
+def test_sc70_pad_count() -> None:
+    fp = generate_footprint("SC-70")
+    assert _count_pads(fp) == 3
+    assert "SC-70-3" in fp
+    assert _is_balanced(fp)
+
+
+def test_sot323_alias_matches_sc70() -> None:
+    fp = generate_footprint("SOT-323")
+    assert _count_pads(fp) == 3
+    assert _is_balanced(fp)
+
+
+# ---------------------------------------------------------------------------
+# SOD-123 / SOD-323 (2-pad SMD diodes)
+# ---------------------------------------------------------------------------
+
+
+def test_sod123_pad_count_and_balanced() -> None:
+    fp = generate_footprint("SOD-123")
+    assert _count_pads(fp) == 2
+    assert "SOD-123" in fp
+    assert _is_balanced(fp)
+
+
+def test_sod123_density_levels() -> None:
+    for density in ("A", "B", "C"):
+        fp = generate_footprint("SOD-123", density=density)  # type: ignore[arg-type]
+        assert _count_pads(fp) == 2
+        assert _is_balanced(fp)
+
+
+def test_sod323_pad_count_and_balanced() -> None:
+    fp = generate_footprint("SOD-323")
+    assert _count_pads(fp) == 2
+    assert "SOD-323" in fp
+    assert _is_balanced(fp)
+
+
+# ---------------------------------------------------------------------------
+# DO-214 variants: SMA / SMB / SMC
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("variant", ["SMA", "SMB", "SMC"])
+def test_do214_pad_count(variant: str) -> None:
+    fp = generate_footprint(variant)
+    assert _count_pads(fp) == 2
+    assert _is_balanced(fp)
+
+
+def test_do214_sma_name_in_footprint() -> None:
+    fp = generate_footprint("SMA")
+    assert "D_SMA" in fp
+
+
+def test_do214_long_alias() -> None:
+    fp1 = generate_footprint("DO-214AB")
+    fp2 = generate_footprint("SMA")
+    assert _count_pads(fp1) == _count_pads(fp2) == 2
+    assert _is_balanced(fp1) and _is_balanced(fp2)
+
+
+# ---------------------------------------------------------------------------
+# DPAK / TO-252 and D2PAK / TO-263 (power packages)
+# ---------------------------------------------------------------------------
+
+
+def test_dpak_pad_count_includes_tab() -> None:
+    fp = generate_footprint("DPAK")
+    # 3 signal pads + 1 tab (pin 2 duplicated) = 4 pad entries
+    assert _count_pads(fp) == 4
+    assert fp.count("(pad 2 ") == 2  # centre lead + tab both numbered 2
+    assert _is_balanced(fp)
+
+
+def test_to252_alias_matches_dpak() -> None:
+    fp = generate_footprint("TO-252")
+    assert _count_pads(fp) == 4
+    assert _is_balanced(fp)
+
+
+def test_d2pak_pad_count_includes_tab() -> None:
+    fp = generate_footprint("D2PAK")
+    assert _count_pads(fp) == 4
+    assert fp.count("(pad 2 ") == 2
+    assert _is_balanced(fp)
+
+
+def test_to263_alias_matches_d2pak() -> None:
+    fp = generate_footprint("TO-263")
+    assert _count_pads(fp) == 4
+    assert _is_balanced(fp)
+
+
+# ---------------------------------------------------------------------------
+# Updated unknown-package error message
+# ---------------------------------------------------------------------------
+
+
+def test_unknown_package_error_lists_new_families() -> None:
+    with pytest.raises(ValueError, match="SOD-123"):
+        generate_footprint("FOOBAR")
 
 
 @pytest.mark.parametrize("family", ["SOIC", "SSOP", "TSSOP"])
