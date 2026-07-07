@@ -317,9 +317,7 @@ def _persist_manifest_artifact(payload: LivePreviewPayload) -> LivePreviewPayloa
         mime_type="application/json",
     )
     manifest = payload.to_manifest()
-    manifest = manifest.model_copy(
-        update={"artifacts": [*manifest.artifacts, manifest_artifact]}
-    )
+    manifest = manifest.model_copy(update={"artifacts": [*manifest.artifacts, manifest_artifact]})
     update: dict[str, Any] = {
         "manifest": manifest,
         "manifest_path": str(manifest_path),
