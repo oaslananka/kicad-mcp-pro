@@ -22,6 +22,7 @@ The docs are ordered from first setup to operations and maintenance.
 - [Configuration](configuration.md)
 - [Troubleshooting](troubleshooting.md)
 - [FAQ](faq.md)
+- [Glossary](glossary.md)
 - [Comparison](comparison.md)
 - [AI Discovery](llms.txt)
 
