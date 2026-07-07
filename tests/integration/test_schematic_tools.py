@@ -2512,3 +2512,25 @@ def test_symbol_existence_validation_is_conservative() -> None:
     assert symbol_exists("NoSuchLibraryXYZ", "Whatever") is None
     # Must not raise for a library this headless reader cannot locate.
     _validate_symbol_resolves("NoSuchLibraryXYZ", "Whatever")
+
+
+@pytest.mark.anyio
+async def test_schematic_live_preview_rejects_invalid_preview_bounds(
+    sample_project,
+    mock_kicad,
+) -> None:
+    server = build_server("schematic")
+
+    bad_debounce = await call_tool_text(
+        server,
+        "sch_live_preview",
+        {"debounce_ms": -1},
+    )
+    assert "debounce_ms must be between 0 and 60000" in bad_debounce
+
+    bad_dpi = await call_tool_text(
+        server,
+        "sch_live_preview",
+        {"dpi": 601},
+    )
+    assert "dpi must be between 72 and 600" in bad_dpi
