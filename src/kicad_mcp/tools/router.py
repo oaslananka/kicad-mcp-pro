@@ -297,6 +297,7 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "sch_auto_place_functional",
             "sch_render_png",
             "sch_render_visual_diff",
+            "sch_live_preview",
             "sch_get_circuit_ir",
             "sch_visual_qa",
             "sch_plan_from_spec",

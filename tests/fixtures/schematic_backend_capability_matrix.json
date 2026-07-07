@@ -129,6 +129,14 @@
     ],
     "notes": "Reload is a KiCad IPC concern and will remain a wrapper around the active editor/session."
   },
+  "sch_live_preview": {
+    "kicad_sch_api_support": "wrapper_needed",
+    "verified_surface": [
+      "kicad-cli sch export svg",
+      "KiCad IPC reload helper outside kicad-sch-api"
+    ],
+    "notes": "Live preview is an opt-in polling wrapper over file signatures, safe PNG rendering, and optional KiCad reload; it is intentionally not a blind GUI hot-reload."
+  },
   "sch_create_sheet": {
     "kicad_sch_api_support": "native",
     "verified_surface": [

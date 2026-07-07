@@ -8,6 +8,7 @@ import math
 import os
 import re
 import threading
+import time
 import uuid
 from collections.abc import Callable, Iterable
 from copy import deepcopy
@@ -234,6 +235,18 @@ SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
         "notes": (
             "Reload is a KiCad IPC concern and will remain a wrapper around the active "
             "editor/session."
+        ),
+    },
+    "sch_live_preview": {
+        "kicad_sch_api_support": "wrapper_needed",
+        "verified_surface": [
+            "kicad-cli sch export svg",
+            "KiCad IPC reload helper outside kicad-sch-api",
+        ],
+        "notes": (
+            "Live preview is an opt-in polling wrapper over file signatures, safe PNG "
+            "rendering, and optional KiCad reload; it is intentionally not a blind "
+            "GUI hot-reload."
         ),
     },
     "sch_create_sheet": {
@@ -1842,6 +1855,128 @@ def _schematic_has_renderable_content(data: dict[str, Any]) -> bool:
         if data.get(key):
             return True
     return False
+
+
+def _schematic_live_preview_state_filename(sch_file: Path, include_child_sheets: bool) -> str:
+    suffix = "tree" if include_child_sheets else "sheet"
+    key = hashlib.sha256(f"{sch_file.resolve()}::{suffix}".encode()).hexdigest()[:16]
+    return f"live-preview-{suffix}-{key}.json"
+
+
+def _schematic_live_preview_files(root: Path, include_child_sheets: bool) -> list[Path]:
+    files = [root.resolve()]
+    if include_child_sheets:
+        for _name, child in _iter_child_sheet_paths(root):
+            resolved = child.resolve()
+            if resolved not in files:
+                files.append(resolved)
+    return files
+
+
+def _schematic_live_preview_signature(paths: list[Path]) -> dict[str, Any]:
+    files: list[dict[str, Any]] = []
+    for path in paths:
+        item: dict[str, Any] = {"path": str(path), "exists": path.exists()}
+        if path.exists():
+            stat = path.stat()
+            content = path.read_bytes()
+            item.update(
+                {
+                    "size": stat.st_size,
+                    "mtime_ns": stat.st_mtime_ns,
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                }
+            )
+        files.append(item)
+    return {"files": files}
+
+
+def _schematic_live_preview_changed_files(
+    before: dict[str, Any] | None,
+    after: dict[str, Any],
+) -> list[str]:
+    before_files = {
+        str(item.get("path")): item
+        for item in cast(list[dict[str, Any]], (before or {}).get("files", []))
+    }
+    changed: list[str] = []
+    for item in cast(list[dict[str, Any]], after.get("files", [])):
+        path = str(item.get("path"))
+        if before_files.get(path) != item:
+            changed.append(path)
+    for path in before_files:
+        if path not in {
+            str(item.get("path")) for item in cast(list[dict[str, Any]], after.get("files", []))
+        }:
+            changed.append(path)
+    return sorted(set(changed))
+
+
+def _schematic_live_preview_render_path(
+    *,
+    target_path: Path,
+    watched_files: list[Path],
+    changed_files: list[str],
+) -> Path:
+    """Choose the schematic sheet to render for a live-preview refresh."""
+    changed = {str(Path(path).resolve()) for path in changed_files}
+    for path in watched_files:
+        resolved = path.resolve()
+        if str(resolved) in changed and resolved.exists():
+            try:
+                if _schematic_has_renderable_content(parse_schematic_file(resolved)):
+                    return resolved
+            except Exception as exc:
+                logger.debug(
+                    "schematic_live_preview_render_candidate_failed",
+                    schematic_file=str(resolved),
+                    error=str(exc),
+                )
+                continue
+    return target_path.resolve()
+
+
+def _schematic_live_preview_payload(
+    *,
+    status: str,
+    target: _SchematicTarget,
+    files: list[Path],
+    signature: dict[str, Any],
+    changed_files: list[str] | None = None,
+    message: str | None = None,
+    reload_result: str | None = None,
+    render_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "status": status,
+        "target": target.description,
+        "target_path": str(target.path),
+        "watch_files": [str(path) for path in files],
+        "signature": signature,
+        "changed_files": changed_files or [],
+    }
+    if message:
+        payload["message"] = message
+    if reload_result:
+        payload["reload_result"] = reload_result
+    if render_metadata:
+        payload["render"] = render_metadata
+    return payload
+
+
+def _schematic_live_preview_state_read(filename: str) -> dict[str, Any] | None:
+    path = _schematic_state_path(filename)
+    if not path.exists():
+        return None
+    try:
+        return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _schematic_live_preview_state_write(filename: str, state: dict[str, Any]) -> None:
+    path = _schematic_state_path(filename)
+    path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _export_schematic_svg_for_render(
@@ -7412,6 +7547,189 @@ def register(mcp: FastMCP) -> None:
             lines.append(f"  Slot {i}: x_mm={x}, y_mm={y}")
         lines.append("\nPass these coordinates directly to sch_add_symbol(x_mm=..., y_mm=...).")
         return "\n".join(lines)
+
+    @mcp.tool()
+    @headless_compatible
+    def sch_live_preview(
+        sheet: str | None = None,
+        sheet_file: str | None = None,
+        include_child_sheets: bool = True,
+        debounce_ms: int = 750,
+        render: bool = True,
+        reload: bool = False,
+        force: bool = False,
+        crop_to_content: bool = True,
+        dpi: int = 200,
+        include_title_block: bool = True,
+        output_file: str | None = None,
+    ) -> CallToolResult:
+        """Poll a safe live schematic preview state and refresh rendered output on changes.
+
+        This is an opt-in polling watcher for agents and companion-plugin flows. It
+        records the current schematic file signature, debounces rapid writes, then
+        refreshes a PNG preview when the watched files are stable. KiCad GUI reload
+        is deliberately opt-in via ``reload=True`` because the tool cannot reliably
+        prove that the user has no unsaved GUI edits.
+        """
+        if debounce_ms < 0 or debounce_ms > 60_000:
+            return text_tool_result("debounce_ms must be between 0 and 60000.")
+        if dpi < 72 or dpi > 600:
+            return text_tool_result("dpi must be between 72 and 600.")
+
+        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
+        files = _schematic_live_preview_files(target.path, include_child_sheets)
+        signature = _schematic_live_preview_signature(files)
+        state_name = _schematic_live_preview_state_filename(target.path, include_child_sheets)
+        state = _schematic_live_preview_state_read(state_name)
+        now_ns = time.time_ns()
+        debounce_ns = debounce_ms * 1_000_000
+
+        if state is None:
+            state = {
+                "last_signature": signature,
+                "pending_signature": None,
+                "pending_observed_at_ns": None,
+                "updated_at_ns": now_ns,
+            }
+            _schematic_live_preview_state_write(state_name, state)
+            if not force:
+                payload = _schematic_live_preview_payload(
+                    status="initialized",
+                    target=target,
+                    files=files,
+                    signature=signature,
+                    message=(
+                        "Live preview baseline recorded. Call again after a schematic "
+                        "change, or use force=True to render immediately."
+                    ),
+                )
+                return text_tool_result(json.dumps(payload, indent=2), metadata=payload)
+
+        last_signature = cast(dict[str, Any] | None, state.get("last_signature"))
+        pending_signature = cast(dict[str, Any] | None, state.get("pending_signature"))
+        changed_files = _schematic_live_preview_changed_files(last_signature, signature)
+
+        if not force and signature == last_signature:
+            state["pending_signature"] = None
+            state["pending_observed_at_ns"] = None
+            state["updated_at_ns"] = now_ns
+            _schematic_live_preview_state_write(state_name, state)
+            payload = _schematic_live_preview_payload(
+                status="no_change",
+                target=target,
+                files=files,
+                signature=signature,
+                message="No schematic file changes detected since the last live-preview refresh.",
+            )
+            return text_tool_result(json.dumps(payload, indent=2), metadata=payload)
+
+        if not force:
+            if pending_signature != signature:
+                state["pending_signature"] = signature
+                state["pending_observed_at_ns"] = now_ns
+                state["updated_at_ns"] = now_ns
+                _schematic_live_preview_state_write(state_name, state)
+                payload = _schematic_live_preview_payload(
+                    status="pending_debounce",
+                    target=target,
+                    files=files,
+                    signature=signature,
+                    changed_files=changed_files,
+                    message="Change detected; waiting for debounce window before preview refresh.",
+                )
+                return text_tool_result(json.dumps(payload, indent=2), metadata=payload)
+            observed_at = int(state.get("pending_observed_at_ns") or now_ns)
+            if now_ns - observed_at < debounce_ns:
+                payload = _schematic_live_preview_payload(
+                    status="pending_debounce",
+                    target=target,
+                    files=files,
+                    signature=signature,
+                    changed_files=changed_files,
+                    message="Change is still inside the debounce window.",
+                )
+                return text_tool_result(json.dumps(payload, indent=2), metadata=payload)
+
+        reload_result = _reload_schematic() if reload else None
+        render_metadata: dict[str, Any] | None = None
+        output_path: Path | None = None
+        if render:
+            render_path = _schematic_live_preview_render_path(
+                target_path=target.path,
+                watched_files=files,
+                changed_files=changed_files,
+            )
+            data = parse_schematic_file(render_path)
+            if _schematic_has_renderable_content(data):
+                try:
+                    default_name = f"live-preview-{render_path.stem}.png"
+                    output_path = _safe_render_output_path(output_file, default_name=default_name)
+                    svg_file, image_metadata = _render_schematic_png_artifact(
+                        render_path,
+                        output_path,
+                        dpi=dpi,
+                        crop_to_content=crop_to_content,
+                        include_title_block=include_title_block,
+                    )
+                    render_metadata = {
+                        "status": "ok",
+                        "sheet_path": str(render_path),
+                        "png_path": str(output_path),
+                        "svg_path": str(svg_file),
+                        "dpi": dpi,
+                        "include_title_block": include_title_block,
+                        **image_metadata,
+                    }
+                except (OSError, RuntimeError, ValueError) as exc:
+                    render_metadata = {
+                        "status": "failed",
+                        "sheet_path": str(render_path),
+                        "message": str(exc),
+                    }
+            else:
+                render_metadata = {
+                    "status": "empty_sheet",
+                    "sheet_path": str(render_path),
+                    "message": "No schematic content was available to render.",
+                }
+
+        state["last_signature"] = signature
+        state["pending_signature"] = None
+        state["pending_observed_at_ns"] = None
+        state["last_changed_files"] = changed_files
+        state["last_render"] = render_metadata
+        state["last_reload_result"] = reload_result
+        state["updated_at_ns"] = now_ns
+        _schematic_live_preview_state_write(state_name, state)
+
+        status = "forced_rendered" if force else "changed"
+        if render_metadata and render_metadata.get("status") == "ok":
+            status = "forced_rendered" if force else "changed_rendered"
+        elif reload_result:
+            status = "forced_reloaded" if force else "changed_reloaded"
+        payload = _schematic_live_preview_payload(
+            status=status,
+            target=target,
+            files=files,
+            signature=signature,
+            changed_files=changed_files,
+            reload_result=reload_result,
+            render_metadata=render_metadata,
+            message=(
+                "KiCad reload was requested by opt-in reload=True; dirty GUI state "
+                "could not be verified."
+                if reload
+                else "Preview refreshed without forcing a KiCad GUI reload."
+            ),
+        )
+        if (
+            output_path is not None
+            and output_path.exists()
+            and render_metadata
+            and render_metadata.get("status") == "ok"
+        ):
+            return image_tool_result(output_path, payload)
+        return text_tool_result(json.dumps(payload, indent=2), metadata=payload)
 
     @mcp.tool()
     @headless_compatible
