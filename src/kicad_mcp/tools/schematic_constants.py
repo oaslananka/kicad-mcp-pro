@@ -137,6 +137,7 @@ SCHEMATIC_PUBLIC_TOOL_NAMES = (
     "sch_check_power_flags",
     "sch_annotate",
     "sch_reload",
+    "sch_live_preview",
     "sch_create_sheet",
     "sch_add_hierarchical_label",
     "sch_add_global_label",

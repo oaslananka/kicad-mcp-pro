@@ -237,6 +237,18 @@ SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
             "editor/session."
         ),
     },
+    "sch_live_preview": {
+        "kicad_sch_api_support": "wrapper_needed",
+        "verified_surface": [
+            "kicad-cli sch export svg",
+            "KiCad IPC reload helper outside kicad-sch-api",
+        ],
+        "notes": (
+            "Live preview is an opt-in polling wrapper over file signatures, safe PNG "
+            "rendering, and optional KiCad reload; it is intentionally not a blind "
+            "GUI hot-reload."
+        ),
+    },
     "sch_create_sheet": {
         "kicad_sch_api_support": "native",
         "verified_surface": ["Schematic.add_sheet", "create_schematic", "Schematic.save"],
@@ -1898,6 +1910,30 @@ def _schematic_live_preview_changed_files(
         }:
             changed.append(path)
     return sorted(set(changed))
+
+
+def _schematic_live_preview_render_path(
+    *,
+    target_path: Path,
+    watched_files: list[Path],
+    changed_files: list[str],
+) -> Path:
+    """Choose the schematic sheet to render for a live-preview refresh."""
+    changed = {str(Path(path).resolve()) for path in changed_files}
+    for path in watched_files:
+        resolved = path.resolve()
+        if str(resolved) in changed and resolved.exists():
+            try:
+                if _schematic_has_renderable_content(parse_schematic_file(resolved)):
+                    return resolved
+            except Exception as exc:
+                logger.debug(
+                    "schematic_live_preview_render_candidate_failed",
+                    schematic_file=str(resolved),
+                    error=str(exc),
+                )
+                continue
+    return target_path.resolve()
 
 
 def _schematic_live_preview_payload(
@@ -7618,13 +7654,18 @@ def register(mcp: FastMCP) -> None:
         render_metadata: dict[str, Any] | None = None
         output_path: Path | None = None
         if render:
-            data = parse_schematic_file(target.path)
+            render_path = _schematic_live_preview_render_path(
+                target_path=target.path,
+                watched_files=files,
+                changed_files=changed_files,
+            )
+            data = parse_schematic_file(render_path)
             if _schematic_has_renderable_content(data):
                 try:
-                    default_name = f"live-preview-{target.path.stem}.png"
+                    default_name = f"live-preview-{render_path.stem}.png"
                     output_path = _safe_render_output_path(output_file, default_name=default_name)
                     svg_file, image_metadata = _render_schematic_png_artifact(
-                        target.path,
+                        render_path,
                         output_path,
                         dpi=dpi,
                         crop_to_content=crop_to_content,
@@ -7632,6 +7673,7 @@ def register(mcp: FastMCP) -> None:
                     )
                     render_metadata = {
                         "status": "ok",
+                        "sheet_path": str(render_path),
                         "png_path": str(output_path),
                         "svg_path": str(svg_file),
                         "dpi": dpi,
@@ -7639,10 +7681,15 @@ def register(mcp: FastMCP) -> None:
                         **image_metadata,
                     }
                 except (OSError, RuntimeError, ValueError) as exc:
-                    render_metadata = {"status": "failed", "message": str(exc)}
+                    render_metadata = {
+                        "status": "failed",
+                        "sheet_path": str(render_path),
+                        "message": str(exc),
+                    }
             else:
                 render_metadata = {
                     "status": "empty_sheet",
+                    "sheet_path": str(render_path),
                     "message": "No schematic content was available to render.",
                 }
 
