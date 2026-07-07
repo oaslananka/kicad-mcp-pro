@@ -79,7 +79,7 @@ the dependency-free helpers are covered by `tests/unit/test_companion_context.py
 
 The companion plugin must keep live-preview feedback artifact-first by default.
 A plugin button or agent command may request `sch_live_preview(render=true)` to
-produce a preview image, but it must not silently force the user's open KiCad GUI
+produce a preview image, but it must not silently change the user's open KiCad GUI
 state to update.
 
 Recommended UX contract:
