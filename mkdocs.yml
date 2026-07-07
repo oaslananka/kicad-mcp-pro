@@ -85,6 +85,7 @@ nav:
       - Agent Guides:
           - Overview: agents/index.md
           - Install: agents/install.md
+          - Quickstart Matrix: agents/quickstart.md
           - Compatibility: agents/compatibility.md
           - Security: agents/security.md
           - Toolsets: agents/toolsets.md
