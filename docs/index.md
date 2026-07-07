@@ -40,6 +40,7 @@ The docs are ordered from first setup to operations and maintenance.
 - [Client Config Generator](install/client-config-generator.md)
 - [Publishing](publishing.md)
 - [Public Listings](public-listing.md)
+- [MCP Registry Status](registry.md)
 
 ### Integrations
 
