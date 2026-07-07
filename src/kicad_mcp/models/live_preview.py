@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Literal, get_args
 from uuid import uuid4
 
@@ -237,7 +238,7 @@ class LivePreviewPayload(BaseModel):
             state=debounce_state,
             pending_observed_at_ns=payload.get("pending_observed_at_ns"),
         )
-        return cls(
+        normalized = cls(
             status=status if status in get_args(LivePreviewStatus) else "changed",
             outcome=outcome,
             target=str(payload.get("target", "schematic")),
@@ -259,6 +260,7 @@ class LivePreviewPayload(BaseModel):
             render=render,
             message=payload.get("message"),
         )
+        return _persist_manifest_artifact(normalized) if render_artifacts else normalized
 
     def to_manifest(self) -> LivePreviewManifest:
         """Create a manifest from the normalized payload."""
@@ -289,3 +291,43 @@ class LivePreviewPayload(BaseModel):
             render=self.render,
             artifacts=artifacts,
         )
+
+
+def _manifest_artifact_path(payload: LivePreviewPayload) -> Path | None:
+    if payload.render.png_path:
+        png_path = Path(payload.render.png_path)
+        return png_path.with_name(f"{png_path.stem}.manifest.json")
+    if payload.render.svg_path:
+        svg_path = Path(payload.render.svg_path)
+        return svg_path.with_name(f"{svg_path.stem}.manifest.json")
+    if payload.target_path:
+        target_path = Path(payload.target_path)
+        return target_path.with_name(f"{target_path.stem}.live-preview.manifest.json")
+    return None
+
+
+def _persist_manifest_artifact(payload: LivePreviewPayload) -> LivePreviewPayload:
+    manifest_path = _manifest_artifact_path(payload)
+    if manifest_path is None:
+        return payload
+    manifest_artifact = LivePreviewArtifact(
+        kind="json",
+        path=str(manifest_path),
+        role="session-manifest",
+        mime_type="application/json",
+    )
+    manifest = payload.to_manifest()
+    manifest = manifest.model_copy(update={"artifacts": [*manifest.artifacts, manifest_artifact]})
+    update: dict[str, Any] = {
+        "manifest": manifest,
+        "manifest_path": str(manifest_path),
+    }
+    if not manifest_path.parent.exists():
+        return payload.model_copy(update=update)
+    try:
+        manifest_path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+    except OSError as exc:
+        update["warnings"] = [*payload.warnings, f"Unable to write live-preview manifest: {exc}"]
+        return payload.model_copy(update=update)
+    update["render_artifacts"] = [*payload.render_artifacts, manifest_artifact]
+    return payload.model_copy(update=update)
