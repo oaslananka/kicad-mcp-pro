@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.20.0](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.19.1...mcp-server-v3.20.0) (2026-07-07)
+
+
+### Features
+
+* **schematic:** add safe live preview polling ([#312](https://github.com/oaslananka/kicad-mcp/issues/312)) ([b10d5d2](https://github.com/oaslananka/kicad-mcp/commit/b10d5d22278ff6d19017fcf3854a8991804f5720))
+
 ## [3.19.1](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.19.0...mcp-server-v3.19.1) (2026-07-07)
 
 
