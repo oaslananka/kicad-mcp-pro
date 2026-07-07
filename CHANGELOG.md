@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.19.1](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.19.0...mcp-server-v3.19.1) (2026-07-07)
+
+
+### Bug Fixes
+
+* **schematic:** resolve child sheets for read tools ([#308](https://github.com/oaslananka/kicad-mcp/issues/308)) ([6f6a38c](https://github.com/oaslananka/kicad-mcp/commit/6f6a38ca3ab2de5a56713fc5a4582045cc6d777a))
+
 ## [3.19.0](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.18.0...mcp-server-v3.19.0) (2026-07-05)
 
 
