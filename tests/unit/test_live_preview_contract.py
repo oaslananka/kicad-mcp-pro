@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -132,6 +133,42 @@ def test_live_preview_manifest_indexes_visual_artifacts() -> None:
         ("svg", "source-render", SVG_PATH),
     ]
     json.loads(manifest.model_dump_json())
+
+
+def test_live_preview_payload_persists_manifest_json_with_visual_artifacts(
+    tmp_path: Path,
+) -> None:
+    root_sch = tmp_path / "demo.kicad_sch"
+    child_sch = tmp_path / "sub.kicad_sch"
+    png_path = tmp_path / "live.png"
+    svg_path = tmp_path / "live.svg"
+
+    payload = LivePreviewPayload.from_legacy_payload(
+        {
+            "status": "changed_rendered",
+            "target": "root schematic",
+            "target_path": str(root_sch),
+            "watch_files": [str(root_sch), str(child_sch)],
+            "changed_files": [str(child_sch)],
+            "render": {
+                "status": "ok",
+                "sheet_path": str(child_sch),
+                "png_path": str(png_path),
+                "svg_path": str(svg_path),
+            },
+        }
+    )
+
+    assert payload.manifest_path == str(tmp_path / "live.manifest.json")
+    assert payload.manifest is not None
+    manifest_path = Path(payload.manifest_path)
+    assert manifest_path.exists()
+    persisted = json.loads(manifest_path.read_text())
+    assert persisted["schema_version"] == "live-preview.manifest.v1"
+    assert persisted["session_id"] == payload.session_id
+    assert [item["kind"] for item in persisted["artifacts"]] == ["png", "svg", "json"]
+    assert payload.render_artifacts[-1].kind == "json"
+    assert payload.render_artifacts[-1].role == "session-manifest"
 
 
 def test_live_preview_debounce_bounds_are_schema_validated() -> None:
