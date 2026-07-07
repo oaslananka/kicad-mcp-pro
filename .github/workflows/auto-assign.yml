@@ -3,12 +3,13 @@ name: Auto assign incoming issues and PRs
 on:
   issues:
     types: [opened]
-  pull_request_target:
+  pull_request:
     types: [opened, reopened, ready_for_review]
 
 permissions:
+  contents: read
   issues: write
-  pull-requests: write
+  pull-requests: read
 
 jobs:
   assign:
@@ -22,4 +23,7 @@ jobs:
           REPO: ${{ github.repository }}
           NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
         run: |
-          gh api --method POST "/repos/$REPO/issues/$NUMBER/assignees" -f assignees[]=oaslananka
+          set -euo pipefail
+          if ! gh api --method POST "/repos/$REPO/issues/$NUMBER/assignees" -f assignees[]=oaslananka; then
+            echo "::warning::Could not assign #$NUMBER to oaslananka. This can happen for forked pull requests with read-only tokens."
+          fi
