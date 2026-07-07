@@ -1244,6 +1244,39 @@ async def test_schematic_create_and_inspect_child_sheets(sample_project, mock_ki
 
 
 @pytest.mark.anyio
+async def test_schematic_read_tools_resolve_child_sheet_labels(
+    sample_project,
+    mock_kicad,
+) -> None:
+    server = build_server("schematic")
+
+    await call_tool_text(
+        server,
+        "sch_create_sheet",
+        {"name": "Sub", "filename": "sub.kicad_sch", "x_mm": 40.64, "y_mm": 50.8},
+    )
+    await call_tool_text(
+        server,
+        "sch_add_hierarchical_label",
+        {
+            "text": "OUT",
+            "x_mm": 30.48,
+            "y_mm": 30.48,
+            "shape": "output",
+            "sheet": "Sub",
+        },
+    )
+
+    root_labels = await call_tool_text(server, "sch_get_labels", {})
+    child_labels = await call_tool_text(server, "sch_get_labels", {"sheet": "Sub"})
+    child_nets = await call_tool_text(server, "sch_get_net_names", {"sheet": "Sub"})
+
+    assert "OUT" not in root_labels
+    assert "OUT" in child_labels
+    assert "- OUT" in child_nets
+
+
+@pytest.mark.anyio
 async def test_schematic_global_and_hierarchical_labels_preserve_shape(
     sample_project,
     mock_kicad,
