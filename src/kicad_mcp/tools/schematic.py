@@ -610,7 +610,7 @@ def _resolve_schematic_target(
     sheet: str | None = None,
     sheet_file: str | None = None,
 ) -> _SchematicTarget:
-    """Resolve an optional child-sheet target for file-backed write tools."""
+    """Resolve an optional child-sheet target for file-backed tools."""
     if sheet and sheet_file:
         raise ValueError("Use only one of sheet or sheet_file.")
 
@@ -5225,9 +5225,13 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @ttl_cache(ttl_seconds=5)
-    def sch_get_symbols() -> str:
-        """List all schematic symbols."""
-        sch_file = _get_schematic_file()
+    def sch_get_symbols(
+        sheet: str | None = None,
+        sheet_file: str | None = None,
+    ) -> str:
+        """List all schematic symbols, optionally from a child sheet."""
+        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
+        sch_file = target.path
         data = parse_schematic_file(sch_file)
         symbols = data["symbols"] + data["power_symbols"]
         if not symbols:
@@ -5254,9 +5258,13 @@ def register(mcp: FastMCP) -> None:
         return "\n".join(lines)
 
     @mcp.tool()
-    def sch_get_wires() -> str:
-        """List all wires in the schematic."""
-        sch_file = _get_schematic_file()
+    def sch_get_wires(
+        sheet: str | None = None,
+        sheet_file: str | None = None,
+    ) -> str:
+        """List all wires in the schematic, optionally from a child sheet."""
+        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
+        sch_file = target.path
         wires = parse_schematic_file(sch_file)["wires"]
         if not wires:
             return _with_schematic_diagnostics(
@@ -5272,9 +5280,13 @@ def register(mcp: FastMCP) -> None:
         return "\n".join(lines)
 
     @mcp.tool()
-    def sch_get_labels() -> str:
-        """List all labels in the schematic."""
-        sch_file = _get_schematic_file()
+    def sch_get_labels(
+        sheet: str | None = None,
+        sheet_file: str | None = None,
+    ) -> str:
+        """List all labels in the schematic, optionally from a child sheet."""
+        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
+        sch_file = target.path
         labels = parse_schematic_file(sch_file)["labels"]
         if not labels:
             return _with_schematic_diagnostics(
@@ -5289,9 +5301,13 @@ def register(mcp: FastMCP) -> None:
         return "\n".join(lines)
 
     @mcp.tool()
-    def sch_get_net_names() -> str:
-        """List unique net names derived from labels."""
-        sch_file = _get_schematic_file()
+    def sch_get_net_names(
+        sheet: str | None = None,
+        sheet_file: str | None = None,
+    ) -> str:
+        """List unique net names derived from labels, optionally from a child sheet."""
+        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
+        sch_file = target.path
         labels = parse_schematic_file(sch_file)["labels"]
         names = sorted({label["name"] for label in labels})
         if not names:
