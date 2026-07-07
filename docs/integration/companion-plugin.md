@@ -74,3 +74,27 @@ the dependency-free helpers are covered by `tests/unit/test_companion_context.py
 - It does not request filesystem or network permissions beyond the loopback POST.
 - Mutating operations are listed in `SAFE_APPLY_ACTIONS` and always require an
   explicit confirmation via `confirm_safe_apply`.
+
+## Live-preview opt-in refresh UX
+
+The companion plugin must keep live-preview feedback artifact-first by default.
+A plugin button or agent command may request `sch_live_preview(render=true)` to
+produce a preview image, but it must not silently change the user's open KiCad GUI
+state to update.
+
+Recommended UX contract:
+
+1. Show a clear action label such as **Refresh preview evidence** for ordinary
+   artifact generation.
+2. Use a separate, explicit action label such as **Refresh open KiCad view** for
+   GUI-facing behavior.
+3. Before any GUI-facing refresh, show a confirmation dialog explaining that the
+   MCP server cannot prove whether the editor has unsaved human changes.
+4. Remember consent only for the current plugin session; do not persist it across
+   KiCad restarts.
+5. Surface the resulting status in the dialog or status pane, including whether
+   the operation produced a PNG artifact, skipped because no change was detected,
+   or failed with a renderer diagnostic.
+
+Agents should treat preview PNGs, visual diffs, and visual QA results as evidence
+for review, not as proof that a human user's editor tab has been updated.
