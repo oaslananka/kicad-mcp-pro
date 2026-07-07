@@ -1961,6 +1961,13 @@ def _schematic_live_preview_payload(
         payload["reload_result"] = reload_result
     if render_metadata:
         payload["render"] = render_metadata
+    contract = __import__(
+        "kicad_mcp.models.live_preview", fromlist=["LivePreviewPayload"]
+    ).LivePreviewPayload.from_legacy_payload(payload)  # noqa: E501
+    normalized = contract.model_dump(mode="json", exclude_none=True)  # noqa: E501
+    payload.update(normalized)
+    payload["watch_files"] = list(contract.watched_files)
+    payload["changed_files"] = list(contract.changed_files)
     return payload
 
 
