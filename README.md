@@ -57,6 +57,16 @@ configuration is documented in
 [`docs/configuration.md`](docs/configuration.md#opentelemetry), and privacy rules
 are documented in [`docs/privacy.md`](docs/privacy.md).
 
+## See it in action
+
+![KiCad MCP Pro terminal demo](docs/assets/demo.gif)
+
+Run a health check, inspect doctor output, and start the MCP server before connecting Claude, Cursor, Copilot, or another MCP-capable agent. See the [demo notes](docs/demo.md) for the reproducible cast and replacement rules.
+
+```text
+Open the current KiCad project, inspect the schematic hierarchy, list ERC-relevant issues, render a schematic preview, and explain what changed without modifying files.
+```
+
 ## Scope and honesty
 
 KiCad MCP Pro is a **professional first-pass design and review assistant**, not an
