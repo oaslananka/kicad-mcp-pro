@@ -1,0 +1,59 @@
+name: Live Preview Smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/kicad_mcp/tools/schematic.py"
+      - "tests/integration/test_schematic_tools.py"
+      - ".github/workflows/live-preview-smoke.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Headless live-preview smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Run targeted smoke tests
+        run: |
+          mkdir -p artifacts/live-preview-smoke
+          uv run --all-extras python -m pytest \
+            tests/integration/test_schematic_tools.py \
+            -k live_preview \
+            --junitxml=artifacts/live-preview-smoke/junit.xml
+
+      - name: Collect debug metadata
+        if: always()
+        run: |
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "workflow=${GITHUB_WORKFLOW}"
+            echo "runner=${RUNNER_OS}"
+            uv --version || true
+            python --version || true
+          } > artifacts/live-preview-smoke/environment.txt
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-preview-smoke-${{ github.run_id }}
+          path: artifacts/live-preview-smoke
+          if-no-files-found: warn
