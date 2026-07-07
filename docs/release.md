@@ -1,5 +1,9 @@
 # Release
 
+## Safe live-preview hardening
+
+The live-preview workflow is now documented as a safe artifact-first agent feedback loop.
+
 Current product versions are represented in:
 
 - `.release-please-manifest.json`
