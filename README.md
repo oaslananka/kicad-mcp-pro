@@ -11,7 +11,8 @@
   <a href="docs/installation.md">Installation</a> ·
   <a href="#quick-start">Quick Start</a> ·
   <a href="docs/tools-reference.generated.md">Tool Reference</a> ·
-  <a href="https://oaslananka.github.io/kicad-mcp/agents/">AI Agent Setup</a>
+  <a href="https://oaslananka.github.io/kicad-mcp/agents/">AI Agent Setup</a> ·
+  <a href="docs/llms.txt">AI discovery</a>
 </p>
 
 <p>
