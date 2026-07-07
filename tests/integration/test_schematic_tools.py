@@ -2254,6 +2254,88 @@ async def test_schematic_render_png_reports_empty_and_renders_populated_sheet(
 
 
 @pytest.mark.anyio
+async def test_schematic_live_preview_debounces_and_renders_changed_sheet(
+    sample_project,
+    mock_kicad,
+    monkeypatch,
+) -> None:
+    server = build_server("schematic")
+
+    baseline = await call_tool_text(
+        server,
+        "sch_live_preview",
+        {"include_child_sheets": False, "render": False},
+    )
+    baseline_payload = json.loads(baseline)
+    assert baseline_payload["status"] == "initialized"
+
+    await call_tool_text(
+        server,
+        "sch_add_label",
+        {"name": "LIVE", "x_mm": 12.7, "y_mm": 12.7},
+    )
+
+    pending = await call_tool_text(
+        server,
+        "sch_live_preview",
+        {"include_child_sheets": False, "render": False, "debounce_ms": 1000},
+    )
+    pending_payload = json.loads(pending)
+    assert pending_payload["status"] == "pending_debounce"
+    assert str(sample_project / "demo.kicad_sch") in pending_payload["changed_files"]
+
+    def fake_export(sch_file: Path, out_dir: Path, *, include_title_block: bool):
+        out_dir.mkdir(parents=True, exist_ok=True)
+        marker = "<text>LIVE</text>" if "LIVE" in sch_file.read_text(encoding="utf-8") else ""
+        (out_dir / f"{sch_file.stem}.svg").write_text(
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="32" height="16">{marker}</svg>',
+            encoding="utf-8",
+        )
+        return 0, "", ""
+
+    def fake_render(svg_file: Path, output_file: Path, *, dpi: int, crop_to_content: bool):
+        from PIL import Image
+
+        image = Image.new("RGBA", (32, 16), (0, 0, 0, 0))
+        if "LIVE" in svg_file.read_text(encoding="utf-8"):
+            image.putpixel((8, 8), (0, 0, 0, 255))
+        image.save(output_file)
+        return {"width_px": 32, "height_px": 16, "cropped": crop_to_content}
+
+    monkeypatch.setattr(
+        "kicad_mcp.tools.schematic._export_schematic_svg_for_render",
+        fake_export,
+    )
+    monkeypatch.setattr("kicad_mcp.tools.schematic._render_svg_to_png", fake_render)
+
+    content = await call_tool_content(
+        server,
+        "sch_live_preview",
+        {
+            "include_child_sheets": False,
+            "debounce_ms": 0,
+            "render": True,
+            "output_file": "live-preview-test.png",
+        },
+    )
+    payload = json.loads(tool_text(content))
+    assert payload["status"] == "changed_rendered"
+    assert payload["render"]["status"] == "ok"
+    assert Path(payload["render"]["png_path"]).name == "live-preview-test.png"
+    assert Path(payload["render"]["png_path"]).exists()
+    image = next(item for item in content if isinstance(item, ImageContent))
+    assert image.mimeType == "image/png"
+
+    unchanged = await call_tool_text(
+        server,
+        "sch_live_preview",
+        {"include_child_sheets": False, "render": False},
+    )
+    unchanged_payload = json.loads(unchanged)
+    assert unchanged_payload["status"] == "no_change"
+
+
+@pytest.mark.anyio
 async def test_schematic_set_title_block_info_dry_run_does_not_write(
     sample_project, mock_kicad
 ) -> None:

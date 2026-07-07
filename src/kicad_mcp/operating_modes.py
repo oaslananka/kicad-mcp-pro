@@ -44,6 +44,7 @@ _WRITE_TOOL_NAMES = frozenset(
         "project_full_validation_loop",
         "kicad_create_new_project",
         "dfm_load_manufacturer_profile",
+        "sch_live_preview",
     }
 )
 _WRITE_PREFIXES = (
