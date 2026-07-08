@@ -62,6 +62,7 @@ from ..models.pcb import (
 )
 from ..models.tool_result import MutatingToolResult, TransactionVerification
 from ..models.verdict import Finding, SuggestedFix, VerdictReport, stable_finding_id
+from ..operating_modes import OperatingMode, active_operating_mode
 from ..utils import telemetry as otel
 from ..utils.cache import clear_ttl_cache, ttl_cache
 from ..utils.impedance import TraceType, copper_thickness_mm, trace_impedance
@@ -3525,7 +3526,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     def pcb_highlight_net(net_name: str) -> str:
         """Attempt to highlight a net in the GUI when supported."""
-        if not get_config().enable_experimental_tools:
+        if active_operating_mode(get_config()) is not OperatingMode.EXPERIMENTAL:
             return "Net highlighting is experimental. Enable experimental tools to try it."
         return (
             "Net highlighting is not exposed as a stable KiCad 10.x IPC operation. "
@@ -3536,7 +3537,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     def pcb_set_net_class(net_name: str, class_name: str) -> str:
         """Assign a net class when the runtime supports it."""
-        if not get_config().enable_experimental_tools:
+        if active_operating_mode(get_config()) is not OperatingMode.EXPERIMENTAL:
             return "Net class assignment is experimental. Enable experimental tools to try it."
         return (
             "Direct net class assignment is not exposed as a stable KiCad 10.x IPC operation. "

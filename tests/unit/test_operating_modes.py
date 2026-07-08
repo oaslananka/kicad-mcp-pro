@@ -12,6 +12,7 @@ from kicad_mcp.operating_modes import (
     tool_required_mode,
 )
 from kicad_mcp.server import KiCadFastMCP, _apply_cli_env, build_server
+from tests.conftest import call_tool_text
 
 
 def _tool_names_for_mode(mode: str, *, profile: str = "full") -> set[str]:
@@ -115,6 +116,35 @@ def test_experimental_mode_requires_explicit_opt_in_for_routing_and_unstable_too
         "route_tune_length",
         "sch_swap_pins",
     } <= tool_names
+
+
+@pytest.mark.anyio
+async def test_project_info_reports_effective_experimental_mode(
+    monkeypatch,
+    sample_project,
+) -> None:
+    monkeypatch.setenv("KICAD_MCP_OPERATING_MODE", "experimental")
+    monkeypatch.delenv("KICAD_MCP_ENABLE_EXPERIMENTAL_TOOLS", raising=False)
+    reset_config()
+    server = build_server("full")
+
+    text = await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    expected = "- " + "Experimental tools: True"
+    assert expected in text
+
+
+@pytest.mark.anyio
+async def test_experimental_mode_enables_legacy_experimental_pcb_guards(monkeypatch) -> None:
+    monkeypatch.setenv("KICAD_MCP_OPERATING_MODE", "experimental")
+    monkeypatch.delenv("KICAD_MCP_ENABLE_EXPERIMENTAL_TOOLS", raising=False)
+    reset_config()
+    server = build_server("full")
+
+    text = await call_tool_text(server, "pcb_highlight_net", {"net_name": "GND"})
+
+    assert "Enable experimental tools" not in text
+    assert "Net highlighting is not exposed as a stable" in text
 
 
 @pytest.mark.anyio
