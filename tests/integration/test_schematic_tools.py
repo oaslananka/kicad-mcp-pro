@@ -1324,7 +1324,7 @@ async def test_schematic_hierarchical_label_default_justify_avoids_icon_overlap(
             {"text": f"NET_{rotation}", "x_mm": 20.32, "y_mm": 20.32, "rotation": rotation},
         )
         schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
-        assert f'(justify {expected_justify})' in schematic
+        assert f"(justify {expected_justify})" in schematic
 
     labels = await call_tool_text(server, "sch_get_labels", {})
     assert "justify=left" in labels
@@ -1354,9 +1354,7 @@ async def test_schematic_add_label_justify_override_and_none(
         {"text": "CENTERED", "x_mm": 25.4, "y_mm": 25.4, "justify": "none"},
     )
     schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
-    centered_block_match = re.search(
-        r'\(global_label "CENTERED".*?\n\t\)', schematic, re.DOTALL
-    )
+    centered_block_match = re.search(r'\(global_label "CENTERED".*?\n\t\)', schematic, re.DOTALL)
     assert centered_block_match is not None
     assert "justify" not in centered_block_match.group(0)
 
