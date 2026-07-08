@@ -3,6 +3,16 @@ name: Dependency Review
 on:
   pull_request:
     branches: [main]
+    paths:
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "Dockerfile"
+      - "renovate.json"
+      - "packages/mcp-npm/package.json"
+      - "packages/mcp-npm/package-lock.json"
+      - ".github/workflows/dependency-review.yml"
   workflow_dispatch:
 
 permissions:
