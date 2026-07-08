@@ -11,6 +11,18 @@ CoordMM = Annotated[
     Field(ge=-2000.0, le=2000.0, description="Coordinate in millimeters."),
 ]
 
+LabelJustify = Literal[
+    "left",
+    "right",
+    "top",
+    "bottom",
+    "left top",
+    "left bottom",
+    "right top",
+    "right bottom",
+    "none",
+]
+
 
 class AddSymbolInput(BaseModel):
     """Schematic symbol placement input."""
@@ -47,6 +59,7 @@ class AddLabelInput(BaseModel):
     snap_to_grid: bool = True
     global_label: bool = False
     shape: Literal["input", "output", "bidirectional", "tri_state", "passive"] | None = None
+    justify: LabelJustify | None = None
 
 
 class AddBusInput(BaseModel):
@@ -141,6 +154,7 @@ class HierarchicalLabelInput(BaseModel):
     shape: Literal["input", "output", "bidirectional", "tri_state", "passive"] = "input"
     rotation: Literal[0, 90, 180, 270] = 0
     snap_to_grid: bool = True
+    justify: LabelJustify | None = None
 
 
 class GlobalLabelInput(BaseModel):
@@ -152,6 +166,16 @@ class GlobalLabelInput(BaseModel):
     shape: Literal["input", "output", "bidirectional", "tri_state", "passive"] = "bidirectional"
     rotation: Literal[0, 90, 180, 270] = 0
     snap_to_grid: bool = True
+    justify: LabelJustify | None = None
+
+
+class ModifyLabelInput(BaseModel):
+    """Label justification update parameters."""
+
+    name: str = Field(min_length=1, max_length=240)
+    x_mm: CoordMM
+    y_mm: CoordMM
+    justify: LabelJustify
 
 
 class GetSheetInfoInput(BaseModel):

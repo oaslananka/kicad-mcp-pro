@@ -329,21 +329,44 @@ def parse_placed_symbols(sch_text: str) -> list[PlacedSymbol]:
 
 
 def parse_labels(sch_text: str) -> list[LabelItem]:
-    """Extract local/global/hierarchical labels with their positions."""
+    """Extract local/global/hierarchical labels with their positions.
 
+    Global/hierarchical labels commonly carry an explicit ``(justify ...)``
+    override (see ``label_block`` in ``tools/schematic.py``) so their icon
+    doesn't overlap the text; reading the real token keeps overlap detection
+    in sync with what KiCad actually renders instead of assuming center.
+    """
+
+    # Global/hierarchical labels normally carry a (shape ...) token between
+    # their name and (at ...) (see label_block in tools/schematic.py); skip it
+    # so shaped labels aren't silently missed by every downstream QA check.
     patterns = {
         "local": r'\(label\s+"([^"]*)"\s+\(at\s+(-?[\d.]+)\s+(-?[\d.]+)\s*(-?[\d.]+)?',
-        "global": r'\(global_label\s+"([^"]*)"\s+\(at\s+(-?[\d.]+)\s+(-?[\d.]+)\s*(-?[\d.]+)?',
+        "global": (
+            r'\(global_label\s+"([^"]*)"\s+(?:\(shape\s+\w+\)\s+)?'
+            r"\(at\s+(-?[\d.]+)\s+(-?[\d.]+)\s*(-?[\d.]+)?"
+        ),
         "hierarchical": (
-            r'\(hierarchical_label\s+"([^"]*)"\s+\(at\s+(-?[\d.]+)\s+(-?[\d.]+)\s*(-?[\d.]+)?'
+            r'\(hierarchical_label\s+"([^"]*)"\s+(?:\(shape\s+\w+\)\s+)?'
+            r"\(at\s+(-?[\d.]+)\s+(-?[\d.]+)\s*(-?[\d.]+)?"
         ),
     }
     labels: list[LabelItem] = []
     for kind, pattern in patterns.items():
         for match in re.finditer(pattern, sch_text):
             angle = float(match.group(4)) if match.group(4) else 0.0
+            block = extract_balanced_block(sch_text, match.start())
+            justify_match = re.search(r"\(justify\s+([^)]*)\)", block) if block else None
+            justify = parse_justify(justify_match.group(1)) if justify_match else frozenset()
             labels.append(
-                LabelItem(match.group(1), float(match.group(2)), float(match.group(3)), kind, angle)
+                LabelItem(
+                    match.group(1),
+                    float(match.group(2)),
+                    float(match.group(3)),
+                    kind,
+                    angle,
+                    justify=justify,
+                )
             )
     return labels
 

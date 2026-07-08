@@ -75,7 +75,7 @@ domains:
         mcp_tool: sch_add_label
         status: covered
         kicad_version_introduced: "10.0.x"
-        notes: "sch_add_global_label, sch_add_hierarchical_label, sch_move_label, sch_delete_label."
+        notes: "sch_add_global_label, sch_add_hierarchical_label, sch_move_label, sch_delete_label, sch_modify_label (justify)."
       - capability: "Add a bus and bus-wire entries"
         kicad_channel: file
         mcp_tool: sch_add_bus

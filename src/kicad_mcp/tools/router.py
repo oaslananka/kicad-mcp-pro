@@ -278,6 +278,7 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "sch_delete_wire",
             "sch_delete_label",
             "sch_move_label",
+            "sch_modify_label",
             "sch_analyze_net_compilation",
             "sch_build_circuit",
             "sch_get_pin_positions",
