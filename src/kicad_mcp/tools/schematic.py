@@ -5351,7 +5351,10 @@ def _reload_schematic_via_ipc() -> str:
         command = editor_commands_pb2.RevertDocument()
         command.document.CopyFrom(documents[0])
         kicad._client.send(command, type(None).__mro__[0])
-        return "The schematic was updated and KiCad was asked to reload it."
+        return (
+            "The schematic was updated and a best-effort KiCad GUI reload request was sent. "
+            "Schematic disk reload in the open GUI document is not confirmed."
+        )
     except Exception as exc:
         logger.debug("schematic_reload_failed", error=str(exc))
         return "The schematic was updated. Reload it manually in KiCad if needed."
@@ -7723,8 +7726,8 @@ def register(mcp: FastMCP) -> None:
             reload_result=reload_result,
             render_metadata=render_metadata,
             message=(
-                "KiCad reload was requested by opt-in reload=True; dirty GUI state "
-                "could not be verified."
+                "A best-effort KiCad GUI reload was requested by opt-in reload=True; "
+                "schematic disk reload in the open GUI document is not confirmed."
                 if reload
                 else "Preview refreshed without forcing a KiCad GUI reload."
             ),

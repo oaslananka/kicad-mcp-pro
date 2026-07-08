@@ -62,7 +62,7 @@ def test_live_preview_payload_normalizes_current_tool_shape() -> None:
     ]
 
 
-def test_live_preview_payload_distinguishes_gui_reload() -> None:
+def test_live_preview_payload_distinguishes_best_effort_gui_reload_request() -> None:
     payload = LivePreviewPayload.from_legacy_payload(
         {
             "status": "changed_reloaded",
@@ -76,12 +76,22 @@ def test_live_preview_payload_distinguishes_gui_reload() -> None:
         }
     )
 
-    assert payload.outcome == "reloaded"
+    assert payload.outcome == "reload_requested"
     assert payload.reload_attempted is True
-    assert payload.reload_outcome == "ok"
+    assert payload.reload_outcome == "requested"
+    assert payload.reload_confirmed is False
+    assert payload.reload_mode == "best_effort_gui_request"
+    assert payload.upstream_blockers == ["https://gitlab.com/kicad/code/kicad/-/work_items/24803"]
     assert payload.unsafe_state == {"dirty_state_verified": False, "unsafe": False}
-    assert "GUI dirty state could not be verified" in payload.warnings[0]
-    assert payload.next_actions == ["Verify the GUI-visible sheet and run ERC/DRC checks."]
+    assert any("best-effort only" in warning for warning in payload.warnings)
+    assert any("not confirmed" in warning for warning in payload.warnings)
+    assert any("GUI dirty state could not be verified" in warning for warning in payload.warnings)
+    assert payload.safety.status == "best_effort_gui_request"
+    assert payload.next_actions == [
+        "Inspect render_artifacts when available before continuing.",
+        "Do not assume the KiCad GUI document reloaded from disk.",
+        "Run ERC/DRC checks after schematic changes.",
+    ]
 
 
 def test_live_preview_payload_surfaces_render_failure_as_error() -> None:
