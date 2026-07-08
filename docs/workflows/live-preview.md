@@ -77,6 +77,51 @@ Agent code should read structured fields instead of parsing human-readable messa
 
 Agents should ignore unknown fields for forward compatibility.
 
+
+## Manifest example
+
+A live-preview manifest should be durable, sanitized, and useful to both humans and agents. Prefer relative project paths where possible:
+
+```json
+{
+  "schema_version": "live-preview.manifest.v1",
+  "session_id": "lp-20260707-001",
+  "target_path": "hardware/demo.kicad_sch",
+  "watch": {
+    "include_child_sheets": true,
+    "files": ["hardware/demo.kicad_sch", "hardware/power.kicad_sch"],
+    "changed_files": ["hardware/power.kicad_sch"]
+  },
+  "debounce": {
+    "requested_ms": 750,
+    "state": "settled"
+  },
+  "render": {
+    "status": "ok",
+    "sheet_path": "hardware/power.kicad_sch",
+    "png_path": "artifacts/live-preview/lp-20260707-001.png",
+    "svg_path": "artifacts/live-preview/lp-20260707-001.svg",
+    "dpi": 200,
+    "include_title_block": true
+  },
+  "artifacts": [
+    {
+      "kind": "png",
+      "path": "artifacts/live-preview/lp-20260707-001.png",
+      "role": "rendered-preview",
+      "mime_type": "image/png"
+    }
+  ],
+  "warnings": [],
+  "safety": {
+    "uses_relative_paths": true,
+    "redacted_private_paths": true
+  }
+}
+```
+
+Do not expose private absolute workstation paths in public CI artifacts, screenshots, or issue comments.
+
 ## Troubleshooting
 
 If no preview appears, first check whether the response is `initialized` or `pending_debounce`. These are normal states. Call again after a schematic mutation or after the debounce window.
