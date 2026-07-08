@@ -1,5 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="KiCad MCP Pro">
-  <rect width="128" height="128" rx="18" fill="#0d1117"/>
-  <path d="M26 30h20v25l27-25h26L61 63l41 35H75L46 72v26H26z" fill="#58a6ff"/>
-  <circle cx="101" cy="101" r="16" fill="#22c55e" stroke="#ffffff" stroke-width="5"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" aria-label="KiCad MCP Pro" role="img" viewBox="0 0 128 128"><rect width="128" height="128" fill="#0d1117" rx="18"/><path fill="#58a6ff" d="M26 30h20v25l27-25h26L61 63l41 35H75L46 72v26H26z"/><circle cx="101" cy="101" r="16" fill="#22c55e" stroke="#fff" stroke-width="5"/></svg>
