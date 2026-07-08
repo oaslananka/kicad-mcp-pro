@@ -34,6 +34,7 @@ from ..models.state import (
     WorkflowRole,
 )
 from ..models.verdict import Finding, SuggestedFix, Verdict, stable_finding_id
+from ..operating_modes import OperatingMode, active_operating_mode
 from ..path_safety import assert_within
 from ..prompts.workflows import render_professional_circuit_design_prompt
 from ..utils.cache import clear_ttl_cache, ttl_cache
@@ -323,6 +324,8 @@ def _render_design_workflow(state: DesignWorkflowState) -> str:
 def _render_project_info() -> str:
     cfg = get_config()
     cli_status = "found" if cfg.kicad_cli.exists() else "missing"
+    operating_mode = active_operating_mode(cfg)
+    experimental_enabled = operating_mode is OperatingMode.EXPERIMENTAL
     return "\n".join(
         [
             "Current project configuration:",
@@ -334,7 +337,7 @@ def _render_project_info() -> str:
             f"- Output directory: {cfg.output_dir or '(not set)'}",
             f"- KiCad CLI: {cfg.kicad_cli} ({cli_status})",
             f"- Server profile: {cfg.profile}",
-            f"- Experimental tools: {cfg.enable_experimental_tools}",
+            f"- Experimental tools: {experimental_enabled}",
         ]
     )
 
