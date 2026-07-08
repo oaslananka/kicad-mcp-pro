@@ -41,6 +41,7 @@ from ..models.schematic import (
     GetSheetInfoInput,
     GlobalLabelInput,
     HierarchicalLabelInput,
+    ModifyLabelInput,
     MoveSymbolInput,
     PowerSymbolInput,
     RouteWireBetweenPinsInput,
@@ -2319,15 +2320,41 @@ def _extract_labels(content: str) -> list[dict[str, Any]]:
         r"(?:\(shape\s+\w+\)\s+)?\(at\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)",
         content,
     ):
+        block, _ = _extract_block(content, match.start())
         labels.append(
             {
                 "name": _unescape_sexpr_string(match.group(1)),
                 "x": float(match.group(2)),
                 "y": float(match.group(3)),
                 "rotation": int(round(float(match.group(4)))),
+                "justify": _label_justify_from_block(block) if block else "",
             }
         )
     return labels
+
+
+def _label_justify_from_block(block: str) -> str:
+    """Read the raw ``(justify ...)`` token string from a label block, if any."""
+    justify_match = re.search(r"\(justify\s+([^)]*)\)", block)
+    return justify_match.group(1).strip() if justify_match else ""
+
+
+def _set_label_justify(block: str, justify_value: str) -> str:
+    """Insert, replace, or remove the ``(justify ...)`` node inside a label's
+    ``(effects ...)`` block. An empty ``justify_value`` removes any existing
+    override, restoring KiCad's centered default."""
+    idx = block.find("(effects")
+    if idx == -1:
+        return block
+    effects_block, eff_len = _extract_block(block, idx)
+    jidx = effects_block.find("(justify")
+    if jidx != -1:
+        _, jlen = _extract_block(effects_block, jidx)
+        effects_block = effects_block[:jidx] + effects_block[jidx + jlen :]
+        effects_block = re.sub(r"\s+\)", ")", effects_block)
+    if justify_value:
+        effects_block = effects_block[:-1].rstrip() + f" (justify {justify_value}))"
+    return block[:idx] + effects_block + block[idx + eff_len :]
 
 
 def _parse_label_block(block: str) -> dict[str, Any] | None:
@@ -2345,6 +2372,7 @@ def _parse_label_block(block: str) -> dict[str, Any] | None:
         "x": float(match.group(3)),
         "y": float(match.group(4)),
         "rotation": int(round(float(match.group(5)))),
+        "justify": _label_justify_from_block(block),
     }
 
 
@@ -4436,6 +4464,31 @@ def wire_block(
     )
 
 
+# Global/hierarchical labels carry a directional icon glyph at their anchor.
+# KiCad's GUI writes an explicit (justify ...) away from that icon whenever one
+# of these is placed; a file that omits it renders center-justified text on
+# top of the icon (issue #373). Mirrors this codebase's own outward-stub
+# convention (see _terminal_rotation_from_vector): rotation 0/180 are
+# horizontal, so the text needs a horizontal justify away from the icon,
+# while 90/270 are vertical and need a vertical one. Verified against a real
+# kicad-cli render for each cardinal rotation.
+_LABEL_JUSTIFY_BY_ROTATION: dict[int, str] = {0: "left", 90: "bottom", 180: "right", 270: "top"}
+
+
+def _normalize_label_justify(justify: str | None) -> str | None:
+    """Turn a ``LabelJustify`` value into the raw S-expression token string.
+
+    Returns ``None`` when unset (caller may apply a rotation-derived default),
+    or ``""`` when the literal ``"none"`` explicitly requests KiCad's centered
+    default with no override.
+    """
+    if justify is None:
+        return None
+    if justify == "none":
+        return ""
+    return justify
+
+
 def label_block(
     name: str,
     x: float,
@@ -4444,6 +4497,7 @@ def label_block(
     global_label: bool = False,
     shape: str | None = None,
     kind: str | None = None,
+    justify: str | None = None,
 ) -> str:
     """Create a schematic label block."""
     effective_kind = kind or ("global_label" if global_label else "label")
@@ -4451,11 +4505,19 @@ def label_block(
     if effective_kind == "global_label" and effective_shape is None:
         effective_shape = "bidirectional"
     shape_line = f"\t\t(shape {effective_shape})\n" if effective_shape else ""
+    resolved_justify = _normalize_label_justify(justify)
+    if resolved_justify is None:
+        resolved_justify = (
+            _LABEL_JUSTIFY_BY_ROTATION.get(rotation, "")
+            if effective_kind in ("global_label", "hierarchical_label")
+            else ""
+        )
+    justify_part = f" (justify {resolved_justify})" if resolved_justify else ""
     return (
         f"\t({effective_kind} {_sexpr_string(name)}\n"
         f"{shape_line}"
         f"\t\t(at {_fmt_mm(x)} {_fmt_mm(y)} {rotation})\n"
-        "\t\t(effects (font (size 1.524 1.524)))\n"
+        f"\t\t(effects (font (size 1.524 1.524)){justify_part})\n"
         f'\t\t(uuid "{new_uuid()}")\n'
         "\t)"
     )
@@ -5440,7 +5502,8 @@ def register(mcp: FastMCP) -> None:
             )
         lines = [f"Labels ({len(labels)} total):"]
         lines.extend(
-            f"- {label['name']} @ ({label['x']}, {label['y']}) rot={label['rotation']}"
+            f"- {label['name']} @ ({label['x']}, {label['y']}) rot={label['rotation']} "
+            f"justify={label.get('justify') or 'center'}"
             for label in labels
         )
         return "\n".join(lines)
@@ -5636,10 +5699,16 @@ def register(mcp: FastMCP) -> None:
         rotation: int = 0,
         snap_to_grid: bool = True,
         text: str | None = None,
+        justify: str | None = None,
         sheet: str | None = None,
         sheet_file: str | None = None,
     ) -> str:
-        """Add a schematic label, snapping its anchor to the 1.27 mm / 50 mil grid by default."""
+        """Add a schematic label, snapping its anchor to the 1.27 mm / 50 mil grid by default.
+
+        ``justify`` overrides KiCad's centered default (e.g. "left", "right",
+        "top", "bottom", "left top"); local labels have no directional icon so
+        centered text is usually correct and this is rarely needed.
+        """
         label_text = name or text
         if not label_text:
             raise ValueError("Either name or text parameter is required.")
@@ -5649,6 +5718,7 @@ def register(mcp: FastMCP) -> None:
             y_mm=y_mm,
             rotation=rotation,
             snap_to_grid=snap_to_grid,
+            justify=justify,
         )
         target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
         label_x, label_y = _snap_point(payload.x_mm, payload.y_mm, payload.snap_to_grid)
@@ -5656,7 +5726,13 @@ def register(mcp: FastMCP) -> None:
         transactional_write(
             lambda current: _append_before_sheet_instances(
                 current,
-                label_block(payload.name, label_x, label_y, payload.rotation),
+                label_block(
+                    payload.name,
+                    label_x,
+                    label_y,
+                    payload.rotation,
+                    justify=payload.justify,
+                ),
             ),
             target.path,
         )
@@ -6452,6 +6528,73 @@ def register(mcp: FastMCP) -> None:
         return "\n".join(lines)
 
     @mcp.tool()
+    def sch_modify_label(
+        name: str,
+        x_mm: float,
+        y_mm: float,
+        justify: str,
+    ) -> str:
+        """Set the text justification of an existing label (local/global/
+        hierarchical) matching ``name`` at (x_mm, y_mm). Use sch_get_labels()
+        to find exact names/positions.
+
+        Global and hierarchical labels carry a directional icon at their
+        anchor; KiCad centers unjustified text on that anchor, which overlaps
+        the icon. Pass "left", "right", "top", "bottom", or a combination like
+        "left top" to move the text clear of the icon, or "none" to restore
+        KiCad's centered default.
+        """
+        payload = ModifyLabelInput(name=name, x_mm=x_mm, y_mm=y_mm, justify=justify)
+        resolved_justify = _normalize_label_justify(payload.justify) or ""
+        tol = 0.05
+        modified = 0
+
+        def mutator(current: str) -> str:
+            nonlocal modified
+            pieces: list[str] = []
+            cursor = 0
+            last = 0
+            while cursor < len(current):
+                if modified == 0 and current[cursor:].startswith(
+                    ("(label", "(global_label", "(hierarchical_label")
+                ):
+                    block, length = _extract_block(current, cursor)
+                    parsed = _parse_label_block(block) if block else None
+                    if (
+                        parsed is not None
+                        and parsed["name"] == payload.name
+                        and abs(parsed["x"] - payload.x_mm) <= tol
+                        and abs(parsed["y"] - payload.y_mm) <= tol
+                    ):
+                        updated_block = _set_label_justify(block, resolved_justify)
+                        pieces.append(current[last:cursor])
+                        pieces.append(updated_block)
+                        cursor += length
+                        last = cursor
+                        modified += 1
+                        continue
+                cursor += 1
+            pieces.append(current[last:])
+            if modified == 0:
+                raise ValueError(
+                    f"No label '{payload.name}' found near "
+                    f"({_fmt_mm(payload.x_mm)}, {_fmt_mm(payload.y_mm)})."
+                )
+            return "".join(pieces)
+
+        try:
+            transactional_write(mutator)
+        except ValueError as exc:
+            return str(exc)
+
+        justify_desc = resolved_justify or "none (centered)"
+        return (
+            f"{_reload_schematic()}\n"
+            f"Set justify='{justify_desc}' on label '{payload.name}' at "
+            f"({_fmt_mm(payload.x_mm)}, {_fmt_mm(payload.y_mm)})."
+        )
+
+    @mcp.tool()
     def sch_analyze_net_compilation(
         symbols: list[dict[str, Any]] | None = None,
         wires: list[dict[str, Any]] | None = None,
@@ -6893,10 +7036,17 @@ def register(mcp: FastMCP) -> None:
         rotation: int = 0,
         snap_to_grid: bool = True,
         name: str | None = None,
+        justify: str | None = None,
         sheet: str | None = None,
         sheet_file: str | None = None,
     ) -> str:
-        """Add a hierarchical label, preserving the requested shape and rotation."""
+        """Add a hierarchical label, preserving the requested shape and rotation.
+
+        By default the text is justified away from the directional icon based
+        on ``rotation`` (0=left, 90=bottom, 180=right, 270=top) so it doesn't
+        render on top of the icon. Pass ``justify`` to override, or "none" to
+        force KiCad's centered default.
+        """
         label_text = text or name
         if not label_text:
             raise ValueError("Either text or name parameter is required.")
@@ -6907,6 +7057,7 @@ def register(mcp: FastMCP) -> None:
             shape=shape,
             rotation=rotation,
             snap_to_grid=snap_to_grid,
+            justify=justify,
         )
         target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
         label_x, label_y = _snap_point(payload.x_mm, payload.y_mm, payload.snap_to_grid)
@@ -6921,6 +7072,7 @@ def register(mcp: FastMCP) -> None:
                     payload.rotation,
                     kind="hierarchical_label",
                     shape=payload.shape,
+                    justify=payload.justify,
                 ),
             ),
             target.path,
@@ -6937,10 +7089,17 @@ def register(mcp: FastMCP) -> None:
         rotation: int = 0,
         snap_to_grid: bool = True,
         name: str | None = None,
+        justify: str | None = None,
         sheet: str | None = None,
         sheet_file: str | None = None,
     ) -> str:
-        """Add a global label, preserving the requested shape and rotation."""
+        """Add a global label, preserving the requested shape and rotation.
+
+        By default the text is justified away from the directional icon based
+        on ``rotation`` (0=left, 90=bottom, 180=right, 270=top) so it doesn't
+        render on top of the icon. Pass ``justify`` to override, or "none" to
+        force KiCad's centered default.
+        """
         label_text = text or name
         if not label_text:
             raise ValueError("Either text or name parameter is required.")
@@ -6951,6 +7110,7 @@ def register(mcp: FastMCP) -> None:
             shape=shape,
             rotation=rotation,
             snap_to_grid=snap_to_grid,
+            justify=justify,
         )
         target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
         label_x, label_y = _snap_point(payload.x_mm, payload.y_mm, payload.snap_to_grid)
@@ -6965,6 +7125,7 @@ def register(mcp: FastMCP) -> None:
                     payload.rotation,
                     kind="global_label",
                     shape=payload.shape,
+                    justify=payload.justify,
                 ),
             ),
             target.path,

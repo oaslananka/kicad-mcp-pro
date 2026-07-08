@@ -55,7 +55,7 @@ Symbol/wire/label/bus/hierarchy/power/no-connect/annotate/ERC editing of .kicad_
 | Move a placed symbol | `file` | `sch_move_symbol` | `covered` | 10.0.x |  |
 | Delete a placed symbol and attached wires | `file` | `sch_delete_symbol` | `covered` | 10.0.x |  |
 | Add a wire between points / between pins | `file` | `sch_route_wire_between_pins` | `covered` | 10.0.x | sch_add_wire for raw segments; sch_add_missing_junctions repairs T-junctions. |
-| Add local / global / hierarchical labels | `file` | `sch_add_label` | `covered` | 10.0.x | sch_add_global_label, sch_add_hierarchical_label, sch_move_label, sch_delete_label. |
+| Add local / global / hierarchical labels | `file` | `sch_add_label` | `covered` | 10.0.x | sch_add_global_label, sch_add_hierarchical_label, sch_move_label, sch_delete_label, sch_modify_label (justify). |
 | Add a bus and bus-wire entries | `file` | `sch_add_bus` | `covered` | 10.0.x | sch_add_bus_wire_entry for member entries. |
 | Add a power symbol / power flag | `file` | `sch_add_power_symbol` | `covered` | 10.0.x | sch_check_power_flags audits coverage. |
 | Add no-connect markers | `file` | `sch_add_no_connect` | `covered` | 10.0.x |  |

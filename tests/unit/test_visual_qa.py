@@ -59,6 +59,47 @@ def test_parse_labels_and_symbols() -> None:
     assert symbols[0].lib_id == "Device:R"
 
 
+def test_parse_labels_finds_shaped_global_and_hierarchical_labels() -> None:
+    """Real global/hierarchical labels always carry a (shape ...) token
+    between the name and (at ...); before this fix the regexes required (at
+    ...) immediately after the name, so every shaped label (i.e. virtually
+    all of them) was silently invisible to overlap/offsheet detection."""
+    sch = """
+    (kicad_sch (version 20240101) (paper "A4")
+      (global_label "VCC" (shape output) (at 10 10 0)
+        (effects (font (size 1.524 1.524))))
+      (hierarchical_label "SIG" (shape bidirectional) (at 20 20 0)
+        (effects (font (size 1.524 1.524))))
+    )
+    """
+    labels = {label.text: label for label in parse_labels(sch)}
+    assert labels["VCC"].kind == "global"
+    assert labels["SIG"].kind == "hierarchical"
+
+
+def test_parse_labels_reads_real_justify_override() -> None:
+    """Issue #373: a label's rendered box must reflect its actual (justify
+    ...) token, not an assumed center, or overlap detection would be wrong
+    for the directional hierarchical/global labels that carry one."""
+    sch = """
+    (kicad_sch (version 20240101) (paper "A4")
+      (hierarchical_label "VOUT_5V" (shape output) (at 20.32 20.32 0)
+        (effects (font (size 1.524 1.524)) (justify left)))
+      (global_label "GND" (shape input) (at 40 40 0)
+        (effects (font (size 1.524 1.524))))
+    )
+    """
+    labels = {label.text: label for label in parse_labels(sch)}
+    assert labels["VOUT_5V"].justify == frozenset({"left"})
+    assert labels["GND"].justify == frozenset()
+
+    # Left-justified text grows to the right of its anchor; a centered label
+    # of the same text would straddle the anchor on both sides instead.
+    left_box = labels["VOUT_5V"].box()
+    assert left_box.x_min == pytest.approx(20.32)
+    assert left_box.x_max > left_box.x_min
+
+
 def test_detect_label_collisions_flags_overlap() -> None:
     findings = detect_label_collisions(parse_labels(DEFECT_SCH))
     assert len(findings) == 1

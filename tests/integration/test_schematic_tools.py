@@ -1302,6 +1302,116 @@ async def test_schematic_global_and_hierarchical_labels_preserve_shape(
 
 
 @pytest.mark.anyio
+async def test_schematic_hierarchical_label_default_justify_avoids_icon_overlap(
+    sample_project,
+    mock_kicad,
+) -> None:
+    """Issue #373: global/hierarchical labels have a directional icon glyph;
+    without an explicit justify KiCad centers the text on the anchor and it
+    overlaps the icon. Freshly placed labels should get a rotation-derived
+    justify by default so they read cleanly out of the box."""
+    server = build_server("schematic")
+
+    for rotation, expected_justify in (
+        (0, "left"),
+        (90, "bottom"),
+        (180, "right"),
+        (270, "top"),
+    ):
+        await call_tool_text(
+            server,
+            "sch_add_hierarchical_label",
+            {"text": f"NET_{rotation}", "x_mm": 20.32, "y_mm": 20.32, "rotation": rotation},
+        )
+        schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
+        assert f'(justify {expected_justify})' in schematic
+
+    labels = await call_tool_text(server, "sch_get_labels", {})
+    assert "justify=left" in labels
+    assert "justify=bottom" in labels
+    assert "justify=right" in labels
+    assert "justify=top" in labels
+
+
+@pytest.mark.anyio
+async def test_schematic_add_label_justify_override_and_none(
+    sample_project,
+    mock_kicad,
+) -> None:
+    server = build_server("schematic")
+
+    await call_tool_text(
+        server,
+        "sch_add_global_label",
+        {"text": "OVERRIDE", "x_mm": 15.24, "y_mm": 15.24, "justify": "left top"},
+    )
+    schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
+    assert "(justify left top)" in schematic
+
+    await call_tool_text(
+        server,
+        "sch_add_global_label",
+        {"text": "CENTERED", "x_mm": 25.4, "y_mm": 25.4, "justify": "none"},
+    )
+    schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
+    centered_block_match = re.search(
+        r'\(global_label "CENTERED".*?\n\t\)', schematic, re.DOTALL
+    )
+    assert centered_block_match is not None
+    assert "justify" not in centered_block_match.group(0)
+
+
+@pytest.mark.anyio
+async def test_schematic_modify_label_sets_and_clears_justify(
+    sample_project,
+    mock_kicad,
+) -> None:
+    server = build_server("schematic")
+
+    await call_tool_text(
+        server,
+        "sch_add_hierarchical_label",
+        {"text": "VOUT_5V", "x_mm": 20.32, "y_mm": 20.32, "rotation": 0},
+    )
+    schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
+    assert "(justify left)" in schematic
+
+    await call_tool_text(
+        server,
+        "sch_modify_label",
+        {"name": "VOUT_5V", "x_mm": 20.32, "y_mm": 20.32, "justify": "left bottom"},
+    )
+    schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
+    assert "(justify left bottom)" in schematic
+    assert "(justify left))" not in schematic
+
+    labels = await call_tool_text(server, "sch_get_labels", {})
+    assert "justify=left bottom" in labels
+
+    await call_tool_text(
+        server,
+        "sch_modify_label",
+        {"name": "VOUT_5V", "x_mm": 20.32, "y_mm": 20.32, "justify": "none"},
+    )
+    schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
+    assert "justify" not in schematic
+
+
+@pytest.mark.anyio
+async def test_schematic_modify_label_missing_target_reports_error(
+    sample_project,
+    mock_kicad,
+) -> None:
+    server = build_server("schematic")
+    text = await call_tool_text(
+        server,
+        "sch_modify_label",
+        {"name": "GHOST", "x_mm": 5.0, "y_mm": 5.0, "justify": "left"},
+    )
+    assert "not found" in text or "No label" in text
+
+
+@pytest.mark.anyio
 async def test_schematic_route_wire_between_pins_updates_connectivity_graph(
     sample_project,
     mock_kicad,
