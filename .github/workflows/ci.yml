@@ -14,6 +14,103 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    outputs:
+      docs: ${{ steps.filter.outputs.docs }}
+      docs_only: ${{ steps.check.outputs.docs_only }}
+      python: ${{ steps.filter.outputs.python }}
+      npm: ${{ steps.filter.outputs.npm }}
+      schemas: ${{ steps.filter.outputs.schemas }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+      dependencies: ${{ steps.filter.outputs.dependencies }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36
+        id: filter
+        with:
+          filters: |
+            python:
+              - 'src/**'
+              - 'tests/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'uv.toml'
+              - 'scripts/**'
+              - 'conftest.py'
+              - 'pyrightconfig.json'
+              - '.python-version'
+              - 'performance/**'
+              - 'evals/**'
+            npm:
+              - 'packages/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.node-version'
+              - '.npmrc'
+              - 'commitlint.config.cjs'
+              - '.commitlintrc.json'
+            schemas:
+              - 'packages/protocol-schemas/**'
+            workflows:
+              - '.github/workflows/**'
+              - '.github/actions/**'
+            dependencies:
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'Dockerfile'
+              - 'renovate.json'
+            docs:
+              - 'docs/**'
+              - 'README.md'
+              - 'CONTRIBUTING.md'
+              - 'CHANGELOG.md'
+              - 'CODE_OF_CONDUCT.md'
+              - 'GOVERNANCE.md'
+              - 'MAINTAINERS.md'
+              - 'ROADMAP.md'
+              - 'SECURITY.md'
+              - 'SUPPORT.md'
+              - 'ARCHITECTURE.md'
+              - 'CITATION.cff'
+              - 'LICENSE'
+              - 'mkdocs.yml'
+              - 'assets/**'
+      - name: Compute docs_only flag
+        id: check
+        shell: bash
+        run: |
+          if [[ "${{ steps.filter.outputs.python }}" == 'false' && \
+                "${{ steps.filter.outputs.npm }}" == 'false' && \
+                "${{ steps.filter.outputs.schemas }}" == 'false' && \
+                "${{ steps.filter.outputs.workflows }}" == 'false' && \
+                "${{ steps.filter.outputs.docs }}" == 'true' ]]; then
+            echo 'docs_only=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'docs_only=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Summarize detected changes
+        run: |
+          echo '## Change Detection Summary' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '| Category | Changed |' >> "$GITHUB_STEP_SUMMARY"
+          echo '|----------|---------|' >> "$GITHUB_STEP_SUMMARY"
+          echo '| python | ${{ steps.filter.outputs.python }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| npm | ${{ steps.filter.outputs.npm }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| schemas | ${{ steps.filter.outputs.schemas }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| workflows | ${{ steps.filter.outputs.workflows }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| dependencies | ${{ steps.filter.outputs.dependencies }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| docs | ${{ steps.filter.outputs.docs }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| **docs_only** | **${{ steps.check.outputs.docs_only }}** |' >> "$GITHUB_STEP_SUMMARY"
+
   mcp-server:
     if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
     runs-on: ${{ matrix.os }}
