@@ -10,6 +10,25 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.22.0](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.21.0...mcp-server-v3.22.0) (2026-07-08)
+
+
+### Features
+
+* **web:** add operating-mode control and schematic preview to dashboard ([#367](https://github.com/oaslananka/kicad-mcp/issues/367)) ([d6aaeb0](https://github.com/oaslananka/kicad-mcp/commit/d6aaeb0f1e31a192cf12960ec7a10877cb469782))
+
+
+### Bug Fixes
+
+* default schematic snap grid to 50 mil ([#351](https://github.com/oaslananka/kicad-mcp/issues/351)) ([971003d](https://github.com/oaslananka/kicad-mcp/commit/971003d06f52e38c16a4958c149c023ea6fe2bfb))
+
+
+### Documentation
+
+* add read-only agent review workflow ([#340](https://github.com/oaslananka/kicad-mcp/issues/340)) ([375ac87](https://github.com/oaslananka/kicad-mcp/commit/375ac87b0816a043b13b97fe7037db8bb5505cbd))
+* add workflow glossary ([#339](https://github.com/oaslananka/kicad-mcp/issues/339)) ([2dcf8fe](https://github.com/oaslananka/kicad-mcp/commit/2dcf8fe3aabb19e492eb0a576e200f2d3a3c5613))
+* document CI/CD policy and risk-based gates ([#359](https://github.com/oaslananka/kicad-mcp/issues/359)) ([5920be6](https://github.com/oaslananka/kicad-mcp/commit/5920be6d7e22c166f0c274aadf0a5018d57ca229))
+
 ## [3.21.0](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.20.0...mcp-server-v3.21.0) (2026-07-08)
 
 
