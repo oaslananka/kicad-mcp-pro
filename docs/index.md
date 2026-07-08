@@ -22,12 +22,14 @@ The docs are ordered from first setup to operations and maintenance.
 - [Configuration](configuration.md)
 - [Troubleshooting](troubleshooting.md)
 - [FAQ](faq.md)
+- [Glossary](glossary.md)
 - [Comparison](comparison.md)
 - [AI Discovery](llms.txt)
 
 ### Reference and status
 
 - [Tools Reference](tools-reference.md)
+- [Agent-friendly Tool Workflow Index](tools-agent-workflow.md)
 - [API Stability](api-stability.md)
 - [Maintenance Policy](maintenance-policy.md)
 - [Capability Verification Levels](status/capability-levels.md)
@@ -58,6 +60,7 @@ The docs are ordered from first setup to operations and maintenance.
 ### Workflows
 
 - [First PCB](workflows/first-pcb.md)
+- [Read-only Agent Review](workflows/read-only-agent-review.md)
 - [Schematic to PCB](workflows/schematic-to-pcb.md)
 - [Professional Circuit Design](workflows/professional-circuit-design.md)
 - [High-Speed Review](workflows/high-speed-review.md)

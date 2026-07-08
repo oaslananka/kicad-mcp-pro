@@ -372,15 +372,16 @@ def test_schematic_routing_endpoint_helpers_cover_fallbacks() -> None:
 
 
 def test_terminal_stub_length_scales_with_net_name() -> None:
-    from kicad_mcp.tools.schematic import _terminal_stub_length
+    from kicad_mcp.tools.schematic import SCHEMATIC_GRID_MM, _terminal_stub_length
 
     # Short names keep the historical 5.08 mm stub; long names are pushed out so
-    # the global-label text clears the symbol body, snapped to the 2.54 mm grid.
+    # the global-label text clears the symbol body, snapped to the configured
+    # schematic grid. The default grid is 50 mil, but deployments may override it.
     assert _terminal_stub_length("GND") == 5.08
     assert _terminal_stub_length("3V3") == 5.08
     long_stub = _terminal_stub_length("VBUS_5V")
     assert long_stub > 5.08
-    assert abs(long_stub / 2.54 - round(long_stub / 2.54)) < 1e-6  # grid-aligned
+    assert abs(long_stub / SCHEMATIC_GRID_MM - round(long_stub / SCHEMATIC_GRID_MM)) < 1e-6
 
 
 def test_pin_alias_resolves_diff_pair_and_duplicate_contacts() -> None:
