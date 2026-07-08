@@ -34,8 +34,11 @@ categories.
 | **kicad** | `src/kicad_mcp/tools/schematic*.py`, `src/kicad_mcp/tools/pcb*.py`, `tests/integration/**`, `tests/fixtures/**`, `scripts/kicad_canary.py`, `compatibility.yaml`, `test-fixtures/**` |
 
 A PR is classified as **docs-only** when it touches files in the `docs`
-category and does _not_ touch files in `python`, `npm`, `schemas`, or
-`workflows`.
+category and does _not_ touch files in `python`, `npm`, `schemas`,
+`workflows`, or `dependencies`. The `dependencies` exclusion matters: a PR
+that edits `README.md` alongside `Dockerfile` or a lockfile must **not** be
+treated as docs-only, or the Trivy filesystem scan (in the `security` job)
+would incorrectly no-op on a real dependency/Dockerfile change.
 
 ## Workflow Behavior by PR Type
 
@@ -46,10 +49,19 @@ category and does _not_ touch files in `python`, `npm`, `schemas`, or
 | `protocol-schemas` | no-op ✅ | **full** | **full** | **full** | **full** | **full** |
 | `scan` (Gitleaks) | **full** | **full** | **full** | **full** | **full** | **full** |
 | `analyze` (CodeQL) | no-op ✅ | **full** | **full** | **full** | **full** | **full** |
-| Dependency Review | skip | if deps ∆ | if deps ∆ | skip | **full** | if deps ∆ |
+| Dependency Review | not triggered | if deps ∆ | if deps ∆ | not triggered | if workflow file ∆ | if deps ∆ |
+| `required-pr-gate` | ✅ pass | ✅ pass/fail | ✅ pass/fail | ✅ pass/fail | ✅ pass/fail | ✅ pass/fail |
 
 **no-op** means the job runs and reports success, but skips expensive steps.
 This ensures the required status check is never left pending.
+
+Dependency Review is scoped at the **workflow trigger** level (`on.pull_request.paths`
+in `dependency-review.yml`), not via the `changes` job, so it does not run at
+all (no check appears) unless the PR touches `package.json`, `pnpm-lock.yaml`,
+`pyproject.toml`, `uv.lock`, `Dockerfile`, `renovate.json`,
+`packages/mcp-npm/package.json`/`package-lock.json`, or the workflow file
+itself. This is safe only because Dependency Review is **not** a required
+status check.
 
 ## Required Status Checks
 
@@ -83,15 +95,71 @@ To ensure required checks always report success even on docs-only PRs, we use
 This avoids the "pending check" problem that occurs when a required job is
 skipped entirely.
 
+### Aggregate Gate (`required-pr-gate`)
+
+`ci.yml` includes a `required-pr-gate` job that evaluates the results of
+`changes`, `mcp-server`, `mcp-npm`, `protocol-schemas`, and `security`,
+failing on any `failure`/`cancelled` result and passing on `success`/`skipped`.
+It exists to let branch protection eventually depend on **one** check instead
+of pinning every individual matrix context, so job renames or new matrix
+entries don't require a ruleset edit.
+
+**As of this writing it is not yet part of the branch ruleset.** The required
+migration sequence, in order:
+
+1. Merge the `required-pr-gate` job to `main`.
+2. Confirm it appears and reports correctly on a fresh PR built from updated `main`.
+3. Additively add `Required PR Gate` to ruleset `18233373`'s required checks
+   (keep the existing 10 contexts — do not remove them yet).
+4. As a separate, explicitly-labeled follow-up, once confidence is established,
+   remove the 7 matrix-specific contexts (`mcp-server (*)`, `mcp-npm (*)`,
+   `protocol-schemas`), leaving `Required PR Gate` + `scan` +
+   `analyze (python)` + `analyze (javascript-typescript)`.
+
+Adding step 3 before step 1/2 would create an unsatisfiable pending check on
+every already-open PR that doesn't yet contain the job — this is exactly the
+"required check pending" failure mode this whole policy exists to avoid.
+
 ## Security Workflows
 
 | Workflow | Runs on docs-only PR? | Rationale |
 |----------|:---------------------:|-----------|
 | **Gitleaks** (`scan`) | ✅ Always | Fast; secrets can appear in any file. |
 | **CodeQL** (`analyze`) | no-op | Code analysis is irrelevant for docs changes. Scheduled full scan runs weekly regardless. |
-| **Dependency Review** | Skip if no lockfile/manifest changes | Only meaningful when dependency files change. |
+| **Dependency Review** | Not triggered (no lockfile/manifest changes) | Only meaningful when dependency files change; scoped via workflow-level `paths:`, not a `changes` output. |
 | **Scorecard** | Not triggered on PR | Runs on push to main and weekly schedule. |
 | **Trivy** (in CI `security` job) | no-op on docs-only | Filesystem vulnerability scan is code-focused. |
+| **SonarQube Cloud** | Runs (Automatic Analysis, not workflow-gated) | Not a required check; see below for scope. |
+
+### Dependency Graph and Renovate
+
+GitHub's Dependency Graph (`vulnerability-alerts` API) is **enabled** on this
+repository. It must be enabled for the Dependency Review action to function
+at all — without it, Dependency Review fails on every PR regardless of path
+filtering, with the error "Dependency review is not supported on this
+repository."
+
+`renovate.json` already exists at the repo root and is well-configured
+(`config:best-practices`, `security:openssf-scorecard`, `pinDigests` for
+GitHub Actions and Docker, `vulnerabilityAlerts` + `osvVulnerabilityAlerts`).
+It currently has no effect because the Mend Renovate GitHub App is not
+installed on this repository/org — installing the app is the only remaining
+step to activate it; `dependabot.yml` is intentionally left disabled in favor
+of it.
+
+### SonarQube Cloud scope
+
+This project has no Sonar CI workflow — it runs under SonarQube Cloud's
+**Automatic Analysis** mode, which reads `.sonarcloud.properties` from the
+default branch (a different file from the `sonar-project.properties` format
+used by CI-based scans; if both existed, Automatic Analysis would ignore its
+own settings and fall back to the properties file, so only one may be
+present). `.sonarcloud.properties` sets `sonar.tests` to classify `tests/`,
+`packages/protocol-schemas/test/`, and `packages/kicad-fixtures/test/` as
+test code. This only affects path classification — it does not exclude any
+file from analysis, and it does not change rule severities or Quality
+Profiles (those require SonarQube Cloud UI/admin access, not a repo file).
+Sonar is not a required status check, so it cannot block merges either way.
 
 ## Publish Workflows
 
@@ -115,6 +183,19 @@ All publish workflows enforce strict safety:
 | Publish MCP Registry | Dry-run validate | Wait for artifacts → publish to registry |
 | Publish Protocol Schemas | N/A | Build → attest → publish to npm |
 | GUI Release | N/A | Build Tauri → create GitHub Release |
+
+## Supply Chain — Action Pinning
+
+Every third-party action reference across `.github/workflows/` is pinned to a
+commit SHA (not a mutable tag like `@v4` or `@main`). This is verified by:
+
+```
+grep -rnE "uses:.*@(v[0-9]|main|master)" .github/workflows/ | grep -vE "@[0-9a-f]{40}"
+```
+
+returning no output. When bumping a pinned action, resolve the new tag to its
+commit SHA and reuse the same SHA across every workflow that references that
+action, to keep pins consistent repo-wide.
 
 ## Rollback
 
