@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.22.2](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.22.1...mcp-server-v3.22.2) (2026-07-08)
+
+
+### Bug Fixes
+
+* support label justify to fix hierarchical/global icon overlap ([#375](https://github.com/oaslananka/kicad-mcp/issues/375)) ([1dfea9e](https://github.com/oaslananka/kicad-mcp/commit/1dfea9ed3c4d2565a2a52ecced25cd69fe5e4c88))
+
 ## [3.22.1](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.22.0...mcp-server-v3.22.1) (2026-07-08)
 
 
