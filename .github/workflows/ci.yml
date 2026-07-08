@@ -92,6 +92,7 @@ jobs:
                 "${{ steps.filter.outputs.npm }}" == 'false' && \
                 "${{ steps.filter.outputs.schemas }}" == 'false' && \
                 "${{ steps.filter.outputs.workflows }}" == 'false' && \
+                "${{ steps.filter.outputs.dependencies }}" == 'false' && \
                 "${{ steps.filter.outputs.docs }}" == 'true' ]]; then
             echo 'docs_only=true' >> "$GITHUB_OUTPUT"
           else
