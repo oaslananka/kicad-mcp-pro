@@ -20,7 +20,7 @@ The safe default is artifact-based feedback. The tool should prefer rendered PNG
 
 The MCP process cannot reliably prove that a human has no unsaved KiCad GUI edits. For that reason, GUI refresh behavior must remain explicit and operator-approved. Agents must not treat a rendered PNG as proof that the KiCad GUI has refreshed its open editor tab.
 
-`reload=true` is a best-effort GUI-facing request, not a guarantee that KiCad will reload the already-open schematic document from disk. KiCad `View -> Refresh` may redraw the viewport without re-reading the schematic file. Agent workflows must therefore treat `render`, `render_artifacts`, and the live-preview manifest as the authoritative review evidence.
+`reload=true` is a best-effort GUI-facing request, not a guarantee that KiCad will reload the already-open schematic document from disk. KiCad `View -> Refresh` may redraw the viewport without re-reading the schematic file. In KiCad 10, the schematic editor does not expose a confirmed silent `RevertDocument` IPC path equivalent to PCB, so live-preview responses distinguish `reload_attempted` from `reload_confirmed`. Track the upstream blocker at <https://gitlab.com/kicad/code/kicad/-/work_items/24803>. Agent workflows must therefore treat `render`, `render_artifacts`, and the live-preview manifest as the authoritative review evidence.
 
 ## Recommended agent sequence
 
@@ -40,7 +40,7 @@ The MCP process cannot reliably prove that a human has no unsaved KiCad GUI edit
 - `sch_render_png()` renders one selected schematic sheet to a PNG artifact.
 - `sch_render_visual_diff()` compares schematic visual state before and after changes.
 - `sch_visual_qa()` checks visual readability and schematic presentation defects.
-- `sch_reload()` is a separate GUI-facing operation and should be treated as best-effort. It should not be used blindly in automated flows.
+- `sch_reload()` is a separate GUI-facing operation and should be treated as best-effort. It means a reload was requested, not that the GUI document was confirmed to have reloaded from disk. It should not be used blindly in automated flows.
 
 ## Child sheets
 
@@ -69,7 +69,11 @@ Agent code should read structured fields instead of parsing human-readable messa
 - `signature`: per-file size, mtime, and digest evidence;
 - `render`: generated image artifact metadata when rendering succeeds or fails;
 - `render_artifacts`: PNG, SVG, and manifest evidence artifacts associated with the preview;
-- `manifest_path`: durable JSON manifest path when manifest persistence succeeds.
+- `manifest_path`: durable JSON manifest path when manifest persistence succeeds;
+- `reload_attempted`: whether a GUI-facing reload request was sent;
+- `reload_confirmed`: whether the workflow can prove the GUI document reloaded from disk. This is normally `false` for schematic reload requests on KiCad 10;
+- `reload_outcome`: `requested` for best-effort GUI reload requests, not a confirmation of disk reload;
+- `upstream_blockers`: upstream KiCad issues that limit stronger GUI reload guarantees.
 
 Agents should ignore unknown fields for forward compatibility.
 

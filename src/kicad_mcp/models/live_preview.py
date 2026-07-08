@@ -26,12 +26,24 @@ LivePreviewOutcome = Literal[
     "pending",
     "changed",
     "rendered",
+    "reload_requested",
     "reloaded",
     "error",
     "fallback",
 ]
 ArtifactKind = Literal["png", "svg", "json", "junit", "environment"]
 RenderStatus = Literal["ok", "failed", "empty_sheet", "skipped"]
+
+SCHEMATIC_GUI_RELOAD_BEST_EFFORT_WARNING = (
+    "KiCad schematic GUI reload is best-effort only; treat rendered artifacts "
+    "and the manifest as authoritative review evidence."
+)
+SCHEMATIC_GUI_RELOAD_UNCONFIRMED_WARNING = (
+    "Schematic GUI disk reload was requested but not confirmed. KiCad 10 does "
+    "not expose a confirmed silent schematic RevertDocument IPC path equivalent "
+    "to PCB."
+)
+SCHEMATIC_GUI_RELOAD_UPSTREAM_BLOCKER_URL = "https://gitlab.com/kicad/code/kicad/-/work_items/24803"
 
 
 class LivePreviewArtifact(BaseModel):
@@ -129,6 +141,13 @@ class LivePreviewPayload(BaseModel):
     debounce_ms: int = Field(default=750, ge=0, le=60_000)
     reload_attempted: bool = False
     reload_outcome: str = "skipped"
+    reload_confirmed: bool = False
+    reload_mode: Literal[
+        "skipped",
+        "best_effort_gui_request",
+        "confirmed_gui_reload",
+    ] = "skipped"
+    upstream_blockers: list[str] = Field(default_factory=list)
     render_artifacts: list[LivePreviewArtifact] = Field(default_factory=list)
     unsafe_state: dict[str, Any] = Field(default_factory=dict)
     next_actions: list[str] = Field(default_factory=list)
@@ -150,12 +169,13 @@ class LivePreviewPayload(BaseModel):
         watch_files = [str(item) for item in payload.get("watch_files", [])]
         render_payload = payload.get("render") or {}
         render_status = str(render_payload.get("status", "skipped"))
+        reload_confirmed = bool(payload.get("reload_confirmed", False))
         if status == "pending_debounce":
             outcome: LivePreviewOutcome = "pending"
         elif render_status == "ok" or status.endswith("_rendered"):
             outcome = "rendered"
         elif status.endswith("_reloaded"):
-            outcome = "reloaded"
+            outcome = "reloaded" if reload_confirmed else "reload_requested"
         elif render_status == "failed" or status == "error":
             outcome = "error"
         elif status == "fallback":
@@ -182,12 +202,24 @@ class LivePreviewPayload(BaseModel):
         )
         reload_result = payload.get("reload_result")
         reload_attempted = bool(payload.get("reload_attempted") or reload_result)
-        if reload_attempted and reload_result:
-            reload_outcome = str(payload.get("reload_outcome") or "ok")
-        elif reload_attempted:
-            reload_outcome = str(payload.get("reload_outcome") or "attempted")
+        if reload_attempted and not reload_confirmed:
+            # A successful IPC send means the GUI-facing request was attempted; it
+            # does not prove that the open Eeschema document reloaded from disk.
+            reload_outcome = "requested"
+        elif reload_attempted and reload_confirmed:
+            reload_outcome = "confirmed"
         else:
             reload_outcome = str(payload.get("reload_outcome") or "skipped")
+        reload_mode = (
+            "confirmed_gui_reload"
+            if reload_confirmed
+            else "best_effort_gui_request"
+            if reload_attempted
+            else "skipped"
+        )
+        upstream_blockers = [str(item) for item in payload.get("upstream_blockers", [])]
+        if reload_attempted and not reload_confirmed:
+            upstream_blockers.append(SCHEMATIC_GUI_RELOAD_UPSTREAM_BLOCKER_URL)
         render_artifacts: list[LivePreviewArtifact] = []
         if render.png_path:
             render_artifacts.append(
@@ -208,8 +240,12 @@ class LivePreviewPayload(BaseModel):
                 )
             )
         warnings = [str(item) for item in payload.get("warnings", [])]
+        if reload_attempted and not reload_confirmed:
+            warnings.append(SCHEMATIC_GUI_RELOAD_BEST_EFFORT_WARNING)
+            warnings.append(SCHEMATIC_GUI_RELOAD_UNCONFIRMED_WARNING)
         if reload_attempted and not payload.get("dirty_state_verified", False):
             warnings.append("GUI dirty state could not be verified before reload request.")
+        warnings = list(dict.fromkeys(warnings))
         unsafe_state = dict(payload.get("unsafe_state") or {})
         dirty_state_verified = bool(payload.get("dirty_state_verified", False))
         unsafe_state.setdefault("dirty_state_verified", dirty_state_verified)
@@ -219,6 +255,12 @@ class LivePreviewPayload(BaseModel):
         elif outcome == "rendered":
             next_actions = [
                 "Inspect render_artifacts before continuing.",
+                "Run ERC/DRC checks after schematic changes.",
+            ]
+        elif outcome == "reload_requested":
+            next_actions = [
+                "Inspect render_artifacts when available before continuing.",
+                "Do not assume the KiCad GUI document reloaded from disk.",
                 "Run ERC/DRC checks after schematic changes.",
             ]
         elif outcome == "reloaded":
@@ -250,6 +292,9 @@ class LivePreviewPayload(BaseModel):
             debounce_ms=debounce_ms,
             reload_attempted=reload_attempted,
             reload_outcome=reload_outcome,
+            reload_confirmed=reload_confirmed,
+            reload_mode=reload_mode,
+            upstream_blockers=upstream_blockers,
             render_artifacts=render_artifacts,
             unsafe_state=unsafe_state,
             next_actions=next_actions,
@@ -258,6 +303,11 @@ class LivePreviewPayload(BaseModel):
             signature=dict(payload.get("signature") or {}),
             debounce=debounce,
             render=render,
+            safety=LivePreviewSafety(
+                dirty_state_verified=dirty_state_verified,
+                status=reload_mode if reload_attempted else "safe_artifact_preview",
+                warnings=warnings,
+            ),
             message=payload.get("message"),
         )
         return _persist_manifest_artifact(normalized) if render_artifacts else normalized
