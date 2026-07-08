@@ -2623,6 +2623,11 @@ def dashboard(
     open_browser: bool = typer.Option(
         False, "--open", "-o", help=option_help("Open the dashboard in the default browser.")
     ),
+    operating_mode: str | None = typer.Option(
+        None,
+        "--mode",
+        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
+    ),
 ) -> None:
     """Start the server with the web dashboard enabled."""
     if not HAS_WEB:
@@ -2659,7 +2664,9 @@ def dashboard(
     from .config import reset_config
 
     reset_config()
-    _run_server_from_options(transport="streamable-http", host=host, port=port)
+    _run_server_from_options(
+        transport="streamable-http", host=host, port=port, operating_mode=operating_mode
+    )
 
 
 @app.command()
