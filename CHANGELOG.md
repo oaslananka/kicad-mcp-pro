@@ -10,6 +10,32 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.21.0](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.20.0...mcp-server-v3.21.0) (2026-07-08)
+
+
+### Features
+
+* add preview contract models ([#327](https://github.com/oaslananka/kicad-mcp/issues/327)) ([fee308b](https://github.com/oaslananka/kicad-mcp/commit/fee308b3463e08f9ece10678c273539eb037485c))
+* persist live preview manifest artifacts ([#347](https://github.com/oaslananka/kicad-mcp/issues/347)) ([e6c9f1a](https://github.com/oaslananka/kicad-mcp/commit/e6c9f1adaf862635b5ad3f9d2ddc4c39115a409d))
+* wire live preview contract responses ([#346](https://github.com/oaslananka/kicad-mcp/issues/346)) ([24068dd](https://github.com/oaslananka/kicad-mcp/commit/24068dd8a81c26405aeef356be3fbb5ea33dab5b))
+
+
+### Bug Fixes
+
+* clarify live preview reload request contract ([#353](https://github.com/oaslananka/kicad-mcp/issues/353)) ([929d4d4](https://github.com/oaslananka/kicad-mcp/commit/929d4d4c3d9104863eceba0b885b469ad9dc9b79))
+
+
+### Documentation
+
+* add agent quickstart matrix ([#338](https://github.com/oaslananka/kicad-mcp/issues/338)) ([cbcd31c](https://github.com/oaslananka/kicad-mcp/commit/cbcd31cf93c9206290abaed2e394bf81801635cf))
+* add agent tool workflow index ([#345](https://github.com/oaslananka/kicad-mcp/issues/345)) ([3a2896b](https://github.com/oaslananka/kicad-mcp/commit/3a2896b4188a4d8767d2dc160356cd5b8f0c0fd1))
+* add claude desktop troubleshooting examples ([#343](https://github.com/oaslananka/kicad-mcp/issues/343)) ([9550c0f](https://github.com/oaslananka/kicad-mcp/commit/9550c0fd22710ee19e153dc6c425ef2c155e5cab))
+* add llms ai discovery file ([#329](https://github.com/oaslananka/kicad-mcp/issues/329)) ([26cd7fc](https://github.com/oaslananka/kicad-mcp/commit/26cd7fc7ad351e09a421dbcbb2d76b0e496cd077))
+* add mcp registry status page ([#331](https://github.com/oaslananka/kicad-mcp/issues/331)) ([1792158](https://github.com/oaslananka/kicad-mcp/commit/1792158b127c32906496e0414be47da239812ff3))
+* add safe live preview workflow guidance ([#322](https://github.com/oaslananka/kicad-mcp/issues/322)) ([55c40e2](https://github.com/oaslananka/kicad-mcp/commit/55c40e2a49ec13414f361da177e2949b91b0b514))
+* clarify live preview GUI refresh semantics ([#352](https://github.com/oaslananka/kicad-mcp/issues/352)) ([9846190](https://github.com/oaslananka/kicad-mcp/commit/984619065c3f48a62ab3c237cd423ef29bff97ff))
+* define live preview UX and stability contract ([#324](https://github.com/oaslananka/kicad-mcp/issues/324)) ([0a4b8a6](https://github.com/oaslananka/kicad-mcp/commit/0a4b8a61b817b50122b88e5d48d8669efa46d841))
+
 ## [3.20.0](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.19.1...mcp-server-v3.20.0) (2026-07-07)
 
 

@@ -22,12 +22,14 @@ The docs are ordered from first setup to operations and maintenance.
 - [Configuration](configuration.md)
 - [Troubleshooting](troubleshooting.md)
 - [FAQ](faq.md)
+- [Glossary](glossary.md)
 - [Comparison](comparison.md)
 - [AI Discovery](llms.txt)
 
 ### Reference and status
 
 - [Tools Reference](tools-reference.md)
+- [Agent-friendly Tool Workflow Index](tools-agent-workflow.md)
 - [API Stability](api-stability.md)
 - [Maintenance Policy](maintenance-policy.md)
 - [Capability Verification Levels](status/capability-levels.md)
