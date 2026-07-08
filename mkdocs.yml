@@ -56,6 +56,7 @@ nav:
   - Reference and Status:
       - Diataxis Reference: reference/index.md
       - Tools Reference: tools-reference.md
+      - Agent Tool Workflow Index: tools-agent-workflow.md
       - Generated Tools Reference: tools-reference.generated.md
       - Error Catalog: errors.md
       - MCP Reference:
@@ -85,6 +86,7 @@ nav:
       - Agent Guides:
           - Overview: agents/index.md
           - Install: agents/install.md
+          - Quickstart Matrix: agents/quickstart.md
           - Compatibility: agents/compatibility.md
           - Security: agents/security.md
           - Toolsets: agents/toolsets.md
@@ -115,6 +117,7 @@ nav:
       - KiCad 10.0.4 Gap Audit: development/kicad-10-0-4-gap-audit.md
   - Workflows:
       - First PCB: workflows/first-pcb.md
+      - Read-only Agent Review: workflows/read-only-agent-review.md
       - Schematic to PCB: workflows/schematic-to-pcb.md
       - Professional Circuit Design: workflows/professional-circuit-design.md
       - High-Speed Review: workflows/high-speed-review.md
