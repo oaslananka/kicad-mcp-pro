@@ -4,7 +4,7 @@ This workflow describes how agents and operators should use `sch_live_preview()`
 
 ## Purpose
 
-`sch_live_preview()` is a polling workflow for schematic feedback. It records a baseline of watched schematic files, detects stable changes after a debounce window, and can generate a rendered PNG artifact for visual review.
+`sch_live_preview()` is a polling workflow for schematic feedback. It records a baseline of watched schematic files, detects stable changes after a debounce window, and can generate rendered PNG/SVG artifacts plus a manifest for visual review.
 
 Use it when an agent needs a closed feedback loop after schematic mutations:
 
@@ -16,9 +16,11 @@ Use it when an agent needs a closed feedback loop after schematic mutations:
 
 ## Safety model
 
-The safe default is artifact-based feedback. The tool should prefer rendered PNG evidence over any operation that forces the KiCad GUI to refresh the user-visible sheet.
+The safe default is artifact-based feedback. The tool should prefer rendered PNG/SVG/manifest evidence over any operation that asks the KiCad GUI to refresh the user-visible sheet.
 
 The MCP process cannot reliably prove that a human has no unsaved KiCad GUI edits. For that reason, GUI refresh behavior must remain explicit and operator-approved. Agents must not treat a rendered PNG as proof that the KiCad GUI has refreshed its open editor tab.
+
+`reload=true` is a best-effort GUI-facing request, not a guarantee that KiCad will reload the already-open schematic document from disk. KiCad `View -> Refresh` may redraw the viewport without re-reading the schematic file. Agent workflows must therefore treat `render`, `render_artifacts`, and the live-preview manifest as the authoritative review evidence.
 
 ## Recommended agent sequence
 
@@ -38,7 +40,7 @@ The MCP process cannot reliably prove that a human has no unsaved KiCad GUI edit
 - `sch_render_png()` renders one selected schematic sheet to a PNG artifact.
 - `sch_render_visual_diff()` compares schematic visual state before and after changes.
 - `sch_visual_qa()` checks visual readability and schematic presentation defects.
-- `sch_reload()` is a separate GUI-facing operation and should not be used blindly in automated flows.
+- `sch_reload()` is a separate GUI-facing operation and should be treated as best-effort. It should not be used blindly in automated flows.
 
 ## Child sheets
 
@@ -65,14 +67,16 @@ Agent code should read structured fields instead of parsing human-readable messa
 - `watch_files`: files included in the signature;
 - `changed_files`: files that changed since the previous accepted baseline;
 - `signature`: per-file size, mtime, and digest evidence;
-- `render`: generated image artifact metadata when rendering succeeds or fails.
+- `render`: generated image artifact metadata when rendering succeeds or fails;
+- `render_artifacts`: PNG, SVG, and manifest evidence artifacts associated with the preview;
+- `manifest_path`: durable JSON manifest path when manifest persistence succeeds.
 
-Future hardening work may add richer schema fields for debounce state, safety state, and manifest evidence. Agents should ignore unknown fields for forward compatibility.
+Agents should ignore unknown fields for forward compatibility.
 
 ## Troubleshooting
 
 If no preview appears, first check whether the response is `initialized` or `pending_debounce`. These are normal states. Call again after a schematic mutation or after the debounce window.
 
-If rendering fails, run `sch_render_png()` directly for the selected sheet and inspect the returned diagnostic message.
+If rendering fails, run `sch_render_png()` directly for the selected sheet and inspect the returned diagnostic message. Do not assume a GUI refresh happened just because a GUI-facing request was made.
 
 If the selected sheet is empty, the render result may report an empty-sheet state instead of emitting a misleading blank image.
