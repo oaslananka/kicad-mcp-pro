@@ -5,16 +5,34 @@ have a single, import-light source of truth for grid sizes, paper dimensions,
 auto-layout spacing, power-net naming and the public tool-name list. Keeping these
 here lets future domain submodules and the router share them without importing the
 heavy registration module. This is the first incremental slice of the #161 split;
-behaviour and values are unchanged.
+behaviour is kept centralized and safe defaults may evolve here.
 """
 
 from __future__ import annotations
+
+import os
 
 # ---------------------------------------------------------------------------
 # Grid / snap
 # ---------------------------------------------------------------------------
 
-SCHEMATIC_GRID_MM = 2.54
+DEFAULT_SCHEMATIC_GRID_MM = 1.27
+
+
+def _schematic_grid_from_env() -> float:
+    raw = os.getenv("KICAD_MCP_SCHEMATIC_GRID_MM")
+    if raw is None or raw.strip() == "":
+        return DEFAULT_SCHEMATIC_GRID_MM
+    try:
+        grid_mm = float(raw)
+    except ValueError:
+        return DEFAULT_SCHEMATIC_GRID_MM
+    if grid_mm <= 0.0 or grid_mm > 25.4:
+        return DEFAULT_SCHEMATIC_GRID_MM
+    return round(grid_mm, 4)
+
+
+SCHEMATIC_GRID_MM = _schematic_grid_from_env()
 SNAP_TOLERANCE_MM = 1e-6
 
 # ---------------------------------------------------------------------------
