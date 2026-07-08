@@ -10,6 +10,18 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.22.1](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.22.0...mcp-server-v3.22.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* honor experimental operating mode in tool status ([#370](https://github.com/oaslananka/kicad-mcp/issues/370)) ([30b0185](https://github.com/oaslananka/kicad-mcp/commit/30b01851507e1e4e3a0267c2ec09b267194e96ec))
+
+
+### Documentation
+
+* close live preview onboarding gaps ([#372](https://github.com/oaslananka/kicad-mcp/issues/372)) ([a57ce97](https://github.com/oaslananka/kicad-mcp/commit/a57ce9735d974f658fb020dd62b41c87f1169396))
+
 ## [3.22.0](https://github.com/oaslananka/kicad-mcp/compare/mcp-server-v3.21.0...mcp-server-v3.22.0) (2026-07-08)
 
 
