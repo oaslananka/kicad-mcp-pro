@@ -11,10 +11,11 @@ import sys
 import threading
 import time
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 import structlog
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from starlette.routing import Route
 
 from .. import __version__
@@ -22,8 +23,11 @@ from ..cli_init import MCP_CLIENT_CONFIGS
 from ..config import get_config, reset_config
 from ..diagnostics import build_health_report
 from ..discovery import find_kicad_version
+from ..errors import UnsafePathError
 from ..ipc.capabilities import get_ipc_capability_state
+from ..models.live_preview import LivePreviewManifest
 from ..operating_modes import active_operating_mode
+from ..path_safety import resolve_under
 from ..tools.router import available_profiles, tool_count_for_profile
 from .dashboard import DASHBOARD_HTML
 from .state import get_metrics_snapshot, get_server_handle, get_start_time
@@ -155,6 +159,7 @@ def _config_public_payload() -> dict[str, object]:
         "pcb_file": str(cfg.pcb_file) if cfg.pcb_file else "",
         "sch_file": str(cfg.sch_file) if cfg.sch_file else "",
         "log_level": safe.get("log_level", os.environ.get("KICAD_MCP_LOG_LEVEL", "INFO")),
+        "operating_mode": active_operating_mode(cfg).value,
     }
     payload.update({k: v for k, v in safe.items() if k not in payload})
     return payload
@@ -571,6 +576,57 @@ def _format_uptime(seconds: float) -> str:
     return " ".join(parts)
 
 
+_ARTIFACT_MIME_TYPES = {".svg": "image/svg+xml", ".png": "image/png"}
+
+
+def _schematic_render_dir() -> Path:
+    return get_config().ensure_output_dir("schematic-renders")
+
+
+async def api_artifacts_schematic(request: Request) -> JSONResponse:
+    """List recent schematic live-preview manifests for the dashboard Preview tab."""
+    render_dir = _schematic_render_dir()
+    entries: list[dict[str, object]] = []
+    for manifest_path in render_dir.glob("*.manifest.json"):
+        try:
+            manifest = LivePreviewManifest.model_validate_json(manifest_path.read_text())
+        except (OSError, ValueError):
+            continue
+        entries.append(
+            {
+                "session_id": manifest.session_id,
+                "target_path": manifest.target_path,
+                "sheet_path": manifest.render.sheet_path,
+                "png_path": manifest.render.png_path,
+                "svg_path": manifest.render.svg_path,
+                "timestamp": manifest_path.stat().st_mtime,
+            }
+        )
+    entries.sort(key=lambda e: e["timestamp"], reverse=True)  # type: ignore[arg-type,return-value]
+    return JSONResponse({"artifacts": entries})
+
+
+async def api_artifacts_file(request: Request) -> JSONResponse | FileResponse:
+    """Serve a single schematic render artifact (SVG/PNG) from the sandboxed render dir."""
+    raw_path = request.query_params.get("path", "")
+    if not raw_path:
+        return JSONResponse({"error": "path query parameter is required"}, status_code=400)
+    suffix = Path(raw_path).suffix.lower()
+    media_type = _ARTIFACT_MIME_TYPES.get(suffix)
+    if media_type is None:
+        return JSONResponse(
+            {"error": "Only .svg and .png artifacts can be served"}, status_code=400
+        )
+    render_dir = _schematic_render_dir()
+    try:
+        resolved = resolve_under(render_dir, raw_path, allow_absolute=True)
+    except UnsafePathError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=403)
+    if not resolved.is_file():
+        return JSONResponse({"error": "Artifact not found"}, status_code=404)
+    return FileResponse(resolved, media_type=media_type)
+
+
 # ---------------------------------------------------------------------------
 # Route definitions — list of Starlette Route objects for clean mounting
 # ---------------------------------------------------------------------------
@@ -587,6 +643,8 @@ web_routes: list[Route] = [
     Route("/api/metrics", endpoint=api_metrics, methods=["GET"]),
     Route("/api/server/{action}", endpoint=api_server_action, methods=["POST"]),
     Route("/api/logs/stream", endpoint=api_log_stream, methods=["GET"]),
+    Route("/api/artifacts/schematic", endpoint=api_artifacts_schematic, methods=["GET"]),
+    Route("/api/artifacts/file", endpoint=api_artifacts_file, methods=["GET"]),
     Route("/ui", endpoint=api_dashboard, methods=["GET"]),
     Route("/ui/", endpoint=api_dashboard, methods=["GET"]),
     Route("/api/dashboard", endpoint=api_dashboard, methods=["GET"]),

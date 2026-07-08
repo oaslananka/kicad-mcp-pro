@@ -277,6 +277,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <div class="nav-item active" data-view="dashboard">&#9664; Dashboard</div>
   <div class="nav-item" data-view="log-viewer">&#9776; Logs</div>
   <div class="nav-item" data-view="tools-catalog">&#9881; Tools</div>
+  <div class="nav-item" data-view="preview">&#128444; Preview</div>
   <div class="nav-item" data-view="settings">&#9878; Settings</div>
   <div class="nav-item" data-view="setup-wizard">&#9889; Setup</div>
   <div class="nav-sep"></div>
@@ -375,6 +376,16 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- Preview -->
+  <div class="view" id="view-preview">
+    <h2>Preview</h2>
+    <div id="preview-loading" class="loading"><div class="spinner"></div> Loading previews...</div>
+    <div id="preview-empty" class="msg info" style="display:none;">
+      No schematic renders yet — run <code>sch_live_preview</code> to generate one.
+    </div>
+    <div id="previewGrid" class="tool-grid"></div>
+  </div>
+
   <!-- Settings -->
   <div class="view" id="view-settings">
     <h2>Settings</h2>
@@ -417,6 +428,18 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
             <option value="WARNING">WARNING</option>
             <option value="ERROR">ERROR</option>
           </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="cfg-operating_mode">Operating Mode</label>
+          <select id="cfg-operating_mode" name="operating_mode">
+            <option value="readonly">readonly</option>
+            <option value="write">write</option>
+            <option value="manufacturing">manufacturing</option>
+            <option value="experimental">experimental</option>
+          </select>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Takes effect after restart.</div>
         </div>
       </div>
       <div class="actions">
@@ -527,6 +550,8 @@ function navigate(view) {
     'tools': 'tools-catalog',
     '/tools': 'tools-catalog',
     'tools-catalog': 'tools-catalog',
+    'preview': 'preview',
+    '/preview': 'preview',
     'settings': 'settings',
     '/settings': 'settings',
     'setup': 'setup-wizard',
@@ -544,6 +569,7 @@ function navigate(view) {
   if (hash === 'tools-catalog' && !document.getElementById('toolGrid').children.length) {
     loadTools();
   }
+  if (hash === 'preview') loadPreview();
   if (hash === 'settings') loadSettings();
   if (hash === 'setup-wizard') initWizard();
 }
@@ -841,6 +867,39 @@ function testSelectedTool() {
   });
 }
 
+/* ── Preview ── */
+function loadPreview() {
+  byId('preview-loading').style.display = 'block';
+  byId('preview-empty').style.display = 'none';
+  byId('previewGrid').innerHTML = '';
+  fetch('/api/artifacts/schematic').then(r => r.json()).then(d => {
+    byId('preview-loading').style.display = 'none';
+    const artifacts = d.artifacts || [];
+    if (!artifacts.length) {
+      byId('preview-empty').style.display = 'block';
+      return;
+    }
+    const grid = byId('previewGrid');
+    artifacts.forEach(a => {
+      const imgPath = a.svg_path || a.png_path;
+      if (!imgPath) return;
+      const url = '/api/artifacts/file?path=' + encodeURIComponent(imgPath);
+      const ts = a.timestamp ? new Date(a.timestamp * 1000).toLocaleString() : 'unknown time';
+      const name = a.sheet_path || a.target_path || a.session_id;
+      const card = doc('div', 'tool-card');
+      card.innerHTML =
+        '<div style="background:#fff;border-radius:4px;padding:6px;margin-bottom:8px;">' +
+        '<img src="' + esc(url) + '" alt="Schematic preview" style="width:100%;display:block;">' +
+        '</div>' +
+        '<div style="font-size:12px;font-weight:600;">' + esc(name) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-muted);">' + esc(ts) + '</div>';
+      grid.appendChild(card);
+    });
+  }).catch(() => {
+    byId('preview-loading').innerHTML = 'Failed to load previews.';
+  });
+}
+
 /* ── Settings ── */
 function loadSettings() {
   byId('settings-msg').innerHTML = '';
@@ -852,6 +911,7 @@ function loadSettings() {
     setField('cfg-port', String(cfg.port || '3334'));
     setField('cfg-profile', cfg.profile || '');
     setField('cfg-log_level', cfg.log_level || 'INFO');
+    setField('cfg-operating_mode', cfg.operating_mode || 'readonly');
   }).catch(() => {
     showMsg('settings-msg', 'Failed to load config', 'error');
   });

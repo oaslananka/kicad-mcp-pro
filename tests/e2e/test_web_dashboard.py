@@ -123,6 +123,20 @@ MOCK_CONFIG: dict[str, Any] = {
     "port": 9090,
     "profile": "default",
     "log_level": "INFO",
+    "operating_mode": "write",
+}
+
+MOCK_ARTIFACTS: dict[str, Any] = {
+    "artifacts": [
+        {
+            "session_id": "sess-1",
+            "target_path": "/project/test.kicad_sch",
+            "sheet_path": "/project/test.kicad_sch",
+            "png_path": None,
+            "svg_path": "/project/output/schematic-renders/live-preview-test.svg",
+            "timestamp": 1783527664.0,
+        }
+    ]
 }
 
 MOCK_CONFIG_EXPORT: dict[str, str] = {
@@ -220,6 +234,18 @@ def mock_api(page: Page) -> Iterator[None]:
                 content_type="application/json",
                 body=json.dumps(MOCK_TOOLS),
             )
+        elif "/api/artifacts/schematic" in url and method == "GET":
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps(MOCK_ARTIFACTS),
+            )
+        elif "/api/artifacts/file" in url and method == "GET":
+            route.fulfill(
+                status=200,
+                content_type="image/svg+xml",
+                body="<svg xmlns='http://www.w3.org/2000/svg'></svg>",
+            )
         elif "/api/config/export" in url and method == "GET":
             route.fulfill(
                 status=200,
@@ -312,7 +338,7 @@ class TestDashboardSPA:
         page.goto(dashboard_url)
         page.wait_for_selector("#navVersion")
 
-        views = ["log-viewer", "tools-catalog", "settings", "setup-wizard"]
+        views = ["log-viewer", "tools-catalog", "preview", "settings", "setup-wizard"]
         for view in views:
             page.evaluate(f'window.location.hash = "#{view}"')
             page.wait_for_selector(f"#view-{view}", timeout=3000)
@@ -505,6 +531,26 @@ class TestDashboardSPA:
         assert page.input_value("#cfg-port") == "9090"
         assert page.input_value("#cfg-profile") == "default"
         assert page.input_value("#cfg-log_level") == "INFO"
+        assert page.input_value("#cfg-operating_mode") == "write"
+
+    def test_preview_tab_shows_artifact(self, page: Page, dashboard_url: str) -> None:
+        """Preview tab lists schematic render artifacts with a timestamp."""
+        page.goto(dashboard_url)
+        page.wait_for_selector("#navVersion")
+        page.evaluate('window.location.hash = "#preview"')
+        page.wait_for_selector("#view-preview")
+
+        page.wait_for_function(
+            '() => document.getElementById("previewGrid").children.length > 0',
+            timeout=5000,
+        )
+        assert page.is_visible("#previewGrid img")
+        assert page.get_attribute("#previewGrid img", "src") == (
+            "/api/artifacts/file?path=%2Fproject%2Foutput%2Fschematic-renders%2F"
+            "live-preview-test.svg"
+        )
+        card_text = page.text_content("#previewGrid") or ""
+        assert "/project/test.kicad_sch" in card_text
 
     def test_settings_form_save(self, page: Page, dashboard_url: str) -> None:
         """Settings save triggers POST and shows success message."""

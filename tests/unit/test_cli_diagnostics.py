@@ -226,6 +226,18 @@ def test_cli_version_and_serve_help(sample_project: Path) -> None:
     assert "Start the MCP server explicitly" in serve_help.output
 
 
+def test_cli_dashboard_help_exposes_mode_option(sample_project: Path) -> None:
+    """The dashboard subcommand accepts --mode, matching serve's operating-mode option."""
+    _ = sample_project
+    runner = CliRunner()
+
+    dashboard_help = runner.invoke(app, ["dashboard", "--help"])
+
+    assert dashboard_help.exit_code == 0, dashboard_help.output
+    assert "--mode" in dashboard_help.output
+    assert "Operating mode" in dashboard_help.output
+
+
 def test_cli_tools_list_json(sample_project: Path) -> None:
     _ = sample_project
 
