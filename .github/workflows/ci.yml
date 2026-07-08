@@ -260,3 +260,51 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           version: v0.70.0
+
+  required-pr-gate:
+    name: Required PR Gate
+    needs: [changes, mcp-server, mcp-npm, protocol-schemas, security]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Evaluate required job results
+        shell: bash
+        run: |
+          set -euo pipefail
+          declare -A results=(
+            [changes]="${{ needs.changes.result }}"
+            [mcp-server]="${{ needs.mcp-server.result }}"
+            [mcp-npm]="${{ needs.mcp-npm.result }}"
+            [protocol-schemas]="${{ needs.protocol-schemas.result }}"
+            [security]="${{ needs.security.result }}"
+          )
+          docs_only="${{ needs.changes.outputs.docs_only }}"
+
+          {
+            echo '## Required PR Gate'
+            echo ''
+            echo "docs_only: **${docs_only:-n/a}**"
+            echo ''
+            echo '| Job | Result |'
+            echo '|-----|--------|'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          failed=0
+          for job in changes mcp-server mcp-npm protocol-schemas security; do
+            result="${results[$job]}"
+            echo "| $job | $result |" >> "$GITHUB_STEP_SUMMARY"
+            case "$result" in
+              failure|cancelled)
+                failed=1
+                ;;
+            esac
+          done
+
+          if [[ "$failed" -eq 1 ]]; then
+            echo '' >> "$GITHUB_STEP_SUMMARY"
+            echo '❌ One or more required jobs failed or was cancelled.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '✅ All required jobs passed or were not applicable to this event.' >> "$GITHUB_STEP_SUMMARY"
