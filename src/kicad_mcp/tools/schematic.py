@@ -1961,6 +1961,13 @@ def _schematic_live_preview_payload(
         payload["reload_result"] = reload_result
     if render_metadata:
         payload["render"] = render_metadata
+    contract = __import__(
+        "kicad_mcp.models.live_preview", fromlist=["LivePreviewPayload"]
+    ).LivePreviewPayload.from_legacy_payload(payload)  # noqa: E501
+    normalized = contract.model_dump(mode="json", exclude_none=True)  # noqa: E501
+    payload.update(normalized)
+    payload["watch_files"] = list(contract.watched_files)
+    payload["changed_files"] = list(contract.changed_files)
     return payload
 
 
@@ -5344,7 +5351,10 @@ def _reload_schematic_via_ipc() -> str:
         command = editor_commands_pb2.RevertDocument()
         command.document.CopyFrom(documents[0])
         kicad._client.send(command, type(None).__mro__[0])
-        return "The schematic was updated and KiCad was asked to reload it."
+        return (
+            "The schematic was updated and a best-effort KiCad GUI reload request was sent. "
+            "Schematic disk reload in the open GUI document is not confirmed."
+        )
     except Exception as exc:
         logger.debug("schematic_reload_failed", error=str(exc))
         return "The schematic was updated. Reload it manually in KiCad if needed."
@@ -5470,7 +5480,7 @@ def register(mcp: FastMCP) -> None:
     ) -> str:
         """Add a schematic symbol at an absolute coordinate.
 
-        Coordinates snap to the 2.54 mm schematic grid by default; set
+        Coordinates snap to the 1.27 mm / 50 mil schematic grid by default; set
         snap_to_grid=False only when an exact off-grid coordinate is intentional.
         """
         payload = AddSymbolInput(
@@ -5588,7 +5598,7 @@ def register(mcp: FastMCP) -> None:
         sheet: str | None = None,
         sheet_file: str | None = None,
     ) -> str:
-        """Add a schematic wire, snapping endpoints to the 2.54 mm grid by default."""
+        """Add a schematic wire, snapping endpoints to the 1.27 mm / 50 mil grid by default."""
         payload = AddWireInput(
             x1_mm=x1_mm,
             y1_mm=y1_mm,
@@ -5629,7 +5639,7 @@ def register(mcp: FastMCP) -> None:
         sheet: str | None = None,
         sheet_file: str | None = None,
     ) -> str:
-        """Add a schematic label, snapping its anchor to the 2.54 mm grid by default."""
+        """Add a schematic label, snapping its anchor to the 1.27 mm / 50 mil grid by default."""
         label_text = name or text
         if not label_text:
             raise ValueError("Either name or text parameter is required.")
@@ -5845,7 +5855,7 @@ def register(mcp: FastMCP) -> None:
         sheet: str | None = None,
         sheet_file: str | None = None,
     ) -> str:
-        """Add a power symbol, snapping its anchor to the 2.54 mm grid by default."""
+        """Add a power symbol, snapping its anchor to the 1.27 mm / 50 mil grid by default."""
         placed_x, placed_y = _snap_point(x_mm, y_mm, snap_to_grid)
         result = str(
             sch_add_symbol(
@@ -5876,7 +5886,7 @@ def register(mcp: FastMCP) -> None:
         sheet: str | None = None,
         sheet_file: str | None = None,
     ) -> str:
-        """Add a schematic bus, snapping endpoints to the 2.54 mm grid by default."""
+        """Add a schematic bus, snapping endpoints to the 1.27 mm / 50 mil grid by default."""
         payload = AddBusInput(
             x1_mm=x1_mm,
             y1_mm=y1_mm,
@@ -5915,7 +5925,10 @@ def register(mcp: FastMCP) -> None:
         sheet: str | None = None,
         sheet_file: str | None = None,
     ) -> str:
-        """Add a bus wire entry marker, snapping its anchor to the 2.54 mm grid by default."""
+        """Add a bus wire entry marker.
+
+        Snaps its anchor to the 1.27 mm / 50 mil grid by default.
+        """
         payload = AddBusWireEntryInput(
             x_mm=x_mm,
             y_mm=y_mm,
@@ -5943,7 +5956,7 @@ def register(mcp: FastMCP) -> None:
         sheet: str | None = None,
         sheet_file: str | None = None,
     ) -> str:
-        """Add a no-connect marker, snapping it to the 2.54 mm grid by default."""
+        """Add a no-connect marker, snapping it to the 1.27 mm / 50 mil grid by default."""
         payload = AddNoConnectInput(x_mm=x_mm, y_mm=y_mm, snap_to_grid=snap_to_grid)
         target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
         marker_x, marker_y = _snap_point(payload.x_mm, payload.y_mm, payload.snap_to_grid)
@@ -6326,7 +6339,7 @@ def register(mcp: FastMCP) -> None:
         given coordinate. Use sch_get_labels() to find exact names/positions."""
         tol = 0.05
         removed = 0
-        # sch_add_label snaps to the 2.54 mm grid by default, so a label placed at
+        # sch_add_label snaps to the schematic grid by default, so a label placed at
         # (50, 50) actually lands at (50.8, 50.8). Match against both the raw query
         # point and its grid-snapped position so the obvious add/delete round trip
         # works, while still deleting labels that were placed off-grid.
@@ -6506,7 +6519,7 @@ def register(mcp: FastMCP) -> None:
         schematic without erasing it use ``sch_add_symbol`` / ``sch_add_wire`` /
         ``sch_add_label`` instead.
 
-        Coordinates are snapped to the 2.54 mm grid by default.  When no coordinates
+        Coordinates are snapped to the 1.27 mm / 50 mil grid by default.  When no coordinates
         are provided for a symbol, set ``auto_layout=True`` so the placement engine
         assigns non-overlapping positions automatically.
 
@@ -7716,8 +7729,8 @@ def register(mcp: FastMCP) -> None:
             reload_result=reload_result,
             render_metadata=render_metadata,
             message=(
-                "KiCad reload was requested by opt-in reload=True; dirty GUI state "
-                "could not be verified."
+                "A best-effort KiCad GUI reload was requested by opt-in reload=True; "
+                "schematic disk reload in the open GUI document is not confirmed."
                 if reload
                 else "Preview refreshed without forcing a KiCad GUI reload."
             ),

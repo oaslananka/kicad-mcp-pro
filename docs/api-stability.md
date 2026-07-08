@@ -33,14 +33,18 @@ Stable for client use:
 - watched-file and changed-file evidence;
 - rendered PNG artifact evidence when rendering succeeds;
 - child-sheet inclusion as the default watch behavior;
-- artifact-first safety guidance for companion-plugin and agent flows.
+- artifact-first safety guidance for companion-plugin and agent flows;
+- the distinction between a GUI reload request and a confirmed GUI document reload.
 
 Evolving metadata:
 
 - richer manifest files;
 - additional visual-evidence artifact indexes;
 - more detailed debounce timing fields;
-- GUI-facing confirmation and session-consent metadata.
+- GUI-facing confirmation and session-consent metadata;
+- upstream KiCad issue links that explain reload limitations.
+
+For schematic GUI refresh, `reload_attempted=true` means the MCP server made a best-effort GUI-facing request. It does not imply that the already-open KiCad schematic document was confirmed to reload from disk. Clients must prefer `render_artifacts`, `manifest_path`, and structured visual evidence as authoritative review data.
 
 Clients should ignore unknown fields in live-preview responses and should not
 parse human-readable messages when a structured field is available.

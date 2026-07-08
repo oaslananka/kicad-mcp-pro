@@ -29,6 +29,7 @@ The docs are ordered from first setup to operations and maintenance.
 ### Reference and status
 
 - [Tools Reference](tools-reference.md)
+- [Agent-friendly Tool Workflow Index](tools-agent-workflow.md)
 - [API Stability](api-stability.md)
 - [Maintenance Policy](maintenance-policy.md)
 - [Capability Verification Levels](status/capability-levels.md)
