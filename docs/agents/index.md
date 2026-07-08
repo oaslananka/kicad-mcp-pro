@@ -23,6 +23,9 @@ kiCad-mcp-pro is an MCP server that exposes KiCad PCB design capabilities as too
 
 ## Quick Start
 
+For a client-by-client copy-paste setup overview, see the [Quickstart Matrix](quickstart.md).
+
+
 ```bash
 # Install
 pipx install kicad-mcp-pro

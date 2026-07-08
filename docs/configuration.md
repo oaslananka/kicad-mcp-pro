@@ -77,6 +77,19 @@ interop aliases for launchers and editors:
 Diagnostics only report whether tokens are configured. Token values are never
 printed.
 
+
+## Schematic Grid Defaults
+
+Schematic write tools keep snapping enabled by default and use a 1.27 mm / 50 mil grid. This matches common KiCad library symbols, including `Device:R`, whose pins may not land cleanly on a 2.54 mm / 100 mil grid when the symbol body is centered. Agents should prefer the default snapped behavior instead of disabling snap globally.
+
+Set `KICAD_MCP_SCHEMATIC_GRID_MM` before server startup to override the schematic snap grid for a project or launcher:
+
+```bash
+KICAD_MCP_SCHEMATIC_GRID_MM=1.27
+```
+
+Invalid, zero, negative, or unreasonably large values fall back to the built-in 1.27 mm default. PCB placement grid defaults are independent and are not changed by this setting.
+
 ## KiCad IPC Capability Discovery
 
 `kicad_get_server_info` reports the live IPC state that MCP clients use to gate

@@ -14,38 +14,160 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    outputs:
+      docs: ${{ steps.filter.outputs.docs }}
+      docs_only: ${{ steps.check.outputs.docs_only }}
+      python: ${{ steps.filter.outputs.python }}
+      npm: ${{ steps.filter.outputs.npm }}
+      schemas: ${{ steps.filter.outputs.schemas }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+      dependencies: ${{ steps.filter.outputs.dependencies }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36
+        id: filter
+        with:
+          filters: |
+            python:
+              - 'src/**'
+              - 'tests/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'uv.toml'
+              - 'scripts/**'
+              - 'conftest.py'
+              - 'pyrightconfig.json'
+              - '.python-version'
+              - 'performance/**'
+              - 'evals/**'
+            npm:
+              - 'packages/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.node-version'
+              - '.npmrc'
+              - 'commitlint.config.cjs'
+              - '.commitlintrc.json'
+            schemas:
+              - 'packages/protocol-schemas/**'
+            workflows:
+              - '.github/workflows/**'
+              - '.github/actions/**'
+            dependencies:
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'Dockerfile'
+              - 'renovate.json'
+            docs:
+              - 'docs/**'
+              - 'README.md'
+              - 'CONTRIBUTING.md'
+              - 'CHANGELOG.md'
+              - 'CODE_OF_CONDUCT.md'
+              - 'GOVERNANCE.md'
+              - 'MAINTAINERS.md'
+              - 'ROADMAP.md'
+              - 'SECURITY.md'
+              - 'SUPPORT.md'
+              - 'ARCHITECTURE.md'
+              - 'CITATION.cff'
+              - 'LICENSE'
+              - 'mkdocs.yml'
+              - 'assets/**'
+      - name: Compute docs_only flag
+        id: check
+        shell: bash
+        run: |
+          if [[ "${{ steps.filter.outputs.python }}" == 'false' && \
+                "${{ steps.filter.outputs.npm }}" == 'false' && \
+                "${{ steps.filter.outputs.schemas }}" == 'false' && \
+                "${{ steps.filter.outputs.workflows }}" == 'false' && \
+                "${{ steps.filter.outputs.dependencies }}" == 'false' && \
+                "${{ steps.filter.outputs.docs }}" == 'true' ]]; then
+            echo 'docs_only=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'docs_only=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Summarize detected changes
+        run: |
+          echo '## Change Detection Summary' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '| Category | Changed |' >> "$GITHUB_STEP_SUMMARY"
+          echo '|----------|---------|' >> "$GITHUB_STEP_SUMMARY"
+          echo '| python | ${{ steps.filter.outputs.python }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| npm | ${{ steps.filter.outputs.npm }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| schemas | ${{ steps.filter.outputs.schemas }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| workflows | ${{ steps.filter.outputs.workflows }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| dependencies | ${{ steps.filter.outputs.dependencies }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| docs | ${{ steps.filter.outputs.docs }} |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| **docs_only** | **${{ steps.check.outputs.docs_only }}** |' >> "$GITHUB_STEP_SUMMARY"
+
   mcp-server:
-    if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
+    needs: [changes]
+    if: >-
+      always() &&
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-2025, macos-15]
     steps:
+      - name: Skip heavy CI for docs-only PR
+        if: needs.changes.outputs.docs_only == 'true'
+        run: |
+          echo "::notice::Skipping mcp-server CI — docs-only PR detected"
+          echo "skip_ci=true" >> "$GITHUB_ENV"
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        if: env.skip_ci != 'true'
         with:
           persist-credentials: false
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        if: env.skip_ci != 'true'
         with:
           node-version-file: .node-version
           package-manager-cache: false
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        if: env.skip_ci != 'true'
         with:
           enable-cache: true
           version-file: uv.toml
       - run: corepack enable
+        if: env.skip_ci != 'true'
       - run: corepack pnpm install --frozen-lockfile
+        if: env.skip_ci != 'true'
       - run: uv sync --all-extras --frozen
+        if: env.skip_ci != 'true'
       - run: corepack pnpm run format:check
+        if: env.skip_ci != 'true'
       - run: corepack pnpm run lint
+        if: env.skip_ci != 'true'
       - run: corepack pnpm run typecheck
+        if: env.skip_ci != 'true'
       - run: corepack pnpm run test:unit
+        if: env.skip_ci != 'true'
       - run: corepack pnpm run metadata:check
+        if: env.skip_ci != 'true'
       - run: corepack pnpm run mcp:manifest:check
+        if: env.skip_ci != 'true'
       - run: corepack pnpm run package:check
+        if: env.skip_ci != 'true'
 
   mcp-npm:
-    if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
+    needs: [changes]
+    if: >-
+      always() &&
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -55,46 +177,82 @@ jobs:
       run:
         working-directory: packages/mcp-npm
     steps:
+      - name: Skip heavy CI for docs-only PR
+        if: needs.changes.outputs.docs_only == 'true'
+        run: |
+          echo "::notice::Skipping mcp-npm CI — docs-only PR detected"
+          echo "skip_ci=true" >> "$GITHUB_ENV"
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        if: env.skip_ci != 'true'
         with:
           persist-credentials: false
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        if: env.skip_ci != 'true'
         with:
           node-version-file: .node-version
           package-manager-cache: false
       - run: npm ci --ignore-scripts=false
+        if: env.skip_ci != 'true'
       - run: npm pack --dry-run
+        if: env.skip_ci != 'true'
       - run: npm run build
+        if: env.skip_ci != 'true'
 
   protocol-schemas:
-    if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
+    needs: [changes]
+    if: >-
+      always() &&
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops')
     runs-on: ubuntu-24.04
     steps:
+      - name: Skip heavy CI for docs-only PR
+        if: needs.changes.outputs.docs_only == 'true'
+        run: |
+          echo "::notice::Skipping protocol-schemas CI — docs-only PR detected"
+          echo "skip_ci=true" >> "$GITHUB_ENV"
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        if: env.skip_ci != 'true'
         with:
           persist-credentials: false
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        if: env.skip_ci != 'true'
         with:
           node-version-file: .node-version
           package-manager-cache: false
       - run: corepack enable
+        if: env.skip_ci != 'true'
       - run: corepack pnpm install --frozen-lockfile
+        if: env.skip_ci != 'true'
       - run: corepack pnpm --filter @oaslananka/kicad-protocol-schemas run format:check
+        if: env.skip_ci != 'true'
       - run: corepack pnpm --filter @oaslananka/kicad-protocol-schemas run lint
+        if: env.skip_ci != 'true'
       - run: corepack pnpm --filter @oaslananka/kicad-protocol-schemas run typecheck
+        if: env.skip_ci != 'true'
       - run: corepack pnpm --filter @oaslananka/kicad-protocol-schemas run test
+        if: env.skip_ci != 'true'
 
   security:
-    if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
+    needs: [changes]
+    if: >-
+      always() &&
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write
     steps:
+      - name: Skip Trivy scan for docs-only PR
+        if: needs.changes.outputs.docs_only == 'true'
+        run: |
+          echo "::notice::Skipping Trivy filesystem scan — docs-only PR detected"
+          echo "skip_ci=true" >> "$GITHUB_ENV"
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        if: env.skip_ci != 'true'
         with:
           persist-credentials: false
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        if: env.skip_ci != 'true'
         with:
           scan-type: fs
           scan-ref: .
@@ -102,3 +260,51 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           version: v0.70.0
+
+  required-pr-gate:
+    name: Required PR Gate
+    needs: [changes, mcp-server, mcp-npm, protocol-schemas, security]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Evaluate required job results
+        shell: bash
+        run: |
+          set -euo pipefail
+          declare -A results=(
+            [changes]="${{ needs.changes.result }}"
+            [mcp-server]="${{ needs.mcp-server.result }}"
+            [mcp-npm]="${{ needs.mcp-npm.result }}"
+            [protocol-schemas]="${{ needs.protocol-schemas.result }}"
+            [security]="${{ needs.security.result }}"
+          )
+          docs_only="${{ needs.changes.outputs.docs_only }}"
+
+          {
+            echo '## Required PR Gate'
+            echo ''
+            echo "docs_only: **${docs_only:-n/a}**"
+            echo ''
+            echo '| Job | Result |'
+            echo '|-----|--------|'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          failed=0
+          for job in changes mcp-server mcp-npm protocol-schemas security; do
+            result="${results[$job]}"
+            echo "| $job | $result |" >> "$GITHUB_STEP_SUMMARY"
+            case "$result" in
+              failure|cancelled)
+                failed=1
+                ;;
+            esac
+          done
+
+          if [[ "$failed" -eq 1 ]]; then
+            echo '' >> "$GITHUB_STEP_SUMMARY"
+            echo '❌ One or more required jobs failed or was cancelled.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '✅ All required jobs passed or were not applicable to this event.' >> "$GITHUB_STEP_SUMMARY"
