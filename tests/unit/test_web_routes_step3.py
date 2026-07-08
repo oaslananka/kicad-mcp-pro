@@ -317,6 +317,22 @@ class TestAPIConfig:
         assert isinstance(data["config"], dict)
 
     @pytest.mark.anyio
+    async def test_config_get_includes_operating_mode(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """GET /api/config exposes the active operating mode for the dashboard dropdown."""
+        from kicad_mcp.config import reset_config
+        from kicad_mcp.web.routes import api_config_get
+
+        monkeypatch.setenv("KICAD_MCP_OPERATING_MODE", "write")
+        reset_config()
+        request = MagicMock()
+        response = await api_config_get(request)
+        data = json.loads(response.body)
+        assert data["config"]["operating_mode"] == "write"
+        assert data["operating_mode"] == "write"
+
+    @pytest.mark.anyio
     async def test_config_post_no_body(self) -> None:
         """Returns 400 for non-JSON body."""
         from kicad_mcp.web.routes import api_config_post
