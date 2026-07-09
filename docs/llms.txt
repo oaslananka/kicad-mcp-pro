@@ -4,21 +4,21 @@
 
 ## Canonical links
 
-- GitHub: https://github.com/oaslananka/kicad-mcp
-- Documentation: https://oaslananka.github.io/kicad-mcp/
+- GitHub: https://github.com/oaslananka/kicad-mcp-pro
+- Documentation: https://oaslananka.github.io/kicad-mcp-pro/
 - PyPI: https://pypi.org/project/kicad-mcp-pro/
 - npm: https://www.npmjs.com/package/kicad-mcp-pro
 - MCP Registry name: io.github.oaslananka/kicad-mcp-pro
 
 ## Core docs
 
-- Installation: https://oaslananka.github.io/kicad-mcp/installation/
-- Client configuration: https://oaslananka.github.io/kicad-mcp/client-configuration/
-- Tool reference: https://oaslananka.github.io/kicad-mcp/tools-reference/
-- AI agent setup: https://oaslananka.github.io/kicad-mcp/agents/
-- API stability: https://oaslananka.github.io/kicad-mcp/api-stability/
-- Security and privacy: https://oaslananka.github.io/kicad-mcp/security/threat-model/
-- Safe live-preview workflow: https://oaslananka.github.io/kicad-mcp/workflows/live-preview/
+- Installation: https://oaslananka.github.io/kicad-mcp-pro/installation/
+- Client configuration: https://oaslananka.github.io/kicad-mcp-pro/client-configuration/
+- Tool reference: https://oaslananka.github.io/kicad-mcp-pro/tools-reference/
+- AI agent setup: https://oaslananka.github.io/kicad-mcp-pro/agents/
+- API stability: https://oaslananka.github.io/kicad-mcp-pro/api-stability/
+- Security and privacy: https://oaslananka.github.io/kicad-mcp-pro/security/threat-model/
+- Safe live-preview workflow: https://oaslananka.github.io/kicad-mcp-pro/workflows/live-preview/
 
 ## Scope and safety
 

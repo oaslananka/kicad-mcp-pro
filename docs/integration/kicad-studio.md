@@ -93,4 +93,4 @@ is intentionally disabled by default; clients that still require
 - `kicad://studio/context` is the resource that agents can read directly.
 - `KICAD_MCP_STUDIO_WATCH_DIR` watches for `.kicad_pro` updates and auto-selects the active project.
 - `KICAD_MCP_WORKSPACE_ROOT` constrains project artifact reads and writes for safe extension-driven operation.
-- The manufacturing release help link used by KiCad Studio is `https://oaslananka.github.io/kicad-mcp/mcp/workflows/manufacturing-export/`; the canonical repository publishes that path through the docs workflow.
+- The manufacturing release help link used by KiCad Studio is `https://oaslananka.github.io/kicad-mcp-pro/mcp/workflows/manufacturing-export/`; the canonical repository publishes that path through the docs workflow.

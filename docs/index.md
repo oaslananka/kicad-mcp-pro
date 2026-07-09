@@ -6,7 +6,7 @@ KiCad MCP Pro is a project-aware Model Context Protocol server for KiCad PCB and
 
 | Field | Value |
 | --- | --- |
-| Canonical repository | [`oaslananka/kicad-mcp`](https://github.com/oaslananka/kicad-mcp) |
+| Canonical repository | [`oaslananka/kicad-mcp-pro`](https://github.com/oaslananka/kicad-mcp-pro) |
 | PyPI package | `kicad-mcp-pro` |
 | npm wrapper | `kicad-mcp-pro` |
 | MCP Registry name | `io.github.oaslananka/kicad-mcp-pro` |

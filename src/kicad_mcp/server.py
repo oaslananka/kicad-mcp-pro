@@ -395,7 +395,7 @@ def _tool_error_hint(message: str) -> str:
     if "no pcb file" in lowered or "no schematic file" in lowered:
         return (
             "Call kicad_set_project() or set the relevant KICAD_MCP_*_FILE variable. "
-            "Example: kicad-mcp setup claude-code --write"
+            "Example: kicad-mcp-pro setup claude-code --write"
         )
     if "kicad-cli" in lowered:
         return (
@@ -1642,7 +1642,7 @@ def build_server(profile: str | None = None, *, defer_registration: bool = False
             "validation, and manufacturing export. Start with kicad_get_version(), "
             "kicad_set_project(), and project_get_design_spec()."
         ),
-        website_url="https://oaslananka.github.io/kicad-mcp",
+        website_url="https://oaslananka.github.io/kicad-mcp-pro",
         host=cfg.host,
         port=cfg.port,
         streamable_http_path=cfg.mount_path,
@@ -2296,16 +2296,16 @@ def setup(
 ) -> None:
     """Generate or install KiCad MCP configuration for a supported agent.
 
-    Use 'kicad-mcp setup wizard' for interactive setup.
+    Use 'kicad-mcp-pro setup wizard' for interactive setup.
 
     \b
     Examples:
-      kicad-mcp setup claude-code
-      kicad-mcp setup claude-code --write --scope project
-      kicad-mcp setup codex --write --mode manufacturing
-      kicad-mcp setup vscode --transport http --url http://127.0.0.1:8765/mcp
-      kicad-mcp setup-restore claude-code
-      kicad-mcp setup-backups claude-code
+      kicad-mcp-pro setup claude-code
+      kicad-mcp-pro setup claude-code --write --scope project
+      kicad-mcp-pro setup codex --write --mode manufacturing
+      kicad-mcp-pro setup vscode --transport http --url http://127.0.0.1:8765/mcp
+      kicad-mcp-pro setup-restore claude-code
+      kicad-mcp-pro setup-backups claude-code
     """
     from .setup import setup_agent, setup_wizard
 

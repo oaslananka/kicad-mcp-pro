@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://oaslananka.github.io/kicad-mcp/schemas/extension-active-context.schema.json",
+  "$id": "https://oaslananka.github.io/kicad-mcp-pro/schemas/extension-active-context.schema.json",
   "title": "KiCad Studio active context payload",
   "description": "Product-neutral IDE context payload pushed from the extension to MCP tools.",
   "type": "object",

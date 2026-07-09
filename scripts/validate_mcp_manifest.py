@@ -21,8 +21,8 @@ SERVER_SCHEMA = ROOT / "scripts" / "schemas" / "server.schema.json"
 SUPPORTED_TRANSPORTS = frozenset({"stdio", "streamable-http", "sse"})
 NAME_RE = re.compile(r"^[a-zA-Z0-9.-]+/[a-zA-Z0-9._-]+$")
 REGISTRY_META_KEY = "io.github.oaslananka/kicad-mcp-pro"
-REPOSITORY = "https://github.com/oaslananka/kicad-mcp"
-WEBSITE = "https://oaslananka.github.io/kicad-mcp"
+REPOSITORY = "https://github.com/oaslananka/kicad-mcp-pro"
+WEBSITE = "https://oaslananka.github.io/kicad-mcp-pro"
 VALID_SPDX_LICENSES = frozenset(
     {
         "MIT",

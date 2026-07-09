@@ -81,6 +81,6 @@ kicad-mcp-pro doctor --bundle /tmp/kicad-bundle.zip
 
 ## Getting Help
 
-- GitHub Issues: https://github.com/oaslananka/kicad-mcp/issues
+- GitHub Issues: https://github.com/oaslananka/kicad-mcp-pro/issues
 - Documentation: docs/
 - Run `kicad-mcp-pro doctor --bundle bundle.zip` and attach to your issue

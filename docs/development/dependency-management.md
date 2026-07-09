@@ -23,7 +23,7 @@ KiCad MCP Pro uses reviewable dependency declarations, lockfiles, audit jobs, an
 
 ## Vulnerability monitoring
 
-The repository uses GitHub Dependabot, dependency audit scripts, CodeQL, Gitleaks, Trivy, and Scorecard. Security-sensitive updates should be prioritized according to [`SECURITY.md`](https://github.com/oaslananka/kicad-mcp/blob/main/SECURITY.md).
+The repository uses GitHub Dependabot, dependency audit scripts, CodeQL, Gitleaks, Trivy, and Scorecard. Security-sensitive updates should be prioritized according to [`SECURITY.md`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/SECURITY.md).
 
 ## Vendoring and generated code
 

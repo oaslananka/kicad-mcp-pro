@@ -5,7 +5,7 @@ Connect [OpenCode](https://opencode.ai) to KiCad via the `kicad-mcp-pro` MCP ser
 ## Quick Install
 
 ```bash
-kicad-mcp setup opencode
+kicad-mcp-pro setup opencode
 ```
 
 Or manually, add to your `opencode.json`:
@@ -56,7 +56,7 @@ An experimental OpenCode plugin is available at `plugins/kicad-mcp-plugin/`. It 
 ## Verification
 
 ```bash
-kicad-mcp doctor --agent opencode
+kicad-mcp-pro doctor --agent opencode
 opencode mcp list
 ```
 

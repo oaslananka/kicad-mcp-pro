@@ -25,8 +25,8 @@ SUBMISSION_MODE=1 pnpm run submission:check
 | GHCR image | Verified | `ghcr.io/oaslananka/kicad-mcp-pro:3.17.1` returns a multi-arch OCI index |
 | Public screenshots | Ready for automated final-check mode | `docs/assets/screenshots/` contains five 1920x1080 public-listing images |
 | Demo media | Required before each external form | `docs/assets/demo.cast` and `docs/assets/demo.gif` are checked by submission preflight |
-| Privacy URL | Required before each external form | `https://oaslananka.github.io/kicad-mcp/privacy/` |
-| Support URL | Required before each external form | `https://github.com/oaslananka/kicad-mcp/issues` |
+| Privacy URL | Required before each external form | `https://oaslananka.github.io/kicad-mcp-pro/privacy/` |
+| Support URL | Required before each external form | `https://github.com/oaslananka/kicad-mcp-pro/issues` |
 
 ## Submission Log
 

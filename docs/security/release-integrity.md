@@ -1,7 +1,7 @@
 # Release Integrity
 
 Release integrity controls are emitted only from the canonical repository,
-`oaslananka/kicad-mcp`.
+`oaslananka/kicad-mcp-pro`.
 
 
 ## Release evidence target
@@ -55,7 +55,7 @@ CLI:
 
 ```bash
 python -m sigstore verify identity \
-  --cert-identity "https://github.com/oaslananka/kicad-mcp/.github/workflows/release-please.yml@refs/tags/v<version>" \
+  --cert-identity "https://github.com/oaslananka/kicad-mcp-pro/.github/workflows/release-please.yml@refs/tags/v<version>" \
   --cert-oidc-issuer "https://token.actions.githubusercontent.com" \
   dist/kicad_mcp_pro-<version>-py3-none-any.whl
 ```
@@ -70,14 +70,14 @@ Verify a local artifact:
 
 ```bash
 gh attestation verify dist/kicad_mcp_pro-<version>-py3-none-any.whl \
-  --repo oaslananka/kicad-mcp
+  --repo oaslananka/kicad-mcp-pro
 ```
 
 For source distributions:
 
 ```bash
 gh attestation verify dist/kicad_mcp_pro-<version>.tar.gz \
-  --repo oaslananka/kicad-mcp
+  --repo oaslananka/kicad-mcp-pro
 ```
 
 ## GHCR Image Digest and Provenance
@@ -98,7 +98,7 @@ Verify the keyless Sigstore signature:
 
 ```bash
 cosign verify \
-  --certificate-identity-regexp "https://github.com/oaslananka/kicad-mcp/.github/workflows/publish-mcp-container.yml@refs/tags/mcp-server-v.*" \
+  --certificate-identity-regexp "https://github.com/oaslananka/kicad-mcp-pro/.github/workflows/publish-mcp-container.yml@refs/tags/mcp-server-v.*" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   ghcr.io/oaslananka/kicad-mcp-pro@sha256:<digest>
 ```

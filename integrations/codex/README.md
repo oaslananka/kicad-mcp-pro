@@ -5,7 +5,7 @@ Connect [Codex CLI](https://github.com/openai/codex) to your local KiCad project
 ## Quick Install
 
 ```bash
-kicad-mcp setup codex
+kicad-mcp-pro setup codex
 ```
 
 Or manually:
@@ -34,7 +34,7 @@ Never run destructive tools without explicit user confirmation.
 ## Verification
 
 ```bash
-kicad-mcp doctor --agent codex
+kicad-mcp-pro doctor --agent codex
 ```
 
 ## Security

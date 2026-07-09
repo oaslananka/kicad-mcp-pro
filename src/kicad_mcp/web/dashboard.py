@@ -282,8 +282,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <div class="nav-item" data-view="setup-wizard">&#9889; Setup</div>
   <div class="nav-sep"></div>
   <div class="nav-label">AI Agents</div>
-  <a class="nav-item" href="https://oaslananka.github.io/kicad-mcp/agents/" target="_blank" rel="noopener noreferrer">&#129302; Agent Setup &#8599;</a>
-  <a class="nav-item" href="https://oaslananka.github.io/kicad-mcp/agents/prompts/" target="_blank" rel="noopener noreferrer">&#128172; Prompt Library &#8599;</a>
+  <a class="nav-item" href="https://oaslananka.github.io/kicad-mcp-pro/agents/" target="_blank" rel="noopener noreferrer">&#129302; Agent Setup &#8599;</a>
+  <a class="nav-item" href="https://oaslananka.github.io/kicad-mcp-pro/agents/prompts/" target="_blank" rel="noopener noreferrer">&#128172; Prompt Library &#8599;</a>
 </nav>
 
 <!-- Main content -->

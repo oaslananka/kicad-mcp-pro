@@ -70,5 +70,5 @@ the change will be noted in the repository CHANGELOG.
 
 ## 7. Contact
 
-Open an issue at https://github.com/oaslananka/kicad-mcp/issues or contact
+Open an issue at https://github.com/oaslananka/kicad-mcp-pro/issues or contact
 via GitHub profile: https://github.com/oaslananka

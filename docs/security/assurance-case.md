@@ -34,7 +34,7 @@ KiCad MCP Pro can be used as a professional MCP automation layer for KiCad workf
 
 **Evidence.**
 
-- [`SECURITY.md`](https://github.com/oaslananka/kicad-mcp/blob/main/SECURITY.md)
+- [`SECURITY.md`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/SECURITY.md)
 - GitHub private vulnerability reporting
 - [`scorecard-exceptions.md`](scorecard-exceptions.md)
 
@@ -55,13 +55,13 @@ KiCad MCP Pro can be used as a professional MCP automation layer for KiCad workf
 
 **Evidence.**
 
-- [`CONTRIBUTING.md`](https://github.com/oaslananka/kicad-mcp/blob/main/CONTRIBUTING.md)
+- [`CONTRIBUTING.md`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/CONTRIBUTING.md)
 - generated tool reference
 - PR template safety checklist
 - release checklist in [`release-security.md`](release-security.md)
 
 ## Known limitations
 
-- The canonical repository currently has a single maintainer; continuity and bus-factor risk are documented in [`GOVERNANCE.md`](https://github.com/oaslananka/kicad-mcp/blob/main/GOVERNANCE.md).
+- The canonical repository currently has a single maintainer; continuity and bus-factor risk are documented in [`GOVERNANCE.md`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/GOVERNANCE.md).
 - Some EDA validations are heuristic and must be treated as review aids, not sign-off authority.
 - Dynamic assertion policy is still maturing; fuzzing exists, but assertion-specific hardening remains a future improvement.

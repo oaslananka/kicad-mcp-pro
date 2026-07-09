@@ -35,7 +35,7 @@ for example `uv self update 0.10.8` when `uv.toml` requires `0.10.8`.
 
 ## CI Matrix
 
-CI runs in the canonical `oaslananka/kicad-mcp` GitHub repository on
+CI runs in the canonical `oaslananka/kicad-mcp-pro` GitHub repository on
 GitHub-hosted runners. Python **3.13** is the required PR/push lane for the MCP
 server, and package publishing uses the release workflows documented in
 `docs/publishing.md`.

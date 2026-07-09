@@ -19,10 +19,10 @@ Use this checklist before entering any external review form.
 - [ ] Maintainer name is `Osman Aslan`.
 - [ ] Contact handle is `oaslananka`.
 - [ ] Primary docs domain is `oaslananka.github.io`; ChatGPT Apps custom-domain verification remains a manual platform step before final submission.
-- [ ] Repository URL is `https://github.com/oaslananka/kicad-mcp`.
-- [ ] Documentation URL is `https://oaslananka.github.io/kicad-mcp`.
-- [ ] Privacy URL is `https://oaslananka.github.io/kicad-mcp/privacy/`.
-- [ ] Support URL is `https://github.com/oaslananka/kicad-mcp/issues`.
+- [ ] Repository URL is `https://github.com/oaslananka/kicad-mcp-pro`.
+- [ ] Documentation URL is `https://oaslananka.github.io/kicad-mcp-pro`.
+- [ ] Privacy URL is `https://oaslananka.github.io/kicad-mcp-pro/privacy/`.
+- [ ] Support URL is `https://github.com/oaslananka/kicad-mcp-pro/issues`.
 - [ ] MCP server name is `io.github.oaslananka/kicad-mcp-pro`.
 - [ ] Package name is `kicad-mcp-pro`.
 - [ ] Container image is `ghcr.io/oaslananka/kicad-mcp-pro:<version>`.
@@ -32,7 +32,7 @@ Use this checklist before entering any external review form.
 
 - [ ] Confirm `pyproject.toml` version matches `server.json` and `src/kicad_mcp/__init__.py`.
 - [ ] Confirm `server.json` declares `name` as `io.github.oaslananka/kicad-mcp-pro`.
-- [ ] Confirm `server.json` declares repository URL as `https://github.com/oaslananka/kicad-mcp`.
+- [ ] Confirm `server.json` declares repository URL as `https://github.com/oaslananka/kicad-mcp-pro`.
 - [ ] Confirm README references the demo media slot `docs/assets/demo.gif`.
 - [ ] Confirm README links to the public listing page.
 - [ ] Confirm README links to the privacy policy.
@@ -50,9 +50,9 @@ Use this checklist before entering any external review form.
 - [ ] Set category to `EDA / Hardware Design` when available.
 - [ ] Use fallback category `Developer Tools` only if EDA is unavailable.
 - [ ] Set transport to `stdio`.
-- [ ] Paste repository URL exactly as `https://github.com/oaslananka/kicad-mcp`.
-- [ ] Paste privacy URL exactly as `https://oaslananka.github.io/kicad-mcp/privacy/`.
-- [ ] Paste support URL exactly as `https://github.com/oaslananka/kicad-mcp/issues`.
+- [ ] Paste repository URL exactly as `https://github.com/oaslananka/kicad-mcp-pro`.
+- [ ] Paste privacy URL exactly as `https://oaslananka.github.io/kicad-mcp-pro/privacy/`.
+- [ ] Paste support URL exactly as `https://github.com/oaslananka/kicad-mcp-pro/issues`.
 - [ ] State that OAuth is not required because the server is local stdio.
 - [ ] State that manufacturing export is gated by `project_quality_gate`.
 
@@ -64,8 +64,8 @@ Use this checklist before entering any external review form.
 - [ ] Use short description no longer than 80 characters.
 - [ ] Use long description no longer than 500 characters.
 - [ ] Set category to `Developer Tools`.
-- [ ] Use support URL `https://github.com/oaslananka/kicad-mcp/issues`.
-- [ ] Use privacy URL `https://oaslananka.github.io/kicad-mcp/privacy/`.
+- [ ] Use support URL `https://github.com/oaslananka/kicad-mcp-pro/issues`.
+- [ ] Use privacy URL `https://oaslananka.github.io/kicad-mcp-pro/privacy/`.
 - [ ] Use screenshots from `docs/assets/screenshots/`.
 - [ ] Confirm tool annotations expose `readOnlyHint`, `destructiveHint`, and `openWorldHint`.
 

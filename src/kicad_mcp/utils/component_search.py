@@ -19,7 +19,7 @@ from typing import Any, Protocol, cast
 # distributor clients can be unit-tested without touching the network.
 HttpPostJson = Callable[[str, bytes, dict[str, str]], dict[str, Any]]
 
-DEFAULT_USER_AGENT = "kicad-mcp-pro/1.0 (+https://github.com/oaslananka/kicad-mcp)"
+DEFAULT_USER_AGENT = "kicad-mcp-pro/1.0 (+https://github.com/oaslananka/kicad-mcp-pro)"
 
 
 @dataclass(frozen=True)

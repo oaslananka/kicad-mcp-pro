@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability - private report
-    url: https://github.com/oaslananka/kicad-mcp/security/advisories/new
+    url: https://github.com/oaslananka/kicad-mcp-pro/security/advisories/new
     about: Report active vulnerabilities privately. Do not open a public issue for security-sensitive findings.
   - name: Usage questions and ideas
-    url: https://github.com/oaslananka/kicad-mcp/discussions
+    url: https://github.com/oaslananka/kicad-mcp-pro/discussions
     about: Use GitHub Discussions for questions, design ideas, integration notes, and general support.
   - name: Documentation site
-    url: https://oaslananka.github.io/kicad-mcp/
+    url: https://oaslananka.github.io/kicad-mcp-pro/
     about: Check installation, configuration, workflow, and troubleshooting documentation before opening a report.

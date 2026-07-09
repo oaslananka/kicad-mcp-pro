@@ -5,7 +5,7 @@ Connect [Antigravity IDE](https://github.com/google/antigravity) to KiCad via th
 ## Quick Install
 
 ```bash
-kicad-mcp setup antigravity
+kicad-mcp-pro setup antigravity
 ```
 
 Or manually:

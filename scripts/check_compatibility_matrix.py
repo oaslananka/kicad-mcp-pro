@@ -29,7 +29,7 @@ KICAD_SUPPORT_STATES = {"primary", "supported", "deprecated"}
 KICAD_CI_MODES = {"required", "scheduled", "manual"}
 KICAD10_FEATURE_STATUSES = {"supported", "not-applicable", "partial", "blocked", "future"}
 PRODUCT_EVIDENCE_PREFIXES = ("path:", "fixture:", "command:", "smoke:")
-ISSUE_URL_RE = re.compile(r"^https://github.com/oaslananka/kicad-mcp/issues/\d+$")
+ISSUE_URL_RE = re.compile(r"^https://github.com/oaslananka/kicad-mcp-pro/issues/\d+$")
 URL_RE = re.compile(r"^https://[^\s]+$")
 
 

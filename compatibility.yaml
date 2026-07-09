@@ -1,6 +1,6 @@
 schemaVersion: 1
 updated: '2026-07-03'
-source: https://github.com/oaslananka/kicad-mcp
+source: https://github.com/oaslananka/kicad-mcp-pro
 kicad:
   primary: 10.0.x
   latestVerified: 10.0.4
@@ -94,7 +94,7 @@ kicad:
 kicad10FeatureParity:
   reviewed: '2026-06-26'
   baseline: 10.0.4
-  primaryIssue: https://github.com/oaslananka/kicad-mcp/issues/191
+  primaryIssue: https://github.com/oaslananka/kicad-mcp-pro/issues/191
   documentation: docs/compatibility/kicad-10-0-4-feature-parity.md
   allowedStatuses:
     - supported
@@ -126,7 +126,7 @@ kicad10FeatureParity:
         productSurface: >-
           KiCad Studio extension command registered but hidden unless CLI
           support appears
-        issue: https://github.com/oaslananka/kicad-mcp/issues/179
+        issue: https://github.com/oaslananka/kicad-mcp-pro/issues/179
         evidence:
           - path:tests/integration/test_export_tools.py
           - fixture:kicad-10-0-3-regressions
@@ -350,7 +350,7 @@ kicad10FeatureParity:
         status: blocked
         nativeSurface: Deprecated SWIG pcbnew Python bindings
         productSurface: Production direct pcbnew imports are forbidden
-        issue: https://github.com/oaslananka/kicad-mcp/issues/197
+        issue: https://github.com/oaslananka/kicad-mcp-pro/issues/197
         evidence:
           - path:scripts/check_no_pcbnew.py
           - path:docs/compatibility/kicad-10-to-11-migration.md
@@ -391,7 +391,7 @@ kicad10FeatureParity:
         status: partial
         nativeSurface: Empty KiCad 10.0.4 project files
         productSurface: File-backed MCP read tools and quality gates
-        issue: https://github.com/oaslananka/kicad-mcp/issues/228
+        issue: https://github.com/oaslananka/kicad-mcp-pro/issues/228
         evidence:
           - path:tests/integration/test_pcb_tools.py
           - path:tests/integration/test_schematic_tools.py
@@ -402,7 +402,7 @@ kicad10FeatureParity:
         status: partial
         nativeSurface: KiCad IPC lifecycle
         productSurface: kicad_get_server_info and tool diagnostics
-        issue: https://github.com/oaslananka/kicad-mcp/issues/223
+        issue: https://github.com/oaslananka/kicad-mcp-pro/issues/223
         evidence:
           - path:tests/unit/test_server_info_contract.py
           - path:tests/gui/test_kicad_gui_live_context.py
@@ -440,7 +440,7 @@ kicad10FeatureParity:
       status: future
       nativeSurface: MCP protocol and KiCad 11 readiness
       productSurface: Protocol upgrade plan and KiCad 11 manual canary path
-      issue: https://github.com/oaslananka/kicad-mcp/issues/197
+      issue: https://github.com/oaslananka/kicad-mcp-pro/issues/197
       evidence:
         - path:docs/compatibility/kicad-10-to-11-migration.md
         - command:corepack pnpm run test:kicad-cli-contract:future

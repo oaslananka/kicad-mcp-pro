@@ -4,7 +4,7 @@ This document defines the security posture expected for KiCad MCP Pro releases, 
 
 ## Goals
 
-- Releases are built from the canonical `oaslananka/kicad-mcp` repository.
+- Releases are built from the canonical `oaslananka/kicad-mcp-pro` repository.
 - Publishing happens through GitHub Actions, not from a maintainer workstation.
 - Long-lived package-manager tokens are avoided where trusted publishing or OIDC is available.
 - Release artifacts are reproducible enough to verify names, versions, checksums, SBOMs, and provenance.

@@ -1,7 +1,7 @@
 # KiCad companion plugin
 
 A small KiCad **Action Plugin** that connects the running pcbnew GUI to a local
-kicad-mcp server. It lets an agent see what you have open and selected, and gates
+kicad-mcp-pro server. It lets an agent see what you have open and selected, and gates
 any board-mutating action behind a confirmation dialog.
 
 It is intentionally minimal-permission: it talks **only** to the loopback MCP

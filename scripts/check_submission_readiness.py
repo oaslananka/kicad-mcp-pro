@@ -284,7 +284,7 @@ def _readme_check() -> CheckResult:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     version = pyproject["project"]["version"]
     required = {
-        "canonical repository": "https://github.com/oaslananka/kicad-mcp",
+        "canonical repository": "https://github.com/oaslananka/kicad-mcp-pro",
         "PyPI package": "kicad-mcp-pro",
         "npm wrapper": "kicad-mcp-pro",
         "MCP Registry name": "io.github.oaslananka/kicad-mcp-pro",

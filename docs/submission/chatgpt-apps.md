@@ -28,10 +28,10 @@ Use this document for the ChatGPT Apps submission path.
 - [ ] Long description: `KiCad MCP Pro connects ChatGPT-compatible MCP clients to local KiCad projects for project setup, schematic review, PCB inspection, validation gates, DFM checks, and gated manufacturing export. It runs locally over stdio by default, and OpenTelemetry export is disabled unless explicitly configured by the operator.`
 - [ ] Long description length: below 500 characters.
 - [ ] Category: `Developer Tools`.
-- [ ] Support URL: `https://github.com/oaslananka/kicad-mcp/issues`.
-- [ ] Privacy URL: `https://oaslananka.github.io/kicad-mcp/privacy/`.
-- [ ] Repository URL: `https://github.com/oaslananka/kicad-mcp`.
-- [ ] Documentation URL: `https://oaslananka.github.io/kicad-mcp`.
+- [ ] Support URL: `https://github.com/oaslananka/kicad-mcp-pro/issues`.
+- [ ] Privacy URL: `https://oaslananka.github.io/kicad-mcp-pro/privacy/`.
+- [ ] Repository URL: `https://github.com/oaslananka/kicad-mcp-pro`.
+- [ ] Documentation URL: `https://oaslananka.github.io/kicad-mcp-pro`.
 
 ## Tool Annotation Exports
 

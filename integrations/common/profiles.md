@@ -21,7 +21,7 @@
 
 **Targets:** VS Code, Cursor, Gemini CLI, Claude Code, OpenCode, local UI dashboard
 
-**Command:** `kicad-mcp serve --transport http --host 127.0.0.1 --port 8765`
+**Command:** `kicad-mcp-pro serve --transport http --host 127.0.0.1 --port 8765`
 
 **Features:**
 - Loopback-only for security

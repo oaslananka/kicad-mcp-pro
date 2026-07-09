@@ -2,7 +2,7 @@
 
 The only canonical source and release authority is:
 
-https://github.com/oaslananka/kicad-mcp
+https://github.com/oaslananka/kicad-mcp-pro
 
 Release and publish automation runs from GitHub Actions in this repository. Package publishing is split by protected environment:
 

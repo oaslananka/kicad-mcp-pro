@@ -15,7 +15,7 @@ identities of record:
 
 | Asset | Identifier |
 |---|---|
-| Source repository | `github.com/oaslananka/kicad-mcp` |
+| Source repository | `github.com/oaslananka/kicad-mcp-pro` |
 | PyPI package | `kicad-mcp-pro` |
 | npm package | `kicad-mcp-pro` |
 | MCP Registry name | `io.github.oaslananka/kicad-mcp-pro` |
@@ -33,7 +33,7 @@ Candidates have typically:
 A co-maintainer is invited by an existing maintainer and, on acceptance, is added
 to the table above and granted:
 
-1. **Repository write** (review/merge) on `oaslananka/kicad-mcp`.
+1. **Repository write** (review/merge) on `oaslananka/kicad-mcp-pro`.
 2. **Release rights** via the GitHub Actions release environments — no local
    signing secrets are handed over; publishing is GitHub-side trusted publishing.
 3. **Security triage** access (private vulnerability reports) per

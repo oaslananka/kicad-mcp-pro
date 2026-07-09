@@ -5,7 +5,7 @@ Connect [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to KiCad v
 ## Quick Install (One Command)
 
 ```bash
-kicad-mcp setup claude-code
+kicad-mcp-pro setup claude-code
 ```
 
 Or manually:
@@ -38,7 +38,7 @@ The skill auto-loads when KiCad projects are detected. See `kicad-pcb-review-ski
 ## Verification
 
 ```bash
-kicad-mcp doctor --agent claude-code
+kicad-mcp-pro doctor --agent claude-code
 ```
 
 In Claude Code: `/mcp` to verify the kicad server is connected.

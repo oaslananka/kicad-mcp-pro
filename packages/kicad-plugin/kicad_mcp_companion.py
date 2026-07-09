@@ -55,7 +55,7 @@ class KiCadMcpCompanionPlugin(pcbnew.ActionPlugin):
     def defaults(self) -> None:
         self.name = "kicad-mcp companion"
         self.category = "kicad-mcp"
-        self.description = "Publish active board context to a running kicad-mcp server."
+        self.description = "Publish active board context to a running kicad-mcp-pro server."
         self.show_toolbar_button = True
 
     def Run(self) -> None:

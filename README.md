@@ -7,16 +7,16 @@
 </p>
 
 <p>
-  <a href="https://oaslananka.github.io/kicad-mcp/">Documentation</a> ·
+  <a href="https://oaslananka.github.io/kicad-mcp-pro/">Documentation</a> ·
   <a href="docs/installation.md">Installation</a> ·
   <a href="#quick-start">Quick Start</a> ·
   <a href="docs/tools-reference.generated.md">Tool Reference</a> ·
-  <a href="https://oaslananka.github.io/kicad-mcp/agents/">AI Agent Setup</a> ·
+  <a href="https://oaslananka.github.io/kicad-mcp-pro/agents/">AI Agent Setup</a> ·
   <a href="docs/llms.txt">AI discovery</a>
 </p>
 
 <p>
-  <a href="https://github.com/oaslananka/kicad-mcp/releases"><img src="https://img.shields.io/github/v/release/oaslananka/kicad-mcp?filter=kicad-mcp-gui-v*&label=gui%20release" alt="GUI Release" /></a>
+  <a href="https://github.com/oaslananka/kicad-mcp-pro/releases"><img src="https://img.shields.io/github/v/release/oaslananka/kicad-mcp-pro?filter=kicad-mcp-gui-v*&label=gui%20release" alt="GUI Release" /></a>
   <a href="https://pypi.org/project/kicad-mcp-pro/"><img src="https://img.shields.io/pypi/v/kicad-mcp-pro?label=pypi" alt="PyPI Version" /></a>
   <a href="https://www.npmjs.com/package/kicad-mcp-pro"><img src="https://img.shields.io/npm/v/kicad-mcp-pro?label=npm" alt="npm Version" /></a>
   <a href="https://pypi.org/project/kicad-mcp-pro/"><img src="https://img.shields.io/pypi/pyversions/kicad-mcp-pro?label=python" alt="Python Version" /></a>
@@ -24,11 +24,11 @@
 </p>
 
 <p>
-  <a href="https://github.com/oaslananka/kicad-mcp/actions/workflows/ci.yml"><img src="https://github.com/oaslananka/kicad-mcp/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
-  <a href="https://github.com/oaslananka/kicad-mcp/actions/workflows/gui-ci.yml"><img src="https://github.com/oaslananka/kicad-mcp/actions/workflows/gui-ci.yml/badge.svg?branch=main" alt="GUI CI" /></a>
-  <a href="https://github.com/oaslananka/kicad-mcp/actions/workflows/docs.yml"><img src="https://github.com/oaslananka/kicad-mcp/actions/workflows/docs.yml/badge.svg?branch=main" alt="Docs" /></a>
-  <a href="https://github.com/oaslananka/kicad-mcp/actions/workflows/codeql.yml"><img src="https://github.com/oaslananka/kicad-mcp/actions/workflows/codeql.yml/badge.svg?branch=main" alt="CodeQL" /></a>
-  <a href="https://securityscorecards.dev/viewer/?uri=github.com/oaslananka/kicad-mcp"><img src="https://api.scorecard.dev/projects/github.com/oaslananka/kicad-mcp/badge" alt="OpenSSF Scorecard" /></a>
+  <a href="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/ci.yml"><img src="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
+  <a href="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/gui-ci.yml"><img src="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/gui-ci.yml/badge.svg?branch=main" alt="GUI CI" /></a>
+  <a href="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/docs.yml"><img src="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/docs.yml/badge.svg?branch=main" alt="Docs" /></a>
+  <a href="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/codeql.yml"><img src="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/codeql.yml/badge.svg?branch=main" alt="CodeQL" /></a>
+  <a href="https://securityscorecards.dev/viewer/?uri=github.com/oaslananka/kicad-mcp-pro"><img src="https://api.scorecard.dev/projects/github.com/oaslananka/kicad-mcp-pro/badge" alt="OpenSSF Scorecard" /></a>
   <a href="https://www.bestpractices.dev/projects/13377"><img src="https://www.bestpractices.dev/projects/13377/badge" alt="OpenSSF Best Practices: Silver" /></a>
 </p>
 
@@ -42,8 +42,8 @@
 <!-- parity-coverage-badge:end -->
 
 <p>
-  <a href="https://oaslananka.github.io/kicad-mcp/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-blue" alt="Documentation" /></a>
-  <a href="https://deepwiki.com/oaslananka/kicad-mcp"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
+  <a href="https://oaslananka.github.io/kicad-mcp-pro/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-blue" alt="Documentation" /></a>
+  <a href="https://deepwiki.com/oaslananka/kicad-mcp-pro"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
   <a href="https://www.buymeacoffee.com/oaslananka"><img src="https://img.shields.io/badge/sponsor-Buy%20me%20a%20coffee-ffdd00?logo=buymeacoffee&logoColor=black" alt="Buy me a coffee" /></a>
 </p>
 
@@ -74,7 +74,7 @@ fraction of KiCad's programmatic surface the server drives is tracked openly in 
 
 | Field | Value |
 | --- | --- |
-| Canonical repository | [`oaslananka/kicad-mcp`](https://github.com/oaslananka/kicad-mcp) |
+| Canonical repository | [`oaslananka/kicad-mcp-pro`](https://github.com/oaslananka/kicad-mcp-pro) |
 | PyPI package | [`kicad-mcp-pro`](https://pypi.org/project/kicad-mcp-pro/) |
 | npm wrapper | [`kicad-mcp-pro`](https://www.npmjs.com/package/kicad-mcp-pro) |
 | MCP Registry name | `io.github.oaslananka/kicad-mcp-pro` |
@@ -87,7 +87,7 @@ fraction of KiCad's programmatic surface the server drives is tracked openly in 
 ### Desktop App
 
 Download the latest installer from the
-[GitHub releases page](https://github.com/oaslananka/kicad-mcp/releases).
+[GitHub releases page](https://github.com/oaslananka/kicad-mcp-pro/releases).
 The Tauri desktop app starts the Python dashboard server automatically and opens
 the GUI at `http://127.0.0.1:3334/ui`.
 
@@ -128,7 +128,7 @@ keeping genuine `gap`s distinct from `gui-only-no-api` items that KiCad exposes 
 headless API for.
 
 The published documentation site is available at
-[https://oaslananka.github.io/kicad-mcp/](https://oaslananka.github.io/kicad-mcp/).
+[https://oaslananka.github.io/kicad-mcp-pro/](https://oaslananka.github.io/kicad-mcp-pro/).
 
 ## Transports
 

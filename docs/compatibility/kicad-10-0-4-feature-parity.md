@@ -1,7 +1,7 @@
 # KiCad 10.0.4 Feature Parity
 
 This page is the human-readable view of
-[`compatibility.yaml`](https://github.com/oaslananka/kicad-mcp/blob/main/compatibility.yaml) `kicad10FeatureParity`. It
+[`compatibility.yaml`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/compatibility.yaml) `kicad10FeatureParity`. It
 tracks KiCad 10.0.4 parity separately from the current KiCad 11 readiness plan
 so release gates stay focused on the stable KiCad line.
 
@@ -20,7 +20,7 @@ Status vocabulary:
 | Feature id    | State       | Product boundary                                                                                                | Evidence or issue                                                                             |
 | ------------- | ----------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `altium`      | `supported` | Extension import command and MCP manufacturing probe after `kicad-cli pcb import --help` advertises the format. | `tests/integration/test_export_tools.py`, `tests/integration/test_manufacturing_tools.py`     |
-| `allegro`     | `blocked`   | Extension command is registered for future compatibility but hidden unless CLI support appears.                 | [#191](https://github.com/oaslananka/kicad-mcp/issues/191), `kicad-10-0-3-regressions`        |
+| `allegro`     | `blocked`   | Extension command is registered for future compatibility but hidden unless CLI support appears.                 | [#191](https://github.com/oaslananka/kicad-mcp-pro/issues/191), `kicad-10-0-3-regressions`        |
 | `cadstar`     | `supported` | Extension command is probe-gated by CLI help.                                                                   | `tests/integration/test_export_tools.py`                                                      |
 | `eagle`       | `supported` | Extension command is probe-gated by CLI help.                                                                   | `tests/integration/test_export_tools.py`                                                      |
 | `fabmaster`   | `supported` | Extension command is probe-gated by CLI help.                                                                   | `tests/integration/test_export_tools.py`                                                      |
@@ -58,7 +58,7 @@ Status vocabulary:
 | Feature id                      | State       | Product boundary                                                                       | Evidence or issue                                                 |
 | ------------------------------- | ----------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | `kicad_python_ipc`              | `supported` | KiCad IPC is the supported live-editor direction for current and future KiCad lines.   | `tests/gui/test_kicad_gui_live_context.py`                        |
-| `swig_pcbnew_direct_dependency` | `blocked`   | Production direct `pcbnew` imports are forbidden because SWIG bindings are deprecated. | [#192](https://github.com/oaslananka/kicad-mcp/issues/192)        |
+| `swig_pcbnew_direct_dependency` | `blocked`   | Production direct `pcbnew` imports are forbidden because SWIG bindings are deprecated. | [#192](https://github.com/oaslananka/kicad-mcp-pro/issues/192)        |
 
 ## Product Surfaces
 
@@ -67,8 +67,8 @@ Status vocabulary:
 | `status_surface`                  | `supported` | The MCP server-info endpoint exposes detected KiCad line and feature gates.             | `tests/unit/test_server_info_contract.py`                         |
 | `importer_command_gating`         | `supported` | Import commands are unavailable until the matching CLI capability probe passes.         | `tests/integration/test_export_tools.py`                          |
 | `server_info_capability_contract` | `supported` | MCP server-info compatibility and capability payloads are schema and docs gated.        | `tests/unit/test_server_info_contract.py`                         |
-| `empty_project_read_tools`        | `partial`   | File-backed empty-project behavior is tracked outside this matrix.                      | [#210](https://github.com/oaslananka/kicad-mcp/issues/210)        |
-| `ipc_state_consistency`           | `partial`   | IPC lifecycle consistency is tracked in the MCP compatibility milestone.                | [#192](https://github.com/oaslananka/kicad-mcp/issues/192)        |
+| `empty_project_read_tools`        | `partial`   | File-backed empty-project behavior is tracked outside this matrix.                      | [#210](https://github.com/oaslananka/kicad-mcp-pro/issues/210)        |
+| `ipc_state_consistency`           | `partial`   | IPC lifecycle consistency is tracked in the MCP compatibility milestone.                | [#192](https://github.com/oaslananka/kicad-mcp-pro/issues/192)        |
 
 ## Release
 
@@ -84,7 +84,7 @@ KiCad 11 readiness is represented separately from KiCad 10.0.4 parity:
 
 | Feature id           | State       | Product boundary                                                                                   | Evidence or issue                                                 |
 | -------------------- | ----------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `protocol_upgrade`   | `future`    | MCP protocol and KiCad 11 support planning remain separate from the stable KiCad 10 gate.          | [#209](https://github.com/oaslananka/kicad-mcp/issues/209)        |
+| `protocol_upgrade`   | `future`    | MCP protocol and KiCad 11 support planning remain separate from the stable KiCad 10 gate.          | [#209](https://github.com/oaslananka/kicad-mcp-pro/issues/209)        |
 | `nightly_canary`     | `supported` | Manual nightly canary commands track prerelease behavior without changing the stable support line. | `corepack pnpm run test:kicad-cli-contract:nightly`               |
 | `swig_removal_guard` | `supported` | The direct-`pcbnew` guard keeps production code away from APIs planned for removal.                | `scripts/check_no_pcbnew.py`                                      |
 

@@ -1,7 +1,7 @@
 # Repository maturity report
 
 Assessment date: 2026-07-02
-Repository: `oaslananka/kicad-mcp`
+Repository: `oaslananka/kicad-mcp-pro`
 Mode: audit + implementation PR
 
 ## Executive summary

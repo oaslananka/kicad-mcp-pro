@@ -5,7 +5,7 @@ Connect [VS Code](https://code.visualstudio.com) and [GitHub Copilot](https://gi
 ## Quick Install
 
 ```bash
-kicad-mcp setup vscode
+kicad-mcp-pro setup vscode
 ```
 
 Or manually:
@@ -56,7 +56,7 @@ For VS Code remote MCP with token auth:
 ## Verification
 
 ```bash
-kicad-mcp doctor --agent vscode
+kicad-mcp-pro doctor --agent vscode
 ```
 
 ## Security

@@ -10,7 +10,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PACKAGE_ROOT
 MCP_SERVER_NAME = "io.github.oaslananka/kicad-mcp-pro"
 GHCR_IMAGE = "ghcr.io/oaslananka/kicad-mcp-pro"
-OLD_GHCR_IMAGE = "ghcr.io/oaslananka/kicad-mcp/kicad-mcp-pro"
+OLD_GHCR_IMAGE = "ghcr.io/oaslananka/kicad-mcp-pro/kicad-mcp-pro"
 
 
 def _read(path: str) -> str:
@@ -41,7 +41,7 @@ def main() -> int:
     for path, content in dockerfiles.items():
         required = [
             f'io.modelcontextprotocol.server.name="{MCP_SERVER_NAME}"',
-            'org.opencontainers.image.source="https://github.com/oaslananka/kicad-mcp"',
+            'org.opencontainers.image.source="https://github.com/oaslananka/kicad-mcp-pro"',
             "ARG KICAD_MCP_VERSION",
             "ARG VCS_REF",
         ]
