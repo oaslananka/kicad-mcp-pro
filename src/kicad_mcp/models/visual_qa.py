@@ -358,6 +358,13 @@ def parse_labels(sch_text: str) -> list[LabelItem]:
             block = extract_balanced_block(sch_text, match.start())
             justify_match = re.search(r"\(justify\s+([^)]*)\)", block) if block else None
             justify = parse_justify(justify_match.group(1)) if justify_match else frozenset()
+            size_match = re.search(r"\(font[^)]*\(size\s+(-?[\d.]+)", block) if block else None
+            font_mm = DEFAULT_FONT_MM
+            if size_match:
+                try:
+                    font_mm = float(size_match.group(1)) or DEFAULT_FONT_MM
+                except ValueError:
+                    font_mm = DEFAULT_FONT_MM
             labels.append(
                 LabelItem(
                     match.group(1),
@@ -365,6 +372,7 @@ def parse_labels(sch_text: str) -> list[LabelItem]:
                     float(match.group(3)),
                     kind,
                     angle,
+                    font_mm=font_mm,
                     justify=justify,
                 )
             )
@@ -640,6 +648,422 @@ def check_title_block(sch_text: str) -> list[VisualFinding]:
     return findings
 
 
+# ---------------------------------------------------------------------------
+# Cosmetic-quality detectors (Visual Excellence Loop, Phase A)
+#
+# These go beyond "is it readable" (the checks above) to "does it look like a
+# professional drew it": on-grid placement, orthogonal wiring, consistent text,
+# conventional power-symbol orientation, and balanced sheet use. Every check is
+# pure geometry so the score stays deterministic and unit-testable.
+# ---------------------------------------------------------------------------
+
+# Default schematic grid (50 mil = 1.27 mm). Mirrors
+# ``tools/schematic_constants.SCHEMATIC_GRID_MM`` but kept local so this module
+# stays import-light and dependency-free.
+COSMETIC_GRID_MM = 1.27
+# Anchors within this distance of a grid line count as on-grid (float slack).
+GRID_SNAP_TOLERANCE_MM = 0.01
+# A wire segment shorter than this is treated as a stub and never called diagonal.
+MIN_DIAGONAL_WIRE_MM = 0.05
+# Font sizes differing from the sheet's dominant size by more than this (mm) are
+# flagged as inconsistent typography.
+FONT_SIZE_TOLERANCE_MM = 0.01
+# Report at most this many individual off-grid / diagonal examples before rolling
+# the rest into a summary count, so a badly-broken sheet does not flood output.
+MAX_ITEMIZED_EXAMPLES = 5
+
+
+@dataclass(frozen=True, slots=True)
+class WireSegment:
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+
+def parse_wires(sch_text: str) -> list[WireSegment]:
+    """Extract two-point wire segments from the schematic geometry."""
+
+    segments: list[WireSegment] = []
+    for match in re.finditer(r"\(wire\b", sch_text):
+        block = extract_balanced_block(sch_text, match.start())
+        pts = re.search(
+            r"\(pts\s+\(xy\s+(-?[\d.]+)\s+(-?[\d.]+)\)\s+\(xy\s+(-?[\d.]+)\s+(-?[\d.]+)\)",
+            block,
+        )
+        if pts is None:
+            continue
+        segments.append(
+            WireSegment(
+                float(pts.group(1)),
+                float(pts.group(2)),
+                float(pts.group(3)),
+                float(pts.group(4)),
+            )
+        )
+    return segments
+
+
+def parse_junctions(sch_text: str) -> list[tuple[float, float]]:
+    """Extract junction anchor points from the schematic geometry."""
+
+    points: list[tuple[float, float]] = []
+    for match in re.finditer(r"\(junction\s+\(at\s+(-?[\d.]+)\s+(-?[\d.]+)", sch_text):
+        points.append((float(match.group(1)), float(match.group(2))))
+    return points
+
+
+def _off_grid(value: float, grid_mm: float) -> bool:
+    if grid_mm <= 0.0:
+        return False
+    nearest = round(value / grid_mm) * grid_mm
+    return abs(value - nearest) > GRID_SNAP_TOLERANCE_MM
+
+
+def detect_grid_misalignment(
+    symbols: list[PlacedSymbol],
+    labels: list[LabelItem],
+    wires: list[WireSegment],
+    junctions: list[tuple[float, float]],
+    grid_mm: float = COSMETIC_GRID_MM,
+) -> list[VisualFinding]:
+    """Flag symbol/label/wire/junction anchors that are not on the drawing grid.
+
+    Off-grid anchors are the single most common source of the "connects in the
+    netlist but the wire visibly misses the pin" defect and of ragged, hand-shifted
+    layouts. Reports a bounded list of concrete examples plus a rolled-up count.
+    """
+
+    offenders: list[tuple[str, float, float]] = []
+    for symbol in symbols:
+        if _off_grid(symbol.x, grid_mm) or _off_grid(symbol.y, grid_mm):
+            offenders.append((symbol.reference or symbol.lib_id or "symbol", symbol.x, symbol.y))
+    for label in labels:
+        if _off_grid(label.x, grid_mm) or _off_grid(label.y, grid_mm):
+            offenders.append((f"label:{label.text}", label.x, label.y))
+    for wire in wires:
+        if (
+            _off_grid(wire.x1, grid_mm)
+            or _off_grid(wire.y1, grid_mm)
+            or _off_grid(wire.x2, grid_mm)
+            or _off_grid(wire.y2, grid_mm)
+        ):
+            offenders.append(("wire", wire.x1, wire.y1))
+    for jx, jy in junctions:
+        if _off_grid(jx, grid_mm) or _off_grid(jy, grid_mm):
+            offenders.append(("junction", jx, jy))
+
+    if not offenders:
+        return []
+
+    findings: list[VisualFinding] = []
+    for ref, x, y in offenders[:MAX_ITEMIZED_EXAMPLES]:
+        findings.append(
+            VisualFinding(
+                "INFO",
+                "grid_misalignment",
+                f"{ref} anchor ({x:.3f}, {y:.3f}) is off the {grid_mm:.2f} mm grid.",
+                ref=ref,
+                x=x,
+                y=y,
+            )
+        )
+    remaining = len(offenders) - len(findings)
+    if remaining > 0:
+        findings.append(
+            VisualFinding(
+                "INFO",
+                "grid_misalignment",
+                f"{remaining} more anchor(s) are off the {grid_mm:.2f} mm grid.",
+            )
+        )
+    return findings
+
+
+def detect_diagonal_wires(wires: list[WireSegment]) -> list[VisualFinding]:
+    """Flag wire segments that are neither horizontal nor vertical.
+
+    Diagonal wires are legal in KiCad but are a strong signal of a rushed or
+    machine-generated sheet; professional schematics route orthogonally.
+    """
+
+    diagonal: list[WireSegment] = []
+    for wire in wires:
+        dx = abs(wire.x2 - wire.x1)
+        dy = abs(wire.y2 - wire.y1)
+        if dx > GRID_SNAP_TOLERANCE_MM and dy > GRID_SNAP_TOLERANCE_MM:
+            if math.hypot(dx, dy) >= MIN_DIAGONAL_WIRE_MM:
+                diagonal.append(wire)
+
+    if not diagonal:
+        return []
+
+    findings: list[VisualFinding] = []
+    for wire in diagonal[:MAX_ITEMIZED_EXAMPLES]:
+        findings.append(
+            VisualFinding(
+                "INFO",
+                "diagonal_wire",
+                f"Wire from ({wire.x1:.2f}, {wire.y1:.2f}) to ({wire.x2:.2f}, {wire.y2:.2f}) "
+                "is diagonal; route it orthogonally.",
+                x=wire.x1,
+                y=wire.y1,
+            )
+        )
+    remaining = len(diagonal) - len(findings)
+    if remaining > 0:
+        findings.append(
+            VisualFinding(
+                "INFO",
+                "diagonal_wire",
+                f"{remaining} more wire segment(s) are diagonal.",
+            )
+        )
+    return findings
+
+
+def _dominant_font_mm(font_sizes: list[float]) -> float | None:
+    if not font_sizes:
+        return None
+    counts: dict[float, int] = {}
+    for size in font_sizes:
+        key = round(size, 3)
+        counts[key] = counts.get(key, 0) + 1
+    # Most common size wins; ties break toward the larger size (usually the body text).
+    return max(counts.items(), key=lambda item: (item[1], item[0]))[0]
+
+
+def detect_font_size_inconsistency(
+    symbols: list[PlacedSymbol], labels: list[LabelItem]
+) -> list[VisualFinding]:
+    """Flag text whose font size departs from the sheet's dominant size.
+
+    Mixed font sizes read as accidental; a consistent size is a hallmark of a
+    deliberately laid-out sheet. The dominant size is inferred from the sheet
+    itself, so intentionally-scaled sheets are judged against their own norm.
+    """
+
+    sized: list[tuple[str, float]] = []
+    for symbol in symbols:
+        for field in symbol.fields:
+            sized.append((f"{symbol.reference or symbol.lib_id}:{field.text}", field.font_mm))
+    for label in labels:
+        sized.append((f"label:{label.text}", label.font_mm))
+
+    dominant = _dominant_font_mm([size for _, size in sized])
+    if dominant is None:
+        return []
+
+    findings: list[VisualFinding] = []
+    outliers = [(ref, size) for ref, size in sized if abs(size - dominant) > FONT_SIZE_TOLERANCE_MM]
+    for ref, size in outliers[:MAX_ITEMIZED_EXAMPLES]:
+        findings.append(
+            VisualFinding(
+                "INFO",
+                "font_inconsistency",
+                f"{ref} font {size:.2f} mm differs from the sheet's dominant {dominant:.2f} mm.",
+                ref=ref,
+            )
+        )
+    remaining = len(outliers) - len(findings)
+    if remaining > 0:
+        findings.append(
+            VisualFinding(
+                "INFO",
+                "font_inconsistency",
+                f"{remaining} more text field(s) use a non-standard font size.",
+            )
+        )
+    return findings
+
+
+def detect_power_symbol_orientation(symbols: list[PlacedSymbol]) -> list[VisualFinding]:
+    """Flag power/ground symbols rotated sideways (90 or 270 degrees).
+
+    Sideways power and ground symbols are almost never intentional and read as
+    broken. This is deliberately conservative — it does not judge up/down polarity
+    (which is context-dependent) — so it stays low-noise.
+    """
+
+    findings: list[VisualFinding] = []
+    for symbol in symbols:
+        if not symbol.lib_id.lower().startswith("power:"):
+            continue
+        normalized = round(symbol.angle % 360.0)
+        if normalized in (90, 270):
+            name = symbol.reference or symbol.lib_id
+            findings.append(
+                VisualFinding(
+                    "WARN",
+                    "power_symbol_sideways",
+                    f"Power symbol {name} is rotated {normalized} deg; place power and "
+                    "ground symbols upright for a conventional, readable sheet.",
+                    ref=symbol.reference,
+                    x=symbol.x,
+                    y=symbol.y,
+                )
+            )
+    return findings
+
+
+def detect_sheet_density_imbalance(
+    symbols: list[PlacedSymbol], extent: tuple[float, float]
+) -> list[VisualFinding]:
+    """Flag sheets whose symbols crowd into one region while the rest sits empty.
+
+    A well-composed sheet spreads its content; a lopsided one (everything jammed
+    in a corner) reads as unfinished. Uses a coarse 2x2 quadrant occupancy check
+    so it only fires on genuinely imbalanced layouts, not minor unevenness.
+    """
+
+    width, height = extent
+    if width <= 0.0 or height <= 0.0 or len(symbols) < 8:
+        return []
+
+    mid_x = width / 2.0
+    mid_y = height / 2.0
+    quadrants = [0, 0, 0, 0]
+    for symbol in symbols:
+        qx = 0 if symbol.x < mid_x else 1
+        qy = 0 if symbol.y < mid_y else 1
+        quadrants[qy * 2 + qx] += 1
+
+    total = sum(quadrants)
+    if total == 0:
+        return []
+    occupied = sum(1 for count in quadrants if count > 0)
+    busiest = max(quadrants)
+    # Fire only when content collapses into a single quadrant, or one quadrant
+    # holds an overwhelming majority while others sit nearly empty.
+    if occupied <= 1 or busiest / total >= 0.85:
+        return [
+            VisualFinding(
+                "INFO",
+                "sheet_density_imbalance",
+                f"{busiest} of {total} symbols crowd into one quadrant; spread the "
+                "layout across the sheet for a balanced, professional composition.",
+            )
+        ]
+    return []
+
+
+# Penalty weights per finding code (points subtracted from a perfect 100).
+# Documented and fixed so the score is fully deterministic and reviewable.
+COSMETIC_PENALTIES: dict[str, float] = {
+    "symbol_overlap": 15.0,
+    "offsheet_symbol": 12.0,
+    "text_overlap": 10.0,
+    "label_overlap": 8.0,
+    "offsheet_label": 8.0,
+    "power_symbol_sideways": 6.0,
+    "grid_misalignment": 4.0,
+    "diagonal_wire": 3.0,
+    "font_inconsistency": 4.0,
+    "dense_label_fanout": 3.0,
+    "sheet_density_imbalance": 3.0,
+    "title_block_missing": 4.0,
+    "title_block_title": 4.0,
+    "title_block_rev": 1.0,
+    "title_block_date": 1.0,
+    "title_block_company": 1.0,
+}
+
+# Group finding codes into user-facing categories for the score breakdown.
+COSMETIC_CATEGORIES: dict[str, str] = {
+    "symbol_overlap": "readability",
+    "text_overlap": "readability",
+    "label_overlap": "readability",
+    "offsheet_symbol": "readability",
+    "offsheet_label": "readability",
+    "dense_label_fanout": "readability",
+    "grid_misalignment": "grid",
+    "diagonal_wire": "wiring",
+    "font_inconsistency": "typography",
+    "power_symbol_sideways": "orientation",
+    "sheet_density_imbalance": "layout_balance",
+    "title_block_missing": "documentation",
+    "title_block_title": "documentation",
+    "title_block_rev": "documentation",
+    "title_block_date": "documentation",
+    "title_block_company": "documentation",
+}
+
+
+def cosmetic_score(findings: list[VisualFinding]) -> dict[str, object]:
+    """Compute a deterministic 0-100 cosmetic-quality score from findings.
+
+    Each finding subtracts its code's fixed penalty (capped so no single category
+    can drive the score below zero on its own). Returns the score, a per-category
+    penalty breakdown, and the dominant issue category for follow-up.
+    """
+
+    per_category: dict[str, float] = {}
+    for finding in findings:
+        penalty = COSMETIC_PENALTIES.get(finding.code)
+        if penalty is None:
+            continue
+        category = COSMETIC_CATEGORIES.get(finding.code, "other")
+        per_category[category] = per_category.get(category, 0.0) + penalty
+
+    # Cap each category's contribution so a single flooded category cannot alone
+    # zero the score — keeps the number meaningful across mixed defect profiles.
+    total_penalty = sum(min(value, 40.0) for value in per_category.values())
+    score = max(0.0, min(100.0, 100.0 - total_penalty))
+
+    worst_category = ""
+    if per_category:
+        worst_category = max(per_category.items(), key=lambda item: item[1])[0]
+
+    return {
+        "score": round(score, 1),
+        "penalties_by_category": {k: round(v, 1) for k, v in sorted(per_category.items())},
+        "worst_category": worst_category,
+    }
+
+
+def run_cosmetic_qa(sch_text: str) -> dict[str, object]:
+    """Run readability + cosmetic checks and return a scored report.
+
+    Combines the existing headless readability findings with the cosmetic
+    detectors (grid, wiring, typography, orientation, layout balance) and folds
+    them into a single deterministic 0-100 score with a category breakdown.
+    """
+
+    extent = parse_paper_extent(sch_text)
+    labels = parse_labels(sch_text)
+    symbols = parse_symbols(sch_text)
+    placed = parse_placed_symbols(sch_text)
+    wires = parse_wires(sch_text)
+    junctions = parse_junctions(sch_text)
+
+    findings: list[VisualFinding] = []
+    findings.extend(detect_label_collisions(labels))
+    findings.extend(detect_symbol_overlap(placed))
+    findings.extend(detect_text_overlap(placed, labels))
+    findings.extend(detect_offsheet_boxes(placed, labels, extent))
+    findings.extend(detect_dense_fanout(labels))
+    findings.extend(detect_grid_misalignment(placed, labels, wires, junctions))
+    findings.extend(detect_diagonal_wires(wires))
+    findings.extend(detect_font_size_inconsistency(placed, labels))
+    findings.extend(detect_power_symbol_orientation(placed))
+    findings.extend(detect_sheet_density_imbalance(placed, extent))
+    findings.extend(check_title_block(sch_text))
+
+    scored = cosmetic_score(findings)
+    report: dict[str, object] = {
+        "paper_mm": [extent[0], extent[1]],
+        "symbol_count": len(symbols),
+        "label_count": len(labels),
+        "wire_count": len(wires),
+        "status": rollup_status(findings),
+        "cosmetic_score": scored["score"],
+        "worst_category": scored["worst_category"],
+        "penalties_by_category": scored["penalties_by_category"],
+        "findings": [finding.as_dict() for finding in findings],
+    }
+    return report
+
+
 def rollup_status(findings: list[VisualFinding]) -> str:
     worst = 0
     for finding in findings:
@@ -680,22 +1104,35 @@ def run_visual_qa(sch_text: str, *, render_path: str = "") -> dict[str, object]:
 
 __all__ = [
     "Box",
+    "COSMETIC_CATEGORIES",
+    "COSMETIC_GRID_MM",
+    "COSMETIC_PENALTIES",
     "LabelItem",
     "PlacedSymbol",
     "SymbolItem",
     "VisualFinding",
+    "WireSegment",
     "check_title_block",
+    "cosmetic_score",
     "detect_dense_fanout",
+    "detect_diagonal_wires",
+    "detect_font_size_inconsistency",
+    "detect_grid_misalignment",
     "detect_label_collisions",
     "detect_offsheet",
     "detect_offsheet_boxes",
+    "detect_power_symbol_orientation",
+    "detect_sheet_density_imbalance",
     "detect_symbol_overlap",
     "detect_text_overlap",
+    "parse_junctions",
     "parse_labels",
     "parse_paper_extent",
     "parse_placed_symbols",
     "parse_symbols",
+    "parse_wires",
     "rollup_status",
+    "run_cosmetic_qa",
     "run_visual_qa",
     "union",
 ]

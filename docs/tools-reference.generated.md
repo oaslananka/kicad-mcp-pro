@@ -1,6 +1,6 @@
 Machine-maintained catalog. Refresh with `pnpm run docs:tools`.
 
-Total public tools: 369.
+Total public tools: 370.
 
 | Tool | Profile(s) | Read-Only | Destructive | Open-World | Idempotent | Headless | Requires KiCad Running | Summary |
 |---|---|---:|---:|---:|---:|---:|---:|---|
@@ -276,6 +276,7 @@ Total public tools: 369.
 | `sch_autoplace_fields` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Reposition symbol Reference/Value text onto the clearest body side. |
 | `sch_build_circuit` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | no | no | Build (overwrite) the active schematic from structured symbol, wire, and label inputs. |
 | `sch_check_power_flags` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | no | no | Check whether common power nets appear to be flagged. This KiCad MCP Pro tool supports production EDA automation work... |
+| `sch_cosmetic_score` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Score the active schematic's cosmetic quality on a 0-100 scale. |
 | `sch_create_sheet` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | no | no | Create a child schematic sheet and add it to the active top-level schematic. |
 | `sch_delete_label` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Delete label(s) (local/global/hierarchical) matching ``name`` at the |
 | `sch_delete_symbol` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Remove a placed symbol and any directly attached wire segments. |
@@ -648,6 +649,7 @@ Total public tools: 369.
 - `sch_autoplace_fields`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `sch_build_circuit`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_check_power_flags`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
+- `sch_cosmetic_score`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `sch_create_sheet`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_delete_label`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_delete_symbol`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.

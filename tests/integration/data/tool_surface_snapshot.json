@@ -5759,6 +5759,29 @@
   {
     "destructive": false,
     "experimental": false,
+    "headless": true,
+    "idempotent": false,
+    "name": "sch_cosmetic_score",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "critic",
+      "expert",
+      "full",
+      "high_speed",
+      "power",
+      "schematic",
+      "schematic_authoring",
+      "schematic_only",
+      "simulation"
+    ],
+    "read_only": false,
+    "requires_kicad_running": false
+  },
+  {
+    "destructive": false,
+    "experimental": false,
     "headless": false,
     "idempotent": false,
     "name": "sch_create_sheet",

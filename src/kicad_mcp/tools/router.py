@@ -301,6 +301,7 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "sch_live_preview",
             "sch_get_circuit_ir",
             "sch_visual_qa",
+            "sch_cosmetic_score",
             "sch_plan_from_spec",
             "sch_preview_plan",
             "sch_apply_plan",
