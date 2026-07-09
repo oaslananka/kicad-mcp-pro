@@ -8,7 +8,8 @@
     "./skills/pcb-design",
     "./skills/drc-check",
     "./skills/fabrication-output",
-    "./skills/schematic-review"
+    "./skills/schematic-review",
+    "./skills/visual-excellence"
   ],
   "author": {
     "name": "oaslananka",

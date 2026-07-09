@@ -20,6 +20,7 @@ async def test_workflow_prompts_expose_v3_canonical_sequences() -> None:
     post_route = await get_prompt_text(server, "post_placement_routing", {})
     manufacturing = await get_prompt_text(server, "manufacturing_export", {})
     review = await get_prompt_text(server, "design_review_loop", {})
+    visual = await get_prompt_text(server, "visual_excellence_loop", {})
     blocking = await get_prompt_text(server, "fix_blocking_issues", {})
     release = await get_prompt_text(server, "manufacturing_release_checklist", {})
     high_speed = await get_prompt_text(server, "high_speed_review_loop", {})
@@ -34,6 +35,8 @@ async def test_workflow_prompts_expose_v3_canonical_sequences() -> None:
     assert "post-placement routing loop" in post_route
     assert "export_manufacturing_package" in manufacturing
     assert "kicad://project/fix_queue" in review
+    assert "sch_cosmetic_score" in visual
+    assert "connectivity_preserved" in visual
     assert "project_get_next_action" in blocking
     assert "Treat manufacturing release as a gated handoff" in release
     assert "critical nets" in high_speed
