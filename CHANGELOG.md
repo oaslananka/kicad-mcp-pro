@@ -10,6 +10,16 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.24.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.23.0...mcp-server-v3.24.0) (2026-07-09)
+
+
+### Features
+
+* **gate:** add advisory schematic cosmetics quality gate ([#384](https://github.com/oaslananka/kicad-mcp-pro/issues/384)) ([966cf29](https://github.com/oaslananka/kicad-mcp-pro/commit/966cf292e9a328861deb522dc01286f2fcdb58fb))
+* **schematic:** add connectivity-safe cosmetic auto-fixers ([#380](https://github.com/oaslananka/kicad-mcp-pro/issues/380)) ([77a9a28](https://github.com/oaslananka/kicad-mcp-pro/commit/77a9a28aaceb810c03e8d4a1e3063e5f8e555fb9))
+* **schematic:** add visual baseline regression tools ([#383](https://github.com/oaslananka/kicad-mcp-pro/issues/383)) ([ab26572](https://github.com/oaslananka/kicad-mcp-pro/commit/ab26572761280ffa3651cbeb0ac1f8b7d1097eac))
+* **skill:** add visual-excellence loop skill and workflow prompt ([#382](https://github.com/oaslananka/kicad-mcp-pro/issues/382)) ([06227c3](https://github.com/oaslananka/kicad-mcp-pro/commit/06227c337cf7d9e81fedcaa6e19f20f2ef794ffd))
+
 ## [3.23.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.22.2...mcp-server-v3.23.0) (2026-07-09)
 
 
