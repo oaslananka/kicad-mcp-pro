@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.24.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.24.0...mcp-server-v3.24.1) (2026-07-09)
+
+
+### Documentation
+
+* **skill:** add professional vs rushed reference renders ([#387](https://github.com/oaslananka/kicad-mcp-pro/issues/387)) ([7ca6bec](https://github.com/oaslananka/kicad-mcp-pro/commit/7ca6bec8f42b53fa4b00608f4f2c9ccd5415c85a))
+
 ## [3.24.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.23.0...mcp-server-v3.24.0) (2026-07-09)
 
 
