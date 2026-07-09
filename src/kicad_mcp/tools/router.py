@@ -307,6 +307,8 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "sch_resolve_label_overlaps",
             "sch_normalize_power_orientation",
             "sch_normalize_text_sizes",
+            "sch_visual_baseline_set",
+            "sch_visual_baseline_compare",
             "sch_plan_from_spec",
             "sch_preview_plan",
             "sch_apply_plan",
