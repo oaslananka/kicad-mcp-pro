@@ -1031,6 +1031,60 @@ def _empty_child_sheet_ids(top_file: Path) -> set[str]:
     return ignored
 
 
+# Sheets scoring below this are flagged (advisory only — cosmetic quality never
+# blocks release).
+_COSMETIC_GATE_THRESHOLD = 80.0
+
+
+def _evaluate_schematic_cosmetics_gate() -> GateOutcome:
+    """Advisory gate on schematic cosmetic quality (never blocks release).
+
+    Scores every sheet with the deterministic cosmetic engine and reports the
+    worst. Below the threshold it returns WARN with the worst category, so the
+    fix queue surfaces the cosmetic tools without gating manufacturing.
+    """
+    from ..models.visual_qa import run_cosmetic_qa
+    from .schematic import project_schematic_files
+
+    try:
+        sheets = project_schematic_files()
+    except Exception:
+        sheets = []
+    if not sheets:
+        return GateOutcome("Schematic cosmetics", "PASS", "No schematic sheets to score.")
+
+    worst_score = 100.0
+    worst_sheet = ""
+    worst_category = ""
+    details: list[str] = []
+    for sch in sheets:
+        try:
+            text = sch.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        report = run_cosmetic_qa(text)
+        score = float(cast(float, report["cosmetic_score"]))
+        category = str(report.get("worst_category") or "")
+        details.append(f"{sch.name}: score {score:.0f} (worst: {category or 'none'})")
+        if score < worst_score:
+            worst_score, worst_sheet, worst_category = score, sch.name, category
+
+    if worst_score >= _COSMETIC_GATE_THRESHOLD:
+        return GateOutcome(
+            "Schematic cosmetics",
+            "PASS",
+            f"Cosmetic score {worst_score:.0f}/100 across all sheets.",
+            details,
+        )
+    return GateOutcome(
+        "Schematic cosmetics",
+        "WARN",
+        f"Cosmetic score {worst_score:.0f}/100 on {worst_sheet} "
+        f"(worst category: {worst_category or 'none'}). Advisory — does not block release.",
+        details,
+    )
+
+
 def _evaluate_schematic_connectivity_gate() -> GateOutcome:
     from .schematic import _build_connectivity_groups, parse_schematic_file
 
@@ -2165,6 +2219,7 @@ def _evaluate_project_gate(
         ("schematic", _evaluate_schematic_gate),
         ("connectivity", _evaluate_schematic_connectivity_gate),
         ("connectivity", _evaluate_pre_sync_gate),
+        ("schematic", _evaluate_schematic_cosmetics_gate),
         ("pcb", _evaluate_pcb_gate),
         ("pcb", _evaluate_pcb_placement_gate),
         ("pcb", _evaluate_pcb_transfer_gate),
