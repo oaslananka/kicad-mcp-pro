@@ -1553,6 +1553,7 @@ def _register_profile_components(
         routing,
         sch_transaction,
         schematic,
+        schematic_cosmetics,
         signal_integrity,
         simulation,
         test_points,
@@ -1578,6 +1579,7 @@ def _register_profile_components(
         schematic.register(server)
         variants.register(server)
         visual_qa.register(server)
+        schematic_cosmetics.register(server)
         sch_transaction.register(server)
     if "library" in enabled:
         library.register(server)
