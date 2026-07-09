@@ -728,7 +728,10 @@ def test_docker_metadata_contains_mcp_oci_label_and_release_image_contract() -> 
     assert uv_version
 
     assert 'io.modelcontextprotocol.server.name="io.github.oaslananka/kicad-mcp-pro"' in dockerfile
-    assert 'org.opencontainers.image.source="https://github.com/oaslananka/kicad-mcp-pro"' in dockerfile
+    assert (
+        'org.opencontainers.image.source="https://github.com/oaslananka/kicad-mcp-pro"'
+        in dockerfile
+    )
     assert "ARG KICAD_MCP_VERSION" in dockerfile
     assert "ARG VCS_REF" in dockerfile
     assert "@sha256:" in dockerfile
