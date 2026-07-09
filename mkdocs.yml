@@ -1,7 +1,7 @@
 site_name: KiCad MCP Pro
-site_url: https://oaslananka.github.io/kicad-mcp
-repo_url: https://github.com/oaslananka/kicad-mcp
-repo_name: oaslananka/kicad-mcp
+site_url: https://oaslananka.github.io/kicad-mcp-pro
+repo_url: https://github.com/oaslananka/kicad-mcp-pro
+repo_name: oaslananka/kicad-mcp-pro
 theme:
   name: material
   palette:

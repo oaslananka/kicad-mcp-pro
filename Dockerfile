@@ -50,7 +50,7 @@ COPY --from=uv-bin /uv /usr/local/bin/uv
 LABEL io.modelcontextprotocol.server.name="io.github.oaslananka/kicad-mcp-pro" \
   org.opencontainers.image.title="kicad-mcp-pro" \
   org.opencontainers.image.description="Professional MCP server for KiCad automation" \
-  org.opencontainers.image.source="https://github.com/oaslananka/kicad-mcp" \
+  org.opencontainers.image.source="https://github.com/oaslananka/kicad-mcp-pro" \
   org.opencontainers.image.version="${KICAD_MCP_VERSION}" \
   org.opencontainers.image.revision="${VCS_REF}" \
   org.opencontainers.image.licenses="MIT"
@@ -99,7 +99,7 @@ RUN chmod 0755 /usr/local/bin/kicad-mcp-pro-entrypoint
 LABEL io.modelcontextprotocol.server.name="io.github.oaslananka/kicad-mcp-pro" \
   org.opencontainers.image.title="kicad-mcp-pro-kicad10" \
   org.opencontainers.image.description="KiCad MCP Pro with KiCad 10 kicad-cli from AppImage. Not for shared hosting." \
-  org.opencontainers.image.source="https://github.com/oaslananka/kicad-mcp" \
+  org.opencontainers.image.source="https://github.com/oaslananka/kicad-mcp-pro" \
   org.opencontainers.image.version="${KICAD_MCP_VERSION}" \
   org.opencontainers.image.revision="${VCS_REF}" \
   org.opencontainers.image.licenses="MIT"

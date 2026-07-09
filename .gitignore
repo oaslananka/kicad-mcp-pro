@@ -52,7 +52,7 @@ TEMP/
 
 # Backup artifacts from setup wizard
 *.mcp.json.*.bak
-# User config file created by kicad-mcp setup wizard
+# User config file created by kicad-mcp-pro setup wizard
 .mcp.json
 
 # Tauri / Rust build artifacts

@@ -53,7 +53,7 @@ description = "Test metadata"
 {license_toml}
 
 [project.urls]
-Repository = "https://github.com/oaslananka/kicad-mcp"
+Repository = "https://github.com/oaslananka/kicad-mcp-pro"
 Documentation = "https://docs.example.test"
 """.lstrip(),
         encoding="utf-8",
@@ -109,16 +109,16 @@ def test_release_metadata_is_synchronised() -> None:
     assert mcp_oci["identifier"] == f"{mcp_oci['image']}:{version}"
     assert mcp_json["version"] == version
     assert server_json["name"] == "io.github.oaslananka/kicad-mcp-pro"
-    assert server_json["repository"]["url"] == "https://github.com/oaslananka/kicad-mcp"
-    assert mcp_json["repository"]["url"] == "https://github.com/oaslananka/kicad-mcp"
+    assert server_json["repository"]["url"] == "https://github.com/oaslananka/kicad-mcp-pro"
+    assert mcp_json["repository"]["url"] == "https://github.com/oaslananka/kicad-mcp-pro"
     assert npm_wrapper["version"] == version
-    assert npm_wrapper["homepage"] == "https://oaslananka.github.io/kicad-mcp"
+    assert npm_wrapper["homepage"] == "https://oaslananka.github.io/kicad-mcp-pro"
     assert npm_wrapper["mcpName"] == "io.github.oaslananka/kicad-mcp-pro"
-    assert npm_wrapper["repository"]["url"] == "git+https://github.com/oaslananka/kicad-mcp.git"
+    assert npm_wrapper["repository"]["url"] == "git+https://github.com/oaslananka/kicad-mcp-pro.git"
     assert f'__version__ = "{version}"  # x-release-please-version' in package_init
     assert "<!-- mcp-name: io.github.oaslananka/kicad-mcp-pro -->" in readme
     assert "development/v2-migration.md" in mkdocs
-    assert "https://github.com/oaslananka/kicad-mcp/security/advisories/new" in security
+    assert "https://github.com/oaslananka/kicad-mcp-pro/security/advisories/new" in security
     assert "Do not open public issues for active vulnerabilities." in security
 
 
@@ -130,7 +130,7 @@ def test_kicad_studio_contract_documents_current_http_bridge() -> None:
     assert ">=3.5.2,<4.0.0" in studio_doc
     assert "http://127.0.0.1:27185/mcp" in studio_doc
     assert "KICAD_MCP_LEGACY_SSE=true" in studio_doc
-    assert "kicad-mcp/mcp/workflows/manufacturing-export/" in studio_doc
+    assert "kicad-mcp-pro/mcp/workflows/manufacturing-export/" in studio_doc
     assert "workflows/manufacturing-export.md" in mkdocs
 
 

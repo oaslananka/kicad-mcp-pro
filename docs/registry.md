@@ -7,8 +7,8 @@ KiCad MCP Pro publishes registry metadata from the repository-level `server.json
 | Field | Value |
 | --- | --- |
 | Registry name | `io.github.oaslananka/kicad-mcp-pro` |
-| Repository | `https://github.com/oaslananka/kicad-mcp` |
-| Documentation | `https://oaslananka.github.io/kicad-mcp/` |
+| Repository | `https://github.com/oaslananka/kicad-mcp-pro` |
+| Documentation | `https://oaslananka.github.io/kicad-mcp-pro/` |
 | PyPI package | `kicad-mcp-pro` |
 | npm package | `kicad-mcp-pro` |
 | Current manifest version | `3.20.0` |

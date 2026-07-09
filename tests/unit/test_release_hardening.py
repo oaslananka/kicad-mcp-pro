@@ -728,7 +728,7 @@ def test_docker_metadata_contains_mcp_oci_label_and_release_image_contract() -> 
     assert uv_version
 
     assert 'io.modelcontextprotocol.server.name="io.github.oaslananka/kicad-mcp-pro"' in dockerfile
-    assert 'org.opencontainers.image.source="https://github.com/oaslananka/kicad-mcp"' in dockerfile
+    assert 'org.opencontainers.image.source="https://github.com/oaslananka/kicad-mcp-pro"' in dockerfile
     assert "ARG KICAD_MCP_VERSION" in dockerfile
     assert "ARG VCS_REF" in dockerfile
     assert "@sha256:" in dockerfile
@@ -752,9 +752,9 @@ def test_docker_metadata_contains_mcp_oci_label_and_release_image_contract() -> 
     assert "ghcr.io/freerouting/freerouting:2.1.0@sha256:" in compose
     assert ":latest" not in compose
     assert "type=raw,value=latest" not in registry_workflow
-    assert "ghcr.io/oaslananka/kicad-mcp/kicad-mcp-pro" not in docker_install
-    assert "ghcr.io/oaslananka/kicad-mcp/kicad-mcp-pro" not in publishing
-    assert "ghcr.io/oaslananka/kicad-mcp/kicad-mcp-pro" not in deployment
+    assert "ghcr.io/oaslananka/kicad-mcp-pro/kicad-mcp-pro" not in docker_install
+    assert "ghcr.io/oaslananka/kicad-mcp-pro/kicad-mcp-pro" not in publishing
+    assert "ghcr.io/oaslananka/kicad-mcp-pro/kicad-mcp-pro" not in deployment
 
     assert "ghcr.io/oaslananka/kicad-mcp-pro" in container_workflow
     assert "linux/amd64,linux/arm64" in container_workflow
@@ -849,7 +849,7 @@ def test_version_synchronization_across_release_manifests() -> None:
         if package.get("registryType") != "oci" and package.get("registry") != "container"
     )
     assert f'__version__ = "{mcp_version}"' in init_py
-    assert "https://oaslananka.github.io/kicad-mcp" in wrapper["homepage"]
+    assert "https://oaslananka.github.io/kicad-mcp-pro" in wrapper["homepage"]
     assert "release:dry-run:kicad-studio" in root_package["scripts"]
     assert "release:dry-run:kicad-mcp-pro" in root_package["scripts"]
     assert "release:dry-run" in root_package["scripts"]
@@ -864,7 +864,7 @@ def test_docs_workflow_deploys_only_from_canonical_repo() -> None:
     workflow = _workflow("docs.yml")
     shell_suppression = "||" + " true"
 
-    assert "github.repository == 'oaslananka/kicad-mcp'" not in workflow
+    assert "github.repository == 'oaslananka/kicad-mcp-pro'" not in workflow
     assert "CANONICAL_PAGES_TOKEN" not in workflow
     assert "github.repository_owner == 'oaslananka'" in workflow
     legacy_repo = "github.com/oaslananka/kicad-" + "mcp-pro.git"

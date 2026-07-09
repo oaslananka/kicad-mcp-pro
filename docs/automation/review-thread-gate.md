@@ -22,7 +22,7 @@ The script writes both:
 
 ```bash
 node scripts/check-review-threads.mjs \
-  --repo oaslananka/kicad-mcp \
+  --repo oaslananka/kicad-mcp-pro \
   --pr 123 \
   --fail-on-blocked
 ```

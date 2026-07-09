@@ -536,7 +536,7 @@ def _agent_config_checks() -> list[CheckResult]:
                             name=f"agent_config_{key}_{scope}",
                             status="skipped",
                             message=f"{key} ({scope}) config not found at {path}",
-                            hint=f"Run: kicad-mcp setup {key} --write",
+                            hint=f"Run: kicad-mcp-pro setup {key} --write",
                         )
                     )
     except Exception as exc:

@@ -18,7 +18,7 @@ Security fixes are normally released in the next patch version. Critical fixes m
 
 Use GitHub private vulnerability reporting for the canonical repository:
 
-<https://github.com/oaslananka/kicad-mcp/security/advisories/new>
+<https://github.com/oaslananka/kicad-mcp-pro/security/advisories/new>
 
 Do not open public issues for active vulnerabilities. Do **not** open a public issue for an active vulnerability.
 

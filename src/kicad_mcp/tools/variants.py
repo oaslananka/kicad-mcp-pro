@@ -25,7 +25,7 @@ def _variants_path() -> Path:
         raise ValueError(
             "No active project directory is configured.\n"
             "Resolution: call kicad_set_project('/absolute/path/to/project') first.\n"
-            "Help: https://oaslananka.github.io/kicad-mcp/installation/"
+            "Help: https://oaslananka.github.io/kicad-mcp-pro/installation/"
         )
     target = cfg.project_dir / _VARIANTS_DIRNAME
     target.mkdir(parents=True, exist_ok=True)

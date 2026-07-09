@@ -21,7 +21,7 @@ version, tag, or release identity was changed.
 | Published (UTC)  | `2026-04-15T21:15:40Z`                                | n/a                                       |
 | Version          | `2.1.0`                                               | `3.6.0`                                   |
 | Packages         | `pypi` only                                           | `pypi`, `npm`, `oci`                      |
-| `repository.url` | legacy standalone `kicad-mcp-pro` repo (pre-monorepo) | `https://github.com/oaslananka/kicad-mcp` |
+| `repository.url` | legacy standalone `kicad-mcp-pro` repo (pre-monorepo) | `https://github.com/oaslananka/kicad-mcp-pro` |
 
 Findings:
 
@@ -112,7 +112,7 @@ OIDC under the `oaslananka` namespace (`id-token: write`).
 ```bash
 VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
 cosign verify ghcr.io/oaslananka/kicad-mcp-pro:${VERSION} \
-  --certificate-identity-regexp "https://github.com/oaslananka/kicad-mcp/.github/workflows/publish-mcp-container.yml@refs/tags/mcp-server-v.*" \
+  --certificate-identity-regexp "https://github.com/oaslananka/kicad-mcp-pro/.github/workflows/publish-mcp-container.yml@refs/tags/mcp-server-v.*" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 

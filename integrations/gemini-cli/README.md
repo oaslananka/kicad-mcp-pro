@@ -5,7 +5,7 @@ Connect [Gemini CLI](https://cloud.google.com/gemini-cli) to your local KiCad pr
 ## Quick Install
 
 ```bash
-kicad-mcp setup gemini
+kicad-mcp-pro setup gemini
 ```
 
 Or manually:
@@ -40,7 +40,7 @@ Or manually:
 ## Verification
 
 ```bash
-kicad-mcp doctor --agent gemini
+kicad-mcp-pro doctor --agent gemini
 ```
 
 ## Security

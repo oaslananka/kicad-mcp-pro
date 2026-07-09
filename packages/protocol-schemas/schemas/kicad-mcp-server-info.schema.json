@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://oaslananka.github.io/kicad-mcp/schemas/kicad-mcp-server-info.schema.json",
+  "$id": "https://oaslananka.github.io/kicad-mcp-pro/schemas/kicad-mcp-server-info.schema.json",
   "title": "KiCad MCP Pro server-info contract",
   "description": "Stable capability discovery payload. Breaking contract changes must increment the schemaVersion major.",
   "type": "object",

@@ -7,7 +7,7 @@ description: Safe KiCad PCB design assistance workflow using KiCad MCP board ins
 
 Use this skill when an AI agent is asked to inspect, plan, improve, or safely assist with a KiCad PCB layout through KiCad MCP Pro.
 
-This skill is specific to `oaslananka/kicad-mcp` and should be kept synchronized with `docs/tools-reference.generated.md`.
+This skill is specific to `oaslananka/kicad-mcp-pro` and should be kept synchronized with `docs/tools-reference.generated.md`.
 
 ## When to use
 

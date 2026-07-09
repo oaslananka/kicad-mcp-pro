@@ -4,10 +4,10 @@ Allows remote clients (ChatGPT app, Claude.ai) to reach a local
 kicad-mcp-pro server through a TCP pairing bridge.
 
 Usage:
-    kicad-mcp bridge start            # start with random pairing code
-    kicad-mcp bridge start --port 9090 --mcp-port 3334 --code SECRET
-    kicad-mcp bridge status           # check if bridge is running
-    kicad-mcp bridge stop             # stop bridge
+    kicad-mcp-pro bridge start            # start with random pairing code
+    kicad-mcp-pro bridge start --port 9090 --mcp-port 3334 --code SECRET
+    kicad-mcp-pro bridge status           # check if bridge is running
+    kicad-mcp-pro bridge stop             # stop bridge
 """
 
 from __future__ import annotations
@@ -93,7 +93,7 @@ def bridge_status() -> None:
         typer.echo(f"Bridge is running (PID: {pid}, port: {DEFAULT_BRIDGE_PORT})")
     except (ConnectionRefusedError, OSError):
         typer.echo(f"PID file exists ({pid}) but bridge is not responding.")
-        typer.echo("Run 'kicad-mcp bridge stop' to clean up.")
+        typer.echo("Run 'kicad-mcp-pro bridge stop' to clean up.")
 
 
 def bridge_stop() -> None:
@@ -347,7 +347,7 @@ async def _bridge_server(state: BridgeState) -> None:
 async def _route_message(
     state: BridgeState, message: dict[str, object]
 ) -> dict[str, object] | None:
-    """Route an incoming JSON-RPC message to the local kicad-mcp server."""
+    """Route an incoming JSON-RPC message to the local kicad-mcp-pro server."""
     method = message.get("method", "")
     msg_id = message.get("id")
 
@@ -491,7 +491,7 @@ def _start_daemon(state: BridgeState) -> None:
             pid_path.write_text(str(pid))
             typer.echo(f"Bridge daemon started (PID: {pid}, port: {state.port})")
             typer.echo(f"Pairing code: {state.pairing_code}")
-            typer.echo("To stop: kicad-mcp bridge stop")
+            typer.echo("To stop: kicad-mcp-pro bridge stop")
     else:
         # Windows/Platform fallback: spawn a detached subprocess
         import subprocess
@@ -539,4 +539,4 @@ def _start_daemon(state: BridgeState) -> None:
 
         typer.echo(f"Bridge daemon started (PID: {pid}, port: {state.port})")
         typer.echo(f"Pairing code: {state.pairing_code}")
-        typer.echo("To stop: kicad-mcp bridge stop")
+        typer.echo("To stop: kicad-mcp-pro bridge stop")

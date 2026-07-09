@@ -25,7 +25,7 @@ def test_checked_mcp_manifest_is_valid() -> None:
     manifest = module.validate_manifest_file(ROOT / "server.json")
 
     assert manifest["name"] == "io.github.oaslananka/kicad-mcp-pro"
-    assert manifest["repository"]["url"] == "https://github.com/oaslananka/kicad-mcp"
+    assert manifest["repository"]["url"] == "https://github.com/oaslananka/kicad-mcp-pro"
     assert manifest["repository"].get("subfolder") is None
     assert [package["runtimeHint"] for package in manifest["packages"]] == [
         "uvx",
@@ -48,12 +48,12 @@ def test_checked_mcp_manifest_has_public_registry_listing_metadata() -> None:
     assert len(manifest["description"]) <= 100
     assert manifest["icons"] == [
         {
-            "src": "https://oaslananka.github.io/kicad-mcp/assets/icon-512.png",
+            "src": "https://oaslananka.github.io/kicad-mcp-pro/assets/icon-512.png",
             "mimeType": "image/png",
             "sizes": ["512x512"],
         },
         {
-            "src": "https://oaslananka.github.io/kicad-mcp/assets/icon.svg",
+            "src": "https://oaslananka.github.io/kicad-mcp-pro/assets/icon.svg",
             "mimeType": "image/svg+xml",
             "sizes": ["any"],
         },
@@ -80,9 +80,9 @@ def test_checked_mcp_manifest_has_public_registry_listing_metadata() -> None:
     ]
     assert registry_meta["supportedMcpProtocolVersions"] == ["2025-11-25"]
     assert registry_meta["license"] == "MIT"
-    assert registry_meta["canonicalRepository"] == ("https://github.com/oaslananka/kicad-mcp")
+    assert registry_meta["canonicalRepository"] == ("https://github.com/oaslananka/kicad-mcp-pro")
     assert registry_meta["changelog"] == (
-        "https://github.com/oaslananka/kicad-mcp/blob/main/CHANGELOG.md"
+        "https://github.com/oaslananka/kicad-mcp-pro/blob/main/CHANGELOG.md"
     )
     assert registry_meta["releaseNotes"] == registry_meta["changelog"]
     assert registry_meta["maintainer"] == {
@@ -112,7 +112,7 @@ def test_checked_mcp_manifest_has_public_registry_listing_metadata() -> None:
             "simulation, DFM, and manufacturing export."
         ),
         "reference": (
-            "https://github.com/oaslananka/kicad-mcp/blob/main/docs/tools-reference.generated.md"
+            "https://github.com/oaslananka/kicad-mcp-pro/blob/main/docs/tools-reference.generated.md"
         ),
     }
 
@@ -149,7 +149,7 @@ def test_validator_rejects_invalid_license_and_broken_metadata_link() -> None:
     manifest = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
     manifest["license"] = "MIT License"
     manifest["_meta"][REGISTRY_META_KEY]["changelog"] = (
-        "https://github.com/oaslananka/kicad-mcp/blob/main/MISSING.md"
+        "https://github.com/oaslananka/kicad-mcp-pro/blob/main/MISSING.md"
     )
 
     errors = module.validate_manifest(manifest)

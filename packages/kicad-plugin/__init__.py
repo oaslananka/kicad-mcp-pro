@@ -5,7 +5,7 @@ Copy or symlink this directory into your KiCad plugins folder
 KiCad's pcbnew will auto-register the toolbar action on startup.
 
 The plugin reads the live board read-only, publishes the active project / file /
-selection context to a running kicad-mcp server, and gates any mutating action
+selection context to a running kicad-mcp-pro server, and gates any mutating action
 behind a safe-apply confirmation. It requires no broad permissions: it talks only
 to the loopback MCP endpoint and never writes files itself.
 """

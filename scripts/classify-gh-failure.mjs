@@ -254,7 +254,7 @@ Options:
 function parseArgs(argv) {
   const args = {
     json: false,
-    repo: process.env.GITHUB_REPOSITORY || "oaslananka/kicad-mcp",
+    repo: process.env.GITHUB_REPOSITORY || "oaslananka/kicad-mcp-pro",
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];

@@ -17,7 +17,7 @@ No long-lived release token is required.
 5. Confirm PyPI publish, SBOM, checksums, Sigstore signing artifacts,
    and GitHub attestations.
 6. Confirm docs deploy to the canonical repository `gh-pages` branch and
-   `https://oaslananka.github.io/kicad-mcp/` Pages site.
+   `https://oaslananka.github.io/kicad-mcp-pro/` Pages site.
 7. Post a short GitHub Discussions announcement.
 
 ## Release Workflow

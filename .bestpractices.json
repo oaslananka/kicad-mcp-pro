@@ -25,7 +25,7 @@
     "goldClaimed": false,
     "name": "KiCad MCP Pro",
     "openssfTarget": "Maintain Passing/Silver evidence; Gold intentionally not targeted for solo-maintainer mode",
-    "repository": "https://github.com/oaslananka/kicad-mcp"
+    "repository": "https://github.com/oaslananka/kicad-mcp-pro"
   },
   "schemaVersion": 1,
   "statusLegend": [

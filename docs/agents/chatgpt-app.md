@@ -24,7 +24,7 @@ ChatGPT web users can connect to KiCad via a custom GPT app powered by the KiCad
 
 ## Mode B — Developer/Local Bridge (V2)
 
-- User runs `kicad-mcp bridge` locally
+- User runs `kicad-mcp-pro bridge` locally
 - ChatGPT app pairs with local bridge via pairing code
 - Write tools require local approval
 - Short-lived tokens and project access

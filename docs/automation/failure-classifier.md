@@ -41,7 +41,7 @@ Classify a GitHub Actions run with `gh`:
 
 ```bash
 node scripts/classify-gh-failure.mjs \
-  --repo oaslananka/kicad-mcp \
+  --repo oaslananka/kicad-mcp-pro \
   --run-id 123456789 \
   --json
 ```

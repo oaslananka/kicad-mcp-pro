@@ -8,7 +8,7 @@
 - Normal CI, lint, test, docs, CodeQL, Gitleaks, Trivy, and workflow-security
   checks run on pull requests and canonical pushes.
   Publishing, release, registry, package-manager, signing, and deploy
-  jobs keep `github.repository == 'oaslananka/kicad-mcp'` guards.
+  jobs keep `github.repository == 'oaslananka/kicad-mcp-pro'` guards.
 - Third-party Actions are pinned to full commit SHAs resolved from upstream refs.
   Do not replace these with fabricated SHAs.
 - JavaScript Actions should declare `runs.using: node24` when an upstream

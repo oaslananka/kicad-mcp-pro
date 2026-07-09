@@ -3,7 +3,7 @@
 Stdlib only. ``build_studio_context`` maps a snapshot of KiCad's live GUI state
 (:class:`BoardInfo`) onto the ``studio_push_context`` tool arguments, and
 :class:`StudioContextClient` posts a JSON-RPC ``tools/call`` to a running
-kicad-mcp server's HTTP endpoint. The networking opener is injectable so the whole
+kicad-mcp-pro server's HTTP endpoint. The networking opener is injectable so the whole
 flow is unit-testable without KiCad or a live server.
 """
 
@@ -105,7 +105,7 @@ def _validate_loopback_base_url(base_url: str) -> None:
 
 
 class StudioContextClient:
-    """Minimal JSON-RPC client that pushes context to a running kicad-mcp server."""
+    """Minimal JSON-RPC client that pushes context to a running kicad-mcp-pro server."""
 
     def __init__(
         self,

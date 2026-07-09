@@ -6,7 +6,7 @@ Phase 2 deliverables:
 - Project/user/global scope support
 - Backup and restore of existing configs
 - Config validation per agent format
-- Interactive wizard (``kicad-mcp setup --wizard``)
+- Interactive wizard (``kicad-mcp-pro setup --wizard``)
 """
 
 from __future__ import annotations
@@ -914,10 +914,10 @@ def setup_wizard() -> str:
     for key, info in sorted(AGENTS.items()):
         lines.append(f"  {key:20s} {info.display}")
     lines.append("")
-    lines.append("Run: kicad-mcp setup <agent-name>")
-    lines.append("Example: kicad-mcp setup claude-code")
+    lines.append("Run: kicad-mcp-pro setup <agent-name>")
+    lines.append("Example: kicad-mcp-pro setup claude-code")
     lines.append("")
-    lines.append("For interactive mode: kicad-mcp setup --wizard")
+    lines.append("For interactive mode: kicad-mcp-pro setup --wizard")
     return "\n".join(lines)
 
 

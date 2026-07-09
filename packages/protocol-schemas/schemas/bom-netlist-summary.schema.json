@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://oaslananka.github.io/kicad-mcp/schemas/bom-netlist-summary.schema.json",
+  "$id": "https://oaslananka.github.io/kicad-mcp-pro/schemas/bom-netlist-summary.schema.json",
   "title": "BOM and netlist summary contract",
   "description": "Product-neutral summary of BOM rows and netlist nodes exchanged between KiCad Studio and kicad-mcp-pro.",
   "type": "object",

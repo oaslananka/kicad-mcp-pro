@@ -2,7 +2,7 @@
 
 **Review date:** 2026-07-03  
 **Release line:** `3.17.1`  
-**Repository:** `oaslananka/kicad-mcp`
+**Repository:** `oaslananka/kicad-mcp-pro`
 
 This document records the release and public-listing evidence used before
 external MCP/app-directory submissions. It is intentionally factual: do not mark

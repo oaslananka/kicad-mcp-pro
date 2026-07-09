@@ -33,7 +33,7 @@ The project is maintainer-led. Routine fixes use lazy consensus. Changes that al
 
 ## Release Authority
 
-Automated CI/CD is owned by the canonical `oaslananka/kicad-mcp`
+Automated CI/CD is owned by the canonical `oaslananka/kicad-mcp-pro`
 GitHub repository. Publishing uses GitHub Actions environments and trusted
 publishing where supported. Releases are driven by release-please and the CI
 pipeline rather than by privileged local steps, so a release can be cut by any

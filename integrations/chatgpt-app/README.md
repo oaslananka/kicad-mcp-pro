@@ -17,7 +17,7 @@ ChatGPT Apps use the MCP Apps SDK, which provides:
 - Config snippet generation
 
 ### Mode B — Developer/Local Bridge (V2)
-- User runs `kicad-mcp bridge` on their machine
+- User runs `kicad-mcp-pro bridge` on their machine
 - ChatGPT app pairs with local bridge via pairing code
 - Write tools require local approval
 - Short-lived tokens and project access

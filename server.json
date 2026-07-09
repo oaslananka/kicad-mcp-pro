@@ -3,18 +3,18 @@
   "name": "io.github.oaslananka/kicad-mcp-pro",
   "title": "KiCad MCP Pro",
   "description": "Production-grade MCP server for KiCad EDA\u2014PCB design, DRC, simulation, BOM, DFM, and manufacturing.",
-  "websiteUrl": "https://oaslananka.github.io/kicad-mcp",
+  "websiteUrl": "https://oaslananka.github.io/kicad-mcp-pro",
   "license": "MIT",
   "icons": [
     {
-      "src": "https://oaslananka.github.io/kicad-mcp/assets/icon-512.png",
+      "src": "https://oaslananka.github.io/kicad-mcp-pro/assets/icon-512.png",
       "mimeType": "image/png",
       "sizes": [
         "512x512"
       ]
     },
     {
-      "src": "https://oaslananka.github.io/kicad-mcp/assets/icon.svg",
+      "src": "https://oaslananka.github.io/kicad-mcp-pro/assets/icon.svg",
       "mimeType": "image/svg+xml",
       "sizes": [
         "any"
@@ -22,7 +22,7 @@
     }
   ],
   "repository": {
-    "url": "https://github.com/oaslananka/kicad-mcp",
+    "url": "https://github.com/oaslananka/kicad-mcp-pro",
     "source": "github",
     "id": "R_kgDOOIB7Lg"
   },
@@ -155,29 +155,29 @@
       ],
       "screenshots": [
         {
-          "src": "https://oaslananka.github.io/kicad-mcp/assets/screenshots/01-claude-desktop-quality-gate.png",
+          "src": "https://oaslananka.github.io/kicad-mcp-pro/assets/screenshots/01-claude-desktop-quality-gate.png",
           "caption": "Quality gate report in Claude Desktop"
         },
         {
-          "src": "https://oaslananka.github.io/kicad-mcp/assets/screenshots/02-cursor-schematic-build.png",
+          "src": "https://oaslananka.github.io/kicad-mcp-pro/assets/screenshots/02-cursor-schematic-build.png",
           "caption": "Schematic build workflow in Cursor"
         },
         {
-          "src": "https://oaslananka.github.io/kicad-mcp/assets/screenshots/03-vscode-pcb-inspection.png",
+          "src": "https://oaslananka.github.io/kicad-mcp-pro/assets/screenshots/03-vscode-pcb-inspection.png",
           "caption": "PCB inspection in VS Code"
         },
         {
-          "src": "https://oaslananka.github.io/kicad-mcp/assets/screenshots/04-tools-reference.png",
+          "src": "https://oaslananka.github.io/kicad-mcp-pro/assets/screenshots/04-tools-reference.png",
           "caption": "Tools reference documentation"
         },
         {
-          "src": "https://oaslananka.github.io/kicad-mcp/assets/screenshots/05-export-manufacturing.png",
+          "src": "https://oaslananka.github.io/kicad-mcp-pro/assets/screenshots/05-export-manufacturing.png",
           "caption": "Export and manufacturing package generation"
         }
       ],
       "toolCatalog": {
         "summary": "EDA automation tools for KiCad project setup, schematic analysis, PCB inspection, DRC/ERC validation, BOM/netlist generation, routing review, simulation, DFM, and manufacturing export.",
-        "reference": "https://github.com/oaslananka/kicad-mcp/blob/main/docs/tools-reference.generated.md"
+        "reference": "https://github.com/oaslananka/kicad-mcp-pro/blob/main/docs/tools-reference.generated.md"
       },
       "prerequisites": [
         "KiCad CLI 8.x, 9.x, or 10.x available on PATH for file-backed DRC, ERC, and export tools."
@@ -189,10 +189,10 @@
         "name": "Osman Aslan",
         "url": "https://github.com/oaslananka"
       },
-      "canonicalRepository": "https://github.com/oaslananka/kicad-mcp",
+      "canonicalRepository": "https://github.com/oaslananka/kicad-mcp-pro",
       "license": "MIT",
-      "changelog": "https://github.com/oaslananka/kicad-mcp/blob/main/CHANGELOG.md",
-      "releaseNotes": "https://github.com/oaslananka/kicad-mcp/blob/main/CHANGELOG.md",
+      "changelog": "https://github.com/oaslananka/kicad-mcp-pro/blob/main/CHANGELOG.md",
+      "releaseNotes": "https://github.com/oaslananka/kicad-mcp-pro/blob/main/CHANGELOG.md",
       "serverInfo": {
         "schemaVersion": "1.1.0",
         "mcpProtocolVersion": "2025-11-25",

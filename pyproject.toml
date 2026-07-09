@@ -98,11 +98,11 @@ vcs = [
 kicad-mcp-pro = "kicad_mcp.server:main"
 
 [project.urls]
-Homepage = "https://github.com/oaslananka/kicad-mcp"
-Documentation = "https://oaslananka.github.io/kicad-mcp"
-Repository = "https://github.com/oaslananka/kicad-mcp"
-"Bug Tracker" = "https://github.com/oaslananka/kicad-mcp/issues"
-Changelog = "https://github.com/oaslananka/kicad-mcp/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/oaslananka/kicad-mcp-pro"
+Documentation = "https://oaslananka.github.io/kicad-mcp-pro"
+Repository = "https://github.com/oaslananka/kicad-mcp-pro"
+"Bug Tracker" = "https://github.com/oaslananka/kicad-mcp-pro/issues"
+Changelog = "https://github.com/oaslananka/kicad-mcp-pro/blob/main/CHANGELOG.md"
 Funding = "https://github.com/sponsors/oaslananka"
 
 

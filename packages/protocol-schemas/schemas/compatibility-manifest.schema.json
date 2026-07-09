@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://oaslananka.github.io/kicad-mcp/schemas/compatibility-manifest.schema.json",
+  "$id": "https://oaslananka.github.io/kicad-mcp-pro/schemas/compatibility-manifest.schema.json",
   "title": "Protocol compatibility manifest",
   "description": "Cross-product manifest describing supported schema majors and migration policy.",
   "type": "object",

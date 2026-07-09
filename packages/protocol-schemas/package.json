@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/oaslananka/kicad-mcp"
+    "url": "https://github.com/oaslananka/kicad-mcp-pro"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

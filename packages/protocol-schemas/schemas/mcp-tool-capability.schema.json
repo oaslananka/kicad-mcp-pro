@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://oaslananka.github.io/kicad-mcp/schemas/mcp-tool-capability.schema.json",
+  "$id": "https://oaslananka.github.io/kicad-mcp-pro/schemas/mcp-tool-capability.schema.json",
   "title": "MCP tool capability metadata contract",
   "description": "Versioned metadata for a single advertised kicad-mcp-pro tool capability.",
   "type": "object",

@@ -7,7 +7,7 @@ description: KiCad MCP manufacturing release workflow for Gerbers, drill files, 
 
 Use this skill when an AI agent is asked to prepare, validate, or package KiCad manufacturing outputs through KiCad MCP Pro.
 
-This skill is specific to `oaslananka/kicad-mcp` and should be kept synchronized with `docs/tools-reference.generated.md`.
+This skill is specific to `oaslananka/kicad-mcp-pro` and should be kept synchronized with `docs/tools-reference.generated.md`.
 
 ## When to use
 

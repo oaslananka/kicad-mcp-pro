@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://oaslananka.github.io/kicad-mcp/schemas/mcp-server-health.schema.json",
+  "$id": "https://oaslananka.github.io/kicad-mcp-pro/schemas/mcp-server-health.schema.json",
   "title": "MCP server health and version contract",
   "description": "Health/version payload advertised by kicad-mcp-pro without VS Code or Python implementation details.",
   "type": "object",

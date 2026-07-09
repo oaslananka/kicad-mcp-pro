@@ -57,7 +57,7 @@ This statement is the formal safety answer for public directory reviewers.
 - [ ] CycloneDX SBOM is required release evidence.
 - [ ] SHA-256 checksums are required release evidence.
 - [ ] Release workflow is protected by a `release` environment.
-- [ ] Docs workflow publishes to `https://oaslananka.github.io/kicad-mcp`.
+- [ ] Docs workflow publishes to `https://oaslananka.github.io/kicad-mcp-pro`.
 
 ## Independent Verification Commands
 
@@ -75,7 +75,7 @@ uv run --all-extras properdocs build -f mkdocs.yml --strict
 ```bash
 VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
 cosign verify ghcr.io/oaslananka/kicad-mcp-pro:${VERSION} \
-  --certificate-identity-regexp "https://github.com/oaslananka/kicad-mcp/.github/workflows/publish-mcp-container.yml@refs/tags/mcp-server-v.*" \
+  --certificate-identity-regexp "https://github.com/oaslananka/kicad-mcp-pro/.github/workflows/publish-mcp-container.yml@refs/tags/mcp-server-v.*" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 

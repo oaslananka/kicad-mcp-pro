@@ -21,9 +21,9 @@ NPM_WRAPPER_PACKAGE = ROOT / "packages" / "mcp-npm" / "package.json"
 # number that silently drifts away from the real tool surface.
 TOOLS_REFERENCE_GENERATED = ROOT / "docs" / "tools-reference.generated.md"
 MCP_SERVER_NAME = "io.github.oaslananka/kicad-mcp-pro"
-REPOSITORY = "https://github.com/oaslananka/kicad-mcp"
+REPOSITORY = "https://github.com/oaslananka/kicad-mcp-pro"
 REPOSITORY_ID = "R_kgDOOIB7Lg"
-WEBSITE = "https://oaslananka.github.io/kicad-mcp"
+WEBSITE = "https://oaslananka.github.io/kicad-mcp-pro"
 GHCR_IMAGE = "ghcr.io/oaslananka/kicad-mcp-pro"
 REGISTRY_META_KEY = "io.github.oaslananka/kicad-mcp-pro"
 # In standalone kicad-mcp the root IS the package, so canonicalRepository

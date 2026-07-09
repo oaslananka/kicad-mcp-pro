@@ -7,7 +7,7 @@ description: KiCad MCP workflow for ERC/DRC execution, issue triage, waiver revi
 
 Use this skill when an AI agent is asked to run, interpret, triage, or revalidate KiCad ERC/DRC results through KiCad MCP Pro.
 
-This skill is specific to `oaslananka/kicad-mcp` and should be kept synchronized with `docs/tools-reference.generated.md`.
+This skill is specific to `oaslananka/kicad-mcp-pro` and should be kept synchronized with `docs/tools-reference.generated.md`.
 
 ## When to use
 

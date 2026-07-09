@@ -5,7 +5,7 @@ Connect [Cursor](https://cursor.sh) to KiCad via the `kicad-mcp-pro` MCP server 
 ## Quick Install
 
 ```bash
-kicad-mcp setup cursor
+kicad-mcp-pro setup cursor
 ```
 
 Or manually:
@@ -26,7 +26,7 @@ Or manually:
 ## Verification
 
 ```bash
-kicad-mcp doctor --agent cursor
+kicad-mcp-pro doctor --agent cursor
 ```
 
 In Cursor Agent mode, ask: *"Use kicad MCP to inspect this project."*

@@ -16,10 +16,10 @@ Use this document when submitting KiCad MCP Pro to the Anthropic Connector Direc
 - [ ] Category: `EDA / Hardware Design`.
 - [ ] Fallback category: `Developer Tools`.
 - [ ] Transport: `stdio`.
-- [ ] Repository URL: `https://github.com/oaslananka/kicad-mcp`.
-- [ ] Privacy URL: `https://oaslananka.github.io/kicad-mcp/privacy/`.
-- [ ] Support URL: `https://github.com/oaslananka/kicad-mcp/issues`.
-- [ ] Documentation URL: `https://oaslananka.github.io/kicad-mcp`.
+- [ ] Repository URL: `https://github.com/oaslananka/kicad-mcp-pro`.
+- [ ] Privacy URL: `https://oaslananka.github.io/kicad-mcp-pro/privacy/`.
+- [ ] Support URL: `https://github.com/oaslananka/kicad-mcp-pro/issues`.
+- [ ] Documentation URL: `https://oaslananka.github.io/kicad-mcp-pro`.
 - [ ] Package install command: `uvx kicad-mcp-pro`.
 - [ ] MCP server name: `io.github.oaslananka/kicad-mcp-pro`.
 - [ ] License: `MIT`.
@@ -86,7 +86,7 @@ Use this document when submitting KiCad MCP Pro to the Anthropic Connector Direc
 - Concrete repo control: Use `KiCad MCP Pro` and `io.github.oaslananka/kicad-mcp-pro` consistently.
 - Reviewer response: point to the exact file or command, then rerun `pnpm run submission:check`.
 - Known rejection cause: Missing privacy policy.
-- Concrete repo control: Use `https://oaslananka.github.io/kicad-mcp/privacy/` and `docs/privacy.md`.
+- Concrete repo control: Use `https://oaslananka.github.io/kicad-mcp-pro/privacy/` and `docs/privacy.md`.
 - Reviewer response: point to the exact file or command, then rerun `pnpm run submission:check`.
 - Known rejection cause: Unsafe filesystem access.
 - Concrete repo control: Reference `path_safety.py`, project dir, and workspace root.
@@ -110,7 +110,7 @@ Use this document when submitting KiCad MCP Pro to the Anthropic Connector Direc
 - Concrete repo control: Reference `src/kicad_mcp/tools/metadata.py`.
 - Reviewer response: point to the exact file or command, then rerun `pnpm run submission:check`.
 - Known rejection cause: Broken docs URL.
-- Concrete repo control: Verify `https://oaslananka.github.io/kicad-mcp` before submission.
+- Concrete repo control: Verify `https://oaslananka.github.io/kicad-mcp-pro` before submission.
 - Reviewer response: point to the exact file or command, then rerun `pnpm run submission:check`.
 
 ## Final Anthropic Consistency Controls
