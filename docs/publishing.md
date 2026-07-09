@@ -19,6 +19,27 @@ The release workflow uses PyPI Trusted Publishing through GitHub Actions OIDC.
 Long-lived package-index token secrets should not be needed once the PyPI
 trusted publisher is configured.
 
+### Token fallback (manual, OIDC unavailable)
+
+`.github/workflows/publish-python-token.yml` is a manual-only
+(`workflow_dispatch`) fallback for when trusted publishing cannot run — most
+commonly right after a repository rename, before the PyPI/TestPyPI
+trusted-publisher configuration is updated to the new repository name (the OIDC
+claim carries the new name while PyPI still expects the old one, so the primary
+path fails).
+
+The preferred fix is to update the trusted publisher's repository name on PyPI
+and TestPyPI and return to the OIDC path. The token fallback exists only to
+unblock a publish in the meantime. Note that token authentication cannot mint
+PEP 740 attestations.
+
+To use it: create the gated environments `pypi-token` and `testpypi-token` (add
+required reviewers), then add an environment secret named `PYPI_PUBLISH_TOKEN`
+to each — the real PyPI project token on `pypi-token`, the TestPyPI project
+token on `testpypi-token`. Run the workflow and pick the `target`; the chosen
+environment supplies the matching token. Use project-scoped tokens, not
+account-wide ones.
+
 ## GitHub Releases
 
 GitHub Release artifacts are produced by `.github/workflows/release-please.yml`.
