@@ -1,0 +1,100 @@
+name: Publish Python (token fallback)
+
+# Manual, token-authenticated fallback for publishing to PyPI / TestPyPI.
+#
+# The PRIMARY publish path is trusted publishing (OIDC) in publish-python.yml.
+# Use this workflow ONLY when OIDC is unavailable — for example right after a
+# repository rename, before the PyPI/TestPyPI trusted-publisher configuration is
+# updated to the new repository name. It is manual-only (workflow_dispatch) and
+# never runs on release, so it cannot fire automatically.
+#
+# Token publishing does NOT produce PEP 740 attestations (those require OIDC), so
+# prefer fixing the trusted publisher and returning to publish-python.yml.
+#
+# Setup: create the gated environments `pypi-token` and `testpypi-token` (add
+# required reviewers), and add an environment secret named PYPI_PUBLISH_TOKEN to
+# each — the real PyPI token on `pypi-token`, the TestPyPI token on
+# `testpypi-token`. The workflow selects the environment (and therefore the
+# correct token) from the chosen target.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which index to publish to
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
+
+permissions:
+  contents: read
+
+jobs:
+  publish-token:
+    if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
+    runs-on: ubuntu-24.04
+    environment:
+      name: ${{ inputs.target == 'pypi' && 'pypi-token' || 'testpypi-token' }}
+      url: ${{ inputs.target == 'pypi' && 'https://pypi.org/p/kicad-mcp-pro' || 'https://test.pypi.org/p/kicad-mcp-pro' }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - run: uv build
+      - name: Generate and verify local checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --all-extras python scripts/generate_release_evidence.py generate \
+            --dist-dir dist \
+            --output release-evidence
+          uv run --all-extras python scripts/generate_release_evidence.py verify-local \
+            --checksums release-evidence/SHA256SUMS.txt \
+            --artifacts dist
+          (cd dist && sha256sum --check ../release-evidence/SHA256SUMS.txt)
+      - name: Check if version already published
+        id: check-published
+        env:
+          TARGET: ${{ inputs.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(uv run --frozen python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
+          if [ "$TARGET" = "pypi" ]; then
+            base="https://pypi.org"
+          else
+            base="https://test.pypi.org"
+          fi
+          if curl -fsS "${base}/pypi/kicad-mcp-pro/${version}/json" >/dev/null; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish with API token
+        if: steps.check-published.outputs.already_published != 'true'
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
+        with:
+          packages-dir: dist
+          repository-url: ${{ inputs.target == 'pypi' && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}
+          password: ${{ secrets.PYPI_PUBLISH_TOKEN }}
+          # Token auth cannot mint OIDC attestations; keep this false.
+          attestations: false
+      - name: Verify published digests
+        env:
+          TARGET: ${{ inputs.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(uv run --frozen python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
+          uv run --frozen python scripts/generate_release_evidence.py verify-pypi \
+            --repository "$TARGET" \
+            --package kicad-mcp-pro \
+            --version "$version" \
+            --checksums release-evidence/SHA256SUMS.txt
