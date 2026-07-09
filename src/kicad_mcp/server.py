@@ -1561,6 +1561,7 @@ def _register_profile_components(
         validation,
         variants,
         version_control,
+        visual_baseline,
         visual_qa,
     )
 
@@ -1580,6 +1581,7 @@ def _register_profile_components(
         variants.register(server)
         visual_qa.register(server)
         schematic_cosmetics.register(server)
+        visual_baseline.register(server)
         sch_transaction.register(server)
     if "library" in enabled:
         library.register(server)
