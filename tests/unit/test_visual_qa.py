@@ -8,15 +8,25 @@ from pathlib import Path
 import pytest
 
 from kicad_mcp.models.visual_qa import (
+    COSMETIC_GRID_MM,
+    cosmetic_score,
+    detect_diagonal_wires,
+    detect_font_size_inconsistency,
+    detect_grid_misalignment,
     detect_label_collisions,
     detect_offsheet,
     detect_offsheet_boxes,
+    detect_power_symbol_orientation,
+    detect_sheet_density_imbalance,
     detect_symbol_overlap,
     detect_text_overlap,
+    parse_junctions,
     parse_labels,
     parse_paper_extent,
     parse_placed_symbols,
     parse_symbols,
+    parse_wires,
+    run_cosmetic_qa,
     run_visual_qa,
 )
 
@@ -247,3 +257,133 @@ async def test_sch_visual_qa_tool(tmp_path: Path) -> None:
     assert payload["sheets"]
     codes = {f["code"] for sheet in payload["sheets"] for f in sheet["findings"]}
     assert "label_overlap" in codes
+
+
+# ---------------------------------------------------------------------------
+# Cosmetic-quality detectors (Visual Excellence Loop, Phase A)
+# ---------------------------------------------------------------------------
+
+# On-grid, orthogonal, single font, upright — a clean reference sheet.
+CLEAN_COSMETIC_SCH = """
+(kicad_sch (version 20240101) (paper "A4")
+  (title_block (title "Clean") (rev "A") (date "2026-01-01") (company "Acme"))
+  (wire (pts (xy 50.8 50.8) (xy 63.5 50.8)))
+  (wire (pts (xy 63.5 50.8) (xy 63.5 63.5)))
+  (junction (at 63.5 50.8))
+  (label "NET_A" (at 50.8 40.64 0) (effects (font (size 1.27 1.27))))
+  (symbol (lib_id "Device:R") (at 63.5 63.5 0)
+    (property "Reference" "R1" (at 66.04 62.23 0) (effects (font (size 1.27 1.27))))
+  )
+)
+"""
+
+
+def test_parse_wires_and_junctions() -> None:
+    wires = parse_wires(CLEAN_COSMETIC_SCH)
+    assert len(wires) == 2
+    junctions = parse_junctions(CLEAN_COSMETIC_SCH)
+    assert junctions == [(63.5, 50.8)]
+
+
+def test_detect_grid_misalignment_flags_off_grid_anchor() -> None:
+    symbols = parse_placed_symbols(
+        '(kicad_sch (symbol (lib_id "Device:R") (at 50.7 63.5 0)'
+        ' (property "Reference" "R1" (at 50.7 63.5 0))))'
+    )
+    findings = detect_grid_misalignment(symbols, [], [], [], grid_mm=COSMETIC_GRID_MM)
+    assert any(f.code == "grid_misalignment" for f in findings)
+
+
+def test_detect_grid_misalignment_clean_when_on_grid() -> None:
+    wires = parse_wires(CLEAN_COSMETIC_SCH)
+    junctions = parse_junctions(CLEAN_COSMETIC_SCH)
+    placed = parse_placed_symbols(CLEAN_COSMETIC_SCH)
+    labels = parse_labels(CLEAN_COSMETIC_SCH)
+    assert detect_grid_misalignment(placed, labels, wires, junctions) == []
+
+
+def test_detect_diagonal_wires() -> None:
+    diagonal = parse_wires("(kicad_sch (wire (pts (xy 10 10) (xy 20 25))))")
+    assert any(f.code == "diagonal_wire" for f in detect_diagonal_wires(diagonal))
+    # Orthogonal wires are clean.
+    ortho = parse_wires("(kicad_sch (wire (pts (xy 10 10) (xy 20 10))))")
+    assert detect_diagonal_wires(ortho) == []
+
+
+def test_detect_font_size_inconsistency() -> None:
+    sch = """
+    (kicad_sch (version 20240101) (paper "A4")
+      (label "A" (at 10 10 0) (effects (font (size 1.27 1.27))))
+      (label "B" (at 20 20 0) (effects (font (size 1.27 1.27))))
+      (label "C" (at 30 30 0) (effects (font (size 2.54 2.54))))
+    )
+    """
+    labels = parse_labels(sch)
+    findings = detect_font_size_inconsistency([], labels)
+    assert any(f.code == "font_inconsistency" for f in findings)
+
+
+def test_detect_power_symbol_sideways() -> None:
+    sch = (
+        '(kicad_sch (symbol (lib_id "power:GND") (at 100 100 90)'
+        ' (property "Reference" "#PWR01" (at 100 100 0))))'
+    )
+    placed = parse_placed_symbols(sch)
+    findings = detect_power_symbol_orientation(placed)
+    assert any(f.code == "power_symbol_sideways" for f in findings)
+
+    upright = parse_placed_symbols(
+        '(kicad_sch (symbol (lib_id "power:GND") (at 100 100 0)'
+        ' (property "Reference" "#PWR01" (at 100 100 0))))'
+    )
+    assert detect_power_symbol_orientation(upright) == []
+
+
+def test_detect_sheet_density_imbalance() -> None:
+    # Ten symbols all jammed into the top-left quadrant of an A4 sheet.
+    blocks = "".join(
+        f'(symbol (lib_id "Device:R") (at {10 + i} {10 + i} 0)'
+        f' (property "Reference" "R{i}" (at {10 + i} {10 + i} 0)))'
+        for i in range(10)
+    )
+    placed = parse_placed_symbols(f"(kicad_sch {blocks})")
+    findings = detect_sheet_density_imbalance(placed, (297.0, 210.0))
+    assert any(f.code == "sheet_density_imbalance" for f in findings)
+
+
+def test_cosmetic_score_perfect_and_penalized() -> None:
+    clean = run_cosmetic_qa(CLEAN_COSMETIC_SCH)
+    assert clean["cosmetic_score"] == 100.0
+    assert clean["worst_category"] == ""
+
+    ugly = run_cosmetic_qa(DEFECT_SCH)
+    assert ugly["cosmetic_score"] < 100.0
+    assert ugly["worst_category"]
+    # Score is deterministic: same input, same number.
+    assert run_cosmetic_qa(DEFECT_SCH)["cosmetic_score"] == ugly["cosmetic_score"]
+
+
+def test_cosmetic_score_capping_prevents_negative() -> None:
+    from kicad_mcp.models.visual_qa import VisualFinding
+
+    flood = [VisualFinding("WARN", "symbol_overlap", "x") for _ in range(100)]
+    result = cosmetic_score(flood)
+    assert 0.0 <= float(result["score"]) <= 100.0
+
+
+@pytest.mark.anyio
+async def test_sch_cosmetic_score_tool(tmp_path: Path) -> None:
+    from kicad_mcp.server import create_server
+    from tests.conftest import call_tool_text
+
+    (tmp_path / "test.kicad_pro").write_text("{}", encoding="utf-8")
+    (tmp_path / "test.kicad_pcb").write_text("", encoding="utf-8")
+    (tmp_path / "test.kicad_sch").write_text(CLEAN_COSMETIC_SCH, encoding="utf-8")
+
+    server = create_server()
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(tmp_path)})
+    raw = await call_tool_text(server, "sch_cosmetic_score", {})
+    payload = json.loads(raw)
+    assert payload["cosmetic_score"] == 100.0
+    assert payload["sheets"]
+    assert "penalties_by_category" in payload["sheets"][0]
