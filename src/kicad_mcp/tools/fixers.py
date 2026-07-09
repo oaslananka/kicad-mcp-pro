@@ -155,6 +155,35 @@ GATE_FIXERS: dict[str, list[FixerAction]] = {
             description="Inspect footprint-parity details to identify mismatched refs.",
         ),
     ],
+    # Advisory only — cosmetic fixers mutate the schematic and default to a dry
+    # run, so they are surfaced as suggestions (never auto-applied in the loop)
+    # to respect the review-before-write workflow.
+    "Schematic cosmetics": [
+        FixerAction(
+            tool="sch_cosmetic_score",
+            description="Re-score cosmetics and read worst_category to pick the right fixer.",
+        ),
+        FixerAction(
+            tool="sch_align_to_grid",
+            description="Snap off-grid symbols/labels/wires to the grid (dry run, then apply).",
+        ),
+        FixerAction(
+            tool="sch_straighten_wires",
+            description="Flatten almost-orthogonal wires (dry run, then apply=true).",
+        ),
+        FixerAction(
+            tool="sch_resolve_label_overlaps",
+            description="De-conflict overlapping labels by flipping justify (dry run, then apply).",
+        ),
+        FixerAction(
+            tool="sch_normalize_power_orientation",
+            description="Upright sideways power symbols (dry run, then apply=true).",
+        ),
+        FixerAction(
+            tool="sch_normalize_text_sizes",
+            description="Normalise outlier fonts to the dominant size (dry run, then apply=true).",
+        ),
+    ],
 }
 
 # Gate names that, when failing, block *all* downstream gates.
