@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.23.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.22.2...mcp-server-v3.23.0) (2026-07-09)
+
+
+### Features
+
+* **schematic:** add deterministic cosmetic-quality score ([#378](https://github.com/oaslananka/kicad-mcp-pro/issues/378)) ([0b18069](https://github.com/oaslananka/kicad-mcp-pro/commit/0b180696c0ec4e92f6f783c38b11255605bbbdf3))
+
 ## [3.22.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.22.1...mcp-server-v3.22.2) (2026-07-08)
 
 
