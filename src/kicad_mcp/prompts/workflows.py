@@ -197,6 +197,38 @@ Run a closed-loop design review instead of trusting a single build pass.
         return [TextContent(type="text", text=text)]
 
     @mcp.prompt()
+    def visual_excellence_loop() -> list[TextContent]:
+        """Score → fix → render → verify loop for professional schematic cosmetics."""
+        text = """
+Drive the schematic to a professional, cosmetically clean state with a measured
+loop. Cosmetic fixers keep electrical connectivity as a hard invariant, so apply
+them without fear — but verify the render and finish with ERC.
+
+Run this loop per sheet until the score meets the target (default 80/100) or no
+fixer applies:
+
+1. Measure with `sch_cosmetic_score()`. If the score is at target, stop. Else
+   read `worst_category`.
+2. Dry-run the matching fixer (default `apply=false`) and read
+   `connectivity_preserved`:
+   - `grid` -> `sch_align_to_grid()`
+   - `wiring` -> `sch_straighten_wires()`
+   - `readability` -> `sch_resolve_label_overlaps()`
+   - `orientation` -> `sch_normalize_power_orientation()`
+   - `typography` -> `sch_normalize_text_sizes()`
+3. If `connectivity_preserved` is false, do not apply — the fix would change a
+   net; surface it for a human. If true, apply with `apply=true`.
+4. See it: `sch_render_png()`, then `sch_render_visual_diff()` to confirm the
+   delta covers only the objects you intended to move.
+5. Re-measure with `sch_cosmetic_score()`; confirm the score rose. Repeat.
+6. When every applicable fixer reports `no_change`, stop even if below target —
+   the rest needs human layout judgment. Report what is left.
+7. Finish with `run_erc()`: a clean cosmetic pass must also be electrically
+   clean. Cosmetic checks never substitute for ERC or human approval.
+""".strip()
+        return [TextContent(type="text", text=text)]
+
+    @mcp.prompt()
     def fix_blocking_issues() -> list[TextContent]:
         """Prompt focused on consuming the fix queue and clearing blockers."""
         text = """
