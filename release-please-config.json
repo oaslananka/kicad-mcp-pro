@@ -52,6 +52,11 @@
           "jsonpath": "$.version"
         },
         {
+          "type": "json",
+          "path": ".claude-plugin/plugin.json",
+          "jsonpath": "$.version"
+        },
+        {
           "type": "yaml",
           "path": "compatibility.yaml",
           "jsonpath": "$.products.kicad-mcp-pro.version"

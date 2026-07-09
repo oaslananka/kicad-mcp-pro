@@ -214,3 +214,21 @@ def test_docs_workflow_uses_properdocs_to_avoid_mkdocs_2_warning() -> None:
 
     assert "uv run properdocs build -f mkdocs.yml --strict" in workflow
     assert "python -m mkdocs build" not in workflow
+
+
+def test_plugin_manifest_version_tracks_package_and_is_release_managed() -> None:
+    """The Claude plugin manifest version must match the package and be release-managed.
+
+    It drifted (3.19.0 vs 3.24.0) because release-please did not bump it; this locks
+    the version to pyproject and asserts the manifest is listed as a release extra-file
+    so future releases keep it in sync automatically.
+    """
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    version = pyproject["project"]["version"]
+    plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    assert plugin["version"] == version
+
+    config = json.loads((ROOT / "release-please-config.json").read_text(encoding="utf-8"))
+    extra_files = config["packages"]["."]["extra-files"]
+    tracked = {(entry["path"], entry.get("jsonpath")) for entry in extra_files}
+    assert (".claude-plugin/plugin.json", "$.version") in tracked
