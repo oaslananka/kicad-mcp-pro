@@ -2,6 +2,10 @@ site_name: KiCad MCP Pro
 site_url: https://oaslananka.github.io/kicad-mcp-pro
 repo_url: https://github.com/oaslananka/kicad-mcp-pro
 repo_name: oaslananka/kicad-mcp-pro
+copyright: >
+  &copy; 2026 oaslananka &middot;
+  <a href="https://github.com/sponsors/oaslananka">Sponsor</a> &middot;
+  <a href="https://www.buymeacoffee.com/oaslananka">Buy me a coffee</a>
 theme:
   name: material
   palette:
