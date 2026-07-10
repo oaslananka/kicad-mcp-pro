@@ -40,7 +40,9 @@ class GateHistory:
     @classmethod
     def for_active_project(cls) -> GateHistory:
         root = get_config().project_root
-        state_dir = root / ".kicad_mcp"
+        # Canonical MCP state dir is ".kicad-mcp" (hyphen) everywhere else; keep
+        # gate history in the same place rather than a second ".kicad_mcp" dir.
+        state_dir = root / ".kicad-mcp"
         state_dir.mkdir(parents=True, exist_ok=True)
         history = cls(state_dir / "gate_history.db")
         history._init()
