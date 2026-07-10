@@ -113,7 +113,7 @@ GitHub Actions OIDC. PyPI and TestPyPI project owners must configure trusted
 publishers for the package-index environments:
 
 - Owner: `oaslananka`
-- Repository: `kicad-mcp`
+- Repository: `kicad-mcp-pro`
 - Workflow: `publish-python.yml`
 - Environments: `pypi` and `testpypi`
 
