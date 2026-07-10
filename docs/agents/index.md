@@ -13,6 +13,7 @@ kiCad-mcp-pro is an MCP server that exposes KiCad PCB design capabilities as too
 | [VS Code / Copilot](vscode-copilot.md) | ✅ Supported | ✅ Supported | — | Experimental |
 | [Cursor](cursor.md) | ✅ Supported | ⚠️ Verify | ✅ Supported | — |
 | [Claude Desktop](claude-desktop.md) | ✅ Supported | — | — | — |
+| [.mcpb bundle](mcpb.md) | ✅ Supported | — | — | ✅ 1-file install |
 | [Claude.ai Web](claude-ai.md) | ❌ No | ✅ Supported | — | Limited |
 | [ChatGPT Web](chatgpt-app.md) | ❌ No | ✅ Supported | — | ✅ Apps SDK |
 | [Antigravity](antigravity.md) | ⚠️ Verify | ✅ Supported | — | — |
