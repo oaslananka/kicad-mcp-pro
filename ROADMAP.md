@@ -10,12 +10,16 @@ described in `GOVERNANCE.md`.
 
 ## Current Release Line
 
-### 3.17.x (Current stable — 2026-07-03)
+The authoritative version lives in `pyproject.toml` / `src/kicad_mcp/__init__.py`;
+each release records a version-pinned evidence snapshot in a dated
+`docs/release-readiness-<date>.md` document. This section is kept
+version-agnostic so it does not drift.
+
 - Package metadata is synchronized across `pyproject.toml`, `package.json`,
-  `server.json`, `src/kicad_mcp/__init__.py`, and README.
-- Public packages are verified for the 3.17.1 release line on PyPI and npm.
-- GHCR `ghcr.io/oaslananka/kicad-mcp-pro:3.17.1` is published as a multi-arch
-  OCI index.
+  `server.json`, `src/kicad_mcp/__init__.py`, and README on every release.
+- Public packages are verified for each release line on PyPI and npm.
+- GHCR `ghcr.io/oaslananka/kicad-mcp-pro:<version>` is published as a multi-arch
+  OCI index per release.
 - KiCad 10.0.4 remains the primary stable KiCad baseline.
 - MCP protocol compatibility remains aligned with the 2025-11-25 schema used by
   `server.json` and the generated tool contracts.

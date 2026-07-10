@@ -11,7 +11,7 @@ KiCad MCP Pro publishes registry metadata from the repository-level `server.json
 | Documentation | `https://oaslananka.github.io/kicad-mcp-pro/` |
 | PyPI package | `kicad-mcp-pro` |
 | npm package | `kicad-mcp-pro` |
-| Current manifest version | `3.20.0` |
+| Current manifest version | See `server.json` (`$.version`) — synced from `pyproject.toml` |
 
 ## Source of truth
 
