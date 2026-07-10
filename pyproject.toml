@@ -128,6 +128,10 @@ ignore = ["S603"]
 # scripts/build_parity_matrix.py); do not hand-edit.
 "src/kicad_mcp/parity_matrix_data.py" = ["E501"]
 "packages/kicad-plugin/__init__.py" = ["N999"]
+# Example generator scripts favour schematic-reference naming (U1, R1, C1) and a
+# compact block layout over library lint conventions; they are demos, not library
+# code.
+"examples/**/*.py" = ["N", "E702", "ANN"]
 "packages/kicad-plugin/kicad_mcp_companion.py" = ["N802"]
 
 [tool.mypy]

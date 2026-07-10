@@ -9,7 +9,8 @@
     "./skills/drc-check",
     "./skills/fabrication-output",
     "./skills/schematic-review",
-    "./skills/visual-excellence"
+    "./skills/visual-excellence",
+    "./skills/wired-subcircuit-design"
   ],
   "author": {
     "name": "oaslananka",
