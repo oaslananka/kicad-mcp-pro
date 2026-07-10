@@ -11,6 +11,8 @@
     "assets:demo": "uv run --all-extras python scripts/generate_synthetic_demo.py --convert-if-available",
     "assets:screenshots": "uv run --all-extras python scripts/render_screenshots.py",
     "mcp:manifest:check": "uv run --all-extras python scripts/validate_mcp_manifest.py server.json",
+    "mcpb:validate": "npx -y @anthropic-ai/mcpb@latest validate packaging/mcpb/manifest.json",
+    "mcpb:pack": "npx -y @anthropic-ai/mcpb@latest pack packaging/mcpb dist/kicad-mcp-pro.mcpb",
     "docker:metadata:check": "uv run --all-extras python scripts/check_docker_metadata.py",
     "publish:mcp:dry-run": "uv run --all-extras python scripts/publish_mcp_registry.py --dry-run",
     "release:check": "uv run --all-extras python scripts/check_release_preflight.py",

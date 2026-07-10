@@ -1,0 +1,40 @@
+{
+  "manifest_version": "0.4",
+  "name": "kicad-mcp-pro",
+  "display_name": "KiCad MCP Pro",
+  "version": "3.25.0",
+  "description": "Drive KiCad schematic, PCB, DRC/ERC, DFM, and manufacturing review from any MCP-capable AI agent.",
+  "long_description": "KiCad MCP Pro is a production-grade Model Context Protocol server for KiCad EDA. It exposes schematic capture, PCB layout, ERC/DRC validation, DFM checks, BOM, simulation, and manufacturing export as agent tools.\n\nThis bundle is a configuration convenience: it registers the published `kicad-mcp-pro` package with your desktop app so you do not have to hand-edit a JSON config. It is not a fully self-contained one-click install. KiCad (with `kicad-cli`) must already be installed on your system, and `uv` resolves and launches the published package on first run (which needs network access the first time).",
+  "author": {
+    "name": "oaslananka",
+    "url": "https://github.com/oaslananka"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oaslananka/kicad-mcp-pro"
+  },
+  "homepage": "https://oaslananka.github.io/kicad-mcp-pro",
+  "documentation": "https://oaslananka.github.io/kicad-mcp-pro",
+  "support": "https://github.com/oaslananka/kicad-mcp-pro/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "binary",
+    "entry_point": "kicad-mcp-pro",
+    "mcp_config": {
+      "command": "uvx",
+      "args": ["kicad-mcp-pro"]
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "linux", "win32"]
+  },
+  "keywords": [
+    "KiCad",
+    "EDA",
+    "PCB design",
+    "Model Context Protocol",
+    "electronic design automation"
+  ],
+  "license": "MIT",
+  "privacy_policies": ["https://oaslananka.github.io/kicad-mcp-pro/privacy/"]
+}
