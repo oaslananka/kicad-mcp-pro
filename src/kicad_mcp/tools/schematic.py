@@ -1766,7 +1766,11 @@ def parse_schematic_file(sch_file: Path) -> dict[str, Any]:
 
 
 def _extract_uuid(content: str) -> str:
-    match = re.search(r'\(kicad_sch[^(]*\(uuid\s+"([^"]+)"', content)
+    # The root sheet UUID is the first ``(uuid ...)`` after ``(kicad_sch`` — but
+    # ``(version ...)`` / ``(generator ...)`` sit between them, so a ``[^(]*`` gap
+    # never matches a real file. Use a non-greedy DOTALL span to reach the first
+    # UUID (the root), not a later symbol/wire UUID.
+    match = re.search(r'\(kicad_sch\b.*?\(uuid\s+"([^"]+)"', content, re.DOTALL)
     return match.group(1) if match else ""
 
 
