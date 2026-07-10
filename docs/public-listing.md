@@ -17,12 +17,17 @@ SUBMISSION_MODE=1 pnpm run submission:check
 
 ## Current Release Readiness Snapshot
 
+Version numbers are intentionally omitted here so this living document does not
+drift out of date. The authoritative version lives in `pyproject.toml` /
+`src/kicad_mcp/__init__.py`; each release captures a version-pinned evidence
+snapshot in a dated `release-readiness-<date>.md` document.
+
 | Item | Status | Evidence |
 |---|---|---|
-| Release line | Ready for 3.17.1 validation | [`release-readiness-2026-07-03.md`](release-readiness-2026-07-03.md) |
-| PyPI package | Verified | `kicad-mcp-pro` 3.17.1 present in PyPI JSON metadata |
-| npm wrapper | Verified | `kicad-mcp-pro` 3.17.1 present in npm registry metadata |
-| GHCR image | Verified | `ghcr.io/oaslananka/kicad-mcp-pro:3.17.1` returns a multi-arch OCI index |
+| Release line | Validated per release | Latest dated [`release-readiness-*.md`](.) snapshot |
+| PyPI package | Verified | `kicad-mcp-pro` current release present in PyPI JSON metadata |
+| npm wrapper | Verified | `kicad-mcp-pro` current release present in npm registry metadata |
+| GHCR image | Verified | `ghcr.io/oaslananka/kicad-mcp-pro:<version>` returns a multi-arch OCI index |
 | Public screenshots | Ready for automated final-check mode | `docs/assets/screenshots/` contains five 1920x1080 public-listing images |
 | Demo media | Required before each external form | `docs/assets/demo.cast` and `docs/assets/demo.gif` are checked by submission preflight |
 | Privacy URL | Required before each external form | `https://oaslananka.github.io/kicad-mcp-pro/privacy/` |
