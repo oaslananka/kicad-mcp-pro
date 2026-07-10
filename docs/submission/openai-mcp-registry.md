@@ -93,7 +93,7 @@ OIDC under the `oaslananka` namespace (`id-token: write`).
 - [ ] Confirm workflow is `release-please.yml`.
 - [ ] Confirm release environment is `release`.
 - [ ] Confirm owner is `oaslananka`.
-- [ ] Confirm repository is `kicad-mcp`.
+- [ ] Confirm repository is `kicad-mcp-pro`.
 - [ ] Confirm OIDC `id-token: write` remains configured for release publish.
 - [ ] Remove token-based PyPI secrets after Trusted Publishing is active.
 - [ ] Do not paste PyPI credentials into registry forms or docs.
