@@ -95,7 +95,18 @@ not an automated fixer. Report what is left and why.
 
 ## Rubric — what "professional" looks like
 
-When you evaluate a `sch_render_png`, check for:
+Compare the sheet you render against these two reference renders (both are the
+same three-resistor circuit):
+
+- `reference/professional.png` — clean: parts aligned on a row, one horizontal
+  wire, and readable `IN` / `MID` / `OUT` labels.
+- `reference/rushed.png` — the same circuit drawn badly: the net labels collide
+  into an unreadable blob, the wire runs diagonally, and the parts sit off-grid
+  at uneven heights.
+
+The `rushed` sheet is still electrically identical — this is exactly the class of
+defect that ERC passes and cosmetic review must catch. When you evaluate a
+`sch_render_png`, check for:
 
 - **Grid** — parts and wires sit on a regular grid; nothing looks hand-nudged.
 - **Orthogonal wiring** — wires run horizontally/vertically; no diagonals.
