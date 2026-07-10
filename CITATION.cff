@@ -8,8 +8,8 @@ authors:
 repository-code: "https://github.com/oaslananka/kicad-mcp-pro"
 url: "https://oaslananka.github.io/kicad-mcp-pro"
 license: MIT
-version: "3.17.1"
-date-released: "2026-07-03"
+version: "3.25.0" # x-release-please-version
+date-released: "2026-07-10"
 keywords:
   - KiCad
   - EDA
