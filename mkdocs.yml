@@ -101,6 +101,7 @@ nav:
           - Claude AI: agents/claude-ai.md
           - Claude Code: agents/claude-code.md
           - Claude Desktop: agents/claude-desktop.md
+          - MCP Bundle (.mcpb): agents/mcpb.md
           - Cline: agents/cline.md
           - Codex: agents/codex.md
           - Continue: agents/continue.md
