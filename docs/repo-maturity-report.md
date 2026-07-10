@@ -6,7 +6,7 @@ Mode: audit + implementation PR
 
 ## Executive summary
 
-`kicad-mcp` already has many strong professional open-source signals: README, MIT license, contribution guide, code of conduct, security policy, support policy, release automation, CI, CodeQL, Gitleaks, Scorecard, fuzzing, package metadata, OpenSSF Silver evidence, generated tool references, and documented governance.
+`kicad-mcp-pro` already has many strong professional open-source signals: README, MIT license, contribution guide, code of conduct, security policy, support policy, release automation, CI, CodeQL, Gitleaks, Scorecard, fuzzing, package metadata, OpenSSF Silver evidence, generated tool references, and documented governance.
 
 The current maturity level is **Professional OSS / Mature OSS**. This report does **not** claim Gold or foundation-grade status because several conditions need human confirmation or are not yet true: single active maintainer, no evidence of independent human PR review in sampled recent PRs, classic branch protection is not used because an active GitHub ruleset protects `main`, and only team-growth controls remain out of scope for a solo maintainer.
 
