@@ -20,6 +20,7 @@
   <a href="https://www.npmjs.com/package/kicad-mcp-pro"><img src="https://img.shields.io/npm/v/kicad-mcp-pro?label=npm" alt="npm Version" /></a>
   <a href="https://pypi.org/project/kicad-mcp-pro/"><img src="https://img.shields.io/pypi/pyversions/kicad-mcp-pro?label=python" alt="Python Version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="MIT License" /></a>
+  <a href="https://doi.org/10.5281/zenodo.21283791"><img src="https://zenodo.org/badge/1255527274.svg" alt="DOI" /></a>
 </p>
 
 <p>
@@ -265,6 +266,25 @@ All changes must pass `task verify` before opening a pull request.
 Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request. All
 changes must pass the repository's format, lint, type-check, test, workflow,
 security, and package metadata gates.
+
+## Cite this software
+
+If you use KiCad MCP Pro in research or a technical publication, cite the
+archived release via its DOI (see [`CITATION.cff`](CITATION.cff) for full
+metadata):
+
+```bibtex
+@software{aslan_kicad_mcp_pro,
+  author  = {Aslan, Osman},
+  title   = {KiCad MCP Pro},
+  license = {MIT},
+  url     = {https://github.com/oaslananka/kicad-mcp-pro},
+  doi     = {10.5281/zenodo.21283791}
+}
+```
+
+Every GitHub release is archived on Zenodo under this concept DOI, which
+always resolves to the most recent version.
 
 ## License
 
