@@ -10,6 +10,26 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.25.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.24.1...mcp-server-v3.25.0) (2026-07-10)
+
+
+### Features
+
+* **gallery:** add wired sub-circuit skill and ESP32-C3 breakout example ([#389](https://github.com/oaslananka/kicad-mcp-pro/issues/389)) ([1cef404](https://github.com/oaslananka/kicad-mcp-pro/commit/1cef404ba4c6d1d62475e4ad4f2b167a9e5c9a35))
+
+
+### Bug Fixes
+
+* **gate-history:** store gate history in the canonical .kicad-mcp state dir ([#392](https://github.com/oaslananka/kicad-mcp-pro/issues/392)) ([aa7fa97](https://github.com/oaslananka/kicad-mcp-pro/commit/aa7fa97bbdb32932f5dbd9c24c7a8e7f839978b1))
+* **schematic:** read root sheet UUID so incremental symbol adds share one sheet ([#390](https://github.com/oaslananka/kicad-mcp-pro/issues/390)) ([fc2ddc0](https://github.com/oaslananka/kicad-mcp-pro/commit/fc2ddc033a3ca52afcaae7ce1bbda32c68726705))
+
+
+### Documentation
+
+* add a discreet Sponsor / Buy me a coffee footer link ([#395](https://github.com/oaslananka/kicad-mcp-pro/issues/395)) ([d66086b](https://github.com/oaslananka/kicad-mcp-pro/commit/d66086b95c6dfa2d9e51e6b8c49c08e3bfdb8381))
+* fix stale kicad-mcp repo references left by the rename ([#393](https://github.com/oaslananka/kicad-mcp-pro/issues/393)) ([55fad7f](https://github.com/oaslananka/kicad-mcp-pro/commit/55fad7fcc429f581c26349aa908a9ec4d1abf0d2))
+* **readme:** trim redundant hero badges (17 to 13) ([#396](https://github.com/oaslananka/kicad-mcp-pro/issues/396)) ([6922379](https://github.com/oaslananka/kicad-mcp-pro/commit/6922379d037f9d640e0592bc447bdfc0306d3c7a))
+
 ## [3.24.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.24.0...mcp-server-v3.24.1) (2026-07-09)
 
 
