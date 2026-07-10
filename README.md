@@ -16,7 +16,6 @@
 </p>
 
 <p>
-  <a href="https://github.com/oaslananka/kicad-mcp-pro/releases"><img src="https://img.shields.io/github/v/release/oaslananka/kicad-mcp-pro?filter=kicad-mcp-gui-v*&label=gui%20release" alt="GUI Release" /></a>
   <a href="https://pypi.org/project/kicad-mcp-pro/"><img src="https://img.shields.io/pypi/v/kicad-mcp-pro?label=pypi" alt="PyPI Version" /></a>
   <a href="https://www.npmjs.com/package/kicad-mcp-pro"><img src="https://img.shields.io/npm/v/kicad-mcp-pro?label=npm" alt="npm Version" /></a>
   <a href="https://pypi.org/project/kicad-mcp-pro/"><img src="https://img.shields.io/pypi/pyversions/kicad-mcp-pro?label=python" alt="Python Version" /></a>
@@ -26,7 +25,6 @@
 <p>
   <a href="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/ci.yml"><img src="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/gui-ci.yml"><img src="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/gui-ci.yml/badge.svg?branch=main" alt="GUI CI" /></a>
-  <a href="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/docs.yml"><img src="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/docs.yml/badge.svg?branch=main" alt="Docs" /></a>
   <a href="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/codeql.yml"><img src="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/codeql.yml/badge.svg?branch=main" alt="CodeQL" /></a>
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/oaslananka/kicad-mcp-pro"><img src="https://api.scorecard.dev/projects/github.com/oaslananka/kicad-mcp-pro/badge" alt="OpenSSF Scorecard" /></a>
   <a href="https://www.bestpractices.dev/projects/13377"><img src="https://www.bestpractices.dev/projects/13377/badge" alt="OpenSSF Best Practices: Silver" /></a>
@@ -42,8 +40,6 @@
 <!-- parity-coverage-badge:end -->
 
 <p>
-  <a href="https://oaslananka.github.io/kicad-mcp-pro/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-blue" alt="Documentation" /></a>
-  <a href="https://deepwiki.com/oaslananka/kicad-mcp-pro"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
   <a href="https://www.buymeacoffee.com/oaslananka"><img src="https://img.shields.io/badge/sponsor-Buy%20me%20a%20coffee-ffdd00?logo=buymeacoffee&logoColor=black" alt="Buy me a coffee" /></a>
 </p>
 
