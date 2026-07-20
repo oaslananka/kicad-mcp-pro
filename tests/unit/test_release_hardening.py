@@ -794,6 +794,9 @@ def test_scorecard_workflow_uses_pinned_actions_without_artifact_storage() -> No
     workflow = _workflow("scorecard.yml")
 
     assert "security-events: write" in workflow
+    assert "checks: read" in workflow
+    assert "pull-requests: read" in workflow
+    assert "statuses: read" in workflow
     assert "ossf/scorecard-action@62b2cac7ed8198b15735ed49ab1e5cf35480ba46" in workflow
     assert "results_format: sarif" in workflow
     assert "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in workflow
