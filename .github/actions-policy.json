@@ -121,5 +121,8 @@
     "/release-please-config.json @oaslananka",
     "/scripts/check_github_actions_policy.py @oaslananka",
     "/server.json @oaslananka"
+  ],
+  "allowed_transitive_action_repositories": [
+    "aquasecurity/setup-trivy"
   ]
 }

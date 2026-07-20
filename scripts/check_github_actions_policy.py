@@ -73,6 +73,14 @@ def validate_repository(root: Path, policy: dict[str, object]) -> list[str]:
 
     github_owned = set(policy.get("github_owned_action_owners", []))
     allowed_repositories = set(policy.get("allowed_action_repositories", []))
+    allowed_transitive_repositories = set(policy.get("allowed_transitive_action_repositories", []))
+    overlapping_repositories = sorted(allowed_repositories & allowed_transitive_repositories)
+    if overlapping_repositories:
+        errors.append(
+            "actions-policy.json: repositories cannot be both direct and transitive: "
+            f"{overlapping_repositories!r}"
+        )
+    permitted_repositories = allowed_repositories | allowed_transitive_repositories
     expected_writes = policy.get("workflow_write_permissions", {})
     if not isinstance(expected_writes, dict):
         errors.append("actions-policy.json: workflow_write_permissions must be an object")
@@ -134,7 +142,12 @@ def validate_repository(root: Path, policy: dict[str, object]) -> list[str]:
             repository = "/".join(parts[:2])
             if parts[0] not in github_owned:
                 actual_third_party.add(repository)
-                if repository not in allowed_repositories:
+                if repository in allowed_transitive_repositories:
+                    errors.append(
+                        f"{workflow.name}: directly used Action must be promoted from the "
+                        f"transitive allowlist: {repository}"
+                    )
+                elif repository not in permitted_repositories:
                     errors.append(
                         f"{workflow.name}: action repository is not allowlisted: {repository}"
                     )

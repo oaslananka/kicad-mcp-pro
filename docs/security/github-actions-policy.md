@@ -12,7 +12,7 @@ The repository is configured with:
 - immutable commit-SHA references required;
 - GitHub-owned Actions allowed, with every other Action repository explicitly allowlisted.
 
-The expected settings and third-party Action repositories are recorded in `.github/actions-policy.json`.
+The expected settings and third-party Action repositories are recorded in `.github/actions-policy.json`. Direct workflow dependencies and transitively invoked Action repositories are tracked separately so repository settings cover composite-Action dependencies without hiding unused direct dependencies.
 
 ## Workflow permission rules
 
@@ -29,7 +29,7 @@ A new write scope requires all of the following in the same pull request:
 
 ## Action allowlist changes
 
-A third-party Action may be added only when its repository is listed in `.github/actions-policy.json` and the workflow references a full 40-character commit SHA. Tags and branches are rejected even for allowlisted repositories.
+A third-party Action may be added only when its repository is listed in `.github/actions-policy.json` and the workflow references a full 40-character commit SHA. Tags and branches are rejected even for allowlisted repositories. Composite Actions may invoke other Actions; those repositories must be recorded in the transitive allowlist and confirmed from the pinned parent Action source.
 
 Prefer GitHub-owned Actions or existing allowlisted repositories. Review the Action source, release history, permissions, network behavior, and maintenance status before expanding the allowlist.
 
