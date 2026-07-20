@@ -1,2 +1,5 @@
 packages:
   - "packages/protocol-schemas"
+
+overrides:
+  js-yaml: 4.3.0
