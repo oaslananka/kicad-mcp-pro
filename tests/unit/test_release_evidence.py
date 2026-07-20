@@ -3,8 +3,9 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
+import sys
 from pathlib import Path
-from types import ModuleType, TracebackType
+from types import ModuleType, SimpleNamespace, TracebackType
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -239,3 +240,88 @@ def test_verify_pypi_provenance_rejects_legacy_repository_identity(
         assert "no publish attestation matched" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("legacy Trusted Publisher identity must be rejected")
+
+
+def test_verify_pypi_provenance_cryptographically_verifies_local_artifact(
+    tmp_path: Path, monkeypatch
+) -> None:
+    module = _load_script()
+    digest = "a" * 64
+    artifact_dir = tmp_path / "dist"
+    artifact_dir.mkdir()
+    artifact = artifact_dir / "artifact.whl"
+    artifact.write_bytes(b"artifact")
+    checksums = tmp_path / "SHA256SUMS.txt"
+    checksums.write_text(f"{digest}  {artifact.name}\n", encoding="utf-8")
+    payload = _provenance_payload(
+        repository="oaslananka/kicad-mcp-pro",
+        environment="testpypi",
+        filename=artifact.name,
+        digest=digest,
+    )
+    monkeypatch.setattr(
+        module.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: _PypiResponse(payload),
+    )
+
+    verified: list[Path] = []
+
+    class FakePublisher:
+        def __init__(self, *, repository: str, workflow: str, environment: str) -> None:
+            self.identity = (repository, workflow, environment)
+
+        def __eq__(self, other: object) -> bool:
+            return isinstance(other, FakePublisher) and self.identity == other.identity
+
+    class FakeDistribution:
+        @classmethod
+        def from_file(cls, path: Path) -> Path:
+            return path
+
+    class FakeAttestation:
+        def verify(self, publisher: FakePublisher, distribution: Path):
+            assert publisher.identity == (
+                "oaslananka/kicad-mcp-pro",
+                "publish-python.yml",
+                "testpypi",
+            )
+            verified.append(distribution)
+            return module.PYPI_PUBLISH_ATTESTATION, None
+
+    class FakeProvenance:
+        @classmethod
+        def model_validate(cls, _payload: object) -> SimpleNamespace:
+            return SimpleNamespace(
+                attestation_bundles=[
+                    SimpleNamespace(
+                        publisher=FakePublisher(
+                            repository="oaslananka/kicad-mcp-pro",
+                            workflow="publish-python.yml",
+                            environment="testpypi",
+                        ),
+                        attestations=[FakeAttestation()],
+                    )
+                ]
+            )
+
+    fake_module = ModuleType("pypi_attestations")
+    fake_module.Distribution = FakeDistribution
+    fake_module.GitHubPublisher = FakePublisher
+    fake_module.Provenance = FakeProvenance
+    monkeypatch.setitem(sys.modules, "pypi_attestations", fake_module)
+
+    module.verify_pypi_provenance(
+        "testpypi",
+        "kicad-mcp-pro",
+        "1.0.0",
+        checksums,
+        "oaslananka/kicad-mcp-pro",
+        "publish-python.yml",
+        "testpypi",
+        artifact_dir=artifact_dir,
+        retries=1,
+        retry_delay=0,
+    )
+
+    assert verified == [artifact]

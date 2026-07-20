@@ -297,6 +297,51 @@ def _provenance_failure(
     )
 
 
+def _cryptographic_provenance_failure(
+    provenance_payload: dict[str, Any],
+    *,
+    artifact_path: Path,
+    publisher_repository: str,
+    publisher_workflow: str,
+    publisher_environment: str,
+) -> str | None:
+    """Cryptographically verify a local artifact against PyPI provenance."""
+    try:
+        from pypi_attestations import Distribution, GitHubPublisher, Provenance
+    except ImportError:
+        return "pypi-attestations is required for cryptographic provenance verification"
+
+    publisher = GitHubPublisher(
+        repository=publisher_repository,
+        workflow=publisher_workflow,
+        environment=publisher_environment,
+    )
+    try:
+        provenance = Provenance.model_validate(provenance_payload)
+        distribution = Distribution.from_file(artifact_path)
+    except Exception as exc:
+        return f"{artifact_path.name}: invalid provenance or artifact: {exc}"
+
+    matching_bundles = [
+        bundle for bundle in provenance.attestation_bundles if bundle.publisher == publisher
+    ]
+    if not matching_bundles:
+        return f"{artifact_path.name}: no cryptographic bundle matched the expected publisher"
+
+    failures: list[str] = []
+    for bundle in matching_bundles:
+        for attestation in bundle.attestations:
+            try:
+                predicate_type, _predicate = attestation.verify(publisher, distribution)
+            except Exception as exc:
+                failures.append(str(exc))
+                continue
+            if predicate_type == PYPI_PUBLISH_ATTESTATION:
+                return None
+    detail = "; ".join(failures) if failures else "no PyPI publish attestation was present"
+    return f"{artifact_path.name}: cryptographic provenance verification failed: {detail}"
+
+
 def verify_pypi_provenance(
     repository: str,
     package: str,
@@ -305,18 +350,22 @@ def verify_pypi_provenance(
     publisher_repository: str,
     publisher_workflow: str,
     publisher_environment: str,
+    artifact_dir: Path | None = None,
     retries: int = DEFAULT_PYPI_RETRIES,
     retry_delay: float = DEFAULT_PYPI_RETRY_DELAY,
 ) -> None:
-    """Verify PEP 740 statement metadata and the Trusted Publisher identity."""
+    """Verify PEP 740 metadata, identity, and optional cryptographic provenance."""
     expected = _read_checksums(checksum_file)
     last_errors = ["PyPI provenance was not available"]
     for attempt in range(1, retries + 1):
         errors: list[str] = []
         try:
             for filename, digest in expected.items():
+                provenance_payload = _published_pypi_provenance(
+                    repository, package, version, filename
+                )
                 failure = _provenance_failure(
-                    _published_pypi_provenance(repository, package, version, filename),
+                    provenance_payload,
                     filename=filename,
                     digest=digest,
                     publisher_repository=publisher_repository,
@@ -325,6 +374,21 @@ def verify_pypi_provenance(
                 )
                 if failure:
                     errors.append(failure)
+                    continue
+                if artifact_dir is not None:
+                    artifact_path = artifact_dir / filename
+                    if not artifact_path.is_file():
+                        errors.append(f"{filename}: local artifact is missing from {artifact_dir}")
+                        continue
+                    crypto_failure = _cryptographic_provenance_failure(
+                        provenance_payload,
+                        artifact_path=artifact_path,
+                        publisher_repository=publisher_repository,
+                        publisher_workflow=publisher_workflow,
+                        publisher_environment=publisher_environment,
+                    )
+                    if crypto_failure:
+                        errors.append(crypto_failure)
         except (
             OSError,
             ValueError,
@@ -374,6 +438,7 @@ def main() -> int:
     provenance_parser.add_argument("--publisher-repository", required=True)
     provenance_parser.add_argument("--publisher-workflow", required=True)
     provenance_parser.add_argument("--publisher-environment", required=True)
+    provenance_parser.add_argument("--artifacts", type=Path)
     provenance_parser.add_argument("--retries", type=int, default=DEFAULT_PYPI_RETRIES)
     provenance_parser.add_argument("--retry-delay", type=float, default=DEFAULT_PYPI_RETRY_DELAY)
 
@@ -400,6 +465,7 @@ def main() -> int:
             args.publisher_repository,
             args.publisher_workflow,
             args.publisher_environment,
+            artifact_dir=args.artifacts,
             retries=args.retries,
             retry_delay=args.retry_delay,
         )

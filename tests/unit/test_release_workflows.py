@@ -36,9 +36,17 @@ def test_python_trusted_publish_is_tag_gated_and_provenance_verified() -> None:
     assert "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'" in workflow
     assert "startsWith(github.ref, 'refs/tags/mcp-server-v')" in workflow
     assert workflow.count("verify-pypi-provenance") == 2
-    assert workflow.count("pypi-attestations verify pypi") == 2
-    assert "--staging" in workflow
-    assert workflow.count("--repository https://github.com/oaslananka/kicad-mcp-pro") == 2
+    assert workflow.count("pypi-attestations verify pypi") == 1
+    assert "--staging" not in workflow
+    assert workflow.count("--repository https://github.com/oaslananka/kicad-mcp-pro") == 1
+    assert "--publisher-environment testpypi \\\n            --artifacts dist" in workflow
+    assert "--publisher-environment pypi \\\n            --artifacts dist" in workflow
+    assert (
+        workflow.count(
+            "--group release python scripts/generate_release_evidence.py verify-pypi-provenance"
+        )
+        == 2
+    )
     assert workflow.count("--publisher-repository oaslananka/kicad-mcp-pro") == 2
     assert "--publisher-environment pypi" in workflow
     assert "--publisher-environment testpypi" in workflow
