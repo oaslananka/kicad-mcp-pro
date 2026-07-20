@@ -152,20 +152,15 @@ jobs:
             --package kicad-mcp-pro \
             --version "$version" \
             --checksums release-evidence/SHA256SUMS.txt
-          uv run --frozen python scripts/generate_release_evidence.py verify-pypi-provenance \
+          uv run --frozen --group release python scripts/generate_release_evidence.py verify-pypi-provenance \
             --repository testpypi \
             --package kicad-mcp-pro \
             --version "$version" \
             --checksums release-evidence/SHA256SUMS.txt \
             --publisher-repository oaslananka/kicad-mcp-pro \
             --publisher-workflow publish-python.yml \
-            --publisher-environment testpypi
-          while read -r _digest filename; do
-            uv run --frozen --group release pypi-attestations verify pypi \
-              --staging \
-              --repository https://github.com/oaslananka/kicad-mcp-pro \
-              "pypi:${filename}"
-          done < release-evidence/SHA256SUMS.txt
+            --publisher-environment testpypi \
+            --artifacts dist
 
   publish-pypi:
     if: >-
@@ -224,14 +219,15 @@ jobs:
             --package kicad-mcp-pro \
             --version "$version" \
             --checksums release-evidence/SHA256SUMS.txt
-          uv run --frozen python scripts/generate_release_evidence.py verify-pypi-provenance \
+          uv run --frozen --group release python scripts/generate_release_evidence.py verify-pypi-provenance \
             --repository pypi \
             --package kicad-mcp-pro \
             --version "$version" \
             --checksums release-evidence/SHA256SUMS.txt \
             --publisher-repository oaslananka/kicad-mcp-pro \
             --publisher-workflow publish-python.yml \
-            --publisher-environment pypi
+            --publisher-environment pypi \
+            --artifacts dist
           while read -r _digest filename; do
             uv run --frozen --group release pypi-attestations verify pypi \
               --repository https://github.com/oaslananka/kicad-mcp-pro \
