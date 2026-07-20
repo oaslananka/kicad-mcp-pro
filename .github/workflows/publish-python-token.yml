@@ -25,13 +25,26 @@ on:
         type: choice
         options: [testpypi, pypi]
         default: testpypi
+      incident_reference:
+        description: Issue, incident, or outage reference authorizing token fallback
+        type: string
+        required: true
+      confirm_token_fallback:
+        description: Confirm that OIDC is unavailable and token fallback is required
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: publish-python-token-${{ inputs.target }}
+  cancel-in-progress: false
+
 jobs:
   publish-token:
-    if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
+    if: (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') && github.ref == 'refs/heads/main' && inputs.confirm_token_fallback == true
     runs-on: ubuntu-24.04
     environment:
       name: ${{ inputs.target == 'pypi' && 'pypi-token' || 'testpypi-token' }}
@@ -39,6 +52,21 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Validate emergency authorization
+        env:
+          INCIDENT_REFERENCE: ${{ inputs.incident_reference }}
+          PYPI_PUBLISH_TOKEN: ${{ secrets.PYPI_PUBLISH_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test -n "$INCIDENT_REFERENCE"
+          test -n "$PYPI_PUBLISH_TOKEN"
+          {
+            echo "## Emergency PyPI token fallback"
+            echo "- Target: ${{ inputs.target }}"
+            echo "- Authorization: $INCIDENT_REFERENCE"
+            echo "- OIDC remains the canonical publishing path."
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false

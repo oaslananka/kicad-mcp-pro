@@ -17,7 +17,7 @@ The normal release path is documented in [`../release-process.md`](../release-pr
 1. Work lands through pull requests to `main`.
 2. Required CI, security, CodeQL, docs, and metadata checks pass.
 3. Release-please derives versions from Conventional Commits and opens the release pull request.
-4. Publishing workflows run only from canonical release events or guarded manual dispatches.
+4. Production Python publishing runs only from canonical `mcp-server-v*` tag pushes; manual dispatch is TestPyPI-only.
 5. Protected environments gate publishing jobs.
 6. Publish jobs produce or verify release evidence before publishing.
 7. Post-publish verification confirms the package-index artifact matches the locally generated digest where supported.
@@ -26,7 +26,7 @@ The normal release path is documented in [`../release-process.md`](../release-pr
 
 | Artifact | Workflow | Expected evidence |
 | --- | --- | --- |
-| Python package `kicad-mcp-pro` | `.github/workflows/publish-python.yml` | wheel/sdist, SHA256 checksums, SBOM, GitHub attestation, PyPI/TestPyPI verification |
+| Python package `kicad-mcp-pro` | `.github/workflows/publish-python.yml` | wheel/sdist, SHA256 checksums, SBOM, GitHub attestation, registry digest verification, PyPI Integrity API identity plus cryptographic PEP 740 verification |
 | npm wrapper `kicad-mcp-pro` | `.github/workflows/publish-npm.yml` | npm tarball, SHA256 checksums, SBOM, provenance, post-publish digest verification |
 | Protocol schemas npm package | `.github/workflows/publish-protocol-schemas.yml` | npm tarball, SHA256 checksums, SBOM, provenance, post-publish digest verification |
 | Docker image | `.github/workflows/publish-mcp-container.yml` | multi-arch image, labels, SBOM/provenance from buildx, Trivy scan, GHCR digest |
@@ -37,7 +37,8 @@ The normal release path is documented in [`../release-process.md`](../release-pr
 
 - Workflow default permissions are `contents: read` unless a job needs narrower elevated permissions.
 - Jobs that publish, deploy, attest, or mutate release assets declare job-scoped permissions.
-- Publish jobs are guarded by repository owner, event type, tag prefix, and environment checks.
+- Publish jobs are guarded by repository owner, event type, tag prefix, deployment branch/tag policy, and environment checks.
+- Emergency token publishing requires a protected environment approval and an authorization reference.
 - Third-party Actions are pinned to full commit SHAs.
 - Checkout credentials are not persisted unless a workflow explicitly needs to push.
 - Shell steps pass GitHub expressions through `env:` before use in scripts.

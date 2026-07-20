@@ -55,7 +55,7 @@ CLI:
 
 ```bash
 python -m sigstore verify identity \
-  --cert-identity "https://github.com/oaslananka/kicad-mcp-pro/.github/workflows/release-please.yml@refs/tags/v<version>" \
+  --cert-identity "https://github.com/oaslananka/kicad-mcp-pro/.github/workflows/publish-python.yml@refs/tags/mcp-server-v<version>" \
   --cert-oidc-issuer "https://token.actions.githubusercontent.com" \
   dist/kicad_mcp_pro-<version>-py3-none-any.whl
 ```
@@ -108,17 +108,38 @@ when the image is pushed.
 
 ## PyPI Trusted Publishing
 
-The Python publish workflow is configured for PyPI Trusted Publishing through
-GitHub Actions OIDC. PyPI and TestPyPI project owners must configure trusted
-publishers for the package-index environments:
+The Python workflow uses short-lived GitHub OIDC credentials and PyPI Trusted
+Publishing. The required publisher identities are:
 
-- Owner: `oaslananka`
-- Repository: `kicad-mcp-pro`
-- Workflow: `publish-python.yml`
-- Environments: `pypi` and `testpypi`
+| Index | Repository | Workflow | Environment | Allowed ref |
+| --- | --- | --- | --- | --- |
+| PyPI | `oaslananka/kicad-mcp-pro` | `publish-python.yml` | `pypi` | tag `mcp-server-v*` |
+| TestPyPI | `oaslananka/kicad-mcp-pro` | `publish-python.yml` | `testpypi` | branch `main` |
 
-After the publisher is configured, long-lived package-index token secrets should
-not be used by CI.
+Repository renames change the OIDC identity. Update both PyPI and TestPyPI
+Trusted Publisher records before publishing from a renamed repository. A
+publisher record for the former repository name is not accepted as current
+provenance.
+
+After upload, the workflow queries the PyPI Integrity API for every wheel and
+source distribution. It requires a PEP 740 publish attestation whose digest, repository,
+workflow, and environment match the expected release identity. The pinned
+`pypi-attestations` verifier then validates the Sigstore-backed attestation
+cryptographically against the canonical repository. A
+matching file digest without matching Trusted Publisher provenance is a release
+failure.
+
+Independent verification can use the PyPI attestations CLI:
+
+```bash
+pypi-attestations verify pypi \
+  --repository https://github.com/oaslananka/kicad-mcp-pro \
+  https://files.pythonhosted.org/.../kicad_mcp_pro-<version>-py3-none-any.whl
+```
+
+The token fallback is emergency-only and cannot produce the Trusted Publisher
+publish attestation. Its successful digest verification does not satisfy the
+normal provenance requirement.
 
 ## DockerHub
 

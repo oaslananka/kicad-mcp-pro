@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import hashlib
 import json
 import re
@@ -12,12 +14,18 @@ import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+from urllib.parse import quote
 
 PYPI_ENDPOINTS = {
     "pypi": "https://pypi.org/pypi/{name}/{version}/json",
     "testpypi": "https://test.pypi.org/pypi/{name}/{version}/json",
 }
+PYPI_INTEGRITY_ENDPOINTS = {
+    "pypi": "https://pypi.org/integrity/{name}/{version}/{filename}/provenance",
+    "testpypi": "https://test.pypi.org/integrity/{name}/{version}/{filename}/provenance",
+}
+PYPI_PUBLISH_ATTESTATION = "https://docs.pypi.org/attestations/publish/v1"
 DEFAULT_PYPI_RETRIES = 18
 DEFAULT_PYPI_RETRY_DELAY = 10.0
 
@@ -34,7 +42,8 @@ def _sha256(path: Path) -> str:
 def _read_project(pyproject_path: Path) -> dict[str, Any]:
     """Load project metadata from pyproject.toml."""
     with pyproject_path.open("rb") as handle:
-        return tomllib.load(handle)["project"]
+        project = tomllib.load(handle)["project"]
+    return cast(dict[str, Any], project)
 
 
 def _artifact_paths(dist_dir: Path, project: dict[str, Any]) -> list[Path]:
@@ -208,6 +217,133 @@ def verify_pypi(
     raise SystemExit("Published PyPI digest verification failed:\n- " + last_error)
 
 
+def _published_pypi_provenance(
+    repository: str, package: str, version: str, filename: str
+) -> dict[str, Any]:
+    """Read one artifact's PEP 740 provenance from the PyPI Integrity API."""
+    url = PYPI_INTEGRITY_ENDPOINTS[repository].format(
+        name=quote(package, safe=""),
+        version=quote(version, safe=""),
+        filename=quote(filename, safe=""),
+    )
+    request = urllib.request.Request(  # noqa: S310
+        url,
+        headers={"Accept": "application/vnd.pypi.integrity.v1+json"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"Unexpected PyPI provenance payload for {filename}.")
+    return payload
+
+
+def _decode_attestation_statement(attestation: dict[str, Any]) -> dict[str, Any] | None:
+    """Decode an in-toto statement embedded in a PyPI attestation envelope."""
+    envelope = attestation.get("envelope")
+    if not isinstance(envelope, dict) or not isinstance(envelope.get("statement"), str):
+        return None
+    decoded = base64.b64decode(envelope["statement"], validate=True)
+    statement = json.loads(decoded.decode("utf-8"))
+    return statement if isinstance(statement, dict) else None
+
+
+def _provenance_failure(
+    provenance: dict[str, Any],
+    *,
+    filename: str,
+    digest: str,
+    publisher_repository: str,
+    publisher_workflow: str,
+    publisher_environment: str,
+) -> str | None:
+    """Return why provenance does not match the required Trusted Publisher identity."""
+    bundles = provenance.get("attestation_bundles")
+    if not isinstance(bundles, list) or not bundles:
+        return f"{filename}: no attestation bundles"
+    for bundle in bundles:
+        if not isinstance(bundle, dict):
+            continue
+        publisher = bundle.get("publisher")
+        if not isinstance(publisher, dict):
+            continue
+        if (
+            publisher.get("kind") != "GitHub"
+            or publisher.get("repository") != publisher_repository
+            or publisher.get("workflow") != publisher_workflow
+            or publisher.get("environment") != publisher_environment
+        ):
+            continue
+        attestations = bundle.get("attestations")
+        if not isinstance(attestations, list):
+            continue
+        for attestation in attestations:
+            if not isinstance(attestation, dict):
+                continue
+            statement = _decode_attestation_statement(attestation)
+            if statement is None or statement.get("predicateType") != PYPI_PUBLISH_ATTESTATION:
+                continue
+            subjects = statement.get("subject")
+            if not isinstance(subjects, list):
+                continue
+            for subject in subjects:
+                if not isinstance(subject, dict) or subject.get("name") != filename:
+                    continue
+                subject_digest = subject.get("digest")
+                if isinstance(subject_digest, dict) and subject_digest.get("sha256") == digest:
+                    return None
+    return (
+        f"{filename}: no publish attestation matched GitHub publisher "
+        f"{publisher_repository}/{publisher_workflow} environment={publisher_environment}"
+    )
+
+
+def verify_pypi_provenance(
+    repository: str,
+    package: str,
+    version: str,
+    checksum_file: Path,
+    publisher_repository: str,
+    publisher_workflow: str,
+    publisher_environment: str,
+    retries: int = DEFAULT_PYPI_RETRIES,
+    retry_delay: float = DEFAULT_PYPI_RETRY_DELAY,
+) -> None:
+    """Verify PEP 740 statement metadata and the Trusted Publisher identity."""
+    expected = _read_checksums(checksum_file)
+    last_errors = ["PyPI provenance was not available"]
+    for attempt in range(1, retries + 1):
+        errors: list[str] = []
+        try:
+            for filename, digest in expected.items():
+                failure = _provenance_failure(
+                    _published_pypi_provenance(repository, package, version, filename),
+                    filename=filename,
+                    digest=digest,
+                    publisher_repository=publisher_repository,
+                    publisher_workflow=publisher_workflow,
+                    publisher_environment=publisher_environment,
+                )
+                if failure:
+                    errors.append(failure)
+        except (
+            OSError,
+            ValueError,
+            urllib.error.URLError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            binascii.Error,
+        ) as exc:
+            errors = [str(exc)]
+        if not errors:
+            return
+        last_errors = errors
+        if attempt < retries:
+            time.sleep(retry_delay)
+    raise SystemExit(
+        "Published PyPI provenance verification failed:\n- " + "\n- ".join(last_errors)
+    )
+
+
 def main() -> int:
     """Run the release evidence CLI."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -230,6 +366,17 @@ def main() -> int:
     pypi_parser.add_argument("--retries", type=int, default=DEFAULT_PYPI_RETRIES)
     pypi_parser.add_argument("--retry-delay", type=float, default=DEFAULT_PYPI_RETRY_DELAY)
 
+    provenance_parser = subparsers.add_parser("verify-pypi-provenance")
+    provenance_parser.add_argument("--repository", choices=sorted(PYPI_ENDPOINTS), required=True)
+    provenance_parser.add_argument("--package", required=True)
+    provenance_parser.add_argument("--version", required=True)
+    provenance_parser.add_argument("--checksums", type=Path, required=True)
+    provenance_parser.add_argument("--publisher-repository", required=True)
+    provenance_parser.add_argument("--publisher-workflow", required=True)
+    provenance_parser.add_argument("--publisher-environment", required=True)
+    provenance_parser.add_argument("--retries", type=int, default=DEFAULT_PYPI_RETRIES)
+    provenance_parser.add_argument("--retry-delay", type=float, default=DEFAULT_PYPI_RETRY_DELAY)
+
     args = parser.parse_args()
     if args.command == "generate":
         generate(args.dist_dir, args.output, args.pyproject)
@@ -241,6 +388,18 @@ def main() -> int:
             args.package,
             args.version,
             args.checksums,
+            retries=args.retries,
+            retry_delay=args.retry_delay,
+        )
+    elif args.command == "verify-pypi-provenance":
+        verify_pypi_provenance(
+            args.repository,
+            args.package,
+            args.version,
+            args.checksums,
+            args.publisher_repository,
+            args.publisher_workflow,
+            args.publisher_environment,
             retries=args.retries,
             retry_delay=args.retry_delay,
         )

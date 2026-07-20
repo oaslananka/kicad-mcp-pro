@@ -37,6 +37,7 @@ After a release is published:
 2. Verify package versions match `pyproject.toml`, `package.json`, `server.json`, and registry metadata.
 3. Verify checksums and release evidence artifacts are attached where expected.
 4. Verify package installation smoke tests.
+5. Verify PyPI Integrity API provenance identifies `oaslananka/kicad-mcp-pro`, `publish-python.yml`, and the `pypi` environment.
 5. Update OpenSSF evidence if release process or artifact classes changed.
 
 ## Do not do
