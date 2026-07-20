@@ -8,13 +8,15 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: read
 
 jobs:
   assign:
     runs-on: ubuntu-latest
     if: github.actor != 'oaslananka'
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
 
     steps:
       - name: Assign to oaslananka

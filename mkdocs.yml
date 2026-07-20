@@ -160,6 +160,7 @@ nav:
       - Input Validation: security/input-validation.md
       - Assurance Case: security/assurance-case.md
       - Scorecard Exceptions: security/scorecard-exceptions.md
+      - GitHub Actions Policy: security/github-actions-policy.md
       - Workflow Security: workflow-security.md
   - Submission:
       - Overview: submission/README.md

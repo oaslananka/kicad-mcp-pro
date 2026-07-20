@@ -233,6 +233,23 @@ jobs:
       - run: corepack pnpm --filter @oaslananka/kicad-protocol-schemas run test
         if: env.skip_ci != 'true'
 
+  workflow-policy:
+    needs: [changes]
+    if: >-
+      always() &&
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: true
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - run: uv run --all-extras python scripts/check_github_actions_policy.py
+
   security:
     needs: [changes]
     if: >-
@@ -264,7 +281,7 @@ jobs:
 
   required-pr-gate:
     name: Required PR Gate
-    needs: [changes, mcp-server, mcp-npm, protocol-schemas, security]
+    needs: [changes, mcp-server, mcp-npm, protocol-schemas, workflow-policy, security]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -277,6 +294,7 @@ jobs:
             [mcp-server]="${{ needs.mcp-server.result }}"
             [mcp-npm]="${{ needs.mcp-npm.result }}"
             [protocol-schemas]="${{ needs.protocol-schemas.result }}"
+            [workflow-policy]="${{ needs.workflow-policy.result }}"
             [security]="${{ needs.security.result }}"
           )
           docs_only="${{ needs.changes.outputs.docs_only }}"
@@ -291,7 +309,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           failed=0
-          for job in changes mcp-server mcp-npm protocol-schemas security; do
+          for job in changes mcp-server mcp-npm protocol-schemas workflow-policy security; do
             result="${results[$job]}"
             echo "| $job | $result |" >> "$GITHUB_STEP_SUMMARY"
             case "$result" in
