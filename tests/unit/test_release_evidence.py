@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 import json
 from pathlib import Path
@@ -141,3 +142,100 @@ def test_verify_pypi_default_retries_cover_registry_propagation(
     module.verify_pypi("pypi", "kicad-mcp-pro", "1.0.0", checksums)
 
     assert attempts == 7
+
+
+def _provenance_payload(
+    *, repository: str, environment: str | None, filename: str, digest: str
+) -> bytes:
+    statement = {
+        "_type": "https://in-toto.io/Statement/v1",
+        "subject": [{"name": filename, "digest": {"sha256": digest}}],
+        "predicateType": "https://docs.pypi.org/attestations/publish/v1",
+        "predicate": None,
+    }
+    encoded = base64.b64encode(json.dumps(statement).encode("utf-8")).decode("ascii")
+    return json.dumps(
+        {
+            "version": 1,
+            "attestation_bundles": [
+                {
+                    "publisher": {
+                        "kind": "GitHub",
+                        "repository": repository,
+                        "workflow": "publish-python.yml",
+                        "environment": environment,
+                    },
+                    "attestations": [{"envelope": {"statement": encoded, "signature": "sig"}}],
+                }
+            ],
+        }
+    ).encode("utf-8")
+
+
+def test_verify_pypi_provenance_accepts_expected_trusted_publisher(
+    tmp_path: Path, monkeypatch
+) -> None:
+    module = _load_script()
+    digest = "a" * 64
+    checksums = tmp_path / "SHA256SUMS.txt"
+    checksums.write_text(f"{digest}  artifact.whl\n", encoding="utf-8")
+    payload = _provenance_payload(
+        repository="oaslananka/kicad-mcp-pro",
+        environment="pypi",
+        filename="artifact.whl",
+        digest=digest,
+    )
+    monkeypatch.setattr(
+        module.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: _PypiResponse(payload),
+    )
+
+    module.verify_pypi_provenance(
+        "pypi",
+        "kicad-mcp-pro",
+        "1.0.0",
+        checksums,
+        "oaslananka/kicad-mcp-pro",
+        "publish-python.yml",
+        "pypi",
+        retries=1,
+        retry_delay=0,
+    )
+
+
+def test_verify_pypi_provenance_rejects_legacy_repository_identity(
+    tmp_path: Path, monkeypatch
+) -> None:
+    module = _load_script()
+    digest = "a" * 64
+    checksums = tmp_path / "SHA256SUMS.txt"
+    checksums.write_text(f"{digest}  artifact.whl\n", encoding="utf-8")
+    payload = _provenance_payload(
+        repository="oaslananka/kicad-mcp",
+        environment=None,
+        filename="artifact.whl",
+        digest=digest,
+    )
+    monkeypatch.setattr(
+        module.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: _PypiResponse(payload),
+    )
+
+    try:
+        module.verify_pypi_provenance(
+            "pypi",
+            "kicad-mcp-pro",
+            "1.0.0",
+            checksums,
+            "oaslananka/kicad-mcp-pro",
+            "publish-python.yml",
+            "pypi",
+            retries=1,
+            retry_delay=0,
+        )
+    except SystemExit as exc:
+        assert "no publish attestation matched" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("legacy Trusted Publisher identity must be rejected")

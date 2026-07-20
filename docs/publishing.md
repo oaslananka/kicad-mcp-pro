@@ -8,37 +8,49 @@ attestation workflows are owned by that canonical repository.
 
 ## PyPI
 
-Python package releases use `.github/workflows/release-please.yml` in
-`oaslananka/kicad-mcp-pro`. The workflow builds the Python distributions,
-creates release artifacts, generates SBOM and checksum files, signs artifacts
-with Sigstore, creates GitHub artifact attestations, and publishes to PyPI only
-when release-please reports that a release was created and the protected
-`release` environment is approved.
+The canonical Python publication path is `.github/workflows/publish-python.yml`.
+Production publishing is triggered only by a `mcp-server-v*` tag and uses the
+`pypi` environment. Manual dispatch is limited to TestPyPI from `main` and uses
+the `testpypi` environment.
 
-The release workflow uses PyPI Trusted Publishing through GitHub Actions OIDC.
-Long-lived package-index token secrets should not be needed once the PyPI
-trusted publisher is configured.
+PyPI and TestPyPI Trusted Publisher records must use this exact identity:
 
-### Token fallback (manual, OIDC unavailable)
+- Owner: `oaslananka`
+- Repository: `kicad-mcp-pro`
+- Workflow: `publish-python.yml`
+- Environment: `pypi` or `testpypi`
 
-`.github/workflows/publish-python-token.yml` is a manual-only
-(`workflow_dispatch`) fallback for when trusted publishing cannot run — most
-commonly right after a repository rename, before the PyPI/TestPyPI
-trusted-publisher configuration is updated to the new repository name (the OIDC
-claim carries the new name while PyPI still expects the old one, so the primary
-path fails).
+The workflow builds wheel and source distributions, creates checksums and a
+CycloneDX SBOM, emits GitHub artifact attestations, publishes with OIDC, verifies
+registry digests, and then checks the PyPI Integrity API publisher identity and statement metadata,
+then cryptographically verifies every uploaded file with the pinned
+`pypi-attestations` release dependency. Production completion fails
+when the package is present but provenance does not match the canonical identity.
 
-The preferred fix is to update the trusted publisher's repository name on PyPI
-and TestPyPI and return to the OIDC path. The token fallback exists only to
-unblock a publish in the meantime. Note that token authentication cannot mint
-PEP 740 attestations.
+### Token fallback
 
-To use it: create the gated environments `pypi-token` and `testpypi-token` (add
-required reviewers), then add an environment secret named `PYPI_PUBLISH_TOKEN`
-to each — the real PyPI project token on `pypi-token`, the TestPyPI project
-token on `testpypi-token`. Run the workflow and pick the `target`; the chosen
-environment supplies the matching token. Use project-scoped tokens, not
-account-wide ones.
+`.github/workflows/publish-python-token.yml` is an emergency-only manual path. It
+is restricted to `main`, requires an incident or issue reference, requires an
+explicit confirmation input, and is gated by the required reviewer on the
+`pypi-token` or `testpypi-token` environment. Token publication does not produce
+PEP 740 Trusted Publisher attestations and must not be treated as a normal
+release path.
+
+The repository owner is accountable for the fallback project token. Use a
+project-scoped token with upload permission only. Rotate it after every use and
+at least every 90 days while retained. Revoke it immediately after suspected
+exposure, maintainer access changes, unexpected publication, or restoration of a
+replacement token. Record the authorization reference and the rotation or
+revocation action in the associated private incident record; do not paste token
+values into issues, logs, workflow inputs, or release notes.
+
+Before using fallback:
+
+1. record why OIDC is unavailable;
+2. confirm the Trusted Publisher owner, repository, workflow, and environment;
+3. approve the protected environment deployment;
+4. publish and verify registry digests;
+5. repair OIDC and prove it with TestPyPI before the next production release.
 
 ## GitHub Releases
 

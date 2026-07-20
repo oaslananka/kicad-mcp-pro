@@ -168,6 +168,9 @@ omit = ["tests/*"]
 fail_under = 83
 
 [dependency-groups]
+release = [
+    "pypi-attestations==0.0.29",
+]
 dev = [
     # httpx2 keeps starlette.testclient from emitting its httpx deprecation
     # warning (issue #187); it lives in the default group so bare `uv run`

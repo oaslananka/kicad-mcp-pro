@@ -15,7 +15,7 @@ Current product versions are represented in:
 
 `.release-please-manifest.json` tracks product package paths only. The private repository root is not released.
 
-Release PRs are created by `.github/workflows/release-please.yml` with separate Release Please pull requests per product package path. The VS Code extension (KiCad Studio) releases independently from its own repository; `kicad-mcp-pro` Python package and npm launcher stay version-linked as one MCP product. Release publication workflows run from GitHub Releases and protected environments.
+Release PRs are created by `.github/workflows/release-please.yml` with separate Release Please pull requests per product package path. The VS Code extension (KiCad Studio) releases independently from its own repository; `kicad-mcp-pro` Python package and npm launcher stay version-linked as one MCP product. Python production publishing runs from `mcp-server-v*` tag pushes through the protected `pypi` environment; manual Python publishing is limited to TestPyPI.
 
 The publish workflows keep release evidence product-scoped:
 
@@ -24,8 +24,9 @@ The publish workflows keep release evidence product-scoped:
   uploads that evidence as `python-release-evidence`, and creates GitHub
   artifact attestations for the Python wheel and source distribution before PyPI
   trusted publishing. The publish jobs verify local checksums before upload and
-  verify PyPI/TestPyPI SHA-256 digests after upload. The `python-dist` artifact
-  intentionally contains only `*.whl` and `*.tar.gz` files.
+  verify PyPI/TestPyPI SHA-256 digests after upload, and require a matching PyPI Integrity API Trusted Publisher identity and
+  cryptographically verified PEP 740 attestation for each distribution. The
+  `python-dist` artifact intentionally contains only `*.whl` and `*.tar.gz` files.
 - `publish-npm.yml` packs the `kicad-mcp-pro` npm launcher tarball, emits
   `SHA256SUMS.txt` and a CycloneDX SBOM, creates GitHub artifact attestations,
   publishes with npm provenance, and downloads the published tarball to verify
