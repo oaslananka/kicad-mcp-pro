@@ -103,6 +103,37 @@ def test_version_control_helper_functions(monkeypatch, tmp_path: Path) -> None:
     assert version_control._has_session_scraps([" M demo.kicad_pcb"]) is None
 
 
+def test_git_subprocess_environment_drops_caller_repository_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for variable in version_control._REPOSITORY_LOCAL_GIT_ENV:
+        monkeypatch.setenv(variable, f"hostile-{variable.lower()}")
+    monkeypatch.setenv("HOME", "/safe/home")
+
+    env = version_control._git_subprocess_env()
+
+    assert env["HOME"] == "/safe/home"
+    assert set(version_control._REPOSITORY_LOCAL_GIT_ENV).isdisjoint(env)
+
+
+def test_project_pathspec_and_destructive_scope_fail_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    repo_root = tmp_path / "repo"
+    project_dir = repo_root / "project"
+    outside = tmp_path / "outside"
+    project_dir.mkdir(parents=True)
+    outside.mkdir()
+
+    assert version_control._project_pathspec(repo_root, project_dir) == "project"
+    with pytest.raises(ValueError, match="outside Git repository"):
+        version_control._project_pathspec(repo_root, outside)
+
+    monkeypatch.setattr(version_control, "_git_repo_root", lambda _path: outside)
+    with pytest.raises(ValueError, match="repository context changed"):
+        version_control._verify_repo_scope(repo_root, project_dir)
+
+
 def test_commit_blocked_by_drc_branches(monkeypatch, tmp_path: Path) -> None:
     pcb_file = tmp_path / "demo.kicad_pcb"
     pcb_file.write_text("board", encoding="utf-8")
