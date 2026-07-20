@@ -18,6 +18,9 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      checks: read
+      pull-requests: read
+      statuses: read
       security-events: write
       id-token: write
       actions: read
