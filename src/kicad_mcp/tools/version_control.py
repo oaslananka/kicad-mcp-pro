@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -16,6 +17,17 @@ from .validation import _entries, _evaluate_project_gate, _run_drc_report
 _CHECKPOINT_TRAILER = "KiCad-MCP-Checkpoint: true"
 _DEFAULT_GIT_NAME = "KiCad MCP Pro"
 _DEFAULT_GIT_EMAIL = "kicad-mcp@example.invalid"
+_REPOSITORY_LOCAL_GIT_ENV = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_DIR",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_PREFIX",
+    "GIT_QUARANTINE_PATH",
+    "GIT_WORK_TREE",
+)
 
 
 def _git_executable() -> str:
@@ -41,6 +53,14 @@ def _resolve_project_dir(project_dir: str | None = None) -> Path:
     return path
 
 
+def _git_subprocess_env() -> dict[str, str]:
+    """Return a Git environment detached from the caller repository context."""
+    env = os.environ.copy()
+    for variable in _REPOSITORY_LOCAL_GIT_ENV:
+        env.pop(variable, None)
+    return env
+
+
 def _run_git(
     repo_dir: Path,
     *args: str,
@@ -52,6 +72,7 @@ def _run_git(
         capture_output=True,
         text=True,
         errors="replace",
+        env=_git_subprocess_env(),
         timeout=30,
         check=False,
     )
@@ -69,9 +90,28 @@ def _git_repo_root(project_dir: Path) -> Path | None:
 
 
 def _project_pathspec(repo_root: Path, project_dir: Path) -> str:
-    if repo_root == project_dir:
+    resolved_root = repo_root.resolve()
+    resolved_project = project_dir.resolve()
+    if resolved_root == resolved_project:
         return "."
-    return project_dir.relative_to(repo_root).as_posix()
+    try:
+        return resolved_project.relative_to(resolved_root).as_posix()
+    except ValueError as exc:
+        raise ValueError(
+            f"Project directory {resolved_project} is outside Git repository {resolved_root}."
+        ) from exc
+
+
+def _verify_repo_scope(repo_root: Path, project_dir: Path) -> None:
+    """Fail closed when Git resolves a different repository than the active project."""
+    expected = repo_root.resolve()
+    _project_pathspec(expected, project_dir)
+    actual = _git_repo_root(project_dir)
+    if actual != expected:
+        raise ValueError(
+            "Git repository context changed before a destructive operation: "
+            f"expected {expected}, resolved {actual or '<none>'}."
+        )
 
 
 def _ensure_git_identity(repo_root: Path) -> list[str]:
@@ -292,6 +332,7 @@ def register(mcp: FastMCP) -> None:
                     "Rerun with confirm=true to restore project files.",
                 ]
             )
+        _verify_repo_scope(repo_root, project_dir)
         stash_note = _stash_project_state(repo_root, pathspec, commit_hash)
         _run_git(
             repo_root,
