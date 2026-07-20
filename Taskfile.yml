@@ -66,6 +66,11 @@ tasks:
     cmds:
       - corepack pnpm run workflows:lint
 
+  workflows:policy:
+    desc: Validate least-privilege workflow permissions and Action allowlists
+    cmds:
+      - corepack pnpm run workflows:policy
+
   workflows:security:
     desc: Run workflow security checks
     cmds:
@@ -115,6 +120,7 @@ tasks:
       - task: docker:metadata:check
       - task: typecheck
       - task: test:fast
+      - task: workflows:policy
       - task: workflows:lint
 
   ci:

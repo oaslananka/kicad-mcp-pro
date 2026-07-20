@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "repository_settings": {
+    "allowed_actions": "selected",
+    "can_approve_pull_request_reviews": false,
+    "default_workflow_permissions": "read",
+    "github_owned_allowed": true,
+    "sha_pinning_required": true,
+    "verified_allowed": false
+  },
+  "github_owned_action_owners": [
+    "actions",
+    "github"
+  ],
+  "allowed_action_repositories": [
+    "aquasecurity/trivy-action",
+    "astral-sh/setup-uv",
+    "docker/build-push-action",
+    "docker/login-action",
+    "docker/metadata-action",
+    "docker/setup-buildx-action",
+    "docker/setup-qemu-action",
+    "dorny/paths-filter",
+    "googleapis/release-please-action",
+    "ossf/scorecard-action",
+    "peaceiris/actions-gh-pages",
+    "pypa/gh-action-pypi-publish",
+    "sigstore/cosign-installer"
+  ],
+  "workflow_write_permissions": {
+    "auto-assign.yml": {
+      "assign": [
+        "issues"
+      ]
+    },
+    "ci.yml": {
+      "security": [
+        "security-events"
+      ]
+    },
+    "codeql.yml": {
+      "analyze": [
+        "security-events"
+      ]
+    },
+    "docs.yml": {
+      "deploy": [
+        "contents"
+      ]
+    },
+    "gui-release.yml": {
+      "create-release": [
+        "contents"
+      ]
+    },
+    "publish-mcp-container.yml": {
+      "build": [
+        "attestations",
+        "id-token",
+        "packages"
+      ]
+    },
+    "publish-mcp-registry.yml": {
+      "publish": [
+        "id-token"
+      ]
+    },
+    "publish-npm.yml": {
+      "publish": [
+        "artifact-metadata",
+        "attestations",
+        "contents",
+        "id-token"
+      ]
+    },
+    "publish-protocol-schemas.yml": {
+      "publish": [
+        "artifact-metadata",
+        "attestations",
+        "contents",
+        "id-token"
+      ]
+    },
+    "publish-python.yml": {
+      "build": [
+        "artifact-metadata",
+        "attestations",
+        "contents",
+        "id-token"
+      ],
+      "publish-pypi": [
+        "id-token"
+      ],
+      "publish-testpypi": [
+        "id-token"
+      ]
+    },
+    "release-please.yml": {
+      "release": [
+        "contents",
+        "pull-requests"
+      ]
+    },
+    "scorecard.yml": {
+      "analysis": [
+        "id-token",
+        "security-events"
+      ]
+    }
+  },
+  "required_codeowner_rules": [
+    "* @oaslananka",
+    "/.github/CODEOWNERS @oaslananka",
+    "/.github/actions-policy.json @oaslananka",
+    "/.github/workflows/ @oaslananka",
+    "/.release-please-manifest.json @oaslananka",
+    "/SECURITY.md @oaslananka",
+    "/package.json @oaslananka",
+    "/packages/*/package.json @oaslananka",
+    "/pyproject.toml @oaslananka",
+    "/release-please-config.json @oaslananka",
+    "/scripts/check_github_actions_policy.py @oaslananka",
+    "/server.json @oaslananka"
+  ],
+  "allowed_transitive_action_repositories": [
+    "aquasecurity/setup-trivy"
+  ]
+}

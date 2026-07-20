@@ -1,1 +1,15 @@
+# Default ownership for the public repository.
 * @oaslananka
+
+# Security-sensitive automation and release surfaces.
+/.github/CODEOWNERS @oaslananka
+/.github/actions-policy.json @oaslananka
+/.github/workflows/ @oaslananka
+/.release-please-manifest.json @oaslananka
+/SECURITY.md @oaslananka
+/package.json @oaslananka
+/packages/*/package.json @oaslananka
+/pyproject.toml @oaslananka
+/release-please-config.json @oaslananka
+/scripts/check_github_actions_policy.py @oaslananka
+/server.json @oaslananka
