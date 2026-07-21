@@ -712,6 +712,43 @@ def test_security_and_publish_workflows_emit_supply_chain_evidence() -> None:
         assert "actions/attest@" in workflow
 
 
+def test_mcpb_release_workflow_attaches_attested_versioned_bundle() -> None:
+    workflow = _workflow("publish-mcpb.yml")
+    package = json.loads((_repo_root() / "package.json").read_text(encoding="utf-8"))
+    policy = json.loads(
+        (_repo_root() / ".github" / "actions-policy.json").read_text(encoding="utf-8")
+    )
+
+    assert "release:" in workflow
+    assert "types: [published]" in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "mcp-server-v" in workflow
+    assert "@anthropic-ai/mcpb@2.1.2" in workflow
+    assert "validate packaging/mcpb/manifest.json" in workflow
+    assert "kicad-mcp-pro-${version}.mcpb" in workflow
+    assert "SHA256SUMS.txt" in workflow
+    assert "kicad-mcp-pro-mcpb-release-evidence.json" in workflow
+    assert 'SOURCE_COMMIT="$(git rev-parse HEAD)"' in workflow
+    assert '"sourceCommit": os.environ["SOURCE_COMMIT"]' in workflow
+    assert '"sourceCommit": os.environ["GITHUB_SHA"]' not in workflow
+    assert "actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26" in workflow
+    assert "subject-checksums: release-assets/mcpb/kicad-mcp-pro-mcpb-SHA256SUMS.txt" in workflow
+    assert 'gh release upload "$release_tag" release-assets/mcpb/* --clobber' in workflow
+    assert "attestations: write" in workflow
+    assert "artifact-metadata: write" in workflow
+    assert "contents: write" in workflow
+    assert "id-token: write" in workflow
+
+    assert package["scripts"]["mcpb:validate"].startswith("npx -y @anthropic-ai/mcpb@2.1.2 ")
+    assert package["scripts"]["mcpb:pack"].startswith("npx -y @anthropic-ai/mcpb@2.1.2 ")
+    assert policy["workflow_write_permissions"]["publish-mcpb.yml"]["publish"] == [
+        "artifact-metadata",
+        "attestations",
+        "contents",
+        "id-token",
+    ]
+
+
 def test_docker_metadata_contains_mcp_oci_label_and_release_image_contract() -> None:
     root = Path(__file__).resolve().parents[2]
     dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")

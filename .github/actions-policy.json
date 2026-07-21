@@ -69,6 +69,14 @@
         "id-token"
       ]
     },
+    "publish-mcpb.yml": {
+      "publish": [
+        "artifact-metadata",
+        "attestations",
+        "contents",
+        "id-token"
+      ]
+    },
     "publish-npm.yml": {
       "publish": [
         "artifact-metadata",
