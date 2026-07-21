@@ -69,6 +69,44 @@ def test_release_preflight_scans_only_current_changelog_section(
     assert "current release section" in errors[0]
 
 
+def test_release_preflight_rejects_unmanaged_stale_citation_date(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("check_release_preflight.py")
+    (tmp_path / "CITATION.cff").write_text(
+        """
+version: "3.26.0" # x-release-please-version
+date-released: "2026-07-10"
+""".lstrip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "CHANGELOG.md").write_text(
+        "## [3.26.0](https://example.test/compare) (2026-07-21)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(module, "_project_version", lambda: "3.26.0")
+    monkeypatch.setattr(module, "_check_versions", lambda: [])
+    monkeypatch.setattr(module, "_check_protocol_schema_version", lambda: [])
+    monkeypatch.setattr(module, "_check_changelog", lambda version: [])
+    monkeypatch.setattr(module, "validate_compatibility_matrix", lambda: [])
+
+    assert module.main() == 1
+    stderr = capsys.readouterr().err
+    assert "CITATION.cff date-released" in stderr
+    assert "x-release-please-date" in stderr
+
+
+def test_repository_citation_release_date_is_release_please_managed() -> None:
+    citation = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
+    date_line = next(line for line in citation.splitlines() if line.startswith("date-released:"))
+
+    assert "x-release-please-date" in date_line
+
+
 def test_release_preflight_skips_release_please_generated_changelog_noise(
     tmp_path: Path,
     monkeypatch,

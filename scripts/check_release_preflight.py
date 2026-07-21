@@ -17,6 +17,20 @@ REPO_ROOT = ROOT
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 INIT_VERSION_RE = re.compile(r'^__version__\s*=\s*"([^"]+)"', re.MULTILINE)
 CHANGELOG_VERSION_RE = re.compile(r"^## \[(?P<version>[^\]]+)\]", re.MULTILINE)
+CHANGELOG_RELEASE_DATE_RE = re.compile(
+    r"^## \[(?P<version>[^\]]+)\](?:\([^)]+\))?\s+"
+    r"\((?P<date>\d{4}-\d{2}-\d{2})\)\s*$",
+    re.MULTILINE,
+)
+CITATION_VERSION_RE = re.compile(
+    r'^version:\s*["\']?(?P<version>[^"\'#\s]+)["\']?\s*(?:#.*)?$',
+    re.MULTILINE,
+)
+CITATION_DATE_RE = re.compile(
+    r'^date-released:\s*["\']?(?P<date>\d{4}-\d{2}-\d{2})["\']?'
+    r"\s*(?P<comment>#.*)?$",
+    re.MULTILINE,
+)
 
 
 def _read_json(path: str) -> dict[str, object]:
@@ -114,6 +128,44 @@ def _changelog_section(changelog: str, version: str) -> str:
     return ""
 
 
+def _check_citation(version: str) -> list[str]:
+    citation = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
+    errors: list[str] = []
+
+    version_match = CITATION_VERSION_RE.search(citation)
+    if version_match is None:
+        errors.append("CITATION.cff must declare a version")
+    elif version_match.group("version") != version:
+        errors.append(
+            "CITATION.cff version drift detected: "
+            f"citation={version_match.group('version')}, project={version}"
+        )
+
+    date_match = CITATION_DATE_RE.search(citation)
+    if date_match is None:
+        errors.append("CITATION.cff must declare date-released in YYYY-MM-DD format")
+        return errors
+
+    comment = date_match.group("comment") or ""
+    if "x-release-please-date" not in comment:
+        errors.append(
+            "CITATION.cff date-released must include the x-release-please-date annotation"
+        )
+
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    release_dates = {
+        match.group("version"): match.group("date")
+        for match in CHANGELOG_RELEASE_DATE_RE.finditer(changelog)
+    }
+    expected_date = release_dates.get(version)
+    if expected_date is not None and date_match.group("date") != expected_date:
+        errors.append(
+            "CITATION.cff date-released does not match the current changelog release date: "
+            f"citation={date_match.group('date')}, changelog={expected_date}"
+        )
+    return errors
+
+
 def _check_changelog(version: str) -> list[str]:
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     errors: list[str] = []
@@ -154,6 +206,7 @@ def main() -> int:
     errors = [
         *_check_versions(),
         *_check_protocol_schema_version(),
+        *_check_citation(version),
         *_check_changelog(version),
         *validate_compatibility_matrix(),
     ]
