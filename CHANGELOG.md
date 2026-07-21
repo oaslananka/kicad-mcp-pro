@@ -10,6 +10,33 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.26.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.25.0...mcp-server-v3.26.0) (2026-07-21)
+
+
+### Features
+
+* **packaging:** add .mcpb desktop bundle for one-file install ([#401](https://github.com/oaslananka/kicad-mcp-pro/issues/401)) ([60163a7](https://github.com/oaslananka/kicad-mcp-pro/commit/60163a7f2c85ba443f34bea642fc139ba5e95fec))
+
+
+### Bug Fixes
+
+* **release:** restore PyPI trusted publishing ([#415](https://github.com/oaslananka/kicad-mcp-pro/issues/415)) ([4ef7334](https://github.com/oaslananka/kicad-mcp-pro/commit/4ef733418c99a3f95122ccdeed50de2a1fc2d7aa))
+* **release:** synchronize citation release date ([#425](https://github.com/oaslananka/kicad-mcp-pro/issues/425)) ([2066e59](https://github.com/oaslananka/kicad-mcp-pro/commit/2066e597890d115046dc39a7ae1a3be3d9d34048))
+* **release:** synchronize Tauri bundle version ([#426](https://github.com/oaslananka/kicad-mcp-pro/issues/426)) ([a555ff2](https://github.com/oaslananka/kicad-mcp-pro/commit/a555ff27b53aa1c94bd04126034779fe9918c1c0))
+* **release:** verify TestPyPI attestations locally ([#416](https://github.com/oaslananka/kicad-mcp-pro/issues/416)) ([b64c2f9](https://github.com/oaslananka/kicad-mcp-pro/commit/b64c2f9b4e7bde9eee65f2aba5dbd314d94586d3))
+* **repo:** make CITATION.cff version track release-please ([#397](https://github.com/oaslananka/kicad-mcp-pro/issues/397)) ([f43b880](https://github.com/oaslananka/kicad-mcp-pro/commit/f43b880b5c674c10d91f977ddcce1b57d4b00c44))
+* **security:** let Scorecard inspect CI checks ([#419](https://github.com/oaslananka/kicad-mcp-pro/issues/419)) ([b352c5f](https://github.com/oaslananka/kicad-mcp-pro/commit/b352c5f7e4aab61e015ead8a154c63a96ab3b874))
+* **security:** pin patched js-yaml ([#417](https://github.com/oaslananka/kicad-mcp-pro/issues/417)) ([b3cf63d](https://github.com/oaslananka/kicad-mcp-pro/commit/b3cf63dc5384b649a11066ba2d63068eb3c75b24))
+* **security:** scope patched body-parser override ([#423](https://github.com/oaslananka/kicad-mcp-pro/issues/423)) ([664865a](https://github.com/oaslananka/kicad-mcp-pro/commit/664865a86f4995d8a9e05b758b3629e86df8bd55))
+* **test:** isolate Git integration repositories ([#418](https://github.com/oaslananka/kicad-mcp-pro/issues/418)) ([1260060](https://github.com/oaslananka/kicad-mcp-pro/commit/1260060a6732ec10429cc3bedd2761fe3c11dd16))
+
+
+### Documentation
+
+* add Zenodo DOI badge and Cite this software section ([#399](https://github.com/oaslananka/kicad-mcp-pro/issues/399)) ([b73bcb6](https://github.com/oaslananka/kicad-mcp-pro/commit/b73bcb6ac6f5014d36337c2147c325dfd02553fe))
+* **security:** record Scorecard CI false positive evidence ([#424](https://github.com/oaslananka/kicad-mcp-pro/issues/424)) ([21ad4e9](https://github.com/oaslananka/kicad-mcp-pro/commit/21ad4e94f2655c3997d5a74928ca7f355279cc95))
+* stop hardcoding versions in living status docs ([#400](https://github.com/oaslananka/kicad-mcp-pro/issues/400)) ([e268630](https://github.com/oaslananka/kicad-mcp-pro/commit/e268630e21ebfa4f1195d9769a874de341715695))
+
 ## [3.25.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.24.1...mcp-server-v3.25.0) (2026-07-10)
 
 
