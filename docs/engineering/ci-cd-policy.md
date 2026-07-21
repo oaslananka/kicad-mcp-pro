@@ -45,23 +45,22 @@ would incorrectly no-op on a real dependency/Dockerfile change.
 | Job / Check | Docs-only PR | Python PR | NPM PR | Schema PR | Workflow PR | Full / Mixed PR |
 |-------------|:------------:|:---------:|:------:|:---------:|:-----------:|:---------------:|
 | `mcp-server` (3 OS) | no-op ✅ | **full** | no-op ✅ | no-op ✅ | **full** | **full** |
+| `CI Tests / Coverage` | no-op ✅ | **full** | no-op ✅ | no-op ✅ | **full** | **full** |
 | `mcp-npm` (3 OS) | no-op ✅ | no-op ✅ | **full** | no-op ✅ | **full** | **full** |
 | `protocol-schemas` | no-op ✅ | **full** | **full** | **full** | **full** | **full** |
 | `scan` (Gitleaks) | **full** | **full** | **full** | **full** | **full** | **full** |
 | `analyze` (CodeQL) | no-op ✅ | **full** | **full** | **full** | **full** | **full** |
-| Dependency Review | not triggered | if deps ∆ | if deps ∆ | not triggered | if workflow file ∆ | if deps ∆ |
+| Dependency Review | **full** | **full** | **full** | **full** | **full** | **full** |
 | `required-pr-gate` | ✅ pass | ✅ pass/fail | ✅ pass/fail | ✅ pass/fail | ✅ pass/fail | ✅ pass/fail |
 
 **no-op** means the job runs and reports success, but skips expensive steps.
 This ensures the required status check is never left pending.
 
-Dependency Review is scoped at the **workflow trigger** level (`on.pull_request.paths`
-in `dependency-review.yml`), not via the `changes` job, so it does not run at
-all (no check appears) unless the PR touches `package.json`, `pnpm-lock.yaml`,
-`pyproject.toml`, `uv.lock`, `Dockerfile`, `renovate.json`,
-`packages/mcp-npm/package.json`/`package-lock.json`, or the workflow file
-itself. This is safe only because Dependency Review is **not** a required
-status check.
+Dependency Review runs on every pull request to `main` and is a required
+status check. It must not be path-filtered at the workflow trigger because a
+missing required context would leave an otherwise valid pull request blocked.
+The action itself reports success when a pull request has no dependency-graph
+delta.
 
 ## Required Status Checks
 
@@ -98,27 +97,28 @@ skipped entirely.
 ### Aggregate Gate (`required-pr-gate`)
 
 `ci.yml` includes a `required-pr-gate` job that evaluates the results of
-`changes`, `mcp-server`, `mcp-npm`, `protocol-schemas`, and `security`,
+`changes`, `mcp-server`, `coverage`, `mcp-npm`, `protocol-schemas`, and `security`,
 failing on any `failure`/`cancelled` result and passing on `success`/`skipped`.
 It exists to let branch protection eventually depend on **one** check instead
 of pinning every individual matrix context, so job renames or new matrix
 entries don't require a ruleset edit.
 
-**As of this writing it is not yet part of the branch ruleset.** The required
-migration sequence, in order:
+`Required PR Gate` is active in ruleset `18233373`. The existing operating-
+system matrix, protocol schema, secret scan, CodeQL, and dependency-review
+contexts remain required alongside it. New internal jobs such as `coverage`
+become merge-blocking by joining the aggregate gate; they should not be added
+directly to the ruleset until they have a stable history and a deliberate
+migration plan.
 
-1. Merge the `required-pr-gate` job to `main`.
-2. Confirm it appears and reports correctly on a fresh PR built from updated `main`.
-3. Additively add `Required PR Gate` to ruleset `18233373`'s required checks
-   (keep the existing 10 contexts — do not remove them yet).
-4. As a separate, explicitly-labeled follow-up, once confidence is established,
-   remove the 7 matrix-specific contexts (`mcp-server (*)`, `mcp-npm (*)`,
-   `protocol-schemas`), leaving `Required PR Gate` + `scan` +
-   `analyze (python)` + `analyze (javascript-typescript)`.
+### Codecov reporting
 
-Adding step 3 before step 1/2 would create an unsatisfiable pending check on
-every already-open PR that doesn't yet contain the job — this is exactly the
-"required check pending" failure mode this whole policy exists to avoid.
+`CI Tests / Coverage` is the recognized full-test summary check for OpenSSF
+Scorecard and the source of Codecov Python coverage and JUnit test analytics.
+It authenticates with OIDC and runs upload steps after failed tests. Codecov
+project and patch statuses use relative `auto` targets and are informational
+during baseline collection; the pytest failure and 83% local coverage threshold
+remain blocking through the
+aggregate gate.
 
 ## Security Workflows
 
@@ -126,7 +126,7 @@ every already-open PR that doesn't yet contain the job — this is exactly the
 |----------|:---------------------:|-----------|
 | **Gitleaks** (`scan`) | ✅ Always | Fast; secrets can appear in any file. |
 | **CodeQL** (`analyze`) | no-op | Code analysis is irrelevant for docs changes. Scheduled full scan runs weekly regardless. |
-| **Dependency Review** | Not triggered (no lockfile/manifest changes) | Only meaningful when dependency files change; scoped via workflow-level `paths:`, not a `changes` output. |
+| **Dependency Review** | ✅ Always | Required context; evaluates dependency-graph changes and succeeds when no dependency delta exists. |
 | **Scorecard** | Not triggered on PR | Runs on push to main and weekly schedule. |
 | **Trivy** (in CI `security` job) | no-op on docs-only | Filesystem vulnerability scan is code-focused. |
 | **SonarQube Cloud** | Runs (Automatic Analysis, not workflow-gated) | Not a required check; see below for scope. |

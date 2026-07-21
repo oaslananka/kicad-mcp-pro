@@ -13,6 +13,7 @@ site/
 coverage/
 htmlcov/
 coverage.xml
+python.junit.xml
 .coverage
 performance-results/
 artifacts/

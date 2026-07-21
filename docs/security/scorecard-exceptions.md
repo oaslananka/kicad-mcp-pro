@@ -27,3 +27,14 @@ Accepted Scorecard exceptions must be revisited before each release and after an
 The Scorecard CI-Tests check reads recent pull-request associations, CheckRuns, and commit statuses. The Scorecard job therefore has read-only access to `pull-requests`, `checks`, and `statuses`; it does not receive write access to any of them. Code-bearing pull requests remain unable to merge unless the operating-system server matrix and `Required PR Gate` succeed under the active `main` ruleset.
 
 A Scorecard run after a permission change is the authoritative detection check. Keep the alert open if the upstream detector still cannot associate successful GitHub Actions checks, and record that limitation rather than weakening the merge gate.
+
+## CI-Tests detector follow-up
+
+The Scorecard `CI-Tests` probe did not recognize the repository's historical
+job names even after read access to checks, statuses, and pull requests was
+granted. The workflow now emits a dedicated `CI Tests / Coverage` check on pull
+requests and `main` commits. Scorecard evaluates approximately 30 recent merged
+changes, so the normalized score will improve as that history is replaced. The
+finding must not be dismissed as fixed until a future Scorecard run observes
+the recognized check history or an upstream detector limitation is accepted
+with evidence.

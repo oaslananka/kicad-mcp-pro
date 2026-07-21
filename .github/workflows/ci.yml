@@ -61,6 +61,8 @@ jobs:
             workflows:
               - '.github/workflows/**'
               - '.github/actions/**'
+              - '.github/actions-policy.json'
+              - 'codecov.yml'
             dependencies:
               - 'package.json'
               - 'pnpm-lock.yaml'
@@ -100,17 +102,19 @@ jobs:
           fi
       - name: Summarize detected changes
         run: |
-          echo '## Change Detection Summary' >> "$GITHUB_STEP_SUMMARY"
-          echo '' >> "$GITHUB_STEP_SUMMARY"
-          echo '| Category | Changed |' >> "$GITHUB_STEP_SUMMARY"
-          echo '|----------|---------|' >> "$GITHUB_STEP_SUMMARY"
-          echo '| python | ${{ steps.filter.outputs.python }} |' >> "$GITHUB_STEP_SUMMARY"
-          echo '| npm | ${{ steps.filter.outputs.npm }} |' >> "$GITHUB_STEP_SUMMARY"
-          echo '| schemas | ${{ steps.filter.outputs.schemas }} |' >> "$GITHUB_STEP_SUMMARY"
-          echo '| workflows | ${{ steps.filter.outputs.workflows }} |' >> "$GITHUB_STEP_SUMMARY"
-          echo '| dependencies | ${{ steps.filter.outputs.dependencies }} |' >> "$GITHUB_STEP_SUMMARY"
-          echo '| docs | ${{ steps.filter.outputs.docs }} |' >> "$GITHUB_STEP_SUMMARY"
-          echo '| **docs_only** | **${{ steps.check.outputs.docs_only }}** |' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo '## Change Detection Summary'
+            echo ''
+            echo '| Category | Changed |'
+            echo '|----------|---------|'
+            echo '| python | ${{ steps.filter.outputs.python }} |'
+            echo '| npm | ${{ steps.filter.outputs.npm }} |'
+            echo '| schemas | ${{ steps.filter.outputs.schemas }} |'
+            echo '| workflows | ${{ steps.filter.outputs.workflows }} |'
+            echo '| dependencies | ${{ steps.filter.outputs.dependencies }} |'
+            echo '| docs | ${{ steps.filter.outputs.docs }} |'
+            echo '| **docs_only** | **${{ steps.check.outputs.docs_only }}** |'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   mcp-server:
     needs: [changes]
@@ -162,6 +166,77 @@ jobs:
         if: env.skip_ci != 'true'
       - run: corepack pnpm run package:check
         if: env.skip_ci != 'true'
+
+  coverage:
+    name: CI Tests / Coverage
+    needs: [changes]
+    if: >-
+      always() &&
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Skip full coverage for non-Python PR
+        if: >-
+          github.event_name == 'pull_request' &&
+          needs.changes.outputs.python != 'true' &&
+          needs.changes.outputs.workflows != 'true'
+        run: |
+          echo "::notice::Skipping full Python coverage — no Python or workflow changes detected"
+          echo "skip_ci=true" >> "$GITHUB_ENV"
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        if: env.skip_ci != 'true'
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        if: env.skip_ci != 'true'
+        with:
+          enable-cache: true
+          version-file: uv.toml
+      - name: Install Python dependencies
+        if: env.skip_ci != 'true'
+        run: uv sync --all-extras --frozen
+      - name: Run full Python suite with coverage and JUnit
+        id: python-tests
+        if: env.skip_ci != 'true'
+        continue-on-error: true
+        run: >-
+          uv run python scripts/run_pytest.py full
+          --junitxml=python.junit.xml
+          -o junit_family=legacy
+      - name: Upload Python coverage to Codecov
+        if: env.skip_ci != 'true' && !cancelled() && hashFiles('coverage.xml') != ''
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        with:
+          use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          files: coverage.xml
+          disable_search: true
+          disable_telem: true
+          fail_ci_if_error: false
+          flags: python-full
+          name: python-full
+          verbose: true
+      - name: Upload Python test results to Codecov
+        if: env.skip_ci != 'true' && !cancelled() && hashFiles('python.junit.xml') != ''
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        with:
+          use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          report_type: test_results
+          files: python.junit.xml
+          disable_search: true
+          disable_telem: true
+          fail_ci_if_error: false
+          flags: python-full
+          name: python-full-tests
+          verbose: true
+      - name: Propagate Python test failure
+        if: env.skip_ci != 'true' && steps.python-tests.outcome == 'failure'
+        run: |
+          echo "Full Python suite failed; Codecov uploads were attempted before failing the job."
+          exit 1
 
   mcp-npm:
     needs: [changes]
@@ -281,7 +356,7 @@ jobs:
 
   required-pr-gate:
     name: Required PR Gate
-    needs: [changes, mcp-server, mcp-npm, protocol-schemas, workflow-policy, security]
+    needs: [changes, mcp-server, coverage, mcp-npm, protocol-schemas, workflow-policy, security]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -292,6 +367,7 @@ jobs:
           declare -A results=(
             [changes]="${{ needs.changes.result }}"
             [mcp-server]="${{ needs.mcp-server.result }}"
+            [coverage]="${{ needs.coverage.result }}"
             [mcp-npm]="${{ needs.mcp-npm.result }}"
             [protocol-schemas]="${{ needs.protocol-schemas.result }}"
             [workflow-policy]="${{ needs.workflow-policy.result }}"
@@ -309,7 +385,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           failed=0
-          for job in changes mcp-server mcp-npm protocol-schemas workflow-policy security; do
+          for job in changes mcp-server coverage mcp-npm protocol-schemas workflow-policy security; do
             result="${results[$job]}"
             echo "| $job | $result |" >> "$GITHUB_STEP_SUMMARY"
             case "$result" in
