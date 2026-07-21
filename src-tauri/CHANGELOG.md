@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.26.0](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v3.25.0...kicad-mcp-gui-v3.26.0) (2026-07-21)
+
+
+### Bug Fixes
+
+* **release:** synchronize Tauri bundle version ([#426](https://github.com/oaslananka/kicad-mcp-pro/issues/426)) ([a555ff2](https://github.com/oaslananka/kicad-mcp-pro/commit/a555ff27b53aa1c94bd04126034779fe9918c1c0))
+
 ## [3.25.0](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v3.24.1...kicad-mcp-gui-v3.25.0) (2026-07-10)
 
 
