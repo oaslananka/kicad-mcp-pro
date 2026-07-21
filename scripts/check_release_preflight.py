@@ -61,6 +61,10 @@ def _collect_versions() -> dict[str, str]:
     server = _read_json("server.json")
     wrapper = _read_repo_json("packages/mcp-npm/package.json")
     manifest = _read_repo_json(".release-please-manifest.json")
+    tauri_cargo = tomllib.loads(
+        (REPO_ROOT / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8")
+    )
+    tauri_config = _read_repo_json("src-tauri/tauri.conf.json")
     versions = {
         "pyproject.toml": _project_version(),
         "src/kicad_mcp/__init__.py": _init_version(),
@@ -68,6 +72,9 @@ def _collect_versions() -> dict[str, str]:
         "packages/mcp-npm/package.json": str(wrapper.get("version", "")),
         ".release-please-manifest.json .": str(manifest.get(".", "")),
         ".release-please-manifest.json packages/mcp-npm": str(manifest.get("packages/mcp-npm", "")),
+        "src-tauri/Cargo.toml": str(tauri_cargo.get("package", {}).get("version", "")),
+        "src-tauri/tauri.conf.json": str(tauri_config.get("version", "")),
+        ".release-please-manifest.json src-tauri": str(manifest.get("src-tauri", "")),
     }
     packages = server.get("packages")
     if not isinstance(packages, list) or not packages:
