@@ -171,6 +171,7 @@ nav:
       - Safety and Permissions: submission/safety-and-permissions.md
   - Development:
       - Local Workflow: development.md
+      - Reproducible Bootstrap: development/reproducible-bootstrap.md
       - Contributing: development/contributing.md
       - Testing: testing.md
       - Coding Standards: development/coding-standards.md
