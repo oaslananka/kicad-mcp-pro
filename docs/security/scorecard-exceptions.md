@@ -6,7 +6,7 @@ This page records OpenSSF Scorecard findings that are not immediate code vulnera
 
 | Check | Current status | Rationale | Remediation path |
 | --- | --- | --- | --- |
-| CI-Tests | Remediation in progress | The Scorecard job declared an explicit permission map but omitted `checks`, `statuses`, and `pull-requests`. GitHub therefore supplied `none` for those scopes, so Scorecard could not inspect the successful CheckRuns attached to recent merged pull requests and reported 0/30 despite the protected multi-platform CI gate. | Grant read-only access to those three metadata scopes, keep all mutation scopes disabled, rerun Scorecard, and retain the required `mcp-server` test matrix plus `Required PR Gate` in the main ruleset. |
+| CI-Tests | Accepted upstream false positive | OpenSSF Scorecard v5.0.0 continued to report 0/30 after receiving the required read-only metadata scopes. A checksum-verified reproduction identified the exact 30 pull-request HEAD SHAs, and direct GitHub REST verification found completed, successful `github-actions` CheckRuns on 30/30 of them. | Keep the protected operating-system matrices, `CI Tests / Coverage`, and `Required PR Gate`. A long-lived PAT must not be added solely to satisfy this low-severity heuristic. Re-evaluate after an upstream Scorecard client or Action update. Evidence: `docs/evidence/scorecard-ci-tests-rest-verification-2026-07-21.json`. |
 | Branch-Protection | Accepted temporary exception | `main` is protected by a GitHub ruleset that blocks deletion and force-pushes, requires pull requests, requires linear history, requires CI/CodeQL/Gitleaks checks, and requires resolved review threads. Required human approval, code-owner review, and last-push approval are intentionally not enabled while the repository has a single trusted maintainer because doing so can block routine maintenance and security fixes. | Enable required approvals, code-owner review, and last-push approval after adding a second trusted maintainer with verified signing and review availability. |
 | Code-Review | Accepted temporary exception | Recent changes are single-maintainer changes. Bot review and automated analysis are not a substitute for independent human review, so Scorecard correctly cannot award full credit yet. | Recruit at least one additional trusted maintainer and require independent human review for protected-branch merges. |
 | Maintained | Accepted time-based exception | The repository is new, and Scorecard intentionally treats projects younger than 90 days as too new to assess long-term maintenance. | Re-run Scorecard after the repository has more than 90 days of public history and weekly maintenance activity. |
@@ -22,19 +22,63 @@ This page records OpenSSF Scorecard findings that are not immediate code vulnera
 ## Review policy
 
 Accepted Scorecard exceptions must be revisited before each release and after any maintainer or repository-permission change. Do not dismiss a finding without either fixing it or documenting the accepted-risk rationale here.
+
 ## CI-Tests detection contract
 
-The Scorecard CI-Tests check reads recent pull-request associations, CheckRuns, and commit statuses. The Scorecard job therefore has read-only access to `pull-requests`, `checks`, and `statuses`; it does not receive write access to any of them. Code-bearing pull requests remain unable to merge unless the operating-system server matrix and `Required PR Gate` succeed under the active `main` ruleset.
+Code-bearing pull requests cannot merge unless the protected operating-system
+server matrix, `CI Tests / Coverage`, and `Required PR Gate` succeed. The
+Scorecard job retains read-only access to `pull-requests`, `checks`, `statuses`,
+and `actions`; it receives no write permission for those metadata scopes.
 
-A Scorecard run after a permission change is the authoritative detection check. Keep the alert open if the upstream detector still cannot associate successful GitHub Actions checks, and record that limitation rather than weakening the merge gate.
+The deployed OpenSSF Scorecard v5.0.0 binary was downloaded from the official
+release, verified against its published SHA-256 checksum, and run against the
+repository with the `CI-Tests` check and debug details enabled. It reproduced
+`0 out of 30 merged PRs checked by a CI test` and listed the exact 30 pull-request
+HEAD SHAs used by the detector.
 
-## CI-Tests detector follow-up
+Each listed SHA was then queried through GitHub's Check Runs REST endpoint. All
+30/30 SHAs had completed, successful CheckRuns owned by the `github-actions`
+application. Each SHA had 15–27 successful CheckRun records, representing 14–26
+distinct successful check names. The checked-in machine-readable evidence is:
 
-The Scorecard `CI-Tests` probe did not recognize the repository's historical
-job names even after read access to checks, statuses, and pull requests was
-granted. The workflow now emits a dedicated `CI Tests / Coverage` check on pull
-requests and `main` commits. Scorecard evaluates approximately 30 recent merged
-changes, so the normalized score will improve as that history is replaced. The
-finding must not be dismissed as fixed until a future Scorecard run observes
-the recognized check history or an upstream detector limitation is accepted
-with evidence.
+- `docs/evidence/scorecard-ci-tests-rest-verification-2026-07-21.json`
+
+The upstream implementation explains the mismatch:
+
+- The `CI-Tests` collector associates merged pull requests with their HEAD SHA
+  and requests CheckRuns for that SHA.
+- The probe accepts a successful CheckRun when the application slug matches a
+  recognized CI provider, including `github-actions`.
+- The GitHub client contains an explicit warning that its GraphQL CheckSuite
+  query does not work with `GITHUB_TOKEN` and works only with a PAT. An
+  empty-but-successful GraphQL result can therefore avoid the REST cache-miss
+  fallback even though REST returns the successful CheckRuns.
+
+Exact upstream sources for the deployed Scorecard commit:
+
+- <https://github.com/ossf/scorecard/blob/ea7e27ed41b76ab879c862fa0ca4cc9c61764ee4/checks/raw/ci_tests.go>
+- <https://github.com/ossf/scorecard/blob/ea7e27ed41b76ab879c862fa0ca4cc9c61764ee4/probes/testsRunInCI/impl.go>
+- <https://github.com/ossf/scorecard/blob/ea7e27ed41b76ab879c862fa0ca4cc9c61764ee4/clients/githubrepo/checkruns.go>
+
+## CI-Tests risk decision
+
+Code-scanning alert #10 is classified as a false positive, not as remediated CI
+behavior. Introducing a repository or organization PAT would add a long-lived
+credential and broader operational risk without strengthening the actual merge
+gate. A long-lived PAT must not be added solely to make this heuristic report a
+higher score.
+
+The alert may be dismissed with reason `false_positive` only while all of the
+following remain true:
+
+1. The evidence file verifies successful `github-actions` CheckRuns on every SHA
+   that Scorecard reports as untested.
+2. The protected branch continues to require the operating-system test matrix,
+   CodeQL, dependency review, Gitleaks, and `Required PR Gate`.
+3. `CI Tests / Coverage` continues to run the full Python suite and upload both
+   coverage and JUnit/Test Analytics evidence.
+4. No successful upstream Scorecard run contradicts the recorded detector
+   limitation.
+
+Re-open the investigation after a Scorecard Action/client upgrade, a change to
+GitHub token behavior, or any modification to the required-check ruleset.
