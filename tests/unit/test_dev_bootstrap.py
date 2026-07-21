@@ -153,6 +153,59 @@ def test_safe_extract_tar_allows_internal_symlink_but_rejects_escape(tmp_path: P
         safe_extract_tar(hostile_archive, tmp_path / "hostile")
 
 
+def test_safe_extract_tar_uses_callable_cross_version_filter(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    archive = tmp_path / "node-links.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        target = tarfile.TarInfo("node/lib/node_modules/npm/bin/npm-cli.js")
+        target.size = 3
+        bundle.addfile(target, io.BytesIO(b"cli"))
+        link = tarfile.TarInfo("node/bin/npm")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "../lib/node_modules/npm/bin/npm-cli.js"
+        bundle.addfile(link)
+
+    filters: list[object] = []
+    original_extractall = tarfile.TarFile.extractall
+
+    def recording_extractall(
+        bundle: tarfile.TarFile,
+        path: str | Path = ".",
+        members: object = None,
+        *,
+        numeric_owner: bool = False,
+        filter: object = None,
+    ) -> None:
+        filters.append(filter)
+        original_extractall(
+            bundle,
+            path,
+            members,
+            numeric_owner=numeric_owner,
+            filter=filter,
+        )
+
+    monkeypatch.setattr(tarfile.TarFile, "extractall", recording_extractall)
+
+    safe_extract_tar(archive, tmp_path / "extract")
+
+    assert len(filters) == 1
+    assert callable(filters[0])
+
+
+def test_safe_extract_tar_rejects_special_files(tmp_path: Path) -> None:
+    archive = tmp_path / "special.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        fifo = tarfile.TarInfo("package/unsafe-fifo")
+        fifo.type = tarfile.FIFOTYPE
+        bundle.addfile(fifo)
+
+    with pytest.raises(ValueError, match="Unsupported archive member"):
+        safe_extract_tar(archive, tmp_path / "extract")
+
+
 def test_node_install_preserves_archive_symlinks(tmp_path: Path, monkeypatch) -> None:
     source_root = tmp_path / "archive-root"
     node_root = source_root / "node-v24.11.0-linux-x64"
@@ -307,6 +360,54 @@ def test_prepare_environment_installs_uv_and_uvx_from_pinned_archive(
 
     assert result["ok"] is True
     assert installed == ["uv", "uvx"]
+
+
+def test_ci_bootstrap_runs_doctor_with_prepared_python(monkeypatch, capsys) -> None:
+    doctor_payload = {
+        "status": "degraded",
+        "development": {"capabilityMode": "core-only"},
+        "developmentPolicy": {"ready": True, "blocking": [], "limitations": []},
+    }
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(
+        "scripts.dev_environment.prepare_environment",
+        lambda _plan, *, capture: {"ok": True, "status": "ready", "tools": {}},
+    )
+    monkeypatch.setattr(
+        "scripts.dev_environment._doctor_payload",
+        lambda _plan: pytest.fail("bootstrap must not import doctor with the system Python"),
+    )
+    monkeypatch.setattr("scripts.dev_environment.run_ci_quality_gates", lambda _plan: [])
+
+    def fake_run(
+        command: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(doctor_payload),
+            stderr="",
+        )
+
+    monkeypatch.setattr("scripts.dev_environment._run", fake_run)
+
+    result = main(["--ci", "--json", "--core-only"])
+
+    assert result == 0
+    assert commands
+    assert Path(commands[0][0]) == ROOT / ".venv" / "bin" / "python"
+    assert commands[0][1:] == [
+        str(ROOT / "scripts" / "dev_environment.py"),
+        "--doctor",
+        "--json",
+        "--ci",
+        "--root",
+        str(ROOT),
+    ]
+    assert json.loads(capsys.readouterr().out)["doctor"] == doctor_payload
 
 
 def test_main_requests_captured_subprocess_output_for_json(monkeypatch, capsys) -> None:

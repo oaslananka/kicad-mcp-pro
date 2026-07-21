@@ -221,28 +221,50 @@ def download_verified(url: str, destination: Path, expected_sha256: str) -> Path
     return destination
 
 
+def _path_within(root: Path, candidate: Path) -> bool:
+    return candidate == root or root in candidate.parents
+
+
+def _safe_tar_filter(member: tarfile.TarInfo, destination: str) -> tarfile.TarInfo:
+    """Apply a Python-version-independent safe extraction policy."""
+
+    destination_root = Path(destination).resolve()
+    target = (destination_root / member.name).resolve()
+    if not _path_within(destination_root, target):
+        raise ValueError(f"Archive member resolves outside destination: {member.name}")
+
+    if not (member.isreg() or member.isdir() or member.issym() or member.islnk()):
+        raise ValueError(f"Unsupported archive member type: {member.name}")
+
+    if member.issym():
+        link_target = (target.parent / member.linkname).resolve()
+    elif member.islnk():
+        link_target = (destination_root / member.linkname).resolve()
+    else:
+        link_target = None
+    if link_target is not None and not _path_within(destination_root, link_target):
+        raise ValueError(f"Archive link resolves outside destination: {member.name}")
+
+    member.uid = None
+    member.gid = None
+    member.uname = None
+    member.gname = None
+    if member.isdir() or member.issym():
+        member.mode = None
+    elif member.mode is not None:
+        mode = member.mode & 0o755
+        if not mode & 0o100:
+            mode &= ~0o111
+        member.mode = mode | 0o600
+    return member
+
+
 def safe_extract_tar(archive: Path, destination: Path) -> None:
-    """Extract a native tool archive without allowing links or path traversal."""
+    """Extract a native tool archive without allowing unsafe members or paths."""
 
     destination.mkdir(parents=True, exist_ok=True)
-    destination_resolved = destination.resolve()
     with tarfile.open(archive, "r:*") as bundle:
-        for member in bundle.getmembers():
-            target = (destination / member.name).resolve()
-            if target != destination_resolved and destination_resolved not in target.parents:
-                raise ValueError(f"Archive member resolves outside destination: {member.name}")
-            if member.issym():
-                link_target = (target.parent / member.linkname).resolve()
-            elif member.islnk():
-                link_target = (destination / member.linkname).resolve()
-            else:
-                continue
-            if (
-                link_target != destination_resolved
-                and destination_resolved not in link_target.parents
-            ):
-                raise ValueError(f"Archive link resolves outside destination: {member.name}")
-        bundle.extractall(destination, filter="data")
+        bundle.extractall(destination, filter=_safe_tar_filter)  # noqa: S202
 
 
 def _host_architecture() -> str:
@@ -651,6 +673,26 @@ def _doctor_payload(plan: BootstrapPlan) -> dict[str, Any]:
     return payload
 
 
+def run_prepared_doctor(plan: BootstrapPlan) -> dict[str, Any]:
+    """Run doctor inside the managed virtual environment created by bootstrap."""
+
+    python = plan.venv_root / "bin" / "python"
+    command = [
+        str(python),
+        str(plan.root / "scripts" / "dev_environment.py"),
+        "--doctor",
+        "--json",
+        "--ci",
+        "--root",
+        str(plan.root),
+    ]
+    completed = _run(command, cwd=plan.root, env=_environment(plan), capture=True)
+    payload = json.loads(completed.stdout)
+    if not isinstance(payload, dict):
+        raise ValueError("Prepared doctor did not return a JSON object")
+    return payload
+
+
 def run_ci_quality_gates(plan: BootstrapPlan) -> list[dict[str, Any]]:
     """Run the agreed clean-host quality gates and return concise evidence."""
 
@@ -753,7 +795,7 @@ def main(argv: list[str] | None = None) -> int:
         _render(payload, json_output=args.json)
         return 2
     if args.ci:
-        doctor = _doctor_payload(plan)
+        doctor = run_prepared_doctor(plan)
         payload["doctor"] = doctor
         if not doctor["developmentPolicy"]["ready"]:
             _render(payload, json_output=args.json)
