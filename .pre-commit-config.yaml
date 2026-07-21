@@ -10,6 +10,8 @@ repos:
       - id: check-json
       - id: check-toml
       - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.16
@@ -26,13 +28,30 @@ repos:
 
   - repo: local
     hooks:
-      - id: pytest
-        name: pytest
-        entry: pytest
+      - id: workflow-policy
+        name: GitHub Actions policy
+        entry: uv run --all-extras python scripts/check_github_actions_policy.py
+        language: system
+        files: ^(\.github/(workflows/|actions-policy\.json|CODEOWNERS)|scripts/check_github_actions_policy\.py)
+        pass_filenames: false
+      - id: actionlint
+        name: actionlint
+        entry: uv run --all-extras python scripts/check_workflows.py --actionlint
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+        pass_filenames: false
+      - id: zizmor
+        name: zizmor
+        entry: uv run --all-extras python scripts/workflow_security.py --min-severity high
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+        pass_filenames: false
+      - id: unit-tests
+        name: Unit tests
+        entry: uv run --all-extras python scripts/run_pytest.py unit
         language: system
         always_run: true
         pass_filenames: false
-        args: [--no-header, "-q", "--tb=short", "-x"]
         stages: [pre-push]
       - id: gui-web-tests
         name: GUI web route tests
@@ -42,7 +61,7 @@ repos:
         pass_filenames: false
       - id: tauri-cargo-check
         name: Tauri cargo check
-        entry: cargo check --manifest-path src-tauri/Cargo.toml --locked
+        entry: cargo check --manifest-path src-tauri/Cargo.toml
         language: system
         files: ^src-tauri/
         pass_filenames: false

@@ -43,3 +43,11 @@ The `CI Tests / Coverage` job runs the full Python suite with the repository's
 Test Analytics. Upload steps run after test failures, but the original pytest
 failure is propagated after reporting. See
 [Codecov coverage and test analytics](codecov.md).
+
+## Local hook scope
+
+Commit-time hooks stay fast and deterministic: whitespace/format checks,
+secret scanning, workflow policy, actionlint, and Zizmor run only on matching
+files. The repository-wide unit suite runs at `pre-push`, not `pre-commit`, via
+the pinned `uv` environment and the repository's external-basetemp test driver.
+Full coverage, integration, E2E, container, and CodeQL work remains in CI.

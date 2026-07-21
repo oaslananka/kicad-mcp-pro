@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d
         id: filter
         with:
           filters: |
@@ -324,6 +324,8 @@ jobs:
           version-file: uv.toml
       - run: uv sync --all-extras --frozen
       - run: uv run --all-extras python scripts/check_github_actions_policy.py
+      - run: uv run --all-extras python scripts/check_workflows.py --actionlint
+      - run: uv run --all-extras python scripts/workflow_security.py --min-severity high
 
   security:
     needs: [changes]

@@ -11,9 +11,10 @@ task hooks
 
 ## Local Setup
 
-`pnpm run workflows:lint` and `task workflows:lint` require `actionlint` on
-`PATH`. Install it from <https://github.com/rhysd/actionlint> before running the
-full local workflow lint gate.
+`pnpm run workflows:lint` and `task workflows:lint` use the exact
+`actionlint-py` and `shellcheck-py` versions locked by `uv.lock`. A frozen
+`uv sync --all-extras` installs both binaries; no separate global install is
+required.
 
 ## Daily Workflow
 
@@ -48,8 +49,9 @@ For local workstation security scanners:
 task security:local
 ```
 
-This command requires Gitleaks, actionlint, and zizmor. It reports clear install
-hints when a required scanner is missing.
+This command uses the locked actionlint, ShellCheck, and Zizmor binaries from
+the project environment. Gitleaks remains a separately installed required
+scanner; missing tools fail with explicit installation guidance.
 
 ## Optional GitHub Actions Local Run
 

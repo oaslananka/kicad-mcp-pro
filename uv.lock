@@ -11,6 +11,12 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "actionlint-py"
+version = "1.7.12.24"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6f/0b/3f29683dfbe94208fb5c3806806a6ef419972892e25c3c4f95198f68c978/actionlint_py-1.7.12.24.tar.gz", hash = "sha256:7571b0724fde79b2572b98b2b53792c470249d4db29951b57fc49b9cd3eaf11e", size = 12071, upload-time = "2026-03-31T06:21:35.015Z" }
+
+[[package]]
 name = "aiofile"
 version = "3.11.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1107,6 +1113,7 @@ components = [
     { name = "httpx" },
 ]
 dev = [
+    { name = "actionlint-py" },
     { name = "bandit" },
     { name = "cairosvg" },
     { name = "httpx2" },
@@ -1130,6 +1137,7 @@ dev = [
     { name = "pytest-testmon" },
     { name = "pytest-xdist" },
     { name = "ruff" },
+    { name = "shellcheck-py" },
     { name = "types-pyyaml" },
     { name = "vulture" },
     { name = "watchfiles" },
@@ -1162,6 +1170,7 @@ release = [
 
 [package.metadata]
 requires-dist = [
+    { name = "actionlint-py", marker = "extra == 'dev'", specifier = "==1.7.12.24" },
     { name = "anyio", specifier = ">=4.4.0" },
     { name = "authlib", specifier = ">=1.7.1" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7.9" },
@@ -1205,6 +1214,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "rich", specifier = ">=13.7.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.0,!=0.15.10" },
+    { name = "shellcheck-py", marker = "extra == 'dev'", specifier = "==0.11.0.1" },
     { name = "starlette", specifier = ">=1.0.1,<2.0.0" },
     { name = "structlog", specifier = ">=24.2.0" },
     { name = "typer", specifier = ">=0.12.0" },
@@ -3157,6 +3167,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a7/7f/369a478863a39351be75e0a12602bc29196b31f87bf3432bed2be6379f8e/sexpdata-1.0.2.tar.gz", hash = "sha256:92b67b0361f6766f8f9e44b9519cf3fbcfafa755db85bbf893c3e1cf4ddac109", size = 8906, upload-time = "2024-01-09T07:09:59.096Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f1/f3/ec9f8cc20dc1f34c926f0ec3f43b73fa2da59cf08e432fb8ae5b666b2027/sexpdata-1.0.2-py3-none-any.whl", hash = "sha256:b39c918f055a85c5c35c1d4f7930aabb176bd29016e5ba5692e7e849914b2a1a", size = 10337, upload-time = "2024-01-09T07:09:57.185Z" },
+]
+
+[[package]]
+name = "shellcheck-py"
+version = "0.11.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/df/55/455b097417b3df3d330eff029c72c32f08b25739e3010acb30ad06d268ef/shellcheck_py-0.11.0.1.tar.gz", hash = "sha256:5c620c88901e8f1d3be5934b31ea99e3310065e1245253741eafd0a275c8c9cc", size = 3139, upload-time = "2025-08-09T17:53:42.492Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/54/27/d75b03e5458cefdb6d3b674566cd20476c3e4d3fe6cc9d68b7e3b854b296/shellcheck_py-0.11.0.1-py2.py3-none-macosx_10_9_x86_64.whl", hash = "sha256:b6a3fee28efda2e16e38d6e6d59faf7224300256456639727370d404730849e8", size = 6774472, upload-time = "2025-08-09T17:53:34.573Z" },
+    { url = "https://files.pythonhosted.org/packages/61/ac/2a84c37171c0cf5a10ea4b0a27d43eb0a1d29bd98b49c2c5ffe17ad24bbe/shellcheck_py-0.11.0.1-py2.py3-none-macosx_11_0_arm64.whl", hash = "sha256:6b88d0a244c82ed07e06a53e444da841f69330ca59ae15d4a66c391655dae7a0", size = 11381835, upload-time = "2025-08-09T17:53:36.852Z" },
+    { url = "https://files.pythonhosted.org/packages/96/55/250e0e3367613a5c22bd82e33b16b889287d81ab0f7dda67e6514a4cccf4/shellcheck_py-0.11.0.1-py2.py3-none-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:1b274df81de5b000ff78db433e7328b87e52e3c38481c60f8e488c3095beef05", size = 3800600, upload-time = "2025-08-09T17:53:38.643Z" },
+    { url = "https://files.pythonhosted.org/packages/15/5b/bb14c0a7474463b1aa3c09e866cb172dffc66ed2993b7ea8f1db581e86ee/shellcheck_py-0.11.0.1-py2.py3-none-win_amd64.whl", hash = "sha256:784156289ecb17e91c692cd783ab5152333309588cabb10032a047331c63e759", size = 8027541, upload-time = "2025-08-09T17:53:40.889Z" },
 ]
 
 [[package]]

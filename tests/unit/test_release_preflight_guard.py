@@ -136,7 +136,7 @@ kicadIpcReadiness:
     assert module.main() == 1
 
 
-def test_workflow_lint_uses_workspace_actionlint_fallback(
+def test_workflow_lint_uses_locked_actionlint_binary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -154,29 +154,17 @@ def test_workflow_lint_uses_workspace_actionlint_fallback(
 
     module.main()
 
-    assert commands == [["corepack", "pnpm", "--filter", "kicadstudio", "run", "workflows:lint"]]
+    assert module.ACTIONLINT_COMMAND == ["actionlint"]
+    assert commands == [["actionlint"]]
 
 
-def test_workflow_lint_does_not_branch_on_local_actionlint_binary(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_workflow_lint_has_no_workspace_specific_fallback() -> None:
     module = _load_script("check_workflows.py")
-    workflows = tmp_path / ".github" / "workflows"
-    workflows.mkdir(parents=True)
-    (workflows / "example.yml").write_text(
-        "name: Example\non: workflow_dispatch\njobs: {}\n",
-        encoding="utf-8",
-    )
-    commands: list[list[str]] = []
-    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(module, "_run", commands.append)
-    monkeypatch.setattr(sys, "argv", ["check_workflows.py", "--actionlint"])
 
-    module.main()
-
-    assert module.WORKSPACE_ACTIONLINT_COMMAND[0] == "corepack"
-    assert commands == [["corepack", "pnpm", "--filter", "kicadstudio", "run", "workflows:lint"]]
+    assert not hasattr(module, "WORKSPACE_ACTIONLINT_COMMAND")
+    assert "kicadstudio" not in Path(__file__).resolve().parents[2].joinpath(
+        "scripts", "check_workflows.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_workflow_lint_resolves_windows_command_shims(monkeypatch: pytest.MonkeyPatch) -> None:
