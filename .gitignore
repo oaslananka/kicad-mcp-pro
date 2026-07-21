@@ -64,3 +64,8 @@ src-tauri/gen/
 
 # Serena local index cache
 .serena/
+
+# Repository-scoped development toolchain
+.dev-tools/
+.dev-cache/
+.dev-env.sh
