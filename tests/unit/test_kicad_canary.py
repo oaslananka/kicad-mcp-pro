@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -157,6 +158,41 @@ def test_kicad_canary_uses_shared_fixture_corpus() -> None:
         kicad_canary._project_file("clean-led-kicad10", ".kicad_pcb").name
         == "clean-led-kicad10.kicad_pcb"
     )
+
+
+def test_fixture_workspace_copy_does_not_require_directory_metadata(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    fixture_root = tmp_path / "fixtures"
+    source = fixture_root / "portable-fixture"
+    nested = source / "nested"
+    nested.mkdir(parents=True)
+    (source / "board.kicad_pcb").write_text("board\n", encoding="utf-8")
+    (nested / "sheet.kicad_sch").write_text("sheet\n", encoding="utf-8")
+    monkeypatch.setattr(kicad_canary, "FIXTURE_ROOT", fixture_root)
+
+    original_copystat = shutil.copystat
+
+    def deny_directory_metadata(source_path, target_path, *, follow_symlinks=True):
+        if Path(source_path).is_dir():
+            raise PermissionError("directory metadata is not writable")
+        return original_copystat(
+            source_path,
+            target_path,
+            follow_symlinks=follow_symlinks,
+        )
+
+    monkeypatch.setattr(kicad_canary.shutil, "copystat", deny_directory_metadata)
+
+    workspace = kicad_canary._prepare_fixture_workspaces(
+        tmp_path / "artifacts",
+        {"portable-fixture"},
+    )
+
+    copied = workspace / "portable-fixture"
+    assert (copied / "board.kicad_pcb").read_text(encoding="utf-8") == "board\n"
+    assert (copied / "nested" / "sheet.kicad_sch").read_text(encoding="utf-8") == "sheet\n"
 
 
 def test_command_plan_covers_oaslana_38_export_surface(tmp_path: Path) -> None:

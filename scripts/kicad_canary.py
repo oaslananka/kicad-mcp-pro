@@ -208,6 +208,19 @@ def _project_file(fixture: str, suffix: str) -> Path:
     return _fixture_file(FIXTURE_ROOT, fixture, suffix)
 
 
+def _copy_fixture_tree(source: Path, target: Path) -> None:
+    """Copy fixture contents without requiring writable filesystem metadata."""
+    target.mkdir(parents=True, exist_ok=False)
+    for entry in source.iterdir():
+        destination = target / entry.name
+        if entry.is_dir():
+            _copy_fixture_tree(entry, destination)
+        elif entry.is_file():
+            shutil.copyfile(entry, destination)
+        else:
+            raise OSError(f"Unsupported fixture entry: {entry}")
+
+
 def _prepare_fixture_workspaces(artifacts: Path, fixtures: set[str]) -> Path:
     workspace_root = artifacts / "workspace"
     workspace_root.mkdir(parents=True, exist_ok=True)
@@ -218,7 +231,7 @@ def _prepare_fixture_workspaces(artifacts: Path, fixtures: set[str]) -> Path:
             raise FileNotFoundError(f"Unknown KiCad fixture: {fixture}")
         if target.exists():
             shutil.rmtree(target)
-        shutil.copytree(source, target)
+        _copy_fixture_tree(source, target)
     return workspace_root
 
 
