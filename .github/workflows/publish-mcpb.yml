@@ -1,0 +1,178 @@
+name: Publish MCPB
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing mcp-server release tag to backfill.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-mcpb-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
+      ((github.event_name == 'release' && startsWith(github.event.release.tag_name, 'mcp-server-v')) ||
+       (github.event_name == 'workflow_dispatch' && startsWith(inputs.tag, 'mcp-server-v')))
+    runs-on: ubuntu-24.04
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_EVENT_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "release" ]]; then
+            release_tag="$RELEASE_EVENT_TAG"
+          else
+            release_tag="$DISPATCH_TAG"
+          fi
+          if [[ ! "$release_tag" =~ ^mcp-server-v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Unsupported MCPB release tag: $release_tag" >&2
+            exit 1
+          fi
+          version="${release_tag#mcp-server-v}"
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Verify release source and manifest version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          release_tag="$RELEASE_TAG"
+          version="$VERSION"
+          source_commit="$(git rev-parse HEAD)"
+          tag_commit="$(git rev-list -n 1 "$release_tag")"
+          manifest_version="$(node -e "console.log(require('./packaging/mcpb/manifest.json').version)")"
+          release_target="$(gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+          test "$source_commit" = "$tag_commit"
+          test "$release_target" = "$source_commit"
+          test "$manifest_version" = "$version"
+
+      - name: Validate and pack MCPB bundle
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          version="$VERSION"
+          output="release-assets/mcpb/kicad-mcp-pro-${version}.mcpb"
+          mkdir -p release-assets/mcpb
+          npx -y @anthropic-ai/mcpb@2.1.2 validate packaging/mcpb/manifest.json
+          npx -y @anthropic-ai/mcpb@2.1.2 pack packaging/mcpb "$output"
+          test -s "$output"
+          ARTIFACT="$output" VERSION="$version" python3 - <<'PY'
+          import json
+          import os
+          import zipfile
+          from pathlib import Path
+
+          artifact = Path(os.environ["ARTIFACT"])
+          with zipfile.ZipFile(artifact) as archive:
+              names = set(archive.namelist())
+              if {"manifest.json", "icon.png"} - names:
+                  raise SystemExit(f"MCPB archive missing required entries: {sorted(names)}")
+              manifest = json.loads(archive.read("manifest.json"))
+          if manifest.get("version") != os.environ["VERSION"]:
+              raise SystemExit(
+                  f"MCPB manifest version drift: {manifest.get('version')} != {os.environ['VERSION']}"
+              )
+          PY
+
+      - name: Generate MCPB release evidence
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          release_tag="$RELEASE_TAG"
+          version="$VERSION"
+          evidence_dir="release-assets/mcpb"
+          artifact="kicad-mcp-pro-${version}.mcpb"
+          SOURCE_COMMIT="$(git rev-parse HEAD)"
+          (
+            cd "$evidence_dir"
+            sha256sum "$artifact" > kicad-mcp-pro-mcpb-SHA256SUMS.txt
+            sha256sum --check kicad-mcp-pro-mcpb-SHA256SUMS.txt
+          )
+          RELEASE_TAG="$release_tag" VERSION="$version" ARTIFACT="$artifact" SOURCE_COMMIT="$SOURCE_COMMIT" python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("release-assets/mcpb")
+          artifact = root / os.environ["ARTIFACT"]
+          evidence = {
+              "schemaVersion": 1,
+              "artifact": artifact.name,
+              "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+              "sourceTag": os.environ["RELEASE_TAG"],
+              "sourceCommit": os.environ["SOURCE_COMMIT"],
+              "version": os.environ["VERSION"],
+              "workflowRun": (
+                  f"https://github.com/{os.environ['GITHUB_REPOSITORY']}"
+                  f"/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+              ),
+          }
+          (root / "kicad-mcp-pro-mcpb-release-evidence.json").write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Attest MCPB bundle
+        id: attest-mcpb
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26
+        with:
+          subject-checksums: release-assets/mcpb/kicad-mcp-pro-mcpb-SHA256SUMS.txt
+
+      - name: Store MCPB release evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: mcpb-release-evidence
+          path: release-assets/mcpb
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attach MCPB bundle and evidence to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          release_tag="$RELEASE_TAG"
+          gh release upload "$release_tag" release-assets/mcpb/* --clobber
