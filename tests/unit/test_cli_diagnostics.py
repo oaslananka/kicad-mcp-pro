@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from kicad_mcp.diagnostics import (
     DiagnosticReport,
     KiCadDiagnostics,
     McpDiagnostics,
+    _development_contract,
+    _development_tool_version,
     build_development_diagnostics,
     build_diagnostic_report,
 )
@@ -384,3 +387,47 @@ def test_public_doctor_report_includes_source_checkout_development_section(
         "optional",
         "live-kicad",
     }
+
+
+def test_development_contract_ignores_non_assignment_lines(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    contract = checkout / "scripts" / "dev-toolchain.env"
+    contract.parent.mkdir(parents=True)
+    contract.write_text(
+        "\n"
+        "# reviewed development versions\n"
+        "not-an-assignment\n"
+        "PYTHON_VERSION=3.13.12\n"
+        "UV_VERSION=0.10.8\n"
+        "NODE_VERSION=24.11.0\n"
+        "PNPM_VERSION=11.5.0\n"
+        "TASK_VERSION=3.52.0\n"
+        "RUST_TOOLCHAIN=1.97.1\n"
+        "KICAD_CLI_VERSION=10.0.4\n",
+        encoding="utf-8",
+    )
+
+    values = _development_contract(checkout)
+
+    assert values is not None
+    assert values["PYTHON_VERSION"] == "3.13.12"
+    assert "not-an-assignment" not in values
+
+
+def test_development_tool_version_treats_nonzero_exit_as_unavailable(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    executable = tmp_path / "tool"
+    executable.write_text("tool", encoding="utf-8")
+    monkeypatch.setattr(
+        "kicad_mcp.diagnostics.subprocess.run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            [str(executable), "--version"],
+            2,
+            stdout="tool 1.0.0",
+            stderr="failed",
+        ),
+    )
+
+    assert _development_tool_version("tool", executable, ["--version"]) is None
