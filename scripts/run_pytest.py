@@ -42,7 +42,7 @@ def main(argv: list[str]) -> int:
         valid = ", ".join(sorted(SUITES))
         print(f"Usage: python scripts/run_pytest.py <{valid}>", file=sys.stderr)
         return 2
-    args = [*SUITES[suite], "--basetemp", str(_basetemp(suite))]
+    args = [*SUITES[suite], *argv[2:], "--basetemp", str(_basetemp(suite))]
     return pytest.main(args)
 
 

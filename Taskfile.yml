@@ -233,7 +233,7 @@ tasks:
   clean:
     desc: Remove generated build and test artifacts
     cmds:
-      - cmd: rm -rf dist build .pytest_cache .mypy_cache .ruff_cache htmlcov coverage.xml junit.xml
+      - cmd: rm -rf dist build .pytest_cache .mypy_cache .ruff_cache htmlcov coverage.xml junit.xml python.junit.xml
         platforms: [linux, darwin]
-      - cmd: powershell -NoProfile -Command "Remove-Item -Recurse -Force dist,build,.pytest_cache,.mypy_cache,.ruff_cache,htmlcov,coverage.xml,junit.xml -ErrorAction SilentlyContinue"
+      - cmd: powershell -NoProfile -Command "Remove-Item -Recurse -Force dist,build,.pytest_cache,.mypy_cache,.ruff_cache,htmlcov,coverage.xml,junit.xml,python.junit.xml -ErrorAction SilentlyContinue"
         platforms: [windows]

@@ -35,3 +35,11 @@ Atheris fuzz smoke testing covers shared KiCad S-expression helpers. Fuzzing sho
 Tests that initialize or mutate Git repositories must use test-owned temporary directories and an isolated process environment. Set `HOME`, `XDG_CONFIG_HOME`, `GIT_CONFIG_GLOBAL`, and `GIT_CONFIG_SYSTEM` to test-owned paths, disable system configuration, and use an empty `GIT_TEMPLATE_DIR` so contributor hooks and templates cannot enter fixtures.
 
 Production Git helpers discard repository-local variables such as `GIT_DIR`, `GIT_WORK_TREE`, and `GIT_INDEX_FILE` before spawning Git. Regression tests must seed hostile caller values and prove the source checkout status, unstaged diff, and staged diff remain unchanged across normal and failure paths. Destructive operations must revalidate the resolved repository root immediately before mutation.
+
+## Coverage and failed-test reporting
+
+The `CI Tests / Coverage` job runs the full Python suite with the repository's
+83% pytest-cov gate, publishes `coverage.xml`, and emits JUnit XML for Codecov
+Test Analytics. Upload steps run after test failures, but the original pytest
+failure is propagated after reporting. See
+[Codecov coverage and test analytics](codecov.md).
