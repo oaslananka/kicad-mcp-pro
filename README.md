@@ -152,20 +152,26 @@ The deprecated HTTP+SSE fallback routes are disabled by default. Set
 
 ## Install
 
+Published packages:
+
 ```bash
-corepack pnpm run dev:doctor -- --ci
 uvx kicad-mcp-pro --help
 npx kicad-mcp-pro --help
 ```
 
-For source checkouts, `corepack pnpm run dev:doctor` validates Node, pnpm,
-Python, uv, MCP server CLI startup/version reporting, fixture corpus, protocol
-schemas, common development ports, and optional Cloudflare tunnel tooling.
-If repository commands fail with a uv required-version mismatch before Python
-starts, run `kicad-mcp-pro doctor --json` and check the `uv_version` result. The
-checkout's `uv.toml` pins the supported uv release; switch to that version (for
-example `uv self update 0.10.8` when required) and rerun `uv sync --all-extras
---frozen`.
+Fresh source checkout on supported Linux hosts:
+
+```bash
+./scripts/bootstrap-dev.sh
+source .dev-env.sh
+pnpm run dev:doctor -- --ci
+```
+
+The repository bootstrap installs checksum-pinned Python, uv/uvx, Node.js,
+pnpm, Task, and Rust tooling into ignored checkout-local roots and performs
+frozen dependency installation. It does not modify global tool directories.
+See the [reproducible bootstrap guide](docs/development/reproducible-bootstrap.md)
+for `--core-only`, `--check`, cleanup, upgrade, and KiCad capability modes.
 
 ## Package metadata
 

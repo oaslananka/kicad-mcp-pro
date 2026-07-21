@@ -1,0 +1,160 @@
+name: Development Bootstrap
+
+on:
+  pull_request:
+    paths:
+      - .python-version
+      - rust-toolchain.toml
+      - uv.toml
+      - package.json
+      - pnpm-lock.yaml
+      - pyproject.toml
+      - uv.lock
+      - Taskfile.yml
+      - scripts/bootstrap-dev.sh
+      - scripts/dev-toolchain.env
+      - scripts/dev_environment.py
+      - src/kicad_mcp/diagnostics.py
+      - tests/unit/test_dev_bootstrap.py
+      - tests/unit/test_dev_toolchain.py
+      - tests/unit/test_cli_diagnostics.py
+      - .github/workflows/dev-bootstrap.yml
+  push:
+    branches: [main]
+    paths:
+      - .python-version
+      - rust-toolchain.toml
+      - uv.toml
+      - package.json
+      - pnpm-lock.yaml
+      - pyproject.toml
+      - uv.lock
+      - Taskfile.yml
+      - scripts/bootstrap-dev.sh
+      - scripts/dev-toolchain.env
+      - scripts/dev_environment.py
+      - src/kicad_mcp/diagnostics.py
+      - tests/unit/test_dev_bootstrap.py
+      - tests/unit/test_dev_toolchain.py
+      - tests/unit/test_cli_diagnostics.py
+      - .github/workflows/dev-bootstrap.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clean-host:
+    name: Clean host bootstrap
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Prepare clean HOME
+        shell: bash
+        run: |
+          set -euo pipefail
+          clean_home="$RUNNER_TEMP/kicad-mcp-bootstrap-home"
+          rm -rf "$clean_home"
+          mkdir -p "$clean_home/.cache" artifacts/dev-bootstrap
+          echo "HOME=$clean_home" >> "$GITHUB_ENV"
+          echo "XDG_CACHE_HOME=$clean_home/.cache" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+
+      - name: Bootstrap exact core toolchain and run quality gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/dev-bootstrap
+          ./scripts/bootstrap-dev.sh --core-only --ci --json \
+            > artifacts/dev-bootstrap/bootstrap.json
+          python3 -m json.tool artifacts/dev-bootstrap/bootstrap.json >/dev/null
+
+      - name: Verify exact tool versions and doctor policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .dev-env.sh
+          test "$(python --version)" = "Python 3.13.12"
+          test "$(uv --version)" = "uv 0.10.8"
+          test "$(uvx --version)" = "uvx 0.10.8"
+          test "$(node --version)" = "v24.11.0"
+          test "$(pnpm --version)" = "11.5.0"
+          python scripts/dev_environment.py --doctor --json --ci \
+            > artifacts/dev-bootstrap/doctor.json
+          python3 -m json.tool artifacts/dev-bootstrap/doctor.json >/dev/null
+
+      - name: Upload clean-host bootstrap evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: development-bootstrap-clean-host
+          path: artifacts/dev-bootstrap
+          if-no-files-found: error
+          retention-days: 14
+
+  kicad-canary:
+    name: Bootstrapped KiCad 10.0.4 canary
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Prepare clean HOME
+        shell: bash
+        run: |
+          set -euo pipefail
+          clean_home="$RUNNER_TEMP/kicad-mcp-bootstrap-home"
+          rm -rf "$clean_home"
+          mkdir -p "$clean_home/.cache" artifacts/dev-bootstrap artifacts/kicad-10-0-4
+          echo "HOME=$clean_home" >> "$GITHUB_ENV"
+          echo "XDG_CACHE_HOME=$clean_home/.cache" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+
+      - name: Install KiCad 10.0.4 CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo add-apt-repository -y ppa:kicad/kicad-10.0-releases
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends kicad
+          test "$(kicad-cli version)" = "10.0.4"
+
+      - name: Bootstrap exact core toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/dev-bootstrap artifacts/kicad-10-0-4
+          ./scripts/bootstrap-dev.sh --core-only --json \
+            > artifacts/dev-bootstrap/bootstrap-kicad.json
+          python3 -m json.tool artifacts/dev-bootstrap/bootstrap-kicad.json >/dev/null
+
+      - name: Run supported KiCad canary and doctor
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .dev-env.sh
+          python scripts/kicad_canary.py run \
+            --artifacts artifacts/kicad-10-0-4 \
+            --kicad-range 10.0.x
+          python scripts/dev_environment.py --doctor --json --ci \
+            > artifacts/dev-bootstrap/doctor-kicad.json
+          python3 -m json.tool artifacts/dev-bootstrap/doctor-kicad.json >/dev/null
+
+      - name: Upload bootstrapped KiCad canary evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: development-bootstrap-kicad-canary
+          path: |
+            artifacts/dev-bootstrap
+            artifacts/kicad-10-0-4
+          if-no-files-found: error
+          retention-days: 14

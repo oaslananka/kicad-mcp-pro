@@ -1285,3 +1285,55 @@ def test_dashboard_config_filtering(sample_project: Path) -> None:
     assert updated_cfg.log_level == "DEBUG"
     # The unsafe field must NOT have changed
     assert updated_cfg.kicad_cli == original_cli
+
+
+def test_development_bootstrap_workflow_proves_clean_host_and_kicad_canary() -> None:
+    workflow = _workflow("dev-bootstrap.yml")
+
+    assert "pull_request:" in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "contents: read" in workflow
+    assert 'clean_home="$RUNNER_TEMP/kicad-mcp-bootstrap-home"' in workflow
+    assert 'echo "HOME=$clean_home" >> "$GITHUB_ENV"' in workflow
+    assert "./scripts/bootstrap-dev.sh --core-only --ci --json" in workflow
+    assert "python3 -m json.tool" in workflow
+    assert "Python 3.13.12" in workflow
+    assert "uv 0.10.8" in workflow
+    assert "v24.11.0" in workflow
+    assert "11.5.0" in workflow
+    assert "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10" in workflow
+    assert "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in workflow
+    assert "kicad-canary:" in workflow
+    assert "ppa:kicad/kicad-10.0-releases" in workflow
+    assert 'test "$(kicad-cli version)" = "10.0.4"' in workflow
+    assert "scripts/kicad_canary.py run" in workflow
+    kicad_job = workflow.split("  kicad-canary:", 1)[1]
+    bootstrap_step = kicad_job.split("      - name: Bootstrap exact core toolchain", 1)[1]
+    bootstrap_step = bootstrap_step.split("      - name: Run supported KiCad canary", 1)[0]
+    assert "mkdir -p artifacts/dev-bootstrap artifacts/kicad-10-0-4" in bootstrap_step
+    clean_host = workflow.split("  clean-host:", 1)[1].split("  kicad-canary:", 1)[0]
+    assert "sudo" not in clean_host
+
+
+def test_reproducible_bootstrap_documentation_covers_setup_and_recovery() -> None:
+    root = _repo_root()
+    guide = (root / "docs" / "development" / "reproducible-bootstrap.md").read_text(
+        encoding="utf-8"
+    )
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    installation = (root / "docs" / "installation.md").read_text(encoding="utf-8")
+    mkdocs = (root / "mkdocs.yml").read_text(encoding="utf-8")
+
+    assert "./scripts/bootstrap-dev.sh" in guide
+    assert "./scripts/bootstrap-dev.sh --check" in guide
+    assert "./scripts/bootstrap-dev.sh --core-only" in guide
+    assert "source .dev-env.sh" in guide
+    assert "pnpm run dev:doctor -- --ci" in guide
+    assert "SHA-256 mismatch" in guide
+    assert "rm -rf .dev-tools .dev-cache .venv .dev-env.sh node_modules" in guide
+    assert "core-only" in guide
+    assert "headless-kicad" in guide
+    assert "gui-connected" in guide
+    assert "./scripts/bootstrap-dev.sh" in readme
+    assert "development/reproducible-bootstrap.md" in installation
+    assert "development/reproducible-bootstrap.md" in mkdocs
