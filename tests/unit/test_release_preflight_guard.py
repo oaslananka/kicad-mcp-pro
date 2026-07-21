@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -105,6 +106,31 @@ def test_repository_citation_release_date_is_release_please_managed() -> None:
     date_line = next(line for line in citation.splitlines() if line.startswith("date-released:"))
 
     assert "x-release-please-date" in date_line
+
+
+def test_release_preflight_tracks_tauri_bundle_version() -> None:
+    module = _load_script("check_release_preflight.py")
+    versions = module._collect_versions()
+
+    expected = {
+        "src-tauri/Cargo.toml",
+        "src-tauri/tauri.conf.json",
+        ".release-please-manifest.json src-tauri",
+    }
+    assert expected.issubset(versions)
+    assert len({versions[source] for source in expected}) == 1
+
+
+def test_release_please_tauri_extra_file_is_package_relative() -> None:
+    config = json.loads((ROOT / "release-please-config.json").read_text(encoding="utf-8"))
+    extra_files = config["packages"]["src-tauri"]["extra-files"]
+
+    assert {
+        "type": "json",
+        "path": "tauri.conf.json",
+        "jsonpath": "$.version",
+    } in extra_files
+    assert all(entry["path"] != "src-tauri/tauri.conf.json" for entry in extra_files)
 
 
 def test_release_preflight_skips_release_please_generated_changelog_noise(
