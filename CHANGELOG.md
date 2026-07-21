@@ -10,6 +10,18 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.27.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.26.0...mcp-server-v3.27.0) (2026-07-21)
+
+
+### Features
+
+* **dev:** add reproducible rootless bootstrap ([#430](https://github.com/oaslananka/kicad-mcp-pro/issues/430)) ([39d4b8a](https://github.com/oaslananka/kicad-mcp-pro/commit/39d4b8ac76c22b3d41e23c3b5c897fe0a4e31c15))
+
+
+### Bug Fixes
+
+* **security:** patch vulnerable dependency chains ([#432](https://github.com/oaslananka/kicad-mcp-pro/issues/432)) ([277c63d](https://github.com/oaslananka/kicad-mcp-pro/commit/277c63dc6194b89036aa636ad2058cb3ac50349a))
+
 ## [3.26.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.25.0...mcp-server-v3.26.0) (2026-07-21)
 
 
