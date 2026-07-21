@@ -802,6 +802,38 @@ def test_scorecard_workflow_uses_pinned_actions_without_artifact_storage() -> No
     assert "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in workflow
 
 
+def test_scorecard_ci_tests_false_positive_has_auditable_evidence() -> None:
+    repo = _repo_root()
+    evidence_path = (
+        repo / "docs" / "evidence" / "scorecard-ci-tests-rest-verification-2026-07-21.json"
+    )
+    assert evidence_path.exists(), "Scorecard CI-Tests exception requires checked-in REST evidence"
+
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    entries = evidence["pull_requests"]
+    successful_counts = [entry["successful_github_actions_check_count"] for entry in entries]
+
+    assert evidence["scorecard"]["version"] == "v5.0.0"
+    assert evidence["scorecard"]["reported_tested_pull_requests"] == 0
+    assert evidence["scorecard"]["reported_merged_pull_requests"] == 30
+    assert len(entries) == 30
+    assert len({entry["number"] for entry in entries}) == 30
+    assert len({entry["head_sha"] for entry in entries}) == 30
+    assert all(count > 0 for count in successful_counts)
+    assert min(successful_counts) == evidence["rest_verification"]["minimum_successful_checks"]
+    assert max(successful_counts) == evidence["rest_verification"]["maximum_successful_checks"]
+    assert evidence["rest_verification"]["pull_requests_with_successful_checks"] == 30
+
+    exceptions = (repo / "docs" / "security" / "scorecard-exceptions.md").read_text(
+        encoding="utf-8"
+    )
+    assert "| CI-Tests | Accepted upstream false positive |" in exceptions
+    assert "30/30" in exceptions
+    assert "long-lived PAT" in exceptions
+    assert "must not be added" in exceptions
+    assert "history is replaced" not in exceptions
+
+
 def test_version_synchronization_across_release_manifests() -> None:
     repo = _repo_root()
     root = Path(__file__).resolve().parents[2]
