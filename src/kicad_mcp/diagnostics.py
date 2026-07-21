@@ -24,6 +24,9 @@ from .discovery import find_kicad_version
 
 CheckStatus = Literal["ok", "warn", "error", "skipped"]
 OverallStatus = Literal["ok", "degraded", "error"]
+DevelopmentClassification = Literal["required", "optional", "live-kicad"]
+DevelopmentToolStatus = Literal["ok", "missing", "version-mismatch"]
+DevelopmentCapabilityMode = Literal["core-only", "headless-kicad", "gui-connected"]
 DIAGNOSTIC_SCHEMA_VERSION = "1.0.0"
 _PRIVATE_KEY_MARKER = "PRIVATE" + " KEY"
 _SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -129,6 +132,39 @@ class LiveContextDiagnostics(BaseModel):
     diagnostics: list[str] = Field(default_factory=list)
 
 
+class DevelopmentToolDiagnostics(BaseModel):
+    """One source-checkout development capability."""
+
+    name: str
+    classification: DevelopmentClassification
+    expected_version: str | None = None
+    actual_version: str | None = None
+    executable: str | None = None
+    status: DevelopmentToolStatus
+    remediation: str
+
+
+class DevelopmentRootDiagnostics(BaseModel):
+    """One repository-scoped development state root."""
+
+    name: str
+    path: str
+    exists: bool
+    writable: bool
+
+
+class DevelopmentDiagnostics(BaseModel):
+    """Source-checkout toolchain and live KiCad capability report."""
+
+    available: bool = True
+    capability_mode: DevelopmentCapabilityMode
+    prepared: bool
+    frozen_python_ready: bool = False
+    frozen_node_ready: bool = False
+    tools: list[DevelopmentToolDiagnostics] = Field(default_factory=list)
+    roots: list[DevelopmentRootDiagnostics] = Field(default_factory=list)
+
+
 class DiagnosticReport(BaseModel):
     """Machine-readable health/doctor report."""
 
@@ -144,6 +180,7 @@ class DiagnosticReport(BaseModel):
     config: ConfigDiagnostics
     tools: ToolCatalogDiagnostics = Field(default_factory=ToolCatalogDiagnostics)
     live_context: LiveContextDiagnostics = Field(default_factory=LiveContextDiagnostics)
+    development: DevelopmentDiagnostics | None = None
     recent_errors: list[str] = Field(default_factory=list)
     checks: list[CheckResult] = Field(default_factory=list)
 
@@ -267,6 +304,203 @@ def _checkout_candidates() -> list[Path]:
     candidates.append(Path.cwd())
     candidates.append(Path(__file__).resolve())
     return candidates
+
+
+def _development_contract(checkout: Path) -> dict[str, str] | None:
+    path = checkout / "scripts" / "dev-toolchain.env"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    values: dict[str, str] = {}
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key] = value
+    required = {
+        "KICAD_CLI_VERSION",
+        "NODE_VERSION",
+        "PNPM_VERSION",
+        "PYTHON_VERSION",
+        "RUST_TOOLCHAIN",
+        "TASK_VERSION",
+        "UV_VERSION",
+    }
+    return values if required <= values.keys() else None
+
+
+def _writable_path(path: Path) -> bool:
+    candidate = path
+    while not candidate.exists() and candidate != candidate.parent:
+        candidate = candidate.parent
+    return candidate.exists() and os.access(candidate, os.W_OK)
+
+
+def _development_tool_version(name: str, path: Path | None, arguments: list[str]) -> str | None:
+    executable: str | None
+    if path is not None and path.is_file():
+        executable = str(path)
+    else:
+        executable = shutil.which(name)
+    if executable is None:
+        return None
+    try:
+        result = subprocess.run(
+            [executable, *arguments],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    output = (result.stdout or result.stderr).strip().splitlines()
+    return output[0] if output else None
+
+
+def build_development_diagnostics(
+    checkout: Path,
+    *,
+    cli_found: bool,
+    ipc_reachable: bool,
+    cli_path: Path | None = None,
+) -> DevelopmentDiagnostics:
+    """Build source-checkout development tool and capability diagnostics."""
+
+    root = checkout.resolve()
+    contract = _development_contract(root)
+    if contract is None:
+        return DevelopmentDiagnostics(
+            available=False,
+            capability_mode="gui-connected"
+            if ipc_reachable
+            else "headless-kicad"
+            if cli_found
+            else "core-only",
+            prepared=False,
+        )
+
+    tool_root = root / ".dev-tools"
+    cache_root = root / ".dev-cache"
+    venv_root = root / ".venv"
+    candidates: list[tuple[str, DevelopmentClassification, str | None, Path | None, list[str]]] = [
+        (
+            "python",
+            "required",
+            contract["PYTHON_VERSION"],
+            venv_root / "bin" / "python",
+            ["--version"],
+        ),
+        (
+            "uv",
+            "required",
+            contract["UV_VERSION"],
+            tool_root / "uv" / contract["UV_VERSION"] / "bin" / "uv",
+            ["--version"],
+        ),
+        (
+            "uvx",
+            "required",
+            contract["UV_VERSION"],
+            tool_root / "uv" / contract["UV_VERSION"] / "bin" / "uvx",
+            ["--version"],
+        ),
+        (
+            "node",
+            "required",
+            contract["NODE_VERSION"],
+            tool_root / "node" / contract["NODE_VERSION"] / "bin" / "node",
+            ["--version"],
+        ),
+        (
+            "pnpm",
+            "required",
+            contract["PNPM_VERSION"],
+            tool_root / "pnpm" / contract["PNPM_VERSION"] / "bin" / "pnpm",
+            ["--version"],
+        ),
+        (
+            "task",
+            "optional",
+            contract["TASK_VERSION"],
+            tool_root / "task" / contract["TASK_VERSION"] / "bin" / "task",
+            ["--version"],
+        ),
+        (
+            "rustc",
+            "optional",
+            contract["RUST_TOOLCHAIN"],
+            tool_root / "cargo" / "bin" / "rustc",
+            ["--version"],
+        ),
+        (
+            "cargo",
+            "optional",
+            contract["RUST_TOOLCHAIN"],
+            tool_root / "cargo" / "bin" / "cargo",
+            ["--version"],
+        ),
+        ("kicad-cli", "live-kicad", contract["KICAD_CLI_VERSION"], cli_path, ["--version"]),
+    ]
+    tools: list[DevelopmentToolDiagnostics] = []
+    for name, classification, expected, executable, arguments in candidates:
+        actual = _development_tool_version(name, executable, arguments)
+        status: DevelopmentToolStatus
+        if actual is None:
+            status = "missing"
+        elif expected is not None and expected not in actual.lstrip("v"):
+            status = "version-mismatch"
+        else:
+            status = "ok"
+        if classification == "live-kicad":
+            remediation = "Install the supported KiCad CLI or set KICAD_MCP_KICAD_CLI."
+        elif classification == "optional":
+            remediation = "Run ./scripts/bootstrap-dev.sh to install the optional development tool."
+        else:
+            remediation = "Run ./scripts/bootstrap-dev.sh to restore the exact required tool."
+        resolved_executable = (
+            executable if executable is not None and executable.is_file() else None
+        )
+        tools.append(
+            DevelopmentToolDiagnostics(
+                name=name,
+                classification=classification,
+                expected_version=expected,
+                actual_version=actual,
+                executable=str(resolved_executable) if resolved_executable is not None else None,
+                status=status,
+                remediation=remediation,
+            )
+        )
+
+    roots = [
+        DevelopmentRootDiagnostics(
+            name=name,
+            path=str(path),
+            exists=path.exists(),
+            writable=_writable_path(path),
+        )
+        for name, path in (
+            ("tools", tool_root),
+            ("cache", cache_root),
+            ("venv", venv_root),
+        )
+    ]
+    capability_mode: DevelopmentCapabilityMode = (
+        "gui-connected" if ipc_reachable else "headless-kicad" if cli_found else "core-only"
+    )
+    return DevelopmentDiagnostics(
+        capability_mode=capability_mode,
+        prepared=(root / ".dev-env.sh").is_file(),
+        frozen_python_ready=(venv_root / "pyvenv.cfg").is_file(),
+        frozen_node_ready=(root / "node_modules" / ".modules.yaml").is_file(),
+        tools=tools,
+        roots=roots,
+    )
 
 
 def _package_diagnostics() -> tuple[PackageDiagnostics, list[CheckResult]]:
@@ -636,6 +870,19 @@ def build_diagnostic_report(*, probe_cli: bool, probe_ipc: bool) -> DiagnosticRe
 
     ok, status = _status(checks)
     config_payload = cfg.safe_diagnostics()
+    checkout = (
+        Path(package_diagnostics.repo_path) if package_diagnostics.repo_path is not None else None
+    )
+    development = (
+        build_development_diagnostics(
+            checkout,
+            cli_found=cli_found,
+            ipc_reachable=ipc_reachable,
+            cli_path=Path(cfg.kicad_cli) if cfg.kicad_cli else None,
+        )
+        if checkout is not None
+        else None
+    )
     return DiagnosticReport(
         ok=ok,
         status=status,
@@ -658,6 +905,7 @@ def build_diagnostic_report(*, probe_cli: bool, probe_ipc: bool) -> DiagnosticRe
         ),
         config=ConfigDiagnostics.model_validate(config_payload),
         tools=_tool_catalog_diagnostics(cfg.profile),
+        development=development,
         live_context=LiveContextDiagnostics(
             available=ipc_reachable,
             ipc_reachable=ipc_reachable,

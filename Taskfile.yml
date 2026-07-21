@@ -1,6 +1,16 @@
 version: "3"
 
 tasks:
+  dev:bootstrap:
+    desc: Install the exact repository-scoped development toolchain
+    cmds:
+      - ./scripts/bootstrap-dev.sh
+
+  dev:doctor:
+    desc: Report required, optional, and live-KiCad development capabilities
+    cmds:
+      - corepack pnpm run dev:doctor -- {{.CLI_ARGS}}
+
   install:
     desc: Install all development dependencies
     cmds:

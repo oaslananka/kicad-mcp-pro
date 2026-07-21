@@ -15,6 +15,7 @@ from kicad_mcp.diagnostics import (
     DiagnosticReport,
     KiCadDiagnostics,
     McpDiagnostics,
+    build_development_diagnostics,
     build_diagnostic_report,
 )
 from kicad_mcp.server import app
@@ -309,3 +310,77 @@ def test_cli_doctor_strict_exit_codes(monkeypatch) -> None:
     )
     missing_external = runner.invoke(app, ["doctor", "--json", "--strict"])
     assert missing_external.exit_code == 3, missing_external.output
+
+
+def test_development_diagnostics_classify_required_optional_and_live_tools(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repository_root = Path(__file__).resolve().parents[2]
+    root = tmp_path / "checkout"
+    (root / "scripts").mkdir(parents=True)
+    (root / "scripts" / "dev-toolchain.env").write_text(
+        (repository_root / "scripts" / "dev-toolchain.env").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    versions = {
+        "cargo": "cargo 1.97.1",
+        "node": "v24.11.0",
+        "pnpm": "11.5.0",
+        "python": "Python 3.13.12",
+        "rustc": "rustc 1.97.1",
+        "task": "Task version: v3.52.0",
+        "uv": "uv 0.10.8",
+        "uvx": "uvx 0.10.8",
+    }
+    monkeypatch.setattr(
+        "kicad_mcp.diagnostics._development_tool_version",
+        lambda name, _path, _arguments: versions.get(name),
+    )
+
+    core = build_development_diagnostics(root, cli_found=False, ipc_reachable=False)
+    assert core.capability_mode == "core-only"
+    assert core.prepared is False
+    classes = {tool.name: tool.classification for tool in core.tools}
+    assert classes == {
+        "cargo": "optional",
+        "kicad-cli": "live-kicad",
+        "node": "required",
+        "pnpm": "required",
+        "python": "required",
+        "rustc": "optional",
+        "task": "optional",
+        "uv": "required",
+        "uvx": "required",
+    }
+    assert all(tool.remediation for tool in core.tools)
+    assert all(root == Path(item.path) or root in Path(item.path).parents for item in core.roots)
+
+    headless = build_development_diagnostics(root, cli_found=True, ipc_reachable=False)
+    assert headless.capability_mode == "headless-kicad"
+    connected = build_development_diagnostics(root, cli_found=True, ipc_reachable=True)
+    assert connected.capability_mode == "gui-connected"
+
+
+def test_public_doctor_report_includes_source_checkout_development_section(
+    sample_project: Path,
+    monkeypatch,
+) -> None:
+    root = Path(__file__).resolve().parents[2]
+    monkeypatch.setenv("KICAD_MCP_REPO_PATH", str(root))
+    monkeypatch.setattr("kicad_mcp.diagnostics.find_kicad_version", lambda _path: "KiCad 10.0.4")
+    monkeypatch.setattr(
+        "kicad_mcp.diagnostics.get_board",
+        lambda: (_ for _ in ()).throw(KiCadConnectionError("IPC unavailable")),
+    )
+
+    result = CliRunner().invoke(app, ["doctor", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["development"]["capability_mode"] in {"core-only", "headless-kicad"}
+    assert {tool["classification"] for tool in payload["development"]["tools"]} == {
+        "required",
+        "optional",
+        "live-kicad",
+    }
