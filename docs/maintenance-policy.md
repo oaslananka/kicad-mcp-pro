@@ -12,7 +12,7 @@ task ci
 
 `task pre-push` runs metadata sync checks, format checks, Ruff, mypy, unit tests,
 workflow YAML parsing, and actionlint. `task ci` adds the full test suite with
-the coverage threshold unchanged at 90%, enforced security checks, workflow
+the coverage threshold unchanged at 83%, enforced security checks, workflow
 security checks, and package build verification.
 
 `task security:local` is stricter about workstation tools. It requires

@@ -24,7 +24,7 @@ corepack pnpm run workflows:lint
 corepack pnpm run workflows:security
 ```
 
-`workflows:lint` parses workflow YAML and runs actionlint. `workflows:security`
+`workflows:lint` parses workflow YAML and runs actionlint with ShellCheck. `workflows:security`
 runs zizmor offline at high severity or above. Medium findings such as checkout
 credential persistence are still reviewed, but high findings block the local and
 CI gate.
@@ -48,3 +48,18 @@ the exact unresolved action and stop the change.
 
 After updating a pin, inspect the resolved `action.yml` or `action.yaml` and
 confirm JavaScript actions no longer declare a deprecated Node runtime.
+
+## Deterministic local tooling
+
+`actionlint-py` and `shellcheck-py` are exact-version development dependencies,
+so `uv sync --all-extras --frozen` supplies the same workflow parser and shell
+analyzer on Linux, macOS, and Windows. `scripts/check_workflows.py` invokes the
+real `actionlint` binary directly; a missing or failing binary is an error rather
+than a successful no-op. Zizmor remains locked in `uv.lock` and runs offline.
+
+## Node 24 runtime audit
+
+Direct JavaScript Actions use Node 24-capable releases. In particular, the
+path filter is pinned to `dorny/paths-filter` v4.0.1 and artifact uploads use
+`actions/upload-artifact` v7.0.1. When changing an Action pin, inspect the
+pinned commit's `action.yml` rather than assuming a major tag's runtime.

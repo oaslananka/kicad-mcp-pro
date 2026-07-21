@@ -10,14 +10,7 @@ import subprocess
 import yaml
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-WORKSPACE_ACTIONLINT_COMMAND = [
-    "corepack",
-    "pnpm",
-    "--filter",
-    "kicadstudio",
-    "run",
-    "workflows:lint",
-]
+ACTIONLINT_COMMAND = ["actionlint"]
 
 
 def _resolve_command(command: list[str]) -> list[str]:
@@ -29,7 +22,7 @@ def _resolve_command(command: list[str]) -> list[str]:
 
 
 def _run(command: list[str]) -> None:
-    result = subprocess.run(_resolve_command(command), check=False)
+    result = subprocess.run(_resolve_command(command), cwd=REPO_ROOT, check=False)
     if result.returncode != 0:
         raise SystemExit(result.returncode)
 
@@ -46,7 +39,7 @@ def main() -> None:
     print(f"Parsed {len(workflows)} workflow file(s).")
 
     if args.actionlint:
-        _run(WORKSPACE_ACTIONLINT_COMMAND)
+        _run(ACTIONLINT_COMMAND)
 
 
 if __name__ == "__main__":
