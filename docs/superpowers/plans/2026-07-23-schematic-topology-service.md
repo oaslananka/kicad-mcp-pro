@@ -24,11 +24,11 @@
 - Create: `tests/unit/test_schematic_topology_service.py`
 - Create: `src/kicad_mcp/schematic/topology.py`
 
-- [ ] Write failing direct tests for hierarchy listing, sheet details, connectivity summaries, net tracing, diagnostics, warnings, and missing results.
-- [ ] Run the tests and verify they fail because the module is absent.
-- [ ] Implement `SchematicTopologyService` with injected loader, diagnostics, connectivity, child discovery, parser, and warning callables.
-- [ ] Run the tests and verify they pass.
-- [ ] Commit the service and tests.
+- [x] Write failing direct tests for hierarchy listing, sheet details, connectivity summaries, net tracing, diagnostics, warnings, and missing results.
+- [x] Run the tests and verify they fail because the module is absent.
+- [x] Implement `SchematicTopologyService` with injected loader, diagnostics, connectivity, child discovery, parser, and warning callables.
+- [x] Run the tests and verify they pass.
+- [x] Commit the service and tests.
 
 ### Task 2: Add the thin registration adapter
 
@@ -37,11 +37,11 @@
 - Create: `src/kicad_mcp/tools/schematic_topology.py`
 - Modify: `src/kicad_mcp/tools/schematic.py`
 
-- [ ] Write failing registration tests for exact names, descriptions, schemas, validation, and delegation.
-- [ ] Implement the adapter and wire it from the composition root.
-- [ ] Remove the four legacy nested tool bodies.
-- [ ] Run focused registration and schematic integration tests.
-- [ ] Commit the adapter tranche.
+- [x] Write failing registration tests for exact names, descriptions, schemas, validation, and delegation.
+- [x] Implement the adapter and wire it from the composition root.
+- [x] Remove the four legacy nested tool bodies.
+- [x] Run focused registration and schematic integration tests.
+- [x] Commit the adapter tranche.
 
 ### Task 3: Enforce architecture and surface stability
 
@@ -49,15 +49,25 @@
 - Modify: `scripts/check_architecture_boundaries.py`
 - Create: `tests/unit/test_schematic_topology_architecture.py`
 
-- [ ] Write failing architecture tests for module tracking, purity, monolith-import prevention, and the 300-line limit.
-- [ ] Extend the architecture checker.
-- [ ] Verify the public snapshot and generated tool docs remain unchanged.
-- [ ] Commit the architecture guard.
+- [x] Write failing architecture tests for module tracking, purity, monolith-import prevention, and the 300-line limit.
+- [x] Extend the architecture checker.
+- [x] Verify the public snapshot and generated tool docs remain unchanged.
+- [x] Commit the architecture guard.
 
 ### Task 4: Verify, publish, and review
 
-- [ ] Run metadata, format, lint, mypy, scoped Pyright, full unit, workflow-security, strict docs, snapshot, and representative performance gates.
-- [ ] Record line-count and exact public-surface evidence.
+- [x] Run metadata, format, lint, mypy, scoped Pyright, full unit, workflow-security, strict docs, snapshot, and representative performance gates.
+- [x] Record line-count and exact public-surface evidence.
 - [ ] Push and open a professional English PR referencing #434.
 - [ ] Inspect all bot/agent comments, reviews, and review threads; resolve actionable findings.
 - [ ] Merge only after all required checks pass.
+
+## Verification Evidence
+
+- The exact public metadata for all four extracted tools is identical to `main`: names, descriptions, input schemas, and annotations all match.
+- `tests/integration/test_tool_surface_snapshot.py` passes without snapshot regeneration.
+- The main schematic `register()` span decreased from 3,273 to 3,145 lines; the new topology adapter `register()` spans 31 lines.
+- Direct service, registration, architecture, and schematic integration coverage passes.
+- The full unit suite completed successfully with five expected skips and one pre-existing async-mock warning.
+- Metadata, formatting, Ruff, mypy, scoped strict Pyright, architecture, generated tool documentation, workflow policy/security, strict MkDocs, and the committed MCP latency benchmark all pass.
+- No runtime dependency, mutation behavior, connectivity algorithm, or backend-selection behavior changed.
