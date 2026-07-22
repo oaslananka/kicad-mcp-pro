@@ -1,6 +1,6 @@
 # MCP Registry status
 
-KiCad MCP Pro publishes registry metadata from the repository-level `server.json` manifest.
+KiCad MCP Pro publishes the checked-in, generated registry payload from the repository-level `server.json` manifest.
 
 ## Canonical identity
 
@@ -15,8 +15,9 @@ KiCad MCP Pro publishes registry metadata from the repository-level `server.json
 
 ## Source of truth
 
-- `server.json` is the registry manifest source of truth.
-- `pyproject.toml`, package metadata, and `server.json` must stay synchronized.
+- `server.json` is the generated registry payload used for validation and submission.
+- `pyproject.toml` provides package version and repository identity; `compatibility.yaml` provides runtime support policy.
+- Generated package metadata, support documentation, and `server.json` must stay synchronized.
 - Registry publication should use the documented dry-run flow before any live publish.
 - Live publication requires maintainer review and should not run from a dirty tree.
 

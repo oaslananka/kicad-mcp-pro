@@ -10,11 +10,11 @@ The package exposes version metadata through Python imports, Python packaging me
 
 ## Decision
 
-`pyproject.toml` and `src/kicad_mcp/__init__.py` are the authoritative version sources. Generated public metadata in `server.json` is synchronized by `scripts/sync_mcp_metadata.py` and checked in CI with `pnpm run metadata:check`.
+`pyproject.toml` (`project.version`) is the canonical package version source. `src/kicad_mcp/__init__.py` is a synchronized runtime surface that release automation updates in lockstep. Generated public metadata in `server.json` is synchronized by `scripts/sync_mcp_metadata.py` and checked in CI with `pnpm run metadata:check`. Repository identity and runtime support-policy sources are defined in ADR-0005.
 
 ## Consequences
 
-- Release changes must update the Python package version and Python module version together.
+- Release changes update the canonical Python package version and synchronized Python module version together.
 - `server.json` should be treated as a generated metadata surface, not a hand-edited version authority.
 - Pull requests must fail when metadata parity drifts.
 

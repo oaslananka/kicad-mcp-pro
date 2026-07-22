@@ -35,7 +35,7 @@ jobs:
       # release-please bumps the bare version fields, but server.json / mcp.json embed
       # the version inside the OCI image identifier (ghcr.io/...:X.Y.Z), which its JSON
       # updater cannot bump (it replaces whole values, not substrings). Regenerate the
-      # version-derived metadata from the bumped pyproject and push it onto the release
+      # canonical public metadata from the bumped pyproject and push it onto the release
       # PR branch so the metadata-sync gate passes.
       - name: Detect release PR branch
         id: release-pr-branch
@@ -57,7 +57,7 @@ jobs:
         with:
           enable-cache: false
       - if: ${{ steps.release-pr-branch.outputs.branch != '' }}
-        name: Sync version-derived MCP metadata onto the release PR
+        name: Sync canonical public metadata onto the release PR
         env:
           RELEASE_PR_BRANCH: ${{ steps.release-pr-branch.outputs.branch }}
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
@@ -66,7 +66,7 @@ jobs:
           if [ -n "$(git status --porcelain)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -am "chore: sync version-derived MCP metadata"
+            git commit -am "chore: sync canonical public metadata"
             gh auth setup-git
             git push origin "HEAD:${RELEASE_PR_BRANCH}"
           fi

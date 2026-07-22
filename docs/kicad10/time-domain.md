@@ -11,4 +11,4 @@ The following helpers were added for KiCad 10 style time-domain routing workflow
 
 Profile definitions are stored in `.kicad-mcp/tuning_profiles.json`. When a stackup is available, `route_tune_time_domain(...)` derives an effective dielectric constant from the selected layer context and converts delay targets into a computed length target. The resulting delay and length constraints are then written into `.kicad_dru`.
 
-If no usable stackup context exists, the helper falls back to the legacy propagation-speed-factor path so mixed KiCad 9/10 environments still get a practical constraint rule.
+If no usable stackup context exists, the helper falls back to the legacy propagation-speed-factor path. This fallback preserves file-level behavior but does not imply support for dropped KiCad lines.

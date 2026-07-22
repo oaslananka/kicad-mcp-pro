@@ -11,6 +11,10 @@ on:
       - "pyproject.toml"
       - "package.json"
       - "server.json"
+      - "compatibility.yaml"
+      - "ROADMAP.md"
+      - "docs/faq.md"
+      - "scripts/sync_mcp_metadata.py"
       - "docs/development/release-process.md"
       - "docs/security/release-integrity.md"
   release:
@@ -39,5 +43,6 @@ jobs:
       - run: corepack enable
       - run: corepack pnpm install --frozen-lockfile
       - run: uv sync --all-extras --frozen
+      - run: corepack pnpm run metadata:check
       - run: corepack pnpm run release:check
       - run: corepack pnpm run package:check

@@ -20,9 +20,13 @@ version-agnostic so it does not drift.
 - Public packages are verified for each release line on PyPI and npm.
 - GHCR `ghcr.io/oaslananka/kicad-mcp-pro:<version>` is published as a multi-arch
   OCI index per release.
-- KiCad 10.0.4 remains the primary stable KiCad baseline.
-- MCP protocol compatibility remains aligned with the 2025-11-25 schema used by
-  `server.json` and the generated tool contracts.
+<!-- public-metadata:runtime-policy:start -->
+- Primary KiCad line: `10.0.x`; latest verified patch: `10.0.4`.
+- Deprecated KiCad lines: `8.x`.
+- Dropped KiCad lines: `9.x`.
+- Preview KiCad lines: `11.x`.
+- MCP protocol contract: `2025-11-25`.
+<!-- public-metadata:runtime-policy:end -->
 
 ---
 
@@ -80,7 +84,7 @@ version-agnostic so it does not drift.
 
 ## Upcoming
 
-### 3.18 (Target: July 2026)
+### July 2026 Release-Readiness Closeout
 - **Release-readiness closeout:** keep PyPI, npm, GHCR, GitHub Releases,
   `server.json`, README, and docs synchronized before external submissions.
 - **Public listing readiness:** keep production screenshots, demo media, privacy,
@@ -90,7 +94,7 @@ version-agnostic so it does not drift.
 - **Scorecard evidence refresh:** verify branch ruleset, release evidence, and
   accepted solo-maintainer exceptions after workflow-name changes.
 
-### 3.19 (Target: Q3 2026)
+### Q3 2026 Productization
 - **Structured verdicts:** finish stable machine-readable PASS/WARN/FAIL payloads
   across high-traffic gates.
 - **Schematic write safety:** migrate remaining mutating schematic writers to the

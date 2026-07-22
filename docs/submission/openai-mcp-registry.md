@@ -4,9 +4,9 @@ This document covers the registry publish path driven by `server.json`.
 
 ## Source of Truth
 
-- Use `server.json` as the single source of truth for registry metadata.
-- Do not hand-edit registry payloads after generation.
-- Keep `server.json` synchronized with `pyproject.toml`.
+- Use the checked-in `server.json` as the generated registry payload for submission.
+- Do not hand-edit generated registry payloads.
+- Keep `server.json` synchronized with canonical `pyproject.toml` and `compatibility.yaml` inputs.
 - Version must match `src/kicad_mcp/__init__.py`.
 
 ## Verified Registry Status (2026-05-31)
@@ -15,7 +15,7 @@ Verification of the official MCP Registry (`registry.modelcontextprotocol.io`) f
 `io.github.oaslananka/kicad-mcp-pro`, per issue #272. No publish was performed and no
 version, tag, or release identity was changed.
 
-| Field            | Official registry record                              | Canonical repo (`server.json`)            |
+| Field            | Official registry record                              | Generated repo payload (`server.json`)            |
 | ---------------- | ----------------------------------------------------- | ----------------------------------------- |
 | Listing status   | `active`, `isLatest: true`                            | n/a                                       |
 | Published (UTC)  | `2026-04-15T21:15:40Z`                                | n/a                                       |
@@ -138,7 +138,7 @@ cosign verify ghcr.io/oaslananka/kicad-mcp-pro:${VERSION} \
 
 ## Final Registry Publish Controls
 
-- [ ] Confirm `server.json` remains the registry payload source of truth.
+- [ ] Confirm `server.json` remains the generated registry payload used for submission.
 - [ ] Confirm `server.json` schema validation passes before dry run.
 - [ ] Confirm `server.json` stays synchronized with `pyproject.toml`.
 - [ ] Confirm `pyproject.toml` version matches `server.json`.

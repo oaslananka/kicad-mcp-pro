@@ -175,7 +175,7 @@ for `--core-only`, `--check`, cleanup, upgrade, and KiCad capability modes.
 
 ## Package metadata
 
-The canonical metadata source of truth is `server.json`, which defines the MCP server contract. It is synchronized with `pyproject.toml` and verified in CI via `pnpm run metadata:check`.
+The canonical metadata inputs are `pyproject.toml` for package version and repository identity, and `compatibility.yaml` for KiCad and MCP support policy. `server.json` is the generated registry manifest. `pnpm run metadata:sync` renders the public surfaces, and `pnpm run metadata:check` verifies them in CI and release validation.
 
 ## Usage
 

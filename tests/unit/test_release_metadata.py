@@ -55,6 +55,9 @@ description = "Test metadata"
 [project.urls]
 Repository = "https://github.com/oaslananka/kicad-mcp-pro"
 Documentation = "https://docs.example.test"
+
+[tool.kicad-mcp.public-metadata]
+repository-id = "R_test"
 """.lstrip(),
         encoding="utf-8",
     )
@@ -110,6 +113,10 @@ def test_release_metadata_is_synchronised() -> None:
     assert mcp_json["version"] == version
     assert server_json["name"] == "io.github.oaslananka/kicad-mcp-pro"
     assert server_json["repository"]["url"] == "https://github.com/oaslananka/kicad-mcp-pro"
+    assert (
+        server_json["repository"]["id"]
+        == pyproject["tool"]["kicad-mcp"]["public-metadata"]["repository-id"]
+    )
     assert mcp_json["repository"]["url"] == "https://github.com/oaslananka/kicad-mcp-pro"
     assert npm_wrapper["version"] == version
     assert npm_wrapper["homepage"] == "https://oaslananka.github.io/kicad-mcp-pro"

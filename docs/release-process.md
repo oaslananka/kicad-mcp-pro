@@ -46,4 +46,4 @@ pnpm run metadata:sync
 pnpm run metadata:check
 ```
 
-`pyproject.toml` is the source of truth for `server.json`.
+`pyproject.toml` is canonical for package version and repository identity, while `compatibility.yaml` is canonical for runtime support policy. `server.json` and the marked public documentation blocks are generated surfaces.

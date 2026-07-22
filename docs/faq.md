@@ -6,7 +6,9 @@ Use the client that already fits your workflow. VS Code, Cursor, Claude Desktop,
 
 ## Is KiCad 10 required?
 
-KiCad 10 is the primary target. KiCad 9 is supported on a best-effort basis for core PCB, schematic, validation, and export workflows. KiCad 10-only features are called out in the KiCad 10 docs.
+<!-- public-metadata:kicad-support:start -->
+KiCad 10.0.x is the primary supported target. KiCad 8.x remains deprecated and is limited to file-level read and migration support. KiCad 9.x has been dropped and is not supported. KiCad 11.x is preview-only. The executable support policy lives in `compatibility.yaml`.
+<!-- public-metadata:kicad-support:end -->
 
 ## Why does the server need a project directory?
 
