@@ -10,6 +10,18 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.28.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.27.0...mcp-server-v3.28.0) (2026-07-22)
+
+
+### Features
+
+* **agent:** add bounded progressive-disclosure profiles ([#439](https://github.com/oaslananka/kicad-mcp-pro/issues/439)) ([8eb73fe](https://github.com/oaslananka/kicad-mcp-pro/commit/8eb73fef1ba5444c2d07c3eba7387936d2cb8007))
+
+
+### Bug Fixes
+
+* **metadata:** enforce canonical public metadata ([#437](https://github.com/oaslananka/kicad-mcp-pro/issues/437)) ([0051bb4](https://github.com/oaslananka/kicad-mcp-pro/commit/0051bb45927cf851a670cdd9cd1d42df40092091))
+
 ## [3.27.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.26.0...mcp-server-v3.27.0) (2026-07-21)
 
 

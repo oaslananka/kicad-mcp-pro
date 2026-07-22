@@ -1,6 +1,6 @@
 {
-  ".": "3.27.0",
-  "packages/mcp-npm": "3.27.0",
+  ".": "3.28.0",
+  "packages/mcp-npm": "3.28.0",
   "packages/protocol-schemas": "1.3.0",
-  "src-tauri": "3.27.0"
+  "src-tauri": "3.28.0"
 }
