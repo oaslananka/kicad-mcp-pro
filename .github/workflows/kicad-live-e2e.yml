@@ -7,6 +7,13 @@ on:
   pull_request:
     paths:
       - "scripts/kicad_canary.py"
+      - "scripts/kicad11_headless_canary.py"
+      - "scripts/build_adapter_matrix.py"
+      - "src/kicad_mcp/adapter_matrix.py"
+      - "src/kicad_mcp/ipc/**"
+      - "src/kicad_mcp/server_info.py"
+      - "integrations/common/kicad-adapter-matrix.json"
+      - "compatibility.yaml"
       - "tests/fixtures/**"
       - "docs/status/kicad-10-0-4-baseline.md"
       - "docs/compatibility/**"
@@ -15,6 +22,13 @@ on:
     branches: [main]
     paths:
       - "scripts/kicad_canary.py"
+      - "scripts/kicad11_headless_canary.py"
+      - "scripts/build_adapter_matrix.py"
+      - "src/kicad_mcp/adapter_matrix.py"
+      - "src/kicad_mcp/ipc/**"
+      - "src/kicad_mcp/server_info.py"
+      - "integrations/common/kicad-adapter-matrix.json"
+      - "compatibility.yaml"
       - "tests/fixtures/**"
       - "docs/status/kicad-10-0-4-baseline.md"
       - "docs/compatibility/**"
@@ -117,8 +131,16 @@ jobs:
             /usr/bin/kicad-nightly-cli \
             /usr/bin/kicad-cli; do
             if [ -x "$candidate" ] && "$candidate" version; then
+              version="$($candidate version)"
+              major="${version%%.*}"
+              if [[ "$major" == "11" ]]; then
+                kicad_range="11.0.x"
+              else
+                kicad_range="10.99.x"
+              fi
               echo "available=true" >&3
               echo "kicad_cli=$candidate" >&3
+              echo "kicad_range=$kicad_range" >&3
               echo "ld_library_path=${LD_LIBRARY_PATH:-}" >&3
               exit 0
             fi
@@ -128,7 +150,6 @@ jobs:
           echo "KiCad nightly installed but no runnable CLI candidate was found."
 
       - name: Install Python dependencies
-        if: steps.nightly.outputs.available == 'true'
         run: uv sync --all-extras --frozen
 
       - name: Run KiCad 11 preview smoke canary
@@ -140,7 +161,58 @@ jobs:
           set -euo pipefail
           uv run --all-extras python scripts/kicad_canary.py run \
             --artifacts artifacts/kicad-11-preview \
-            --kicad-range 10.99.x
+            --kicad-range "${{ steps.nightly.outputs.kicad_range }}"
+
+      - name: Verify guarded file-mutation contracts
+        run: >-
+          uv run --all-extras pytest
+          tests/unit/test_schematic_write_integrity.py
+          tests/unit/test_schematic_write_transaction_guard.py
+          tests/integration/test_roundtrip_fidelity.py -q
+
+      - name: Report KiCad 11 headless adapter surfaces
+        if: always()
+        env:
+          KICAD_CANARY_AVAILABLE: ${{ steps.nightly.outputs.available }}
+          KICAD_CANARY_KICAD_CLI: ${{ steps.nightly.outputs.kicad_cli }}
+          LD_LIBRARY_PATH: ${{ steps.nightly.outputs.ld_library_path }}
+        run: |
+          set -euo pipefail
+          fixture="packages/kicad-fixtures/fixtures/clean-led-kicad10/clean-led-kicad10.kicad_pcb"
+          if [[ "$KICAD_CANARY_AVAILABLE" == "true" ]]; then
+            uv run --all-extras python scripts/kicad11_headless_canary.py \
+              --artifacts artifacts/kicad-11-preview \
+              --kicad-cli "$KICAD_CANARY_KICAD_CLI" \
+              --project-or-file "$fixture"
+          else
+            python3 scripts/kicad11_headless_canary.py \
+              --artifacts artifacts/kicad-11-preview \
+              --unavailable-reason "KiCad nightly package is unavailable on this runner."
+          fi
+
+      - name: Upload KiCad 11 headless read report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kicad-11-headless-read
+          path: artifacts/kicad-11-preview/read
+          if-no-files-found: error
+
+      - name: Upload KiCad 11 headless write report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kicad-11-headless-write
+          path: artifacts/kicad-11-preview/write
+          if-no-files-found: error
+
+      - name: Upload KiCad 11 headless export report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kicad-11-headless-export
+          path: artifacts/kicad-11-preview/export
+          if-no-files-found: error
 
       - name: Upload KiCad 11 preview smoke artifacts
         if: always()
@@ -148,4 +220,4 @@ jobs:
         with:
           name: kicad-11-preview-smoke
           path: artifacts/kicad-11-preview
-          if-no-files-found: warn
+          if-no-files-found: error

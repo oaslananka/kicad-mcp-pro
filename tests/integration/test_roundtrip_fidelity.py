@@ -104,7 +104,14 @@ def test_guard_protects_real_multi_sheet_fixture(tmp_path: Path) -> None:
     if not fixture.exists():
         pytest.skip(f"fixture missing: {fixture}")
     work_dir = tmp_path / fixture.parent.name
-    shutil.copytree(fixture.parent, work_dir)
+    work_dir.mkdir()
+    for source in fixture.parent.rglob("*"):
+        destination = work_dir / source.relative_to(fixture.parent)
+        if source.is_dir():
+            destination.mkdir(parents=True, exist_ok=True)
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
     work = work_dir / fixture.name
     original = work.read_text(encoding="utf-8")
 

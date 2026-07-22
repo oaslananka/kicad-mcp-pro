@@ -1,7 +1,7 @@
 # MCP API Reference
 
-Machine-maintained from `packages/protocol-schemas/schemas/kicad-mcp-server-info.schema.json`
-and `compatibility.yaml`. Refresh with `corepack pnpm run docs:generate`.
+Derived from `packages/protocol-schemas/schemas/kicad-mcp-server-info.schema.json` and
+`compatibility.yaml`; update this page whenever either public contract changes.
 
 ## Current Contract
 
@@ -9,8 +9,9 @@ and `compatibility.yaml`. Refresh with `corepack pnpm run docs:generate`.
 | --- | --- |
 | MCP protocol version | `2025-11-25` |
 | Tool schema version | `1.0` |
+| Server-info schema version | `1.3.0` |
 | Registry schema version | `2025-12-11` |
-| Server package version | `3.6.0` |
+| Server package version | `3.28.0` |
 
 ## Server Info Fields
 
@@ -43,6 +44,7 @@ and `compatibility.yaml`. Refresh with `corepack pnpm run docs:generate`.
 | `liveSchematicWrite` | boolean |  |
 | `liveEditingTools` | object |  |
 | `chatgptConnectorCompatible` | boolean |  |
+| `adapterRouting` | object | Deterministic active adapter selection by routed tool category. |
 | `cliExports` | object |  |
 
 ## Release-Gated MCP Tools

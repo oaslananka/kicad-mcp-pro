@@ -194,7 +194,7 @@
       "changelog": "https://github.com/oaslananka/kicad-mcp-pro/blob/main/CHANGELOG.md",
       "releaseNotes": "https://github.com/oaslananka/kicad-mcp-pro/blob/main/CHANGELOG.md",
       "serverInfo": {
-        "schemaVersion": "1.1.0",
+        "schemaVersion": "1.3.0",
         "mcpProtocolVersion": "2025-11-25",
         "toolSchemaVersion": "1.0.0",
         "capabilities": [

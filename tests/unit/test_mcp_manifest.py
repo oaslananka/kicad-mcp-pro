@@ -91,7 +91,7 @@ def test_checked_mcp_manifest_has_public_registry_listing_metadata() -> None:
         "url": "https://github.com/oaslananka",
     }
     assert registry_meta["serverInfo"] == {
-        "schemaVersion": "1.1.0",
+        "schemaVersion": "1.3.0",
         "mcpProtocolVersion": "2025-11-25",
         "toolSchemaVersion": "1.0.0",
         "capabilities": [

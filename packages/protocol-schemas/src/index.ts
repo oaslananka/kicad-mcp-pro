@@ -93,6 +93,8 @@ export interface McpServerInfoContract {
     ipcEndpointSource: "config" | "environment" | "default";
     livePcbContext: boolean;
     liveSchematicContext: boolean;
+    headlessIpcRequested?: boolean;
+    headlessIpcAvailable?: boolean;
     ipcDocumentLoaded: boolean;
   };
   operatingMode: {
@@ -114,12 +116,45 @@ export interface McpServerInfoContract {
       string,
       {
         available: boolean;
-        backend: "kicad-ipc" | "hybrid-file-ipc";
+        backend: "kicad-ipc" | "kicad-ipc-headless" | "hybrid-file-ipc";
         reason: string | null;
         minimumKiCadMajor: number;
       }
     >;
     chatgptConnectorCompatible: boolean;
+    adapterRouting?: {
+      schemaVersion: string;
+      context: {
+        kicadMajor: number | null;
+        ipcReachable: boolean;
+        livePcbContext: boolean;
+        liveSchematicContext: boolean;
+        headlessIpcAvailable: boolean;
+        cliAvailable: boolean;
+        ngspiceAvailable: boolean;
+        freeroutingAvailable: boolean;
+        dockerAvailable: boolean;
+        networkAvailable: boolean;
+      };
+      categories: Record<
+        string,
+        {
+          preferredBackends: string[];
+          kicad11Support:
+            | "preview"
+            | "partial"
+            | "independent"
+            | "not-applicable";
+          canarySurfaces: Array<"read" | "write" | "export">;
+          fallbackPolicy: string;
+          mutationGuard: string | null;
+          toolCount: number;
+          availableCount: number;
+          blockedCount: number;
+          selectedBackends: Record<string, number>;
+        }
+      >;
+    };
     cliExports: {
       ipc2581: boolean;
       odb: boolean;
