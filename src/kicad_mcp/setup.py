@@ -247,20 +247,20 @@ def resolve_all_paths(agent_key: str) -> dict[Scope, Path]:
 
 _READONLY_ENV: dict[str, str] = {
     "KICAD_MCP_PROJECT_DIR": "{project_dir}",
-    "KICAD_MCP_PROFILE": "analysis",
+    "KICAD_MCP_PROFILE": "default",
     "KICAD_MCP_OPERATING_MODE": "readonly",
 }
 
 _WRITE_ENV: dict[str, str] = {
     "KICAD_MCP_PROJECT_DIR": "{project_dir}",
-    "KICAD_MCP_PROFILE": "analysis",
+    "KICAD_MCP_PROFILE": "build",
     "KICAD_MCP_OPERATING_MODE": "write",
 }
 
 _MANUFACTURING_ENV: dict[str, str] = {
     "KICAD_MCP_PROJECT_DIR": "{project_dir}",
-    "KICAD_MCP_PROFILE": "analysis",
-    "KICAD_MCP_OPERATING_MODE": "write",
+    "KICAD_MCP_PROFILE": "release",
+    "KICAD_MCP_OPERATING_MODE": "manufacturing",
 }
 
 

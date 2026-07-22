@@ -8,12 +8,12 @@
 
 **Features:**
 - Direct KiCad CLI access
-- Full filesystem access (within workspace)
-- ERC/DRC/DFM, exports, routing
-- Git integration for checkpoints
-- Write tools require approval
+- Bounded 24-tool review surface by default
+- ERC/DRC/DFM, visual QA, component-contract checks, and next-action discovery
+- Explicit `build`, `release`, or `expert` opt-in for broader workflows
+- Write and manufacturing tools remain mode-gated
 
-**Default mode:** `readonly` / `analysis`
+**Default mode/profile:** `readonly` / `default` (24 tools)
 
 **Required env:** `KICAD_MCP_PROJECT_DIR`
 

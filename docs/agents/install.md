@@ -58,7 +58,7 @@ Choose your agent for detailed setup instructions:
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `KICAD_MCP_PROJECT_DIR` | Yes | Path to KiCad project directory |
-| `KICAD_MCP_PROFILE` | No | Server profile (default: `analysis`) |
+| `KICAD_MCP_PROFILE` | No | Server profile (default: `default`, 24 tools) |
 | `KICAD_MCP_OPERATING_MODE` | No | `readonly`, `write`, `manufacturing`, `experimental` |
 | `KICAD_MCP_KICAD_CLI` | No | Path to kicad-cli binary |
 | `KICAD_MCP_OUTPUT_DIR` | No | Output directory for exports |

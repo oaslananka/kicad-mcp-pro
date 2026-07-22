@@ -136,11 +136,19 @@ class TestGenerateConfig:
 
     def test_env_for_mode(self) -> None:
         env = _env_for_mode("readonly", "/project")
+        assert env["KICAD_MCP_PROFILE"] == "default"
         assert env["KICAD_MCP_OPERATING_MODE"] == "readonly"
         assert env["KICAD_MCP_PROJECT_DIR"] == "/project"
 
         env2 = _env_for_mode("write", "/other")
+        assert env2["KICAD_MCP_PROFILE"] == "build"
         assert env2["KICAD_MCP_OPERATING_MODE"] == "write"
+        assert env2["KICAD_MCP_PROJECT_DIR"] == "/other"
+
+        env3 = _env_for_mode("manufacturing", "/release")
+        assert env3["KICAD_MCP_PROFILE"] == "release"
+        assert env3["KICAD_MCP_OPERATING_MODE"] == "manufacturing"
+        assert env3["KICAD_MCP_PROJECT_DIR"] == "/release"
 
 
 # ---------------------------------------------------------------------------

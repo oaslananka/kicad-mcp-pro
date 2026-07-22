@@ -93,8 +93,12 @@ class KiCadMCPConfig(BaseSettings):
     telemetry_buffer_max_events: int = Field(default=100, ge=0, le=1000)
     studio_watch_dir: Path | None = Field(default=None)
     profile: Literal[
-        "full",
+        "default",
+        "review",
+        "build",
+        "release",
         "expert",
+        "full",
         "minimal",
         "beginner",
         "read_only_inspection",
@@ -114,7 +118,7 @@ class KiCadMCPConfig(BaseSettings):
         "pcb",
         "schematic",
         "agent_full",
-    ] = Field(default="full")
+    ] = Field(default="default")
     operating_mode: Literal["readonly", "write", "manufacturing", "experimental"] = Field(
         default="readonly",
         description="Risk-oriented tool exposure mode.",

@@ -52,7 +52,7 @@ def test_available_profiles_include_v2_surface() -> None:
     assert "simulation" in PROFILE_CATEGORIES["high_speed"]
     assert "version_control" in PROFILE_CATEGORIES["high_speed"]
     assert categories_for_profile("agent_full") == PROFILE_CATEGORIES["agent_full"]
-    assert categories_for_profile("unknown-profile") == PROFILE_CATEGORIES["full"]
+    assert categories_for_profile("unknown-profile") == PROFILE_CATEGORIES["default"]
 
 
 def test_validation_cli_tools_are_declared_for_discovery() -> None:

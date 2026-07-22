@@ -39,7 +39,7 @@ def test_print_startup_diagnostics_logs_expected_fields(
 
     assert captured["event"] == "startup_diagnostics"
     payload = captured["kwargs"]
-    assert payload["profile"] == "full"
+    assert payload["profile"] == "default"
     assert payload["kicad_version"] == "10.0.1"
     assert payload["gate_mode"] == "release-export-only"
     assert str(payload["project_dir"]).endswith("project")

@@ -1,6 +1,6 @@
 # Toolset Profiles
 
-KiCad MCP has 300+ tools. To reduce context token usage in AI agents, use toolset profiles to expose only the tools needed for each task.
+KiCad MCP has a 377-tool expert catalog. General agents should use the bounded workflow toolsets below instead of loading the complete catalog.
 
 `integrations/common/toolsets.json` is **generated from the router profile source of
 truth** (`src/kicad_mcp/tools/router.py`) by `scripts/build_toolsets.py`; each toolset
@@ -12,15 +12,20 @@ that every listed tool is really registered.
 
 | Profile | Router profile / mode | Tools | Use Case |
 |---------|-----------------------|------:|----------|
-| `readonly` | `agent_full` / readonly | 183 | Inspection, ERC/DRC, quality gates |
-| `schematic` | `schematic` | 173 | Schematic design, library, export |
-| `pcb_layout` | `pcb_only` | 112 | PCB layout and routing |
-| `manufacturing` | `manufacturing` | 110 | Gerber export, DFM, BOM, release |
-| `simulation` | `simulation` | 154 | SPICE simulation |
-| `high_speed` | `high_speed` | 268 | High-speed design review |
-| `full_write` | `agent_full` / experimental | 328 | Full unrestricted access (dangerous) |
+| `default` | `default` / readonly | 24 | Safe general-agent review |
+| `review` | `review` / readonly | 24 | DRC/ERC/DFM and visual review |
+| `build` | `build` / write | 24 | Plan/apply/verify/rollback workflows |
+| `release` | `release` / manufacturing | 24 | Human-gated manufacturing handoff |
+| `expert` | `expert` / experimental | 377 | Complete trusted-client catalog |
+| `readonly` | `review` / readonly | 24 | Backward-compatible review alias |
+| `schematic` | `schematic` / experimental | 213 | Schematic design, library, export |
+| `pcb_layout` | `pcb_only` / experimental | 120 | PCB layout and routing |
+| `manufacturing` | `manufacturing` / experimental | 124 | Broad manufacturing surface |
+| `simulation` | `simulation` / experimental | 187 | SPICE simulation |
+| `high_speed` | `high_speed` / experimental | 310 | High-speed design review |
+| `full_write` | `expert` / experimental | 377 | Backward-compatible expert alias |
 
-Counts are derived; refresh this table from `toolsets.json` when profiles change.
+Counts are generated from `toolsets.json`. The default/review/build/release surfaces are also checked by `pnpm run profiles:check`; see [Progressive-Disclosure Profiles](progressive-disclosure.md).
 
 ## Using Toolsets
 

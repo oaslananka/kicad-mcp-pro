@@ -33,7 +33,7 @@ Use `readonly` for the first connection:
       "args": ["kicad-mcp-pro"],
       "env": {
         "KICAD_MCP_PROJECT_DIR": "/absolute/path/to/kicad/project",
-        "KICAD_MCP_PROFILE": "analysis",
+        "KICAD_MCP_PROFILE": "default",
         "KICAD_MCP_OPERATING_MODE": "readonly"
       }
     }

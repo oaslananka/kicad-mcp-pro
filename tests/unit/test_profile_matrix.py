@@ -4,7 +4,7 @@ import pytest
 
 from kicad_mcp.operating_modes import OperatingMode, is_tool_allowed_in_mode
 from kicad_mcp.server import build_server
-from kicad_mcp.tools.router import EXPERIMENTAL_TOOL_NAMES, PROFILE_CATEGORIES, TOOL_CATEGORIES
+from kicad_mcp.tools.router import EXPERIMENTAL_TOOL_NAMES, PROFILE_CATEGORIES, tools_for_profile
 
 
 def _default_mode_expected_tools(profile_name: str, expected: list[str]) -> set[str]:
@@ -26,10 +26,9 @@ async def test_profile_tool_matrix_matches_declared_categories(
         server = build_server(profile_name)
         listed = [tool.name for tool in await server.list_tools()]
         listed_set = set(listed)
-        expected: list[str] = []
-        for category in categories:
-            expected.extend(TOOL_CATEGORIES[category]["tools"])
+        expected = list(tools_for_profile(profile_name))
 
+        assert categories
         assert len(listed) == len(listed_set)
         assert listed_set.issubset(set(expected))
         assert listed_set == _default_mode_expected_tools(profile_name, expected)

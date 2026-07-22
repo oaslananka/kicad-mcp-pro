@@ -606,9 +606,116 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
     },
 }
 
+# Progressive-disclosure profiles intentionally use exact tool allowlists rather
+# than whole categories. Categories remain the registration/composition boundary,
+# while these lists are the public discovery boundary exposed to general agents.
+# Keep each workflow surface small enough for reliable tool selection; advanced
+# clients can opt into ``expert`` or ``full`` without losing any tools.
+_REVIEW_TOOLS: tuple[str, ...] = (
+    "kicad_set_project",
+    "kicad_get_project_info",
+    "kicad_get_version",
+    "kicad_get_server_info",
+    "kicad_list_tool_categories",
+    "kicad_get_tools_in_category",
+    "project_get_next_action",
+    "project_design_workflow",
+    "pcb_get_board_summary",
+    "pcb_get_design_rules",
+    "pcb_get_stackup",
+    "sch_get_symbols",
+    "sch_get_connectivity_graph",
+    "sch_get_bounding_boxes",
+    "validate_design",
+    "run_drc",
+    "run_erc",
+    "validate_footprints_vs_schematic",
+    "pcb_visual_qa",
+    "dfm_run_manufacturer_check",
+    "project_quality_gate",
+    "lib_verify_component_contract",
+    "sch_visual_qa",
+    "lib_get_bom_with_pricing",
+)
+
+_BUILD_TOOLS: tuple[str, ...] = (
+    "kicad_set_project",
+    "kicad_get_project_info",
+    "kicad_get_version",
+    "kicad_get_server_info",
+    "kicad_list_tool_categories",
+    "kicad_get_tools_in_category",
+    "project_get_next_action",
+    "project_design_workflow",
+    "project_get_design_spec",
+    "project_assess_edit_impact",
+    "sch_plan_from_spec",
+    "sch_preview_plan",
+    "sch_apply_plan",
+    "sch_verify_plan",
+    "sch_rollback_plan",
+    "pcb_begin_commit",
+    "pcb_push_commit",
+    "pcb_drop_commit",
+    "pcb_revert",
+    "project_quality_gate",
+    "lib_verify_component_contract",
+    "sch_visual_qa",
+    "vcs_commit_checkpoint",
+    "vcs_diff_with_checkpoint",
+)
+
+_RELEASE_TOOLS: tuple[str, ...] = (
+    "kicad_set_project",
+    "kicad_get_project_info",
+    "kicad_get_version",
+    "kicad_get_server_info",
+    "kicad_list_tool_categories",
+    "kicad_get_tools_in_category",
+    "project_get_next_action",
+    "project_get_design_spec",
+    "project_validate_design_spec",
+    "pcb_get_board_summary",
+    "pcb_get_design_rules",
+    "pcb_get_stackup",
+    "validate_design",
+    "run_drc",
+    "run_erc",
+    "validate_footprints_vs_schematic",
+    "check_design_for_manufacture",
+    "dfm_run_manufacturer_check",
+    "project_quality_gate",
+    "manufacturing_quality_gate",
+    "get_board_stats",
+    "export_manufacturing_package",
+    "vcs_list_checkpoints",
+    "vcs_diff_with_checkpoint",
+)
+
+PROFILE_TOOL_ALLOWLISTS: dict[str, tuple[str, ...]] = {
+    "default": _REVIEW_TOOLS,
+    "review": _REVIEW_TOOLS,
+    "build": _BUILD_TOOLS,
+    "release": _RELEASE_TOOLS,
+}
+
+
+def _categories_for_tools(tools: tuple[str, ...]) -> tuple[str, ...]:
+    selected = set(tools)
+    return tuple(
+        category
+        for category, info in TOOL_CATEGORIES.items()
+        if selected.intersection(info["tools"])
+    )
+
+
 PROFILE_CATEGORIES: dict[str, tuple[str, ...]] = {
     "full": tuple(TOOL_CATEGORIES.keys()),
     "expert": tuple(TOOL_CATEGORIES.keys()),
+    "default": _categories_for_tools(_REVIEW_TOOLS),
+    "review": _categories_for_tools(_REVIEW_TOOLS),
+    "build": _categories_for_tools(_BUILD_TOOLS),
+    "release": _categories_for_tools(_RELEASE_TOOLS),
     "minimal": ("project", "pcb_read", "export"),
     "beginner": ("project", "pcb_read", "dfm"),
     "read_only_inspection": ("project", "pcb_read", "dfm"),
@@ -692,16 +799,38 @@ PROFILE_CATEGORIES: dict[str, tuple[str, ...]] = {
 }
 
 
+def _category_by_tool() -> dict[str, str]:
+    return {
+        tool_name: category
+        for category, info in TOOL_CATEGORIES.items()
+        for tool_name in info["tools"]
+    }
+
+
 def categories_for_profile(profile: str) -> tuple[str, ...]:
-    """Resolve categories enabled by the named server profile."""
-    return PROFILE_CATEGORIES.get(profile, PROFILE_CATEGORIES["full"])
+    """Resolve registration categories enabled by a named server profile.
+
+    Unknown names fail closed to the bounded default profile instead of silently
+    exposing the complete expert catalog.
+    """
+    selected = profile if profile in PROFILE_CATEGORIES else "default"
+    explicit_tools = PROFILE_TOOL_ALLOWLISTS.get(selected)
+    if explicit_tools is None:
+        return PROFILE_CATEGORIES[selected]
+    tool_categories = {_category_by_tool()[tool_name] for tool_name in explicit_tools}
+    return tuple(category for category in TOOL_CATEGORIES if category in tool_categories)
 
 
 def tools_for_profile(profile: str) -> tuple[str, ...]:
-    """Return unique tool names enabled by a server profile, preserving category order."""
+    """Return unique tool names enabled by a server profile, preserving order."""
+    selected = profile if profile in PROFILE_CATEGORIES else "default"
+    explicit_tools = PROFILE_TOOL_ALLOWLISTS.get(selected)
+    if explicit_tools is not None:
+        return explicit_tools
+
     seen: set[str] = set()
     tools: list[str] = []
-    for category in categories_for_profile(profile):
+    for category in categories_for_profile(selected):
         for tool_name in TOOL_CATEGORIES[category]["tools"]:
             if tool_name not in seen:
                 seen.add(tool_name)
@@ -717,8 +846,12 @@ def tool_count_for_profile(profile: str) -> int:
 def available_profiles() -> tuple[str, ...]:
     """Return the supported server profile names."""
     preferred = [
-        "full",
+        "default",
+        "review",
+        "build",
+        "release",
         "expert",
+        "full",
         "minimal",
         "beginner",
         "read_only_inspection",
@@ -745,12 +878,21 @@ def available_profiles() -> tuple[str, ...]:
 def register(mcp: FastMCP) -> None:
     """Register category discovery tools."""
 
+    def visible_tools(category: str) -> tuple[str, ...]:
+        info = TOOL_CATEGORIES[category]
+        allowed = getattr(mcp, "allowed_tool_names", None)
+        if not isinstance(allowed, (set, frozenset)):
+            return tuple(info["tools"])
+        return tuple(tool_name for tool_name in info["tools"] if tool_name in allowed)
+
     @mcp.tool()
     def kicad_list_tool_categories() -> str:
         """List all available tool categories and capabilities."""
         lines = ["# KiCad MCP Pro Tool Categories", ""]
         for category, info in TOOL_CATEGORIES.items():
-            tools = info["tools"]
+            tools = visible_tools(category)
+            if not tools:
+                continue
             lines.append(f"## `{category}`")
             lines.append(str(info["description"]))
             lines.append(f"Tools: {len(tools)}")
@@ -763,9 +905,12 @@ def register(mcp: FastMCP) -> None:
     def kicad_get_tools_in_category(category: str, maturity: str = "") -> str:
         """Get tool names in a category, optionally filtered by maturity."""
         info = TOOL_CATEGORIES.get(category)
-        if info is None:
-            available = ", ".join(sorted(TOOL_CATEGORIES))
-            return f"Unknown category '{category}'. Available categories: {available}"
+        tools = visible_tools(category) if info is not None else ()
+        if info is None or not tools:
+            available = ", ".join(sorted(name for name in TOOL_CATEGORIES if visible_tools(name)))
+            return (
+                f"Unknown or unavailable category '{category}'. Available categories: {available}"
+            )
 
         from ..operating_modes import active_operating_mode
 
@@ -785,7 +930,7 @@ def register(mcp: FastMCP) -> None:
             "",
         ]
         maturity_filter = maturity.strip().casefold()
-        for tool_name in info["tools"]:
+        for tool_name in tools:
             if maturity_filter:
                 from ..capabilities import get as get_capability
 
