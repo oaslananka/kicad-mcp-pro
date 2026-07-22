@@ -25,8 +25,9 @@ and the high-speed review loop.
 
 Use `pcb_get_stackup` to confirm dielectric and copper data, then run
 `route_tune_time_domain` for timing-critical nets. On KiCad 10 projects the tool
-derives required length from per-layer dielectric data; KiCad 9 keeps the legacy
-length-based fallback.
+derives required length from per-layer dielectric data. If no usable stackup
+context is available, it uses the legacy length-based fallback; that fallback is
+not a support guarantee for dropped KiCad lines.
 
 ```text
 route_tune_time_domain(

@@ -73,7 +73,7 @@ Use this checklist before entering any external review form.
 
 - [ ] Run `pnpm run submission:check` before registry dry run.
 - [ ] Run `uv run --all-extras python scripts/publish_mcp_registry.py --dry-run` before live publish.
-- [ ] Use `server.json` as the registry source of truth.
+- [ ] Use the generated `server.json` as the registry submission payload.
 - [ ] Confirm PyPI Trusted Publisher OIDC is enabled for release workflow.
 - [ ] Confirm GHCR image is available as `ghcr.io/oaslananka/kicad-mcp-pro:<version>`.
 - [ ] Confirm release artifacts include SBOM evidence.

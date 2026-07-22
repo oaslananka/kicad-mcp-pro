@@ -24,7 +24,7 @@
   "repository": {
     "url": "https://github.com/oaslananka/kicad-mcp-pro",
     "source": "github",
-    "id": "R_kgDOOIB7Lg"
+    "id": "R_kgDOStXTag"
   },
   "version": "3.27.0",
   "packages": [
@@ -180,7 +180,7 @@
         "reference": "https://github.com/oaslananka/kicad-mcp-pro/blob/main/docs/tools-reference.generated.md"
       },
       "prerequisites": [
-        "KiCad CLI 8.x, 9.x, or 10.x available on PATH for file-backed DRC, ERC, and export tools."
+        "KiCad CLI 10.0.x available on PATH for file-backed DRC, ERC, and export tools. KiCad 8.x is deprecated and limited to file-level read and migration workflows."
       ],
       "supportedMcpProtocolVersions": [
         "2025-11-25"

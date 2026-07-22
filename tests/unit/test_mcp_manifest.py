@@ -76,7 +76,8 @@ def test_checked_mcp_manifest_has_public_registry_listing_metadata() -> None:
     assert "KiCad CLI" in registry_meta["longDescription"]
     assert len(registry_meta["screenshots"]) == 5
     assert registry_meta["prerequisites"] == [
-        "KiCad CLI 8.x, 9.x, or 10.x available on PATH for file-backed DRC, ERC, and export tools."
+        "KiCad CLI 10.0.x available on PATH for file-backed DRC, ERC, and export tools. "
+        "KiCad 8.x is deprecated and limited to file-level read and migration workflows."
     ]
     assert registry_meta["supportedMcpProtocolVersions"] == ["2025-11-25"]
     assert registry_meta["license"] == "MIT"

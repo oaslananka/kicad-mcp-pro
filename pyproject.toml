@@ -107,6 +107,10 @@ Repository = "https://github.com/oaslananka/kicad-mcp-pro"
 Changelog = "https://github.com/oaslananka/kicad-mcp-pro/blob/main/CHANGELOG.md"
 Funding = "https://github.com/sponsors/oaslananka"
 
+[tool.kicad-mcp.public-metadata]
+# Stable GitHub GraphQL node ID for repository-resurrection protection.
+repository-id = "R_kgDOStXTag"
+
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kicad_mcp"]
