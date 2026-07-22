@@ -15,6 +15,9 @@ from kicad_mcp.tools.router import (
     categories_for_profile,
     tools_for_profile,
 )
+from kicad_mcp.tools.router import (
+    register as register_router,
+)
 from tests.conftest import call_tool_text
 
 WORKFLOW_PROFILES = ("default", "review", "build", "release", "expert")
@@ -131,6 +134,26 @@ async def test_default_discovery_hides_tools_outside_profile() -> None:
     assert "project_get_next_action" in project_tools
     assert "Unknown or unavailable category 'pcb_write'" in hidden_category
     assert "pcb_write" not in hidden_category.split("Available categories:", 1)[-1]
+
+
+def test_discovery_without_allowlist_preserves_full_legacy_visibility() -> None:
+    registered: dict[str, object] = {}
+
+    class LegacyMCP:
+        def tool(self):  # type: ignore[no-untyped-def]
+            def decorator(func):  # type: ignore[no-untyped-def]
+                registered[func.__name__] = func
+                return func
+
+            return decorator
+
+    register_router(LegacyMCP())  # type: ignore[arg-type]
+    list_categories = registered["kicad_list_tool_categories"]
+
+    output = list_categories()  # type: ignore[operator]
+
+    assert "## `pcb_write`" in output
+    assert "## `release_export`" in output
 
 
 def test_unknown_profile_fails_closed_to_default() -> None:
