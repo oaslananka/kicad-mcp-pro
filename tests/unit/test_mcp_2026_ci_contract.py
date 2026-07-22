@@ -17,6 +17,10 @@ def test_candidate_protocol_contract_runs_in_an_independent_required_ci_job() ->
         "tests/unit/test_protocol_compat.py "
         "tests/unit/test_mcp_protocol_2026_contract.py -q"
     ) in " ".join(workflow.split())
+    assert "Run supported-host MCP 2026 smoke cases" in workflow
+    assert "uv run pytest tests/integration/test_mcp_2026_host_smoke.py -q" in " ".join(
+        workflow.split()
+    )
     assert (
         "needs: [changes, mcp-server, coverage, mcp-npm, protocol-schemas, "
         "mcp-2026-compat, workflow-policy, security]"

@@ -65,6 +65,26 @@ def test_validate_candidate_request_accepts_stateless_list_request() -> None:
     assert validated.request_id == 1
 
 
+def test_validate_candidate_request_requires_jsonrpc_2_0() -> None:
+    request = candidate_request()
+    request["jsonrpc"] = "1.0"
+
+    with pytest.raises(ProtocolValidationError) as raised:
+        validate_candidate_request(candidate_headers(), request)
+
+    assert_protocol_error(raised.value, code=-32600, fragment="jsonrpc")
+
+
+@pytest.mark.parametrize("request_id", [None, True, 1.5, {"nested": "id"}])
+def test_validate_candidate_request_requires_a_json_rpc_request_id(request_id: object) -> None:
+    request = candidate_request(request_id=request_id)
+
+    with pytest.raises(ProtocolValidationError) as raised:
+        validate_candidate_request(candidate_headers(), request)
+
+    assert_protocol_error(raised.value, code=-32600, fragment="id")
+
+
 def test_validate_candidate_request_requires_candidate_protocol_version() -> None:
     headers = candidate_headers()
     headers["MCP-Protocol-Version"] = "2025-11-25"

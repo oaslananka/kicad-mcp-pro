@@ -99,12 +99,17 @@ def validate_candidate_request(
     """Validate candidate transport headers and required per-request metadata."""
 
     normalized = _normalized_headers(headers)
+
+    if payload.get("jsonrpc") != "2.0":
+        raise ProtocolValidationError(-32600, "JSON-RPC request jsonrpc must be '2.0'")
+
     raw_request_id = payload.get("id")
-    request_id: JSONRPCID = (
-        raw_request_id
-        if isinstance(raw_request_id, (str, int)) and not isinstance(raw_request_id, bool)
-        else None
-    )
+    if not isinstance(raw_request_id, (str, int)) or isinstance(raw_request_id, bool):
+        raise ProtocolValidationError(
+            -32600,
+            "JSON-RPC request id must be a string or integer",
+        )
+    request_id: JSONRPCID = raw_request_id
 
     if "mcp-session-id" in normalized:
         raise ProtocolValidationError(
@@ -296,7 +301,7 @@ def decorate_candidate_response(
         tools_raw = result.get("tools")
         if isinstance(tools_raw, list):
             tools: list[dict[str, Any]] = []
-            for item in cast(list[Any], tools_raw):
+            for item in tools_raw:
                 if not isinstance(item, dict):
                     break
                 tools.append(cast(dict[str, Any], item))

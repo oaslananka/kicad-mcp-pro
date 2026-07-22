@@ -269,6 +269,10 @@ jobs:
           tests/unit/test_protocol_compat.py
           tests/unit/test_mcp_protocol_2026_contract.py -q
 
+      - name: Run supported-host MCP 2026 smoke cases
+        if: env.skip_ci != 'true'
+        run: uv run pytest tests/integration/test_mcp_2026_host_smoke.py -q
+
   mcp-npm:
     needs: [changes]
     if: >-

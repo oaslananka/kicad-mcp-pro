@@ -22,12 +22,13 @@ def _request(
     *,
     request_id: int = 1,
     params: dict[str, Any] | None = None,
+    client_name: str = "mcp-2026-contract-test",
 ) -> dict[str, Any]:
     request_params = dict(params or {})
     request_params["_meta"] = {
         "io.modelcontextprotocol/protocolVersion": CANDIDATE_PROTOCOL_VERSION,
         "io.modelcontextprotocol/clientInfo": {
-            "name": "mcp-2026-contract-test",
+            "name": client_name,
             "version": "1.0.0",
         },
         "io.modelcontextprotocol/clientCapabilities": {},
@@ -101,6 +102,20 @@ def test_candidate_tools_list_is_direct_stateless_and_cache_annotated(
     assert result["resultType"] == "complete"
     assert result["ttlMs"] == 300_000
     assert result["cacheScope"] == "private"
+    assert all(isinstance(tool["inputSchema"], dict) for tool in result["tools"])
+    assert all(tool["inputSchema"].get("type") == "object" for tool in result["tools"])
+
+
+def test_candidate_rejects_invalid_json_rpc_envelope(sample_project: Path) -> None:
+    server = _candidate_server(sample_project)
+    request = _request("tools/list", request_id=8)
+    request["jsonrpc"] = "1.0"
+
+    with TestClient(server.streamable_http_app(), base_url="http://127.0.0.1:3334") as client:
+        response = client.post("/mcp", headers=_headers("tools/list"), json=request)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == -32600
 
 
 def test_candidate_tool_call_is_direct_and_has_server_metadata(sample_project: Path) -> None:

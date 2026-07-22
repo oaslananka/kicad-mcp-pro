@@ -72,5 +72,6 @@ The repository gains early, deterministic evidence for the candidate protocol wi
 
 - `uv run pytest tests/unit/test_mcp_2026_config.py tests/unit/test_protocol_compat.py tests/unit/test_mcp_protocol_2026_contract.py -q`
 - `uv run pytest tests/unit/test_mcp_protocol_contract.py tests/unit/test_mcp_manifest.py -q`
+- `uv run pytest tests/integration/test_mcp_2026_host_smoke.py -q` runs loopback HTTP request-profile smoke cases for ChatGPT Connector and VS Code MCP clients. These cases verify wire behavior but do not claim certification of external host binaries.
 - The CI job named `MCP 2026 Compatibility` passes independently.
 - `server.json` continues to advertise only `2025-11-25`.

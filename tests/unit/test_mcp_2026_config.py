@@ -60,6 +60,7 @@ def test_candidate_protocol_lane_can_be_selected_explicitly(fake_cli: Path) -> N
 
     assert config.protocol_lane == "2026-07-28-rc"
     assert config.stateful_http is False
+    assert config.safe_diagnostics()["protocol_lane"] == "2026-07-28-rc"
 
 
 def test_candidate_protocol_lane_loads_from_environment(
