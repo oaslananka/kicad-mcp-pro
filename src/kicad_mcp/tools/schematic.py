@@ -38,20 +38,19 @@ from ..models.schematic import (
     CreateSheetInput,
     DeleteSymbolInput,
     DeleteWireInput,
-    GetSheetInfoInput,
     GlobalLabelInput,
     HierarchicalLabelInput,
     ModifyLabelInput,
     MoveSymbolInput,
     PowerSymbolInput,
     RouteWireBetweenPinsInput,
-    TraceNetInput,
     UpdatePropertiesInput,
 )
 from ..models.tool_result import MutatingToolResult, TransactionVerification
 from ..models.visual_qa import run_visual_qa as _run_visual_qa
 from ..path_safety import resolve_under
 from ..schematic.inspection import SchematicInspectionService
+from ..schematic.topology import SchematicTopologyService
 from ..utils.cache import clear_ttl_cache, ttl_cache
 from ..utils.field_placer import FieldSpec, autoplace_fields
 from ..utils.geometry import Box as GeoBox
@@ -64,7 +63,7 @@ from ..utils.sexpr import (
     _sexpr_string,
     _unescape_sexpr_string,
 )
-from . import schematic_inspection
+from . import schematic_inspection, schematic_topology
 from .metadata import headless_compatible
 from .schematic_constants import (
     _SCHEMATIC_STATE_DIRNAME,
@@ -5451,6 +5450,22 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
+    topology_service = SchematicTopologyService(
+        load_schematic=_load_kicad_schematic,
+        with_diagnostics=_with_schematic_diagnostics,
+        build_connectivity_groups=_build_connectivity_groups,
+        iter_child_sheet_paths=_iter_child_sheet_paths,
+        parse_schematic=parse_schematic_file,
+        warn=logger.warning,
+    )
+    schematic_topology.register(
+        mcp,
+        schematic_topology.SchematicTopologyDependencies(
+            active_schematic_file=_get_schematic_file,
+            service=topology_service,
+        ),
+    )
+
     @mcp.tool()
     @headless_compatible
     def sch_add_symbol(
@@ -6998,79 +7013,6 @@ def register(mcp: FastMCP) -> None:
         return "\n".join(p for p in [result, _format_target_detail(target), snap_note] if p)
 
     @mcp.tool()
-    def sch_list_sheets() -> str:
-        """List child sheets from the active top-level schematic."""
-        sch_file = _get_schematic_file()
-        try:
-            schematic = _load_kicad_schematic(sch_file)
-            hierarchy = schematic.sheets.get_sheet_hierarchy()
-        except Exception as exc:
-            logger.warning(
-                "schematic_list_sheets_failed",
-                schematic_file=str(sch_file),
-                error=str(exc),
-            )
-            return _with_schematic_diagnostics(
-                f"Could not inspect sheet hierarchy: {exc}",
-                sch_file,
-            )
-
-        children = hierarchy.get("root", {}).get("children", [])
-        if not children:
-            return _with_schematic_diagnostics(
-                "The active schematic has no child sheets.",
-                sch_file,
-            )
-
-        lines = [f"Child sheets ({len(children)} total):"]
-        for child in children:
-            position = child.get("position")
-            size = child.get("size")
-            lines.append(
-                f"- {child.get('name')} -> {child.get('filename')} "
-                f"@ ({float(position.x):.2f}, {float(position.y):.2f}) "
-                f"size=({float(size.x):.2f}, {float(size.y):.2f})"
-            )
-        return "\n".join(lines)
-
-    @mcp.tool()
-    def sch_get_sheet_info(sheet_name: str) -> str:
-        """Return metadata for a specific child sheet."""
-        payload = GetSheetInfoInput(sheet_name=sheet_name)
-        sch_file = _get_schematic_file()
-        try:
-            schematic = _load_kicad_schematic(sch_file)
-            info = schematic.sheets.get_sheet_by_name(payload.sheet_name)
-        except Exception as exc:
-            logger.warning(
-                "schematic_get_sheet_info_failed",
-                schematic_file=str(sch_file),
-                sheet_name=payload.sheet_name,
-                error=str(exc),
-            )
-            return f"Could not inspect sheet '{payload.sheet_name}': {exc}"
-
-        if info is None:
-            return f"Sheet '{payload.sheet_name}' was not found."
-
-        pins = info.get("pins", [])
-        position = info.get("position", {})
-        size = info.get("size", {})
-        lines = [f"Sheet '{payload.sheet_name}'"]
-        lines.append(f"- File: {info.get('filename')}")
-        lines.append(
-            "- Position: "
-            f"({float(position.get('x', 0.0)):.2f}, {float(position.get('y', 0.0)):.2f}) mm"
-        )
-        lines.append(
-            "- Size: "
-            f"({float(size.get('width', 0.0)):.2f}, {float(size.get('height', 0.0)):.2f}) mm"
-        )
-        lines.append(f"- Page: {info.get('page_number', '?')}")
-        lines.append(f"- Pins: {len(pins)}")
-        return "\n".join(lines)
-
-    @mcp.tool()
     def sch_route_wire_between_pins(
         ref1: str,
         pin1: str,
@@ -7154,77 +7096,6 @@ def register(mcp: FastMCP) -> None:
         summary = run_auto_add_missing_junctions()
         result = _reload_schematic()
         return f"{result}\n{summary}"
-
-    @mcp.tool()
-    def sch_get_connectivity_graph() -> str:
-        """Summarize the active schematic as a textual net connectivity graph."""
-        sch_file = _get_schematic_file()
-        groups = _build_connectivity_groups(sch_file)
-        if not groups:
-            return _with_schematic_diagnostics(
-                "The active schematic has no connectivity to summarize.",
-                sch_file,
-            )
-
-        lines = [f"Connectivity groups ({len(groups)} total):"]
-        for index, group in enumerate(groups, start=1):
-            if group["names"]:
-                names = ", ".join(group["names"])
-            elif group.get("no_connect"):
-                names = "~no-connect"
-            else:
-                names = "~unnamed"
-            pins = (
-                ", ".join(f"{item['reference']}:{item['pin']}" for item in group["pins"]) or "none"
-            )
-            lines.append(f"- Group {index}: {names} | pins={pins} | points={len(group['points'])}")
-        return "\n".join(lines)
-
-    @mcp.tool()
-    def sch_trace_net(net_name: str) -> str:
-        """Trace a named net through the active schematic and matching child sheets."""
-        payload = TraceNetInput(net_name=net_name)
-        target = payload.net_name
-        local_matches = [
-            group
-            for group in _build_connectivity_groups(_get_schematic_file())
-            if target in group["names"]
-        ]
-
-        child_matches: list[str] = []
-        for display_name, child_path in _iter_child_sheet_paths(_get_schematic_file()):
-            if not child_path.exists():
-                continue
-            child_data = parse_schematic_file(child_path)
-            matched_labels = [
-                label for label in child_data["labels"] if str(label["name"]) == target
-            ]
-            matched_power = [
-                symbol for symbol in child_data["power_symbols"] if str(symbol["value"]) == target
-            ]
-            if matched_labels or matched_power:
-                child_matches.append(
-                    f"- {display_name}: labels={len(matched_labels)} "
-                    f"power_symbols={len(matched_power)}"
-                )
-
-        if not local_matches and not child_matches:
-            return f"Net '{target}' was not found in the active schematic or child sheets."
-
-        lines = [f"Trace for net '{target}':"]
-        if local_matches:
-            for index, group in enumerate(local_matches, start=1):
-                pins = (
-                    ", ".join(f"{item['reference']}:{item['pin']}" for item in group["pins"])
-                    or "none"
-                )
-                lines.append(
-                    f"- Top level match {index}: pins={pins} points={len(group['points'])}"
-                )
-        if child_matches:
-            lines.append("Child sheet matches:")
-            lines.extend(child_matches)
-        return "\n".join(lines)
 
     @mcp.tool()
     def sch_auto_place_symbols(
