@@ -18,7 +18,7 @@ Or manually add to `opencode.json`:
       "timeout": 30000,
       "environment": {
         "KICAD_MCP_PROJECT_DIR": ".",
-        "KICAD_MCP_PROFILE": "analysis",
+        "KICAD_MCP_PROFILE": "default",
         "KICAD_MCP_OPERATING_MODE": "readonly"
       }
     }

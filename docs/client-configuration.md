@@ -20,17 +20,19 @@ Recommended environment:
 
 ```text
 KICAD_MCP_PROJECT_DIR=/absolute/path/to/your/kicad-project
-KICAD_MCP_PROFILE=pcb_only
+KICAD_MCP_PROFILE=default
 KICAD_MCP_OPERATING_MODE=readonly
 ```
 
-Use `KICAD_MCP_PROFILE=full` if you want every tool category. Preferred focused profiles are
-`minimal`, `pcb_only`, `schematic_only`, `manufacturing`, `high_speed`, `power`,
-`simulation`, and `analysis`. Legacy aliases `pcb` and `schematic` still work for older
-client configs. Profiles select a tool category set; `KICAD_MCP_OPERATING_MODE` is the
-risk gate applied on top. The default mode is `readonly`. Use `write` only for schematic
-or PCB source edits, `manufacturing` for release/export handoff tools, and `experimental`
-for routing, tuning, and unstable helpers.
+The default `default` profile is a bounded 24-tool review surface. Use `review` for the
+same explicit read-only contract, `build` with `KICAD_MCP_OPERATING_MODE=write` for
+plan/preview/apply/verify/rollback workflows, and `release` with
+`KICAD_MCP_OPERATING_MODE=manufacturing` for human-gated manufacturing handoff. Use
+`expert` or the backward-compatible `full` profile only when the client genuinely needs
+the complete catalog. Existing focused profiles such as `pcb_only`, `schematic_only`,
+`manufacturing`, `high_speed`, `power`, `simulation`, and `analysis` remain available.
+Profiles select the discovery surface; `KICAD_MCP_OPERATING_MODE` is an independent risk
+gate applied on top.
 
 ## CLI Setup Command Variants
 

@@ -24,7 +24,7 @@ Use read-only mode for first contact:
 
 ```json
 {
-  "KICAD_MCP_PROFILE": "analysis",
+  "KICAD_MCP_PROFILE": "default",
   "KICAD_MCP_OPERATING_MODE": "readonly"
 }
 ```

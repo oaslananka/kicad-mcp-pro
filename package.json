@@ -60,7 +60,7 @@
     "check:audit": "corepack pnpm run security:audit",
     "check:metadata": "corepack pnpm run metadata:check",
     "check:security": "corepack pnpm run security:bandit && corepack pnpm run security:audit",
-    "check:meta": "corepack pnpm run metadata:check && corepack pnpm run assets:icons:check && corepack pnpm run mcp:manifest:check && corepack pnpm run docker:metadata:check && corepack pnpm run docs:tools:check && corepack pnpm run parity:check && corepack pnpm run parity:check:regression && corepack pnpm run toolsets:check && corepack pnpm run tool-contracts:check && corepack pnpm run architecture:check && corepack pnpm run compat:check",
+    "check:meta": "corepack pnpm run metadata:check && corepack pnpm run assets:icons:check && corepack pnpm run mcp:manifest:check && corepack pnpm run docker:metadata:check && corepack pnpm run docs:tools:check && corepack pnpm run parity:check && corepack pnpm run parity:check:regression && corepack pnpm run toolsets:check && corepack pnpm run profiles:check && corepack pnpm run tool-contracts:check && corepack pnpm run architecture:check && corepack pnpm run compat:check",
     "check:release": "corepack pnpm run release:check && corepack pnpm run submission:check && corepack pnpm run release:dry-run",
     "check:build": "corepack pnpm run build && corepack pnpm run package:check",
     "check:workflows": "corepack pnpm run workflows:lint && corepack pnpm run workflows:security",
@@ -69,7 +69,9 @@
     "hooks:pre-push": "corepack pnpm run metadata:check && corepack pnpm run release:check && corepack pnpm run compat:check && corepack pnpm run format:check && corepack pnpm run lint && corepack pnpm run typecheck && corepack pnpm run test:unit && corepack pnpm run workflows:policy && corepack pnpm run workflows:lint",
     "hooks:security": "corepack pnpm run security",
     "compat:check": "uv run --all-extras python scripts/check_no_pcbnew.py && uv run --all-extras python scripts/check_compatibility_matrix.py && uv run --all-extras python scripts/runtime_policy.py check",
-    "release:dry-run": "corepack pnpm run metadata:check && corepack pnpm run release:check"
+    "release:dry-run": "corepack pnpm run metadata:check && corepack pnpm run release:check",
+    "profiles:build": "uv run --all-extras python scripts/profile_surface_report.py",
+    "profiles:check": "uv run --all-extras python scripts/profile_surface_report.py --check"
   },
   "devDependencies": {
     "@commitlint/cli": "21.0.2",

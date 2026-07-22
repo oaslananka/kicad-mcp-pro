@@ -16,7 +16,7 @@ Or manually add to `~/.gemini/settings.json`:
       "args": ["kicad-mcp-pro"],
       "env": {
         "KICAD_MCP_PROJECT_DIR": "$PWD",
-        "KICAD_MCP_PROFILE": "analysis",
+        "KICAD_MCP_PROFILE": "default",
         "KICAD_MCP_OPERATING_MODE": "readonly"
       },
       "cwd": ".",

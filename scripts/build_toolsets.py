@@ -32,10 +32,40 @@ TOOLSETS_PATH = ROOT / "integrations" / "common" / "toolsets.json"
 
 # toolset name -> (router profile, operating mode, description, dangerous)
 TOOLSETS: dict[str, tuple[str, str, str, bool]] = {
-    "readonly": (
-        "agent_full",
+    "default": (
+        "default",
         "readonly",
-        "Safe read-only tools for inspection, ERC/DRC, quality gates, and library search.",
+        "Bounded general-agent surface for project review and safe next-action discovery.",
+        False,
+    ),
+    "review": (
+        "review",
+        "readonly",
+        "Read-only review surface with DRC, ERC, DFM, visual QA, and contract checks.",
+        False,
+    ),
+    "build": (
+        "build",
+        "write",
+        "Plan, preview, apply, verify, rollback, and checkpoint workflows for trusted projects.",
+        False,
+    ),
+    "release": (
+        "release",
+        "manufacturing",
+        "Release validation and human-gated manufacturing package generation.",
+        False,
+    ),
+    "expert": (
+        "expert",
+        "experimental",
+        "Complete expert catalog. DANGEROUS - use only with trusted projects and approval.",
+        True,
+    ),
+    "readonly": (
+        "review",
+        "readonly",
+        "Backward-compatible alias for the bounded review surface.",
         False,
     ),
     "schematic": (
@@ -69,10 +99,9 @@ TOOLSETS: dict[str, tuple[str, str, str, bool]] = {
         False,
     ),
     "full_write": (
-        "agent_full",
+        "expert",
         "experimental",
-        "Full unrestricted tool access. DANGEROUS - enable only for trusted projects "
-        "with explicit user approval.",
+        "Backward-compatible alias for the complete expert catalog.",
         True,
     ),
 }
@@ -105,7 +134,7 @@ def build() -> dict[str, Any]:
         entry["tools"] = _tools_for(profile, mode)
         toolsets[name] = entry
     return {
-        "version": "2.0.0",
+        "version": "3.0.0",
         "description": (
             "Generated from router profile definitions (src/kicad_mcp/tools/router.py). "
             "Do not edit by hand; run scripts/build_toolsets.py."

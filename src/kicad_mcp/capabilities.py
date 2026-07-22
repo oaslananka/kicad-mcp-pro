@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 
@@ -336,12 +336,18 @@ register(
 )
 
 
-def _profiles_for_category(category: str) -> frozenset[str]:
-    from .tools.router import PROFILE_CATEGORIES
+def _profiles_for_tool(name: str, category: str) -> frozenset[str]:
+    from .tools.router import PROFILE_CATEGORIES, PROFILE_TOOL_ALLOWLISTS
 
-    return frozenset(
-        profile for profile, categories in PROFILE_CATEGORIES.items() if category in categories
-    )
+    category_profiles = {
+        profile
+        for profile, categories in PROFILE_CATEGORIES.items()
+        if profile not in PROFILE_TOOL_ALLOWLISTS and category in categories
+    }
+    explicit_profiles = {
+        profile for profile, tools in PROFILE_TOOL_ALLOWLISTS.items() if name in tools
+    }
+    return frozenset(category_profiles | explicit_profiles)
 
 
 def _is_read_tool(name: str, category: str) -> bool:
@@ -355,6 +361,11 @@ def _is_read_tool(name: str, category: str) -> bool:
         "pcb_transfer_quality_gate",
         "pcb_transfer_quality_report",
         "lib_certify_footprint",
+        "lib_verify_component_contract",
+        "project_quality_gate",
+        "project_quality_gate_report",
+        "sch_cosmetic_score",
+        "sch_visual_qa",
     }:
         return True
     return name.startswith(
@@ -462,10 +473,11 @@ def _register_router_tools() -> None:
     from .tools.router import TOOL_CATEGORIES
 
     for category, info in TOOL_CATEGORIES.items():
-        profiles = _profiles_for_category(category)
         for name in info["tools"]:
+            profiles = _profiles_for_tool(name, category)
             existing = _REGISTRY.get(name)
             if existing is not None:
+                register(replace(existing, profiles=existing.profiles | profiles))
                 continue
             tier = _tier_for_tool(name, category)
             runtime = _runtime_for_tool(name, category, tier)

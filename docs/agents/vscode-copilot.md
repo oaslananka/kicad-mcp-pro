@@ -18,7 +18,7 @@ Or manually add `.vscode/mcp.json`:
       "cwd": "${workspaceFolder}",
       "env": {
         "KICAD_MCP_PROJECT_DIR": "${workspaceFolder}",
-        "KICAD_MCP_PROFILE": "analysis",
+        "KICAD_MCP_PROFILE": "default",
         "KICAD_MCP_OPERATING_MODE": "readonly"
       },
       "sandboxEnabled": true

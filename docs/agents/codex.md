@@ -27,7 +27,7 @@ enabled_tools = [
 
 [mcp_servers.kicad.env]
 KICAD_MCP_PROJECT_DIR = "."
-KICAD_MCP_PROFILE = "analysis"
+KICAD_MCP_PROFILE = "default"
 KICAD_MCP_OPERATING_MODE = "readonly"
 ```
 

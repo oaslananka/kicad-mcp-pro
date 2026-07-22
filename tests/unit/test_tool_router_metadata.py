@@ -43,7 +43,7 @@ def test_categories_for_profile_full() -> None:
 
 def test_profiles_do_not_include_unknown() -> None:
     cats = categories_for_profile("nobody")
-    assert len(cats) > 0  # fallback to full
+    assert cats == categories_for_profile("default")  # fail closed
 
 
 def test_tools_for_profile_returns_unique_tool_count() -> None:
@@ -51,5 +51,5 @@ def test_tools_for_profile_returns_unique_tool_count() -> None:
 
     assert len(tools) == len(set(tools))
     assert tool_count_for_profile("full") == len(tools)
-    assert tool_count_for_profile("unknown-profile") == tool_count_for_profile("full")
+    assert tool_count_for_profile("unknown-profile") == tool_count_for_profile("default")
     assert tool_count_for_profile("minimal") < tool_count_for_profile("full")

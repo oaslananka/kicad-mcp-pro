@@ -1644,7 +1644,7 @@ def build_server(profile: str | None = None, *, defer_registration: bool = False
         instructions=(
             "KiCad MCP Pro Server for project setup, schematic capture, PCB editing, "
             "validation, and manufacturing export. Start with kicad_get_version(), "
-            "kicad_set_project(), and project_get_design_spec()."
+            "kicad_set_project(), and project_get_next_action()."
         ),
         website_url="https://oaslananka.github.io/kicad-mcp-pro",
         host=cfg.host,
@@ -1796,11 +1796,17 @@ def build_server(profile: str | None = None, *, defer_registration: bool = False
 
 
 def create_server(profile: str | None = None) -> _SyncServerHandle:
-    """Backward-compatible helper used by benchmark and verification scripts."""
+    """Backward-compatible helper used by benchmark and verification scripts.
+
+    The production configuration defaults to the bounded ``default`` profile, but
+    this programmatic helper historically materialized the complete catalog. Keep
+    that behavior for tests, benchmarks, and advanced integrations unless a profile
+    is supplied explicitly.
+    """
     cfg = get_config()
     if "KICAD_MCP_OPERATING_MODE" not in os.environ and not cfg.enable_experimental_tools:
         cfg.operating_mode = "experimental"
-    return _SyncServerHandle(build_server(profile))
+    return _SyncServerHandle(build_server(profile or "full"))
 
 
 def _ipc_status_summary() -> str:
