@@ -24,6 +24,11 @@ DOMAIN_MODULES = {
     "kicad_mcp.models.sch_transaction": SRC_ROOT / "kicad_mcp" / "models" / "sch_transaction.py",
     "kicad_mcp.models.visual_qa": SRC_ROOT / "kicad_mcp" / "models" / "visual_qa.py",
     "kicad_mcp.schematic.inspection": SRC_ROOT / "kicad_mcp" / "schematic" / "inspection.py",
+    "kicad_mcp.schematic.topology": SRC_ROOT / "kicad_mcp" / "schematic" / "topology.py",
+    "kicad_mcp.tools.schematic_topology": SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "schematic_topology.py",
     "kicad_mcp.tools.schematic_inspection": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -45,6 +50,7 @@ PURE_HELPERS = {
     "kicad_mcp.models.sch_transaction",
     "kicad_mcp.models.visual_qa",
     "kicad_mcp.schematic.inspection",
+    "kicad_mcp.schematic.topology",
     "kicad_mcp.tools.schematic_constants",
 }
 
@@ -61,10 +67,12 @@ FORBIDDEN_PURE_IMPORT_PREFIXES = (
 
 ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.schematic_inspection": ("kicad_mcp.tools.schematic",),
+    "kicad_mcp.tools.schematic_topology": ("kicad_mcp.tools.schematic",),
 }
 
 REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.schematic_inspection": 300,
+    "kicad_mcp.tools.schematic_topology": 300,
 }
 
 
