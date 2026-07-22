@@ -127,3 +127,30 @@ def test_ipc_client_normalizes_lazy_connection_failures() -> None:
 
     with pytest.raises(KiCadIpcUnavailableError, match="Connection refused"):
         client.probe()
+
+
+def test_kicad11_requires_explicit_headless_configuration(fake_cli: Path) -> None:
+    gui_state = get_ipc_capability_state(
+        client=FakeIpcClient(
+            version="KiCad 11.0.0",
+            api_version="11.0.0",
+            board_open=False,
+            schematic_open=False,
+        ),
+        config_factory=lambda: KiCadMCPConfig(kicad_cli=fake_cli, headless=False),
+    )
+    headless_state = get_ipc_capability_state(
+        client=FakeIpcClient(
+            version="KiCad 11.0.0",
+            api_version="11.0.0",
+            board_open=False,
+            schematic_open=False,
+        ),
+        config_factory=lambda: KiCadMCPConfig(kicad_cli=fake_cli, headless=True),
+    )
+
+    assert gui_state.headless_ipc_available is False
+    assert gui_state.live_pcb_write is False
+    assert headless_state.headless_ipc_available is True
+    assert headless_state.live_pcb_write is True
+    assert headless_state.live_schematic_write is True

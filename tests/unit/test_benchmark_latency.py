@@ -38,6 +38,7 @@ def _unavailable_ipc_state() -> KiCadIpcCapabilityState:
         major_version=None,
         live_pcb_context=False,
         live_schematic_context=False,
+        headless_requested=False,
         operations={},
         diagnostics=(),
     )

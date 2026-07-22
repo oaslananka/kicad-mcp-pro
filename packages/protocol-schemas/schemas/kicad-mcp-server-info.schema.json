@@ -152,6 +152,12 @@
         },
         "ipcDocumentLoaded": {
           "type": "boolean"
+        },
+        "headlessIpcRequested": {
+          "type": "boolean"
+        },
+        "headlessIpcAvailable": {
+          "type": "boolean"
         }
       }
     },
@@ -289,6 +295,9 @@
               "type": "boolean"
             }
           }
+        },
+        "adapterRouting": {
+          "$ref": "#/$defs/adapterRouting"
         }
       }
     },
@@ -328,7 +337,7 @@
           "type": "boolean"
         },
         "backend": {
-          "enum": ["kicad-ipc", "hybrid-file-ipc"]
+          "enum": ["kicad-ipc", "kicad-ipc-headless", "hybrid-file-ipc"]
         },
         "reason": {
           "type": ["string", "null"]
@@ -370,6 +379,152 @@
         "testedAgainst": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "adapterRuntimeContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kicadMajor",
+        "ipcReachable",
+        "livePcbContext",
+        "liveSchematicContext",
+        "headlessIpcAvailable",
+        "cliAvailable",
+        "ngspiceAvailable",
+        "freeroutingAvailable",
+        "dockerAvailable",
+        "networkAvailable"
+      ],
+      "properties": {
+        "kicadMajor": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "ipcReachable": {
+          "type": "boolean"
+        },
+        "livePcbContext": {
+          "type": "boolean"
+        },
+        "liveSchematicContext": {
+          "type": "boolean"
+        },
+        "cliAvailable": {
+          "type": "boolean"
+        },
+        "ngspiceAvailable": {
+          "type": "boolean"
+        },
+        "freeroutingAvailable": {
+          "type": "boolean"
+        },
+        "dockerAvailable": {
+          "type": "boolean"
+        },
+        "networkAvailable": {
+          "type": "boolean"
+        },
+        "headlessIpcAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "adapterCategory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preferredBackends",
+        "kicad11Support",
+        "canarySurfaces",
+        "fallbackPolicy",
+        "mutationGuard",
+        "toolCount",
+        "availableCount",
+        "blockedCount",
+        "selectedBackends"
+      ],
+      "properties": {
+        "preferredBackends": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "kicad-11-headless-ipc",
+              "kicad-gui-ipc",
+              "kicad-cli",
+              "guarded-schematic-file",
+              "transactional-pcb-file",
+              "local-filesystem",
+              "local-engine",
+              "network",
+              "ngspice",
+              "freerouting",
+              "docker",
+              "git",
+              "unavailable"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "kicad11Support": {
+          "enum": ["preview", "partial", "independent", "not-applicable"]
+        },
+        "canarySurfaces": {
+          "type": "array",
+          "items": {
+            "enum": ["read", "write", "export"]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "fallbackPolicy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mutationGuard": {
+          "type": ["string", "null"]
+        },
+        "toolCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "availableCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "blockedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selectedBackends": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "adapterRouting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "context", "categories"],
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "context": {
+          "$ref": "#/$defs/adapterRuntimeContext"
+        },
+        "categories": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/adapterCategory"
+          }
         }
       }
     }

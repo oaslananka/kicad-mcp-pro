@@ -29,6 +29,16 @@ const kicad_protocol_schemas_1 = require("@oaslananka/kicad-protocol-schemas");
     const valid = (0, kicad_protocol_schemas_1.validateMcpServerInfoContract)(serverInfoFixture());
     strict_1.default.equal(valid.valid, true);
     strict_1.default.equal(valid.data?.server, "kicad-mcp-pro");
+    const current = serverInfoFixture();
+    const { headlessIpcRequested: _headlessIpcRequested, headlessIpcAvailable: _headlessIpcAvailable, ...previousKicad } = current.kicad;
+    const { adapterRouting: _adapterRouting, ...previousCapabilities } = current.capabilities;
+    const previousMinor = {
+        ...current,
+        schemaVersion: "1.2.0",
+        kicad: previousKicad,
+        capabilities: previousCapabilities,
+    };
+    strict_1.default.equal((0, kicad_protocol_schemas_1.validateMcpServerInfoContract)(previousMinor).valid, true);
     const invalid = (0, kicad_protocol_schemas_1.validateMcpServerInfoContract)({
         ...serverInfoFixture(),
         server: "other-server",
@@ -156,7 +166,7 @@ const kicad_protocol_schemas_1 = require("@oaslananka/kicad-protocol-schemas");
 });
 function serverInfoFixture() {
     return {
-        schemaVersion: "1.2.0",
+        schemaVersion: "1.3.0",
         server: "kicad-mcp-pro",
         description: "KiCad MCP Pro server for PCB and schematic workflows.",
         localizedDescriptions: {
@@ -196,6 +206,8 @@ function serverInfoFixture() {
             ipcEndpointSource: "default",
             livePcbContext: true,
             liveSchematicContext: false,
+            headlessIpcRequested: false,
+            headlessIpcAvailable: false,
             ipcDocumentLoaded: true,
         },
         operatingMode: {
@@ -256,6 +268,34 @@ function serverInfoFixture() {
                 sch_modify_property: liveTool(10),
             },
             chatgptConnectorCompatible: false,
+            adapterRouting: {
+                schemaVersion: "1.0.0",
+                context: {
+                    kicadMajor: 10,
+                    ipcReachable: true,
+                    livePcbContext: true,
+                    liveSchematicContext: false,
+                    headlessIpcAvailable: false,
+                    cliAvailable: true,
+                    ngspiceAvailable: false,
+                    freeroutingAvailable: false,
+                    dockerAvailable: true,
+                    networkAvailable: true,
+                },
+                categories: {
+                    pcb_read: {
+                        preferredBackends: ["kicad-11-headless-ipc", "kicad-gui-ipc"],
+                        kicad11Support: "preview",
+                        canarySurfaces: ["read"],
+                        fallbackPolicy: "Prefer IPC and fail closed for IPC-only tools.",
+                        mutationGuard: null,
+                        toolCount: 1,
+                        availableCount: 1,
+                        blockedCount: 0,
+                        selectedBackends: { "kicad-gui-ipc": 1 },
+                    },
+                },
+            },
             cliExports: {
                 ipc2581: true,
                 odb: true,

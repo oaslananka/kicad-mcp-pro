@@ -50,6 +50,7 @@ class CapabilityConfig(Protocol):
     kicad_socket_path: Path | None
     kicad_token: str | None
     ipc_connection_timeout: float
+    headless: bool
 
 
 ConfigFactory = Callable[[], CapabilityConfig]
@@ -58,12 +59,15 @@ ConfigFactory = Callable[[], CapabilityConfig]
 class CapabilityClient(Protocol):
     def probe(self) -> Mapping[str, object]:
         """Return IPC probe data."""
+        ...
 
     def board(self) -> object:
         """Return the active board."""
+        ...
 
     def has_open_schematic(self) -> bool:
         """Return whether a schematic document is open."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -97,6 +101,7 @@ class KiCadIpcCapabilityState:
     major_version: int | None
     live_pcb_context: bool
     live_schematic_context: bool
+    headless_requested: bool
     operations: Mapping[str, KiCadIpcOperationState]
     diagnostics: tuple[str, ...]
 
@@ -108,8 +113,10 @@ class KiCadIpcCapabilityState:
         KiCad GUI — it exposes the same API via ``kicad-cli api-server``. When this
         is True, domain logic can rely on IPC without requiring ``live_pcb_context``.
         """
-        return self.reachable and _major_at_least(
-            self.major_version, KICAD_11_HEADLESS_IPC_MIN_VERSION
+        return (
+            self.reachable
+            and self.headless_requested
+            and _major_at_least(self.major_version, KICAD_11_HEADLESS_IPC_MIN_VERSION)
         )
 
     @property
@@ -182,13 +189,16 @@ def get_ipc_capability_state(
     fallback_version: str | None = None,
 ) -> KiCadIpcCapabilityState:
     """Probe KiCad IPC and return a version-gated live operation matrix."""
-    endpoint = KiCadIpcDiscovery(config_factory=config_factory).discover()
+    cfg = config_factory()
+    endpoint = KiCadIpcDiscovery(config_factory=lambda: cfg).discover()
+    headless_requested = bool(cfg.headless)
     if not probe_live_context:
         return _unavailable_state(
             endpoint,
             version=None,
             api_version=None,
             diagnostic=None,
+            headless_requested=headless_requested,
         )
 
     active_client = client or KiCadIpcClient()
@@ -200,6 +210,7 @@ def get_ipc_capability_state(
             version=None,
             api_version=None,
             diagnostic=f"KiCad IPC is unavailable: {_first_line(exc)}",
+            headless_requested=headless_requested,
         )
     except Exception as exc:  # pragma: no cover - defensive IPC boundary
         return _unavailable_state(
@@ -207,6 +218,7 @@ def get_ipc_capability_state(
             version=None,
             api_version=None,
             diagnostic=f"KiCad IPC probe failed: {_first_line(exc)}",
+            headless_requested=headless_requested,
         )
 
     version = _string_or_none(probe.get("version")) or fallback_version
@@ -218,6 +230,7 @@ def get_ipc_capability_state(
             version=version,
             api_version=api_version,
             diagnostic="KiCad IPC is unavailable: probe reported disconnected.",
+            headless_requested=headless_requested,
         )
 
     live_pcb_context = False
@@ -244,6 +257,7 @@ def get_ipc_capability_state(
         major_version=major_version,
         live_pcb_context=live_pcb_context,
         live_schematic_context=live_schematic_context,
+        headless_requested=headless_requested,
     )
     return KiCadIpcCapabilityState(
         endpoint=endpoint,
@@ -253,6 +267,7 @@ def get_ipc_capability_state(
         major_version=major_version,
         live_pcb_context=live_pcb_context,
         live_schematic_context=live_schematic_context,
+        headless_requested=headless_requested,
         operations=operations,
         diagnostics=tuple(diagnostics),
     )
@@ -264,12 +279,14 @@ def _unavailable_state(
     version: str | None,
     api_version: str | None,
     diagnostic: str | None,
+    headless_requested: bool,
 ) -> KiCadIpcCapabilityState:
     operations = _operation_states(
         reachable=False,
         major_version=_parse_major(version) or _parse_major(api_version),
         live_pcb_context=False,
         live_schematic_context=False,
+        headless_requested=headless_requested,
     )
     return KiCadIpcCapabilityState(
         endpoint=endpoint,
@@ -279,6 +296,7 @@ def _unavailable_state(
         major_version=_parse_major(version) or _parse_major(api_version),
         live_pcb_context=False,
         live_schematic_context=False,
+        headless_requested=headless_requested,
         operations=operations,
         diagnostics=(diagnostic,) if diagnostic else (),
     )
@@ -290,8 +308,13 @@ def _operation_states(
     major_version: int | None,
     live_pcb_context: bool,
     live_schematic_context: bool,
+    headless_requested: bool = False,
 ) -> dict[str, KiCadIpcOperationState]:
-    headless = reachable and _major_at_least(major_version, KICAD_11_HEADLESS_IPC_MIN_VERSION)
+    headless = (
+        reachable
+        and headless_requested
+        and _major_at_least(major_version, KICAD_11_HEADLESS_IPC_MIN_VERSION)
+    )
     states: dict[str, KiCadIpcOperationState] = {}
     for tool_name in sorted(PCB_LIVE_EDITING_TOOLS):
         available = headless or (

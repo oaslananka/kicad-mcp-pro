@@ -34,7 +34,7 @@ FAQ_SUPPORT_START = "<!-- public-metadata:kicad-support:start -->"
 FAQ_SUPPORT_END = "<!-- public-metadata:kicad-support:end -->"
 ROADMAP_RUNTIME_START = "<!-- public-metadata:runtime-policy:start -->"
 ROADMAP_RUNTIME_END = "<!-- public-metadata:runtime-policy:end -->"
-SERVER_INFO_SCHEMA_VERSION = "1.1.0"
+SERVER_INFO_SCHEMA_VERSION = "1.3.0"
 TOOL_SCHEMA_VERSION = "1.0.0"
 SERVER_INFO_CAPABILITIES = [
     "fileBackedDrc",

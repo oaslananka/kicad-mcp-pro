@@ -54,7 +54,7 @@ def test_server_info_contract_matches_protocol_schema(monkeypatch, sample_projec
     payload = get_server_info_contract()
 
     _validate_contract(payload)
-    assert payload["schemaVersion"] == "1.2.0"
+    assert payload["schemaVersion"] == "1.3.0"
     assert payload["server"] == "kicad-mcp-pro"
     assert payload["description"] == "KiCad MCP Pro server for PCB and schematic workflows."
     assert payload["localizedDescriptions"] == {
@@ -93,6 +93,8 @@ def test_server_info_contract_matches_protocol_schema(monkeypatch, sample_projec
         "ipcEndpointSource": "default",
         "livePcbContext": True,
         "liveSchematicContext": False,
+        "headlessIpcRequested": False,
+        "headlessIpcAvailable": False,
         "ipcDocumentLoaded": True,
     }
     operating_mode = payload["operatingMode"]
@@ -126,6 +128,27 @@ def test_server_info_contract_matches_protocol_schema(monkeypatch, sample_projec
         "reason": "Requires experimental operating mode.",
     }
     capabilities = payload["capabilities"]
+    adapter_routing = capabilities.pop("adapterRouting")
+    assert adapter_routing["schemaVersion"] == "1.0.0"
+    assert set(adapter_routing["categories"]) == {
+        "project",
+        "pcb_read",
+        "pcb_write",
+        "schematic",
+        "library",
+        "export",
+        "release_export",
+        "manufacturing",
+        "validation",
+        "dfm",
+        "routing",
+        "signal_integrity",
+        "power_integrity",
+        "emc",
+        "simulation",
+        "version_control",
+    }
+    assert adapter_routing["categories"]["pcb_write"]["selectedBackends"]["kicad-gui-ipc"]
     assert capabilities == {
         "fileBackedDrc": True,
         "fileBackedErc": True,
@@ -372,3 +395,52 @@ async def test_server_info_tool_and_resource_return_same_contract(
     assert tool_payload == resource_payload
     _validate_contract(resource_payload)
     assert resource_payload["server"] == "kicad-mcp-pro"
+
+
+def test_server_info_contract_reports_kicad11_headless_adapter_routes(
+    monkeypatch,
+    sample_project,
+) -> None:
+    from kicad_mcp.ipc.capabilities import KiCadIpcCapabilityState, _operation_states
+    from kicad_mcp.ipc.discovery import KiCadIpcEndpoint
+
+    _ = sample_project
+    server_info._CLI_DISCOVERY_CACHE.clear()
+    monkeypatch.setattr(
+        "kicad_mcp.server_info.get_cli_capabilities",
+        lambda _cli: CliCapabilities(version="KiCad 11.0.0", supports_svg=True),
+    )
+    state = KiCadIpcCapabilityState(
+        endpoint=KiCadIpcEndpoint(
+            socket_path=None,
+            source="default",
+            token_configured=False,
+            timeout_ms=2000,
+        ),
+        reachable=True,
+        version="KiCad 11.0.0",
+        api_version="11.0.0",
+        major_version=11,
+        live_pcb_context=False,
+        live_schematic_context=False,
+        headless_requested=True,
+        operations=_operation_states(
+            reachable=True,
+            major_version=11,
+            live_pcb_context=False,
+            live_schematic_context=False,
+            headless_requested=True,
+        ),
+        diagnostics=(),
+    )
+    monkeypatch.setattr("kicad_mcp.server_info.get_ipc_capability_state", lambda **_kwargs: state)
+
+    payload = get_server_info_contract()
+
+    _validate_contract(payload)
+    assert payload["capabilities"]["liveEditingTools"]["pcb_route_trace"]["backend"] == (
+        "kicad-ipc-headless"
+    )
+    routing = payload["capabilities"]["adapterRouting"]
+    assert routing["context"]["kicadMajor"] == 11
+    assert routing["categories"]["pcb_write"]["selectedBackends"]["kicad-11-headless-ipc"]

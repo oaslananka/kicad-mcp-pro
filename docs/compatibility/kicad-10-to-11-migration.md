@@ -21,24 +21,30 @@ The executable contract lives in `compatibility.yaml` under
 allowlist, the manual nightly/RC canary commands, and the IPC feature-parity
 matrix that maps user-facing MCP tools to tests and canary probes.
 
+The generated [KiCad adapter matrix](kicad-adapter-matrix.generated.md) maps every routed tool
+category to its KiCad 10 GUI IPC, KiCad 11 headless IPC, CLI, guarded file, or external-engine
+adapter. Runtime selection is observable through `kicad_get_server_info` and fails closed when a
+declared runtime is unavailable. The governing decision is
+[ADR-0007](../adr/0007-kicad-adapter-selection-and-swig-retirement.md).
+
 ## Direct `pcbnew` Policy
 
 Production code must not import or call the legacy SWIG Python `pcbnew` module.
 The only repository allowlist entries are:
 
-- `packages/mcp-server/scripts/check_no_pcbnew.py`, because it names the
+- `scripts/check_no_pcbnew.py`, because it names the
   forbidden API while enforcing the guard.
-- `packages/mcp-server/tests/**`, because tests may construct examples that
+- `tests/**`, because tests may construct examples that
   prove the guard fails.
 
 Run the guard locally:
 
 ```bash
-uv run --project packages/mcp-server --all-extras python packages/mcp-server/scripts/check_no_pcbnew.py
+uv run --all-extras python scripts/check_no_pcbnew.py
 ```
 
 ```powershell
-uv run --project packages/mcp-server --all-extras python packages/mcp-server/scripts/check_no_pcbnew.py
+uv run --all-extras python scripts/check_no_pcbnew.py
 ```
 
 ## Manual KiCad 11 Smoke Path
@@ -70,8 +76,17 @@ $Env:KICAD_CANARY_KICAD_CLI = "C:\Program Files\KiCad\11.0\bin\kicad-cli.exe"
 corepack pnpm run test:kicad-cli-contract:future
 ```
 
-The canary writes logs, reports, manufacturing outputs, `summary.json`, and
-`failing-fixtures.txt` under `artifacts/kicad-cli-contract/`.
+The CLI canary writes logs, reports, manufacturing outputs, `summary.json`, and
+`failing-fixtures.txt` under `artifacts/kicad-cli-contract/`. The scheduled preview workflow also
+publishes independent `read`, `write`, and `export` reports under `artifacts/kicad-11-preview/`.
+A blocked report is retained when the nightly package or compatible headless SDK surface is not yet
+available; it must not be interpreted as KiCad 11 support.
+
+For runtime routing, `KICAD_MCP_HEADLESS=1` is an explicit assertion that the configured IPC
+endpoint belongs to `kicad-cli api-server`. It does not launch KiCad. Leave it disabled for GUI
+sessions; KiCad 11 plus a reachable socket is not, by itself, evidence of headless operation.
+As of July 22, 2026, stable `kicad-python` 0.7.1 still documents connection to a running KiCad
+session, while automatic headless launch remains on the development branch.
 
 ## IPC Feature-Parity Matrix
 
@@ -108,10 +123,12 @@ corepack pnpm run check:compatibility
 
 ## Source Verification
 
-Checked on 2026-05-26:
+Checked on 2026-07-22:
 
 - [KiCad PCB Python bindings](https://dev-docs.kicad.org/en/apis-and-binding/pcbnew/)
   for the SWIG `pcbnew` deprecation and KiCad 11 removal plan.
+- [KiCad API Python bindings](https://gitlab.com/kicad/code/kicad-python) and the
+  [stable package](https://pypi.org/project/kicad-python/) for the current headless-launch boundary.
 - [KiCad command-line interface](https://docs.kicad.org/master/en/cli/cli.html)
   for the `api-server`, DRC, ERC, and export command surfaces.
 - [KiCad nightly builds and release candidates](https://www.kicad.org/help/nightlies-and-rcs/)

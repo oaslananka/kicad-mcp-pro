@@ -85,3 +85,21 @@ def test_kicad10_feature_parity_matrix_tracks_gaps_and_evidence() -> None:
         )
         for feature in supported_items
     )
+
+
+def test_kicad_adapter_matrix_contract_is_generated_and_release_gated() -> None:
+    matrix = yaml.safe_load((REPO_ROOT / "compatibility.yaml").read_text(encoding="utf-8"))
+    adapter = matrix["kicadAdapterMatrix"]
+
+    assert adapter["stableBaseline"] == matrix["kicad"]["primary"]
+    assert adapter["previewBaseline"] == "11.x"
+    assert set(adapter["surfaces"]) == {"read", "write", "export"}
+    assert adapter["noSwigGuard"] == "scripts/check_no_pcbnew.py"
+    assert adapter["generatedJson"] == "integrations/common/kicad-adapter-matrix.json"
+    assert adapter["decisionRecord"].endswith("0007-kicad-adapter-selection-and-swig-retirement.md")
+    assert set(adapter["mutationEvidence"]) == {
+        "schematicRoundTrip",
+        "schematicWriter",
+        "transactionGuard",
+        "adapterContract",
+    }

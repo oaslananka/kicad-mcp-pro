@@ -118,6 +118,7 @@ nav:
       - KiCad 10.0.4 Feature Parity: compatibility/kicad-10-0-4-feature-parity.md
       - KiCad 10.0.4 Baseline: status/kicad-10-0-4-baseline.md
       - KiCad 10 to 11 Migration: compatibility/kicad-10-to-11-migration.md
+      - Generated Adapter Matrix: compatibility/kicad-adapter-matrix.generated.md
       - KiCad 10.0.4 Canary Report: development/kicad-10-0-4-canary-report.md
       - KiCad 10.0.4 Gap Audit: development/kicad-10-0-4-gap-audit.md
   - Workflows:
@@ -191,6 +192,7 @@ nav:
           - Export Tool Naming: adr/0003-export-tool-naming.md
           - Public Metadata Sources: adr/0005-public-metadata-sources.md
           - MCP 2026 Stateless Compatibility Lane: adr/0006-mcp-2026-stateless-compatibility-lane.md
+          - KiCad Adapter Selection and SWIG Retirement: adr/0007-kicad-adapter-selection-and-swig-retirement.md
       - Regression Fixtures: development/contributing-fixtures.md
       - Production Principles: development/principles.md
       - 2026 Roadmap: development/roadmap-2026.md

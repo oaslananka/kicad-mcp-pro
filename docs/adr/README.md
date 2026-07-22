@@ -27,3 +27,7 @@ What becomes easier, harder, or explicitly out of scope?
 
 How can a maintainer confirm the decision is still being followed?
 ```
+
+## Accepted decisions
+
+- [ADR-0007: KiCad Adapter Selection and SWIG Retirement](0007-kicad-adapter-selection-and-swig-retirement.md)

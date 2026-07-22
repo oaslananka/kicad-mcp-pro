@@ -576,6 +576,30 @@ kicadIpcReadiness:
         evidence:
           - tests/unit/test_server_info_contract.py
           - tests/unit/test_cli_diagnostics.py
+kicadAdapterMatrix:
+  reviewed: '2026-07-22'
+  schemaVersion: 1.0.0
+  stableBaseline: 10.0.x
+  previewBaseline: 11.x
+  generatedJson: integrations/common/kicad-adapter-matrix.json
+  generatedDocumentation: docs/compatibility/kicad-adapter-matrix.generated.md
+  decisionRecord: docs/adr/0007-kicad-adapter-selection-and-swig-retirement.md
+  workflow: .github/workflows/kicad-live-e2e.yml
+  canaryScript: scripts/kicad11_headless_canary.py
+  surfaces:
+    - read
+    - write
+    - export
+  noSwigGuard: scripts/check_no_pcbnew.py
+  mutationEvidence:
+    schematicRoundTrip: tests/integration/test_roundtrip_fidelity.py
+    schematicWriter: tests/unit/test_schematic_write_integrity.py
+    transactionGuard: tests/unit/test_schematic_write_transaction_guard.py
+    adapterContract: tests/unit/test_kicad_adapter_matrix.py
+  sources:
+    cli: https://docs.kicad.org/master/en/cli/cli.html
+    ipcApi: https://dev-docs.kicad.org/en/apis-and-binding/ipc-api/
+    pcbnewRetirement: https://dev-docs.kicad.org/en/apis-and-binding/pcbnew/
 vscode:
   minimum: 1.120.0
   enginesRange: ^1.120.0

@@ -333,7 +333,7 @@ def test_server_info_contract_validates_protocol_version() -> None:
     info = get_server_info_contract(probe_live_context=False)
     from kicad_mcp.compatibility import MCP_PROTOCOL_VERSION
 
-    assert info["schemaVersion"] == "1.2.0"
+    assert info["schemaVersion"] == "1.3.0"
     assert info["mcpProtocolVersion"] == MCP_PROTOCOL_VERSION
     # toolSchemaVersion is normalized to semver by _as_semver
     assert info["toolSchemaVersion"] == "1.0.0"

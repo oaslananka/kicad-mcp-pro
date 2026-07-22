@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
 from . import __version__
+from .adapter_matrix import AdapterRuntimeContext, adapter_routing_contract
 from .compatibility import MCP_PROTOCOL_VERSION, MCP_TOOL_SCHEMA_VERSION, compatibility_summary
 from .config import get_config
 from .connection import get_board, get_kicad
@@ -17,7 +19,7 @@ from .ipc.capabilities import get_ipc_capability_state
 from .ipc.client import KiCadIpcClient
 from .operating_modes import operating_mode_contract
 
-SERVER_INFO_SCHEMA_VERSION = "1.2.0"
+SERVER_INFO_SCHEMA_VERSION = "1.3.0"
 _BIND_ALL_HOSTS = {"0.0.0.0", "::"}  # noqa: S104 - bind-all sentinel, not a socket bind.
 _SEMVER_NUMBER_RE = re.compile(r"\d+")
 TransportType = Literal["stdio", "streamable-http", "sse"]
@@ -67,6 +69,8 @@ def get_server_info_contract(*, probe_live_context: bool = True) -> dict[str, ob
             "ipcEndpointSource": ipc_state.endpoint.source,
             "livePcbContext": ipc_state.live_pcb_context,
             "liveSchematicContext": ipc_state.live_schematic_context,
+            "headlessIpcRequested": ipc_state.headless_requested,
+            "headlessIpcAvailable": ipc_state.headless_ipc_available,
             "ipcDocumentLoaded": ipc_state.live_pcb_context or ipc_state.live_schematic_context,
         },
         "operatingMode": operating_mode_contract(cfg),
@@ -80,6 +84,23 @@ def get_server_info_contract(*, probe_live_context: bool = True) -> dict[str, ob
             "liveSchematicWrite": ipc_state.live_schematic_write,
             "liveEditingTools": ipc_state.live_editing_contract(),
             "chatgptConnectorCompatible": False,
+            "adapterRouting": adapter_routing_contract(
+                AdapterRuntimeContext(
+                    kicad_major=ipc_state.major_version,
+                    ipc_reachable=ipc_state.reachable,
+                    live_pcb_context=ipc_state.live_pcb_context,
+                    live_schematic_context=ipc_state.live_schematic_context,
+                    headless_ipc_available=ipc_state.headless_ipc_available,
+                    cli_available=cli.found,
+                    ngspice_available=bool(cfg.ngspice_cli and cfg.ngspice_cli.exists())
+                    or shutil.which("ngspice") is not None,
+                    freerouting_available=bool(
+                        cfg.freerouting_jar and cfg.freerouting_jar.exists()
+                    ),
+                    docker_available=shutil.which(cfg.docker_executable) is not None,
+                    network_available=False,
+                )
+            ),
             "cliExports": {
                 "ipc2581": bool(cli.capabilities and cli.capabilities.supports_ipc2581),
                 "odb": bool(cli.capabilities and cli.capabilities.supports_odb_export),
