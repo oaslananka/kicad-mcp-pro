@@ -98,6 +98,15 @@ from .operating_modes import (
     filter_tools_for_mode,
     is_tool_allowed_in_mode,
 )
+from .protocol_compat import (
+    CANDIDATE_PROTOCOL_LANE,
+    ProtocolValidationError,
+    candidate_discover_result,
+    decorate_candidate_response,
+    jsonrpc_error_response,
+    stable_sdk_request,
+    validate_candidate_request,
+)
 from .tools import footprint as _footprint
 from .tools import jobset as _jobset
 from .tools import router
@@ -862,6 +871,8 @@ class KiCadFastMCP(FastMCP):
                     "Content-Type",
                     "MCP-Protocol-Version",
                     "MCP-Session-Id",
+                    "Mcp-Method",
+                    "Mcp-Name",
                 ],
             )
         app.add_middleware(_OriginValidationMiddleware)
@@ -1123,7 +1134,7 @@ class _StreamableHttpContractMiddleware:
             await original_send(message)
 
         send = post_request_send
-        if rpc_method == "initialize":
+        if rpc_method == "initialize" and cfg.protocol_lane == "stable":
             logger.info(
                 "mcp_transport_initialize",
                 request_id=rpc_id,
@@ -1167,6 +1178,27 @@ class _StreamableHttpContractMiddleware:
                 receive=replay_receive,
                 send=send,
             )
+            return
+
+        if cfg.protocol_lane == CANDIDATE_PROTOCOL_LANE:
+            with otel.mcp_request_span(
+                http_method=str(method),
+                mount_path=cfg.mount_path,
+                session_present=False,
+            ) as request_span:
+                otel.annotate_mcp_request(request_span, rpc_method=rpc_method)
+                with structlog.contextvars.bound_contextvars(
+                    request_id=rpc_id,
+                    mcp_session_id=None,
+                ):
+                    await self._handle_candidate_post(
+                        scope=scope,
+                        body=body,
+                        headers=headers,
+                        rpc_id=rpc_id,
+                        send=send,
+                    )
+                otel.finish_mcp_request_span(request_span, status_code=post_response_status)
             return
 
         protocol_version = headers.get("mcp-protocol-version")
@@ -1235,6 +1267,76 @@ class _StreamableHttpContractMiddleware:
                 await self.app(scope, replay_receive, send_wrapper)
             otel.finish_mcp_request_span(request_span, status_code=post_response_status)
 
+    async def _handle_candidate_post(
+        self,
+        *,
+        scope: Scope,
+        body: bytes,
+        headers: dict[str, str],
+        rpc_id: object | None,
+        send: Send,
+    ) -> None:
+        """Validate and adapt one opt-in MCP 2026-07-28 request."""
+        payload = _json_rpc_payload(body)
+        if payload is None:
+            await _candidate_json_response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": rpc_id,
+                    "error": {"code": -32700, "message": "Parse error"},
+                },
+                status_code=400,
+                scope=scope,
+                send=send,
+            )
+            return
+
+        try:
+            candidate_request = validate_candidate_request(headers, payload)
+        except ProtocolValidationError as exc:
+            await _candidate_json_response(
+                jsonrpc_error_response(exc, request_id=_json_rpc_id(payload)),
+                status_code=400,
+                scope=scope,
+                send=send,
+            )
+            return
+
+        if candidate_request.method == "server/discover":
+            await _candidate_json_response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": candidate_request.request_id,
+                    "result": candidate_discover_result(server_version=__version__),
+                },
+                status_code=200,
+                scope=scope,
+                send=send,
+            )
+            return
+
+        stable_body = json.dumps(
+            stable_sdk_request(payload),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        stable_scope = _scope_with_header(
+            scope,
+            "mcp-protocol-version",
+            MCP_PROTOCOL_VERSION,
+        )
+        downstream_messages: list[Message] = []
+
+        async def capture_send(message: Message) -> None:
+            downstream_messages.append(message)
+
+        await self.app(stable_scope, _receive_from_body(stable_body), capture_send)
+        await _send_candidate_downstream_response(
+            downstream_messages,
+            method=candidate_request.method,
+            send=send,
+        )
+
     def _has_session(self, session_id: str) -> bool:
         return session_id in self._session_ids
 
@@ -1276,6 +1378,135 @@ async def _buffer_request_body(receive: Receive) -> tuple[bytes, Receive]:
         return next(iterator, {"type": "http.request", "body": b"", "more_body": False})
 
     return b"".join(chunks), replay_receive
+
+
+def _json_rpc_payload(body: bytes) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _json_rpc_id(payload: dict[str, Any]) -> str | int | None:
+    request_id = payload.get("id")
+    if isinstance(request_id, bool):
+        return None
+    return request_id if isinstance(request_id, (str, int)) else None
+
+
+def _receive_from_body(body: bytes) -> Receive:
+    delivered = False
+
+    async def receive() -> Message:
+        nonlocal delivered
+        if delivered:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        delivered = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    return receive
+
+
+def _scope_with_header(scope: Scope, header_name: str, value: str) -> Scope:
+    expected = header_name.casefold().encode("latin-1")
+    headers: list[tuple[bytes, bytes]] = []
+    replaced = False
+    for key, header_value in scope.get("headers", []):
+        if key.lower() == expected:
+            headers.append((key, value.encode("latin-1")))
+            replaced = True
+        else:
+            headers.append((key, header_value))
+    if not replaced:
+        headers.append((expected, value.encode("latin-1")))
+    updated = dict(scope)
+    updated["headers"] = headers
+    return cast(Scope, updated)
+
+
+async def _candidate_json_response(
+    payload: dict[str, Any],
+    *,
+    status_code: int,
+    scope: Scope,
+    send: Send,
+) -> None:
+    await JSONResponse(payload, status_code=status_code)(
+        scope,
+        _receive_from_body(b""),
+        send,
+    )
+
+
+def _response_headers_without_session(
+    headers: list[tuple[bytes, bytes]],
+    *,
+    content_length: int | None = None,
+) -> list[tuple[bytes, bytes]]:
+    filtered: list[tuple[bytes, bytes]] = []
+    has_content_length = False
+    for key, value in headers:
+        lowered = key.lower()
+        if lowered == b"mcp-session-id":
+            continue
+        if lowered == b"content-length" and content_length is not None:
+            filtered.append((key, str(content_length).encode("ascii")))
+            has_content_length = True
+            continue
+        filtered.append((key, value))
+    if content_length is not None and not has_content_length:
+        filtered.append((b"content-length", str(content_length).encode("ascii")))
+    return filtered
+
+
+async def _send_candidate_downstream_response(
+    messages: list[Message],
+    *,
+    method: str,
+    send: Send,
+) -> None:
+    start = next(
+        (message for message in messages if message["type"] == "http.response.start"), None
+    )
+    if start is None:
+        for message in messages:
+            await send(message)
+        return
+
+    chunks = [
+        message.get("body", b"")
+        for message in messages
+        if message["type"] == "http.response.body" and isinstance(message.get("body", b""), bytes)
+    ]
+    body = b"".join(cast(list[bytes], chunks))
+    raw_headers = start.get("headers", [])
+    headers = cast(list[tuple[bytes, bytes]], raw_headers if isinstance(raw_headers, list) else [])
+    content_type = ""
+    for key, value in headers:
+        if key.lower() == b"content-type":
+            content_type = value.decode("latin-1")
+            break
+
+    status = start.get("status", 200)
+    status_code = status if isinstance(status, int) else 200
+    if 200 <= status_code < 300 and _content_type_header_is(content_type, "application/json"):
+        payload = _json_rpc_payload(body)
+        if payload is not None:
+            decorated = decorate_candidate_response(
+                method,
+                payload,
+                server_version=__version__,
+            )
+            body = json.dumps(decorated, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+    response_start = dict(start)
+    response_start["headers"] = _response_headers_without_session(
+        headers,
+        content_length=len(body),
+    )
+    await send(cast(Message, response_start))
+    await send({"type": "http.response.body", "body": body, "more_body": False})
 
 
 def _scope_headers(scope: Scope) -> dict[str, str]:
