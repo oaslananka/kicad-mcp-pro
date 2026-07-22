@@ -51,6 +51,7 @@ from ..models.schematic import (
 from ..models.tool_result import MutatingToolResult, TransactionVerification
 from ..models.visual_qa import run_visual_qa as _run_visual_qa
 from ..path_safety import resolve_under
+from ..schematic.inspection import SchematicInspectionService
 from ..utils.cache import clear_ttl_cache, ttl_cache
 from ..utils.field_placer import FieldSpec, autoplace_fields
 from ..utils.geometry import Box as GeoBox
@@ -63,6 +64,7 @@ from ..utils.sexpr import (
     _sexpr_string,
     _unescape_sexpr_string,
 )
+from . import schematic_inspection
 from .metadata import headless_compatible
 from .schematic_constants import (
     _SCHEMATIC_STATE_DIRNAME,
@@ -5433,101 +5435,21 @@ def _reload_schematic() -> str:
 
 def register(mcp: FastMCP) -> None:
     """Register schematic tools."""
-
-    @mcp.tool()
-    @ttl_cache(ttl_seconds=5)
-    def sch_get_symbols(
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-    ) -> str:
-        """List all schematic symbols, optionally from a child sheet."""
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        sch_file = target.path
-        data = parse_schematic_file(sch_file)
-        symbols = data["symbols"] + data["power_symbols"]
-        if not symbols:
-            return _with_schematic_diagnostics(
-                "The active schematic contains no symbols.",
-                sch_file,
-            )
-
-        lines = [f"Symbols ({len(symbols)} total):"]
-        for symbol in data["symbols"]:
-            suffix = f" footprint={symbol['footprint']}" if symbol["footprint"] else ""
-            lines.append(
-                f"- {symbol['reference']} {symbol['value']} {symbol['lib_id']} @ "
-                f"({symbol['x']:.2f}, {symbol['y']:.2f}) rot={symbol['rotation']} "
-                f"unit={symbol['unit']}{suffix}"
-            )
-        if data["power_symbols"]:
-            lines.append("Power symbols:")
-            for symbol in data["power_symbols"]:
-                lines.append(
-                    f"- {symbol['reference']} {symbol['value']} @ "
-                    f"({symbol['x']:.2f}, {symbol['y']:.2f}) unit={symbol['unit']}"
-                )
-        return "\n".join(lines)
-
-    @mcp.tool()
-    def sch_get_wires(
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-    ) -> str:
-        """List all wires in the schematic, optionally from a child sheet."""
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        sch_file = target.path
-        wires = parse_schematic_file(sch_file)["wires"]
-        if not wires:
-            return _with_schematic_diagnostics(
-                "The active schematic contains no wires.",
-                sch_file,
-            )
-        lines = [f"Wires ({len(wires)} total):"]
-        for wire in wires:
-            identifier = f"{wire['uuid']} " if wire.get("uuid") else ""
-            lines.append(
-                f"- {identifier}({wire['x1']}, {wire['y1']}) -> ({wire['x2']}, {wire['y2']})"
-            )
-        return "\n".join(lines)
-
-    @mcp.tool()
-    def sch_get_labels(
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-    ) -> str:
-        """List all labels in the schematic, optionally from a child sheet."""
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        sch_file = target.path
-        labels = parse_schematic_file(sch_file)["labels"]
-        if not labels:
-            return _with_schematic_diagnostics(
-                "The active schematic contains no labels.",
-                sch_file,
-            )
-        lines = [f"Labels ({len(labels)} total):"]
-        lines.extend(
-            f"- {label['name']} @ ({label['x']}, {label['y']}) rot={label['rotation']} "
-            f"justify={label.get('justify') or 'center'}"
-            for label in labels
-        )
-        return "\n".join(lines)
-
-    @mcp.tool()
-    def sch_get_net_names(
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-    ) -> str:
-        """List unique net names derived from labels, optionally from a child sheet."""
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        sch_file = target.path
-        labels = parse_schematic_file(sch_file)["labels"]
-        names = sorted({label["name"] for label in labels})
-        if not names:
-            return _with_schematic_diagnostics(
-                "No named nets were found in the schematic.",
-                sch_file,
-            )
-        return "Named nets:\n" + "\n".join(f"- {name}" for name in names)
+    inspection_service = SchematicInspectionService(
+        parse_schematic=parse_schematic_file,
+        with_diagnostics=_with_schematic_diagnostics,
+        population_records=_population_records,
+        symbol_available_units=get_symbol_available_units,
+        pin_positions_lookup=get_pin_positions,
+    )
+    schematic_inspection.register(
+        mcp,
+        schematic_inspection.SchematicInspectionDependencies(
+            resolve_target=_resolve_schematic_target,
+            active_schematic_file=_get_schematic_file,
+            service=inspection_service,
+        ),
+    )
 
     @mcp.tool()
     @headless_compatible
@@ -6218,24 +6140,6 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @headless_compatible
-    def sch_get_population_status(
-        reference: str | None = None,
-        sheet: str | None = None,
-    ) -> str:
-        """Report native KiCad Populate/DNP status for schematic components.
-
-        Returns each placed component's ``populated``/``dnp``/``in_bom`` state
-        and any recorded DNP reason. Pass ``reference`` to inspect a single part
-        or ``sheet`` to scope the scan to one schematic file.
-        """
-        records = _population_records(reference, sheet)
-        if reference and not records:
-            scope = f" in sheet '{sheet}'" if sheet else ""
-            raise ValueError(f"Reference '{reference}' was not found{scope}.")
-        return json.dumps({"count": len(records), "components": records}, indent=2)
-
-    @mcp.tool()
-    @headless_compatible
     def sch_modify_property(reference: str, field: str, value: str) -> str:
         """Modify a schematic symbol property by reference."""
         return str(sch_update_properties(reference, field, value))
@@ -6890,50 +6794,6 @@ def register(mcp: FastMCP) -> None:
         if notes:
             return result + "\n" + "\n".join(notes)
         return result
-
-    @mcp.tool()
-    def sch_get_pin_positions(
-        library: str,
-        symbol_name: str,
-        x_mm: float,
-        y_mm: float,
-        rotation: int = 0,
-        unit: int = 1,
-    ) -> str:
-        """Calculate absolute pin positions for a given symbol placement."""
-        available_units = get_symbol_available_units(library, symbol_name)
-        if available_units and unit not in available_units:
-            return (
-                f"{library}:{symbol_name} does not support unit {unit}. "
-                f"Available units: {_format_available_units(available_units)}."
-            )
-
-        positions = get_pin_positions(library, symbol_name, x_mm, y_mm, rotation, unit)
-        if not positions:
-            return f"Could not calculate pin positions for {library}:{symbol_name}."
-        lines = [f"{library}:{symbol_name} @ ({x_mm}, {y_mm}) rot={rotation} unit={unit}:"]
-        for pin, coords in sorted(positions.items()):
-            lines.append(f"- Pin {pin}: ({coords[0]:.4f}, {coords[1]:.4f}) mm")
-        return "\n".join(lines)
-
-    @mcp.tool()
-    def sch_check_power_flags() -> str:
-        """Check whether common power nets appear to be flagged."""
-        sch_file = _get_schematic_file()
-        data = parse_schematic_file(sch_file)
-        named_power = {
-            label["name"]
-            for label in data["labels"]
-            if label["name"].upper() in {"GND", "VCC", "+3V3", "+5V", "+12V"}
-        }
-        power_symbols = {symbol["value"].upper() for symbol in data["power_symbols"]}
-        missing = sorted(name for name in named_power if name.upper() not in power_symbols)
-        if not missing:
-            return _with_schematic_diagnostics(
-                "No obvious missing power flags were detected.",
-                sch_file,
-            )
-        return "Potential missing power flags:\n" + "\n".join(f"- {name}" for name in missing)
 
     @mcp.tool()
     def sch_annotate(start_number: int = 1, order: str = "alpha") -> str:

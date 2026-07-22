@@ -23,6 +23,11 @@ DOMAIN_MODULES = {
     / "contract_verifier.py",
     "kicad_mcp.models.sch_transaction": SRC_ROOT / "kicad_mcp" / "models" / "sch_transaction.py",
     "kicad_mcp.models.visual_qa": SRC_ROOT / "kicad_mcp" / "models" / "visual_qa.py",
+    "kicad_mcp.schematic.inspection": SRC_ROOT / "kicad_mcp" / "schematic" / "inspection.py",
+    "kicad_mcp.tools.schematic_inspection": SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "schematic_inspection.py",
     "kicad_mcp.tools.schematic_constants": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -39,6 +44,7 @@ PURE_HELPERS = {
     "kicad_mcp.models.contract_verifier",
     "kicad_mcp.models.sch_transaction",
     "kicad_mcp.models.visual_qa",
+    "kicad_mcp.schematic.inspection",
     "kicad_mcp.tools.schematic_constants",
 }
 
@@ -52,6 +58,14 @@ FORBIDDEN_PURE_IMPORT_PREFIXES = (
     "wx",
     "kipy",
 )
+
+ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
+    "kicad_mcp.tools.schematic_inspection": ("kicad_mcp.tools.schematic",),
+}
+
+REGISTER_LINE_LIMITS = {
+    "kicad_mcp.tools.schematic_inspection": 300,
+}
 
 
 def _module_package(module_name: str) -> str:
@@ -79,6 +93,21 @@ def _imports_for(module_name: str, path: Path) -> set[str]:
             if resolved:
                 imports.add(resolved)
     return imports
+
+
+def _function_span(path: Path, function_name: str) -> int | None:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    matches = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == function_name
+    ]
+    if len(matches) != 1:
+        return None
+    node = matches[0]
+    if node.end_lineno is None:
+        return None
+    return node.end_lineno - node.lineno + 1
 
 
 def _domain_target(import_name: str) -> str | None:
@@ -131,6 +160,22 @@ def main() -> int:
             for import_name in sorted(imports):
                 if import_name.startswith(FORBIDDEN_PURE_IMPORT_PREFIXES):
                     errors.append(f"{module_name} must stay pure; forbidden import: {import_name}")
+        for import_name in sorted(imports):
+            forbidden_prefixes = ADAPTER_FORBIDDEN_IMPORT_PREFIXES.get(module_name, ())
+            if import_name.startswith(forbidden_prefixes):
+                errors.append(
+                    f"{module_name} must not import its composition-root monolith: {import_name}"
+                )
+
+        register_limit = REGISTER_LINE_LIMITS.get(module_name)
+        if register_limit is not None:
+            register_span = _function_span(path, "register")
+            if register_span is None:
+                errors.append(f"{module_name} must define exactly one top-level register()")
+            elif register_span > register_limit:
+                errors.append(
+                    f"{module_name}.register spans {register_span} lines; limit is {register_limit}"
+                )
 
     graph = {
         module_name: {
