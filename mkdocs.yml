@@ -190,6 +190,7 @@ nav:
           - Version Single Source: adr/0002-version-single-source.md
           - Export Tool Naming: adr/0003-export-tool-naming.md
           - Public Metadata Sources: adr/0005-public-metadata-sources.md
+          - MCP 2026 Stateless Compatibility Lane: adr/0006-mcp-2026-stateless-compatibility-lane.md
       - Regression Fixtures: development/contributing-fixtures.md
       - Production Principles: development/principles.md
       - 2026 Roadmap: development/roadmap-2026.md

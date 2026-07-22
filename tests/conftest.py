@@ -141,6 +141,7 @@ def reset_globals(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.delenv("KICAD_MCP_HEADLESS", raising=False)
     monkeypatch.delenv("KICAD_MCP_WORKSPACE_ROOT", raising=False)
     monkeypatch.delenv("KICAD_MCP_TRANSPORT", raising=False)
+    monkeypatch.delenv("KICAD_MCP_PROTOCOL_LANE", raising=False)
     monkeypatch.delenv("KICAD_MCP_LEGACY_SSE", raising=False)
     monkeypatch.delenv("KICAD_MCP_STATEFUL_HTTP", raising=False)
     monkeypatch.delenv("KICAD_MCP_ENABLE_METRICS", raising=False)

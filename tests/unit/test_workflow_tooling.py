@@ -49,7 +49,7 @@ def test_workflow_policy_runs_actionlint_and_zizmor_in_required_gate() -> None:
     assert "scripts/workflow_security.py --min-severity high" in workflow
     assert (
         "needs: [changes, mcp-server, coverage, mcp-npm, protocol-schemas, "
-        "workflow-policy, security]" in workflow
+        "mcp-2026-compat, workflow-policy, security]" in workflow
     )
 
 

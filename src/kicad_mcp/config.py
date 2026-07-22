@@ -76,6 +76,10 @@ class KiCadMCPConfig(BaseSettings):
     footprint_library_dir: Path | None = Field(default=None)
 
     transport: Literal["stdio", "http", "sse", "streamable-http"] = Field(default="stdio")
+    protocol_lane: Literal["stable", "2026-07-28-rc"] = Field(
+        default="stable",
+        description="MCP protocol compatibility lane. Release-candidate lanes are opt-in.",
+    )
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=3334)
     mount_path: str = Field(default="/mcp")
@@ -329,7 +333,23 @@ class KiCadMCPConfig(BaseSettings):
         )
         self._refresh_paths()
         self._validate_http_transport_security()
+        self._validate_protocol_lane()
         return self
+
+    def _validate_protocol_lane(self) -> None:
+        """Reject incompatible runtime modes for non-default protocol lanes."""
+        if self.protocol_lane == "stable":
+            return
+        if self.transport != "streamable-http":
+            raise ValueError("MCP protocol lane 2026-07-28-rc requires transport='streamable-http'")
+        if self.stateful_http:
+            raise ValueError("MCP protocol lane 2026-07-28-rc requires stateful_http=false")
+        if self.legacy_sse:
+            raise ValueError("MCP protocol lane 2026-07-28-rc does not support legacy_sse")
+        if self.enable_tasks:
+            raise ValueError(
+                "MCP protocol lane 2026-07-28-rc does not support the legacy Tasks implementation"
+            )
 
     def _validate_http_transport_security(self) -> None:
         """Fail closed before exposing HTTP transports on non-loopback interfaces."""
@@ -473,6 +493,7 @@ class KiCadMCPConfig(BaseSettings):
             "otel_protocol": self.otel_protocol,
             "telemetry_buffer_max_events": self.telemetry_buffer_max_events,
             "transport": self.transport,
+            "protocol_lane": self.protocol_lane,
             "host": self.host,
             "port": self.port,
             "mount_path": self.mount_path,
