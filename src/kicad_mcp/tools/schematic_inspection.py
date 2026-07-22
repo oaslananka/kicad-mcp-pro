@@ -17,10 +17,20 @@ from .metadata import headless_compatible
 class ResolvedSchematicTarget(Protocol):
     """Minimal target contract required by inspection registration."""
 
-    path: Path
+    @property
+    def path(self) -> Path: ...
 
 
-type ResolveSchematicTarget = Callable[..., ResolvedSchematicTarget]
+class ResolveSchematicTarget(Protocol):
+    """Callable contract for resolving optional child-sheet targets."""
+
+    def __call__(
+        self,
+        sheet: str | None = None,
+        sheet_file: str | None = None,
+    ) -> ResolvedSchematicTarget: ...
+
+
 type ActiveSchematicFile = Callable[[], Path]
 
 
