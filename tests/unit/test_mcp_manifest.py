@@ -280,3 +280,13 @@ def test_validator_rejects_malformed_oci_identifier(identifier: str) -> None:
         "packages[2] OCI identifier must be registry/repository:tag "
         "or registry/repository@algorithm:digest."
     ) in errors
+
+
+def test_candidate_protocol_is_not_advertised_before_release_gates_pass() -> None:
+    module = _load_validator()
+    manifest = module.validate_manifest_file(ROOT / "server.json")
+    registry_meta = manifest["_meta"][REGISTRY_META_KEY]
+
+    assert registry_meta["supportedMcpProtocolVersions"] == ["2025-11-25"]
+    assert "2026-07-28" not in registry_meta["supportedMcpProtocolVersions"]
+    assert registry_meta["serverInfo"]["mcpProtocolVersion"] == "2025-11-25"
