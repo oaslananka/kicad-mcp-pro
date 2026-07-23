@@ -42,6 +42,7 @@ from ..models.schematic import (
 from ..models.tool_result import MutatingToolResult, TransactionVerification
 from ..models.visual_qa import run_visual_qa as _run_visual_qa
 from ..path_safety import resolve_under
+from ..schematic.back_annotation import SchematicBackAnnotationService
 from ..schematic.basic_authoring import SchematicBasicAuthoringService
 from ..schematic.destructive_edit import SchematicDestructiveEditService
 from ..schematic.inspection import SchematicInspectionService
@@ -60,6 +61,7 @@ from ..utils.sexpr import (
     _unescape_sexpr_string,
 )
 from . import (
+    schematic_back_annotation,
     schematic_basic_authoring,
     schematic_destructive_edit,
     schematic_inspection,
@@ -5544,6 +5546,24 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
+    back_annotation_service = SchematicBackAnnotationService(
+        project_file=lambda: get_config().project_file,
+        symbol_by_reference=_symbol_by_reference,
+        split_lib_id=_split_lib_id,
+        pin_alias_positions=get_pin_alias_positions,
+        symbol_library_file=_symbol_library_file,
+        collect_symbol_blocks=_collect_symbol_blocks,
+        available_units_from_blocks=_available_units_from_blocks,
+        load_state=_load_schematic_state,
+        save_state=_save_schematic_state,
+    )
+    schematic_back_annotation.register(
+        mcp,
+        schematic_back_annotation.SchematicBackAnnotationDependencies(
+            service=back_annotation_service,
+        ),
+    )
+
     @mcp.tool()
     def sch_add_pin_labels(
         connections: list[dict[str, Any]],
@@ -5725,119 +5745,6 @@ def register(mcp: FastMCP) -> None:
             f"{_reload_schematic()}\n{_format_target_detail(target)}\n"
             f"Added {len(wire_blocks)} pin terminal(s) with stubs:\n" + "\n".join(results)
         )
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_set_hop_over(enabled: bool = True) -> str:
-        """Toggle KiCad 10 hop-over display in the active project settings."""
-        cfg = get_config()
-        if cfg.project_file is None or not cfg.project_file.exists():
-            raise ValueError(
-                "No project file is configured. Call kicad_set_project() before changing "
-                "schematic display settings."
-            )
-        try:
-            project_payload = json.loads(cfg.project_file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"Project file '{cfg.project_file}' does not contain valid JSON."
-            ) from exc
-        if not isinstance(project_payload, dict):
-            raise ValueError("The active project file must contain a JSON object.")
-
-        schematic_settings = cast(
-            dict[str, object],
-            project_payload.setdefault("schematic", {}),
-        )
-        schematic_settings["hop_over_display"] = bool(enabled)
-        cfg.project_file.write_text(json.dumps(project_payload, indent=2), encoding="utf-8")
-        return (
-            f"Hop-over display set to {'enabled' if enabled else 'disabled'} in {cfg.project_file}."
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_list_swappable_pins(component_ref: str) -> str:
-        """List candidate pins and units that can participate in a swap workflow."""
-        symbol = _symbol_by_reference(component_ref)
-        library, symbol_name = _split_lib_id(str(symbol.get("lib_id", "")))
-        pins = sorted(
-            {
-                alias
-                for alias in get_pin_alias_positions(
-                    library,
-                    symbol_name,
-                    float(symbol.get("x", 0.0)),
-                    float(symbol.get("y", 0.0)),
-                    int(symbol.get("rotation", 0)),
-                    int(symbol.get("unit", 1)),
-                )
-                if alias and alias.isdigit()
-            },
-            key=int,
-        )
-
-        units = []
-        sym_file = _symbol_library_file(library)
-        if sym_file is not None:
-            content = sym_file.read_text(encoding="utf-8", errors="ignore")
-            symbol_blocks = _collect_symbol_blocks(content, symbol_name)
-            units = sorted(_available_units_from_blocks(symbol_blocks))
-
-        return json.dumps(
-            {
-                "reference": component_ref,
-                "pins": pins,
-                "gates": units,
-                "note": "Recorded swaps are stored as back-annotation intents in .kicad-mcp.",
-            },
-            indent=2,
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_swap_pins(component_ref: str, pin_a: str, pin_b: str) -> str:
-        """Record a pin-swap back-annotation intent for a component."""
-        swappable = json.loads(sch_list_swappable_pins(component_ref))
-        pins = cast(list[str], swappable.get("pins", []))
-        if pin_a not in pins or pin_b not in pins:
-            return (
-                f"Pins '{pin_a}' and/or '{pin_b}' are not swappable candidates "
-                f"for '{component_ref}'."
-            )
-
-        state = _load_schematic_state("pin_swaps.json", {"swaps": []})
-        swaps = cast(list[dict[str, str]], state.setdefault("swaps", []))
-        swaps.append(
-            {
-                "reference": component_ref,
-                "pin_a": pin_a,
-                "pin_b": pin_b,
-            }
-        )
-        path = _save_schematic_state("pin_swaps.json", state)
-        return f"Recorded pin swap {component_ref}:{pin_a}<->{pin_b} in {path}."
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_swap_gates(component_ref: str, gate_a: int, gate_b: int) -> str:
-        """Record a gate-swap back-annotation intent for a multi-unit component."""
-        swappable = json.loads(sch_list_swappable_pins(component_ref))
-        gates = cast(list[int], swappable.get("gates", []))
-        if gate_a not in gates or gate_b not in gates:
-            return f"Gates '{gate_a}' and/or '{gate_b}' are not available on '{component_ref}'."
-
-        state = _load_schematic_state("gate_swaps.json", {"swaps": []})
-        swaps = cast(list[dict[str, object]], state.setdefault("swaps", []))
-        swaps.append(
-            {
-                "reference": component_ref,
-                "gate_a": gate_a,
-                "gate_b": gate_b,
-            }
-        )
-        path = _save_schematic_state("gate_swaps.json", state)
-        return f"Recorded gate swap {component_ref}:{gate_a}<->{gate_b} in {path}."
 
     @mcp.tool()
     @headless_compatible
