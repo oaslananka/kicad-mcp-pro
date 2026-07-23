@@ -153,7 +153,7 @@ git commit -m "test(architecture): guard destructive edit boundaries"
 - Exact full-server metadata for all five extracted tools matches `main`: names, descriptions, input schemas, and annotations are identical.
 - `tests/integration/test_tool_surface_snapshot.py` passes without snapshot regeneration.
 - The main schematic `register()` span decreased from 3,093 to 2,807 lines; the destructive-edit adapter `register()` spans 69 lines.
-- Focused service, registration, and schematic integration coverage passed: 148 tests.
+- Focused service, registration, and schematic integration coverage passed: 150 tests; the extracted service and adapter have 100% focused line coverage.
 - The full unit suite passed with five expected skips and one pre-existing async-mock warning.
 - Deletion tests prove `allow_node_loss=True` remains limited to wire, symbol, and label deletion; label movement and justification keep the default structural-loss guard.
 - Metadata, formatting, Ruff, mypy, scoped strict Pyright, architecture, generated tool documentation, workflow policy/security, strict MkDocs, tool-surface snapshot, and the committed MCP latency benchmark all pass.

@@ -147,6 +147,21 @@ def test_delete_wire_preserves_missing_and_ambiguous_results() -> None:
     assert ambiguous_tx.calls == []
 
 
+def test_delete_wire_preserves_transaction_time_missing_result() -> None:
+    record = {"uuid": "abc123", "x1": 1.0, "y1": 2.0, "x2": 3.0, "y2": 4.0}
+    transaction = _TransactionRecorder("plain")
+    service, transaction = _service(
+        current="aa(wire-a)bb",
+        transaction=transaction,
+        wire_records=[record],
+        wire_blocks={"(wire-a)": record},
+    )
+
+    assert service.delete_wire("abc") == "Wire 'abc' could not be removed."
+    assert transaction.calls == [True]
+    assert transaction.updated is None
+
+
 def test_delete_symbol_removes_matching_symbols_and_attached_wires() -> None:
     current = "aa(symbol-r1)bb(wire-attached)cc(wire-other)dd"
     symbol = {"reference": "R1", "points": {(1.0, 2.0)}}
@@ -187,6 +202,24 @@ def test_delete_label_matches_raw_or_grid_snapped_coordinates() -> None:
     )
     assert transaction.calls == [True]
     assert transaction.updated == "aabb"
+
+
+def test_delete_label_skips_nonmatching_label_before_target() -> None:
+    current = "aa(label-other)bb(label-vcc)cc"
+    service, transaction = _service(
+        current=current,
+        label_blocks={
+            "(label-other)": {"name": "VCC", "x": 1.0, "y": 2.0},
+            "(label-vcc)": {"name": "VCC", "x": 50.8, "y": 50.8},
+        },
+        snap_result=(50.8, 50.8),
+    )
+
+    assert service.delete_label("VCC", 50.0, 50.0) == (
+        "Reloaded schematic.\nDeleted 1 label(s) 'VCC' at (50, 50)."
+    )
+    assert transaction.calls == [True]
+    assert transaction.updated == "aa(label-other)bbcc"
 
 
 def test_delete_label_preserves_missing_result() -> None:
