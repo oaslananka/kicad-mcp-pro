@@ -48,6 +48,7 @@ from ..schematic.hierarchy_authoring import (
     SchematicHierarchyAuthoringService,
 )
 from ..schematic.inspection import SchematicInspectionService
+from ..schematic.layout_inspection import SchematicLayoutInspectionService
 from ..schematic.symbol_mutation import SchematicSymbolMutationService
 from ..schematic.topology import SchematicTopologyService
 from ..utils.cache import clear_ttl_cache, ttl_cache
@@ -68,6 +69,7 @@ from . import (
     schematic_destructive_edit,
     schematic_hierarchy_authoring,
     schematic_inspection,
+    schematic_layout_inspection,
     schematic_symbol_mutation,
     schematic_topology,
 )
@@ -5467,6 +5469,22 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
+    layout_inspection_service = SchematicLayoutInspectionService(
+        active_schematic_file=_get_schematic_file,
+        parse_schematic=parse_schematic_file,
+        with_diagnostics=_with_schematic_diagnostics,
+        symbol_bbox_bounds=_symbol_bbox_bounds,
+        estimate_occupied_cells=_estimate_occupied_cells,
+        keepout_occupied_cells=_keepout_occupied_cells,
+        next_free_cell=_next_free_cell,
+    )
+    schematic_layout_inspection.register(
+        mcp,
+        schematic_layout_inspection.SchematicLayoutInspectionDependencies(
+            service=layout_inspection_service,
+        ),
+    )
+
     topology_service = SchematicTopologyService(
         load_schematic=_load_kicad_schematic,
         with_diagnostics=_with_schematic_diagnostics,
@@ -6469,124 +6487,6 @@ def register(mcp: FastMCP) -> None:
     # -----------------------------------------------------------------------
     # Spatial awareness tools (v2.1.0)
     # -----------------------------------------------------------------------
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_get_bounding_boxes() -> str:
-        """Return the estimated bounding box of every symbol in the active schematic.
-
-        Use this before calling sch_add_symbol or sch_build_circuit to understand
-        which areas of the schematic sheet are already occupied.  The bounding boxes
-        are heuristic estimates (KiCad does not expose exact extents via the file API)
-        but are conservative enough to avoid overlap in practice.
-
-        Returns:
-            A table of all symbols with their centre position and estimated
-            bounding-box corners (x_min, y_min, x_max, y_max) in mm, plus an
-            occupied-area summary.
-        """
-        sch_file = _get_schematic_file()
-        sch_data = parse_schematic_file(sch_file)
-        all_syms = sch_data["symbols"] + sch_data["power_symbols"]
-
-        if not all_syms:
-            return _with_schematic_diagnostics(
-                "The active schematic contains no symbols.",
-                sch_file,
-            )
-
-        lines = [
-            f"Schematic bounding boxes ({len(all_syms)} symbols):",
-            (
-                f"{'Ref':<10} {'Value':<16} {'X':>8} {'Y':>8} "
-                f"{'X_min':>8} {'Y_min':>8} {'X_max':>8} {'Y_max':>8}"
-            ),
-            "-" * 76,
-        ]
-        extents: list[tuple[float, float, float, float]] = []
-        for sym in all_syms:
-            ref = str(sym.get("reference", "?"))
-            val = str(sym.get("value", ""))[:16]
-            x = float(sym.get("x", sym.get("x_mm", 0.0)) or 0.0)
-            y = float(sym.get("y", sym.get("y_mm", 0.0)) or 0.0)
-            x_min, y_min, x_max, y_max = _symbol_bbox_bounds(sym)
-            extents.append((x_min, y_min, x_max, y_max))
-            lines.append(
-                f"{ref:<10} {val:<16} {x:>8.2f} {y:>8.2f} "
-                f"{x_min:>8.2f} {y_min:>8.2f} {x_max:>8.2f} {y_max:>8.2f}"
-            )
-
-        if extents:
-            lines += [
-                "",
-                f"Sheet occupied region: X=[{min(item[0] for item in extents):.1f}, "
-                f"{max(item[2] for item in extents):.1f}] "
-                f"Y=[{min(item[1] for item in extents):.1f}, "
-                f"{max(item[3] for item in extents):.1f}] mm",
-                "Tip: use sch_find_free_placement to get safe coordinates for new symbols.",
-            ]
-
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_find_free_placement(
-        count: int = 1,
-        cell_width_mm: float = AUTO_LAYOUT_COLUMN_SPACING_MM,
-        cell_height_mm: float = AUTO_LAYOUT_ROW_SPACING_MM,
-        keepout_regions: list[tuple[float, float, float, float]] | None = None,
-    ) -> str:
-        """Find N collision-free placement coordinates for new symbols.
-
-        Reads the current schematic, builds an occupancy grid from all existing
-        symbols, and returns ``count`` coordinate pairs that do not overlap with
-        any placed symbol.  Call this before sch_add_symbol to get safe (x, y)
-        values.
-
-        Args:
-            count: Number of free coordinate slots to return (default 1, max 64).
-            cell_width_mm: Grid cell width in mm (default 25.4 — one 10-mil grid unit).
-            cell_height_mm: Grid cell height in mm (default 17.78).
-            keepout_regions: Optional rectangular keepouts as
-                ``[(x_min, y_min, x_max, y_max), ...]`` in mm.
-
-        Returns:
-            A list of (x_mm, y_mm) coordinate pairs, one per requested slot.
-        """
-        count = max(1, min(count, 64))
-        sch_file = _get_schematic_file()
-        sch_data = parse_schematic_file(sch_file)
-        all_syms = sch_data["symbols"] + sch_data["power_symbols"]
-
-        occupied = _estimate_occupied_cells(all_syms, cell_w=cell_width_mm, cell_h=cell_height_mm)
-        keepouts = keepout_regions or []
-        if keepouts:
-            occupied.update(
-                _keepout_occupied_cells(
-                    keepouts,
-                    cell_w=cell_width_mm,
-                    cell_h=cell_height_mm,
-                )
-            )
-
-        coords: list[tuple[float, float]] = []
-        for _ in range(count):
-            x, y = _next_free_cell(
-                occupied,
-                cell_w=cell_width_mm,
-                cell_h=cell_height_mm,
-            )
-            coords.append((round(x, 4), round(y, 4)))
-
-        lines = [
-            f"Free placement coordinates ({count} slot(s) requested, "
-            f"{len(all_syms)} existing symbol(s) avoided, "
-            f"{len(keepouts)} keepout region(s) respected):",
-        ]
-        for i, (x, y) in enumerate(coords, start=1):
-            lines.append(f"  Slot {i}: x_mm={x}, y_mm={y}")
-        lines.append("\nPass these coordinates directly to sch_add_symbol(x_mm=..., y_mm=...).")
-        return "\n".join(lines)
 
     @mcp.tool()
     @headless_compatible

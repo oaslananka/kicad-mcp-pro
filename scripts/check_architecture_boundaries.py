@@ -40,6 +40,10 @@ DOMAIN_MODULES = {
     / "schematic"
     / "hierarchy_authoring.py",
     "kicad_mcp.schematic.inspection": SRC_ROOT / "kicad_mcp" / "schematic" / "inspection.py",
+    "kicad_mcp.schematic.layout_inspection": SRC_ROOT
+    / "kicad_mcp"
+    / "schematic"
+    / "layout_inspection.py",
     "kicad_mcp.schematic.symbol_mutation": SRC_ROOT
     / "kicad_mcp"
     / "schematic"
@@ -73,6 +77,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "schematic_inspection.py",
+    "kicad_mcp.tools.schematic_layout_inspection": SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "schematic_layout_inspection.py",
     "kicad_mcp.tools.schematic_constants": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -94,6 +102,7 @@ PURE_HELPERS = {
     "kicad_mcp.schematic.destructive_edit",
     "kicad_mcp.schematic.hierarchy_authoring",
     "kicad_mcp.schematic.inspection",
+    "kicad_mcp.schematic.layout_inspection",
     "kicad_mcp.schematic.symbol_mutation",
     "kicad_mcp.schematic.topology",
     "kicad_mcp.tools.schematic_constants",
@@ -116,6 +125,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.schematic_destructive_edit": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_hierarchy_authoring": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_inspection": ("kicad_mcp.tools.schematic",),
+    "kicad_mcp.tools.schematic_layout_inspection": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_symbol_mutation": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_topology": ("kicad_mcp.tools.schematic",),
 }
@@ -126,6 +136,7 @@ REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.schematic_destructive_edit": 300,
     "kicad_mcp.tools.schematic_hierarchy_authoring": 300,
     "kicad_mcp.tools.schematic_inspection": 300,
+    "kicad_mcp.tools.schematic_layout_inspection": 300,
     "kicad_mcp.tools.schematic_symbol_mutation": 300,
     "kicad_mcp.tools.schematic_topology": 300,
 }
