@@ -15,7 +15,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Literal, Protocol, TypedDict, cast
+from typing import Any, Literal, Protocol, TextIO, TypedDict, cast
 
 import structlog
 from mcp.server.fastmcp import FastMCP
@@ -50,6 +50,7 @@ from ..schematic.hierarchy_authoring import (
 from ..schematic.inspection import SchematicInspectionService
 from ..schematic.layout_inspection import SchematicLayoutInspectionService
 from ..schematic.symbol_mutation import SchematicSymbolMutationService
+from ..schematic.template_catalog import SchematicTemplateCatalogService
 from ..schematic.topology import SchematicTopologyService
 from ..utils.cache import clear_ttl_cache, ttl_cache
 from ..utils.field_placer import FieldSpec, autoplace_fields
@@ -72,6 +73,7 @@ from . import (
     schematic_inspection,
     schematic_layout_inspection,
     schematic_symbol_mutation,
+    schematic_template_catalog,
     schematic_topology,
 )
 from .metadata import headless_compatible
@@ -5452,6 +5454,13 @@ def _reload_schematic() -> str:
     return get_schematic_backend().reload_schematic()
 
 
+def _template_yaml_loader_factory() -> Callable[[TextIO], Any]:
+    """Return PyYAML's safe loader without importing it during server startup."""
+    import yaml
+
+    return yaml.safe_load
+
+
 def register(mcp: FastMCP) -> None:
     """Register schematic tools."""
     inspection_service = SchematicInspectionService(
@@ -5507,6 +5516,17 @@ def register(mcp: FastMCP) -> None:
         mcp,
         schematic_document_settings.SchematicDocumentSettingsDependencies(
             service=document_settings_service,
+        ),
+    )
+
+    template_catalog_service = SchematicTemplateCatalogService(
+        templates_dir=Path(__file__).parent.parent / "templates" / "subcircuits",
+        yaml_loader_factory=_template_yaml_loader_factory,
+    )
+    schematic_template_catalog.register(
+        mcp,
+        schematic_template_catalog.SchematicTemplateCatalogDependencies(
+            service=template_catalog_service,
         ),
     )
 
@@ -7075,145 +7095,6 @@ def register(mcp: FastMCP) -> None:
     # -----------------------------------------------------------------------
     # Subcircuit template tools (v2.1.0)
     # -----------------------------------------------------------------------
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_list_templates() -> str:
-        """List all available reference subcircuit templates.
-
-        Templates are pre-wired subcircuit blueprints for common building blocks
-        (buck converter, LDO, USB Type-C, MCU decoupling, Ethernet with magnetics).
-
-        Call sch_get_template_info() for full parameter and placement details,
-        then sch_instantiate_template() to add the subcircuit to the schematic.
-        """
-        from pathlib import Path as _Path
-
-        templates_dir = _Path(__file__).parent.parent / "templates" / "subcircuits"
-        if not templates_dir.exists():
-            return "No subcircuit templates are available."
-
-        try:
-            import yaml
-        except ImportError:
-            return "Template tools require PyYAML. Install it to inspect bundled templates."
-
-        lines = ["# Available Subcircuit Templates", ""]
-        for yaml_file in sorted(templates_dir.glob("*.yaml")):
-            try:
-                with yaml_file.open(encoding="utf-8") as fh:
-                    data = yaml.safe_load(fh)
-                name = data.get("name", yaml_file.stem)
-                desc = str(data.get("description", "")).strip().split("\n")[0][:80]
-                params = list(data.get("parameters", {}).keys())
-                lines.append(f"**{name}**")
-                lines.append(f"  {desc}")
-                if params:
-                    lines.append(f"  Parameters: {', '.join(params)}")
-                lines.append("")
-            except Exception:
-                lines.append(f"**{yaml_file.stem}** — (could not parse template)")
-                lines.append("")
-
-        if len(lines) == 2:
-            return "No subcircuit templates were found."
-
-        lines.append("Use sch_instantiate_template(template_name, prefix, params) to add.")
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_get_template_info(template_name: str) -> str:
-        """Return full details for a subcircuit template.
-
-        Args:
-            template_name: Template name as returned by sch_list_templates()
-                (e.g. ``"buck_converter_generic"``).
-
-        Returns:
-            Structured template description including parameters, symbols,
-            nets, and placement hints.
-        """
-        from pathlib import Path as _Path
-
-        templates_dir = _Path(__file__).parent.parent / "templates" / "subcircuits"
-        yaml_file = templates_dir / f"{template_name}.yaml"
-        if not yaml_file.exists():
-            available = [f.stem for f in templates_dir.glob("*.yaml")]
-            return (
-                f"Template '{template_name}' not found. Available: {', '.join(sorted(available))}"
-            )
-
-        try:
-            import yaml
-
-            with yaml_file.open(encoding="utf-8") as fh:
-                data = yaml.safe_load(fh)
-        except ImportError:
-            return "Template tools require PyYAML. Install it to inspect bundled templates."
-        except Exception as exc:
-            return f"Could not parse template '{template_name}': {exc}"
-
-        lines = [
-            f"# Template: {data.get('name', template_name)}",
-            f"Version: {data.get('version', '1.0')}",
-            "",
-            data.get("description", "").strip(),
-            "",
-        ]
-
-        params = data.get("parameters", {})
-        if params:
-            lines += ["## Parameters", ""]
-            for pname, pdef in params.items():
-                lines.append(
-                    f"- **{pname}** ({pdef.get('type', 'any')}): "
-                    f"{pdef.get('description', '')} "
-                    f"[default: {pdef.get('default', '—')}]"
-                )
-            lines.append("")
-
-        symbols = data.get("symbols", [])
-        if symbols:
-            lines += [f"## Symbols ({len(symbols)})", ""]
-            for sym in symbols:
-                lines.append(
-                    f"- **{sym.get('ref_prefix', '?')}?** "
-                    f"{sym.get('value', '?')} — {sym.get('comment', '')}"
-                )
-                left_pins = ", ".join(str(pin) for pin in sym.get("pins_left", []))
-                right_pins = ", ".join(str(pin) for pin in sym.get("pins_right", []))
-                pin_parts: list[str] = []
-                if left_pins:
-                    pin_parts.append(f"left: {left_pins}")
-                if right_pins:
-                    pin_parts.append(f"right: {right_pins}")
-                if pin_parts:
-                    lines.append(f"  Pins: {' | '.join(pin_parts)}")
-            lines.append("")
-
-        nets = data.get("nets", [])
-        if nets:
-            lines += ["## Nets", ""]
-            for net in nets:
-                note = f" — {net['note']}" if net.get("note") else ""
-                lines.append(f"- `{net['name']}` ({net.get('type', 'signal')}){note}")
-            lines.append("")
-
-        hints = data.get("placement_hints", [])
-        if hints:
-            lines += ["## Placement Hints", ""]
-            for hint in hints:
-                lines.append(f"- {hint}")
-            lines.append("")
-
-        search = data.get("part_search_hints", {})
-        if search:
-            lines += ["## Part Search Hints (use with lib_recommend_part())", ""]
-            for role, query in search.items():
-                lines.append(f"- {role}: `{query}`")
-
-        return "\n".join(lines)
 
     @mcp.tool()
     @headless_compatible
