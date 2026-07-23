@@ -171,6 +171,31 @@ def test_add_symbol_preserves_target_write_warnings_and_result_order() -> None:
     ]
 
 
+def test_add_symbol_inserts_library_definition_into_nonempty_section() -> None:
+    transaction = _TransactionRecorder(
+        current='\t(lib_symbols\n\t\t(symbol "Device:C")\n\t)\n(sheet_instances)'
+    )
+    service, transaction, _reload, _calls = _service(transaction=transaction)
+
+    service.add_symbol(
+        "Device",
+        "R",
+        1.0,
+        2.0,
+        "R1",
+        "10k",
+        "",
+        0,
+        False,
+        1,
+        None,
+        None,
+    )
+
+    assert '\t(lib_symbols\n\t(symbol "Device:R")' in str(transaction.updated)
+    assert '\t\t(symbol "Device:C")' in str(transaction.updated)
+
+
 def test_add_symbol_preserves_missing_symbol_suggestions_without_write() -> None:
     service, transaction, reload, _calls = _service(
         lib_definition=None,
