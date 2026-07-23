@@ -84,9 +84,6 @@ def _service(
             is_root=not bool(sheet or sheet_file),
             description=sheet or sheet_file or "root",
         ),
-        format_target_detail=lambda target: (
-            f"Target schematic ({'root' if target.is_root else 'child'}): {target.path}"
-        ),
         parse_schematic=lambda _path: (
             parsed
             or {

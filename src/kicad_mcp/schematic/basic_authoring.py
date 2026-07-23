@@ -28,12 +28,6 @@ class ResolveTarget(Protocol):
     ) -> SchematicTarget: ...
 
 
-class TransactionalWrite(Protocol):
-    """Write one deterministic schematic mutation to an explicit target."""
-
-    def __call__(self, mutator: Callable[[str], str], path: Path) -> str: ...
-
-
 class PlaceSymbolBlock(Protocol):
     """Create a placed-symbol S-expression block."""
 
@@ -67,7 +61,6 @@ class LabelBlock(Protocol):
     ) -> str: ...
 
 
-type FormatTargetDetail = Callable[[SchematicTarget], str]
 type ParseSchematic = Callable[[Path], Mapping[str, Any]]
 type ProjectName = Callable[[], str]
 type LoadLibSymbol = Callable[[str, str], str | None]
@@ -80,10 +73,11 @@ type SnapLine = Callable[
     tuple[float, float, float, float],
 ]
 type SnapNotice = Callable[[tuple[float, ...], tuple[float, ...]], str]
-type PointNearExisting = Callable[[float, float, list[dict[str, Any]]], str]
+type PointNearExisting = Callable[[float, float, list[dict[str, Any]]], str | None]
 type ValidateFootprint = Callable[[str], str | None]
 type WireBlock = Callable[[float, float, float, float], str]
 type AppendBeforeSheetInstances = Callable[[str, str], str]
+type TransactionalWrite = Callable[[Callable[[str], str], Path], str]
 type ReloadSchematic = Callable[[], str]
 type NewUuid = Callable[[], str]
 type FormatMm = Callable[[float], str]
@@ -94,7 +88,6 @@ class SchematicBasicAuthoringService:
     """Compose basic authoring operations from injected deterministic helpers."""
 
     resolve_target: ResolveTarget
-    format_target_detail: FormatTargetDetail
     parse_schematic: ParseSchematic
     project_name: ProjectName
     load_lib_symbol: LoadLibSymbol
@@ -114,6 +107,11 @@ class SchematicBasicAuthoringService:
     reload_schematic: ReloadSchematic
     new_uuid: NewUuid
     format_mm: FormatMm
+
+    @staticmethod
+    def _format_target_detail(target: SchematicTarget) -> str:
+        kind = "root" if target.is_root else "child"
+        return f"Target schematic ({kind}): {target.path}"
 
     def add_symbol(
         self,
@@ -192,7 +190,7 @@ class SchematicBasicAuthoringService:
             part
             for part in (
                 result,
-                self.format_target_detail(target),
+                self._format_target_detail(target),
                 snap_note,
                 overlap_warning,
                 footprint_warning,
@@ -232,7 +230,7 @@ class SchematicBasicAuthoringService:
         )
         result = self.reload_schematic()
         return "\n".join(
-            part for part in (result, self.format_target_detail(target), snap_note) if part
+            part for part in (result, self._format_target_detail(target), snap_note) if part
         )
 
     def add_label(
@@ -265,7 +263,7 @@ class SchematicBasicAuthoringService:
         )
         result = self.reload_schematic()
         return "\n".join(
-            part for part in (result, self.format_target_detail(target), snap_note) if part
+            part for part in (result, self._format_target_detail(target), snap_note) if part
         )
 
     def add_power_symbol(
