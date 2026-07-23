@@ -27,10 +27,7 @@ from ..discovery import is_numbered_duplicate_kicad_file
 from ..errors import SchematicWriteUnsafeError
 from ..mcp_media import image_tool_result, text_tool_result
 from ..models.schematic import (
-    AddBusInput,
-    AddBusWireEntryInput,
     AddLabelInput,
-    AddNoConnectInput,
     AddSymbolInput,
     AddWireInput,
     AnnotateInput,
@@ -5531,6 +5528,8 @@ def register(mcp: FastMCP) -> None:
         validate_footprint=_validate_footprint,
         place_symbol_block=place_symbol_block,
         wire_block=wire_block,
+        bus_entry_block=bus_entry_block,
+        no_connect_block=no_connect_block,
         label_block=label_block,
         append_before_sheet_instances=_append_before_sheet_instances,
         transactional_write=transactional_write,
@@ -5726,101 +5725,6 @@ def register(mcp: FastMCP) -> None:
             f"{_reload_schematic()}\n{_format_target_detail(target)}\n"
             f"Added {len(wire_blocks)} pin terminal(s) with stubs:\n" + "\n".join(results)
         )
-
-    @mcp.tool()
-    def sch_add_bus(
-        x1_mm: float,
-        y1_mm: float,
-        x2_mm: float,
-        y2_mm: float,
-        snap_to_grid: bool = True,
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-    ) -> str:
-        """Add a schematic bus, snapping endpoints to the 1.27 mm / 50 mil grid by default."""
-        payload = AddBusInput(
-            x1_mm=x1_mm,
-            y1_mm=y1_mm,
-            x2_mm=x2_mm,
-            y2_mm=y2_mm,
-            snap_to_grid=snap_to_grid,
-        )
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        bus_coords = _snap_line(
-            payload.x1_mm,
-            payload.y1_mm,
-            payload.x2_mm,
-            payload.y2_mm,
-            payload.snap_to_grid,
-        )
-        snap_note = _snap_notice(
-            (payload.x1_mm, payload.y1_mm, payload.x2_mm, payload.y2_mm),
-            bus_coords,
-        )
-        transactional_write(
-            lambda current: _append_before_sheet_instances(
-                current,
-                wire_block(*bus_coords, "bus"),
-            ),
-            target.path,
-        )
-        result = _reload_schematic()
-        return "\n".join(p for p in [result, _format_target_detail(target), snap_note] if p)
-
-    @mcp.tool()
-    def sch_add_bus_wire_entry(
-        x_mm: float,
-        y_mm: float,
-        direction: str = "up_right",
-        snap_to_grid: bool = True,
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-    ) -> str:
-        """Add a bus wire entry marker.
-
-        Snaps its anchor to the 1.27 mm / 50 mil grid by default.
-        """
-        payload = AddBusWireEntryInput(
-            x_mm=x_mm,
-            y_mm=y_mm,
-            direction=direction,
-            snap_to_grid=snap_to_grid,
-        )
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        entry_x, entry_y = _snap_point(payload.x_mm, payload.y_mm, payload.snap_to_grid)
-        snap_note = _snap_notice((payload.x_mm, payload.y_mm), (entry_x, entry_y))
-        transactional_write(
-            lambda current: _append_before_sheet_instances(
-                current,
-                bus_entry_block(entry_x, entry_y, payload.direction),
-            ),
-            target.path,
-        )
-        result = _reload_schematic()
-        return "\n".join(p for p in [result, _format_target_detail(target), snap_note] if p)
-
-    @mcp.tool()
-    def sch_add_no_connect(
-        x_mm: float,
-        y_mm: float,
-        snap_to_grid: bool = True,
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-    ) -> str:
-        """Add a no-connect marker, snapping it to the 1.27 mm / 50 mil grid by default."""
-        payload = AddNoConnectInput(x_mm=x_mm, y_mm=y_mm, snap_to_grid=snap_to_grid)
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        marker_x, marker_y = _snap_point(payload.x_mm, payload.y_mm, payload.snap_to_grid)
-        snap_note = _snap_notice((payload.x_mm, payload.y_mm), (marker_x, marker_y))
-        transactional_write(
-            lambda current: _append_before_sheet_instances(
-                current,
-                no_connect_block(marker_x, marker_y),
-            ),
-            target.path,
-        )
-        result = _reload_schematic()
-        return "\n".join(p for p in [result, _format_target_detail(target), snap_note] if p)
 
     @mcp.tool()
     @headless_compatible
