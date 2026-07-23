@@ -30,11 +30,11 @@
 - Produces methods: `delete_wire`, `delete_symbol`, `delete_label`, `move_label`, and `modify_label`.
 - Consumes injected path, parser, formatting, grid, transaction, and reload callables.
 
-- [ ] **Step 1: Write failing direct service tests**
+- [x] **Step 1: Write failing direct service tests**
 
 Cover successful and missing/ambiguous wire deletion, symbol deletion with attached-wire counts, label deletion grid matching, label move snap/rotation behavior, label justification changes, and exact `allow_node_loss` flags.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 ```bash
 uv run --all-extras pytest -q tests/unit/test_schematic_destructive_edit_service.py
@@ -42,15 +42,15 @@ uv run --all-extras pytest -q tests/unit/test_schematic_destructive_edit_service
 
 Expected: collection failure because `kicad_mcp.schematic.destructive_edit` does not exist.
 
-- [ ] **Step 3: Implement the injected service**
+- [x] **Step 3: Implement the injected service**
 
 Move only observable orchestration and deterministic text-edit behavior. Preserve the current 0.05 mm label tolerance and first-match semantics.
 
-- [ ] **Step 4: Run and verify GREEN**
+- [x] **Step 4: Run and verify GREEN**
 
 Run the command from Step 2. Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/kicad_mcp/schematic/destructive_edit.py \
@@ -70,11 +70,11 @@ git commit -m "refactor(schematic): extract destructive edit service"
 - Produces: `SchematicDestructiveEditDependencies(service)`.
 - Produces: `register(mcp, dependencies) -> None`.
 
-- [ ] **Step 1: Write failing registration tests**
+- [x] **Step 1: Write failing registration tests**
 
 Assert exact public names, descriptions, schemas, annotations, validation, and argument delegation.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 ```bash
 uv run --all-extras pytest -q tests/unit/test_schematic_destructive_edit_registration.py
@@ -82,11 +82,11 @@ uv run --all-extras pytest -q tests/unit/test_schematic_destructive_edit_registr
 
 Expected: collection failure because the adapter does not exist.
 
-- [ ] **Step 3: Implement and wire the adapter**
+- [x] **Step 3: Implement and wire the adapter**
 
 Construct the service in the composition root, register the adapter once, and remove the five nested legacy functions.
 
-- [ ] **Step 4: Run focused behavior tests**
+- [x] **Step 4: Run focused behavior tests**
 
 ```bash
 uv run --all-extras pytest -q \
@@ -98,7 +98,7 @@ uv run --all-extras pytest -q \
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/kicad_mcp/tools/schematic.py \
@@ -113,15 +113,15 @@ git commit -m "refactor(schematic): delegate destructive edit registration"
 - Modify: `scripts/check_architecture_boundaries.py`
 - Create: `tests/unit/test_schematic_destructive_edit_architecture.py`
 
-- [ ] **Step 1: Write failing architecture tests**
+- [x] **Step 1: Write failing architecture tests**
 
 Assert service/adapter tracking, domain purity, adapter isolation, and the 300-line limit.
 
-- [ ] **Step 2: Extend the architecture checker**
+- [x] **Step 2: Extend the architecture checker**
 
 Register both modules, keep only the service in `PURE_HELPERS`, add the adapter import guard, and enforce the line limit.
 
-- [ ] **Step 3: Verify public-surface stability**
+- [x] **Step 3: Verify public-surface stability**
 
 ```bash
 uv run --all-extras python scripts/check_architecture_boundaries.py
@@ -131,7 +131,7 @@ corepack pnpm run docs:tools:check
 
 Expected: all pass without snapshot regeneration.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add scripts/check_architecture_boundaries.py \
@@ -141,8 +141,20 @@ git commit -m "test(architecture): guard destructive edit boundaries"
 
 ### Task 4: Verify, publish, and review
 
-- [ ] Run metadata, format, lint, mypy, scoped strict Pyright, full unit, workflow security, strict docs, snapshot, and representative performance gates.
-- [ ] Record exact public-surface, transaction-flag, and registration line-count evidence.
+- [x] Run metadata, format, lint, mypy, scoped strict Pyright, full unit, workflow security, strict docs, snapshot, and representative performance gates.
+- [x] Record exact public-surface, transaction-flag, and registration line-count evidence.
 - [ ] Push and open a professional English PR referencing #434.
 - [ ] Inspect every bot/agent comment, review, and review thread; resolve actionable findings.
 - [ ] Merge only after all required checks pass.
+
+
+## Verification Evidence
+
+- Exact full-server metadata for all five extracted tools matches `main`: names, descriptions, input schemas, and annotations are identical.
+- `tests/integration/test_tool_surface_snapshot.py` passes without snapshot regeneration.
+- The main schematic `register()` span decreased from 3,093 to 2,807 lines; the destructive-edit adapter `register()` spans 69 lines.
+- Focused service, registration, and schematic integration coverage passed: 148 tests.
+- The full unit suite passed with five expected skips and one pre-existing async-mock warning.
+- Deletion tests prove `allow_node_loss=True` remains limited to wire, symbol, and label deletion; label movement and justification keep the default structural-loss guard.
+- Metadata, formatting, Ruff, mypy, scoped strict Pyright, architecture, generated tool documentation, workflow policy/security, strict MkDocs, tool-surface snapshot, and the committed MCP latency benchmark all pass.
+- No runtime dependency, public tool contract, matching tolerance, reload order, transaction boundary, or backend-selection behavior changed.
