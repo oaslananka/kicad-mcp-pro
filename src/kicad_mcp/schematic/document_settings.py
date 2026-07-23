@@ -13,7 +13,7 @@ from ..models.tool_result import MutatingToolResult, TransactionVerification
 
 
 class TransactionalWrite(Protocol):
-    def __call__(self, mutator: Callable[[str], str], path: Path, /) -> None: ...
+    def __call__(self, mutator: Callable[[str], str], path: Path, /) -> object: ...
 
 
 class _SheetAlreadySetError(Exception):

@@ -36,12 +36,12 @@ from ..models.schematic import (
     RouteWireBetweenPinsInput,
     UpdatePropertiesInput,
 )
-from ..models.tool_result import MutatingToolResult, TransactionVerification
 from ..models.visual_qa import run_visual_qa as _run_visual_qa
 from ..path_safety import resolve_under
 from ..schematic.back_annotation import SchematicBackAnnotationService
 from ..schematic.basic_authoring import SchematicBasicAuthoringService
 from ..schematic.destructive_edit import SchematicDestructiveEditService
+from ..schematic.document_settings import SchematicDocumentSettingsService
 from ..schematic.hierarchy_authoring import (
     ChildSchematic,
     RootSchematic,
@@ -67,6 +67,7 @@ from . import (
     schematic_back_annotation,
     schematic_basic_authoring,
     schematic_destructive_edit,
+    schematic_document_settings,
     schematic_hierarchy_authoring,
     schematic_inspection,
     schematic_layout_inspection,
@@ -5485,6 +5486,30 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
+    document_settings_service = SchematicDocumentSettingsService(
+        active_schematic_file=_get_schematic_file,
+        resolve_target=_resolve_schematic_target,
+        parse_schematic=parse_schematic_file,
+        apply_title_block_updates=_apply_title_block_updates,
+        transactional_write=transactional_write,
+        reload_schematic=_reload_schematic,
+        format_target_detail=_format_target_detail,
+        read_sheet_paper=_read_sheet_paper,
+        sheet_usable_cols=_sheet_usable_cols,
+        sheet_usable_rows=_sheet_usable_rows,
+        paper_sizes_mm=PAPER_SIZES_MM,
+        layout_origin_x_mm=AUTO_LAYOUT_ORIGIN_X_MM,
+        sheet_margin_mm=_SHEET_MARGIN_MM,
+        symbol_half_width_mm=_SYMBOL_HALF_W_MM,
+        symbol_half_height_mm=_SYMBOL_HALF_H_MM,
+    )
+    schematic_document_settings.register(
+        mcp,
+        schematic_document_settings.SchematicDocumentSettingsDependencies(
+            service=document_settings_service,
+        ),
+    )
+
     topology_service = SchematicTopologyService(
         load_schematic=_load_kicad_schematic,
         with_diagnostics=_with_schematic_diagnostics,
@@ -6837,216 +6862,6 @@ def register(mcp: FastMCP) -> None:
             **diff_metadata,
         }
         return image_tool_result(diff_file, metadata2)
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_set_title_block_info(
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-        title: str | None = None,
-        rev: str | None = None,
-        date: str | None = None,
-        company: str | None = None,
-        comment1: str | None = None,
-        comment2: str | None = None,
-        comment3: str | None = None,
-        comment4: str | None = None,
-        dry_run: bool = False,
-    ) -> str:
-        """Set schematic title block fields on the root sheet or a child sheet.
-
-        Unspecified fields are preserved. Use ``sheet`` for a named child sheet
-        or ``sheet_file`` for a specific ``.kicad_sch`` file; omit both to target
-        the active root schematic.
-        """
-        updates = {
-            key: value
-            for key, value in {
-                "title": title,
-                "rev": rev,
-                "date": date,
-                "company": company,
-                "comment1": comment1,
-                "comment2": comment2,
-                "comment3": comment3,
-                "comment4": comment4,
-            }.items()
-            if value is not None
-        }
-        if not updates:
-            return "No schematic title block fields specified. Provide at least one field."
-
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        before_text = target.path.read_text(encoding="utf-8")
-        planned_text = _apply_title_block_updates(before_text, updates)
-        if dry_run:
-            changed = ", ".join(updates)
-            transaction = MutatingToolResult(
-                changed_files=[str(target.path)],
-                changed_objects=[f"title_block.{field}" for field in updates],
-                before_hash=hashlib.sha256(before_text.encode("utf-8")).hexdigest(),
-                after_hash=hashlib.sha256(planned_text.encode("utf-8")).hexdigest(),
-                verification=TransactionVerification(roundtrip="planned_not_written"),
-                dry_run=True,
-            )
-            return transaction.to_compat_text(
-                f"Dry run: schematic title block fields would be updated: {changed}."
-            )
-        transactional_write(
-            lambda current: _apply_title_block_updates(current, updates),
-            target.path,
-        )
-        after_text = target.path.read_text(encoding="utf-8")
-        result = _reload_schematic()
-        changed = ", ".join(updates)
-        summary = (
-            f"{result}\n{_format_target_detail(target)}\n"
-            f"Updated schematic title block fields: {changed}."
-        )
-        transaction = MutatingToolResult(
-            changed_files=[str(target.path)],
-            changed_objects=[f"title_block.{field}" for field in updates],
-            before_hash=hashlib.sha256(before_text.encode("utf-8")).hexdigest(),
-            after_hash=hashlib.sha256(after_text.encode("utf-8")).hexdigest(),
-            verification=TransactionVerification(roundtrip="validated"),
-        )
-        return transaction.to_compat_text(summary)
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_set_sheet_size(
-        paper: str = "A3",
-    ) -> str:
-        """Change the schematic sheet (paper) size.
-
-        Use this when the current sheet is too small to fit all symbols — for
-        example after ``sch_auto_place_functional`` warns that symbols were
-        placed outside the sheet boundary, or when you receive a screenshot
-        showing components outside the red sheet border.
-
-        Supported sizes (landscape): A4, A3, A2, A1, A0, A (letter), B, C, D, E,
-        USLetter, USLegal.
-
-        After resizing you should call ``sch_auto_place_functional`` again so
-        that symbols are re-distributed across the larger sheet.
-
-        Args:
-            paper: Target paper size keyword (default "A3").
-
-        Returns:
-            Confirmation with old and new dimensions.
-        """
-        paper = paper.strip()
-        if paper not in PAPER_SIZES_MM:
-            available = ", ".join(sorted(PAPER_SIZES_MM))
-            return f"Unknown paper size '{paper}'. Available sizes: {available}."
-
-        sch_file = _get_schematic_file()
-        new_w, new_h = PAPER_SIZES_MM[paper]
-        old_paper = "A4"
-
-        class _SheetAlreadySetError(Exception):
-            pass
-
-        def resize_sheet(current: str) -> str:
-            nonlocal old_paper
-            match = re.search(r'\(paper\s+"([^"]+)"(?:\s+[\d.]+\s+[\d.]+)?\)', current)
-            old_paper = match.group(1) if match else "A4"
-
-            if match is not None:
-                new_text = re.sub(
-                    r'\(paper\s+"[^"]+"(?:\s+[\d.]+\s+[\d.]+)?\)',
-                    f'(paper "{paper}")',
-                    current,
-                    count=1,
-                )
-            else:
-                # Insert after the kicad_sch opening tag.
-                new_text = re.sub(
-                    r"(\(kicad_sch[^\n]*\n)",
-                    rf'\1  (paper "{paper}")\n',
-                    current,
-                    count=1,
-                )
-
-            if new_text == current:
-                raise _SheetAlreadySetError
-            return new_text
-
-        try:
-            transactional_write(resize_sheet, sch_file)
-        except _SheetAlreadySetError:
-            return f"Sheet is already '{paper}' ({new_w:.0f} x {new_h:.0f} mm). No change made."
-        except Exception as exc:
-            return f"Could not write schematic file: {exc}"
-
-        result = _reload_schematic()
-        old_w, old_h = PAPER_SIZES_MM.get(old_paper, (0.0, 0.0))
-        usable_cols = _sheet_usable_cols(paper)
-        usable_rows = _sheet_usable_rows(paper)
-        return (
-            f"{result}\n"
-            f"Sheet resized: {old_paper} ({old_w:.0f}x{old_h:.0f} mm) "
-            f"-> {paper} ({new_w:.0f}x{new_h:.0f} mm).\n"
-            f"Usable grid: {usable_cols} columns x {usable_rows} rows "
-            f"(origin {AUTO_LAYOUT_ORIGIN_X_MM} mm, margin {_SHEET_MARGIN_MM} mm).\n"
-            f"Tip: run sch_auto_place_functional to redistribute symbols on the new sheet."
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_auto_resize_sheet() -> str:
-        """Automatically grow the sheet to fit all currently placed symbols.
-
-        Reads the bounding box of all placed symbols and selects the smallest
-        standard paper size (A4 → A3 → A2 → A1) that contains them with the
-        configured margin.  If the current sheet already fits, reports that no
-        change is needed.
-
-        Returns:
-            The chosen paper size and new dimensions, or a message if the
-            current size is already sufficient.
-        """
-        sch_file = _get_schematic_file()
-        sch_data = parse_schematic_file(sch_file)
-        all_syms = sch_data["symbols"] + sch_data["power_symbols"]
-
-        if not all_syms:
-            return "No symbols found — sheet size unchanged."
-
-        xs = [float(s.get("x", s.get("x_mm", 0.0)) or 0.0) for s in all_syms]
-        ys = [float(s.get("y", s.get("y_mm", 0.0)) or 0.0) for s in all_syms]
-
-        required_w = max(xs) + _SYMBOL_HALF_W_MM + _SHEET_MARGIN_MM
-        required_h = max(ys) + _SYMBOL_HALF_H_MM + _SHEET_MARGIN_MM
-
-        # Pick smallest standard size (in landscape) that fits
-        candidates = ["A4", "A3", "A2", "A1", "A0", "B", "C", "D", "E"]
-        chosen = None
-        for size in candidates:
-            w, h = PAPER_SIZES_MM[size]
-            if w >= required_w and h >= required_h:
-                chosen = size
-                break
-
-        current_paper = _read_sheet_paper(sch_file)
-        cur_w, cur_h = PAPER_SIZES_MM.get(current_paper, PAPER_SIZES_MM["A4"])
-
-        if chosen is None:
-            return (
-                f"Symbols span {required_w:.0f} x {required_h:.0f} mm — "
-                "no standard size is large enough.  Consider splitting into "
-                "hierarchical sheets (sch_create_sheet)."
-            )
-
-        if chosen == current_paper:
-            return (
-                f"Current sheet '{current_paper}' ({cur_w:.0f}x{cur_h:.0f} mm) "
-                f"already fits all symbols (required {required_w:.0f}x{required_h:.0f} mm)."
-            )
-
-        # Delegate to sch_set_sheet_size logic
-        return str(sch_set_sheet_size(paper=chosen))
 
     @mcp.tool()
     @headless_compatible
