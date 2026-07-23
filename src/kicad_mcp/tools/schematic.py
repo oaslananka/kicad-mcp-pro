@@ -41,7 +41,6 @@ from ..models.schematic import (
     GlobalLabelInput,
     HierarchicalLabelInput,
     ModifyLabelInput,
-    MoveSymbolInput,
     PowerSymbolInput,
     RouteWireBetweenPinsInput,
     UpdatePropertiesInput,
@@ -50,6 +49,7 @@ from ..models.tool_result import MutatingToolResult, TransactionVerification
 from ..models.visual_qa import run_visual_qa as _run_visual_qa
 from ..path_safety import resolve_under
 from ..schematic.inspection import SchematicInspectionService
+from ..schematic.symbol_mutation import SchematicSymbolMutationService
 from ..schematic.topology import SchematicTopologyService
 from ..utils.cache import clear_ttl_cache, ttl_cache
 from ..utils.field_placer import FieldSpec, autoplace_fields
@@ -63,7 +63,7 @@ from ..utils.sexpr import (
     _sexpr_string,
     _unescape_sexpr_string,
 )
-from . import schematic_inspection, schematic_topology
+from . import schematic_inspection, schematic_symbol_mutation, schematic_topology
 from .metadata import headless_compatible
 from .schematic_constants import (
     _SCHEMATIC_STATE_DIRNAME,
@@ -5466,6 +5466,23 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
+    symbol_mutation_service = SchematicSymbolMutationService(
+        update_symbol_property=update_symbol_property,
+        set_symbol_dnp=set_symbol_dnp,
+        reload_schematic=_reload_schematic,
+        snap_point=_snap_point,
+        snap_notice=_snap_notice,
+        transactional_write=transactional_write,
+        find_placed_symbol_block=_find_placed_symbol_block,
+        shift_symbol_block=_shift_symbol_block,
+    )
+    schematic_symbol_mutation.register(
+        mcp,
+        schematic_symbol_mutation.SchematicSymbolMutationDependencies(
+            service=symbol_mutation_service,
+        ),
+    )
+
     @mcp.tool()
     @headless_compatible
     def sch_add_symbol(
@@ -6133,75 +6150,6 @@ def register(mcp: FastMCP) -> None:
         result = _reload_schematic()
         detail = f"Added jumper '{reference}' ({value}) at ({target_x:.2f}, {target_y:.2f}) mm."
         return f"{detail}\n{result}\n{snap_note}" if snap_note else f"{detail}\n{result}"
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_update_properties(reference: str, field: str, value: str) -> str:
-        """Update a property on a placed symbol."""
-        result = update_symbol_property(reference, field, value)
-        return f"{result}\n{_reload_schematic()}"
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_set_dnp(reference: str, enabled: bool = True, reason: str | None = None) -> str:
-        """Set KiCad's native Do Not Populate flag on a placed symbol.
-
-        When ``reason`` is given it is stored in the ``DNP Reason`` property so
-        ``sch_get_population_status`` and variant BOMs can report why the part
-        is unpopulated.
-        """
-        result = set_symbol_dnp(reference, enabled, reason)
-        return f"{result}\n{_reload_schematic()}"
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_modify_property(reference: str, field: str, value: str) -> str:
-        """Modify a schematic symbol property by reference."""
-        return str(sch_update_properties(reference, field, value))
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_move_symbol(
-        reference: str,
-        x_mm: float,
-        y_mm: float,
-        snap_to_grid: bool = True,
-    ) -> str:
-        """Move an existing symbol instance to a new absolute coordinate."""
-        payload = MoveSymbolInput(
-            reference=reference,
-            x_mm=x_mm,
-            y_mm=y_mm,
-            snap_to_grid=snap_to_grid,
-        )
-        target_x, target_y = _snap_point(payload.x_mm, payload.y_mm, payload.snap_to_grid)
-        snap_note = _snap_notice((payload.x_mm, payload.y_mm), (target_x, target_y))
-
-        def mutator(current: str) -> str:
-            match = _find_placed_symbol_block(current, payload.reference)
-            if match is None:
-                raise ValueError(f"Reference '{payload.reference}' was not found in the schematic.")
-            block, start, end, parsed = match
-            shifted = _shift_symbol_block(
-                block,
-                dx_mm=target_x - float(parsed["x"]),
-                dy_mm=target_y - float(parsed["y"]),
-            )
-            return current[:start] + shifted + current[end:]
-
-        try:
-            transactional_write(mutator)
-        except ValueError as exc:
-            return str(exc)
-
-        result = _reload_schematic()
-        lines = [
-            result,
-            f"Moved symbol '{payload.reference}' to ({target_x:.2f}, {target_y:.2f}) mm.",
-        ]
-        if snap_note:
-            lines.append(snap_note)
-        return "\n".join(lines)
 
     @mcp.tool()
     def sch_delete_wire(wire_id: str) -> str:
