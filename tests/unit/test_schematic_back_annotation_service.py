@@ -147,9 +147,8 @@ def test_swap_pins_appends_intent_and_preserves_same_pin_behavior() -> None:
         state=state,
     )
 
-    assert service.swap_pins("R1", "1", "1") == (
-        "Recorded pin swap R1:1<->1 in .kicad-mcp/pin_swaps.json."
-    )
+    saved_path = Path(".kicad-mcp") / "pin_swaps.json"
+    assert service.swap_pins("R1", "1", "1") == (f"Recorded pin swap R1:1<->1 in {saved_path}.")
     assert state.saved == [
         (
             "pin_swaps.json",
@@ -179,9 +178,8 @@ def test_swap_gates_appends_intent(tmp_path: Path) -> None:
     state.loaded["gate_swaps.json"] = {"swaps": []}
     service, state = _service(symbol_library_file=library, units={1, 2}, state=state)
 
-    assert service.swap_gates("U1", 1, 2) == (
-        "Recorded gate swap U1:1<->2 in .kicad-mcp/gate_swaps.json."
-    )
+    saved_path = Path(".kicad-mcp") / "gate_swaps.json"
+    assert service.swap_gates("U1", 1, 2) == (f"Recorded gate swap U1:1<->2 in {saved_path}.")
     assert state.saved == [
         (
             "gate_swaps.json",
