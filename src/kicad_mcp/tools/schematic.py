@@ -45,6 +45,7 @@ from ..models.schematic import (
 from ..models.tool_result import MutatingToolResult, TransactionVerification
 from ..models.visual_qa import run_visual_qa as _run_visual_qa
 from ..path_safety import resolve_under
+from ..schematic.basic_authoring import SchematicBasicAuthoringService
 from ..schematic.destructive_edit import SchematicDestructiveEditService
 from ..schematic.inspection import SchematicInspectionService
 from ..schematic.symbol_mutation import SchematicSymbolMutationService
@@ -62,6 +63,7 @@ from ..utils.sexpr import (
     _unescape_sexpr_string,
 )
 from . import (
+    schematic_basic_authoring,
     schematic_destructive_edit,
     schematic_inspection,
     schematic_symbol_mutation,
@@ -5514,219 +5516,34 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    def sch_add_symbol(
-        library: str,
-        symbol_name: str,
-        x_mm: float,
-        y_mm: float,
-        reference: str,
-        value: str,
-        footprint: str = "",
-        rotation: int = 0,
-        snap_to_grid: bool = True,
-        unit: int = 1,
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-    ) -> str:
-        """Add a schematic symbol at an absolute coordinate.
-
-        Coordinates snap to the 1.27 mm / 50 mil schematic grid by default; set
-        snap_to_grid=False only when an exact off-grid coordinate is intentional.
-        """
-        payload = AddSymbolInput(
-            library=library,
-            symbol_name=symbol_name,
-            x_mm=x_mm,
-            y_mm=y_mm,
-            reference=reference,
-            value=value,
-            footprint=footprint,
-            rotation=rotation,
-            snap_to_grid=snap_to_grid,
-            unit=unit,
-        )
-        symbol_x, symbol_y = _snap_point(payload.x_mm, payload.y_mm, payload.snap_to_grid)
-        snap_note = _snap_notice((payload.x_mm, payload.y_mm), (symbol_x, symbol_y))
-        lib_def = load_lib_symbol(payload.library, payload.symbol_name)
-        if lib_def is None:
-            suggestions = suggest_symbol_names(payload.library, payload.symbol_name)
-            hint = f" Did you mean: {', '.join(suggestions)}?" if suggestions else ""
-            return f"Symbol '{payload.library}:{payload.symbol_name}' was not found.{hint}"
-        available_units = get_symbol_available_units(payload.library, payload.symbol_name)
-        if available_units and payload.unit not in available_units:
-            return (
-                f"Symbol '{payload.library}:{payload.symbol_name}' does not support unit "
-                f"{payload.unit}. Available units: {_format_available_units(available_units)}."
-            )
-
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        sch_file = target.path
-        sch_data = parse_schematic_file(sch_file)
-        root_uuid = sch_data["uuid"] or new_uuid()
-        cfg = get_config()
-        project_name = cfg.project_file.stem if cfg.project_file is not None else "KiCadMCP"
-        lib_id = f"{payload.library}:{payload.symbol_name}"
-
-        # Collision warning: does the insertion point overlap existing symbols?
-        all_existing = sch_data["symbols"] + sch_data["power_symbols"]
-        overlap_warning = _point_near_existing(symbol_x, symbol_y, all_existing)
-
-        def mutator(current: str) -> str:
-            updated = current
-            if f'(symbol "{lib_id}"' not in updated:
-                if "(lib_symbols)" in updated:
-                    updated = updated.replace("(lib_symbols)", f"(lib_symbols\n\t{lib_def}\n\t)", 1)
-                else:
-                    updated = updated.replace(
-                        "\t(lib_symbols\n", f"\t(lib_symbols\n\t{lib_def}\n", 1
-                    )
-            block = place_symbol_block(
-                lib_id=lib_id,
-                x=symbol_x,
-                y=symbol_y,
-                reference=payload.reference,
-                value=payload.value,
-                footprint=payload.footprint,
-                rotation=payload.rotation,
-                unit=payload.unit,
-                project_name=project_name,
-                root_uuid=root_uuid,
-            )
-            return _append_before_sheet_instances(updated, block)
-
-        transactional_write(mutator, sch_file)
-        result = _reload_schematic()
-        fp_warning = _validate_footprint(payload.footprint or "")
-        parts = [
-            p
-            for p in [result, _format_target_detail(target), snap_note, overlap_warning, fp_warning]
-            if p
-        ]
-        return "\n".join(parts)
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_add_component(
-        library: str,
-        symbol_name: str,
-        x_mm: float,
-        y_mm: float,
-        reference: str,
-        value: str,
-        footprint: str = "",
-        rotation: int = 0,
-        snap_to_grid: bool = True,
-        unit: int = 1,
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-    ) -> str:
-        """Add a schematic component through the hybrid IPC reload path."""
-        return str(
-            sch_add_symbol(
-                library=library,
-                symbol_name=symbol_name,
-                x_mm=x_mm,
-                y_mm=y_mm,
-                reference=reference,
-                value=value,
-                footprint=footprint,
-                rotation=rotation,
-                snap_to_grid=snap_to_grid,
-                unit=unit,
-                sheet=sheet,
-                sheet_file=sheet_file,
-            )
-        )
-
-    @mcp.tool()
-    def sch_add_wire(
-        x1_mm: float,
-        y1_mm: float,
-        x2_mm: float,
-        y2_mm: float,
-        snap_to_grid: bool = True,
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-    ) -> str:
-        """Add a schematic wire, snapping endpoints to the 1.27 mm / 50 mil grid by default."""
-        payload = AddWireInput(
-            x1_mm=x1_mm,
-            y1_mm=y1_mm,
-            x2_mm=x2_mm,
-            y2_mm=y2_mm,
-            snap_to_grid=snap_to_grid,
-        )
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        wire_coords = _snap_line(
-            payload.x1_mm,
-            payload.y1_mm,
-            payload.x2_mm,
-            payload.y2_mm,
-            payload.snap_to_grid,
-        )
-        snap_note = _snap_notice(
-            (payload.x1_mm, payload.y1_mm, payload.x2_mm, payload.y2_mm),
-            wire_coords,
-        )
-        transactional_write(
-            lambda current: _append_before_sheet_instances(
-                current,
-                wire_block(*wire_coords),
-            ),
-            target.path,
-        )
-        result = _reload_schematic()
-        return "\n".join(p for p in [result, _format_target_detail(target), snap_note] if p)
-
-    @mcp.tool()
-    def sch_add_label(
-        name: str | None = None,
-        x_mm: float = 0.0,
-        y_mm: float = 0.0,
-        rotation: int = 0,
-        snap_to_grid: bool = True,
-        text: str | None = None,
-        justify: str | None = None,
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-    ) -> str:
-        """Add a schematic label, snapping its anchor to the 1.27 mm / 50 mil grid by default.
-
-        ``justify`` overrides KiCad's centered default (e.g. "left", "right",
-        "top", "bottom", "left top"); local labels have no directional icon so
-        centered text is usually correct and this is rarely needed.
-        """
-        label_text = name or text
-        if not label_text:
-            raise ValueError("Either name or text parameter is required.")
-        payload = AddLabelInput(
-            name=label_text,
-            x_mm=x_mm,
-            y_mm=y_mm,
-            rotation=rotation,
-            snap_to_grid=snap_to_grid,
-            justify=justify,
-        )
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        label_x, label_y = _snap_point(payload.x_mm, payload.y_mm, payload.snap_to_grid)
-        snap_note = _snap_notice((payload.x_mm, payload.y_mm), (label_x, label_y))
-        transactional_write(
-            lambda current: _append_before_sheet_instances(
-                current,
-                label_block(
-                    payload.name,
-                    label_x,
-                    label_y,
-                    payload.rotation,
-                    justify=payload.justify,
-                ),
-            ),
-            target.path,
-        )
-        result = _reload_schematic()
-        return "\n".join(p for p in [result, _format_target_detail(target), snap_note] if p)
+    basic_authoring_service = SchematicBasicAuthoringService(
+        resolve_target=_resolve_schematic_target,
+        parse_schematic=parse_schematic_file,
+        project_name=_project_name,
+        load_lib_symbol=load_lib_symbol,
+        suggest_symbol_names=suggest_symbol_names,
+        symbol_available_units=get_symbol_available_units,
+        format_available_units=_format_available_units,
+        snap_point=_snap_point,
+        snap_line=_snap_line,
+        snap_notice=_snap_notice,
+        point_near_existing=_point_near_existing,
+        validate_footprint=_validate_footprint,
+        place_symbol_block=place_symbol_block,
+        wire_block=wire_block,
+        label_block=label_block,
+        append_before_sheet_instances=_append_before_sheet_instances,
+        transactional_write=transactional_write,
+        reload_schematic=_reload_schematic,
+        new_uuid=new_uuid,
+        format_mm=_fmt_mm,
+    )
+    schematic_basic_authoring.register(
+        mcp,
+        schematic_basic_authoring.SchematicBasicAuthoringDependencies(
+            service=basic_authoring_service,
+        ),
+    )
 
     @mcp.tool()
     def sch_add_pin_labels(
@@ -5909,37 +5726,6 @@ def register(mcp: FastMCP) -> None:
             f"{_reload_schematic()}\n{_format_target_detail(target)}\n"
             f"Added {len(wire_blocks)} pin terminal(s) with stubs:\n" + "\n".join(results)
         )
-
-    @mcp.tool()
-    def sch_add_power_symbol(
-        name: str,
-        x_mm: float,
-        y_mm: float,
-        rotation: int = 0,
-        snap_to_grid: bool = True,
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-    ) -> str:
-        """Add a power symbol, snapping its anchor to the 1.27 mm / 50 mil grid by default."""
-        placed_x, placed_y = _snap_point(x_mm, y_mm, snap_to_grid)
-        result = str(
-            sch_add_symbol(
-                library="power",
-                symbol_name=name,
-                x_mm=x_mm,
-                y_mm=y_mm,
-                reference=f"#PWR{new_uuid()[:4]}",
-                value=name,
-                footprint="",
-                rotation=rotation,
-                snap_to_grid=snap_to_grid,
-                sheet=sheet,
-                sheet_file=sheet_file,
-            )
-        )
-        if "was not found" in result:
-            return result
-        return f"{result}\nPower symbol {name} placed at ({_fmt_mm(placed_x)}, {_fmt_mm(placed_y)})"
 
     @mcp.tool()
     def sch_add_bus(
