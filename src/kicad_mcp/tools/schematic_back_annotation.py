@@ -1,5 +1,7 @@
 """Thin FastMCP adapters for schematic settings and swap intents."""
 
+# pyright: reportUnusedFunction=false
+
 from __future__ import annotations
 
 from dataclasses import dataclass
