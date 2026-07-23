@@ -49,11 +49,16 @@ from ..schematic.hierarchy_authoring import (
 )
 from ..schematic.inspection import SchematicInspectionService
 from ..schematic.layout_inspection import SchematicLayoutInspectionService
+from ..schematic.semantic_ir import (
+    CircuitLike,
+    FindingLike,
+    SchematicSemanticIRService,
+)
 from ..schematic.symbol_mutation import SchematicSymbolMutationService
 from ..schematic.template_catalog import SchematicTemplateCatalogService
 from ..schematic.template_instantiation import SchematicTemplateInstantiationService
 from ..schematic.topology import SchematicTopologyService
-from ..utils.cache import clear_ttl_cache, ttl_cache
+from ..utils.cache import clear_ttl_cache
 from ..utils.field_placer import FieldSpec, autoplace_fields
 from ..utils.geometry import Box as GeoBox
 from ..utils.geometry import body_box_from_pins, text_extent
@@ -73,6 +78,7 @@ from . import (
     schematic_hierarchy_authoring,
     schematic_inspection,
     schematic_layout_inspection,
+    schematic_semantic_ir,
     schematic_symbol_mutation,
     schematic_template_catalog,
     schematic_template_instantiation,
@@ -5463,6 +5469,20 @@ def _template_yaml_loader_factory() -> Callable[[TextIO], Any]:
     return yaml.safe_load
 
 
+def _parse_semantic_ir(schematic_file: Path) -> CircuitLike:
+    """Parse semantic IR lazily to avoid the existing compatibility import cycle."""
+    from ..ir import parse_schematic_to_ir
+
+    return cast(CircuitLike, parse_schematic_to_ir(schematic_file, load_pin_metadata=True))
+
+
+def _lint_semantic_ir(circuit: CircuitLike) -> Iterable[FindingLike]:
+    """Run semantic IR lint lazily to avoid importing IR during server startup."""
+    from ..ir import IRCircuit, lint_circuit
+
+    return cast(Iterable[FindingLike], lint_circuit(cast(IRCircuit, circuit)))
+
+
 def register(mcp: FastMCP) -> None:
     """Register schematic tools."""
     inspection_service = SchematicInspectionService(
@@ -5540,6 +5560,22 @@ def register(mcp: FastMCP) -> None:
         mcp,
         schematic_template_instantiation.SchematicTemplateInstantiationDependencies(
             service=template_instantiation_service,
+        ),
+    )
+
+    semantic_ir_service = SchematicSemanticIRService(
+        active_schematic_file=_get_schematic_file,
+        parse_circuit=_parse_semantic_ir,
+        lint_circuit=_lint_semantic_ir,
+        with_diagnostics=_with_schematic_diagnostics,
+        warn_parse_failure=lambda exc: logger.warning(
+            "sch_get_circuit_ir parse failed", error=str(exc)
+        ),
+    )
+    schematic_semantic_ir.register(
+        mcp,
+        schematic_semantic_ir.SchematicSemanticIRDependencies(
+            service=semantic_ir_service,
         ),
     )
 
@@ -7104,107 +7140,3 @@ def register(mcp: FastMCP) -> None:
             f"\nFunctional spacing target: {functional_spacing_mm:.2f} mm."
             f"{anchor_suffix}{missing_suffix}{overflow_note}"
         )
-
-    # -----------------------------------------------------------------------
-    # Subcircuit template tools (v2.1.0)
-    # -----------------------------------------------------------------------
-
-    @mcp.tool()
-    @headless_compatible
-    @ttl_cache(ttl_seconds=10)
-    def sch_get_circuit_ir() -> str:
-        """Return the semantic circuit IR for the active schematic.
-
-        The IR decouples 'what the circuit is' (components, nets, pin
-        roles, power domains, interfaces) from 'how KiCad stores it'
-        (geometry, UUIDs, file format).  Wiring is expressed in terms
-        of pin names and roles, not coordinates.
-
-        The output is a structured text summary of the IR.
-        """
-        sch_file = _get_schematic_file()
-        try:
-            from ..ir import lint_circuit, parse_schematic_to_ir
-
-            ir = parse_schematic_to_ir(sch_file, load_pin_metadata=True)
-        except Exception as exc:
-            logger.warning("sch_get_circuit_ir parse failed", error=str(exc))
-            return _with_schematic_diagnostics(
-                f"Could not parse IR: {exc}",
-                sch_file,
-            )
-
-        lines = [
-            f"# Semantic Circuit IR — {ir.title}",
-            f"Source: {ir.source_path}",
-            f"UUID: {ir.source_uuid or 'N/A'}",
-            "",
-            f"**Summary:** {ir.component_count()} components, "
-            f"{ir.pin_count()} pins, "
-            f"{ir.net_count()} nets, "
-            f"{len(ir.power_rails)} rails, "
-            f"{ir.interface_count()} interfaces",
-        ]
-
-        # Components
-        if ir.components:
-            lines += ["", f"## Components ({ir.component_count()})"]
-            for ref in sorted(ir.components):
-                c = ir.components[ref]
-                flags = ""
-                if c.dnp:
-                    flags += " [DNP]"
-                if not c.in_bom:
-                    flags += " [NoBOM]"
-                lines.append(
-                    f"- {ref}: {c.lib_id} = {c.value} ({c.footprint}){flags}  ({len(c.pins)} pins)"
-                )
-
-        # Nets
-        if ir.nets:
-            power_nets = sum(1 for n in ir.nets.values() if n.is_power)
-            signal_nets = ir.net_count() - power_nets
-            lines += [
-                "",
-                f"## Nets ({ir.net_count()} total: {signal_nets} signal, {power_nets} power)",
-            ]
-            for name in sorted(ir.nets):
-                net = ir.nets[name]
-                pin_count = len(net.connections)
-                power_tag = " [POWER]" if net.is_power else ""
-                voltage_tag = f" {net.voltage}V" if net.voltage is not None else ""
-                lines.append(f"- `{name}`{power_tag}{voltage_tag} ({pin_count} connections)")
-
-        # Power rails
-        if ir.power_rails:
-            lines += ["", f"## Power Rails ({len(ir.power_rails)})"]
-            for name in sorted(ir.power_rails):
-                rail = ir.power_rails[name]
-                nets_str = ", ".join(sorted(rail.net_names)[:5])
-                if len(rail.net_names) > 5:
-                    nets_str += f" … (+{len(rail.net_names) - 5} more)"
-                source = f" from {rail.source_ref}.{rail.source_pin}" if rail.source_ref else ""
-                lines.append(f"- {name}: {rail.voltage}V{source}  nets=[{nets_str}]")
-
-        # Interfaces
-        if ir.interfaces:
-            lines += ["", f"## Interfaces ({ir.interface_count()})"]
-            for name in sorted(ir.interfaces):
-                iface = ir.interfaces[name]
-                refs = ", ".join(sorted(iface.refs)[:3])
-                roles = ", ".join(f"{k}={v}" for k, v in iface.net_roles.items())
-                lines.append(f"- {name} ({iface.kind}): [{roles}]  refs=[{refs}]")
-
-        # Lint findings
-        findings = lint_circuit(ir)
-        if findings:
-            lines += ["", f"## IR Lint Findings ({len(findings)})"]
-            for f in findings:
-                subject_tag = f" ({f.subject})" if f.subject else ""
-                detail_tag = f" — {f.detail}" if f.detail else ""
-                lines.append(
-                    f"- [{f.severity.value.upper()}] {f.rule_id}"
-                    f"{subject_tag}: {f.message}{detail_tag}"
-                )
-
-        return "\n".join(lines)
