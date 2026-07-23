@@ -36,11 +36,8 @@ from ..models.schematic import (
     AnnotateInput,
     AutoPlaceSymbolsInput,
     CreateSheetInput,
-    DeleteSymbolInput,
-    DeleteWireInput,
     GlobalLabelInput,
     HierarchicalLabelInput,
-    ModifyLabelInput,
     PowerSymbolInput,
     RouteWireBetweenPinsInput,
     UpdatePropertiesInput,
@@ -48,6 +45,7 @@ from ..models.schematic import (
 from ..models.tool_result import MutatingToolResult, TransactionVerification
 from ..models.visual_qa import run_visual_qa as _run_visual_qa
 from ..path_safety import resolve_under
+from ..schematic.destructive_edit import SchematicDestructiveEditService
 from ..schematic.inspection import SchematicInspectionService
 from ..schematic.symbol_mutation import SchematicSymbolMutationService
 from ..schematic.topology import SchematicTopologyService
@@ -63,7 +61,12 @@ from ..utils.sexpr import (
     _sexpr_string,
     _unescape_sexpr_string,
 )
-from . import schematic_inspection, schematic_symbol_mutation, schematic_topology
+from . import (
+    schematic_destructive_edit,
+    schematic_inspection,
+    schematic_symbol_mutation,
+    schematic_topology,
+)
 from .metadata import headless_compatible
 from .schematic_constants import (
     _SCHEMATIC_STATE_DIRNAME,
@@ -5483,6 +5486,34 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
+    destructive_edit_service = SchematicDestructiveEditService(
+        active_schematic_file=_get_schematic_file,
+        read_schematic_text=lambda path: path.read_text(encoding="utf-8", errors="ignore"),
+        extract_wires=_extract_wires,
+        wire_id_matches=_wire_id_matches,
+        wire_signature=_wire_signature,
+        extract_block=_extract_block,
+        parse_wire_block=_parse_wire_block,
+        format_mm=_fmt_mm,
+        transactional_write=transactional_write,
+        reload_schematic=_reload_schematic,
+        find_placed_symbol_blocks=_find_placed_symbol_blocks,
+        symbol_connection_points=_symbol_connection_points,
+        parse_symbol_block=_parse_symbol_block,
+        coordinate_key=_coord_pair_key,
+        parse_label_block=_parse_label_block,
+        snap_point=_snap_point,
+        snap_notice=_snap_notice,
+        normalize_label_justify=_normalize_label_justify,
+        set_label_justify=_set_label_justify,
+    )
+    schematic_destructive_edit.register(
+        mcp,
+        schematic_destructive_edit.SchematicDestructiveEditDependencies(
+            service=destructive_edit_service,
+        ),
+    )
+
     @mcp.tool()
     @headless_compatible
     def sch_add_symbol(
@@ -6150,320 +6181,6 @@ def register(mcp: FastMCP) -> None:
         result = _reload_schematic()
         detail = f"Added jumper '{reference}' ({value}) at ({target_x:.2f}, {target_y:.2f}) mm."
         return f"{detail}\n{result}\n{snap_note}" if snap_note else f"{detail}\n{result}"
-
-    @mcp.tool()
-    def sch_delete_wire(wire_id: str) -> str:
-        """Remove a specific wire segment using its UUID or unique UUID prefix."""
-        payload = DeleteWireInput(wire_id=wire_id)
-        sch_file = _get_schematic_file()
-        current = sch_file.read_text(encoding="utf-8", errors="ignore")
-        wire_records = _extract_wires(current)
-        matches = [
-            wire
-            for wire in wire_records
-            if wire.get("uuid") and _wire_id_matches(str(wire["uuid"]), payload.wire_id)
-        ]
-        if not matches:
-            return f"Wire '{payload.wire_id}' was not found in the active schematic."
-        if len(matches) > 1:
-            matching_ids = ", ".join(str(wire["uuid"]) for wire in matches[:5])
-            return (
-                f"Wire identifier '{payload.wire_id}' is ambiguous. Matching UUIDs: {matching_ids}"
-            )
-
-        target = matches[0]
-        target_signature = _wire_signature(
-            target["x1"],
-            target["y1"],
-            target["x2"],
-            target["y2"],
-        )
-
-        def mutator(current_text: str) -> str:
-            pieces: list[str] = []
-            cursor = 0
-            last = 0
-            removed = False
-            while cursor < len(current_text):
-                if current_text[cursor:].startswith("(wire"):
-                    block, length = _extract_block(current_text, cursor)
-                    parsed = _parse_wire_block(block) if block else None
-                    if parsed is not None:
-                        signature = _wire_signature(
-                            parsed["x1"],
-                            parsed["y1"],
-                            parsed["x2"],
-                            parsed["y2"],
-                        )
-                        parsed_uuid = str(parsed.get("uuid", ""))
-                        if (
-                            signature == target_signature
-                            and parsed_uuid
-                            and _wire_id_matches(parsed_uuid, str(target["uuid"]))
-                        ):
-                            pieces.append(current_text[last:cursor])
-                            cursor += length
-                            last = cursor
-                            removed = True
-                            continue
-                cursor += 1
-            pieces.append(current_text[last:])
-            if not removed:
-                raise ValueError(f"Wire '{payload.wire_id}' could not be removed.")
-            return "".join(pieces)
-
-        try:
-            transactional_write(mutator, allow_node_loss=True)
-        except ValueError as exc:
-            return str(exc)
-        return (
-            f"{_reload_schematic()}\n"
-            f"Deleted wire '{target['uuid']}' from "
-            f"({_fmt_mm(target['x1'])}, {_fmt_mm(target['y1'])}) to "
-            f"({_fmt_mm(target['x2'])}, {_fmt_mm(target['y2'])})."
-        )
-
-    @mcp.tool()
-    def sch_delete_symbol(reference: str) -> str:
-        """Remove a placed symbol and any directly attached wire segments."""
-        payload = DeleteSymbolInput(reference=reference)
-        removed_wire_count = 0
-        removed_symbol_count = 0
-
-        def mutator(current: str) -> str:
-            nonlocal removed_symbol_count, removed_wire_count
-
-            matches = _find_placed_symbol_blocks(current, payload.reference)
-            if not matches:
-                raise ValueError(f"Reference '{payload.reference}' was not found in the schematic.")
-            removed_symbol_count = len(matches)
-            connection_points = {
-                point for _, _, _, parsed in matches for point in _symbol_connection_points(parsed)
-            }
-
-            pieces: list[str] = []
-            cursor = 0
-            last = 0
-            while cursor < len(current):
-                if current[cursor:].startswith("(symbol"):
-                    block, length = _extract_block(current, cursor)
-                    parsed = _parse_symbol_block(block) if block else None
-                    if parsed is not None and parsed["reference"] == payload.reference:
-                        pieces.append(current[last:cursor])
-                        cursor += length
-                        last = cursor
-                        continue
-                if current[cursor:].startswith("(wire"):
-                    block, length = _extract_block(current, cursor)
-                    parsed_wire = _parse_wire_block(block) if block else None
-                    if parsed_wire is not None:
-                        start = _coord_pair_key(parsed_wire["x1"], parsed_wire["y1"])
-                        end = _coord_pair_key(parsed_wire["x2"], parsed_wire["y2"])
-                        if start in connection_points or end in connection_points:
-                            removed_wire_count += 1
-                            pieces.append(current[last:cursor])
-                            cursor += length
-                            last = cursor
-                            continue
-                cursor += 1
-            pieces.append(current[last:])
-            return "".join(pieces)
-
-        try:
-            transactional_write(mutator, allow_node_loss=True)
-        except ValueError as exc:
-            return str(exc)
-
-        return (
-            f"{_reload_schematic()}\n"
-            f"Deleted {removed_symbol_count} symbol block(s) for '{payload.reference}' "
-            f"and {removed_wire_count} directly connected wire(s)."
-        )
-
-    @mcp.tool()
-    def sch_delete_label(name: str, x_mm: float, y_mm: float) -> str:
-        """Delete label(s) (local/global/hierarchical) matching ``name`` at the
-        given coordinate. Use sch_get_labels() to find exact names/positions."""
-        tol = 0.05
-        removed = 0
-        # sch_add_label snaps to the schematic grid by default, so a label placed at
-        # (50, 50) actually lands at (50.8, 50.8). Match against both the raw query
-        # point and its grid-snapped position so the obvious add/delete round trip
-        # works, while still deleting labels that were placed off-grid.
-        snapped_x, snapped_y = _snap_point(x_mm, y_mm, True)
-
-        def _matches_target(parsed: dict[str, Any]) -> bool:
-            for target_x, target_y in ((x_mm, y_mm), (snapped_x, snapped_y)):
-                if abs(parsed["x"] - target_x) <= tol and abs(parsed["y"] - target_y) <= tol:
-                    return True
-            return False
-
-        def mutator(current: str) -> str:
-            nonlocal removed
-            pieces: list[str] = []
-            cursor = 0
-            last = 0
-            while cursor < len(current):
-                if current[cursor:].startswith(("(label", "(global_label", "(hierarchical_label")):
-                    block, length = _extract_block(current, cursor)
-                    parsed = _parse_label_block(block) if block else None
-                    if parsed is not None and parsed["name"] == name and _matches_target(parsed):
-                        pieces.append(current[last:cursor])
-                        cursor += length
-                        last = cursor
-                        removed += 1
-                        continue
-                cursor += 1
-            pieces.append(current[last:])
-            if removed == 0:
-                raise ValueError(
-                    f"No label '{name}' found near ({_fmt_mm(x_mm)}, {_fmt_mm(y_mm)})."
-                )
-            return "".join(pieces)
-
-        try:
-            transactional_write(mutator, allow_node_loss=True)
-        except ValueError as exc:
-            return str(exc)
-        return (
-            f"{_reload_schematic()}\n"
-            f"Deleted {removed} label(s) '{name}' at ({_fmt_mm(x_mm)}, {_fmt_mm(y_mm)})."
-        )
-
-    @mcp.tool()
-    def sch_move_label(
-        name: str,
-        x_mm: float,
-        y_mm: float,
-        new_x_mm: float,
-        new_y_mm: float,
-        new_rotation: int | None = None,
-        snap_to_grid: bool = False,
-    ) -> str:
-        """Move the label matching ``name`` at (x_mm, y_mm) to a new coordinate,
-        optionally re-rotating it. snap_to_grid defaults to False so the anchor
-        can land exactly on a pin/wire endpoint."""
-        target_x, target_y = _snap_point(new_x_mm, new_y_mm, snap_to_grid)
-        snap_note = _snap_notice((new_x_mm, new_y_mm), (target_x, target_y))
-        tol = 0.05
-        moved = 0
-
-        def mutator(current: str) -> str:
-            nonlocal moved
-            pieces: list[str] = []
-            cursor = 0
-            last = 0
-            while cursor < len(current):
-                if moved == 0 and current[cursor:].startswith(
-                    ("(label", "(global_label", "(hierarchical_label")
-                ):
-                    block, length = _extract_block(current, cursor)
-                    parsed = _parse_label_block(block) if block else None
-                    if (
-                        parsed is not None
-                        and parsed["name"] == name
-                        and abs(parsed["x"] - x_mm) <= tol
-                        and abs(parsed["y"] - y_mm) <= tol
-                    ):
-                        rot = parsed["rotation"] if new_rotation is None else int(new_rotation)
-                        updated_block = re.sub(
-                            r"\(at\s+[-\d.]+\s+[-\d.]+\s+[-\d.]+\)",
-                            f"(at {_fmt_mm(target_x)} {_fmt_mm(target_y)} {rot})",
-                            block,
-                            count=1,
-                        )
-                        pieces.append(current[last:cursor])
-                        pieces.append(updated_block)
-                        cursor += length
-                        last = cursor
-                        moved += 1
-                        continue
-                cursor += 1
-            pieces.append(current[last:])
-            if moved == 0:
-                raise ValueError(
-                    f"No label '{name}' found near ({_fmt_mm(x_mm)}, {_fmt_mm(y_mm)})."
-                )
-            return "".join(pieces)
-
-        try:
-            transactional_write(mutator)
-        except ValueError as exc:
-            return str(exc)
-        lines = [
-            _reload_schematic(),
-            f"Moved label '{name}' to ({target_x:.2f}, {target_y:.2f}) mm.",
-        ]
-        if snap_note:
-            lines.append(snap_note)
-        return "\n".join(lines)
-
-    @mcp.tool()
-    def sch_modify_label(
-        name: str,
-        x_mm: float,
-        y_mm: float,
-        justify: str,
-    ) -> str:
-        """Set the text justification of an existing label (local/global/
-        hierarchical) matching ``name`` at (x_mm, y_mm). Use sch_get_labels()
-        to find exact names/positions.
-
-        Global and hierarchical labels carry a directional icon at their
-        anchor; KiCad centers unjustified text on that anchor, which overlaps
-        the icon. Pass "left", "right", "top", "bottom", or a combination like
-        "left top" to move the text clear of the icon, or "none" to restore
-        KiCad's centered default.
-        """
-        payload = ModifyLabelInput(name=name, x_mm=x_mm, y_mm=y_mm, justify=justify)
-        resolved_justify = _normalize_label_justify(payload.justify) or ""
-        tol = 0.05
-        modified = 0
-
-        def mutator(current: str) -> str:
-            nonlocal modified
-            pieces: list[str] = []
-            cursor = 0
-            last = 0
-            while cursor < len(current):
-                if modified == 0 and current[cursor:].startswith(
-                    ("(label", "(global_label", "(hierarchical_label")
-                ):
-                    block, length = _extract_block(current, cursor)
-                    parsed = _parse_label_block(block) if block else None
-                    if (
-                        parsed is not None
-                        and parsed["name"] == payload.name
-                        and abs(parsed["x"] - payload.x_mm) <= tol
-                        and abs(parsed["y"] - payload.y_mm) <= tol
-                    ):
-                        updated_block = _set_label_justify(block, resolved_justify)
-                        pieces.append(current[last:cursor])
-                        pieces.append(updated_block)
-                        cursor += length
-                        last = cursor
-                        modified += 1
-                        continue
-                cursor += 1
-            pieces.append(current[last:])
-            if modified == 0:
-                raise ValueError(
-                    f"No label '{payload.name}' found near "
-                    f"({_fmt_mm(payload.x_mm)}, {_fmt_mm(payload.y_mm)})."
-                )
-            return "".join(pieces)
-
-        try:
-            transactional_write(mutator)
-        except ValueError as exc:
-            return str(exc)
-
-        justify_desc = resolved_justify or "none (centered)"
-        return (
-            f"{_reload_schematic()}\n"
-            f"Set justify='{justify_desc}' on label '{payload.name}' at "
-            f"({_fmt_mm(payload.x_mm)}, {_fmt_mm(payload.y_mm)})."
-        )
 
     @mcp.tool()
     def sch_analyze_net_compilation(

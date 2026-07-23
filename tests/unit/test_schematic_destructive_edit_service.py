@@ -52,19 +52,19 @@ def _service(
     def read_text(_path: Path) -> str:
         return current
 
-    def parse_wire(block: str) -> Mapping[str, Any] | None:
+    def parse_wire(block: str) -> dict[str, Any] | None:
         return (wire_blocks or {}).get(block)
 
     def find_symbols(
         _content: str,
         reference: str,
-    ) -> list[tuple[str, int, int, Mapping[str, Any]]]:
+    ) -> list[tuple[str, int, int, dict[str, Any]]]:
         return list((symbol_matches or {}).get(reference, []))
 
-    def parse_symbol(block: str) -> Mapping[str, Any] | None:
+    def parse_symbol(block: str) -> dict[str, Any] | None:
         return (symbol_blocks or {}).get(block)
 
-    def parse_label(block: str) -> Mapping[str, Any] | None:
+    def parse_label(block: str) -> dict[str, Any] | None:
         return (label_blocks or {}).get(block)
 
     def normalize_justify(value: str | None) -> str | None:

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Hashable, Mapping
+from collections.abc import Callable, Hashable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-type ParsedRecord = Mapping[str, Any]
+type ParsedRecord = dict[str, Any]
 type SymbolMatch = tuple[str, int, int, ParsedRecord]
 type ActiveSchematicFile = Callable[[], Path]
 type ReadSchematicText = Callable[[Path], str]
