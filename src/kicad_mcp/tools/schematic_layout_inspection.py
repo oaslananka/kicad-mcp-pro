@@ -10,7 +10,9 @@ from mcp.server.fastmcp import FastMCP
 
 from ..schematic.layout_inspection import SchematicLayoutInspectionService
 from .metadata import headless_compatible
-from .schematic_constants import AUTO_LAYOUT_COLUMN_SPACING_MM, AUTO_LAYOUT_ROW_SPACING_MM
+
+_DEFAULT_CELL_WIDTH_MM = 25.4
+_DEFAULT_CELL_HEIGHT_MM = 17.78
 
 
 @dataclass(frozen=True)
@@ -45,8 +47,8 @@ def register(mcp: FastMCP, dependencies: SchematicLayoutInspectionDependencies) 
     @headless_compatible
     def sch_find_free_placement(
         count: int = 1,
-        cell_width_mm: float = AUTO_LAYOUT_COLUMN_SPACING_MM,
-        cell_height_mm: float = AUTO_LAYOUT_ROW_SPACING_MM,
+        cell_width_mm: float = _DEFAULT_CELL_WIDTH_MM,
+        cell_height_mm: float = _DEFAULT_CELL_HEIGHT_MM,
         keepout_regions: list[tuple[float, float, float, float]] | None = None,
     ) -> str:
         """Find N collision-free placement coordinates for new symbols.
