@@ -56,6 +56,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "schematic"
     / "template_catalog.py",
+    "kicad_mcp.schematic.template_instantiation": SRC_ROOT
+    / "kicad_mcp"
+    / "schematic"
+    / "template_instantiation.py",
     "kicad_mcp.schematic.topology": SRC_ROOT / "kicad_mcp" / "schematic" / "topology.py",
     "kicad_mcp.tools.schematic_back_annotation": SRC_ROOT
     / "kicad_mcp"
@@ -81,6 +85,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "schematic_template_catalog.py",
+    "kicad_mcp.tools.schematic_template_instantiation": SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "schematic_template_instantiation.py",
     "kicad_mcp.tools.schematic_topology": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -122,6 +130,7 @@ PURE_HELPERS = {
     "kicad_mcp.schematic.layout_inspection",
     "kicad_mcp.schematic.symbol_mutation",
     "kicad_mcp.schematic.template_catalog",
+    "kicad_mcp.schematic.template_instantiation",
     "kicad_mcp.schematic.topology",
     "kicad_mcp.tools.schematic_constants",
 }
@@ -147,6 +156,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.schematic_layout_inspection": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_symbol_mutation": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_template_catalog": ("kicad_mcp.tools.schematic",),
+    "kicad_mcp.tools.schematic_template_instantiation": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_topology": ("kicad_mcp.tools.schematic",),
 }
 
@@ -160,6 +170,7 @@ REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.schematic_layout_inspection": 300,
     "kicad_mcp.tools.schematic_symbol_mutation": 300,
     "kicad_mcp.tools.schematic_template_catalog": 300,
+    "kicad_mcp.tools.schematic_template_instantiation": 300,
     "kicad_mcp.tools.schematic_topology": 300,
 }
 
