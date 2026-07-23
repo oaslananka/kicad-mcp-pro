@@ -112,6 +112,8 @@ def _service(
         ),
         place_symbol_block=place_symbol_block,
         wire_block=lambda *coords: f"(wire {' '.join(str(value) for value in coords)})",
+        bus_entry_block=lambda x, y, direction: f"(bus-entry {x} {y} {direction})",
+        no_connect_block=lambda x, y: f"(no-connect {x} {y})",
         label_block=lambda name, x, y, rotation, justify=None: (
             f"(label {name} {x} {y} {rotation} {justify})"
         ),
@@ -318,3 +320,49 @@ def test_add_power_symbol_returns_missing_symbol_result_unchanged() -> None:
     assert result == "Symbol 'power:NO_SUCH_POWER' was not found."
     assert transaction.calls == []
     assert reload.calls == 0
+
+
+def test_add_bus_preserves_snapping_target_and_bus_block() -> None:
+    service, transaction, reload, _calls = _service()
+
+    assert service.add_bus(1.0, 2.0, 4.0, 5.0, True, "Signals", None) == (
+        "Reloaded schematic.\n"
+        "Target schematic (child): Signals\n"
+        "Grid snap: (1.0, 2.0, 4.0, 5.0) -> (1.27, 2.54, 3.81, 5.08)"
+    )
+    assert reload.calls == 1
+    assert transaction.calls[0][0] == Path("Signals")
+    assert "(wire 1.27 2.54 3.81 5.08 bus)" in str(transaction.updated)
+
+
+def test_add_bus_wire_entry_preserves_direction_snap_and_target() -> None:
+    service, transaction, reload, _calls = _service()
+
+    assert service.add_bus_wire_entry(
+        10.0,
+        20.0,
+        "down_left",
+        True,
+        None,
+        "child.kicad_sch",
+    ) == (
+        "Reloaded schematic.\n"
+        "Target schematic (child): child.kicad_sch\n"
+        "Grid snap: (10.0, 20.0) -> (10.16, 20.32)"
+    )
+    assert reload.calls == 1
+    assert transaction.calls[0][0] == Path("child.kicad_sch")
+    assert "(bus-entry 10.16 20.32 down_left)" in str(transaction.updated)
+
+
+def test_add_no_connect_preserves_snap_target_and_default_guard() -> None:
+    service, transaction, reload, _calls = _service()
+
+    assert service.add_no_connect(10.0, 20.0, True, None, None) == (
+        "Reloaded schematic.\n"
+        "Target schematic (root): root.kicad_sch\n"
+        "Grid snap: (10.0, 20.0) -> (10.16, 20.32)"
+    )
+    assert reload.calls == 1
+    assert transaction.calls[0][0] == Path("root.kicad_sch")
+    assert "(no-connect 10.16 20.32)" in str(transaction.updated)
