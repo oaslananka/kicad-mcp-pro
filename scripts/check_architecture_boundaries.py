@@ -35,6 +35,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "schematic"
     / "destructive_edit.py",
+    "kicad_mcp.schematic.document_settings": SRC_ROOT
+    / "kicad_mcp"
+    / "schematic"
+    / "document_settings.py",
     "kicad_mcp.schematic.hierarchy_authoring": SRC_ROOT
     / "kicad_mcp"
     / "schematic"
@@ -61,6 +65,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "schematic_destructive_edit.py",
+    "kicad_mcp.tools.schematic_document_settings": SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "schematic_document_settings.py",
     "kicad_mcp.tools.schematic_symbol_mutation": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -100,6 +108,7 @@ PURE_HELPERS = {
     "kicad_mcp.schematic.back_annotation",
     "kicad_mcp.schematic.basic_authoring",
     "kicad_mcp.schematic.destructive_edit",
+    "kicad_mcp.schematic.document_settings",
     "kicad_mcp.schematic.hierarchy_authoring",
     "kicad_mcp.schematic.inspection",
     "kicad_mcp.schematic.layout_inspection",
@@ -123,6 +132,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.schematic_back_annotation": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_basic_authoring": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_destructive_edit": ("kicad_mcp.tools.schematic",),
+    "kicad_mcp.tools.schematic_document_settings": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_hierarchy_authoring": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_inspection": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_layout_inspection": ("kicad_mcp.tools.schematic",),
@@ -134,6 +144,7 @@ REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.schematic_back_annotation": 300,
     "kicad_mcp.tools.schematic_basic_authoring": 300,
     "kicad_mcp.tools.schematic_destructive_edit": 300,
+    "kicad_mcp.tools.schematic_document_settings": 300,
     "kicad_mcp.tools.schematic_hierarchy_authoring": 300,
     "kicad_mcp.tools.schematic_inspection": 300,
     "kicad_mcp.tools.schematic_layout_inspection": 300,
