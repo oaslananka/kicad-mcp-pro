@@ -51,6 +51,7 @@ from ..schematic.inspection import SchematicInspectionService
 from ..schematic.layout_inspection import SchematicLayoutInspectionService
 from ..schematic.symbol_mutation import SchematicSymbolMutationService
 from ..schematic.template_catalog import SchematicTemplateCatalogService
+from ..schematic.template_instantiation import SchematicTemplateInstantiationService
 from ..schematic.topology import SchematicTopologyService
 from ..utils.cache import clear_ttl_cache, ttl_cache
 from ..utils.field_placer import FieldSpec, autoplace_fields
@@ -74,6 +75,7 @@ from . import (
     schematic_layout_inspection,
     schematic_symbol_mutation,
     schematic_template_catalog,
+    schematic_template_instantiation,
     schematic_topology,
 )
 from .metadata import headless_compatible
@@ -5530,6 +5532,17 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
+    template_instantiation_service = SchematicTemplateInstantiationService(
+        templates_dir=Path(__file__).parent.parent / "templates" / "subcircuits",
+        yaml_loader_factory=_template_yaml_loader_factory,
+    )
+    schematic_template_instantiation.register(
+        mcp,
+        schematic_template_instantiation.SchematicTemplateInstantiationDependencies(
+            service=template_instantiation_service,
+        ),
+    )
+
     topology_service = SchematicTopologyService(
         load_schematic=_load_kicad_schematic,
         with_diagnostics=_with_schematic_diagnostics,
@@ -7193,114 +7206,5 @@ def register(mcp: FastMCP) -> None:
                     f"- [{f.severity.value.upper()}] {f.rule_id}"
                     f"{subject_tag}: {f.message}{detail_tag}"
                 )
-
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_instantiate_template(
-        template_name: str,
-        prefix: str = "",
-        params: dict[str, object] | None = None,
-    ) -> str:
-        """Instantiate a subcircuit template — returns a structured action plan.
-
-        This tool returns a structured plan describing the symbols, connections,
-        and part-search steps needed to add the subcircuit to the schematic.
-        It does NOT directly edit the schematic (use the plan as a guide for
-        calling sch_add_symbol, sch_add_wire, lib_recommend_part, etc.).
-
-        Args:
-            template_name: Template name (from sch_list_templates()).
-            prefix: Reference prefix applied to all template refs (e.g. ``"PWR_"``
-                produces ``PWR_U1``, ``PWR_L1``, etc.).
-            params: Dict of parameter overrides (e.g. ``{"vout_v": 5.0}``).
-
-        Returns:
-            Step-by-step instantiation plan in markdown format.
-        """
-        from pathlib import Path as _Path
-
-        templates_dir = _Path(__file__).parent.parent / "templates" / "subcircuits"
-        yaml_file = templates_dir / f"{template_name}.yaml"
-        if not yaml_file.exists():
-            available = [f.stem for f in templates_dir.glob("*.yaml")]
-            return (
-                f"Template '{template_name}' not found. Available: {', '.join(sorted(available))}"
-            )
-
-        try:
-            import yaml
-
-            with yaml_file.open(encoding="utf-8") as fh:
-                data = yaml.safe_load(fh)
-        except ImportError:
-            return "Template tools require PyYAML. Install it to instantiate templates."
-        except Exception as exc:
-            return f"Could not parse template '{template_name}': {exc}"
-
-        params = params or {}
-        defaults = {k: v.get("default") for k, v in data.get("parameters", {}).items()}
-        resolved = {**defaults, **params}
-
-        symbols = data.get("symbols", [])
-        nets = data.get("nets", [])
-        hints = data.get("placement_hints", [])
-        search = data.get("part_search_hints", {})
-        prefix_str = prefix.strip()
-
-        lines = [
-            f"# Instantiation Plan: {data.get('name', template_name)}",
-            f"Prefix: `{prefix_str or '(none)'}`",
-            "",
-            "## Parameters",
-        ]
-        for k, v in resolved.items():
-            lines.append(f"- {k}: **{v}**")
-
-        lines += [
-            "",
-            "## Step 1: Add Symbols",
-            "Call sch_add_symbol() for each symbol below:",
-            "",
-        ]
-        for i, sym in enumerate(symbols, start=1):
-            ref = f"{prefix_str}{sym.get('ref_prefix', 'X')}{i}"
-            lines.append(f"- `sch_add_symbol(reference={ref!r}, value={sym.get('value', '?')!r})`")
-            lines.append(f"  Comment: {sym.get('comment', '')}")
-            lines.append(f"  Footprint hint: {sym.get('default_footprint', '—')}")
-
-        lines += [
-            "",
-            "## Step 2: Add Nets / Wires",
-            "Call sch_add_power_symbol() and sch_add_wire() to connect:",
-            "",
-        ]
-        for net in nets:
-            note = f" ({net['note']})" if net.get("note") else ""
-            lines.append(f"- `{net['name']}` — {net.get('type', 'signal')}{note}")
-
-        lines += ["", "## Step 3: Part Selection"]
-        if search:
-            for role, query_template in search.items():
-                query = str(query_template)
-                for k, v in resolved.items():
-                    query = query.replace(f"{{{k}}}", str(v))
-                lines.append(f"- **{role}**: `lib_recommend_part(category={query!r})`")
-        else:
-            lines.append("- Use lib_search_components() or lib_recommend_part() for each symbol.")
-
-        lines += [
-            "",
-            "## Step 4: Footprint Assignment",
-            (
-                "For each symbol: `lib_bind_part_to_symbol(sym_ref, lcsc_code, "
-                "auto_assign_footprint=True)`"
-            ),
-            "",
-            "## Placement Hints",
-        ]
-        for hint in hints:
-            lines.append(f"- {hint}")
 
         return "\n".join(lines)
