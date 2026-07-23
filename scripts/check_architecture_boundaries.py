@@ -23,6 +23,10 @@ DOMAIN_MODULES = {
     / "contract_verifier.py",
     "kicad_mcp.models.sch_transaction": SRC_ROOT / "kicad_mcp" / "models" / "sch_transaction.py",
     "kicad_mcp.models.visual_qa": SRC_ROOT / "kicad_mcp" / "models" / "visual_qa.py",
+    "kicad_mcp.schematic.back_annotation": SRC_ROOT
+    / "kicad_mcp"
+    / "schematic"
+    / "back_annotation.py",
     "kicad_mcp.schematic.basic_authoring": SRC_ROOT
     / "kicad_mcp"
     / "schematic"
@@ -37,6 +41,10 @@ DOMAIN_MODULES = {
     / "schematic"
     / "symbol_mutation.py",
     "kicad_mcp.schematic.topology": SRC_ROOT / "kicad_mcp" / "schematic" / "topology.py",
+    "kicad_mcp.tools.schematic_back_annotation": SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "schematic_back_annotation.py",
     "kicad_mcp.tools.schematic_basic_authoring": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -73,6 +81,7 @@ PURE_HELPERS = {
     "kicad_mcp.models.contract_verifier",
     "kicad_mcp.models.sch_transaction",
     "kicad_mcp.models.visual_qa",
+    "kicad_mcp.schematic.back_annotation",
     "kicad_mcp.schematic.basic_authoring",
     "kicad_mcp.schematic.destructive_edit",
     "kicad_mcp.schematic.inspection",
@@ -93,6 +102,7 @@ FORBIDDEN_PURE_IMPORT_PREFIXES = (
 )
 
 ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
+    "kicad_mcp.tools.schematic_back_annotation": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_basic_authoring": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_destructive_edit": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_inspection": ("kicad_mcp.tools.schematic",),
@@ -101,6 +111,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
 }
 
 REGISTER_LINE_LIMITS = {
+    "kicad_mcp.tools.schematic_back_annotation": 300,
     "kicad_mcp.tools.schematic_basic_authoring": 300,
     "kicad_mcp.tools.schematic_destructive_edit": 300,
     "kicad_mcp.tools.schematic_inspection": 300,
