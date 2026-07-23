@@ -51,11 +51,18 @@ class RootSchematic(Protocol):
         filename: str,
         position: tuple[float, float],
         size: tuple[float, float],
-        *,
+        stroke_width: float | None = None,
+        stroke_type: str = "solid",
         project_name: str | None = None,
+        page_number: str | None = None,
+        uuid: str | None = None,
     ) -> str: ...
 
-    def save(self, path: Path, preserve_format: bool = True) -> object: ...
+    def save(
+        self,
+        file_path: Path | str | None = None,
+        preserve_format: bool = True,
+    ) -> object: ...
 
 
 class LabelBlock(Protocol):
@@ -63,13 +70,13 @@ class LabelBlock(Protocol):
 
     def __call__(
         self,
-        text: str,
+        name: str,
         x: float,
         y: float,
-        rotation: int,
-        *,
-        kind: str,
-        shape: str,
+        rotation: int = 0,
+        global_label: bool = False,
+        shape: str | None = None,
+        kind: str | None = None,
         justify: str | None = None,
     ) -> str: ...
 
@@ -77,7 +84,13 @@ class LabelBlock(Protocol):
 class TransactionalWrite(Protocol):
     """Apply a guarded schematic mutation to a selected file."""
 
-    def __call__(self, mutator: Callable[[str], str], path: Path) -> str: ...
+    def __call__(
+        self,
+        mutator: Callable[[str], str],
+        sch_file: Path | None = None,
+        *,
+        allow_node_loss: bool = False,
+    ) -> str: ...
 
 
 class Warn(Protocol):

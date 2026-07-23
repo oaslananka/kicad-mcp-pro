@@ -32,9 +32,6 @@ from ..models.schematic import (
     AddWireInput,
     AnnotateInput,
     AutoPlaceSymbolsInput,
-    CreateSheetInput,
-    GlobalLabelInput,
-    HierarchicalLabelInput,
     PowerSymbolInput,
     RouteWireBetweenPinsInput,
     UpdatePropertiesInput,
@@ -45,6 +42,11 @@ from ..path_safety import resolve_under
 from ..schematic.back_annotation import SchematicBackAnnotationService
 from ..schematic.basic_authoring import SchematicBasicAuthoringService
 from ..schematic.destructive_edit import SchematicDestructiveEditService
+from ..schematic.hierarchy_authoring import (
+    ChildSchematic,
+    RootSchematic,
+    SchematicHierarchyAuthoringService,
+)
 from ..schematic.inspection import SchematicInspectionService
 from ..schematic.symbol_mutation import SchematicSymbolMutationService
 from ..schematic.topology import SchematicTopologyService
@@ -64,6 +66,7 @@ from . import (
     schematic_back_annotation,
     schematic_basic_authoring,
     schematic_destructive_edit,
+    schematic_hierarchy_authoring,
     schematic_inspection,
     schematic_symbol_mutation,
     schematic_topology,
@@ -450,6 +453,16 @@ def _load_kicad_schematic(sch_file: Path) -> _LoadedSchematicLike:
     from kicad_sch_api import load_schematic
 
     return cast(_LoadedSchematicLike, load_schematic(str(sch_file)))
+
+
+def _load_hierarchy_schematic(sch_file: Path) -> RootSchematic:
+    return cast(RootSchematic, _load_kicad_schematic(sch_file))
+
+
+def _resolve_create_schematic() -> Callable[[str], ChildSchematic]:
+    from kicad_sch_api import create_schematic
+
+    return cast(Callable[[str], ChildSchematic], create_schematic)
 
 
 def _component_unit(component: _PlacedComponentLike) -> int:
@@ -5564,6 +5577,28 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
+    hierarchy_authoring_service = SchematicHierarchyAuthoringService(
+        active_schematic_file=_get_schematic_file,
+        resolve_target=_resolve_schematic_target,
+        resolve_create_schematic=_resolve_create_schematic,
+        load_schematic=_load_hierarchy_schematic,
+        snap_point=_snap_point,
+        snap_notice=_snap_notice,
+        project_name=_project_name,
+        default_sheet_size=(DEFAULT_SHEET_WIDTH_MM, DEFAULT_SHEET_HEIGHT_MM),
+        label_block=label_block,
+        append_before_sheet_instances=_append_before_sheet_instances,
+        transactional_write=transactional_write,
+        reload_schematic=_reload_schematic,
+        warn=logger.warning,
+    )
+    schematic_hierarchy_authoring.register(
+        mcp,
+        schematic_hierarchy_authoring.SchematicHierarchyAuthoringDependencies(
+            service=hierarchy_authoring_service,
+        ),
+    )
+
     @mcp.tool()
     def sch_add_pin_labels(
         connections: list[dict[str, Any]],
@@ -6107,172 +6142,6 @@ def register(mcp: FastMCP) -> None:
     def sch_reload() -> str:
         """Ask KiCad to reload the active schematic."""
         return _reload_schematic()
-
-    @mcp.tool()
-    def sch_create_sheet(
-        name: str,
-        filename: str,
-        x_mm: float,
-        y_mm: float,
-        snap_to_grid: bool = True,
-    ) -> str:
-        """Create a child schematic sheet and add it to the active top-level schematic."""
-        payload = CreateSheetInput(
-            name=name,
-            filename=filename,
-            x_mm=x_mm,
-            y_mm=y_mm,
-            snap_to_grid=snap_to_grid,
-        )
-        try:
-            from kicad_sch_api import create_schematic
-        except Exception as exc:
-            logger.warning("schematic_create_sheet_dependency_missing", error=str(exc))
-            return "kicad-sch-api is unavailable, so child sheet creation could not run."
-
-        top_schematic_path = _get_schematic_file()
-        sheet_x, sheet_y = _snap_point(payload.x_mm, payload.y_mm, payload.snap_to_grid)
-        snap_note = _snap_notice((payload.x_mm, payload.y_mm), (sheet_x, sheet_y))
-        child_name = payload.filename
-        if not child_name.endswith(".kicad_sch"):
-            child_name = f"{child_name}.kicad_sch"
-        child_path = top_schematic_path.parent / child_name
-        child_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            schematic = _load_kicad_schematic(top_schematic_path)
-            if schematic.sheets.get_sheet_by_name(payload.name) is not None:
-                return f"Sheet '{payload.name}' already exists."
-            if not child_path.exists():
-                child_schematic = create_schematic(payload.name)
-                child_schematic.save(child_path, preserve_format=True)
-            schematic.add_sheet(
-                payload.name,
-                str(child_path.relative_to(top_schematic_path.parent)).replace("\\", "/"),
-                (sheet_x, sheet_y),
-                (DEFAULT_SHEET_WIDTH_MM, DEFAULT_SHEET_HEIGHT_MM),
-                project_name=_project_name(),
-            )
-            schematic.save(top_schematic_path, preserve_format=True)
-        except Exception as exc:
-            logger.warning(
-                "schematic_create_sheet_failed",
-                name=payload.name,
-                filename=str(child_path),
-                error=str(exc),
-            )
-            return f"Could not create child sheet '{payload.name}': {exc}"
-
-        result = _reload_schematic()
-        detail = f"Created child sheet '{payload.name}' -> {child_path.name}."
-        if snap_note:
-            detail = f"{detail}\n{snap_note}"
-        return f"{result}\n{detail}"
-
-    @mcp.tool()
-    def sch_add_hierarchical_label(
-        text: str | None = None,
-        x_mm: float = 0.0,
-        y_mm: float = 0.0,
-        shape: str = "input",
-        rotation: int = 0,
-        snap_to_grid: bool = True,
-        name: str | None = None,
-        justify: str | None = None,
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-    ) -> str:
-        """Add a hierarchical label, preserving the requested shape and rotation.
-
-        By default the text is justified away from the directional icon based
-        on ``rotation`` (0=left, 90=bottom, 180=right, 270=top) so it doesn't
-        render on top of the icon. Pass ``justify`` to override, or "none" to
-        force KiCad's centered default.
-        """
-        label_text = text or name
-        if not label_text:
-            raise ValueError("Either text or name parameter is required.")
-        payload = HierarchicalLabelInput(
-            text=label_text,
-            x_mm=x_mm,
-            y_mm=y_mm,
-            shape=shape,
-            rotation=rotation,
-            snap_to_grid=snap_to_grid,
-            justify=justify,
-        )
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        label_x, label_y = _snap_point(payload.x_mm, payload.y_mm, payload.snap_to_grid)
-        snap_note = _snap_notice((payload.x_mm, payload.y_mm), (label_x, label_y))
-        transactional_write(
-            lambda current: _append_before_sheet_instances(
-                current,
-                label_block(
-                    payload.text,
-                    label_x,
-                    label_y,
-                    payload.rotation,
-                    kind="hierarchical_label",
-                    shape=payload.shape,
-                    justify=payload.justify,
-                ),
-            ),
-            target.path,
-        )
-        result = _reload_schematic()
-        return "\n".join(p for p in [result, _format_target_detail(target), snap_note] if p)
-
-    @mcp.tool()
-    def sch_add_global_label(
-        text: str | None = None,
-        x_mm: float = 0.0,
-        y_mm: float = 0.0,
-        shape: str = "bidirectional",
-        rotation: int = 0,
-        snap_to_grid: bool = True,
-        name: str | None = None,
-        justify: str | None = None,
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-    ) -> str:
-        """Add a global label, preserving the requested shape and rotation.
-
-        By default the text is justified away from the directional icon based
-        on ``rotation`` (0=left, 90=bottom, 180=right, 270=top) so it doesn't
-        render on top of the icon. Pass ``justify`` to override, or "none" to
-        force KiCad's centered default.
-        """
-        label_text = text or name
-        if not label_text:
-            raise ValueError("Either text or name parameter is required.")
-        payload = GlobalLabelInput(
-            text=label_text,
-            x_mm=x_mm,
-            y_mm=y_mm,
-            shape=shape,
-            rotation=rotation,
-            snap_to_grid=snap_to_grid,
-            justify=justify,
-        )
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        label_x, label_y = _snap_point(payload.x_mm, payload.y_mm, payload.snap_to_grid)
-        snap_note = _snap_notice((payload.x_mm, payload.y_mm), (label_x, label_y))
-        transactional_write(
-            lambda current: _append_before_sheet_instances(
-                current,
-                label_block(
-                    payload.text,
-                    label_x,
-                    label_y,
-                    payload.rotation,
-                    kind="global_label",
-                    shape=payload.shape,
-                    justify=payload.justify,
-                ),
-            ),
-            target.path,
-        )
-        result = _reload_schematic()
-        return "\n".join(p for p in [result, _format_target_detail(target), snap_note] if p)
 
     @mcp.tool()
     def sch_route_wire_between_pins(
