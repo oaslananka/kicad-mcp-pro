@@ -75,7 +75,23 @@ type SnapLine = Callable[
 type SnapNotice = Callable[[tuple[float, ...], tuple[float, ...]], str]
 type PointNearExisting = Callable[[float, float, list[dict[str, Any]]], str | None]
 type ValidateFootprint = Callable[[str], str | None]
-type WireBlock = Callable[[float, float, float, float], str]
+
+
+class WireBlock(Protocol):
+    """Create a wire or bus S-expression block."""
+
+    def __call__(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        kind: str = "wire",
+    ) -> str: ...
+
+
+type BusEntryBlock = Callable[[float, float, str], str]
+type NoConnectBlock = Callable[[float, float], str]
 type AppendBeforeSheetInstances = Callable[[str, str], str]
 type TransactionalWrite = Callable[[Callable[[str], str], Path], str]
 type ReloadSchematic = Callable[[], str]
@@ -101,6 +117,8 @@ class SchematicBasicAuthoringService:
     validate_footprint: ValidateFootprint
     place_symbol_block: PlaceSymbolBlock
     wire_block: WireBlock
+    bus_entry_block: BusEntryBlock
+    no_connect_block: NoConnectBlock
     label_block: LabelBlock
     append_before_sheet_instances: AppendBeforeSheetInstances
     transactional_write: TransactionalWrite
@@ -225,6 +243,90 @@ class SchematicBasicAuthoringService:
             lambda current: self.append_before_sheet_instances(
                 current,
                 self.wire_block(*wire_coordinates),
+            ),
+            target.path,
+        )
+        result = self.reload_schematic()
+        return "\n".join(
+            part for part in (result, self._format_target_detail(target), snap_note) if part
+        )
+
+    def add_bus(
+        self,
+        x1_mm: float,
+        y1_mm: float,
+        x2_mm: float,
+        y2_mm: float,
+        snap_to_grid: bool,
+        sheet: str | None,
+        sheet_file: str | None,
+    ) -> str:
+        """Add one bus segment to a resolved schematic target."""
+        target = self.resolve_target(sheet=sheet, sheet_file=sheet_file)
+        bus_coordinates = self.snap_line(
+            x1_mm,
+            y1_mm,
+            x2_mm,
+            y2_mm,
+            snap_to_grid,
+        )
+        snap_note = self.snap_notice(
+            (x1_mm, y1_mm, x2_mm, y2_mm),
+            bus_coordinates,
+        )
+        self.transactional_write(
+            lambda current: self.append_before_sheet_instances(
+                current,
+                self.wire_block(*bus_coordinates, "bus"),
+            ),
+            target.path,
+        )
+        result = self.reload_schematic()
+        return "\n".join(
+            part for part in (result, self._format_target_detail(target), snap_note) if part
+        )
+
+    def add_bus_wire_entry(
+        self,
+        x_mm: float,
+        y_mm: float,
+        direction: str,
+        snap_to_grid: bool,
+        sheet: str | None,
+        sheet_file: str | None,
+    ) -> str:
+        """Add one bus-entry marker to a resolved schematic target."""
+        target = self.resolve_target(sheet=sheet, sheet_file=sheet_file)
+        entry_x, entry_y = self.snap_point(x_mm, y_mm, snap_to_grid)
+        snap_note = self.snap_notice((x_mm, y_mm), (entry_x, entry_y))
+        self.transactional_write(
+            lambda current: self.append_before_sheet_instances(
+                current,
+                self.bus_entry_block(entry_x, entry_y, direction),
+            ),
+            target.path,
+        )
+        result = self.reload_schematic()
+        return "\n".join(
+            part for part in (result, self._format_target_detail(target), snap_note) if part
+        )
+
+    def add_no_connect(
+        self,
+        x_mm: float,
+        y_mm: float,
+        snap_to_grid: bool,
+        sheet: str | None,
+        sheet_file: str | None,
+    ) -> str:
+        """Add one no-connect marker to a resolved schematic target."""
+        target = self.resolve_target(sheet=sheet, sheet_file=sheet_file)
+        marker_x, marker_y = self.snap_point(x_mm, y_mm, snap_to_grid)
+        snap_note = self.snap_notice((x_mm, y_mm), (marker_x, marker_y))
+        self.transactional_write(
+            lambda current: self.append_before_sheet_instances(
+                current,
+                self.no_connect_block(marker_x, marker_y),
             ),
             target.path,
         )

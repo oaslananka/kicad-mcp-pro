@@ -92,6 +92,45 @@ class FakeBasicAuthoringService:
         self.calls.append(("add_power_symbol", args))
         return "power"
 
+    def add_bus(
+        self,
+        x1_mm: float,
+        y1_mm: float,
+        x2_mm: float,
+        y2_mm: float,
+        snap_to_grid: bool,
+        sheet: str | None,
+        sheet_file: str | None,
+    ) -> str:
+        args = (x1_mm, y1_mm, x2_mm, y2_mm, snap_to_grid, sheet, sheet_file)
+        self.calls.append(("add_bus", args))
+        return "bus"
+
+    def add_bus_wire_entry(
+        self,
+        x_mm: float,
+        y_mm: float,
+        direction: str,
+        snap_to_grid: bool,
+        sheet: str | None,
+        sheet_file: str | None,
+    ) -> str:
+        args = (x_mm, y_mm, direction, snap_to_grid, sheet, sheet_file)
+        self.calls.append(("add_bus_wire_entry", args))
+        return "bus-entry"
+
+    def add_no_connect(
+        self,
+        x_mm: float,
+        y_mm: float,
+        snap_to_grid: bool,
+        sheet: str | None,
+        sheet_file: str | None,
+    ) -> str:
+        args = (x_mm, y_mm, snap_to_grid, sheet, sheet_file)
+        self.calls.append(("add_no_connect", args))
+        return "no-connect"
+
 
 def _registered() -> tuple[FastMCP, FakeBasicAuthoringService]:
     server = FastMCP("schematic-basic-authoring-test")
@@ -110,6 +149,9 @@ def test_registration_preserves_names_descriptions_and_schema_defaults() -> None
         "sch_add_wire",
         "sch_add_label",
         "sch_add_power_symbol",
+        "sch_add_bus",
+        "sch_add_bus_wire_entry",
+        "sch_add_no_connect",
     }
     assert tools["sch_add_symbol"].description == (
         "Add a schematic symbol at an absolute coordinate.\n\n"
@@ -131,6 +173,15 @@ def test_registration_preserves_names_descriptions_and_schema_defaults() -> None
     assert tools["sch_add_power_symbol"].description == (
         "Add a power symbol, snapping its anchor to the 1.27 mm / 50 mil grid by default."
     )
+    assert tools["sch_add_bus"].description == (
+        "Add a schematic bus, snapping endpoints to the 1.27 mm / 50 mil grid by default."
+    )
+    assert tools["sch_add_bus_wire_entry"].description == (
+        "Add a bus wire entry marker.\n\nSnaps its anchor to the 1.27 mm / 50 mil grid by default."
+    )
+    assert tools["sch_add_no_connect"].description == (
+        "Add a no-connect marker, snapping it to the 1.27 mm / 50 mil grid by default."
+    )
     assert tools["sch_add_symbol"].parameters["required"] == [
         "library",
         "symbol_name",
@@ -147,6 +198,18 @@ def test_registration_preserves_names_descriptions_and_schema_defaults() -> None
     assert tools["sch_add_label"].parameters["properties"]["name"]["default"] is None
     assert tools["sch_add_label"].parameters["properties"]["text"]["default"] is None
     assert tools["sch_add_power_symbol"].parameters["required"] == ["name", "x_mm", "y_mm"]
+    assert tools["sch_add_bus"].parameters["required"] == [
+        "x1_mm",
+        "y1_mm",
+        "x2_mm",
+        "y2_mm",
+    ]
+    assert tools["sch_add_bus"].parameters["properties"]["snap_to_grid"]["default"] is True
+    assert tools["sch_add_bus_wire_entry"].parameters["required"] == ["x_mm", "y_mm"]
+    assert tools["sch_add_bus_wire_entry"].parameters["properties"]["direction"]["default"] == (
+        "up_right"
+    )
+    assert tools["sch_add_no_connect"].parameters["required"] == ["x_mm", "y_mm"]
 
 
 def test_registration_preserves_headless_metadata() -> None:
@@ -159,6 +222,9 @@ def test_registration_preserves_headless_metadata() -> None:
     assert get_tool_metadata("sch_add_wire") is None
     assert get_tool_metadata("sch_add_label") is None
     assert get_tool_metadata("sch_add_power_symbol") is None
+    assert get_tool_metadata("sch_add_bus") is None
+    assert get_tool_metadata("sch_add_bus_wire_entry") is None
+    assert get_tool_metadata("sch_add_no_connect") is None
 
 
 def test_registration_delegates_symbol_and_component_with_defaults() -> None:
@@ -255,4 +321,51 @@ def test_registration_preserves_label_missing_value_and_pydantic_validation() ->
             y_mm=2.0,
             reference="R1",
             value="10k",
+        )
+
+
+def test_registration_delegates_connectivity_primitives_and_defaults() -> None:
+    server, service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert (
+        tools["sch_add_bus"].fn(
+            x1_mm=1.0,
+            y1_mm=2.0,
+            x2_mm=3.0,
+            y2_mm=4.0,
+            sheet="Signals",
+        )
+        == "bus"
+    )
+    assert (
+        tools["sch_add_bus_wire_entry"].fn(
+            x_mm=5.0,
+            y_mm=6.0,
+            direction="down_left",
+            snap_to_grid=False,
+            sheet_file="child.kicad_sch",
+        )
+        == "bus-entry"
+    )
+    assert tools["sch_add_no_connect"].fn(x_mm=7.0, y_mm=8.0) == "no-connect"
+    assert service.calls == [
+        ("add_bus", (1.0, 2.0, 3.0, 4.0, True, "Signals", None)),
+        (
+            "add_bus_wire_entry",
+            (5.0, 6.0, "down_left", False, None, "child.kicad_sch"),
+        ),
+        ("add_no_connect", (7.0, 8.0, True, None, None)),
+    ]
+
+
+def test_registration_preserves_bus_entry_direction_validation() -> None:
+    server, _service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    with pytest.raises(ValidationError):
+        tools["sch_add_bus_wire_entry"].fn(
+            x_mm=1.0,
+            y_mm=2.0,
+            direction="sideways",
         )

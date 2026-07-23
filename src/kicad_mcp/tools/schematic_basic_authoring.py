@@ -6,7 +6,14 @@ from dataclasses import dataclass
 
 from mcp.server.fastmcp import FastMCP
 
-from ..models.schematic import AddLabelInput, AddSymbolInput, AddWireInput
+from ..models.schematic import (
+    AddBusInput,
+    AddBusWireEntryInput,
+    AddLabelInput,
+    AddNoConnectInput,
+    AddSymbolInput,
+    AddWireInput,
+)
 from ..schematic.basic_authoring import SchematicBasicAuthoringService
 from .metadata import headless_compatible
 
@@ -214,6 +221,79 @@ def register(mcp: FastMCP, dependencies: SchematicBasicAuthoringDependencies) ->
             y_mm,
             rotation,
             snap_to_grid,
+            sheet,
+            sheet_file,
+        )
+
+    @mcp.tool()
+    def sch_add_bus(
+        x1_mm: float,
+        y1_mm: float,
+        x2_mm: float,
+        y2_mm: float,
+        snap_to_grid: bool = True,
+        sheet: str | None = None,
+        sheet_file: str | None = None,
+    ) -> str:
+        """Add a schematic bus, snapping endpoints to the 1.27 mm / 50 mil grid by default."""
+        payload = AddBusInput(
+            x1_mm=x1_mm,
+            y1_mm=y1_mm,
+            x2_mm=x2_mm,
+            y2_mm=y2_mm,
+            snap_to_grid=snap_to_grid,
+        )
+        return service.add_bus(
+            payload.x1_mm,
+            payload.y1_mm,
+            payload.x2_mm,
+            payload.y2_mm,
+            payload.snap_to_grid,
+            sheet,
+            sheet_file,
+        )
+
+    @mcp.tool()
+    def sch_add_bus_wire_entry(
+        x_mm: float,
+        y_mm: float,
+        direction: str = "up_right",
+        snap_to_grid: bool = True,
+        sheet: str | None = None,
+        sheet_file: str | None = None,
+    ) -> str:
+        """Add a bus wire entry marker.
+
+        Snaps its anchor to the 1.27 mm / 50 mil grid by default."""
+        payload = AddBusWireEntryInput(
+            x_mm=x_mm,
+            y_mm=y_mm,
+            direction=direction,
+            snap_to_grid=snap_to_grid,
+        )
+        return service.add_bus_wire_entry(
+            payload.x_mm,
+            payload.y_mm,
+            payload.direction,
+            payload.snap_to_grid,
+            sheet,
+            sheet_file,
+        )
+
+    @mcp.tool()
+    def sch_add_no_connect(
+        x_mm: float,
+        y_mm: float,
+        snap_to_grid: bool = True,
+        sheet: str | None = None,
+        sheet_file: str | None = None,
+    ) -> str:
+        """Add a no-connect marker, snapping it to the 1.27 mm / 50 mil grid by default."""
+        payload = AddNoConnectInput(x_mm=x_mm, y_mm=y_mm, snap_to_grid=snap_to_grid)
+        return service.add_no_connect(
+            payload.x_mm,
+            payload.y_mm,
+            payload.snap_to_grid,
             sheet,
             sheet_file,
         )
