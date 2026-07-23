@@ -35,6 +35,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "schematic"
     / "destructive_edit.py",
+    "kicad_mcp.schematic.hierarchy_authoring": SRC_ROOT
+    / "kicad_mcp"
+    / "schematic"
+    / "hierarchy_authoring.py",
     "kicad_mcp.schematic.inspection": SRC_ROOT / "kicad_mcp" / "schematic" / "inspection.py",
     "kicad_mcp.schematic.symbol_mutation": SRC_ROOT
     / "kicad_mcp"
@@ -61,6 +65,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "schematic_topology.py",
+    "kicad_mcp.tools.schematic_hierarchy_authoring": SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "schematic_hierarchy_authoring.py",
     "kicad_mcp.tools.schematic_inspection": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -84,6 +92,7 @@ PURE_HELPERS = {
     "kicad_mcp.schematic.back_annotation",
     "kicad_mcp.schematic.basic_authoring",
     "kicad_mcp.schematic.destructive_edit",
+    "kicad_mcp.schematic.hierarchy_authoring",
     "kicad_mcp.schematic.inspection",
     "kicad_mcp.schematic.symbol_mutation",
     "kicad_mcp.schematic.topology",
@@ -105,6 +114,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.schematic_back_annotation": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_basic_authoring": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_destructive_edit": ("kicad_mcp.tools.schematic",),
+    "kicad_mcp.tools.schematic_hierarchy_authoring": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_inspection": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_symbol_mutation": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_topology": ("kicad_mcp.tools.schematic",),
@@ -114,6 +124,7 @@ REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.schematic_back_annotation": 300,
     "kicad_mcp.tools.schematic_basic_authoring": 300,
     "kicad_mcp.tools.schematic_destructive_edit": 300,
+    "kicad_mcp.tools.schematic_hierarchy_authoring": 300,
     "kicad_mcp.tools.schematic_inspection": 300,
     "kicad_mcp.tools.schematic_symbol_mutation": 300,
     "kicad_mcp.tools.schematic_topology": 300,
