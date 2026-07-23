@@ -29,11 +29,11 @@
 - Produces methods: `add_symbol`, `add_wire`, `add_label`, and `add_power_symbol`.
 - Consumes injected target, parser, library, snapping, formatting, block-builder, transaction, UUID, and reload callables.
 
-- [ ] **Step 1: Write failing direct service tests**
+- [x] **Step 1: Write failing direct service tests**
 
 Cover symbol success, missing symbol with suggestions, invalid units, library insertion, warnings and result ordering, wire targeting/snapping, label alias/error behavior, and delegated power-symbol success/failure.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 ```bash
 uv run --all-extras pytest -q tests/unit/test_schematic_basic_authoring_service.py
@@ -41,15 +41,15 @@ uv run --all-extras pytest -q tests/unit/test_schematic_basic_authoring_service.
 
 Expected: collection failure because `kicad_mcp.schematic.basic_authoring` does not exist.
 
-- [ ] **Step 3: Implement the injected service**
+- [x] **Step 3: Implement the injected service**
 
 Implement only the current observable orchestration. Keep Pydantic models out of the service and accept already validated primitive values.
 
-- [ ] **Step 4: Run and verify GREEN**
+- [x] **Step 4: Run and verify GREEN**
 
 Run the command from Step 2. Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/kicad_mcp/schematic/basic_authoring.py \
@@ -69,11 +69,11 @@ git commit -m "refactor(schematic): extract basic authoring service"
 - Produces: `SchematicBasicAuthoringDependencies(service)`.
 - Produces: `register(mcp, dependencies) -> None`.
 
-- [ ] **Step 1: Write failing registration tests**
+- [x] **Step 1: Write failing registration tests**
 
 Assert exact public names, descriptions, schemas, headless metadata, Pydantic validation, alias behavior, and argument delegation.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 ```bash
 uv run --all-extras pytest -q tests/unit/test_schematic_basic_authoring_registration.py
@@ -81,11 +81,11 @@ uv run --all-extras pytest -q tests/unit/test_schematic_basic_authoring_registra
 
 Expected: collection failure because the adapter does not exist.
 
-- [ ] **Step 3: Implement and wire the adapter**
+- [x] **Step 3: Implement and wire the adapter**
 
 Construct the service in the composition root, register the adapter once, and remove the five nested legacy functions.
 
-- [ ] **Step 4: Run focused behavior tests**
+- [x] **Step 4: Run focused behavior tests**
 
 ```bash
 uv run --all-extras pytest -q \
@@ -97,7 +97,7 @@ uv run --all-extras pytest -q \
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/kicad_mcp/tools/schematic.py \
@@ -112,15 +112,15 @@ git commit -m "refactor(schematic): delegate basic authoring registration"
 - Modify: `scripts/check_architecture_boundaries.py`
 - Create: `tests/unit/test_schematic_basic_authoring_architecture.py`
 
-- [ ] **Step 1: Write failing architecture tests**
+- [x] **Step 1: Write failing architecture tests**
 
 Assert service/adapter tracking, service purity, adapter isolation, and the 300-line limit.
 
-- [ ] **Step 2: Extend the architecture checker**
+- [x] **Step 2: Extend the architecture checker**
 
 Register both modules, keep only the service in `PURE_HELPERS`, add the adapter import guard, and enforce the line limit.
 
-- [ ] **Step 3: Verify public-surface stability**
+- [x] **Step 3: Verify public-surface stability**
 
 ```bash
 uv run --all-extras python scripts/check_architecture_boundaries.py
@@ -130,7 +130,7 @@ corepack pnpm run docs:tools:check
 
 Expected: all pass without snapshot regeneration.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add scripts/check_architecture_boundaries.py \
@@ -140,8 +140,20 @@ git commit -m "test(architecture): guard basic authoring boundaries"
 
 ### Task 4: Verify, publish, and review
 
-- [ ] Run metadata, format, lint, mypy, scoped strict Pyright, full unit, workflow security, strict docs, snapshot, focused coverage, and representative performance gates.
-- [ ] Record exact public-surface and registration line-count evidence.
+- [x] Run metadata, format, lint, mypy, scoped strict Pyright, full unit, workflow security, strict docs, snapshot, focused coverage, and representative performance gates.
+- [x] Record exact public-surface and registration line-count evidence.
 - [ ] Push and open a professional English PR referencing #434.
 - [ ] Inspect every bot/agent comment, review, and review thread; resolve actionable findings.
 - [ ] Merge only after all required checks pass.
+
+
+## Verification Evidence
+
+- Exact full-server metadata for all five extracted tools matches `main`: names, descriptions, input schemas, and annotations are identical.
+- `tests/integration/test_tool_surface_snapshot.py` passes without snapshot regeneration.
+- The main schematic `register()` span decreased from 2,807 to 2,591 lines; the basic-authoring adapter `register()` spans 199 lines.
+- Focused service, registration, and schematic integration coverage passed: 149 tests.
+- The extracted service and adapter have 100% focused line coverage.
+- The full unit suite passed with five expected skips and one pre-existing async-mock warning.
+- Metadata, formatting, Ruff, mypy, scoped strict Pyright, architecture, generated tool documentation, workflow policy/security, strict MkDocs, tool-surface snapshot, and the committed MCP latency benchmark all pass.
+- No runtime dependency, public tool contract, child-sheet targeting, grid default, transaction target, reload order, warning order, or backend-selection behavior changed.
