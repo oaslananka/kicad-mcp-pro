@@ -80,12 +80,12 @@
 ## Verification Evidence
 
 - TDD red/green evidence was observed for the absent rendering service, absent adapter, and missing architecture-policy entries before implementation.
-- Direct service and adapter suite: 13 tests passed; architecture suite: 3 tests passed; focused integration, fallback, protocol-contract, and tool-surface suite: 15 tests passed.
-- Focused coverage: 193 statements, 98% total (`rendering.py` 165 statements at 99%; `schematic_rendering.py` 28 statements at 96%), exceeding the 83% requirement.
+- Direct service and adapter suite: 16 tests passed; architecture suite: 3 tests passed; focused integration, fallback, protocol-contract, and tool-surface suite: 15 tests passed.
+- Focused coverage: 193 statements, 100% total (`rendering.py` 165/165; `schematic_rendering.py` 28/28), exceeding the 83% requirement.
 - Exact full-server metadata matches `main` for all three tools: names, descriptions, input schemas, output schemas, annotations, MCP metadata, and headless/KiCad-running metadata.
 - Committed tool-surface snapshot passed unchanged.
 - Main schematic `register()` span decreased from 1,657 lines on `main` to 1,368 lines; the new adapter `register()` is 93 lines.
-- Full selected unit gate passed: 1,749 tests collected, 5 skipped, no failures.
+- Full selected unit gate passed before the review-coverage additions: 1,749 tests collected, 5 skipped, no failures. The pre-push gate then passed again with the three added coverage tests.
 - Focused schematic PNG render, visual diff, live-preview debounce/child-sheet/bounds, renderer-fallback, protocol-contract, and snapshot tests passed.
 - Formatting, Ruff, mypy, scoped Pyright, architecture, metadata, generated references, parity, profile, tool-contract, compatibility, runtime-policy, strict MkDocs, latency benchmark, Bandit, dependency audit, GitHub Actions policy, zizmor, actionlint workflow checks, package build, and package metadata checks all passed.
 - The repository bootstrap reproduced the known `actionlint-py` wheel-install `EPERM` on the exec-agent filesystem. Verification used the locked environment with `uv sync --all-extras --frozen --no-install-package actionlint-py` and the exact cached actionlint binary; no source or lockfile changes were required.
