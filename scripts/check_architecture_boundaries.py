@@ -31,6 +31,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "schematic"
     / "basic_authoring.py",
+    "kicad_mcp.schematic.circuit_compilation": SRC_ROOT
+    / "kicad_mcp"
+    / "schematic"
+    / "circuit_compilation.py",
     "kicad_mcp.schematic.destructive_edit": SRC_ROOT
     / "kicad_mcp"
     / "schematic"
@@ -71,6 +75,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "schematic_basic_authoring.py",
+    "kicad_mcp.tools.schematic_circuit_compilation": SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "schematic_circuit_compilation.py",
     "kicad_mcp.tools.schematic_destructive_edit": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -133,6 +141,7 @@ PURE_HELPERS = {
     "kicad_mcp.models.visual_qa",
     "kicad_mcp.schematic.back_annotation",
     "kicad_mcp.schematic.basic_authoring",
+    "kicad_mcp.schematic.circuit_compilation",
     "kicad_mcp.schematic.destructive_edit",
     "kicad_mcp.schematic.document_settings",
     "kicad_mcp.schematic.hierarchy_authoring",
@@ -161,6 +170,7 @@ FORBIDDEN_PURE_IMPORT_PREFIXES = (
 ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.schematic_back_annotation": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_basic_authoring": ("kicad_mcp.tools.schematic",),
+    "kicad_mcp.tools.schematic_circuit_compilation": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_destructive_edit": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_document_settings": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_hierarchy_authoring": ("kicad_mcp.tools.schematic",),
@@ -177,6 +187,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
 REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.schematic_back_annotation": 300,
     "kicad_mcp.tools.schematic_basic_authoring": 300,
+    "kicad_mcp.tools.schematic_circuit_compilation": 300,
     "kicad_mcp.tools.schematic_destructive_edit": 300,
     "kicad_mcp.tools.schematic_document_settings": 300,
     "kicad_mcp.tools.schematic_hierarchy_authoring": 300,
