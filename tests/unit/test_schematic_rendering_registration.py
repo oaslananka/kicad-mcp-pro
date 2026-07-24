@@ -264,3 +264,33 @@ def test_registration_converts_image_response(tmp_path: Path) -> None:
     assert result.structuredContent == {"status": "ok", "png_path": str(image)}
     assert any(isinstance(item, TextContent) for item in result.content)
     assert any(isinstance(item, ImageContent) for item in result.content)
+
+
+def test_registration_delegates_visual_diff_response() -> None:
+    server, service = _registered()
+    tool = {item.name: item for item in server._tool_manager.list_tools()}["sch_render_visual_diff"]
+
+    result = tool.fn(
+        sheet="Power",
+        sheet_file=None,
+        dpi=144,
+        include_title_block=False,
+        output_file="delta.png",
+    )
+
+    assert service.calls == [
+        (
+            "render_visual_diff",
+            {
+                "sheet": "Power",
+                "sheet_file": None,
+                "dpi": 144,
+                "include_title_block": False,
+                "output_file": "delta.png",
+            },
+        )
+    ]
+    assert len(result.content) == 1
+    text = result.content[0]
+    assert isinstance(text, TextContent)
+    assert text.text == "diff"

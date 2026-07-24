@@ -335,3 +335,30 @@ def test_live_preview_force_renders_on_first_call(tmp_path: Path) -> None:
     assert response.image_path is not None
     assert response.metadata is not None
     assert response.metadata["status"] == "forced_rendered"
+
+
+def test_visual_diff_validates_dpi(tmp_path: Path) -> None:
+    response = RenderingHarness(tmp_path).service().render_visual_diff(dpi=601)
+
+    assert response.text == "dpi must be between 72 and 600."
+    assert response.metadata is None
+
+
+def test_live_preview_reports_reload_only_status(tmp_path: Path) -> None:
+    harness = RenderingHarness(tmp_path)
+    harness.preview_state = {
+        "last_signature": {"files": []},
+        "pending_signature": harness.signature,
+        "pending_observed_at_ns": 0,
+    }
+
+    response = harness.service().live_preview(
+        debounce_ms=0,
+        render=False,
+        reload=True,
+    )
+
+    assert response.image_path is None
+    assert response.metadata is not None
+    assert response.metadata["status"] == "changed_reloaded"
+    assert response.metadata["reload_result"] == "reloaded"
