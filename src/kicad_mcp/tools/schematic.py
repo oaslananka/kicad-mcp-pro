@@ -19,13 +19,11 @@ from typing import Any, Literal, Protocol, TextIO, TypedDict, cast
 
 import structlog
 from mcp.server.fastmcp import FastMCP
-from mcp.types import CallToolResult
 
 from ..config import get_config
 from ..connection import KiCadConnectionError, get_kicad
 from ..discovery import is_numbered_duplicate_kicad_file
 from ..errors import SchematicWriteUnsafeError
-from ..mcp_media import image_tool_result, text_tool_result
 from ..models.schematic import (
     AddLabelInput,
     AddSymbolInput,
@@ -49,6 +47,7 @@ from ..schematic.hierarchy_authoring import (
 )
 from ..schematic.inspection import SchematicInspectionService
 from ..schematic.layout_inspection import SchematicLayoutInspectionService
+from ..schematic.rendering import SchematicRenderingService
 from ..schematic.semantic_ir import (
     CircuitLike,
     FindingLike,
@@ -78,6 +77,7 @@ from . import (
     schematic_hierarchy_authoring,
     schematic_inspection,
     schematic_layout_inspection,
+    schematic_rendering,
     schematic_semantic_ir,
     schematic_symbol_mutation,
     schematic_template_catalog,
@@ -5579,6 +5579,67 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
+    rendering_service = SchematicRenderingService(
+        resolve_target=lambda sheet, sheet_file: _resolve_schematic_target(
+            sheet=sheet,
+            sheet_file=sheet_file,
+        ),
+        parse_schematic=lambda path: parse_schematic_file(path),
+        has_renderable_content=lambda data: _schematic_has_renderable_content(data),
+        safe_output_path=lambda raw_name, default_name: _safe_render_output_path(
+            raw_name,
+            default_name=default_name,
+        ),
+        render_png_artifact=lambda schematic_file, output_path, dpi, crop, title: (
+            _render_schematic_png_artifact(
+                schematic_file,
+                output_path,
+                dpi=dpi,
+                crop_to_content=crop,
+                include_title_block=title,
+            )
+        ),
+        load_visual_diff=lambda path: _load_schematic_visual_diff(path),
+        render_png_visual_diff=lambda before, after, output: _render_png_visual_diff(
+            before,
+            after,
+            output,
+        ),
+        preview_files=lambda root, include_children: _schematic_live_preview_files(
+            root,
+            include_children,
+        ),
+        preview_signature=lambda paths: _schematic_live_preview_signature(paths),
+        preview_state_filename=lambda path, include_children: (
+            _schematic_live_preview_state_filename(path, include_children)
+        ),
+        preview_state_read=lambda filename: _schematic_live_preview_state_read(filename),
+        preview_state_write=lambda filename, state: _schematic_live_preview_state_write(
+            filename,
+            state,
+        ),
+        preview_changed_files=lambda before, after: _schematic_live_preview_changed_files(
+            before,
+            after,
+        ),
+        preview_render_path=lambda target_path, watched_files, changed_files: (
+            _schematic_live_preview_render_path(
+                target_path=target_path,
+                watched_files=watched_files,
+                changed_files=changed_files,
+            )
+        ),
+        preview_payload=lambda **kwargs: _schematic_live_preview_payload(**kwargs),
+        reload_schematic=lambda: _reload_schematic(),
+        now_ns=lambda: time.time_ns(),
+    )
+    schematic_rendering.register(
+        mcp,
+        schematic_rendering.SchematicRenderingDependencies(
+            service=rendering_service,
+        ),
+    )
+
     topology_service = SchematicTopologyService(
         load_schematic=_load_kicad_schematic,
         with_diagnostics=_with_schematic_diagnostics,
@@ -6581,356 +6642,6 @@ def register(mcp: FastMCP) -> None:
     # -----------------------------------------------------------------------
     # Spatial awareness tools (v2.1.0)
     # -----------------------------------------------------------------------
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_live_preview(
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-        include_child_sheets: bool = True,
-        debounce_ms: int = 750,
-        render: bool = True,
-        reload: bool = False,
-        force: bool = False,
-        crop_to_content: bool = True,
-        dpi: int = 200,
-        include_title_block: bool = True,
-        output_file: str | None = None,
-    ) -> CallToolResult:
-        """Poll a safe live schematic preview state and refresh rendered output on changes.
-
-        This is an opt-in polling watcher for agents and companion-plugin flows. It
-        records the current schematic file signature, debounces rapid writes, then
-        refreshes a PNG preview when the watched files are stable. KiCad GUI reload
-        is deliberately opt-in via ``reload=True`` because the tool cannot reliably
-        prove that the user has no unsaved GUI edits.
-        """
-        if debounce_ms < 0 or debounce_ms > 60_000:
-            return text_tool_result("debounce_ms must be between 0 and 60000.")
-        if dpi < 72 or dpi > 600:
-            return text_tool_result("dpi must be between 72 and 600.")
-
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        files = _schematic_live_preview_files(target.path, include_child_sheets)
-        signature = _schematic_live_preview_signature(files)
-        state_name = _schematic_live_preview_state_filename(target.path, include_child_sheets)
-        state = _schematic_live_preview_state_read(state_name)
-        now_ns = time.time_ns()
-        debounce_ns = debounce_ms * 1_000_000
-
-        if state is None:
-            state = {
-                "last_signature": signature,
-                "pending_signature": None,
-                "pending_observed_at_ns": None,
-                "updated_at_ns": now_ns,
-            }
-            _schematic_live_preview_state_write(state_name, state)
-            if not force:
-                payload = _schematic_live_preview_payload(
-                    status="initialized",
-                    target=target,
-                    files=files,
-                    signature=signature,
-                    message=(
-                        "Live preview baseline recorded. Call again after a schematic "
-                        "change, or use force=True to render immediately."
-                    ),
-                )
-                return text_tool_result(json.dumps(payload, indent=2), metadata=payload)
-
-        last_signature = cast(dict[str, Any] | None, state.get("last_signature"))
-        pending_signature = cast(dict[str, Any] | None, state.get("pending_signature"))
-        changed_files = _schematic_live_preview_changed_files(last_signature, signature)
-
-        if not force and signature == last_signature:
-            state["pending_signature"] = None
-            state["pending_observed_at_ns"] = None
-            state["updated_at_ns"] = now_ns
-            _schematic_live_preview_state_write(state_name, state)
-            payload = _schematic_live_preview_payload(
-                status="no_change",
-                target=target,
-                files=files,
-                signature=signature,
-                message="No schematic file changes detected since the last live-preview refresh.",
-            )
-            return text_tool_result(json.dumps(payload, indent=2), metadata=payload)
-
-        if not force:
-            if pending_signature != signature:
-                state["pending_signature"] = signature
-                state["pending_observed_at_ns"] = now_ns
-                state["updated_at_ns"] = now_ns
-                _schematic_live_preview_state_write(state_name, state)
-                payload = _schematic_live_preview_payload(
-                    status="pending_debounce",
-                    target=target,
-                    files=files,
-                    signature=signature,
-                    changed_files=changed_files,
-                    message="Change detected; waiting for debounce window before preview refresh.",
-                )
-                return text_tool_result(json.dumps(payload, indent=2), metadata=payload)
-            observed_at = int(state.get("pending_observed_at_ns") or now_ns)
-            if now_ns - observed_at < debounce_ns:
-                payload = _schematic_live_preview_payload(
-                    status="pending_debounce",
-                    target=target,
-                    files=files,
-                    signature=signature,
-                    changed_files=changed_files,
-                    message="Change is still inside the debounce window.",
-                )
-                return text_tool_result(json.dumps(payload, indent=2), metadata=payload)
-
-        reload_result = _reload_schematic() if reload else None
-        render_metadata: dict[str, Any] | None = None
-        output_path: Path | None = None
-        if render:
-            render_path = _schematic_live_preview_render_path(
-                target_path=target.path,
-                watched_files=files,
-                changed_files=changed_files,
-            )
-            data = parse_schematic_file(render_path)
-            if _schematic_has_renderable_content(data):
-                try:
-                    default_name = f"live-preview-{render_path.stem}.png"
-                    output_path = _safe_render_output_path(output_file, default_name=default_name)
-                    svg_file, image_metadata = _render_schematic_png_artifact(
-                        render_path,
-                        output_path,
-                        dpi=dpi,
-                        crop_to_content=crop_to_content,
-                        include_title_block=include_title_block,
-                    )
-                    render_metadata = {
-                        "status": "ok",
-                        "sheet_path": str(render_path),
-                        "png_path": str(output_path),
-                        "svg_path": str(svg_file),
-                        "dpi": dpi,
-                        "include_title_block": include_title_block,
-                        **image_metadata,
-                    }
-                except (OSError, RuntimeError, ValueError) as exc:
-                    render_metadata = {
-                        "status": "failed",
-                        "sheet_path": str(render_path),
-                        "message": str(exc),
-                    }
-            else:
-                render_metadata = {
-                    "status": "empty_sheet",
-                    "sheet_path": str(render_path),
-                    "message": "No schematic content was available to render.",
-                }
-
-        state["last_signature"] = signature
-        state["pending_signature"] = None
-        state["pending_observed_at_ns"] = None
-        state["last_changed_files"] = changed_files
-        state["last_render"] = render_metadata
-        state["last_reload_result"] = reload_result
-        state["updated_at_ns"] = now_ns
-        _schematic_live_preview_state_write(state_name, state)
-
-        status = "forced_rendered" if force else "changed"
-        if render_metadata and render_metadata.get("status") == "ok":
-            status = "forced_rendered" if force else "changed_rendered"
-        elif reload_result:
-            status = "forced_reloaded" if force else "changed_reloaded"
-        payload = _schematic_live_preview_payload(
-            status=status,
-            target=target,
-            files=files,
-            signature=signature,
-            changed_files=changed_files,
-            reload_result=reload_result,
-            render_metadata=render_metadata,
-            message=(
-                "A best-effort KiCad GUI reload was requested by opt-in reload=True; "
-                "schematic disk reload in the open GUI document is not confirmed."
-                if reload
-                else "Preview refreshed without forcing a KiCad GUI reload."
-            ),
-        )
-        if (
-            output_path is not None
-            and output_path.exists()
-            and render_metadata
-            and render_metadata.get("status") == "ok"
-        ):
-            return image_tool_result(output_path, payload)
-        return text_tool_result(json.dumps(payload, indent=2), metadata=payload)
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_render_png(
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-        crop_to_content: bool = True,
-        dpi: int = 200,
-        include_title_block: bool = True,
-        output_file: str | None = None,
-    ) -> CallToolResult:
-        """Render a schematic sheet to PNG for visual self-checks.
-
-        Uses headless ``kicad-cli sch export svg`` followed by SVG-to-PNG
-        conversion. Empty sheets return ``status=empty_sheet`` instead of a
-        misleading blank image.
-        """
-        if dpi < 72 or dpi > 600:
-            return text_tool_result("dpi must be between 72 and 600.")
-
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        data = parse_schematic_file(target.path)
-        if not _schematic_has_renderable_content(data):
-            metadata: dict[str, Any] = {
-                "status": "empty_sheet",
-                "sheet_path": str(target.path),
-                "message": "No schematic content was available to render.",
-            }
-            return text_tool_result(
-                json.dumps(metadata, indent=2),
-                metadata=metadata,
-            )
-
-        try:
-            png_file = _safe_render_output_path(output_file, default_name=f"{target.path.stem}.png")
-        except ValueError as exc:
-            return text_tool_result(f"Invalid output path: {exc}")
-        try:
-            svg_file, image_metadata = _render_schematic_png_artifact(
-                target.path,
-                png_file,
-                dpi=dpi,
-                crop_to_content=crop_to_content,
-                include_title_block=include_title_block,
-            )
-        except RuntimeError as exc:
-            return text_tool_result(f"Schematic PNG render failed: {exc}")
-        metadata = {
-            "status": "ok",
-            "png_path": str(png_file),
-            "svg_path": str(svg_file),
-            "sheet_path": str(target.path),
-            "dpi": dpi,
-            "include_title_block": include_title_block,
-            **image_metadata,
-        }
-        return image_tool_result(
-            png_file,
-            metadata,
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_render_visual_diff(
-        sheet: str | None = None,
-        sheet_file: str | None = None,
-        dpi: int = 200,
-        include_title_block: bool = True,
-        output_file: str | None = None,
-    ) -> CallToolResult:
-        """Render the exact visual delta produced by the last schematic mutation.
-
-        The red pixels are the aligned before/after image difference. Metadata lists
-        every changed symbol, label/net, wire, bus, junction, or document object.
-        """
-        if dpi < 72 or dpi > 600:
-            return text_tool_result("dpi must be between 72 and 600.")
-
-        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        state = _load_schematic_visual_diff(target.path)
-        if state is None:
-            metadata: dict[str, Any] = {
-                "status": "no_recorded_mutation",
-                "sheet_path": str(target.path),
-                "message": "No mutation snapshot is available for this schematic.",
-            }
-            return text_tool_result(
-                json.dumps(metadata, indent=2),
-                metadata=metadata,
-            )
-
-        before_snapshot = Path(str(state.get("before_snapshot", "")))
-        if not before_snapshot.is_file():
-            metadata = {
-                "status": "missing_before_snapshot",
-                "sheet_path": str(target.path),
-                "before_snapshot": str(before_snapshot),
-            }
-            return text_tool_result(
-                json.dumps(metadata, indent=2),
-                metadata=metadata,
-            )
-
-        current_content = target.path.read_text(encoding="utf-8")
-        current_sha256 = hashlib.sha256(current_content.encode("utf-8")).hexdigest()
-        if current_sha256 != state.get("after_sha256"):
-            metadata = {
-                "status": "stale_mutation_snapshot",
-                "sheet_path": str(target.path),
-                "recorded_after_sha256": state.get("after_sha256"),
-                "current_sha256": current_sha256,
-                "message": "The schematic changed outside the recorded mutation.",
-            }
-            return text_tool_result(
-                json.dumps(metadata, indent=2),
-                metadata=metadata,
-            )
-
-        try:
-            diff_file = _safe_render_output_path(
-                output_file,
-                default_name=f"{target.path.stem}-visual-diff.png",
-            )
-        except ValueError as exc:
-            return text_tool_result(f"Invalid output path: {exc}")
-
-        artifact_dir = diff_file.parent / "_visual-diff"
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-        before_png = artifact_dir / f"{diff_file.stem}-before.png"
-        after_png = artifact_dir / f"{diff_file.stem}-after.png"
-        try:
-            before_svg, before_metadata = _render_schematic_png_artifact(
-                before_snapshot,
-                before_png,
-                dpi=dpi,
-                crop_to_content=False,
-                include_title_block=include_title_block,
-            )
-            after_svg, after_metadata = _render_schematic_png_artifact(
-                target.path,
-                after_png,
-                dpi=dpi,
-                crop_to_content=False,
-                include_title_block=include_title_block,
-            )
-            diff_metadata = _render_png_visual_diff(before_png, after_png, diff_file)
-        except RuntimeError as exc:
-            return text_tool_result(f"Schematic visual diff failed: {exc}")
-
-        metadata2: dict[str, Any] = {
-            "status": "ok",
-            "diff_path": str(diff_file),
-            "before_png_path": str(before_png),
-            "after_png_path": str(after_png),
-            "before_svg_path": str(before_svg),
-            "after_svg_path": str(after_svg),
-            "sheet_path": str(target.path),
-            "dpi": dpi,
-            "include_title_block": include_title_block,
-            "before_render": before_metadata,
-            "after_render": after_metadata,
-            "changed_objects": state.get("changed_objects", []),
-            "changed_refs": state.get("changed_refs", []),
-            "changed_nets": state.get("changed_nets", []),
-            **diff_metadata,
-        }
-        return image_tool_result(diff_file, metadata2)
 
     @mcp.tool()
     @headless_compatible

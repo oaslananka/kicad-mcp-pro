@@ -48,6 +48,7 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "schematic"
     / "layout_inspection.py",
+    "kicad_mcp.schematic.rendering": SRC_ROOT / "kicad_mcp" / "schematic" / "rendering.py",
     "kicad_mcp.schematic.semantic_ir": SRC_ROOT / "kicad_mcp" / "schematic" / "semantic_ir.py",
     "kicad_mcp.schematic.symbol_mutation": SRC_ROOT
     / "kicad_mcp"
@@ -106,6 +107,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "schematic_layout_inspection.py",
+    "kicad_mcp.tools.schematic_rendering": SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "schematic_rendering.py",
     "kicad_mcp.tools.schematic_semantic_ir": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -133,6 +138,7 @@ PURE_HELPERS = {
     "kicad_mcp.schematic.hierarchy_authoring",
     "kicad_mcp.schematic.inspection",
     "kicad_mcp.schematic.layout_inspection",
+    "kicad_mcp.schematic.rendering",
     "kicad_mcp.schematic.semantic_ir",
     "kicad_mcp.schematic.symbol_mutation",
     "kicad_mcp.schematic.template_catalog",
@@ -160,6 +166,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.schematic_hierarchy_authoring": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_inspection": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_layout_inspection": ("kicad_mcp.tools.schematic",),
+    "kicad_mcp.tools.schematic_rendering": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_semantic_ir": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_symbol_mutation": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_template_catalog": ("kicad_mcp.tools.schematic",),
@@ -175,6 +182,7 @@ REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.schematic_hierarchy_authoring": 300,
     "kicad_mcp.tools.schematic_inspection": 300,
     "kicad_mcp.tools.schematic_layout_inspection": 300,
+    "kicad_mcp.tools.schematic_rendering": 300,
     "kicad_mcp.tools.schematic_semantic_ir": 300,
     "kicad_mcp.tools.schematic_symbol_mutation": 300,
     "kicad_mcp.tools.schematic_template_catalog": 300,
