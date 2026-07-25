@@ -38,6 +38,10 @@ from ..models.visual_qa import run_visual_qa as _run_visual_qa
 from ..path_safety import resolve_under
 from ..schematic.back_annotation import SchematicBackAnnotationService
 from ..schematic.basic_authoring import SchematicBasicAuthoringService
+from ..schematic.circuit_compilation import (
+    PreparedCircuitInputs,
+    SchematicCircuitCompilationService,
+)
 from ..schematic.destructive_edit import SchematicDestructiveEditService
 from ..schematic.document_settings import SchematicDocumentSettingsService
 from ..schematic.hierarchy_authoring import (
@@ -72,6 +76,7 @@ from ..utils.sexpr import (
 from . import (
     schematic_back_annotation,
     schematic_basic_authoring,
+    schematic_circuit_compilation,
     schematic_destructive_edit,
     schematic_document_settings,
     schematic_hierarchy_authoring,
@@ -5483,6 +5488,55 @@ def _lint_semantic_ir(circuit: CircuitLike) -> Iterable[FindingLike]:
     return cast(Iterable[FindingLike], lint_circuit(cast(IRCircuit, circuit)))
 
 
+def _prepare_circuit_compilation_inputs(
+    *,
+    symbols: list[dict[str, Any]] | None = None,
+    wires: list[dict[str, Any]] | None = None,
+    labels: list[dict[str, Any]] | None = None,
+    power_symbols: list[dict[str, Any]] | None = None,
+    nets: list[dict[str, Any]] | None = None,
+    snap_to_grid: bool = True,
+    auto_layout: bool = False,
+    unsafe_routed_wires: bool = False,
+    paper: str = "A4",
+) -> PreparedCircuitInputs:
+    prepared = _prepare_build_circuit_inputs(
+        symbols=symbols,
+        wires=wires,
+        labels=labels,
+        power_symbols=power_symbols,
+        nets=nets,
+        snap_to_grid=snap_to_grid,
+        auto_layout=auto_layout,
+        unsafe_routed_wires=unsafe_routed_wires,
+        paper=paper,
+    )
+    return PreparedCircuitInputs(
+        symbols=prepared[0],
+        powers=prepared[1],
+        labels=prepared[2],
+        wires=prepared[3],
+        nets=prepared[4],
+        generated_wires=prepared[5],
+        unresolved_nets=prepared[6],
+        resolution_stats=prepared[7],
+        chosen_paper=prepared[8],
+    )
+
+
+def _write_compiled_schematic(content: str, path: Path, allow_node_loss: bool) -> None:
+    transactional_write(
+        lambda _current: content,
+        path,
+        allow_node_loss=allow_node_loss,
+    )
+
+
+def _active_project_name() -> str:
+    config = get_config()
+    return config.project_file.stem if config.project_file is not None else "KiCadMCP"
+
+
 def register(mcp: FastMCP) -> None:
     """Register schematic tools."""
     inspection_service = SchematicInspectionService(
@@ -5576,6 +5630,39 @@ def register(mcp: FastMCP) -> None:
         mcp,
         schematic_semantic_ir.SchematicSemanticIRDependencies(
             service=semantic_ir_service,
+        ),
+    )
+
+    circuit_compilation_service = SchematicCircuitCompilationService(
+        active_schematic_file=lambda: _get_schematic_file(),
+        project_name=_active_project_name,
+        read_sheet_paper=lambda path: _read_sheet_paper(path),
+        read_sheet_paper_declaration=lambda path: _read_sheet_paper_declaration(path),
+        prepare_inputs=_prepare_circuit_compilation_inputs,
+        render_report=lambda **kwargs: _render_net_compilation_report(**kwargs),
+        paper_sizes=PAPER_SIZES_MM,
+        new_uuid=lambda: new_uuid(),
+        load_lib_symbol=lambda library, symbol_name: load_lib_symbol(library, symbol_name),
+        snap_point=lambda x, y, enabled: _snap_point(x, y, enabled),
+        place_symbol_block=lambda **kwargs: place_symbol_block(**kwargs),
+        wire_block=lambda x1, y1, x2, y2: wire_block(x1, y1, x2, y2),
+        snap_line=lambda x1, y1, x2, y2, enabled: _snap_line(x1, y1, x2, y2, enabled),
+        label_block=lambda name, x, y, rotation, **kwargs: label_block(
+            name, x, y, rotation, **kwargs
+        ),
+        normalize_connectivity=lambda content: _normalize_schematic_wire_connectivity(content),
+        validate_schematic_text=lambda content: _validate_schematic_text(content),
+        transactional_write=_write_compiled_schematic,
+        reload_schematic=lambda: _reload_schematic(),
+        warn_unresolved=lambda payload: logger.warning(
+            "schematic_netlist_routing_incomplete",
+            **payload,
+        ),
+    )
+    schematic_circuit_compilation.register(
+        mcp,
+        schematic_circuit_compilation.SchematicCircuitCompilationDependencies(
+            service=circuit_compilation_service,
         ),
     )
 
@@ -5988,298 +6075,7 @@ def register(mcp: FastMCP) -> None:
         return f"{detail}\n{result}\n{snap_note}" if snap_note else f"{detail}\n{result}"
 
     @mcp.tool()
-    def sch_analyze_net_compilation(
-        symbols: list[dict[str, Any]] | None = None,
-        wires: list[dict[str, Any]] | None = None,
-        labels: list[dict[str, Any]] | None = None,
-        power_symbols: list[dict[str, Any]] | None = None,
-        nets: list[dict[str, Any]] | None = None,
-        snap_to_grid: bool = True,
-        auto_layout: bool = False,
-        unsafe_routed_wires: bool = False,
-    ) -> str:
-        """Preview how netlist-aware schematic compilation will resolve endpoints and wires.
-
-        Mirrors ``sch_build_circuit``: by default nets resolve to collision-safe
-        terminal stubs; pass ``unsafe_routed_wires=True`` to preview routed Manhattan
-        wire segments instead.
-        """
-        (
-            validated_symbols,
-            validated_powers,
-            validated_labels,
-            validated_wires,
-            raw_nets,
-            generated_wires,
-            unresolved_nets,
-            resolution_stats,
-            _chosen_paper,
-        ) = _prepare_build_circuit_inputs(
-            symbols=symbols,
-            wires=wires,
-            labels=labels,
-            power_symbols=power_symbols,
-            nets=nets,
-            snap_to_grid=snap_to_grid,
-            auto_layout=auto_layout,
-            unsafe_routed_wires=unsafe_routed_wires,
-        )
-        return _render_net_compilation_report(
-            symbols=validated_symbols,
-            powers=validated_powers,
-            labels=validated_labels,
-            explicit_wires=len(validated_wires) - len(generated_wires),
-            nets=raw_nets,
-            generated_wires=generated_wires,
-            unresolved_nets=unresolved_nets,
-            resolution_stats=resolution_stats,
-            auto_layout=auto_layout,
-            terminalized=not unsafe_routed_wires,
-        )
-
     @mcp.tool()
-    def sch_build_circuit(
-        symbols: list[dict[str, Any]] | None = None,
-        wires: list[dict[str, Any]] | None = None,
-        labels: list[dict[str, Any]] | None = None,
-        power_symbols: list[dict[str, Any]] | None = None,
-        nets: list[dict[str, Any]] | None = None,
-        snap_to_grid: bool = True,
-        auto_layout: bool = False,
-        unsafe_routed_wires: bool = False,
-    ) -> str:
-        """Build (overwrite) the active schematic from structured symbol, wire, and label inputs.
-
-        IMPORTANT: This tool **replaces** the entire schematic content.  Any symbols
-        already placed in the schematic will be lost.  To add symbols to an existing
-        schematic without erasing it use ``sch_add_symbol`` / ``sch_add_wire`` /
-        ``sch_add_label`` instead.
-
-        Coordinates are snapped to the 1.27 mm / 50 mil grid by default.  When no coordinates
-        are provided for a symbol, set ``auto_layout=True`` so the placement engine
-        assigns non-overlapping positions automatically.
-
-        When ``nets`` are provided, the builder is connection-aware. By default it
-        uses the **collision-safe** strategy: each pin endpoint gets a short stub plus
-        a same-named terminal (a global label for signal nets, a power symbol for
-        power nets), so nets connect *by name* and can never short by crossing wire
-        geometry.  Nets that cannot resolve to a routable pin endpoint raise a clear
-        error (or are surfaced as warnings) instead of silently producing a
-        disconnected schematic.
-
-        Set ``unsafe_routed_wires=True`` only if you explicitly want routed Manhattan
-        wire segments between pins.  That star-routing can cross unrelated pins or
-        labels and KiCad will merge them by geometry, so it can introduce silent
-        shorts on non-trivial netlists — prefer the default terminal strategy.
-
-        Recommended workflow:
-          1. Call ``sch_find_free_placement(count=N)`` to obtain safe coordinates.
-          2. Pass those coordinates in the ``symbols`` list.
-          3. OR set ``auto_layout=True`` and omit coordinates entirely.
-        """
-        start_paper = _read_sheet_paper(_get_schematic_file())
-        (
-            validated_symbols,
-            validated_powers,
-            validated_labels,
-            validated_wires,
-            raw_nets,
-            generated_wires,
-            unresolved_nets,
-            resolution_stats,
-            chosen_paper,
-        ) = _prepare_build_circuit_inputs(
-            symbols=symbols,
-            wires=wires,
-            labels=labels,
-            power_symbols=power_symbols,
-            nets=nets,
-            snap_to_grid=snap_to_grid,
-            auto_layout=auto_layout,
-            unsafe_routed_wires=unsafe_routed_wires,
-            paper=start_paper,
-        )
-        if unresolved_nets:
-            logger.warning(
-                "schematic_netlist_routing_incomplete",
-                generated_wire_count=len(generated_wires),
-                unresolved_net_count=len(unresolved_nets),
-                unresolved_nets=unresolved_nets[:10],
-            )
-        if raw_nets and not generated_wires and not validated_wires:
-            examples = "; ".join(
-                (
-                    f"{item['name']} "
-                    f"(resolved {item['resolved_count']}/{item['endpoint_count']}, "
-                    f"missing: {', '.join(item['unresolved_endpoints']) or 'all'})"
-                )
-                for item in unresolved_nets[:5]
-            )
-            raise ValueError(
-                "Netlist-aware auto-layout could not generate any safe terminal stubs. "
-                "The provided nets did not resolve to collision-safe pin endpoints. "
-                "Use `sch_analyze_net_compilation()` to inspect unresolved nets, or "
-                "provide explicit reference+pin endpoints / explicit wires. "
-                f"Examples: {examples or 'no endpoints were routable'}. "
-                f"Alias matches: {resolution_stats['pin_alias_resolutions']}."
-            )
-
-        sch_file = _get_schematic_file()
-        paper_declaration = _read_sheet_paper_declaration(sch_file)
-        # If auto-layout had to grow the sheet to keep every symbol on-page, write
-        # the larger size rather than the (now too small) original declaration.
-        if auto_layout and chosen_paper != start_paper and chosen_paper in PAPER_SIZES_MM:
-            paper_declaration = f'(paper "{chosen_paper}")'
-        root_uuid = new_uuid()
-        cfg = get_config()
-        project_name = cfg.project_file.stem if cfg.project_file is not None else "KiCadMCP"
-        lib_defs_added: set[str] = set()
-        lib_symbols_content: list[str] = []
-        elements: list[str] = []
-
-        # Load lib_symbols for regular symbols
-        for sym in validated_symbols:
-            key = f"{sym.library}:{sym.symbol_name}"
-            if key not in lib_defs_added:
-                lib_def = load_lib_symbol(sym.library, sym.symbol_name)
-                if lib_def is not None:
-                    lib_symbols_content.append(lib_def)
-                lib_defs_added.add(key)
-
-        # Load lib_symbols for power symbols
-        for pwr in validated_powers:
-            key = f"power:{pwr.name}"
-            if key not in lib_defs_added:
-                lib_def = load_lib_symbol("power", pwr.name)
-                if lib_def is not None:
-                    lib_symbols_content.append(lib_def)
-                lib_defs_added.add(key)
-
-        for sym in validated_symbols:
-            symbol_x, symbol_y = _snap_point(
-                sym.x_mm,
-                sym.y_mm,
-                snap_to_grid and sym.snap_to_grid,
-            )
-            elements.append(
-                place_symbol_block(
-                    lib_id=f"{sym.library}:{sym.symbol_name}",
-                    x=symbol_x,
-                    y=symbol_y,
-                    reference=sym.reference,
-                    value=sym.value,
-                    footprint=sym.footprint,
-                    rotation=sym.rotation,
-                    unit=sym.unit,
-                    project_name=project_name,
-                    root_uuid=root_uuid,
-                )
-            )
-
-        for index, pwr in enumerate(validated_powers, start=1):
-            power_x, power_y = _snap_point(
-                pwr.x_mm,
-                pwr.y_mm,
-                snap_to_grid and pwr.snap_to_grid,
-            )
-            elements.append(
-                place_symbol_block(
-                    lib_id=f"power:{pwr.name}",
-                    x=power_x,
-                    y=power_y,
-                    reference=f"#PWR{index:03d}",
-                    value=pwr.name,
-                    rotation=pwr.rotation,
-                    project_name=project_name,
-                    root_uuid=root_uuid,
-                )
-            )
-
-        for wire in validated_wires:
-            elements.append(
-                wire_block(
-                    *_snap_line(
-                        wire.x1_mm,
-                        wire.y1_mm,
-                        wire.x2_mm,
-                        wire.y2_mm,
-                        snap_to_grid and wire.snap_to_grid,
-                    )
-                )
-            )
-
-        for lbl in validated_labels:
-            label_x, label_y = _snap_point(
-                lbl.x_mm,
-                lbl.y_mm,
-                snap_to_grid and lbl.snap_to_grid,
-            )
-            elements.append(
-                label_block(
-                    lbl.name,
-                    label_x,
-                    label_y,
-                    lbl.rotation,
-                    global_label=lbl.global_label,
-                    shape=lbl.shape,
-                )
-            )
-
-        lib_section = "\t(lib_symbols\n"
-        for lib_symbol in lib_symbols_content:
-            lib_section += "\n".join("\t" + line for line in lib_symbol.splitlines()) + "\n"
-        lib_section += "\t)"
-        content = (
-            "(kicad_sch\n"
-            "\t(version 20250316)\n"
-            '\t(generator "kicad-mcp-pro")\n'
-            f'\t(uuid "{root_uuid}")\n'
-            f"\t{paper_declaration}\n"
-            f"{lib_section}\n"
-            + "\n".join(elements)
-            + (
-                "\n\t(sheet_instances\n"
-                '\t\t(path "/"\n'
-                '\t\t\t(page "1")\n'
-                "\t\t)\n"
-                "\t)\n"
-                "\t(embedded_fonts no)\n"
-                ")\n"
-            )
-        )
-        content = _normalize_schematic_wire_connectivity(content)
-        _validate_schematic_text(content)
-        transactional_write(lambda _current: content, sch_file, allow_node_loss=True)
-        result = _reload_schematic()
-        notes: list[str] = []
-        if auto_layout:
-            notes.append("Applied auto-layout to schematic symbols.")
-        if raw_nets:
-            if unsafe_routed_wires:
-                notes.append(
-                    f"Generated {len(generated_wires)} routed wire segment(s) in "
-                    "unsafe routed mode — these can short by crossing geometry; "
-                    "prefer the default terminal strategy."
-                )
-            else:
-                notes.append(
-                    f"Generated {len(generated_wires)} collision-safe terminal "
-                    "stub(s); nets connect by name."
-                )
-            # Never drop a connection silently: if some nets did not resolve to a
-            # routable endpoint, surface them in the result, not just the server log.
-            if unresolved_nets:
-                names = ", ".join(str(item["name"]) for item in unresolved_nets[:8])
-                more = " …" if len(unresolved_nets) > 8 else ""
-                notes.append(
-                    f"WARNING: {len(unresolved_nets)} net(s) could not be "
-                    f"terminalized safely and were left unconnected: {names}{more}. "
-                    "Use sch_analyze_net_compilation() for per-endpoint details."
-                )
-        if notes:
-            return result + "\n" + "\n".join(notes)
-        return result
-
     @mcp.tool()
     def sch_annotate(start_number: int = 1, order: str = "alpha") -> str:
         """Renumber schematic references sequentially."""
