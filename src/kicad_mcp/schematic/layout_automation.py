@@ -6,7 +6,7 @@ import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from ..models.schematic import AutoPlaceSymbolsInput
 
@@ -35,11 +35,13 @@ class SchematicLike(Protocol):
 class FunctionalDesignIntentLike(Protocol):
     """Design-intent setting consumed by functional placement."""
 
-    functional_spacing_mm: float
+    @property
+    def functional_spacing_mm(self) -> float: ...
 
 
 FieldMutator = Callable[[str], str]
 ParsedSchematic = dict[str, Any]
+LayoutStrategy = Literal["cluster", "linear", "star", "grid"]
 
 
 @dataclass(frozen=True)
@@ -86,7 +88,10 @@ class SchematicLayoutAutomationService:
         strategy: str = "cluster",
     ) -> str:
         """Place references with the existing deterministic layout strategies."""
-        payload = AutoPlaceSymbolsInput(symbol_list=symbol_list or [], strategy=strategy)
+        payload = AutoPlaceSymbolsInput(
+            symbol_list=symbol_list or [],
+            strategy=cast(LayoutStrategy, strategy),
+        )
         sch_file = self.active_schematic_file()
         try:
             schematic = self.load_schematic(sch_file)
@@ -231,7 +236,14 @@ class SchematicLayoutAutomationService:
             report = self.run_visual_qa(sch_file.read_text(encoding="utf-8", errors="ignore"))
             status = str(report["status"])
             findings = report["findings"]
-            codes = {str(f["code"]) for f in findings} if isinstance(findings, list) else set()
+            codes: set[str] = set()
+            if isinstance(findings, list):
+                for finding in cast(list[object], findings):
+                    if not isinstance(finding, dict):
+                        continue
+                    code = cast(dict[str, object], finding).get("code")
+                    if code is not None:
+                        codes.add(str(code))
             if initial_status is None:
                 initial_status = status
             final_status = status
