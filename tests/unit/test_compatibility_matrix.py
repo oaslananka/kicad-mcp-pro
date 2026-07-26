@@ -57,10 +57,10 @@ def test_kicad10_feature_parity_matrix_tracks_gaps_and_evidence() -> None:
     parity = matrix["kicad10FeatureParity"]
     surfaces = parity["surfaces"]
 
-    assert matrix["kicad"]["latestVerified"] == "10.0.4"
+    assert matrix["kicad"]["latestVerified"] == "10.0.5"
     assert parity["baseline"] == matrix["kicad"]["latestVerified"]
     assert parity["primaryIssue"].endswith("/issues/191")
-    assert parity["documentation"] == "docs/compatibility/kicad-10-0-4-feature-parity.md"
+    assert parity["documentation"] == "docs/compatibility/kicad-10-0-5-feature-parity.md"
     assert set(parity["allowedStatuses"]) == KICAD10_FEATURE_STATUSES
     assert surfaces["importers"]["allegro"]["status"] == "blocked"
     assert surfaces["exports"]["stepz"]["status"] == "supported"
