@@ -61,7 +61,7 @@ def test_kicad_canary_matrix_uses_scheduled_non_blocking_deprecated_lanes() -> N
                 "ci": "required",
                 "os": "windows-2025-vs2026",
                 "install": "choco",
-                "version": "10.0.4",
+                "version": "10.0.5",
                 "continue_on_error": False,
             },
             {
@@ -101,7 +101,7 @@ def test_kicad_canary_matrix_uses_scheduled_non_blocking_deprecated_lanes() -> N
     }
 
 
-def test_primary_matrix_includes_windows_10_0_4_contract_lane() -> None:
+def test_primary_matrix_includes_windows_10_0_5_contract_lane() -> None:
     matrix = build_canary_matrix(_compatibility_matrix(), include_manual=False)
 
     windows_primary = next(
@@ -115,7 +115,7 @@ def test_primary_matrix_includes_windows_10_0_4_contract_lane() -> None:
         "ci": "required",
         "os": "windows-2025-vs2026",
         "install": "choco",
-        "version": "10.0.4",
+        "version": "10.0.5",
         "continue_on_error": False,
     }
 

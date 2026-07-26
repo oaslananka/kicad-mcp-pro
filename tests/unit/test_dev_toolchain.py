@@ -20,7 +20,7 @@ def test_toolchain_contract_is_exact_and_cross_file_consistent() -> None:
     assert contract.task_version == "3.52.0"
     assert contract.rustup_version == "1.29.0"
     assert contract.rust_toolchain == "1.97.1"
-    assert contract.kicad_cli_version == "10.0.4"
+    assert contract.kicad_cli_version == "10.0.5"
     assert contract.supported_architectures == ("aarch64", "x86_64")
 
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))

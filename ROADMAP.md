@@ -21,7 +21,7 @@ version-agnostic so it does not drift.
 - GHCR `ghcr.io/oaslananka/kicad-mcp-pro:<version>` is published as a multi-arch
   OCI index per release.
 <!-- public-metadata:runtime-policy:start -->
-- Primary KiCad line: `10.0.x`; latest verified patch: `10.0.4`.
+- Primary KiCad line: `10.0.x`; latest verified patch: `10.0.5`.
 - Deprecated KiCad lines: `8.x`.
 - Dropped KiCad lines: `9.x`.
 - Preview KiCad lines: `11.x`.
@@ -89,7 +89,7 @@ version-agnostic so it does not drift.
   `server.json`, README, and docs synchronized before external submissions.
 - **Public listing readiness:** keep production screenshots, demo media, privacy,
   support, registry metadata, and reviewer prompts submission-ready.
-- **KiCad 10.0.4 evidence refresh:** re-run and archive CLI canary evidence for
+- **KiCad 10.0.5 evidence refresh:** re-run and archive CLI canary evidence for
   the current release line.
 - **Scorecard evidence refresh:** verify branch ruleset, release evidence, and
   accepted solo-maintainer exceptions after workflow-name changes.

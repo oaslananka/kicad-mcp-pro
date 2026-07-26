@@ -124,6 +124,54 @@ async def test_export_gerber_prefers_modern_command_then_legacy_fallback(
 
 
 @pytest.mark.anyio
+async def test_render_stackup_colors_flag_is_opt_in(
+    sample_project,
+    monkeypatch,
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(cmd, *args: object, **kwargs: object):
+        _ = args, kwargs
+        commands.append(list(cmd))
+        if "--output" in cmd:
+            output_path = Path(cmd[cmd.index("--output") + 1])
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr("kicad_mcp.tools.export.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "kicad_mcp.tools.export.get_cli_capabilities",
+        lambda _cli: CliCapabilities(
+            version="KiCad 10.0.5",
+            gerber_command="gerbers",
+            drill_command="drill",
+            position_command="pos",
+            supports_render=True,
+        ),
+    )
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    await call_tool_text(server, "export_3d_render", {"output_file": "default.png"})
+    await call_tool_text(
+        server,
+        "export_3d_render",
+        {"output_file": "stackup.png", "use_board_stackup_colors": True},
+    )
+
+    render_commands = [command for command in commands if "render" in command]
+    assert "--use-board-stackup-colors" not in render_commands[0]
+    assert render_commands[1].count("--use-board-stackup-colors") == 1
+
+
+@pytest.mark.anyio
 async def test_export_paths_reject_traversal_and_absolute_outputs(
     sample_project,
     monkeypatch,
