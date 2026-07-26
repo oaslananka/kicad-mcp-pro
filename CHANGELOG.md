@@ -10,6 +10,27 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.29.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.28.0...mcp-server-v3.29.0) (2026-07-26)
+
+
+### Features
+
+* **compat:** add the KiCad 11 adapter matrix and canaries ([#442](https://github.com/oaslananka/kicad-mcp-pro/issues/442)) ([457138d](https://github.com/oaslananka/kicad-mcp-pro/commit/457138decbb8d8c4894e05e5eee144d2f4b41f62)), closes [#411](https://github.com/oaslananka/kicad-mcp-pro/issues/411)
+* **mcp:** add the 2026 stateless compatibility lane ([#440](https://github.com/oaslananka/kicad-mcp-pro/issues/440)) ([40b4913](https://github.com/oaslananka/kicad-mcp-pro/commit/40b49131604eaec920c74a32f0003b464331f967)), closes [#410](https://github.com/oaslananka/kicad-mcp-pro/issues/410)
+
+
+### Bug Fixes
+
+* **compat:** promote KiCad 10.0.5 baseline ([186bb05](https://github.com/oaslananka/kicad-mcp-pro/commit/186bb057139d920d863cb3f4b39f4112e9105f35))
+* **security:** raise GitPython security floor ([489b9eb](https://github.com/oaslananka/kicad-mcp-pro/commit/489b9eb3ccfaaa7819d61952b7e9e24b399cf333))
+
+
+### Documentation
+
+* **architecture:** design schematic connectivity authoring extraction ([c48270e](https://github.com/oaslananka/kicad-mcp-pro/commit/c48270e28b6660f8a13392fd56485d11a7989600))
+* **architecture:** design schematic layout automation extraction ([8f2f582](https://github.com/oaslananka/kicad-mcp-pro/commit/8f2f58291db1654f45cb1115db6646d2034711b4))
+* **architecture:** design schematic lifecycle authoring extraction ([c77351a](https://github.com/oaslananka/kicad-mcp-pro/commit/c77351a949118e6151dbb1a7fe059c3afd80c81f))
+
 ## [3.28.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.27.0...mcp-server-v3.28.0) (2026-07-22)
 
 

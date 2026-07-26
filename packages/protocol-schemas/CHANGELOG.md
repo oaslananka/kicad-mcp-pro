@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v1.3.0...protocol-schemas-v1.4.0) (2026-07-26)
+
+
+### Features
+
+* **compat:** add the KiCad 11 adapter matrix and canaries ([#442](https://github.com/oaslananka/kicad-mcp-pro/issues/442)) ([457138d](https://github.com/oaslananka/kicad-mcp-pro/commit/457138decbb8d8c4894e05e5eee144d2f4b41f62)), closes [#411](https://github.com/oaslananka/kicad-mcp-pro/issues/411)
+
 ## [1.3.0](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v1.2.0...protocol-schemas-v1.3.0) (2026-06-27)
 
 
