@@ -17,14 +17,14 @@ def test_gitpython_security_floor_is_patched() -> None:
     uv_lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
 
     vcs_dependencies = pyproject["project"]["optional-dependencies"]["vcs"]
-    assert any("gitpython>=3.1.51" in dependency.lower() for dependency in vcs_dependencies)
+    assert any("gitpython>=3.1.55" in dependency.lower() for dependency in vcs_dependencies)
 
     locked = next(
         package["version"]
         for package in uv_lock["package"]
         if package["name"].lower() == "gitpython"
     )
-    assert Version(locked) >= Version("3.1.51")
+    assert Version(locked) >= Version("3.1.55")
 
 
 def test_root_pnpm_lock_uses_patched_fast_uri() -> None:
