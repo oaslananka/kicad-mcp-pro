@@ -28,7 +28,6 @@ from ..models.schematic import (
     AddLabelInput,
     AddSymbolInput,
     AddWireInput,
-    AnnotateInput,
     PowerSymbolInput,
     UpdatePropertiesInput,
 )
@@ -59,6 +58,7 @@ from ..schematic.layout_automation import (
     SchematicLike,
 )
 from ..schematic.layout_inspection import SchematicLayoutInspectionService
+from ..schematic.lifecycle_authoring import SchematicLifecycleAuthoringService
 from ..schematic.rendering import SchematicRenderingService
 from ..schematic.semantic_ir import (
     CircuitLike,
@@ -92,6 +92,7 @@ from . import (
     schematic_inspection,
     schematic_layout_automation,
     schematic_layout_inspection,
+    schematic_lifecycle_authoring,
     schematic_rendering,
     schematic_semantic_ir,
     schematic_symbol_mutation,
@@ -99,7 +100,6 @@ from . import (
     schematic_template_instantiation,
     schematic_topology,
 )
-from .metadata import headless_compatible
 from .schematic_constants import (
     _SCHEMATIC_STATE_DIRNAME,
     _SHEET_MARGIN_MM,
@@ -5945,76 +5945,24 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    def sch_add_jumper(
-        x_mm: float,
-        y_mm: float,
-        pins: int = 2,
-        open_by_default: bool = True,
-        snap_to_grid: bool = True,
-    ) -> str:
-        """Add a jumper symbol to the schematic."""
-        if pins < 2 or pins > 3:
-            raise ValueError("Only 2-pin and 3-pin jumpers are supported.")
-        target_x, target_y = _snap_point(x_mm, y_mm, snap_to_grid)
-        snap_note = _snap_notice((x_mm, y_mm), (target_x, target_y))
-        reference = _next_reference("JP")
-        value = f"Jumper_{pins}_{'Open' if open_by_default else 'Closed'}"
-        lib_id = f"Jumper:{value}"
-        transactional_write(
-            lambda current: _append_before_sheet_instances(
-                current,
-                place_symbol_block(
-                    lib_id=lib_id,
-                    x=target_x,
-                    y=target_y,
-                    reference=reference,
-                    value=value,
-                ),
-            )
-        )
-        result = _reload_schematic()
-        detail = f"Added jumper '{reference}' ({value}) at ({target_x:.2f}, {target_y:.2f}) mm."
-        return f"{detail}\n{result}\n{snap_note}" if snap_note else f"{detail}\n{result}"
-
-    @mcp.tool()
-    @mcp.tool()
-    @mcp.tool()
-    def sch_annotate(start_number: int = 1, order: str = "alpha") -> str:
-        """Renumber schematic references sequentially."""
-        payload = AnnotateInput(start_number=start_number, order=order)
-        data = parse_schematic_file(_get_schematic_file())
-        symbols = list(data["symbols"])
-        _sort_symbols_for_annotation(symbols, payload.order)
-
-        counters: dict[str, int] = {}
-        updates: list[tuple[str, str]] = []
-        for symbol in symbols:
-            prefix_match = re.match(r"([A-Za-z#]+)", symbol["reference"])
-            prefix = prefix_match.group(1) if prefix_match else "U"
-            counters.setdefault(prefix, payload.start_number)
-            new_reference = f"{prefix}{counters[prefix]}"
-            counters[prefix] += 1
-            updates.append((symbol["reference"], new_reference))
-
-        def mutator(current: str) -> str:
-            updated = current
-            for old_reference, new_reference in updates:
-                updated = updated.replace(
-                    f'(property "Reference" "{old_reference}"',
-                    f'(property "Reference" "{new_reference}"',
-                    1,
-                )
-            return updated
-
-        transactional_write(mutator)
-        return f"Annotated {len(updates)} symbol(s).\n{_reload_schematic()}"
-
-    @mcp.tool()
-    def sch_reload() -> str:
-        """Ask KiCad to reload the active schematic."""
-        return _reload_schematic()
+    lifecycle_authoring_service = SchematicLifecycleAuthoringService(
+        snap_point=_snap_point,
+        snap_notice=_snap_notice,
+        next_reference=_next_reference,
+        place_symbol_block=place_symbol_block,
+        append_before_sheet_instances=_append_before_sheet_instances,
+        transactional_write=transactional_write,
+        reload_schematic=_reload_schematic,
+        active_schematic_file=_get_schematic_file,
+        parse_schematic=parse_schematic_file,
+        sort_symbols_for_annotation=_sort_symbols_for_annotation,
+    )
+    schematic_lifecycle_authoring.register(
+        mcp,
+        schematic_lifecycle_authoring.SchematicLifecycleAuthoringDependencies(
+            service=lifecycle_authoring_service,
+        ),
+    )
 
     layout_automation_service = SchematicLayoutAutomationService(
         active_schematic_file=_get_schematic_file,
