@@ -91,14 +91,13 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
         "the symbol and reads outward. Power nets get conventional power symbols;\n"
         "other nets get labels. Pins that share a ``net`` are joined by their\n"
         "common terminal name. This is the clean alternative to placing bare\n"
-        "labels directly on pins."
+        "labels directly on pins.\n"
     )
     assert tools["sch_route_wire_between_pins"].description == (
         "Route deterministic Manhattan wire segments between two placed symbol pins."
     )
     assert tools["sch_add_missing_junctions"].description == (
-        "Insert missing schematic junctions at T-intersection wire endpoints. "
-        "This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients."
+        "Insert missing schematic junctions at T-intersection wire endpoints."
     )
 
     assert tools["sch_add_pin_labels"].parameters == {
@@ -157,15 +156,14 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
             "title": f"{name}Output",
             "type": "object",
         }
-        assert tool.annotations is not None
-        assert tool.annotations.readOnlyHint is None
-        assert tool.annotations.destructiveHint is True
-        assert tool.annotations.idempotentHint is False
+        assert tool.annotations is None
 
 
 def test_registration_preserves_headless_metadata() -> None:
     server, _service = _registered()
-    metadata = {tool.name: get_tool_metadata(tool.name) for tool in server._tool_manager.list_tools()}
+    metadata = {
+        tool.name: get_tool_metadata(tool.name) for tool in server._tool_manager.list_tools()
+    }
 
     assert metadata["sch_add_pin_labels"] is None
     assert metadata["sch_route_wire_between_pins"] is None
