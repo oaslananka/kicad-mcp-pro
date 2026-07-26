@@ -3,65 +3,47 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        stages: [pre-commit]
       - id: end-of-file-fixer
+        stages: [pre-commit]
       - id: check-added-large-files
+        stages: [pre-commit]
       - id: check-merge-conflict
+        stages: [pre-commit]
       - id: check-yaml
+        stages: [pre-commit]
       - id: check-json
+        stages: [pre-commit]
       - id: check-toml
+        stages: [pre-commit]
       - id: detect-private-key
+        stages: [pre-commit]
       - id: mixed-line-ending
         args: [--fix=lf]
+        stages: [pre-commit]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.16
     hooks:
       - id: ruff-format
+        stages: [pre-commit]
       - id: ruff
         args: [--fix]
+        stages: [pre-commit]
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
       - id: gitleaks
         args: [--config=.gitleaks.toml]
+        stages: [pre-commit]
 
   - repo: local
     hooks:
-      - id: workflow-policy
-        name: GitHub Actions policy
-        entry: uv run --all-extras python scripts/check_github_actions_policy.py
-        language: system
-        files: ^(\.github/(workflows/|actions-policy\.json|CODEOWNERS)|scripts/check_github_actions_policy\.py)
-        pass_filenames: false
-      - id: actionlint
-        name: actionlint
-        entry: uv run --all-extras python scripts/check_workflows.py --actionlint
-        language: system
-        files: ^\.github/workflows/.*\.ya?ml$
-        pass_filenames: false
-      - id: zizmor
-        name: zizmor
-        entry: uv run --all-extras python scripts/workflow_security.py --min-severity high
-        language: system
-        files: ^\.github/workflows/.*\.ya?ml$
-        pass_filenames: false
-      - id: unit-tests
-        name: Unit tests
-        entry: uv run --all-extras python scripts/run_pytest.py unit
-        language: system
-        always_run: true
-        pass_filenames: false
+      - id: targeted-pre-push
+        name: Targeted pre-push checks
+        entry: python scripts/run_uv.py run --all-extras python scripts/hook_pre_push.py
+        language: python
         stages: [pre-push]
-      - id: gui-web-tests
-        name: GUI web route tests
-        entry: uv run pytest tests/unit/test_web_routes.py tests/unit/test_web_routes_step3.py -q
-        language: system
-        files: ^(src/kicad_mcp/web/|tests/unit/test_web_routes.*\.py)
-        pass_filenames: false
-      - id: tauri-cargo-check
-        name: Tauri cargo check
-        entry: cargo check --manifest-path src-tauri/Cargo.toml
-        language: system
-        files: ^src-tauri/
+        always_run: true
         pass_filenames: false

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import yaml
@@ -18,20 +17,35 @@ def test_actionlint_is_a_locked_python_dev_tool() -> None:
     assert "kicadstudio" not in checker
 
 
-def test_pre_commit_keeps_heavy_tests_on_pre_push() -> None:
+def test_pre_commit_uses_one_targeted_pre_push_gate() -> None:
     config = yaml.safe_load((ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
     local = next(repo for repo in config["repos"] if repo["repo"] == "local")
     hooks = {hook["id"]: hook for hook in local["hooks"]}
 
-    assert hooks["unit-tests"]["stages"] == ["pre-push"]
-    assert "scripts/run_pytest.py unit" in hooks["unit-tests"]["entry"]
-    assert hooks["workflow-policy"]["pass_filenames"] is False
-    assert hooks["actionlint"]["pass_filenames"] is False
-    assert hooks["zizmor"]["pass_filenames"] is False
-    assert re.search(hooks["workflow-policy"]["files"], ".github/actions-policy.json")
-    assert re.search(hooks["actionlint"]["files"], ".github/workflows/ci.yml")
-    assert re.search(hooks["zizmor"]["files"], ".github/workflows/ci.yaml")
-    assert "--locked" not in hooks["tauri-cargo-check"]["entry"]
+    assert set(hooks) == {"targeted-pre-push"}
+    targeted = hooks["targeted-pre-push"]
+    assert targeted["stages"] == ["pre-push"]
+    assert targeted["always_run"] is True
+    assert targeted["pass_filenames"] is False
+    assert targeted["language"] == "python"
+    assert targeted["entry"] == (
+        "python scripts/run_uv.py run --all-extras python scripts/hook_pre_push.py"
+    )
+
+    config_text = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    assert "scripts/run_pytest.py unit" not in config_text
+    assert "cargo check" not in config_text
+    assert "workflow_security.py" not in config_text
+
+
+def test_standard_hooks_run_only_at_pre_commit() -> None:
+    config = yaml.safe_load((ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
+
+    for repo in config["repos"]:
+        if repo["repo"] == "local":
+            continue
+        for hook in repo["hooks"]:
+            assert hook["stages"] == ["pre-commit"]
 
 
 def test_mixed_line_endings_are_normalized() -> None:

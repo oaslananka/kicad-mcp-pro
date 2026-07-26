@@ -46,8 +46,8 @@ def main() -> int:
         return 0
 
     commands = [
-        ["uv", "run", "ruff", "format", "--check", *files],
-        ["uv", "run", "ruff", "check", *files],
+        [sys.executable, "-m", "ruff", "format", "--check", *files],
+        [sys.executable, "-m", "ruff", "check", *files],
     ]
     for command in commands:
         exit_code = _run(command)
