@@ -15,6 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
 
 DOMAIN_MODULES = {
+    "kicad_mcp.tools.schematic": SRC_ROOT / "kicad_mcp" / "tools" / "schematic.py",
     "kicad_mcp.companion.context": SRC_ROOT / "kicad_mcp" / "companion" / "context.py",
     "kicad_mcp.ipc.command_queue": SRC_ROOT / "kicad_mcp" / "ipc" / "command_queue.py",
     "kicad_mcp.models.contract_verifier": SRC_ROOT
@@ -215,6 +216,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
 }
 
 REGISTER_LINE_LIMITS = {
+    "kicad_mcp.tools.schematic": 300,
     "kicad_mcp.tools.schematic_back_annotation": 300,
     "kicad_mcp.tools.schematic_basic_authoring": 300,
     "kicad_mcp.tools.schematic_circuit_compilation": 300,
