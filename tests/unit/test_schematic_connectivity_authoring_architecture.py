@@ -42,9 +42,7 @@ def test_connectivity_authoring_service_has_no_fastmcp_or_registry_dependency() 
 
 
 def test_connectivity_authoring_adapter_does_not_import_monolith() -> None:
-    adapter = (
-        boundaries.SRC_ROOT / "kicad_mcp" / "tools" / "schematic_connectivity_authoring.py"
-    )
+    adapter = boundaries.SRC_ROOT / "kicad_mcp" / "tools" / "schematic_connectivity_authoring.py"
     assert "kicad_mcp.tools.schematic" not in _imports(adapter)
     assert boundaries.ADAPTER_FORBIDDEN_IMPORT_PREFIXES[
         "kicad_mcp.tools.schematic_connectivity_authoring"
@@ -52,13 +50,11 @@ def test_connectivity_authoring_adapter_does_not_import_monolith() -> None:
 
 
 def test_connectivity_authoring_register_stays_below_300_lines() -> None:
-    adapter = (
-        boundaries.SRC_ROOT / "kicad_mcp" / "tools" / "schematic_connectivity_authoring.py"
-    )
+    adapter = boundaries.SRC_ROOT / "kicad_mcp" / "tools" / "schematic_connectivity_authoring.py"
     assert _function_span(adapter, "register") <= 300
-    assert boundaries.REGISTER_LINE_LIMITS[
-        "kicad_mcp.tools.schematic_connectivity_authoring"
-    ] == 300
+    assert (
+        boundaries.REGISTER_LINE_LIMITS["kicad_mcp.tools.schematic_connectivity_authoring"] == 300
+    )
 
 
 def test_schematic_composition_root_delegates_connectivity_authoring() -> None:
