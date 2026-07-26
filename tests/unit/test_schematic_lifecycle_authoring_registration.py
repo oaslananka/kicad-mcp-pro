@@ -112,7 +112,9 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
 
 def test_registration_preserves_metadata() -> None:
     server, _service = _registered()
-    metadata = {tool.name: get_tool_metadata(tool.name) for tool in server._tool_manager.list_tools()}
+    metadata = {
+        tool.name: get_tool_metadata(tool.name) for tool in server._tool_manager.list_tools()
+    }
 
     jumper = metadata["sch_add_jumper"]
     assert jumper is not None
