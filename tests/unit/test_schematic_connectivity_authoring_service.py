@@ -1,17 +1,28 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from kicad_mcp.schematic.connectivity_authoring import SchematicConnectivityAuthoringService
+from kicad_mcp.schematic.connectivity_authoring import (
+    BoundingBoxLike,
+    SchematicConnectivityAuthoringService,
+)
 
 
 @dataclass(frozen=True)
 class FakeTarget:
     path: Path
     description: str = "root"
+
+
+@dataclass(frozen=True)
+class FakeBoundingBox:
+    x_min: float = 0.0
+    y_min: float = 0.0
+    x_max: float = 1.0
+    y_max: float = 1.0
 
 
 @dataclass
@@ -30,7 +41,7 @@ def _harness(
     route_segments: list[tuple[float, float, float, float]] | None = None,
     route_warning: str | None = None,
     power_net: Callable[[str], bool] | None = None,
-    power_lib: str | None = "(symbol \"power:3V3\")",
+    power_lib: str | None = '(symbol "power:3V3")',
 ) -> ServiceHarness:
     target = FakeTarget(tmp_path / "board.kicad_sch")
     target.path.write_text("(kicad_sch\n\t(sheet_instances)\n)", encoding="utf-8")
@@ -60,9 +71,29 @@ def _harness(
         calls.append(("label_block", (name, x, y, rotation, global_label)))
         return f"LABEL({name},{x},{y},{rotation},{global_label})"
 
-    def place_symbol_block(**kwargs: Any) -> str:
-        calls.append(("place_symbol_block", kwargs))
-        return f"POWER({kwargs['value']},{kwargs['x']},{kwargs['y']})"
+    def place_symbol_block(
+        *,
+        lib_id: str,
+        x: float,
+        y: float,
+        reference: str,
+        value: str,
+        rotation: int,
+        project_name: str,
+        root_uuid: str,
+    ) -> str:
+        payload: dict[str, object] = {
+            "lib_id": lib_id,
+            "x": x,
+            "y": y,
+            "reference": reference,
+            "value": value,
+            "rotation": rotation,
+            "project_name": project_name,
+            "root_uuid": root_uuid,
+        }
+        calls.append(("place_symbol_block", payload))
+        return f"POWER({value},{x},{y})"
 
     def append_before_sheet_instances(content: str, block: str) -> str:
         return content.replace("\t(sheet_instances)", f"\t{block}\n\t(sheet_instances)", 1)
@@ -90,11 +121,15 @@ def _harness(
     def route(
         start: tuple[float, float],
         end: tuple[float, float],
-        obstacles: list[object],
+        obstacles: list[BoundingBoxLike],
         snap_to_grid: bool,
     ) -> tuple[list[tuple[float, float, float, float]], str | None]:
         calls.append(("route", (start, end, obstacles, snap_to_grid)))
         return list(route_segments or []), route_warning
+
+    def split_lib_id(lib_id: str) -> tuple[str, str]:
+        library, symbol_name = lib_id.split(":", 1)
+        return library, symbol_name
 
     service = SchematicConnectivityAuthoringService(
         resolve_target=lambda sheet, sheet_file: target,
@@ -117,8 +152,8 @@ def _harness(
         reload_schematic=lambda: "Reloaded",
         format_target_detail=lambda resolved: f"Target schematic: {resolved.path.name}",
         active_schematic_file=lambda: target.path,
-        split_lib_id=lambda lib_id: tuple(lib_id.split(":", 1)),  # type: ignore[return-value]
-        get_symbol_bboxes=lambda content: ["bbox"],
+        split_lib_id=split_lib_id,
+        get_symbol_bboxes=lambda content: [FakeBoundingBox()],
         route_avoiding_obstacles=route,
         run_auto_add_missing_junctions=lambda: "Inserted 2 missing junction(s).",
         snap_tolerance_mm=0.001,
@@ -138,7 +173,9 @@ def _symbol(reference: str = "U1", lib_id: str = "Device:R") -> dict[str, Any]:
     }
 
 
-def test_add_pin_labels_reports_invalid_and_missing_connections_without_write(tmp_path: Path) -> None:
+def test_add_pin_labels_reports_invalid_and_missing_connections_without_write(
+    tmp_path: Path,
+) -> None:
     harness = _harness(tmp_path, parsed={"uuid": "root", "symbols": [], "power_symbols": []})
 
     result = harness.service.add_pin_labels(
@@ -190,9 +227,7 @@ def test_add_pin_labels_resolves_alias_and_places_power_symbol(tmp_path: Path) -
         aliases={("Device", "R"): {"VIN": (12.0, 20.0)}},
     )
 
-    result = harness.service.add_pin_labels(
-        [{"reference": "U1", "pin": "VIN", "net": "3V3"}]
-    )
+    result = harness.service.add_pin_labels([{"reference": "U1", "pin": "VIN", "net": "3V3"}])
 
     assert "U1.VIN -> 3V3 (power) @ (17.08, 20.0)" in result
     assert any(name == "place_symbol_block" for name, _payload in harness.calls)
@@ -208,9 +243,7 @@ def test_add_pin_labels_accepts_power_symbol_origin_pin_fallback(tmp_path: Path)
         pin_positions={("power", "GND"): {}},
     )
 
-    result = harness.service.add_pin_labels(
-        [{"reference": "#PWR01", "pin": "1", "net": "GND"}]
-    )
+    result = harness.service.add_pin_labels([{"reference": "#PWR01", "pin": "1", "net": "GND"}])
 
     assert "#PWR01.1 -> GND (power) @ (15.08, 20.0)" in result
     assert len(harness.writes) == 1
@@ -224,9 +257,7 @@ def test_add_pin_labels_skips_missing_power_library_symbol(tmp_path: Path) -> No
         power_lib=None,
     )
 
-    result = harness.service.add_pin_labels(
-        [{"reference": "U1", "pin": "1", "net": "3V3"}]
-    )
+    result = harness.service.add_pin_labels([{"reference": "U1", "pin": "1", "net": "3V3"}])
 
     assert result == "No pin labels were added.\nU1.1: power symbol '3V3' was not found"
     assert harness.writes == []
@@ -276,13 +307,10 @@ def test_route_wire_between_pins_writes_segments_and_warning(tmp_path: Path) -> 
         route_warning="WARNING: obstacle_bypass_failed",
     )
 
-    result = harness.service.route_wire_between_pins(
-        "U1", "1", "R1", "2", snap_to_grid=False
-    )
+    result = harness.service.route_wire_between_pins("U1", "1", "R1", "2", snap_to_grid=False)
 
     assert result == (
-        "Reloaded\nRouted 2 wire segment(s) between U1:1 and R1:2.\n"
-        "WARNING: obstacle_bypass_failed"
+        "Reloaded\nRouted 2 wire segment(s) between U1:1 and R1:2.\nWARNING: obstacle_bypass_failed"
     )
     assert len(harness.writes) == 1
     assert harness.writes[0][0] is None
@@ -294,8 +322,17 @@ def test_add_missing_junctions_runs_fixer_before_reload(tmp_path: Path) -> None:
     order: list[str] = []
     harness = _harness(tmp_path)
     service = harness.service
-    object.__setattr__(service, "run_auto_add_missing_junctions", lambda: order.append("fix") or "Fixed")
-    object.__setattr__(service, "reload_schematic", lambda: order.append("reload") or "Reloaded")
+
+    def fix() -> str:
+        order.append("fix")
+        return "Fixed"
+
+    def reload() -> str:
+        order.append("reload")
+        return "Reloaded"
+
+    object.__setattr__(service, "run_auto_add_missing_junctions", fix)
+    object.__setattr__(service, "reload_schematic", reload)
 
     result = service.add_missing_junctions()
 
