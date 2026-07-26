@@ -206,8 +206,8 @@ class SchematicLayoutAutomationService:
             mutator(sch_file.read_text(encoding="utf-8"))
             return (
                 f"Dry run: would reposition Reference/Value fields on {len(updated)} "
-                f"symbol(s): {', '.join(updated) if updated else '(none)'}\."
-            ).replace("\\.", ".")
+                f"symbol(s): {', '.join(updated) if updated else '(none)'}."
+            )
 
         self.transactional_write_to_schematic_file(sch_file, mutator)
         result = self.reload_schematic()
