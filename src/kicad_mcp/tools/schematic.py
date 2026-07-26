@@ -5586,8 +5586,8 @@ def _connectivity_transactional_write(
     return transactional_write(mutator, path)
 
 
-def register(mcp: FastMCP) -> None:
-    """Register schematic tools."""
+def _register_inspection_and_analysis(mcp: FastMCP) -> None:
+    """Register schematic inspection, compilation, rendering, and topology tools."""
     inspection_service = SchematicInspectionService(
         parse_schematic=parse_schematic_file,
         with_diagnostics=_with_schematic_diagnostics,
@@ -5792,6 +5792,9 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
+
+def _register_authoring(mcp: FastMCP) -> None:
+    """Register schematic mutation and authoring tools."""
     symbol_mutation_service = SchematicSymbolMutationService(
         update_symbol_property=update_symbol_property,
         set_symbol_dnp=set_symbol_dnp,
@@ -6003,3 +6006,9 @@ def register(mcp: FastMCP) -> None:
             service=layout_automation_service,
         ),
     )
+
+
+def register(mcp: FastMCP) -> None:
+    """Register schematic tools."""
+    _register_inspection_and_analysis(mcp)
+    _register_authoring(mcp)
