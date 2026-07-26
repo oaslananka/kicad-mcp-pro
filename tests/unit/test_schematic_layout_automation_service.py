@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -11,6 +11,11 @@ from kicad_mcp.schematic.layout_automation import (
     SchematicLayoutAutomationService,
     SchematicLike,
 )
+
+
+@dataclass(frozen=True)
+class FakeDesignIntent:
+    functional_spacing_mm: float
 
 
 class FakeComponent:
@@ -102,6 +107,26 @@ def _service(
         resize_log.append((path, target))
         return True
 
+    def load_design_intent() -> FakeDesignIntent:
+        return FakeDesignIntent(functional_spacing_mm=functional_spacing_mm)
+
+    def classify_symbol(*, ref: str, value: str, lib_id: str) -> str:
+        del ref, value, lib_id
+        return "passive"
+
+    def functional_zone_origin(
+        category: str,
+        *,
+        max_cols: int,
+        max_rows: int,
+        spacing_mm: float,
+    ) -> tuple[int, int]:
+        del category, max_cols, max_rows, spacing_mm
+        return functional_origin
+
+    def warn(event: str, **payload: object) -> None:
+        warning_log.append((event, dict(payload)))
+
     return SchematicLayoutAutomationService(
         active_schematic_file=lambda: schematic_file,
         load_schematic=load_schematic,
@@ -122,20 +147,20 @@ def _service(
         schematic_has_connections=lambda _text: False,
         respace_symbols_apply=lambda _path: list(respace_result or []),
         autoplace_fields_apply=lambda _path: list(field_apply_result or []),
-        load_design_intent=lambda: SimpleNamespace(functional_spacing_mm=functional_spacing_mm),
+        load_design_intent=load_design_intent,
         normalize_anchor_refs=lambda _anchor: list(normalized_anchors or []),
         sheet_usable_cols=lambda _paper: usable_cols,
         sheet_usable_rows=lambda _paper: usable_rows,
         paper_sizes_mm={"A4": (297.0, 210.0), "A3": (420.0, 297.0)},
-        classify_symbol=lambda **_kwargs: "passive",
-        functional_zone_origin=lambda *_args, **_kwargs: functional_origin,
+        classify_symbol=classify_symbol,
+        functional_zone_origin=functional_zone_origin,
         functional_zones=("passive", "connector"),
         zone_max_cols=3,
         auto_layout_origin_x_mm=25.4,
         auto_layout_origin_y_mm=17.78,
         auto_layout_column_spacing_mm=25.4,
         auto_layout_row_spacing_mm=17.78,
-        warn=lambda event, **payload: warning_log.append((event, payload)),
+        warn=warn,
     )
 
 
@@ -255,9 +280,16 @@ def test_autoplace_fields_writes_and_reloads(tmp_path: Path) -> None:
 
 def test_autoplace_fields_reports_no_matching_targets(tmp_path: Path) -> None:
     schematic_file = tmp_path / "board.kicad_sch"
+
+    def no_targets(
+        _path: Path,
+        _references: list[str] | None,
+    ) -> tuple[Callable[[str], str], list[str], list[str]]:
+        return (lambda value: value, [], [])
+
     service = _service(
         schematic_file,
-        field_builder=lambda _path, _refs: (lambda value: value, [], []),
+        field_builder=no_targets,
     )
 
     result = service.autoplace_fields(["R9"])
