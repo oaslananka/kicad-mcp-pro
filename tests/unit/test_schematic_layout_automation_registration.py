@@ -95,9 +95,7 @@ def test_registration_preserves_names_and_schemas() -> None:
     }
     assert tools["sch_autoplace_fields"].parameters["properties"]["dry_run"]["default"] is False
     assert tools["sch_fix_readability"].parameters == {
-        "properties": {
-            "max_passes": {"default": 3, "title": "Max Passes", "type": "integer"}
-        },
+        "properties": {"max_passes": {"default": 3, "title": "Max Passes", "type": "integer"}},
         "title": "sch_fix_readabilityArguments",
         "type": "object",
     }
@@ -131,7 +129,9 @@ def test_registration_preserves_descriptions() -> None:
         "symbols that are not in ``symbol_list`` are treated as immovable obstacles.\n"
     )
     assert "Mirrors KiCad's ``autoplace_fields``" in tools["sch_autoplace_fields"].description
-    assert "Iteratively fix schematic readability defects" in tools["sch_fix_readability"].description
+    assert (
+        "Iteratively fix schematic readability defects" in tools["sch_fix_readability"].description
+    )
     assert "semantically meaningful zones" in tools["sch_auto_place_functional"].description
 
 
@@ -156,8 +156,7 @@ def test_registration_delegates_exact_arguments() -> None:
     assert tools["sch_autoplace_fields"].fn(references=["R1"], dry_run=True) == "fields"
     assert tools["sch_fix_readability"].fn(max_passes=4) == "readability"
     assert (
-        tools["sch_auto_place_functional"].fn(symbol_list=["U1"], anchor_ref=["J1"])
-        == "functional"
+        tools["sch_auto_place_functional"].fn(symbol_list=["U1"], anchor_ref=["J1"]) == "functional"
     )
 
     assert service.calls == [

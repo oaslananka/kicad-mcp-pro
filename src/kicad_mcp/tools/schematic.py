@@ -29,7 +29,6 @@ from ..models.schematic import (
     AddSymbolInput,
     AddWireInput,
     AnnotateInput,
-    AutoPlaceSymbolsInput,
     PowerSymbolInput,
     RouteWireBetweenPinsInput,
     UpdatePropertiesInput,
@@ -50,6 +49,11 @@ from ..schematic.hierarchy_authoring import (
     SchematicHierarchyAuthoringService,
 )
 from ..schematic.inspection import SchematicInspectionService
+from ..schematic.layout_automation import (
+    FunctionalDesignIntentLike,
+    SchematicLayoutAutomationService,
+    SchematicLike,
+)
 from ..schematic.layout_inspection import SchematicLayoutInspectionService
 from ..schematic.rendering import SchematicRenderingService
 from ..schematic.semantic_ir import (
@@ -81,6 +85,7 @@ from . import (
     schematic_document_settings,
     schematic_hierarchy_authoring,
     schematic_inspection,
+    schematic_layout_automation,
     schematic_layout_inspection,
     schematic_rendering,
     schematic_semantic_ir,
@@ -5537,6 +5542,16 @@ def _active_project_name() -> str:
     return config.project_file.stem if config.project_file is not None else "KiCadMCP"
 
 
+def _load_layout_schematic(path: Path) -> SchematicLike:
+    return cast(SchematicLike, _load_kicad_schematic(path))
+
+
+def _load_layout_design_intent() -> FunctionalDesignIntentLike:
+    from .project import load_design_intent
+
+    return load_design_intent()
+
+
 def register(mcp: FastMCP) -> None:
     """Register schematic tools."""
     inspection_service = SchematicInspectionService(
@@ -6197,453 +6212,42 @@ def register(mcp: FastMCP) -> None:
         result = _reload_schematic()
         return f"{result}\n{summary}"
 
-    @mcp.tool()
-    def sch_auto_place_symbols(
-        symbol_list: list[str] | None = None,
-        strategy: str = "cluster",
-    ) -> str:
-        """Place selected references with a deterministic cluster, linear, star, or grid layout.
-
-        Unlike the legacy behaviour, this version reads all already-placed symbols
-        first and avoids placing new symbols on top of them.  Fixed/already-placed
-        symbols that are not in ``symbol_list`` are treated as immovable obstacles.
-        """
-        payload = AutoPlaceSymbolsInput(symbol_list=symbol_list or [], strategy=strategy)
-        sch_file = _get_schematic_file()
-        try:
-            schematic = _load_kicad_schematic(sch_file)
-        except Exception as exc:
-            logger.warning(
-                "schematic_auto_place_load_failed",
-                schematic_file=str(sch_file),
-                error=str(exc),
-            )
-            return f"Could not load the active schematic for auto-placement: {exc}"
-
-        sch_data = parse_schematic_file(sch_file)
-        all_syms = sch_data["symbols"] + sch_data["power_symbols"]
-
-        requested = payload.symbol_list or [str(sym["reference"]) for sym in sch_data["symbols"]]
-        if not requested:
-            return _with_schematic_diagnostics(
-                "The active schematic contains no symbols to auto-place.",
-                sch_file,
-            )
-
-        requested_set = set(requested)
-
-        # Symbols NOT being moved are fixed obstacles.
-        fixed_syms = [s for s in all_syms if str(s.get("reference", "")) not in requested_set]
-        occupied = _estimate_occupied_cells(fixed_syms)
-
-        placed = 0
-        missing: list[str] = []
-        radius_mm = AUTO_LAYOUT_COLUMN_SPACING_MM * 2
-        center_x = AUTO_LAYOUT_ORIGIN_X_MM + AUTO_LAYOUT_COLUMN_SPACING_MM
-        center_y = AUTO_LAYOUT_ORIGIN_Y_MM + AUTO_LAYOUT_ROW_SPACING_MM
-
-        for index, reference in enumerate(requested):
-            component = schematic.components.get(reference)
-            if component is None:
-                missing.append(reference)
-                continue
-
-            if payload.strategy == "linear":
-                # Find next free cell along a single row
-                x, y = _next_free_cell(
-                    occupied,
-                    start_col=index,
-                    start_row=0,
-                    max_cols=24,
-                )
-            elif payload.strategy == "star":
-                if index == 0:
-                    x = center_x
-                    y = center_y
-                    # Mark centre cell occupied
-                    col = int(round((x - AUTO_LAYOUT_ORIGIN_X_MM) / AUTO_LAYOUT_COLUMN_SPACING_MM))
-                    row = int(round((y - AUTO_LAYOUT_ORIGIN_Y_MM) / AUTO_LAYOUT_ROW_SPACING_MM))
-                    occupied.add((col, row))
-                else:
-                    angle = ((index - 1) / max(len(requested) - 1, 1)) * (2 * math.pi)
-                    raw_x = center_x + (radius_mm * math.cos(angle))
-                    raw_y = center_y + (radius_mm * math.sin(angle))
-                    # Snap to nearest free cell
-                    col = int(
-                        round((raw_x - AUTO_LAYOUT_ORIGIN_X_MM) / AUTO_LAYOUT_COLUMN_SPACING_MM)
-                    )
-                    row = int(round((raw_y - AUTO_LAYOUT_ORIGIN_Y_MM) / AUTO_LAYOUT_ROW_SPACING_MM))
-                    x, y = _next_free_cell(occupied, start_col=col, start_row=row)
-            elif payload.strategy == "grid":
-                # Uniform 2D grid: wrap into a roughly square arrangement so the
-                # references fill rows and columns evenly instead of one long row.
-                grid_cols = max(1, math.ceil(math.sqrt(len(requested))))
-                x, y = _next_free_cell(occupied, max_cols=grid_cols)
-            else:
-                # cluster: row-major grid, skip occupied cells
-                x, y = _next_free_cell(occupied)
-
-            snapped_x, snapped_y = _snap_point(x, y, True)
-            component.move(snapped_x, snapped_y)
-            placed += 1
-
-        try:
-            schematic.save(sch_file, preserve_format=True)
-        except Exception as exc:
-            logger.warning(
-                "schematic_auto_place_save_failed",
-                schematic_file=str(sch_file),
-                error=str(exc),
-            )
-            return f"Could not save auto-placement changes: {exc}"
-
-        result = _reload_schematic()
-        missing_suffix = f" Missing: {', '.join(missing)}." if missing else ""
-        return (
-            f"{result}\n"
-            f"Auto-placed {placed} symbol(s) using the {payload.strategy} strategy. "
-            f"Overlap-aware placement respected {len(fixed_syms)} fixed obstacle(s)."
-            f"{missing_suffix}"
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_autoplace_fields(references: list[str] | None = None, dry_run: bool = False) -> str:
-        """Reposition symbol Reference/Value text onto the clearest body side.
-
-        Mirrors KiCad's ``autoplace_fields``: for each symbol the visible
-        Reference and Value fields are moved to the body side with the most
-        clearance, away from pins and neighbouring symbols, so the rendered sheet
-        stops stacking text on top of other text. Footprint/Datasheet and hidden
-        fields are left untouched. Pass ``references`` to limit the operation to
-        specific designators, or ``dry_run`` to preview the count without writing.
-
-        Run this after ``sch_auto_place_symbols`` (or any bulk placement) and use
-        ``sch_visual_qa`` to confirm the ``text_overlap`` findings clear.
-        """
-        sch_file = _get_schematic_file()
-        mutator, targets, updated = _build_autoplace_fields_mutator(sch_file, references)
-        if not targets:
-            return _with_schematic_diagnostics(
-                "No matching symbols found to auto-place fields for.", sch_file
-            )
-
-        if dry_run:
-            mutator(sch_file.read_text(encoding="utf-8"))
-            return (
-                f"Dry run: would reposition Reference/Value fields on {len(updated)} "
-                f"symbol(s): {', '.join(updated) if updated else '(none)'}."
-            )
-
-        _transactional_write_to_schematic_file(sch_file, mutator)
-        result = _reload_schematic()
-        return (
-            f"{result}\n"
-            f"Auto-placed Reference/Value fields on {len(updated)} symbol(s)"
-            f"{': ' + ', '.join(updated) if updated else ''}."
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_fix_readability(max_passes: int = 3) -> str:
-        """Iteratively fix schematic readability defects until clean or stable.
-
-        Runs the headless ``sch_visual_qa`` checks, then applies the matching
-        fixer and re-checks, looping until the sheet passes, no further progress
-        is made, or ``max_passes`` is reached:
-
-        - **off-sheet** symbols/labels -> grow the sheet one paper size (A4 -> A3 ...)
-        - **text overlap** -> auto-place Reference/Value fields onto clear body sides
-        - **symbol-body overlap** -> re-space the symbols on a body-sized grid, but
-          ONLY when the sheet has no wires, labels or power symbols (moving a
-          connected symbol would break its nets); otherwise it is reported.
-
-        Dense label clusters are reported for manual follow-up (label anchors are
-        electrical attachment points and cannot be moved safely). Returns a
-        per-pass log with the before/after QA status so the closing state is
-        explicit.
-        """
-        passes = max(1, max_passes)
-        sch_file = _get_schematic_file()
-        actions: list[str] = []
-        pass_log: list[str] = []
-        initial_status: str | None = None
-        final_status = "PASS"
-        remaining: set[str] = set()
-
-        for pass_index in range(passes):
-            report = _run_visual_qa(sch_file.read_text(encoding="utf-8", errors="ignore"))
-            status = str(report["status"])
-            findings = report["findings"]
-            codes = {str(f["code"]) for f in findings} if isinstance(findings, list) else set()
-            if initial_status is None:
-                initial_status = status
-            final_status = status
-            pass_log.append(
-                f"pass {pass_index + 1}: {status} ({', '.join(sorted(codes)) or 'clean'})"
-            )
-            if status == "PASS":
-                break
-
-            changed = False
-            if {"offsheet_symbol", "offsheet_label"} & codes:
-                current_paper = _read_sheet_paper(sch_file)
-                ladder_index = (
-                    _PAPER_LADDER.index(current_paper) if current_paper in _PAPER_LADDER else 0
-                )
-                if ladder_index < len(_PAPER_LADDER) - 1:
-                    target = _PAPER_LADDER[ladder_index + 1]
-                    if _resize_sheet_apply(sch_file, target):
-                        actions.append(f"grew sheet to {target}")
-                        changed = True
-            if "symbol_overlap" in codes and not _schematic_has_connections(
-                sch_file.read_text(encoding="utf-8", errors="ignore")
-            ):
-                respaced = _respace_symbols_apply(sch_file)
-                if respaced:
-                    actions.append(f"re-spaced {len(respaced)} overlapping symbol(s)")
-                    changed = True
-            if "text_overlap" in codes:
-                moved = _autoplace_fields_apply(sch_file)
-                if moved:
-                    actions.append(f"auto-placed fields on {len(moved)} symbol(s)")
-                    changed = True
-
-            if not changed:
-                remaining = codes
-                break
-            remaining = codes
-
-        if actions:
-            _reload_schematic()
-
-        unresolved = sorted(remaining & {"symbol_overlap", "label_overlap", "dense_label_fanout"})
-        summary = [
-            f"Readability fix: {initial_status or 'PASS'} -> {final_status} "
-            f"over {len(pass_log)} pass(es).",
-            *pass_log,
-        ]
-        if actions:
-            summary.append("Applied: " + "; ".join(actions) + ".")
-        else:
-            summary.append("No automatic fixes were applied.")
-        if unresolved:
-            summary.append(
-                "Manual follow-up suggested for: "
-                + ", ".join(unresolved)
-                + " (try sch_auto_place_functional / sch_auto_resize_sheet)."
-            )
-        return "\n".join(summary)
-
-    # -----------------------------------------------------------------------
-    # Spatial awareness tools (v2.1.0)
-    # -----------------------------------------------------------------------
-
-    @mcp.tool()
-    @headless_compatible
-    def sch_auto_place_functional(
-        symbol_list: list[str] | None = None,
-        anchor_ref: str | list[str] | None = None,
-    ) -> str:
-        """Place schematic symbols into semantically meaningful zones on the sheet.
-
-        Unlike the basic ``sch_auto_place_symbols`` which uses a plain grid,
-        this tool categorises each symbol by its **function** (MCU, connector,
-        power IC, sensor, passive, protection …) and places it in the
-        corresponding region of the schematic sheet.  The result is a readable,
-        professionally structured schematic with logical signal flow
-        (connectors on the left, processing in the centre, power/decoupling at
-        the bottom).
-
-        Zone layout (column × row, each cell = 25.4 × 17.78 mm)::
-
-            Col →    0-2          3-5          6-8
-            Row 0:   connectors   MCU          UI/LED/SW
-            Row 3:   power IC     sensors/IC   protection
-            Row 5:   power_pass   passives     transistors/filter
-            Row 7:   test points  ---          misc
-
-        The actual sheet size is read from the schematic file.  If the symbol
-        count would overflow the current sheet, a warning is appended
-        recommending ``sch_auto_resize_sheet`` to switch to a larger format
-        (A3, A2, …) before re-running this tool.
-
-        Symbols already placed (not in ``symbol_list``) are treated as fixed
-        obstacles and will not be overwritten.  Within each zone, symbols are
-        arranged in a compact row-major sub-grid.
-
-        Args:
-            symbol_list: Optional list of reference designators to place.  If
-                omitted, all symbols in the schematic are placed.
-            anchor_ref: Optional single reference or list of references to keep
-                fixed while re-placing the remaining symbols around them.
-
-        Returns:
-            A summary showing how many symbols were placed per functional zone,
-            plus an overflow warning if the sheet is too small.
-        """
-        sch_file = _get_schematic_file()
-        try:
-            schematic = _load_kicad_schematic(sch_file)
-        except Exception as exc:
-            return f"Could not load the active schematic for functional placement: {exc}"
-
-        sch_data = parse_schematic_file(sch_file)
-        all_syms = sch_data["symbols"] + sch_data["power_symbols"]
-
-        requested: list[str] = symbol_list or [str(s["reference"]) for s in sch_data["symbols"]]
-        if not requested:
-            return _with_schematic_diagnostics(
-                "The active schematic contains no symbols to place.",
-                sch_file,
-            )
-
-        from .project import load_design_intent
-
-        design_intent = load_design_intent()
-        functional_spacing_mm = design_intent.functional_spacing_mm
-        anchor_refs = _normalize_anchor_refs(anchor_ref)
-        anchor_set = set(anchor_refs)
-
-        requested_set = set(requested)
-        paper = _read_sheet_paper(sch_file)
-        max_cols = _sheet_usable_cols(paper)
-        max_rows = _sheet_usable_rows(paper)
-        sheet_w, sheet_h = PAPER_SIZES_MM.get(paper, PAPER_SIZES_MM["A4"])
-
-        # Fixed obstacles — symbols we are NOT moving
-        fixed_syms = [
-            s
-            for s in all_syms
-            if str(s.get("reference", "")) not in requested_set
-            or str(s.get("reference", "")) in anchor_set
-        ]
-        global_occupied = _estimate_occupied_cells(fixed_syms)
-
-        # Per-zone occupancy
-        zone_occupied: dict[str, set[tuple[int, int]]] = {z: set() for z in _FUNCTIONAL_ZONES}
-
-        # Build symbol metadata lookup
-        sym_meta: dict[str, dict[str, str]] = {}
-        for s in sch_data["symbols"]:
-            ref = str(s.get("reference", ""))
-            sym_meta[ref] = {
-                "value": str(s.get("value", "")),
-                "lib_id": str(s.get("lib_id", "")),
-            }
-
-        anchored_preserved = [
-            ref for ref in anchor_refs if ref in requested_set and schematic.components.get(ref)
-        ]
-        for symbol in fixed_syms:
-            reference = str(symbol.get("reference", ""))
-            category = _classify_symbol(
-                ref=reference,
-                value=sym_meta.get(reference, {}).get("value", ""),
-                lib_id=sym_meta.get(reference, {}).get("lib_id", ""),
-            )
-            x = float(symbol.get("x", symbol.get("x_mm", 0.0)) or 0.0)
-            y = float(symbol.get("y", symbol.get("y_mm", 0.0)) or 0.0)
-            col = int(round((x - AUTO_LAYOUT_ORIGIN_X_MM) / AUTO_LAYOUT_COLUMN_SPACING_MM))
-            row = int(round((y - AUTO_LAYOUT_ORIGIN_Y_MM) / AUTO_LAYOUT_ROW_SPACING_MM))
-            zone_occupied.setdefault(category, set()).add((col, row))
-
-        placed = 0
-        overflow_count = 0
-        missing: list[str] = []
-        zone_counts: dict[str, int] = {}
-
-        for reference in requested:
-            if reference in anchor_set:
-                continue
-            component = schematic.components.get(reference)
-            if component is None:
-                missing.append(reference)
-                continue
-
-            meta = sym_meta.get(reference, {})
-            category = _classify_symbol(
-                ref=reference,
-                value=meta.get("value", ""),
-                lib_id=meta.get("lib_id", ""),
-            )
-
-            zone_col, zone_row = _functional_zone_origin(
-                category,
-                max_cols=max_cols,
-                max_rows=max_rows,
-                spacing_mm=functional_spacing_mm,
-            )
-
-            # Find next free cell within this zone's sub-grid
-            placed_in_zone = zone_occupied[category]
-            found = False
-            for sub_row in range(0, max_rows):
-                for sub_col in range(0, _ZONE_MAX_COLS):
-                    cand_col = zone_col + sub_col
-                    cand_row = zone_row + sub_row
-                    if cand_col >= max_cols or cand_row >= max_rows:
-                        continue
-                    cell = (cand_col, cand_row)
-                    if cell not in global_occupied and cell not in placed_in_zone:
-                        col, row = cell
-                        found = True
-                        break
-                if found:
-                    break
-
-            if not found:
-                # Fall back to any remaining free cell within sheet bounds
-                col_f, row_f = _next_free_cell(global_occupied, paper=paper)
-                col = int(round((col_f - AUTO_LAYOUT_ORIGIN_X_MM) / AUTO_LAYOUT_COLUMN_SPACING_MM))
-                row = int(round((row_f - AUTO_LAYOUT_ORIGIN_Y_MM) / AUTO_LAYOUT_ROW_SPACING_MM))
-                # If still outside sheet bounds, flag overflow
-                if col >= max_cols or row >= max_rows:
-                    overflow_count += 1
-
-            x = AUTO_LAYOUT_ORIGIN_X_MM + col * AUTO_LAYOUT_COLUMN_SPACING_MM
-            y = AUTO_LAYOUT_ORIGIN_Y_MM + row * AUTO_LAYOUT_ROW_SPACING_MM
-            snapped_x, snapped_y = _snap_point(x, y, True)
-
-            component.move(snapped_x, snapped_y)
-            placed += 1
-
-            # Mark this cell occupied globally and within its zone
-            for dc in (-1, 0, 1):
-                for dr in (-1, 0, 1):
-                    global_occupied.add((col + dc, row + dr))
-            zone_occupied[category].add((col, row))
-            zone_counts[category] = zone_counts.get(category, 0) + 1
-
-        try:
-            schematic.save(sch_file, preserve_format=True)
-        except Exception as exc:
-            return f"Could not save functional placement changes: {exc}"
-
-        result = _reload_schematic()
-        missing_suffix = f" Missing refs: {', '.join(missing)}." if missing else ""
-        anchor_suffix = (
-            f"\nAnchored refs preserved: {', '.join(anchored_preserved)}."
-            if anchored_preserved
-            else ""
-        )
-
-        zone_lines = [f"  {cat}: {n}" for cat, n in sorted(zone_counts.items())]
-        summary = "\n".join(zone_lines) if zone_lines else "  (none)"
-
-        overflow_note = ""
-        if overflow_count:
-            overflow_note = (
-                f"\nWARNING: {overflow_count} symbol(s) could not fit within the "
-                f"'{paper}' sheet ({sheet_w:.0f}x{sheet_h:.0f} mm).  "
-                "Call sch_auto_resize_sheet to switch to a larger format, "
-                "then run sch_auto_place_functional again."
-            )
-
-        return (
-            f"{result}\n"
-            f"Functional auto-placement complete on '{paper}' sheet — "
-            f"{placed} symbol(s) placed in {len(zone_counts)} zone(s):\n{summary}"
-            f"\nFunctional spacing target: {functional_spacing_mm:.2f} mm."
-            f"{anchor_suffix}{missing_suffix}{overflow_note}"
-        )
+    layout_automation_service = SchematicLayoutAutomationService(
+        active_schematic_file=_get_schematic_file,
+        load_schematic=_load_layout_schematic,
+        parse_schematic=parse_schematic_file,
+        with_diagnostics=_with_schematic_diagnostics,
+        estimate_occupied_cells=_estimate_occupied_cells,
+        next_free_cell=_next_free_cell,
+        snap_point=_snap_point,
+        reload_schematic=_reload_schematic,
+        build_autoplace_fields_mutator=_build_autoplace_fields_mutator,
+        transactional_write_to_schematic_file=_transactional_write_to_schematic_file,
+        run_visual_qa=_run_visual_qa,
+        read_sheet_paper=_read_sheet_paper,
+        paper_ladder=_PAPER_LADDER,
+        resize_sheet_apply=_resize_sheet_apply,
+        schematic_has_connections=_schematic_has_connections,
+        respace_symbols_apply=_respace_symbols_apply,
+        autoplace_fields_apply=_autoplace_fields_apply,
+        load_design_intent=_load_layout_design_intent,
+        normalize_anchor_refs=_normalize_anchor_refs,
+        sheet_usable_cols=_sheet_usable_cols,
+        sheet_usable_rows=_sheet_usable_rows,
+        paper_sizes_mm=PAPER_SIZES_MM,
+        classify_symbol=_classify_symbol,
+        functional_zone_origin=_functional_zone_origin,
+        functional_zones=tuple(_FUNCTIONAL_ZONES),
+        zone_max_cols=_ZONE_MAX_COLS,
+        auto_layout_origin_x_mm=AUTO_LAYOUT_ORIGIN_X_MM,
+        auto_layout_origin_y_mm=AUTO_LAYOUT_ORIGIN_Y_MM,
+        auto_layout_column_spacing_mm=AUTO_LAYOUT_COLUMN_SPACING_MM,
+        auto_layout_row_spacing_mm=AUTO_LAYOUT_ROW_SPACING_MM,
+        warn=logger.warning,
+    )
+    schematic_layout_automation.register(
+        mcp,
+        schematic_layout_automation.SchematicLayoutAutomationDependencies(
+            service=layout_automation_service,
+        ),
+    )

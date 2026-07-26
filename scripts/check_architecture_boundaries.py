@@ -48,6 +48,10 @@ DOMAIN_MODULES = {
     / "schematic"
     / "hierarchy_authoring.py",
     "kicad_mcp.schematic.inspection": SRC_ROOT / "kicad_mcp" / "schematic" / "inspection.py",
+    "kicad_mcp.schematic.layout_automation": SRC_ROOT
+    / "kicad_mcp"
+    / "schematic"
+    / "layout_automation.py",
     "kicad_mcp.schematic.layout_inspection": SRC_ROOT
     / "kicad_mcp"
     / "schematic"
@@ -111,6 +115,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "schematic_inspection.py",
+    "kicad_mcp.tools.schematic_layout_automation": SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "schematic_layout_automation.py",
     "kicad_mcp.tools.schematic_layout_inspection": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -146,6 +154,7 @@ PURE_HELPERS = {
     "kicad_mcp.schematic.document_settings",
     "kicad_mcp.schematic.hierarchy_authoring",
     "kicad_mcp.schematic.inspection",
+    "kicad_mcp.schematic.layout_automation",
     "kicad_mcp.schematic.layout_inspection",
     "kicad_mcp.schematic.rendering",
     "kicad_mcp.schematic.semantic_ir",
@@ -175,6 +184,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.schematic_document_settings": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_hierarchy_authoring": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_inspection": ("kicad_mcp.tools.schematic",),
+    "kicad_mcp.tools.schematic_layout_automation": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_layout_inspection": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_rendering": ("kicad_mcp.tools.schematic",),
     "kicad_mcp.tools.schematic_semantic_ir": ("kicad_mcp.tools.schematic",),
@@ -192,6 +202,7 @@ REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.schematic_document_settings": 300,
     "kicad_mcp.tools.schematic_hierarchy_authoring": 300,
     "kicad_mcp.tools.schematic_inspection": 300,
+    "kicad_mcp.tools.schematic_layout_automation": 300,
     "kicad_mcp.tools.schematic_layout_inspection": 300,
     "kicad_mcp.tools.schematic_rendering": 300,
     "kicad_mcp.tools.schematic_semantic_ir": 300,
