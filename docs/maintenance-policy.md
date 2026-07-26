@@ -10,10 +10,11 @@ task pre-push
 task ci
 ```
 
-`task pre-push` runs metadata sync checks, format checks, Ruff, mypy, unit tests,
-workflow YAML parsing, and actionlint. `task ci` adds the full test suite with
-the coverage threshold unchanged at 83%, enforced security checks, workflow
-security checks, and package build verification.
+`task pre-push` runs only checks selected by the files being pushed: scoped Ruff
+and mypy, matching unit tests, architecture/tool-contract checks, and conditional
+workflow, web, Cargo, metadata, or compatibility validation. `task ci` remains the
+full local parity command and includes the repository-wide suite with the 83%
+coverage threshold, security checks, docs/package builds, and release validation.
 
 `task security:local` is stricter about workstation tools. It requires
 Gitleaks, actionlint, and zizmor, and runs OSV Scanner and Trivy when installed.

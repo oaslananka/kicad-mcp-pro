@@ -20,9 +20,8 @@ tasks:
   hooks:
     desc: Install local git hooks
     cmds:
-      - uvx pre-commit install --install-hooks
-      - uvx pre-commit install --hook-type commit-msg
-      - uvx pre-commit install --hook-type pre-push
+      - python3 scripts/run_uv.py tool run pre-commit install --install-hooks
+      - python3 scripts/run_uv.py tool run pre-commit install --hook-type pre-push
 
   format:
     desc: Auto-format the codebase
@@ -52,7 +51,7 @@ tasks:
       - corepack pnpm run test:unit
 
   test:fast:
-    desc: Run fast tests
+    desc: Run the full unit suite manually (not part of pre-push)
     cmds:
       - corepack pnpm run test:unit
 
@@ -120,18 +119,9 @@ tasks:
       - task: build
 
   pre-push:
-    desc: Run the pre-push parity gate
+    desc: Run change-scoped checks for the commits being pushed
     cmds:
-      - corepack pnpm run metadata:check
-      - corepack pnpm run format:check
-      - task: compat:check
-      - task: lint
-      - task: mcp:manifest:check
-      - task: docker:metadata:check
-      - task: typecheck
-      - task: test:fast
-      - task: workflows:policy
-      - task: workflows:lint
+      - python3 scripts/run_uv.py run --all-extras python scripts/hook_pre_push.py
 
   ci:
     desc: Run the local equivalent of CI

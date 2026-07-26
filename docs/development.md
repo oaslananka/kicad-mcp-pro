@@ -2,12 +2,17 @@
 
 ## One-Time Setup
 
-Install Task from <https://taskfile.dev/installation/>.
+Prepare the repository-scoped toolchain, then install both hooks:
 
 ```bash
-task install
+./scripts/bootstrap-dev.sh
+source .dev-env.sh
 task hooks
 ```
+
+The hook launcher reads the committed `UV_VERSION` and refuses a mismatched
+global uv. It uses `.dev-tools/uv/<version>/bin/uv`, so other repositories may
+use different uv versions without conflict.
 
 ## Local Setup
 
@@ -31,11 +36,16 @@ task ci
 
 ## Before Push
 
-The pre-push hook runs:
+The pre-push hook runs change-scoped checks only:
 
 ```bash
 task pre-push
 ```
+
+It selects Ruff, mypy, matching unit tests, architecture/tool-contract checks,
+workflow validation, web route tests, Cargo checks, or compatibility checks from
+the files being pushed. It deliberately does not run the repository-wide unit
+suite, coverage, package build, docs build, release checks, or security matrix.
 
 For full local parity with CI:
 
@@ -64,5 +74,5 @@ act -W .github/workflows/ci.yml --container-architecture linux/amd64
 ## Troubleshooting
 
 - `task: command not found`: install Task from the official installation page.
-- Hook setup fails: run `uvx pre-commit install --install-hooks`.
+- Hook setup fails: run `task hooks`.
 - CI and local results differ: check that environment variables are consistent between local and CI.
