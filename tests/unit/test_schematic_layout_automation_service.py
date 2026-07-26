@@ -7,7 +7,10 @@ from typing import Any
 
 import pytest
 
-from kicad_mcp.schematic.layout_automation import SchematicLayoutAutomationService
+from kicad_mcp.schematic.layout_automation import (
+    SchematicLayoutAutomationService,
+    SchematicLike,
+)
 
 
 class FakeComponent:
@@ -73,12 +76,12 @@ def _service(
     resize_log = resize_calls if resize_calls is not None else []
     reload_log = reload_calls if reload_calls is not None else []
 
-    def load_schematic(_path: Path) -> FakeSchematic:
+    def load_schematic(_path: Path) -> SchematicLike:
         if isinstance(loaded_value, Exception):
             raise loaded_value
         return loaded_value
 
-    def next_free_cell(_occupied: set[tuple[int, int]], **_kwargs: Any) -> tuple[float, float]:
+    def next_free_cell(_occupied: set[tuple[int, int]], **_kwargs: object) -> tuple[float, float]:
         return cell_values.pop(0) if cell_values else (25.4, 17.78)
 
     def run_visual_qa(_text: str) -> dict[str, Any]:
@@ -91,6 +94,14 @@ def _service(
     ) -> tuple[Callable[[str], str], list[str], list[str]]:
         return (lambda current: current + "-updated", ["R1"], ["R1"])
 
+    def reload_schematic() -> str:
+        reload_log.append(True)
+        return "Reloaded"
+
+    def resize_sheet_apply(path: Path, target: str) -> bool:
+        resize_log.append((path, target))
+        return True
+
     return SchematicLayoutAutomationService(
         active_schematic_file=lambda: schematic_file,
         load_schematic=load_schematic,
@@ -99,7 +110,7 @@ def _service(
         estimate_occupied_cells=lambda symbols: {(len(symbols), 0)} if symbols else set(),
         next_free_cell=next_free_cell,
         snap_point=lambda x, y, _enabled: (x + 0.1, y + 0.2),
-        reload_schematic=lambda: reload_log.append(True) or "Reloaded",
+        reload_schematic=reload_schematic,
         build_autoplace_fields_mutator=field_builder or default_field_builder,
         transactional_write_to_schematic_file=lambda path, mutator: transaction_log.append(
             (path, mutator)
@@ -107,13 +118,11 @@ def _service(
         run_visual_qa=run_visual_qa,
         read_sheet_paper=lambda _path: paper,
         paper_ladder=("A4", "A3", "A2", "A1", "A0"),
-        resize_sheet_apply=lambda path, target: resize_log.append((path, target)) or True,
+        resize_sheet_apply=resize_sheet_apply,
         schematic_has_connections=lambda _text: False,
         respace_symbols_apply=lambda _path: list(respace_result or []),
         autoplace_fields_apply=lambda _path: list(field_apply_result or []),
-        load_design_intent=lambda: SimpleNamespace(
-            functional_spacing_mm=functional_spacing_mm
-        ),
+        load_design_intent=lambda: SimpleNamespace(functional_spacing_mm=functional_spacing_mm),
         normalize_anchor_refs=lambda _anchor: list(normalized_anchors or []),
         sheet_usable_cols=lambda _paper: usable_cols,
         sheet_usable_rows=lambda _paper: usable_rows,
@@ -169,7 +178,7 @@ def test_auto_place_symbols_respects_fixed_obstacles_and_reports_missing(tmp_pat
 
     result = service.auto_place_symbols(["R1", "R404"], "grid")
 
-    assert r1.moves == [(50.9, 35.76)]
+    assert r1.moves == [pytest.approx((50.9, 35.76))]
     assert loaded.saved == [(schematic_file, True)]
     assert "Auto-placed 1 symbol(s) using the grid strategy." in result
     assert "respected 2 fixed obstacle(s)" in result
@@ -334,7 +343,7 @@ def test_auto_place_functional_preserves_anchor_and_reports_missing(tmp_path: Pa
 
     result = service.auto_place_functional(["R1", "J1", "R404"], anchor_ref="J1")
 
-    assert r1.moves == [(50.9, 53.54)]
+    assert r1.moves == [pytest.approx((50.9, 53.54))]
     assert anchor.moves == []
     assert loaded.saved == [(schematic_file, True)]
     assert "1 symbol(s) placed in 1 zone(s)" in result
@@ -374,9 +383,7 @@ def test_auto_place_functional_reports_overflow(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("strategy", ["cluster", "linear", "star", "grid"])
-def test_auto_place_symbols_accepts_all_existing_strategies(
-    tmp_path: Path, strategy: str
-) -> None:
+def test_auto_place_symbols_accepts_all_existing_strategies(tmp_path: Path, strategy: str) -> None:
     schematic_file = tmp_path / "board.kicad_sch"
     component = FakeComponent()
     service = _service(
