@@ -23,7 +23,12 @@ def _service(
 ]:
     schematic = tmp_path / "demo.kicad_sch"
     schematic.write_text(
-        '(kicad_sch\n\t(property "Reference" "R?")\n\t(property "Reference" "U?")\n\t(sheet_instances)\n)',
+        "(kicad_sch\n"
+        '\t(property "Reference" "R?")\n'
+        '\t(property "Reference" "U?")\n'
+        '\t(property "Reference" "R12")\n'
+        "\t(sheet_instances)\n"
+        ")",
         encoding="utf-8",
     )
     parsed_value = parsed or {"symbols": []}
