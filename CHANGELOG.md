@@ -10,6 +10,19 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.29.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.29.0...mcp-server-v3.29.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* **config:** preserve explicit KiCad IPC endpoint URIs ([#472](https://github.com/oaslananka/kicad-mcp-pro/issues/472)) ([2e07852](https://github.com/oaslananka/kicad-mcp-pro/commit/2e0785227292bf6b522a3543df6a2cff5ab0008a))
+* **release:** avoid duplicate retryless PyPI verification ([#473](https://github.com/oaslananka/kicad-mcp-pro/issues/473)) ([68a9656](https://github.com/oaslananka/kicad-mcp-pro/commit/68a9656f490de15b08c3f50ea7f73cf9ec901ba2))
+
+
+### Documentation
+
+* **compat:** record physical Windows KiCad 10.0.5 evidence ([#469](https://github.com/oaslananka/kicad-mcp-pro/issues/469)) ([8e0f107](https://github.com/oaslananka/kicad-mcp-pro/commit/8e0f1077b0b0e876a40f46024807ef158d0353bc))
+
 ## [3.29.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.28.0...mcp-server-v3.29.0) (2026-07-26)
 
 
