@@ -118,6 +118,11 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "pcb_session_inspection.py",
+    "kicad_mcp.pcb.stackup_management": SRC_ROOT / "kicad_mcp" / "pcb" / "stackup_management.py",
+    "kicad_mcp.tools.pcb_stackup_management": SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "pcb_stackup_management.py",
     "kicad_mcp.tools.pcb_title_block_management": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -216,6 +221,7 @@ PURE_HELPERS = {
     "kicad_mcp.pcb.groups_inspection",
     "kicad_mcp.pcb.origin_management",
     "kicad_mcp.pcb.session_inspection",
+    "kicad_mcp.pcb.stackup_management",
     "kicad_mcp.pcb.title_block_management",
     "kicad_mcp.pcb.transaction_lifecycle",
     "kicad_mcp.schematic.back_annotation",
@@ -256,6 +262,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.pcb_groups_inspection": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_origin_management": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_session_inspection": ("kicad_mcp.tools.pcb",),
+    "kicad_mcp.tools.pcb_stackup_management": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_title_block_management": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_transaction_lifecycle": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.schematic_back_annotation": ("kicad_mcp.tools.schematic",),
@@ -284,6 +291,7 @@ REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.pcb_groups_inspection": 300,
     "kicad_mcp.tools.pcb_origin_management": 300,
     "kicad_mcp.tools.pcb_session_inspection": 300,
+    "kicad_mcp.tools.pcb_stackup_management": 300,
     "kicad_mcp.tools.pcb_title_block_management": 300,
     "kicad_mcp.tools.pcb_transaction_lifecycle": 300,
     "kicad_mcp.tools.schematic": 300,

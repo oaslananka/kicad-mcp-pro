@@ -56,7 +56,6 @@ from ..models.pcb import (
     PlaceDecouplingCapsInput,
     SetBoardOutlineInput,
     SetDesignRulesInput,
-    SetStackupInput,
     StackupLayerSpec,
     SyncPcbFromSchematicInput,
 )
@@ -68,6 +67,7 @@ from ..pcb.file_inspection import PcbFileInspectionService
 from ..pcb.groups_inspection import PcbGroupsInspectionService
 from ..pcb.origin_management import PcbOriginService
 from ..pcb.session_inspection import PcbSessionInspectionService
+from ..pcb.stackup_management import PcbStackupManagementService
 from ..pcb.title_block_management import PcbTitleBlockService
 from ..pcb.transaction_lifecycle import PcbTransactionLifecycleService
 from ..utils import telemetry as otel
@@ -92,6 +92,7 @@ from . import (
     pcb_groups_inspection,
     pcb_origin_management,
     pcb_session_inspection,
+    pcb_stackup_management,
     pcb_title_block_management,
     pcb_transaction_lifecycle,
 )
@@ -2470,59 +2471,22 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    def pcb_get_stackup() -> str:
-        """Show the current stackup."""
-        try:
-            layers = _current_stackup_specs()
-        except ValueError as exc:
-            return "\n".join(
-                [
-                    str(exc),
-                    *_format_board_file_diagnostics(
-                        board_file=_configured_board_file(),
-                        status="stackup data unavailable in active board context",
-                    ),
-                ]
+    pcb_stackup_management.register(
+        mcp,
+        pcb_stackup_management.PcbStackupDependencies(
+            service=PcbStackupManagementService(
+                current_stackup_specs=_current_stackup_specs,
+                total_stackup_thickness_mm=_total_stackup_thickness_mm,
+                configured_board_file=_configured_board_file,
+                board_file_diagnostics=_format_board_file_diagnostics,
+                is_copper_stackup_layer=_is_copper_stackup_layer,
+                write_stackup_state=_write_stackup_state,
+                transactional_board_write=_transactional_board_write,
+                apply_stackup_to_board=_apply_stackup_to_board,
+                reload_board_after_file_sync=_reload_board_after_file_sync,
             )
-
-        lines = [f"Board stackup ({len(layers)} layers):"]
-        for index, layer in enumerate(layers, start=1):
-            extras: list[str] = []
-            if layer.epsilon_r is not None:
-                extras.append(f"Er={layer.epsilon_r:.3f}")
-            if layer.loss_tangent is not None:
-                extras.append(f"loss={layer.loss_tangent:.4f}")
-            suffix = f" | {' | '.join(extras)}" if extras else ""
-            lines.append(
-                f"- {index}. {layer.name} | type={layer.type} | "
-                f"thickness={layer.thickness_mm:.4f} mm | material={layer.material}{suffix}"
-            )
-        lines.append(f"- Total thickness: {_total_stackup_thickness_mm(layers):.4f} mm")
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def pcb_set_stackup(layers: list[dict[str, object]]) -> str:
-        """Set the active board stackup using a file-backed profile."""
-        payload = SetStackupInput.model_validate({"layers": layers})
-        copper_count = sum(1 for layer in payload.layers if _is_copper_stackup_layer(layer))
-        if copper_count < 2:
-            raise ValueError("A valid stackup needs at least two copper layers.")
-
-        state_path = _write_stackup_state(payload.layers)
-        _transactional_board_write(lambda current: _apply_stackup_to_board(current, payload.layers))
-        reload_message = _reload_board_after_file_sync()
-        return "\n".join(
-            [
-                f"Configured stackup with {len(payload.layers)} layers.",
-                f"- Copper layers: {copper_count}",
-                f"- Total thickness: {_total_stackup_thickness_mm(payload.layers):.4f} mm",
-                f"- Saved stackup state: {state_path}",
-                f"- {reload_message}",
-            ]
-        )
+        ),
+    )
 
     @mcp.tool()
     @headless_compatible
