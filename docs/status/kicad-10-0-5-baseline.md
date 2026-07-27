@@ -1,6 +1,6 @@
 # KiCad 10.0.5 Baseline
 
-**Reviewed:** 2026-07-26
+**Reviewed:** 2026-07-27
 
 KiCad MCP Pro treats KiCad 10.0.5 as the current primary KiCad 10 stable
 baseline. The repository compatibility matrix records this in
@@ -34,10 +34,14 @@ original patch release. It is a regression corpus carried forward under the
 10.0.5 baseline, not a statement that the primary tested KiCad version is still
 10.0.3.
 
-
 ## Platform Verification Status
 
 The required Ubuntu canary installs the final `10.0.5` package from the stable
-KiCad 10.0 PPA and rejects any other patch version. Windows remains represented
-by the required `10.0.5` canary lane; final physical-host evidence is tracked in
-[issue #427](https://github.com/oaslananka/kicad-mcp-pro/issues/427).
+KiCad 10.0 PPA and rejects any other patch version. The GitHub-hosted Windows
+package and MCP server matrices also pass on the 10.0.5 baseline.
+
+Physical-host verification was completed on 2026-07-27 using the AMD2700X
+Windows 11 workstation. The released 3.29.0 source passed all 31 stable canary
+entries, and the default KiCad IPC discovery connected to an active KiCad
+10.0.5 PCB Editor session with a live board open. See the sanitized
+[physical Windows evidence](../evidence/kicad-10-0-5/2026-07-27/amd2700x-windows.md).
