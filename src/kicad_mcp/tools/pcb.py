@@ -60,11 +60,11 @@ from ..models.pcb import (
     StackupLayerSpec,
     SyncPcbFromSchematicInput,
 )
-from ..models.tool_result import MutatingToolResult, TransactionVerification
 from ..models.verdict import Finding, SuggestedFix, VerdictReport, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
 from ..pcb.file_inspection import PcbFileInspectionService
 from ..pcb.origin_management import PcbOriginService
+from ..pcb.title_block_management import PcbTitleBlockService
 from ..pcb.transaction_lifecycle import PcbTransactionLifecycleService
 from ..utils import telemetry as otel
 from ..utils.cache import clear_ttl_cache, ttl_cache
@@ -81,7 +81,12 @@ from ..utils.placement import (
 )
 from ..utils.sexpr import _extract_block, _sexpr_string
 from ..utils.units import _coord_nm, mm_to_nm, nm_to_mm
-from . import pcb_file_inspection, pcb_origin_management, pcb_transaction_lifecycle
+from . import (
+    pcb_file_inspection,
+    pcb_origin_management,
+    pcb_title_block_management,
+    pcb_transaction_lifecycle,
+)
 from .export_support import _run_cli_variants
 from .metadata import headless_compatible, requires_kicad_running
 from .schematic import _iter_child_sheet_paths, parse_schematic_file
@@ -4914,75 +4919,16 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
-    @mcp.tool()
-    @requires_kicad_running
-    def pcb_set_title_block_info(
-        title: str | None = None,
-        date: str | None = None,
-        revision: str | None = None,
-        company: str | None = None,
-        comment1: str | None = None,
-        comment2: str | None = None,
-        comment3: str | None = None,
-        comment4: str | None = None,
-    ) -> str:
-        """Set board title block information (KiCad 10.0.1+).
-
-        Title block fields appear on printed outputs and drawings.
-
-        Args:
-            title: Board title.
-            date: Board date.
-            revision: Board revision.
-            company: Company name.
-            comment1: Custom comment field 1.
-            comment2: Custom comment field 2.
-            comment3: Custom comment field 3.
-            comment4: Custom comment field 4.
-
-        Returns:
-            Confirmation message with updated fields.
-        """
-        try:
-            board = get_board()
-            set_title_block_info = getattr(board, "set_title_block_info", None)
-            if not callable(set_title_block_info):
-                return (
-                    "Title block editing requires KiCad 10.0.1 or later. "
-                    "The current KiCad version does not support this operation."
-                )
-            # Build kwargs for non-None fields
-            kwargs: dict[str, str] = {}
-            if title is not None:
-                kwargs["title"] = title
-            if date is not None:
-                kwargs["date"] = date
-            if revision is not None:
-                kwargs["revision"] = revision
-            if company is not None:
-                kwargs["company"] = company
-            if comment1 is not None:
-                kwargs["comment1"] = comment1
-            if comment2 is not None:
-                kwargs["comment2"] = comment2
-            if comment3 is not None:
-                kwargs["comment3"] = comment3
-            if comment4 is not None:
-                kwargs["comment4"] = comment4
-            if not kwargs:
-                return "No title block fields specified. Provide at least one field to update."
-            _run_queued_ipc_mutation(
-                "pcb_set_title_block_info",
-                lambda: set_title_block_info(**kwargs),
+    pcb_title_block_management.register(
+        mcp,
+        pcb_title_block_management.PcbTitleBlockDependencies(
+            service=PcbTitleBlockService(
+                get_board=get_board,
+                run_mutation=_run_queued_ipc_mutation,
+                connection_errors=(KiCadConnectionError, OSError),
             )
-            updated_fields = ", ".join(kwargs.keys())
-            transaction = MutatingToolResult(
-                changed_objects=[f"board.title_block.{field}" for field in kwargs],
-                verification=TransactionVerification(roundtrip="live_gui_state"),
-            )
-            return transaction.to_compat_text(f"Title block updated: {updated_fields}.")
-        except (KiCadConnectionError, OSError) as exc:
-            return f"Failed to set title block info: {exc}"
+        ),
+    )
 
     @mcp.tool()
     @headless_compatible
