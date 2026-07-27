@@ -25,6 +25,7 @@ DOMAIN_MODULES = {
     "kicad_mcp.models.sch_transaction": SRC_ROOT / "kicad_mcp" / "models" / "sch_transaction.py",
     "kicad_mcp.models.visual_qa": SRC_ROOT / "kicad_mcp" / "models" / "visual_qa.py",
     "kicad_mcp.pcb.file_inspection": SRC_ROOT / "kicad_mcp" / "pcb" / "file_inspection.py",
+    "kicad_mcp.pcb.groups_inspection": SRC_ROOT / "kicad_mcp" / "pcb" / "groups_inspection.py",
     "kicad_mcp.pcb.origin_management": SRC_ROOT / "kicad_mcp" / "pcb" / "origin_management.py",
     "kicad_mcp.pcb.title_block_management": SRC_ROOT
     / "kicad_mcp"
@@ -90,6 +91,10 @@ DOMAIN_MODULES = {
     / "schematic"
     / "template_instantiation.py",
     "kicad_mcp.schematic.topology": SRC_ROOT / "kicad_mcp" / "schematic" / "topology.py",
+    "kicad_mcp.tools.pcb_groups_inspection": SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "pcb_groups_inspection.py",
     "kicad_mcp.tools.pcb_file_inspection": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -191,6 +196,7 @@ PURE_HELPERS = {
     "kicad_mcp.models.sch_transaction",
     "kicad_mcp.models.visual_qa",
     "kicad_mcp.pcb.file_inspection",
+    "kicad_mcp.pcb.groups_inspection",
     "kicad_mcp.pcb.origin_management",
     "kicad_mcp.pcb.title_block_management",
     "kicad_mcp.pcb.transaction_lifecycle",
@@ -227,6 +233,7 @@ FORBIDDEN_PURE_IMPORT_PREFIXES = (
 
 ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.pcb_file_inspection": ("kicad_mcp.tools.pcb",),
+    "kicad_mcp.tools.pcb_groups_inspection": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_origin_management": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_title_block_management": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_transaction_lifecycle": ("kicad_mcp.tools.pcb",),
@@ -251,6 +258,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
 
 REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.pcb_file_inspection": 300,
+    "kicad_mcp.tools.pcb_groups_inspection": 300,
     "kicad_mcp.tools.pcb_origin_management": 300,
     "kicad_mcp.tools.pcb_title_block_management": 300,
     "kicad_mcp.tools.pcb_transaction_lifecycle": 300,

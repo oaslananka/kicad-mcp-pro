@@ -63,6 +63,7 @@ from ..models.pcb import (
 from ..models.verdict import Finding, SuggestedFix, VerdictReport, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
 from ..pcb.file_inspection import PcbFileInspectionService
+from ..pcb.groups_inspection import PcbGroupsInspectionService
 from ..pcb.origin_management import PcbOriginService
 from ..pcb.title_block_management import PcbTitleBlockService
 from ..pcb.transaction_lifecycle import PcbTransactionLifecycleService
@@ -83,6 +84,7 @@ from ..utils.sexpr import _extract_block, _sexpr_string
 from ..utils.units import _coord_nm, mm_to_nm, nm_to_mm
 from . import (
     pcb_file_inspection,
+    pcb_groups_inspection,
     pcb_origin_management,
     pcb_title_block_management,
     pcb_transaction_lifecycle,
@@ -4874,36 +4876,15 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    def pcb_get_groups() -> str:
-        """List board groups (KiCad 10.0.0+).
-
-        Groups are logical collections of board items that can be moved and
-        manipulated together.
-
-        Returns:
-            JSON string with group information or message if not supported.
-        """
-        try:
-            board = get_board()
-            get_groups = getattr(board, "get_groups", None)
-            if not callable(get_groups):
-                return (
-                    "Group support requires KiCad 10.0.0 or later. "
-                    "The current KiCad version does not support board groups."
-                )
-            groups = list(get_groups())
-            if not groups:
-                return "No groups are present on the active board."
-            lines = [f"Groups ({len(groups)} total):", "- Source: live-gui"]
-            for index, group in enumerate(groups, start=1):
-                name = getattr(group, "name", None) or f"Group {index}"
-                item_count = len(getattr(group, "items", []))
-                lines.append(f"{index}. {name} ({item_count} items)")
-            return "\n".join(lines)
-        except (KiCadConnectionError, OSError) as exc:
-            return f"Failed to get groups: {exc}"
+    pcb_groups_inspection.register(
+        mcp,
+        pcb_groups_inspection.PcbGroupsInspectionDependencies(
+            service=PcbGroupsInspectionService(
+                get_board=get_board,
+                connection_errors=(KiCadConnectionError, OSError),
+            )
+        ),
+    )
 
     pcb_origin_management.register(
         mcp,
