@@ -26,13 +26,13 @@
     "source": "github",
     "id": "R_kgDOStXTag"
   },
-  "version": "3.29.0",
+  "version": "3.29.1",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "kicad-mcp-pro",
-      "version": "3.29.0",
+      "version": "3.29.1",
       "transport": {
         "type": "stdio"
       },
@@ -79,7 +79,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "kicad-mcp-pro",
-      "version": "3.29.0",
+      "version": "3.29.1",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -100,7 +100,7 @@
     },
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/oaslananka/kicad-mcp-pro:3.29.0",
+      "identifier": "ghcr.io/oaslananka/kicad-mcp-pro:3.29.1",
       "registry": "container",
       "image": "ghcr.io/oaslananka/kicad-mcp-pro",
       "runtimeHint": "docker",
@@ -126,7 +126,7 @@
           "type": "positional",
           "valueHint": "image",
           "description": "Docker image to run",
-          "default": "ghcr.io/oaslananka/kicad-mcp-pro:3.29.0",
+          "default": "ghcr.io/oaslananka/kicad-mcp-pro:3.29.1",
           "isRequired": true
         }
       ]
