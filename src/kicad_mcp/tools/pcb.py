@@ -64,6 +64,7 @@ from ..models.tool_result import MutatingToolResult, TransactionVerification
 from ..models.verdict import Finding, SuggestedFix, VerdictReport, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
 from ..pcb.file_inspection import PcbFileInspectionService
+from ..pcb.origin_management import PcbOriginService
 from ..pcb.transaction_lifecycle import PcbTransactionLifecycleService
 from ..utils import telemetry as otel
 from ..utils.cache import clear_ttl_cache, ttl_cache
@@ -80,7 +81,7 @@ from ..utils.placement import (
 )
 from ..utils.sexpr import _extract_block, _sexpr_string
 from ..utils.units import _coord_nm, mm_to_nm, nm_to_mm
-from . import pcb_file_inspection, pcb_transaction_lifecycle
+from . import pcb_file_inspection, pcb_origin_management, pcb_transaction_lifecycle
 from .export_support import _run_cli_variants
 from .metadata import headless_compatible, requires_kicad_running
 from .schematic import _iter_child_sheet_paths, parse_schematic_file
@@ -4899,54 +4900,19 @@ def register(mcp: FastMCP) -> None:
         except (KiCadConnectionError, OSError) as exc:
             return f"Failed to get groups: {exc}"
 
-    @mcp.tool()
-    @requires_kicad_running
-    def pcb_set_origin(x_mm: float, y_mm: float) -> str:
-        """Set the board origin (drill origin) in millimeters.
-
-        The origin is used as the reference point for drill files and some
-        export formats.
-
-        Args:
-            x_mm: X coordinate in millimeters.
-            y_mm: Y coordinate in millimeters.
-
-        Returns:
-            Confirmation message with new origin coordinates.
-        """
-        try:
-            board = get_board()
-            set_origin = getattr(board, "set_origin", None)
-            if not callable(set_origin):
-                return "Origin setting is not supported by the current KiCad IPC version."
-            origin = Vector2.from_xy(int(mm_to_nm(x_mm)), int(mm_to_nm(y_mm)))
-            set_origin(origin)
-            return f"Board origin set to ({x_mm:.3f}, {y_mm:.3f}) mm."
-        except (KiCadConnectionError, OSError) as exc:
-            return f"Failed to set origin: {exc}"
-
-    @mcp.tool()
-    @headless_compatible
-    def pcb_get_origin() -> str:
-        """Get the current board origin (drill origin) in millimeters.
-
-        Returns:
-            JSON string with origin coordinates or message if not supported.
-        """
-        try:
-            board = get_board()
-            get_origin = getattr(board, "get_origin", None)
-            if not callable(get_origin):
-                return "Origin retrieval is not supported by the current KiCad IPC version."
-            origin = get_origin()
-            x_mm = nm_to_mm(_coord_nm(origin, "x"))
-            y_mm = nm_to_mm(_coord_nm(origin, "y"))
-            return json.dumps(
-                {"origin_mm": {"x": x_mm, "y": y_mm}, "source": "live-gui"},
-                indent=2,
+    pcb_origin_management.register(
+        mcp,
+        pcb_origin_management.PcbOriginDependencies(
+            service=PcbOriginService(
+                get_board=get_board,
+                vector_from_xy=Vector2.from_xy,
+                mm_to_nm=mm_to_nm,
+                coord_nm=_coord_nm,
+                nm_to_mm=nm_to_mm,
+                connection_errors=(KiCadConnectionError, OSError),
             )
-        except (KiCadConnectionError, OSError) as exc:
-            return f"Failed to get origin: {exc}"
+        ),
+    )
 
     @mcp.tool()
     @requires_kicad_running
