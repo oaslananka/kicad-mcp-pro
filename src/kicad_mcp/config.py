@@ -62,7 +62,7 @@ class KiCadMCPConfig(BaseSettings):
     java_executable: str = Field(default="java")
     freerouting_timeout_sec: float = Field(default=900.0, gt=1.0, le=7200.0)
     ngspice_cli: Path | None = Field(default=None)
-    kicad_socket_path: Path | None = Field(default=None)
+    kicad_socket_path: str | Path | None = Field(default=None)
     kicad_token: str | None = Field(default=None)
     workspace_root: Path | None = Field(default=None)
 
@@ -226,7 +226,6 @@ class KiCadMCPConfig(BaseSettings):
         "kicad_cli",
         "freerouting_jar",
         "ngspice_cli",
-        "kicad_socket_path",
         "project_dir",
         "project_file",
         "pcb_file",
@@ -246,6 +245,21 @@ class KiCadMCPConfig(BaseSettings):
             return value.expanduser()
         if isinstance(value, str):
             return Path(value).expanduser()
+        return value
+
+    @field_validator("kicad_socket_path", mode="before")
+    @classmethod
+    def _normalize_kicad_socket_path(cls, value: object) -> object:
+        """Preserve NNG endpoint URIs while expanding plain filesystem paths."""
+        if value in (None, ""):
+            return None
+        if isinstance(value, Path):
+            return value.expanduser()
+        if isinstance(value, str):
+            endpoint = value.strip()
+            if "://" in endpoint:
+                return endpoint
+            return Path(endpoint).expanduser()
         return value
 
     @field_validator("mount_path")

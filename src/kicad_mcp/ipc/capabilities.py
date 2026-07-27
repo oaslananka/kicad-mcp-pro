@@ -47,7 +47,7 @@ _VERSION_RE = re.compile(r"(?<!\d)(\d+)(?:\.(\d+))?(?:\.(\d+))?")
 
 
 class CapabilityConfig(Protocol):
-    kicad_socket_path: Path | None
+    kicad_socket_path: str | Path | None
     kicad_token: str | None
     ipc_connection_timeout: float
     headless: bool

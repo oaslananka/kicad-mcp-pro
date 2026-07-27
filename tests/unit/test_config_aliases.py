@@ -33,6 +33,27 @@ def test_config_aliases_and_secret_masking(fake_cli: Path, monkeypatch) -> None:
     assert "secret-token" not in str(safe)
 
 
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        r"ipc://C:\Users\Admin\AppData\Local\Temp\kicad\api.sock",
+        "ipc://C:/Users/Admin/AppData/Local/Temp/kicad/api.sock",
+        "ipc:///tmp/kicad/api.sock",
+        "tcp://127.0.0.1:4242",
+    ],
+)
+def test_explicit_ipc_endpoint_uri_round_trips_unchanged(
+    endpoint: str,
+    fake_cli: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("KICAD_API_SOCKET", endpoint)
+
+    cfg = KiCadMCPConfig(kicad_cli=fake_cli)
+
+    assert cfg.kicad_socket_path == endpoint
+
+
 def test_invalid_timeout_alias_is_rejected(monkeypatch) -> None:
     monkeypatch.setenv("KICAD_MCP_TIMEOUT_MS", "not-a-number")
 

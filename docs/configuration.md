@@ -63,7 +63,7 @@ interop aliases for launchers and editors:
 | Alias                         | Internal field                        |
 | ----------------------------- | ------------------------------------- |
 | `KICAD_API_TOKEN`             | KiCad IPC token                       |
-| `KICAD_API_SOCKET`            | KiCad IPC socket path                 |
+| `KICAD_API_SOCKET`            | KiCad IPC endpoint URI or socket path |
 | `KICAD_CLI_PATH`              | `kicad-cli` path                      |
 | `KICAD_MCP_TIMEOUT_MS`        | IPC timeout in milliseconds           |
 | `KICAD_MCP_RETRIES`           | IPC connection retries                |
@@ -101,7 +101,12 @@ file-backed read, DRC, ERC, and export operations remain available when their
 CLI/project prerequisites are satisfied.
 
 For external KiCad plugin launchers, `KICAD_API_SOCKET` and `KICAD_API_TOKEN`
-are accepted alongside the `KICAD_MCP_*` equivalents.
+are accepted alongside the `KICAD_MCP_*` equivalents. Explicit IPC endpoints
+may be NNG URIs such as `ipc:///tmp/kicad/api.sock`,
+`ipc://C:\Users\Admin\AppData\Local\Temp\kicad\api.sock`, or
+`tcp://127.0.0.1:4242`. URI values are passed to kipy unchanged; plain filesystem
+paths continue to be expanded as socket paths. Leave the socket setting unset to
+use kipy's platform-default discovery.
 
 ## Structured Logging
 
