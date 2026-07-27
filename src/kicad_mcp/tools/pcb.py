@@ -63,6 +63,7 @@ from ..models.pcb import (
 from ..models.tool_result import MutatingToolResult, TransactionVerification
 from ..models.verdict import Finding, SuggestedFix, VerdictReport, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
+from ..pcb.file_inspection import PcbFileInspectionService
 from ..utils import telemetry as otel
 from ..utils.cache import clear_ttl_cache, ttl_cache
 from ..utils.impedance import TraceType, copper_thickness_mm, trace_impedance
@@ -78,6 +79,7 @@ from ..utils.placement import (
 )
 from ..utils.sexpr import _extract_block, _sexpr_string
 from ..utils.units import _coord_nm, mm_to_nm, nm_to_mm
+from . import pcb_file_inspection
 from .export_support import _run_cli_variants
 from .metadata import headless_compatible, requires_kicad_running
 from .schematic import _iter_child_sheet_paths, parse_schematic_file
@@ -2555,60 +2557,20 @@ def register(mcp: FastMCP) -> None:
             )
         return "\n".join(lines)
 
-    @mcp.tool()
-    @headless_compatible
-    def pcb_get_footprint_layers(reference: str) -> str:
-        """List every layer referenced by a footprint block, including inner layers."""
-        board_file = _get_pcb_file_for_sync()
-        board_content = _normalize_board_content(board_file.read_text(encoding="utf-8"))
-        footprints = _parse_board_footprint_blocks(board_content)
-        entry = footprints.get(reference)
-        if entry is None:
-            return json.dumps(
-                {
-                    "reference": reference,
-                    "found": False,
-                    "layers": [],
-                    "diagnostics": _board_file_diagnostic_payload(
-                        board_file=board_file,
-                        status="footprint reference not present in board file",
-                    ),
-                },
-                indent=2,
+    pcb_file_inspection.register(
+        mcp,
+        pcb_file_inspection.PcbFileInspectionDependencies(
+            service=PcbFileInspectionService(
+                get_board_file=_get_pcb_file_for_sync,
+                normalize_board_content=_normalize_board_content,
+                parse_board_footprints=_parse_board_footprint_blocks,
+                footprint_layers=_footprint_layers_from_block,
+                board_file_diagnostics=_board_file_diagnostic_payload,
+                edge_cuts_bounds=_edge_cuts_bounds,
+                readability_report=run_pcb_readability,
             )
-        layers = _footprint_layers_from_block(str(entry["block"]))
-        return json.dumps(
-            {
-                "reference": reference,
-                "found": True,
-                "layers": layers,
-                "diagnostics": _board_file_diagnostic_payload(
-                    board_file=board_file,
-                    status="using file-backed footprint parser",
-                ),
-            },
-            indent=2,
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def pcb_visual_qa() -> str:
-        """Headless PCB readability QA: off-board parts, silk and body overlap.
-
-        A fast, file-backed first pass that runs without a live KiCad: it flags
-        footprints whose body leaves the board outline, reference designators that
-        collide on the silkscreen, and overlapping footprint bodies — directly
-        from the ``.kicad_pcb`` geometry. It complements (does not replace) the
-        authoritative DRC run, which remains the sign-off check for courtyard and
-        silk clipping. Returns JSON with an overall PASS/INFO/WARN status and
-        per-finding refs/positions.
-        """
-        board_file = _get_pcb_file_for_sync()
-        board_content = _normalize_board_content(board_file.read_text(encoding="utf-8"))
-        footprints = _parse_board_footprint_blocks(board_content)
-        bounds = _edge_cuts_bounds(board_content)
-        report = run_pcb_readability(footprints, bounds)
-        return json.dumps(report, indent=2)
+        ),
+    )
 
     @mcp.tool()
     @headless_compatible
