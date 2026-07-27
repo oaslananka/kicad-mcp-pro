@@ -145,6 +145,42 @@ def test_verify_pypi_default_retries_cover_registry_propagation(
     assert attempts == 7
 
 
+def test_verify_pypi_retries_when_sdist_appears_after_wheel(tmp_path: Path, monkeypatch) -> None:
+    module = _load_script()
+    wheel_digest = "a" * 64
+    sdist_digest = "b" * 64
+    checksums = tmp_path / "SHA256SUMS.txt"
+    checksums.write_text(
+        f"{wheel_digest}  artifact.whl\n{sdist_digest}  artifact.tar.gz\n",
+        encoding="utf-8",
+    )
+    attempts = 0
+
+    def partially_visible_metadata(*_args: object, **_kwargs: object) -> _PypiResponse:
+        nonlocal attempts
+        attempts += 1
+        urls = [
+            {"filename": "artifact.whl", "digests": {"sha256": wheel_digest}},
+        ]
+        if attempts >= 3:
+            urls.append({"filename": "artifact.tar.gz", "digests": {"sha256": sdist_digest}})
+        return _PypiResponse(json.dumps({"urls": urls}).encode("utf-8"))
+
+    monkeypatch.setattr(module.urllib.request, "urlopen", partially_visible_metadata)
+    monkeypatch.setattr(module.time, "sleep", lambda _delay: None)
+
+    module.verify_pypi(
+        "pypi",
+        "kicad-mcp-pro",
+        "1.0.0",
+        checksums,
+        retries=3,
+        retry_delay=0,
+    )
+
+    assert attempts == 3
+
+
 def _provenance_payload(
     *, repository: str, environment: str | None, filename: str, digest: str
 ) -> bytes:

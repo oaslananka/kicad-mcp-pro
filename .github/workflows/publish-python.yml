@@ -228,8 +228,3 @@ jobs:
             --publisher-workflow publish-python.yml \
             --publisher-environment pypi \
             --artifacts dist
-          while read -r _digest filename; do
-            uv run --frozen --group release pypi-attestations verify pypi \
-              --repository https://github.com/oaslananka/kicad-mcp-pro \
-              "pypi:${filename}"
-          done < release-evidence/SHA256SUMS.txt
