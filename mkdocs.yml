@@ -27,6 +27,10 @@ theme:
     - navigation.instant
     - navigation.sections
     - content.code.copy
+extra_css:
+  - assets/support-links.css
+extra_javascript:
+  - assets/support-links.js
 plugins:
   - search
   - git-revision-date-localized:

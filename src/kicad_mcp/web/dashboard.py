@@ -73,6 +73,15 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     padding: 6px 16px 2px; font-size: 10px; letter-spacing: 0.06em;
     text-transform: uppercase; color: var(--text-muted); opacity: 0.7;
   }
+  .nav-support-group { margin-top: auto; padding-top: 10px; }
+  .nav-support {
+    margin: 4px 10px; padding: 8px 10px; border: 1px solid var(--border);
+    border-radius: 7px; color: var(--text); font-weight: 600;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .nav-support:hover { text-decoration: none; transform: translateY(-1px); }
+  .nav-support.github { border-color: #8f376f; color: #ff8ccf; background: #261727; }
+  .nav-support.coffee { border-color: #d1b700; color: #171717; background: #ffdd00; }
 
   /* Main content */
   .main { flex: 1; padding: 24px; overflow-y: auto; max-height: 100vh; }
@@ -260,6 +269,9 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     .sidebar .status-row { display: none; }
     .nav-item { padding: 6px 10px; border-left: none; border-bottom: 2px solid transparent; }
     .nav-item.active { border-left-color: transparent; border-bottom-color: var(--accent); }
+    .nav-support-group { display: flex; width: 100%; gap: 6px; padding-top: 4px; margin-top: 0; }
+    .nav-support-group .nav-label { display: none; }
+    .nav-support { margin: 0; padding: 6px 9px; border-bottom-width: 1px; }
     .main { padding: 16px; max-height: none; }
   }
 </style>
@@ -284,6 +296,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <div class="nav-label">AI Agents</div>
   <a class="nav-item" href="https://oaslananka.github.io/kicad-mcp-pro/agents/" target="_blank" rel="noopener noreferrer">&#129302; Agent Setup &#8599;</a>
   <a class="nav-item" href="https://oaslananka.github.io/kicad-mcp-pro/agents/prompts/" target="_blank" rel="noopener noreferrer">&#128172; Prompt Library &#8599;</a>
+  <div class="nav-support-group">
+    <div class="nav-label">Support</div>
+    <a class="nav-item nav-support github" href="https://github.com/sponsors/oaslananka" target="_blank" rel="noopener noreferrer" aria-label="Support KiCad MCP Pro through GitHub Sponsors">&#9829; GitHub Sponsors &#8599;</a>
+    <a class="nav-item nav-support coffee" href="https://www.buymeacoffee.com/oaslananka" target="_blank" rel="noopener noreferrer" aria-label="Support KiCad MCP Pro through Buy me a coffee">&#9749; Buy me a coffee &#8599;</a>
+  </div>
 </nav>
 
 <!-- Main content -->

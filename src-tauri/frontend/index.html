@@ -97,9 +97,44 @@
       .step.ok::before { content: '✓ '; }
       .step.fail::before { content: '✗ '; }
       .step.pending::before { content: '○ '; }
+      .support-links {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        display: flex;
+        gap: 8px;
+        z-index: 10;
+      }
+      .support-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 34px;
+        padding: 7px 11px;
+        border: 1px solid #3a3a68;
+        border-radius: 7px;
+        color: #e8e8f2;
+        background: rgba(22, 33, 62, 0.92);
+        font-size: 12px;
+        font-weight: 700;
+        text-decoration: none;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+      }
+      .support-link:hover { transform: translateY(-1px); }
+      .support-link.github { color: #ff8ccf; border-color: #8f376f; }
+      .support-link.coffee { color: #171717; background: #ffdd00; border-color: #d1b700; }
+      @media (max-width: 620px) {
+        .support-links { top: 10px; right: 10px; gap: 6px; }
+        .support-link { width: 34px; padding: 7px; justify-content: center; }
+        .support-link span { display: none; }
+      }
     </style>
   </head>
   <body>
+    <nav class="support-links" aria-label="Project support">
+      <a class="support-link github" href="https://github.com/sponsors/oaslananka" target="_blank" rel="noopener noreferrer" aria-label="GitHub Sponsors">♥ <span>GitHub Sponsors</span></a>
+      <a class="support-link coffee" href="https://www.buymeacoffee.com/oaslananka" target="_blank" rel="noopener noreferrer" aria-label="Buy me a coffee">☕ <span>Buy me a coffee</span></a>
+    </nav>
     <div class="container">
       <div class="spinner" id="spinner"></div>
       <h1>KiCad MCP Pro</h1>
