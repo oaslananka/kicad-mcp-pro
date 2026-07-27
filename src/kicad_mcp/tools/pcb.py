@@ -63,6 +63,7 @@ from ..models.pcb import (
 from ..models.verdict import Finding, SuggestedFix, VerdictReport, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
 from ..pcb.basic_inspection import PcbBasicInspectionService
+from ..pcb.board_inspection import PcbBoardInspectionService
 from ..pcb.file_inspection import PcbFileInspectionService
 from ..pcb.groups_inspection import PcbGroupsInspectionService
 from ..pcb.origin_management import PcbOriginService
@@ -70,7 +71,7 @@ from ..pcb.session_inspection import PcbSessionInspectionService
 from ..pcb.title_block_management import PcbTitleBlockService
 from ..pcb.transaction_lifecycle import PcbTransactionLifecycleService
 from ..utils import telemetry as otel
-from ..utils.cache import clear_ttl_cache, ttl_cache
+from ..utils.cache import clear_ttl_cache
 from ..utils.impedance import TraceType, copper_thickness_mm, trace_impedance
 from ..utils.layers import CANONICAL_LAYER_NAMES, resolve_layer, resolve_layer_name
 from ..utils.pcb_readability import run_pcb_readability
@@ -86,6 +87,7 @@ from ..utils.sexpr import _extract_block, _sexpr_string
 from ..utils.units import _coord_nm, mm_to_nm, nm_to_mm
 from . import (
     pcb_basic_inspection,
+    pcb_board_inspection,
     pcb_file_inspection,
     pcb_groups_inspection,
     pcb_origin_management,
@@ -2410,165 +2412,29 @@ def _planned_board_positions(
 def register(mcp: FastMCP) -> None:
     """Register PCB tools."""
 
-    @mcp.tool()
-    @headless_compatible
-    @ttl_cache(ttl_seconds=5)
-    def pcb_get_board_summary() -> VerdictReport:
-        """Summarize the current board."""
-        try:
-            board = get_board()
-        except (KiCadConnectionError, OSError) as exc:
-            return _file_backed_board_summary(exc)
-        tracks = board.get_tracks()
-        footprints = board.get_footprints()
-        vias = board.get_vias()
-        zones = board.get_zones()
-        nets = board.get_nets(netclass_filter=None)
-        shapes = board.get_shapes()
-        text = "\n".join(
-            [
-                "Board summary:",
-                "- Source: live-gui",
-                f"- Tracks: {len(tracks)}",
-                f"- Vias: {len(vias)}",
-                f"- Footprints: {len(footprints)}",
-                f"- Zones: {len(zones)}",
-                f"- Nets: {len(nets)}",
-                f"- Shapes: {len(shapes)}",
-            ]
-        )
-        return _board_summary_report(
-            text=text,
-            source="live-gui",
-            tracks=len(tracks),
-            vias=len(vias),
-            footprints=len(footprints),
-            zones=len(zones),
-            nets=len(nets),
-            shapes=len(shapes),
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def pcb_get_tracks(
-        page: int = 1,
-        page_size: int = 100,
-        filter_layer: str = "",
-        filter_net: str = "",
-    ) -> str:
-        """List board tracks."""
-        try:
-            all_tracks = [
-                track
-                for track in cast(Iterable[Track], get_board().get_tracks())
-                if _matches_layer_filter(track.layer, filter_layer)
-                and (not filter_net or (track.net.name or "").casefold() == filter_net.casefold())
-            ]
-        except (KiCadConnectionError, OSError) as exc:
-            return _file_backed_tracks(
-                exc,
-                page=page,
-                page_size=page_size,
-                filter_layer=filter_layer,
-                filter_net=filter_net,
+    pcb_board_inspection.register(
+        mcp,
+        pcb_board_inspection.PcbBoardInspectionDependencies(
+            service=PcbBoardInspectionService(
+                get_board=get_board,
+                file_backed_board_summary=_file_backed_board_summary,
+                board_summary_report=_board_summary_report,
+                file_backed_tracks=_file_backed_tracks,
+                file_backed_vias=_file_backed_vias,
+                file_backed_footprints=_file_backed_footprints,
+                paginate=_paginate,
+                limit_items=_limit,
+                matches_layer_filter=_matches_layer_filter,
+                with_pcb_diagnostics=_with_pcb_diagnostics,
+                layer_name=BoardLayer.Name,
+                via_type_name=ViaType.Name,
+                format_selection_id=_format_selection_id,
+                coord_nm=_coord_nm,
+                nm_to_mm=nm_to_mm,
+                connection_errors=(KiCadConnectionError, OSError),
             )
-        tracks, total, page_count = _paginate(all_tracks, page=page, page_size=page_size)
-        if total == 0:
-            if filter_layer or filter_net:
-                return _with_pcb_diagnostics(
-                    "No tracks match the supplied filters on the active board."
-                )
-            return _with_pcb_diagnostics("No tracks are present on the active board.")
-        if not tracks:
-            return f"Track page {page} is out of range. Available pages: 1-{page_count}."
-
-        lines = [
-            f"Tracks ({total} total):",
-            "- Source: live-gui",
-            f"- Page {page}/{page_count} | Showing {len(tracks)}",
-        ]
-        for index, track in enumerate(tracks, start=1):
-            lines.append(
-                f"{index}. "
-                f"({nm_to_mm(_coord_nm(track.start, 'x')):.2f}, "
-                f"{nm_to_mm(_coord_nm(track.start, 'y')):.2f}) -> "
-                f"({nm_to_mm(_coord_nm(track.end, 'x')):.2f}, "
-                f"{nm_to_mm(_coord_nm(track.end, 'y')):.2f}) mm "
-                f"layer={BoardLayer.Name(track.layer)} "
-                f"width={nm_to_mm(track.width):.3f} mm "
-                f"net={track.net.name or '(none)'} id={_format_selection_id(track)}"
-            )
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def pcb_get_vias() -> str:
-        """List board vias."""
-        try:
-            vias, total = _limit(cast(Iterable[Via], get_board().get_vias()))
-        except (KiCadConnectionError, OSError) as exc:
-            return _file_backed_vias(exc)
-        if not vias:
-            return _with_pcb_diagnostics("No vias are present on the active board.")
-
-        lines = [f"Vias ({total} total):", "- Source: live-gui"]
-        for index, via in enumerate(vias, start=1):
-            lines.append(
-                f"{index}. "
-                f"({nm_to_mm(_coord_nm(via.position, 'x')):.2f}, "
-                f"{nm_to_mm(_coord_nm(via.position, 'y')):.2f}) mm "
-                f"diameter={nm_to_mm(via.diameter):.3f} mm "
-                f"drill={nm_to_mm(via.drill_diameter):.3f} mm "
-                f"net={via.net.name or '(none)'} type={ViaType.Name(via.type)}"
-            )
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def pcb_get_footprints(
-        page: int = 1,
-        page_size: int = 50,
-        filter_layer: str = "",
-    ) -> str:
-        """List board footprints."""
-        try:
-            all_footprints = [
-                footprint
-                for footprint in cast(Iterable[_FootprintLike], get_board().get_footprints())
-                if _matches_layer_filter(footprint.layer, filter_layer)
-            ]
-        except (KiCadConnectionError, OSError) as exc:
-            return _file_backed_footprints(
-                exc,
-                page=page,
-                page_size=page_size,
-                filter_layer=filter_layer,
-            )
-        footprints, total, page_count = _paginate(all_footprints, page=page, page_size=page_size)
-        if total == 0:
-            if filter_layer:
-                return _with_pcb_diagnostics(
-                    "No footprints match the supplied layer filter on the active board."
-                )
-            return _with_pcb_diagnostics("No footprints are present on the active board.")
-        if not footprints:
-            return f"Footprint page {page} is out of range. Available pages: 1-{page_count}."
-
-        lines = [
-            f"Footprints ({total} total):",
-            "- Source: live-gui",
-            f"- Page {page}/{page_count} | Showing {len(footprints)}",
-        ]
-        for footprint in footprints:
-            lines.append(
-                f"- {footprint.reference_field.text.value} "
-                f"({footprint.value_field.text.value}) "
-                f"@ ({nm_to_mm(_coord_nm(footprint.position, 'x')):.2f}, "
-                f"{nm_to_mm(_coord_nm(footprint.position, 'y')):.2f}) mm "
-                f"layer={BoardLayer.Name(footprint.layer)} "
-                f"id={_format_selection_id(footprint)}"
-            )
-        return "\n".join(lines)
+        ),
+    )
 
     pcb_file_inspection.register(
         mcp,
