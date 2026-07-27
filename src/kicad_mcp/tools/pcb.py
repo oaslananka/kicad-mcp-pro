@@ -65,6 +65,7 @@ from ..operating_modes import OperatingMode, active_operating_mode
 from ..pcb.file_inspection import PcbFileInspectionService
 from ..pcb.groups_inspection import PcbGroupsInspectionService
 from ..pcb.origin_management import PcbOriginService
+from ..pcb.session_inspection import PcbSessionInspectionService
 from ..pcb.title_block_management import PcbTitleBlockService
 from ..pcb.transaction_lifecycle import PcbTransactionLifecycleService
 from ..utils import telemetry as otel
@@ -86,6 +87,7 @@ from . import (
     pcb_file_inspection,
     pcb_groups_inspection,
     pcb_origin_management,
+    pcb_session_inspection,
     pcb_title_block_management,
     pcb_transaction_lifecycle,
 )
@@ -2827,46 +2829,18 @@ def register(mcp: FastMCP) -> None:
             ]
         )
 
-    @mcp.tool()
-    @headless_compatible
-    def pcb_get_selection() -> str:
-        """List currently selected items in the PCB editor."""
-        try:
-            items = list(get_board().get_selection())
-        except (KiCadConnectionError, OSError) as exc:
-            loaded = _load_file_backed_board(exc)
-            if isinstance(loaded, str):
-                return loaded
-            _, _, diagnostics = loaded
-            return "\n".join(
-                [
-                    "No PCB items are selected in the file-backed fallback.",
-                    *diagnostics,
-                ]
+    pcb_session_inspection.register(
+        mcp,
+        pcb_session_inspection.PcbSessionInspectionDependencies(
+            service=PcbSessionInspectionService(
+                get_board=get_board,
+                load_file_backed_board=_load_file_backed_board,
+                format_selection_id=_format_selection_id,
+                get_max_text_response_chars=lambda: get_config().max_text_response_chars,
+                connection_errors=(KiCadConnectionError, OSError),
             )
-        if not items:
-            return "No PCB items are currently selected."
-        lines = [f"Selected items ({len(items)} total):"]
-        for index, item in enumerate(items, start=1):
-            lines.append(f"{index}. {type(item).__name__} id={_format_selection_id(item)}")
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def pcb_get_board_as_string() -> str:
-        """Return the current board as a bounded S-expression string."""
-        cfg = get_config()
-        diagnostics: list[str] | None = None
-        try:
-            data = get_board().get_as_string()
-        except (KiCadConnectionError, OSError) as exc:
-            loaded = _load_file_backed_board(exc)
-            if isinstance(loaded, str):
-                return loaded
-            _, data, diagnostics = loaded
-        if len(data) > cfg.max_text_response_chars:
-            data = f"{data[: cfg.max_text_response_chars]}\n... [truncated]"
-        return "\n".join([data, *diagnostics]) if diagnostics is not None else data
+        ),
+    )
 
     @mcp.tool()
     @headless_compatible
