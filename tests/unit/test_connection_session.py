@@ -82,6 +82,22 @@ def test_kicad_session_builds_supported_kwargs_and_resets(tmp_path: Path, fake_c
     assert client.closed is True
 
 
+def test_kicad_session_preserves_explicit_ipc_uri(fake_cli: Path) -> None:
+    endpoint = r"ipc://C:\Users\Admin\AppData\Local\Temp\kicad\api.sock"
+    cfg = KiCadMCPConfig(kicad_cli=fake_cli, kicad_socket_path=endpoint)
+
+    class FakeClient:
+        def __init__(self, socket_path: str) -> None:
+            self.socket_path = socket_path
+
+    session = KiCadSession(client_factory=FakeClient, config_factory=lambda: cfg)
+
+    client = session.client()
+
+    assert isinstance(client, FakeClient)
+    assert client.socket_path == endpoint
+
+
 def test_kicad_session_maps_timeout(fake_cli: Path) -> None:
     cfg = KiCadMCPConfig(kicad_cli=fake_cli, ipc_retries=0)
     session = KiCadSession(

@@ -64,6 +64,20 @@ def test_ipc_discovery_uses_configured_socket_and_kicad_api_socket_alias(
     assert discovered.source == "environment"
 
 
+def test_ipc_discovery_preserves_explicit_uri_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_cli: Path,
+) -> None:
+    endpoint = r"ipc://C:\Users\Admin\AppData\Local\Temp\kicad\api.sock"
+    monkeypatch.setenv("KICAD_API_SOCKET", endpoint)
+
+    cfg = KiCadMCPConfig(kicad_cli=fake_cli)
+    discovered = KiCadIpcDiscovery(config_factory=lambda: cfg).discover()
+
+    assert discovered.socket_path == endpoint
+    assert discovered.source == "environment"
+
+
 def test_ipc_capability_matrix_kicad_10_exposes_required_live_editing_tools(
     fake_cli: Path,
 ) -> None:

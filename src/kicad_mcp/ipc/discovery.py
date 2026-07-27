@@ -14,7 +14,7 @@ EndpointSource = Literal["config", "environment", "default"]
 class IpcDiscoveryConfig(Protocol):
     """Configuration protocol used by KiCadIpcDiscovery."""
 
-    kicad_socket_path: Path | None
+    kicad_socket_path: str | Path | None
     kicad_token: str | None
     ipc_connection_timeout: float
 
@@ -26,10 +26,24 @@ ConfigFactory = Callable[[], IpcDiscoveryConfig]
 class KiCadIpcEndpoint:
     """Resolved KiCad IPC endpoint metadata."""
 
-    socket_path: Path | None
+    socket_path: str | Path | None
     source: EndpointSource
     token_configured: bool
     timeout_ms: int
+
+
+def _normalize_endpoint(value: str) -> str | Path:
+    """Preserve URI endpoints and expand plain filesystem socket paths."""
+    endpoint = value.strip()
+    if "://" in endpoint:
+        return endpoint
+    return Path(endpoint).expanduser()
+
+
+def _endpoints_equal(raw: str, configured: str | Path) -> bool:
+    """Compare an environment endpoint with its normalized config value."""
+    normalized = _normalize_endpoint(raw)
+    return normalized == configured
 
 
 def _default_config() -> IpcDiscoveryConfig:
@@ -52,7 +66,7 @@ class KiCadIpcDiscovery:
             return KiCadIpcEndpoint(
                 socket_path=cfg.kicad_socket_path,
                 source="environment"
-                if env_socket and Path(env_socket).expanduser() == cfg.kicad_socket_path
+                if env_socket and _endpoints_equal(env_socket, cfg.kicad_socket_path)
                 else "config",
                 token_configured=bool(cfg.kicad_token),
                 timeout_ms=int(cfg.ipc_connection_timeout * 1000),
@@ -60,7 +74,7 @@ class KiCadIpcDiscovery:
 
         if env_socket:
             return KiCadIpcEndpoint(
-                socket_path=Path(env_socket).expanduser(),
+                socket_path=_normalize_endpoint(env_socket),
                 source="environment",
                 token_configured=bool(cfg.kicad_token or os.environ.get("KICAD_API_TOKEN")),
                 timeout_ms=int(cfg.ipc_connection_timeout * 1000),
