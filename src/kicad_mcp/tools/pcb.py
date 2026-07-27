@@ -62,6 +62,7 @@ from ..models.pcb import (
 )
 from ..models.verdict import Finding, SuggestedFix, VerdictReport, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
+from ..pcb.basic_inspection import PcbBasicInspectionService
 from ..pcb.file_inspection import PcbFileInspectionService
 from ..pcb.groups_inspection import PcbGroupsInspectionService
 from ..pcb.origin_management import PcbOriginService
@@ -84,6 +85,7 @@ from ..utils.placement import (
 from ..utils.sexpr import _extract_block, _sexpr_string
 from ..utils.units import _coord_nm, mm_to_nm, nm_to_mm
 from . import (
+    pcb_basic_inspection,
     pcb_file_inspection,
     pcb_groups_inspection,
     pcb_origin_management,
@@ -2583,81 +2585,24 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    def pcb_get_nets() -> str:
-        """List all board nets."""
-        try:
-            nets, total = _limit(cast(Iterable[Net], get_board().get_nets(netclass_filter=None)))
-        except (KiCadConnectionError, OSError) as exc:
-            return _file_backed_nets(exc)
-        if not nets:
-            return _with_pcb_diagnostics("No nets are present on the active board.")
-        lines = [f"Nets ({total} total):", "- Source: live-gui"]
-        lines.extend(f"- {net.name or '(unnamed)'}" for net in nets)
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def pcb_get_zones() -> str:
-        """List all board copper zones."""
-        try:
-            zones, total = _limit(cast(Iterable[Any], get_board().get_zones()))
-        except (KiCadConnectionError, OSError) as exc:
-            return _file_backed_zones(exc)
-        if not zones:
-            return _with_pcb_diagnostics("No zones are present on the active board.")
-
-        lines = [f"Zones ({total} total):", "- Source: live-gui"]
-        for index, zone in enumerate(zones, start=1):
-            line = f"{index}. name={zone.name or '(unnamed)'} net={zone.net.name or '(none)'}"
-            if hasattr(zone, "layer"):
-                line += f" layer={BoardLayer.Name(zone.layer)}"
-            if hasattr(zone, "layers"):
-                line += f" layers={','.join(BoardLayer.Name(layer) for layer in zone.layers)}"
-            lines.append(line)
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @requires_kicad_running
-    def pcb_get_shapes() -> str:
-        """List graphical board shapes."""
-        shapes, total = _limit(cast(Iterable[Any], get_board().get_shapes()))
-        if not shapes:
-            return _with_pcb_diagnostics("No graphic shapes are present on the active board.")
-        lines = [f"Shapes ({total} total):"]
-        for index, shape in enumerate(shapes, start=1):
-            layer = getattr(shape, "layer", BoardLayer.BL_UNDEFINED)
-            lines.append(f"{index}. {type(shape).__name__} layer={BoardLayer.Name(layer)}")
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @requires_kicad_running
-    def pcb_get_pads() -> str:
-        """List board pads."""
-        pads, total = _limit(cast(Iterable[_PadLike], get_board().get_pads()))
-        if not pads:
-            return _with_pcb_diagnostics("No pads are present on the active board.")
-        lines = [f"Pads ({total} total):"]
-        for index, pad in enumerate(pads, start=1):
-            lines.append(
-                f"{index}. {pad.parent.reference_field.text.value}:{pad.number} "
-                f"net={pad.net.name or '(none)'} "
-                f"@ ({nm_to_mm(_coord_nm(pad.position, 'x')):.2f}, "
-                f"{nm_to_mm(_coord_nm(pad.position, 'y')):.2f}) mm"
+    pcb_basic_inspection.register(
+        mcp,
+        pcb_basic_inspection.PcbBasicInspectionDependencies(
+            service=PcbBasicInspectionService(
+                get_board=get_board,
+                limit_items=_limit,
+                file_backed_nets=_file_backed_nets,
+                file_backed_zones=_file_backed_zones,
+                file_backed_layers=_file_backed_layers,
+                with_pcb_diagnostics=_with_pcb_diagnostics,
+                layer_name=BoardLayer.Name,
+                undefined_layer=BoardLayer.BL_UNDEFINED,
+                coord_nm=_coord_nm,
+                nm_to_mm=nm_to_mm,
+                connection_errors=(KiCadConnectionError, OSError),
             )
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def pcb_get_layers() -> str:
-        """List enabled board layers."""
-        try:
-            layers = get_board().get_enabled_layers()
-        except (KiCadConnectionError, OSError) as exc:
-            return _file_backed_layers(exc)
-        names = [BoardLayer.Name(layer) for layer in layers]
-        return "Enabled layers:\n- Source: live-gui\n" + "\n".join(f"- {name}" for name in names)
+        ),
+    )
 
     @mcp.tool()
     @headless_compatible
