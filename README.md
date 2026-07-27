@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.oaslananka%2Fkicad-mcp-pro.svg)](https://mcptoplist.com/server/io.github.oaslananka%2Fkicad-mcp-pro)
+
 <div align="center">
 
 <h1>KiCad MCP Pro</h1>
