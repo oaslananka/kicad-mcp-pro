@@ -1,0 +1,40 @@
+standard:
+  version: "1.0.0"
+  profile: "released"
+  lifecycle: "active"
+  overlays:
+    - "library"
+    - "web-ui"
+    - "cli"
+    - "container-and-iac"
+
+ownership:
+  owner: "@oaslananka"
+  operations_actor: "@oaslananka-ops"
+  commit_email: "info@oaslananka.dev"
+
+secrets:
+  provider: "doppler"
+  repository_values_allowed: false
+
+features:
+  releases: true
+  production_deployment: false
+  persistent_data: false
+  external_contributions: true
+  ai_agents: true
+
+quality:
+  compatibility_documented: true
+  performance_budget: "report-only"
+
+compliance:
+  openssf_passing: "silver"
+  osps_baseline_level: 1
+
+verification:
+  verified_commit: "1ab708a7b6cbb2ac1166b600f3413f4f23a84393"
+  last_verified: "2026-07-28"
+  next_review: "2026-10-28"
+
+exceptions: []
