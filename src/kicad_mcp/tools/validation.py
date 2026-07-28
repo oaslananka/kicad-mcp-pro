@@ -3310,8 +3310,8 @@ def _build_constraint_node(
     return node
 
 
-def register(mcp: FastMCP) -> None:
-    """Register validation tools."""
+def _register_drc_rule_tools(mcp: FastMCP) -> None:
+    """Register custom DRC rule management tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -3472,6 +3472,10 @@ def register(mcp: FastMCP) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
         return f"Custom DRC rules exported to {target}."
+
+
+def _register_validation_gate_tools(mcp: FastMCP) -> None:
+    """Register DRC, ERC, and project quality-gate tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -3703,6 +3707,10 @@ def register(mcp: FastMCP) -> None:
             )
         return payload
 
+
+def _register_targeted_validation_tools(mcp: FastMCP) -> None:
+    """Register targeted DFM and violation-reporting tools."""
+
     @mcp.tool()
     @headless_compatible
     def check_design_for_manufacture(jlcpcb: bool = True) -> str:
@@ -3769,6 +3777,16 @@ def register(mcp: FastMCP) -> None:
         ]
         lines.extend(f"- {detail}" for detail in outcome.details)
         return "\n".join(lines)
+
+
+def register(mcp: FastMCP) -> None:
+    """Register validation tools."""
+
+    _register_drc_rule_tools(mcp)
+
+    _register_validation_gate_tools(mcp)
+
+    _register_targeted_validation_tools(mcp)
 
     # ── FAZ 5.1 — DRC Exclusion tools ──────────────────────────────────
 
