@@ -1,0 +1,15 @@
+schema_version: 1
+
+configurations:
+  - id: replay-golden
+    host: fixture
+    model: deterministic-golden
+    adapter: replay
+    trace_path: replay-golden.jsonl
+    limits:
+      timeout_seconds: 5
+      max_retries: 0
+      max_cases: 325
+      max_total_tool_calls: 500
+      max_total_tokens: 100000
+      max_total_cost_micros: 0
