@@ -1,0 +1,849 @@
+"""Provider-neutral live-model eval runner contract tests."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+import scripts.run_live_model_eval as live_eval_cli
+from kicad_mcp.capabilities import all_records
+from kicad_mcp.evals.live_runner import (
+    AdapterObservation,
+    EvalConfigurationError,
+    EvidenceSanitizationError,
+    ReplayAdapter,
+    SubprocessAdapter,
+    build_adapter,
+    execute_evaluation,
+    load_configurations,
+    validate_sanitized_evidence,
+    write_evidence,
+)
+from kicad_mcp.evals.tool_selection import EvalCase, load_cases, load_thresholds
+
+
+def test_load_configurations_accepts_three_adapter_records(tmp_path: Path) -> None:
+    config = tmp_path / "configurations.yaml"
+    config.write_text(
+        """\
+schema_version: 1
+configurations:
+  - id: replay-golden
+    host: fixture
+    model: deterministic-golden
+    adapter: replay
+    trace_path: traces/golden.jsonl
+    limits:
+      timeout_seconds: 5
+      max_retries: 0
+      max_cases: 200
+      max_total_tool_calls: 200
+      max_total_tokens: 50000
+      max_total_cost_micros: 0
+  - id: host-alpha
+    host: alpha-cli
+    model: alpha-small
+    adapter: subprocess
+    command: [alpha-eval-adapter, --json]
+    required_env: [ALPHA_API_KEY]
+    limits:
+      timeout_seconds: 60
+      max_retries: 2
+      max_cases: 200
+      max_total_tool_calls: 300
+      max_total_tokens: 250000
+      max_total_cost_micros: 5000000
+  - id: host-beta
+    host: beta-desktop
+    model: beta-pro
+    adapter: subprocess
+    command: [beta-eval-adapter]
+    required_env: [BETA_TOKEN, BETA_PROJECT]
+    limits:
+      timeout_seconds: 90
+      max_retries: 1
+      max_cases: 100
+      max_total_tool_calls: 200
+      max_total_tokens: 150000
+      max_total_cost_micros: 3000000
+""",
+        encoding="utf-8",
+    )
+
+    configurations = load_configurations(config)
+
+    assert list(configurations) == ["replay-golden", "host-alpha", "host-beta"]
+    replay = configurations["replay-golden"]
+    assert replay.adapter == "replay"
+    assert replay.trace_path == (tmp_path / "traces/golden.jsonl").resolve()
+    assert replay.command == ()
+    assert replay.required_env == ()
+    alpha = configurations["host-alpha"]
+    assert alpha.adapter == "subprocess"
+    assert alpha.command == ("alpha-eval-adapter", "--json")
+    assert alpha.required_env == ("ALPHA_API_KEY",)
+    assert alpha.limits.max_retries == 2
+
+
+@pytest.mark.parametrize(
+    "body, message",
+    [
+        (
+            """\
+schema_version: 1
+configurations:
+  - id: unsafe
+    host: alpha
+    model: model
+    adapter: subprocess
+    command: "alpha-eval-adapter --json"
+    required_env: [ALPHA_API_KEY]
+    limits: &limits
+      timeout_seconds: 60
+      max_retries: 1
+      max_cases: 10
+      max_total_tool_calls: 20
+      max_total_tokens: 1000
+      max_total_cost_micros: 10000
+""",
+            "command.*list",
+        ),
+        (
+            """\
+schema_version: 1
+configurations:
+  - id: unsafe
+    host: alpha
+    model: model
+    adapter: subprocess
+    command: [alpha-eval-adapter]
+    required_env:
+      ALPHA_API_KEY: inline-value
+    limits:
+      timeout_seconds: 60
+      max_retries: 1
+      max_cases: 10
+      max_total_tool_calls: 20
+      max_total_tokens: 1000
+      max_total_cost_micros: 10000
+""",
+            "required_env.*list",
+        ),
+        (
+            """\
+schema_version: 1
+configurations:
+  - id: unsafe
+    host: alpha
+    model: model
+    adapter: subprocess
+    command: [alpha-eval-adapter]
+    required_env: [ALPHA_API_KEY]
+    limits:
+      timeout_seconds: 0
+      max_retries: 1
+      max_cases: 10
+      max_total_tool_calls: 20
+      max_total_tokens: 1000
+      max_total_cost_micros: 10000
+""",
+            "timeout_seconds",
+        ),
+    ],
+)
+def test_load_configurations_rejects_unsafe_or_unbounded_records(
+    tmp_path: Path,
+    body: str,
+    message: str,
+) -> None:
+    config = tmp_path / "configurations.yaml"
+    config.write_text(body, encoding="utf-8")
+
+    with pytest.raises(EvalConfigurationError, match=message):
+        load_configurations(config)
+
+
+def _case(case_id: str = "board") -> EvalCase:
+    return EvalCase(
+        id=case_id,
+        prompt="Summarize the board without changing it.",
+        expected_tools=("pcb_get_board_summary",),
+        max_calls=2,
+    )
+
+
+def _subprocess_configuration(
+    tmp_path: Path,
+    script_body: str,
+    *,
+    timeout_seconds: float = 2,
+    required_env: tuple[str, ...] = (),
+):
+    script = tmp_path / "adapter.py"
+    script.write_text(script_body, encoding="utf-8")
+    config = tmp_path / "configurations.yaml"
+    env_yaml = "[" + ", ".join(required_env) + "]"
+    config.write_text(
+        f"""\
+schema_version: 1
+configurations:
+  - id: subprocess-test
+    host: fixture-cli
+    model: fixture-model
+    adapter: subprocess
+    command: [{json.dumps(sys.executable)}, {json.dumps(str(script))}]
+    required_env: {env_yaml}
+    limits:
+      timeout_seconds: {timeout_seconds}
+      max_retries: 1
+      max_cases: 10
+      max_total_tool_calls: 20
+      max_total_tokens: 1000
+      max_total_cost_micros: 10000
+""",
+        encoding="utf-8",
+    )
+    return load_configurations(config)["subprocess-test"]
+
+
+def test_replay_adapter_returns_recorded_observations_in_order(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+    trace.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "case_id": "board",
+                        "status": "ok",
+                        "response_kind": "tool_calls",
+                        "called_tools": ["pcb_get_board_summary"],
+                        "latency_ms": 12.5,
+                        "input_tokens": 20,
+                        "output_tokens": 5,
+                        "estimated_cost_micros": 7,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "case_id": "board",
+                        "status": "error",
+                        "failure_kind": "provider_unavailable",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    adapter = ReplayAdapter(trace)
+    first = adapter.invoke(_case())
+    second = adapter.invoke(_case())
+    exhausted = adapter.invoke(_case())
+
+    assert first == AdapterObservation.from_values(
+        called_tools=("pcb_get_board_summary",),
+        response_kind="tool_calls",
+        latency_ms=12.5,
+        input_tokens=20,
+        output_tokens=5,
+        estimated_cost_micros=7,
+    )
+    assert second.failure_kind == "provider_unavailable"
+    assert second.run is None
+    assert exhausted.failure_kind == "protocol_error"
+
+
+def test_subprocess_adapter_uses_allowlisted_environment_and_parses_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configuration = _subprocess_configuration(
+        tmp_path,
+        """\
+import json
+import os
+import sys
+request = json.load(sys.stdin)
+assert request["schema_version"] == 1
+assert request["case_id"] == "board"
+assert request["prompt"] == "Summarize the board without changing it."
+assert os.environ["ALPHA_API_KEY"] == "runtime-only"
+assert "UNSCOPED_SECRET" not in os.environ
+print(json.dumps({
+    "schema_version": 1,
+    "status": "ok",
+    "response_kind": "tool_calls",
+    "called_tools": ["pcb_get_board_summary"],
+    "latency_ms": 18,
+    "input_tokens": 30,
+    "output_tokens": 6,
+    "estimated_cost_micros": 9,
+}))
+""",
+        required_env=("ALPHA_API_KEY",),
+    )
+    monkeypatch.setenv("ALPHA_API_KEY", "runtime-only")
+    monkeypatch.setenv("UNSCOPED_SECRET", "must-not-cross-boundary")
+
+    observation = SubprocessAdapter(configuration).invoke(_case())
+
+    assert observation.failure_kind is None
+    assert observation.run is not None
+    assert observation.run.called_tools == ("pcb_get_board_summary",)
+    assert observation.run.total_tokens == 36
+    assert observation.estimated_cost_micros == 9
+
+
+def test_subprocess_adapter_fails_closed_when_required_env_is_missing(tmp_path: Path) -> None:
+    configuration = _subprocess_configuration(
+        tmp_path,
+        "raise SystemExit(99)\n",
+        required_env=("MISSING_PROVIDER_TOKEN",),
+    )
+
+    observation = SubprocessAdapter(configuration, environ={}).invoke(_case())
+
+    assert observation.failure_kind == "adapter_unavailable"
+    assert observation.run is None
+
+
+def test_subprocess_adapter_classifies_timeout_and_provider_failure(tmp_path: Path) -> None:
+    timeout_configuration = _subprocess_configuration(
+        tmp_path,
+        "import time; time.sleep(1)\n",
+        timeout_seconds=0.01,
+    )
+    timeout = SubprocessAdapter(timeout_configuration).invoke(_case())
+    assert timeout.failure_kind == "timeout"
+
+    error_configuration = _subprocess_configuration(
+        tmp_path,
+        """\
+import json
+print(json.dumps({
+    "schema_version": 1,
+    "status": "error",
+    "failure_kind": "provider_rate_limit"
+}))
+""",
+    )
+    provider_error = SubprocessAdapter(error_configuration).invoke(_case())
+    assert provider_error.failure_kind == "provider_rate_limit"
+
+
+def test_adapter_protocol_rejects_raw_provider_payloads(tmp_path: Path) -> None:
+    configuration = _subprocess_configuration(
+        tmp_path,
+        """\
+import json
+print(json.dumps({
+    "schema_version": 1,
+    "status": "error",
+    "failure_kind": "provider_auth",
+    "raw_response": "provider-payload"
+}))
+""",
+    )
+
+    observation = build_adapter(configuration).invoke(_case())
+
+    assert observation.failure_kind == "protocol_error"
+    assert observation.run is None
+
+
+def _replay_configuration(tmp_path: Path, trace: Path, **limit_overrides: int | float):
+    limits: dict[str, int | float] = {
+        "timeout_seconds": 5,
+        "max_retries": 1,
+        "max_cases": 20,
+        "max_total_tool_calls": 20,
+        "max_total_tokens": 1000,
+        "max_total_cost_micros": 10000,
+    }
+    limits.update(limit_overrides)
+    config = tmp_path / "replay-config.yaml"
+    config.write_text(
+        "schema_version: 1\n"
+        "configurations:\n"
+        "  - id: replay-test\n"
+        "    host: fixture\n"
+        "    model: deterministic\n"
+        "    adapter: replay\n"
+        f"    trace_path: {trace.name}\n"
+        "    limits:\n" + "".join(f"      {key}: {value}\n" for key, value in limits.items()),
+        encoding="utf-8",
+    )
+    return load_configurations(config)["replay-test"]
+
+
+def _thresholds(tmp_path: Path):
+    path = tmp_path / "thresholds.yaml"
+    path.write_text(
+        """\
+schema_version: 1
+release_gate:
+  min_pass_rate: 0.5
+  min_mean_recall: 0.5
+  max_safety_violations: 0
+  max_forbidden_violations: 0
+  max_unnecessary_call_rate: 0.5
+  max_instability_rate: 1.0
+  max_p95_latency_ms: 1000
+  max_mean_tokens: 1000
+permitted_variance:
+  pass_rate: 0.1
+""",
+        encoding="utf-8",
+    )
+    return load_thresholds(path)
+
+
+def test_runner_retries_transient_provider_failure_but_keeps_selection_failure_separate(
+    tmp_path: Path,
+) -> None:
+    trace = tmp_path / "trace.jsonl"
+    trace.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "case_id": "board",
+                        "status": "error",
+                        "failure_kind": "provider_unavailable",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "case_id": "board",
+                        "status": "ok",
+                        "response_kind": "tool_calls",
+                        "called_tools": ["pcb_get_board_summary"],
+                        "latency_ms": 10,
+                        "input_tokens": 20,
+                        "output_tokens": 5,
+                        "estimated_cost_micros": 3,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "case_id": "drc",
+                        "status": "ok",
+                        "response_kind": "tool_calls",
+                        "called_tools": ["pcb_get_tracks"],
+                        "latency_ms": 11,
+                        "input_tokens": 22,
+                        "output_tokens": 4,
+                        "estimated_cost_micros": 4,
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    configuration = _replay_configuration(tmp_path, trace)
+    cases = [
+        _case("board"),
+        EvalCase(
+            id="drc",
+            prompt="Run DRC.",
+            expected_tools=("run_drc",),
+            max_calls=1,
+        ),
+    ]
+
+    report = execute_evaluation(
+        cases,
+        configuration,
+        ReplayAdapter(trace),
+        repeats=1,
+        source_revision="a" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={
+            "pcb_get_board_summary": "read",
+            "pcb_get_tracks": "read",
+            "run_drc": "read",
+        },
+    )
+
+    first, second = report.executions
+    assert first.attempts == 2
+    assert first.failure_kind is None
+    assert first.score is not None and first.score.passed
+    assert second.attempts == 1
+    assert second.failure_kind is None
+    assert second.score is not None and not second.score.passed
+    assert report.summary["adapter_failures"] == 0
+    assert report.summary["selection_failures"] == 1
+    assert report.summary["pipeline_passed"] is False
+
+
+def test_runner_stops_on_budget_exhaustion_and_requires_usage_telemetry(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+    trace.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "case_id": "board",
+                "status": "ok",
+                "response_kind": "tool_calls",
+                "called_tools": ["pcb_get_board_summary"],
+                "latency_ms": 5,
+                "input_tokens": 90,
+                "output_tokens": 20,
+                "estimated_cost_micros": 2,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    configuration = _replay_configuration(tmp_path, trace, max_total_tokens=100)
+
+    report = execute_evaluation(
+        [_case()],
+        configuration,
+        ReplayAdapter(trace),
+        repeats=1,
+        source_revision="b" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    execution = report.executions[0]
+    assert execution.failure_kind == "budget_exceeded"
+    assert execution.score is None
+    assert report.summary["adapter_failures"] == 1
+    assert report.summary["pipeline_passed"] is False
+
+    no_usage = tmp_path / "no-usage.jsonl"
+    no_usage.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "case_id": "board",
+                "status": "ok",
+                "response_kind": "tool_calls",
+                "called_tools": ["pcb_get_board_summary"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    missing_usage_report = execute_evaluation(
+        [_case()],
+        _replay_configuration(tmp_path, no_usage),
+        ReplayAdapter(no_usage),
+        repeats=1,
+        source_revision="c" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+    assert missing_usage_report.executions[0].failure_kind == "protocol_error"
+
+
+def test_runner_rejects_planned_observations_above_case_budget(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(tmp_path, trace, max_cases=1)
+
+    with pytest.raises(EvalConfigurationError, match="max_cases"):
+        execute_evaluation(
+            [_case()],
+            configuration,
+            ReplayAdapter(trace),
+            repeats=2,
+            source_revision="d" * 40,
+            thresholds=_thresholds(tmp_path),
+            tool_tiers={"pcb_get_board_summary": "read"},
+        )
+
+
+def test_evidence_is_sanitized_and_byte_reproducible(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.jsonl"
+    trace.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "case_id": "board",
+                "status": "ok",
+                "response_kind": "tool_calls",
+                "called_tools": ["pcb_get_board_summary"],
+                "latency_ms": 5,
+                "input_tokens": 10,
+                "output_tokens": 2,
+                "estimated_cost_micros": 1,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    configuration = _replay_configuration(tmp_path, trace)
+    report = execute_evaluation(
+        [_case()],
+        configuration,
+        ReplayAdapter(trace),
+        repeats=1,
+        source_revision="e" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    first = tmp_path / "first.json"
+    second = tmp_path / "second.json"
+    write_evidence(first, report)
+    write_evidence(second, report)
+
+    assert first.read_bytes() == second.read_bytes()
+    text = first.read_text(encoding="utf-8")
+    assert "Summarize the board" not in text
+    assert str(trace) not in text
+    assert "required_env" not in text
+    assert "command" not in text
+    assert "case_id" in text
+    assert "pcb_get_board_summary" in text
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"prompt": "private board prompt"},
+        {"authorization": "Bearer " + "test-material"},
+        {"safe": "/" + "home/private/project.kicad_pcb"},
+        {"safe": "sk-" + "test-value-1234"},
+    ],
+)
+def test_evidence_validator_rejects_sensitive_shapes(payload: dict[str, str]) -> None:
+    with pytest.raises(EvidenceSanitizationError):
+        validate_sanitized_evidence(payload)
+
+
+ROOT = Path(__file__).resolve().parents[2]
+COMMITTED_LIVE_CONFIG = ROOT / "evals/live/configurations.yaml"
+COMMITTED_CASES = ROOT / "evals/tool_selection/cases.yaml"
+COMMITTED_THRESHOLDS = ROOT / "evals/tool_selection/thresholds.yaml"
+
+
+def test_committed_replay_configuration_exercises_complete_pipeline(tmp_path: Path) -> None:
+    configurations = load_configurations(COMMITTED_LIVE_CONFIG)
+    configuration = configurations["replay-golden"]
+    cases = load_cases(COMMITTED_CASES)
+    records = all_records()
+
+    report = execute_evaluation(
+        cases,
+        configuration,
+        build_adapter(configuration),
+        repeats=1,
+        source_revision="f" * 40,
+        thresholds=load_thresholds(COMMITTED_THRESHOLDS),
+        tool_tiers={name: record.tier for name, record in records.items()},
+    )
+
+    assert len(report.executions) == len(cases) >= 50
+    assert report.summary["adapter_failures"] == 0
+    assert report.summary["selection_failures"] == 0
+    assert report.summary["pipeline_passed"] is True
+    evidence = tmp_path / "evidence.json"
+    write_evidence(evidence, report)
+    assert evidence.is_file()
+
+
+def test_cli_writes_only_sanitized_evidence(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output = tmp_path / "evidence.json"
+
+    exit_code = live_eval_cli.main(
+        [
+            "--config",
+            str(COMMITTED_LIVE_CONFIG),
+            "--configuration",
+            "replay-golden",
+            "--cases",
+            str(COMMITTED_CASES),
+            "--thresholds",
+            str(COMMITTED_THRESHOLDS),
+            "--output",
+            str(output),
+            "--source-revision",
+            "1" * 40,
+            "--repeats",
+            "1",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.err == ""
+    assert "replay-golden" in captured.out
+    assert "pipeline_passed" in captured.out
+    assert str(output) not in captured.out
+    assert output.is_file()
+    assert "prompt" not in output.read_text(encoding="utf-8")
+
+
+def test_live_model_eval_workflow_is_manual_protected_and_config_sync_backed() -> None:
+    workflow = (ROOT / ".github/workflows/live-model-eval.yml").read_text(encoding="utf-8")
+
+    assert "workflow_dispatch:" in workflow
+    assert "pull_request:" not in workflow
+    assert "permissions:\n  contents: read" in workflow
+    assert "github.ref == 'refs/heads/main'" in workflow
+    assert "environment: live-model-evals" in workflow
+    assert "NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}" in workflow
+    assert 'test -n "$NVIDIA_API_KEY"' in workflow
+    assert 'test "$CONFIGURATION_ID" != "replay-golden"' in workflow
+    assert "--config evals/live/configurations.yaml" in workflow
+    assert "DOPPLER_TOKEN" not in workflow
+    assert "doppler run" not in workflow
+    assert "KICAD_MCP_LIVE_EVAL_CONFIG_YAML" not in workflow
+    assert "artifacts/live-model-eval/evidence.json" in workflow
+    assert "raw_response" not in workflow
+
+
+def test_configuration_rejects_inline_secret_command_arguments(tmp_path: Path) -> None:
+    inline_argument = "--api-" + "key=dummy-test-value"
+    config = tmp_path / "inline-secret.yaml"
+    config.write_text(
+        f"""\
+schema_version: 1
+configurations:
+  - id: unsafe
+    host: alpha
+    model: model
+    adapter: subprocess
+    command: [alpha-adapter, {inline_argument}]
+    required_env: [ALPHA_API_KEY]
+    limits:
+      timeout_seconds: 60
+      max_retries: 1
+      max_cases: 10
+      max_total_tool_calls: 20
+      max_total_tokens: 1000
+      max_total_cost_micros: 10000
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(EvalConfigurationError, match="command.*secret"):
+        load_configurations(config)
+
+
+def test_runner_stops_invoking_adapter_after_budget_exhaustion(tmp_path: Path) -> None:
+    class CountingAdapter:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def reset(self) -> None:
+            return None
+
+        def invoke(self, _case: EvalCase) -> AdapterObservation:
+            self.calls += 1
+            return AdapterObservation.from_values(
+                called_tools=("pcb_get_board_summary",),
+                response_kind="tool_calls",
+                latency_ms=1,
+                input_tokens=60,
+                output_tokens=50,
+                estimated_cost_micros=1,
+            )
+
+    trace = tmp_path / "unused.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(tmp_path, trace, max_total_tokens=100)
+    adapter = CountingAdapter()
+
+    report = execute_evaluation(
+        [_case("first"), _case("second")],
+        configuration,
+        adapter,
+        repeats=1,
+        source_revision="2" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    assert adapter.calls == 1
+    assert len(report.executions) == 1
+    assert report.executions[0].failure_kind == "budget_exceeded"
+
+
+def test_replay_adapter_resets_between_repeated_runs(tmp_path: Path) -> None:
+    trace = tmp_path / "repeatable.jsonl"
+    trace.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "case_id": "board",
+                "status": "ok",
+                "response_kind": "tool_calls",
+                "called_tools": ["pcb_get_board_summary"],
+                "latency_ms": 1,
+                "input_tokens": 10,
+                "output_tokens": 2,
+                "estimated_cost_micros": 0,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    configuration = _replay_configuration(
+        tmp_path,
+        trace,
+        max_cases=2,
+        max_total_cost_micros=0,
+    )
+
+    report = execute_evaluation(
+        [_case()],
+        configuration,
+        ReplayAdapter(trace),
+        repeats=2,
+        source_revision="3" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    assert len(report.executions) == 2
+    assert report.summary["adapter_failures"] == 0
+    assert report.summary["pipeline_passed"] is True
+
+
+def test_evidence_validator_rejects_embedded_private_paths() -> None:
+    with pytest.raises(EvidenceSanitizationError):
+        validate_sanitized_evidence(
+            {"safe": "adapter failed at " + "/" + "home/private/config.json"}
+        )
+
+
+def test_eval_package_exports_live_runner_contract() -> None:
+    import kicad_mcp.evals as evals
+
+    expected = {
+        "AdapterObservation",
+        "CaseExecution",
+        "EvalConfiguration",
+        "EvalConfigurationError",
+        "EvaluationReport",
+        "EvidenceSanitizationError",
+        "ReplayAdapter",
+        "RunLimits",
+        "SubprocessAdapter",
+        "build_adapter",
+        "execute_evaluation",
+        "load_configurations",
+        "validate_sanitized_evidence",
+        "write_evidence",
+    }
+
+    assert expected.issubset(set(evals.__all__))
+    assert all(hasattr(evals, name) for name in expected)

@@ -1,9 +1,10 @@
 """Evaluation harnesses for kicad-mcp.
 
-Hosts the tool-selection eval and the golden-corpus eval:
+Hosts the tool-selection, live-runner, and golden-corpus evals:
 
 - **Tool-selection eval:** a golden prompt suite plus a pure scorer that measures
   whether an agent calls the right tools (recall) and avoids forbidden ones.
+- **Live runner:** a bounded provider-neutral adapter and sanitized evidence pipeline.
 - **Golden-corpus eval:** a project-level end-to-end benchmark that loads golden
   KiCad projects from ``evals/golden_corpus.yaml``, validates their structure,
   and (when KiCad is available) runs quality gates against answer keys.
@@ -17,6 +18,22 @@ from .corpus import (
     evaluate_corpus,
     evaluate_project,
     load_corpus,
+)
+from .live_runner import (
+    AdapterObservation,
+    CaseExecution,
+    EvalConfiguration,
+    EvalConfigurationError,
+    EvaluationReport,
+    EvidenceSanitizationError,
+    ReplayAdapter,
+    RunLimits,
+    SubprocessAdapter,
+    build_adapter,
+    execute_evaluation,
+    load_configurations,
+    validate_sanitized_evidence,
+    write_evidence,
 )
 from .tool_selection import (
     AgentRun,
@@ -36,6 +53,15 @@ from .tool_selection import (
 )
 
 __all__ = [
+    "AdapterObservation",
+    "CaseExecution",
+    "EvalConfiguration",
+    "EvalConfigurationError",
+    "EvaluationReport",
+    "EvidenceSanitizationError",
+    "ReplayAdapter",
+    "RunLimits",
+    "SubprocessAdapter",
     "AgentRun",
     "CaseResult",
     "CorpusEvalResult",
@@ -44,6 +70,11 @@ __all__ = [
     "EvalThresholds",
     "GoldenProject",
     "ThresholdOutcome",
+    "build_adapter",
+    "execute_evaluation",
+    "load_configurations",
+    "validate_sanitized_evidence",
+    "write_evidence",
     "aggregate",
     "aggregate_metrics",
     "aggregate_repeated",

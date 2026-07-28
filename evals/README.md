@@ -96,6 +96,150 @@ Live provider execution remains a separate, bounded, billed step. Credentials mu
 come from the configured secret source at runtime and must never be written to the
 repository, traces, reports, or CI artifacts.
 
+## Provider-neutral live runner
+
+The runner in
+[`src/kicad_mcp/evals/live_runner.py`](../src/kicad_mcp/evals/live_runner.py)
+keeps provider and host integrations outside the deterministic scorer. It supports
+one strict configuration schema with two adapter kinds:
+
+- `replay`: reads sanitized JSONL observations and resets the trace before each
+  repeated corpus run;
+- `subprocess`: invokes an external adapter with an argument list, `shell=False`,
+  a per-attempt timeout, bounded retries, and an explicit environment allowlist.
+
+A configuration record declares all limits. Missing limits are rejected rather
+than replaced with permissive defaults:
+
+```yaml
+schema_version: 1
+configurations:
+  - id: replay-golden
+    host: fixture
+    model: deterministic-golden
+    adapter: replay
+    trace_path: replay-golden.jsonl
+    limits:
+      timeout_seconds: 5
+      max_retries: 0
+      max_cases: 325
+      max_total_tool_calls: 500
+      max_total_tokens: 100000
+      max_total_cost_micros: 0
+
+  - id: host-a
+    host: supported-host-a
+    model: supported-model-a
+    adapter: subprocess
+    command: [host-a-eval-adapter, --json]
+    required_env: [HOST_A_API_KEY]
+    limits:
+      timeout_seconds: 60
+      max_retries: 2
+      max_cases: 325
+      max_total_tool_calls: 1000
+      max_total_tokens: 500000
+      max_total_cost_micros: 10000000
+
+  - id: host-b
+    host: supported-host-b
+    model: supported-model-b
+    adapter: subprocess
+    command: [host-b-eval-adapter]
+    required_env: [HOST_B_TOKEN]
+    limits:
+      timeout_seconds: 90
+      max_retries: 1
+      max_cases: 325
+      max_total_tool_calls: 1000
+      max_total_tokens: 500000
+      max_total_cost_micros: 10000000
+```
+
+Configuration files contain environment variable names only. Inline credentials
+in command arguments are rejected. The subprocess receives only a small safe base
+environment plus variables named in `required_env`; unrelated process secrets are
+not inherited.
+
+### Adapter JSON contract
+
+For each case, the runner writes one JSON request to adapter stdin:
+
+```json
+{"case_id":"board_overview","prompt":"...","schema_version":1}
+```
+
+The prompt is runtime input and is never copied to evidence. A successful adapter
+writes exactly one JSON object to stdout:
+
+```json
+{
+  "schema_version": 1,
+  "status": "ok",
+  "response_kind": "tool_calls",
+  "called_tools": ["pcb_get_board_summary"],
+  "latency_ms": 420,
+  "input_tokens": 900,
+  "output_tokens": 80,
+  "estimated_cost_micros": 250
+}
+```
+
+A host or provider failure uses the restricted error shape:
+
+```json
+{"failure_kind":"provider_rate_limit","schema_version":1,"status":"error"}
+```
+
+Supported classifications are `adapter_unavailable`, `timeout`, `protocol_error`,
+`provider_auth`, `provider_rate_limit`, `provider_unavailable`, `budget_exceeded`,
+`model_error`, and `unknown`. Only timeout, provider rate limiting, and provider
+unavailability are retried. A valid model response that selects the wrong tool is
+not an adapter failure; it reaches the scorer and is reported separately as a
+selection failure.
+
+Raw provider payloads, messages, stack traces, transcripts, and extra response
+fields are rejected. Stderr is not retained in the report.
+
+### Replay and evidence
+
+Run the committed 65-case replay without network access or credentials:
+
+```bash
+uv run --all-extras python scripts/run_live_model_eval.py \
+  --configuration replay-golden \
+  --source-revision "$(git rev-parse HEAD)" \
+  --repeats 1 \
+  --output /tmp/kicad-mcp-live-eval-evidence.json
+```
+
+The schema-versioned evidence contains configuration identity, source revision,
+case IDs, normalized tool calls, telemetry, failure classifications, scorer
+results, aggregate metrics, and threshold outcome. It deliberately excludes
+prompts, commands, environment variable names, raw request/response content,
+transcripts, credentials, and private absolute paths. The same configuration,
+trace, source revision, and repeat count produce byte-identical JSON.
+
+### Protected billed runs
+
+`.github/workflows/live-model-eval.yml` is manual-only. Replay mode is safe to run
+without secrets. Live mode is restricted to `main` and the protected
+`live-model-evals` environment. Provider credentials are synchronized from Doppler
+into that GitHub environment and are injected only into the billed job. The
+workflow does not require a long-lived Doppler token in GitHub Actions.
+
+Live adapter configuration records are versioned in
+[`live/configurations.yaml`](live/configurations.yaml) and contain no credential
+values. The current file intentionally contains only the deterministic replay
+record; issue #492 adds the reviewed NVIDIA NIM model records and their external
+adapter command before a billed run is enabled. The guard rejects `replay-golden`
+when `mode=live`, so live execution fails closed until such a record exists.
+
+The workflow uploads only sanitized evidence JSON. The repository does not commit
+provider credentials, vendor SDKs, raw authorization material, or live model
+transcripts. Actual three-configuration benchmark results and release
+non-regression enforcement remain scoped to issue #492.
+
 ### Adding cases
 
 Keep IDs unique and tool names identical to registered MCP names. Tool-call cases

@@ -1,0 +1,121 @@
+name: Live Model Evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Run the deterministic replay or a billed protected adapter.
+        type: choice
+        options: [replay, live]
+        default: replay
+        required: true
+      configuration_id:
+        description: Configuration id from the selected configuration file.
+        type: string
+        default: replay-golden
+        required: true
+      repeats:
+        description: Full-corpus repetitions, bounded from 1 to 5.
+        type: number
+        default: 1
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-model-eval-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Validate dispatch bounds
+        env:
+          CONFIGURATION_ID: ${{ inputs.configuration_id }}
+          GITHUB_REF_VALUE: ${{ github.ref }}
+          MODE: ${{ inputs.mode }}
+          REPEATS: ${{ inputs.repeats }}
+        run: |
+          set -euo pipefail
+          test "$REPEATS" -ge 1
+          test "$REPEATS" -le 5
+          if [[ "$MODE" == "live" ]]; then
+            test "$GITHUB_REF_VALUE" = "refs/heads/main"
+            test "$CONFIGURATION_ID" != "replay-golden"
+          fi
+
+  replay:
+    if: inputs.mode == 'replay'
+    needs: guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: true
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - name: Run deterministic replay
+        env:
+          CONFIGURATION_ID: ${{ inputs.configuration_id }}
+          REPEATS: ${{ inputs.repeats }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/live-model-eval
+          uv run --all-extras python scripts/run_live_model_eval.py \
+            --configuration "$CONFIGURATION_ID" \
+            --repeats "$REPEATS" \
+            --source-revision "$GITHUB_SHA" \
+            --output artifacts/live-model-eval/evidence.json
+      - name: Upload sanitized replay evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: live-model-eval-replay-${{ github.run_id }}
+          path: artifacts/live-model-eval/evidence.json
+          if-no-files-found: error
+          retention-days: 7
+
+  live:
+    if: inputs.mode == 'live' && github.ref == 'refs/heads/main'
+    needs: guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: live-model-evals
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - name: Run bounded billed evaluation
+        env:
+          CONFIGURATION_ID: ${{ inputs.configuration_id }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          REPEATS: ${{ inputs.repeats }}
+        run: |
+          set -euo pipefail
+          test -n "$NVIDIA_API_KEY"
+          mkdir -p artifacts/live-model-eval
+          uv run --all-extras python scripts/run_live_model_eval.py \
+            --config evals/live/configurations.yaml \
+            --configuration "$CONFIGURATION_ID" \
+            --repeats "$REPEATS" \
+            --source-revision "$GITHUB_SHA" \
+            --output artifacts/live-model-eval/evidence.json
+      - name: Upload sanitized live evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: live-model-eval-${{ github.run_id }}
+          path: artifacts/live-model-eval/evidence.json
+          if-no-files-found: error
+          retention-days: 14
