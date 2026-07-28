@@ -9,7 +9,6 @@ import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -32,6 +31,8 @@ from ..utils.dru import (
     parse_dru,
     upsert_rule,
 )
+from ..validation.policy_state import ValidationPolicyStateService
+from . import validation_policy_state
 from .export_support import _ensure_output_dir, _get_pcb_file, _get_sch_file, _run_cli_variants
 from .gates import GateOutcome, GateStatus, _combined_status
 from .metadata import headless_compatible
@@ -3771,242 +3772,13 @@ def register(mcp: FastMCP) -> None:
 
     # ── FAZ 5.1 — DRC Exclusion tools ──────────────────────────────────
 
-    def _drc_exclusions_path() -> Path:
-        cfg = get_config()
-        if cfg.project_dir is None:
-            raise ValueError("No active project is configured.")
-        target = cfg.project_dir / ".kicad-mcp"
-        target.mkdir(parents=True, exist_ok=True)
-        return target / "drc_exclusions.json"
-
-    def _load_drc_exclusions() -> dict[str, object]:
-        path = _drc_exclusions_path()
-        if not path.exists():
-            payload: dict[str, object] = {"exclusions": []}
-            path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            return payload
-        return cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
-
-    def _save_drc_exclusions(payload: dict[str, object]) -> Path:
-        path = _drc_exclusions_path()
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        return path
-
-    @mcp.tool()
-    @headless_compatible
-    def drc_list_exclusions() -> str:
-        """List all DRC violation exclusions stored for the active project.
-
-        Returns a JSON array of exclusions, each with a 'uuid' (violation
-        identifier), 'reason', and 'created' timestamp.
-        """
-        state = _load_drc_exclusions()
-        exclusions = cast(list[dict[str, object]], state.get("exclusions", []))
-        if not exclusions:
-            return json.dumps({"exclusions": [], "count": 0}, indent=2)
-        return json.dumps({"exclusions": exclusions, "count": len(exclusions)}, indent=2)
-
-    @mcp.tool()
-    @headless_compatible
-    def drc_add_exclusion(reason: str = "Reviewed — not actionable.") -> str:
-        """Add DRC exclusions for the current violation set.
-
-        Runs DRC, lists all violations, and asks the user to pick which UUIDs
-        to exclude.  Because MCP tools cannot interactively prompt, this tool
-        excludes ALL current DRC violations and records a reason string.
-
-        Use ``drc_list_exclusions`` afterward to review what was excluded.
-        """
-        _, report, error = _run_drc_report("drc_add_exclusion.json")
-        if report is None:
-            return f"Could not run DRC: {error or 'unknown error'}"
-        violations = _entries(report, "violations")
-        if not violations:
-            return "No DRC violations found — nothing to exclude."
-
-        state = _load_drc_exclusions()
-        existing_uuids = {
-            str(excl.get("uuid", ""))
-            for excl in cast(list[dict[str, object]], state.get("exclusions", []))
-        }
-        exclusions = cast(list[dict[str, object]], state.setdefault("exclusions", []))
-        now = datetime.now(UTC).isoformat()
-        added = 0
-        for violation in violations:
-            uuid = str(violation.get("uuid", ""))
-            if not uuid or uuid in existing_uuids:
-                continue
-            exclusions.append(
-                {
-                    "uuid": uuid,
-                    "reason": reason,
-                    "created": now,
-                    "description": str(violation.get("description", "")),
-                }
+    validation_policy_state.register(
+        mcp,
+        validation_policy_state.ValidationPolicyStateDependencies(
+            service=ValidationPolicyStateService(
+                project_dir=lambda: get_config().project_dir,
+                run_drc_report=_run_drc_report,
+                report_entries=_entries,
             )
-            existing_uuids.add(uuid)
-            added += 1
-
-        _save_drc_exclusions(state)
-        return f"Added {added} DRC exclusion(s). Total exclusions stored: {len(exclusions)}."
-
-    @mcp.tool()
-    @headless_compatible
-    def drc_remove_exclusion(uuid: str) -> str:
-        """Remove a single DRC exclusion by its violation UUID.
-
-        Use ``drc_list_exclusions`` to retrieve the UUID of the exclusion to remove.
-        """
-        state = _load_drc_exclusions()
-        exclusions = cast(list[dict[str, object]], state.get("exclusions", []))
-        before = len(exclusions)
-        state["exclusions"] = [excl for excl in exclusions if str(excl.get("uuid", "")) != uuid]
-        removed = before - len(cast(list[dict[str, object]], state["exclusions"]))
-        if removed == 0:
-            return f"No exclusion found with UUID '{uuid}'."
-        _save_drc_exclusions(state)
-        return f"Removed 1 DRC exclusion (UUID: {uuid})."
-
-    @mcp.tool()
-    @headless_compatible
-    def drc_validate_exclusions() -> str:
-        """Validate that stored DRC exclusions still cover active violations.
-
-        Re-runs DRC and reports which previously excluded violations are
-        still present (valid) and which have been resolved (stale).
-        """
-        state = _load_drc_exclusions()
-        exclusions = cast(list[dict[str, object]], state.get("exclusions", []))
-        if not exclusions:
-            return "No DRC exclusions stored for the active project."
-
-        _, report, error = _run_drc_report("drc_validate_exclusions.json")
-        if report is None:
-            return f"Could not run DRC: {error or 'unknown error'}"
-        active_uuids = {str(v.get("uuid", "")) for v in _entries(report, "violations")}
-
-        valid = []
-        stale = []
-        for excl in exclusions:
-            uuid = str(excl.get("uuid", ""))
-            if uuid in active_uuids:
-                valid.append(excl)
-            else:
-                stale.append(excl)
-
-        return json.dumps(
-            {
-                "total_exclusions": len(exclusions),
-                "valid_exclusions": len(valid),
-                "stale_exclusions": len(stale),
-                "active_violations": len(active_uuids),
-                "valid": valid[:20],
-                "stale": stale[:20],
-            },
-            indent=2,
-        )
-
-    # ── FAZ 5.2 — ERC Rule Severity tools ──────────────────────────────
-
-    _erc_rule_names: list[str] = [
-        "power_pin_not_driven",
-        "pin_not_connected",
-        "pin_to_pin_warning",
-        "unresolved_variable",
-        "missing_input_pin_connection",
-        "missing_power_pin_connection",
-        "missing_power_symbol",
-        "bus_conflict",
-        "label_conflict",
-        "global_label_conflict",
-        "hierarchical_label_conflict",
-        "duplicate_reference",
-        "invalid_reference",
-        "extra_units",
-        "no_connect_connected",
-    ]
-
-    def _erc_severity_path() -> Path:
-        cfg = get_config()
-        if cfg.project_dir is None:
-            raise ValueError("No active project is configured.")
-        target = cfg.project_dir / ".kicad-mcp"
-        target.mkdir(parents=True, exist_ok=True)
-        return target / "erc_severity.json"
-
-    def _load_erc_severity() -> dict[str, str]:
-        path = _erc_severity_path()
-        if not path.exists():
-            payload: dict[str, str] = {rule: "error" for rule in _erc_rule_names}
-            path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            return payload
-        return cast(dict[str, str], json.loads(path.read_text(encoding="utf-8")))
-
-    def _save_erc_severity(payload: dict[str, str]) -> Path:
-        path = _erc_severity_path()
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        return path
-
-    @mcp.tool()
-    @headless_compatible
-    def erc_list_rules() -> str:
-        """List known ERC rules and their current severity levels.
-
-        Severity levels are: ``error``, ``warning``, or ``ignore``.
-        """
-        severity_map = _load_erc_severity()
-        payload = {
-            "rules": [
-                {"name": name, "severity": severity_map.get(name, "error")}
-                for name in _erc_rule_names
-            ]
-        }
-        return json.dumps(payload, indent=2)
-
-    @mcp.tool()
-    @headless_compatible
-    def erc_set_rule_severity(rule_name: str, severity: str) -> str:
-        """Override the severity of an ERC rule.
-
-        Parameters
-        ----------
-        rule_name : str
-            Name of the ERC rule (use ``erc_list_rules`` to see available names).
-        severity : str
-            One of ``error``, ``warning``, or ``ignore``.
-        """
-        severity_lower = severity.casefold().strip()
-        if severity_lower not in {"error", "warning", "ignore"}:
-            raise ValueError("Severity must be one of: error, warning, ignore.")
-        if rule_name not in _erc_rule_names:
-            raise ValueError(
-                f"Unknown ERC rule '{rule_name}'. Available rules: {', '.join(_erc_rule_names)}"
-            )
-        state = _load_erc_severity()
-        state[rule_name] = severity_lower
-        _save_erc_severity(state)
-        return f"ERC rule '{rule_name}' severity set to '{severity_lower}'."
-
-    @mcp.tool()
-    @headless_compatible
-    def erc_reset_rules(rule_name: str | None = None) -> str:
-        """Reset one or all ERC rule severities back to their default (``error``).
-
-        Parameters
-        ----------
-        rule_name : str | None
-            Specific rule to reset, or omit to reset all rules.
-        """
-        state = _load_erc_severity()
-        if rule_name:
-            if rule_name not in _erc_rule_names:
-                raise ValueError(
-                    f"Unknown ERC rule '{rule_name}'. Available rules: {', '.join(_erc_rule_names)}"
-                )
-            state[rule_name] = "error"
-            _save_erc_severity(state)
-            return f"ERC rule '{rule_name}' reset to default severity (error)."
-        for name in _erc_rule_names:
-            state[name] = "error"
-        _save_erc_severity(state)
-        return f"All {len(_erc_rule_names)} ERC rules reset to default severity (error)."
+        ),
+    )
