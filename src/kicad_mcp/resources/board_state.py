@@ -12,6 +12,7 @@ from mcp.server.fastmcp import FastMCP
 
 from ..config import get_config
 from ..connection import KiCadConnectionError, get_board
+from ..validation.drc_report import courtyard_violations, report_entries
 
 
 def _queue_reason(details: Iterable[str], summary: str) -> str:
@@ -356,12 +357,9 @@ def register(mcp: FastMCP) -> None:
             if report is None:
                 msg = error or "Run run_drc(save_report=True) to generate a report."
                 return f"DRC: No recent report\n- {msg}"
-            violations_raw = report.get("violations")
-            violations = list(violations_raw) if isinstance(violations_raw, list) else []
-            unconnected_raw = report.get("unconnected_items")
-            unconnected = list(unconnected_raw) if isinstance(unconnected_raw, list) else []
-            courtyard_raw = report.get("items_not_passing_courtyard")
-            courtyard = list(courtyard_raw) if isinstance(courtyard_raw, list) else []
+            violations = report_entries(report, "violations")
+            unconnected = report_entries(report, "unconnected_items")
+            courtyard = courtyard_violations(report)
             lines = [
                 "DRC latest results:",
                 f"- Violations: {len(violations)}",

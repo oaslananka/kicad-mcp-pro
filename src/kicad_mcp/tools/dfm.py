@@ -17,6 +17,7 @@ from ..connection import KiCadConnectionError, get_board
 from ..models.verdict import Verdict, VerdictReport
 from ..utils.sexpr import _extract_block
 from ..utils.units import nm_to_mm
+from ..validation.drc_report import courtyard_violations, report_entries
 from .export_support import _ensure_output_dir, _get_pcb_file, _run_cli_variants
 from .metadata import headless_compatible
 
@@ -248,11 +249,9 @@ def _dfm_check_lines(
     rules = cast(dict[str, float | int], profile["rules"])
     metrics = _board_metrics()
     _, report, error = _run_drc_report("dfm_profile_check.json")
-    violations = cast(list[dict[str, Any]], report.get("violations", [])) if report else []
-    unconnected = cast(list[dict[str, Any]], report.get("unconnected_items", [])) if report else []
-    courtyard = (
-        cast(list[dict[str, Any]], report.get("items_not_passing_courtyard", [])) if report else []
-    )
+    violations = report_entries(report, "violations") if report else []
+    unconnected = report_entries(report, "unconnected_items") if report else []
+    courtyard = courtyard_violations(report) if report else []
     silk = [entry for entry in violations if "silk" in str(entry.get("description", "")).lower()]
 
     lines = [
