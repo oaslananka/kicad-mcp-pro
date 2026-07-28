@@ -31,6 +31,7 @@ from ..utils.dru import (
     parse_dru,
     upsert_rule,
 )
+from ..validation.drc_report import courtyard_violations, report_entries
 from ..validation.policy_state import ValidationPolicyStateService
 from . import validation_policy_state
 from .export_support import _ensure_output_dir, _get_pcb_file, _get_sch_file, _run_cli_variants
@@ -183,7 +184,7 @@ def _load_report(path: Path) -> dict[str, object]:
 
 
 def _entries(report: dict[str, object], key: str) -> list[dict[str, object]]:
-    return cast(list[dict[str, object]], report.get(key, []))
+    return report_entries(report, key)
 
 
 def _normalize_erc_sheet_id(value: object) -> str:
@@ -441,7 +442,7 @@ def _drc_report_payload(
 
     violations = _entries(report, "violations")
     unconnected = _entries(report, "unconnected_items")
-    courtyard = _entries(report, "items_not_passing_courtyard")
+    courtyard = courtyard_violations(report)
     lines = [
         "DRC summary:",
         f"- Violations: {len(violations)}",
@@ -470,6 +471,7 @@ def _drc_report_payload(
             fix_tool="get_courtyard_violations",
         )
         for entry in courtyard
+        if entry not in violations
     )
     verdict = VerdictReport.verdict_for([finding.severity for finding in findings])
     return VerdictReport(
@@ -1422,8 +1424,9 @@ def _evaluate_pcb_gate() -> GateOutcome:
 
     violations = _entries(report, "violations")
     unconnected = _entries(report, "unconnected_items")
-    courtyard = _entries(report, "items_not_passing_courtyard")
-    blocking_count = len(violations) + len(unconnected) + len(courtyard)
+    courtyard = courtyard_violations(report)
+    legacy_only_courtyard = [entry for entry in courtyard if entry not in violations]
+    blocking_count = len(violations) + len(unconnected) + len(legacy_only_courtyard)
     status: GateStatus = "PASS" if blocking_count == 0 else "FAIL"
     details = [
         f"DRC violations: {len(violations)}",
@@ -3742,7 +3745,7 @@ def _register_targeted_validation_tools(mcp: FastMCP) -> None:
         if report is None:
             return f"Unable to compute courtyard issues: {error or 'unknown error'}"
 
-        entries = _entries(report, "items_not_passing_courtyard")
+        entries = courtyard_violations(report)
         if not entries:
             return "No courtyard violations were reported."
         return _format_violations("Courtyard violations", entries)
