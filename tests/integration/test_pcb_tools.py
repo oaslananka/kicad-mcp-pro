@@ -161,12 +161,19 @@ async def test_pcb_read_tools_report_active_board_items(
         net=SimpleNamespace(name="GND"),
         type=ViaType.VT_THROUGH,
     )
+    pad = SimpleNamespace(
+        id=SimpleNamespace(value="pad-1"),
+        number="1",
+        net=SimpleNamespace(name="USB_DP"),
+        position=SimpleNamespace(x_nm=6_500_000, y_nm=7_500_000),
+    )
     footprint = SimpleNamespace(
         reference_field=SimpleNamespace(text=SimpleNamespace(value="U1")),
         value_field=SimpleNamespace(text=SimpleNamespace(value="MCU")),
         position=SimpleNamespace(x_nm=6_000_000, y_nm=7_000_000),
         layer=BoardLayer.BL_B_Cu,
         id=SimpleNamespace(value="fp-1"),
+        definition=SimpleNamespace(pads=[pad]),
     )
     zone = SimpleNamespace(
         name="GND_FILL",
@@ -174,12 +181,6 @@ async def test_pcb_read_tools_report_active_board_items(
         layers=[BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu],
     )
     shape = SimpleNamespace(layer=BoardLayer.BL_Edge_Cuts)
-    pad = SimpleNamespace(
-        parent=SimpleNamespace(reference_field=SimpleNamespace(text=SimpleNamespace(value="U1"))),
-        number="1",
-        net=SimpleNamespace(name="USB_DP"),
-        position=SimpleNamespace(x_nm=6_500_000, y_nm=7_500_000),
-    )
     mock_board.get_tracks.return_value = [track]
     mock_board.get_vias.return_value = [via]
     mock_board.get_footprints.return_value = [footprint]
