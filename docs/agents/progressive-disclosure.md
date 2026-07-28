@@ -41,7 +41,7 @@ The profile controls discovery. The operating mode is an independent execution-r
 
 ## Safety boundaries
 
-The review profile contains only `READ`-tier capabilities. Its golden tool-selection cases retain 100% expected-tool coverage while exposing none of the destructive tools forbidden by those cases.
+The review profile contains only `READ`-tier capabilities. The eight `review-profile`-tagged golden cases retain 100% expected-tool coverage while exposing none of the destructive tools explicitly forbidden by those cases. The broader tool-selection corpus also covers build, mutation, export, publish, confirmation, and refusal behavior and is not expected to fit inside the review surface.
 Category discovery is profile-aware: hidden categories and lower-level tool names are not returned by the discovery tools until the server starts with a profile that allows them.
 
 The build profile exposes workflow-level operations instead of the unrestricted low-level mutation catalog. Schematic work is bounded by `plan`, `preview`, `apply`, `verify`, and `rollback`. PCB work is bounded by begin, push, drop, and revert transaction operations. Direct destructive helpers such as bulk deletion are not part of the profile.
@@ -60,7 +60,7 @@ The deterministic snapshot at `docs/evidence/progressive-disclosure-profile-snap
 
 - declared and callable tool counts;
 - serialized catalog character and estimated token sizes;
-- golden tool-selection case coverage;
+- total, read-only, and profile-tagged golden case coverage;
 - forbidden-tool exposure counts;
 - reductions relative to the expert catalog.
 

@@ -19,19 +19,27 @@ def test_profile_surface_report_matches_committed_snapshot(
     assert report.build_report() == committed_snapshot
 
 
-def test_default_surface_reduces_catalog_pressure_without_losing_golden_cases(
+def test_bounded_surfaces_reduce_catalog_pressure_and_preserve_review_contract(
     committed_snapshot: dict[str, object],
 ) -> None:
     data = committed_snapshot["profiles"]
     assert isinstance(data, dict)
     default = data["default"]
+    review = data["review"]
     expert = data["expert"]
     assert isinstance(default, dict)
+    assert isinstance(review, dict)
     assert isinstance(expert, dict)
 
     assert default["callableTools"] == 24
-    assert default["goldenCoveragePct"] == 100.0
     assert default["forbiddenToolExposures"] == 0
+    assert review["profileTaggedCases"] == 8
+    assert review["profileTaggedCasesCovered"] == 8
+    assert review["profileTaggedCoveragePct"] == 100.0
+    assert review["forbiddenToolExposures"] == 0
+    assert expert["goldenToolCallCases"] == 55
+    assert expert["goldenCasesCovered"] == 55
+    assert expert["goldenCoveragePct"] == 100.0
     assert default["toolReductionVsExpertPct"] >= 90.0
     assert default["catalogReductionVsExpertPct"] >= 90.0
     assert expert["callableTools"] > default["callableTools"]

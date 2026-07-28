@@ -108,7 +108,10 @@ def test_load_cases_rejects_bad_datasets(tmp_path: Path) -> None:
 def test_golden_dataset_loads() -> None:
     cases = load_cases(CASES_PATH)
     assert len(cases) >= 5
-    assert all(case.expected_tools for case in cases)
+    assert all(
+        case.expected_tools if case.expected_behavior == "tool_calls" else not case.expected_tools
+        for case in cases
+    )
 
 
 def test_golden_dataset_only_references_real_tools() -> None:
