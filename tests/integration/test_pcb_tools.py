@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -1458,3 +1459,68 @@ async def test_pcb_sync_from_root_collects_linked_child_sheet_components(
     assert "No schematic symbols were found" not in result
     assert "New footprints added: 1" in result
     assert '(property "Reference" "R9"' in pcb_text
+
+
+@pytest.mark.anyio
+async def test_pcb_sync_from_schematic_resolves_project_fp_lib_table(
+    sample_project: Path,
+    mock_kicad,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp.config import reset_config
+
+    _allow_schematic_sync(monkeypatch)
+    monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb._export_schematic_net_map",
+        lambda: ({("J1", "1"): "VIN", ("J1", "2"): "GND"}, ""),
+    )
+
+    pretty_dir = sample_project / "footprints" / "Gateway.pretty"
+    pretty_dir.mkdir(parents=True)
+    (pretty_dir / "Custom.kicad_mod").write_text(
+        (
+            '(footprint "Custom"\n'
+            '\t(layer "F.Cu")\n'
+            '\t(property "Reference" "REF**" (at 0 -1 0) (layer "F.SilkS"))\n'
+            '\t(property "Value" "Custom" (at 0 1 0) (layer "F.Fab"))\n'
+            '\t(pad "1" smd rect (at -1 0) (size 1 1) (layers "F.Cu"))\n'
+            '\t(pad "2" smd rect (at 1 0) (size 1 1) (layers "F.Cu"))\n'
+            ")\n"
+        ),
+        encoding="utf-8",
+    )
+    (sample_project / "fp-lib-table").write_text(
+        '(fp_lib_table (lib (name "Gateway") (type "KiCad") '
+        '(uri "${KIPRJMOD}/footprints/Gateway.pretty") (options "") (descr "")))\n',
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR")
+    reset_config()
+
+    server = build_server("full")
+    await call_tool_text(
+        server,
+        "sch_build_circuit",
+        {
+            "symbols": [
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "reference": "J1",
+                    "value": "Custom",
+                    "footprint": "Gateway:Custom",
+                    "x_mm": 50.8,
+                    "y_mm": 50.8,
+                }
+            ]
+        },
+    )
+
+    result = await call_tool_text(server, "pcb_sync_from_schematic", {})
+    pcb_text = (sample_project / "demo.kicad_pcb").read_text(encoding="utf-8")
+
+    assert "New footprints added: 1" in result
+    assert '(property "Reference" "J1"' in pcb_text
+    assert '(net "VIN")' in pcb_text
+    assert '(net "GND")' in pcb_text

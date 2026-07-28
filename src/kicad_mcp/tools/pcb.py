@@ -33,6 +33,7 @@ from mcp.server.fastmcp import FastMCP
 from ..config import get_config
 from ..connection import KiCadConnectionError, board_transaction, get_board
 from ..ipc.command_queue import get_command_queue
+from ..library_resolution import footprint_file as _footprint_file
 from ..models.common import _FootprintLike, _PadLike
 from ..models.pcb import (
     AddCircleInput,
@@ -2068,13 +2069,6 @@ def _inner_layer_graphic_block(
             f'(uuid "{uuid.uuid4()}"))'
         )
     raise ValueError("shape_type must be one of: line, rect, text.")
-
-
-def _footprint_file(library: str, footprint: str) -> Path:
-    cfg = get_config()
-    if cfg.footprint_library_dir is None or not cfg.footprint_library_dir.exists():
-        raise FileNotFoundError("No KiCad footprint library directory is configured.")
-    return cfg.footprint_library_dir / f"{library}.pretty" / f"{footprint}.kicad_mod"
 
 
 def _split_footprint_assignment(assignment: str) -> tuple[str, str]:
