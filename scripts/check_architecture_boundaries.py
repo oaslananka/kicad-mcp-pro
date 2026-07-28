@@ -16,6 +16,7 @@ SRC_ROOT = REPO_ROOT / "src"
 
 DOMAIN_MODULES = {
     "kicad_mcp.tools.pcb": SRC_ROOT / "kicad_mcp" / "tools" / "pcb.py",
+    "kicad_mcp.tools.validation": SRC_ROOT / "kicad_mcp" / "tools" / "validation.py",
     "kicad_mcp.validation.policy_state": SRC_ROOT / "kicad_mcp" / "validation" / "policy_state.py",
     "kicad_mcp.tools.validation_policy_state": SRC_ROOT
     / "kicad_mcp"
@@ -294,6 +295,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
 
 REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.pcb": 300,
+    "kicad_mcp.tools.validation": 300,
     "kicad_mcp.tools.validation_policy_state": 300,
     "kicad_mcp.tools.pcb_basic_inspection": 300,
     "kicad_mcp.tools.pcb_board_inspection": 300,

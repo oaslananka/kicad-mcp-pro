@@ -115,6 +115,33 @@ prefer a FastMCP-independent service under `src/kicad_mcp/pcb/` with a thin adap
 under `src/kicad_mcp/tools/`; composition helpers are for registration wiring, not
 new domain logic.
 
+### Validation composition root
+
+Validation registration follows the same bounded composition model. The original
+`validation.register()` combined 701 lines of decorators, policy persistence,
+quality-gate orchestration, DRC rule management, and result presentation. The
+current structure keeps the public surface stable while separating deterministic
+policy state and bounded registration groups:
+
+```text
+before
+  tools/validation.py::register (701 lines)
+    └─ decorators + policy state + rule wiring + gate orchestration + presentation
+
+after
+  tools/validation.py::register (21-line composition root)
+    ├─ bounded _register_* helpers (each <= 300 lines)
+    └─ tools/validation_policy_state.py (thin MCP adapter)
+         └─ validation/policy_state.py (FastMCP-independent service)
+```
+
+The architecture checker enforces the 300-line registration boundary and prevents
+the policy adapter from importing the validation monolith. Contract and focused
+regression tests preserve tool names, schemas, annotations, DRC/ERC policy behavior,
+structured results, and profile membership. New deterministic validation behavior
+should live under `src/kicad_mcp/validation/` and be exposed through a thin adapter;
+composition helpers should contain registration wiring rather than new policy logic.
+
 ### 4. KiCad adapter seam — *the fragility quarantine*
 
 **This is the most important architectural rule: everything that can break when
