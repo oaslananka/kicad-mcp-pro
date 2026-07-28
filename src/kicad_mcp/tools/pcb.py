@@ -2410,83 +2410,8 @@ def _planned_board_positions(
     return positions
 
 
-def register(mcp: FastMCP) -> None:
-    """Register PCB tools."""
-
-    pcb_board_inspection.register(
-        mcp,
-        pcb_board_inspection.PcbBoardInspectionDependencies(
-            service=PcbBoardInspectionService(
-                get_board=get_board,
-                file_backed_board_summary=_file_backed_board_summary,
-                board_summary_report=_board_summary_report,
-                file_backed_tracks=_file_backed_tracks,
-                file_backed_vias=_file_backed_vias,
-                file_backed_footprints=_file_backed_footprints,
-                paginate=_paginate,
-                limit_items=_limit,
-                matches_layer_filter=_matches_layer_filter,
-                with_pcb_diagnostics=_with_pcb_diagnostics,
-                layer_name=BoardLayer.Name,
-                via_type_name=ViaType.Name,
-                format_selection_id=_format_selection_id,
-                coord_nm=_coord_nm,
-                nm_to_mm=nm_to_mm,
-                connection_errors=(KiCadConnectionError, OSError),
-            )
-        ),
-    )
-
-    pcb_file_inspection.register(
-        mcp,
-        pcb_file_inspection.PcbFileInspectionDependencies(
-            service=PcbFileInspectionService(
-                get_board_file=_get_pcb_file_for_sync,
-                normalize_board_content=_normalize_board_content,
-                parse_board_footprints=_parse_board_footprint_blocks,
-                footprint_layers=_footprint_layers_from_block,
-                board_file_diagnostics=_board_file_diagnostic_payload,
-                edge_cuts_bounds=_edge_cuts_bounds,
-                readability_report=run_pcb_readability,
-            )
-        ),
-    )
-
-    pcb_basic_inspection.register(
-        mcp,
-        pcb_basic_inspection.PcbBasicInspectionDependencies(
-            service=PcbBasicInspectionService(
-                get_board=get_board,
-                limit_items=_limit,
-                file_backed_nets=_file_backed_nets,
-                file_backed_zones=_file_backed_zones,
-                file_backed_layers=_file_backed_layers,
-                with_pcb_diagnostics=_with_pcb_diagnostics,
-                layer_name=BoardLayer.Name,
-                undefined_layer=BoardLayer.BL_UNDEFINED,
-                coord_nm=_coord_nm,
-                nm_to_mm=nm_to_mm,
-                connection_errors=(KiCadConnectionError, OSError),
-            )
-        ),
-    )
-
-    pcb_stackup_management.register(
-        mcp,
-        pcb_stackup_management.PcbStackupDependencies(
-            service=PcbStackupManagementService(
-                current_stackup_specs=_current_stackup_specs,
-                total_stackup_thickness_mm=_total_stackup_thickness_mm,
-                configured_board_file=_configured_board_file,
-                board_file_diagnostics=_format_board_file_diagnostics,
-                is_copper_stackup_layer=_is_copper_stackup_layer,
-                write_stackup_state=_write_stackup_state,
-                transactional_board_write=_transactional_board_write,
-                apply_stackup_to_board=_apply_stackup_to_board,
-                reload_board_after_file_sync=_reload_board_after_file_sync,
-            )
-        ),
-    )
+def _register_impedance_and_creepage_tools(mcp: FastMCP) -> None:
+    """Register impedance and creepage analysis tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -2604,18 +2529,9 @@ def register(mcp: FastMCP) -> None:
             ]
         )
 
-    pcb_session_inspection.register(
-        mcp,
-        pcb_session_inspection.PcbSessionInspectionDependencies(
-            service=PcbSessionInspectionService(
-                get_board=get_board,
-                load_file_backed_board=_load_file_backed_board,
-                format_selection_id=_format_selection_id,
-                get_max_text_response_chars=lambda: get_config().max_text_response_chars,
-                connection_errors=(KiCadConnectionError, OSError),
-            )
-        ),
-    )
+
+def _register_board_rules_tools(mcp: FastMCP) -> None:
+    """Register ratsnest and design-rule tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -2774,6 +2690,10 @@ def register(mcp: FastMCP) -> None:
             f"- Min annular ring: {payload.min_annular_ring_mm:.3f} mm\n"
             f"- Min hole-to-hole: {payload.min_hole_to_hole_mm:.3f} mm"
         )
+
+
+def _register_routing_authoring_tools(mcp: FastMCP) -> None:
+    """Register track, via, and segment authoring tools."""
 
     @mcp.tool()
     @requires_kicad_running
@@ -3001,6 +2921,10 @@ def register(mcp: FastMCP) -> None:
             board.create_items([segment])
         return "Graphic segment added successfully."
 
+
+def _register_board_graphics_tools(mcp: FastMCP) -> None:
+    """Register board graphics and text authoring tools."""
+
     @mcp.tool()
     def pcb_add_circle(
         cx_mm: float,
@@ -3192,6 +3116,10 @@ def register(mcp: FastMCP) -> None:
             f"on {canonical_layer}. Source raster: {width_px}x{height_px} px; "
             f"placed at ({x_mm:.2f}, {y_mm:.2f}) mm with width {width_mm:.2f} mm."
         )
+
+
+def _register_board_mutation_tools(mcp: FastMCP) -> None:
+    """Register board mutation and basic placement tools."""
 
     @mcp.tool()
     @requires_kicad_running
@@ -3390,6 +3318,10 @@ def register(mcp: FastMCP) -> None:
             f"Added {shape_type} inner-layer graphic to footprint '{reference}' "
             f"on {canonical_layer}."
         )
+
+
+def _register_schematic_sync_tools(mcp: FastMCP) -> None:
+    """Register schematic-to-PCB synchronization tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -3607,6 +3539,10 @@ def register(mcp: FastMCP) -> None:
         if reload_note:
             lines.append(reload_note)
         return "\n".join(lines)
+
+
+def _register_placement_automation_tools(mcp: FastMCP) -> None:
+    """Register deterministic placement automation tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -3895,6 +3831,10 @@ def register(mcp: FastMCP) -> None:
         lines.append(_finalize_file_based_board_edit(payload.allow_open_board))
         return "\n".join(lines)
 
+
+def _register_zone_authoring_tools(mcp: FastMCP) -> None:
+    """Register alignment and zone authoring tools."""
+
     @mcp.tool()
     @headless_compatible
     def pcb_align_footprints(
@@ -4102,6 +4042,10 @@ def register(mcp: FastMCP) -> None:
             f"Added keepout zone '{payload.name}' on {len(zone.layers)} copper layer(s) "
             f"with rules: {', '.join(payload.rules)}."
         )
+
+
+def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
+    """Register mechanical and reusable block tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -4322,6 +4266,10 @@ def register(mcp: FastMCP) -> None:
             f"with {len(additions)} cloned footprint(s)."
         )
 
+
+def _register_teardrop_tools(mcp: FastMCP) -> None:
+    """Register teardrop authoring tools."""
+
     @mcp.tool()
     @requires_kicad_running
     def pcb_add_teardrops(
@@ -4453,9 +4401,9 @@ def register(mcp: FastMCP) -> None:
             current_board.refill_zones(block=True, max_poll_seconds=60.0)
         return f"Added {len(zones)} teardrop helper zone(s) to the active board."
 
-    # -----------------------------------------------------------------------
-    # Force-directed placement (v2.1.0)
-    # -----------------------------------------------------------------------
+
+def _register_advanced_placement_tools(mcp: FastMCP) -> None:
+    """Register advanced placement and fanout tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -4614,51 +4562,9 @@ def register(mcp: FastMCP) -> None:
         )
         return json.dumps({"summary": summary, "vias": plan}, indent=2)
 
-    pcb_transaction_lifecycle.register(
-        mcp,
-        pcb_transaction_lifecycle.PcbTransactionLifecycleDependencies(
-            service=PcbTransactionLifecycleService(
-                get_board=get_board,
-                run_mutation=_run_queued_ipc_mutation,
-                connection_errors=(KiCadConnectionError, OSError),
-            )
-        ),
-    )
 
-    pcb_groups_inspection.register(
-        mcp,
-        pcb_groups_inspection.PcbGroupsInspectionDependencies(
-            service=PcbGroupsInspectionService(
-                get_board=get_board,
-                connection_errors=(KiCadConnectionError, OSError),
-            )
-        ),
-    )
-
-    pcb_origin_management.register(
-        mcp,
-        pcb_origin_management.PcbOriginDependencies(
-            service=PcbOriginService(
-                get_board=get_board,
-                vector_from_xy=Vector2.from_xy,
-                mm_to_nm=mm_to_nm,
-                coord_nm=_coord_nm,
-                nm_to_mm=nm_to_mm,
-                connection_errors=(KiCadConnectionError, OSError),
-            )
-        ),
-    )
-
-    pcb_title_block_management.register(
-        mcp,
-        pcb_title_block_management.PcbTitleBlockDependencies(
-            service=PcbTitleBlockService(
-                get_board=get_board,
-                run_mutation=_run_queued_ipc_mutation,
-                connection_errors=(KiCadConnectionError, OSError),
-            )
-        ),
-    )
+def _register_placement_critique_tools(mcp: FastMCP) -> None:
+    """Register placement critique tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -4738,3 +4644,169 @@ def register(mcp: FastMCP) -> None:
             "findings": [f.to_dict() for f in findings],
         }
         return json.dumps(result, indent=2)
+
+
+def register(mcp: FastMCP) -> None:
+    """Register PCB tools."""
+
+    pcb_board_inspection.register(
+        mcp,
+        pcb_board_inspection.PcbBoardInspectionDependencies(
+            service=PcbBoardInspectionService(
+                get_board=get_board,
+                file_backed_board_summary=_file_backed_board_summary,
+                board_summary_report=_board_summary_report,
+                file_backed_tracks=_file_backed_tracks,
+                file_backed_vias=_file_backed_vias,
+                file_backed_footprints=_file_backed_footprints,
+                paginate=_paginate,
+                limit_items=_limit,
+                matches_layer_filter=_matches_layer_filter,
+                with_pcb_diagnostics=_with_pcb_diagnostics,
+                layer_name=BoardLayer.Name,
+                via_type_name=ViaType.Name,
+                format_selection_id=_format_selection_id,
+                coord_nm=_coord_nm,
+                nm_to_mm=nm_to_mm,
+                connection_errors=(KiCadConnectionError, OSError),
+            )
+        ),
+    )
+
+    pcb_file_inspection.register(
+        mcp,
+        pcb_file_inspection.PcbFileInspectionDependencies(
+            service=PcbFileInspectionService(
+                get_board_file=_get_pcb_file_for_sync,
+                normalize_board_content=_normalize_board_content,
+                parse_board_footprints=_parse_board_footprint_blocks,
+                footprint_layers=_footprint_layers_from_block,
+                board_file_diagnostics=_board_file_diagnostic_payload,
+                edge_cuts_bounds=_edge_cuts_bounds,
+                readability_report=run_pcb_readability,
+            )
+        ),
+    )
+
+    pcb_basic_inspection.register(
+        mcp,
+        pcb_basic_inspection.PcbBasicInspectionDependencies(
+            service=PcbBasicInspectionService(
+                get_board=get_board,
+                limit_items=_limit,
+                file_backed_nets=_file_backed_nets,
+                file_backed_zones=_file_backed_zones,
+                file_backed_layers=_file_backed_layers,
+                with_pcb_diagnostics=_with_pcb_diagnostics,
+                layer_name=BoardLayer.Name,
+                undefined_layer=BoardLayer.BL_UNDEFINED,
+                coord_nm=_coord_nm,
+                nm_to_mm=nm_to_mm,
+                connection_errors=(KiCadConnectionError, OSError),
+            )
+        ),
+    )
+
+    pcb_stackup_management.register(
+        mcp,
+        pcb_stackup_management.PcbStackupDependencies(
+            service=PcbStackupManagementService(
+                current_stackup_specs=_current_stackup_specs,
+                total_stackup_thickness_mm=_total_stackup_thickness_mm,
+                configured_board_file=_configured_board_file,
+                board_file_diagnostics=_format_board_file_diagnostics,
+                is_copper_stackup_layer=_is_copper_stackup_layer,
+                write_stackup_state=_write_stackup_state,
+                transactional_board_write=_transactional_board_write,
+                apply_stackup_to_board=_apply_stackup_to_board,
+                reload_board_after_file_sync=_reload_board_after_file_sync,
+            )
+        ),
+    )
+
+    _register_impedance_and_creepage_tools(mcp)
+
+    pcb_session_inspection.register(
+        mcp,
+        pcb_session_inspection.PcbSessionInspectionDependencies(
+            service=PcbSessionInspectionService(
+                get_board=get_board,
+                load_file_backed_board=_load_file_backed_board,
+                format_selection_id=_format_selection_id,
+                get_max_text_response_chars=lambda: get_config().max_text_response_chars,
+                connection_errors=(KiCadConnectionError, OSError),
+            )
+        ),
+    )
+
+    _register_board_rules_tools(mcp)
+
+    _register_routing_authoring_tools(mcp)
+
+    _register_board_graphics_tools(mcp)
+
+    _register_board_mutation_tools(mcp)
+
+    _register_schematic_sync_tools(mcp)
+
+    _register_placement_automation_tools(mcp)
+
+    _register_zone_authoring_tools(mcp)
+
+    _register_mechanical_and_block_tools(mcp)
+
+    _register_teardrop_tools(mcp)
+
+    # -----------------------------------------------------------------------
+    # Force-directed placement (v2.1.0)
+    # -----------------------------------------------------------------------
+
+    _register_advanced_placement_tools(mcp)
+
+    pcb_transaction_lifecycle.register(
+        mcp,
+        pcb_transaction_lifecycle.PcbTransactionLifecycleDependencies(
+            service=PcbTransactionLifecycleService(
+                get_board=get_board,
+                run_mutation=_run_queued_ipc_mutation,
+                connection_errors=(KiCadConnectionError, OSError),
+            )
+        ),
+    )
+
+    pcb_groups_inspection.register(
+        mcp,
+        pcb_groups_inspection.PcbGroupsInspectionDependencies(
+            service=PcbGroupsInspectionService(
+                get_board=get_board,
+                connection_errors=(KiCadConnectionError, OSError),
+            )
+        ),
+    )
+
+    pcb_origin_management.register(
+        mcp,
+        pcb_origin_management.PcbOriginDependencies(
+            service=PcbOriginService(
+                get_board=get_board,
+                vector_from_xy=Vector2.from_xy,
+                mm_to_nm=mm_to_nm,
+                coord_nm=_coord_nm,
+                nm_to_mm=nm_to_mm,
+                connection_errors=(KiCadConnectionError, OSError),
+            )
+        ),
+    )
+
+    pcb_title_block_management.register(
+        mcp,
+        pcb_title_block_management.PcbTitleBlockDependencies(
+            service=PcbTitleBlockService(
+                get_board=get_board,
+                run_mutation=_run_queued_ipc_mutation,
+                connection_errors=(KiCadConnectionError, OSError),
+            )
+        ),
+    )
+
+    _register_placement_critique_tools(mcp)

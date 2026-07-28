@@ -88,6 +88,33 @@ What decides *which* tools exist for a given run, and how they are labeled.
   [`docs/development/architecture.md`](docs/development/architecture.md) for the gate
   details.
 
+### PCB composition root
+
+The PCB registry is intentionally a small composition root rather than a container
+for board behavior. The original nested registry concentrated 2,821 lines in one
+`register()` function. The current structure separates registration from testable
+domain behavior and keeps every composition helper below the 300-line boundary:
+
+```text
+before
+  tools/pcb.py::register (2,821 lines)
+    └─ decorators + orchestration + board behavior + result formatting
+
+after
+  tools/pcb.py::register (bounded composition root)
+    ├─ thin tools/pcb_* adapters
+    │    └─ typed pcb/* domain services
+    └─ bounded _register_* composition helpers
+         └─ existing public tool implementations grouped by capability
+```
+
+`python scripts/check_architecture_boundaries.py` enforces the root and adapter
+limits, while contract snapshots prevent public tool names, schemas, annotations,
+and profile membership from drifting during extraction. New PCB behavior should
+prefer a FastMCP-independent service under `src/kicad_mcp/pcb/` with a thin adapter
+under `src/kicad_mcp/tools/`; composition helpers are for registration wiring, not
+new domain logic.
+
 ### 4. KiCad adapter seam — *the fragility quarantine*
 
 **This is the most important architectural rule: everything that can break when
@@ -146,11 +173,12 @@ installed.
 
 A tool is added in one module + one registry entry. Concretely:
 
-1. **Implement it.** In the matching domain module under
-   [`src/kicad_mcp/tools/`](src/kicad_mcp/tools) (e.g. `pcb.py`, `schematic.py`,
-   `export.py`), add a function inside that module's `register(mcp)` decorated with
-   `@mcp.tool()`. Keep KiCad-touching calls behind the adapter seam (layer 4); keep
-   pure math/file logic in [`utils/`](src/kicad_mcp/utils) so it is unit-testable.
+1. **Implement it.** Put deterministic behavior in the matching domain package
+   (for example `src/kicad_mcp/pcb/`) and expose it through a thin adapter under
+   [`src/kicad_mcp/tools/`](src/kicad_mcp/tools). Register the adapter from the
+   bounded composition root. Keep KiCad-touching calls behind the adapter seam
+   (layer 4); keep pure math/file logic in [`utils/`](src/kicad_mcp/utils) so it is
+   unit-testable. Do not add new business logic directly to a root `register()`.
 2. **Register it in the catalog.** Add the tool name to the correct category's `tools`
    list in `TOOL_CATEGORIES` in
    [`tools/router.py`](src/kicad_mcp/tools/router.py). If it should not appear in every
