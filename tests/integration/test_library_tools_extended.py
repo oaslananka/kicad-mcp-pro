@@ -513,3 +513,52 @@ async def test_library_live_component_edge_cases(
     assert "Footprint hint" not in no_auto_footprint
     assert "Could not update schematic properties" in update_failed
     assert ("U2", "LCSC", "C999") in updates
+
+
+@pytest.mark.anyio
+async def test_project_fp_lib_table_is_visible_to_library_tools(
+    sample_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp.config import reset_config
+
+    pretty_dir = sample_project / "footprints" / "Gateway.pretty"
+    pretty_dir.mkdir(parents=True)
+    (pretty_dir / "Custom.kicad_mod").write_text(
+        (
+            '(footprint "Custom"\n'
+            '\t(layer "F.Cu")\n'
+            '\t(property "Reference" "REF**")\n'
+            '\t(property "Value" "Custom")\n'
+            ")\n"
+        ),
+        encoding="utf-8",
+    )
+    (sample_project / "fp-lib-table").write_text(
+        '(fp_lib_table (lib (name "Gateway") (type "KiCad") '
+        '(uri "${KIPRJMOD}/footprints/Gateway.pretty") (options "") (descr "")))\n',
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR")
+    reset_config()
+
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    libraries = await call_tool_text(server, "lib_list_libraries", {})
+    search = await call_tool_text(server, "lib_search_footprints", {"query": "Custom"})
+    listing = await call_tool_text(
+        server,
+        "lib_list_footprints",
+        {"library": "Gateway"},
+    )
+    info = await call_tool_text(
+        server,
+        "lib_get_footprint_info",
+        {"library": "Gateway", "footprint": "Custom"},
+    )
+
+    assert "Gateway.pretty" in libraries
+    assert "Gateway:Custom" in search
+    assert "- Custom" in listing
+    assert "Footprint: Gateway:Custom" in info

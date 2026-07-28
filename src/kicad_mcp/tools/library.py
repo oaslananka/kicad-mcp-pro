@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import threading
 from dataclasses import dataclass
@@ -13,6 +12,15 @@ from typing import Any, cast
 from mcp.server.fastmcp import FastMCP
 
 from ..config import get_config
+from ..library_resolution import (
+    active_project_dir as _project_dir,
+)
+from ..library_resolution import (
+    footprint_file as _footprint_file,
+)
+from ..library_resolution import (
+    footprint_library_dirs as _footprint_library_dirs,
+)
 from ..models import contract_verifier as cv
 from ..models.component_contracts import find_component_contract
 from ..models.verdict import Finding, Verdict, VerdictReport, stable_finding_id
@@ -25,6 +33,15 @@ from ..utils.component_search import (
     MouserClient,
     NexarClient,
     normalize_lcsc_code,
+)
+from ..utils.library_tables import (
+    lib_table_paths as _lib_table_paths,
+)
+from ..utils.library_tables import (
+    parse_lib_table as _parse_lib_table,
+)
+from ..utils.library_tables import (
+    resolve_kicad_env,
 )
 from ..utils.sexpr import _extract_block, _sexpr_string
 from .metadata import headless_compatible
@@ -49,74 +66,8 @@ def _footprint_library_dir() -> Path:
 
 
 def _resolve_kicad_env(uri: str, project_dir: Path | None) -> str:
-    """Substitute KiCad library-table variables (``${KIPRJMOD}``, ``${ENV}``) in a URI."""
-
-    def _sub(match: re.Match[str]) -> str:
-        name = match.group(1)
-        if name == "KIPRJMOD" and project_dir is not None:
-            return str(project_dir)
-        return os.environ.get(name, match.group(0))
-
-    return re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", _sub, uri)
-
-
-def _parse_lib_table(path: Path, project_dir: Path | None) -> dict[str, Path]:
-    """Parse a KiCad sym-/fp-lib-table, returning ``{nickname: resolved_path}``.
-
-    Only ``KiCad``-type entries are returned (legacy/other plugin types are skipped),
-    with ``${KIPRJMOD}`` and environment-variable references resolved.
-    """
-    libs: dict[str, Path] = {}
-    try:
-        content = path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return libs
-    # Split into one chunk per (lib ...) entry; nested parens make a single regex for the
-    # whole entry unreliable, so parse name/type/uri within each chunk.
-    for chunk in re.split(r"\(lib\b", content)[1:]:
-        name = re.search(r'\(name\s+"?([^")\s]+)"?\)', chunk)
-        type_ = re.search(r'\(type\s+"?([^")\s]+)"?\)', chunk)
-        uri = re.search(r'\(uri\s+"([^"]+)"\)', chunk)
-        if not (name and uri):
-            continue
-        if type_ and type_.group(1).lower() != "kicad":
-            continue
-        resolved = Path(_resolve_kicad_env(uri.group(1), project_dir))
-        if resolved.exists():
-            libs[name.group(1)] = resolved
-    return libs
-
-
-def _lib_table_paths(table_name: str, project_dir: Path | None) -> list[Path]:
-    """Locate the project-level then global KiCad library tables of ``table_name``."""
-    paths: list[Path] = []
-    if project_dir is not None:
-        candidate = project_dir / table_name
-        if candidate.exists():
-            paths.append(candidate)
-    config_roots = [
-        os.environ.get("APPDATA"),
-        os.path.expanduser("~/.config"),
-        os.path.expanduser("~/Library/Preferences"),
-    ]
-    for root in config_roots:
-        if not root:
-            continue
-        kicad_root = Path(root) / "kicad"
-        if not kicad_root.is_dir():
-            continue
-        for version_dir in sorted(kicad_root.glob("*")):
-            candidate = version_dir / table_name
-            if candidate.exists():
-                paths.append(candidate)
-    return paths
-
-
-def _project_dir() -> Path | None:
-    cfg = get_config()
-    if cfg.project_file is not None:
-        return cfg.project_file.parent
-    return None
+    """Compatibility wrapper around shared KiCad environment substitution."""
+    return resolve_kicad_env(uri, project_dir)
 
 
 def _symbol_library_files() -> dict[str, Path]:
@@ -183,31 +134,6 @@ def _read_symbol_file(library: str) -> str | None:
     if path is None or not path.exists():
         return None
     return path.read_text(encoding="utf-8", errors="ignore")
-
-
-def _footprint_library_dirs() -> dict[str, Path]:
-    """Map every discoverable footprint-library nickname to its ``.pretty`` directory.
-
-    Combines the configured directory with project and global ``fp-lib-table`` entries
-    (issue #78), so footprint libraries registered through KiCad's library tables resolve.
-    """
-    dirs: dict[str, Path] = {}
-    cfg = get_config()
-    if cfg.footprint_library_dir is not None and cfg.footprint_library_dir.exists():
-        for pretty in sorted(cfg.footprint_library_dir.glob("*.pretty")):
-            dirs.setdefault(pretty.stem, pretty)
-    project_dir = _project_dir()
-    for table in _lib_table_paths("fp-lib-table", project_dir):
-        for nickname, pretty_path in _parse_lib_table(table, project_dir).items():
-            dirs.setdefault(nickname, pretty_path)
-    return dirs
-
-
-def _footprint_file(library: str, footprint: str) -> Path:
-    pretty_dir = _footprint_library_dirs().get(library)
-    if pretty_dir is None:
-        pretty_dir = _footprint_library_dir() / f"{library}.pretty"
-    return pretty_dir / f"{footprint}.kicad_mod"
 
 
 def _component_search_client(source: str) -> ComponentSearchClient:
@@ -611,7 +537,7 @@ def register(mcp: FastMCP) -> None:
     def lib_list_libraries() -> str:
         """List configured symbol and footprint libraries."""
         symbol_libs = sorted(path.stem for path in _symbol_library_dir().glob("*.kicad_sym"))
-        footprint_libs = sorted(path.name for path in _footprint_library_dir().glob("*.pretty"))
+        footprint_libs = sorted(f"{nickname}.pretty" for nickname in _footprint_library_dirs())
         lines = [f"Symbol libraries ({len(symbol_libs)} total):"]
         lines.extend(f"- {name}" for name in symbol_libs[:50])
         lines.append("")
@@ -757,14 +683,13 @@ def register(mcp: FastMCP) -> None:
         if page_size < 1:
             return "page_size must be >= 1."
         page_size = min(page_size, 500)
-        root = _footprint_library_dir()
         results: list[str] = []
-        for library in root.glob("*.pretty"):
-            if library_filter and library_filter.lower() not in library.stem.lower():
+        for nickname, library_dir in _footprint_library_dirs().items():
+            if library_filter and library_filter.lower() not in nickname.lower():
                 continue
-            for footprint in library.glob("*.kicad_mod"):
+            for footprint in library_dir.glob("*.kicad_mod"):
                 if query.lower() in footprint.stem.lower():
-                    results.append(f"{library.stem}:{footprint.stem}")
+                    results.append(f"{nickname}:{footprint.stem}")
         total = len(results)
         if total == 0:
             return f"No footprints matched '{query}'."
@@ -788,8 +713,8 @@ def register(mcp: FastMCP) -> None:
     @headless_compatible
     def lib_list_footprints(library: str) -> str:
         """List footprints in a specific library."""
-        library_dir = _footprint_library_dir() / f"{library}.pretty"
-        if not library_dir.exists():
+        library_dir = _footprint_library_dirs().get(library)
+        if library_dir is None or not library_dir.exists():
             return f"Footprint library '{library}' was not found."
         footprints = sorted(path.stem for path in library_dir.glob("*.kicad_mod"))
         lines = [f"Footprints in {library} ({len(footprints)} total):"]
