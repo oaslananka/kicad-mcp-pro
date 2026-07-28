@@ -24,7 +24,7 @@ from kipy.board_types import (
     Via,
     Zone,
 )
-from kipy.geometry import Angle, PolygonWithHoles, PolyLine, PolyLineNode, Vector2
+from kipy.geometry import PolygonWithHoles, PolyLine, PolyLineNode, Vector2
 from kipy.proto.board import board_types_pb2
 from kipy.proto.board.board_types_pb2 import BoardLayer, ViaType, ZoneType
 from kipy.proto.common import types as common_types
@@ -64,6 +64,11 @@ from ..operating_modes import OperatingMode, active_operating_mode
 from ..pcb.basic_inspection import PcbBasicInspectionService
 from ..pcb.board_inspection import PcbBoardInspectionService
 from ..pcb.file_inspection import PcbFileInspectionService
+from ..pcb.footprint_transform import (
+    FootprintRotationError,
+    apply_footprint_rotation,
+    verify_footprint_rotation,
+)
 from ..pcb.groups_inspection import PcbGroupsInspectionService
 from ..pcb.origin_management import PcbOriginService
 from ..pcb.session_inspection import PcbSessionInspectionService
@@ -3233,19 +3238,24 @@ def _register_board_mutation_tools(mcp: FastMCP) -> None:
             return f"Footprint '{reference}' was not found on the active board."
 
         footprint.position = Vector2.from_xy_mm(x_mm, y_mm)
-        if hasattr(footprint, "angle"):
-            try:
-                footprint.angle = Angle.from_degrees(rotation_deg)
-            except Exception as exc:
-                logger.debug("footprint_angle_not_supported", error=str(exc))
-        elif hasattr(footprint, "orientation"):
-            try:
-                footprint.orientation = rotation_deg
-            except Exception as exc:
-                logger.debug("footprint_orientation_not_supported", error=str(exc))
+        rotation_attribute = apply_footprint_rotation(footprint, rotation_deg)
         with board_transaction() as board:
             board.update_items([cast(BoardItem, footprint)])
-        return f"Moved footprint '{reference}' to ({x_mm}, {y_mm}) mm."
+
+        refreshed = _find_footprint_by_reference(reference)
+        if refreshed is None:
+            raise FootprintRotationError(
+                f"Footprint '{reference}' could not be reloaded to verify its rotation."
+            )
+        actual_rotation = verify_footprint_rotation(
+            refreshed,
+            rotation_attribute,
+            rotation_deg,
+        )
+        return (
+            f"Moved footprint '{reference}' to ({x_mm}, {y_mm}) mm "
+            f"with verified rotation {actual_rotation:.3f} degrees."
+        )
 
     @mcp.tool()
     @requires_kicad_running
