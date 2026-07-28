@@ -130,23 +130,36 @@ def test_shapes_preserve_types_layers_and_empty_diagnostics() -> None:
 
 def test_pads_preserve_reference_net_and_coordinate_formatting() -> None:
     pad = SimpleNamespace(
-        parent=SimpleNamespace(reference_field=SimpleNamespace(text=SimpleNamespace(value="U1"))),
+        id=SimpleNamespace(value="pad-7"),
         number="7",
         net=SimpleNamespace(name="GND"),
         position=SimpleNamespace(x=1_250_000, y=-2_500_000),
     )
+    footprint = SimpleNamespace(
+        reference_field=SimpleNamespace(text=SimpleNamespace(value="U1")),
+        definition=SimpleNamespace(pads=[SimpleNamespace(id=SimpleNamespace(value="pad-7"))]),
+    )
 
-    def get_pads() -> list[object]:
-        return [pad]
-
-    def no_pads() -> list[object]:
-        return []
-
-    assert _service(SimpleNamespace(get_pads=get_pads)).get_pads() == "\n".join(
+    board = SimpleNamespace(get_pads=lambda: [pad], get_footprints=lambda: [footprint])
+    assert _service(board).get_pads() == "\n".join(
         ["Pads (1 total):", "1. U1:7 net=GND @ (1.25, -2.50) mm"]
     )
-    assert _service(SimpleNamespace(get_pads=no_pads)).get_pads() == (
-        "diag::No pads are present on the active board."
+
+    no_pads = SimpleNamespace(get_pads=lambda: [], get_footprints=lambda: [])
+    assert _service(no_pads).get_pads() == ("diag::No pads are present on the active board.")
+
+
+def test_pads_report_unmapped_reference_without_crashing() -> None:
+    pad = SimpleNamespace(
+        id=SimpleNamespace(value="orphan"),
+        number="2",
+        net=SimpleNamespace(name=""),
+        position=SimpleNamespace(x=0, y=0),
+    )
+    board = SimpleNamespace(get_pads=lambda: [pad], get_footprints=lambda: [])
+
+    assert _service(board).get_pads() == "\n".join(
+        ["Pads (1 total):", "1. (unmapped):2 net=(none) @ (0.00, 0.00) mm"]
     )
 
 

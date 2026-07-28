@@ -6,6 +6,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Protocol, cast
 
+from .pad_mapping import map_pads_to_footprints
+
 
 class LimitItems(Protocol):
     """Apply the configured response item limit while preserving total count."""
@@ -23,6 +25,8 @@ class BasicInspectionBoard(Protocol):
     def get_shapes(self) -> Iterable[object]: ...
 
     def get_pads(self) -> Iterable[object]: ...
+
+    def get_footprints(self) -> Iterable[object]: ...
 
     def get_enabled_layers(self) -> Iterable[int]: ...
 
@@ -47,20 +51,12 @@ class TextLike(Protocol):
     def text(self) -> TextValueLike: ...
 
 
-class PadParentLike(Protocol):
-    @property
-    def reference_field(self) -> TextLike: ...
-
-
 class NetLike(Protocol):
     @property
     def name(self) -> str: ...
 
 
 class PadLike(Protocol):
-    @property
-    def parent(self) -> PadParentLike: ...
-
     @property
     def number(self) -> str | int: ...
 
@@ -150,13 +146,15 @@ class PcbBasicInspectionService:
 
     def get_pads(self) -> str:
         """List live board pads with references, nets, and coordinates."""
-        pads, total = self.limit_items(self._board().get_pads())
+        board = self._board()
+        mapped = map_pads_to_footprints(board.get_pads(), board.get_footprints())
+        pads, total = self.limit_items(mapped)
         if not pads:
             return self.with_pcb_diagnostics("No pads are present on the active board.")
         lines = [f"Pads ({total} total):"]
-        for index, raw_pad in enumerate(pads, start=1):
-            pad = cast(PadLike, raw_pad)
-            reference = pad.parent.reference_field.text.value
+        for index, mapped_pad in enumerate(pads, start=1):
+            pad = cast(PadLike, mapped_pad.pad)
+            reference = mapped_pad.reference or "(unmapped)"
             number = pad.number
             net_name = pad.net.name or "(none)"
             x_mm = self.nm_to_mm(self.coord_nm(pad.position, "x"))

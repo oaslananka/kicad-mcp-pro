@@ -13,6 +13,7 @@ from typing import Any, cast
 from mcp.server.fastmcp import FastMCP
 
 from ..connection import KiCadConnectionError, get_board
+from ..pcb.pad_mapping import MappedPad, footprint_pads, map_pads_to_footprints
 from ..utils.units import nm_to_mm
 from .export_support import _get_pcb_file
 from .metadata import headless_compatible
@@ -37,21 +38,20 @@ def _board_vias(board: object) -> list[Any]:
         return []
 
 
-def _board_pads(board: object) -> list[Any]:
+def _board_footprints(board: object) -> list[Any]:
     try:
-        return list(cast(Any, board).get_pads())
+        return list(cast(Any, board).get_footprints())
     except (AttributeError, TypeError, OSError):
-        pads: list[Any] = []
-        try:
-            footprints = cast(Any, board).get_footprints()
-        except (AttributeError, TypeError, OSError):
-            return pads
-        for footprint in footprints:
-            try:
-                pads.extend(list(footprint.get_pads()))
-            except (AttributeError, TypeError, OSError):
-                continue
-        return pads
+        return []
+
+
+def _mapped_board_pads(board: object) -> list[MappedPad]:
+    footprints = _board_footprints(board)
+    try:
+        pads = list(cast(Any, board).get_pads())
+    except (AttributeError, TypeError, OSError):
+        pads = [pad for footprint in footprints for pad in footprint_pads(footprint)]
+    return map_pads_to_footprints(pads, footprints)
 
 
 def _collect_nets_from_board() -> list[dict[str, Any]]:
@@ -64,7 +64,8 @@ def _collect_nets_from_board() -> list[dict[str, Any]]:
 
     tracks = _board_tracks(board)
     vias = _board_vias(board)
-    pads = _board_pads(board)
+    mapped_pads = _mapped_board_pads(board)
+    pads = [mapped.pad for mapped in mapped_pads]
 
     result: list[dict[str, Any]] = []
     for net in nets:
@@ -113,6 +114,29 @@ def _nets() -> list[dict[str, Any]]:
         return _collect_nets_from_board()
     except (RuntimeError, KiCadConnectionError):
         return _collect_nets_from_file()
+
+
+def _file_pad_details(net_name: str) -> list[dict[str, object]]:
+    """Return footprint pad details from balanced PCB S-expression blocks."""
+    from .board_file import _normalize_board_content, _parse_board_footprint_blocks
+
+    content = _normalize_board_content(_get_pcb_file().read_text(encoding="utf-8", errors="ignore"))
+    footprints = _parse_board_footprint_blocks(content)
+    details: list[dict[str, object]] = []
+    for reference, entry in footprints.items():
+        pad_nets = cast(dict[str, str], entry.get("pad_nets", {}))
+        layer = str(entry.get("layer_name", "unknown"))
+        for pad_number, mapped_net_name in pad_nets.items():
+            if mapped_net_name != net_name:
+                continue
+            details.append(
+                {
+                    "reference": reference,
+                    "pad": pad_number,
+                    "layer": layer,
+                }
+            )
+    return details
 
 
 def register(mcp: FastMCP) -> None:
@@ -171,47 +195,20 @@ def register(mcp: FastMCP) -> None:
         net = matches[0]
         net_code = net.get("code")
 
-        # Collect footprint pads on this net
-        pads_on_net: list[dict[str, object]] = []
+        # Collect authoritative board pads and enrich them with containing references.
         try:
             board = get_board()
-            for footprint in board.get_footprints():
-                for pad in footprint.get_pads():  # type: ignore[attr-defined]
-                    if _object_net_name(pad) == net_name:
-                        pads_on_net.append(
-                            {
-                                "reference": footprint.reference_field.text.value,
-                                "pad": pad.number,
-                                "layer": str(pad.layer),
-                            }
-                        )
-        except Exception:
-            # File fallback — parse footprint pad nets by stable net name.
-            import re
-
-            from .board_file import _normalize_board_content
-
-            content = _normalize_board_content(
-                _get_pcb_file().read_text(encoding="utf-8", errors="ignore")
-            )
-            escaped_name = re.escape(net_name)
-            pad_net_re = re.compile(
-                r'\(pad\s+"([^"]*)"\s+\w+.*?\(net\s+\d+\s+"' + escaped_name + r'"\)',
-                re.DOTALL,
-            )
-            for fp_match in re.finditer(r"\(footprint\s+.*?\)", content, re.DOTALL):
-                block = fp_match.group()
-                ref_m = re.search(r'\(property\s+"Reference"\s+"([^"]*)"', block)
-                if not ref_m:
-                    continue
-                for pad_m in pad_net_re.finditer(block):
-                    pads_on_net.append(
-                        {
-                            "reference": ref_m.group(1),
-                            "pad": pad_m.group(1),
-                            "layer": "unknown",
-                        }
-                    )
+            pads_on_net = [
+                {
+                    "reference": mapped.reference or "(unmapped)",
+                    "pad": getattr(mapped.pad, "number", ""),
+                    "layer": str(getattr(mapped.pad, "layer", "unknown")),
+                }
+                for mapped in _mapped_board_pads(board)
+                if _object_net_name(mapped.pad) == net_name
+            ]
+        except (KiCadConnectionError, OSError, AttributeError, TypeError):
+            pads_on_net = _file_pad_details(net_name)
 
         payload: dict[str, object] = {
             "net_name": net_name,
