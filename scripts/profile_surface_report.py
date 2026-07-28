@@ -64,8 +64,17 @@ def build_report() -> dict[str, Any]:
         catalog = _catalog(profile, mode)
         callable_names = {entry["name"] for entry in catalog}
         serialized = json.dumps(catalog, separators=(",", ":"), sort_keys=True)
+        tool_call_cases = [case for case in cases if case.expected_behavior == "tool_calls"]
+        read_only_cases = [case for case in tool_call_cases if case.safety == "read_only"]
+        tagged_cases = [case for case in tool_call_cases if f"{profile}-profile" in case.tags]
         covered_cases = sum(
-            1 for case in cases if set(case.expected_tools).issubset(callable_names)
+            1 for case in tool_call_cases if set(case.expected_tools).issubset(callable_names)
+        )
+        covered_read_only_cases = sum(
+            1 for case in read_only_cases if set(case.expected_tools).issubset(callable_names)
+        )
+        covered_tagged_cases = sum(
+            1 for case in tagged_cases if set(case.expected_tools).issubset(callable_names)
         )
         forbidden_exposures = sum(
             len(set(case.forbidden_tools).intersection(callable_names)) for case in cases
@@ -77,8 +86,17 @@ def build_report() -> dict[str, Any]:
             "catalogCharacters": len(serialized),
             "estimatedCatalogTokens": math.ceil(len(serialized) / 4),
             "goldenCases": len(cases),
+            "goldenToolCallCases": len(tool_call_cases),
             "goldenCasesCovered": covered_cases,
-            "goldenCoveragePct": round(covered_cases / len(cases) * 100, 1),
+            "goldenCoveragePct": round(covered_cases / len(tool_call_cases) * 100, 1),
+            "readOnlyCases": len(read_only_cases),
+            "readOnlyCasesCovered": covered_read_only_cases,
+            "readOnlyCoveragePct": round(covered_read_only_cases / len(read_only_cases) * 100, 1),
+            "profileTaggedCases": len(tagged_cases),
+            "profileTaggedCasesCovered": covered_tagged_cases,
+            "profileTaggedCoveragePct": (
+                round(covered_tagged_cases / len(tagged_cases) * 100, 1) if tagged_cases else None
+            ),
             "forbiddenToolExposures": forbidden_exposures,
             "tools": sorted(callable_names),
         }
@@ -95,7 +113,7 @@ def build_report() -> dict[str, Any]:
         )
 
     return {
-        "schemaVersion": "1.0.0",
+        "schemaVersion": "2.0.0",
         "source": {
             "profiles": "src/kicad_mcp/tools/router.py",
             "goldenCases": "evals/tool_selection/cases.yaml",

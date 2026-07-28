@@ -92,8 +92,10 @@ def test_review_profile_covers_golden_selection_cases_without_forbidden_tools() 
 
     cases_path = Path(__file__).resolve().parents[2] / "evals" / "tool_selection" / "cases.yaml"
     surfaced = set(tools_for_profile("review"))
-    cases = load_cases(cases_path)
+    cases = [case for case in load_cases(cases_path) if "review-profile" in case.tags]
 
+    assert cases
+    assert all(case.safety == "read_only" for case in cases)
     assert all(set(case.expected_tools).issubset(surfaced) for case in cases)
     assert all(set(case.forbidden_tools).isdisjoint(surfaced) for case in cases)
 
