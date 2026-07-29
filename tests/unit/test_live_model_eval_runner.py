@@ -487,7 +487,7 @@ def test_runner_retries_transient_provider_failure_but_keeps_selection_failure_s
     assert report.summary["pipeline_passed"] is False
 
 
-def test_runner_stops_on_budget_exhaustion_and_requires_usage_telemetry(tmp_path: Path) -> None:
+def test_runner_stops_on_budget_exhaustion_and_separates_missing_telemetry(tmp_path: Path) -> None:
     trace = tmp_path / "trace.jsonl"
     trace.write_text(
         json.dumps(
@@ -547,7 +547,14 @@ def test_runner_stops_on_budget_exhaustion_and_requires_usage_telemetry(tmp_path
         thresholds=_thresholds(tmp_path),
         tool_tiers={"pcb_get_board_summary": "read"},
     )
-    assert missing_usage_report.executions[0].failure_kind == "protocol_error"
+    assert missing_usage_report.executions[0].failure_kind is None
+    assert missing_usage_report.executions[0].score is not None
+    assert missing_usage_report.summary["adapter_failures"] == 0
+    assert missing_usage_report.summary["token_coverage"] == 0.0
+    assert missing_usage_report.threshold_outcome.passed is False
+    assert any(
+        "mean_tokens=None" in item for item in missing_usage_report.threshold_outcome.failures
+    )
 
 
 def test_runner_rejects_planned_observations_above_case_budget(tmp_path: Path) -> None:
@@ -847,3 +854,40 @@ def test_eval_package_exports_live_runner_contract() -> None:
 
     assert expected.issubset(set(evals.__all__))
     assert all(hasattr(evals, name) for name in expected)
+
+
+def test_runner_scores_success_when_token_and_cost_metrics_are_unavailable(tmp_path: Path) -> None:
+    class NoTelemetryAdapter:
+        def reset(self) -> None:
+            return None
+
+        def invoke(self, _case: EvalCase) -> AdapterObservation:
+            return AdapterObservation.from_values(
+                called_tools=("pcb_get_board_summary",),
+                response_kind="tool_calls",
+                latency_ms=5,
+                input_tokens=None,
+                output_tokens=None,
+                estimated_cost_micros=None,
+            )
+
+    trace = tmp_path / "unused.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(tmp_path, trace)
+
+    report = execute_evaluation(
+        [_case()],
+        configuration,
+        NoTelemetryAdapter(),
+        repeats=1,
+        source_revision="4" * 40,
+        thresholds=load_thresholds(COMMITTED_THRESHOLDS),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    assert report.summary["adapter_failures"] == 0
+    assert report.summary["completed_observations"] == 1
+    assert report.summary["pipeline_passed"] is True
+    assert report.summary["token_coverage"] == 0.0
+    assert report.usage["token_observations"] == 0
+    assert report.usage["cost_observations"] == 0

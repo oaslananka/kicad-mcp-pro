@@ -1,0 +1,138 @@
+name: Live Model Release Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: Full-corpus repetitions per configuration, bounded from 3 to 5.
+        type: number
+        default: 3
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-model-release-gate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Validate protected dispatch
+        env:
+          GITHUB_REF_VALUE: ${{ github.ref }}
+          REPEATS: ${{ inputs.repeats }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_VALUE" = "refs/heads/main"
+          test "$REPEATS" -ge 3
+          test "$REPEATS" -le 5
+
+  benchmark:
+    needs: guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: live-model-evals
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        configuration:
+          - nvidia-nemotron-3-nano-30b-a3b
+          - nvidia-mistral-medium-3-5-128b
+          - nvidia-gemma-4-31b-it
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - name: Run bounded live benchmark
+        env:
+          CONFIGURATION_ID: ${{ matrix.configuration }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          REPEATS: ${{ inputs.repeats }}
+        run: |
+          set -euo pipefail
+          test -n "$NVIDIA_API_KEY"
+          mkdir -p artifacts/live-model-eval
+          set +e
+          uv run --all-extras python scripts/run_live_model_eval.py \
+            --config evals/live/configurations.yaml \
+            --configuration "$CONFIGURATION_ID" \
+            --repeats "$REPEATS" \
+            --source-revision "$GITHUB_SHA" \
+            --output artifacts/live-model-eval/evidence.json
+          exit_code=$?
+          set -e
+          python - "$CONFIGURATION_ID" "$exit_code" <<'PY'
+          import json
+          import pathlib
+          import sys
+          pathlib.Path("artifacts/live-model-eval/status.json").write_text(
+              json.dumps(
+                  {"configuration_id": sys.argv[1], "runner_exit_code": int(sys.argv[2])},
+                  sort_keys=True,
+              ) + "\n",
+              encoding="utf-8",
+          )
+          PY
+      - name: Upload sanitized configuration evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: live-model-release-${{ matrix.configuration }}-${{ github.run_id }}
+          path: artifacts/live-model-eval
+          if-no-files-found: error
+          retention-days: 14
+
+  aggregate:
+    if: always()
+    needs: benchmark
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: true
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - name: Download sanitized configuration evidence
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: live-model-release-*-${{ github.run_id }}
+          path: artifacts/downloaded
+      - name: Evaluate aggregate non-regression gate
+        if: always()
+        id: gate
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          uv run --all-extras python scripts/evaluate_live_model_release_gate.py \
+            --evidence-root artifacts/downloaded \
+            --output artifacts/live-model-release-gate/report.json
+      - name: Upload sanitized aggregate report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: live-model-release-gate-${{ github.run_id }}
+          path: artifacts/live-model-release-gate/report.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce gate result
+        if: always()
+        env:
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+        run: |
+          set -euo pipefail
+          test "$GATE_OUTCOME" = "success"
