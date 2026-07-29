@@ -891,3 +891,57 @@ def test_runner_scores_success_when_token_and_cost_metrics_are_unavailable(tmp_p
     assert report.summary["token_coverage"] == 0.0
     assert report.usage["token_observations"] == 0
     assert report.usage["cost_observations"] == 0
+
+
+class _InterruptingAdapter:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def reset(self) -> None:
+        return None
+
+    def invoke(self, _case: EvalCase) -> AdapterObservation:
+        self.calls += 1
+        if self.calls > 1:
+            raise KeyboardInterrupt
+        return AdapterObservation.from_values(
+            called_tools=("pcb_get_board_summary",),
+            response_kind="tool_calls",
+            latency_ms=10,
+            input_tokens=20,
+            output_tokens=5,
+            estimated_cost_micros=None,
+        )
+
+
+def test_runner_emits_sanitized_atomic_checkpoint_before_and_after_observations(
+    tmp_path: Path,
+) -> None:
+    trace = tmp_path / "unused.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(tmp_path, trace, max_cases=10)
+    output = tmp_path / "evidence.json"
+    cases = [_case("first"), _case("second")]
+
+    with pytest.raises(KeyboardInterrupt):
+        execute_evaluation(
+            cases,
+            configuration,
+            _InterruptingAdapter(),
+            repeats=1,
+            source_revision="a" * 40,
+            thresholds=_thresholds(tmp_path),
+            tool_tiers={name: record.tier for name, record in all_records().items()},
+            checkpoint=lambda report: write_evidence(output, report),
+        )
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["complete"] is False
+    assert payload["summary"]["planned_observations"] == 2
+    assert payload["summary"]["completed_observations"] == 1
+    assert len(payload["executions"]) == 1
+    assert payload["executions"][0]["case_id"] == "first"
+    rendered = json.dumps(payload).lower()
+    assert "prompt" not in rendered
+    assert "raw_response" not in rendered
+    assert "authorization" not in rendered

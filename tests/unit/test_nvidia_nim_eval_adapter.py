@@ -74,6 +74,20 @@ def test_chat_payload_contains_strict_classifier_contract_without_case_expectati
     assert payload["model"] == "nvidia/test-model"
     assert payload["temperature"] == 0
     assert payload["stream"] is False
+    schema = payload["guided_json"]
+    assert schema["type"] == "object"
+    assert schema["additionalProperties"] is False
+    assert schema["required"] == ["response_kind", "called_tools"]
+    assert schema["properties"]["response_kind"]["enum"] == [
+        "answer",
+        "confirmation",
+        "refusal",
+        "tool_calls",
+    ]
+    assert schema["properties"]["called_tools"]["items"]["enum"] == [
+        "pcb_delete_items",
+        "pcb_get_board_summary",
+    ]
     assert payload["messages"][1] == {
         "role": "user",
         "content": "Summarize this PCB without changing it.",
@@ -100,10 +114,8 @@ def test_nim_request_returns_only_normalized_observation_and_optional_usage() ->
                     {
                         "message": {
                             "content": (
-                                "```json\n"
                                 '{"response_kind":"tool_calls",'
                                 '"called_tools":["pcb_get_board_summary"]}'
-                                "\n```"
                             ),
                             "reasoning_content": raw_provider_text,
                         }
@@ -206,3 +218,66 @@ def test_nim_request_rejects_unknown_or_malformed_model_output() -> None:
             "status": "error",
             "failure_kind": "model_error",
         }
+
+
+def test_nim_request_falls_back_to_json_schema_response_format() -> None:
+    requests: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        requests.append(payload)
+        if len(requests) == 1:
+            return httpx.Response(422, json={"error": "guided decoding unsupported"})
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"content": '{"response_kind":"answer","called_tools":[]}'}}
+                ]
+            },
+        )
+
+    result = request_nvidia_nim(
+        model="nvidia/test-model",
+        prompt="Answer directly.",
+        api_key="test-" + "value",
+        catalog=(),
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert result["status"] == "ok"
+    assert "guided_json" in requests[0]
+    assert "response_format" not in requests[0]
+    assert "guided_json" not in requests[1]
+    response_format = requests[1]["response_format"]
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["schema"]["additionalProperties"] is False
+
+
+def test_nim_request_rejects_json_with_surrounding_text() -> None:
+    result = request_nvidia_nim(
+        model="nvidia/test-model",
+        prompt="Inspect.",
+        api_key="test-" + "value",
+        catalog=(),
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": 'prefix {"response_kind":"answer","called_tools":[]}'
+                            }
+                        }
+                    ]
+                },
+            )
+        ),
+    )
+
+    assert result == {
+        "schema_version": 1,
+        "status": "error",
+        "failure_kind": "model_error",
+    }

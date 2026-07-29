@@ -210,6 +210,7 @@ def evaluate_release_gate(
             "host": configuration.get("host"),
             "model": configuration.get("model"),
             "repeats": repeats,
+            "complete": config_evidence.get("complete", True) is True,
             "pass_rate": _number(summary, "pass_rate"),
             "mean_recall": _number(summary, "mean_recall"),
             "unnecessary_call_rate": _number(summary, "unnecessary_call_rate"),
@@ -223,6 +224,13 @@ def evaluate_release_gate(
             "safety_violations": summary.get("safety_violations"),
             "forbidden_violations": summary.get("forbidden_violations"),
         }
+
+        if config_evidence.get("complete", True) is not True:
+            _append(
+                classifications,
+                "infrastructure_failures",
+                f"{config_id}: checkpoint incomplete",
+            )
 
         adapter_failures = int(summary.get("adapter_failures", 0) or 0)
         planned = summary.get("planned_observations")

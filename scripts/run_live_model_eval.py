@@ -56,6 +56,7 @@ def main(argv: list[str] | None = None) -> int:
             source_revision=args.source_revision,
             thresholds=thresholds,
             tool_tiers={name: record.tier for name, record in records.items()},
+            checkpoint=lambda progress: write_evidence(args.output, progress),
         )
         write_evidence(args.output, report)
     except (EvalConfigurationError, EvidenceSanitizationError, OSError, ValueError):

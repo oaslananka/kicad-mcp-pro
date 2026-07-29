@@ -33,7 +33,7 @@ jobs:
   benchmark:
     needs: guard
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 180
     environment: live-model-evals
     strategy:
       fail-fast: false
@@ -61,6 +61,23 @@ jobs:
           set -euo pipefail
           test -n "$NVIDIA_API_KEY"
           mkdir -p artifacts/live-model-eval
+          python - "$CONFIGURATION_ID" "$GITHUB_SHA" <<'PY'
+          import json
+          import pathlib
+          import sys
+          pathlib.Path("artifacts/live-model-eval/status.json").write_text(
+              json.dumps(
+                  {
+                      "configuration_id": sys.argv[1],
+                      "source_revision": sys.argv[2],
+                      "state": "running",
+                      "runner_exit_code": None,
+                  },
+                  sort_keys=True,
+              ) + "\n",
+              encoding="utf-8",
+          )
+          PY
           set +e
           uv run --all-extras python scripts/run_live_model_eval.py \
             --config evals/live/configurations.yaml \
@@ -76,7 +93,11 @@ jobs:
           import sys
           pathlib.Path("artifacts/live-model-eval/status.json").write_text(
               json.dumps(
-                  {"configuration_id": sys.argv[1], "runner_exit_code": int(sys.argv[2])},
+                  {
+                      "configuration_id": sys.argv[1],
+                      "state": "completed",
+                      "runner_exit_code": int(sys.argv[2]),
+                  },
                   sort_keys=True,
               ) + "\n",
               encoding="utf-8",
