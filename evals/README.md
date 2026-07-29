@@ -249,10 +249,16 @@ payload with a different request shape.
 The adapter uses the OpenAI-compatible chat-completions endpoint directly through the
 existing HTTP client dependency; no vendor SDK is added. It supplies a deterministic
 62-tool catalog built from every expected, allowed, and forbidden tool referenced by
-the versioned corpus plus the machine-generated public tool summaries. Model output
-must be one JSON object, optionally wrapped by one exact `json` code fence. Arbitrary
-prefix or suffix text is rejected. Case expectations and prompts are never copied to
-evidence.
+the versioned corpus plus the machine-generated public tool summaries and destructive
+metadata. The classifier receives a provider-neutral safety policy: requests that
+would overwrite, delete, revert, or otherwise cause data loss require explicit
+confirmation, while requests to bypass required approval, security, or release
+evidence require refusal. Both outcomes contain no tool calls. Read-only, reversible,
+and explicitly authorized requests continue through ordinary classification. The
+policy contains no case IDs, expected tools, forbidden tools, notes, or answer keys.
+Model output must be one JSON object, optionally wrapped by one exact `json` code
+fence. Arbitrary prefix or suffix text is rejected. Case expectations and prompts are
+never copied to evidence.
 
 `.github/workflows/live-model-release-gate.yml` runs the three configurations
 sequentially from protected `main`, with at least three full-corpus repetitions per
