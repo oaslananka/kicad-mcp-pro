@@ -13,3 +13,45 @@ configurations:
       max_total_tool_calls: 500
       max_total_tokens: 100000
       max_total_cost_micros: 0
+
+  - id: nvidia-nemotron-3-nano-30b-a3b
+    host: nvidia-nim
+    model: nvidia/nemotron-3-nano-30b-a3b
+    adapter: subprocess
+    command: [python, scripts/nvidia_nim_eval_adapter.py, --model, nvidia/nemotron-3-nano-30b-a3b]
+    required_env: [NVIDIA_API_KEY]
+    limits:
+      timeout_seconds: 70
+      max_retries: 2
+      max_cases: 325
+      max_total_tool_calls: 1000
+      max_total_tokens: 3000000
+      max_total_cost_micros: 0
+
+  - id: nvidia-mistral-medium-3-5-128b
+    host: nvidia-nim
+    model: mistralai/mistral-medium-3.5-128b
+    adapter: subprocess
+    command: [python, scripts/nvidia_nim_eval_adapter.py, --model, mistralai/mistral-medium-3.5-128b]
+    required_env: [NVIDIA_API_KEY]
+    limits:
+      timeout_seconds: 70
+      max_retries: 2
+      max_cases: 325
+      max_total_tool_calls: 1000
+      max_total_tokens: 3000000
+      max_total_cost_micros: 0
+
+  - id: nvidia-gemma-4-31b-it
+    host: nvidia-nim
+    model: google/gemma-4-31b-it
+    adapter: subprocess
+    command: [python, scripts/nvidia_nim_eval_adapter.py, --model, google/gemma-4-31b-it]
+    required_env: [NVIDIA_API_KEY]
+    limits:
+      timeout_seconds: 70
+      max_retries: 2
+      max_cases: 325
+      max_total_tool_calls: 1000
+      max_total_tokens: 3000000
+      max_total_cost_micros: 0

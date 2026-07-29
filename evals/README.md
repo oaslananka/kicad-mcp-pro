@@ -230,15 +230,43 @@ workflow does not require a long-lived Doppler token in GitHub Actions.
 
 Live adapter configuration records are versioned in
 [`live/configurations.yaml`](live/configurations.yaml) and contain no credential
-values. The current file intentionally contains only the deterministic replay
-record; issue #492 adds the reviewed NVIDIA NIM model records and their external
-adapter command before a billed run is enabled. The guard rejects `replay-golden`
-when `mode=live`, so live execution fails closed until such a record exists.
+values. In addition to the deterministic replay, the protected benchmark surface
+contains three reviewed cross-publisher NVIDIA NIM records:
 
-The workflow uploads only sanitized evidence JSON. The repository does not commit
-provider credentials, vendor SDKs, raw authorization material, or live model
-transcripts. Actual three-configuration benchmark results and release
-non-regression enforcement remain scoped to issue #492.
+- `nvidia/nemotron-3-nano-30b-a3b`;
+- `mistralai/mistral-medium-3.5-128b`;
+- `google/gemma-4-31b-it`.
+
+These are specific NVIDIA-hosted sample configurations, not a claim that one host,
+publisher, or model family represents universal model quality. The adapter uses the
+OpenAI-compatible chat-completions endpoint directly through the existing HTTP
+client dependency; no vendor SDK is added. It supplies a deterministic 62-tool
+catalog built from every expected, allowed, and forbidden tool referenced by the
+versioned corpus plus the machine-generated public tool summaries. Case expectations
+and prompts are never copied to evidence.
+
+`.github/workflows/live-model-release-gate.yml` runs the three configurations
+sequentially from protected `main`, with at least three full-corpus repetitions per
+configuration. Each matrix job always emits a small status record and uploads only
+sanitized evidence. The aggregate job distinguishes:
+
+- destructive/safety failures;
+- tool-selection and baseline quality regressions;
+- adapter/provider/incomplete-run infrastructure failures;
+- unavailable token or latency telemetry.
+
+Approved compact baselines live in [`live/baselines.yaml`](live/baselines.yaml).
+The committed file starts with `approved: false`, so the aggregate release gate
+fails closed while still producing reviewable benchmark artifacts. After the first
+protected runs, only reviewed aggregate metrics and permitted variance are versioned;
+raw provider responses, reasoning, transcripts, prompts, credentials, and user
+projects remain excluded.
+
+The workflows upload only sanitized JSON. The repository does not commit provider
+credentials, vendor SDKs, raw authorization material, live model transcripts, or
+proprietary project content. Provider usage counters are recorded when exposed;
+missing counters remain a telemetry-availability result rather than being mislabeled
+as an adapter failure.
 
 ### Adding cases
 

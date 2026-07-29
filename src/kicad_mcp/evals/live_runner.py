@@ -103,7 +103,7 @@ class EvaluationReport:
     source_revision: str
     repeats: int
     executions: tuple[CaseExecution, ...]
-    usage: Mapping[str, int]
+    usage: Mapping[str, int | float]
     summary: Mapping[str, Any]
     threshold_outcome: ThresholdOutcome
 
@@ -208,6 +208,8 @@ def execute_evaluation(
     total_tool_calls = 0
     total_tokens = 0
     total_cost_micros = 0
+    token_observations = 0
+    cost_observations = 0
     budget_exhausted = False
 
     for run_index in range(repeats):
@@ -243,7 +245,7 @@ def execute_evaluation(
                 )
                 continue
             run = observation.run
-            if run is None or run.total_tokens is None or observation.estimated_cost_micros is None:
+            if run is None:
                 executions.append(
                     _execution_failure(
                         case,
@@ -256,15 +258,27 @@ def execute_evaluation(
                 continue
 
             prospective_calls = total_tool_calls + len(run.called_tools)
-            prospective_tokens = total_tokens + run.total_tokens
-            prospective_cost = total_cost_micros + observation.estimated_cost_micros
+            prospective_tokens = total_tokens
+            prospective_cost = total_cost_micros
+            if run.total_tokens is not None:
+                prospective_tokens += run.total_tokens
+            if observation.estimated_cost_micros is not None:
+                prospective_cost += observation.estimated_cost_micros
             total_tool_calls = prospective_calls
             total_tokens = prospective_tokens
             total_cost_micros = prospective_cost
+            token_budget_exceeded = (
+                run.total_tokens is not None
+                and prospective_tokens > configuration.limits.max_total_tokens
+            )
+            cost_budget_exceeded = (
+                observation.estimated_cost_micros is not None
+                and prospective_cost > configuration.limits.max_total_cost_micros
+            )
             if (
                 prospective_calls > configuration.limits.max_total_tool_calls
-                or prospective_tokens > configuration.limits.max_total_tokens
-                or prospective_cost > configuration.limits.max_total_cost_micros
+                or token_budget_exceeded
+                or cost_budget_exceeded
             ):
                 executions.append(
                     _execution_failure(
@@ -278,6 +292,10 @@ def execute_evaluation(
                 budget_exhausted = True
                 break
 
+            if run.total_tokens is not None:
+                token_observations += 1
+            if observation.estimated_cost_micros is not None:
+                cost_observations += 1
             score = score_case(case, run, tool_tiers=tool_tiers)
             run_scores.append(score)
             executions.append(
@@ -306,6 +324,10 @@ def execute_evaluation(
     summary["adapter_failures"] = adapter_failures
     summary["selection_failures"] = selection_failures
     threshold_outcome = evaluate_thresholds(summary, thresholds)
+    completed_observations = int(summary["completed_observations"])
+    summary["cost_coverage"] = (
+        cost_observations / completed_observations if completed_observations else 0.0
+    )
     summary["pipeline_passed"] = (
         adapter_failures == 0 and selection_failures == 0 and threshold_outcome.passed
     )
@@ -319,6 +341,8 @@ def execute_evaluation(
             "total_tool_calls": total_tool_calls,
             "total_tokens": total_tokens,
             "total_cost_micros": total_cost_micros,
+            "token_observations": token_observations,
+            "cost_observations": cost_observations,
         },
         summary=summary,
         threshold_outcome=threshold_outcome,
