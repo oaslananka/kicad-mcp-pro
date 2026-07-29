@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -406,6 +407,7 @@ permitted_variance:
 
 def test_runner_retries_transient_provider_failure_but_keeps_selection_failure_separate(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     trace = tmp_path / "trace.jsonl"
     trace.write_text(
@@ -451,6 +453,7 @@ def test_runner_retries_transient_provider_failure_but_keeps_selection_failure_s
         encoding="utf-8",
     )
     configuration = _replay_configuration(tmp_path, trace)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     cases = [
         _case("board"),
         EvalCase(
@@ -485,6 +488,52 @@ def test_runner_retries_transient_provider_failure_but_keeps_selection_failure_s
     assert report.summary["adapter_failures"] == 0
     assert report.summary["selection_failures"] == 1
     assert report.summary["pipeline_passed"] is False
+
+
+class _RetrySequenceAdapter:
+    def __init__(self) -> None:
+        self.failures = ["provider_rate_limit", "provider_unavailable", "timeout"]
+
+    def reset(self) -> None:
+        return None
+
+    def invoke(self, _case: EvalCase) -> AdapterObservation:
+        if self.failures:
+            return AdapterObservation(failure_kind=self.failures.pop(0))
+        return AdapterObservation.from_values(
+            called_tools=("pcb_get_board_summary",),
+            response_kind="tool_calls",
+            latency_ms=10,
+            input_tokens=20,
+            output_tokens=5,
+            estimated_cost_micros=None,
+        )
+
+
+def test_runner_waits_with_bounded_exponential_backoff_for_retryable_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = tmp_path / "unused.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(tmp_path, trace, max_retries=3)
+    waits: list[float] = []
+    monkeypatch.setattr(time, "sleep", waits.append)
+
+    report = execute_evaluation(
+        [_case()],
+        configuration,
+        _RetrySequenceAdapter(),
+        repeats=1,
+        source_revision="a" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    assert waits == [1.0, 2.0, 4.0]
+    assert report.executions[0].attempts == 4
+    assert report.executions[0].failure_kind is None
+    assert report.summary["adapter_failures"] == 0
 
 
 def test_runner_stops_on_budget_exhaustion_and_separates_missing_telemetry(tmp_path: Path) -> None:

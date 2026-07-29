@@ -22,6 +22,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
     parser.add_argument("--tools-reference", type=Path, default=DEFAULT_TOOLS)
     parser.add_argument("--timeout-seconds", type=float, default=50)
+    parser.add_argument(
+        "--structured-output",
+        choices=("none", "guided_json", "json_schema"),
+        default="none",
+    )
     return parser
 
 
@@ -52,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
                 api_key=api_key,
                 catalog=catalog,
                 timeout_seconds=args.timeout_seconds,
+                structured_output=args.structured_output,
             )
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             result = {

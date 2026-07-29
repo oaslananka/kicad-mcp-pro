@@ -74,20 +74,8 @@ def test_chat_payload_contains_strict_classifier_contract_without_case_expectati
     assert payload["model"] == "nvidia/test-model"
     assert payload["temperature"] == 0
     assert payload["stream"] is False
-    schema = payload["guided_json"]
-    assert schema["type"] == "object"
-    assert schema["additionalProperties"] is False
-    assert schema["required"] == ["response_kind", "called_tools"]
-    assert schema["properties"]["response_kind"]["enum"] == [
-        "answer",
-        "confirmation",
-        "refusal",
-        "tool_calls",
-    ]
-    assert schema["properties"]["called_tools"]["items"]["enum"] == [
-        "pcb_delete_items",
-        "pcb_get_board_summary",
-    ]
+    assert "guided_json" not in payload
+    assert "response_format" not in payload
     assert payload["messages"][1] == {
         "role": "user",
         "content": "Summarize this PCB without changing it.",
@@ -220,38 +208,104 @@ def test_nim_request_rejects_unknown_or_malformed_model_output() -> None:
         }
 
 
-def test_nim_request_falls_back_to_json_schema_response_format() -> None:
+def test_hosted_nim_request_makes_one_http_call_without_structured_fields() -> None:
     requests: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content)
-        requests.append(payload)
-        if len(requests) == 1:
-            return httpx.Response(422, json={"error": "guided decoding unsupported"})
-        return httpx.Response(
-            200,
-            json={
-                "choices": [
-                    {"message": {"content": '{"response_kind":"answer","called_tools":[]}'}}
-                ]
-            },
-        )
+        requests.append(json.loads(request.content))
+        return httpx.Response(422, json={"error": "unsupported request field"})
 
     result = request_nvidia_nim(
-        model="nvidia/test-model",
+        model="nvidia/nemotron-3-nano-30b-a3b",
         prompt="Answer directly.",
-        api_key="test-" + "value",
+        api_key="api-" + "value",
         catalog=(),
         transport=httpx.MockTransport(handler),
     )
 
-    assert result["status"] == "ok"
-    assert "guided_json" in requests[0]
+    assert result == {
+        "schema_version": 1,
+        "status": "error",
+        "failure_kind": "model_error",
+    }
+    assert len(requests) == 1
+    assert "guided_json" not in requests[0]
     assert "response_format" not in requests[0]
-    assert "guided_json" not in requests[1]
-    response_format = requests[1]["response_format"]
-    assert response_format["type"] == "json_schema"
-    assert response_format["json_schema"]["schema"]["additionalProperties"] is False
+
+
+def test_explicit_structured_output_modes_build_one_reviewable_payload() -> None:
+    guided = build_chat_payload(
+        model="self-hosted/model",
+        prompt="Inspect.",
+        catalog=({"name": "pcb_get_board_summary", "summary": "Summarize."},),
+        structured_output="guided_json",
+    )
+    response_format = build_chat_payload(
+        model="self-hosted/model",
+        prompt="Inspect.",
+        catalog=({"name": "pcb_get_board_summary", "summary": "Summarize."},),
+        structured_output="json_schema",
+    )
+
+    assert guided["guided_json"]["additionalProperties"] is False
+    assert "response_format" not in guided
+    assert "guided_json" not in response_format
+    assert response_format["response_format"]["type"] == "json_schema"
+    assert (
+        response_format["response_format"]["json_schema"]["schema"]["additionalProperties"] is False
+    )
+
+
+def test_hosted_model_profiles_disable_unneeded_reasoning() -> None:
+    mistral = build_chat_payload(
+        model="mistralai/mistral-medium-3.5-128b",
+        prompt="Inspect.",
+        catalog=(),
+    )
+    gemma = build_chat_payload(
+        model="google/gemma-4-31b-it",
+        prompt="Inspect.",
+        catalog=(),
+    )
+    nemotron = build_chat_payload(
+        model="nvidia/nemotron-3-nano-30b-a3b",
+        prompt="Inspect.",
+        catalog=(),
+    )
+
+    assert mistral["reasoning_effort"] == "none"
+    assert gemma["chat_template_kwargs"] == {"enable_thinking": False}
+    assert "reasoning_effort" not in nemotron
+    assert "chat_template_kwargs" not in nemotron
+
+
+def test_nim_request_accepts_a_single_json_code_fence() -> None:
+    result = request_nvidia_nim(
+        model="nvidia/test-model",
+        prompt="Inspect.",
+        api_key="api-" + "value",
+        catalog=(),
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": (
+                                    '```json\n{"response_kind":"answer","called_tools":[]}\n```'
+                                )
+                            }
+                        }
+                    ]
+                },
+            )
+        ),
+    )
+
+    assert result["status"] == "ok"
+    assert result["response_kind"] == "answer"
+    assert result["called_tools"] == []
 
 
 def test_nim_request_rejects_json_with_surrounding_text() -> None:

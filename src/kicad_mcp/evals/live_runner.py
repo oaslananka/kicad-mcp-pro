@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -308,6 +309,7 @@ def execute_evaluation(
                     observation.failure_kind in _RETRYABLE_FAILURES
                     and attempts <= configuration.limits.max_retries
                 ):
+                    time.sleep(float(min(2 ** (attempts - 1), 4)))
                     continue
                 break
 
