@@ -8,13 +8,16 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
 
 from .tool_selection import all_referenced_tools, load_cases
 
 NVIDIA_NIM_CHAT_COMPLETIONS_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+StructuredOutputMode = Literal["none", "guided_json", "json_schema"]
+_MISTRAL_MEDIUM_MODEL = "mistralai/mistral-medium-3.5-128b"
+_GEMMA_MODEL = "google/gemma-4-31b-it"
 _RESPONSE_KINDS = frozenset({"tool_calls", "answer", "confirmation", "refusal"})
 _TOOL_ROW = re.compile(r"^\| `([^`]+)` \|.*\| ([^|]+) \|$")
 
@@ -86,8 +89,9 @@ def build_chat_payload(
     model: str,
     prompt: str,
     catalog: Sequence[ToolCatalogEntry | Mapping[str, str]],
+    structured_output: StructuredOutputMode = "none",
 ) -> dict[str, Any]:
-    """Build a deterministic classification request without case expectations."""
+    """Build one capability-aware classification request without case expectations."""
     catalog_values = _catalog_values(catalog)
     system = (
         "You are a tool-selection classifier for KiCad MCP Pro. Do not execute tools. "
@@ -98,8 +102,7 @@ def build_chat_payload(
         "explanations or additional keys.\nTOOL_CATALOG="
         + json.dumps(catalog_values, separators=(",", ":"), ensure_ascii=False)
     )
-    schema = _classifier_schema([item["name"] for item in catalog_values])
-    return {
+    payload: dict[str, Any] = {
         "model": model,
         "messages": [
             {"role": "system", "content": system},
@@ -109,8 +112,26 @@ def build_chat_payload(
         "top_p": 1,
         "max_tokens": 256,
         "stream": False,
-        "guided_json": schema,
     }
+    if model == _MISTRAL_MEDIUM_MODEL:
+        payload["reasoning_effort"] = "none"
+    elif model == _GEMMA_MODEL:
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
+
+    schema = _classifier_schema([item["name"] for item in catalog_values])
+    if structured_output == "guided_json":
+        payload["guided_json"] = schema
+    elif structured_output == "json_schema":
+        payload["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "kicad_mcp_tool_selection",
+                "schema": schema,
+            },
+        }
+    elif structured_output != "none":
+        raise ValueError("Unsupported structured-output mode.")
+    return payload
 
 
 def _failure(kind: str) -> dict[str, object]:
@@ -128,7 +149,13 @@ def _failure_for_status(status_code: int) -> str:
 
 
 def _json_object(content: str) -> dict[str, Any]:
-    value = json.loads(content)
+    normalized = content.strip()
+    if normalized.startswith("```"):
+        match = re.fullmatch(r"```json[ \t]*\r?\n(?P<body>.*)\r?\n```", normalized, re.DOTALL)
+        if match is None:
+            raise ValueError("Model response code fence is malformed.")
+        normalized = match.group("body").strip()
+    value = json.loads(normalized)
     if not isinstance(value, dict):
         raise ValueError("Model response JSON must be an object.")
     return cast(dict[str, Any], value)
@@ -199,12 +226,18 @@ def request_nvidia_nim(
     catalog: Sequence[ToolCatalogEntry | Mapping[str, str]],
     timeout_seconds: float = 50,
     transport: httpx.BaseTransport | None = None,
+    structured_output: StructuredOutputMode = "none",
 ) -> dict[str, object]:
     """Invoke NVIDIA NIM and return only the normalized adapter contract."""
     catalog_values = _catalog_values(catalog)
     catalog_names = frozenset(item["name"] for item in catalog_values)
     started = time.perf_counter()
-    payload = build_chat_payload(model=model, prompt=prompt, catalog=catalog_values)
+    payload = build_chat_payload(
+        model=model,
+        prompt=prompt,
+        catalog=catalog_values,
+        structured_output=structured_output,
+    )
     try:
         with httpx.Client(timeout=timeout_seconds, transport=transport) as client:
             response = client.post(
@@ -215,24 +248,6 @@ def request_nvidia_nim(
                 },
                 json=payload,
             )
-            if response.status_code in {400, 422}:
-                fallback = dict(payload)
-                schema = fallback.pop("guided_json")
-                fallback["response_format"] = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "kicad_mcp_tool_selection",
-                        "schema": schema,
-                    },
-                }
-                response = client.post(
-                    NVIDIA_NIM_CHAT_COMPLETIONS_URL,
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=fallback,
-                )
     except httpx.TimeoutException:
         return _failure("timeout")
     except httpx.HTTPError:
@@ -251,6 +266,7 @@ def request_nvidia_nim(
 
 __all__ = [
     "NVIDIA_NIM_CHAT_COMPLETIONS_URL",
+    "StructuredOutputMode",
     "ToolCatalogEntry",
     "build_chat_payload",
     "load_eval_tool_catalog",

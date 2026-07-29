@@ -238,12 +238,21 @@ contains three reviewed cross-publisher NVIDIA NIM records:
 - `google/gemma-4-31b-it`.
 
 These are specific NVIDIA-hosted sample configurations, not a claim that one host,
-publisher, or model family represents universal model quality. The adapter uses the
-OpenAI-compatible chat-completions endpoint directly through the existing HTTP
-client dependency; no vendor SDK is added. It supplies a deterministic 62-tool
-catalog built from every expected, allowed, and forbidden tool referenced by the
-versioned corpus plus the machine-generated public tool summaries. Case expectations
-and prompts are never copied to evidence.
+publisher, or model family represents universal model quality. Hosted records use
+`--structured-output none`, so each adapter attempt sends exactly one request with
+only model-documented fields. Mistral reasoning is disabled with
+`reasoning_effort: none`; Gemma thinking is disabled with
+`chat_template_kwargs.enable_thinking: false`. Explicit self-hosted integrations may
+select `guided_json` or `json_schema`, but the adapter never retries a rejected
+payload with a different request shape.
+
+The adapter uses the OpenAI-compatible chat-completions endpoint directly through the
+existing HTTP client dependency; no vendor SDK is added. It supplies a deterministic
+62-tool catalog built from every expected, allowed, and forbidden tool referenced by
+the versioned corpus plus the machine-generated public tool summaries. Model output
+must be one JSON object, optionally wrapped by one exact `json` code fence. Arbitrary
+prefix or suffix text is rejected. Case expectations and prompts are never copied to
+evidence.
 
 `.github/workflows/live-model-release-gate.yml` runs the three configurations
 sequentially from protected `main`, with at least three full-corpus repetitions per

@@ -270,8 +270,14 @@ def test_committed_live_configurations_are_three_reviewed_nim_records() -> None:
         assert configuration.model == model
         assert configuration.adapter == "subprocess"
         assert configuration.required_env == ("NVIDIA_API_KEY",)
-        assert configuration.command[:2] == ("python", "scripts/nvidia_nim_eval_adapter.py")
-        assert configuration.command[-2:] == ("--model", model)
+        assert configuration.command == (
+            "python",
+            "scripts/nvidia_nim_eval_adapter.py",
+            "--model",
+            model,
+            "--structured-output",
+            "none",
+        )
         assert configuration.limits.max_cases >= 195
 
 
