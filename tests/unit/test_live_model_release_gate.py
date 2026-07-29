@@ -46,6 +46,7 @@ def _evidence(
 ) -> dict[str, object]:
     return {
         "schema_version": 1,
+        "complete": True,
         "configuration": {
             "id": config_id,
             "host": "nvidia-nim",
@@ -284,6 +285,10 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     assert "environment: live-model-evals" in workflow
     assert "max-parallel: 1" in workflow
     assert "fail-fast: false" in workflow
+    assert "timeout-minutes: 180" in workflow
+    assert '"state": "running"' in workflow
+    assert '"runner_exit_code": None' in workflow
+    assert "Upload sanitized configuration evidence\n        if: always()" in workflow
     assert "default: 3" in workflow
     for config_id in CONFIG_IDS:
         assert config_id in workflow
@@ -292,3 +297,29 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     assert "download-artifact@" in workflow
     assert "raw_response" not in workflow
     assert "DOPPLER_TOKEN" not in workflow
+
+
+def test_gate_reports_incomplete_checkpoint_as_infrastructure_failure(
+    tmp_path: Path,
+) -> None:
+    values = [
+        _evidence(config_id, model) for config_id, model in zip(CONFIG_IDS, MODELS, strict=True)
+    ]
+    values[1]["complete"] = False
+    values[1]["summary"]["planned_observations"] = 195  # type: ignore[index]
+    values[1]["summary"]["completed_observations"] = 73  # type: ignore[index]
+    evidence = _write_evidence(tmp_path / "evidence", values)
+
+    report = evaluate_release_gate(
+        evidence,
+        baseline_path=_baseline(tmp_path / "baselines.yaml", approved=False),
+        cases_path=CASES,
+        thresholds_path=THRESHOLDS,
+    )
+
+    assert report["passed"] is False
+    assert report["observed"][CONFIG_IDS[1]]["complete"] is False
+    assert any(
+        item == f"{CONFIG_IDS[1]}: checkpoint incomplete"
+        for item in report["classifications"]["infrastructure_failures"]
+    )

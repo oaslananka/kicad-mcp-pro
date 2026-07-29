@@ -65,6 +65,22 @@ def _catalog_values(
     return values
 
 
+def _classifier_schema(catalog_names: Sequence[str]) -> dict[str, object]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["response_kind", "called_tools"],
+        "properties": {
+            "response_kind": {"type": "string", "enum": sorted(_RESPONSE_KINDS)},
+            "called_tools": {
+                "type": "array",
+                "items": {"type": "string", "enum": sorted(catalog_names)},
+                "uniqueItems": True,
+            },
+        },
+    }
+
+
 def build_chat_payload(
     *,
     model: str,
@@ -82,6 +98,7 @@ def build_chat_payload(
         "explanations or additional keys.\nTOOL_CATALOG="
         + json.dumps(catalog_values, separators=(",", ":"), ensure_ascii=False)
     )
+    schema = _classifier_schema([item["name"] for item in catalog_values])
     return {
         "model": model,
         "messages": [
@@ -92,6 +109,7 @@ def build_chat_payload(
         "top_p": 1,
         "max_tokens": 256,
         "stream": False,
+        "guided_json": schema,
     }
 
 
@@ -110,10 +128,7 @@ def _failure_for_status(status_code: int) -> str:
 
 
 def _json_object(content: str) -> dict[str, Any]:
-    start = content.find("{")
-    if start < 0:
-        raise ValueError("Model response does not contain a JSON object.")
-    value, _end = json.JSONDecoder().raw_decode(content[start:])
+    value = json.loads(content)
     if not isinstance(value, dict):
         raise ValueError("Model response JSON must be an object.")
     return cast(dict[str, Any], value)
@@ -189,6 +204,7 @@ def request_nvidia_nim(
     catalog_values = _catalog_values(catalog)
     catalog_names = frozenset(item["name"] for item in catalog_values)
     started = time.perf_counter()
+    payload = build_chat_payload(model=model, prompt=prompt, catalog=catalog_values)
     try:
         with httpx.Client(timeout=timeout_seconds, transport=transport) as client:
             response = client.post(
@@ -197,8 +213,26 @@ def request_nvidia_nim(
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
-                json=build_chat_payload(model=model, prompt=prompt, catalog=catalog_values),
+                json=payload,
             )
+            if response.status_code in {400, 422}:
+                fallback = dict(payload)
+                schema = fallback.pop("guided_json")
+                fallback["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "kicad_mcp_tool_selection",
+                        "schema": schema,
+                    },
+                }
+                response = client.post(
+                    NVIDIA_NIM_CHAT_COMPLETIONS_URL,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=fallback,
+                )
     except httpx.TimeoutException:
         return _failure("timeout")
     except httpx.HTTPError:

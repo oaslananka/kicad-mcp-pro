@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -106,12 +106,14 @@ class EvaluationReport:
     usage: Mapping[str, int | float]
     summary: Mapping[str, Any]
     threshold_outcome: ThresholdOutcome
+    complete: bool = True
 
     def as_dict(self) -> dict[str, object]:
         """Return evidence without prompts, commands, env names, or private paths."""
         limits = self.configuration.limits
         return {
             "schema_version": 1,
+            "complete": self.complete,
             "configuration": {
                 "id": self.configuration.id,
                 "host": self.configuration.host,
@@ -181,6 +183,59 @@ def _execution_failure(
     )
 
 
+def _build_report(
+    *,
+    configuration: EvalConfiguration,
+    source_revision: str,
+    repeats: int,
+    executions: Sequence[CaseExecution],
+    score_runs: Sequence[Sequence[CaseResult]],
+    thresholds: EvalThresholds,
+    planned_observations: int,
+    total_tool_calls: int,
+    total_tokens: int,
+    total_cost_micros: int,
+    token_observations: int,
+    cost_observations: int,
+    complete: bool,
+) -> EvaluationReport:
+    summary = aggregate_repeated(score_runs)
+    adapter_failures = sum(1 for execution in executions if execution.failure_kind is not None)
+    selection_failures = sum(
+        1 for execution in executions if execution.score is not None and not execution.score.passed
+    )
+    summary["planned_observations"] = planned_observations
+    summary["completed_observations"] = sum(
+        1 for execution in executions if execution.score is not None
+    )
+    summary["adapter_failures"] = adapter_failures
+    summary["selection_failures"] = selection_failures
+    completed_observations = int(summary["completed_observations"])
+    summary["cost_coverage"] = (
+        cost_observations / completed_observations if completed_observations else 0.0
+    )
+    threshold_outcome = evaluate_thresholds(summary, thresholds)
+    summary["pipeline_passed"] = (
+        complete and adapter_failures == 0 and selection_failures == 0 and threshold_outcome.passed
+    )
+    return EvaluationReport(
+        configuration=configuration,
+        source_revision=source_revision,
+        repeats=repeats,
+        executions=tuple(executions),
+        usage={
+            "total_tool_calls": total_tool_calls,
+            "total_tokens": total_tokens,
+            "total_cost_micros": total_cost_micros,
+            "token_observations": token_observations,
+            "cost_observations": cost_observations,
+        },
+        summary=summary,
+        threshold_outcome=threshold_outcome,
+        complete=complete,
+    )
+
+
 def execute_evaluation(
     cases: list[EvalCase],
     configuration: EvalConfiguration,
@@ -190,8 +245,9 @@ def execute_evaluation(
     source_revision: str,
     thresholds: EvalThresholds,
     tool_tiers: Mapping[str, object],
+    checkpoint: Callable[[EvaluationReport], object] | None = None,
 ) -> EvaluationReport:
-    """Execute bounded repeated evals and separate infrastructure from model failures."""
+    """Execute bounded repeated evals and persist sanitized progress when requested."""
     if repeats < 1:
         raise EvalConfigurationError("repeats must be at least 1.")
     planned_observations = len(cases) * repeats
@@ -212,10 +268,36 @@ def execute_evaluation(
     cost_observations = 0
     budget_exhausted = False
 
+    def report(*, complete: bool) -> EvaluationReport:
+        return _build_report(
+            configuration=configuration,
+            source_revision=source_revision,
+            repeats=repeats,
+            executions=executions,
+            score_runs=score_runs,
+            thresholds=thresholds,
+            planned_observations=planned_observations,
+            total_tool_calls=total_tool_calls,
+            total_tokens=total_tokens,
+            total_cost_micros=total_cost_micros,
+            token_observations=token_observations,
+            cost_observations=cost_observations,
+            complete=complete,
+        )
+
+    def record(execution: CaseExecution) -> None:
+        executions.append(execution)
+        if checkpoint is not None:
+            checkpoint(report(complete=False))
+
+    if checkpoint is not None:
+        checkpoint(report(complete=False))
+
     for run_index in range(repeats):
         if run_index > 0:
             adapter.reset()
         run_scores: list[CaseResult] = []
+        score_runs.append(run_scores)
         for case in cases:
             attempts = 0
             observation: AdapterObservation | None = None
@@ -230,31 +312,14 @@ def execute_evaluation(
                 break
 
             if observation is None:
-                executions.append(
-                    _execution_failure(case, run_index, attempts, "adapter_unavailable")
-                )
+                record(_execution_failure(case, run_index, attempts, "adapter_unavailable"))
                 continue
             if observation.failure_kind is not None:
-                executions.append(
-                    _execution_failure(
-                        case,
-                        run_index,
-                        attempts,
-                        observation.failure_kind,
-                    )
-                )
+                record(_execution_failure(case, run_index, attempts, observation.failure_kind))
                 continue
             run = observation.run
             if run is None:
-                executions.append(
-                    _execution_failure(
-                        case,
-                        run_index,
-                        attempts,
-                        "protocol_error",
-                        observation,
-                    )
-                )
+                record(_execution_failure(case, run_index, attempts, "protocol_error", observation))
                 continue
 
             prospective_calls = total_tool_calls + len(run.called_tools)
@@ -280,14 +345,8 @@ def execute_evaluation(
                 or token_budget_exceeded
                 or cost_budget_exceeded
             ):
-                executions.append(
-                    _execution_failure(
-                        case,
-                        run_index,
-                        attempts,
-                        "budget_exceeded",
-                        observation,
-                    )
+                record(
+                    _execution_failure(case, run_index, attempts, "budget_exceeded", observation)
                 )
                 budget_exhausted = True
                 break
@@ -298,7 +357,7 @@ def execute_evaluation(
                 cost_observations += 1
             score = score_case(case, run, tool_tiers=tool_tiers)
             run_scores.append(score)
-            executions.append(
+            record(
                 CaseExecution(
                     case_id=case.id,
                     run_index=run_index,
@@ -308,45 +367,13 @@ def execute_evaluation(
                     failure_kind=None,
                 )
             )
-        score_runs.append(run_scores)
         if budget_exhausted:
             break
 
-    summary = aggregate_repeated(score_runs)
-    adapter_failures = sum(1 for execution in executions if execution.failure_kind is not None)
-    selection_failures = sum(
-        1 for execution in executions if execution.score is not None and not execution.score.passed
-    )
-    summary["planned_observations"] = planned_observations
-    summary["completed_observations"] = sum(
-        1 for execution in executions if execution.score is not None
-    )
-    summary["adapter_failures"] = adapter_failures
-    summary["selection_failures"] = selection_failures
-    threshold_outcome = evaluate_thresholds(summary, thresholds)
-    completed_observations = int(summary["completed_observations"])
-    summary["cost_coverage"] = (
-        cost_observations / completed_observations if completed_observations else 0.0
-    )
-    summary["pipeline_passed"] = (
-        adapter_failures == 0 and selection_failures == 0 and threshold_outcome.passed
-    )
-
-    return EvaluationReport(
-        configuration=configuration,
-        source_revision=source_revision,
-        repeats=repeats,
-        executions=tuple(executions),
-        usage={
-            "total_tool_calls": total_tool_calls,
-            "total_tokens": total_tokens,
-            "total_cost_micros": total_cost_micros,
-            "token_observations": token_observations,
-            "cost_observations": cost_observations,
-        },
-        summary=summary,
-        threshold_outcome=threshold_outcome,
-    )
+    final_report = report(complete=True)
+    if checkpoint is not None:
+        checkpoint(final_report)
+    return final_report
 
 
 def validate_sanitized_evidence(value: object) -> None:
