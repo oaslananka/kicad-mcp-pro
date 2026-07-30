@@ -10,6 +10,16 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.29.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.29.1...mcp-server-v3.29.2) (2026-07-30)
+
+
+### Bug Fixes
+
+* classify KiCad 10 courtyard violations ([#497](https://github.com/oaslananka/kicad-mcp-pro/issues/497)) ([03238ca](https://github.com/oaslananka/kicad-mcp-pro/commit/03238cae9a22b1cfb72df1c5fe4d552a54aaa90a))
+* map live pads to footprint references ([#502](https://github.com/oaslananka/kicad-mcp-pro/issues/502)) ([4fcbe5c](https://github.com/oaslananka/kicad-mcp-pro/commit/4fcbe5c8db2cd647335afaebf2c0b4b398c98bcb))
+* share project-aware footprint resolution ([#504](https://github.com/oaslananka/kicad-mcp-pro/issues/504)) ([cd83a35](https://github.com/oaslananka/kicad-mcp-pro/commit/cd83a35ff2a834f05679e639abd6d5439fd98e76))
+* verify footprint rotation updates ([#500](https://github.com/oaslananka/kicad-mcp-pro/issues/500)) ([e45113f](https://github.com/oaslananka/kicad-mcp-pro/commit/e45113fe31fc91a50875ba7870ec078d49e691f4))
+
 ## [3.29.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.29.0...mcp-server-v3.29.1) (2026-07-27)
 
 
