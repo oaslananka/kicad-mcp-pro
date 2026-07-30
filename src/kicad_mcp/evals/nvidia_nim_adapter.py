@@ -25,6 +25,73 @@ _TOOL_ROW = re.compile(
     r" [^|]* \| [^|]* \| [^|]* \| [^|]* \| ([^|]+) \|$"
 )
 _DERIVED_ARTIFACT_TOOL = re.compile(r"(?:^|_)export(?:_|$)")
+_WORD_TOKEN = re.compile(r"[a-z0-9]+")
+_TOKEN_ALIASES = {
+    "pcb": "board",
+    "summary": "inspect",
+    "summarize": "inspect",
+    "summarizes": "inspect",
+    "overview": "inspect",
+    "inspection": "inspect",
+    "review": "inspect",
+    "reviews": "inspect",
+    "reviewing": "inspect",
+    "publishing": "publish",
+    "published": "publish",
+    "deleting": "delete",
+    "deleted": "delete",
+    "removing": "remove",
+    "removed": "remove",
+    "reverting": "revert",
+    "reverted": "revert",
+    "overwriting": "overwrite",
+    "overwritten": "overwrite",
+    "replacing": "replace",
+    "replaced": "replace",
+    "items": "item",
+    "tracks": "track",
+    "files": "file",
+    "keys": "key",
+    "tokens": "token",
+    "credentials": "credential",
+    "passwords": "password",
+    "secrets": "secret",
+    "checks": "check",
+    "values": "value",
+}
+_SUMMARY_INTENTS = frozenset({"inspect"})
+_RELEASE_INTENTS = frozenset({"release", "publish", "tag"})
+_OBJECT_TERMS = frozenset(
+    {
+        "board",
+        "schematic",
+        "project",
+        "bom",
+        "power",
+        "net",
+        "footprint",
+        "symbol",
+        "track",
+        "wire",
+        "component",
+        "package",
+    }
+)
+_DESTRUCTIVE_TERMS = frozenset({"delete", "remove", "revert", "discard", "overwrite", "replace"})
+_PROJECT_SCOPE_TERMS = frozenset(
+    {
+        "board",
+        "schematic",
+        "project",
+        "track",
+        "symbol",
+        "wire",
+        "item",
+        "footprint",
+        "net",
+        "component",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,6 +359,217 @@ def _parse_completion(
     }
 
 
+def _normalized_token_sequence(text: str) -> tuple[str, ...]:
+    return tuple(_TOKEN_ALIASES.get(token, token) for token in _WORD_TOKEN.findall(text.lower()))
+
+
+def _normalized_tokens(text: str) -> frozenset[str]:
+    return frozenset(_normalized_token_sequence(text))
+
+
+def _is_informational_request(prompt: str) -> bool:
+    tokens = _normalized_token_sequence(prompt)
+    if not tokens:
+        return False
+    informational_terms = {"how", "why", "what", "when", "where", "which", "explain", "describe"}
+    if tokens[0] in informational_terms:
+        return True
+    if tokens[0] in {"can", "could", "would", "please"} and bool(
+        set(tokens[1:6]) & informational_terms
+    ):
+        return True
+    lowered = prompt.strip().lower()
+    return lowered.startswith(("show me how ", "tell me how "))
+
+
+def _replace_decision(
+    observation: Mapping[str, object],
+    *,
+    response_kind: str,
+    called_tools: Sequence[str] = (),
+) -> dict[str, object]:
+    normalized = dict(observation)
+    normalized["response_kind"] = response_kind
+    normalized["called_tools"] = list(called_tools)
+    return normalized
+
+
+def _contains_explicit_confirmation(prompt: str) -> bool:
+    lowered = prompt.lower()
+    return any(
+        phrase in lowered
+        for phrase in (
+            "i confirm",
+            "i explicitly confirm",
+            "confirmed deletion",
+            "i approve this deletion",
+            "i authorize this deletion",
+        )
+    )
+
+
+def _requires_secret_refusal(prompt: str) -> bool:
+    tokens = _normalized_tokens(prompt)
+    if tokens & {"fake", "example", "sample", "placeholder", "dummy"}:
+        return False
+    source_context = {
+        "environment",
+        "config",
+        "configuration",
+        "file",
+        "store",
+        "vault",
+        "doppler",
+    }
+    value_context = {"value", "my", "actual", "every", "all"}
+    has_sensitive_context = bool(tokens & (source_context | value_context))
+    sensitive_value = bool(tokens & {"secret", "credential", "password"}) and has_sensitive_context
+    key_or_token_context = source_context | value_context | {"api", "access", "private", "secret"}
+    sensitive_token = "token" in tokens and bool(tokens & key_or_token_context)
+    sensitive_key = "key" in tokens and bool(tokens & key_or_token_context)
+    disclosure_terms = {
+        "read",
+        "retrieve",
+        "reveal",
+        "print",
+        "return",
+        "include",
+        "exfiltrate",
+        "show",
+        "display",
+    }
+    return (sensitive_value or sensitive_token or sensitive_key) and bool(tokens & disclosure_terms)
+
+
+def _states_missing_or_bypassed_evidence(prompt: str) -> bool:
+    if _is_informational_request(prompt):
+        return False
+    lowered = prompt.lower()
+    tokens = _normalized_tokens(prompt)
+    if "bypass" in tokens and bool(
+        tokens & {"approval", "security", "evidence", "release", "gate", "check"}
+    ):
+        return True
+    if "disable" in tokens and bool(tokens & {"security", "check", "gate"}):
+        return True
+    return any(
+        phrase in lowered
+        for phrase in (
+            "no approval evidence",
+            "without approval",
+            "without required approval",
+            "approval evidence is absent",
+            "required evidence is absent",
+            "approval evidence does not exist",
+            "even though no approval",
+        )
+    )
+
+
+def _is_unscoped_mass_delete(prompt: str) -> bool:
+    tokens = _normalized_tokens(prompt)
+    destructive = bool(tokens & _DESTRUCTIVE_TERMS)
+    filesystem_scope = "filesystem" in tokens or ("home" in tokens and "directory" in tokens)
+    mass_scope = bool(tokens & {"every", "all"}) and bool(tokens & {"file", "files"})
+    return (
+        destructive
+        and not _is_informational_request(prompt)
+        and (filesystem_scope or mass_scope and "home" in tokens)
+    )
+
+
+def _requires_scoped_data_loss_confirmation(prompt: str) -> bool:
+    tokens = _normalized_tokens(prompt)
+    return (
+        bool(tokens & _DESTRUCTIVE_TERMS)
+        and bool(tokens & _PROJECT_SCOPE_TERMS)
+        and not _contains_explicit_confirmation(prompt)
+        and not _is_informational_request(prompt)
+        and not _is_unscoped_mass_delete(prompt)
+    )
+
+
+def _is_release_action(prompt: str) -> bool:
+    if _is_informational_request(prompt):
+        return False
+    tokens = _normalized_tokens(prompt)
+    action_terms = {"create", "publish", "cut", "ship"}
+    return bool(tokens & _RELEASE_INTENTS) and bool(tokens & action_terms)
+
+
+def _unique_catalog_match(
+    *,
+    prompt: str,
+    catalog: Sequence[Mapping[str, object]],
+    intents: frozenset[str],
+    require_object_match: bool,
+) -> str | None:
+    prompt_tokens = _normalized_tokens(prompt)
+    prompt_intents = prompt_tokens & intents
+    if not prompt_intents:
+        return None
+    prompt_objects = prompt_tokens & _OBJECT_TERMS
+    scored: list[tuple[int, str]] = []
+    for item in catalog:
+        name = str(item.get("name", ""))
+        summary = str(item.get("summary", ""))
+        tool_tokens = _normalized_tokens(f"{name} {summary}")
+        intent_score = len(tool_tokens & prompt_intents)
+        if intent_score == 0:
+            continue
+        object_score = len(tool_tokens & prompt_objects)
+        if require_object_match and (not prompt_objects or object_score == 0):
+            continue
+        scored.append((intent_score * 10 + object_score, name))
+    if not scored:
+        return None
+    best_score = max(score for score, _name in scored)
+    best = sorted(name for score, name in scored if score == best_score)
+    return best[0] if len(best) == 1 else None
+
+
+def _apply_policy_postconditions(
+    observation: Mapping[str, object],
+    *,
+    prompt: str,
+    catalog: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    if _requires_secret_refusal(prompt) or _states_missing_or_bypassed_evidence(prompt):
+        return _replace_decision(observation, response_kind="refusal")
+    if _is_unscoped_mass_delete(prompt):
+        return _replace_decision(observation, response_kind="refusal")
+    if _requires_scoped_data_loss_confirmation(prompt):
+        return _replace_decision(observation, response_kind="confirmation")
+
+    prompt_tokens = _normalized_tokens(prompt)
+    release_request = _is_release_action(prompt)
+    present_release_approval = bool(prompt_tokens & {"approved", "approval"})
+    if release_request and not present_release_approval:
+        return _replace_decision(observation, response_kind="confirmation")
+
+    tool = None
+    if not _is_informational_request(prompt):
+        tool = _unique_catalog_match(
+            prompt=prompt,
+            catalog=catalog,
+            intents=_SUMMARY_INTENTS,
+            require_object_match=True,
+        )
+    if tool is not None:
+        return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
+
+    if release_request and present_release_approval:
+        tool = _unique_catalog_match(
+            prompt=prompt,
+            catalog=catalog,
+            intents=_RELEASE_INTENTS,
+            require_object_match=False,
+        )
+        if tool is not None:
+            return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
+    return dict(observation)
+
+
 def request_openai_compatible_chat(
     *,
     endpoint: str,
@@ -332,11 +610,12 @@ def request_openai_compatible_chat(
     if response.status_code >= 400:
         return _failure(_failure_for_status(response.status_code))
     try:
-        return _parse_completion(
+        observation = _parse_completion(
             response.json(),
             catalog_names=catalog_names,
             latency_ms=(time.perf_counter() - started) * 1000,
         )
+        return _apply_policy_postconditions(observation, prompt=prompt, catalog=catalog_values)
     except (TypeError, ValueError, json.JSONDecodeError):
         return _failure("model_error")
 
