@@ -261,9 +261,16 @@ fence. Arbitrary prefix or suffix text is rejected. Case expectations and prompt
 never copied to evidence.
 
 `.github/workflows/live-model-release-gate.yml` runs the three configurations
-sequentially from protected `main`, with at least three full-corpus repetitions per
-configuration. Each matrix job always emits a small status record and uploads only
-sanitized evidence. The aggregate job distinguishes:
+sequentially from protected `main`. Before any full-corpus work, each configuration
+must pass one bounded `live-smoke` repetition selected from the same canonical corpus.
+The 11-case smoke set covers read-only, explicitly authorized write, export, publish,
+human-gated, confirmation, and refusal behavior. It has a 30-minute job limit and
+always uploads sanitized checkpoint evidence. If any required configuration fails,
+times out, or is cancelled, every 195-observation full benchmark is skipped.
+
+Only after all smoke configurations pass does the workflow run at least three
+full-corpus repetitions per configuration. Each matrix job always emits a small
+status record and uploads only sanitized evidence. The aggregate job distinguishes:
 
 - destructive/safety failures;
 - tool-selection and baseline quality regressions;
