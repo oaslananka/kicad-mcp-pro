@@ -16,6 +16,7 @@ from .tool_selection import all_referenced_tools, load_cases
 
 NVIDIA_NIM_CHAT_COMPLETIONS_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 StructuredOutputMode = Literal["none", "guided_json", "json_schema"]
+_NEMOTRON_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 _MISTRAL_MEDIUM_MODEL = "mistralai/mistral-medium-3.5-128b"
 _GEMMA_MODEL = "google/gemma-4-31b-it"
 _RESPONSE_KINDS = frozenset({"tool_calls", "answer", "confirmation", "refusal"})
@@ -138,7 +139,9 @@ def build_chat_payload(
         "max_tokens": 256,
         "stream": False,
     }
-    if model == _MISTRAL_MEDIUM_MODEL:
+    if model == _NEMOTRON_MODEL:
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
+    elif model == _MISTRAL_MEDIUM_MODEL:
         payload["reasoning_effort"] = "none"
     elif model == _GEMMA_MODEL:
         payload["chat_template_kwargs"] = {"enable_thinking": False}

@@ -276,7 +276,7 @@ def test_hosted_model_profiles_disable_unneeded_reasoning() -> None:
     assert mistral["reasoning_effort"] == "none"
     assert gemma["chat_template_kwargs"] == {"enable_thinking": False}
     assert "reasoning_effort" not in nemotron
-    assert "chat_template_kwargs" not in nemotron
+    assert nemotron["chat_template_kwargs"] == {"enable_thinking": False}
 
 
 def test_nim_request_accepts_a_single_json_code_fence() -> None:

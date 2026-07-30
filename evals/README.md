@@ -240,9 +240,9 @@ contains three reviewed cross-publisher NVIDIA NIM records:
 These are specific NVIDIA-hosted sample configurations, not a claim that one host,
 publisher, or model family represents universal model quality. Hosted records use
 `--structured-output none`, so each adapter attempt sends exactly one request with
-only model-documented fields. Mistral reasoning is disabled with
-`reasoning_effort: none`; Gemma thinking is disabled with
-`chat_template_kwargs.enable_thinking: false`. Explicit self-hosted integrations may
+only model-documented fields. Nemotron and Gemma thinking are disabled with
+`chat_template_kwargs.enable_thinking: false`; Mistral reasoning is disabled with
+`reasoning_effort: none`. Explicit self-hosted integrations may
 select `guided_json` or `json_schema`, but the adapter never retries a rejected
 payload with a different request shape.
 
