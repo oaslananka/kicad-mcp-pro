@@ -226,7 +226,9 @@ trace, source revision, and repeat count produce byte-identical JSON.
 without secrets. Live mode is restricted to `main` and the protected
 `live-model-evals` environment. Provider credentials are synchronized from Doppler
 into that GitHub environment and are injected only into the billed job. The
-workflow does not require a long-lived Doppler token in GitHub Actions.
+workflow does not require a long-lived Doppler token in GitHub Actions. Manual runs
+default to the full corpus; the `smoke` scope selects only the canonical `live-smoke`
+subset for bounded per-configuration diagnostics without changing release-gate policy.
 
 Live adapter configuration records are versioned in
 [`live/configurations.yaml`](live/configurations.yaml) and contain no credential

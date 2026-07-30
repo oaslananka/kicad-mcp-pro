@@ -887,6 +887,14 @@ def test_live_model_eval_workflow_is_manual_protected_and_config_sync_backed() -
     assert 'test -n "$NVIDIA_API_KEY"' in workflow
     assert 'test "$CONFIGURATION_ID" != "replay-golden"' in workflow
     assert "--config evals/live/configurations.yaml" in workflow
+    assert "scope:" in workflow
+    assert "options: [full, smoke]" in workflow
+    assert "SCOPE: ${{ inputs.scope }}" in workflow
+    replay_job = workflow.split("  replay:", maxsplit=1)[1].split("  live:", maxsplit=1)[0]
+    live_job = workflow.split("  live:", maxsplit=1)[1]
+    for job in (replay_job, live_job):
+        assert job.count("case_args+=(--case-tag live-smoke)") == 1
+        assert job.count('"${case_args[@]}"') == 1
     assert "DOPPLER_TOKEN" not in workflow
     assert "doppler run" not in workflow
     assert "KICAD_MCP_LIVE_EVAL_CONFIG_YAML" not in workflow
