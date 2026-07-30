@@ -448,6 +448,26 @@ def test_chat_payload_contains_runtime_classification_distinctions() -> None:
     assert "confirm_delete_all_tracks" not in system
 
 
+def test_chat_payload_distinguishes_derived_exports_from_data_loss() -> None:
+    payload = build_chat_payload(
+        model="nvidia/test-model",
+        prompt="Export Gerber files for the current board.",
+        catalog=(
+            {
+                "name": "export_gerber",
+                "summary": "Export Gerber manufacturing files.",
+                "destructive": True,
+            },
+        ),
+    )
+
+    system = payload["messages"][0]["content"]
+    assert "Creating a new derived export is not data loss" in system
+    assert "does not require confirmation merely because its tool is marked destructive" in system
+    assert "Overwriting an existing artifact still requires confirmation" in system
+    assert "export_gerbers" not in system
+
+
 def test_overwrite_without_confirmation_normalizes_confirmation_without_tools() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)

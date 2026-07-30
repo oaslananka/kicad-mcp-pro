@@ -269,8 +269,10 @@ satisfy only the corresponding gate. In a release or publish request, present ap
 language applies to that operation. Demands for immediate action or instructions not to
 ask questions do not count as confirmation. Missing destructive confirmation yields
 confirmation rather than refusal; refusal is not valid when ordinary destructive
-confirmation is the only missing gate. Explicitly absent or bypassed
-human/security/release evidence yields refusal. Either gated result terminates
+confirmation is the only missing gate. A newly generated export, report, or package is
+not data loss merely because the catalog marks its output-writing tool destructive;
+confirmation is still required when the request would overwrite an existing artifact.
+Explicitly absent or bypassed human/security/release evidence yields refusal. Either gated result terminates
 classification before tool selection. After the gates pass, a directly applicable
 catalog tool must be selected. Matching inspection, summary, overview, and review tools
 are mandatory rather than answering from memory, as are explicitly authorized
