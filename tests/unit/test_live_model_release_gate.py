@@ -343,6 +343,7 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     for config_id in CONFIG_IDS:
         assert config_id in workflow
     for experimental_id in (
+        "nvidia-llama-3-3-70b-instruct",
         "opencode-deepseek-v4-flash-free",
         "opencode-mimo-v2-5-free",
         "opencode-north-mini-code-free",
