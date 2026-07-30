@@ -405,13 +405,47 @@ def test_chat_payload_contains_generic_confirmation_and_human_gate_policy() -> N
     assert "Never call a tool until all applicable gates pass" in system
     assert "Missing destructive confirmation must be confirmation, not refusal" in system
     assert "required human approval, security evidence, or release evidence is absent" in system
-    assert "read-only inspect, summarize, or review requests" in system
+    assert "inspect, summarize, overview, or review" in system
     assert "Use response_kind=answer only when no supplied catalog tool directly applies" in system
     assert "confirm_overwrite_project" not in system
     assert "refuse_release_without_approval" not in system
     assert "expected_tools" not in system
     assert "forbidden_tools" not in system
     assert "notes" not in system
+
+
+def test_chat_payload_contains_runtime_classification_distinctions() -> None:
+    payload = build_chat_payload(
+        model="nvidia/test-model",
+        prompt="Summarize the current board.",
+        catalog=(
+            {
+                "name": "pcb_get_board_summary",
+                "summary": "Summarize the current board.",
+                "destructive": False,
+            },
+            {
+                "name": "vcs_tag_release",
+                "summary": "Create an approved release tag.",
+                "destructive": False,
+            },
+            {
+                "name": "pcb_delete_items",
+                "summary": "Delete PCB items by UUID.",
+                "destructive": True,
+            },
+        ),
+    )
+
+    system = payload["messages"][0]["content"]
+    assert "must not answer from memory" in system
+    assert "inspect, summarize, overview, or review" in system
+    assert "the word approved in a release or publish request" in system
+    assert "Refusal is forbidden for an ordinary destructive request" in system
+    assert "lack of confirmation requires confirmation" in system
+    assert "board_overview" not in system
+    assert '"case_id":"tag_release"' not in system
+    assert "confirm_delete_all_tracks" not in system
 
 
 def test_overwrite_without_confirmation_normalizes_confirmation_without_tools() -> None:
