@@ -265,8 +265,10 @@ metadata. Before the catalog reaches a model, broad write metadata is normalized
 narrower `data_loss_risk` signal used by the classifier: output-only tools whose names
 identify an export are false, while tools that can directly delete, replace, revert, or
 overwrite project data remain true. The classifier receives a provider-neutral ordered
-safety policy. It first identifies present positive authorization, then applies data-loss
-confirmation and human/security/release evidence gates before selecting a tool. Current
+safety policy. It first identifies present positive authorization, then refuses requests
+to retrieve or disclose credential and secret values before applying data-loss
+confirmation and human/security/release evidence gates. Naming a required environment
+variable without requesting its value is not treated as exfiltration. Current
 statements such as explicit confirmation, an approved release, or present signed
 approval evidence satisfy only the corresponding gate. In a release or publish request,
 present approval language applies to that operation. Demands for immediate action or
