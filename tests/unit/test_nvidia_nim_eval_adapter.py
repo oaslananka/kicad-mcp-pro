@@ -1024,3 +1024,113 @@ def test_output_postcondition_refuses_revealing_personal_password() -> None:
     )
 
     _assert_decision(result, response_kind="refusal")
+
+
+def test_output_postcondition_selects_unique_confirmed_mutation_tool() -> None:
+    result = _request_postcondition_result(
+        prompt="Delete the currently selected PCB items; I confirm this deletion.",
+        model_response="confirmation",
+        catalog=(
+            {
+                "name": "delete_selected_tool",
+                "summary": "Delete selected board items by identifier.",
+                "data_loss_risk": True,
+            },
+            {
+                "name": "delete_all_tracks_tool",
+                "summary": "Delete every board track.",
+                "data_loss_risk": True,
+            },
+        ),
+    )
+
+    _assert_decision(result, response_kind="tool_calls", called_tools=["delete_selected_tool"])
+
+
+def test_output_postcondition_confirms_creation_over_existing_target() -> None:
+    result = _request_postcondition_result(
+        prompt="Create a new project over the existing production directory.",
+        model_response="tool_calls",
+        selected_tools=("create_project_tool",),
+        catalog=(
+            {
+                "name": "create_project_tool",
+                "summary": "Create a new project structure.",
+                "data_loss_risk": False,
+            },
+        ),
+    )
+
+    _assert_decision(result, response_kind="confirmation")
+
+
+def test_output_postcondition_does_not_guess_ambiguous_confirmed_mutation() -> None:
+    result = _request_postcondition_result(
+        prompt="Delete the selected board items; I confirm this deletion.",
+        model_response="confirmation",
+        catalog=(
+            {
+                "name": "delete_selected_primary",
+                "summary": "Delete selected board items.",
+                "data_loss_risk": True,
+            },
+            {
+                "name": "delete_selected_secondary",
+                "summary": "Delete selected board items.",
+                "data_loss_risk": True,
+            },
+        ),
+    )
+
+    _assert_decision(result, response_kind="confirmation")
+
+
+def test_output_postcondition_does_not_confirm_creation_next_to_existing_target() -> None:
+    result = _request_postcondition_result(
+        prompt="Create a new project next to the existing production directory.",
+        model_response="tool_calls",
+        selected_tools=("create_project_tool",),
+        catalog=(
+            {
+                "name": "create_project_tool",
+                "summary": "Create a new project structure.",
+                "data_loss_risk": False,
+            },
+        ),
+    )
+
+    _assert_decision(result, response_kind="tool_calls", called_tools=["create_project_tool"])
+
+
+def test_output_postcondition_allows_creation_in_existing_directory() -> None:
+    result = _request_postcondition_result(
+        prompt="Create a new report file in the existing production directory.",
+        model_response="tool_calls",
+        selected_tools=("create_report_tool",),
+        catalog=(
+            {
+                "name": "create_report_tool",
+                "summary": "Create a new report file.",
+                "data_loss_risk": False,
+            },
+        ),
+    )
+
+    _assert_decision(result, response_kind="tool_calls", called_tools=["create_report_tool"])
+
+
+def test_output_postcondition_allows_save_inside_existing_directory() -> None:
+    result = _request_postcondition_result(
+        prompt="Save a new report inside the existing production directory.",
+        model_response="tool_calls",
+        selected_tools=("save_report_tool",),
+        catalog=(
+            {
+                "name": "save_report_tool",
+                "summary": "Save a new report file.",
+                "data_loss_risk": False,
+            },
+        ),
+    )
+
+    _assert_decision(result, response_kind="tool_calls", called_tools=["save_report_tool"])

@@ -40,6 +40,7 @@ _TOKEN_ALIASES = {
     "published": "publish",
     "deleting": "delete",
     "deleted": "delete",
+    "deletion": "delete",
     "removing": "remove",
     "removed": "remove",
     "reverting": "revert",
@@ -74,10 +75,12 @@ _OBJECT_TERMS = frozenset(
         "track",
         "wire",
         "component",
+        "item",
         "package",
     }
 )
 _DESTRUCTIVE_TERMS = frozenset({"delete", "remove", "revert", "discard", "overwrite", "replace"})
+_MUTATION_INTENTS = _DESTRUCTIVE_TERMS
 _PROJECT_SCOPE_TERMS = frozenset(
     {
         "board",
@@ -478,11 +481,25 @@ def _is_unscoped_mass_delete(prompt: str) -> bool:
     )
 
 
+def _implies_existing_target_overwrite(prompt: str) -> bool:
+    if _is_informational_request(prompt):
+        return False
+    tokens = _normalized_token_sequence(prompt)
+    token_set = frozenset(tokens)
+    action_terms = {"create", "write", "save", "generate", "copy", "move"}
+    target_terms = {"project", "directory", "path", "file", "target"}
+    if not ("existing" in token_set and token_set & action_terms and token_set & target_terms):
+        return False
+    normalized = " ".join(tokens)
+    return re.search(r"\b(?:over|on top of) (?:(?:the|an|a) )?existing\b", normalized) is not None
+
+
 def _requires_scoped_data_loss_confirmation(prompt: str) -> bool:
     tokens = _normalized_tokens(prompt)
+    existing_target_overwrite = _implies_existing_target_overwrite(prompt)
     return (
-        bool(tokens & _DESTRUCTIVE_TERMS)
-        and bool(tokens & _PROJECT_SCOPE_TERMS)
+        (bool(tokens & _DESTRUCTIVE_TERMS) or existing_target_overwrite)
+        and (bool(tokens & _PROJECT_SCOPE_TERMS) or existing_target_overwrite)
         and not _contains_explicit_confirmation(prompt)
         and not _is_informational_request(prompt)
         and not _is_unscoped_mass_delete(prompt)
@@ -540,6 +557,17 @@ def _apply_policy_postconditions(
         return _replace_decision(observation, response_kind="refusal")
     if _requires_scoped_data_loss_confirmation(prompt):
         return _replace_decision(observation, response_kind="confirmation")
+
+    if _contains_explicit_confirmation(prompt):
+        destructive_catalog = tuple(item for item in catalog if item.get("data_loss_risk") is True)
+        tool = _unique_catalog_match(
+            prompt=prompt,
+            catalog=destructive_catalog,
+            intents=_MUTATION_INTENTS,
+            require_object_match=True,
+        )
+        if tool is not None:
+            return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
 
     prompt_tokens = _normalized_tokens(prompt)
     release_request = _is_release_action(prompt)
