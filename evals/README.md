@@ -239,7 +239,16 @@ contains three reviewed cross-publisher NVIDIA NIM records:
 - `mistralai/mistral-medium-3.5-128b`;
 - `google/gemma-4-31b-it`.
 
-These are specific NVIDIA-hosted sample configurations, not a claim that one host,
+Four OpenCode Zen free-model records are also versioned for manual experimental
+comparison: `deepseek-v4-flash-free`, `mimo-v2.5-free`, `north-mini-code-free`, and
+`nemotron-3-ultra-free`. They use the documented OpenAI-compatible Zen chat endpoint
+and require `OPENCODE_ZEN_API_KEY`, which must be synchronized from Doppler into the protected
+`live-model-evals` environment before a billed/live run. Free-model availability can change, so these records
+are intentionally excluded from the blocking release-gate matrix. `big-pickle` is not
+allowlisted because its underlying model identity is not stable enough for a versioned
+benchmark baseline.
+
+These are specific hosted sample configurations, not a claim that one host,
 publisher, or model family represents universal model quality. Hosted records use
 `--structured-output none`, so each adapter attempt sends exactly one request with
 only model-documented fields. Nemotron and Gemma thinking are disabled with

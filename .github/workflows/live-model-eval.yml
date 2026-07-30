@@ -114,11 +114,11 @@ jobs:
         env:
           CONFIGURATION_ID: ${{ inputs.configuration_id }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
           REPEATS: ${{ inputs.repeats }}
           SCOPE: ${{ inputs.scope }}
         run: |
           set -euo pipefail
-          test -n "$NVIDIA_API_KEY"
           mkdir -p artifacts/live-model-eval
           case_args=()
           if [[ "$SCOPE" == "smoke" ]]; then
