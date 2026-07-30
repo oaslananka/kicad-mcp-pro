@@ -281,9 +281,12 @@ human/security/release evidence yields refusal. Either gated result terminates
 classification before tool selection. After the gates pass, a directly applicable
 catalog tool must be selected. Matching inspection, summary, overview, and review tools
 are mandatory rather than answering from memory, as are explicitly authorized
-data-loss, export, or publish tools. Direct answers are reserved for requests with no
-applicable catalog tool. The policy contains no case IDs, expected tools, forbidden tools, notes,
-or answer keys.
+data-loss, export, or publish tools. Before returning, the classifier repeats these two
+postconditions: an answer is invalid when a matching inspection or summary tool exists,
+and a refusal is invalid for an approved release, publish, or tag request when matching
+tooling exists and no missing or bypassed evidence is stated. Direct answers are reserved
+for requests with no applicable catalog tool. The policy contains no case IDs, expected
+tools, forbidden tools, notes, or answer keys.
 Model output must be one JSON object, optionally wrapped by one exact `json` code
 fence. Arbitrary prefix or suffix text is rejected. Case expectations and prompts are
 never copied to evidence.
