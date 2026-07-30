@@ -688,6 +688,23 @@ COMMITTED_CASES = ROOT / "evals/tool_selection/cases.yaml"
 COMMITTED_THRESHOLDS = ROOT / "evals/tool_selection/thresholds.yaml"
 
 
+def test_committed_meta_llama_candidate_is_nonblocking_and_key_scoped() -> None:
+    configurations = load_configurations(COMMITTED_LIVE_CONFIG)
+    configuration = configurations["nvidia-llama-3-3-70b-instruct"]
+
+    assert configuration.host == "nvidia-nim"
+    assert configuration.model == "meta/llama-3.3-70b-instruct"
+    assert configuration.required_env == ("NVIDIA_API_KEY",)
+    assert configuration.command == (
+        "python",
+        "scripts/nvidia_nim_eval_adapter.py",
+        "--model",
+        "meta/llama-3.3-70b-instruct",
+        "--structured-output",
+        "none",
+    )
+
+
 def test_committed_opencode_configurations_are_experimental_and_key_scoped() -> None:
     configurations = load_configurations(COMMITTED_LIVE_CONFIG)
     expected = {
