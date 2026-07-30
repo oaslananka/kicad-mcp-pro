@@ -688,6 +688,23 @@ COMMITTED_CASES = ROOT / "evals/tool_selection/cases.yaml"
 COMMITTED_THRESHOLDS = ROOT / "evals/tool_selection/thresholds.yaml"
 
 
+def test_committed_opencode_configurations_are_experimental_and_key_scoped() -> None:
+    configurations = load_configurations(COMMITTED_LIVE_CONFIG)
+    expected = {
+        "opencode-deepseek-v4-flash-free": "deepseek-v4-flash-free",
+        "opencode-mimo-v2-5-free": "mimo-v2.5-free",
+        "opencode-north-mini-code-free": "north-mini-code-free",
+        "opencode-nemotron-3-ultra-free": "nemotron-3-ultra-free",
+    }
+
+    for configuration_id, model in expected.items():
+        configuration = configurations[configuration_id]
+        assert configuration.host == "opencode-zen"
+        assert configuration.model == model
+        assert configuration.required_env == ("OPENCODE_ZEN_API_KEY",)
+        assert configuration.command[:2] == ("python", "scripts/opencode_zen_eval_adapter.py")
+
+
 def test_committed_replay_configuration_exercises_complete_pipeline(tmp_path: Path) -> None:
     configurations = load_configurations(COMMITTED_LIVE_CONFIG)
     configuration = configurations["replay-golden"]
@@ -884,7 +901,8 @@ def test_live_model_eval_workflow_is_manual_protected_and_config_sync_backed() -
     assert "github.ref == 'refs/heads/main'" in workflow
     assert "environment: live-model-evals" in workflow
     assert "NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}" in workflow
-    assert 'test -n "$NVIDIA_API_KEY"' in workflow
+    assert "OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}" in workflow
+    assert 'test -n "$NVIDIA_API_KEY"' not in workflow
     assert 'test "$CONFIGURATION_ID" != "replay-golden"' in workflow
     assert "--config evals/live/configurations.yaml" in workflow
     assert "scope:" in workflow

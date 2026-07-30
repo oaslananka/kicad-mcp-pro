@@ -342,6 +342,13 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     assert "default: 3" in workflow
     for config_id in CONFIG_IDS:
         assert config_id in workflow
+    for experimental_id in (
+        "opencode-deepseek-v4-flash-free",
+        "opencode-mimo-v2-5-free",
+        "opencode-north-mini-code-free",
+        "opencode-nemotron-3-ultra-free",
+    ):
+        assert experimental_id not in workflow
     assert "NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}" in workflow
     assert "evaluate_live_model_release_gate.py" in workflow
     assert "download-artifact@" in workflow

@@ -266,8 +266,9 @@ def _parse_completion(
     }
 
 
-def request_nvidia_nim(
+def request_openai_compatible_chat(
     *,
+    endpoint: str,
     model: str,
     prompt: str,
     api_key: str,
@@ -276,7 +277,9 @@ def request_nvidia_nim(
     transport: httpx.BaseTransport | None = None,
     structured_output: StructuredOutputMode = "none",
 ) -> dict[str, object]:
-    """Invoke NVIDIA NIM and return only the normalized adapter contract."""
+    """Invoke one reviewed OpenAI-compatible chat endpoint and sanitize the result."""
+    if not endpoint.startswith("https://"):
+        raise ValueError("OpenAI-compatible eval endpoints must use HTTPS.")
     catalog_values = _catalog_values(catalog)
     catalog_names = frozenset(str(item["name"]) for item in catalog_values)
     started = time.perf_counter()
@@ -289,7 +292,7 @@ def request_nvidia_nim(
     try:
         with httpx.Client(timeout=timeout_seconds, transport=transport) as client:
             response = client.post(
-                NVIDIA_NIM_CHAT_COMPLETIONS_URL,
+                endpoint,
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
@@ -312,11 +315,35 @@ def request_nvidia_nim(
         return _failure("model_error")
 
 
+def request_nvidia_nim(
+    *,
+    model: str,
+    prompt: str,
+    api_key: str,
+    catalog: Sequence[ToolCatalogEntry | Mapping[str, object]],
+    timeout_seconds: float = 50,
+    transport: httpx.BaseTransport | None = None,
+    structured_output: StructuredOutputMode = "none",
+) -> dict[str, object]:
+    """Invoke NVIDIA NIM through the shared sanitized chat-completions path."""
+    return request_openai_compatible_chat(
+        endpoint=NVIDIA_NIM_CHAT_COMPLETIONS_URL,
+        model=model,
+        prompt=prompt,
+        api_key=api_key,
+        catalog=catalog,
+        timeout_seconds=timeout_seconds,
+        transport=transport,
+        structured_output=structured_output,
+    )
+
+
 __all__ = [
     "NVIDIA_NIM_CHAT_COMPLETIONS_URL",
     "StructuredOutputMode",
     "ToolCatalogEntry",
     "build_chat_payload",
     "load_eval_tool_catalog",
+    "request_openai_compatible_chat",
     "request_nvidia_nim",
 ]
