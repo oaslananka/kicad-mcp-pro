@@ -497,6 +497,35 @@ def test_chat_payload_contains_runtime_classification_distinctions() -> None:
     assert "confirm_delete_all_tracks" not in system
 
 
+def test_chat_payload_rechecks_tool_applicability_before_return() -> None:
+    payload = build_chat_payload(
+        model="nvidia/test-model",
+        prompt="Review the current board and create an approved release tag.",
+        catalog=(
+            {
+                "name": "board_summary_tool",
+                "summary": "Summarize the current board.",
+                "data_loss_risk": False,
+            },
+            {
+                "name": "release_tag_tool",
+                "summary": "Create an annotated release tag after approval.",
+                "data_loss_risk": False,
+            },
+        ),
+    )
+
+    system = payload["messages"][0]["content"]
+    assert "FINAL POLICY CHECK" in system
+    assert "answer is invalid" in system
+    assert "matching inspection, summary, overview, or review tool" in system
+    assert "refusal is invalid" in system
+    assert "approved release, publish, or tag request" in system
+    assert "board_overview" not in system
+    assert "tag_release" not in system
+    assert "expected_tools" not in system
+
+
 def test_chat_payload_requires_refusal_for_secret_exfiltration() -> None:
     payload = build_chat_payload(
         model="nvidia/test-model",
