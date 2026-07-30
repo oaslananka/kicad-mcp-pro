@@ -19,6 +19,12 @@ on:
         type: number
         default: 1
         required: true
+      scope:
+        description: Evaluate the full corpus or only the canonical live-smoke subset.
+        type: choice
+        options: [full, smoke]
+        default: full
+        required: true
 
 permissions:
   contents: read
@@ -37,10 +43,12 @@ jobs:
           GITHUB_REF_VALUE: ${{ github.ref }}
           MODE: ${{ inputs.mode }}
           REPEATS: ${{ inputs.repeats }}
+          SCOPE: ${{ inputs.scope }}
         run: |
           set -euo pipefail
           test "$REPEATS" -ge 1
           test "$REPEATS" -le 5
+          [[ "$SCOPE" == "full" || "$SCOPE" == "smoke" ]]
           if [[ "$MODE" == "live" ]]; then
             test "$GITHUB_REF_VALUE" = "refs/heads/main"
             test "$CONFIGURATION_ID" != "replay-golden"
@@ -64,12 +72,18 @@ jobs:
         env:
           CONFIGURATION_ID: ${{ inputs.configuration_id }}
           REPEATS: ${{ inputs.repeats }}
+          SCOPE: ${{ inputs.scope }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/live-model-eval
+          case_args=()
+          if [[ "$SCOPE" == "smoke" ]]; then
+            case_args+=(--case-tag live-smoke)
+          fi
           uv run --all-extras python scripts/run_live_model_eval.py \
             --configuration "$CONFIGURATION_ID" \
             --repeats "$REPEATS" \
+            "${case_args[@]}" \
             --source-revision "$GITHUB_SHA" \
             --output artifacts/live-model-eval/evidence.json
       - name: Upload sanitized replay evidence
@@ -101,14 +115,20 @@ jobs:
           CONFIGURATION_ID: ${{ inputs.configuration_id }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           REPEATS: ${{ inputs.repeats }}
+          SCOPE: ${{ inputs.scope }}
         run: |
           set -euo pipefail
           test -n "$NVIDIA_API_KEY"
           mkdir -p artifacts/live-model-eval
+          case_args=()
+          if [[ "$SCOPE" == "smoke" ]]; then
+            case_args+=(--case-tag live-smoke)
+          fi
           uv run --all-extras python scripts/run_live_model_eval.py \
             --config evals/live/configurations.yaml \
             --configuration "$CONFIGURATION_ID" \
             --repeats "$REPEATS" \
+            "${case_args[@]}" \
             --source-revision "$GITHUB_SHA" \
             --output artifacts/live-model-eval/evidence.json
       - name: Upload sanitized live evidence
