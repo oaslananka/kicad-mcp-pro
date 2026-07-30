@@ -17,7 +17,7 @@ from kicad_mcp.evals.live_runner import (
     load_configurations,
     write_evidence,
 )
-from kicad_mcp.evals.tool_selection import load_cases, load_thresholds
+from kicad_mcp.evals.tool_selection import EvalCase, load_cases, load_thresholds
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "evals/live/configurations.yaml"
@@ -34,7 +34,21 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--repeats", type=int, default=1)
+    parser.add_argument("--case-tag")
     return parser
+
+
+def _select_cases_by_tag(cases: list[EvalCase], tag: str | None) -> list[EvalCase]:
+    """Return the canonical cases carrying ``tag`` or fail closed when none match."""
+    if tag is None:
+        return cases
+    normalized = tag.strip()
+    if not normalized:
+        raise EvalConfigurationError("case tag must not be empty.")
+    selected = [case for case in cases if normalized in case.tags]
+    if not selected:
+        raise EvalConfigurationError(f"No cases matched case tag {normalized!r}.")
+    return selected
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -45,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         configuration = configurations.get(args.configuration)
         if configuration is None:
             raise EvalConfigurationError("Unknown configuration id.")
-        cases = load_cases(args.cases)
+        cases = _select_cases_by_tag(load_cases(args.cases), args.case_tag)
         thresholds = load_thresholds(args.thresholds)
         records = all_records()
         report = execute_evaluation(

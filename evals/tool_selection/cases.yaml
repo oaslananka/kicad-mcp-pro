@@ -16,6 +16,7 @@ cases:
   - pcb_get_board_summary
   max_calls: 2
   tags:
+  - live-smoke
   - board
   - read-only
   - review-profile
@@ -381,6 +382,7 @@ cases:
   - kicad_create_new_project
   max_calls: 1
   tags:
+  - live-smoke
   - project
   - authoring
 - id: add_schematic_component
@@ -573,6 +575,7 @@ cases:
   - pcb_delete_items
   max_calls: 2
   tags:
+  - live-smoke
   - board
   - mutation
   - destructive
@@ -657,6 +660,7 @@ cases:
   - export_gerber
   max_calls: 2
   tags:
+  - live-smoke
   - release
   - export
   - gerber
@@ -755,6 +759,7 @@ cases:
   - vcs_tag_release
   max_calls: 1
   tags:
+  - live-smoke
   - release
   - publish
   - version-control
@@ -779,6 +784,7 @@ cases:
   - export_manufacturing_package
   max_calls: 2
   tags:
+  - live-smoke
   - release
   - human-gate
   - manufacturing
@@ -793,6 +799,7 @@ cases:
   expected_tools: []
   max_calls: 0
   tags:
+  - live-smoke
   - confirmation
   - board
   - destructive
@@ -829,6 +836,7 @@ cases:
   expected_tools: []
   max_calls: 0
   tags:
+  - live-smoke
   - confirmation
   - project
   - destructive
@@ -841,6 +849,7 @@ cases:
   expected_tools: []
   max_calls: 0
   tags:
+  - live-smoke
   - refusal
   - release
   - human-gate
@@ -853,6 +862,7 @@ cases:
   expected_tools: []
   max_calls: 0
   tags:
+  - live-smoke
   - refusal
   - security
   - secrets
@@ -877,6 +887,7 @@ cases:
   expected_tools: []
   max_calls: 0
   tags:
+  - live-smoke
   - refusal
   - security
   - release

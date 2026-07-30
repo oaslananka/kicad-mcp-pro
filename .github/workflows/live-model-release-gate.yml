@@ -30,8 +30,105 @@ jobs:
           test "$REPEATS" -ge 3
           test "$REPEATS" -le 5
 
-  benchmark:
+  smoke:
+    name: Live model smoke (${{ matrix.configuration }})
     needs: guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: live-model-evals
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        configuration:
+          - nvidia-nemotron-3-nano-30b-a3b
+          - nvidia-mistral-medium-3-5-128b
+          - nvidia-gemma-4-31b-it
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - name: Run bounded live smoke
+        env:
+          CONFIGURATION_ID: ${{ matrix.configuration }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$NVIDIA_API_KEY"
+          mkdir -p artifacts/live-model-smoke
+          python - "$CONFIGURATION_ID" "$GITHUB_SHA" <<'PY'
+          import json
+          import pathlib
+          import sys
+          pathlib.Path("artifacts/live-model-smoke/status.json").write_text(
+              json.dumps(
+                  {
+                      "configuration_id": sys.argv[1],
+                      "source_revision": sys.argv[2],
+                      "state": "running",
+                      "runner_exit_code": None,
+                  },
+                  sort_keys=True,
+              ) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          set +e
+          uv run --all-extras python scripts/run_live_model_eval.py \
+            --config evals/live/configurations.yaml \
+            --configuration "$CONFIGURATION_ID" \
+            --repeats 1 \
+            --case-tag live-smoke \
+            --source-revision "$GITHUB_SHA" \
+            --output artifacts/live-model-smoke/evidence.json
+          exit_code=$?
+          set -e
+          python - "$CONFIGURATION_ID" "$GITHUB_SHA" "$exit_code" <<'PY'
+          import json
+          import pathlib
+          import sys
+          pathlib.Path("artifacts/live-model-smoke/status.json").write_text(
+              json.dumps(
+                  {
+                      "configuration_id": sys.argv[1],
+                      "source_revision": sys.argv[2],
+                      "state": "completed",
+                      "runner_exit_code": int(sys.argv[3]),
+                  },
+                  sort_keys=True,
+              ) + "\n",
+              encoding="utf-8",
+          )
+          PY
+      - name: Upload sanitized smoke evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: live-model-smoke-${{ matrix.configuration }}-${{ github.run_id }}
+          path: artifacts/live-model-smoke
+          if-no-files-found: error
+          retention-days: 7
+      - name: Enforce smoke result
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import pathlib
+          status = json.loads(
+              pathlib.Path("artifacts/live-model-smoke/status.json").read_text(encoding="utf-8")
+          )
+          if status.get("state") != "completed" or status.get("runner_exit_code") != 0:
+              raise SystemExit("live-model smoke did not pass")
+          PY
+
+  benchmark:
+    needs: smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     environment: live-model-evals
@@ -113,8 +210,8 @@ jobs:
           retention-days: 14
 
   aggregate:
-    if: always()
-    needs: benchmark
+    if: ${{ always() && needs.smoke.result == 'success' }}
+    needs: [smoke, benchmark]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

@@ -9,6 +9,7 @@ import yaml
 
 from kicad_mcp.evals.live_config import load_configurations
 from kicad_mcp.evals.release_gate import evaluate_release_gate, write_release_gate_report
+from kicad_mcp.evals.tool_selection import load_cases
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIGURATIONS = ROOT / "evals/live/configurations.yaml"
@@ -281,6 +282,33 @@ def test_committed_live_configurations_are_three_reviewed_nim_records() -> None:
         assert configuration.limits.max_cases >= 195
 
 
+def test_committed_live_smoke_subset_is_bounded_balanced_and_canonical() -> None:
+    cases = load_cases(CASES)
+    smoke = [case for case in cases if "live-smoke" in case.tags]
+    ids = {case.id for case in smoke}
+
+    assert 8 <= len(smoke) <= 12
+    assert len(ids) == len(smoke)
+    assert {
+        "read_only",
+        "write",
+        "export",
+        "publish",
+        "human_only",
+        "no_tool",
+    } <= {case.safety for case in smoke}
+    assert {"tool_calls", "confirmation", "refusal"} <= {case.expected_behavior for case in smoke}
+    assert {
+        "board_overview",
+        "delete_selected_items",
+        "approved_manufacturing_package",
+        "confirm_overwrite_project",
+        "refuse_release_without_approval",
+        "refuse_secret_exfiltration",
+        "refuse_disable_security_gate",
+    } <= ids
+
+
 def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     workflow = (ROOT / ".github/workflows/live-model-release-gate.yml").read_text(encoding="utf-8")
 
@@ -291,6 +319,22 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     assert "environment: live-model-evals" in workflow
     assert "max-parallel: 1" in workflow
     assert "fail-fast: false" in workflow
+    assert "smoke:" in workflow
+    assert workflow.index("  smoke:") < workflow.index("  benchmark:")
+    smoke_block = workflow.split("  smoke:", 1)[1].split("  benchmark:", 1)[0]
+    benchmark_block = workflow.split("  benchmark:", 1)[1].split("  aggregate:", 1)[0]
+    aggregate_block = workflow.split("  aggregate:", 1)[1]
+    assert "fail-fast: true" in smoke_block
+    assert "fail-fast: false" in benchmark_block
+    assert "needs: [smoke, benchmark]" in aggregate_block
+    assert "if: ${{ always() && needs.smoke.result == 'success' }}" in aggregate_block
+    assert "timeout-minutes: 30" in workflow
+    assert "--case-tag live-smoke" in workflow
+    assert "--repeats 1" in workflow
+    assert "Upload sanitized smoke evidence\n        if: always()" in workflow
+    assert "live-model-smoke-${{ matrix.configuration }}-${{ github.run_id }}" in workflow
+    assert "name: Enforce smoke result" in workflow
+    assert "needs: smoke" in workflow
     assert "timeout-minutes: 180" in workflow
     assert '"state": "running"' in workflow
     assert '"runner_exit_code": None' in workflow
