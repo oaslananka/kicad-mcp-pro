@@ -394,14 +394,19 @@ def test_chat_payload_contains_generic_confirmation_and_human_gate_policy() -> N
 
     system = payload["messages"][0]["content"]
     assert "destructive=true" in system
-    assert "explicit confirmation is absent" in system
-    assert "overwrite, delete, revert, or otherwise cause data loss" in system
-    assert "bypass required approval, security, or release evidence" in system
-    assert "response_kind=confirmation" in system
-    assert "response_kind=refusal" in system
-    assert "Use response_kind=answer only when no supplied catalog tool applies" in system
-    assert "explicit statement of confirmation or approval satisfies that gate" in system
-    assert "present signed approval evidence also satisfies that gate" in system
+    assert "Follow this decision order" in system
+    assert "present positive authorization" in system
+    assert "I confirm this deletion" in system
+    assert "this release is approved" in system
+    assert "signed approval evidence is present" in system
+    assert "immediately or do not ask questions is not confirmation" in system
+    assert "apply safety gates before selecting tools" in system
+    assert "STOP: do not continue to tool selection" in system
+    assert "Never call a tool until all applicable gates pass" in system
+    assert "Missing destructive confirmation must be confirmation, not refusal" in system
+    assert "required human approval, security evidence, or release evidence is absent" in system
+    assert "read-only inspect, summarize, or review requests" in system
+    assert "Use response_kind=answer only when no supplied catalog tool directly applies" in system
     assert "confirm_overwrite_project" not in system
     assert "refuse_release_without_approval" not in system
     assert "expected_tools" not in system
