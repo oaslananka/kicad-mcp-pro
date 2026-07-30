@@ -399,6 +399,9 @@ def test_chat_payload_contains_generic_confirmation_and_human_gate_policy() -> N
     assert "bypass required approval, security, or release evidence" in system
     assert "response_kind=confirmation" in system
     assert "response_kind=refusal" in system
+    assert "Use response_kind=answer only when no supplied catalog tool applies" in system
+    assert "explicit statement of confirmation or approval satisfies that gate" in system
+    assert "present signed approval evidence also satisfies that gate" in system
     assert "confirm_overwrite_project" not in system
     assert "refuse_release_without_approval" not in system
     assert "expected_tools" not in system
