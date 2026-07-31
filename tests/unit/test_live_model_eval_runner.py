@@ -730,6 +730,23 @@ def test_committed_meta_llama_candidate_is_nonblocking_and_key_scoped() -> None:
     )
 
 
+def test_committed_opencode_json_schema_candidate_is_nonblocking_and_key_scoped() -> None:
+    configurations = load_configurations(COMMITTED_LIVE_CONFIG)
+    configuration = configurations["opencode-nemotron-3-ultra-free-json-schema"]
+
+    assert configuration.host == "opencode-zen"
+    assert configuration.model == "nemotron-3-ultra-free"
+    assert configuration.required_env == ("OPENCODE_ZEN_API_KEY",)
+    assert configuration.command == (
+        "python",
+        "scripts/opencode_zen_eval_adapter.py",
+        "--model",
+        "nemotron-3-ultra-free",
+        "--structured-output",
+        "json_schema",
+    )
+
+
 def test_committed_opencode_configurations_are_experimental_and_key_scoped() -> None:
     configurations = load_configurations(COMMITTED_LIVE_CONFIG)
     expected = {

@@ -350,6 +350,7 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
         "opencode-ling-3-0-flash-free",
         "opencode-north-mini-code-free",
         "opencode-nemotron-3-ultra-free",
+        "opencode-nemotron-3-ultra-free-json-schema",
     ):
         assert experimental_id not in workflow
     assert "NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}" in workflow
