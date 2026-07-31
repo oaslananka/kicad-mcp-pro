@@ -73,11 +73,22 @@ _TOKEN_ALIASES = {
     "footprints": "footprint",
     "rules": "rule",
     "layers": "layer",
+    "holes": "hole",
+    "zones": "zone",
+    "properties": "property",
     "look": "get",
     "lookup": "get",
     "draw": "add",
     "change": "set",
     "apply": "set",
+    "modify": "set",
+    "modified": "set",
+    "modifying": "set",
+    "mark": "set",
+    "marked": "set",
+    "marking": "set",
+    "populate": "dnp",
+    "populated": "dnp",
     "listing": "list",
     "listed": "list",
     "finds": "find",
@@ -144,6 +155,15 @@ _DIRECT_OBJECT_TERMS = frozenset(
         "ipc",
         "sheet",
         "via",
+        "mounting",
+        "hole",
+        "copper",
+        "zone",
+        "property",
+        "value",
+        "dnp",
+        "variant",
+        "flag",
     }
 )
 _OBJECT_TERMS = frozenset(
@@ -706,11 +726,12 @@ def _unique_direct_tool_match(
         summary = str(item.get("summary", ""))
         tool_tokens = _normalized_tokens(f"{name} {summary}")
         intent_score = len(tool_tokens & prompt_intents)
-        object_score = len(tool_tokens & prompt_objects)
-        if intent_score == 0 or object_score == 0:
+        matched_objects = tool_tokens & prompt_objects
+        if intent_score == 0 or not matched_objects:
             continue
         domain_score = len(tool_tokens & prompt_domains)
-        scored.append((intent_score * 100 + domain_score * 20 + object_score, name))
+        semantic_object_score = len(matched_objects - {"reference"})
+        scored.append((intent_score * 100 + domain_score * 20 + semantic_object_score, name))
     if not scored:
         return None
     best_score = max(score for score, _name in scored)

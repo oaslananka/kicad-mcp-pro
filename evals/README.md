@@ -312,7 +312,9 @@ forces scoped unconfirmed data-loss and unapproved publish requests to confirmat
 selects a catalog tool only when the inspection/summary, approved-release, or direct
 action match is unique and high-confidence. Direct-action matching requires a positive,
 non-negated action intent plus matching catalog objects; explicit board, schematic, and
-library domains receive stronger weight than generic reference tokens. Informational or
+library domains receive stronger weight than generic reference tokens. The normalized
+object vocabulary covers common EDA authoring concepts such as holes, zones, symbol
+properties, and DNP variants without embedding corpus case identifiers. Informational or
 instructional questions and ambiguous matches are not guessed. Direct answers are
 reserved for requests with no applicable catalog tool. Neither layer contains case IDs,
 expected tools, forbidden tools, notes, or answer keys.
