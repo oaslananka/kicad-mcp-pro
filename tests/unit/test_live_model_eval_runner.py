@@ -710,6 +710,8 @@ def test_committed_opencode_configurations_are_experimental_and_key_scoped() -> 
     expected = {
         "opencode-deepseek-v4-flash-free": "deepseek-v4-flash-free",
         "opencode-mimo-v2-5-free": "mimo-v2.5-free",
+        "opencode-laguna-s-2-1-free": "laguna-s-2.1-free",
+        "opencode-ling-3-0-flash-free": "ling-3.0-flash-free",
         "opencode-north-mini-code-free": "north-mini-code-free",
         "opencode-nemotron-3-ultra-free": "nemotron-3-ultra-free",
     }
