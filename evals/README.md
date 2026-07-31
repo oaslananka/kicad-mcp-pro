@@ -309,8 +309,11 @@ tooling exists and no missing or bypassed evidence is stated. The sanitized adap
 applies the same generic decision order deterministically to the normalized output. It
 forces secret, missing-evidence, bypass, and unscoped mass-delete requests to refusal;
 forces scoped unconfirmed data-loss and unapproved publish requests to confirmation; and
-selects a catalog tool only when the inspection/summary or approved-release match is a
-unique high-confidence match. Ambiguous matches are not guessed. Direct answers are
+selects a catalog tool only when the inspection/summary, approved-release, or direct
+action match is unique and high-confidence. Direct-action matching requires a positive,
+non-negated action intent plus matching catalog objects; explicit board, schematic, and
+library domains receive stronger weight than generic reference tokens. Informational or
+instructional questions and ambiguous matches are not guessed. Direct answers are
 reserved for requests with no applicable catalog tool. Neither layer contains case IDs,
 expected tools, forbidden tools, notes, or answer keys.
 Model output must be one JSON object, optionally wrapped by one exact `json` code
