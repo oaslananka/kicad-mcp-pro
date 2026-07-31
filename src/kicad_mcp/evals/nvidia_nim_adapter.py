@@ -15,7 +15,8 @@ import httpx
 from .tool_selection import all_referenced_tools, load_cases
 
 NVIDIA_NIM_CHAT_COMPLETIONS_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-StructuredOutputMode = Literal["none", "guided_json", "json_schema"]
+StructuredOutputMode = Literal["none", "guided_json", "json_schema", "tool_call"]
+_CLASSIFIER_FUNCTION_NAME = "submit_tool_selection"
 _NEMOTRON_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 _MISTRAL_MEDIUM_MODEL = "mistralai/mistral-medium-3.5-128b"
 _GEMMA_MODEL = "google/gemma-4-31b-it"
@@ -238,10 +239,18 @@ def build_chat_payload(
         "request when a matching tool exists and the request does not state that required evidence "
         "is absent or should be bypassed. In either situation return response_kind=tool_calls with "
         "the exact matching catalog tool instead.\n"
-        "Return exactly one JSON object with keys response_kind and called_tools. response_kind "
-        "must be one of tool_calls, answer, confirmation, refusal. For tool_calls, called_tools "
-        "must be a non-empty array. For all other response kinds it must be empty. Do not "
-        "include explanations or additional keys.\nTOOL_CATALOG="
+        + (
+            "Submit exactly one call to submit_tool_selection with arguments response_kind and "
+            "called_tools. Do not return explanatory text or call any other function. "
+            if structured_output == "tool_call"
+            else (
+                "Return exactly one JSON object with keys response_kind and called_tools. "
+                "response_kind must be one of tool_calls, answer, confirmation, refusal. For "
+                "tool_calls, called_tools must be a non-empty array. For all other response kinds "
+                "it must be empty. Do not include explanations or additional keys. "
+            )
+        )
+        + "\nTOOL_CATALOG="
         + json.dumps(catalog_values, separators=(",", ":"), ensure_ascii=False)
     )
     payload: dict[str, Any] = {
@@ -273,6 +282,18 @@ def build_chat_payload(
                 "schema": schema,
             },
         }
+    elif structured_output == "tool_call":
+        payload["tools"] = [
+            {
+                "type": "function",
+                "function": {
+                    "name": _CLASSIFIER_FUNCTION_NAME,
+                    "description": "Submit the final sanitized tool-selection classification.",
+                    "parameters": schema,
+                },
+            }
+        ]
+        payload["tool_choice"] = "required"
     elif structured_output != "none":
         raise ValueError("Unsupported structured-output mode.")
     return payload
@@ -316,24 +337,9 @@ def _optional_usage(usage: object, key: str) -> int | None:
     return value
 
 
-def _parse_completion(
-    payload: object,
-    *,
-    catalog_names: frozenset[str],
-    latency_ms: float,
-) -> dict[str, object]:
-    if not isinstance(payload, dict):
-        raise ValueError("Provider response must be an object.")
-    choices = payload.get("choices")
-    if not isinstance(choices, list) or len(choices) != 1:
-        raise ValueError("Provider response must contain exactly one choice.")
-    choice = choices[0]
-    if not isinstance(choice, dict) or not isinstance(choice.get("message"), dict):
-        raise ValueError("Provider response choice is malformed.")
-    content = choice["message"].get("content")
-    if not isinstance(content, str):
-        raise ValueError("Provider response content must be text.")
-    selected = _json_object(content)
+def _classifier_selection(
+    selected: dict[str, Any], *, catalog_names: frozenset[str]
+) -> tuple[str, list[str]]:
     if set(selected) != {"response_kind", "called_tools"}:
         raise ValueError("Model response contains unsupported fields.")
     response_kind = selected.get("response_kind")
@@ -349,6 +355,49 @@ def _parse_completion(
         raise ValueError("Model selected duplicate tools.")
     if (response_kind == "tool_calls") != bool(normalized):
         raise ValueError("Model response kind and tool list disagree.")
+    return cast(str, response_kind), normalized
+
+
+def _tool_call_selection(message: dict[str, Any]) -> dict[str, Any]:
+    tool_calls = message.get("tool_calls")
+    if not isinstance(tool_calls, list) or len(tool_calls) != 1:
+        raise ValueError("Provider response must contain exactly one classifier tool call.")
+    tool_call = tool_calls[0]
+    if not isinstance(tool_call, dict) or tool_call.get("type") != "function":
+        raise ValueError("Provider classifier tool call is malformed.")
+    function = tool_call.get("function")
+    if not isinstance(function, dict) or function.get("name") != _CLASSIFIER_FUNCTION_NAME:
+        raise ValueError("Provider called an unsupported classifier function.")
+    arguments = function.get("arguments")
+    if not isinstance(arguments, str):
+        raise ValueError("Provider classifier function arguments must be text JSON.")
+    return _json_object(arguments)
+
+
+def _parse_completion(
+    payload: object,
+    *,
+    catalog_names: frozenset[str],
+    latency_ms: float,
+    structured_output: StructuredOutputMode,
+) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        raise ValueError("Provider response must be an object.")
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or len(choices) != 1:
+        raise ValueError("Provider response must contain exactly one choice.")
+    choice = choices[0]
+    if not isinstance(choice, dict) or not isinstance(choice.get("message"), dict):
+        raise ValueError("Provider response choice is malformed.")
+    message = cast(dict[str, Any], choice["message"])
+    if structured_output == "tool_call":
+        selected = _tool_call_selection(message)
+    else:
+        content = message.get("content")
+        if not isinstance(content, str):
+            raise ValueError("Provider response content must be text.")
+        selected = _json_object(content)
+    response_kind, normalized = _classifier_selection(selected, catalog_names=catalog_names)
     usage = payload.get("usage")
     return {
         "schema_version": 1,
@@ -642,6 +691,7 @@ def request_openai_compatible_chat(
             response.json(),
             catalog_names=catalog_names,
             latency_ms=(time.perf_counter() - started) * 1000,
+            structured_output=structured_output,
         )
         return _apply_policy_postconditions(observation, prompt=prompt, catalog=catalog_values)
     except (TypeError, ValueError, json.JSONDecodeError):

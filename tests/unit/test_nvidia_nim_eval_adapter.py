@@ -256,6 +256,167 @@ def test_explicit_structured_output_modes_build_one_reviewable_payload() -> None
     )
 
 
+def test_tool_call_mode_builds_one_forced_classifier_function() -> None:
+    payload = build_chat_payload(
+        model="opencode/test-model",
+        prompt="Inspect the board.",
+        catalog=({"name": "pcb_get_board_summary", "summary": "Summarize."},),
+        structured_output="tool_call",
+    )
+
+    assert "guided_json" not in payload
+    assert "response_format" not in payload
+    assert "parallel_tool_calls" not in payload
+    assert payload["tool_choice"] == "required"
+    assert payload["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "submit_tool_selection",
+                "description": "Submit the final sanitized tool-selection classification.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["response_kind", "called_tools"],
+                    "properties": {
+                        "response_kind": {
+                            "type": "string",
+                            "enum": ["answer", "confirmation", "refusal", "tool_calls"],
+                        },
+                        "called_tools": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": ["pcb_get_board_summary"],
+                            },
+                            "uniqueItems": True,
+                        },
+                    },
+                },
+            },
+        }
+    ]
+
+
+def test_tool_call_mode_parses_one_sanitized_function_call() -> None:
+    raw_provider_text = "private-provider-debug"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["tool_choice"] == "required"
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "submit_tool_selection",
+                                        "arguments": (
+                                            '{"response_kind":"tool_calls",'
+                                            '"called_tools":["pcb_get_board_summary"]}'
+                                        ),
+                                    },
+                                }
+                            ],
+                            "reasoning_content": raw_provider_text,
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 30, "completion_tokens": 7},
+                "debug": raw_provider_text,
+            },
+        )
+
+    result = request_nvidia_nim(
+        model="nvidia/test-model",
+        prompt="Summarize the board.",
+        api_key="test-" + "key",
+        catalog=({"name": "pcb_get_board_summary", "summary": "Summarize."},),
+        transport=httpx.MockTransport(handler),
+        structured_output="tool_call",
+    )
+
+    assert result["status"] == "ok"
+    assert result["response_kind"] == "tool_calls"
+    assert result["called_tools"] == ["pcb_get_board_summary"]
+    assert result["input_tokens"] == 30
+    assert result["output_tokens"] == 7
+    assert raw_provider_text not in json.dumps(result)
+
+
+def test_tool_call_mode_rejects_wrong_multiple_or_malformed_calls() -> None:
+    messages = (
+        {
+            "content": None,
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "other_function",
+                        "arguments": '{"response_kind":"answer","called_tools":[]}',
+                    },
+                }
+            ],
+        },
+        {
+            "content": None,
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "submit_tool_selection",
+                        "arguments": '{"response_kind":"answer","called_tools":[]}',
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "submit_tool_selection",
+                        "arguments": '{"response_kind":"answer","called_tools":[]}',
+                    },
+                },
+            ],
+        },
+        {
+            "content": None,
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "submit_tool_selection",
+                        "arguments": "not-json",
+                    },
+                }
+            ],
+        },
+    )
+
+    for message in messages:
+        result = request_nvidia_nim(
+            model="nvidia/test-model",
+            prompt="Inspect.",
+            api_key="test-" + "key",
+            catalog=(),
+            transport=httpx.MockTransport(
+                lambda _request, message=message: httpx.Response(
+                    200, json={"choices": [{"message": message}]}
+                )
+            ),
+            structured_output="tool_call",
+        )
+        assert result == {
+            "schema_version": 1,
+            "status": "error",
+            "failure_kind": "model_output_invalid",
+        }
+
+
 def test_hosted_model_profiles_disable_unneeded_reasoning() -> None:
     mistral = build_chat_payload(
         model="mistralai/mistral-medium-3.5-128b",
