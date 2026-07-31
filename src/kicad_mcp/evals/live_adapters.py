@@ -22,6 +22,8 @@ FailureKind = Literal[
     "provider_rate_limit",
     "provider_unavailable",
     "budget_exceeded",
+    "provider_request_rejected",
+    "model_output_invalid",
     "model_error",
     "unknown",
 ]
@@ -36,6 +38,8 @@ _FAILURE_KINDS = frozenset(
         "provider_rate_limit",
         "provider_unavailable",
         "budget_exceeded",
+        "provider_request_rejected",
+        "model_output_invalid",
         "model_error",
         "unknown",
     }

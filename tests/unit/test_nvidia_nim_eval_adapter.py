@@ -163,7 +163,7 @@ def test_nim_request_classifies_provider_failures_without_raw_body() -> None:
         (403, "provider_auth"),
         (429, "provider_rate_limit"),
         (503, "provider_unavailable"),
-        (400, "model_error"),
+        (400, "provider_request_rejected"),
     ):
         result = request_nvidia_nim(
             model="nvidia/test-model",
@@ -204,7 +204,7 @@ def test_nim_request_rejects_unknown_or_malformed_model_output() -> None:
         assert result == {
             "schema_version": 1,
             "status": "error",
-            "failure_kind": "model_error",
+            "failure_kind": "model_output_invalid",
         }
 
 
@@ -226,7 +226,7 @@ def test_hosted_nim_request_makes_one_http_call_without_structured_fields() -> N
     assert result == {
         "schema_version": 1,
         "status": "error",
-        "failure_kind": "model_error",
+        "failure_kind": "provider_request_rejected",
     }
     assert len(requests) == 1
     assert "guided_json" not in requests[0]
@@ -333,7 +333,7 @@ def test_nim_request_rejects_json_with_surrounding_text() -> None:
     assert result == {
         "schema_version": 1,
         "status": "error",
-        "failure_kind": "model_error",
+        "failure_kind": "model_output_invalid",
     }
 
 
