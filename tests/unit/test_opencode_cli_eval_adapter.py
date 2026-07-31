@@ -9,9 +9,10 @@ import pytest
 
 import scripts.opencode_cli_eval_adapter as cli_script
 from kicad_mcp.evals.opencode_cli_adapter import (
+    OPENCODE_CLI_AGENT_ID,
     OPENCODE_CLI_PROVIDER_ID,
     OPENCODE_CLI_VERSION,
-    build_classifier_message,
+    build_classifier_messages,
     build_opencode_config,
     parse_opencode_events,
     request_opencode_cli,
@@ -53,8 +54,11 @@ def test_opencode_cli_version_is_pinned() -> None:
     assert OPENCODE_CLI_VERSION == "1.18.10"
 
 
-def test_config_uses_one_custom_provider_and_denies_every_permission() -> None:
-    config = build_opencode_config(model="nemotron-3-ultra-free")
+def test_config_uses_one_custom_provider_agent_and_denies_every_permission() -> None:
+    config = build_opencode_config(
+        model="nemotron-3-ultra-free",
+        system_prompt="STRICT_SYSTEM_POLICY",
+    )
 
     assert config["enabled_providers"] == [OPENCODE_CLI_PROVIDER_ID]
     assert config["permission"] == "deny"
@@ -65,21 +69,31 @@ def test_config_uses_one_custom_provider_and_denies_every_permission() -> None:
         "baseURL": "https://opencode.ai/zen/v1",
         "apiKey": "{env:OPENCODE_ZEN_API_KEY}",
     }
+    agent = config["agent"][OPENCODE_CLI_AGENT_ID]  # type: ignore[index]
+    assert agent == {
+        "description": "Strict KiCad MCP tool-selection classifier.",
+        "mode": "primary",
+        "model": f"{OPENCODE_CLI_PROVIDER_ID}/nemotron-3-ultra-free",
+        "prompt": "STRICT_SYSTEM_POLICY",
+        "temperature": 0,
+        "permission": "deny",
+    }
     assert "test-key" not in json.dumps(config)
 
 
-def test_classifier_message_reuses_policy_without_case_answer_keys() -> None:
-    message = build_classifier_message(
+def test_classifier_messages_separate_policy_from_user_request() -> None:
+    system, user = build_classifier_messages(
         model="nemotron-3-ultra-free",
-        prompt="Summarize the board.",
+        prompt="Please inspect the current PCB.",
         catalog=({"name": "pcb_get_board_summary", "summary": "Summarize the board."},),
     )
 
-    assert "TOOL_CATALOG=" in message
-    assert "pcb_get_board_summary" in message
-    assert 'USER_REQUEST="Summarize the board."' in message
-    assert "expected_tools" not in message
-    assert "forbidden_tools" not in message
+    assert "TOOL_CATALOG=" in system
+    assert "pcb_get_board_summary" in system
+    assert "Please inspect the current PCB." not in system
+    assert user == "Please inspect the current PCB."
+    assert "expected_tools" not in system
+    assert "forbidden_tools" not in system
 
 
 def test_event_parser_retains_only_text_tokens_and_cost() -> None:
@@ -139,16 +153,20 @@ def test_request_runs_pure_headless_cli_with_isolated_environment() -> None:
     assert command[command.index("--model") + 1] == (
         f"{OPENCODE_CLI_PROVIDER_ID}/nemotron-3-ultra-free"
     )
+    assert command[command.index("--agent") + 1] == OPENCODE_CLI_AGENT_ID
     assert "Answer directly." not in command
     kwargs = captured["kwargs"]
     assert isinstance(kwargs, dict)
     env = kwargs["env"]
     assert isinstance(env, dict)
     assert env["OPENCODE_ZEN_API_KEY"] == "test-key"
-    assert json.loads(env["OPENCODE_CONFIG_CONTENT"])["permission"] == "deny"
+    config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
+    assert config["permission"] == "deny"
+    assert "TOOL_CATALOG=" in config["agent"][OPENCODE_CLI_AGENT_ID]["prompt"]
+    assert "Answer directly." not in config["agent"][OPENCODE_CLI_AGENT_ID]["prompt"]
     assert "GITHUB_TOKEN" not in env
     assert "NVIDIA_API_KEY" not in env
-    assert kwargs["input"].endswith('USER_REQUEST="Answer directly."')
+    assert kwargs["input"] == "Answer directly."
     assert kwargs["capture_output"] is True
     assert kwargs["check"] is False
 
