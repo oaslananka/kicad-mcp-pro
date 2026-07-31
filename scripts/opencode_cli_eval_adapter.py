@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Adapt reviewed OpenCode Zen free models to the sanitized live-eval contract."""
+"""Adapt pinned OpenCode CLI output to the sanitized live-eval contract."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from kicad_mcp.evals.nvidia_nim_adapter import load_eval_tool_catalog
-from kicad_mcp.evals.opencode_zen_adapter import request_opencode_zen
+from kicad_mcp.evals.opencode_cli_adapter import request_opencode_cli
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CASES = ROOT / "evals/tool_selection/cases.yaml"
@@ -20,14 +20,10 @@ DEFAULT_TOOLS = ROOT / "docs/tools-reference.generated.md"
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", required=True)
+    parser.add_argument("--opencode-bin", default="opencode")
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
     parser.add_argument("--tools-reference", type=Path, default=DEFAULT_TOOLS)
-    parser.add_argument("--timeout-seconds", type=float, default=50)
-    parser.add_argument(
-        "--structured-output",
-        choices=("none", "guided_json", "json_schema"),
-        default="none",
-    )
+    parser.add_argument("--timeout-seconds", type=float, default=55)
     return parser
 
 
@@ -52,13 +48,13 @@ def main(argv: list[str] | None = None) -> int:
             ):
                 raise ValueError
             catalog = load_eval_tool_catalog(args.cases, args.tools_reference)
-            result = request_opencode_zen(
+            result = request_opencode_cli(
                 model=args.model,
                 prompt=request["prompt"],
                 api_key=api_key,
                 catalog=catalog,
+                opencode_bin=args.opencode_bin,
                 timeout_seconds=args.timeout_seconds,
-                structured_output=args.structured_output,
             )
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             result = {
