@@ -123,3 +123,11 @@ configurations:
     command: [python, scripts/opencode_zen_eval_adapter.py, --model, nemotron-3-ultra-free, --structured-output, none]
     required_env: [OPENCODE_ZEN_API_KEY]
     limits: *opencode_free_limits
+
+  - id: opencode-nemotron-3-ultra-free-json-schema
+    host: opencode-zen
+    model: nemotron-3-ultra-free
+    adapter: subprocess
+    command: [python, scripts/opencode_zen_eval_adapter.py, --model, nemotron-3-ultra-free, --structured-output, json_schema]
+    required_env: [OPENCODE_ZEN_API_KEY]
+    limits: *opencode_free_limits
