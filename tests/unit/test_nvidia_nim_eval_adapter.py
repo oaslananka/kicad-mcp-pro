@@ -1430,3 +1430,102 @@ def test_output_postcondition_ignores_negated_direct_action_intent(
     )
 
     _assert_decision(result, response_kind="tool_calls", called_tools=[selected_tool])
+
+
+@pytest.mark.parametrize(
+    ("prompt", "catalog", "expected_tool"),
+    [
+        (
+            "Add four mounting holes near the board corners.",
+            (
+                _direct_tool_entry(
+                    "pcb_add_mounting_holes",
+                    "Append mounting-hole footprints around the board frame.",
+                    data_loss_risk=True,
+                ),
+                _direct_tool_entry(
+                    "pcb_add_copper_zone",
+                    "Add a copper zone to the board.",
+                    data_loss_risk=True,
+                ),
+            ),
+            "pcb_add_mounting_holes",
+        ),
+        (
+            "Add a copper zone on the front layer.",
+            (
+                _direct_tool_entry(
+                    "pcb_add_copper_zone",
+                    "Add a copper zone to the board.",
+                    data_loss_risk=True,
+                ),
+                _direct_tool_entry(
+                    "pcb_add_mounting_holes",
+                    "Append mounting-hole footprints around the board frame.",
+                    data_loss_risk=True,
+                ),
+            ),
+            "pcb_add_copper_zone",
+        ),
+        (
+            "Change R1's value property.",
+            (
+                _direct_tool_entry(
+                    "sch_modify_property",
+                    "Modify a schematic symbol property by reference.",
+                    data_loss_risk=True,
+                ),
+                _direct_tool_entry(
+                    "sch_set_dnp",
+                    "Set the DNP flag on a placed symbol.",
+                    data_loss_risk=True,
+                ),
+            ),
+            "sch_modify_property",
+        ),
+        (
+            "Mark C12 as do not populate for the active variant.",
+            (
+                _direct_tool_entry(
+                    "sch_set_dnp",
+                    "Set the Do Not Populate flag on a placed symbol.",
+                    data_loss_risk=True,
+                ),
+                _direct_tool_entry(
+                    "sch_modify_property",
+                    "Modify a schematic symbol property by reference.",
+                    data_loss_risk=True,
+                ),
+            ),
+            "sch_set_dnp",
+        ),
+    ],
+)
+def test_output_postcondition_selects_extended_direct_vocabulary_tool(
+    prompt: str,
+    catalog: tuple[dict[str, object], ...],
+    expected_tool: str,
+) -> None:
+    result = _request_postcondition_result(
+        prompt=prompt,
+        model_response="confirmation",
+        catalog=catalog,
+    )
+
+    _assert_decision(result, response_kind="tool_calls", called_tools=[expected_tool])
+
+
+def test_output_postcondition_ignores_negated_property_mutation() -> None:
+    result = _request_postcondition_result(
+        prompt="Inspect R1 but do not modify its value property.",
+        model_response="answer",
+        catalog=(
+            _direct_tool_entry(
+                "sch_modify_property",
+                "Modify a schematic symbol property by reference.",
+                data_loss_risk=True,
+            ),
+        ),
+    )
+
+    _assert_decision(result, response_kind="answer")
