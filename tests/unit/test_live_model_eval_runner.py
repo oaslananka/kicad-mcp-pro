@@ -730,9 +730,10 @@ def test_committed_meta_llama_candidate_is_nonblocking_and_key_scoped() -> None:
     )
 
 
-def test_committed_opencode_json_schema_candidate_is_nonblocking_and_key_scoped() -> None:
+def test_committed_opencode_tool_call_candidate_is_nonblocking_and_key_scoped() -> None:
     configurations = load_configurations(COMMITTED_LIVE_CONFIG)
-    configuration = configurations["opencode-nemotron-3-ultra-free-json-schema"]
+    assert "opencode-nemotron-3-ultra-free-json-schema" not in configurations
+    configuration = configurations["opencode-nemotron-3-ultra-free-tool-call"]
 
     assert configuration.host == "opencode-zen"
     assert configuration.model == "nemotron-3-ultra-free"
@@ -743,7 +744,7 @@ def test_committed_opencode_json_schema_candidate_is_nonblocking_and_key_scoped(
         "--model",
         "nemotron-3-ultra-free",
         "--structured-output",
-        "json_schema",
+        "tool_call",
     )
 
 

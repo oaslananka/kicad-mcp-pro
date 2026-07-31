@@ -263,10 +263,12 @@ These are specific hosted sample configurations, not a claim that one host,
 publisher, or model family represents universal model quality. Reviewed primary
 hosted records use `--structured-output none`, so each adapter attempt sends exactly
 one request with only model-documented fields. A separate nonblocking
-`opencode-nemotron-3-ultra-free-json-schema` configuration sends the standard
-OpenAI-compatible `response_format` shape as a bounded conformance experiment; it
-does not replace or retry the primary record and is excluded from release gating and
-baselines. Nemotron and Gemma thinking are disabled with
+`opencode-nemotron-3-ultra-free-tool-call` configuration sends one forced synthetic
+OpenAI-compatible function call as a bounded conformance experiment; it never exposes
+or executes the actual KiCad tools, does not replace or retry the primary record, and
+is excluded from release gating and baselines. The earlier direct `response_format`
+experiment was removed after producing zero valid smoke observations. Nemotron and
+Gemma thinking are disabled with
 `chat_template_kwargs.enable_thinking: false`; Mistral reasoning is disabled with
 `reasoning_effort: none`. Explicit self-hosted integrations may select `guided_json`
 or `json_schema`, but the adapter never retries a rejected payload with a different

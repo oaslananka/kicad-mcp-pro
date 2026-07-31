@@ -81,6 +81,19 @@ def test_opencode_request_rejects_unreviewed_model_before_network() -> None:
         )
 
 
+def test_opencode_cli_accepts_tool_call_mode() -> None:
+    args = opencode_cli._parser().parse_args(
+        [
+            "--model",
+            "nemotron-3-ultra-free",
+            "--structured-output",
+            "tool_call",
+        ]
+    )
+
+    assert args.structured_output == "tool_call"
+
+
 def test_opencode_cli_fails_closed_without_key(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
