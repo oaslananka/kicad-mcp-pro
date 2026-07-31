@@ -23,6 +23,7 @@ from kicad_mcp.evals.live_runner import (
     validate_sanitized_evidence,
     write_evidence,
 )
+from kicad_mcp.evals.opencode_cli_adapter import OPENCODE_CLI_VERSION
 from kicad_mcp.evals.tool_selection import EvalCase, load_cases, load_thresholds
 
 
@@ -730,21 +731,24 @@ def test_committed_meta_llama_candidate_is_nonblocking_and_key_scoped() -> None:
     )
 
 
-def test_committed_opencode_tool_call_candidate_is_nonblocking_and_key_scoped() -> None:
+def test_committed_opencode_cli_candidate_is_nonblocking_and_key_scoped() -> None:
     configurations = load_configurations(COMMITTED_LIVE_CONFIG)
     assert "opencode-nemotron-3-ultra-free-json-schema" not in configurations
-    configuration = configurations["opencode-nemotron-3-ultra-free-tool-call"]
+    assert "opencode-nemotron-3-ultra-free-tool-call" not in configurations
+    configuration = configurations["opencode-cli-nemotron-3-ultra-free"]
 
-    assert configuration.host == "opencode-zen"
+    assert configuration.host == "opencode-zen-cli"
     assert configuration.model == "nemotron-3-ultra-free"
     assert configuration.required_env == ("OPENCODE_ZEN_API_KEY",)
     assert configuration.command == (
         "python",
-        "scripts/opencode_zen_eval_adapter.py",
+        "scripts/opencode_cli_eval_adapter.py",
         "--model",
         "nemotron-3-ultra-free",
-        "--structured-output",
-        "tool_call",
+        "--opencode-bin",
+        "opencode",
+        "--timeout-seconds",
+        "55",
     )
 
 
@@ -964,6 +968,10 @@ def test_live_model_eval_workflow_is_manual_protected_and_config_sync_backed() -
     assert "environment: live-model-evals" in workflow
     assert "NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}" in workflow
     assert "OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}" in workflow
+    assert "if: startsWith(inputs.configuration_id, 'opencode-cli-')" in workflow
+    assert f'OPENCODE_CLI_VERSION: "{OPENCODE_CLI_VERSION}"' in workflow
+    assert '"opencode-ai@$OPENCODE_CLI_VERSION"' in workflow
+    assert 'test "$(opencode --version)" = "$OPENCODE_CLI_VERSION"' in workflow
     assert 'test -n "$NVIDIA_API_KEY"' not in workflow
     assert 'test "$CONFIGURATION_ID" != "replay-golden"' in workflow
     assert "--config evals/live/configurations.yaml" in workflow
