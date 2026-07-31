@@ -59,9 +59,93 @@ _TOKEN_ALIASES = {
     "secrets": "secret",
     "checks": "check",
     "values": "value",
+    "sch": "schematic",
+    "lib": "library",
+    "nets": "net",
+    "details": "detail",
+    "alternatives": "alternative",
+    "parts": "part",
+    "components": "component",
+    "symbols": "symbol",
+    "wires": "wire",
+    "labels": "label",
+    "pins": "pin",
+    "footprints": "footprint",
+    "rules": "rule",
+    "layers": "layer",
+    "look": "get",
+    "lookup": "get",
+    "draw": "add",
+    "change": "set",
+    "apply": "set",
+    "listing": "list",
+    "listed": "list",
+    "finds": "find",
+    "found": "find",
+    "adds": "add",
+    "adding": "add",
+    "added": "add",
+    "generates": "generate",
+    "generating": "generate",
+    "generated": "generate",
+    "moves": "move",
+    "moving": "move",
+    "moved": "move",
+    "sets": "set",
+    "setting": "set",
 }
 _SUMMARY_INTENTS = frozenset({"inspect"})
 _RELEASE_INTENTS = frozenset({"release", "publish", "tag"})
+_DIRECT_TOOL_INTENTS = frozenset(
+    {
+        "get",
+        "find",
+        "list",
+        "add",
+        "create",
+        "generate",
+        "move",
+        "set",
+        "write",
+        "save",
+        "export",
+        "place",
+    }
+)
+_DIRECT_DOMAIN_TERMS = frozenset({"board", "schematic", "library"})
+_DIRECT_OBJECT_TERMS = frozenset(
+    {
+        "board",
+        "schematic",
+        "library",
+        "project",
+        "bom",
+        "power",
+        "net",
+        "footprint",
+        "symbol",
+        "track",
+        "wire",
+        "component",
+        "item",
+        "package",
+        "detail",
+        "alternative",
+        "part",
+        "label",
+        "pin",
+        "text",
+        "stackup",
+        "rule",
+        "layer",
+        "reference",
+        "connectivity",
+        "silkscreen",
+        "ipc",
+        "sheet",
+        "via",
+    }
+)
 _OBJECT_TERMS = frozenset(
     {
         "board",
@@ -389,7 +473,13 @@ def _parse_completion(
 
 
 def _normalized_token_sequence(text: str) -> tuple[str, ...]:
-    return tuple(_TOKEN_ALIASES.get(token, token) for token in _WORD_TOKEN.findall(text.lower()))
+    normalized: list[str] = []
+    for token in _WORD_TOKEN.findall(text.lower()):
+        if re.fullmatch(r"[a-z]+[0-9]+", token):
+            normalized.append("reference")
+        else:
+            normalized.append(_TOKEN_ALIASES.get(token, token))
+    return tuple(normalized)
 
 
 def _normalized_tokens(text: str) -> frozenset[str]:
@@ -408,7 +498,17 @@ def _is_informational_request(prompt: str) -> bool:
     ):
         return True
     lowered = prompt.strip().lower()
-    return lowered.startswith(("show me how ", "tell me how "))
+    if lowered.startswith(("show me how ", "tell me how ")):
+        return True
+    normalized = " ".join(tokens)
+    return any(
+        phrase in normalized
+        for phrase in (
+            "steps to ",
+            "ways to ",
+            "instructions for ",
+        )
+    )
 
 
 def _replace_decision(
@@ -571,6 +671,53 @@ def _unique_catalog_match(
     return best[0] if len(best) == 1 else None
 
 
+def _positive_direct_intents(prompt: str) -> frozenset[str]:
+    """Return direct action intents that are not locally negated by the user."""
+    tokens = _normalized_token_sequence(prompt)
+    negators = {"without", "not", "never", "avoid"}
+    positive: set[str] = set()
+    for index, token in enumerate(tokens):
+        if token not in _DIRECT_TOOL_INTENTS:
+            continue
+        context = tokens[max(0, index - 2) : index]
+        if set(context) & negators:
+            continue
+        positive.add(token)
+    return frozenset(positive)
+
+
+def _unique_direct_tool_match(
+    *,
+    prompt: str,
+    catalog: Sequence[Mapping[str, object]],
+) -> str | None:
+    """Select one direct action tool only when intent, object, and domain evidence are unique."""
+    if _is_informational_request(prompt):
+        return None
+    prompt_tokens = _normalized_tokens(prompt)
+    prompt_intents = _positive_direct_intents(prompt)
+    prompt_objects = prompt_tokens & _DIRECT_OBJECT_TERMS
+    if not prompt_intents or not prompt_objects:
+        return None
+    prompt_domains = prompt_objects & _DIRECT_DOMAIN_TERMS
+    scored: list[tuple[int, str]] = []
+    for item in catalog:
+        name = str(item.get("name", ""))
+        summary = str(item.get("summary", ""))
+        tool_tokens = _normalized_tokens(f"{name} {summary}")
+        intent_score = len(tool_tokens & prompt_intents)
+        object_score = len(tool_tokens & prompt_objects)
+        if intent_score == 0 or object_score == 0:
+            continue
+        domain_score = len(tool_tokens & prompt_domains)
+        scored.append((intent_score * 100 + domain_score * 20 + object_score, name))
+    if not scored:
+        return None
+    best_score = max(score for score, _name in scored)
+    best = sorted(name for score, name in scored if score == best_score)
+    return best[0] if len(best) == 1 else None
+
+
 def _apply_policy_postconditions(
     observation: Mapping[str, object],
     *,
@@ -600,6 +747,11 @@ def _apply_policy_postconditions(
     present_release_approval = bool(prompt_tokens & {"approved", "approval"})
     if release_request and not present_release_approval:
         return _replace_decision(observation, response_kind="confirmation")
+
+    if not release_request:
+        tool = _unique_direct_tool_match(prompt=prompt, catalog=catalog)
+        if tool is not None:
+            return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
 
     tool = None
     if not _is_informational_request(prompt):

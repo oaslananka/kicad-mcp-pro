@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 
 from kicad_mcp.evals.nvidia_nim_adapter import (
     NVIDIA_NIM_CHAT_COMPLETIONS_URL,
@@ -1134,3 +1135,298 @@ def test_output_postcondition_allows_save_inside_existing_directory() -> None:
     )
 
     _assert_decision(result, response_kind="tool_calls", called_tools=["save_report_tool"])
+
+
+def _direct_tool_entry(
+    name: str,
+    summary: str,
+    *,
+    data_loss_risk: bool = False,
+) -> dict[str, object]:
+    return {"name": name, "summary": summary, "data_loss_risk": data_loss_risk}
+
+
+_MOVE_CATALOG = (
+    _direct_tool_entry(
+        "pcb_move_component",
+        "Move a board component by reference.",
+        data_loss_risk=True,
+    ),
+    _direct_tool_entry(
+        "sch_move_symbol",
+        "Move a schematic symbol instance.",
+        data_loss_risk=True,
+    ),
+)
+_STACKUP_CATALOG = (
+    _direct_tool_entry(
+        "pcb_set_stackup",
+        "Set the active board stackup.",
+        data_loss_risk=True,
+    ),
+    _direct_tool_entry(
+        "pcb_set_design_rules",
+        "Set board design rules.",
+        data_loss_risk=True,
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("prompt", "model_response", "selected_tools", "catalog", "expected_tool"),
+    [
+        (
+            "List every board net and summarize its connectivity.",
+            "tool_calls",
+            ("board_summary_tool",),
+            (
+                _direct_tool_entry("board_summary_tool", "Summarize the current board."),
+                _direct_tool_entry("pcb_get_nets", "List all board nets."),
+            ),
+            "pcb_get_nets",
+        ),
+        (
+            "Look up the library component details for R1.",
+            "tool_calls",
+            ("sch_get_symbols",),
+            (
+                _direct_tool_entry(
+                    "lib_get_component_details",
+                    "Return component detail for a specific part code.",
+                ),
+                _direct_tool_entry("sch_get_symbols", "List schematic symbols."),
+            ),
+            "lib_get_component_details",
+        ),
+        (
+            "Find a compatible alternative part for this component.",
+            "answer",
+            (),
+            (
+                _direct_tool_entry(
+                    "lib_find_alternative_parts",
+                    "Find alternative parts for a supplied component code.",
+                ),
+                _direct_tool_entry("lib_get_component_details", "Return component detail."),
+            ),
+            "lib_find_alternative_parts",
+        ),
+        (
+            "Draw a schematic wire between the specified pins.",
+            "answer",
+            (),
+            (
+                _direct_tool_entry(
+                    "sch_add_wire",
+                    "Add a schematic wire between endpoints.",
+                    data_loss_risk=True,
+                ),
+                _direct_tool_entry(
+                    "sch_add_component",
+                    "Add a schematic component.",
+                    data_loss_risk=True,
+                ),
+            ),
+            "sch_add_wire",
+        ),
+        (
+            "Add a global label to this schematic net.",
+            "confirmation",
+            (),
+            (
+                _direct_tool_entry(
+                    "sch_add_global_label",
+                    "Add a global label.",
+                    data_loss_risk=True,
+                ),
+                _direct_tool_entry(
+                    "sch_add_wire",
+                    "Add a schematic wire.",
+                    data_loss_risk=True,
+                ),
+            ),
+            "sch_add_global_label",
+        ),
+        (
+            "Generate a custom symbol from this pin table.",
+            "answer",
+            (),
+            (
+                _direct_tool_entry(
+                    "lib_generate_symbol_from_pintable",
+                    "Generate a symbol from a pin table.",
+                ),
+                _direct_tool_entry(
+                    "lib_generate_footprint_ipc7351",
+                    "Generate an IPC footprint.",
+                ),
+            ),
+            "lib_generate_symbol_from_pintable",
+        ),
+        (
+            "Generate an IPC footprint for this package.",
+            "answer",
+            (),
+            (
+                _direct_tool_entry(
+                    "lib_generate_footprint_ipc7351",
+                    "Generate an IPC compliant footprint.",
+                ),
+                _direct_tool_entry(
+                    "export_manufacturing_package",
+                    "Generate a manufacturing package.",
+                ),
+            ),
+            "lib_generate_footprint_ipc7351",
+        ),
+        (
+            "Add front silkscreen text.",
+            "confirmation",
+            (),
+            (
+                _direct_tool_entry("pcb_add_text", "Add board text.", data_loss_risk=True),
+                _direct_tool_entry("pcb_add_via", "Add a board via.", data_loss_risk=True),
+            ),
+            "pcb_add_text",
+        ),
+        (
+            "Move U1 to the requested coordinates.",
+            "confirmation",
+            (),
+            _MOVE_CATALOG,
+            "pcb_move_component",
+        ),
+        (
+            "Change the board stackup to four layers.",
+            "confirmation",
+            (),
+            _STACKUP_CATALOG,
+            "pcb_set_stackup",
+        ),
+        (
+            "Apply these board design rules and track constraints.",
+            "confirmation",
+            (),
+            tuple(reversed(_STACKUP_CATALOG)),
+            "pcb_set_design_rules",
+        ),
+        (
+            "Move U2 in the schematic to the requested coordinates.",
+            "answer",
+            (),
+            _MOVE_CATALOG,
+            "sch_move_symbol",
+        ),
+    ],
+)
+def test_output_postcondition_selects_unique_direct_action_tool(
+    prompt: str,
+    model_response: str,
+    selected_tools: tuple[str, ...],
+    catalog: tuple[dict[str, object], ...],
+    expected_tool: str,
+) -> None:
+    result = _request_postcondition_result(
+        prompt=prompt,
+        model_response=model_response,
+        selected_tools=selected_tools,
+        catalog=catalog,
+    )
+
+    _assert_decision(result, response_kind="tool_calls", called_tools=[expected_tool])
+
+
+def test_output_postcondition_does_not_execute_instructional_steps_request() -> None:
+    result = _request_postcondition_result(
+        prompt="List the steps to add a global label.",
+        model_response="answer",
+        catalog=(
+            _direct_tool_entry(
+                "sch_add_global_label",
+                "Add a global label.",
+                data_loss_risk=True,
+            ),
+        ),
+    )
+
+    _assert_decision(result, response_kind="answer")
+
+
+def test_output_postcondition_does_not_guess_ambiguous_direct_action_tool() -> None:
+    result = _request_postcondition_result(
+        prompt="Add a schematic item.",
+        model_response="confirmation",
+        catalog=(
+            _direct_tool_entry(
+                "sch_add_primary",
+                "Add a schematic item.",
+                data_loss_risk=True,
+            ),
+            _direct_tool_entry(
+                "sch_add_secondary",
+                "Add a schematic item.",
+                data_loss_risk=True,
+            ),
+        ),
+    )
+
+    _assert_decision(result, response_kind="confirmation")
+
+
+def test_output_postcondition_keeps_data_loss_confirmation_ahead_of_direct_matching() -> None:
+    result = _request_postcondition_result(
+        prompt="Delete the selected board items.",
+        model_response="tool_calls",
+        selected_tools=("delete_selected_tool",),
+        catalog=(
+            _direct_tool_entry(
+                "delete_selected_tool",
+                "Delete selected board items.",
+                data_loss_risk=True,
+            ),
+        ),
+    )
+
+    _assert_decision(result, response_kind="confirmation")
+
+
+@pytest.mark.parametrize(
+    ("prompt", "selected_tool", "catalog"),
+    [
+        (
+            "Evaluate placement quality without moving components.",
+            "pcb_placement_quality_gate",
+            (
+                _direct_tool_entry(
+                    "pcb_placement_quality_gate",
+                    "Evaluate board placement quality.",
+                ),
+                _MOVE_CATALOG[0],
+            ),
+        ),
+        (
+            "Report courtyard violations without moving footprints.",
+            "get_courtyard_violations",
+            (
+                _direct_tool_entry(
+                    "get_courtyard_violations",
+                    "Return courtyard violations.",
+                ),
+                _MOVE_CATALOG[0],
+            ),
+        ),
+    ],
+)
+def test_output_postcondition_ignores_negated_direct_action_intent(
+    prompt: str,
+    selected_tool: str,
+    catalog: tuple[dict[str, object], ...],
+) -> None:
+    result = _request_postcondition_result(
+        prompt=prompt,
+        model_response="tool_calls",
+        selected_tools=(selected_tool,),
+        catalog=catalog,
+    )
+
+    _assert_decision(result, response_kind="tool_calls", called_tools=[selected_tool])
