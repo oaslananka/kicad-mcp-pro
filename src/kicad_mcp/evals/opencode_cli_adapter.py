@@ -20,6 +20,7 @@ from .nvidia_nim_adapter import (
 from .opencode_zen_adapter import OPENCODE_ZEN_FREE_MODELS
 
 OPENCODE_CLI_VERSION = "1.18.10"
+OPENCODE_CLI_AGENT_ID = "kicad-eval"
 OPENCODE_CLI_PROVIDER_ID = "kicad-eval-zen"
 OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/v1"
 
@@ -50,8 +51,8 @@ class OpenCodeEventResult:
 RunProcess = Callable[..., subprocess.CompletedProcess[str]]
 
 
-def build_opencode_config(*, model: str) -> dict[str, object]:
-    """Build an isolated one-provider config with every OpenCode permission denied."""
+def build_opencode_config(*, model: str, system_prompt: str) -> dict[str, object]:
+    """Build an isolated provider and primary classifier agent with every permission denied."""
     if model not in OPENCODE_ZEN_FREE_MODELS:
         raise ValueError("Model is not a reviewed OpenCode Zen free model.")
     return {
@@ -60,6 +61,16 @@ def build_opencode_config(*, model: str) -> dict[str, object]:
         "model": f"{OPENCODE_CLI_PROVIDER_ID}/{model}",
         "small_model": f"{OPENCODE_CLI_PROVIDER_ID}/{model}",
         "permission": "deny",
+        "agent": {
+            OPENCODE_CLI_AGENT_ID: {
+                "description": "Strict KiCad MCP tool-selection classifier.",
+                "mode": "primary",
+                "model": f"{OPENCODE_CLI_PROVIDER_ID}/{model}",
+                "prompt": system_prompt,
+                "temperature": 0,
+                "permission": "deny",
+            }
+        },
         "provider": {
             OPENCODE_CLI_PROVIDER_ID: {
                 "npm": "@ai-sdk/openai-compatible",
@@ -79,13 +90,13 @@ def build_opencode_config(*, model: str) -> dict[str, object]:
     }
 
 
-def build_classifier_message(
+def build_classifier_messages(
     *,
     model: str,
     prompt: str,
     catalog: Sequence[ToolCatalogEntry | Mapping[str, object]],
-) -> str:
-    """Reuse the reviewed classifier policy while leaving OpenCode's own tools disabled."""
+) -> tuple[str, str]:
+    """Return the reviewed classifier system policy and user request as separate messages."""
     payload = build_chat_payload(model=model, prompt=prompt, catalog=catalog)
     messages = payload.get("messages")
     if not isinstance(messages, list) or len(messages) != 2:
@@ -96,7 +107,7 @@ def build_classifier_message(
         raise ValueError("Classifier system message is malformed.")
     if not isinstance(user, dict) or not isinstance(user.get("content"), str):
         raise ValueError("Classifier user message is malformed.")
-    return f"{system['content']}\nUSER_REQUEST={json.dumps(user['content'], ensure_ascii=False)}"
+    return system["content"], user["content"]
 
 
 def _optional_nonnegative_int(value: object) -> int | None:
@@ -192,8 +203,12 @@ def request_opencode_cli(
         raise ValueError("Model is not a reviewed OpenCode Zen free model.")
     if not api_key:
         return {"schema_version": 1, "status": "error", "failure_kind": "adapter_unavailable"}
-    config = build_opencode_config(model=model)
-    message = build_classifier_message(model=model, prompt=prompt, catalog=catalog)
+    system_prompt, user_message = build_classifier_messages(
+        model=model,
+        prompt=prompt,
+        catalog=catalog,
+    )
+    config = build_opencode_config(model=model, system_prompt=system_prompt)
     started = time.perf_counter()
     try:
         with tempfile.TemporaryDirectory(prefix="kicad-mcp-opencode-") as temporary:
@@ -211,10 +226,12 @@ def request_opencode_cli(
                     "kicad-mcp-live-eval",
                     "--model",
                     f"{OPENCODE_CLI_PROVIDER_ID}/{model}",
+                    "--agent",
+                    OPENCODE_CLI_AGENT_ID,
                     "--dir",
                     str(workspace),
                 ],
-                input=message,
+                input=user_message,
                 capture_output=True,
                 text=True,
                 timeout=timeout_seconds,
@@ -243,10 +260,11 @@ def request_opencode_cli(
 
 
 __all__ = [
+    "OPENCODE_CLI_AGENT_ID",
     "OPENCODE_CLI_PROVIDER_ID",
     "OPENCODE_CLI_VERSION",
     "OpenCodeEventResult",
-    "build_classifier_message",
+    "build_classifier_messages",
     "build_opencode_config",
     "parse_opencode_events",
     "request_opencode_cli",

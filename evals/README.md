@@ -265,8 +265,10 @@ endpoint records use `--structured-output none`, so each adapter attempt sends e
 one request with only model-documented fields. A separate nonblocking
 `opencode-cli-nemotron-3-ultra-free` record runs pinned OpenCode CLI `1.18.10` with
 one custom Zen provider, isolated temporary state, `--pure`, JSON events, sharing and
-auto-update disabled, and every OpenCode permission denied. The CLI receives the
-reviewed classifier policy as text but no executable KiCad, shell, file, web, MCP, or
+auto-update disabled, and every OpenCode permission denied. A dedicated primary agent
+receives the reviewed classifier policy as its system prompt, while the case request is
+sent separately over stdin as the user message; the default coding-agent instructions
+are not used. The provider receives no executable KiCad, shell, file, web, MCP, or
 subagent tools. It does not replace or retry the raw record and remains excluded from
 release gating and baselines. Earlier direct `response_format` and synthetic function
 call experiments were removed after each produced zero valid smoke observations.
