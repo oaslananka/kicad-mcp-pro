@@ -346,6 +346,8 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
         "nvidia-llama-3-3-70b-instruct",
         "opencode-deepseek-v4-flash-free",
         "opencode-mimo-v2-5-free",
+        "opencode-laguna-s-2-1-free",
+        "opencode-ling-3-0-flash-free",
         "opencode-north-mini-code-free",
         "opencode-nemotron-3-ultra-free",
     ):

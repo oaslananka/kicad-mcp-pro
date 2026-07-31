@@ -245,9 +245,10 @@ full-corpus review before it can replace a required release-gate configuration;
 its presence in the configuration registry alone does not change gate policy or
 baselines.
 
-Four OpenCode Zen free-model records are also versioned for manual experimental
-comparison: `deepseek-v4-flash-free`, `mimo-v2.5-free`, `north-mini-code-free`, and
-`nemotron-3-ultra-free`. They use the documented OpenAI-compatible Zen chat endpoint
+Six OpenCode Zen free-model records are also versioned for manual experimental
+comparison: `deepseek-v4-flash-free`, `mimo-v2.5-free`, `laguna-s-2.1-free`,
+`ling-3.0-flash-free`, `north-mini-code-free`, and `nemotron-3-ultra-free`. They use
+the documented OpenAI-compatible Zen chat endpoint
 and require `OPENCODE_ZEN_API_KEY`, which must be synchronized from Doppler into the protected
 `live-model-evals` environment before a billed/live run. Free-model availability can change, so these records
 are intentionally excluded from the blocking release-gate matrix. `big-pickle` is not

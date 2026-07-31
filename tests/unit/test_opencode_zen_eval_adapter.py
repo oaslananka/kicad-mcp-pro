@@ -62,6 +62,8 @@ def test_opencode_free_model_allowlist_matches_reviewed_experimental_set() -> No
         {
             "deepseek-v4-flash-free",
             "mimo-v2.5-free",
+            "laguna-s-2.1-free",
+            "ling-3.0-flash-free",
             "north-mini-code-free",
             "nemotron-3-ultra-free",
         }
