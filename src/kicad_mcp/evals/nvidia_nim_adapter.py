@@ -289,7 +289,7 @@ def _failure_for_status(status_code: int) -> str:
         return "provider_rate_limit"
     if status_code >= 500:
         return "provider_unavailable"
-    return "model_error"
+    return "provider_request_rejected"
 
 
 def _json_object(content: str) -> dict[str, Any]:
@@ -645,7 +645,7 @@ def request_openai_compatible_chat(
         )
         return _apply_policy_postconditions(observation, prompt=prompt, catalog=catalog_values)
     except (TypeError, ValueError, json.JSONDecodeError):
-        return _failure("model_error")
+        return _failure("model_output_invalid")
 
 
 def request_nvidia_nim(

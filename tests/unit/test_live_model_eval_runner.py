@@ -338,6 +338,31 @@ print(json.dumps({
     assert provider_error.failure_kind == "provider_rate_limit"
 
 
+@pytest.mark.parametrize(
+    "failure_kind",
+    ["provider_request_rejected", "model_output_invalid"],
+)
+def test_subprocess_adapter_accepts_sanitized_nonretryable_diagnostics(
+    tmp_path: Path, failure_kind: str
+) -> None:
+    configuration = _subprocess_configuration(
+        tmp_path,
+        f"""\
+import json
+print(json.dumps({{
+    "schema_version": 1,
+    "status": "error",
+    "failure_kind": "{failure_kind}"
+}}))
+""",
+    )
+
+    observation = SubprocessAdapter(configuration).invoke(_case())
+
+    assert observation.failure_kind == failure_kind
+    assert observation.run is None
+
+
 def test_adapter_protocol_rejects_raw_provider_payloads(tmp_path: Path) -> None:
     configuration = _subprocess_configuration(
         tmp_path,
