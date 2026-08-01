@@ -183,30 +183,62 @@ def test_nim_request_classifies_provider_failures_without_raw_body() -> None:
         assert raw_body not in json.dumps(result)
 
 
-def test_nim_request_rejects_unknown_or_malformed_model_output() -> None:
-    responses = (
-        "not json",
-        '{"response_kind":"tool_calls","called_tools":["unknown_tool"]}',
-        '{"response_kind":"answer","called_tools":["pcb_get_board_summary"]}',
+@pytest.mark.parametrize(
+    ("content", "expected_detail"),
+    [
+        ("not json", "json_parse"),
+        (
+            '{"response_kind":"tool_calls","called_tools":["unknown_tool"]}',
+            "unknown_tool",
+        ),
+        (
+            '{"response_kind":"answer","called_tools":["pcb_get_board_summary"]}',
+            "kind_tool_mismatch",
+        ),
+    ],
+)
+def test_nim_request_classifies_malformed_model_output_without_raw_content(
+    content: str, expected_detail: str
+) -> None:
+    result = request_nvidia_nim(
+        model="nvidia/test-model",
+        prompt="Inspect.",
+        api_key="test-key",
+        catalog=({"name": "pcb_get_board_summary", "summary": "Summarize."},),
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": content}}]},
+            )
+        ),
     )
-    for content in responses:
-        result = request_nvidia_nim(
-            model="nvidia/test-model",
-            prompt="Inspect.",
-            api_key="runtime-" + "key",
-            catalog=({"name": "pcb_get_board_summary", "summary": "Summarize."},),
-            transport=httpx.MockTransport(
-                lambda _request, content=content: httpx.Response(
-                    200,
-                    json={"choices": [{"message": {"content": content}}]},
-                )
-            ),
-        )
-        assert result == {
-            "schema_version": 1,
-            "status": "error",
-            "failure_kind": "model_output_invalid",
-        }
+
+    assert result == {
+        "schema_version": 1,
+        "status": "error",
+        "failure_kind": "model_output_invalid",
+        "failure_detail": expected_detail,
+    }
+    assert content not in json.dumps(result)
+
+
+def test_nim_request_classifies_invalid_provider_json_without_raw_body() -> None:
+    raw_body = "not-provider-json-that-must-not-escape"
+    result = request_nvidia_nim(
+        model="nvidia/test-model",
+        prompt="Inspect.",
+        api_key="test-key",
+        catalog=(),
+        transport=httpx.MockTransport(lambda _request: httpx.Response(200, text=raw_body)),
+    )
+
+    assert result == {
+        "schema_version": 1,
+        "status": "error",
+        "failure_kind": "model_output_invalid",
+        "failure_detail": "provider_json",
+    }
+    assert raw_body not in json.dumps(result)
 
 
 def test_hosted_nim_request_makes_one_http_call_without_structured_fields() -> None:
@@ -335,6 +367,7 @@ def test_nim_request_rejects_json_with_surrounding_text() -> None:
         "schema_version": 1,
         "status": "error",
         "failure_kind": "model_output_invalid",
+        "failure_detail": "json_parse",
     }
 
 

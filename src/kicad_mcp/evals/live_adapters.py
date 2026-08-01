@@ -14,6 +14,21 @@ from typing import Any, Literal, Protocol, cast
 from .live_config import EvalConfiguration
 from .tool_selection import AgentRun, EvalCase, ResponseKind
 
+FailureDetail = Literal[
+    "provider_json",
+    "provider_response_shape",
+    "content_missing",
+    "json_fence",
+    "json_parse",
+    "json_not_object",
+    "unsupported_fields",
+    "classifier_shape",
+    "unknown_tool",
+    "duplicate_tool",
+    "kind_tool_mismatch",
+    "usage_shape",
+]
+
 FailureKind = Literal[
     "adapter_unavailable",
     "timeout",
@@ -28,6 +43,23 @@ FailureKind = Literal[
     "unknown",
 ]
 
+
+MODEL_OUTPUT_FAILURE_DETAILS: frozenset[FailureDetail] = frozenset(
+    {
+        "provider_json",
+        "provider_response_shape",
+        "content_missing",
+        "json_fence",
+        "json_parse",
+        "json_not_object",
+        "unsupported_fields",
+        "classifier_shape",
+        "unknown_tool",
+        "duplicate_tool",
+        "kind_tool_mismatch",
+        "usage_shape",
+    }
+)
 
 _FAILURE_KINDS = frozenset(
     {
@@ -69,6 +101,7 @@ _SUCCESS_KEYS = frozenset(
     }
 )
 _ERROR_KEYS = frozenset({"schema_version", "status", "failure_kind"})
+_ERROR_DETAIL_KEYS = _ERROR_KEYS | {"failure_detail"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,11 +110,17 @@ class AdapterObservation:
 
     run: AgentRun | None = None
     failure_kind: FailureKind | None = None
+    failure_detail: FailureDetail | None = None
     estimated_cost_micros: int | None = None
 
     def __post_init__(self) -> None:
         if (self.run is None) == (self.failure_kind is None):
             raise ValueError("AdapterObservation needs exactly one of run or failure_kind.")
+        if self.failure_detail is not None:
+            if self.failure_kind != "model_output_invalid":
+                raise ValueError("failure_detail is valid only for model_output_invalid.")
+            if self.failure_detail not in MODEL_OUTPUT_FAILURE_DETAILS:
+                raise ValueError("failure_detail is not allowlisted.")
         if self.estimated_cost_micros is not None and self.estimated_cost_micros < 0:
             raise ValueError("estimated_cost_micros must be non-negative.")
 
@@ -119,8 +158,8 @@ class EvalAdapter(Protocol):
         """Execute one case and return only normalized, sanitized data."""
 
 
-def _failure(kind: FailureKind) -> AdapterObservation:
-    return AdapterObservation(failure_kind=kind)
+def _failure(kind: FailureKind, detail: FailureDetail | None = None) -> AdapterObservation:
+    return AdapterObservation(failure_kind=kind, failure_detail=detail)
 
 
 def _optional_number(
@@ -149,12 +188,21 @@ def _parse_adapter_payload(value: object) -> AdapterObservation:
         raise ValueError("Adapter response schema_version must be 1.")
     status = raw.get("status")
     if status == "error":
-        if set(raw) != _ERROR_KEYS:
+        if set(raw) not in {_ERROR_KEYS, _ERROR_DETAIL_KEYS}:
             raise ValueError("Error adapter response contains unsupported fields.")
         failure_raw = raw.get("failure_kind")
         if failure_raw not in _FAILURE_KINDS:
             raise ValueError("Adapter response has an unsupported failure_kind.")
-        return _failure(cast(FailureKind, failure_raw))
+        failure_detail: FailureDetail | None = None
+        if "failure_detail" in raw:
+            detail_raw = raw.get("failure_detail")
+            if (
+                failure_raw != "model_output_invalid"
+                or detail_raw not in MODEL_OUTPUT_FAILURE_DETAILS
+            ):
+                raise ValueError("Adapter response has an unsupported failure_detail.")
+            failure_detail = cast(FailureDetail, detail_raw)
+        return _failure(cast(FailureKind, failure_raw), failure_detail)
     if status != "ok":
         raise ValueError("Adapter response status must be 'ok' or 'error'.")
     if set(raw) - _SUCCESS_KEYS:

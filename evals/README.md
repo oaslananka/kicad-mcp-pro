@@ -338,8 +338,12 @@ instructional questions and ambiguous matches are not guessed. Direct answers ar
 reserved for requests with no applicable catalog tool. Neither layer contains case IDs,
 expected tools, forbidden tools, notes, or answer keys.
 Model output must be one JSON object, optionally wrapped by one exact `json` code
-fence. Arbitrary prefix or suffix text is rejected. Case expectations and prompts are
-never copied to evidence.
+fence. Arbitrary prefix or suffix text is rejected. A failed strict-output validation
+retains `failure_kind: model_output_invalid` and may add one closed, sanitized
+`failure_detail` value identifying only the validation stage (for example JSON parsing,
+provider envelope shape, classifier shape, or unknown tool). Raw model content and
+provider payloads are never copied to adapter output or evidence. Case expectations and
+prompts are never copied to evidence.
 
 `.github/workflows/live-model-release-gate.yml` runs two reviewed NVIDIA NIM records
 and the sandboxed OpenCode CLI record sequentially from protected `main`. The protected

@@ -200,6 +200,15 @@ def test_gate_passes_three_approved_repeated_configurations(tmp_path: Path) -> N
 
 
 def test_gate_distinguishes_safety_quality_infrastructure_and_telemetry(tmp_path: Path) -> None:
+    adapter_execution = {
+        "case_id": "export_router_dsn",
+        "run_index": 0,
+        "attempts": 3,
+        "failure_kind": "model_output_invalid",
+        "failure_detail": "json_parse",
+        "observation": None,
+        "score": None,
+    }
     safety_execution = {
         "case_id": "board_overview",
         "run_index": 0,
@@ -238,7 +247,12 @@ def test_gate_distinguishes_safety_quality_infrastructure_and_telemetry(tmp_path
                 selection_failures=1,
                 executions=[safety_execution],
             ),
-            _evidence(CONFIG_IDS[1], MODELS[1], adapter_failures=1),
+            _evidence(
+                CONFIG_IDS[1],
+                MODELS[1],
+                adapter_failures=1,
+                executions=[adapter_execution],
+            ),
             _evidence(
                 CONFIG_IDS[2],
                 MODELS[2],
@@ -261,7 +275,9 @@ def test_gate_distinguishes_safety_quality_infrastructure_and_telemetry(tmp_path
     assert any(CONFIG_IDS[0] in item for item in classifications["quality_failures"])
     assert any(CONFIG_IDS[1] in item for item in classifications["infrastructure_failures"])
     assert any(CONFIG_IDS[2] in item for item in classifications["telemetry_unavailable"])
-    assert report["per_case_failures"][0]["case_id"] == "board_overview"
+    per_case = {item["case_id"]: item for item in report["per_case_failures"]}
+    assert "board_overview" in per_case
+    assert per_case["export_router_dsn"]["failure_detail"] == "json_parse"
     assert "prompt" not in json.dumps(report)
 
 

@@ -389,6 +389,68 @@ print(json.dumps({{
     assert observation.run is None
 
 
+def test_adapter_observation_rejects_non_allowlisted_failure_detail() -> None:
+    with pytest.raises(ValueError, match="allowlisted"):
+        AdapterObservation(
+            failure_kind="model_output_invalid",
+            failure_detail="raw-provider-text",  # type: ignore[arg-type]
+        )
+
+
+def test_subprocess_adapter_accepts_allowlisted_model_output_failure_detail(
+    tmp_path: Path,
+) -> None:
+    configuration = _subprocess_configuration(
+        tmp_path,
+        """\
+import json
+print(json.dumps({
+    "schema_version": 1,
+    "status": "error",
+    "failure_kind": "model_output_invalid",
+    "failure_detail": "json_parse"
+}))
+""",
+    )
+
+    observation = SubprocessAdapter(configuration).invoke(_case())
+
+    assert observation.failure_kind == "model_output_invalid"
+    assert observation.failure_detail == "json_parse"
+    assert observation.run is None
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "schema_version": 1,
+            "status": "error",
+            "failure_kind": "model_output_invalid",
+            "failure_detail": "raw-provider-text",
+        },
+        {
+            "schema_version": 1,
+            "status": "error",
+            "failure_kind": "provider_unavailable",
+            "failure_detail": "provider_json",
+        },
+    ],
+)
+def test_subprocess_adapter_rejects_invalid_failure_detail(
+    tmp_path: Path, payload: dict[str, object]
+) -> None:
+    configuration = _subprocess_configuration(
+        tmp_path,
+        "import json\nprint(json.dumps(" + repr(payload) + "))\n",
+    )
+
+    observation = SubprocessAdapter(configuration).invoke(_case())
+
+    assert observation.failure_kind == "protocol_error"
+    assert observation.failure_detail is None
+
+
 def test_adapter_protocol_rejects_raw_provider_payloads(tmp_path: Path) -> None:
     configuration = _subprocess_configuration(
         tmp_path,
@@ -680,6 +742,45 @@ def test_runner_retries_model_output_invalid_with_bounded_backoff(
     assert execution.failure_kind is None
     assert execution.score is not None and execution.score.passed
     assert report.summary["adapter_failures"] == 0
+
+
+def test_runner_preserves_final_model_output_failure_detail_after_retries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = tmp_path / "unused.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(tmp_path, trace, max_retries=2)
+    waits: list[float] = []
+    monkeypatch.setattr(time, "sleep", waits.append)
+
+    class DetailedFailureAdapter:
+        def reset(self) -> None:
+            return None
+
+        def invoke(self, _case: EvalCase) -> AdapterObservation:
+            return AdapterObservation(
+                failure_kind="model_output_invalid",
+                failure_detail="unknown_tool",
+            )
+
+    report = execute_evaluation(
+        [_case()],
+        configuration,
+        DetailedFailureAdapter(),
+        repeats=1,
+        source_revision="a" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    execution = report.executions[0]
+    assert waits == [1.0, 2.0]
+    assert execution.attempts == 3
+    assert execution.failure_kind == "model_output_invalid"
+    assert execution.failure_detail == "unknown_tool"
+    assert execution.as_dict()["failure_detail"] == "unknown_tool"
+    assert report.as_dict()["executions"][0]["failure_detail"] == "unknown_tool"
 
 
 def test_runner_does_not_retry_provider_request_rejected(
