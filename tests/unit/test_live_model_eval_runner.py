@@ -15,6 +15,7 @@ from kicad_mcp.evals.live_runner import (
     AdapterObservation,
     EvalConfigurationError,
     EvidenceSanitizationError,
+    FailureKind,
     ReplayAdapter,
     SubprocessAdapter,
     build_adapter,
@@ -343,7 +344,7 @@ print(json.dumps({
     "failure_kind",
     ["provider_request_rejected", "model_output_invalid"],
 )
-def test_subprocess_adapter_accepts_sanitized_nonretryable_diagnostics(
+def test_subprocess_adapter_accepts_sanitized_failure_diagnostics(
     tmp_path: Path, failure_kind: str
 ) -> None:
     configuration = _subprocess_configuration(
@@ -560,6 +561,81 @@ def test_runner_waits_with_bounded_exponential_backoff_for_retryable_failures(
     assert report.executions[0].attempts == 4
     assert report.executions[0].failure_kind is None
     assert report.summary["adapter_failures"] == 0
+
+
+class _ModelOutputRetryAdapter:
+    def __init__(self, failures: list[FailureKind]) -> None:
+        self.failures = failures
+
+    def reset(self) -> None:
+        return None
+
+    def invoke(self, _case: EvalCase) -> AdapterObservation:
+        if self.failures:
+            return AdapterObservation(failure_kind=self.failures.pop(0))
+        return AdapterObservation.from_values(
+            called_tools=("pcb_get_board_summary",),
+            response_kind="tool_calls",
+            latency_ms=10,
+            input_tokens=20,
+            output_tokens=5,
+            estimated_cost_micros=None,
+        )
+
+
+def test_runner_retries_model_output_invalid_with_bounded_backoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = tmp_path / "unused.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(tmp_path, trace, max_retries=2)
+    waits: list[float] = []
+    monkeypatch.setattr(time, "sleep", waits.append)
+
+    report = execute_evaluation(
+        [_case()],
+        configuration,
+        _ModelOutputRetryAdapter(["model_output_invalid"]),
+        repeats=1,
+        source_revision="a" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    execution = report.executions[0]
+    assert waits == [1.0]
+    assert execution.attempts == 2
+    assert execution.failure_kind is None
+    assert execution.score is not None and execution.score.passed
+    assert report.summary["adapter_failures"] == 0
+
+
+def test_runner_does_not_retry_provider_request_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = tmp_path / "unused.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(tmp_path, trace, max_retries=2)
+    waits: list[float] = []
+    monkeypatch.setattr(time, "sleep", waits.append)
+
+    report = execute_evaluation(
+        [_case()],
+        configuration,
+        _ModelOutputRetryAdapter(["provider_request_rejected"]),
+        repeats=1,
+        source_revision="a" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    execution = report.executions[0]
+    assert waits == []
+    assert execution.attempts == 1
+    assert execution.failure_kind == "provider_request_rejected"
+    assert execution.score is None
 
 
 def test_runner_stops_on_budget_exhaustion_and_separates_missing_telemetry(tmp_path: Path) -> None:
