@@ -908,6 +908,89 @@ def test_output_postcondition_maps_check_to_unique_evaluation_tool() -> None:
     )
 
 
+def test_output_postcondition_selects_more_specific_read_only_inspection_tool() -> None:
+    result = _request_postcondition_result(
+        prompt="Show all unconnected PCB nets.",
+        model_response="tool_calls",
+        selected_tools=("pcb_get_nets",),
+        catalog=(
+            {
+                "name": "pcb_get_nets",
+                "summary": "List all board nets.",
+                "data_loss_risk": False,
+            },
+            {
+                "name": "get_unconnected_nets",
+                "summary": "Return only unconnected net issues from DRC.",
+                "data_loss_risk": False,
+            },
+        ),
+    )
+
+    _assert_decision(
+        result,
+        response_kind="tool_calls",
+        called_tools=["get_unconnected_nets"],
+    )
+
+
+def test_output_postcondition_preserves_board_net_tool_over_schematic_candidate() -> None:
+    result = _request_postcondition_result(
+        prompt="List all nets on the active PCB.",
+        model_response="tool_calls",
+        selected_tools=("pcb_get_nets",),
+        catalog=(
+            {
+                "name": "pcb_get_nets",
+                "summary": "List all board nets.",
+                "data_loss_risk": False,
+            },
+            {
+                "name": "sch_get_connectivity_graph",
+                "summary": "Summarize the active schematic as a textual net connectivity graph.",
+                "data_loss_risk": False,
+            },
+        ),
+    )
+
+    _assert_decision(
+        result,
+        response_kind="tool_calls",
+        called_tools=["pcb_get_nets"],
+    )
+
+
+def test_output_postcondition_preserves_read_only_selection_when_specificity_is_ambiguous() -> None:
+    result = _request_postcondition_result(
+        prompt="Show all unconnected PCB nets.",
+        model_response="tool_calls",
+        selected_tools=("pcb_get_nets",),
+        catalog=(
+            {
+                "name": "pcb_get_nets",
+                "summary": "List all board nets.",
+                "data_loss_risk": False,
+            },
+            {
+                "name": "get_unconnected_nets",
+                "summary": "Return only unconnected net issues from DRC.",
+                "data_loss_risk": False,
+            },
+            {
+                "name": "report_unconnected_nets",
+                "summary": "Report only unconnected net issues from DRC.",
+                "data_loss_risk": False,
+            },
+        ),
+    )
+
+    _assert_decision(
+        result,
+        response_kind="tool_calls",
+        called_tools=["pcb_get_nets"],
+    )
+
+
 def test_output_postcondition_does_not_replace_mutation_with_another_mutation() -> None:
     result = _request_postcondition_result(
         prompt="Check whether the schematic-to-PCB transfer is clean.",

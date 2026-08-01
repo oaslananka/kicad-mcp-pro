@@ -197,7 +197,20 @@ _INSPECTION_TOOL_TERMS = frozenset(
     {"inspect", "check", "evaluate", "show", "get", "list", "report", "validate", "quality", "gate"}
 )
 _INSPECTION_OBJECT_TERMS = _DIRECT_OBJECT_TERMS | frozenset(
-    {"transfer", "quality", "clean", "status", "health", "readability", "placement", "parity"}
+    {
+        "transfer",
+        "quality",
+        "clean",
+        "status",
+        "health",
+        "readability",
+        "placement",
+        "parity",
+        "unconnected",
+    }
+)
+_READ_ONLY_SPECIFICITY_PROMPT_TERMS = _INSPECTION_PROMPT_TERMS | frozenset(
+    {"show", "list", "get", "return", "report"}
 )
 _MUTATING_TOOL_TERMS = _DESTRUCTIVE_TERMS | frozenset(
     {"add", "create", "generate", "move", "set", "write", "save", "place", "sync", "apply"}
@@ -781,6 +794,71 @@ def _unique_inspection_tool_match(
     return best[0] if len(best) == 1 else None
 
 
+def _unique_more_specific_read_only_inspection_match(
+    observation: Mapping[str, object],
+    *,
+    prompt: str,
+    catalog: Sequence[Mapping[str, object]],
+) -> str | None:
+    """Refine one read-only selection only when a unique candidate is strictly more specific."""
+    if observation.get("response_kind") != "tool_calls":
+        return None
+    called = observation.get("called_tools")
+    if not isinstance(called, list | tuple) or len(called) != 1:
+        return None
+
+    prompt_tokens = _inspection_tokens(prompt)
+    if not prompt_tokens & _READ_ONLY_SPECIFICITY_PROMPT_TERMS:
+        return None
+    prompt_objects = prompt_tokens & _INSPECTION_OBJECT_TERMS
+    if not prompt_objects:
+        return None
+
+    selected_name = str(called[0])
+    catalog_by_name = {str(item.get("name", "")): item for item in catalog}
+    selected_item = catalog_by_name.get(selected_name)
+    if selected_item is None:
+        return None
+    selected_tokens = _inspection_tokens(f"{selected_name} {str(selected_item.get('summary', ''))}")
+    if selected_tokens & _MUTATING_TOOL_TERMS:
+        return None
+    selected_matches = selected_tokens & prompt_objects
+    selected_score = (
+        len(selected_matches - _DIRECT_DOMAIN_TERMS) * 100
+        + len(selected_matches & _DIRECT_DOMAIN_TERMS) * 10
+    )
+
+    scored: list[tuple[int, str]] = []
+    for item in catalog:
+        name = str(item.get("name", ""))
+        if name == selected_name:
+            continue
+        summary = str(item.get("summary", ""))
+        tool_tokens = _inspection_tokens(f"{name} {summary}")
+        if tool_tokens & _MUTATING_TOOL_TERMS:
+            continue
+        if not tool_tokens & _INSPECTION_TOOL_TERMS:
+            continue
+        candidate_domains = tool_tokens & _DIRECT_DOMAIN_TERMS
+        prompt_domains = prompt_objects & _DIRECT_DOMAIN_TERMS
+        if candidate_domains - prompt_domains:
+            continue
+        matched_objects = tool_tokens & prompt_objects
+        if not matched_objects or not (matched_objects - selected_matches):
+            continue
+        score = (
+            len(matched_objects - _DIRECT_DOMAIN_TERMS) * 100
+            + len(matched_objects & _DIRECT_DOMAIN_TERMS) * 10
+        )
+        if score > selected_score:
+            scored.append((score, name))
+    if not scored:
+        return None
+    best_score = max(score for score, _name in scored)
+    best = sorted(name for score, name in scored if score == best_score)
+    return best[0] if len(best) == 1 else None
+
+
 def _positive_direct_intents(prompt: str) -> frozenset[str]:
     """Return direct action intents that are not locally negated by the user."""
     tokens = _normalized_token_sequence(prompt)
@@ -863,6 +941,12 @@ def _apply_policy_postconditions(
         tool = _unique_inspection_tool_match(prompt=prompt, catalog=catalog)
         if tool is not None:
             return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
+
+    tool = _unique_more_specific_read_only_inspection_match(
+        observation, prompt=prompt, catalog=catalog
+    )
+    if tool is not None:
+        return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
 
     if not release_request:
         tool = _unique_direct_tool_match(prompt=prompt, catalog=catalog)
