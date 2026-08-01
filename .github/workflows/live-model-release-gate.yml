@@ -43,7 +43,7 @@ jobs:
         configuration:
           - nvidia-nemotron-3-nano-30b-a3b
           - nvidia-mistral-medium-3-5-128b
-          - nvidia-gemma-4-31b-it
+          - opencode-cli-nemotron-3-ultra-free
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
@@ -53,13 +53,26 @@ jobs:
           enable-cache: false
           version-file: uv.toml
       - run: uv sync --all-extras --frozen
+      - name: Install pinned OpenCode CLI
+        if: startsWith(matrix.configuration, 'opencode-cli-')
+        env:
+          OPENCODE_CLI_VERSION: "1.18.10"
+        run: |
+          set -euo pipefail
+          npm install --global --no-audit --no-fund "opencode-ai@$OPENCODE_CLI_VERSION"
+          test "$(opencode --version)" = "$OPENCODE_CLI_VERSION"
       - name: Run bounded live smoke
         env:
           CONFIGURATION_ID: ${{ matrix.configuration }}
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          NVIDIA_API_KEY: ${{ startsWith(matrix.configuration, 'nvidia-') && secrets.NVIDIA_API_KEY || '' }}
+          OPENCODE_ZEN_API_KEY: ${{ startsWith(matrix.configuration, 'opencode-cli-') && secrets.OPENCODE_ZEN_API_KEY || '' }}
         run: |
           set -euo pipefail
-          test -n "$NVIDIA_API_KEY"
+          case "$CONFIGURATION_ID" in
+            nvidia-*) test -n "$NVIDIA_API_KEY" ;;
+            opencode-cli-*) test -n "$OPENCODE_ZEN_API_KEY" ;;
+            *) echo "Unsupported blocking configuration: $CONFIGURATION_ID" >&2; exit 2 ;;
+          esac
           mkdir -p artifacts/live-model-smoke
           python - "$CONFIGURATION_ID" "$GITHUB_SHA" <<'PY'
           import json
@@ -139,7 +152,7 @@ jobs:
         configuration:
           - nvidia-nemotron-3-nano-30b-a3b
           - nvidia-mistral-medium-3-5-128b
-          - nvidia-gemma-4-31b-it
+          - opencode-cli-nemotron-3-ultra-free
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
@@ -149,14 +162,27 @@ jobs:
           enable-cache: false
           version-file: uv.toml
       - run: uv sync --all-extras --frozen
+      - name: Install pinned OpenCode CLI
+        if: startsWith(matrix.configuration, 'opencode-cli-')
+        env:
+          OPENCODE_CLI_VERSION: "1.18.10"
+        run: |
+          set -euo pipefail
+          npm install --global --no-audit --no-fund "opencode-ai@$OPENCODE_CLI_VERSION"
+          test "$(opencode --version)" = "$OPENCODE_CLI_VERSION"
       - name: Run bounded live benchmark
         env:
           CONFIGURATION_ID: ${{ matrix.configuration }}
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          NVIDIA_API_KEY: ${{ startsWith(matrix.configuration, 'nvidia-') && secrets.NVIDIA_API_KEY || '' }}
+          OPENCODE_ZEN_API_KEY: ${{ startsWith(matrix.configuration, 'opencode-cli-') && secrets.OPENCODE_ZEN_API_KEY || '' }}
           REPEATS: ${{ inputs.repeats }}
         run: |
           set -euo pipefail
-          test -n "$NVIDIA_API_KEY"
+          case "$CONFIGURATION_ID" in
+            nvidia-*) test -n "$NVIDIA_API_KEY" ;;
+            opencode-cli-*) test -n "$OPENCODE_ZEN_API_KEY" ;;
+            *) echo "Unsupported blocking configuration: $CONFIGURATION_ID" >&2; exit 2 ;;
+          esac
           mkdir -p artifacts/live-model-eval
           python - "$CONFIGURATION_ID" "$GITHUB_SHA" <<'PY'
           import json
