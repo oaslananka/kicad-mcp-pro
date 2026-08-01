@@ -195,6 +195,11 @@ A host or provider failure uses the restricted error shape:
 {"failure_kind":"provider_rate_limit","schema_version":1,"status":"error"}
 ```
 
+The reviewed Mistral NIM record sets a 65-second provider HTTP timeout beneath the
+runner's 70-second subprocess cap. This preserves a five-second process-cleanup margin
+while accommodating the model's observed long-tail latency; retry count, pacing, and
+workflow job deadlines remain unchanged.
+
 Supported classifications are `adapter_unavailable`, `timeout`, `protocol_error`,
 `provider_auth`, `provider_rate_limit`, `provider_unavailable`, `budget_exceeded`,
 `provider_request_rejected`, `model_output_invalid`, `model_error`, and `unknown`.
