@@ -239,6 +239,21 @@ def _build_report(
     )
 
 
+def _wait_for_request_slot(
+    last_started_at: float | None,
+    minimum_interval_seconds: float,
+) -> float:
+    """Wait until the next provider request may start and return its start timestamp."""
+    now = time.monotonic()
+    if last_started_at is None or minimum_interval_seconds <= 0:
+        return now
+    wait_seconds = minimum_interval_seconds - (now - last_started_at)
+    if wait_seconds > 0:
+        time.sleep(wait_seconds)
+        now += wait_seconds
+    return now
+
+
 def execute_evaluation(
     cases: list[EvalCase],
     configuration: EvalConfiguration,
@@ -270,6 +285,7 @@ def execute_evaluation(
     token_observations = 0
     cost_observations = 0
     budget_exhausted = False
+    last_request_started_at: float | None = None
 
     def report(*, complete: bool) -> EvaluationReport:
         return _build_report(
@@ -306,6 +322,10 @@ def execute_evaluation(
             observation: AdapterObservation | None = None
             while attempts <= configuration.limits.max_retries:
                 attempts += 1
+                last_request_started_at = _wait_for_request_slot(
+                    last_request_started_at,
+                    configuration.limits.min_request_interval_seconds,
+                )
                 observation = adapter.invoke(case)
                 if (
                     observation.failure_kind in _RETRYABLE_FAILURES

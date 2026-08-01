@@ -26,6 +26,7 @@ _CONFIGURATION_KEYS = frozenset(
 _LIMIT_KEYS = frozenset(
     {
         "timeout_seconds",
+        "min_request_interval_seconds",
         "max_retries",
         "max_cases",
         "max_total_tool_calls",
@@ -33,6 +34,7 @@ _LIMIT_KEYS = frozenset(
         "max_total_cost_micros",
     }
 )
+_REQUIRED_LIMIT_KEYS = _LIMIT_KEYS - {"min_request_interval_seconds"}
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _COMMAND_SECRET = re.compile(
     r"(?i)(?:sk-[A-Za-z0-9_-]{8,}|"
@@ -54,6 +56,7 @@ class RunLimits:
     max_total_tool_calls: int
     max_total_tokens: int
     max_total_cost_micros: int
+    min_request_interval_seconds: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +133,21 @@ def _required_timeout(raw: dict[str, Any], record_id: str) -> float:
     return float(value)
 
 
+def _optional_nonnegative_number(
+    raw: dict[str, Any],
+    key: str,
+    record_id: str,
+    *,
+    default: float = 0.0,
+) -> float:
+    value = raw.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+        raise EvalConfigurationError(
+            f"Configuration {record_id!r} limit {key!r} must be a number >= 0."
+        )
+    return float(value)
+
+
 def _parse_limits(value: object, record_id: str) -> RunLimits:
     raw = _mapping(value, f"Configuration {record_id!r} field limits")
     unknown = sorted(set(raw) - _LIMIT_KEYS)
@@ -137,7 +155,7 @@ def _parse_limits(value: object, record_id: str) -> RunLimits:
         raise EvalConfigurationError(
             f"Configuration {record_id!r} has unsupported limit fields: {unknown}."
         )
-    missing = sorted(_LIMIT_KEYS - set(raw))
+    missing = sorted(_REQUIRED_LIMIT_KEYS - set(raw))
     if missing:
         raise EvalConfigurationError(
             f"Configuration {record_id!r} is missing required limits: {missing}."
@@ -149,6 +167,9 @@ def _parse_limits(value: object, record_id: str) -> RunLimits:
         max_total_tool_calls=_required_int(raw, "max_total_tool_calls", record_id, minimum=1),
         max_total_tokens=_required_int(raw, "max_total_tokens", record_id, minimum=1),
         max_total_cost_micros=_required_int(raw, "max_total_cost_micros", record_id, minimum=0),
+        min_request_interval_seconds=_optional_nonnegative_number(
+            raw, "min_request_interval_seconds", record_id
+        ),
     )
 
 

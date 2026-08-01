@@ -22,6 +22,7 @@ configurations:
     required_env: [NVIDIA_API_KEY]
     limits:
       timeout_seconds: 70
+      min_request_interval_seconds: 5
       max_retries: 2
       max_cases: 325
       max_total_tool_calls: 1000
@@ -36,6 +37,7 @@ configurations:
     required_env: [NVIDIA_API_KEY]
     limits:
       timeout_seconds: 70
+      min_request_interval_seconds: 5
       max_retries: 2
       max_cases: 325
       max_total_tool_calls: 1000
@@ -50,6 +52,7 @@ configurations:
     required_env: [NVIDIA_API_KEY]
     limits:
       timeout_seconds: 70
+      min_request_interval_seconds: 5
       max_retries: 2
       max_cases: 325
       max_total_tool_calls: 1000
@@ -64,6 +67,7 @@ configurations:
     required_env: [NVIDIA_API_KEY]
     limits:
       timeout_seconds: 70
+      min_request_interval_seconds: 5
       max_retries: 2
       max_cases: 325
       max_total_tool_calls: 1000

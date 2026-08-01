@@ -54,6 +54,7 @@ configurations:
     required_env: [ALPHA_API_KEY]
     limits:
       timeout_seconds: 60
+      min_request_interval_seconds: 5
       max_retries: 2
       max_cases: 200
       max_total_tool_calls: 300
@@ -89,6 +90,8 @@ configurations:
     assert alpha.command == ("alpha-eval-adapter", "--json")
     assert alpha.required_env == ("ALPHA_API_KEY",)
     assert alpha.limits.max_retries == 2
+    assert alpha.limits.min_request_interval_seconds == 5.0
+    assert replay.limits.min_request_interval_seconds == 0.0
 
 
 @pytest.mark.parametrize(
@@ -154,6 +157,27 @@ configurations:
       max_total_cost_micros: 10000
 """,
             "timeout_seconds",
+        ),
+        (
+            """\
+schema_version: 1
+configurations:
+  - id: unsafe
+    host: alpha
+    model: model
+    adapter: subprocess
+    command: [alpha-eval-adapter]
+    required_env: [ALPHA_API_KEY]
+    limits:
+      timeout_seconds: 60
+      min_request_interval_seconds: -1
+      max_retries: 1
+      max_cases: 10
+      max_total_tool_calls: 20
+      max_total_tokens: 1000
+      max_total_cost_micros: 10000
+""",
+            "min_request_interval_seconds",
         ),
     ],
 )
@@ -515,6 +539,53 @@ def test_runner_retries_transient_provider_failure_but_keeps_selection_failure_s
     assert report.summary["adapter_failures"] == 0
     assert report.summary["selection_failures"] == 1
     assert report.summary["pipeline_passed"] is False
+
+
+class _FastSuccessAdapter:
+    def reset(self) -> None:
+        return None
+
+    def invoke(self, _case: EvalCase) -> AdapterObservation:
+        return AdapterObservation.from_values(
+            called_tools=("pcb_get_board_summary",),
+            response_kind="tool_calls",
+            latency_ms=10,
+            input_tokens=20,
+            output_tokens=5,
+            estimated_cost_micros=None,
+        )
+
+
+def test_runner_enforces_minimum_request_start_interval(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = tmp_path / "unused.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(
+        tmp_path,
+        trace,
+        max_retries=0,
+        min_request_interval_seconds=5,
+    )
+    clock = iter([10.0, 11.0])
+    waits: list[float] = []
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(time, "sleep", waits.append)
+
+    report = execute_evaluation(
+        [_case("first"), _case("second")],
+        configuration,
+        _FastSuccessAdapter(),
+        repeats=1,
+        source_revision="a" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    assert waits == [4.0]
+    assert report.summary["completed_observations"] == 2
+    assert report.summary["adapter_failures"] == 0
 
 
 class _RetrySequenceAdapter:
