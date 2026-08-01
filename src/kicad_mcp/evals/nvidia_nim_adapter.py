@@ -190,6 +190,20 @@ _OBJECT_TERMS = frozenset(
 )
 _DESTRUCTIVE_TERMS = frozenset({"delete", "remove", "revert", "discard", "overwrite", "replace"})
 _MUTATION_INTENTS = _DESTRUCTIVE_TERMS
+_INSPECTION_PROMPT_TERMS = frozenset(
+    {"inspect", "check", "checking", "checked", "evaluate", "review", "summary", "overview"}
+)
+_INSPECTION_TOOL_TERMS = frozenset(
+    {"inspect", "check", "evaluate", "show", "get", "list", "report", "validate", "quality", "gate"}
+)
+_INSPECTION_OBJECT_TERMS = _DIRECT_OBJECT_TERMS | frozenset(
+    {"transfer", "quality", "clean", "status", "health", "readability", "placement", "parity"}
+)
+_MUTATING_TOOL_TERMS = _DESTRUCTIVE_TERMS | frozenset(
+    {"add", "create", "generate", "move", "set", "write", "save", "place", "sync", "apply"}
+)
+
+
 _PROJECT_SCOPE_TERMS = frozenset(
     {
         "board",
@@ -700,6 +714,73 @@ def _unique_catalog_match(
     return best[0] if len(best) == 1 else None
 
 
+def _inspection_tokens(text: str) -> frozenset[str]:
+    """Normalize inspection phrasing without changing general action matching."""
+    tokens = set(_normalized_tokens(text))
+    if tokens & _INSPECTION_PROMPT_TERMS:
+        tokens.add("inspect")
+    if tokens & {"evaluates", "evaluating", "evaluated"}:
+        tokens.add("inspect")
+    if "cleanly" in tokens:
+        tokens.add("clean")
+    if "transferred" in tokens:
+        tokens.add("transfer")
+    return frozenset(tokens)
+
+
+def _selected_tools_include_mutation(
+    observation: Mapping[str, object],
+    catalog: Sequence[Mapping[str, object]],
+) -> bool:
+    if observation.get("response_kind") != "tool_calls":
+        return False
+    called = observation.get("called_tools")
+    if not isinstance(called, list | tuple):
+        return False
+    catalog_by_name = {str(item.get("name", "")): item for item in catalog}
+    for raw_name in called:
+        name = str(raw_name)
+        item = catalog_by_name.get(name, {})
+        summary = str(item.get("summary", ""))
+        if _normalized_tokens(f"{name} {summary}") & _MUTATING_TOOL_TERMS:
+            return True
+    return False
+
+
+def _unique_inspection_tool_match(
+    *,
+    prompt: str,
+    catalog: Sequence[Mapping[str, object]],
+) -> str | None:
+    """Select a unique inspection tool using domain-specific semantic overlap."""
+    prompt_tokens = _inspection_tokens(prompt)
+    if "inspect" not in prompt_tokens:
+        return None
+    prompt_objects = prompt_tokens & _INSPECTION_OBJECT_TERMS
+    if not prompt_objects:
+        return None
+    scored: list[tuple[int, str]] = []
+    for item in catalog:
+        name = str(item.get("name", ""))
+        summary = str(item.get("summary", ""))
+        tool_tokens = _inspection_tokens(f"{name} {summary}")
+        if tool_tokens & _MUTATING_TOOL_TERMS:
+            continue
+        if not tool_tokens & _INSPECTION_TOOL_TERMS:
+            continue
+        matched_objects = tool_tokens & prompt_objects
+        if not matched_objects:
+            continue
+        domain_score = len(matched_objects & _DIRECT_DOMAIN_TERMS)
+        semantic_score = len(matched_objects - _DIRECT_DOMAIN_TERMS)
+        scored.append((semantic_score * 100 + domain_score * 10, name))
+    if not scored:
+        return None
+    best_score = max(score for score, _name in scored)
+    best = sorted(name for score, name in scored if score == best_score)
+    return best[0] if len(best) == 1 else None
+
+
 def _positive_direct_intents(prompt: str) -> frozenset[str]:
     """Return direct action intents that are not locally negated by the user."""
     tokens = _normalized_token_sequence(prompt)
@@ -777,6 +858,11 @@ def _apply_policy_postconditions(
     present_release_approval = bool(prompt_tokens & {"approved", "approval"})
     if release_request and not present_release_approval:
         return _replace_decision(observation, response_kind="confirmation")
+
+    if _selected_tools_include_mutation(observation, catalog):
+        tool = _unique_inspection_tool_match(prompt=prompt, catalog=catalog)
+        if tool is not None:
+            return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
 
     if not release_request:
         tool = _unique_direct_tool_match(prompt=prompt, catalog=catalog)
