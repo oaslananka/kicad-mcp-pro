@@ -262,18 +262,21 @@ benchmark baseline.
 These are specific hosted sample configurations, not a claim that one host,
 publisher, or model family represents universal model quality. Reviewed primary raw
 endpoint records use `--structured-output none`, so each adapter attempt sends exactly
-one request with only model-documented fields. A separate nonblocking
-`opencode-cli-nemotron-3-ultra-free` record runs pinned OpenCode CLI `1.18.10` with
-one custom Zen provider, isolated temporary state, `--pure`, JSON events, sharing and
-auto-update disabled, and every OpenCode permission denied. A dedicated primary agent
-receives the reviewed classifier policy as its system prompt, while the case request is
-sent separately over stdin as the user message; the default coding-agent instructions
-are not used. The provider receives no executable KiCad, shell, file, web, MCP, or
-subagent tools. It does not replace or retry the raw record and remains excluded from
-release gating and baselines. Earlier direct `response_format` and synthetic function
-call experiments were removed after each produced zero valid smoke observations.
-Nemotron and Gemma thinking are disabled with
-`chat_template_kwargs.enable_thinking: false`; Mistral reasoning is disabled with
+one request with only model-documented fields. The reviewed
+`opencode-cli-nemotron-3-ultra-free` record runs pinned OpenCode CLI
+`1.18.10` with one custom Zen provider, isolated temporary state, `--pure`, JSON events,
+sharing and auto-update disabled, and every OpenCode permission denied. A dedicated
+primary agent receives the reviewed classifier policy as its system prompt, while the
+case request is sent separately over stdin as the user message; the default coding-agent
+instructions are not used. The provider receives no executable KiCad, shell, file, web,
+MCP, or subagent tools. After three clean same-revision full-corpus observations, this
+CLI record replaces the repeatedly provider-incomplete Gemma record in the blocking
+release-gate matrix. The raw Zen records and Gemma remain available only for manual
+diagnostics; the CLI record does not replace or retry a raw endpoint attempt. Earlier
+direct `response_format` and synthetic function-call experiments were removed after
+each produced zero valid smoke observations. Nemotron and Gemma thinking are
+disabled with `chat_template_kwargs.enable_thinking: false`; Mistral reasoning is
+disabled with
 `reasoning_effort: none`. Explicit self-hosted integrations may select `guided_json`
 or `json_schema`, but the adapter never retries a rejected payload with a different
 request shape.
@@ -323,9 +326,12 @@ Model output must be one JSON object, optionally wrapped by one exact `json` cod
 fence. Arbitrary prefix or suffix text is rejected. Case expectations and prompts are
 never copied to evidence.
 
-`.github/workflows/live-model-release-gate.yml` runs the three configurations
-sequentially from protected `main`. Before any full-corpus work, each configuration
-must pass one bounded `live-smoke` repetition selected from the same canonical corpus.
+`.github/workflows/live-model-release-gate.yml` runs two reviewed NVIDIA NIM records
+and the sandboxed OpenCode CLI record sequentially from protected `main`. The protected
+environment supplies `NVIDIA_API_KEY` or `OPENCODE_ZEN_API_KEY` only to the bounded
+step that validates the selected configuration. Before any full-corpus work, each
+configuration must pass one bounded `live-smoke` repetition selected from the same
+canonical corpus.
 The 11-case smoke set covers read-only, explicitly authorized write, export, publish,
 human-gated, confirmation, and refusal behavior. It has a 30-minute job limit and
 always uploads sanitized checkpoint evidence. If any required configuration fails,

@@ -4,5 +4,5 @@ minimum_repeats: 3
 required_configurations:
   - nvidia-nemotron-3-nano-30b-a3b
   - nvidia-mistral-medium-3-5-128b
-  - nvidia-gemma-4-31b-it
+  - opencode-cli-nemotron-3-ultra-free
 configurations: {}

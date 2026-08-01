@@ -19,13 +19,48 @@ THRESHOLDS = ROOT / "evals/tool_selection/thresholds.yaml"
 CONFIG_IDS = (
     "nvidia-nemotron-3-nano-30b-a3b",
     "nvidia-mistral-medium-3-5-128b",
-    "nvidia-gemma-4-31b-it",
+    "opencode-cli-nemotron-3-ultra-free",
 )
 MODELS = (
     "nvidia/nemotron-3-nano-30b-a3b",
     "mistralai/mistral-medium-3.5-128b",
-    "google/gemma-4-31b-it",
+    "nemotron-3-ultra-free",
 )
+HOSTS = ("nvidia-nim", "nvidia-nim", "opencode-zen-cli")
+REQUIRED_ENVS = (
+    ("NVIDIA_API_KEY",),
+    ("NVIDIA_API_KEY",),
+    ("OPENCODE_ZEN_API_KEY",),
+)
+COMMANDS = (
+    (
+        "python",
+        "scripts/nvidia_nim_eval_adapter.py",
+        "--model",
+        MODELS[0],
+        "--structured-output",
+        "none",
+    ),
+    (
+        "python",
+        "scripts/nvidia_nim_eval_adapter.py",
+        "--model",
+        MODELS[1],
+        "--structured-output",
+        "none",
+    ),
+    (
+        "python",
+        "scripts/opencode_cli_eval_adapter.py",
+        "--model",
+        MODELS[2],
+        "--opencode-bin",
+        "opencode",
+        "--timeout-seconds",
+        "55",
+    ),
+)
+CONFIG_HOSTS = dict(zip(CONFIG_IDS, HOSTS, strict=True))
 
 
 def _evidence(
@@ -50,7 +85,7 @@ def _evidence(
         "complete": True,
         "configuration": {
             "id": config_id,
-            "host": "nvidia-nim",
+            "host": CONFIG_HOSTS.get(config_id, "nvidia-nim"),
             "model": model,
             "adapter": "subprocess",
         },
@@ -117,7 +152,7 @@ def _baseline(path: Path, *, approved: bool = True) -> Path:
         "required_configurations": list(CONFIG_IDS),
         "configurations": {
             config_id: {
-                "host": "nvidia-nim",
+                "host": host,
                 "model": model,
                 "token_metrics_required": True,
                 "metrics": {
@@ -129,7 +164,7 @@ def _baseline(path: Path, *, approved: bool = True) -> Path:
                     "mean_tokens": 180,
                 },
             }
-            for config_id, model in zip(CONFIG_IDS, MODELS, strict=True)
+            for config_id, model, host in zip(CONFIG_IDS, MODELS, HOSTS, strict=True)
         },
     }
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
@@ -262,24 +297,27 @@ def test_gate_report_writer_rejects_sensitive_material(tmp_path: Path) -> None:
         raise AssertionError("Sensitive gate report must be rejected")
 
 
-def test_committed_live_configurations_are_three_reviewed_nim_records() -> None:
+def test_committed_live_configurations_are_three_reviewed_blocking_records() -> None:
     configurations = load_configurations(CONFIGURATIONS)
 
-    for config_id, model in zip(CONFIG_IDS, MODELS, strict=True):
+    for config_id, model, host, required_env, command in zip(
+        CONFIG_IDS, MODELS, HOSTS, REQUIRED_ENVS, COMMANDS, strict=True
+    ):
         configuration = configurations[config_id]
-        assert configuration.host == "nvidia-nim"
+        assert configuration.host == host
         assert configuration.model == model
         assert configuration.adapter == "subprocess"
-        assert configuration.required_env == ("NVIDIA_API_KEY",)
-        assert configuration.command == (
-            "python",
-            "scripts/nvidia_nim_eval_adapter.py",
-            "--model",
-            model,
-            "--structured-output",
-            "none",
-        )
+        assert configuration.required_env == required_env
+        assert configuration.command == command
         assert configuration.limits.max_cases >= 195
+
+
+def test_committed_baseline_keeps_reviewed_required_configs_unapproved() -> None:
+    baseline = yaml.safe_load((ROOT / "evals/live/baselines.yaml").read_text(encoding="utf-8"))
+
+    assert baseline["approved"] is False
+    assert baseline["required_configurations"] == list(CONFIG_IDS)
+    assert baseline["configurations"] == {}
 
 
 def test_committed_live_smoke_subset_is_bounded_balanced_and_canonical() -> None:
@@ -342,7 +380,8 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     assert "default: 3" in workflow
     for config_id in CONFIG_IDS:
         assert config_id in workflow
-    for experimental_id in (
+    for nonblocking_id in (
+        "nvidia-gemma-4-31b-it",
         "nvidia-llama-3-3-70b-instruct",
         "opencode-deepseek-v4-flash-free",
         "opencode-mimo-v2-5-free",
@@ -350,10 +389,31 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
         "opencode-ling-3-0-flash-free",
         "opencode-north-mini-code-free",
         "opencode-nemotron-3-ultra-free",
-        "opencode-cli-nemotron-3-ultra-free",
     ):
-        assert experimental_id not in workflow
-    assert "NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}" in workflow
+        assert nonblocking_id not in workflow
+    assert (
+        workflow.count(
+            "NVIDIA_API_KEY: ${{ startsWith(matrix.configuration, 'nvidia-') "
+            "&& secrets.NVIDIA_API_KEY || '' }}"
+        )
+        == 2
+    )
+    assert (
+        workflow.count(
+            "OPENCODE_ZEN_API_KEY: ${{ startsWith(matrix.configuration, 'opencode-cli-') "
+            "&& secrets.OPENCODE_ZEN_API_KEY || '' }}"
+        )
+        == 2
+    )
+    assert "NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}" not in workflow
+    assert "OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}" not in workflow
+    assert workflow.count("name: Install pinned OpenCode CLI") == 2
+    assert workflow.count('OPENCODE_CLI_VERSION: "1.18.10"') == 2
+    assert workflow.count("if: startsWith(matrix.configuration, 'opencode-cli-')") == 2
+    assert workflow.count('test "$(opencode --version)" = "$OPENCODE_CLI_VERSION"') == 2
+    assert workflow.count('nvidia-*) test -n "$NVIDIA_API_KEY" ;;') == 2
+    assert workflow.count('opencode-cli-*) test -n "$OPENCODE_ZEN_API_KEY" ;;') == 2
+    assert workflow.count("Unsupported blocking configuration: $CONFIGURATION_ID") == 2
     assert "evaluate_live_model_release_gate.py" in workflow
     assert "download-artifact@" in workflow
     assert "raw_response" not in workflow
