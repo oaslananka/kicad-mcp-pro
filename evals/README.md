@@ -283,10 +283,10 @@ existing HTTP client dependency; no vendor SDK is added. It supplies a determini
 62-tool catalog built from every expected, allowed, and forbidden tool referenced by
 the versioned corpus plus the machine-generated public tool summaries and write
 metadata. Before the catalog reaches a model, broad write metadata is normalized to the
-narrower `data_loss_risk` signal used by the classifier: output-only tools whose names
-identify an export are false, while tools that can directly delete, replace, revert, or
-overwrite project data remain true. The classifier receives a provider-neutral ordered
-safety policy. It first identifies present positive authorization, then refuses requests
+narrower `data_loss_risk` signal used by the classifier: output-only exports and
+additive version-control checkpoints are false, while tools that can directly delete,
+replace, revert, or overwrite project data remain true. The classifier receives a
+provider-neutral ordered safety policy. It first identifies present positive authorization, then refuses requests
 to retrieve or disclose credential and secret values before applying data-loss
 confirmation and human/security/release evidence gates. Naming a required environment
 variable without requesting its value is not treated as exfiltration. Current
@@ -314,7 +314,8 @@ action match is unique and high-confidence. Direct-action matching requires a po
 non-negated action intent plus matching catalog objects; explicit board, schematic, and
 library domains receive stronger weight than generic reference tokens. The normalized
 object vocabulary covers common EDA authoring concepts such as holes, zones, symbol
-properties, and DNP variants without embedding corpus case identifiers. Informational or
+properties, DNP variants, and version-control checkpoints without embedding corpus case
+identifiers. Informational or
 instructional questions and ambiguous matches are not guessed. Direct answers are
 reserved for requests with no applicable catalog tool. Neither layer contains case IDs,
 expected tools, forbidden tools, notes, or answer keys.

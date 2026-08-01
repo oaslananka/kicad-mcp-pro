@@ -25,6 +25,7 @@ _TOOL_ROW = re.compile(
     r" [^|]* \| [^|]* \| [^|]* \| [^|]* \| ([^|]+) \|$"
 )
 _DERIVED_ARTIFACT_TOOL = re.compile(r"(?:^|_)export(?:_|$)")
+_ADDITIVE_WRITE_TOOLS = frozenset({"vcs_commit_checkpoint"})
 _WORD_TOKEN = re.compile(r"[a-z0-9]+")
 _TOKEN_ALIASES = {
     "pcb": "board",
@@ -38,6 +39,9 @@ _TOKEN_ALIASES = {
     "reviewing": "inspect",
     "publishing": "publish",
     "published": "publish",
+    "commit": "create",
+    "committing": "create",
+    "committed": "create",
     "deleting": "delete",
     "deleted": "delete",
     "deletion": "delete",
@@ -164,6 +168,7 @@ _DIRECT_OBJECT_TERMS = frozenset(
         "dnp",
         "variant",
         "flag",
+        "checkpoint",
     }
 )
 _OBJECT_TERMS = frozenset(
@@ -219,7 +224,11 @@ class ToolCatalogEntry:
 
 def _classifier_data_loss_risk(name: str, canonical_destructive: bool) -> bool:
     """Map broad write metadata to the narrower confirmation risk used by the classifier."""
-    return canonical_destructive and _DERIVED_ARTIFACT_TOOL.search(name) is None
+    return (
+        canonical_destructive
+        and _DERIVED_ARTIFACT_TOOL.search(name) is None
+        and name not in _ADDITIVE_WRITE_TOOLS
+    )
 
 
 def load_eval_tool_catalog(
