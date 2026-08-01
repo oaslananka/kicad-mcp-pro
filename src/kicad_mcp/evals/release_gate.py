@@ -10,6 +10,7 @@ from typing import Any, cast
 
 import yaml
 
+from .live_adapters import MODEL_OUTPUT_FAILURE_DETAILS
 from .live_runner import validate_sanitized_evidence
 from .tool_selection import evaluate_thresholds, load_cases, load_thresholds
 
@@ -91,6 +92,12 @@ def _safe_case_failures(
             "failure_kind": failure_kind,
             "categories": [],
         }
+        failure_detail = execution.get("failure_detail")
+        if (
+            failure_kind == "model_output_invalid"
+            and failure_detail in MODEL_OUTPUT_FAILURE_DETAILS
+        ):
+            safe["failure_detail"] = failure_detail
         categories = cast(list[str], safe["categories"])
         if failure_kind is not None:
             categories.append("infrastructure")

@@ -12,10 +12,21 @@ from typing import Any, Literal, cast
 
 import httpx
 
+from .live_adapters import FailureDetail, FailureKind
 from .tool_selection import all_referenced_tools, load_cases
 
 NVIDIA_NIM_CHAT_COMPLETIONS_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 StructuredOutputMode = Literal["none", "guided_json", "json_schema"]
+
+
+class _ModelOutputValidationError(ValueError):
+    """A closed, sanitized model-output validation failure."""
+
+    def __init__(self, detail: FailureDetail) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
 _NEMOTRON_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 _MISTRAL_MEDIUM_MODEL = "mistralai/mistral-medium-3.5-128b"
 _GEMMA_MODEL = "google/gemma-4-31b-it"
@@ -418,11 +429,18 @@ def build_chat_payload(
     return payload
 
 
-def _failure(kind: str) -> dict[str, object]:
-    return {"schema_version": 1, "status": "error", "failure_kind": kind}
+def _failure(kind: FailureKind, detail: FailureDetail | None = None) -> dict[str, object]:
+    result: dict[str, object] = {
+        "schema_version": 1,
+        "status": "error",
+        "failure_kind": kind,
+    }
+    if detail is not None:
+        result["failure_detail"] = detail
+    return result
 
 
-def _failure_for_status(status_code: int) -> str:
+def _failure_for_status(status_code: int) -> FailureKind:
     if status_code in {401, 403}:
         return "provider_auth"
     if status_code == 429:
@@ -437,11 +455,14 @@ def _json_object(content: str) -> dict[str, Any]:
     if normalized.startswith("```"):
         match = re.fullmatch(r"```json[ \t]*\r?\n(?P<body>.*)\r?\n```", normalized, re.DOTALL)
         if match is None:
-            raise ValueError("Model response code fence is malformed.")
+            raise _ModelOutputValidationError("json_fence")
         normalized = match.group("body").strip()
-    value = json.loads(normalized)
+    try:
+        value = json.loads(normalized)
+    except json.JSONDecodeError as exc:
+        raise _ModelOutputValidationError("json_parse") from exc
     if not isinstance(value, dict):
-        raise ValueError("Model response JSON must be an object.")
+        raise _ModelOutputValidationError("json_not_object")
     return cast(dict[str, Any], value)
 
 
@@ -452,7 +473,7 @@ def _optional_usage(usage: object, key: str) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError("Provider token usage must be a non-negative integer.")
+        raise _ModelOutputValidationError("usage_shape")
     return value
 
 
@@ -471,20 +492,20 @@ def normalize_classifier_text(
     catalog_names = frozenset(str(item["name"]) for item in catalog_values)
     selected = _json_object(content)
     if set(selected) != {"response_kind", "called_tools"}:
-        raise ValueError("Model response contains unsupported fields.")
+        raise _ModelOutputValidationError("unsupported_fields")
     response_kind = selected.get("response_kind")
     called_tools = selected.get("called_tools")
     if response_kind not in _RESPONSE_KINDS or not isinstance(called_tools, list):
-        raise ValueError("Model response has an invalid classifier shape.")
+        raise _ModelOutputValidationError("classifier_shape")
     normalized: list[str] = []
     for item in called_tools:
         if not isinstance(item, str) or item not in catalog_names:
-            raise ValueError("Model selected an unknown tool.")
+            raise _ModelOutputValidationError("unknown_tool")
         normalized.append(item)
     if len(normalized) != len(set(normalized)):
-        raise ValueError("Model selected duplicate tools.")
+        raise _ModelOutputValidationError("duplicate_tool")
     if (response_kind == "tool_calls") != bool(normalized):
-        raise ValueError("Model response kind and tool list disagree.")
+        raise _ModelOutputValidationError("kind_tool_mismatch")
     observation: dict[str, object] = {
         "schema_version": 1,
         "status": "ok",
@@ -506,16 +527,16 @@ def _parse_completion(
     latency_ms: float,
 ) -> dict[str, object]:
     if not isinstance(payload, dict):
-        raise ValueError("Provider response must be an object.")
+        raise _ModelOutputValidationError("provider_response_shape")
     choices = payload.get("choices")
     if not isinstance(choices, list) or len(choices) != 1:
-        raise ValueError("Provider response must contain exactly one choice.")
+        raise _ModelOutputValidationError("provider_response_shape")
     choice = choices[0]
     if not isinstance(choice, dict) or not isinstance(choice.get("message"), dict):
-        raise ValueError("Provider response choice is malformed.")
+        raise _ModelOutputValidationError("provider_response_shape")
     content = choice["message"].get("content")
     if not isinstance(content, str):
-        raise ValueError("Provider response content must be text.")
+        raise _ModelOutputValidationError("content_missing")
     usage = payload.get("usage")
     return normalize_classifier_text(
         content=content,
@@ -1015,14 +1036,18 @@ def request_openai_compatible_chat(
     if response.status_code >= 400:
         return _failure(_failure_for_status(response.status_code))
     try:
+        response_payload = response.json()
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return _failure("model_output_invalid", "provider_json")
+    try:
         return _parse_completion(
-            response.json(),
+            response_payload,
             prompt=prompt,
             catalog=catalog_values,
             latency_ms=(time.perf_counter() - started) * 1000,
         )
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return _failure("model_output_invalid")
+    except _ModelOutputValidationError as exc:
+        return _failure("model_output_invalid", exc.detail)
 
 
 def request_nvidia_nim(

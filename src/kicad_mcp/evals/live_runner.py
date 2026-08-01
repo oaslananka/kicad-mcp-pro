@@ -14,6 +14,7 @@ from typing import Any
 from .live_adapters import (
     AdapterObservation,
     EvalAdapter,
+    FailureDetail,
     FailureKind,
     ReplayAdapter,
     SubprocessAdapter,
@@ -45,6 +46,7 @@ __all__ = [
     "EvalConfigurationError",
     "EvaluationReport",
     "EvidenceSanitizationError",
+    "FailureDetail",
     "FailureKind",
     "ReplayAdapter",
     "RunLimits",
@@ -71,6 +73,7 @@ class CaseExecution:
     observation: AdapterObservation | None
     score: CaseResult | None
     failure_kind: FailureKind | None
+    failure_detail: FailureDetail | None = None
 
     def as_dict(self) -> dict[str, object]:
         """Return the controlled public evidence shape for one execution."""
@@ -86,7 +89,7 @@ class CaseExecution:
                 "total_tokens": run.total_tokens,
                 "estimated_cost_micros": self.observation.estimated_cost_micros,
             }
-        return {
+        result: dict[str, object] = {
             "case_id": self.case_id,
             "run_index": self.run_index,
             "attempts": self.attempts,
@@ -94,6 +97,9 @@ class CaseExecution:
             "observation": observation,
             "score": self.score.as_dict() if self.score is not None else None,
         }
+        if self.failure_detail is not None:
+            result["failure_detail"] = self.failure_detail
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,6 +189,7 @@ def _execution_failure(
         observation=observation,
         score=None,
         failure_kind=failure_kind,
+        failure_detail=(observation.failure_detail if observation is not None else None),
     )
 
 
@@ -339,7 +346,15 @@ def execute_evaluation(
                 record(_execution_failure(case, run_index, attempts, "adapter_unavailable"))
                 continue
             if observation.failure_kind is not None:
-                record(_execution_failure(case, run_index, attempts, observation.failure_kind))
+                record(
+                    _execution_failure(
+                        case,
+                        run_index,
+                        attempts,
+                        observation.failure_kind,
+                        observation,
+                    )
+                )
                 continue
             run = observation.run
             if run is None:
@@ -389,6 +404,7 @@ def execute_evaluation(
                     observation=observation,
                     score=score,
                     failure_kind=None,
+                    failure_detail=None,
                 )
             )
         if budget_exhausted:
