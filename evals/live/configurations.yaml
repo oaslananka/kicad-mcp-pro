@@ -33,7 +33,7 @@ configurations:
     host: nvidia-nim
     model: mistralai/mistral-medium-3.5-128b
     adapter: subprocess
-    command: [python, scripts/nvidia_nim_eval_adapter.py, --model, mistralai/mistral-medium-3.5-128b, --structured-output, none]
+    command: [python, scripts/nvidia_nim_eval_adapter.py, --model, mistralai/mistral-medium-3.5-128b, --timeout-seconds, "65", --structured-output, none]
     required_env: [NVIDIA_API_KEY]
     limits:
       timeout_seconds: 70

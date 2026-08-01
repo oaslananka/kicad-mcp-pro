@@ -47,6 +47,8 @@ COMMANDS = (
         "scripts/nvidia_nim_eval_adapter.py",
         "--model",
         MODELS[1],
+        "--timeout-seconds",
+        "65",
         "--structured-output",
         "none",
     ),
@@ -312,6 +314,10 @@ def test_committed_live_configurations_are_three_reviewed_blocking_records() -> 
         assert configuration.command == command
         assert configuration.limits.max_cases >= 195
         assert configuration.limits.min_request_interval_seconds == request_interval
+        if "--timeout-seconds" in command:
+            timeout_index = command.index("--timeout-seconds")
+            provider_timeout = float(command[timeout_index + 1])
+            assert configuration.limits.timeout_seconds - provider_timeout >= 5
 
 
 def test_committed_baseline_keeps_reviewed_required_configs_unapproved() -> None:
