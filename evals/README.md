@@ -326,9 +326,13 @@ forces scoped unconfirmed data-loss and unapproved publish requests to confirmat
 selects a catalog tool only when the inspection/summary, approved-release, or direct
 action match is unique and high-confidence. Direct-action matching requires a positive,
 non-negated action intent plus matching catalog objects; explicit board, schematic, and
-library domains receive stronger weight than generic reference tokens. For inspection
-requests, a model-selected mutating tool is corrected only when a unique non-mutating
-inspection tool has stronger semantic object overlap. A read-only selection is refined
+library domains receive stronger weight than generic reference tokens. When a model
+returns exactly one catalog-external tool name for a direct action request, the normalized
+result is recovered only if the prompt has one unique high-confidence catalog match;
+mixed known/unknown selections, ambiguous matches, and informational requests remain
+invalid, while safety gates still run before any recovery. For inspection requests, a
+model-selected mutating tool is corrected only when a unique non-mutating inspection tool
+has stronger semantic object overlap. A read-only selection is refined
 only when one non-mutating candidate is strictly more specific, adds a prompt-matched
 object term, and does not introduce a conflicting board, schematic, or library domain;
 ambiguous or equally specific selections are preserved. The normalized object vocabulary covers common EDA
