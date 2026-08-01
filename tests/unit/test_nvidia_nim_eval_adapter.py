@@ -880,6 +880,86 @@ def test_output_postcondition_maps_review_to_summary_tool() -> None:
     _assert_decision(result, response_kind="tool_calls", called_tools=["board_summary_tool"])
 
 
+def test_output_postcondition_maps_check_to_unique_evaluation_tool() -> None:
+    result = _request_postcondition_result(
+        prompt="Check whether the schematic-to-PCB transfer is clean.",
+        model_response="tool_calls",
+        selected_tools=("pcb_sync_from_schematic",),
+        catalog=(
+            {
+                "name": "pcb_sync_from_schematic",
+                "summary": "Sync missing PCB footprints from schematic footprint assignments.",
+                "data_loss_risk": False,
+            },
+            {
+                "name": "pcb_transfer_quality_gate",
+                "summary": (
+                    "Evaluate whether named schematic pad nets transferred cleanly onto PCB pads."
+                ),
+                "data_loss_risk": False,
+            },
+        ),
+    )
+
+    _assert_decision(
+        result,
+        response_kind="tool_calls",
+        called_tools=["pcb_transfer_quality_gate"],
+    )
+
+
+def test_output_postcondition_does_not_replace_mutation_with_another_mutation() -> None:
+    result = _request_postcondition_result(
+        prompt="Check whether the schematic-to-PCB transfer is clean.",
+        model_response="tool_calls",
+        selected_tools=("pcb_sync_from_schematic",),
+        catalog=(
+            {
+                "name": "pcb_sync_from_schematic",
+                "summary": "Sync missing PCB footprints from schematic footprint assignments.",
+                "data_loss_risk": False,
+            },
+            {
+                "name": "pcb_apply_transfer_quality",
+                "summary": "Apply transfer quality updates to schematic and PCB data.",
+                "data_loss_risk": False,
+            },
+        ),
+    )
+
+    _assert_decision(
+        result,
+        response_kind="tool_calls",
+        called_tools=["pcb_sync_from_schematic"],
+    )
+
+
+def test_output_postcondition_preserves_selected_read_only_project_inspection_tool() -> None:
+    result = _request_postcondition_result(
+        prompt="Tell me which KiCad project is active and summarize its files.",
+        model_response="tool_calls",
+        selected_tools=("kicad_get_project_info",),
+        catalog=(
+            {
+                "name": "kicad_get_project_info",
+                "summary": "Show the currently configured KiCad project paths.",
+                "data_loss_risk": False,
+            },
+            {
+                "name": "project_quality_gate",
+                "summary": "Run the full project quality gate across schematic and PCB checks.",
+                "data_loss_risk": False,
+            },
+        ),
+    )
+
+    _assert_decision(
+        result,
+        response_kind="tool_calls",
+        called_tools=["kicad_get_project_info"],
+    )
+
+
 def test_output_postcondition_preserves_confirmed_destructive_tool_call() -> None:
     result = _request_postcondition_result(
         prompt="Delete the selected PCB items; I confirm this deletion.",
