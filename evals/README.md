@@ -194,13 +194,15 @@ A host or provider failure uses the restricted error shape:
 Supported classifications are `adapter_unavailable`, `timeout`, `protocol_error`,
 `provider_auth`, `provider_rate_limit`, `provider_unavailable`, `budget_exceeded`,
 `provider_request_rejected`, `model_output_invalid`, `model_error`, and `unknown`.
-Only timeout, provider rate limiting, and provider unavailability are retried. A
-non-auth/rate HTTP 4xx response is `provider_request_rejected`; a successful HTTP
-response whose completion cannot satisfy the strict sanitized classifier schema is
-`model_output_invalid`. The legacy `model_error` value remains accepted for older
-evidence and adapters. A valid model response that selects the wrong tool is not an
-adapter failure; it reaches the scorer and is reported separately as a selection
-failure.
+Timeout, provider rate limiting, provider unavailability, and a completion that fails
+the strict sanitized classifier schema are retried with the same request shape and
+bounded exponential backoff. A non-auth/rate HTTP 4xx response is
+`provider_request_rejected` and is not retried. A successful HTTP response whose
+completion cannot satisfy the strict sanitized classifier schema is
+`model_output_invalid`; the final evidence preserves the total attempt count. The
+legacy `model_error` value remains accepted for older evidence and adapters. A valid
+model response that selects the wrong tool is not an adapter failure; it reaches the
+scorer and is reported separately as a selection failure.
 
 Raw provider payloads, messages, stack traces, transcripts, and extra response
 fields are rejected. Stderr is not retained in the report.

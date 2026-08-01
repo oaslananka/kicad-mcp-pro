@@ -141,7 +141,9 @@ class EvaluationReport:
         }
 
 
-_RETRYABLE_FAILURES = frozenset({"timeout", "provider_rate_limit", "provider_unavailable"})
+_RETRYABLE_FAILURES = frozenset(
+    {"timeout", "provider_rate_limit", "provider_unavailable", "model_output_invalid"}
+)
 _FORBIDDEN_EVIDENCE_KEYS = frozenset(
     {
         "authorization",
