@@ -108,8 +108,11 @@ one strict configuration schema with two adapter kinds:
 - `subprocess`: invokes an external adapter with an argument list, `shell=False`,
   a per-attempt timeout, bounded retries, and an explicit environment allowlist.
 
-A configuration record declares all limits. Missing limits are rejected rather
-than replaced with permissive defaults:
+A configuration record declares all required limits. Missing required limits are
+rejected rather than replaced with permissive defaults. The optional non-negative
+`min_request_interval_seconds` field paces request start times without changing the
+payload; omitted values default to zero. The hosted NVIDIA records use five seconds to
+reduce burst pressure on trial endpoints:
 
 ```yaml
 schema_version: 1
@@ -135,6 +138,7 @@ configurations:
     required_env: [HOST_A_API_KEY]
     limits:
       timeout_seconds: 60
+      min_request_interval_seconds: 5
       max_retries: 2
       max_cases: 325
       max_total_tool_calls: 1000

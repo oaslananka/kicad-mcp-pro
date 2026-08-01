@@ -27,6 +27,7 @@ MODELS = (
     "nemotron-3-ultra-free",
 )
 HOSTS = ("nvidia-nim", "nvidia-nim", "opencode-zen-cli")
+REQUEST_INTERVALS = (5.0, 5.0, 0.0)
 REQUIRED_ENVS = (
     ("NVIDIA_API_KEY",),
     ("NVIDIA_API_KEY",),
@@ -300,8 +301,8 @@ def test_gate_report_writer_rejects_sensitive_material(tmp_path: Path) -> None:
 def test_committed_live_configurations_are_three_reviewed_blocking_records() -> None:
     configurations = load_configurations(CONFIGURATIONS)
 
-    for config_id, model, host, required_env, command in zip(
-        CONFIG_IDS, MODELS, HOSTS, REQUIRED_ENVS, COMMANDS, strict=True
+    for config_id, model, host, required_env, command, request_interval in zip(
+        CONFIG_IDS, MODELS, HOSTS, REQUIRED_ENVS, COMMANDS, REQUEST_INTERVALS, strict=True
     ):
         configuration = configurations[config_id]
         assert configuration.host == host
@@ -310,6 +311,7 @@ def test_committed_live_configurations_are_three_reviewed_blocking_records() -> 
         assert configuration.required_env == required_env
         assert configuration.command == command
         assert configuration.limits.max_cases >= 195
+        assert configuration.limits.min_request_interval_seconds == request_interval
 
 
 def test_committed_baseline_keeps_reviewed_required_configs_unapproved() -> None:
