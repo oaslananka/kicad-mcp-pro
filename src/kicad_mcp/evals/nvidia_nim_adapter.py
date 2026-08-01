@@ -119,6 +119,8 @@ _TOKEN_ALIASES = {
     "moved": "move",
     "sets": "set",
     "setting": "set",
+    "routed": "routing",
+    "routes": "routing",
 }
 _SUMMARY_INTENTS = frozenset({"inspect"})
 _RELEASE_INTENTS = frozenset({"release", "publish", "tag"})
@@ -180,6 +182,9 @@ _DIRECT_OBJECT_TERMS = frozenset(
         "variant",
         "flag",
         "checkpoint",
+        "dsn",
+        "specctra",
+        "routing",
     }
 )
 _OBJECT_TERMS = frozenset(
@@ -497,11 +502,38 @@ def normalize_classifier_text(
     called_tools = selected.get("called_tools")
     if response_kind not in _RESPONSE_KINDS or not isinstance(called_tools, list):
         raise _ModelOutputValidationError("classifier_shape")
-    normalized: list[str] = []
+    raw_tools: list[str] = []
     for item in called_tools:
-        if not isinstance(item, str) or item not in catalog_names:
+        if not isinstance(item, str):
             raise _ModelOutputValidationError("unknown_tool")
-        normalized.append(item)
+        raw_tools.append(item)
+
+    unknown_tools = [name for name in raw_tools if name not in catalog_names]
+    if unknown_tools:
+        if response_kind != "tool_calls" or len(raw_tools) != 1:
+            raise _ModelOutputValidationError("unknown_tool")
+        provisional: dict[str, object] = {
+            "schema_version": 1,
+            "status": "ok",
+            "response_kind": response_kind,
+            "called_tools": raw_tools,
+            "latency_ms": round(latency_ms, 3),
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "estimated_cost_micros": estimated_cost_micros,
+        }
+        gated = _apply_policy_postconditions(provisional, prompt=prompt, catalog=catalog_values)
+        if gated.get("response_kind") in {"confirmation", "refusal"} and not gated.get(
+            "called_tools"
+        ):
+            return gated
+        recovered = _unique_direct_tool_match(prompt=prompt, catalog=catalog_values)
+        if recovered is None:
+            raise _ModelOutputValidationError("unknown_tool")
+        normalized = [recovered]
+    else:
+        normalized = raw_tools
+
     if len(normalized) != len(set(normalized)):
         raise _ModelOutputValidationError("duplicate_tool")
     if (response_kind == "tool_calls") != bool(normalized):
