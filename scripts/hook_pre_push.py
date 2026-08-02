@@ -117,10 +117,13 @@ def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
         _is_under(path, prefix)
         for path in changed
         for prefix in (
+            "src/kicad_mcp/pcb",
             "src/kicad_mcp/schematic",
             "src/kicad_mcp/tools",
+            "src/kicad_mcp/validation",
             "scripts/check_architecture_boundaries.py",
             "tests/unit/test_architecture_boundaries.py",
+            "tests/unit/test_shared_helper_architecture.py",
         )
     )
     if architecture_changed:

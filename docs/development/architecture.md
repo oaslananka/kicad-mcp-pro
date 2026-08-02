@@ -97,6 +97,51 @@ The previous routing helper rounded the Euclidean result to the nearest
 nanometre before conversion, so representative outputs remain compatible
 within 0.5 nm (`5e-7` mm). New code must use the unrounded canonical result.
 
+## Shared PCB Helper Extension Policy
+
+Correctness-sensitive PCB helpers have one canonical owner:
+
+- `kicad_mcp.pcb.board_access` owns live board collection reads and preserves the
+  distinction between a successful empty collection and an unavailable or
+  unreadable board API.
+- `kicad_mcp.pcb.geometry` owns KiCad point conversion and straight-segment
+  track length in millimetres.
+- `kicad_mcp.validation.drc_runner` owns DRC command variants, stale-output
+  handling, report parsing, and base `unavailable` / `findings` / `clean` /
+  `malformed` classification.
+
+Callers import these helpers rather than defining private variants. DFM and
+validation may keep thin `_run_drc_report` compatibility wrappers because they
+translate the typed runner result into different public policy/rendering
+contracts; those wrappers must delegate to the same runner and must not execute
+`kicad-cli`, parse JSON, or classify the report independently.
+
+A genuinely domain-specific calculation is allowed only under a distinct name
+that communicates its additional policy. For example, live Edge.Cuts bounds, a
+footprint-envelope fallback, and file-backed S-expression bounds remain
+separate because they consume different sources and answer different questions.
+The reason and unit semantics must be documented next to the implementation.
+
+`scripts/check_architecture_boundaries.py` enforces this narrow policy in CI and
+pre-push checks. It scans top-level production functions only, requires each
+canonical symbol to have exactly one owner, and rejects the legacy private
+board-access and geometry names removed by the consolidation. Protocol methods,
+nested test fixtures, and distinctly named domain-specific helpers are not
+flagged. A failure identifies the symbol and every production file location,
+then points contributors to the canonical import or distinct-name remedy.
+
+The regression evidence is intentionally split by failure mode:
+
+- `tests/unit/test_pcb_board_access.py` covers empty data versus access failure.
+- board inspection/resource tests cover caller fallback and user-visible failure
+  semantics.
+- `tests/unit/test_drc_runner.py` covers shared DFM/validation delegation and all
+  four DRC result classes.
+- `tests/unit/test_pcb_geometry.py` covers supported point/segment shapes,
+  malformed inputs, and the documented 0.5 nm routing compatibility tolerance.
+- `tests/unit/test_shared_helper_architecture.py` exercises actionable duplicate
+  guard failures and false-positive exclusions.
+
 ## Health Surface
 
 The MCP resource layer exposes the current review state as text-first surfaces:
