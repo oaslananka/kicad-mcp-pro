@@ -375,10 +375,12 @@ def test_live_model_assurance_workflow_is_risk_based_and_secret_safe() -> None:
     assert " release " in workflow or " release\n" in workflow
     assert "environment: live-model-evals" in workflow
     assert "max-parallel: 1" in workflow
-    assert "timeout-minutes: 15" in workflow
+    assert "timeout-minutes: 17" in workflow
     assert "fail-fast: false" in workflow
     assert "--case-tag live-smoke" in workflow
     assert "--repeats 1" in workflow
+    assert "timeout --signal=TERM --kill-after=30s 14m" in workflow
+    assert '[ "$exit_code" -ne 124 ] && [ "$exit_code" -ne 137 ]' in workflow
     assert '"state": "running"' in workflow
     assert "fromJSON(needs.classify.outputs.required_configurations)" in workflow
     assert "evaluate_live_model_smoke_assurance.py" in workflow

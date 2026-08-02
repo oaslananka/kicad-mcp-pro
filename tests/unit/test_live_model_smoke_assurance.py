@@ -292,3 +292,24 @@ def test_smoke_assurance_blocks_unexplained_pipeline_threshold_failure(tmp_path:
 
     assert report["passed"] is False
     assert report["classifications"]["quality_failures"] == ["gamma: pipeline thresholds failed"]
+
+
+def test_smoke_assurance_blocks_missing_required_status(tmp_path: Path) -> None:
+    evidence = _write(tmp_path, [_evidence(config_id) for config_id in CONFIGS])
+    statuses = [
+        _write_status(tmp_path, "alpha", state="completed", runner_exit_code=0),
+        _write_status(tmp_path, "beta", state="completed", runner_exit_code=0),
+    ]
+
+    report = evaluate_smoke_assurance(
+        evidence,
+        status_paths=statuses,
+        require_status=True,
+        required_configurations=CONFIGS,
+        minimum_successful_configurations=2,
+        expected_source_revision=REVISION,
+    )
+
+    assert report["passed"] is False
+    assert report["classifications"]["integrity_failures"] == ["gamma: status missing"]
+    assert report["classifications"]["infrastructure_failures"] == []

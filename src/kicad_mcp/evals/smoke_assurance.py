@@ -109,10 +109,10 @@ def evaluate_smoke_assurance(
         config_status = status_by_id.get(config_id)
         if config_status is None:
             if status_required:
-                status_infrastructure = True
+                config_integrity = True
                 _append(
                     classifications,
-                    "infrastructure_failures",
+                    "integrity_failures",
                     f"{config_id}: status missing",
                 )
         else:
