@@ -15,7 +15,7 @@ gh api /repos/oaslananka/kicad-mcp-pro/rulesets
 gh api -X PUT /repos/oaslananka/kicad-mcp-pro/rulesets/<id> --input .github/rulesets/main.json
 ```
 
-The current single-maintainer policy requires pull requests, linear history, non-fast-forward protection, resolved review threads, and the required CI, Gitleaks, and CodeQL check-run contexts listed in `.github/rulesets/main.json`.
+The current single-maintainer policy requires pull requests, linear history, non-fast-forward protection, resolved review threads, and the required CI/security contexts listed in `.github/rulesets/main.json`. `Live Model Release Policy` is the stable risk-based release-assurance context; provider smoke matrix jobs are intentionally not required directly.
 
 Enable required approvals, code-owner review, and verified commit-signing enforcement after adding a second trusted maintainer and configuring signing for all release actors.
 

@@ -27,7 +27,13 @@
         "require_code_owner_review": false,
         "require_last_push_approval": false,
         "required_approving_review_count": 0,
-        "required_review_thread_resolution": true
+        "required_review_thread_resolution": true,
+        "allowed_merge_methods": [
+          "merge",
+          "squash",
+          "rebase"
+        ],
+        "required_reviewers": []
       }
     },
     {
@@ -64,8 +70,18 @@
           },
           {
             "context": "analyze (javascript-typescript)"
+          },
+          {
+            "context": "Required PR Gate"
+          },
+          {
+            "context": "dependency-review"
+          },
+          {
+            "context": "Live Model Release Policy"
           }
-        ]
+        ],
+        "do_not_enforce_on_create": false
       }
     }
   ],
