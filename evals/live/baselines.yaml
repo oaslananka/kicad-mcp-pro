@@ -1,5 +1,11 @@
 schema_version: 1
 approved: false
+approved_at: null
+source_revision: null
+agent_contract_digest: null
+evidence:
+  workflow_run_id: null
+  aggregate_sha256: null
 minimum_repeats: 3
 required_configurations:
   - nvidia-nemotron-3-nano-30b-a3b

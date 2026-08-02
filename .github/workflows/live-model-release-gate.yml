@@ -273,6 +273,25 @@ jobs:
           path: artifacts/live-model-release-gate/report.json
           if-no-files-found: error
           retention-days: 30
+      - name: Generate reviewed baseline candidate
+        if: always()
+        id: baseline-candidate
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          uv run --all-extras python scripts/generate_live_model_baseline.py \
+            --aggregate-report artifacts/live-model-release-gate/report.json \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --approved-at "$(date -u +%F)" \
+            --output artifacts/live-model-release-gate/baselines.candidate.yaml
+      - name: Upload reviewed baseline candidate
+        if: steps.baseline-candidate.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: live-model-baseline-candidate-${{ github.run_id }}
+          path: artifacts/live-model-release-gate/baselines.candidate.yaml
+          if-no-files-found: error
+          retention-days: 30
       - name: Enforce gate result
         if: always()
         env:

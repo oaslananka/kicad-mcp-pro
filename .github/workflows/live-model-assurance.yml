@@ -1,0 +1,235 @@
+name: Live Model Assurance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-model-assurance-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  classify:
+    runs-on: ubuntu-24.04
+    outputs:
+      mode: ${{ steps.policy.outputs.mode }}
+      reason: ${{ steps.policy.outputs.reason }}
+      required_configurations: ${{ steps.policy.outputs.required_configurations }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - name: Classify assurance requirement
+        id: policy
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.before || '' }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          PULL_REQUEST_HEAD: ${{ github.head_ref || '' }}
+          PULL_REQUEST_IS_SAME_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ]; then
+            uv run --all-extras python scripts/check_live_model_release_policy.py \
+              --github-output "$GITHUB_OUTPUT" \
+              push --base-ref "$BASE_SHA" --head-ref "$HEAD_SHA"
+          elif [ "$PULL_REQUEST_HEAD" = "release-please--branches--main" ] && \
+               [ "$PULL_REQUEST_IS_SAME_REPOSITORY" = "true" ]; then
+            uv run --all-extras python scripts/check_live_model_release_policy.py \
+              --github-output "$GITHUB_OUTPUT" \
+              release --ref "$HEAD_SHA"
+          else
+            uv run --all-extras python scripts/check_live_model_release_policy.py \
+              --github-output "$GITHUB_OUTPUT" \
+              noop --ref "$HEAD_SHA"
+          fi
+
+  smoke:
+    name: Live model smoke (${{ matrix.configuration }})
+    needs: classify
+    if: needs.classify.outputs.mode == 'smoke'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: live-model-evals
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        configuration: ${{ fromJSON(needs.classify.outputs.required_configurations) }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - name: Install pinned OpenCode CLI
+        if: startsWith(matrix.configuration, 'opencode-cli-')
+        env:
+          OPENCODE_CLI_VERSION: "1.18.10"
+        run: |
+          set -euo pipefail
+          npm install --global --no-audit --no-fund "opencode-ai@$OPENCODE_CLI_VERSION"
+          test "$(opencode --version)" = "$OPENCODE_CLI_VERSION"
+      - name: Run bounded live smoke
+        env:
+          CONFIGURATION_ID: ${{ matrix.configuration }}
+          SOURCE_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          NVIDIA_API_KEY: ${{ startsWith(matrix.configuration, 'nvidia-') && secrets.NVIDIA_API_KEY || '' }}
+          OPENCODE_ZEN_API_KEY: ${{ startsWith(matrix.configuration, 'opencode-cli-') && secrets.OPENCODE_ZEN_API_KEY || '' }}
+        run: |
+          set -euo pipefail
+          case "$CONFIGURATION_ID" in
+            nvidia-*) test -n "$NVIDIA_API_KEY" ;;
+            opencode-cli-*) test -n "$OPENCODE_ZEN_API_KEY" ;;
+            *) echo "Unsupported blocking configuration: $CONFIGURATION_ID" >&2; exit 2 ;;
+          esac
+          mkdir -p artifacts/live-model-smoke
+          python - "$CONFIGURATION_ID" "$SOURCE_REVISION" <<'PY'
+          import json
+          import pathlib
+          import sys
+          pathlib.Path("artifacts/live-model-smoke/status.json").write_text(
+              json.dumps(
+                  {
+                      "configuration_id": sys.argv[1],
+                      "source_revision": sys.argv[2],
+                      "state": "running",
+                      "runner_exit_code": None,
+                  },
+                  sort_keys=True,
+              ) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          set +e
+          uv run --all-extras python scripts/run_live_model_eval.py \
+            --config evals/live/configurations.yaml \
+            --configuration "$CONFIGURATION_ID" \
+            --repeats 1 \
+            --case-tag live-smoke \
+            --source-revision "$SOURCE_REVISION" \
+            --output artifacts/live-model-smoke/evidence.json
+          exit_code=$?
+          set -e
+          python - "$CONFIGURATION_ID" "$SOURCE_REVISION" "$exit_code" <<'PY'
+          import json
+          import pathlib
+          import sys
+          pathlib.Path("artifacts/live-model-smoke/status.json").write_text(
+              json.dumps(
+                  {
+                      "configuration_id": sys.argv[1],
+                      "source_revision": sys.argv[2],
+                      "state": "completed",
+                      "runner_exit_code": int(sys.argv[3]),
+                  },
+                  sort_keys=True,
+              ) + "\n",
+              encoding="utf-8",
+          )
+          PY
+      - name: Upload sanitized smoke evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: live-model-assurance-${{ matrix.configuration }}-${{ github.run_id }}
+          path: artifacts/live-model-smoke
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve runner outcome for aggregate policy
+        if: always()
+        run: |
+          test -f artifacts/live-model-smoke/status.json
+
+  smoke_assurance:
+    name: Live Model Smoke Assurance
+    if: ${{ always() && needs.classify.outputs.mode == 'smoke' }}
+    needs: [classify, smoke]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - name: Download sanitized smoke evidence
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: live-model-assurance-*-${{ github.run_id }}
+          path: artifacts/downloaded
+      - name: Evaluate smoke assurance
+        id: assurance
+        continue-on-error: true
+        env:
+          SOURCE_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          uv run --all-extras python scripts/evaluate_live_model_smoke_assurance.py \
+            --evidence-root artifacts/downloaded \
+            --source-revision "$SOURCE_REVISION" \
+            --output artifacts/live-model-smoke-assurance/report.json
+      - name: Upload sanitized smoke assurance report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: live-model-smoke-assurance-${{ github.run_id }}
+          path: artifacts/live-model-smoke-assurance/report.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Enforce smoke assurance
+        if: always()
+        env:
+          ASSURANCE_OUTCOME: ${{ steps.assurance.outcome }}
+        run: test "$ASSURANCE_OUTCOME" = "success"
+
+  policy:
+    name: Live Model Release Policy
+    if: always()
+    needs: [classify, smoke, smoke_assurance]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Enforce assurance decision
+        env:
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          MODE: ${{ needs.classify.outputs.mode }}
+          REASON: ${{ needs.classify.outputs.reason }}
+          SMOKE_ASSURANCE_RESULT: ${{ needs.smoke_assurance.result }}
+        run: |
+          set -euo pipefail
+          test "$CLASSIFY_RESULT" = "success"
+          case "$MODE" in
+            none)
+              echo "Live-model assurance not required: $REASON"
+              ;;
+            smoke)
+              test "$SMOKE_ASSURANCE_RESULT" = "success"
+              ;;
+            full)
+              echo "::error::A full protected live-model gate and baseline promotion are required: $REASON"
+              exit 1
+              ;;
+            *)
+              echo "::error::Unknown live-model assurance mode: $MODE"
+              exit 2
+              ;;
+          esac
