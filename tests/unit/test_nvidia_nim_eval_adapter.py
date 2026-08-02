@@ -295,6 +295,11 @@ def test_hosted_model_profiles_disable_unneeded_reasoning() -> None:
         prompt="Inspect.",
         catalog=(),
     )
+    minimax = build_chat_payload(
+        model="minimaxai/minimax-m3",
+        prompt="Inspect.",
+        catalog=(),
+    )
     gemma = build_chat_payload(
         model="google/gemma-4-31b-it",
         prompt="Inspect.",
@@ -307,6 +312,7 @@ def test_hosted_model_profiles_disable_unneeded_reasoning() -> None:
     )
 
     assert mistral["reasoning_effort"] == "none"
+    assert minimax["chat_template_kwargs"] == {"thinking_mode": "disabled"}
     assert gemma["chat_template_kwargs"] == {"enable_thinking": False}
     assert "reasoning_effort" not in nemotron
     assert nemotron["chat_template_kwargs"] == {"enable_thinking": False}
