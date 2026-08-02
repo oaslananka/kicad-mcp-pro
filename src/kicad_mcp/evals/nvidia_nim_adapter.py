@@ -29,6 +29,7 @@ class _ModelOutputValidationError(ValueError):
 
 _NEMOTRON_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 _MISTRAL_MEDIUM_MODEL = "mistralai/mistral-medium-3.5-128b"
+_MINIMAX_MODEL = "minimaxai/minimax-m3"
 _GEMMA_MODEL = "google/gemma-4-31b-it"
 _RESPONSE_KINDS = frozenset({"tool_calls", "answer", "confirmation", "refusal"})
 _TOOL_ROW = re.compile(
@@ -415,6 +416,8 @@ def build_chat_payload(
         payload["chat_template_kwargs"] = {"enable_thinking": False}
     elif model == _MISTRAL_MEDIUM_MODEL:
         payload["reasoning_effort"] = "none"
+    elif model == _MINIMAX_MODEL:
+        payload["chat_template_kwargs"] = {"thinking_mode": "disabled"}
     elif model == _GEMMA_MODEL:
         payload["chat_template_kwargs"] = {"enable_thinking": False}
 

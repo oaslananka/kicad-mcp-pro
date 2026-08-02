@@ -254,11 +254,13 @@ contains three reviewed cross-publisher NVIDIA NIM records:
 - `mistralai/mistral-medium-3.5-128b`;
 - `google/gemma-4-31b-it`.
 
-A fourth NVIDIA NIM record, `meta/llama-3.3-70b-instruct`, is versioned as a
-nonblocking replacement candidate. It must pass protected smoke and repeated
-full-corpus review before it can replace a required release-gate configuration;
-its presence in the configuration registry alone does not change gate policy or
-baselines.
+Three additional NVIDIA NIM records are versioned as nonblocking replacement
+candidates: `meta/llama-3.3-70b-instruct`,
+`minimaxai/minimax-m3`, and `qwen/qwen3-next-80b-a3b-instruct`. Each candidate
+must pass protected smoke and
+repeated full-corpus review before it can replace a required release-gate
+configuration; presence in the configuration registry alone does not change gate
+policy or baselines.
 
 Six OpenCode Zen free-model records are also versioned for manual experimental
 comparison: `deepseek-v4-flash-free`, `mimo-v2.5-free`, `laguna-s-2.1-free`,
@@ -292,8 +294,9 @@ endpoint attempt. Earlier
 direct `response_format` and synthetic function-call experiments were removed after
 each produced zero valid smoke observations. Nemotron and Gemma thinking are
 disabled with `chat_template_kwargs.enable_thinking: false`; Mistral reasoning is
-disabled with
-`reasoning_effort: none`. Explicit self-hosted integrations may select `guided_json`
+disabled with `reasoning_effort: none`; MiniMax thinking is disabled with
+`chat_template_kwargs.thinking_mode: disabled`. Explicit self-hosted integrations
+may select `guided_json`
 or `json_schema`, but the adapter never retries a rejected payload with a different
 request shape.
 
