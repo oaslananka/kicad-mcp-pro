@@ -439,6 +439,9 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     assert workflow.count('opencode-cli-*) test -n "$OPENCODE_ZEN_API_KEY" ;;') == 2
     assert workflow.count("Unsupported blocking configuration: $CONFIGURATION_ID") == 2
     assert "evaluate_live_model_release_gate.py" in workflow
+    assert "generate_live_model_baseline.py" in workflow
+    assert "baselines.candidate.yaml" in workflow
+    assert "live-model-baseline-candidate-${{ github.run_id }}" in workflow
     assert "download-artifact@" in workflow
     assert "raw_response" not in workflow
     assert "DOPPLER_TOKEN" not in workflow

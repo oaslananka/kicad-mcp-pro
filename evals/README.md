@@ -354,6 +354,62 @@ provider envelope shape, classifier shape, or unknown tool). Raw model content a
 provider payloads are never copied to adapter output or evidence. Case expectations and
 prompts are never copied to evidence.
 
+### Risk-based release assurance
+
+`live/release-policy.yaml` separates routine release assurance from baseline
+promotion. Every pull request still passes the deterministic unit, integration,
+contract, replay, coverage, type, workflow, and security checks in normal CI. The
+`Live Model Assurance` workflow adds protected live evidence only at the following
+boundaries:
+
+- a `main` push that changes the versioned model-facing contract runs one 11-case
+  smoke repetition for every required configuration;
+- the same-repository Release Please pull request reuses an approved baseline only
+  when it is at most 30 days old and its `agent_contract_digest` matches the release
+  candidate, then runs the same bounded smoke set;
+- an unapproved or stale baseline, or any model-facing digest change, fails the stable
+  `Live Model Release Policy` check with an instruction to run the full protected gate
+  and promote a new baseline;
+- ordinary pull requests do not receive protected provider credentials. Their
+  deterministic CI remains the review gate, and any model-facing change is exercised
+  by protected smoke after merge to `main`.
+
+The contract digest covers the generated public tool catalog, the canonical eval
+corpus and thresholds, blocking host/model configuration, classifier and matcher
+logic, adapter/runner retry and timeout behavior, and the protected full-gate
+workflows. Release-policy code, smoke aggregation code, and the baseline file itself
+are intentionally excluded so governance-only edits do not invalidate model behavior
+that has not changed.
+
+Routine smoke evaluates all three configurations independently with a 15-minute
+per-configuration bound. It may pass in a
+**degraded** state only when at least two configurations complete cleanly and every
+remaining problem is infrastructure-only, such as timeout, provider unavailability,
+or missing checkpoint evidence. Artifact-integrity failures, tool-selection quality
+failures, safety or forbidden calls, call-limit violations, and insufficient clean
+configurations always block. Provider availability is therefore not mislabeled as
+model quality, while safety remains fail-closed.
+
+The full 65-case, minimum-three-repeat workflow remains mandatory for a new model or
+host, prompt/matcher/safety change, tool catalog or schema change, adapter/retry/timeout
+change, corpus or threshold change, expired baseline, or baseline promotion. A compact
+approved baseline is generated only from a sanitized aggregate with complete evidence
+for every required configuration and no safety, quality, infrastructure, telemetry,
+or per-case failure:
+
+```bash
+uv run --all-extras python scripts/generate_live_model_baseline.py \
+  --aggregate-report artifacts/live-model-release-gate/report.json \
+  --workflow-run-id <github-run-id> \
+  --approved-at YYYY-MM-DD \
+  --output evals/live/baselines.yaml
+```
+
+The generated baseline records the exact source revision, contract SHA-256, workflow
+run ID, aggregate artifact SHA-256, host/model identities, reviewed metrics, and
+approval date. The baseline change is reviewed and merged through a normal pull
+request; no workflow writes directly to the repository.
+
 `.github/workflows/live-model-release-gate.yml` runs two reviewed NVIDIA NIM records
 and the sandboxed OpenCode CLI record sequentially from protected `main`. The protected
 environment supplies `NVIDIA_API_KEY` or `OPENCODE_ZEN_API_KEY` only to the bounded
