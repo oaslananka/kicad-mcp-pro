@@ -132,6 +132,6 @@ configurations:
     host: opencode-zen-cli
     model: nemotron-3-ultra-free
     adapter: subprocess
-    command: [python, scripts/opencode_cli_eval_adapter.py, --model, nemotron-3-ultra-free, --opencode-bin, opencode, --timeout-seconds, "55"]
+    command: [python, scripts/opencode_cli_eval_adapter.py, --model, nemotron-3-ultra-free, --opencode-bin, opencode, --timeout-seconds, "65"]
     required_env: [OPENCODE_ZEN_API_KEY]
     limits: *opencode_free_limits

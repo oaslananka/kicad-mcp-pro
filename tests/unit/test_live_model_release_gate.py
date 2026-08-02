@@ -60,7 +60,7 @@ COMMANDS = (
         "--opencode-bin",
         "opencode",
         "--timeout-seconds",
-        "55",
+        "65",
     ),
 )
 CONFIG_HOSTS = dict(zip(CONFIG_IDS, HOSTS, strict=True))
