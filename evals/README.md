@@ -418,9 +418,12 @@ step that validates the selected configuration. Before any full-corpus work, eac
 configuration must pass one bounded `live-smoke` repetition selected from the same
 canonical corpus.
 The 11-case smoke set covers read-only, explicitly authorized write, export, publish,
-human-gated, confirmation, and refusal behavior. It has a 30-minute job limit and
-always uploads sanitized checkpoint evidence. If any required configuration fails,
-times out, or is cancelled, every 195-observation full benchmark is skipped.
+human-gated, confirmation, and refusal behavior. Its provider command is bounded at
+45 minutes inside a 50-minute job envelope, leaving cleanup time to upload sanitized
+checkpoint evidence and fail explicitly. A command timeout preserves the `running`
+checkpoint instead of rewriting insufficient evidence as a completed verdict. If any
+required configuration fails or times out, every 195-observation full benchmark is
+skipped.
 
 Only after all smoke configurations pass does the workflow run at least three
 full-corpus repetitions per configuration. Each matrix job always emits a small

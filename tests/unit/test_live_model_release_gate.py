@@ -390,9 +390,11 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     assert "fail-fast: false" in benchmark_block
     assert "needs: [smoke, benchmark]" in aggregate_block
     assert "if: ${{ always() && needs.smoke.result == 'success' }}" in aggregate_block
-    assert "timeout-minutes: 30" in workflow
+    assert "timeout-minutes: 50" in workflow
     assert "--case-tag live-smoke" in workflow
     assert "--repeats 1" in workflow
+    assert "timeout --signal=TERM --kill-after=30s 45m" in smoke_block
+    assert "if exit_code not in (124, 137):" in smoke_block
     assert "Upload sanitized smoke evidence\n        if: always()" in workflow
     assert "live-model-smoke-${{ matrix.configuration }}-${{ github.run_id }}" in workflow
     assert "name: Enforce smoke result" in workflow

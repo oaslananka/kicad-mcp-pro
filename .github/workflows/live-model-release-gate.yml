@@ -34,7 +34,7 @@ jobs:
     name: Live model smoke (${{ matrix.configuration }})
     needs: guard
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 50
     environment: live-model-evals
     strategy:
       fail-fast: true
@@ -92,31 +92,34 @@ jobs:
           )
           PY
           set +e
-          uv run --all-extras python scripts/run_live_model_eval.py \
-            --config evals/live/configurations.yaml \
-            --configuration "$CONFIGURATION_ID" \
-            --repeats 1 \
-            --case-tag live-smoke \
-            --source-revision "$GITHUB_SHA" \
-            --output artifacts/live-model-smoke/evidence.json
+          timeout --signal=TERM --kill-after=30s 45m \
+            uv run --all-extras python scripts/run_live_model_eval.py \
+              --config evals/live/configurations.yaml \
+              --configuration "$CONFIGURATION_ID" \
+              --repeats 1 \
+              --case-tag live-smoke \
+              --source-revision "$GITHUB_SHA" \
+              --output artifacts/live-model-smoke/evidence.json
           exit_code=$?
           set -e
           python - "$CONFIGURATION_ID" "$GITHUB_SHA" "$exit_code" <<'PY'
           import json
           import pathlib
           import sys
-          pathlib.Path("artifacts/live-model-smoke/status.json").write_text(
-              json.dumps(
-                  {
-                      "configuration_id": sys.argv[1],
-                      "source_revision": sys.argv[2],
-                      "state": "completed",
-                      "runner_exit_code": int(sys.argv[3]),
-                  },
-                  sort_keys=True,
-              ) + "\n",
-              encoding="utf-8",
-          )
+          exit_code = int(sys.argv[3])
+          if exit_code not in (124, 137):
+              pathlib.Path("artifacts/live-model-smoke/status.json").write_text(
+                  json.dumps(
+                      {
+                          "configuration_id": sys.argv[1],
+                          "source_revision": sys.argv[2],
+                          "state": "completed",
+                          "runner_exit_code": exit_code,
+                      },
+                      sort_keys=True,
+                  ) + "\n",
+                  encoding="utf-8",
+              )
           PY
       - name: Upload sanitized smoke evidence
         if: always()
