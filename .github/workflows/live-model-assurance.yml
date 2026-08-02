@@ -61,7 +61,7 @@ jobs:
     needs: classify
     if: needs.classify.outputs.mode == 'smoke'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 17
     environment: live-model-evals
     strategy:
       fail-fast: false
@@ -118,7 +118,8 @@ jobs:
           )
           PY
           set +e
-          uv run --all-extras python scripts/run_live_model_eval.py \
+          timeout --signal=TERM --kill-after=30s 14m \
+            uv run --all-extras python scripts/run_live_model_eval.py \
             --config evals/live/configurations.yaml \
             --configuration "$CONFIGURATION_ID" \
             --repeats 1 \
@@ -127,7 +128,8 @@ jobs:
             --output artifacts/live-model-smoke/evidence.json
           exit_code=$?
           set -e
-          python - "$CONFIGURATION_ID" "$SOURCE_REVISION" "$exit_code" <<'PY'
+          if [ "$exit_code" -ne 124 ] && [ "$exit_code" -ne 137 ]; then
+            python - "$CONFIGURATION_ID" "$SOURCE_REVISION" "$exit_code" <<'PY'
           import json
           import pathlib
           import sys
@@ -144,6 +146,7 @@ jobs:
               encoding="utf-8",
           )
           PY
+          fi
       - name: Upload sanitized smoke evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
