@@ -333,6 +333,106 @@ REGISTER_LINE_LIMITS = {
 }
 
 
+CANONICAL_HELPER_OWNERS = {
+    "board_tracks": Path("kicad_mcp/pcb/board_access.py"),
+    "board_vias": Path("kicad_mcp/pcb/board_access.py"),
+    "board_footprints": Path("kicad_mcp/pcb/board_access.py"),
+    "board_pads": Path("kicad_mcp/pcb/board_access.py"),
+    "board_zones": Path("kicad_mcp/pcb/board_access.py"),
+    "board_shapes": Path("kicad_mcp/pcb/board_access.py"),
+    "board_nets": Path("kicad_mcp/pcb/board_access.py"),
+    "board_nets_filtered": Path("kicad_mcp/pcb/board_access.py"),
+    "point_xy_mm": Path("kicad_mcp/pcb/geometry.py"),
+    "track_segment_length_mm": Path("kicad_mcp/pcb/geometry.py"),
+    "classify_drc_report": Path("kicad_mcp/validation/drc_runner.py"),
+    "classify_legacy_drc_result": Path("kicad_mcp/validation/drc_runner.py"),
+    "run_drc_report": Path("kicad_mcp/validation/drc_runner.py"),
+}
+
+LEGACY_HELPER_REPLACEMENTS = {
+    "_board_tracks": ("board_tracks", "kicad_mcp.pcb.board_access"),
+    "_board_vias": ("board_vias", "kicad_mcp.pcb.board_access"),
+    "_board_footprints": ("board_footprints", "kicad_mcp.pcb.board_access"),
+    "_board_pads": ("board_pads", "kicad_mcp.pcb.board_access"),
+    "_board_zones": ("board_zones", "kicad_mcp.pcb.board_access"),
+    "_board_shapes": ("board_shapes", "kicad_mcp.pcb.board_access"),
+    "_board_nets": ("board_nets", "kicad_mcp.pcb.board_access"),
+    "_track_length_mm": ("track_segment_length_mm", "kicad_mcp.pcb.geometry"),
+    "_footprint_position_mm": ("point_xy_mm", "kicad_mcp.pcb.geometry"),
+}
+
+
+def _source_location(source_root: Path, path: Path, line: int) -> str:
+    return f"src/{path.relative_to(source_root).as_posix()}:{line}"
+
+
+def _targeted_helper_definition_errors(
+    source_root: Path,
+    *,
+    canonical_owners: dict[str, Path] | None = None,
+    legacy_replacements: dict[str, tuple[str, str]] | None = None,
+) -> list[str]:
+    """Return actionable errors for duplicated correctness-sensitive helpers.
+
+    Only top-level functions under ``src`` are inspected. Protocol/class methods,
+    nested fixtures, and distinctly named domain-specific helpers are intentionally
+    outside this narrow guard.
+    """
+    owners = CANONICAL_HELPER_OWNERS if canonical_owners is None else canonical_owners
+    replacements = (
+        LEGACY_HELPER_REPLACEMENTS if legacy_replacements is None else legacy_replacements
+    )
+    target_names = set(owners) | set(replacements)
+    definitions: dict[str, list[tuple[Path, int]]] = {name: [] for name in target_names}
+    errors: list[str] = []
+
+    for path in sorted(source_root.rglob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except SyntaxError as exc:
+            errors.append(
+                f"Could not inspect targeted shared helpers in "
+                f"{_source_location(source_root, path, exc.lineno or 1)}: {exc.msg}."
+            )
+            continue
+        for node in tree.body:
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name in target_names
+            ):
+                definitions[node.name].append((path, node.lineno))
+
+    for helper_name, owner in sorted(owners.items()):
+        found = definitions.get(helper_name, [])
+        expected = source_root / owner
+        if len(found) == 1 and found[0][0] == expected:
+            continue
+        locations = (
+            ", ".join(_source_location(source_root, found_path, line) for found_path, line in found)
+            or "no definition"
+        )
+        errors.append(
+            f"Targeted shared helper '{helper_name}' must be defined exactly once in "
+            f"src/{owner.as_posix()}; found {locations}. Import the canonical helper or "
+            "use a distinctly named domain-specific helper."
+        )
+
+    for legacy_name, (replacement, module_name) in sorted(replacements.items()):
+        found = definitions.get(legacy_name, [])
+        if not found:
+            continue
+        locations = ", ".join(
+            _source_location(source_root, found_path, line) for found_path, line in found
+        )
+        errors.append(
+            f"Legacy duplicate helper '{legacy_name}' is forbidden at {locations}. "
+            f"Import '{replacement}' from '{module_name}' or use a distinctly named "
+            "domain-specific helper."
+        )
+
+    return errors
+
+
 def _module_package(module_name: str) -> str:
     return module_name.rsplit(".", 1)[0]
 
@@ -412,7 +512,7 @@ def _find_cycle(graph: dict[str, set[str]]) -> list[str]:
 
 
 def main() -> int:
-    errors: list[str] = []
+    errors: list[str] = _targeted_helper_definition_errors(SRC_ROOT)
     imports_by_module: dict[str, set[str]] = {}
 
     for module_name, path in DOMAIN_MODULES.items():

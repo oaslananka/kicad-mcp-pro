@@ -115,3 +115,18 @@ def test_new_branch_falls_back_to_main_merge_base(monkeypatch: MonkeyPatch) -> N
         ["merge-base", "origin/main", "d" * 40],
         ["diff", "--name-only", "--diff-filter=ACMRTUXB", f"{'c' * 40}..{'d' * 40}"],
     ]
+
+
+def test_canonical_helper_changes_select_architecture_guard(tmp_path: Path) -> None:
+    changed_files = [
+        "src/kicad_mcp/pcb/geometry.py",
+        "src/kicad_mcp/validation/drc_runner.py",
+    ]
+    for relative_path in changed_files:
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("VALUE = 1\n", encoding="utf-8")
+
+    plan = build_plan(changed_files, root=tmp_path)
+
+    assert "architecture-boundaries" in _names(plan)
