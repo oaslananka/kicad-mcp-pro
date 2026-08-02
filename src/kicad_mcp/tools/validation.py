@@ -33,6 +33,7 @@ from ..utils.dru import (
     parse_dru,
     upsert_rule,
 )
+from ..validation import drc_runner
 from ..validation.drc_report import courtyard_violations, report_entries
 from ..validation.policy_state import ValidationPolicyStateService
 from . import validation_policy_state
@@ -416,19 +417,58 @@ def _drc_report_payload(
     *,
     save_report: bool,
 ) -> VerdictReport:
-    if report is None:
-        message = f"DRC report unavailable: {error or 'unknown error'}"
+    report_status, classification_error = drc_runner.classify_legacy_drc_result(report, error)
+    if report_status == "malformed":
+        detail = classification_error or "unknown schema error"
+        message = f"DRC report malformed: {detail}"
+        remediation = "Regenerate the DRC report with a supported KiCad CLI, then rerun run_drc()."
+        return VerdictReport(
+            text=message,
+            summary="DRC report is malformed.",
+            verdict="FAIL",
+            findings=[
+                Finding(
+                    id=stable_finding_id("drc", "malformed", detail),
+                    severity="error",
+                    location=str(path),
+                    description=message,
+                    evidence=[{"report_path": str(path), "error": detail}],
+                    remediation=remediation,
+                    retryable=False,
+                    failure_mode="configuration",
+                    suggested_fix=SuggestedFix(tool="run_drc", args={"save_report": True}),
+                )
+            ],
+            failure_mode="configuration",
+            retryable=False,
+            remediation=remediation,
+            next_action=remediation,
+            metadata={
+                "report_path": str(path),
+                "available": False,
+                "failure_mode": "configuration",
+                "report_status": "malformed",
+            },
+        )
+
+    if report_status == "unavailable":
+        message = f"DRC report unavailable: {classification_error or 'unknown error'}"
         return VerdictReport(
             text=message,
             summary="DRC report is unavailable.",
             verdict="FAIL",
             findings=[
                 Finding(
-                    id=stable_finding_id("drc", "unavailable", error or "unknown"),
+                    id=stable_finding_id("drc", "unavailable", classification_error or "unknown"),
                     severity="error",
                     location=str(path),
                     description=message,
-                    evidence=[{"report_path": str(path), "error": error or "unknown error"}],
+                    evidence=[
+                        {
+                            "report_path": str(path),
+                            "error": classification_error or "unknown error",
+                        }
+                    ],
                     remediation="Make kicad-cli/report generation available, then rerun run_drc().",
                     retryable=True,
                     failure_mode="environment",
@@ -439,12 +479,18 @@ def _drc_report_payload(
             retryable=True,
             remediation="Make kicad-cli/report generation available, then rerun run_drc().",
             next_action="Make kicad-cli/report generation available, then rerun run_drc().",
-            metadata={"report_path": str(path), "available": False, "failure_mode": "environment"},
+            metadata={
+                "report_path": str(path),
+                "available": False,
+                "failure_mode": "environment",
+                "report_status": "unavailable",
+            },
         )
 
-    violations = _entries(report, "violations")
-    unconnected = _entries(report, "unconnected_items")
-    courtyard = courtyard_violations(report)
+    validated_report = cast(dict[str, object], report)
+    violations = _entries(validated_report, "violations")
+    unconnected = _entries(validated_report, "unconnected_items")
+    courtyard = courtyard_violations(validated_report)
     lines = [
         "DRC summary:",
         f"- Violations: {len(violations)}",
@@ -486,7 +532,7 @@ def _drc_report_payload(
         verdict=verdict,
         failure_mode="none" if verdict == "PASS" else "design",
         retryable=False,
-        evidence=[{"report_path": str(path), "violations": report}],
+        evidence=[{"report_path": str(path), "violations": validated_report}],
         remediation=(
             "" if verdict == "PASS" else "Fix DRC findings and rerun run_drc(save_report=True)."
         ),
@@ -502,6 +548,7 @@ def _drc_report_payload(
             "violations": len(violations),
             "unconnected_items": len(unconnected),
             "courtyard_issues": len(courtyard),
+            "report_status": report_status,
         },
     )
 
@@ -577,44 +624,15 @@ def _erc_report_payload(
 
 def _run_drc_report(report_name: str) -> tuple[Path, dict[str, object] | None, str | None]:
     pcb_file = _get_pcb_file()
-    out_file = _ensure_output_dir() / report_name
-
     cfg = get_config()
-    capabilities = get_cli_capabilities(cfg.kicad_cli)
-    drc_flags: list[str] = []
-    if capabilities.supports_drc_severity_all:
-        drc_flags.append("--severity-all")
-    if capabilities.supports_drc_exit_code_violations:
-        drc_flags.append("--exit-code-violations")
-
-    code, _, stderr = _run_cli_variants(
-        [
-            [
-                "pcb",
-                "drc",
-                "--output",
-                str(out_file),
-                "--format",
-                "json",
-                *drc_flags,
-                str(pcb_file),
-            ],
-            [
-                "pcb",
-                "drc",
-                "--input",
-                str(pcb_file),
-                "--output",
-                str(out_file),
-                "--format",
-                "json",
-                *drc_flags,
-            ],
-        ]
+    result = drc_runner.run_drc_report(
+        report_name,
+        pcb_file=pcb_file,
+        output_dir=_ensure_output_dir(),
+        run_cli_variants=_run_cli_variants,
+        capabilities=get_cli_capabilities(cfg.kicad_cli),
     )
-    if not out_file.exists():
-        return out_file, None, stderr if code != 0 else "DRC report was not produced."
-    return out_file, _load_report(out_file), None
+    return result.as_legacy_tuple()
 
 
 def _run_erc_report(report_name: str) -> tuple[Path, dict[str, object] | None, str | None]:

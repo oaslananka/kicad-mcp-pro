@@ -13,10 +13,13 @@ from kipy.board_types import Track, Via
 from kipy.proto.board.board_types_pb2 import BoardLayer
 from mcp.server.fastmcp import FastMCP
 
+from ..config import get_config
 from ..connection import KiCadConnectionError, get_board
+from ..discovery import get_cli_capabilities
 from ..models.verdict import Verdict, VerdictReport
 from ..utils.sexpr import _extract_block
 from ..utils.units import nm_to_mm
+from ..validation import drc_runner
 from ..validation.drc_report import courtyard_violations, report_entries
 from .export_support import _ensure_output_dir, _get_pcb_file, _run_cli_variants
 from .metadata import headless_compatible
@@ -131,38 +134,16 @@ def _board_metrics() -> dict[str, float | int | None]:
 
 
 def _run_drc_report(report_name: str) -> tuple[Path, dict[str, Any] | None, str | None]:
-    pcb_file = _get_pcb_file()
-    out_file = _ensure_output_dir() / report_name
-    code, _, stderr = _run_cli_variants(
-        [
-            [
-                "pcb",
-                "drc",
-                "--output",
-                str(out_file),
-                "--format",
-                "json",
-                "--severity-all",
-                "--exit-code-violations",
-                str(pcb_file),
-            ],
-            [
-                "pcb",
-                "drc",
-                "--input",
-                str(pcb_file),
-                "--output",
-                str(out_file),
-                "--format",
-                "json",
-                "--severity-all",
-                "--exit-code-violations",
-            ],
-        ]
+    cfg = get_config()
+    result = drc_runner.run_drc_report(
+        report_name,
+        pcb_file=_get_pcb_file(),
+        output_dir=_ensure_output_dir(),
+        run_cli_variants=_run_cli_variants,
+        capabilities=get_cli_capabilities(cfg.kicad_cli),
     )
-    if not out_file.exists():
-        return out_file, None, stderr if code != 0 else "DRC report was not produced."
-    return out_file, cast(dict[str, Any], json.loads(out_file.read_text(encoding="utf-8"))), None
+    path, report, error = result.as_legacy_tuple()
+    return path, cast(dict[str, Any] | None, report), error
 
 
 def _outline_bounds_mm(content: str) -> tuple[float, float, float, float] | None:
@@ -249,6 +230,9 @@ def _dfm_check_lines(
     rules = cast(dict[str, float | int], profile["rules"])
     metrics = _board_metrics()
     _, report, error = _run_drc_report("dfm_profile_check.json")
+    report_status, classification_error = drc_runner.classify_legacy_drc_result(report, error)
+    if report_status in {"unavailable", "malformed"}:
+        report = None
     violations = report_entries(report, "violations") if report else []
     unconnected = report_entries(report, "unconnected_items") if report else []
     courtyard = courtyard_violations(report) if report else []
@@ -317,7 +301,20 @@ def _dfm_check_lines(
         )
 
     if report is None:
-        lines.append(_format_status("WARN", f"DRC report unavailable ({error})."))
+        if report_status == "malformed":
+            lines.append(
+                _format_status(
+                    "WARN",
+                    f"DRC report malformed ({classification_error or 'unknown schema error'}).",
+                )
+            )
+        else:
+            lines.append(
+                _format_status(
+                    "WARN",
+                    f"DRC report unavailable ({classification_error or 'unknown error'}).",
+                )
+            )
     else:
         checks_run += 3
         lines.append(
