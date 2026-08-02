@@ -26,10 +26,11 @@ from ..pcb.board_access import (
     board_vias,
     board_zones,
 )
+from ..pcb.geometry import point_xy_mm, track_segment_length_mm
 from ..utils.impedance import propagation_delay_ps_per_mm
 from ..utils.layers import resolve_layer
 from ..utils.solver_seams import emc_method, format_solver_verdict
-from ..utils.units import _coord_nm, nm_to_mm
+from ..utils.units import nm_to_mm
 
 
 class _TrackLike(Protocol):
@@ -50,12 +51,6 @@ class _ZoneLike(Protocol):
     net: object
     layers: Iterable[BoardLayer.ValueType]
     filled: bool
-
-
-def _track_length_mm(track: _TrackLike) -> float:
-    dx = _coord_nm(track.end, "x") - _coord_nm(track.start, "x")
-    dy = _coord_nm(track.end, "y") - _coord_nm(track.start, "y")
-    return math.hypot(dx, dy) / 1_000_000.0
 
 
 def _track_net_name(track: _TrackLike) -> str:
@@ -94,13 +89,6 @@ def _footprint_reference(footprint: _FootprintLike) -> str:
     return str(footprint.reference_field.text.value)
 
 
-def _footprint_position_mm(footprint: _FootprintLike) -> tuple[float, float]:
-    return (
-        nm_to_mm(_coord_nm(footprint.position, "x")),
-        nm_to_mm(_coord_nm(footprint.position, "y")),
-    )
-
-
 def _gnd_zones() -> list[_ZoneLike]:
     zones = cast(list[_ZoneLike], board_zones(get_board()))
     return [zone for zone in zones if _is_ground_like_net(_zone_net_name(zone))]
@@ -117,7 +105,7 @@ def _track_lengths_by_net() -> dict[str, float]:
         net_name = _track_net_name(track)
         if not net_name:
             continue
-        lengths[net_name] = lengths.get(net_name, 0.0) + _track_length_mm(track)
+        lengths[net_name] = lengths.get(net_name, 0.0) + track_segment_length_mm(track)
     return lengths
 
 
@@ -131,12 +119,7 @@ def _via_positions_mm(net_name: str) -> list[tuple[float, float]]:
         via_net = str(getattr(getattr(via, "net", None), "name", "") or "")
         if via_net != net_name:
             continue
-        points.append(
-            (
-                nm_to_mm(_coord_nm(via.position, "x")),
-                nm_to_mm(_coord_nm(via.position, "y")),
-            )
-        )
+        points.append(point_xy_mm(via.position))
     return points
 
 
@@ -150,8 +133,9 @@ def _board_bounds() -> tuple[float, float, float, float] | None:
             point = getattr(shape, attr, None)
             if point is None:
                 continue
-            xs.append(nm_to_mm(_coord_nm(point, "x")))
-            ys.append(nm_to_mm(_coord_nm(point, "y")))
+            x_mm, y_mm = point_xy_mm(point)
+            xs.append(x_mm)
+            ys.append(y_mm)
     if xs and ys:
         return min(xs), min(ys), max(xs), max(ys)
     return None
@@ -165,7 +149,7 @@ def _nearest_cap_distance_mm(reference: str) -> float | None:
     )
     if anchor is None:
         return None
-    source_x_mm, source_y_mm = _footprint_position_mm(anchor)
+    source_x_mm, source_y_mm = point_xy_mm(anchor.position)
     caps = [
         footprint
         for footprint in footprints
@@ -175,7 +159,7 @@ def _nearest_cap_distance_mm(reference: str) -> float | None:
         return None
     return min(
         math.hypot(source_x_mm - x_mm, source_y_mm - y_mm)
-        for x_mm, y_mm in (_footprint_position_mm(cap) for cap in caps)
+        for x_mm, y_mm in (point_xy_mm(cap.position) for cap in caps)
     )
 
 
@@ -386,7 +370,9 @@ def _emc_check_high_speed_rules_text(net_class: str, max_stub_length_mm: float) 
         return "WARN", f"No routed nets matched the high-speed class token '{net_class}'."
     worst_stub = 0.0
     for net_name in matching:
-        segment_lengths = sorted(_track_length_mm(track) for track in _tracks_for_net(net_name))
+        segment_lengths = sorted(
+            track_segment_length_mm(track) for track in _tracks_for_net(net_name)
+        )
         if len(segment_lengths) > 1:
             worst_stub = max(worst_stub, segment_lengths[0])
     verdict = "PASS" if worst_stub <= max_stub_length_mm else "WARN"
@@ -406,8 +392,7 @@ def _emc_check_edge_clearance_text(min_clearance_mm: float) -> tuple[str, str]:
         if _track_net_name(track) not in _high_speed_nets():
             continue
         for point in (track.start, track.end):
-            x_mm = nm_to_mm(_coord_nm(point, "x"))
-            y_mm = nm_to_mm(_coord_nm(point, "y"))
+            x_mm, y_mm = point_xy_mm(point)
             distances.append(min(x_mm - x1_mm, x2_mm - x_mm, y_mm - y1_mm, y2_mm - y_mm))
     if not distances:
         return "WARN", "No high-speed tracks were available for edge-clearance review."

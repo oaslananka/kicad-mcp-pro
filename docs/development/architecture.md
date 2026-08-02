@@ -71,6 +71,32 @@ that malformed DRC JSON can no longer appear as a clean result: `run_drc()`
 returns an explicit configuration failure, while DFM surfaces a warning and
 skips false zero-finding checks.
 
+## PCB Segment Geometry Contract
+
+`kicad_mcp.pcb.geometry.track_segment_length_mm()` is the canonical length
+calculation for straight PCB track segments used by routing, EMC, signal-
+integrity, and power-integrity analysis. It reads explicit `start`/`end` point
+coordinates through the repository's `_coord_nm()` compatibility helper,
+converts each delta with `nm_to_mm()`, and applies Euclidean distance in
+millimetres. A cached or provider-specific length field is not used.
+
+The contract is deliberately limited to straight segments. Arc, curved, and
+polyline objects require a separately named implementation that accounts for
+their full geometry; callers must not approximate them as endpoint chords.
+`point_xy_mm()` is the shared coordinate wrapper for object positions and uses
+the same nanometre compatibility path. Missing or non-numeric coordinates
+raise `BoardGeometryError` instead of producing a zero length or origin.
+
+Board-envelope helpers remain domain-specific: EMC derives live Edge.Cuts
+bounds, power-integrity may fall back to a footprint envelope, and file-backed
+outline parsing operates on S-expressions rather than live point objects. Those
+policies must not be collapsed into a generic point/segment helper.
+
+The canonical calculation preserves the former EMC/SI/PI precision exactly.
+The previous routing helper rounded the Euclidean result to the nearest
+nanometre before conversion, so representative outputs remain compatible
+within 0.5 nm (`5e-7` mm). New code must use the unrounded canonical result.
+
 ## Health Surface
 
 The MCP resource layer exposes the current review state as text-first surfaces:

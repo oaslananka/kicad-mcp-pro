@@ -30,6 +30,7 @@ from ..models.power_integrity import (
 )
 from ..models.verdict import Verdict, VerdictReport
 from ..pcb.board_access import board_footprints, board_shapes, board_tracks, board_zones
+from ..pcb.geometry import point_xy_mm, track_segment_length_mm
 from ..utils.impedance import copper_thickness_mm, recommended_decoupling_distance_mm
 from ..utils.layers import resolve_layer
 from ..utils.pdn_mesh import (
@@ -46,7 +47,7 @@ from ..utils.solver_seams import (
     thermal_method,
 )
 from ..utils.thermal_solver import ThermalPlaneSpec, solve_plane_temperature
-from ..utils.units import _coord_nm, mm_to_mil, mm_to_nm, nm_to_mm
+from ..utils.units import mm_to_mil, mm_to_nm, nm_to_mm
 from ..verdicts import three_level_verdict, warn_max_from
 
 _COPPER_RESISTIVITY_OHM_M = 1.724e-8
@@ -72,12 +73,6 @@ def _net(name: str) -> Net:
     net = Net()
     net.name = name
     return net
-
-
-def _track_length_mm(track: _TrackLike) -> float:
-    dx = _coord_nm(track.end, "x") - _coord_nm(track.start, "x")
-    dy = _coord_nm(track.end, "y") - _coord_nm(track.start, "y")
-    return math.hypot(dx, dy) / 1_000_000.0
 
 
 def _matching_tracks(net_name: str) -> list[_TrackLike]:
@@ -115,13 +110,6 @@ def _footprint_value(footprint: _FootprintLike) -> str:
     return str(footprint.value_field.text.value)
 
 
-def _footprint_position_mm(footprint: _FootprintLike) -> tuple[float, float]:
-    return (
-        nm_to_mm(_coord_nm(footprint.position, "x")),
-        nm_to_mm(_coord_nm(footprint.position, "y")),
-    )
-
-
 def _nearest_capacitors(reference: str) -> list[tuple[str, float, str]]:
     footprints = cast(list[_FootprintLike], board_footprints(get_board()))
     anchor = next(
@@ -131,13 +119,13 @@ def _nearest_capacitors(reference: str) -> list[tuple[str, float, str]]:
     if anchor is None:
         return []
 
-    source_x_mm, source_y_mm = _footprint_position_mm(anchor)
+    source_x_mm, source_y_mm = point_xy_mm(anchor.position)
     matches: list[tuple[str, float, str]] = []
     for footprint in footprints:
         candidate_ref = _footprint_reference(footprint)
         if candidate_ref == reference or not candidate_ref.upper().startswith("C"):
             continue
-        x_mm, y_mm = _footprint_position_mm(footprint)
+        x_mm, y_mm = point_xy_mm(footprint.position)
         matches.append(
             (
                 candidate_ref,
@@ -196,8 +184,9 @@ def _edge_cuts_bounds() -> tuple[float, float, float, float] | None:
             point = getattr(shape, attr, None)
             if point is None:
                 continue
-            xs.append(nm_to_mm(_coord_nm(point, "x")))
-            ys.append(nm_to_mm(_coord_nm(point, "y")))
+            x_mm, y_mm = point_xy_mm(point)
+            xs.append(x_mm)
+            ys.append(y_mm)
     if xs and ys:
         return min(xs), min(ys), max(xs), max(ys)
     return None
@@ -207,8 +196,8 @@ def _footprint_bounds() -> tuple[float, float, float, float] | None:
     footprints = cast(list[_FootprintLike], board_footprints(get_board()))
     if not footprints:
         return None
-    xs = [_footprint_position_mm(footprint)[0] for footprint in footprints]
-    ys = [_footprint_position_mm(footprint)[1] for footprint in footprints]
+    xs = [point_xy_mm(footprint.position)[0] for footprint in footprints]
+    ys = [point_xy_mm(footprint.position)[1] for footprint in footprints]
     margin_mm = 5.0
     return min(xs) - margin_mm, min(ys) - margin_mm, max(xs) + margin_mm, max(ys) + margin_mm
 
@@ -450,7 +439,7 @@ def register(mcp: FastMCP) -> None:
 
         min_width_mm = min(nm_to_mm(int(track.width)) for track in tracks)
         avg_width_mm = sum(nm_to_mm(int(track.width)) for track in tracks) / len(tracks)
-        longest_track = max(tracks, key=_track_length_mm)
+        longest_track = max(tracks, key=track_segment_length_mm)
         copper_thickness = _layer_copper_thickness_mm(longest_track.layer)
         external = longest_track.layer in {BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu}
         capacity_a = _ipc_current_capacity_a(
