@@ -171,6 +171,43 @@ class TestKiCadTrayApp:
             tray_app._action_stop_server()
             mock_proc.terminate.assert_called_once()
 
+    def test_action_run_drc_uses_canonical_runner(
+        self,
+        tray_app,
+        tmp_path: Path,
+    ) -> None:
+        from kicad_mcp.validation.drc_runner import DrcRunResult
+
+        pcb_file = tmp_path / "board.kicad_pcb"
+        pcb_file.write_text("(kicad_pcb)", encoding="utf-8")
+        output_dir = tmp_path / "output"
+        cfg = MagicMock()
+        cfg.pcb_file = pcb_file
+        cfg.kicad_cli = Path("kicad-cli")
+        cfg.ensure_output_dir.return_value = output_dir
+        result = DrcRunResult(
+            output_dir / "tray_drc_report.json",
+            "findings",
+            {"violations": [{"type": "clearance"}], "unconnected_items": []},
+            5,
+            "violations found",
+            None,
+        )
+
+        with patch("kicad_mcp.config.get_config", return_value=cfg):
+            with patch("kicad_mcp.discovery.get_cli_capabilities", return_value=MagicMock()):
+                with patch(
+                    "kicad_mcp.validation.drc_runner.run_drc_report",
+                    return_value=result,
+                ) as run_drc:
+                    with patch("kicad_mcp.tray.subprocess.run") as direct_run:
+                        with patch.object(tray_app, "_show_notification") as notify:
+                            tray_app._action_run_drc()
+
+        run_drc.assert_called_once()
+        direct_run.assert_not_called()
+        notify.assert_called_once_with("DRC completed with design findings")
+
     def test_action_show_status(self, tray_app) -> None:
         """Test _action_show_status calls build_health_report."""
         # Patch at the import source (diagnostics module) since tray

@@ -43,6 +43,34 @@ The release contract is intentionally strict:
 - low-level exports remain available for debugging and iteration
 - agents are expected to use the fix queue and re-run gates after each repair pass
 
+## DRC Execution Contract
+
+`kicad_mcp.validation.drc_runner` is the canonical execution boundary for
+`kicad-cli pcb drc`. DFM and validation tools may keep thin compatibility
+wrappers, and the tray action delegates directly to the same service. Consumers
+must not rebuild command variants, parse report files, or classify process
+results independently.
+
+The typed runner result has four states:
+
+- `unavailable`: the CLI, board input, output path, or generated report could not
+  be used. A non-zero exit with an otherwise clean report is also unavailable.
+- `findings`: a valid report contains DRC violations, unconnected items, or
+  legacy courtyard findings. A non-zero `--exit-code-violations` result remains
+  a design finding rather than an environment failure.
+- `clean`: a valid report contains no actionable findings and the command
+  completed successfully.
+- `malformed`: output exists but is invalid JSON or violates the expected DRC
+  list schema. Malformed output must never be interpreted as a clean report.
+
+Policy-specific PASS/WARN/FAIL rendering remains in each caller. The shared
+runner owns stale-output removal, supported command variants, return-code
+interpretation, JSON loading, and base result classification. Public MCP tool
+names and schemas are unchanged. The intentional compatibility correction is
+that malformed DRC JSON can no longer appear as a clean result: `run_drc()`
+returns an explicit configuration failure, while DFM surfaces a warning and
+skips false zero-finding checks.
+
 ## Health Surface
 
 The MCP resource layer exposes the current review state as text-first surfaces:

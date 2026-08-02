@@ -240,23 +240,40 @@ class KiCadTrayApp:
         webbrowser.open(f"{self._dashboard_url}#/{route}")
 
     def _action_run_drc(self) -> None:
-        """Run DRC via kicad-cli."""
+        """Run DRC through the canonical typed validation runner."""
         try:
             from .config import get_config
+            from .discovery import get_cli_capabilities
+            from .tools.export_support import _run_cli_variants
+            from .validation.drc_runner import run_drc_report
 
             cfg = get_config()
-            if cfg.pcb_file and cfg.pcb_file.exists():
-                result = subprocess.run(
-                    [str(cfg.kicad_cli), "pcb", "drc", str(cfg.pcb_file)],
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
-                )
-                summary = result.stdout[:200] if result.stdout else "DRC completed"
-                self._show_notification(summary)
-                logger.info("tray_drc_completed", returncode=result.returncode)
-            else:
+            if not cfg.pcb_file or not cfg.pcb_file.exists():
                 self._show_notification("No PCB file configured")
+                return
+
+            result = run_drc_report(
+                "tray_drc_report.json",
+                pcb_file=cfg.pcb_file,
+                output_dir=cfg.ensure_output_dir("drc"),
+                run_cli_variants=_run_cli_variants,
+                capabilities=get_cli_capabilities(cfg.kicad_cli),
+            )
+            if result.status == "clean":
+                summary = "DRC completed with no findings"
+            elif result.status == "findings":
+                summary = "DRC completed with design findings"
+            elif result.status == "malformed":
+                summary = f"DRC report malformed: {result.error or 'unknown schema error'}"
+            else:
+                summary = f"DRC unavailable: {result.error or 'unknown error'}"
+            self._show_notification(summary[:200])
+            logger.info(
+                "tray_drc_completed",
+                status=result.status,
+                returncode=result.return_code,
+                report_path=str(result.path),
+            )
         except Exception as exc:
             logger.error("tray_drc_failed", error=str(exc))
             self._show_notification(f"DRC failed: {exc}")

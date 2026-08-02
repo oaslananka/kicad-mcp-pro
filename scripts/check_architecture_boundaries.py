@@ -17,6 +17,7 @@ SRC_ROOT = REPO_ROOT / "src"
 DOMAIN_MODULES = {
     "kicad_mcp.tools.pcb": SRC_ROOT / "kicad_mcp" / "tools" / "pcb.py",
     "kicad_mcp.tools.validation": SRC_ROOT / "kicad_mcp" / "tools" / "validation.py",
+    "kicad_mcp.validation.drc_runner": SRC_ROOT / "kicad_mcp" / "validation" / "drc_runner.py",
     "kicad_mcp.validation.policy_state": SRC_ROOT / "kicad_mcp" / "validation" / "policy_state.py",
     "kicad_mcp.tools.validation_policy_state": SRC_ROOT
     / "kicad_mcp"
@@ -218,6 +219,7 @@ DOMAIN_MODULES = {
 }
 
 PURE_HELPERS = {
+    "kicad_mcp.validation.drc_runner",
     "kicad_mcp.validation.policy_state",
     "kicad_mcp.companion.context",
     "kicad_mcp.ipc.command_queue",
