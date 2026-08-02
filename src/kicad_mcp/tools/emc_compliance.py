@@ -19,6 +19,13 @@ from ..config import get_config
 from ..connection import get_board
 from ..models.common import _FootprintLike
 from ..models.verdict import Verdict, VerdictReport
+from ..pcb.board_access import (
+    board_footprints,
+    board_shapes,
+    board_tracks,
+    board_vias,
+    board_zones,
+)
 from ..utils.impedance import propagation_delay_ps_per_mm
 from ..utils.layers import resolve_layer
 from ..utils.solver_seams import emc_method, format_solver_verdict
@@ -49,22 +56,6 @@ def _track_length_mm(track: _TrackLike) -> float:
     dx = _coord_nm(track.end, "x") - _coord_nm(track.start, "x")
     dy = _coord_nm(track.end, "y") - _coord_nm(track.start, "y")
     return math.hypot(dx, dy) / 1_000_000.0
-
-
-def _board_tracks() -> list[_TrackLike]:
-    return cast(list[_TrackLike], list(get_board().get_tracks()))
-
-
-def _board_vias() -> list[_ViaLike]:
-    return cast(list[_ViaLike], list(get_board().get_vias()))
-
-
-def _board_zones() -> list[_ZoneLike]:
-    return cast(list[_ZoneLike], list(get_board().get_zones()))
-
-
-def _board_footprints() -> list[_FootprintLike]:
-    return cast(list[_FootprintLike], list(get_board().get_footprints()))
 
 
 def _track_net_name(track: _TrackLike) -> str:
@@ -111,16 +102,18 @@ def _footprint_position_mm(footprint: _FootprintLike) -> tuple[float, float]:
 
 
 def _gnd_zones() -> list[_ZoneLike]:
-    return [zone for zone in _board_zones() if _is_ground_like_net(_zone_net_name(zone))]
+    zones = cast(list[_ZoneLike], board_zones(get_board()))
+    return [zone for zone in zones if _is_ground_like_net(_zone_net_name(zone))]
 
 
 def _tracks_for_net(net_name: str) -> list[_TrackLike]:
-    return [track for track in _board_tracks() if _track_net_name(track) == net_name]
+    tracks = cast(list[_TrackLike], board_tracks(get_board()))
+    return [track for track in tracks if _track_net_name(track) == net_name]
 
 
 def _track_lengths_by_net() -> dict[str, float]:
     lengths: dict[str, float] = {}
-    for track in _board_tracks():
+    for track in cast(list[_TrackLike], board_tracks(get_board())):
         net_name = _track_net_name(track)
         if not net_name:
             continue
@@ -134,7 +127,7 @@ def _track_widths_mm(net_name: str) -> list[float]:
 
 def _via_positions_mm(net_name: str) -> list[tuple[float, float]]:
     points: list[tuple[float, float]] = []
-    for via in _board_vias():
+    for via in cast(list[_ViaLike], board_vias(get_board())):
         via_net = str(getattr(getattr(via, "net", None), "name", "") or "")
         if via_net != net_name:
             continue
@@ -150,7 +143,7 @@ def _via_positions_mm(net_name: str) -> list[tuple[float, float]]:
 def _board_bounds() -> tuple[float, float, float, float] | None:
     xs: list[float] = []
     ys: list[float] = []
-    for shape in get_board().get_shapes():
+    for shape in board_shapes(get_board()):
         if getattr(shape, "layer", None) != BoardLayer.BL_Edge_Cuts:
             continue
         for attr in ("start", "end", "top_left", "bottom_right", "center", "radius_point"):
@@ -165,7 +158,7 @@ def _board_bounds() -> tuple[float, float, float, float] | None:
 
 
 def _nearest_cap_distance_mm(reference: str) -> float | None:
-    footprints = _board_footprints()
+    footprints = cast(list[_FootprintLike], board_footprints(get_board()))
     anchor = next(
         (footprint for footprint in footprints if _footprint_reference(footprint) == reference),
         None,
@@ -188,7 +181,8 @@ def _nearest_cap_distance_mm(reference: str) -> float | None:
 
 def _high_speed_nets() -> list[str]:
     priority = ("USB", "HS", "CLK", "DDR", "PCIE", "ETH", "HDMI")
-    names = sorted({name for name in (_track_net_name(track) for track in _board_tracks()) if name})
+    tracks = cast(list[_TrackLike], board_tracks(get_board()))
+    names = sorted({name for name in (_track_net_name(track) for track in tracks) if name})
     intent_nets = _intent_critical_nets()
     if intent_nets:
         return [name for name in intent_nets if name in names] or intent_nets
@@ -262,7 +256,7 @@ def _emc_check_single_return_path_text(
     plane_layer = resolve_layer(reference_plane_layer)
     plane_exists = any(
         _is_ground_like_net(_zone_net_name(zone)) and plane_layer in getattr(zone, "layers", [])
-        for zone in _board_zones()
+        for zone in cast(list[_ZoneLike], board_zones(get_board()))
     )
     if not plane_exists:
         return "WARN", f"No GND plane was found on reference layer {reference_plane_layer}."
@@ -309,7 +303,7 @@ def _emc_check_return_path_text(
 
 def _emc_check_split_plane_text(signal_nets: list[str]) -> tuple[str, str]:
     planes_by_layer: dict[str, set[str]] = {}
-    for zone in _board_zones():
+    for zone in cast(list[_ZoneLike], board_zones(get_board())):
         zone_net = _zone_net_name(zone)
         if not zone_net or _is_ground_like_net(zone_net):
             continue
@@ -328,7 +322,7 @@ def _emc_check_split_plane_text(signal_nets: list[str]) -> tuple[str, str]:
 def _emc_check_decoupling_text(max_distance_mm: float) -> tuple[str, str]:
     ics = [
         footprint
-        for footprint in _board_footprints()
+        for footprint in cast(list[_FootprintLike], board_footprints(get_board()))
         if _footprint_reference(footprint).upper().startswith("U")
     ]
     if not ics:
@@ -408,7 +402,7 @@ def _emc_check_edge_clearance_text(min_clearance_mm: float) -> tuple[str, str]:
         return "WARN", "Board outline was not available for edge-clearance review."
     x1_mm, y1_mm, x2_mm, y2_mm = bounds
     distances: list[float] = []
-    for track in _board_tracks():
+    for track in cast(list[_TrackLike], board_tracks(get_board())):
         if _track_net_name(track) not in _high_speed_nets():
             continue
         for point in (track.start, track.end):

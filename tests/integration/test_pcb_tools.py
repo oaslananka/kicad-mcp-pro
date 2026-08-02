@@ -1524,3 +1524,22 @@ async def test_pcb_sync_from_schematic_resolves_project_fp_lib_table(
     assert '(property "Reference" "J1"' in pcb_text
     assert '(net "VIN")' in pcb_text
     assert '(net "GND")' in pcb_text
+
+
+@pytest.mark.anyio
+async def test_pcb_ratsnest_uses_file_fallback_when_live_nets_are_unavailable(
+    sample_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (sample_project / "demo.kicad_pcb").write_text(
+        '(kicad_pcb (version 20250316) (net 1 "GND"))\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("kicad_mcp.tools.pcb.get_board", lambda: object())
+    server = build_server("pcb")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    text = await call_tool_text(server, "pcb_get_ratsnest", {})
+
+    assert "Source: file-backed" in text
+    assert "TOOL_EXECUTION_FAILED" not in text

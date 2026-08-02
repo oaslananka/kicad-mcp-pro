@@ -92,6 +92,25 @@ class KiCadBoardNotOpenError(KiCadMcpError):
     transient_class: TransientClass = "state"
 
 
+class BoardAccessError(KiCadMcpError):
+    """Raised when one live board collection cannot be read."""
+
+    code = "KICAD_BOARD_ACCESS_UNAVAILABLE"
+    hint = "Verify that KiCad IPC and the requested board API are available, then retry."
+    retryable = True
+    transient_class: TransientClass = "state"
+
+    def __init__(self, operation: str, method_name: str, cause: BaseException) -> None:
+        self.operation = operation
+        self.method_name = method_name
+        if isinstance(cause, KiCadMcpError):
+            self.retryable = cause.retryable
+            self.transient_class = cause.transient_class
+            self.retry_after_ms = cause.retry_after_ms
+        detail = str(cause).strip() or cause.__class__.__name__
+        super().__init__(f"Could not read board {operation} via {method_name}: {detail}")
+
+
 class IpcDisconnectedError(KiCadNotRunningError):
     """Raised when the KiCad IPC connection was lost and reconnection failed."""
 

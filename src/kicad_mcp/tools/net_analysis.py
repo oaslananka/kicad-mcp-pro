@@ -13,6 +13,14 @@ from typing import Any, cast
 from mcp.server.fastmcp import FastMCP
 
 from ..connection import KiCadConnectionError, get_board
+from ..pcb.board_access import (
+    BoardAccessError,
+    board_footprints,
+    board_nets,
+    board_pads,
+    board_tracks,
+    board_vias,
+)
 from ..pcb.pad_mapping import MappedPad, footprint_pads, map_pads_to_footprints
 from ..utils.units import nm_to_mm
 from .export_support import _get_pcb_file
@@ -24,32 +32,13 @@ def _object_net_name(obj: object) -> str:
     return str(getattr(getattr(obj, "net", None), "name", "") or "")
 
 
-def _board_tracks(board: object) -> list[Any]:
-    try:
-        return list(cast(Any, board).get_tracks())
-    except (AttributeError, TypeError, OSError):
-        return []
-
-
-def _board_vias(board: object) -> list[Any]:
-    try:
-        return list(cast(Any, board).get_vias())
-    except (AttributeError, TypeError, OSError):
-        return []
-
-
-def _board_footprints(board: object) -> list[Any]:
-    try:
-        return list(cast(Any, board).get_footprints())
-    except (AttributeError, TypeError, OSError):
-        return []
-
-
 def _mapped_board_pads(board: object) -> list[MappedPad]:
-    footprints = _board_footprints(board)
+    footprints = board_footprints(board)
     try:
-        pads = list(cast(Any, board).get_pads())
-    except (AttributeError, TypeError, OSError):
+        pads = board_pads(board)
+    except BoardAccessError:
+        # Some supported KiCad API variants expose pads only through footprint
+        # definitions. Keep that compatibility fallback explicit at this caller.
         pads = [pad for footprint in footprints for pad in footprint_pads(footprint)]
     return map_pads_to_footprints(pads, footprints)
 
@@ -58,13 +47,12 @@ def _collect_nets_from_board() -> list[dict[str, Any]]:
     """Collect net data from a live KiCad IPC connection using net names."""
     try:
         board = get_board()
-        nets = board.get_nets()
-    except (KiCadConnectionError, OSError, AttributeError) as exc:
-        raise RuntimeError(f"Could not retrieve nets from live board: {exc}") from exc
-
-    tracks = _board_tracks(board)
-    vias = _board_vias(board)
-    mapped_pads = _mapped_board_pads(board)
+        nets = board_nets(board)
+        tracks = board_tracks(board)
+        vias = board_vias(board)
+        mapped_pads = _mapped_board_pads(board)
+    except (KiCadConnectionError, BoardAccessError) as exc:
+        raise RuntimeError(f"Could not retrieve collections from live board: {exc}") from exc
     pads = [mapped.pad for mapped in mapped_pads]
 
     result: list[dict[str, Any]] = []
@@ -207,7 +195,7 @@ def register(mcp: FastMCP) -> None:
                 for mapped in _mapped_board_pads(board)
                 if _object_net_name(mapped.pad) == net_name
             ]
-        except (KiCadConnectionError, OSError, AttributeError, TypeError):
+        except (KiCadConnectionError, BoardAccessError, OSError, AttributeError, TypeError):
             pads_on_net = _file_pad_details(net_name)
 
         payload: dict[str, object] = {

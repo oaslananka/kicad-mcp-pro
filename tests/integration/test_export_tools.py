@@ -1114,3 +1114,30 @@ async def test_export_svg_uses_multi_mode_directory_output(sample_project, monke
     assert commands
     assert "--mode-multi" in commands[0]
     assert "--input" not in commands[0]
+
+
+@pytest.mark.anyio
+async def test_validate_footprints_vs_schematic_uses_file_fallback_when_collection_unavailable(
+    sample_project,
+    monkeypatch,
+) -> None:
+    (sample_project / "demo.kicad_sch").write_text(
+        '(kicad_sch (symbol (property "Reference" "R1")))\n',
+        encoding="utf-8",
+    )
+    (sample_project / "demo.kicad_pcb").write_text(
+        '(kicad_pcb (footprint "Resistor_SMD:R_0805" '
+        '(property "Reference" "R1" (at 0 0 0) (layer "F.SilkS"))))\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation.get_board",
+        lambda: object(),
+    )
+
+    server = build_server("manufacturing")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    text = await call_tool_text(server, "validate_footprints_vs_schematic", {})
+
+    assert "PCB footprint refs (file): 1" in text

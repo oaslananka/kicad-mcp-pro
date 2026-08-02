@@ -12,6 +12,14 @@ from mcp.server.fastmcp import FastMCP
 
 from ..config import get_config
 from ..connection import KiCadConnectionError, get_board
+from ..pcb.board_access import (
+    BoardAccessError,
+    board_footprints,
+    board_nets_filtered,
+    board_tracks,
+    board_vias,
+    board_zones,
+)
 from ..validation.drc_report import courtyard_violations, report_entries
 
 
@@ -166,7 +174,7 @@ def _gate_history_json() -> str:
 def _layer_coverage_json() -> str:
     board = get_board()
     zone_counts: dict[str, int] = {}
-    for zone in board.get_zones():
+    for zone in board_zones(board):
         for layer in getattr(zone, "layers", []):
             name = str(BoardLayer.Name(layer)).removeprefix("BL_")
             zone_counts[name] = zone_counts.get(name, 0) + 1
@@ -195,13 +203,14 @@ def register(mcp: FastMCP) -> None:
         """Live PCB board summary."""
         try:
             board = get_board()
+            tracks = board_tracks(board)
+            footprints = board_footprints(board)
+            vias = board_vias(board)
+            nets = board_nets_filtered(board, netclass_filter=None)
         except KiCadConnectionError as exc:
             return f"KiCad is not connected: {exc}"
-
-        tracks = board.get_tracks()
-        footprints = board.get_footprints()
-        vias = board.get_vias()
-        nets = board.get_nets(netclass_filter=None)
+        except BoardAccessError as exc:
+            return f"Board data is unavailable: {exc}"
         return (
             f"Board summary\n"
             f"- Tracks: {len(tracks)}\n"

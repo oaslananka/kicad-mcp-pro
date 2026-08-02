@@ -18,6 +18,7 @@ from ..errors import ManualStepRequiredError
 from ..models.common import _PadLike
 from ..models.pcb import AddTrackInput
 from ..models.tool_result import ArtifactRef, StateDelta, ToolResult
+from ..pcb.board_access import board_nets_filtered, board_pads, board_tracks
 from ..utils.freerouting import FreeRoutingRunner
 from ..utils.layers import resolve_layer
 from ..utils.router_core import apply_ses_to_pcb
@@ -42,7 +43,7 @@ _TUNING_ASSIGNMENTS_FILENAME = "tuning_profile_assignments.json"
 
 
 def _find_pad(reference: str, pad_number: str) -> _PadLike | None:
-    for pad in cast(list[_PadLike], get_board().get_pads()):
+    for pad in cast(list[_PadLike], board_pads(get_board())):
         if pad.parent.reference_field.text.value == reference and str(pad.number) == str(
             pad_number
         ):
@@ -53,7 +54,7 @@ def _find_pad(reference: str, pad_number: str) -> _PadLike | None:
 def _list_board_net_names() -> set[str]:
     return {
         str(net.name)
-        for net in cast(list[Net], get_board().get_nets(netclass_filter=None))
+        for net in cast(list[Net], board_nets_filtered(get_board(), netclass_filter=None))
         if getattr(net, "name", "")
     }
 
@@ -66,7 +67,7 @@ def _track_length_mm(track: Track) -> float:
 
 def _current_track_length_mm(net_name: str) -> float:
     length = 0.0
-    for track in cast(list[Track], get_board().get_tracks()):
+    for track in cast(list[Track], board_tracks(get_board())):
         track_net = getattr(getattr(track, "net", None), "name", "")
         if track_net == net_name:
             length += _track_length_mm(track)
