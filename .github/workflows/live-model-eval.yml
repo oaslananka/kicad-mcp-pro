@@ -99,7 +99,7 @@ jobs:
     if: inputs.mode == 'live' && github.ref == 'refs/heads/main'
     needs: guard
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 110
     environment: live-model-evals
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
@@ -131,19 +131,75 @@ jobs:
           case_args=()
           if [[ "$SCOPE" == "smoke" ]]; then
             case_args+=(--case-tag live-smoke)
+            command_timeout="40m"
+          else
+            command_timeout="100m"
           fi
-          uv run --all-extras python scripts/run_live_model_eval.py \
+          python - "$CONFIGURATION_ID" "$GITHUB_SHA" <<'PY'
+          import json
+          import pathlib
+          import sys
+          pathlib.Path("artifacts/live-model-eval/status.json").write_text(
+              json.dumps(
+                  {
+                      "configuration_id": sys.argv[1],
+                      "source_revision": sys.argv[2],
+                      "state": "running",
+                      "runner_exit_code": None,
+                  },
+                  sort_keys=True,
+              ) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          set +e
+          timeout --signal=TERM --kill-after=30s "$command_timeout" \
+            uv run --all-extras python scripts/run_live_model_eval.py \
             --config evals/live/configurations.yaml \
             --configuration "$CONFIGURATION_ID" \
             --repeats "$REPEATS" \
             "${case_args[@]}" \
             --source-revision "$GITHUB_SHA" \
             --output artifacts/live-model-eval/evidence.json
+          exit_code=$?
+          set -e
+          if [ "$exit_code" -ne 124 ] && [ "$exit_code" -ne 137 ]; then
+            python - "$CONFIGURATION_ID" "$GITHUB_SHA" "$exit_code" <<'PY'
+          import json
+          import pathlib
+          import sys
+          pathlib.Path("artifacts/live-model-eval/status.json").write_text(
+              json.dumps(
+                  {
+                      "configuration_id": sys.argv[1],
+                      "source_revision": sys.argv[2],
+                      "state": "completed",
+                      "runner_exit_code": int(sys.argv[3]),
+                  },
+                  sort_keys=True,
+              ) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          fi
       - name: Upload sanitized live evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: live-model-eval-${{ github.run_id }}
-          path: artifacts/live-model-eval/evidence.json
+          path: artifacts/live-model-eval
           if-no-files-found: error
           retention-days: 14
+      - name: Enforce live evaluation result
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import pathlib
+          status = json.loads(
+              pathlib.Path("artifacts/live-model-eval/status.json").read_text(encoding="utf-8")
+          )
+          if status.get("state") != "completed" or status.get("runner_exit_code") != 0:
+              raise SystemExit("live-model evaluation did not pass")
+          PY

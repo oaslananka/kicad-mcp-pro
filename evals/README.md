@@ -244,6 +244,11 @@ into that GitHub environment and are injected only into the billed job. The
 workflow does not require a long-lived Doppler token in GitHub Actions. Manual runs
 default to the full corpus; the `smoke` scope selects only the canonical `live-smoke`
 subset for bounded per-configuration diagnostics without changing release-gate policy.
+The protected live job reserves artifact and status-upload time around the billed
+command: smoke commands are bounded to 40 minutes and full commands to 100 minutes
+inside a 110-minute job envelope. Slow replacement candidates should be evaluated as
+independent one-repeat full runs so every repetition retains its own exact-revision,
+sanitized evidence artifact and explicit outcome.
 
 Live adapter configuration records are versioned in
 [`live/configurations.yaml`](live/configurations.yaml) and contain no credential

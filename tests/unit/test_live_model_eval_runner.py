@@ -1252,6 +1252,16 @@ def test_live_model_eval_workflow_is_manual_protected_and_config_sync_backed() -
     assert "SCOPE: ${{ inputs.scope }}" in workflow
     replay_job = workflow.split("  replay:", maxsplit=1)[1].split("  live:", maxsplit=1)[0]
     live_job = workflow.split("  live:", maxsplit=1)[1]
+    assert "timeout-minutes: 110" in live_job
+    assert 'command_timeout="40m"' in live_job
+    assert 'command_timeout="100m"' in live_job
+    assert 'timeout --signal=TERM --kill-after=30s "$command_timeout"' in live_job
+    assert '"state": "running"' in live_job
+    assert '"runner_exit_code": None' in live_job
+    assert 'if [ "$exit_code" -ne 124 ] && [ "$exit_code" -ne 137 ]; then' in live_job
+    assert "Upload sanitized live evidence\n        if: always()" in live_job
+    assert "path: artifacts/live-model-eval" in live_job
+    assert "name: Enforce live evaluation result" in live_job
     for job in (replay_job, live_job):
         assert job.count("case_args+=(--case-tag live-smoke)") == 1
         assert job.count('"${case_args[@]}"') == 1
