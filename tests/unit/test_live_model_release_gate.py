@@ -409,6 +409,8 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     for nonblocking_id in (
         "nvidia-gemma-4-31b-it",
         "nvidia-llama-3-3-70b-instruct",
+        "nvidia-minimax-m3",
+        "nvidia-qwen3-next-80b-a3b-instruct",
         "opencode-deepseek-v4-flash-free",
         "opencode-mimo-v2-5-free",
         "opencode-laguna-s-2-1-free",

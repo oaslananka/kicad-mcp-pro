@@ -979,6 +979,32 @@ def test_committed_meta_llama_candidate_is_nonblocking_and_key_scoped() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("configuration_id", "model"),
+    [
+        ("nvidia-minimax-m3", "minimaxai/minimax-m3"),
+        ("nvidia-qwen3-next-80b-a3b-instruct", "qwen/qwen3-next-80b-a3b-instruct"),
+    ],
+)
+def test_committed_replacement_candidates_are_nonblocking_and_key_scoped(
+    configuration_id: str, model: str
+) -> None:
+    configurations = load_configurations(COMMITTED_LIVE_CONFIG)
+    configuration = configurations[configuration_id]
+
+    assert configuration.host == "nvidia-nim"
+    assert configuration.model == model
+    assert configuration.required_env == ("NVIDIA_API_KEY",)
+    assert configuration.command == (
+        "python",
+        "scripts/nvidia_nim_eval_adapter.py",
+        "--model",
+        model,
+        "--structured-output",
+        "none",
+    )
+
+
 def test_committed_opencode_cli_blocking_record_is_key_scoped() -> None:
     configurations = load_configurations(COMMITTED_LIVE_CONFIG)
     assert "opencode-nemotron-3-ultra-free-json-schema" not in configurations

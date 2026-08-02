@@ -74,6 +74,36 @@ configurations:
       max_total_tokens: 3000000
       max_total_cost_micros: 0
 
+  - id: nvidia-minimax-m3
+    host: nvidia-nim
+    model: minimaxai/minimax-m3
+    adapter: subprocess
+    command: [python, scripts/nvidia_nim_eval_adapter.py, --model, minimaxai/minimax-m3, --structured-output, none]
+    required_env: [NVIDIA_API_KEY]
+    limits:
+      timeout_seconds: 70
+      min_request_interval_seconds: 5
+      max_retries: 2
+      max_cases: 325
+      max_total_tool_calls: 1000
+      max_total_tokens: 3000000
+      max_total_cost_micros: 0
+
+  - id: nvidia-qwen3-next-80b-a3b-instruct
+    host: nvidia-nim
+    model: qwen/qwen3-next-80b-a3b-instruct
+    adapter: subprocess
+    command: [python, scripts/nvidia_nim_eval_adapter.py, --model, qwen/qwen3-next-80b-a3b-instruct, --structured-output, none]
+    required_env: [NVIDIA_API_KEY]
+    limits:
+      timeout_seconds: 70
+      min_request_interval_seconds: 5
+      max_retries: 2
+      max_cases: 325
+      max_total_tool_calls: 1000
+      max_total_tokens: 3000000
+      max_total_cost_micros: 0
+
   - id: opencode-deepseek-v4-flash-free
     host: opencode-zen
     model: deepseek-v4-flash-free
