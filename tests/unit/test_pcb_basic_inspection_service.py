@@ -195,3 +195,7 @@ def test_unexpected_basic_inspection_errors_are_not_hidden() -> None:
     )
     with pytest.raises(RuntimeError, match="bug"):
         service.get_nets()
+
+
+def test_nets_use_file_fallback_when_board_method_is_missing() -> None:
+    assert _service(SimpleNamespace()).get_nets().startswith("nets fallback")

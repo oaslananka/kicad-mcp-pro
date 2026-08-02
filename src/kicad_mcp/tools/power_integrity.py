@@ -29,6 +29,7 @@ from ..models.power_integrity import (
     VoltageDropInput,
 )
 from ..models.verdict import Verdict, VerdictReport
+from ..pcb.board_access import board_footprints, board_shapes, board_tracks, board_zones
 from ..utils.impedance import copper_thickness_mm, recommended_decoupling_distance_mm
 from ..utils.layers import resolve_layer
 from ..utils.pdn_mesh import (
@@ -81,7 +82,7 @@ def _track_length_mm(track: _TrackLike) -> float:
 
 def _matching_tracks(net_name: str) -> list[_TrackLike]:
     matches: list[_TrackLike] = []
-    for track in cast(list[_TrackLike], list(get_board().get_tracks())):
+    for track in cast(list[_TrackLike], board_tracks(get_board())):
         track_net = str(getattr(getattr(track, "net", None), "name", "") or "")
         if track_net == net_name:
             matches.append(track)
@@ -106,10 +107,6 @@ def _layer_copper_thickness_mm(layer_value: BoardLayer.ValueType) -> float:
     return copper_thickness_mm(1.0)
 
 
-def _board_footprints() -> list[_FootprintLike]:
-    return cast(list[_FootprintLike], list(get_board().get_footprints()))
-
-
 def _footprint_reference(footprint: _FootprintLike) -> str:
     return str(footprint.reference_field.text.value)
 
@@ -126,7 +123,7 @@ def _footprint_position_mm(footprint: _FootprintLike) -> tuple[float, float]:
 
 
 def _nearest_capacitors(reference: str) -> list[tuple[str, float, str]]:
-    footprints = _board_footprints()
+    footprints = cast(list[_FootprintLike], board_footprints(get_board()))
     anchor = next(
         (footprint for footprint in footprints if _footprint_reference(footprint) == reference),
         None,
@@ -192,7 +189,7 @@ def _required_width_mm(
 def _edge_cuts_bounds() -> tuple[float, float, float, float] | None:
     xs: list[float] = []
     ys: list[float] = []
-    for shape in get_board().get_shapes():
+    for shape in board_shapes(get_board()):
         if getattr(shape, "layer", None) != BoardLayer.BL_Edge_Cuts:
             continue
         for attr in ("start", "end", "top_left", "bottom_right", "center", "radius_point"):
@@ -207,7 +204,7 @@ def _edge_cuts_bounds() -> tuple[float, float, float, float] | None:
 
 
 def _footprint_bounds() -> tuple[float, float, float, float] | None:
-    footprints = _board_footprints()
+    footprints = cast(list[_FootprintLike], board_footprints(get_board()))
     if not footprints:
         return None
     xs = [_footprint_position_mm(footprint)[0] for footprint in footprints]
@@ -221,7 +218,7 @@ def _plane_bounds() -> tuple[float, float, float, float] | None:
 
 
 def _zone_already_exists(net_name: str, layer: BoardLayer.ValueType) -> bool:
-    for zone in cast(list[_ZoneLike], list(get_board().get_zones())):
+    for zone in cast(list[_ZoneLike], board_zones(get_board())):
         zone_net = str(getattr(getattr(zone, "net", None), "name", "") or "")
         zone_layers = list(getattr(zone, "layers", []))
         if zone_net == net_name and layer in zone_layers:
@@ -642,7 +639,7 @@ def register(mcp: FastMCP) -> None:
         )
         zones = [
             zone
-            for zone in cast(list[_ZoneLike], list(get_board().get_zones()))
+            for zone in cast(list[_ZoneLike], board_zones(get_board()))
             if str(getattr(getattr(zone, "net", None), "name", "") or "") == payload.net_name
         ]
         if not zones:

@@ -63,6 +63,13 @@ from ..models.pcb import (
 from ..models.verdict import Finding, SuggestedFix, VerdictReport, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
 from ..pcb.basic_inspection import PcbBasicInspectionService
+from ..pcb.board_access import (
+    BoardAccessError,
+    board_footprints,
+    board_nets_filtered,
+    board_pads,
+    board_tracks,
+)
 from ..pcb.board_inspection import PcbBoardInspectionService
 from ..pcb.file_inspection import PcbFileInspectionService
 from ..pcb.footprint_transform import (
@@ -522,7 +529,7 @@ def _apply_stackup_to_board(content: str, layers: list[StackupLayerSpec]) -> str
 
 def _find_footprint_by_reference(reference: str) -> _FootprintLike | None:
     board = get_board()
-    for footprint in cast(Iterable[_FootprintLike], board.get_footprints()):
+    for footprint in cast(Iterable[_FootprintLike], board_footprints(board)):
         if footprint.reference_field.text.value == reference:
             return footprint
     return None
@@ -2461,7 +2468,7 @@ def _register_impedance_and_creepage_tools(mcp: FastMCP) -> None:
                 "Open the board in KiCad and rerun this tool."
             )
 
-        pads = cast(list[_PadLike], list(get_board().get_pads()))
+        pads = cast(list[_PadLike], list(board_pads(get_board())))
         if len(pads) < 2:
             return "At least two pads are required to evaluate creepage clearance."
 
@@ -2538,8 +2545,8 @@ def _register_board_rules_tools(mcp: FastMCP) -> None:
         """Report currently unconnected board items using the latest DRC view."""
         try:
             board = get_board()
-            nets = board.get_nets(netclass_filter=None)
-        except (KiCadConnectionError, OSError) as exc:
+            nets = board_nets_filtered(board, netclass_filter=None)
+        except (KiCadConnectionError, BoardAccessError, OSError) as exc:
             loaded = _load_file_backed_board(exc)
             if isinstance(loaded, str):
                 return loaded
@@ -4296,8 +4303,8 @@ def _register_teardrop_tools(mcp: FastMCP) -> None:
             )
 
         board = get_board()
-        pads = cast(list[_PadLike], board.get_pads())
-        tracks = cast(list[Track], board.get_tracks())
+        pads = cast(list[_PadLike], board_pads(board))
+        tracks = cast(list[Track], board_tracks(board))
         zones: list[Zone] = []
         created = 0
 

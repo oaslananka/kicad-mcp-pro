@@ -28,6 +28,7 @@ for where errors are defined.
 | `KICAD_CONNECTION_TIMEOUT` | yes | timeout | 2000 | KiCad IPC connection timed out. Increase `KICAD_MCP_TIMEOUT_MS` or verify the IPC API responds. |
 | `IPC_DISCONNECTED` | yes | network | 1000 | The IPC connection was lost and reconnection failed. Re-open KiCad / enable the IPC API server. |
 | `KICAD_BOARD_NOT_OPEN` | yes | state | — | KiCad is reachable but no board is open. Open a `.kicad_pcb` or set the active project, then retry. |
+| `KICAD_BOARD_ACCESS_UNAVAILABLE` | yes | state | — | A requested live-board collection could not be read. Reconcile KiCad IPC and board API state, then retry. |
 | `KICAD_VERSION_MISMATCH` | no | none | — | The detected KiCad version is unsupported. Install a supported version (see the compatibility matrix). |
 | `KICAD_PROJECT_NOT_FOUND` | no | none | — | The configured project cannot be found. Set `KICAD_MCP_PROJECT_DIR` or call `kicad_set_project()`. |
 | `UNSAFE_PATH` | no | none | — | A requested path escapes the workspace. Use a relative path inside `KICAD_MCP_WORKSPACE_ROOT` or the project. |

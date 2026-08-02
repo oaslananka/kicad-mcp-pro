@@ -80,3 +80,33 @@ def test_collect_board_nets_uses_net_names_not_deprecated_codes(monkeypatch) -> 
     )
 
     assert _collect_board_nets() == [{"code": None, "name": "GND"}]
+
+
+@pytest.mark.anyio
+async def test_optimize_test_points_reports_unavailable_via_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class PartiallyReadableBoard:
+        def get_nets(self) -> list[object]:
+            return [type("Net", (), {"name": "GND"})()]
+
+        def get_footprints(self) -> list[object]:
+            return []
+
+        def get_vias(self) -> list[object]:
+            raise OSError("via IPC read failed")
+
+    monkeypatch.setattr(
+        "kicad_mcp.tools.test_points._load_test_points",
+        lambda: {"test_points": [{"net_name": "GND"}]},
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.test_points.get_board",
+        lambda: PartiallyReadableBoard(),
+    )
+    server = create_server()
+
+    result = await call_tool_text(server, "pcb_optimize_test_point_placement", {})
+
+    assert "Could not optimize via live board" in result
+    assert "via IPC read failed" in result

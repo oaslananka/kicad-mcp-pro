@@ -30,6 +30,7 @@ from ..models.signal_integrity import (
     ViaStubInput,
 )
 from ..models.verdict import VerdictReport
+from ..pcb.board_access import board_footprints, board_pads, board_tracks, board_vias
 from ..utils.channel import (
     ChannelMetrics,
     ChannelSpec,
@@ -164,7 +165,7 @@ def _track_length_mm(track: _TrackLike) -> float:
 
 def _track_lengths_by_net() -> dict[str, float]:
     lengths: dict[str, float] = {}
-    for track in cast(list[_TrackLike], list(get_board().get_tracks())):
+    for track in cast(list[_TrackLike], board_tracks(get_board())):
         net_name = str(getattr(getattr(track, "net", None), "name", "") or "")
         if not net_name:
             continue
@@ -174,7 +175,7 @@ def _track_lengths_by_net() -> dict[str, float]:
 
 def _track_width_mm(net_name: str) -> float | None:
     widths: list[float] = []
-    for track in cast(list[_TrackLike], list(get_board().get_tracks())):
+    for track in cast(list[_TrackLike], board_tracks(get_board())):
         track_net = str(getattr(getattr(track, "net", None), "name", "") or "")
         if track_net == net_name:
             widths.append(nm_to_mm(int(getattr(track, "width", 0))))
@@ -219,14 +220,6 @@ def _board_thickness_mm() -> float:
     return nm_to_mm(thickness_nm)
 
 
-def _board_footprints() -> list[_FootprintLike]:
-    return cast(list[_FootprintLike], list(get_board().get_footprints()))
-
-
-def _board_pads() -> list[_PadLike]:
-    return cast(list[_PadLike], list(get_board().get_pads()))
-
-
 def _footprint_reference(footprint: _FootprintLike) -> str:
     return str(footprint.reference_field.text.value)
 
@@ -243,14 +236,14 @@ def _footprint_position_mm(footprint: _FootprintLike) -> tuple[float, float]:
 
 
 def _find_footprint(reference: str) -> _FootprintLike | None:
-    for footprint in _board_footprints():
+    for footprint in cast(list[_FootprintLike], board_footprints(get_board())):
         if _footprint_reference(footprint) == reference:
             return footprint
     return None
 
 
 def _find_power_anchor(ic_ref: str, power_pin: str) -> tuple[float, float]:
-    for pad in _board_pads():
+    for pad in cast(list[_PadLike], board_pads(get_board())):
         if _footprint_reference(pad.parent) == ic_ref and str(pad.number) == power_pin:
             return (
                 nm_to_mm(_coord_nm(pad.position, "x")),
@@ -269,7 +262,7 @@ def _nearest_capacitors(
     source_y_mm: float,
 ) -> list[tuple[str, float, str]]:
     matches: list[tuple[str, float, str]] = []
-    for footprint in _board_footprints():
+    for footprint in cast(list[_FootprintLike], board_footprints(get_board())):
         reference = _footprint_reference(footprint)
         if reference == source_ref or not reference.upper().startswith("C"):
             continue
@@ -288,7 +281,7 @@ def _via_position_mm(via: _ViaLike) -> tuple[float, float]:
 
 
 def _selected_vias(via_positions: list[tuple[float, float]]) -> list[_ViaLike]:
-    vias: list[_ViaLike] = cast(list[_ViaLike], list(get_board().get_vias()))
+    vias: list[_ViaLike] = cast(list[_ViaLike], board_vias(get_board()))
     if not via_positions:
         return list(vias)
 

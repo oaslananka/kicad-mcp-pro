@@ -289,3 +289,19 @@ def test_analysis_resources_expose_structured_defaults_and_stackup(monkeypatch) 
     assert '"total_thickness_mm": 0.25' in stackup
     assert '"copper_layer_count": 2' in stackup
     assert '"loss_tangent": 0.02' in stackup
+
+
+def test_board_summary_resource_reports_collection_access_failure(monkeypatch) -> None:
+    board = SimpleNamespace(
+        get_tracks=lambda: [],
+        get_footprints=lambda: [],
+        get_nets=lambda netclass_filter=None: [],
+    )
+    monkeypatch.setattr(board_state, "get_board", lambda: board)
+    mcp = FakeMCP()
+    board_state.register(mcp)
+
+    result = mcp.resources["kicad://board/summary"]()
+
+    assert "Board data is unavailable" in result
+    assert "Could not read board vias via get_vias" in result

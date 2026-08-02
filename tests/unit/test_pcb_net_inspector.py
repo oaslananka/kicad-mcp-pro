@@ -77,6 +77,9 @@ class _BoardByName:
     def get_pads(self):  # type: ignore[no-untyped-def]
         return [_NetObject("GND")]
 
+    def get_footprints(self):  # type: ignore[no-untyped-def]
+        return []
+
 
 def test_collect_nets_from_board_uses_net_names_not_deprecated_codes(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     from kicad_mcp.tools.net_analysis import _collect_nets_from_board
@@ -164,3 +167,38 @@ async def test_net_inspector_file_fallback_parses_balanced_nested_footprints(
     payload = json.loads(await call_tool_text(server, "pcb_net_inspector", {"net_name": "GND"}))
 
     assert payload["footprint_pads"] == [{"reference": "U1", "pad": "1", "layer": "F.Cu"}]
+
+
+def test_nets_uses_file_fallback_when_live_via_access_is_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pcb_file = tmp_path / "board.kicad_pcb"
+    pcb_file.write_text(
+        '(kicad_pcb (version 20250316) (net 1 "GND"))\n',
+        encoding="utf-8",
+    )
+
+    class PartiallyReadableBoard:
+        def get_nets(self) -> list[object]:
+            return [SimpleNamespace(name="GND", class_name="Default")]
+
+        def get_tracks(self) -> list[object]:
+            return []
+
+        def get_vias(self) -> list[object]:
+            raise OSError("via IPC read failed")
+
+        def get_footprints(self) -> list[object]:
+            return []
+
+        def get_pads(self) -> list[object]:
+            return []
+
+    monkeypatch.setattr(
+        "kicad_mcp.tools.net_analysis.get_board",
+        lambda: PartiallyReadableBoard(),
+    )
+    monkeypatch.setattr("kicad_mcp.tools.net_analysis._get_pcb_file", lambda: pcb_file)
+
+    assert _nets() == [{"code": 1, "name": "GND", "class_name": ""}]

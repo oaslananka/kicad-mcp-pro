@@ -15,6 +15,12 @@ from mcp.server.fastmcp import FastMCP
 
 from ..config import get_config
 from ..connection import KiCadConnectionError, get_board
+from ..pcb.board_access import (
+    BoardAccessError,
+    board_footprints,
+    board_nets,
+    board_vias,
+)
 from ..utils.units import nm_to_mm
 from .export_support import _get_pcb_file
 from .metadata import headless_compatible
@@ -23,13 +29,6 @@ from .metadata import headless_compatible
 def _object_net_name(obj: object) -> str:
     """Return the stable net name for a board object without reading net codes."""
     return str(getattr(getattr(obj, "net", None), "name", "") or "")
-
-
-def _board_vias(board: object) -> list[Any]:
-    try:
-        return list(cast(Any, board).get_vias())
-    except (AttributeError, TypeError, OSError):
-        return []
 
 
 def _sidecar_dir() -> Path:
@@ -69,7 +68,7 @@ def _collect_board_nets() -> list[dict[str, Any]]:
     live_nets: list[dict[str, Any]] = []
     try:
         board = get_board()
-        nets = board.get_nets()
+        nets = board_nets(board)
         live_nets = [
             {
                 "code": None,
@@ -79,7 +78,7 @@ def _collect_board_nets() -> list[dict[str, Any]]:
         ]
         if any(net["name"] for net in live_nets):
             return live_nets
-    except (KiCadConnectionError, AttributeError, OSError):
+    except (KiCadConnectionError, BoardAccessError, AttributeError, OSError):
         pass
 
     # File fallback
@@ -175,7 +174,7 @@ def register(mcp: FastMCP) -> None:
             board = get_board()
             for net_name in sorted(existing_nets):
                 net_found = None
-                for net in board.get_nets():
+                for net in board_nets(board):
                     if getattr(net, "name", "") == net_name:
                         net_found = net
                         break
@@ -185,7 +184,7 @@ def register(mcp: FastMCP) -> None:
                 candidates: list[dict[str, Any]] = []
 
                 # Check existing pads on this net by stable net name.
-                for fp in board.get_footprints():
+                for fp in board_footprints(board):
                     for pad in fp.get_pads():  # type: ignore[attr-defined]
                         if _object_net_name(pad) == net_name:
                             pos = getattr(pad, "position", None)
@@ -201,7 +200,7 @@ def register(mcp: FastMCP) -> None:
                                 )
 
                 # Check vias on this net by stable net name.
-                for via in _board_vias(board):
+                for via in board_vias(board):
                     if _object_net_name(via) != net_name:
                         continue
                     pos = getattr(via, "position", None)
@@ -222,7 +221,7 @@ def register(mcp: FastMCP) -> None:
                         "candidate_count": len(candidates),
                     }
                 )
-        except (KiCadConnectionError, AttributeError, OSError) as exc:
+        except (KiCadConnectionError, BoardAccessError, AttributeError, OSError) as exc:
             return (
                 f"Could not optimize via live board ({exc}). "
                 "Ensure KiCad is running with the PCB open, or use "

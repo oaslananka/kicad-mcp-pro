@@ -7,6 +7,15 @@ from dataclasses import dataclass
 from typing import Protocol, cast
 
 from ..models.verdict import VerdictReport
+from .board_access import (
+    BoardAccessError,
+    board_footprints,
+    board_nets_filtered,
+    board_shapes,
+    board_tracks,
+    board_vias,
+    board_zones,
+)
 
 
 class PaginateItems(Protocol):
@@ -178,6 +187,10 @@ class PcbBoardInspectionService:
     nm_to_mm: NmToMm
     connection_errors: ConnectionErrors
 
+    @property
+    def access_errors(self) -> ConnectionErrors:
+        return (BoardAccessError, *self.connection_errors)
+
     def _board(self) -> BoardInspectionBoard:
         return cast(BoardInspectionBoard, self.get_board())
 
@@ -185,14 +198,14 @@ class PcbBoardInspectionService:
         """Return the established structured live or file-backed board summary."""
         try:
             board = self._board()
-        except self.connection_errors as exc:
+            tracks = board_tracks(board)
+            footprints = board_footprints(board)
+            vias = board_vias(board)
+            zones = board_zones(board)
+            nets = board_nets_filtered(board, netclass_filter=None)
+            shapes = board_shapes(board)
+        except self.access_errors as exc:
             return self.file_backed_board_summary(exc)
-        tracks = board.get_tracks()
-        footprints = board.get_footprints()
-        vias = board.get_vias()
-        zones = board.get_zones()
-        nets = board.get_nets(netclass_filter=None)
-        shapes = board.get_shapes()
         text = "\n".join(
             [
                 "Board summary:",
@@ -228,7 +241,7 @@ class PcbBoardInspectionService:
         try:
             all_tracks = [
                 raw_track
-                for raw_track in self._board().get_tracks()
+                for raw_track in board_tracks(self._board())
                 if self.matches_layer_filter(cast(TrackLike, raw_track).layer, filter_layer)
                 and (
                     not filter_net
@@ -236,7 +249,7 @@ class PcbBoardInspectionService:
                     == filter_net.casefold()
                 )
             ]
-        except self.connection_errors as exc:
+        except self.access_errors as exc:
             return self.file_backed_tracks(
                 exc,
                 page=page,
@@ -280,8 +293,8 @@ class PcbBoardInspectionService:
     def get_vias(self) -> str:
         """List live vias with the configured response limit or use the file fallback."""
         try:
-            vias, total = self.limit_items(self._board().get_vias())
-        except self.connection_errors as exc:
+            vias, total = self.limit_items(board_vias(self._board()))
+        except self.access_errors as exc:
             return self.file_backed_vias(exc)
         if not vias:
             return self.with_pcb_diagnostics("No vias are present on the active board.")
@@ -310,13 +323,13 @@ class PcbBoardInspectionService:
         try:
             all_footprints = [
                 raw_footprint
-                for raw_footprint in self._board().get_footprints()
+                for raw_footprint in board_footprints(self._board())
                 if self.matches_layer_filter(
                     cast(FootprintLike, raw_footprint).layer,
                     filter_layer,
                 )
             ]
-        except self.connection_errors as exc:
+        except self.access_errors as exc:
             return self.file_backed_footprints(
                 exc,
                 page=page,

@@ -291,3 +291,25 @@ def test_footprints_preserve_filter_pagination_formatting_and_fallback() -> None
     assert fallback.get_footprints(page=2, page_size=10, filter_layer="B_Cu") == (
         "footprints::offline::{'page': 2, 'page_size': 10, 'filter_layer': 'B_Cu'}"
     )
+
+
+def test_board_summary_uses_file_fallback_when_collection_access_is_unavailable() -> None:
+    board = SimpleNamespace(
+        get_tracks=lambda: [],
+        get_footprints=lambda: [],
+        get_zones=lambda: [],
+        get_nets=_summary_nets,
+        get_shapes=lambda: [],
+    )
+
+    report = _service(board).get_board_summary()
+
+    assert report.text.startswith("summary::Could not read board vias via get_vias")
+
+
+def test_vias_use_file_fallback_when_board_method_is_missing() -> None:
+    assert (
+        _service(SimpleNamespace())
+        .get_vias()
+        .startswith("vias::Could not read board vias via get_vias")
+    )

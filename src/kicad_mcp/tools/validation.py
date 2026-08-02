@@ -20,8 +20,10 @@ from .. import __version__
 from ..config import get_config
 from ..connection import KiCadConnectionError, get_board
 from ..discovery import get_cli_capabilities
+from ..models.common import _FootprintLike
 from ..models.component_contracts import find_component_contract
 from ..models.verdict import Finding, SuggestedFix, Verdict, VerdictReport, stable_finding_id
+from ..pcb.board_access import BoardAccessError, board_footprints
 from ..utils.dru import (
     SExprNode,
     delete_rule,
@@ -671,13 +673,16 @@ def _board_footprint_references() -> tuple[set[str], str, str | None]:
         return (
             {
                 footprint.reference_field.text.value
-                for footprint in get_board().get_footprints()
+                for footprint in cast(
+                    list[_FootprintLike],
+                    board_footprints(get_board()),
+                )
                 if footprint.reference_field.text.value
             },
             "IPC",
             None,
         )
-    except (KiCadConnectionError, OSError):
+    except (KiCadConnectionError, BoardAccessError, OSError):
         from .board_file import _parse_board_footprint_blocks
 
         try:
