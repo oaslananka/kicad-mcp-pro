@@ -282,8 +282,13 @@ case request is sent separately over stdin as the user message; the default codi
 instructions are not used. The provider receives no executable KiCad, shell, file, web,
 MCP, or subagent tools. After three clean same-revision full-corpus observations, this
 CLI record replaces the repeatedly provider-incomplete Gemma record in the blocking
-release-gate matrix. The raw Zen records and Gemma remain available only for manual
-diagnostics; the CLI record does not replace or retry a raw endpoint attempt. Earlier
+release-gate matrix. Its reviewed CLI request budget is 65 seconds beneath the live
+runner's 70-second subprocess watchdog, preserving a five-second shutdown/protocol
+margin while covering the single exhausted 55-second timeout observed in protected
+three-repeat run `30723266408`. Retries, backoff, workflow bounds, and fail-closed
+incomplete-evidence behavior are unchanged. The raw Zen records and Gemma remain
+available only for manual diagnostics; the CLI record does not replace or retry a raw
+endpoint attempt. Earlier
 direct `response_format` and synthetic function-call experiments were removed after
 each produced zero valid smoke observations. Nemotron and Gemma thinking are
 disabled with `chat_template_kwargs.enable_thinking: false`; Mistral reasoning is

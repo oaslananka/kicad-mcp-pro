@@ -979,7 +979,7 @@ def test_committed_meta_llama_candidate_is_nonblocking_and_key_scoped() -> None:
     )
 
 
-def test_committed_opencode_cli_candidate_is_nonblocking_and_key_scoped() -> None:
+def test_committed_opencode_cli_blocking_record_is_key_scoped() -> None:
     configurations = load_configurations(COMMITTED_LIVE_CONFIG)
     assert "opencode-nemotron-3-ultra-free-json-schema" not in configurations
     assert "opencode-nemotron-3-ultra-free-tool-call" not in configurations
@@ -996,7 +996,7 @@ def test_committed_opencode_cli_candidate_is_nonblocking_and_key_scoped() -> Non
         "--opencode-bin",
         "opencode",
         "--timeout-seconds",
-        "55",
+        "65",
     )
 
 
