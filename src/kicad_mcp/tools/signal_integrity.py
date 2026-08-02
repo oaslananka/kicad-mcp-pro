@@ -31,6 +31,7 @@ from ..models.signal_integrity import (
 )
 from ..models.verdict import VerdictReport
 from ..pcb.board_access import board_footprints, board_pads, board_tracks, board_vias
+from ..pcb.geometry import point_xy_mm, track_segment_length_mm
 from ..utils.channel import (
     ChannelMetrics,
     ChannelSpec,
@@ -63,7 +64,7 @@ from ..utils.solver_seams import (
     thermal_fd_method,
     thermal_method,
 )
-from ..utils.units import _coord_nm, nm_to_mm
+from ..utils.units import nm_to_mm
 from ..verdicts import three_level_verdict, warn_max_from
 from .design_intent_state import resolve_design_intent
 
@@ -157,19 +158,13 @@ class _ViaLike(Protocol):
     type: int
 
 
-def _track_length_mm(track: _TrackLike) -> float:
-    dx = _coord_nm(track.end, "x") - _coord_nm(track.start, "x")
-    dy = _coord_nm(track.end, "y") - _coord_nm(track.start, "y")
-    return math.hypot(dx, dy) / 1_000_000.0
-
-
 def _track_lengths_by_net() -> dict[str, float]:
     lengths: dict[str, float] = {}
     for track in cast(list[_TrackLike], board_tracks(get_board())):
         net_name = str(getattr(getattr(track, "net", None), "name", "") or "")
         if not net_name:
             continue
-        lengths[net_name] = lengths.get(net_name, 0.0) + _track_length_mm(track)
+        lengths[net_name] = lengths.get(net_name, 0.0) + track_segment_length_mm(track)
     return lengths
 
 
@@ -228,13 +223,6 @@ def _footprint_value(footprint: _FootprintLike) -> str:
     return str(footprint.value_field.text.value)
 
 
-def _footprint_position_mm(footprint: _FootprintLike) -> tuple[float, float]:
-    return (
-        nm_to_mm(_coord_nm(footprint.position, "x")),
-        nm_to_mm(_coord_nm(footprint.position, "y")),
-    )
-
-
 def _find_footprint(reference: str) -> _FootprintLike | None:
     for footprint in cast(list[_FootprintLike], board_footprints(get_board())):
         if _footprint_reference(footprint) == reference:
@@ -245,15 +233,12 @@ def _find_footprint(reference: str) -> _FootprintLike | None:
 def _find_power_anchor(ic_ref: str, power_pin: str) -> tuple[float, float]:
     for pad in cast(list[_PadLike], board_pads(get_board())):
         if _footprint_reference(pad.parent) == ic_ref and str(pad.number) == power_pin:
-            return (
-                nm_to_mm(_coord_nm(pad.position, "x")),
-                nm_to_mm(_coord_nm(pad.position, "y")),
-            )
+            return point_xy_mm(pad.position)
 
     footprint = _find_footprint(ic_ref)
     if footprint is None:
         raise ValueError(f"Footprint '{ic_ref}' was not found on the active board.")
-    return _footprint_position_mm(footprint)
+    return point_xy_mm(footprint.position)
 
 
 def _nearest_capacitors(
@@ -266,7 +251,7 @@ def _nearest_capacitors(
         reference = _footprint_reference(footprint)
         if reference == source_ref or not reference.upper().startswith("C"):
             continue
-        x_mm, y_mm = _footprint_position_mm(footprint)
+        x_mm, y_mm = point_xy_mm(footprint.position)
         distance_mm = math.hypot(source_x_mm - x_mm, source_y_mm - y_mm)
         matches.append((reference, distance_mm, _footprint_value(footprint)))
     return sorted(matches, key=lambda item: item[1])
@@ -274,10 +259,7 @@ def _nearest_capacitors(
 
 def _via_position_mm(via: _ViaLike) -> tuple[float, float]:
     position = via.position
-    return (
-        nm_to_mm(_coord_nm(position, "x")),
-        nm_to_mm(_coord_nm(position, "y")),
-    )
+    return point_xy_mm(position)
 
 
 def _selected_vias(via_positions: list[tuple[float, float]]) -> list[_ViaLike]:

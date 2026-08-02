@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 import re
 from pathlib import Path
 from typing import Any, cast
@@ -19,11 +18,12 @@ from ..models.common import _PadLike
 from ..models.pcb import AddTrackInput
 from ..models.tool_result import ArtifactRef, StateDelta, ToolResult
 from ..pcb.board_access import board_nets_filtered, board_pads, board_tracks
+from ..pcb.geometry import point_xy_mm, track_segment_length_mm
 from ..utils.freerouting import FreeRoutingRunner
 from ..utils.layers import resolve_layer
 from ..utils.router_core import apply_ses_to_pcb
 from ..utils.sexpr import _sexpr_string
-from ..utils.units import _coord_nm, mm_to_nm, nm_to_mm
+from ..utils.units import mm_to_nm
 from .export_support import _get_pcb_file
 from .metadata import headless_compatible, requires_dependency, requires_kicad_running
 from .pcb import _transactional_board_write
@@ -59,18 +59,12 @@ def _list_board_net_names() -> set[str]:
     }
 
 
-def _track_length_mm(track: Track) -> float:
-    dx = _coord_nm(track.end, "x") - _coord_nm(track.start, "x")
-    dy = _coord_nm(track.end, "y") - _coord_nm(track.start, "y")
-    return nm_to_mm(int(round(math.hypot(dx, dy))))
-
-
 def _current_track_length_mm(net_name: str) -> float:
     length = 0.0
     for track in cast(list[Track], board_tracks(get_board())):
         track_net = getattr(getattr(track, "net", None), "name", "")
         if track_net == net_name:
-            length += _track_length_mm(track)
+            length += track_segment_length_mm(track)
     return length
 
 
@@ -312,10 +306,8 @@ def register(mcp: FastMCP) -> None:
         if start_pad is None or end_pad is None:
             return "One or both pads were not found on the active board."
 
-        start_x = nm_to_mm(_coord_nm(start_pad.position, "x"))
-        start_y = nm_to_mm(_coord_nm(start_pad.position, "y"))
-        end_x = nm_to_mm(_coord_nm(end_pad.position, "x"))
-        end_y = nm_to_mm(_coord_nm(end_pad.position, "y"))
+        start_x, start_y = point_xy_mm(start_pad.position)
+        end_x, end_y = point_xy_mm(end_pad.position)
         net_name = start_pad.net.name or end_pad.net.name or ""
         payloads = [
             AddTrackInput(
