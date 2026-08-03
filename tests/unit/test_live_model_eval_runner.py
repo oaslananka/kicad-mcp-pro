@@ -420,6 +420,27 @@ print(json.dumps({
     assert observation.run is None
 
 
+def test_subprocess_adapter_accepts_bounded_retry_after_hint(tmp_path: Path) -> None:
+    configuration = _subprocess_configuration(
+        tmp_path,
+        """\
+import json
+print(json.dumps({
+    "schema_version": 1,
+    "status": "error",
+    "failure_kind": "provider_rate_limit",
+    "retry_after_seconds": 75
+}))
+""",
+    )
+
+    observation = SubprocessAdapter(configuration).invoke(_case())
+
+    assert observation.failure_kind == "provider_rate_limit"
+    assert observation.retry_after_seconds == 75.0
+    assert observation.run is None
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -690,7 +711,7 @@ def test_runner_waits_with_bounded_exponential_backoff_for_retryable_failures(
         tool_tiers={"pcb_get_board_summary": "read"},
     )
 
-    assert waits == [1.0, 2.0, 4.0]
+    assert waits == [30.0, 2.0, 4.0]
     assert report.executions[0].attempts == 4
     assert report.executions[0].failure_kind is None
     assert report.summary["adapter_failures"] == 0
@@ -713,6 +734,64 @@ class _ModelOutputRetryAdapter:
             input_tokens=20,
             output_tokens=5,
             estimated_cost_micros=None,
+        )
+
+
+class _RetryAfterAdapter:
+    def __init__(self) -> None:
+        self.first = True
+
+    def reset(self) -> None:
+        return None
+
+    def invoke(self, _case: EvalCase) -> AdapterObservation:
+        if self.first:
+            self.first = False
+            return AdapterObservation(
+                failure_kind="provider_rate_limit",
+                retry_after_seconds=75.0,
+            )
+        return AdapterObservation.from_values(
+            called_tools=("pcb_get_board_summary",),
+            response_kind="tool_calls",
+            latency_ms=10,
+            input_tokens=20,
+            output_tokens=5,
+            estimated_cost_micros=None,
+        )
+
+
+def test_runner_honors_bounded_retry_after_without_persisting_hint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = tmp_path / "unused.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(tmp_path, trace, max_retries=1)
+    waits: list[float] = []
+    monkeypatch.setattr(time, "sleep", waits.append)
+
+    report = execute_evaluation(
+        [_case()],
+        configuration,
+        _RetryAfterAdapter(),
+        repeats=1,
+        source_revision="a" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    assert waits == [75.0]
+    assert report.executions[0].attempts == 2
+    assert report.summary["pipeline_passed"] is True
+    assert "retry_after_seconds" not in json.dumps(report.as_dict())
+
+
+def test_adapter_observation_rejects_retry_after_for_non_transient_failure() -> None:
+    with pytest.raises(ValueError, match="retry_after_seconds"):
+        AdapterObservation(
+            failure_kind="provider_auth",
+            retry_after_seconds=30.0,
         )
 
 
