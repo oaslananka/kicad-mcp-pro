@@ -982,11 +982,15 @@ def test_committed_meta_llama_candidate_is_nonblocking_and_key_scoped() -> None:
 def test_committed_nvidia_replacement_candidates_are_nonblocking_and_key_scoped() -> None:
     configurations = load_configurations(COMMITTED_LIVE_CONFIG)
     expected = {
-        "nvidia-qwen3-next-80b-a3b-instruct": "qwen/qwen3-next-80b-a3b-instruct",
-        "nvidia-minimax-m3": "minimaxai/minimax-m3",
+        "nvidia-qwen3-next-80b-a3b-instruct": (
+            "qwen/qwen3-next-80b-a3b-instruct",
+            "65",
+            70.0,
+        ),
+        "nvidia-minimax-m3": ("minimaxai/minimax-m3", "90", 95.0),
     }
 
-    for configuration_id, model in expected.items():
+    for configuration_id, (model, request_timeout, subprocess_timeout) in expected.items():
         configuration = configurations[configuration_id]
         assert configuration.host == "nvidia-nim"
         assert configuration.model == model
@@ -997,10 +1001,11 @@ def test_committed_nvidia_replacement_candidates_are_nonblocking_and_key_scoped(
             "--model",
             model,
             "--timeout-seconds",
-            "65",
+            request_timeout,
             "--structured-output",
             "none",
         )
+        assert configuration.limits.timeout_seconds == subprocess_timeout
 
 
 def test_committed_opencode_cli_blocking_record_is_key_scoped() -> None:

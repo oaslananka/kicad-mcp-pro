@@ -267,6 +267,13 @@ repeated full-corpus review before it can replace a required release-gate
 configuration; presence in the configuration registry alone does not change gate
 policy or baselines.
 
+The MiniMax candidate uses a 90-second provider HTTP timeout beneath a 95-second
+subprocess cap. A reviewed full-corpus diagnostic completed 59 successful observations
+with a 64.3-second p95 latency but exhausted the previous 65-second request budget on
+six cases after bounded retries. The candidate-specific increase preserves a five-second
+cleanup margin and does not change retry count, pacing, corpus, thresholds, required
+configuration policy, or baseline state.
+
 Six OpenCode Zen free-model records are also versioned for manual experimental
 comparison: `deepseek-v4-flash-free`, `mimo-v2.5-free`, `laguna-s-2.1-free`,
 `ling-3.0-flash-free`, `north-mini-code-free`, and `nemotron-3-ultra-free`. They use

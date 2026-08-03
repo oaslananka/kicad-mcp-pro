@@ -48,10 +48,10 @@ configurations:
     host: nvidia-nim
     model: minimaxai/minimax-m3
     adapter: subprocess
-    command: [python, scripts/nvidia_nim_eval_adapter.py, --model, minimaxai/minimax-m3, --timeout-seconds, "65", --structured-output, none]
+    command: [python, scripts/nvidia_nim_eval_adapter.py, --model, minimaxai/minimax-m3, --timeout-seconds, "90", --structured-output, none]
     required_env: [NVIDIA_API_KEY]
     limits:
-      timeout_seconds: 70
+      timeout_seconds: 95
       min_request_interval_seconds: 5
       max_retries: 2
       max_cases: 325
