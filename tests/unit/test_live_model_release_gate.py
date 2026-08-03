@@ -18,12 +18,12 @@ THRESHOLDS = ROOT / "evals/tool_selection/thresholds.yaml"
 
 CONFIG_IDS = (
     "nvidia-nemotron-3-nano-30b-a3b",
-    "nvidia-mistral-medium-3-5-128b",
+    "nvidia-minimax-m3",
     "opencode-cli-nemotron-3-ultra-free",
 )
 MODELS = (
     "nvidia/nemotron-3-nano-30b-a3b",
-    "mistralai/mistral-medium-3.5-128b",
+    "minimaxai/minimax-m3",
     "nemotron-3-ultra-free",
 )
 HOSTS = ("nvidia-nim", "nvidia-nim", "opencode-zen-cli")
@@ -48,7 +48,7 @@ COMMANDS = (
         "--model",
         MODELS[1],
         "--timeout-seconds",
-        "65",
+        "90",
         "--structured-output",
         "none",
     ),
@@ -407,6 +407,7 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     for config_id in CONFIG_IDS:
         assert config_id in workflow
     for nonblocking_id in (
+        "nvidia-mistral-medium-3-5-128b",
         "nvidia-gemma-4-31b-it",
         "nvidia-llama-3-3-70b-instruct",
         "opencode-deepseek-v4-flash-free",
