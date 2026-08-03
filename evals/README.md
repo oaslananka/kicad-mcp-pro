@@ -205,7 +205,12 @@ Supported classifications are `adapter_unavailable`, `timeout`, `protocol_error`
 `provider_request_rejected`, `model_output_invalid`, `model_error`, and `unknown`.
 Timeout, provider rate limiting, provider unavailability, and a completion that fails
 the strict sanitized classifier schema are retried with the same request shape and
-bounded exponential backoff. A non-auth/rate HTTP 4xx response is
+bounded exponential backoff. Rate-limit retries use deterministic 30- and 60-second
+delays by default. When a provider returns `Retry-After` for a rate-limit or transient
+unavailability response, the adapter converts only that value into a numeric hint capped
+at 120 seconds; provider headers, raw bodies, and the hint itself are not retained in
+evidence. Other retryable failures retain the shorter 1-, 2-, and 4-second schedule. A
+non-auth/rate HTTP 4xx response is
 `provider_request_rejected` and is not retried. A successful HTTP response whose
 completion cannot satisfy the strict sanitized classifier schema is
 `model_output_invalid`; the final evidence preserves the total attempt count. The

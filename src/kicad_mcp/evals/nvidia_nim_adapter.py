@@ -7,6 +7,8 @@ import re
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -30,6 +32,7 @@ class _ModelOutputValidationError(ValueError):
 _NEMOTRON_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 _MISTRAL_MEDIUM_MODEL = "mistralai/mistral-medium-3.5-128b"
 _MINIMAX_MODEL = "minimaxai/minimax-m3"
+_MAX_RETRY_AFTER_SECONDS = 120.0
 _GEMMA_MODEL = "google/gemma-4-31b-it"
 _RESPONSE_KINDS = frozenset({"tool_calls", "answer", "confirmation", "refusal"})
 _TOOL_ROW = re.compile(
@@ -437,7 +440,12 @@ def build_chat_payload(
     return payload
 
 
-def _failure(kind: FailureKind, detail: FailureDetail | None = None) -> dict[str, object]:
+def _failure(
+    kind: FailureKind,
+    detail: FailureDetail | None = None,
+    *,
+    retry_after_seconds: float | None = None,
+) -> dict[str, object]:
     result: dict[str, object] = {
         "schema_version": 1,
         "status": "error",
@@ -445,7 +453,28 @@ def _failure(kind: FailureKind, detail: FailureDetail | None = None) -> dict[str
     }
     if detail is not None:
         result["failure_detail"] = detail
+    if retry_after_seconds is not None:
+        result["retry_after_seconds"] = retry_after_seconds
     return result
+
+
+def _bounded_retry_after_seconds(value: str | None) -> float | None:
+    """Convert one Retry-After value into a safe bounded numeric delay."""
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if normalized.isdecimal():
+        return min(float(normalized), _MAX_RETRY_AFTER_SECONDS)
+    try:
+        retry_at = parsedate_to_datetime(normalized)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=UTC)
+    delay = max(0.0, (retry_at - datetime.now(UTC)).total_seconds())
+    return min(delay, _MAX_RETRY_AFTER_SECONDS)
 
 
 def _failure_for_status(status_code: int) -> FailureKind:
@@ -1069,7 +1098,14 @@ def request_openai_compatible_chat(
     except httpx.HTTPError:
         return _failure("provider_unavailable")
     if response.status_code >= 400:
-        return _failure(_failure_for_status(response.status_code))
+        failure_kind = _failure_for_status(response.status_code)
+        retry_after_seconds = None
+        if failure_kind in {"provider_rate_limit", "provider_unavailable"}:
+            retry_after_seconds = _bounded_retry_after_seconds(response.headers.get("Retry-After"))
+        return _failure(
+            failure_kind,
+            retry_after_seconds=retry_after_seconds,
+        )
     try:
         response_payload = response.json()
     except (TypeError, ValueError, json.JSONDecodeError):

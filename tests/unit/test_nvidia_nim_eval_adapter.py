@@ -183,6 +183,32 @@ def test_nim_request_classifies_provider_failures_without_raw_body() -> None:
         assert raw_body not in json.dumps(result)
 
 
+def test_nim_request_exposes_only_bounded_retry_after_hint() -> None:
+    result = request_nvidia_nim(
+        model="nvidia/test-model",
+        prompt="Inspect.",
+        api_key="test-key",
+        catalog=(),
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                429,
+                headers={"Retry-After": "9999", "X-Private-Provider": "do-not-retain"},
+                text="provider-body-that-must-not-escape",
+            )
+        ),
+    )
+
+    assert result == {
+        "schema_version": 1,
+        "status": "error",
+        "failure_kind": "provider_rate_limit",
+        "retry_after_seconds": 120.0,
+    }
+    serialized = json.dumps(result)
+    assert "X-Private-Provider" not in serialized
+    assert "provider-body-that-must-not-escape" not in serialized
+
+
 @pytest.mark.parametrize(
     ("content", "expected_detail"),
     [

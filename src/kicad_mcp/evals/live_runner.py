@@ -150,6 +150,9 @@ class EvaluationReport:
 _RETRYABLE_FAILURES = frozenset(
     {"timeout", "provider_rate_limit", "provider_unavailable", "model_output_invalid"}
 )
+
+_RATE_LIMIT_BACKOFF_BASE_SECONDS = 30.0
+_MAX_PROVIDER_BACKOFF_SECONDS = 120.0
 _FORBIDDEN_EVIDENCE_KEYS = frozenset(
     {
         "authorization",
@@ -246,6 +249,23 @@ def _build_report(
     )
 
 
+def _retry_backoff_seconds(
+    observation: AdapterObservation,
+    attempts: int,
+) -> float:
+    """Return a deterministic bounded delay for one retryable provider failure."""
+    if observation.failure_kind == "provider_rate_limit":
+        delay: float = min(
+            _RATE_LIMIT_BACKOFF_BASE_SECONDS * (2 ** (attempts - 1)),
+            _MAX_PROVIDER_BACKOFF_SECONDS,
+        )
+    else:
+        delay = float(min(2 ** (attempts - 1), 4))
+    if observation.retry_after_seconds is not None:
+        delay = max(delay, observation.retry_after_seconds)
+    return min(delay, _MAX_PROVIDER_BACKOFF_SECONDS)
+
+
 def _wait_for_request_slot(
     last_started_at: float | None,
     minimum_interval_seconds: float,
@@ -338,7 +358,7 @@ def execute_evaluation(
                     observation.failure_kind in _RETRYABLE_FAILURES
                     and attempts <= configuration.limits.max_retries
                 ):
-                    time.sleep(float(min(2 ** (attempts - 1), 4)))
+                    time.sleep(_retry_backoff_seconds(observation, attempts))
                     continue
                 break
 

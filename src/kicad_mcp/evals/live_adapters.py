@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 from collections import deque
@@ -102,6 +103,9 @@ _SUCCESS_KEYS = frozenset(
 )
 _ERROR_KEYS = frozenset({"schema_version", "status", "failure_kind"})
 _ERROR_DETAIL_KEYS = _ERROR_KEYS | {"failure_detail"}
+_ERROR_RETRY_KEYS = _ERROR_KEYS | {"retry_after_seconds"}
+_MAX_RETRY_AFTER_SECONDS = 120.0
+_RETRY_AFTER_FAILURE_KINDS = frozenset({"provider_rate_limit", "provider_unavailable"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +115,7 @@ class AdapterObservation:
     run: AgentRun | None = None
     failure_kind: FailureKind | None = None
     failure_detail: FailureDetail | None = None
+    retry_after_seconds: float | None = None
     estimated_cost_micros: int | None = None
 
     def __post_init__(self) -> None:
@@ -121,6 +126,19 @@ class AdapterObservation:
                 raise ValueError("failure_detail is valid only for model_output_invalid.")
             if self.failure_detail not in MODEL_OUTPUT_FAILURE_DETAILS:
                 raise ValueError("failure_detail is not allowlisted.")
+        if self.retry_after_seconds is not None:
+            if self.failure_kind not in _RETRY_AFTER_FAILURE_KINDS:
+                raise ValueError(
+                    "retry_after_seconds is valid only for transient provider failures."
+                )
+            if (
+                not math.isfinite(self.retry_after_seconds)
+                or self.retry_after_seconds < 0
+                or self.retry_after_seconds > _MAX_RETRY_AFTER_SECONDS
+            ):
+                raise ValueError(
+                    "retry_after_seconds must be finite and between 0 and 120 seconds."
+                )
         if self.estimated_cost_micros is not None and self.estimated_cost_micros < 0:
             raise ValueError("estimated_cost_micros must be non-negative.")
 
@@ -158,8 +176,17 @@ class EvalAdapter(Protocol):
         """Execute one case and return only normalized, sanitized data."""
 
 
-def _failure(kind: FailureKind, detail: FailureDetail | None = None) -> AdapterObservation:
-    return AdapterObservation(failure_kind=kind, failure_detail=detail)
+def _failure(
+    kind: FailureKind,
+    detail: FailureDetail | None = None,
+    *,
+    retry_after_seconds: float | None = None,
+) -> AdapterObservation:
+    return AdapterObservation(
+        failure_kind=kind,
+        failure_detail=detail,
+        retry_after_seconds=retry_after_seconds,
+    )
 
 
 def _optional_number(
@@ -188,7 +215,7 @@ def _parse_adapter_payload(value: object) -> AdapterObservation:
         raise ValueError("Adapter response schema_version must be 1.")
     status = raw.get("status")
     if status == "error":
-        if set(raw) not in {_ERROR_KEYS, _ERROR_DETAIL_KEYS}:
+        if set(raw) not in {_ERROR_KEYS, _ERROR_DETAIL_KEYS, _ERROR_RETRY_KEYS}:
             raise ValueError("Error adapter response contains unsupported fields.")
         failure_raw = raw.get("failure_kind")
         if failure_raw not in _FAILURE_KINDS:
@@ -202,7 +229,15 @@ def _parse_adapter_payload(value: object) -> AdapterObservation:
             ):
                 raise ValueError("Adapter response has an unsupported failure_detail.")
             failure_detail = cast(FailureDetail, detail_raw)
-        return _failure(cast(FailureKind, failure_raw), failure_detail)
+        retry_after_seconds: float | None = None
+        if "retry_after_seconds" in raw:
+            retry_raw = _optional_number(raw, "retry_after_seconds", integer=False)
+            retry_after_seconds = cast(float, retry_raw)
+        return _failure(
+            cast(FailureKind, failure_raw),
+            failure_detail,
+            retry_after_seconds=retry_after_seconds,
+        )
     if status != "ok":
         raise ValueError("Adapter response status must be 'ok' or 'error'.")
     if set(raw) - _SUCCESS_KEYS:
