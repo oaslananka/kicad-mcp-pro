@@ -10,6 +10,48 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.30.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.29.2...mcp-server-v3.30.0) (2026-08-04)
+
+
+### Features
+
+* **eval:** add experimental OpenCode Zen models ([#521](https://github.com/oaslananka/kicad-mcp-pro/issues/521)) ([b631858](https://github.com/oaslananka/kicad-mcp-pro/commit/b63185856ed55bad23eab47862761a648adb6c47))
+* **eval:** add risk-based live-model assurance ([#556](https://github.com/oaslananka/kicad-mcp-pro/issues/556)) ([e963c69](https://github.com/oaslananka/kicad-mcp-pro/commit/e963c6978cc6b67e9eef690b9a6579778f3c7684))
+* **eval:** classify invalid model output stages ([#544](https://github.com/oaslananka/kicad-mcp-pro/issues/544)) ([a147ed9](https://github.com/oaslananka/kicad-mcp-pro/commit/a147ed9566735a4ba8f75049641592c14838f7ec))
+
+
+### Bug Fixes
+
+* **eval:** back off hosted rate limits ([#564](https://github.com/oaslananka/kicad-mcp-pro/issues/564)) ([703ff82](https://github.com/oaslananka/kicad-mcp-pro/commit/703ff82a60341dc24ec5bb39524fd5c3b155ca53))
+* **eval:** clarify positive authorization policy ([77ae618](https://github.com/oaslananka/kicad-mcp-pro/commit/77ae6188ddcfa2be90e2923affa7c1944c58e024))
+* **eval:** clarify remaining runtime classifier distinctions ([#520](https://github.com/oaslananka/kicad-mcp-pro/issues/520)) ([2ccdf0e](https://github.com/oaslananka/kicad-mcp-pro/commit/2ccdf0e3169e4e06d3922161f24c23b5a4fa7010))
+* **eval:** classify additive checkpoints ([#537](https://github.com/oaslananka/kicad-mcp-pro/issues/537)) ([3f6c44b](https://github.com/oaslananka/kicad-mcp-pro/commit/3f6c44b905a1858f41a884287ce80d1f88325306))
+* **eval:** classify direct data-loss risk ([#523](https://github.com/oaslananka/kicad-mcp-pro/issues/523)) ([d95dc93](https://github.com/oaslananka/kicad-mcp-pro/commit/d95dc93de604b737a4550a14cc2282c60d374327))
+* **eval:** disable Nemotron thinking for classifier JSON ([9492cea](https://github.com/oaslananka/kicad-mcp-pro/commit/9492cea88069f3cecaff90aab77e72df0c6e6cd1))
+* **eval:** enforce classifier output postconditions ([#526](https://github.com/oaslananka/kicad-mcp-pro/issues/526)) ([19b37da](https://github.com/oaslananka/kicad-mcp-pro/commit/19b37da5465b614e165861d3aa5ffae1f9d21126))
+* **eval:** enforce classifier safety-gate decision order ([#518](https://github.com/oaslananka/kicad-mcp-pro/issues/518)) ([b0355a4](https://github.com/oaslananka/kicad-mcp-pro/commit/b0355a46f42699e9be41a85283b47890ccb4be35))
+* **eval:** extend direct action vocabulary ([#536](https://github.com/oaslananka/kicad-mcp-pro/issues/536)) ([38d6a0c](https://github.com/oaslananka/kicad-mcp-pro/commit/38d6a0c06be35fc2a641b96e219d256e904b14e1))
+* **eval:** extend Mistral provider timeout ([#542](https://github.com/oaslananka/kicad-mcp-pro/issues/542)) ([705d566](https://github.com/oaslananka/kicad-mcp-pro/commit/705d5666de222afaf7181e1bb1412764be454a3c))
+* **eval:** extend OpenCode CLI request margin ([#555](https://github.com/oaslananka/kicad-mcp-pro/issues/555)) ([7c0f89f](https://github.com/oaslananka/kicad-mcp-pro/commit/7c0f89f5977a3f0717f8762ad308728befcb5ae0))
+* **eval:** honor confirmed destructive mutations ([#527](https://github.com/oaslananka/kicad-mcp-pro/issues/527)) ([785506b](https://github.com/oaslananka/kicad-mcp-pro/commit/785506b95d2f680875b2e1224723ce71e3031720))
+* **eval:** pace hosted model requests ([#541](https://github.com/oaslananka/kicad-mcp-pro/issues/541)) ([608a104](https://github.com/oaslananka/kicad-mcp-pro/commit/608a104bf9c21e8b4da3206645bdeecc9bd41a13))
+* **eval:** prefer specific read-only tools ([#543](https://github.com/oaslananka/kicad-mcp-pro/issues/543)) ([1b8eaf4](https://github.com/oaslananka/kicad-mcp-pro/commit/1b8eaf4048f9b6e148832935b22db192ee0c0c9f))
+* **eval:** preserve degraded smoke evidence on timeout ([#557](https://github.com/oaslananka/kicad-mcp-pro/issues/557)) ([34f3556](https://github.com/oaslananka/kicad-mcp-pro/commit/34f35565d28b8cd5a962569c184142f55f2aff10))
+* **eval:** preserve full-gate smoke evidence ([#559](https://github.com/oaslananka/kicad-mcp-pro/issues/559)) ([f84c934](https://github.com/oaslananka/kicad-mcp-pro/commit/f84c93464a96e9f81d3904fd3543f758d8841b35))
+* **eval:** preserve manual full diagnostic evidence ([#562](https://github.com/oaslananka/kicad-mcp-pro/issues/562)) ([d2625ea](https://github.com/oaslananka/kicad-mcp-pro/commit/d2625ea161e13583a5c00fad5e4244d2c901991e))
+* **eval:** preserve read-only inspection intent ([#540](https://github.com/oaslananka/kicad-mcp-pro/issues/540)) ([36ad334](https://github.com/oaslananka/kicad-mcp-pro/commit/36ad33429627f36316adf3d4859271ef8f9e7a10))
+* **eval:** promote reviewed live-model baseline ([#568](https://github.com/oaslananka/kicad-mcp-pro/issues/568)) ([4fdb8ce](https://github.com/oaslananka/kicad-mcp-pro/commit/4fdb8cefd6472b9400f75098c8a3115848d4cf06))
+* **eval:** recheck final tool applicability ([#525](https://github.com/oaslananka/kicad-mcp-pro/issues/525)) ([bb162d6](https://github.com/oaslananka/kicad-mcp-pro/commit/bb162d609c3daf8f4819a0a2d0d901b12f3141a3))
+* **eval:** recover unique unknown tool selections ([#545](https://github.com/oaslananka/kicad-mcp-pro/issues/545)) ([a2b76a4](https://github.com/oaslananka/kicad-mcp-pro/commit/a2b76a44a6a1497f531bddd969abff0072ac0f5d))
+* **eval:** refuse secret exfiltration ([#524](https://github.com/oaslananka/kicad-mcp-pro/issues/524)) ([6c9d3e0](https://github.com/oaslananka/kicad-mcp-pro/commit/6c9d3e0b3e943b10b218af66097fba982d436660))
+* **eval:** retry invalid model output ([#539](https://github.com/oaslananka/kicad-mcp-pro/issues/539)) ([3c43fde](https://github.com/oaslananka/kicad-mcp-pro/commit/3c43fde061f1c125aafa6659d7453d4f74be8779))
+* **eval:** select unique direct action tools ([#535](https://github.com/oaslananka/kicad-mcp-pro/issues/535)) ([399bc4c](https://github.com/oaslananka/kicad-mcp-pro/commit/399bc4c93c878a655d8708a9be97c167f01723f9))
+* **eval:** separate derived exports from data loss ([#522](https://github.com/oaslananka/kicad-mcp-pro/issues/522)) ([3fcefaf](https://github.com/oaslananka/kicad-mcp-pro/commit/3fcefaf982bd9a6ef02fa410418917c2520a4136))
+* **eval:** widen MiniMax candidate timeout budget ([#563](https://github.com/oaslananka/kicad-mcp-pro/issues/563)) ([3e3978e](https://github.com/oaslananka/kicad-mcp-pro/commit/3e3978e0ff285440a0c60f3c0279f8fca20b67e6))
+* **pcb:** distinguish board access failures from empty data ([#551](https://github.com/oaslananka/kicad-mcp-pro/issues/551)) ([46f4faf](https://github.com/oaslananka/kicad-mcp-pro/commit/46f4fafb52676a2dbc4f02d9385a6890d6590357)), closes [#547](https://github.com/oaslananka/kicad-mcp-pro/issues/547)
+* **security:** refresh vulnerable dependency floors ([#567](https://github.com/oaslananka/kicad-mcp-pro/issues/567)) ([4e52241](https://github.com/oaslananka/kicad-mcp-pro/commit/4e52241b2c141221eec8f2873dea8e1391df681f))
+* **validation:** unify DRC execution and result classification ([#552](https://github.com/oaslananka/kicad-mcp-pro/issues/552)) ([f427314](https://github.com/oaslananka/kicad-mcp-pro/commit/f4273140765f3b730ce44249a7aa49ba18bf53a9)), closes [#549](https://github.com/oaslananka/kicad-mcp-pro/issues/549)
+
 ## [3.29.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.29.1...mcp-server-v3.29.2) (2026-07-30)
 
 
