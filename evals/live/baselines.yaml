@@ -1,14 +1,47 @@
 schema_version: 1
-approved: false
-approved_at: null
-source_revision: null
-agent_contract_digest: null
+approved: true
+approved_at: '2026-08-03'
+source_revision: 11c2da2c3efcb4044497fc465d8c85412cfe1623
+agent_contract_digest: ba938eb0bb38b2200c006eaf1626f094c9f7088df03c95f136e777d29da7dde6
 evidence:
-  workflow_run_id: null
-  aggregate_sha256: null
+  workflow_run_id: 30788805474
+  aggregate_sha256: 587603f5c191b46f3faf317ecc9947c07df47c52d566b40d33cbddcbbd9a59b4
 minimum_repeats: 3
 required_configurations:
-  - nvidia-nemotron-3-nano-30b-a3b
-  - nvidia-minimax-m3
-  - opencode-cli-nemotron-3-ultra-free
-configurations: {}
+- nvidia-nemotron-3-nano-30b-a3b
+- nvidia-minimax-m3
+- opencode-cli-nemotron-3-ultra-free
+configurations:
+  nvidia-nemotron-3-nano-30b-a3b:
+    host: nvidia-nim
+    model: nvidia/nemotron-3-nano-30b-a3b
+    token_metrics_required: true
+    metrics:
+      pass_rate: 1.0
+      mean_recall: 1.0
+      unnecessary_call_rate: 0.0
+      instability_rate: 0.0
+      p95_latency_ms: 1717.516
+      mean_tokens: 3094.0358974358974
+  nvidia-minimax-m3:
+    host: nvidia-nim
+    model: minimaxai/minimax-m3
+    token_metrics_required: true
+    metrics:
+      pass_rate: 1.0
+      mean_recall: 1.0
+      unnecessary_call_rate: 0.0
+      instability_rate: 0.0
+      p95_latency_ms: 71205.406
+      mean_tokens: 3063.851282051282
+  opencode-cli-nemotron-3-ultra-free:
+    host: opencode-zen-cli
+    model: nemotron-3-ultra-free
+    token_metrics_required: true
+    metrics:
+      pass_rate: 1.0
+      mean_recall: 1.0
+      unnecessary_call_rate: 0.0
+      instability_rate: 0.0
+      p95_latency_ms: 48304.195
+      mean_tokens: 3190.0461538461536

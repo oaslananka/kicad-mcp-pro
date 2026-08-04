@@ -277,13 +277,17 @@ def test_committed_release_policy_tracks_model_facing_inputs_only() -> None:
     assert "evals/live/baselines.yaml" not in policy.agent_contract_paths
 
     baseline = yaml.safe_load(BASELINE_PATH.read_text(encoding="utf-8"))
-    assert baseline["approved_at"] is None
-    assert baseline["source_revision"] is None
-    assert baseline["agent_contract_digest"] is None
+    assert baseline["approved"] is True
+    assert baseline["approved_at"] == "2026-08-03"
+    assert baseline["source_revision"] == "11c2da2c3efcb4044497fc465d8c85412cfe1623"
+    assert baseline["agent_contract_digest"] == (
+        "ba938eb0bb38b2200c006eaf1626f094c9f7088df03c95f136e777d29da7dde6"
+    )
     assert baseline["evidence"] == {
-        "workflow_run_id": None,
-        "aggregate_sha256": None,
+        "workflow_run_id": 30788805474,
+        "aggregate_sha256": ("587603f5c191b46f3faf317ecc9947c07df47c52d566b40d33cbddcbbd9a59b4"),
     }
+    assert set(baseline["configurations"]) == set(baseline["required_configurations"])
 
 
 def test_push_assurance_runs_smoke_only_for_agent_contract_changes(tmp_path: Path) -> None:

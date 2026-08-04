@@ -336,12 +336,22 @@ def test_committed_live_configurations_are_three_reviewed_blocking_records() -> 
             assert configuration.limits.timeout_seconds - provider_timeout >= 5
 
 
-def test_committed_baseline_keeps_reviewed_required_configs_unapproved() -> None:
+def test_committed_baseline_records_reviewed_required_configurations() -> None:
     baseline = yaml.safe_load((ROOT / "evals/live/baselines.yaml").read_text(encoding="utf-8"))
 
-    assert baseline["approved"] is False
+    assert baseline["approved"] is True
+    assert baseline["approved_at"] == "2026-08-03"
     assert baseline["required_configurations"] == list(CONFIG_IDS)
-    assert baseline["configurations"] == {}
+    assert list(baseline["configurations"]) == list(CONFIG_IDS)
+    for config_id, model, host in zip(CONFIG_IDS, MODELS, HOSTS, strict=True):
+        configuration = baseline["configurations"][config_id]
+        assert configuration["host"] == host
+        assert configuration["model"] == model
+        assert configuration["token_metrics_required"] is True
+        assert configuration["metrics"]["pass_rate"] == 1.0
+        assert configuration["metrics"]["mean_recall"] == 1.0
+        assert configuration["metrics"]["unnecessary_call_rate"] == 0.0
+        assert configuration["metrics"]["instability_rate"] == 0.0
 
 
 def test_committed_live_smoke_subset_is_bounded_balanced_and_canonical() -> None:

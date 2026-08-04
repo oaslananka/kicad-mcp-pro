@@ -47,7 +47,7 @@
     "workflows:policy": "uv run --all-extras python scripts/check_github_actions_policy.py",
     "workflows:lint": "uv run --all-extras python scripts/check_workflows.py --actionlint",
     "workflows:security": "corepack pnpm run workflows:policy && uv run --all-extras python scripts/workflow_security.py --min-severity high",
-    "security:bandit": "uv run --all-extras python -m bandit -r src/ -ll -s B104",
+    "security:bandit": "uv run --all-extras python scripts/check_bandit_policy.py",
     "security:audit": "uv run --all-extras python scripts/audit_dependencies.py",
     "security": "corepack pnpm run security:bandit && corepack pnpm run security:audit",
     "security:local": "uv run --all-extras python scripts/security_local.py",
