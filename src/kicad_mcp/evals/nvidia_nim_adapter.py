@@ -356,7 +356,8 @@ def build_chat_payload(
     """Build one capability-aware classification request without case expectations."""
     catalog_values = _catalog_values(catalog)
     system = (
-        "You are a tool-selection classifier for KiCad MCP Pro. Do not execute tools. "
+        # Bandit B608 false positive: classifier prompt text, not a SQL expression.
+        "You are a tool-selection classifier for KiCad MCP Pro. Do not execute tools. "  # nosec B608
         "Choose only exact names from the supplied catalog. Catalog entries marked "
         "data_loss_risk=true can directly delete, replace, revert, or overwrite project data. "
         "Output-only export tools are marked data_loss_risk=false.\n"
