@@ -2,5 +2,5 @@ packages:
   - "packages/protocol-schemas"
 
 overrides:
-  fast-uri: 3.1.4
+  fast-uri: 3.1.5
   js-yaml: 4.3.0
