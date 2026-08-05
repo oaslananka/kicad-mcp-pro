@@ -4,6 +4,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -119,6 +120,134 @@ def test_release_preflight_tracks_tauri_bundle_version() -> None:
     }
     assert expected.issubset(versions)
     assert len({versions[source] for source in expected}) == 1
+
+
+def test_tauri_lockfile_is_tracked_and_workflows_use_locked_resolution() -> None:
+    lockfile = ROOT / "src-tauri" / "Cargo.lock"
+    ignored = {
+        line.strip()
+        for line in (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    gui_ci = (ROOT / ".github" / "workflows" / "gui-ci.yml").read_text(encoding="utf-8")
+    gui_release = (ROOT / ".github" / "workflows" / "gui-release.yml").read_text(encoding="utf-8")
+
+    assert lockfile.is_file()
+    assert "src-tauri/Cargo.lock" not in ignored
+    assert "run: cargo check --locked" in gui_ci
+    assert "run: cargo metadata --locked --format-version 1 --no-deps" in gui_release
+    assert "run: cargo tauri build ${{ matrix.args }} -- --locked" in gui_release
+
+
+def test_gui_release_uses_exact_reviewed_tauri_cli_version() -> None:
+    contract = dict(
+        line.split("=", 1)
+        for line in (ROOT / "scripts" / "dev-toolchain.env")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line and not line.startswith("#")
+    )
+    version = contract["TAURI_CLI_VERSION"]
+    gui_release = (ROOT / ".github" / "workflows" / "gui-release.yml").read_text(encoding="utf-8")
+
+    assert version.count(".") == 2
+    assert f'cargo install tauri-cli --version "{version}" --locked' in gui_release
+
+
+def test_release_preflight_rejects_tauri_root_version_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("check_release_preflight.py")
+    tauri_dir = tmp_path / "src-tauri"
+    tauri_dir.mkdir()
+    (tauri_dir / "Cargo.toml").write_text(
+        '[package]\nname = "kicad-mcp-pro"\nversion = "3.30.1"\n',
+        encoding="utf-8",
+    )
+    (tauri_dir / "Cargo.lock").write_text(
+        'version = 3\n\n[[package]]\nname = "kicad-mcp-pro"\nversion = "3.30.0"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stderr=""),
+    )
+
+    errors = module._check_tauri_lockfile()
+
+    assert errors == [
+        "src-tauri/Cargo.lock root package version does not match Cargo.toml: "
+        "lock=3.30.0, manifest=3.30.1"
+    ]
+
+
+def test_release_preflight_rejects_stale_tauri_lockfile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("check_release_preflight.py")
+    tauri_dir = tmp_path / "src-tauri"
+    tauri_dir.mkdir()
+    (tauri_dir / "Cargo.toml").write_text(
+        '[package]\nname = "fixture"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    (tauri_dir / "Cargo.lock").write_text(
+        'version = 3\n\n[[package]]\nname = "fixture"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(module.shutil, "which", lambda executable: "/usr/bin/cargo")
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=101,
+            stderr="the lock file needs to be updated",
+        ),
+    )
+
+    errors = module._check_tauri_lockfile()
+
+    assert errors == [
+        "src-tauri/Cargo.lock is stale; run cargo metadata --locked after updating Cargo.toml"
+    ]
+
+
+def test_release_validation_runs_for_tauri_dependency_changes() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+
+    assert '- "src-tauri/Cargo.toml"' in workflow
+    assert '- "src-tauri/Cargo.lock"' in workflow
+    assert '- "scripts/check_release_preflight.py"' in workflow
+
+
+def test_renovate_updates_cargo_manifests_and_lockfiles() -> None:
+    config = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
+
+    assert "cargo" in config["enabledManagers"]
+    assert config["lockFileMaintenance"]["enabled"] is True
+
+
+def test_release_preflight_rejects_missing_tauri_lockfile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("check_release_preflight.py")
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(module, "_project_version", lambda: "3.30.0")
+    monkeypatch.setattr(module, "_check_versions", lambda: [])
+    monkeypatch.setattr(module, "_check_protocol_schema_version", lambda: [])
+    monkeypatch.setattr(module, "_check_citation", lambda version: [])
+    monkeypatch.setattr(module, "_check_changelog", lambda version: [])
+    monkeypatch.setattr(module, "validate_compatibility_matrix", lambda: [])
+
+    assert module.main() == 1
+    assert "src-tauri/Cargo.lock is missing" in capsys.readouterr().err
 
 
 def test_release_please_tauri_extra_file_is_package_relative() -> None:

@@ -91,4 +91,4 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - name: Cargo check Tauri bridge
         working-directory: src-tauri
-        run: cargo check
+        run: cargo check --locked

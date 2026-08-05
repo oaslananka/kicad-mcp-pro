@@ -34,6 +34,11 @@ The first command installs the exact versions committed in
 - rustup 1.29.0
 - Rust, Cargo, and rustfmt 1.97.1
 
+The same contract records Tauri CLI 2.11.4 for GUI release jobs. The bootstrap
+does not install that CLI globally; release automation installs the reviewed
+version with Cargo and verifies the committed `src-tauri/Cargo.lock` before
+building installers.
+
 Native downloads are written to temporary files, checked against committed
 SHA-256 values, and only then moved into `.dev-tools/`. Python and Node
 dependencies are installed from the committed lock files using frozen mode.
@@ -173,6 +178,8 @@ KiCad, enable IPC, and open a board to reach `gui-connected` mode.
 
 Tool upgrades are code changes. Update `scripts/dev-toolchain.env`, the related
 repository pin such as `.python-version`, `uv.toml`, `package.json`, or
-`rust-toolchain.toml`, and the committed checksums in one pull request. The
-contract tests, clean-host workflow, OS matrix, and security checks must pass on
-the final commit before merge.
+`rust-toolchain.toml`, and the committed checksums in one pull request. Rust
+application dependency updates must refresh `src-tauri/Cargo.lock` in the same
+change and pass Cargo's locked metadata/check gates. The contract tests,
+clean-host workflow, OS matrix, and security checks must pass on the final
+commit before merge.
