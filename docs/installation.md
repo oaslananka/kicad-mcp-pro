@@ -1,5 +1,28 @@
 # Installation
 
+## Desktop app
+
+Download the installer for your operating system from the repository's GitHub
+Releases page. Automatic updates are not enabled: the desktop application does
+not check for, download, or install releases in the background.
+
+### Upgrade
+
+1. Close the desktop application.
+2. Download the installer from the newer `kicad-mcp-gui-v*` GitHub release.
+3. Install it using the normal package flow for your operating system.
+4. Start the application and verify the displayed version and dashboard health.
+
+### Rollback
+
+1. Close the desktop application.
+2. Download the installer from the previously trusted `kicad-mcp-gui-v*` release.
+3. Reinstall that version using the normal package flow for your operating system.
+4. Start the application and verify its version before reopening project work.
+
+Desktop installation does not rewrite KiCad project files. Keep normal project
+backups and verify release checksums or provenance when those assets are provided.
+
 ## Recommended
 ```bash
 uvx kicad-mcp-pro
