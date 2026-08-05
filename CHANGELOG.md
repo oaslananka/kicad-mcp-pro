@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.30.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.30.0...mcp-server-v3.30.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* **app:** verify read-only ChatGPT surface ([#569](https://github.com/oaslananka/kicad-mcp-pro/issues/569)) ([eacc056](https://github.com/oaslananka/kicad-mcp-pro/commit/eacc0560dfe0ccf31e0ba8de671776ae1396d99d))
+
 ## [3.30.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.29.2...mcp-server-v3.30.0) (2026-08-04)
 
 
