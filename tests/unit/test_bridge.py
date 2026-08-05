@@ -133,7 +133,7 @@ def test_bridge_stop_process_not_found(
 
 
 @patch("kicad_mcp.bridge._bridge_pid_path")
-@patch("kicad_mcp.bridge._bridge_server")
+@patch("kicad_mcp.bridge._bridge_server", new_callable=MagicMock)
 def test_start_daemon_unix(
     mock_bridge_server: MagicMock,
     mock_pid_path: MagicMock,
@@ -166,7 +166,8 @@ def test_start_daemon_unix(
         with patch.object(sys.stdin, "close", mock_close), patch("asyncio.run") as mock_asyncio_run:
             _start_daemon(state)
             mock_close.assert_called_once()
-            mock_asyncio_run.assert_called_once()
+            mock_bridge_server.assert_called_once_with(state)
+            mock_asyncio_run.assert_called_once_with(mock_bridge_server.return_value)
     finally:
         # Restore or remove temporary attribute
         if fork_fn is not None:
