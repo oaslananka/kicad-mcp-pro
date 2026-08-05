@@ -62,19 +62,21 @@ MCP client (agent)  --tool calls-->  KiCad MCP Pro
 - **Verification:** web-route and server-startup tests under `tests/unit/` exercise the
   auth/CORS/origin paths; transport contract is checked by `test_mcp_protocol_contract.py`.
 
-### 4. Bridge daemon (remote pairing)
+### 4. Bridge daemon (localhost pairing)
 
-- **Threat:** an attacker brute-forces the bridge pairing code or floods the daemon.
-- **Control:** the bridge is opt-in, binds locally, and requires a per-session pairing
-  code (`secrets.token_hex`). Inbound messages are now rate-limited by a token bucket
-  (`TokenBucket` in `bridge.py`): a general per-daemon budget blunts floods, and a
-  much stricter pairing budget (small burst, then one attempt every five seconds)
-  makes brute-forcing the 24-bit code infeasible. Exceeding either budget returns a
-  JSON-RPC rate-limit error (`-32004`) without doing any work. Covered by
+- **Threat:** an attacker brute-forces the bridge pairing code, floods the daemon, or
+  reaches a bridge that was incorrectly exposed beyond the local host.
+- **Control:** the bridge is opt-in and localhost-only: it binds to `127.0.0.1` and
+  requires a randomly generated 128-bit pairing code (`secrets.token_hex(16)`).
+  Inbound messages are rate-limited by `TokenBucket`: a general budget blunts floods,
+  while a stricter pairing budget permits a small burst and then one attempt every
+  five seconds. Oversized messages and exhausted budgets fail before proxy work.
+  Verification lives in `tests/unit/test_bridge.py` and
   `tests/unit/test_bridge_rate_limit.py`.
-- **Residual risk:** the pairing code is still short (24-bit). Rate-limiting makes
-  online brute force impractical, but **use a longer explicit `--code` and do not
-  expose the bridge port to untrusted networks** until a longer default code ships.
+- **Residual risk:** pairing authorizes the bridge connection as a whole. The current
+  bridge does not provide a hosted relay, remote browser transport, or per-tool local
+  approval. Keep it localhost-only and use local stdio or local Streamable HTTP for
+  mutation workflows until a separately reviewed relay and approval protocol exists.
 
 ## Supply chain and release integrity
 

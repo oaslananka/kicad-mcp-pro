@@ -28,7 +28,8 @@ snapshot in a dated `release-readiness-<date>.md` document.
 | PyPI package | Verified | `kicad-mcp-pro` current release present in PyPI JSON metadata |
 | npm wrapper | Verified | `kicad-mcp-pro` current release present in npm registry metadata |
 | GHCR image | Verified | `ghcr.io/oaslananka/kicad-mcp-pro:<version>` returns a multi-arch OCI index |
-| Public screenshots | Ready for automated final-check mode | `docs/assets/screenshots/` contains five 1920x1080 public-listing images |
+| Public screenshots | Verified | `docs/assets/screenshots/` contains six 1920x1080 public-listing images, including the fixture-only ChatGPT App dashboard |
+| ChatGPT App E2E | Verified | Real MCP SDK connection, exact read-only tool catalog, widgets, restart, and reconnection pass in `npm run test:smoke` |
 | Demo media | Required before each external form | `docs/assets/demo.cast` and `docs/assets/demo.gif` are checked by submission preflight |
 | Privacy URL | Required before each external form | `https://oaslananka.github.io/kicad-mcp-pro/privacy/` |
 | Support URL | Required before each external form | `https://github.com/oaslananka/kicad-mcp-pro/issues` |
