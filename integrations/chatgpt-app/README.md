@@ -1,55 +1,90 @@
-# ChatGPT App — KiCad MCP Integration
+# ChatGPT App - KiCad MCP Integration
 
-Connect [ChatGPT](https://chatgpt.com) to KiCad via a custom GPT app powered by the KiCad MCP remote server.
+This directory contains the public-safe ChatGPT App adapter for KiCad MCP Pro.
+It serves a stateless Streamable HTTP MCP endpoint and three browser widgets.
 
-## Architecture
+## Current architecture and trust boundaries
 
-ChatGPT Apps use the MCP Apps SDK, which provides:
-- MCP server connectivity (remote HTTP/SSE)
-- Optional web UI components rendered as iframes within ChatGPT
-- JSON-RPC over postMessage bridge between ChatGPT and the web app
+```text
+remote MCP host
+    -> HTTPS/reverse proxy controlled by the deployer
+    -> apps-sdk/src/server.ts
+       -> read-only app tools
+       -> allowlisted upload roots
+       -> static widgets
 
-### Mode A — Public-safe (V1)
-- No local filesystem access
-- Upload KiCad project zip for analysis
-- Cloud-based static analysis
-- Report generation (DRC/ERC/manufacturing)
-- Config snippet generation
+local-only path, separate from the remote app:
+local MCP client -> 127.0.0.1 bridge -> local kicad-mcp-pro HTTP server
+```
 
-### Mode B — Developer/Local Bridge (V2)
-- User runs `kicad-mcp-pro bridge` on their machine
-- ChatGPT app pairs with local bridge via pairing code
-- Write tools require local approval
-- Short-lived tokens and project access
+The remote app does not provide a relay to a workstation and cannot access a
+user's local KiCad process by itself.
 
-## Quick Start
+## Public-safe profile (supported)
 
-1. Enable **Developer Mode** in ChatGPT: Settings → Apps → Advanced → Developer mode
-2. Create a new app: Enter the MCP server URL
-3. Configure OAuth or no-auth for development
-4. The app appears in your ChatGPT interface
+The supported profile is read-only. It provides project summary, DRC/ERC
+explanation, manufacturing-readiness reporting, documentation search, and agent
+configuration generation. All six tools publish MCP annotations that identify
+them as read-only, non-destructive, and idempotent.
 
-## App Files
+Project paths must resolve below the OS temp directory or an operator-provided
+`KICAD_MCP_UPLOAD_ROOTS` entry. The `/api/analyze` endpoint is rate limited.
+
+## Remote-to-local bridge (not currently supported)
+
+The Python bridge binds to `127.0.0.1` and uses newline-delimited JSON-RPC over a
+local TCP socket. It does not provide a hosted relay, browser transport, or NAT
+traversal. After pairing it does not implement per-tool local approval. Do not
+expose the bridge port to an untrusted network or describe ChatGPT web-to-local
+mutation as a supported path.
+
+Local write workflows should use a local stdio or local Streamable HTTP client
+where the operator controls process and filesystem access.
+
+## App files
 
 | File | Purpose |
-|------|---------|
-| `apps-sdk/package.json` | Node.js package with dependencies |
-| `apps-sdk/src/server.ts` | MCP server implementation |
+|---|---|
+| `apps-sdk/package.json` | Package metadata and validation commands |
+| `apps-sdk/src/server.ts` | Stateless MCP server and read-only tools |
+| `apps-sdk/test/app-smoke.test.mjs` | Real SDK connection and restart smoke test |
 | `apps-sdk/public/kicad-dashboard.html` | Project overview widget |
-| `apps-sdk/public/project-review.html` | Board health dashboard |
+| `apps-sdk/public/project-review.html` | DRC/ERC review widget |
 | `apps-sdk/public/manufacturing-report.html` | Manufacturing checklist widget |
 
-## UI Widgets
+## Verify
 
-- **Project Overview Card** — board info, KiCad version, file paths
-- **Board Health Dashboard** — ERC/DRC status, quality gates
-- **ERC/DRC Issue Table** — grouped by severity with explanations
-- **BOM Summary** — component count, status, MPN coverage
-- **Manufacturing Export Checklist** — step-by-step release tracker
-- **Local Setup Wizard** — config snippet for Codex/Claude/Gemini/OpenCode
+```bash
+cd integrations/chatgpt-app/apps-sdk
+npm ci
+npm run typecheck
+npm run build
+npm run test:smoke
+```
 
-## Security
+The smoke test verifies the package/server version contract, exact tool catalog,
+read-only annotations, a real tool call, all widget routes, clean shutdown, and
+reconnection after process restart.
 
-- Remote tools cannot access your local machine directly
-- Uploaded project archives may contain untrusted content
-- See `docs/agents/security.md` for prompt injection guidance
+## Deployment requirements
+
+- Terminate TLS before exposing the app publicly.
+- Add deployment-appropriate authentication and request controls.
+- Configure only trusted upload roots.
+- Never mount private project directories into a public deployment.
+- Treat uploaded KiCad archives as untrusted input.
+- Keep local bridge and local KiCad transports on loopback unless a separately
+  reviewed secure relay is implemented.
+
+## Directory evidence
+
+Run the repository-wide normal and final submission checks before any external
+form is submitted:
+
+```bash
+pnpm run submission:check
+SUBMISSION_MODE=1 pnpm run submission:check
+```
+
+Domain verification and external review status are tracked manually in
+`docs/public-listing.md`.

@@ -1,6 +1,24 @@
 # ChatGPT Apps Submission
 
-Use this document for the ChatGPT Apps submission path.
+Use this document for the ChatGPT Apps submission path. The submission scope is
+the verified public-safe, read-only app under
+`integrations/chatgpt-app/apps-sdk`; it is not the full local KiCad mutation
+surface.
+
+## Verified repository evidence
+
+- [x] Package/runtime identity is synchronized from `package.json`.
+- [x] Six app tools export read-only, non-destructive, idempotent annotations.
+- [x] `npm run test:smoke` verifies real MCP connection, tool execution, widgets,
+  shutdown, restart, and reconnection.
+- [x] `06-chatgpt-app-dashboard.png` is a 1920x1080 fixture-only Apps UI capture.
+- [x] Normal and final `submission:check` modes validate privacy, media, metadata,
+  reviewer prompts, and namespace safety.
+- [x] The localhost bridge limitation and absence of per-tool local approval are
+  documented.
+- [ ] Public HTTPS deployment, authentication, and platform domain verification are
+  complete.
+
 
 ## Developer Dashboard
 
@@ -35,13 +53,12 @@ Use this document for the ChatGPT Apps submission path.
 
 ## Tool Annotation Exports
 
-- [ ] Confirm annotations are exported from `src/kicad_mcp/tools/metadata.py`.
-- [ ] Confirm `readOnlyHint` is surfaced for read-only inspection tools.
-- [ ] Confirm `destructiveHint` is surfaced for tools that can write files or mutate projects.
-- [ ] Confirm `openWorldHint` is surfaced where external or broader context may be involved.
-- [ ] Confirm reviewer-facing docs describe read-only default workflows.
-- [ ] Confirm destructive workflows require explicit user intent.
-- [ ] Confirm manufacturing export remains gate controlled.
+- [x] Confirm annotations are exported from `integrations/chatgpt-app/apps-sdk/src/server.ts`.
+- [x] Confirm `readOnlyHint=true` for all six app tools.
+- [x] Confirm `destructiveHint=false` for all six app tools.
+- [x] Confirm only documentation search has `openWorldHint=true`.
+- [x] Confirm reviewer-facing docs describe the app as read-only.
+- [x] Confirm no local mutation tool is exported by the ChatGPT App.
 - [ ] Run `pnpm run submission:check` after annotation changes.
 
 ## Localization
@@ -63,19 +80,20 @@ Use this document for the ChatGPT Apps submission path.
 - [ ] Use `03-vscode-pcb-inspection.png` for VS Code PCB inspection capture.
 - [ ] Use `04-tools-reference.png` for tools reference capture.
 - [ ] Use `05-export-manufacturing.png` for gated manufacturing export capture.
+- [x] Use `06-chatgpt-app-dashboard.png` for the public-safe Apps UI capture.
 - [ ] Run `SUBMISSION_MODE=1 pnpm run submission:check` before final upload.
 - [ ] Confirm public-listing media passes final submission mode before public production submission.
 
 ## Residency Note
 
-- [ ] Default stdio mode processes files on the user machine.
-- [ ] The server itself does not operate a hosted backend.
-- [ ] The server itself does not store user files remotely.
-- [ ] The server itself does not collect IP addresses.
-- [ ] The server itself does not set cookies.
-- [ ] Optional third-party integrations are governed by their own policies.
-- [ ] Nexar or Freerouting usage must be explicitly configured by the user.
-- [ ] Document residency as local processing only for the default path.
+- [x] The default main-server stdio profile processes files on the user machine.
+- [x] The ChatGPT App is a separate remote-deployment profile.
+- [x] Uploaded or mounted project data is processed on the deployment host inside
+  explicit upload roots.
+- [ ] The production operator documents storage, retention, IP logging, cookies, and
+  subprocess policy for the chosen hosting platform.
+- [x] The app does not directly reach a user's local KiCad process.
+- [x] Optional third-party integrations remain outside the six-tool app surface.
 
 ## Review Controls
 
@@ -100,9 +118,9 @@ Use this document for the ChatGPT Apps submission path.
 - [ ] Confirm the domain verification TXT record is not committed to the repository.
 - [ ] Confirm no stale placeholder domain remains in submission docs before final upload.
 - [ ] Confirm no dashboard field references a retired owner namespace.
-- [ ] Confirm tool annotation evidence references `src/kicad_mcp/tools/metadata.py`.
+- [ ] Confirm tool annotation evidence references `integrations/chatgpt-app/apps-sdk/src/server.ts`.
 - [ ] Confirm `readOnlyHint` is present for inspection-oriented tools.
-- [ ] Confirm `destructiveHint` is present for project mutation tools.
+- [ ] Confirm `destructiveHint=false` for every tool in the read-only app catalog.
 - [ ] Confirm `openWorldHint` is present where broader context may be used.
 - [ ] Confirm annotation exports are regenerated after tool registry changes.
 - [ ] Confirm the complete tool catalog is generated before dashboard upload.
@@ -117,7 +135,7 @@ Use this document for the ChatGPT Apps submission path.
 - [ ] Confirm the app does not claim hosted data residency for stdio mode.
 - [ ] Confirm the app describes default processing as local-only.
 - [ ] Confirm the app says OpenTelemetry export is disabled by default and operator-configured only.
-- [ ] Confirm the app does not request OAuth for local stdio review.
+- [ ] Confirm the production remote app uses deployment-appropriate authentication.
 - [ ] Confirm optional HTTP mode is described as a separate configured deployment path.
 - [ ] Confirm HTTP mode notes mention bearer auth for production.
 - [ ] Confirm HTTP mode notes mention explicit CORS allowlists for production.

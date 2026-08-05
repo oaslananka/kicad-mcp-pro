@@ -14,6 +14,7 @@ Each file must preserve its filename and 1920x1080 dimensions.
 | `03-vscode-pcb-inspection.png` | Board state inspection with safe read-only result | VS Code MCP / MCP transcript | `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` | `pcb_get_board_state` |
 | `04-tools-reference.png` | Tools reference catalog or generated tool table | Browser/docs | Repository docs | `kicad_list_tool_categories` |
 | `05-export-manufacturing.png` | Manufacturing export gate with evidence-linked posture | Claude Desktop / MCP transcript | `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` | `export_manufacturing_package` |
+| `06-chatgpt-app-dashboard.png` | Public-safe ChatGPT App dashboard with fixture-only project health | ChatGPT Apps SDK widget / browser | `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` | MCP tool-result message rendered by `kicad-dashboard.html` |
 
 Replacement checklist:
 

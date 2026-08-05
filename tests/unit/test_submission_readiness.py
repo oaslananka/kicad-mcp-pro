@@ -37,3 +37,10 @@ def test_submission_readiness_rejects_tauri_bundle_version_drift(
 
     assert result.status == "FAIL"
     assert "src-tauri/tauri.conf.json" in result.detail
+
+
+def test_chatgpt_app_readiness_contract_passes() -> None:
+    result = check_submission_readiness._chatgpt_app_check()
+
+    assert result.status == "PASS"
+    assert "0.2.0" in result.detail

@@ -1,43 +1,95 @@
 # ChatGPT Web Integration
 
-ChatGPT web users can connect to KiCad via a custom GPT app powered by the KiCad MCP remote server.
+KiCad MCP Pro has one verified ChatGPT-facing profile today: a public-safe,
+read-only Streamable HTTP app. It can analyze repository-owned or uploaded
+project data inside an explicitly configured upload root and render three HTML
+widgets. It does not grant ChatGPT direct access to a user's local KiCad process.
 
-## Prerequisites
+## Current architecture and trust boundaries
 
-- ChatGPT Plus/Pro/Business/Enterprise account
-- Enable **Developer Mode**: Settings → Apps → Advanced → Developer mode
-- A publicly hosted KiCad MCP remote server
+```text
+ChatGPT web / MCP client
+        |
+        | HTTPS Streamable HTTP (deployment boundary)
+        v
+KiCad MCP Pro ChatGPT App
+  - six read-only tools
+  - upload-root containment
+  - rate-limited analysis endpoint
+  - dashboard, review, and manufacturing widgets
+        |
+        | optional local subprocess on the same trusted host
+        v
+kicad-mcp-pro package / uploaded fixture data
 
-## Setup
+Separate localhost-only component (not reachable from ChatGPT web):
+local client -> 127.0.0.1 TCP bridge -> local Streamable HTTP server -> KiCad
+```
 
-1. Enable Developer Mode in ChatGPT
-2. Create a new app with the MCP server URL
-3. Configure auth (no-auth for dev, OAuth for production)
-4. The app appears in your ChatGPT interface
+The public deployment operator is responsible for HTTPS, authentication, and
+network policy. The app package itself does not provide a hosted relay between
+ChatGPT and a user's workstation.
 
-## Mode A — Public-safe (V1)
+## Public-safe profile (supported)
 
-- No local filesystem access
-- Upload KiCad project zip for analysis
-- Cloud static analysis only
-- Report generation and config snippet generation
+The supported profile exposes these read-only tools:
 
-## Mode B — Developer/Local Bridge (V2)
+- `search_kicad_knowledge`
+- `analyze_uploaded_kicad_project`
+- `explain_drc_report`
+- `explain_erc_report`
+- `generate_manufacturing_readiness_report`
+- `generate_agent_config`
 
-- User runs `kicad-mcp-pro bridge` locally
-- ChatGPT app pairs with local bridge via pairing code
-- Write tools require local approval
-- Short-lived tokens and project access
+Every tool is exported with `readOnlyHint=true`, `destructiveHint=false`, and
+`idempotentHint=true`. Only documentation search is marked open-world. Uploaded
+paths are canonicalized and must remain under the OS temporary directory or a
+root listed in `KICAD_MCP_UPLOAD_ROOTS`.
 
-## UI Widgets
+## Remote-to-local bridge (not currently supported)
 
-The ChatGPT app includes optional web UI components:
-- Project Overview Card
-- Board Health Dashboard
-- ERC/DRC Issue Table
-- BOM Summary
-- Manufacturing Export Checklist
+`kicad-mcp-pro bridge` binds to `127.0.0.1` and accepts newline-delimited JSON-RPC
+from a local client after pairing. It does not provide a hosted relay, NAT
+traversal, browser transport, or remote discovery. It also does not implement
+per-tool local approval after pairing. Therefore ChatGPT web cannot securely pair
+directly with this bridge, and local write/mutation workflows must not be claimed
+as supported by the ChatGPT App.
 
-## Example Prompt
+Use local stdio or local Streamable HTTP clients for KiCad mutation workflows.
+Keep the bridge port localhost-only.
 
-> Analyze this KiCad project. Use the kicad MCP tools to inspect the uploaded project, run quality checks, and summarize board readiness for manufacturing.
+## Verified host matrix
+
+| Host path | Status | Verification |
+|---|---|---|
+| Generic MCP SDK client -> public-safe app | Supported | `npm run test:smoke` |
+| ChatGPT-compatible stateless HTTP profile | Supported protocol profile | `tests/integration/test_mcp_2026_host_smoke.py` |
+| Browser widget static assets | Supported | `npm run test:smoke` |
+| Local stdio clients -> local KiCad server | Supported separately | main server CI matrix |
+| ChatGPT web -> localhost bridge | Not currently supported | no relay or per-tool approval |
+
+## Local verification
+
+```bash
+cd integrations/chatgpt-app/apps-sdk
+npm ci
+npm run typecheck
+npm run build
+npm run test:smoke
+```
+
+The smoke test starts the compiled server, connects with the official MCP SDK,
+validates identity, tool annotations, tool execution, and all widgets, stops the
+process, restarts it, and reconnects.
+
+## Directory submission
+
+Repository media, privacy, metadata, and reviewer evidence are checked with:
+
+```bash
+pnpm run submission:check
+SUBMISSION_MODE=1 pnpm run submission:check
+```
+
+Platform domain verification and the final dashboard submission remain manual.
+See [`../submission/chatgpt-apps.md`](../submission/chatgpt-apps.md).

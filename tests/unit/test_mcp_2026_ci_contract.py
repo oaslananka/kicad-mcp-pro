@@ -22,11 +22,11 @@ def test_candidate_protocol_contract_runs_in_an_independent_required_ci_job() ->
         workflow.split()
     )
     assert (
-        "needs: [changes, mcp-server, coverage, mcp-npm, protocol-schemas, "
+        "needs: [changes, mcp-server, coverage, mcp-npm, chatgpt-app, protocol-schemas, "
         "mcp-2026-compat, workflow-policy, security]"
     ) in workflow
     assert '[mcp-2026-compat]="${{ needs.mcp-2026-compat.result }}"' in workflow
     assert (
-        "for job in changes mcp-server coverage mcp-npm protocol-schemas "
+        "for job in changes mcp-server coverage mcp-npm chatgpt-app protocol-schemas "
         "mcp-2026-compat workflow-policy security"
     ) in " ".join(workflow.split())

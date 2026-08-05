@@ -44,6 +44,7 @@ SCREENSHOTS = (
     "03-vscode-pcb-inspection.png",
     "04-tools-reference.png",
     "05-export-manufacturing.png",
+    "06-chatgpt-app-dashboard.png",
 )
 FORBIDDEN_NAMESPACE = tuple(
     "".join(parts)
@@ -304,6 +305,39 @@ def _readme_check() -> CheckResult:
     return CheckResult("README listing references", "PASS", "monorepo package identity linked")
 
 
+def _chatgpt_app_check() -> CheckResult:
+    app_root = ROOT / "integrations" / "chatgpt-app" / "apps-sdk"
+    try:
+        package = json.loads((app_root / "package.json").read_text(encoding="utf-8"))
+        manifest = (app_root / "app-manifest.md").read_text(encoding="utf-8")
+        source = (app_root / "src" / "server.ts").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    except (OSError, json.JSONDecodeError) as exc:
+        return CheckResult("ChatGPT App contract", "FAIL", str(exc))
+
+    version = package.get("version")
+    scripts = package.get("scripts", {})
+    required = {
+        "package identity": package.get("name") == "kicad-mcp-chatgpt-app",
+        "private package": package.get("private") is True,
+        "manifest version": isinstance(version, str) and f"Version: `{version}`" in manifest,
+        "smoke script": scripts.get("test:smoke") == "node --test test/app-smoke.test.mjs",
+        "runtime version source": "APP_VERSION = APP_PACKAGE.version" in source,
+        "read-only annotations": "LOCAL_READ_ONLY_ANNOTATIONS" in source,
+        "open-world annotation": "OPEN_WORLD_READ_ONLY_ANNOTATIONS" in source,
+        "required CI job": "  chatgpt-app:" in workflow and "npm run test:smoke" in workflow,
+        "smoke test file": (app_root / "test" / "app-smoke.test.mjs").is_file(),
+    }
+    failed = [name for name, passed in required.items() if not passed]
+    if failed:
+        return CheckResult("ChatGPT App contract", "FAIL", ", ".join(failed))
+    return CheckResult(
+        "ChatGPT App contract",
+        "PASS",
+        f"{version}: package, manifest, read-only metadata, E2E, and required CI aligned",
+    )
+
+
 def _server_schema_check() -> CheckResult:
     schema_path = ROOT / "scripts" / "schemas" / "server.schema.json"
     try:
@@ -341,6 +375,7 @@ def run_checks() -> list[CheckResult]:
         _version_check(),
         _pypi_check(),
         _privacy_check(),
+        _chatgpt_app_check(),
         _icon_check(),
         _screenshot_check(),
         _demo_cast_check(),

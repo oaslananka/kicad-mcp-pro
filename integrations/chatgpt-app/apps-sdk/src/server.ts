@@ -185,6 +185,21 @@ const PORT = parseInt(process.env.PORT || "8765", 10);
 const HOST = process.env.HOST || "0.0.0.0";
 const KICAD_MCP_CMD = process.env.KICAD_MCP_CMD || "kicad-mcp-pro";
 const STATIC_DIR = resolve(import.meta.dirname, "..", "public");
+const APP_PACKAGE = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "..", "package.json"), "utf8"),
+) as { version: string };
+const APP_NAME = "KiCad MCP Pro";
+const APP_VERSION = APP_PACKAGE.version;
+const LOCAL_READ_ONLY_ANNOTATIONS = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+} as const;
+const OPEN_WORLD_READ_ONLY_ANNOTATIONS = {
+  ...LOCAL_READ_ONLY_ANNOTATIONS,
+  openWorldHint: true,
+} as const;
 
 // ---------------------------------------------------------------------------
 // Helpers — KiCad project parsing
@@ -435,13 +450,14 @@ app.post("/api/analyze", analyzeRateLimiter, async (req: Request, res: Response)
 // MCP Server
 function createMcpServer(): McpServer {
   const mcp = new McpServer({
-    name: "KiCad MCP",
-    version: "0.1.0",
+    name: APP_NAME,
+    version: APP_VERSION,
   });
 
   mcp.registerTool(
     "search_kicad_knowledge",
     {
+      annotations: OPEN_WORLD_READ_ONLY_ANNOTATIONS,
       description: "Search KiCad documentation and knowledge base for PCB design topics.",
       inputSchema: {
         query: z.string().describe("Search query (e.g. 'footprint editor', 'differential pair routing')"),
@@ -466,6 +482,7 @@ function createMcpServer(): McpServer {
   mcp.registerTool(
     "analyze_uploaded_kicad_project",
     {
+      annotations: LOCAL_READ_ONLY_ANNOTATIONS,
       description:
         "Analyze an uploaded KiCad project archive. " +
         "Accepts a directory path containing .kicad_proj, .kicad_pcb, .kicad_sch files. " +
@@ -543,6 +560,7 @@ function createMcpServer(): McpServer {
   mcp.registerTool(
     "explain_drc_report",
     {
+      annotations: LOCAL_READ_ONLY_ANNOTATIONS,
       description:
         "Interpret a DRC (Design Rule Check) report and explain issues. " +
         "Accepts raw report text and returns a structured summary with categorized violations.",
@@ -579,6 +597,7 @@ function createMcpServer(): McpServer {
   mcp.registerTool(
     "explain_erc_report",
     {
+      annotations: LOCAL_READ_ONLY_ANNOTATIONS,
       description:
         "Interpret an ERC (Electrical Rule Check) report and explain issues. " +
         "Accepts raw report text and returns a structured summary.",
@@ -615,6 +634,7 @@ function createMcpServer(): McpServer {
   mcp.registerTool(
     "generate_manufacturing_readiness_report",
     {
+      annotations: LOCAL_READ_ONLY_ANNOTATIONS,
       description:
         "Generate a manufacturing readiness report for a KiCad project. " +
         "Evaluates DRC/ERC status, BOM, and Gerber availability.",
@@ -658,6 +678,7 @@ function createMcpServer(): McpServer {
   mcp.registerTool(
     "generate_agent_config",
     {
+      annotations: LOCAL_READ_ONLY_ANNOTATIONS,
       description: "Generate an MCP configuration snippet for a supported AI coding agent.",
       inputSchema: {
         targetAgent: z
@@ -698,13 +719,16 @@ function createMcpServer(): McpServer {
   return mcp;
 }
 
-const mcp = createMcpServer();
-const mcpTransport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-await mcp.connect(mcpTransport);
-
 async function handleMcpPostRequest(req: Request, res: Response): Promise<void> {
+  const server = createMcpServer();
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   try {
-    await mcpTransport.handleRequest(req, res, req.body);
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+    res.on("close", () => {
+      void transport.close();
+      void server.close();
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("Error handling MCP POST request:", message);
@@ -718,24 +742,14 @@ async function handleMcpPostRequest(req: Request, res: Response): Promise<void> 
   }
 }
 
-async function handleMcpGetRequest(req: Request, res: Response): Promise<void> {
-  try {
-    await mcpTransport.handleRequest(req, res);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("Error handling MCP GET request:", message);
-    if (!res.headersSent) {
-      res.status(500).json({
-        jsonrpc: "2.0",
-        error: { code: -32603, message: "Internal server error" },
-        id: null,
-      });
-    }
-  }
-}
-
 app.post("/mcp", async (req: Request, res: Response) => { await handleMcpPostRequest(req, res); });
-app.get("/mcp", async (req: Request, res: Response) => { await handleMcpGetRequest(req, res); });
+app.get("/mcp", (_req: Request, res: Response) => {
+  res.status(405).json({
+    jsonrpc: "2.0",
+    error: { code: -32000, message: "Method not allowed." },
+    id: null,
+  });
+});
 app.delete("/mcp", (_req: Request, res: Response) => {
   res.status(405).json({
     jsonrpc: "2.0",
