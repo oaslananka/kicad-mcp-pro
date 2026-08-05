@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -98,6 +100,61 @@ def _check_versions() -> list[str]:
         rendered = ", ".join(f"{source}={version}" for source, version in versions.items())
         errors.append(f"release metadata version drift detected: {rendered}")
     return errors
+
+
+def _check_tauri_lockfile() -> list[str]:
+    lockfile = REPO_ROOT / "src-tauri" / "Cargo.lock"
+    if not lockfile.is_file():
+        return ["src-tauri/Cargo.lock is missing; desktop releases require a committed lockfile"]
+    try:
+        data = tomllib.loads(lockfile.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError:
+        return ["src-tauri/Cargo.lock is not valid TOML"]
+    packages = data.get("package")
+    if data.get("version") not in {3, 4} or not isinstance(packages, list):
+        return ["src-tauri/Cargo.lock is not a valid generated Cargo lockfile"]
+
+    manifest_path = REPO_ROOT / "src-tauri" / "Cargo.toml"
+    try:
+        manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return ["src-tauri/Cargo.toml is missing or invalid"]
+    manifest_package = manifest.get("package")
+    if not isinstance(manifest_package, dict):
+        return ["src-tauri/Cargo.toml must define a package table"]
+    manifest_name = manifest_package.get("name")
+    manifest_version = manifest_package.get("version")
+    root_package = next(
+        (package for package in packages if package.get("name") == manifest_name),
+        None,
+    )
+    if not isinstance(root_package, dict):
+        return ["src-tauri/Cargo.lock does not contain the root Tauri package"]
+    lock_version = str(root_package.get("version", ""))
+    if lock_version != manifest_version:
+        return [
+            "src-tauri/Cargo.lock root package version does not match Cargo.toml: "
+            f"lock={lock_version}, manifest={manifest_version}"
+        ]
+
+    cargo = shutil.which("cargo")
+    if cargo is None:
+        return ["cargo is unavailable; cannot validate src-tauri/Cargo.lock freshness"]
+    try:
+        result = subprocess.run(
+            [cargo, "metadata", "--locked", "--format-version", "1", "--no-deps"],
+            cwd=REPO_ROOT / "src-tauri",
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        return [f"cargo metadata could not start: {exc}"]
+    if result.returncode != 0:
+        return [
+            "src-tauri/Cargo.lock is stale; run cargo metadata --locked after updating Cargo.toml"
+        ]
+    return []
 
 
 def _check_protocol_schema_version() -> list[str]:
@@ -212,6 +269,7 @@ def main() -> int:
     version = _project_version()
     errors = [
         *_check_versions(),
+        *_check_tauri_lockfile(),
         *_check_protocol_schema_version(),
         *_check_citation(version),
         *_check_changelog(version),
