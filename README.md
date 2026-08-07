@@ -88,7 +88,9 @@ fraction of KiCad's programmatic surface the server drives is tracked openly in 
 Download the latest installer from the
 [GitHub releases page](https://github.com/oaslananka/kicad-mcp-pro/releases).
 The Tauri desktop app starts the Python dashboard server automatically and opens
-the GUI at `http://127.0.0.1:3334/ui`.
+the GUI at `http://127.0.0.1:3334/ui`. Desktop releases launch the matching exact
+backend version and verify its desktop compatibility handshake before use; see
+[Installation](docs/installation.md#desktopbackend-compatibility).
 
 ### CLI
 

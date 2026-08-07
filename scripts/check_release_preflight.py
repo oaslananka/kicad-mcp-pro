@@ -102,6 +102,73 @@ def _check_versions() -> list[str]:
     return errors
 
 
+def _check_desktop_backend_contract() -> list[str]:
+    python_contract = (ROOT / "src" / "kicad_mcp" / "compatibility.py").read_text(
+        encoding="utf-8"
+    )
+    tauri_launcher = (REPO_ROOT / "src-tauri" / "src" / "lib.rs").read_text(
+        encoding="utf-8"
+    )
+
+    def extract(text: str, pattern: str, label: str) -> tuple[str | None, list[str]]:
+        match = re.search(pattern, text)
+        if match is None:
+            return None, [f"{label} is missing"]
+        return match.group(1), []
+
+    python_api, errors = extract(
+        python_contract,
+        r'DESKTOP_API_CONTRACT_VERSION: Final = "([^"]+)"',
+        "Python desktop API contract version",
+    )
+    tauri_api, tauri_api_errors = extract(
+        tauri_launcher,
+        r'const DESKTOP_API_CONTRACT_VERSION: &str = "([^"]+)";',
+        "Tauri desktop API contract version",
+    )
+    errors.extend(tauri_api_errors)
+    python_policy, python_policy_errors = extract(
+        python_contract,
+        r'DESKTOP_BACKEND_VERSION_POLICY: Final = "([^"]+)"',
+        "Python desktop backend version policy",
+    )
+    errors.extend(python_policy_errors)
+    tauri_policy, tauri_policy_errors = extract(
+        tauri_launcher,
+        r'const DESKTOP_BACKEND_VERSION_POLICY: &str = "([^"]+)";',
+        "Tauri desktop backend version policy",
+    )
+    errors.extend(tauri_policy_errors)
+
+    if python_api is not None and tauri_api is not None and python_api != tauri_api:
+        errors.append(
+            "desktop API contract drift detected: "
+            f"python={python_api}, tauri={tauri_api}"
+        )
+    if (
+        python_policy is not None
+        and tauri_policy is not None
+        and python_policy != tauri_policy
+    ):
+        errors.append(
+            "desktop backend version policy drift detected: "
+            f"python={python_policy}, tauri={tauri_policy}"
+        )
+    if python_policy is not None and python_policy != "exact-release":
+        errors.append(
+            "desktop backend version policy must remain exact-release; "
+            f"found {python_policy!r}"
+        )
+
+    exact_spec = 'format!("kicad-mcp-pro=={}", env!("CARGO_PKG_VERSION"))'
+    if exact_spec not in tauri_launcher:
+        errors.append(
+            "desktop launcher must derive an exact kicad-mcp-pro==<GUI version> spec "
+            "from CARGO_PKG_VERSION"
+        )
+    return errors
+
+
 def _check_tauri_lockfile() -> list[str]:
     lockfile = REPO_ROOT / "src-tauri" / "Cargo.lock"
     if not lockfile.is_file():
@@ -269,6 +336,7 @@ def main() -> int:
     version = _project_version()
     errors = [
         *_check_versions(),
+        *_check_desktop_backend_contract(),
         *_check_tauri_lockfile(),
         *_check_protocol_schema_version(),
         *_check_citation(version),
