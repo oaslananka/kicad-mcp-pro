@@ -80,19 +80,44 @@ version-agnostic so it does not drift.
 - Manufacturing, routing, library, schematic safety, SI/PI/EMC/thermal, and
   validation surfaces received incremental coverage and honesty gates.
 
+### ✅ 3.17.x – 3.30.1 (Delivered through 2026-08-05)
+- The 3.30.0 release was published on 2026-08-04 across the
+  [Python/server](https://github.com/oaslananka/kicad-mcp-pro/releases/tag/mcp-server-v3.30.0),
+  [npm](https://github.com/oaslananka/kicad-mcp-pro/releases/tag/mcp-npm-v3.30.0), and
+  [desktop GUI](https://github.com/oaslananka/kicad-mcp-pro/releases/tag/kicad-mcp-gui-v3.30.0)
+  surfaces after the live-model evaluation and safety-gate hardening cycle.
+- The 3.30.1 maintenance release followed on 2026-08-05 and includes the
+  verified public-safe read-only ChatGPT Apps surface from
+  [PR #569](https://github.com/oaslananka/kicad-mcp-pro/pull/569).
+- PR #569 materially advances M9, but it does not complete the remaining hosted
+  deployment, desktop provenance, or desktop/backend compatibility work tracked
+  by the open M9 issues.
+
 ---
 
 ## Upcoming
 
-### July 2026 Release-Readiness Closeout
-- **Release-readiness closeout:** keep PyPI, npm, GHCR, GitHub Releases,
-  `server.json`, README, and docs synchronized before external submissions.
-- **Public listing readiness:** keep production screenshots, demo media, privacy,
-  support, registry metadata, and reviewer prompts submission-ready.
-- **KiCad 10.0.5 evidence refresh:** re-run and archive CLI canary evidence for
-  the current release line.
-- **Scorecard evidence refresh:** verify branch ruleset, release evidence, and
-  accepted solo-maintainer exceptions after workflow-name changes.
+### M9 — Apps UI, Hybrid Bridge & Distribution
+- The [M9 milestone](https://github.com/oaslananka/kicad-mcp-pro/milestone/9)
+  remains open for objective distribution and trust-boundary evidence.
+- Reproducible Tauri builds (#571), updater trust-path cleanup (#572), and the
+  bridge coroutine regression (#575) are complete; PR #569 verified the
+  supported public-safe read-only ChatGPT Apps surface.
+- Remaining work is tracked by #412 (hosted deployment and directory-readiness
+  evidence), #573 (desktop installer integrity/provenance release evidence), and
+  #574 (an explicit desktop-to-backend compatibility contract). The implementation
+  for #573 is merged in PR #586, but the issue remains open until its required
+  release-candidate evidence is recorded.
+
+### M10 — Agent Design OS & Workflow Surface
+- The [M10 milestone](https://github.com/oaslananka/kicad-mcp-pro/milestone/10)
+  is now the active governance and maintainability hardening backlog.
+- After this roadmap refresh (#579), the open set is #576 (one dependency-update
+  source of truth), #577 (incremental composition-root decomposition), #578
+  (OpenSSF Signed-Releases reconciliation), and #580 (public Best Practices badge
+  submission).
+- These are hardening and governance tasks; their presence does not imply that
+  unfinished controls or future capabilities have shipped.
 
 ### Q3 2026 Productization
 - **Structured verdicts:** finish stable machine-readable PASS/WARN/FAIL payloads

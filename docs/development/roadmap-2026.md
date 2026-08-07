@@ -3,6 +3,24 @@
 This roadmap converts the May 2026 research findings into enforceable repository
 work. It favors small gates and measurable artifacts over large rewrites.
 
+## August 2026 status snapshot
+
+- Version 3.30.0 was published on 2026-08-04 for the Python/server, npm wrapper,
+  and desktop GUI release surfaces; 3.30.1 followed on 2026-08-05. The release
+  history and exact changes remain authoritative in `CHANGELOG.md` and GitHub
+  Releases rather than being re-described here.
+- [M9 — Apps UI, Hybrid Bridge & Distribution](https://github.com/oaslananka/kicad-mcp-pro/milestone/9)
+  has verified progress from PR #569 plus completed #571, #572, and #575. It
+  remains open for #412, #573, and #574; in particular, the read-only ChatGPT
+  Apps surface must not be presented as completion of the hosted/local mutation
+  or desktop release-hardening work.
+- [M10 — Agent Design OS & Workflow Surface](https://github.com/oaslananka/kicad-mcp-pro/milestone/10)
+  carries the post-release hardening backlog. After #579, the remaining open
+  work is #576, #577, #578, and #580.
+- July release-readiness closeout work is historical; current roadmap language
+  should track these live milestones and objective evidence instead of treating
+  completed release work as pending.
+
 ## P0: Stabilize current CI and release loops
 
 - Keep `corepack pnpm run check:ci` green on Linux and smoke coverage green on
