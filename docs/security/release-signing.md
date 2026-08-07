@@ -17,7 +17,9 @@ KiCad MCP Pro uses artifact-specific release verification instead of relying on 
 | npm wrapper | npm provenance, SHA256 checksums, SBOM, GitHub artifact attestations |
 | Protocol schemas package | npm provenance, SHA256 checksums, SBOM, GitHub artifact attestations |
 | Docker image | digest-pinned image references, BuildKit provenance/SBOM, Trivy scan, and keyless cosign signature for GHCR image digests |
-| GUI bundles | release workflow evidence and platform-specific release notes; platform code signing may be unavailable unless vendor credentials are configured |
+| GUI bundles | SHA256 checksums, Cargo-lock CycloneDX SBOM, GitHub artifact attestation, exact published-asset verification, and explicit platform-signing status |
+
+GitHub artifact attestations bind GUI installer digests and the SBOM to the canonical workflow identity. They do **not** replace Authenticode, Apple code signing/notarization, or Linux package-repository signing. Until vendor signing credentials are configured, the GUI evidence records those platform-signing states as unsigned/unnotarized rather than implying a stronger guarantee.
 
 ## Maintainer checklist
 

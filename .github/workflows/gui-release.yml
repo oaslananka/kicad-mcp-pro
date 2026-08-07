@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, e.g. kicad-mcp-gui-v3.9.1"
+        description: "Existing GUI release tag, e.g. kicad-mcp-gui-v3.30.1"
         required: true
         type: string
 
@@ -40,6 +40,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
         with:
@@ -67,7 +68,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Apple signing secrets are not configured → skip codesigning on macOS
+          # Apple signing secrets are not configured - skip codesigning on macOS.
           TAURI_SKIP_CODESIGNING: ${{ runner.os == 'macOS' && '1' || '' }}
         run: cargo tauri build ${{ matrix.args }} -- --locked
 
@@ -91,12 +92,16 @@ jobs:
     needs: tauri-build
     runs-on: ubuntu-24.04
     permissions:
+      artifact-metadata: write
+      attestations: write
       contents: write
+      id-token: write
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Download all Tauri bundles
         env:
@@ -104,7 +109,8 @@ jobs:
         run: |
           gh run download ${{ github.run_id }} --repo ${{ github.repository }} --dir artifacts
 
-      - name: Upload installers to GitHub Release
+      - name: Prepare release inventory
+        id: release-context
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -113,6 +119,7 @@ jobs:
 
           TAG="$RELEASE_TAG"
           REPO="${{ github.repository }}"
+          SOURCE_COMMIT="$(git rev-parse HEAD)"
 
           case "$TAG" in
             kicad-mcp-gui-v*) ;;
@@ -122,16 +129,21 @@ jobs:
               ;;
           esac
 
+          tag_commit="$(git rev-parse "${TAG}^{commit}" 2>/dev/null || true)"
+          if [ -z "$tag_commit" ]; then
+            echo "::error::GUI release tag must already exist: $TAG"
+            exit 1
+          fi
+          if [ "$tag_commit" != "$SOURCE_COMMIT" ]; then
+            echo "::error::Checked-out source commit does not match $TAG"
+            exit 1
+          fi
+
           if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            echo "Release $TAG does not exist yet, creating..."
-            gh release create "$TAG" --repo "$REPO" \
-              --title "$TAG" \
-              --target "$GITHUB_SHA" \
-              --generate-notes
+            gh release create "$TAG" --repo "$REPO" --verify-tag --title "$TAG" --generate-notes
           fi
 
           mkdir -p release-assets
-
           mapfile -d '' installers < <(
             find artifacts -type f \( \
               -name '*.deb' -o \
@@ -154,16 +166,69 @@ jobs:
               *linux-tauri*|*linux*) os="linux" ;;
               *windows-tauri*|*windows*) os="windows" ;;
               *macos-tauri*|*macos*|*darwin*) os="macos" ;;
-              *) os="other" ;;
+              *)
+                echo "::error::Could not classify installer platform: $f"
+                exit 1
+                ;;
             esac
 
             base="$(basename "$f" | tr ' ' '-')"
             target="release-assets/${os}_${base}"
+            if [ -e "$target" ]; then
+              echo "::error::Duplicate normalized installer name: $target"
+              exit 1
+            fi
             cp "$f" "$target"
             echo "Prepared ($os): $target"
           done
 
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "source_commit=$SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
+
+      - name: Generate GUI release evidence
+        run: |
+          python3 scripts/generate_gui_release_evidence.py generate \
+            --artifact-dir release-assets \
+            --output-dir release-evidence/gui \
+            --cargo-lock src-tauri/Cargo.lock \
+            --source-commit "${{ steps.release-context.outputs.source_commit }}" \
+            --release-tag "${{ steps.release-context.outputs.tag }}"
+
+      - name: Verify GUI release evidence before publication
+        run: |
+          python3 scripts/generate_gui_release_evidence.py verify-local \
+            --artifact-dir release-assets \
+            --evidence-dir release-evidence/gui
+
+      - name: Attest GUI installers
+        id: attest-gui
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26
+        with:
+          subject-checksums: release-evidence/gui/kicad-mcp-pro-gui-SHA256SUMS.txt
+          sbom-path: release-evidence/gui/kicad-mcp-pro-gui-sbom.cdx.json
+
+      - name: Upload installers and evidence to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release-context.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cp release-evidence/gui/* release-assets/
           ls -lh release-assets
           gh release upload "$TAG" release-assets/* --repo "$REPO" --clobber
 
-          echo "::notice::Installers uploaded to $REPO/releases/tag/$TAG"
+      - name: Verify published GUI release inventory
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release-context.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          rm -rf published-assets
+          mkdir -p published-assets
+          gh release download "$TAG" --repo "$REPO" --dir published-assets --clobber
+          python3 scripts/generate_gui_release_evidence.py verify-published \
+            --published-dir published-assets \
+            --evidence published-assets/kicad-mcp-pro-gui-release-evidence.json
+          echo "::notice::GUI release inventory verified for $REPO/releases/tag/$TAG"
