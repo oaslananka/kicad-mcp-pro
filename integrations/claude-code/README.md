@@ -14,6 +14,16 @@ Or manually:
 claude mcp add --transport stdio --scope project kicad -- uvx kicad-mcp-pro
 ```
 
+The generated configuration starts in bounded read-only mode. For a trusted project where PCB/schematic edits are intended, generate the supported write-mode configuration explicitly:
+
+```bash
+kicad-mcp-pro setup claude-code --mode write --write --scope project
+```
+
+Write mode uses the bounded `build` profile. It includes transaction controls plus targeted PCB inspection/removal and DRC verification so an agent does not need to rewrite KiCad files with ad-hoc shell or Python commands. If a required MCP tool is outside the active profile, switch profiles/modes explicitly rather than using raw `.kicad_pcb` / `.kicad_sch` text mutation as a fallback.
+
+Claude Code can still ask for approval when the agent actually invokes Bash or another local command; those shell permission prompts are enforced by Claude Code itself and are separate from KiCad MCP Pro's MCP tool surface.
+
 ## Remote Cloud
 
 ```bash

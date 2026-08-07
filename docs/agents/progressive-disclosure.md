@@ -8,7 +8,7 @@ KiCad MCP Pro defaults to a bounded tool surface so general-purpose agents do no
 |---|---|---:|---|
 | `default` | `readonly` | 24 | Safe general-agent review and next-action discovery |
 | `review` | `readonly` | 24 | Explicit read-only DRC, ERC, DFM, visual QA, and component-contract review |
-| `build` | `write` | 24 | Plan, preview, apply, verify, rollback, PCB transaction, and checkpoint workflows |
+| `build` | `write` | 24 | Plan/apply/verify workflows plus bounded PCB inspect/remove/DRC operations |
 | `release` | `manufacturing` | 24 | Validation and human-gated manufacturing package generation |
 | `expert` | `experimental` | 377 | Complete catalog for trusted advanced clients |
 
@@ -44,7 +44,7 @@ The profile controls discovery. The operating mode is an independent execution-r
 The review profile contains only `READ`-tier capabilities. The eight `review-profile`-tagged golden cases retain 100% expected-tool coverage while exposing none of the destructive tools explicitly forbidden by those cases. The broader tool-selection corpus also covers build, mutation, export, publish, confirmation, and refusal behavior and is not expected to fit inside the review surface.
 Category discovery is profile-aware: hidden categories and lower-level tool names are not returned by the discovery tools until the server starts with a profile that allows them.
 
-The build profile exposes workflow-level operations instead of the unrestricted low-level mutation catalog. Schematic work is bounded by `plan`, `preview`, `apply`, `verify`, and `rollback`. PCB work is bounded by begin, push, drop, and revert transaction operations. Direct destructive helpers such as bulk deletion are not part of the profile.
+The build profile exposes workflow-level operations instead of the unrestricted low-level mutation catalog. Schematic work is bounded by `plan`, `preview`, `apply`, `verify`, and `rollback`. For PCB correction, it adds only the focused `pcb_get_tracks`, `pcb_get_vias`, `pcb_delete_items`, `pcb_delete_object`, and `run_drc` path alongside begin, push, drop, and revert transaction controls. Broad placement, routing, copper, and direct-file mutation helpers remain outside this bounded profile. This is intentional: an agent that needs a different MCP capability must request a supported broader profile rather than falling back to ad-hoc `.kicad_pcb` or `.kicad_sch` text rewriting.
 
 The release profile exposes validation, board statistics, checkpoint inspection, and `export_manufacturing_package`. The final manufacturing package remains `HUMAN_ONLY` and requires explicit human confirmation.
 

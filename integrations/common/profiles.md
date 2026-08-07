@@ -10,7 +10,7 @@
 - Direct KiCad CLI access
 - Bounded 24-tool review surface by default
 - ERC/DRC/DFM, visual QA, component-contract checks, and next-action discovery
-- Explicit `build`, `release`, or `expert` opt-in for broader workflows
+- Explicit `build`, `release`, or `expert` opt-in for broader workflows; `build` stays bounded while adding targeted PCB inspect/remove/DRC operations
 - Write and manufacturing tools remain mode-gated
 
 **Default mode/profile:** `readonly` / `default` (24 tools)

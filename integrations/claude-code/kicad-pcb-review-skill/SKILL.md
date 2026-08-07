@@ -18,8 +18,11 @@ Use this skill for KiCad projects, schematic review, PCB layout review, DRC/ERC,
 
 3. **For design changes:**
    - Explain proposed change
+   - Use `kicad_set_project` to select the KiCad project instead of shell `cd` when possible
    - Use dry-run if available
    - Ask for confirmation before destructive/write tools
+   - Prefer dedicated MCP operations over Bash/Python file rewriting; use `pcb_delete_items` / `pcb_delete_object` for PCB object removal and `run_drc` for DRC verification
+   - If the required MCP operation is not visible in the active profile/mode, stop and state which supported profile/mode is required. Do not silently fall back to `sed`, regex-based Python, or direct `.kicad_pcb` / `.kicad_sch` mutation
 
 4. **After any edit:**
    - Run ERC
@@ -48,7 +51,7 @@ Use this skill for KiCad projects, schematic review, PCB layout review, DRC/ERC,
 
 **Write only when requested:**
 - Schematic add/edit tools
-- PCB add/edit tools
+- PCB add/edit tools, including `pcb_delete_items` and `pcb_delete_object` for removal
 - Route tools
 - Export/release tools
 

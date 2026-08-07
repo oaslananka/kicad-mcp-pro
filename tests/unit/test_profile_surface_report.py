@@ -26,9 +26,11 @@ def test_bounded_surfaces_reduce_catalog_pressure_and_preserve_review_contract(
     assert isinstance(data, dict)
     default = data["default"]
     review = data["review"]
+    build = data["build"]
     expert = data["expert"]
     assert isinstance(default, dict)
     assert isinstance(review, dict)
+    assert isinstance(build, dict)
     assert isinstance(expert, dict)
 
     assert default["callableTools"] == 24
@@ -37,6 +39,9 @@ def test_bounded_surfaces_reduce_catalog_pressure_and_preserve_review_contract(
     assert review["profileTaggedCasesCovered"] == 8
     assert review["profileTaggedCoveragePct"] == 100.0
     assert review["forbiddenToolExposures"] == 0
+    assert build["profileTaggedCases"] == 4
+    assert build["profileTaggedCasesCovered"] == 4
+    assert build["profileTaggedCoveragePct"] == 100.0
     assert expert["goldenToolCallCases"] == 55
     assert expert["goldenCasesCovered"] == 55
     assert expert["goldenCoveragePct"] == 100.0

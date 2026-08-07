@@ -59,12 +59,26 @@ def test_build_profile_enforces_transactional_workflows() -> None:
         "sch_verify_plan",
         "sch_rollback_plan",
     }.issubset(surfaced)
-    assert {"pcb_begin_commit", "pcb_push_commit", "pcb_drop_commit", "pcb_revert"}.issubset(
-        surfaced
-    )
+    assert {
+        "pcb_get_tracks",
+        "pcb_get_vias",
+        "pcb_begin_commit",
+        "pcb_delete_items",
+        "pcb_delete_object",
+        "pcb_push_commit",
+        "pcb_drop_commit",
+        "pcb_revert",
+        "run_drc",
+    }.issubset(surfaced)
     assert {"vcs_commit_checkpoint", "vcs_diff_with_checkpoint"}.issubset(surfaced)
-    assert "pcb_delete_items" not in surfaced
-    assert "sch_delete_symbol" not in surfaced
+    assert {
+        "pcb_add_track",
+        "pcb_add_via",
+        "pcb_add_zone",
+        "pcb_move_footprint",
+        "pcb_refill_zones",
+        "sch_delete_symbol",
+    }.isdisjoint(surfaced)
 
 
 def test_release_profile_keeps_human_gated_export_boundary() -> None:
