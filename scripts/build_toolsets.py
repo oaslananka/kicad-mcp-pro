@@ -47,7 +47,10 @@ TOOLSETS: dict[str, tuple[str, str, str, bool]] = {
     "build": (
         "build",
         "write",
-        "Plan, preview, apply, verify, rollback, and checkpoint workflows for trusted projects.",
+        (
+            "Plan/apply/verify workflows plus bounded PCB inspect/remove/DRC operations "
+            "for trusted projects."
+        ),
         False,
     ),
     "release": (

@@ -34,6 +34,7 @@ cases:
   - pcb_get_tracks
   max_calls: 2
   tags:
+  - build-profile
   - board
   - routing
   - read-only
@@ -48,6 +49,7 @@ cases:
   - pcb_get_vias
   max_calls: 2
   tags:
+  - build-profile
   - board
   - vias
   - read-only
@@ -228,6 +230,7 @@ cases:
   - run_drc
   max_calls: 2
   tags:
+  - build-profile
   - validation
   - drc
   - read-only
@@ -575,6 +578,7 @@ cases:
   - pcb_delete_items
   max_calls: 2
   tags:
+  - build-profile
   - live-smoke
   - board
   - mutation
