@@ -51,6 +51,7 @@ This file consolidates evidence for OpenSSF Best Practices and Scorecard-style r
 | Dangerous-Workflow | Passed / Partial | Workflow security checks and no `pull_request_target` evidence in audit. |
 | SAST | Passed | CodeQL, Bandit, Ruff, mypy. |
 | Fuzzing | Passed | Fuzz workflow and target exist. |
+| Signed-Releases | Partial / accepted detector exception | Scorecard v5.0.0 reports 0 because its sampled GitHub-release detector does not consume the repository's verified PyPI/npm/GitHub/OCI provenance channels directly. Artifact-class verification and the remaining historical/GUI gaps are recorded in `docs/evidence/scorecard-signed-releases-verification-2026-08-07.json` and `docs/security/scorecard-exceptions.md`; GUI follow-up remains #573. |
 
 ## Evidence maintenance
 
