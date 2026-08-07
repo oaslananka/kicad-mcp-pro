@@ -7,6 +7,7 @@ This page records OpenSSF Scorecard findings that are not immediate code vulnera
 | Check | Current status | Rationale | Remediation path |
 | --- | --- | --- | --- |
 | CI-Tests | Accepted upstream false positive | OpenSSF Scorecard v5.0.0 continued to report 0/30 after receiving the required read-only metadata scopes. A checksum-verified reproduction identified the exact 30 pull-request HEAD SHAs, and direct GitHub REST verification found completed, successful `github-actions` CheckRuns on 30/30 of them. | Keep the protected operating-system matrices, `CI Tests / Coverage`, and `Required PR Gate`. A long-lived PAT must not be added solely to satisfy this low-severity heuristic. Re-evaluate after an upstream Scorecard client or Action update. Evidence: `docs/evidence/scorecard-ci-tests-rest-verification-2026-07-21.json`. |
+| Signed-Releases | Accepted detector-visibility exception with artifact-specific follow-up | A checksum-verified OpenSSF Scorecard v5.0.0 reproduction on `26681ed` reports 0/10 because the check only recognizes a small set of signature/provenance **release-asset filenames**. Live verification still succeeds for PyPI PEP 740 provenance, npm/protocol registry attestations, MCPB GitHub SLSA provenance, and the keyless-cosign GHCR image. Historical GitHub attestation gaps remain for Python/npm/protocol release files, and GUI release evidence remains tracked by #573. | Keep ecosystem-native keyless provenance/signing and fix real artifact-class gaps in their owning release work. Do not add a long-lived signing key or duplicate provenance solely for the heuristic. Re-evaluate after a Scorecard upgrade, detector behavior change, or the next post-#586 GUI release evidence. Evidence: `docs/evidence/scorecard-signed-releases-verification-2026-08-07.json`. |
 | Branch-Protection | Accepted temporary exception | `main` is protected by a GitHub ruleset that blocks deletion and force-pushes, requires pull requests, requires linear history, requires CI/CodeQL/Gitleaks checks, and requires resolved review threads. Required human approval, code-owner review, and last-push approval are intentionally not enabled while the repository has a single trusted maintainer because doing so can block routine maintenance and security fixes. | Enable required approvals, code-owner review, and last-push approval after adding a second trusted maintainer with verified signing and review availability. |
 | Code-Review | Accepted temporary exception | Recent changes are single-maintainer changes. Bot review and automated analysis are not a substitute for independent human review, so Scorecard correctly cannot award full credit yet. | Recruit at least one additional trusted maintainer and require independent human review for protected-branch merges. |
 | Maintained | Accepted time-based exception | The repository is new, and Scorecard intentionally treats projects younger than 90 days as too new to assess long-term maintenance. | Re-run Scorecard after the repository has more than 90 days of public history and weekly maintenance activity. |
@@ -82,3 +83,52 @@ following remain true:
 
 Re-open the investigation after a Scorecard Action/client upgrade, a change to
 GitHub token behavior, or any modification to the required-check ruleset.
+
+## Signed-Releases detection contract
+
+The 2026-08-07 investigation reproduced `Signed-Releases: 0/10` with the
+checksum-verified OpenSSF Scorecard v5.0.0 binary (`ea7e27ed`) against repository
+commit `26681ed`. The same repository commit was also analyzed successfully by
+the pinned Scorecard Action run recorded in the evidence file.
+
+Scorecard v5.0.0 samples at most five GitHub releases with assets. Its
+`releasesAreSigned` probe recognizes `.asc`, `.minisig`, `.sig`, `.sign`, and
+`.sigstore` asset suffixes, while `releasesHaveProvenance` recognizes only
+`.intoto.jsonl`. The v5.0.0 source contains a separate verified-package-provenance
+probe, but that probe is not wired into the `Signed-Releases` probe set for this
+version. Consequently, keyless provenance stored in the GitHub Attestations API,
+PyPI/npm registries, or an OCI registry is not enough to make this heuristic pass
+unless a recognized evidence file is also attached to one of the sampled GitHub
+releases.
+
+The repository does have independently verified release evidence:
+
+- PyPI 3.30.1 wheel and sdist checksums match the release assets, and their PEP
+  740 provenance verifies cryptographically against the expected GitHub Trusted
+  Publisher identity. The same historical files are not present in the GitHub
+  Attestations API, so that gap is recorded rather than hidden.
+- npm `kicad-mcp-pro@3.30.1` and protocol schemas `1.4.0` have verified registry
+  signatures and SLSA provenance attestations. Their historical GitHub release
+  tarballs likewise have no GitHub Artifact Attestation record.
+- `kicad-mcp-pro-3.30.1.mcpb` has verified GitHub SLSA provenance bound to the
+  canonical `publish-mcpb.yml` workflow and Rekor transparency log.
+- `ghcr.io/oaslananka/kicad-mcp-pro:3.30.1` resolves to the recorded digest,
+  contains BuildKit attestation manifests for both target architectures, and its
+  digest verifies with the keyless Cosign identity for `publish-mcp-container.yml`.
+- GUI 3.30.1 predates the desktop evidence implementation merged in PR #586;
+  the required post-implementation release evidence remains owned by issue #573
+  and is not duplicated here.
+
+Machine-readable evidence, exact release/tag inventory, detector source links,
+verifier versions, digests, and re-evaluation triggers are recorded in:
+
+- `docs/evidence/scorecard-signed-releases-verification-2026-08-07.json`
+
+### Signed-Releases risk decision
+
+Do not introduce a long-lived signing credential or weaken the existing
+ecosystem-native verification model solely to increase this heuristic score.
+Re-open the investigation when the pinned Scorecard Action/CLI changes, when the
+`Signed-Releases` detector starts consuming verified registry or GitHub
+attestation provenance directly, when #573 produces post-PR-586 GUI release
+evidence, or when the repository materially changes its release evidence model.

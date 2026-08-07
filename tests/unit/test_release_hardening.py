@@ -871,6 +871,48 @@ def test_scorecard_ci_tests_false_positive_has_auditable_evidence() -> None:
     assert "history is replaced" not in exceptions
 
 
+def test_scorecard_signed_releases_exception_has_artifact_class_evidence() -> None:
+    repo = _repo_root()
+    evidence_path = (
+        repo / "docs" / "evidence" / "scorecard-signed-releases-verification-2026-08-07.json"
+    )
+    assert evidence_path.exists(), "Signed-Releases exception requires checked-in evidence"
+
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    scorecard = evidence["scorecard"]
+    detector = evidence["detector"]
+    artifacts = evidence["artifactClasses"]
+    decision = evidence["decision"]
+
+    assert scorecard["version"] == "v5.0.0"
+    assert scorecard["commit"] == "ea7e27ed41b76ab879c862fa0ca4cc9c61764ee4"
+    assert scorecard["reproduction"]["check"] == "Signed-Releases"
+    assert scorecard["reproduction"]["score"] == 0
+    assert scorecard["reproduction"]["result"] == "reproduced"
+    assert len(scorecard["reproduction"]["debugFindings"]) == 10
+    assert len(scorecard["evaluatedReleases"]) == detector["releaseLookback"] == 5
+    assert detector["verifiedPackageProvenanceProbePresent"] is True
+    assert detector["verifiedPackageProvenanceProbeWiredToSignedReleases"] is False
+
+    assert artifacts["python"]["pypiPep740Provenance"] == "cryptographically-verified"
+    assert artifacts["npm"]["registryAttestation"] == "verified-by-npm-audit-signatures"
+    assert artifacts["protocolSchemas"]["registryAttestation"] == "verified-by-npm-audit-signatures"
+    assert artifacts["mcpb"]["githubArtifactAttestation"] == "verified"
+    assert artifacts["container"]["cosignSignature"] == "verified"
+    assert artifacts["gui"]["trackingIssue"].endswith("/issues/573")
+    assert artifacts["gui"]["releaseEvidenceStatus"].startswith("pending-")
+    assert decision["noLongLivedSigningCredentialIntroduced"] is True
+    assert len(decision["reevaluateWhen"]) >= 3
+
+    exceptions = (repo / "docs" / "security" / "scorecard-exceptions.md").read_text(
+        encoding="utf-8"
+    )
+    assert "| Signed-Releases | Accepted detector-visibility exception" in exceptions
+    assert "#573" in exceptions
+    assert "long-lived signing credential" in exceptions
+    assert "must not" not in exceptions.lower() or "must not be added" in exceptions.lower()
+
+
 def test_version_synchronization_across_release_manifests() -> None:
     repo = _repo_root()
     root = Path(__file__).resolve().parents[2]

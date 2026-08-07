@@ -43,7 +43,7 @@ Silver has been achieved for OpenSSF Best Practices project `13377`. Baseline Le
 | Strict warnings | Met | Ruff, mypy, TypeScript, CodeQL, security jobs, workflow checks |
 | Secure design implementation | Met | [`docs/security/requirements.md`](security/requirements.md), [`docs/security/assurance-case.md`](security/assurance-case.md) |
 | Crypto requirements | N/A where custom crypto is absent; Met for release verification | [`docs/security/release-signing.md`](security/release-signing.md), [`docs/security/release-integrity.md`](security/release-integrity.md) |
-| Signed releases | Met | Sigstore/GitHub attestations, npm provenance, cosign-signed container images, checksums, SBOMs |
+| Signed releases | Met / Partial by artifact class | Verified PyPI PEP 740 provenance, npm/protocol registry attestations, MCPB GitHub provenance, and keyless-cosign container signatures; historical GitHub-attestation gaps and GUI follow-up are explicitly recorded in [`docs/evidence/scorecard-signed-releases-verification-2026-08-07.json`](evidence/scorecard-signed-releases-verification-2026-08-07.json) and [`docs/security/scorecard-exceptions.md`](security/scorecard-exceptions.md). |
 | Input validation | Met | [`docs/security/input-validation.md`](security/input-validation.md) |
 | Hardening | Met / partial | Workflow hardening, pinned Actions, digest-pinned containers, minimal permissions, Scorecard exceptions |
 | Assurance case | Met | [`docs/security/assurance-case.md`](security/assurance-case.md) |
