@@ -106,6 +106,27 @@ cosign verify \
 The Docker workflow publishes BuildKit provenance and SBOM attestations only
 when the image is pushed.
 
+## GUI installer integrity
+
+The Tauri GUI release workflow builds the Linux, Windows, and macOS installers from the exact `kicad-mcp-gui-v*` tag commit and publishes three evidence files with the installers:
+
+```text
+kicad-mcp-pro-gui-SHA256SUMS.txt
+kicad-mcp-pro-gui-sbom.cdx.json
+kicad-mcp-pro-gui-release-evidence.json
+```
+
+The evidence JSON records the source commit, release tag, normalized installer inventory, platform classification, size, SHA-256 digest, and the actual platform-signing status. The CycloneDX 1.6 SBOM is generated deterministically from the committed `src-tauri/Cargo.lock`. Before publication the workflow verifies the installer directory against the generated evidence; after upload it downloads the GitHub Release assets and requires the published inventory and installer digests to match exactly.
+
+Verify a downloaded GUI installer with the published checksum file and GitHub attestation:
+
+```bash
+sha256sum --check kicad-mcp-pro-gui-SHA256SUMS.txt
+gh attestation verify <installer-file> --repo oaslananka/kicad-mcp-pro
+```
+
+The GitHub attestation proves CI/source provenance for the installer digest; it is not a substitute for platform code signing. Windows Authenticode, Apple code signing/notarization, and Linux package signing remain separately reported and must not be inferred from the GitHub attestation.
+
 ## PyPI Trusted Publishing
 
 The Python workflow uses short-lived GitHub OIDC credentials and PyPI Trusted

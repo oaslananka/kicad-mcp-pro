@@ -30,7 +30,7 @@ The normal release path is documented in [`../release-process.md`](../release-pr
 | npm wrapper `kicad-mcp-pro` | `.github/workflows/publish-npm.yml` | npm tarball, SHA256 checksums, SBOM, provenance, post-publish digest verification |
 | Protocol schemas npm package | `.github/workflows/publish-protocol-schemas.yml` | npm tarball, SHA256 checksums, SBOM, provenance, post-publish digest verification |
 | Docker image | `.github/workflows/publish-mcp-container.yml` | multi-arch image, labels, SBOM/provenance from buildx, Trivy scan, GHCR digest |
-| Tauri GUI installers | `.github/workflows/gui-release.yml` | platform installer bundles attached to the matching GUI release |
+| Tauri GUI installers | `.github/workflows/gui-release.yml` | Linux/Windows/macOS installer inventory, SHA256 checksums, Cargo-lock CycloneDX SBOM, GitHub artifact attestation, and exact post-publish asset verification |
 | MCP Registry manifest | `.github/workflows/publish-mcp-registry.yml` | manifest validation, package availability verification, registry publish step |
 
 ## Required controls

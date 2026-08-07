@@ -54,7 +54,10 @@
     },
     "gui-release.yml": {
       "create-release": [
-        "contents"
+        "artifact-metadata",
+        "attestations",
+        "contents",
+        "id-token"
       ]
     },
     "publish-mcp-container.yml": {
