@@ -23,6 +23,8 @@ OPENCODE_ZEN_FREE_MODELS = frozenset(
         "nemotron-3-ultra-free",
     }
 )
+OPENCODE_ZEN_PAID_MODELS = frozenset({"minimax-m3"})
+OPENCODE_ZEN_CHAT_MODELS = OPENCODE_ZEN_FREE_MODELS | OPENCODE_ZEN_PAID_MODELS
 
 
 def request_opencode_zen(
@@ -35,9 +37,9 @@ def request_opencode_zen(
     transport: httpx.BaseTransport | None = None,
     structured_output: StructuredOutputMode = "none",
 ) -> dict[str, object]:
-    """Invoke one reviewed free Zen model without retaining provider payloads."""
-    if model not in OPENCODE_ZEN_FREE_MODELS:
-        raise ValueError("Model is not a reviewed OpenCode Zen free model.")
+    """Invoke one reviewed Zen chat model without retaining provider payloads."""
+    if model not in OPENCODE_ZEN_CHAT_MODELS:
+        raise ValueError("Model is not a reviewed OpenCode Zen chat model.")
     return request_openai_compatible_chat(
         endpoint=OPENCODE_ZEN_CHAT_COMPLETIONS_URL,
         model=model,
@@ -52,6 +54,8 @@ def request_opencode_zen(
 
 __all__ = [
     "OPENCODE_ZEN_CHAT_COMPLETIONS_URL",
+    "OPENCODE_ZEN_CHAT_MODELS",
     "OPENCODE_ZEN_FREE_MODELS",
+    "OPENCODE_ZEN_PAID_MODELS",
     "request_opencode_zen",
 ]

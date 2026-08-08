@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Adapt reviewed OpenCode Zen free models to the sanitized live-eval contract."""
+"""Adapt reviewed OpenCode Zen chat models to the sanitized live-eval contract."""
 
 from __future__ import annotations
 

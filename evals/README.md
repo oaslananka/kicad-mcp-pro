@@ -279,6 +279,16 @@ six cases after bounded retries. The candidate-specific increase preserves a fiv
 cleanup margin and does not change retry count, pacing, corpus, thresholds, required
 configuration policy, or baseline state.
 
+A paid OpenCode Zen `minimax-m3` record is versioned as a manual, nonblocking
+replacement candidate. It uses the same sanitized OpenAI-compatible chat adapter and
+MiniMax non-thinking request profile as the NVIDIA-hosted record, while routing through
+the existing protected `OPENCODE_ZEN_API_KEY`. The configuration declares a $1
+accounting ceiling alongside strict case, retry, token, and subprocess bounds; that
+ceiling is enforced only when the endpoint reports cost telemetry. Promotion therefore
+also requires review of the protected run and provider billing. It cannot enter the
+blocking matrix until protected smoke and
+three independent full-corpus runs on one exact revision are complete and clean.
+
 Six OpenCode Zen free-model records are also versioned for manual experimental
 comparison: `deepseek-v4-flash-free`, `mimo-v2.5-free`, `laguna-s-2.1-free`,
 `ling-3.0-flash-free`, `north-mini-code-free`, and `nemotron-3-ultra-free`. They use
