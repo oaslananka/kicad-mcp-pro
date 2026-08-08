@@ -104,6 +104,21 @@ configurations:
       max_total_tokens: 3000000
       max_total_cost_micros: 0
 
+  - id: opencode-minimax-m3
+    host: opencode-zen
+    model: minimax-m3
+    adapter: subprocess
+    command: [python, scripts/opencode_zen_eval_adapter.py, --model, minimax-m3, --timeout-seconds, "90", --structured-output, none]
+    required_env: [OPENCODE_ZEN_API_KEY]
+    limits:
+      timeout_seconds: 95
+      min_request_interval_seconds: 5
+      max_retries: 2
+      max_cases: 325
+      max_total_tool_calls: 1000
+      max_total_tokens: 3000000
+      max_total_cost_micros: 1000000
+
   - id: opencode-deepseek-v4-flash-free
     host: opencode-zen
     model: deepseek-v4-flash-free

@@ -11,6 +11,7 @@ import scripts.opencode_zen_eval_adapter as opencode_cli
 from kicad_mcp.evals.opencode_zen_adapter import (
     OPENCODE_ZEN_CHAT_COMPLETIONS_URL,
     OPENCODE_ZEN_FREE_MODELS,
+    OPENCODE_ZEN_PAID_MODELS,
     request_opencode_zen,
 )
 
@@ -70,8 +71,39 @@ def test_opencode_free_model_allowlist_matches_reviewed_experimental_set() -> No
     )
 
 
+def test_opencode_paid_model_allowlist_includes_minimax_m3() -> None:
+    assert OPENCODE_ZEN_PAID_MODELS == frozenset({"minimax-m3"})
+
+
+def test_opencode_paid_minimax_uses_reviewed_non_thinking_profile() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["model"] == "minimax-m3"
+        assert payload["chat_template_kwargs"] == {"thinking_mode": "disabled"}
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"content": '{"response_kind":"answer","called_tools":[]}'}}
+                ],
+                "usage": {"prompt_tokens": 20, "completion_tokens": 5},
+            },
+        )
+
+    result = request_opencode_zen(
+        model="minimax-m3",
+        prompt="Explain the design.",
+        api_key="placeholder-key",
+        catalog=(),
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert result["status"] == "ok"
+    assert result["response_kind"] == "answer"
+
+
 def test_opencode_request_rejects_unreviewed_model_before_network() -> None:
-    with pytest.raises(ValueError, match="reviewed OpenCode Zen free model"):
+    with pytest.raises(ValueError, match="reviewed OpenCode Zen chat model"):
         request_opencode_zen(
             model="big-pickle",
             prompt="Inspect.",

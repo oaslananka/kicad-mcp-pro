@@ -1108,6 +1108,28 @@ def test_committed_opencode_cli_blocking_record_is_key_scoped() -> None:
     )
 
 
+def test_committed_paid_opencode_minimax_candidate_is_nonblocking_and_bounded() -> None:
+    configurations = load_configurations(COMMITTED_LIVE_CONFIG)
+    configuration = configurations["opencode-minimax-m3"]
+
+    assert configuration.host == "opencode-zen"
+    assert configuration.model == "minimax-m3"
+    assert configuration.required_env == ("OPENCODE_ZEN_API_KEY",)
+    assert configuration.command == (
+        "python",
+        "scripts/opencode_zen_eval_adapter.py",
+        "--model",
+        "minimax-m3",
+        "--timeout-seconds",
+        "90",
+        "--structured-output",
+        "none",
+    )
+    assert configuration.limits.timeout_seconds == 95
+    assert configuration.limits.min_request_interval_seconds == 5
+    assert configuration.limits.max_total_cost_micros == 1_000_000
+
+
 def test_committed_opencode_configurations_are_experimental_and_key_scoped() -> None:
     configurations = load_configurations(COMMITTED_LIVE_CONFIG)
     expected = {
