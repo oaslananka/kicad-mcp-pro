@@ -400,6 +400,10 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     assert "fail-fast: false" in benchmark_block
     assert "needs: [smoke, benchmark]" in aggregate_block
     assert "if: ${{ always() && needs.smoke.result == 'success' }}" in aggregate_block
+    assert workflow.count("name: Cool down shared NVIDIA trial endpoint") == 2
+    assert workflow.count("if: matrix.configuration == 'nvidia-minimax-m3'") == 2
+    assert workflow.count('NVIDIA_SHARED_COOLDOWN_SECONDS: "420"') == 2
+    assert workflow.count('sleep "$NVIDIA_SHARED_COOLDOWN_SECONDS"') == 2
     assert "timeout-minutes: 50" in workflow
     assert "--case-tag live-smoke" in workflow
     assert "--repeats 1" in workflow
