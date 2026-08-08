@@ -61,6 +61,14 @@ jobs:
           set -euo pipefail
           npm install --global --no-audit --no-fund "opencode-ai@$OPENCODE_CLI_VERSION"
           test "$(opencode --version)" = "$OPENCODE_CLI_VERSION"
+      - name: Cool down shared NVIDIA trial endpoint
+        if: matrix.configuration == 'nvidia-minimax-m3'
+        env:
+          NVIDIA_SHARED_COOLDOWN_SECONDS: "420"
+        run: |
+          set -euo pipefail
+          echo "Cooling down the shared NVIDIA trial endpoint before ${{ matrix.configuration }}."
+          sleep "$NVIDIA_SHARED_COOLDOWN_SECONDS"
       - name: Run bounded live smoke
         env:
           CONFIGURATION_ID: ${{ matrix.configuration }}
@@ -173,6 +181,14 @@ jobs:
           set -euo pipefail
           npm install --global --no-audit --no-fund "opencode-ai@$OPENCODE_CLI_VERSION"
           test "$(opencode --version)" = "$OPENCODE_CLI_VERSION"
+      - name: Cool down shared NVIDIA trial endpoint
+        if: matrix.configuration == 'nvidia-minimax-m3'
+        env:
+          NVIDIA_SHARED_COOLDOWN_SECONDS: "420"
+        run: |
+          set -euo pipefail
+          echo "Cooling down the shared NVIDIA trial endpoint before ${{ matrix.configuration }}."
+          sleep "$NVIDIA_SHARED_COOLDOWN_SECONDS"
       - name: Run bounded live benchmark
         env:
           CONFIGURATION_ID: ${{ matrix.configuration }}
