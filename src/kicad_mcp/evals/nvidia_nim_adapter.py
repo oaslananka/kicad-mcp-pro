@@ -405,12 +405,21 @@ def build_chat_payload(
         "include explanations or additional keys.\nTOOL_CATALOG="
         + json.dumps(catalog_values, separators=(",", ":"), ensure_ascii=False)
     )
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": prompt},
+    ]
+    if model == _MISTRAL_MEDIUM_MODEL:
+        messages = [
+            {
+                "role": "user",
+                "content": f"{system}\nUSER_REQUEST:\n{prompt}",
+            }
+        ]
+
     payload: dict[str, Any] = {
         "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-        ],
+        "messages": messages,
         "temperature": 0,
         "top_p": 1,
         "max_tokens": 256,

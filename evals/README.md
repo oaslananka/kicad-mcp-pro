@@ -321,7 +321,10 @@ endpoint attempt. Earlier
 direct `response_format` and synthetic function-call experiments were removed after
 each produced zero valid smoke observations. Nemotron and Gemma thinking are
 disabled with `chat_template_kwargs.enable_thinking: false`; Mistral reasoning is
-disabled with `reasoning_effort: none`; MiniMax thinking is disabled with
+disabled with `reasoning_effort: none`. The hosted Mistral endpoint accepts only
+`user` and `assistant` message roles, so its classifier policy and case request are
+kept in one `user` message separated by a `USER_REQUEST` marker rather than sending a
+`system` message. MiniMax thinking is disabled with
 `chat_template_kwargs.thinking_mode: disabled`. Explicit self-hosted integrations
 may select `guided_json`
 or `json_schema`, but the adapter never retries a rejected payload with a different

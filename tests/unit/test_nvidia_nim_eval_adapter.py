@@ -344,6 +344,20 @@ def test_hosted_model_profiles_disable_unneeded_reasoning() -> None:
     assert nemotron["chat_template_kwargs"] == {"enable_thinking": False}
 
 
+def test_mistral_hosted_payload_uses_supported_user_only_message_role() -> None:
+    payload = build_chat_payload(
+        model="mistralai/mistral-medium-3.5-128b",
+        prompt="Inspect the board.",
+        catalog=({"name": "pcb_get_board_summary", "summary": "Summarize the board."},),
+    )
+
+    messages = payload["messages"]
+    assert [message["role"] for message in messages] == ["user"]
+    content = messages[0]["content"]
+    assert "You are a tool-selection classifier for KiCad MCP Pro." in content
+    assert "USER_REQUEST:\nInspect the board." in content
+
+
 def test_nim_request_accepts_a_single_json_code_fence() -> None:
     result = request_nvidia_nim(
         model="nvidia/test-model",
