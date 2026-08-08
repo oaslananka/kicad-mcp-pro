@@ -43,7 +43,7 @@ Codecov is largely language-agnostic once a supported coverage report exists.
 The `python-full` flag currently covers `src/kicad_mcp/` because pytest-cov
 already produces Cobertura XML. TypeScript packages currently use
 compile-and-execute contract tests without an instrumented coverage producer,
-and the Tauri bridge currently runs `cargo check` rather than Rust coverage.
+and the Tauri bridge currently runs `cargo check` plus Rust contract tests rather than Rust coverage.
 They should not upload fabricated or partial coverage reports.
 
 ## Bundle analysis decision

@@ -92,6 +92,7 @@ date-released: "2026-07-10"
     monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(module, "_project_version", lambda: "3.26.0")
     monkeypatch.setattr(module, "_check_versions", lambda: [])
+    monkeypatch.setattr(module, "_check_desktop_backend_contract", lambda: [])
     monkeypatch.setattr(module, "_check_protocol_schema_version", lambda: [])
     monkeypatch.setattr(module, "_check_changelog", lambda version: [])
     monkeypatch.setattr(module, "validate_compatibility_matrix", lambda: [])
@@ -120,6 +121,78 @@ def test_release_preflight_tracks_tauri_bundle_version() -> None:
     }
     assert expected.issubset(versions)
     assert len({versions[source] for source in expected}) == 1
+
+
+def test_desktop_launcher_is_release_coupled_and_runs_contract_tests() -> None:
+    launcher = (ROOT / "src-tauri" / "src" / "lib.rs").read_text(encoding="utf-8")
+    gui_ci = (ROOT / ".github" / "workflows" / "gui-ci.yml").read_text(encoding="utf-8")
+
+    assert 'const DESKTOP_API_CONTRACT_VERSION: &str = "1.0.0";' in launcher
+    assert 'env!("CARGO_PKG_VERSION")' in launcher
+    assert "kicad-mcp-pro=={}" in launcher
+    assert "kicad-mcp-pro>=3.11.0" not in launcher
+    assert "kicad-mcp-pro@latest" not in launcher
+    assert '"desktopCompatibility"' in launcher
+    assert "run: cargo test --locked --lib" in gui_ci
+
+
+def test_release_preflight_detects_desktop_backend_contract_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("check_release_preflight.py")
+    python_dir = tmp_path / "src" / "kicad_mcp"
+    tauri_dir = tmp_path / "src-tauri" / "src"
+    python_dir.mkdir(parents=True)
+    tauri_dir.mkdir(parents=True)
+    (python_dir / "compatibility.py").write_text(
+        'DESKTOP_API_CONTRACT_VERSION: Final = "1.0.1"\n'
+        'DESKTOP_BACKEND_VERSION_POLICY: Final = "exact-release"\n',
+        encoding="utf-8",
+    )
+    (tauri_dir / "lib.rs").write_text(
+        'const DESKTOP_API_CONTRACT_VERSION: &str = "1.0.0";\n'
+        'const DESKTOP_BACKEND_VERSION_POLICY: &str = "exact-release";\n'
+        'format!("kicad-mcp-pro=={}", env!("CARGO_PKG_VERSION"));\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+
+    errors = module._check_desktop_backend_contract()
+
+    assert errors == ["desktop API contract drift detected: python=1.0.1, tauri=1.0.0"]
+
+
+def test_release_preflight_rejects_non_exact_desktop_backend_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("check_release_preflight.py")
+    python_dir = tmp_path / "src" / "kicad_mcp"
+    tauri_dir = tmp_path / "src-tauri" / "src"
+    python_dir.mkdir(parents=True)
+    tauri_dir.mkdir(parents=True)
+    (python_dir / "compatibility.py").write_text(
+        'DESKTOP_API_CONTRACT_VERSION: Final = "1.0.0"\n'
+        'DESKTOP_BACKEND_VERSION_POLICY: Final = "exact-release"\n',
+        encoding="utf-8",
+    )
+    (tauri_dir / "lib.rs").write_text(
+        'const DESKTOP_API_CONTRACT_VERSION: &str = "1.0.0";\n'
+        'const DESKTOP_BACKEND_VERSION_POLICY: &str = "exact-release";\n'
+        'const MIN_BACKEND_SPEC: &str = "kicad-mcp-pro>=3.11.0";\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+
+    errors = module._check_desktop_backend_contract()
+
+    assert errors == [
+        "desktop launcher must derive an exact kicad-mcp-pro==<GUI version> spec "
+        "from CARGO_PKG_VERSION"
+    ]
 
 
 def test_tauri_lockfile_is_tracked_and_workflows_use_locked_resolution() -> None:
@@ -241,6 +314,7 @@ def test_release_preflight_rejects_missing_tauri_lockfile(
     monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(module, "_project_version", lambda: "3.30.0")
     monkeypatch.setattr(module, "_check_versions", lambda: [])
+    monkeypatch.setattr(module, "_check_desktop_backend_contract", lambda: [])
     monkeypatch.setattr(module, "_check_protocol_schema_version", lambda: [])
     monkeypatch.setattr(module, "_check_citation", lambda version: [])
     monkeypatch.setattr(module, "_check_changelog", lambda version: [])

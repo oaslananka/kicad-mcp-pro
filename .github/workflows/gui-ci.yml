@@ -92,3 +92,6 @@ jobs:
       - name: Cargo check Tauri bridge
         working-directory: src-tauri
         run: cargo check --locked
+      - name: Test Tauri backend compatibility contract
+        working-directory: src-tauri
+        run: cargo test --locked --lib

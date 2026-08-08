@@ -20,6 +20,7 @@ from starlette.routing import Route
 
 from .. import __version__
 from ..cli_init import MCP_CLIENT_CONFIGS
+from ..compatibility import DESKTOP_API_CONTRACT_VERSION, DESKTOP_BACKEND_VERSION_POLICY
 from ..config import get_config, reset_config
 from ..diagnostics import build_health_report
 from ..discovery import find_kicad_version
@@ -282,6 +283,11 @@ async def api_health(request: Request) -> JSONResponse:
             "ok": report.ok,
             "status": report.status,
             "version": __version__,
+            "desktopCompatibility": {
+                "contractVersion": DESKTOP_API_CONTRACT_VERSION,
+                "backendVersion": __version__,
+                "versionPolicy": DESKTOP_BACKEND_VERSION_POLICY,
+            },
             "uptime": time.time() - get_start_time(),
         }
     )

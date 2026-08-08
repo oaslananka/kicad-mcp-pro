@@ -14,11 +14,14 @@ use std::os::windows::process::CommandExt;
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 
-/// Minimum kicad-mcp-pro version the GUI will launch via `uvx --from`.
-/// Bump this when the GUI requires a newer backend. The floor must stay at or
-/// above the first release whose `dashboard` command binds the HTTP transport
-/// (3.11.0); earlier cached builds started the stdio transport instead.
-const MIN_BACKEND_SPEC: &str = "kicad-mcp-pro>=3.11.0";
+/// Desktop/backend API contract negotiated through `/api/health`.
+/// This is intentionally independent from the MCP protocol version.
+const DESKTOP_API_CONTRACT_VERSION: &str = "1.0.0";
+const DESKTOP_BACKEND_VERSION_POLICY: &str = "exact-release";
+
+fn backend_package_spec() -> String {
+    format!("kicad-mcp-pro=={}", env!("CARGO_PKG_VERSION"))
+}
 
 /// How long to wait for the backend to bind and answer /api/health before
 /// giving up. First runs download the package and its dependencies via uvx,
@@ -57,25 +60,111 @@ fn server_addr(port: u16) -> String {
     format!("127.0.0.1:{port}")
 }
 
-fn check_health(port: u16) -> bool {
+#[derive(Debug, PartialEq, Eq)]
+enum BackendProbe {
+    Unreachable,
+    Compatible,
+    Incompatible(String),
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct BackendHealthPayload {
+    version: String,
+    #[serde(rename = "desktopCompatibility")]
+    desktop_compatibility: Option<DesktopCompatibilityPayload>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopCompatibilityPayload {
+    contract_version: String,
+    backend_version: String,
+    version_policy: String,
+}
+
+fn parse_health_response(response: &str) -> BackendProbe {
+    let (headers, body) = match response.split_once("\r\n\r\n") {
+        Some(parts) => parts,
+        None => {
+            return BackendProbe::Incompatible("the health response was not valid HTTP".to_string())
+        }
+    };
+    let status = headers
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1));
+    if status != Some("200") {
+        return BackendProbe::Incompatible(format!(
+            "the health endpoint returned HTTP {}",
+            status.unwrap_or("<missing>")
+        ));
+    }
+
+    let payload: BackendHealthPayload = match serde_json::from_str(body) {
+        Ok(value) => value,
+        Err(error) => {
+            return BackendProbe::Incompatible(format!(
+                "the health endpoint did not return the desktop compatibility contract: {error}"
+            ))
+        }
+    };
+    let compatibility = match payload.desktop_compatibility {
+        Some(value) => value,
+        None => {
+            return BackendProbe::Incompatible(
+                "the health endpoint omitted desktopCompatibility".to_string(),
+            )
+        }
+    };
+    let expected_version = env!("CARGO_PKG_VERSION");
+    if payload.version != expected_version || compatibility.backend_version != expected_version {
+        return BackendProbe::Incompatible(format!(
+            "found backend version {} (contract reports {}), expected {}",
+            payload.version, compatibility.backend_version, expected_version
+        ));
+    }
+    if compatibility.contract_version != DESKTOP_API_CONTRACT_VERSION {
+        return BackendProbe::Incompatible(format!(
+            "found desktop API contract {}, expected {}",
+            compatibility.contract_version, DESKTOP_API_CONTRACT_VERSION
+        ));
+    }
+    if compatibility.version_policy != DESKTOP_BACKEND_VERSION_POLICY {
+        return BackendProbe::Incompatible(format!(
+            "found version policy {}, expected {}",
+            compatibility.version_policy, DESKTOP_BACKEND_VERSION_POLICY
+        ));
+    }
+    BackendProbe::Compatible
+}
+
+fn probe_backend(port: u16) -> BackendProbe {
     let addr: SocketAddr = match server_addr(port).parse() {
         Ok(value) => value,
-        Err(_) => return false,
+        Err(_) => return BackendProbe::Unreachable,
     };
     let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(750)) {
         Ok(value) => value,
-        Err(_) => return false,
+        Err(_) => return BackendProbe::Unreachable,
     };
     let request = format!(
         "GET /api/health HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
         server_addr(port)
     );
     if stream.write_all(request.as_bytes()).is_err() {
-        return false;
+        return BackendProbe::Unreachable;
     }
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
     let mut response = String::new();
-    let _ = stream.read_to_string(&mut response);
-    response.contains("200 OK")
+    if stream.read_to_string(&mut response).is_err() {
+        return BackendProbe::Unreachable;
+    }
+    parse_health_response(&response)
+}
+
+#[cfg(test)]
+fn check_health(port: u16) -> bool {
+    matches!(probe_backend(port), BackendProbe::Compatible)
 }
 
 fn which_uvx() -> Option<PathBuf> {
@@ -115,14 +204,40 @@ fn which_uvx() -> Option<PathBuf> {
     None
 }
 
+fn manual_backend_command(port: u16) -> String {
+    format!(
+        "uvx --from {} kicad-mcp-pro dashboard --host 127.0.0.1 --port {port}",
+        backend_package_spec()
+    )
+}
+
+fn incompatible_backend_error(port: u16, reason: &str) -> String {
+    format!(
+        "Incompatible service detected at http://{}/api/health: {}. \
+KiCad MCP Pro Desktop {} requires backend {} with desktop API contract {} and {} policy. \
+Stop the incompatible service or run the supported backend explicitly: {}",
+        server_addr(port),
+        reason,
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_VERSION"),
+        DESKTOP_API_CONTRACT_VERSION,
+        DESKTOP_BACKEND_VERSION_POLICY,
+        manual_backend_command(port),
+    )
+}
+
 fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, String> {
     // Clear previous error
     if let Ok(mut err_guard) = process.error.lock() {
         *err_guard = None;
     }
 
-    if check_health(port) {
-        return Ok("already_running".to_string());
+    match probe_backend(port) {
+        BackendProbe::Compatible => return Ok("already_running".to_string()),
+        BackendProbe::Incompatible(reason) => {
+            return Err(incompatible_backend_error(port, &reason));
+        }
+        BackendProbe::Unreachable => {}
     }
 
     let mut guard = process.child.lock().map_err(|error| error.to_string())?;
@@ -165,17 +280,15 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
     let log_file = std::fs::File::create(&log_path)
         .map_err(|e| format!("Failed to create server log {log_path:?}: {e}"))?;
 
-    // Pin a minimum backend version with `--from` so uvx cannot serve a stale
-    // cached build. Older cached versions (e.g. 3.9.0) shipped a `dashboard`
-    // command that fell back to the stdio transport and never bound the HTTP
-    // port, which surfaced in the GUI as "Server failed to start". `>=` lets
-    // uvx reuse a satisfying cached environment (fast, works offline) while
-    // refusing anything below the known-good floor.
+    // Release builds launch the backend version that was validated with this
+    // exact GUI package. uvx may reuse that exact cached environment offline;
+    // it must never fall forward or backward to another release.
+    let backend_spec = backend_package_spec();
     let mut cmd = Command::new(&uvx);
     cmd.current_dir(&cwd)
         .args([
             "--from",
-            MIN_BACKEND_SPEC,
+            backend_spec.as_str(),
             "kicad-mcp-pro",
             "dashboard",
             "--host",
@@ -207,8 +320,13 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
     // progress.
     let deadline = std::time::Instant::now() + HEALTH_WAIT;
     while std::time::Instant::now() < deadline {
-        if check_health(port) {
-            return Ok("started".to_string());
+        match probe_backend(port) {
+            BackendProbe::Compatible => return Ok("started".to_string()),
+            BackendProbe::Incompatible(reason) => {
+                let _ = stop_server_inner(process);
+                return Err(incompatible_backend_error(port, &reason));
+            }
+            BackendProbe::Unreachable => {}
         }
         // Check if the child process has exited (server crashed)
         if let Ok(mut guard) = process.child.lock() {
@@ -218,9 +336,11 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
                     drop(guard);
                     return Err(format!(
                         "Python server process exited unexpectedly (code: {}) before binding to port {}.\n\
-                         Run manually to debug: uvx kicad-mcp-pro@latest dashboard --host 127.0.0.1 --port {port}",
+                         The desktop requires backend {}. Run manually to debug: {}",
                         status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".to_string()),
                         port,
+                        env!("CARGO_PKG_VERSION"),
+                        manual_backend_command(port),
                     ));
                 }
             }
@@ -230,10 +350,15 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
 
     let _ = stop_server_inner(process);
     Err(format!(
-        "Python server at http://{}/api/health did not respond within {} seconds.\n\
-         First runs download the backend and can be slow. Run manually to debug: uvx kicad-mcp-pro@latest dashboard --host 127.0.0.1 --port {port}",
+        "Python server at http://{}/api/health did not provide a compatible desktop handshake within {} seconds.\n\
+         The desktop requires backend {} and desktop API contract {}. \
+If the exact backend is not already cached, network access is required for uvx to obtain it. \
+Run manually to debug: {}",
         server_addr(port),
         HEALTH_WAIT.as_secs(),
+        env!("CARGO_PKG_VERSION"),
+        DESKTOP_API_CONTRACT_VERSION,
+        manual_backend_command(port),
     ))
 }
 
@@ -378,10 +503,8 @@ pub fn run() {
         })
         .setup(|app| {
             // Build tray context menu
-            let show_item = MenuItemBuilder::with_id("show", "Show Window")
-                .build(app)?;
-            let quit_item = MenuItemBuilder::with_id("quit", "Quit")
-                .build(app)?;
+            let show_item = MenuItemBuilder::with_id("show", "Show Window").build(app)?;
+            let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
             let menu = MenuBuilder::new(app)
                 .item(&show_item)
                 .separator()
@@ -437,4 +560,106 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("Failed to start KiCad MCP Pro Tauri app");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::TcpListener;
+
+    fn serve_health_once(body: String) -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test health server");
+        let port = listener.local_addr().expect("test health address").port();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept health probe");
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body,
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write health response");
+        });
+        port
+    }
+
+    #[test]
+    fn health_probe_accepts_exact_release_and_desktop_contract() {
+        let body = format!(
+            r#"{{"ok":true,"status":"ok","version":"{}","desktopCompatibility":{{"contractVersion":"1.0.0","backendVersion":"{}","versionPolicy":"exact-release"}}}}"#,
+            env!("CARGO_PKG_VERSION"),
+            env!("CARGO_PKG_VERSION"),
+        );
+        let port = serve_health_once(body);
+        assert!(check_health(port));
+    }
+
+    #[test]
+    fn health_probe_rejects_http_200_from_incompatible_backend_version() {
+        let body = r#"{"ok":true,"status":"ok","version":"99.0.0","desktopCompatibility":{"contractVersion":"1.0.0","backendVersion":"99.0.0","versionPolicy":"exact-release"}}"#.to_string();
+        let port = serve_health_once(body);
+        assert!(!check_health(port));
+    }
+
+    #[test]
+    fn health_probe_rejects_http_200_without_desktop_contract() {
+        let body = format!(
+            r#"{{"ok":true,"status":"ok","version":"{}"}}"#,
+            env!("CARGO_PKG_VERSION")
+        );
+        let port = serve_health_once(body);
+        assert!(!check_health(port));
+    }
+
+    #[test]
+    fn backend_package_spec_is_exact_and_cache_reusable() {
+        let spec = backend_package_spec();
+        assert_eq!(
+            spec,
+            format!("kicad-mcp-pro=={}", env!("CARGO_PKG_VERSION"))
+        );
+        assert!(!spec.contains(">="));
+        assert!(!manual_backend_command(3334).contains("@latest"));
+    }
+
+    #[test]
+    fn desktop_startup_accepts_supported_existing_backend() {
+        let body = format!(
+            r#"{{"ok":true,"status":"ok","version":"{}","desktopCompatibility":{{"contractVersion":"1.0.0","backendVersion":"{}","versionPolicy":"exact-release"}}}}"#,
+            env!("CARGO_PKG_VERSION"),
+            env!("CARGO_PKG_VERSION"),
+        );
+        let port = serve_health_once(body);
+        let process = ServerProcess {
+            child: Mutex::new(None),
+            error: Mutex::new(None),
+            working_dir: Mutex::new(None),
+        };
+
+        assert_eq!(
+            start_server_inner(&process, port),
+            Ok("already_running".to_string())
+        );
+    }
+
+    #[test]
+    fn desktop_startup_rejects_incompatible_existing_backend() {
+        let body = r#"{"ok":true,"status":"ok","version":"99.0.0","desktopCompatibility":{"contractVersion":"1.0.0","backendVersion":"99.0.0","versionPolicy":"exact-release"}}"#.to_string();
+        let port = serve_health_once(body);
+        let process = ServerProcess {
+            child: Mutex::new(None),
+            error: Mutex::new(None),
+            working_dir: Mutex::new(None),
+        };
+
+        let error =
+            start_server_inner(&process, port).expect_err("incompatible backend must fail closed");
+        assert!(error.contains("Incompatible service detected"));
+        assert!(error.contains(env!("CARGO_PKG_VERSION")));
+        assert!(error.contains(DESKTOP_API_CONTRACT_VERSION));
+        assert!(error.contains("kicad-mcp-pro=="));
+    }
 }

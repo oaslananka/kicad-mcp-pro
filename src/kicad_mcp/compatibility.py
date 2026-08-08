@@ -9,6 +9,8 @@ from . import __version__
 
 MCP_PROTOCOL_VERSION: Final = "2025-11-25"
 MCP_TOOL_SCHEMA_VERSION: Final = "1.0"
+DESKTOP_API_CONTRACT_VERSION: Final = "1.0.0"
+DESKTOP_BACKEND_VERSION_POLICY: Final = "exact-release"
 PRIMARY_KICAD_VERSION: Final = "10.0.x"
 
 COMPATIBILITY_MATRIX: Final[dict[str, object]] = {

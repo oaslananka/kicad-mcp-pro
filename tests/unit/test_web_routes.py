@@ -275,6 +275,11 @@ class TestAPIEndpoints:
         assert data["ok"] is True
         assert data["status"] == "ok"
         assert data["version"] == __version__
+        assert data["desktopCompatibility"] == {
+            "contractVersion": "1.0.0",
+            "backendVersion": __version__,
+            "versionPolicy": "exact-release",
+        }
         assert "uptime" in data
 
     @pytest.mark.anyio
