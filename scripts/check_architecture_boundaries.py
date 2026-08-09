@@ -20,6 +20,7 @@ DOMAIN_MODULES = {
     "kicad_mcp.export.drill": SRC_ROOT / "kicad_mcp" / "export" / "drill.py",
     "kicad_mcp.export.netlist": SRC_ROOT / "kicad_mcp" / "export" / "netlist.py",
     "kicad_mcp.export.pcb_pdf": SRC_ROOT / "kicad_mcp" / "export" / "pcb_pdf.py",
+    "kicad_mcp.export.sch_pdf": SRC_ROOT / "kicad_mcp" / "export" / "sch_pdf.py",
     "kicad_mcp.tools.export_board_stats": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -27,6 +28,7 @@ DOMAIN_MODULES = {
     "kicad_mcp.tools.export_drill": SRC_ROOT / "kicad_mcp" / "tools" / "export_drill.py",
     "kicad_mcp.tools.export_netlist": SRC_ROOT / "kicad_mcp" / "tools" / "export_netlist.py",
     "kicad_mcp.tools.export_pcb_pdf": SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_pdf.py",
+    "kicad_mcp.tools.export_sch_pdf": SRC_ROOT / "kicad_mcp" / "tools" / "export_sch_pdf.py",
     "kicad_mcp.tools.validation": SRC_ROOT / "kicad_mcp" / "tools" / "validation.py",
     "kicad_mcp.validation.drc_runner": SRC_ROOT / "kicad_mcp" / "validation" / "drc_runner.py",
     "kicad_mcp.validation.policy_state": SRC_ROOT / "kicad_mcp" / "validation" / "policy_state.py",
@@ -236,6 +238,7 @@ PURE_HELPERS = {
     "kicad_mcp.export.drill",
     "kicad_mcp.export.netlist",
     "kicad_mcp.export.pcb_pdf",
+    "kicad_mcp.export.sch_pdf",
     "kicad_mcp.validation.policy_state",
     "kicad_mcp.companion.context",
     "kicad_mcp.ipc.command_queue",
@@ -290,6 +293,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.export_drill": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_netlist": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_pcb_pdf": ("kicad_mcp.tools.export",),
+    "kicad_mcp.tools.export_sch_pdf": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.pcb_basic_inspection": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_board_inspection": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_file_inspection": ("kicad_mcp.tools.pcb",),
@@ -324,6 +328,7 @@ REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.export_drill": 100,
     "kicad_mcp.tools.export_netlist": 100,
     "kicad_mcp.tools.export_pcb_pdf": 100,
+    "kicad_mcp.tools.export_sch_pdf": 100,
     "kicad_mcp.tools.validation": 300,
     "kicad_mcp.tools.validation_policy_state": 300,
     "kicad_mcp.tools.pcb_basic_inspection": 300,
