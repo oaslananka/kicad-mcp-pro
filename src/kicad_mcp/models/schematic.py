@@ -145,6 +145,28 @@ class CreateSheetInput(BaseModel):
     snap_to_grid: bool = True
 
 
+SheetPinType = Literal["input", "output", "bidirectional", "tri_state", "passive"]
+SheetEdge = Literal["left", "right", "top", "bottom"]
+
+
+class SheetPinInput(BaseModel):
+    """One hierarchical sheet pin placed at an explicit edge position."""
+
+    sheet: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=240)
+    pin_type: SheetPinType = "input"
+    edge: SheetEdge = "left"
+    position_along_edge: CoordMM = 2.54
+
+
+class ImportSheetPinsInput(BaseModel):
+    """Mirror a child sheet's hierarchical labels onto its sheet symbol."""
+
+    sheet: str | None = Field(default=None, max_length=120)
+    grow_sheet: bool = True
+    dry_run: bool = False
+
+
 class HierarchicalLabelInput(BaseModel):
     """Hierarchical label placement parameters."""
 

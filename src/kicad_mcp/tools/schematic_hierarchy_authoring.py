@@ -8,7 +8,13 @@ from dataclasses import dataclass
 
 from mcp.server.fastmcp import FastMCP
 
-from ..models.schematic import CreateSheetInput, GlobalLabelInput, HierarchicalLabelInput
+from ..models.schematic import (
+    CreateSheetInput,
+    GlobalLabelInput,
+    HierarchicalLabelInput,
+    ImportSheetPinsInput,
+    SheetPinInput,
+)
 from ..schematic.hierarchy_authoring import SchematicHierarchyAuthoringService
 
 
@@ -138,3 +144,64 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
             sheet,
             sheet_file,
         )
+
+    @mcp.tool()
+    def sch_add_sheet_pin(
+        sheet: str,
+        name: str,
+        pin_type: str = "input",
+        edge: str = "left",
+        position_along_edge: float = 2.54,
+    ) -> str:
+        """Add one hierarchical sheet pin to a sheet symbol at an explicit position.
+
+        ``position_along_edge`` runs clockwise from the right edge: ``right``
+        measures from the top, ``bottom`` and ``top`` from the left, and ``left``
+        from the bottom. Use ``sch_import_sheet_pins`` to derive every pin from
+        the child sheet instead of placing them one by one.
+        """
+        payload = SheetPinInput.model_validate(
+            {
+                "sheet": sheet,
+                "name": name,
+                "pin_type": pin_type,
+                "edge": edge,
+                "position_along_edge": position_along_edge,
+            }
+        )
+        return service.add_sheet_pin(
+            payload.sheet,
+            payload.name,
+            payload.pin_type,
+            payload.edge,
+            payload.position_along_edge,
+        )
+
+    @mcp.tool()
+    def sch_import_sheet_pins(
+        sheet: str | None = None,
+        grow_sheet: bool = True,
+        dry_run: bool = False,
+    ) -> str:
+        """Mirror each child sheet's hierarchical labels as pins on its sheet symbol.
+
+        This is KiCad's "Import Sheet Pins" without the GUI: without these pins
+        the sheets are electrically separate, ERC reports ``hier_label_mismatch``
+        for every label, and a net that crosses sheets appears twice in the
+        netlist. Inputs are laid out on the left edge and every other pin type on
+        the right, alphabetically; the sheet symbol grows taller if it must.
+
+        Every pin of a touched sheet is re-laid-out, including existing ones,
+        because KiCad measures left-edge pins from the bottom -- so a growing
+        sheet would otherwise move them. Existing pins keep their name, type
+        source and UUID; pins without a matching label are reported, never
+        deleted. Sheet width growth uses an estimated text width (heuristic:
+        0.6 x font height per character), not a measured one.
+
+        Leave ``sheet`` empty to process every child sheet. Use ``dry_run`` to
+        see the report without writing.
+        """
+        payload = ImportSheetPinsInput.model_validate(
+            {"sheet": sheet, "grow_sheet": grow_sheet, "dry_run": dry_run}
+        )
+        return service.import_sheet_pins(payload.sheet, payload.grow_sheet, payload.dry_run)

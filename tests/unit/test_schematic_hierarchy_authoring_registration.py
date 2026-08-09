@@ -68,6 +68,21 @@ class FakeHierarchyAuthoringService:
         )
         return "global"
 
+    def add_sheet_pin(
+        self,
+        sheet: str,
+        name: str,
+        pin_type: str,
+        edge: str,
+        position_along_edge: float,
+    ) -> str:
+        self.calls.append(("add_sheet_pin", (sheet, name, pin_type, edge, position_along_edge)))
+        return "pin"
+
+    def import_sheet_pins(self, sheet: str | None, grow_sheet: bool, dry_run: bool) -> str:
+        self.calls.append(("import_sheet_pins", (sheet, grow_sheet, dry_run)))
+        return "imported"
+
 
 def _registered() -> tuple[FastMCP, FakeHierarchyAuthoringService]:
     server = FastMCP("schematic-hierarchy-authoring-test")
@@ -84,6 +99,8 @@ def test_registration_preserves_names_descriptions_and_defaults() -> None:
         "sch_create_sheet",
         "sch_add_hierarchical_label",
         "sch_add_global_label",
+        "sch_add_sheet_pin",
+        "sch_import_sheet_pins",
     }
     assert tools["sch_create_sheet"].description == (
         "Create a child schematic sheet and add it to the active top-level schematic."
@@ -194,3 +211,55 @@ def test_registration_preserves_missing_label_and_pydantic_validation() -> None:
         tools["sch_create_sheet"].fn(name="", filename="power", x_mm=1.0, y_mm=2.0)
     with pytest.raises(ValidationError):
         tools["sch_add_global_label"].fn(text="VCC", shape="sideways")
+
+
+def test_sheet_pin_tools_are_registered() -> None:
+    server, _service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert {"sch_add_sheet_pin", "sch_import_sheet_pins"} <= set(tools)
+
+
+def test_import_sheet_pins_defaults_to_every_sheet_and_growth() -> None:
+    server, service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert tools["sch_import_sheet_pins"].fn() == "imported"
+
+    assert service.calls == [("import_sheet_pins", (None, True, False))]
+
+
+def test_add_sheet_pin_forwards_its_arguments() -> None:
+    server, service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert (
+        tools["sch_add_sheet_pin"].fn(
+            sheet="02_mcu",
+            name="VIN",
+            pin_type="input",
+            edge="left",
+            position_along_edge=5.08,
+        )
+        == "pin"
+    )
+
+    assert service.calls == [("add_sheet_pin", ("02_mcu", "VIN", "input", "left", 5.08))]
+
+
+def test_sheet_pin_input_rejects_an_unknown_type() -> None:
+    from kicad_mcp.models.schematic import SheetPinInput
+
+    with pytest.raises(ValidationError):
+        SheetPinInput(
+            sheet="s", name="n", pin_type="nonsense", edge="left", position_along_edge=0.0
+        )
+
+
+def test_sheet_pin_input_rejects_an_unknown_edge() -> None:
+    from kicad_mcp.models.schematic import SheetPinInput
+
+    with pytest.raises(ValidationError):
+        SheetPinInput(
+            sheet="s", name="n", pin_type="input", edge="sideways", position_along_edge=0.0
+        )
