@@ -20,13 +20,10 @@ from ..discovery import get_cli_capabilities
 from ..export.board_stats import ExportBoardStatsService
 from ..export.drill import ExportDrillService
 from ..export.netlist import ExportNetlistService
+from ..export.pcb_pdf import ExportPcbPdfService
 from ..mcp_media import image_tool_result, text_tool_result
-from ..models.export import (
-    ExportBOMInput,
-    ExportGerberInput,
-    ExportPdfInput,
-)
-from . import export_board_stats, export_drill, export_netlist
+from ..models.export import ExportBOMInput, ExportGerberInput
+from . import export_board_stats, export_drill, export_netlist, export_pcb_pdf
 from .aliases import notify_deprecated, register_alias
 from .export_support import (
     _ensure_output_dir,
@@ -262,6 +259,14 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         format_file_list=_format_file_list,
     )
 
+    pcb_pdf_service = ExportPcbPdfService(
+        get_pcb_file=_get_pcb_file,
+        ensure_output_dir=_ensure_output_dir,
+        active_variant_args=_active_variant_args,
+        run_cli_variants=_run_cli_variants,
+        default_layers=DEFAULT_PCB_PDF_LAYERS,
+    )
+
     def _export_gerber(
         output_subdir: str = "gerber",
         layers: list[str] | None = None,
@@ -408,49 +413,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
     def export_bom(format: str = "csv") -> str:
         """Export a bill of materials."""
         return _with_low_level_export_notice(_export_bom(format))
-
-    def _export_pcb_pdf(layers: list[str] | None = None) -> str:
-        payload = ExportPdfInput(layers=layers or [])
-        pcb_file = _get_pcb_file()
-        out_dir = _ensure_output_dir()
-        out_file = out_dir / "board.pdf"
-        layers_arg = ",".join(payload.layers or DEFAULT_PCB_PDF_LAYERS)
-        variant_args = _active_variant_args()
-        code, _, stderr = _run_cli_variants(
-            [
-                [
-                    "pcb",
-                    "export",
-                    "pdf",
-                    *variant_args,
-                    "--output",
-                    str(out_file),
-                    "--layers",
-                    layers_arg,
-                    str(pcb_file),
-                ],
-                [
-                    "pcb",
-                    "export",
-                    "pdf",
-                    *variant_args,
-                    "--input",
-                    str(pcb_file),
-                    "--output",
-                    str(out_file),
-                    "--layers",
-                    layers_arg,
-                ],
-            ]
-        )
-        if code != 0:
-            return f"PCB PDF export failed: {stderr or 'unknown error'}"
-        return f"PCB PDF exported to {out_file}"
-
-    @headless_compatible
-    def export_pcb_pdf(layers: list[str] | None = None) -> str:
-        """Export the PCB to PDF."""
-        return _with_low_level_export_notice(_export_pcb_pdf(layers))
 
     def _export_3d_pdf(output_path: str = "") -> str:
         pcb_file = _get_pcb_file()
@@ -1575,7 +1537,13 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
                 add_low_level_notice=_with_low_level_export_notice,
             ),
         )
-        mcp.tool()(export_pcb_pdf)
+        export_pcb_pdf.register(
+            mcp,
+            export_pcb_pdf.ExportPcbPdfDependencies(
+                service=pcb_pdf_service,
+                add_low_level_notice=_with_low_level_export_notice,
+            ),
+        )
         mcp.tool()(export_sch_pdf)
         mcp.tool()(export_sch_svg)
         mcp.tool()(export_sch_dxf)
