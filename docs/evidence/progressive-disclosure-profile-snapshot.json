@@ -93,11 +93,11 @@
       ]
     },
     "expert": {
-      "callableTools": 379,
-      "catalogCharacters": 216956,
+      "callableTools": 380,
+      "catalogCharacters": 217227,
       "catalogReductionVsExpertPct": 0.0,
-      "declaredTools": 379,
-      "estimatedCatalogTokens": 54239,
+      "declaredTools": 380,
+      "estimatedCatalogTokens": 54307,
       "forbiddenToolExposures": 8,
       "goldenCases": 65,
       "goldenCasesCovered": 55,
@@ -406,6 +406,7 @@
         "sch_get_wires",
         "sch_import_sheet_pins",
         "sch_instantiate_template",
+        "sch_list_sheet_pins",
         "sch_list_sheets",
         "sch_list_swappable_pins",
         "sch_list_templates",

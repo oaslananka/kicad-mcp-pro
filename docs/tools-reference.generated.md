@@ -1,6 +1,6 @@
 Machine-maintained catalog. Refresh with `pnpm run docs:tools`.
 
-Total public tools: 379.
+Total public tools: 380.
 
 | Tool | Profile(s) | Read-Only | Destructive | Open-World | Idempotent | Headless | Requires KiCad Running | Summary |
 |---|---|---:|---:|---:|---:|---:|---:|---|
@@ -298,6 +298,7 @@ Total public tools: 379.
 | `sch_get_wires` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | yes | no | no | yes | no | no | List all wires in the schematic, optionally from a child sheet. |
 | `sch_import_sheet_pins` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | yes | no | no | no | Mirror each child sheet's hierarchical labels as pins on its sheet symbol. |
 | `sch_instantiate_template` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Instantiate a subcircuit template — returns a structured action plan. |
+| `sch_list_sheet_pins` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | no | no | List the hierarchical sheet pins of one child sheet symbol. |
 | `sch_list_sheets` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | no | no | List child sheets from the active top-level schematic. This KiCad MCP Pro tool supports production EDA automation wor... |
 | `sch_list_swappable_pins` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | List candidate pins and units that can participate in a swap workflow. |
 | `sch_list_templates` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | List all available reference subcircuit templates. |
@@ -680,6 +681,7 @@ Total public tools: 379.
 - `sch_get_wires`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=no; requiresKiCadRunning=no.
 - `sch_import_sheet_pins`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=yes; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_instantiate_template`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
+- `sch_list_sheet_pins`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_list_sheets`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_list_swappable_pins`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `sch_list_templates`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.

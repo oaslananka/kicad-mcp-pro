@@ -258,6 +258,7 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "sch_create_sheet",
             "sch_list_sheets",
             "sch_get_sheet_info",
+            "sch_list_sheet_pins",
             "sch_add_symbol",
             "sch_add_component",
             "sch_add_wire",

@@ -206,6 +206,12 @@ class GetSheetInfoInput(BaseModel):
     sheet_name: str = Field(min_length=1, max_length=120)
 
 
+class ListSheetPinsInput(BaseModel):
+    """Select one child sheet symbol to list pins for."""
+
+    sheet_name: str = Field(min_length=1, max_length=120)
+
+
 class RouteWireBetweenPinsInput(BaseModel):
     """Pin-to-pin Manhattan routing parameters for schematics."""
 

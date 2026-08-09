@@ -427,7 +427,7 @@
           "toolCount": 15
         },
         "schematic": {
-          "availableCount": 36,
+          "availableCount": 37,
           "blockedCount": 50,
           "canarySurfaces": [
             "read",
@@ -445,10 +445,10 @@
           ],
           "selectedBackends": {
             "guarded-schematic-file": 14,
-            "local-engine": 22,
+            "local-engine": 23,
             "unavailable": 50
           },
-          "toolCount": 86
+          "toolCount": 87
         },
         "signal_integrity": {
           "availableCount": 12,
@@ -751,7 +751,7 @@
           "toolCount": 15
         },
         "schematic": {
-          "availableCount": 86,
+          "availableCount": 87,
           "blockedCount": 0,
           "canarySurfaces": [
             "read",
@@ -770,9 +770,9 @@
           "selectedBackends": {
             "guarded-schematic-file": 14,
             "kicad-gui-ipc": 50,
-            "local-engine": 22
+            "local-engine": 23
           },
-          "toolCount": 86
+          "toolCount": 87
         },
         "signal_integrity": {
           "availableCount": 12,
@@ -1075,7 +1075,7 @@
           "toolCount": 15
         },
         "schematic": {
-          "availableCount": 86,
+          "availableCount": 87,
           "blockedCount": 0,
           "canarySurfaces": [
             "read",
@@ -1094,9 +1094,9 @@
           "selectedBackends": {
             "guarded-schematic-file": 14,
             "kicad-11-headless-ipc": 50,
-            "local-engine": 22
+            "local-engine": 23
           },
-          "toolCount": 86
+          "toolCount": 87
         },
         "signal_integrity": {
           "availableCount": 12,
@@ -1196,7 +1196,7 @@
     "previewBaseline": "11.x",
     "publicSupportClaim": "KiCad 11 remains preview until native canaries pass.",
     "stableBaseline": "10.0.x",
-    "toolCount": 379
+    "toolCount": 380
   },
   "tools": [
     {
@@ -8254,6 +8254,30 @@
       "tier": "write",
       "tool": "sch_instantiate_template",
       "writesFiles": true
+    },
+    {
+      "category": "schematic",
+      "routes": {
+        "degradedNoKiCad": {
+          "available": true,
+          "backend": "local-engine",
+          "mutationGuard": null
+        },
+        "kicad10Gui": {
+          "available": true,
+          "backend": "local-engine",
+          "mutationGuard": null
+        },
+        "kicad11Headless": {
+          "available": true,
+          "backend": "local-engine",
+          "mutationGuard": null
+        }
+      },
+      "runtime": "none",
+      "tier": "read",
+      "tool": "sch_list_sheet_pins",
+      "writesFiles": false
     },
     {
       "category": "schematic",

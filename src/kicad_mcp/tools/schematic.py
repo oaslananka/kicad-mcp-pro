@@ -5783,6 +5783,7 @@ def _register_inspection_and_analysis(mcp: FastMCP) -> None:
         iter_child_sheet_paths=_iter_child_sheet_paths,
         parse_schematic=parse_schematic_file,
         warn=logger.warning,
+        read_text=lambda path: path.read_text(encoding="utf-8"),
     )
     schematic_topology.register(
         mcp,
