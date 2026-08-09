@@ -3,9 +3,22 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
+
+from .sheet_pins import (
+    EDGES,
+    PIN_TYPES,
+    SheetBlock,
+    SheetPinPlan,
+    apply_plan,
+    insert_pin,
+    parse_hierarchical_labels,
+    parse_sheet_blocks,
+    placement_on_edge,
+    plan_sheet_pins,
+)
 
 
 class SchematicTarget(Protocol):
@@ -107,6 +120,9 @@ type SnapNotice = Callable[[tuple[float, ...], tuple[float, ...]], str]
 type ProjectName = Callable[[], str]
 type AppendBeforeSheetInstances = Callable[[str, str], str]
 type ReloadSchematic = Callable[[], str]
+type ReadText = Callable[[Path], str]
+type GridMM = Callable[[], float]
+type NewUUID = Callable[[], str]
 
 
 @dataclass(frozen=True)
@@ -126,6 +142,9 @@ class SchematicHierarchyAuthoringService:
     transactional_write: TransactionalWrite
     reload_schematic: ReloadSchematic
     warn: Warn
+    read_text: ReadText
+    grid_mm: GridMM
+    new_uuid: NewUUID
 
     @staticmethod
     def _format_target_detail(target: SchematicTarget) -> str:
@@ -272,4 +291,160 @@ class SchematicHierarchyAuthoringService:
             justify=justify,
             sheet=sheet,
             sheet_file=sheet_file,
+        )
+
+    def _stamp_uuids(self, plan: SheetPinPlan) -> SheetPinPlan:
+        placements = tuple(
+            placement if placement.uuid else replace(placement, uuid=self.new_uuid())
+            for placement in plan.placements
+        )
+        return replace(plan, placements=placements)
+
+    @staticmethod
+    def _describe(sheet: SheetBlock, plan: SheetPinPlan) -> str:
+        counts = {"add": 0, "retype": 0, "keep": 0}
+        for placement in plan.placements:
+            counts[placement.action] += 1
+        detail = (
+            f"- {sheet.name}: {counts['add']} added, {counts['retype']} retyped, "
+            f"{counts['keep']} unchanged"
+        )
+        if plan.size != sheet.size:
+            detail += f"; resized to {plan.size[0]} x {plan.size[1]} mm"
+        if plan.orphans:
+            detail += f"; kept without a matching label: {', '.join(plan.orphans)}"
+        if plan.conflicts:
+            detail += f"; conflicting shapes (first wins): {', '.join(plan.conflicts)}"
+        return detail
+
+    def import_sheet_pins(
+        self,
+        sheet: str | None,
+        grow_sheet: bool,
+        dry_run: bool,
+    ) -> str:
+        """Mirror each child sheet's hierarchical labels as pins on its sheet symbol."""
+        root_path = self.active_schematic_file()
+        try:
+            root_text = self.read_text(root_path)
+        except OSError as exc:
+            self.warn("schematic_import_sheet_pins_unreadable", error=str(exc))
+            return f"Could not read the top-level schematic: {exc}"
+
+        blocks = parse_sheet_blocks(root_text)
+        if sheet is not None:
+            blocks = tuple(block for block in blocks if block.name == sheet)
+            if not blocks:
+                return f"Sheet '{sheet}' was not found in {root_path.name}."
+        if not blocks:
+            return f"{root_path.name} has no child sheets, so there is nothing to import."
+
+        grid = self.grid_mm()
+        lines: list[str] = []
+        pending: list[tuple[str, SheetPinPlan]] = []
+        for block in blocks:
+            child_path = root_path.parent / block.filename
+            try:
+                child_text = self.read_text(child_path)
+            except OSError as exc:
+                lines.append(f"- {block.name}: blocked, child sheet unreadable ({exc}).")
+                continue
+            plan = plan_sheet_pins(
+                parse_hierarchical_labels(child_text),
+                block,
+                grid_mm=grid,
+                grow_sheet=grow_sheet,
+            )
+            if plan.overflow:
+                lines.append(
+                    f"- {block.name}: blocked, {len(plan.overflow)} pins do not fit at the "
+                    f"current size and grow_sheet is off ({', '.join(plan.overflow)})."
+                )
+                continue
+            lines.append(self._describe(block, plan))
+            lines.extend(f"  note: {note}" for note in plan.notes)
+            pending.append((block.name, self._stamp_uuids(plan)))
+
+        if not pending:
+            return "\n".join(["No sheet pins could be imported.", *lines])
+
+        def mutator(current: str) -> str:
+            for name, plan in pending:
+                block = next(
+                    (
+                        candidate
+                        for candidate in parse_sheet_blocks(current)
+                        if candidate.name == name
+                    ),
+                    None,
+                )
+                if block is None:
+                    continue
+                current = apply_plan(current, block, plan)
+            return current
+
+        if mutator(root_text) == root_text:
+            return "\n".join(["Sheet pins are already up to date; nothing was written.", *lines])
+        if dry_run:
+            return "\n".join(["Dry run -- nothing was written.", *lines])
+
+        try:
+            self.transactional_write(mutator, root_path)
+        except Exception as exc:
+            self.warn("schematic_import_sheet_pins_failed", error=str(exc))
+            return f"Could not write sheet pins: {exc}"
+
+        result = self.reload_schematic()
+        return "\n".join([result, "Imported sheet pins.", *lines])
+
+    def add_sheet_pin(
+        self,
+        sheet: str,
+        name: str,
+        pin_type: str,
+        edge: str,
+        position_along_edge: float,
+    ) -> str:
+        """Add one sheet pin at an explicit edge position, without auto-layout."""
+        if pin_type not in PIN_TYPES:
+            return f"Unknown sheet pin type '{pin_type}'. Use one of: {', '.join(PIN_TYPES)}."
+        if edge not in EDGES:
+            return f"Unknown sheet edge '{edge}'. Use one of: {', '.join(EDGES)}."
+
+        root_path = self.active_schematic_file()
+        try:
+            root_text = self.read_text(root_path)
+        except OSError as exc:
+            return f"Could not read the top-level schematic: {exc}"
+
+        block = next(
+            (candidate for candidate in parse_sheet_blocks(root_text) if candidate.name == sheet),
+            None,
+        )
+        if block is None:
+            return f"Sheet '{sheet}' was not found in {root_path.name}."
+
+        placement = placement_on_edge(
+            block, name, pin_type, edge, position_along_edge, self.new_uuid()
+        )
+
+        def mutator(current: str) -> str:
+            target = next(
+                (candidate for candidate in parse_sheet_blocks(current) if candidate.name == sheet),
+                None,
+            )
+            if target is None:
+                raise ValueError(f"Sheet '{sheet}' disappeared before the write.")
+            return insert_pin(current, target, placement)
+
+        try:
+            self.transactional_write(mutator, root_path)
+        except Exception as exc:
+            self.warn("schematic_add_sheet_pin_failed", sheet=sheet, name=name, error=str(exc))
+            return f"Could not add sheet pin '{name}': {exc}"
+
+        result = self.reload_schematic()
+        return (
+            f"{result}\nAdded pin '{name}' ({pin_type}) to sheet '{sheet}' "
+            f"on the {edge} edge at {placement.x_mm}, {placement.y_mm} mm."
         )
