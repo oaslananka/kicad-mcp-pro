@@ -9,20 +9,6 @@ from kicad_mcp.tools.validation import GateOutcome
 from tests.conftest import call_tool_text
 
 
-def _sheet_pin_block(name: str) -> str:
-    return (
-        f'\t\t(pin "{name}" input\n'
-        "\t\t\t(at 71.12 60.96 180)\n"
-        "\t\t\t(effects\n"
-        "\t\t\t\t(font\n"
-        "\t\t\t\t\t(size 1.27 1.27)\n"
-        "\t\t\t\t)\n"
-        "\t\t\t)\n"
-        '\t\t\t(uuid "44444444-4444-4444-4444-444444444444")\n'
-        "\t\t)\n"
-    )
-
-
 def _child_sheet_with_hierarchical_label(name: str) -> str:
     return (
         "(kicad_sch\n"
@@ -48,14 +34,16 @@ def _child_sheet_with_hierarchical_label(name: str) -> str:
     )
 
 
-def _inject_sheet_pin(top_file: Path, pin_name: str) -> None:
-    content = top_file.read_text(encoding="utf-8")
-    updated = content.replace(
-        "\t\t(instances\n",
-        _sheet_pin_block(pin_name) + "\t\t(instances\n",
-        1,
-    )
-    top_file.write_text(updated, encoding="utf-8")
+async def _inject_sheet_pin(server: object, pin_name: str) -> None:
+    """Create the sheet pin the gate demands, through the tool that now exists.
+
+    ``pin_name`` is unused by the call itself -- the import derives every pin
+    from whatever hierarchical labels the child sheet currently exposes, not
+    from a name the caller hands it. It stays a parameter so each call site
+    still documents which pin it expects the import to produce.
+    """
+    _ = pin_name
+    await call_tool_text(server, "sch_import_sheet_pins", {})
 
 
 @pytest.mark.anyio
@@ -222,11 +210,11 @@ async def test_schematic_connectivity_gate_passes_matching_hierarchy_contract(
         {"name": "Power", "filename": "power.kicad_sch", "x_mm": 40.64, "y_mm": 50.8},
     )
 
-    _inject_sheet_pin(sample_project / "demo.kicad_sch", "VIN")
     (sample_project / "power.kicad_sch").write_text(
         _child_sheet_with_hierarchical_label("VIN"),
         encoding="utf-8",
     )
+    await _inject_sheet_pin(server, "VIN")
 
     text = await call_tool_text(server, "schematic_connectivity_gate", {})
 
@@ -248,7 +236,15 @@ async def test_schematic_connectivity_gate_fails_hierarchy_contract_mismatch(
         {"name": "Power", "filename": "power.kicad_sch", "x_mm": 40.64, "y_mm": 50.8},
     )
 
-    _inject_sheet_pin(sample_project / "demo.kicad_sch", "VOUT")
+    # Import while the child still exposes VOUT, so the parent gets a real
+    # sheet pin for it -- then let the child drift to VIN afterwards, without
+    # re-running the import. That stale-pin scenario is exactly what the
+    # hierarchy contract check exists to catch.
+    (sample_project / "power.kicad_sch").write_text(
+        _child_sheet_with_hierarchical_label("VOUT"),
+        encoding="utf-8",
+    )
+    await _inject_sheet_pin(server, "VOUT")
     (sample_project / "power.kicad_sch").write_text(
         _child_sheet_with_hierarchical_label("VIN"),
         encoding="utf-8",
