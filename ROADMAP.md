@@ -33,7 +33,7 @@ version-agnostic so it does not drift.
 ## Completed Milestones
 
 ### ✅ 3.1 (Delivered)
-- Hardened GitHub supply-chain: Renovate, CodeQL, Gitleaks, Scorecard, SBOM,
+- Hardened GitHub supply-chain: automated dependency updates, CodeQL, Gitleaks, Scorecard, SBOM,
   Sigstore, artifact attestations.
 - Expanded cross-platform CI for Windows and macOS unit smoke tests.
 

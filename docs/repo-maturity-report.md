@@ -57,7 +57,7 @@ Gold / foundation-grade is not a current target for this solo-maintainer reposit
 | Security policy | Passed | `SECURITY.md`. |
 | License | Passed | MIT license. |
 | CI tests | Passed | `ci.yml` and multiple quality gates. |
-| Dependency update tool | Passed | Renovate is configured with vulnerability alerts, lockfile maintenance, and package update policy. |
+| Dependency update tool | Passed | Dependabot is configured as the single active dependency-update tool with repository ecosystem coverage and protected pull requests. |
 | Pinned dependencies | Passed / Partial | Actions are mostly SHA-pinned; workflow-security checks continue enforcement. |
 | Token permissions | Passed / Partial | Workflows default to `contents: read`; release jobs escalate intentionally. |
 | Dangerous workflows | Passed / Partial | Workflow security checks exist; keep auditing release workflows. |
@@ -145,7 +145,7 @@ Gold / foundation-grade is not a current target for this solo-maintainer reposit
 | CodeQL | Passed | `.github/workflows/codeql.yml`. |
 | Gitleaks | Passed | `.github/workflows/gitleaks.yml`. |
 | Dependency review | Partial -> Passed | `.github/workflows/dependency-review.yml` added. |
-| Dependabot/Renovate | Passed | Renovate configuration includes vulnerability alerts and lockfile maintenance; Dependabot security updates remain intentionally disabled to avoid duplicate PRs. |
+| Dependabot | Passed | Dependabot version and security updates are the single automated dependency-update path; Renovate is not configured, avoiding duplicate PRs. |
 | OSV Scanner | Missing / optional | pip-audit exists; OSV can be future non-blocking scheduled check. |
 | SBOM | Passed / Partial | Release evidence generates SBOMs where supported. |
 | SLSA/provenance | Partial | Formal SLSA level is not claimed. |

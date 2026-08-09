@@ -23,12 +23,13 @@ skipping the scan.
 
 ## Dependency Updates
 
-Dependabot remains responsible for security updates and regular dependency
-version PRs using `.github/dependabot.yml`.
+Dependabot is the single automated source for security updates and regular
+dependency version PRs using `.github/dependabot.yml`. Renovate is intentionally
+not configured, which prevents duplicate bot ownership.
 
-Patch and minor updates for development tooling and GitHub Actions may automerge
-only after protected checks pass. Runtime dependencies, major updates, and core
-KiCad/MCP/Pydantic/Typer ecosystem updates require maintainer review.
+All dependency PRs remain subject to the protected `main` ruleset and required CI.
+No bot-side automerge bypass is configured. Runtime dependencies, major updates, and
+core KiCad/MCP/Pydantic/Typer ecosystem updates require maintainer review.
 
 ## Security Scans
 

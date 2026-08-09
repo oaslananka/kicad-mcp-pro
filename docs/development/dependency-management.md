@@ -12,18 +12,46 @@ KiCad MCP Pro uses reviewable dependency declarations, lockfiles, audit jobs, an
 | GitHub Actions | `.github/workflows/*.yml` | Pin third-party Actions to full commit SHAs and keep job permissions minimal. |
 | Rust / Tauri | Cargo manifests and lockfiles where present | Keep generated lockfiles under version control when used for release artifacts. |
 
+## Automated update ownership
+
+GitHub Dependabot is the single normal dependency-update source for this repository.
+`.github/dependabot.yml` covers the root `uv` project, npm/pnpm package locations,
+GitHub Actions, Docker/Docker Compose, and the Tauri Cargo project. Renovate is not
+part of the active update path, so the repository does not keep a second bot
+configuration that could create duplicate update pull requests.
+
+Dependabot runs weekly on Monday using the repository's Europe/Istanbul maintenance
+window. Its pull requests are ordinary protected pull requests: required CI and the
+`main` ruleset still apply, and no dependency bot is allowed to bypass those gates.
+
+## Lockfile maintenance
+
+When a supported dependency update changes resolution, Dependabot updates the matching
+manifest and lockfile together where the ecosystem supports it. The tracked lockfiles
+remain authoritative build inputs:
+
+- Python: `pyproject.toml` + `uv.lock`;
+- pnpm/npm: `package.json` + `pnpm-lock.yaml` or the package-local `package-lock.json`;
+- Rust/Tauri: `src-tauri/Cargo.toml` + `src-tauri/Cargo.lock`.
+
+Lockfile-only refreshes that are not caused by an available dependency version are a
+maintainer task and must use the repository's pinned toolchain. CI uses frozen/locked
+installs and therefore rejects stale or unexpectedly regenerated lockfiles.
+
 ## Update process
 
-1. Open a focused PR for dependency updates.
-2. Explain the dependency source, package name, version change, and reason.
-3. Run CI, security checks, tests, and relevant package builds.
-4. Review changelogs for breaking changes, licensing changes, and known vulnerabilities.
-5. Regenerate lockfiles and release metadata when required.
-6. Merge only after required checks pass.
+1. Dependabot opens a focused dependency pull request from the default branch.
+2. Review the dependency source, package name, version change, release notes, and license impact.
+3. Run the required CI, security checks, tests, and relevant package builds.
+4. Confirm the matching lockfile changed only as expected.
+5. Merge only after required checks pass; major/runtime-sensitive updates receive maintainer review.
 
 ## Vulnerability monitoring
 
-The repository uses GitHub Dependabot, dependency audit scripts, CodeQL, Gitleaks, Trivy, and Scorecard. Security-sensitive updates should be prioritized according to [`SECURITY.md`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/SECURITY.md).
+Dependabot alerts and Dependabot security updates own automated vulnerable-dependency
+remediation. Dependency audit scripts, CodeQL, Gitleaks, Trivy, and Scorecard provide
+additional detection and policy evidence. Security-sensitive updates should be
+prioritized according to [`SECURITY.md`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/SECURITY.md).
 
 ## Vendoring and generated code
 

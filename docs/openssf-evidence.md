@@ -45,7 +45,7 @@ This file consolidates evidence for OpenSSF Best Practices and Scorecard-style r
 | Security-Policy | Passed | `SECURITY.md`. |
 | License | Passed | MIT. |
 | CI-Tests | Passed | `ci.yml` and supporting workflows. |
-| Dependency-Update-Tool | Passed | Renovate is configured with vulnerability alerts and lockfile maintenance. |
+| Dependency-Update-Tool | Passed | Dependabot is the active update tool; `.github/dependabot.yml` covers the repository ecosystems and security updates are enabled in repository settings. |
 | Pinned-Dependencies | Passed / Partial | Actions are pinned to SHAs; continue workflow-security checks. |
 | Token-Permissions | Passed / Partial | Minimal default permissions; release jobs escalate intentionally. |
 | Dangerous-Workflow | Passed / Partial | Workflow security checks and no `pull_request_target` evidence in audit. |
