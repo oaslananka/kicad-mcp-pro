@@ -23,6 +23,7 @@ from ..export.netlist import ExportNetlistService
 from ..export.pcb_pdf import ExportPcbPdfService
 from ..export.sch_pdf import ExportSchPdfService
 from ..export.sch_python_bom import ExportSchPythonBomService
+from ..export.sch_vector import ExportSchVectorService
 from ..mcp_media import image_tool_result, text_tool_result
 from ..models.export import ExportBOMInput, ExportGerberInput
 from . import (
@@ -32,6 +33,7 @@ from . import (
     export_pcb_pdf,
     export_sch_pdf,
     export_sch_python_bom,
+    export_sch_vector,
 )
 from .aliases import notify_deprecated, register_alias
 from .export_support import (
@@ -289,6 +291,14 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         run_cli=_run_cli,
     )
 
+    sch_vector_service = ExportSchVectorService(
+        get_sch_file=_get_sch_file,
+        ensure_output_dir=_ensure_output_dir,
+        resolve_output_file=_resolve_output_file,
+        run_cli=_run_cli,
+        format_file_list=_format_file_list,
+    )
+
     def _export_gerber(
         output_subdir: str = "gerber",
         layers: list[str] | None = None,
@@ -484,105 +494,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
             Output file name (relative to the export output directory).
         """
         return _with_low_level_export_notice(_export_3d_pdf(output_path))
-
-    @headless_compatible
-    def sch_export_svg(
-        output_dir: str = "",
-        pages: str = "",
-        variant_name: str = "",
-        theme: str = "",
-        black_and_white: bool = False,
-        exclude_drawing_sheet: bool = False,
-        draw_hop_over: bool = False,
-        no_background_color: bool = False,
-    ) -> str:
-        """Export schematic to SVG format."""
-        sch_file = _get_sch_file()
-        try:
-            out_dir = (
-                _ensure_output_dir("svg")
-                if not output_dir
-                else _resolve_output_file("svg", output_dir, default_name="")
-            )
-        except ValueError as exc:
-            return f"Invalid output path: {exc}"
-
-        cmd = ["sch", "export", "svg"]
-        if pages:
-            cmd.extend(["--pages", pages])
-        if variant_name:
-            cmd.extend(["--variant", variant_name])
-        if theme:
-            cmd.extend(["--theme", theme])
-        if black_and_white:
-            cmd.append("--black-and-white")
-        if exclude_drawing_sheet:
-            cmd.append("--exclude-drawing-sheet")
-        if draw_hop_over:
-            cmd.append("--draw-hop-over")
-        if no_background_color:
-            cmd.append("--no-background-color")
-        cmd.extend(["--output", str(out_dir)])
-        cmd.append(str(sch_file))
-
-        code, stdout, stderr = _run_cli(*cmd)
-        if code != 0:
-            return f"Schematic SVG export failed: {stderr or stdout or 'unknown error'}"
-        files = sorted(out_dir.glob("*.svg")) if out_dir.is_dir() else []
-        return _format_file_list(files, f"Schematic SVG export completed in {out_dir}:")
-
-    @headless_compatible
-    def export_sch_svg() -> str:
-        """Export the schematic to SVG when supported."""
-        return _with_low_level_export_notice(sch_export_svg())
-
-    @headless_compatible
-    def sch_export_dxf(
-        output_dir: str = "",
-        pages: str = "",
-        variant_name: str = "",
-        theme: str = "",
-        black_and_white: bool = False,
-        exclude_drawing_sheet: bool = False,
-        draw_hop_over: bool = False,
-    ) -> str:
-        """Export schematic to DXF format."""
-        sch_file = _get_sch_file()
-        try:
-            out_dir = (
-                _ensure_output_dir("dxf")
-                if not output_dir
-                else _resolve_output_file("dxf", output_dir, default_name="")
-            )
-        except ValueError as exc:
-            return f"Invalid output path: {exc}"
-
-        cmd = ["sch", "export", "dxf"]
-        if pages:
-            cmd.extend(["--pages", pages])
-        if variant_name:
-            cmd.extend(["--variant", variant_name])
-        if theme:
-            cmd.extend(["--theme", theme])
-        if black_and_white:
-            cmd.append("--black-and-white")
-        if exclude_drawing_sheet:
-            cmd.append("--exclude-drawing-sheet")
-        if draw_hop_over:
-            cmd.append("--draw-hop-over")
-        cmd.extend(["--output", str(out_dir)])
-        cmd.append(str(sch_file))
-
-        code, stdout, stderr = _run_cli(*cmd)
-        if code != 0:
-            return f"Schematic DXF export failed: {stderr or stdout or 'unknown error'}"
-        files = sorted(out_dir.glob("*.dxf")) if out_dir.is_dir() else []
-        return _format_file_list(files, f"Schematic DXF export completed in {out_dir}:")
-
-    @headless_compatible
-    def export_sch_dxf() -> str:
-        """Export the schematic to DXF when supported."""
-        return _with_low_level_export_notice(sch_export_dxf())
 
     @headless_compatible
     def sch_export_ps(
@@ -1524,8 +1435,13 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
                 add_low_level_notice=_with_low_level_export_notice,
             ),
         )
-        mcp.tool()(export_sch_svg)
-        mcp.tool()(export_sch_dxf)
+        export_sch_vector.register(
+            mcp,
+            export_sch_vector.ExportSchVectorDependencies(
+                service=sch_vector_service,
+                add_low_level_notice=_with_low_level_export_notice,
+            ),
+        )
         export_sch_python_bom.register(
             mcp,
             export_sch_python_bom.ExportSchPythonBomDependencies(
