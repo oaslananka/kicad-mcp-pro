@@ -16,6 +16,11 @@ SRC_ROOT = REPO_ROOT / "src"
 
 DOMAIN_MODULES = {
     "kicad_mcp.tools.pcb": SRC_ROOT / "kicad_mcp" / "tools" / "pcb.py",
+    "kicad_mcp.export.board_stats": SRC_ROOT / "kicad_mcp" / "export" / "board_stats.py",
+    "kicad_mcp.tools.export_board_stats": SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "export_board_stats.py",
     "kicad_mcp.tools.validation": SRC_ROOT / "kicad_mcp" / "tools" / "validation.py",
     "kicad_mcp.validation.drc_runner": SRC_ROOT / "kicad_mcp" / "validation" / "drc_runner.py",
     "kicad_mcp.validation.policy_state": SRC_ROOT / "kicad_mcp" / "validation" / "policy_state.py",
@@ -221,6 +226,7 @@ DOMAIN_MODULES = {
 
 PURE_HELPERS = {
     "kicad_mcp.validation.drc_runner",
+    "kicad_mcp.export.board_stats",
     "kicad_mcp.validation.policy_state",
     "kicad_mcp.companion.context",
     "kicad_mcp.ipc.command_queue",
@@ -271,6 +277,7 @@ FORBIDDEN_PURE_IMPORT_PREFIXES = (
 
 ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.validation_policy_state": ("kicad_mcp.tools.validation",),
+    "kicad_mcp.tools.export_board_stats": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.pcb_basic_inspection": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_board_inspection": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_file_inspection": ("kicad_mcp.tools.pcb",),
@@ -301,6 +308,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
 
 REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.pcb": 300,
+    "kicad_mcp.tools.export_board_stats": 100,
     "kicad_mcp.tools.validation": 300,
     "kicad_mcp.tools.validation_policy_state": 300,
     "kicad_mcp.tools.pcb_basic_inspection": 300,
