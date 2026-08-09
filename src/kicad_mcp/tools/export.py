@@ -18,6 +18,7 @@ from mcp.types import CallToolResult
 from ..config import get_config
 from ..discovery import get_cli_capabilities
 from ..export.board_stats import ExportBoardStatsService
+from ..export.drill import ExportDrillService
 from ..export.netlist import ExportNetlistService
 from ..mcp_media import image_tool_result, text_tool_result
 from ..models.export import (
@@ -25,7 +26,7 @@ from ..models.export import (
     ExportGerberInput,
     ExportPdfInput,
 )
-from . import export_board_stats, export_netlist
+from . import export_board_stats, export_drill, export_netlist
 from .aliases import notify_deprecated, register_alias
 from .export_support import (
     _ensure_output_dir,
@@ -252,6 +253,14 @@ async def _report_progress(
 
 def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
     """Register export tools."""
+    drill_service = ExportDrillService(
+        get_pcb_file=_get_pcb_file,
+        ensure_output_dir=_ensure_output_dir,
+        get_drill_command=lambda: get_cli_capabilities(get_config().kicad_cli).drill_command,
+        active_variant_args=_active_variant_args,
+        run_cli_variants=_run_cli_variants,
+        format_file_list=_format_file_list,
+    )
 
     def _export_gerber(
         output_subdir: str = "gerber",
@@ -323,47 +332,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         )
         await _report_progress(ctx, 100, 100, "Gerber export complete.")
         return result
-
-    def _export_drill(output_subdir: str = "gerber", variant_name: str | None = None) -> str:
-        pcb_file = _get_pcb_file()
-        try:
-            out_dir = _ensure_output_dir(output_subdir)
-        except ValueError as exc:
-            return f"Invalid output path: {exc}"
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        variant_args = _active_variant_args(variant_name)
-        code, _, stderr = _run_cli_variants(
-            [
-                [
-                    "pcb",
-                    "export",
-                    caps.drill_command,
-                    *variant_args,
-                    "--output",
-                    str(out_dir),
-                    str(pcb_file),
-                ],
-                [
-                    "pcb",
-                    "export",
-                    caps.drill_command,
-                    *variant_args,
-                    "--input",
-                    str(pcb_file),
-                    "--output",
-                    str(out_dir),
-                ],
-            ]
-        )
-        if code != 0:
-            return f"Drill export failed: {stderr or 'unknown error'}"
-        files = sorted(out_dir.glob("*.drl")) + sorted(out_dir.glob("*.xnc"))
-        return _format_file_list(files, f"Drill export completed in {out_dir}:")
-
-    @headless_compatible
-    def export_drill(output_subdir: str = "gerber") -> str:
-        """Export drill files."""
-        return _with_low_level_export_notice(_export_drill(output_subdir))
 
     def _export_bom(format: str = "csv", variant_name: str | None = None) -> str:
         payload = ExportBOMInput(format=format)
@@ -1535,7 +1503,11 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         ]
         await _report_progress(ctx, 45, 100, "Exporting drill files...")
         results.extend(
-            [await anyio.to_thread.run_sync(lambda: _export_drill(variant_name=variant_name))]
+            [
+                await anyio.to_thread.run_sync(
+                    lambda: drill_service.export(variant_name=variant_name)
+                )
+            ]
         )
         await _report_progress(ctx, 65, 100, "Exporting BOM...")
         results.extend(
@@ -1583,7 +1555,13 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
 
     if include_low_level_exports:
         mcp.tool()(export_gerber)
-        mcp.tool()(export_drill)
+        export_drill.register(
+            mcp,
+            export_drill.ExportDrillDependencies(
+                service=drill_service,
+                add_low_level_notice=_with_low_level_export_notice,
+            ),
+        )
         mcp.tool()(export_bom)
         export_netlist.register(
             mcp,
