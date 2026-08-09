@@ -22,6 +22,7 @@ from ..export.drill import ExportDrillService
 from ..export.netlist import ExportNetlistService
 from ..export.pcb_pdf import ExportPcbPdfService
 from ..export.sch_pdf import ExportSchPdfService
+from ..export.sch_python_bom import ExportSchPythonBomService
 from ..mcp_media import image_tool_result, text_tool_result
 from ..models.export import ExportBOMInput, ExportGerberInput
 from . import (
@@ -30,6 +31,7 @@ from . import (
     export_netlist,
     export_pcb_pdf,
     export_sch_pdf,
+    export_sch_python_bom,
 )
 from .aliases import notify_deprecated, register_alias
 from .export_support import (
@@ -279,6 +281,12 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         ensure_output_dir=lambda: _ensure_output_dir(),
         active_variant_args=_active_variant_args,
         run_cli_variants=_run_cli_variants,
+    )
+
+    sch_python_bom_service = ExportSchPythonBomService(
+        get_sch_file=_get_sch_file,
+        resolve_output_file=_resolve_output_file,
+        run_cli=_run_cli,
     )
 
     def _export_gerber(
@@ -621,26 +629,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
             return f"Schematic PostScript export failed: {stderr or stdout or 'unknown error'}"
         files = sorted(out_dir.glob("*.ps")) if out_dir.is_dir() else []
         return _format_file_list(files, f"Schematic PostScript export completed in {out_dir}:")
-
-    @headless_compatible
-    def sch_export_python_bom(output_file: str = "") -> str:
-        """Export the schematic legacy XML BOM using python-bom."""
-        sch_file = _get_sch_file()
-        try:
-            out_file = _resolve_output_file("bom", output_file, default_name="bom.xml")
-        except ValueError as exc:
-            return f"Invalid output path: {exc}"
-
-        cmd = ["sch", "export", "python-bom", "--output", str(out_file), str(sch_file)]
-        code, stdout, stderr = _run_cli(*cmd)
-        if code != 0:
-            return f"Legacy Python BOM export failed: {stderr or stdout or 'unknown error'}"
-        return f"Legacy Python BOM exported to {out_file}"
-
-    @headless_compatible
-    def export_sch_python_bom() -> str:
-        """Export the schematic BOM using KiCad's Python BOM engine."""
-        return _with_low_level_export_notice(sch_export_python_bom())
 
     def _export_3d_model(
         cli_command: str,
@@ -1538,7 +1526,13 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         )
         mcp.tool()(export_sch_svg)
         mcp.tool()(export_sch_dxf)
-        mcp.tool()(export_sch_python_bom)
+        export_sch_python_bom.register(
+            mcp,
+            export_sch_python_bom.ExportSchPythonBomDependencies(
+                service=sch_python_bom_service,
+                add_low_level_notice=_with_low_level_export_notice,
+            ),
+        )
         register_alias(mcp, export_3d_step, "export_step")
         mcp.tool()(export_step)
         mcp.tool()(export_stepz)
