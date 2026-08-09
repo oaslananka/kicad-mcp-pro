@@ -506,30 +506,72 @@ def _failure_for_status(status_code: int) -> FailureKind:
     return "provider_request_rejected"
 
 
-def _provider_request_failure_detail(response: httpx.Response) -> FailureDetail | None:
+def _request_field_detail_from_text(value: object) -> FailureDetail | None:
+    if not isinstance(value, str):
+        return None
+    direct = _PROVIDER_REQUEST_FIELD_DETAILS.get(value.strip())
+    if direct is not None:
+        return direct
+    for field, detail in _PROVIDER_REQUEST_FIELD_DETAILS.items():
+        if re.search(rf"(?<![a-zA-Z0-9_]){re.escape(field)}(?![a-zA-Z0-9_])", value):
+            return detail
+    return None
+
+
+def _provider_request_failure_detail(response: httpx.Response) -> FailureDetail:
     """Return only an allowlisted request field from one validation response."""
     try:
         payload = response.json()
     except (TypeError, ValueError, json.JSONDecodeError):
-        return None
+        return "request_unknown"
     if not isinstance(payload, dict):
-        return None
+        return "request_unknown"
+
     detail = payload.get("detail")
     entries = detail if isinstance(detail, list) else [detail]
-    saw_location = False
     for entry in entries:
         if not isinstance(entry, dict):
             continue
         location = entry.get("loc")
-        if not isinstance(location, list | tuple):
-            continue
-        saw_location = True
-        for segment in reversed(location):
-            if isinstance(segment, str):
-                mapped = _PROVIDER_REQUEST_FIELD_DETAILS.get(segment)
+        if isinstance(location, list | tuple):
+            for segment in reversed(location):
+                mapped = _request_field_detail_from_text(segment)
                 if mapped is not None:
                     return mapped
-    return "request_unknown" if saw_location else None
+
+    diagnostic_values: list[object] = [
+        payload.get("param"),
+        payload.get("parameter"),
+        payload.get("field"),
+        payload.get("message"),
+        payload.get("msg"),
+    ]
+    if isinstance(detail, str):
+        diagnostic_values.append(detail)
+    elif isinstance(detail, dict):
+        diagnostic_values.extend(
+            detail.get(key) for key in ("param", "parameter", "field", "message", "msg")
+        )
+    elif isinstance(detail, list):
+        for entry in detail:
+            if isinstance(entry, dict):
+                diagnostic_values.extend(
+                    entry.get(key) for key in ("param", "parameter", "field", "message", "msg")
+                )
+
+    error = payload.get("error")
+    if isinstance(error, dict):
+        diagnostic_values.extend(
+            error.get(key) for key in ("param", "parameter", "field", "message", "msg")
+        )
+    elif isinstance(error, str):
+        diagnostic_values.append(error)
+
+    for value in diagnostic_values:
+        mapped = _request_field_detail_from_text(value)
+        if mapped is not None:
+            return mapped
+    return "request_unknown"
 
 
 def _json_object(content: str) -> dict[str, Any]:
