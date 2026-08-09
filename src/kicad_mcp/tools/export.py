@@ -18,14 +18,14 @@ from mcp.types import CallToolResult
 from ..config import get_config
 from ..discovery import get_cli_capabilities
 from ..export.board_stats import ExportBoardStatsService
+from ..export.netlist import ExportNetlistService
 from ..mcp_media import image_tool_result, text_tool_result
 from ..models.export import (
     ExportBOMInput,
     ExportGerberInput,
-    ExportNetlistInput,
     ExportPdfInput,
 )
-from . import export_board_stats
+from . import export_board_stats, export_netlist
 from .aliases import notify_deprecated, register_alias
 from .export_support import (
     _ensure_output_dir,
@@ -440,48 +440,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
     def export_bom(format: str = "csv") -> str:
         """Export a bill of materials."""
         return _with_low_level_export_notice(_export_bom(format))
-
-    def _export_netlist(format: str = "kicad") -> str:
-        payload = ExportNetlistInput(format=format)
-        sch_file = _get_sch_file()
-        out_dir = _ensure_output_dir()
-        extension_map = {"kicad": "net", "spice": "cir", "cadstar": "frp", "orcadpcb2": "net"}
-        cli_format_map = {
-            "kicad": "kicadsexpr",
-            "spice": "spice",
-            "cadstar": "cadstar",
-            "orcadpcb2": "orcadpcb2",
-        }
-        out_file = out_dir / f"netlist.{extension_map[payload.format]}"
-        variant_args = _active_variant_args()
-        code, _, stderr = _run_cli_variants(
-            [
-                [
-                    "sch",
-                    "export",
-                    "netlist",
-                    *variant_args,
-                    "--format",
-                    cli_format_map[payload.format],
-                    "--output",
-                    str(out_file),
-                    str(sch_file),
-                ],
-            ]
-        )
-        if code != 0:
-            return f"Netlist export failed: {stderr or 'unknown error'}"
-        return f"Netlist exported to {out_file}"
-
-    @headless_compatible
-    def export_netlist(format: str = "kicad") -> str:
-        """Export a KiCad schematic netlist."""
-        return _with_low_level_export_notice(_export_netlist(format))
-
-    @headless_compatible
-    def export_spice_netlist() -> str:
-        """Export a SPICE netlist."""
-        return _with_low_level_export_notice(_export_netlist("spice"))
 
     def _export_pcb_pdf(layers: list[str] | None = None) -> str:
         payload = ExportPdfInput(layers=layers or [])
@@ -1627,8 +1585,18 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         mcp.tool()(export_gerber)
         mcp.tool()(export_drill)
         mcp.tool()(export_bom)
-        mcp.tool()(export_netlist)
-        mcp.tool()(export_spice_netlist)
+        export_netlist.register(
+            mcp,
+            export_netlist.ExportNetlistDependencies(
+                service=ExportNetlistService(
+                    get_sch_file=_get_sch_file,
+                    ensure_output_dir=_ensure_output_dir,
+                    active_variant_args=_active_variant_args,
+                    run_cli_variants=_run_cli_variants,
+                ),
+                add_low_level_notice=_with_low_level_export_notice,
+            ),
+        )
         mcp.tool()(export_pcb_pdf)
         mcp.tool()(export_sch_pdf)
         mcp.tool()(export_sch_svg)
