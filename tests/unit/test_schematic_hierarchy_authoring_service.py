@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from kicad_mcp.schematic.hierarchy_authoring import SchematicHierarchyAuthoringService
+from kicad_mcp.schematic.sheet_pins import parse_sheet_blocks
 
 
 class _ChildSchematic:
@@ -417,3 +418,195 @@ def test_add_sheet_pin_rejects_an_invalid_type(tmp_path: Path) -> None:
 
     assert "nonsense" in report
     assert store.writes == []
+
+
+ROOT_TEXT_NO_ANCHOR = """(kicad_sch
+\t(title_block
+\t\t(comment 1 "keep me")
+\t)
+\t(sheet
+\t\t(at 80.01 30.48)
+\t\t(size 30.48 20.32)
+\t\t(property "Sheetname" "02_mcu"
+\t\t\t(at 80.01 29.77 0)
+\t\t)
+\t\t(property "Sheetfile" "child.kicad_sch"
+\t\t\t(at 80.01 51.38 0)
+\t\t)
+\t)
+)
+"""
+
+
+def test_import_sheet_pins_reports_a_missing_anchor_under_dry_run(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_NO_ANCHOR, "child.kicad_sch": CHILD_TEXT})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.import_sheet_pins(None, True, True)
+
+    assert store.writes == []
+    assert "02_mcu" in report
+    assert "instances" in report.casefold()
+
+
+def test_import_sheet_pins_reports_a_missing_anchor_when_writing(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_NO_ANCHOR, "child.kicad_sch": CHILD_TEXT})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.import_sheet_pins(None, True, False)
+
+    assert store.writes == []
+    assert "02_mcu" in report
+    assert "instances" in report.casefold()
+    assert store.files["root.kicad_sch"] == ROOT_TEXT_NO_ANCHOR
+
+
+ROOT_TEXT_TWO_SHEETS = """(kicad_sch
+\t(title_block
+\t\t(comment 1 "keep me")
+\t)
+\t(sheet
+\t\t(at 50.0 30.0)
+\t\t(size 20.0 20.0)
+\t\t(property "Sheetname" "01_power"
+\t\t\t(at 50.0 29.0 0)
+\t\t)
+\t\t(property "Sheetfile" "power.kicad_sch"
+\t\t\t(at 50.0 51.0 0)
+\t\t)
+\t\t(instances
+\t\t\t(project "main" (path "/1" (page "2")))
+\t\t)
+\t)
+\t(sheet
+\t\t(at 80.01 30.48)
+\t\t(size 30.48 20.32)
+\t\t(property "Sheetname" "02_mcu"
+\t\t\t(at 80.01 29.77 0)
+\t\t)
+\t\t(property "Sheetfile" "mcu.kicad_sch"
+\t\t\t(at 80.01 51.38 0)
+\t\t)
+\t\t(instances
+\t\t\t(project "main" (path "/1" (page "3")))
+\t\t)
+\t)
+)
+"""
+
+POWER_CHILD_TEXT = (
+    '(hierarchical_label "VBUS"\n\t(shape input)\n\t(at 1 2 0)\n)\n'
+    '(hierarchical_label "GND"\n\t(shape passive)\n\t(at 3 4 0)\n)\n'
+    '(hierarchical_label "EN"\n\t(shape output)\n\t(at 5 6 0)\n)\n'
+)
+
+
+def test_import_sheet_pins_applies_multiple_sheets_in_one_transaction(tmp_path: Path) -> None:
+    store = _TextStore(
+        {
+            "root.kicad_sch": ROOT_TEXT_TWO_SHEETS,
+            "power.kicad_sch": POWER_CHILD_TEXT,
+            "mcu.kicad_sch": CHILD_TEXT,
+        }
+    )
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.import_sheet_pins(None, True, False)
+
+    written = store.files["root.kicad_sch"]
+    assert len(store.writes) == 1
+
+    parsed = {block.name: block for block in parse_sheet_blocks(written)}
+    assert set(parsed) == {"01_power", "02_mcu"}
+    assert {name for name, _pin_type, _uuid in parsed["01_power"].pins} == {"VBUS", "GND", "EN"}
+    assert {name for name, _pin_type, _uuid in parsed["02_mcu"].pins} == {"VIN", "VOUT"}
+    assert "01_power" in report
+    assert "02_mcu" in report
+
+
+ROOT_TEXT_WITH_ORPHAN_PIN = """(kicad_sch
+\t(title_block
+\t\t(comment 1 "keep me")
+\t)
+\t(sheet
+\t\t(at 80.01 30.48)
+\t\t(size 30.48 20.32)
+\t\t(property "Sheetname" "02_mcu"
+\t\t\t(at 80.01 29.77 0)
+\t\t)
+\t\t(property "Sheetfile" "child.kicad_sch"
+\t\t\t(at 80.01 51.38 0)
+\t\t)
+\t\t(pin "OLD_SIGNAL" input
+\t\t\t(at 80.01 32.0 180)
+\t\t\t(effects
+\t\t\t\t(font
+\t\t\t\t\t(size 1.27 1.27)
+\t\t\t\t)
+\t\t\t\t(justify left)
+\t\t\t)
+\t\t\t(uuid "orphan-uuid")
+\t\t)
+\t\t(instances
+\t\t\t(project "main" (path "/1" (page "2")))
+\t\t)
+\t)
+)
+"""
+
+
+def test_import_sheet_pins_keeps_an_orphan_pin_and_reports_it(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_WITH_ORPHAN_PIN, "child.kicad_sch": CHILD_TEXT})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.import_sheet_pins(None, True, False)
+
+    written = store.files["root.kicad_sch"]
+    parsed = parse_sheet_blocks(written)[0]
+    assert {name for name, _pin_type, _uuid in parsed.pins} == {"OLD_SIGNAL", "VIN", "VOUT"}
+    assert "OLD_SIGNAL" in report
+
+
+class _GeometryDriftStore(_TextStore):
+    """Simulate a sheet whose geometry changes between the read and the write."""
+
+    def __init__(self, files: dict[str, str], drifted_root_text: str) -> None:
+        super().__init__(files)
+        self.drifted_root_text = drifted_root_text
+
+    def transactional_write(self, mutator, sch_file=None):  # type: ignore[no-untyped-def]
+        name = (sch_file or Path("root.kicad_sch")).name
+        if name == "root.kicad_sch":
+            self.files[name] = self.drifted_root_text
+        return super().transactional_write(mutator, sch_file)
+
+
+ROOT_TEXT_MOVED = ROOT_TEXT.replace("(at 80.01 30.48)", "(at 85.09 30.48)")
+
+
+def test_import_sheet_pins_rejects_a_sheet_that_moved_before_the_write(tmp_path: Path) -> None:
+    store = _GeometryDriftStore(
+        {"root.kicad_sch": ROOT_TEXT, "child.kicad_sch": CHILD_TEXT},
+        drifted_root_text=ROOT_TEXT_MOVED,
+    )
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.import_sheet_pins(None, True, False)
+
+    assert store.writes == []
+    assert "02_mcu" in report
+    assert "moved" in report.casefold() or "resized" in report.casefold()
+
+
+def test_add_sheet_pin_rejects_a_sheet_that_moved_before_the_write(tmp_path: Path) -> None:
+    store = _GeometryDriftStore(
+        {"root.kicad_sch": ROOT_TEXT, "child.kicad_sch": CHILD_TEXT},
+        drifted_root_text=ROOT_TEXT_MOVED,
+    )
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.add_sheet_pin("02_mcu", "MANUAL", "bidirectional", "top", 5.08)
+
+    assert store.writes == []
+    assert "02_mcu" in report
+    assert "moved" in report.casefold() or "resized" in report.casefold()

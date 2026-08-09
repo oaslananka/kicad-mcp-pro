@@ -341,7 +341,7 @@ class SchematicHierarchyAuthoringService:
 
         grid = self.grid_mm()
         lines: list[str] = []
-        pending: list[tuple[str, SheetPinPlan]] = []
+        pending: list[tuple[str, SheetPinPlan, tuple[float, float], tuple[float, float]]] = []
         for block in blocks:
             child_path = root_path.parent / block.filename
             try:
@@ -363,13 +363,13 @@ class SchematicHierarchyAuthoringService:
                 continue
             lines.append(self._describe(block, plan))
             lines.extend(f"  note: {note}" for note in plan.notes)
-            pending.append((block.name, self._stamp_uuids(plan)))
+            pending.append((block.name, self._stamp_uuids(plan), block.origin, block.size))
 
         if not pending:
             return "\n".join(["No sheet pins could be imported.", *lines])
 
         def mutator(current: str) -> str:
-            for name, plan in pending:
+            for name, plan, origin, size in pending:
                 block = next(
                     (
                         candidate
@@ -380,10 +380,22 @@ class SchematicHierarchyAuthoringService:
                 )
                 if block is None:
                     continue
+                if block.origin != origin or block.size != size:
+                    raise ValueError(
+                        f"Sheet '{name}' moved or resized since it was read "
+                        f"(origin {origin} -> {block.origin}, size {size} -> {block.size}); "
+                        "refusing to overwrite it. Re-run sch_import_sheet_pins."
+                    )
                 current = apply_plan(current, block, plan)
             return current
 
-        if mutator(root_text) == root_text:
+        try:
+            mutated = mutator(root_text)
+        except ValueError as exc:
+            self.warn("schematic_import_sheet_pins_failed", error=str(exc))
+            return "\n".join([f"Could not import sheet pins: {exc}", *lines])
+
+        if mutated == root_text:
             return "\n".join(["Sheet pins are already up to date; nothing was written.", *lines])
         if dry_run:
             return "\n".join(["Dry run -- nothing was written.", *lines])
@@ -435,6 +447,13 @@ class SchematicHierarchyAuthoringService:
             )
             if target is None:
                 raise ValueError(f"Sheet '{sheet}' disappeared before the write.")
+            if target.origin != block.origin or target.size != block.size:
+                raise ValueError(
+                    f"Sheet '{sheet}' moved or resized since it was read "
+                    f"(origin {block.origin} -> {target.origin}, "
+                    f"size {block.size} -> {target.size}); "
+                    "refusing to overwrite it. Re-run sch_add_sheet_pin."
+                )
             return insert_pin(current, target, placement)
 
         try:
