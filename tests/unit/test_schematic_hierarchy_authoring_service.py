@@ -440,6 +440,9 @@ def test_create_sheet_without_pins_behaves_as_before(tmp_path: Path) -> None:
     service.create_sheet("02_mcu", "child.kicad_sch", 80.01, 30.48, True, ())
 
     assert "(pin " not in store.files["root.kicad_sch"]
+    # No pins requested -> the pin-splice write path (transactional_write) must
+    # never run at all, not merely produce no visible "(pin " text.
+    assert store.writes == []
 
 
 def test_create_sheet_reports_conflicting_duplicate_pin_names(tmp_path: Path) -> None:

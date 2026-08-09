@@ -209,55 +209,9 @@ class SchematicHierarchyAuthoringService:
             )
             return f"Could not create child sheet '{name}': {exc}"
 
-        pin_detail = ""
-        if sheet_pins:
-            plan_labels = tuple(sheet_pins)
-            root_text = self.read_text(top_schematic_path)
-            block = next(
-                (
-                    candidate
-                    for candidate in parse_sheet_blocks(root_text)
-                    if candidate.name == name
-                ),
-                None,
-            )
-            if block is None:
-                pin_detail = (
-                    f"\nSheet '{name}' was created, but its block could not be re-read to add pins."
-                )
-            else:
-                plan = self._stamp_uuids(
-                    plan_sheet_pins(plan_labels, block, grid_mm=self.grid_mm())
-                )
-
-                def mutator(current: str, _name: str = name, _plan: SheetPinPlan = plan) -> str:
-                    target = next(
-                        (
-                            candidate
-                            for candidate in parse_sheet_blocks(current)
-                            if candidate.name == _name
-                        ),
-                        None,
-                    )
-                    if target is None:
-                        raise ValueError(f"Sheet '{_name}' disappeared before the pin write.")
-                    return apply_plan(current, target, _plan)
-
-                try:
-                    self.transactional_write(mutator, top_schematic_path)
-                except Exception as exc:
-                    self.warn("schematic_create_sheet_pins_failed", name=name, error=str(exc))
-                    pin_detail = (
-                        f"\nSheet '{name}' was created, but its pins could not be written: {exc}"
-                    )
-                else:
-                    pin_names = ", ".join(placement.name for placement in plan.placements)
-                    pin_detail = f"\nAdded {len(plan.placements)} sheet pins: {pin_names}."
-                    if plan.conflicts:
-                        pin_detail += (
-                            f" Conflicting pin types for {', '.join(plan.conflicts)} "
-                            "(first occurrence wins)."
-                        )
+        pin_detail = (
+            self._apply_sheet_pins(name, top_schematic_path, sheet_pins) if sheet_pins else ""
+        )
 
         result = self.reload_schematic()
         detail = f"Created child sheet '{name}' -> {child_path.name}."
@@ -360,6 +314,57 @@ class SchematicHierarchyAuthoringService:
             for placement in plan.placements
         )
         return replace(plan, placements=placements)
+
+    def _apply_sheet_pins(
+        self,
+        name: str,
+        top_schematic_path: Path,
+        sheet_pins: Sequence[tuple[str, str]],
+    ) -> str:
+        """Splice ``sheet_pins`` onto a just-created sheet, as a report suffix.
+
+        Called only from ``create_sheet`` once the sheet itself is created and
+        saved. This is a second, independent write on top of that one, through
+        the same text splice ``import_sheet_pins`` uses: never through
+        ``kicad_sch_api.add_sheet()``'s own ``sheet_pins`` argument, whose
+        load/save round trip silently drops ``(comment N ...)`` nodes from the
+        schematic's ``title_block``. Never raises -- a failure here is folded
+        into the returned string so the sheet stays reported as created even
+        if its pins could not be written.
+        """
+        plan_labels = tuple(sheet_pins)
+        root_text = self.read_text(top_schematic_path)
+        block = next(
+            (candidate for candidate in parse_sheet_blocks(root_text) if candidate.name == name),
+            None,
+        )
+        if block is None:
+            return f"\nSheet '{name}' was created, but its block could not be re-read to add pins."
+
+        plan = self._stamp_uuids(plan_sheet_pins(plan_labels, block, grid_mm=self.grid_mm()))
+
+        def mutator(current: str, _name: str = name, _plan: SheetPinPlan = plan) -> str:
+            target = next(
+                (candidate for candidate in parse_sheet_blocks(current) if candidate.name == _name),
+                None,
+            )
+            if target is None:
+                raise ValueError(f"Sheet '{_name}' disappeared before the pin write.")
+            return apply_plan(current, target, _plan)
+
+        try:
+            self.transactional_write(mutator, top_schematic_path)
+        except Exception as exc:
+            self.warn("schematic_create_sheet_pins_failed", name=name, error=str(exc))
+            return f"\nSheet '{name}' was created, but its pins could not be written: {exc}"
+
+        pin_names = ", ".join(placement.name for placement in plan.placements)
+        pin_detail = f"\nAdded {len(plan.placements)} sheet pins: {pin_names}."
+        if plan.conflicts:
+            pin_detail += (
+                f" Conflicting pin types for {', '.join(plan.conflicts)} (first occurrence wins)."
+            )
+        return pin_detail
 
     @staticmethod
     def _describe(sheet: SheetBlock, plan: SheetPinPlan) -> str:
