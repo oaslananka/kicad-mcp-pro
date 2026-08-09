@@ -36,14 +36,20 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
         x_mm: float,
         y_mm: float,
         snap_to_grid: bool = True,
+        sheet_pins: list[tuple[str, str]] | None = None,
     ) -> str:
-        """Create a child schematic sheet and add it to the active top-level schematic."""
+        """Create a child schematic sheet and add it to the active top-level schematic.
+
+        Optional ``sheet_pins`` is a list of ``(name, type)`` pairs laid out by
+        the same rules as ``sch_import_sheet_pins``.
+        """
         payload = CreateSheetInput(
             name=name,
             filename=filename,
             x_mm=x_mm,
             y_mm=y_mm,
             snap_to_grid=snap_to_grid,
+            sheet_pins=sheet_pins or [],
         )
         return service.create_sheet(
             payload.name,
@@ -51,6 +57,7 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
             payload.x_mm,
             payload.y_mm,
             payload.snap_to_grid,
+            tuple(payload.sheet_pins),
         )
 
     @mcp.tool()

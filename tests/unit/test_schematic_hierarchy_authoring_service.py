@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -418,6 +419,84 @@ def test_add_sheet_pin_rejects_an_invalid_type(tmp_path: Path) -> None:
 
     assert "nonsense" in report
     assert store.writes == []
+
+
+def test_create_sheet_writes_the_requested_pins(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT, "child.kicad_sch": CHILD_TEXT})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.create_sheet(
+        "02_mcu", "child.kicad_sch", 80.01, 30.48, True, (("VIN", "input"),)
+    )
+
+    assert '(pin "VIN" input' in store.files["root.kicad_sch"]
+    assert "VIN" in report
+
+
+def test_create_sheet_without_pins_behaves_as_before(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT, "child.kicad_sch": CHILD_TEXT})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    service.create_sheet("02_mcu", "child.kicad_sch", 80.01, 30.48, True, ())
+
+    assert "(pin " not in store.files["root.kicad_sch"]
+
+
+def test_create_sheet_reports_conflicting_duplicate_pin_names(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT, "child.kicad_sch": CHILD_TEXT})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.create_sheet(
+        "02_mcu",
+        "child.kicad_sch",
+        80.01,
+        30.48,
+        True,
+        (("VIN", "input"), ("VIN", "output")),
+    )
+
+    written = store.files["root.kicad_sch"]
+    assert written.count('(pin "VIN"') == 1
+    assert '(pin "VIN" input' in written
+    assert "Conflicting pin types for VIN" in report
+
+
+def test_create_sheet_dedupes_identical_duplicate_pin_names(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT, "child.kicad_sch": CHILD_TEXT})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.create_sheet(
+        "02_mcu",
+        "child.kicad_sch",
+        80.01,
+        30.48,
+        True,
+        (("VIN", "input"), ("VIN", "input")),
+    )
+
+    written = store.files["root.kicad_sch"]
+    assert written.count('(pin "VIN"') == 1
+    assert "Conflicting" not in report
+
+
+def test_create_sheet_reports_a_failed_pin_write_without_losing_the_created_sheet(
+    tmp_path: Path,
+) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT, "child.kicad_sch": CHILD_TEXT})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    def _boom(mutator, sch_file=None):  # type: ignore[no-untyped-def]
+        raise RuntimeError("disk full")
+
+    service = replace(service, transactional_write=_boom)
+
+    report = service.create_sheet(
+        "02_mcu", "child.kicad_sch", 80.01, 30.48, True, (("VIN", "input"),)
+    )
+
+    assert "was created" in report
+    assert "disk full" in report
+    assert "(pin " not in store.files["root.kicad_sch"]
 
 
 ROOT_TEXT_NO_ANCHOR = """(kicad_sch

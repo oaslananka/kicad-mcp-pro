@@ -135,6 +135,13 @@ class PowerSymbolInput(BaseModel):
     snap_to_grid: bool = True
 
 
+SheetPinType = Literal["input", "output", "bidirectional", "tri_state", "passive"]
+SheetEdge = Literal["left", "right", "top", "bottom"]
+
+SheetPinLabel = tuple[Annotated[str, Field(min_length=1, max_length=240)], SheetPinType]
+"""One ``(name, pin_type)`` pair, laid out by ``sch_import_sheet_pins``'s rules."""
+
+
 class CreateSheetInput(BaseModel):
     """Create a child schematic sheet on the active top-level schematic."""
 
@@ -143,10 +150,7 @@ class CreateSheetInput(BaseModel):
     x_mm: CoordMM
     y_mm: CoordMM
     snap_to_grid: bool = True
-
-
-SheetPinType = Literal["input", "output", "bidirectional", "tri_state", "passive"]
-SheetEdge = Literal["left", "right", "top", "bottom"]
+    sheet_pins: list[SheetPinLabel] = Field(default_factory=list, max_length=256)
 
 
 class SheetPinInput(BaseModel):

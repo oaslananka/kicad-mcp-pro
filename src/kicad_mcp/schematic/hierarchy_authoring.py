@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
@@ -158,8 +158,19 @@ class SchematicHierarchyAuthoringService:
         x_mm: float,
         y_mm: float,
         snap_to_grid: bool,
+        sheet_pins: Sequence[tuple[str, str]] = (),
     ) -> str:
-        """Create a child schematic and add it to the active root schematic."""
+        """Create a child schematic and add it to the active root schematic.
+
+        ``sheet_pins``, if given, is applied after the sheet is created through
+        the same text splice ``import_sheet_pins`` uses -- never through
+        ``kicad_sch_api.add_sheet()``'s own ``sheet_pins`` argument, whose
+        load/save round trip silently drops ``(comment N ...)`` nodes from the
+        schematic's ``title_block``. That is a second write on top of the one
+        that creates the sheet: if it fails, the sheet already exists (and is
+        reported as created) but is pinless, and the returned text says so
+        explicitly rather than looking like the whole call failed.
+        """
         try:
             create_schematic = self.resolve_create_schematic()
         except Exception as exc:
@@ -198,11 +209,61 @@ class SchematicHierarchyAuthoringService:
             )
             return f"Could not create child sheet '{name}': {exc}"
 
+        pin_detail = ""
+        if sheet_pins:
+            plan_labels = tuple(sheet_pins)
+            root_text = self.read_text(top_schematic_path)
+            block = next(
+                (
+                    candidate
+                    for candidate in parse_sheet_blocks(root_text)
+                    if candidate.name == name
+                ),
+                None,
+            )
+            if block is None:
+                pin_detail = (
+                    f"\nSheet '{name}' was created, but its block could not be re-read to add pins."
+                )
+            else:
+                plan = self._stamp_uuids(
+                    plan_sheet_pins(plan_labels, block, grid_mm=self.grid_mm())
+                )
+
+                def mutator(current: str, _name: str = name, _plan: SheetPinPlan = plan) -> str:
+                    target = next(
+                        (
+                            candidate
+                            for candidate in parse_sheet_blocks(current)
+                            if candidate.name == _name
+                        ),
+                        None,
+                    )
+                    if target is None:
+                        raise ValueError(f"Sheet '{_name}' disappeared before the pin write.")
+                    return apply_plan(current, target, _plan)
+
+                try:
+                    self.transactional_write(mutator, top_schematic_path)
+                except Exception as exc:
+                    self.warn("schematic_create_sheet_pins_failed", name=name, error=str(exc))
+                    pin_detail = (
+                        f"\nSheet '{name}' was created, but its pins could not be written: {exc}"
+                    )
+                else:
+                    pin_names = ", ".join(placement.name for placement in plan.placements)
+                    pin_detail = f"\nAdded {len(plan.placements)} sheet pins: {pin_names}."
+                    if plan.conflicts:
+                        pin_detail += (
+                            f" Conflicting pin types for {', '.join(plan.conflicts)} "
+                            "(first occurrence wins)."
+                        )
+
         result = self.reload_schematic()
         detail = f"Created child sheet '{name}' -> {child_path.name}."
         if snap_note:
             detail = f"{detail}\n{snap_note}"
-        return f"{result}\n{detail}"
+        return f"{result}\n{detail}{pin_detail}"
 
     def _add_label(
         self,
