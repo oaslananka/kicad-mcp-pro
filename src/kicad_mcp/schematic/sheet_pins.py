@@ -241,6 +241,13 @@ _EDGE_GEOMETRY: Final[dict[str, tuple[int, str]]] = {
 
 Taken from ``kicad_sch_api``'s own edge table so hand-placed pins and imported
 pins render identically.
+
+This is the only geometry ``placement_on_edge`` and ``plan_sheet_pins`` share.
+The two deliberately part ways on where ``position_along_edge`` starts on the
+left edge: ``placement_on_edge`` keeps kicad-sch-api's convention (measured
+from the bottom), while ``plan_sheet_pins`` measures top-down so its left and
+right columns read in the same direction. See each function's docstring for
+why.
 """
 
 
@@ -332,9 +339,14 @@ def placement_on_edge(
 ) -> SheetPinPlacement:
     """Resolve one pin on any of the four edges to absolute coordinates.
 
-    ``position_along_edge`` follows kicad-sch-api's convention, clockwise from
-    the right edge: ``right`` measures from the top, ``bottom`` and ``top`` from
-    the left, and ``left`` from the bottom.
+    This is the manual-placement entry point: callers who already know where
+    they want a pin, in kicad-sch-api's own coordinate convention, get exact
+    parity with hand-placed pins. ``position_along_edge`` follows that
+    convention, clockwise from the right edge: ``right`` measures from the
+    top, ``bottom`` and ``top`` from the left, and ``left`` from the bottom.
+
+    ``plan_sheet_pins`` deliberately does not use this convention for its
+    left edge -- see its docstring and the note on ``_EDGE_GEOMETRY`` for why.
     """
     if pin_type not in PIN_TYPES:
         raise ValueError(f"Unknown sheet pin type '{pin_type}'. Use one of {', '.join(PIN_TYPES)}.")
@@ -382,6 +394,13 @@ def plan_sheet_pins(
     within each edge. The layout covers *all* pins, not only the new ones: KiCad
     measures a left-edge pin from the bottom of the sheet, so growing the sheet
     would silently move any left pin whose offset was left untouched.
+
+    Left-edge pins are placed top-down (``origin_y + margin + index * pitch``),
+    not in kicad-sch-api's bottom-relative convention that ``placement_on_edge``
+    follows. Both columns must run in the same direction -- otherwise the left
+    column would read bottom-to-top while the right reads top-to-bottom -- so
+    this function does not call ``placement_on_edge`` for its left edge. See
+    the note on ``_EDGE_GEOMETRY`` for the full picture.
     """
     desired: dict[str, str] = {}
     conflicts: list[str] = []
