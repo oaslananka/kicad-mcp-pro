@@ -17,6 +17,7 @@ from mcp.types import CallToolResult
 
 from ..config import get_config
 from ..discovery import get_cli_capabilities
+from ..export.board_stats import ExportBoardStatsService
 from ..mcp_media import image_tool_result, text_tool_result
 from ..models.export import (
     ExportBOMInput,
@@ -24,6 +25,7 @@ from ..models.export import (
     ExportNetlistInput,
     ExportPdfInput,
 )
+from . import export_board_stats
 from .aliases import notify_deprecated, register_alias
 from .export_support import (
     _ensure_output_dir,
@@ -1535,72 +1537,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         return _with_low_level_export_notice(_export_odb())
 
     @headless_compatible
-    def get_board_stats() -> str:
-        """Export board statistics and return a readable preview."""
-        pcb_file = _get_pcb_file()
-        out_file = _ensure_output_dir() / "board_stats.txt"
-        code, stdout, stderr = _run_cli_variants(
-            [
-                ["pcb", "export", "stats", "--output", str(out_file), str(pcb_file)],
-                ["pcb", "export", "stats", "--input", str(pcb_file), "--output", str(out_file)],
-            ]
-        )
-        if out_file.exists():
-            return _read_preview(out_file)
-        if code != 0:
-            return f"Board stats export failed: {stderr or 'unknown error'}"
-        return stdout or "Board statistics were generated without a text report."
-
-    @headless_compatible
-    def pcb_export_stats(output_name: str | None = None) -> str:
-        """Export board statistics (net count, component count, layer count, etc.)
-        via the KiCad CLI ``pcb export stats`` command.
-
-        Parameters
-        ----------
-        output_name : str | None
-            Optional output file name (saved under the project output directory).
-            Defaults to ``board_stats.json``.
-        """
-        pcb_file = _get_pcb_file()
-        out_dir = _ensure_output_dir("stats")
-        out_file = out_dir / (output_name.strip() if output_name else "board_stats.json")
-        if "/" in str(out_file.relative_to(out_dir)) or "\\" in str(out_file.relative_to(out_dir)):
-            raise ValueError("Output name must be a single file name, not a path.")
-
-        code, stdout, stderr = _run_cli_variants(
-            [
-                [
-                    "pcb",
-                    "export",
-                    "stats",
-                    "--output",
-                    str(out_file),
-                    str(pcb_file),
-                ],
-                [
-                    "pcb",
-                    "export",
-                    "stats",
-                    "--input",
-                    str(pcb_file),
-                    "--output",
-                    str(out_file),
-                ],
-            ]
-        )
-        if code != 0:
-            return f"Board stats export failed: {stderr or 'unknown error'}"
-        if not out_file.exists():
-            return "Board stats export completed but no output file was produced."
-
-        try:
-            stats = json.loads(out_file.read_text(encoding="utf-8"))
-            return json.dumps(stats, indent=2)
-        except (json.JSONDecodeError, OSError):
-            return f"Board stats exported to {out_file}."
-
-    @headless_compatible
     async def export_manufacturing_package(
         variant: str = "",
         approval_evidence_path: str = "",
@@ -1719,6 +1655,22 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         mcp.tool()(export_svg)
         mcp.tool()(export_dxf)
 
-    mcp.tool()(get_board_stats)
+    board_stats_dependencies = export_board_stats.ExportBoardStatsDependencies(
+        service=ExportBoardStatsService(
+            get_pcb_file=_get_pcb_file,
+            ensure_output_dir=_ensure_output_dir,
+            run_cli_variants=_run_cli_variants,
+            read_preview=_read_preview,
+        )
+    )
+    export_board_stats.register(
+        mcp,
+        board_stats_dependencies,
+        include_json=False,
+    )
     mcp.tool()(export_manufacturing_package)
-    mcp.tool()(pcb_export_stats)
+    export_board_stats.register(
+        mcp,
+        board_stats_dependencies,
+        include_preview=False,
+    )
