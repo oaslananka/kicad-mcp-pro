@@ -500,3 +500,94 @@ def plan_sheet_pins(
         overflow=tuple(overflow),
         notes=tuple(notes),
     )
+
+
+def _format_mm(value: float) -> str:
+    """Format a millimetre value the way KiCad writes it: no trailing zeros."""
+    text = f"{value:.4f}".rstrip("0").rstrip(".")
+    if text in ("", "-", "-0"):
+        return "0"
+    return text
+
+
+def sheet_pin_block(placement: SheetPinPlacement, indent: str = "\t\t") -> str:
+    """Render one ``(pin ...)`` node, newline-terminated, in KiCad's node order."""
+    inner = indent + "\t"
+    return (
+        f'{indent}(pin "{_escape(placement.name)}" {placement.pin_type}\n'
+        f"{inner}(at {_format_mm(placement.x_mm)} {_format_mm(placement.y_mm)}"
+        f" {placement.rotation})\n"
+        f"{inner}(effects\n"
+        f"{inner}\t(font\n"
+        f"{inner}\t\t(size {_format_mm(DEFAULT_TEXT_HEIGHT_MM)}"
+        f" {_format_mm(DEFAULT_TEXT_HEIGHT_MM)})\n"
+        f"{inner}\t)\n"
+        f"{inner}\t(justify {placement.justify})\n"
+        f"{inner})\n"
+        f'{inner}(uuid "{placement.uuid}")\n'
+        f"{indent})\n"
+    )
+
+
+def _line_start(text: str, index: int) -> int:
+    return text.rfind("\n", 0, index) + 1
+
+
+def _indent_of(text: str, index: int) -> str:
+    line_start = _line_start(text, index)
+    return text[line_start:index]
+
+
+def _require_anchor(sheet: SheetBlock) -> int:
+    if sheet.instances_start is None:
+        raise ValueError(
+            f"Sheet '{sheet.name}' has no (instances ...) node, so there is no safe place "
+            "to write pins. Open it once in KiCad, or recreate it with sch_create_sheet."
+        )
+    return sheet.instances_start
+
+
+def _splice(text: str, sheet: SheetBlock, edits: list[tuple[int, int, str]]) -> str:
+    """Apply ``(start, end, replacement)`` edits inside one sheet block."""
+    block = text[sheet.start : sheet.end]
+    for start, end, replacement in sorted(edits, key=lambda edit: edit[0], reverse=True):
+        local_start, local_end = start - sheet.start, end - sheet.start
+        block = block[:local_start] + replacement + block[local_end:]
+    return text[: sheet.start] + block + text[sheet.end :]
+
+
+def apply_plan(text: str, sheet: SheetBlock, plan: SheetPinPlan) -> str:
+    """Write a whole plan into one sheet block: new size, all pins, nothing else.
+
+    Existing ``(pin ...)`` nodes are removed and re-emitted from the plan, which
+    is what keeps left-edge pins correct when the sheet grows. Nothing outside
+    the sheet block is touched, so the document's ``title_block`` survives
+    untouched -- unlike a kicad-sch-api round trip.
+    """
+    anchor = _require_anchor(sheet)
+    edits: list[tuple[int, int, str]] = [
+        (
+            sheet.size_span[0],
+            sheet.size_span[1],
+            f"(size {_format_mm(plan.size[0])} {_format_mm(plan.size[1])})",
+        )
+    ]
+    edits.extend((start, end, "") for start, end in sheet.pin_spans)
+    indent = _indent_of(text, anchor)
+    rendered = "".join(sheet_pin_block(placement, indent) for placement in plan.placements)
+    line_start = _line_start(text, anchor)
+    edits.append((line_start, line_start, rendered))
+    return _splice(text, sheet, edits)
+
+
+def insert_pin(text: str, sheet: SheetBlock, placement: SheetPinPlacement) -> str:
+    """Add a single pin to a sheet block without touching size or other pins."""
+    if any(name == placement.name for name, _type, _uuid in sheet.pins):
+        raise ValueError(
+            f"Sheet '{sheet.name}' already has a pin named '{placement.name}'. "
+            "Use sch_import_sheet_pins to reconcile it with the child sheet."
+        )
+    anchor = _require_anchor(sheet)
+    indent = _indent_of(text, anchor)
+    line_start = _line_start(text, anchor)
+    return _splice(text, sheet, [(line_start, line_start, sheet_pin_block(placement, indent))])

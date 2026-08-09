@@ -46,3 +46,17 @@ def test_hierarchy_authoring_register_stays_below_300_lines() -> None:
     adapter = boundaries.SRC_ROOT / "kicad_mcp" / "tools" / "schematic_hierarchy_authoring.py"
     assert _function_span(adapter, "register") <= 300
     assert boundaries.REGISTER_LINE_LIMITS["kicad_mcp.tools.schematic_hierarchy_authoring"] == 300
+
+
+def test_architecture_checker_tracks_the_sheet_pin_module() -> None:
+    assert "kicad_mcp.schematic.sheet_pins" in boundaries.DOMAIN_MODULES
+    assert "kicad_mcp.schematic.sheet_pins" in boundaries.PURE_HELPERS
+
+
+def test_sheet_pin_module_does_not_depend_on_kicad_sch_api() -> None:
+    # The whole point of the text-splice write path: a kicad-sch-api round trip
+    # drops title_block comments, so this module must never reach for it.
+    module = boundaries.SRC_ROOT / "kicad_mcp" / "schematic" / "sheet_pins.py"
+    imports = _imports(module)
+    assert not any(name.startswith("kicad_sch_api") for name in imports)
+    assert not any(name.startswith("kicad_mcp.tools") for name in imports)

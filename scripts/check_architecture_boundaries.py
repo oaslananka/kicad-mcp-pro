@@ -116,6 +116,7 @@ DOMAIN_MODULES = {
     / "layout_inspection.py",
     "kicad_mcp.schematic.rendering": SRC_ROOT / "kicad_mcp" / "schematic" / "rendering.py",
     "kicad_mcp.schematic.semantic_ir": SRC_ROOT / "kicad_mcp" / "schematic" / "semantic_ir.py",
+    "kicad_mcp.schematic.sheet_pins": SRC_ROOT / "kicad_mcp" / "schematic" / "sheet_pins.py",
     "kicad_mcp.schematic.symbol_mutation": SRC_ROOT
     / "kicad_mcp"
     / "schematic"
@@ -287,6 +288,7 @@ PURE_HELPERS = {
     "kicad_mcp.schematic.layout_inspection",
     "kicad_mcp.schematic.rendering",
     "kicad_mcp.schematic.semantic_ir",
+    "kicad_mcp.schematic.sheet_pins",
     "kicad_mcp.schematic.symbol_mutation",
     "kicad_mcp.schematic.template_catalog",
     "kicad_mcp.schematic.template_instantiation",
