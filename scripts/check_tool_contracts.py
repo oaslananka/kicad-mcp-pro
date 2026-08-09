@@ -11,7 +11,7 @@ from kicad_mcp.server import build_server
 
 
 async def _tool_schemas() -> dict[str, dict[str, Any]]:
-    server = build_server("agent_full")
+    server = build_server("full")
     return {tool.name: dict(tool.inputSchema or {}) for tool in await server.list_tools()}
 
 
@@ -20,12 +20,29 @@ def _schema_properties(schema: dict[str, Any]) -> dict[str, Any]:
     return properties if isinstance(properties, dict) else {}
 
 
+def _array_schema_paths_missing_items(node: object, path: str = "$") -> list[str]:
+    """Return array-schema paths rejected by stricter MCP hosts."""
+    missing: list[str] = []
+    if isinstance(node, dict):
+        if node.get("type") == "array" and "items" not in node:
+            missing.append(path)
+        for key, value in node.items():
+            missing.extend(_array_schema_paths_missing_items(value, f"{path}/{key}"))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            missing.extend(_array_schema_paths_missing_items(value, f"{path}/{index}"))
+    return missing
+
+
 async def lint() -> list[str]:
     """Return human-readable contract errors."""
     errors: list[str] = []
     coverage = metadata_coverage()
-    if coverage["missing_tools"]:
-        missing = ", ".join(str(name) for name in coverage["missing_tools"])
+    missing_tools = coverage["missing_tools"]
+    if not isinstance(missing_tools, list):
+        errors.append("Capability metadata coverage missing_tools must be a list.")
+    elif missing_tools:
+        missing = ", ".join(str(name) for name in missing_tools)
         errors.append(f"Missing capability metadata for routed tools: {missing}")
 
     records = all_records()
@@ -41,6 +58,13 @@ async def lint() -> list[str]:
                 errors.append(f"Read-only profile '{profile}' exposes mutating tool {tool_name}")
 
     schemas = await _tool_schemas()
+    for tool_name, schema in schemas.items():
+        for path in _array_schema_paths_missing_items(schema):
+            errors.append(
+                f"{tool_name} input schema array at {path} must declare items "
+                "for MCP host compatibility."
+            )
+
     lib_search_components = _schema_properties(schemas.get("lib_search_components", {}))
     if "query" not in lib_search_components:
         errors.append("lib_search_components must expose preferred parameter 'query'.")
