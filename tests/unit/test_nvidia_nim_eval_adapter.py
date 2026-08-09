@@ -251,6 +251,58 @@ def test_nim_request_sanitizes_unknown_provider_validation_location() -> None:
     assert "sensitive-provider" not in json.dumps(result)
 
 
+def test_nim_request_sanitizes_provider_error_param() -> None:
+    raw_message = "reasoning_effort rejected with secret-provider-context"
+    result = request_nvidia_nim(
+        model="nvidia/test-model",
+        prompt="Private board prompt must not escape.",
+        api_key="test-key",
+        catalog=(),
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                422,
+                json={
+                    "error": {
+                        "param": "reasoning_effort",
+                        "message": raw_message,
+                    }
+                },
+            )
+        ),
+    )
+
+    assert result == {
+        "schema_version": 1,
+        "status": "error",
+        "failure_kind": "provider_request_rejected",
+        "failure_detail": "request_reasoning_effort",
+    }
+    serialized = json.dumps(result)
+    assert raw_message not in serialized
+    assert "Private board prompt" not in serialized
+
+
+def test_nim_request_sanitizes_allowlisted_field_from_provider_detail_text() -> None:
+    raw_detail = "Validation failed for top_p; secret-provider-context must not escape"
+    result = request_nvidia_nim(
+        model="nvidia/test-model",
+        prompt="Inspect.",
+        api_key="test-key",
+        catalog=(),
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(422, json={"detail": raw_detail})
+        ),
+    )
+
+    assert result == {
+        "schema_version": 1,
+        "status": "error",
+        "failure_kind": "provider_request_rejected",
+        "failure_detail": "request_top_p",
+    }
+    assert raw_detail not in json.dumps(result)
+
+
 def test_nim_request_exposes_only_bounded_retry_after_hint() -> None:
     result = request_nvidia_nim(
         model="nvidia/test-model",
@@ -354,6 +406,7 @@ def test_hosted_nim_request_makes_one_http_call_without_structured_fields() -> N
         "schema_version": 1,
         "status": "error",
         "failure_kind": "provider_request_rejected",
+        "failure_detail": "request_unknown",
     }
     assert len(requests) == 1
     assert "guided_json" not in requests[0]
