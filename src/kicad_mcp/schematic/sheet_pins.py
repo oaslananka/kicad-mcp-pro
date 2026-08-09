@@ -547,8 +547,29 @@ def _require_anchor(sheet: SheetBlock) -> int:
     return sheet.instances_start
 
 
+def _check_non_overlapping(sheet: SheetBlock, edits: list[tuple[int, int, str]]) -> None:
+    """Guard the one precondition ``_splice`` actually depends on.
+
+    Replaying edits in descending order of ``start`` is only safe if the spans
+    are pairwise non-overlapping -- see ``_splice``. A ``(pin ...)`` node
+    sharing a physical source line with ``(instances ...)`` or ``(size ...)``
+    would violate that (their line-widened spans would collide), so this is a
+    loud, named ``ValueError`` instead of a silently corrupted schematic.
+    """
+    ordered = sorted(edits, key=lambda edit: edit[0])
+    for previous, current in zip(ordered, ordered[1:], strict=False):
+        if current[0] < previous[1]:
+            raise ValueError(
+                f"Sheet '{sheet.name}' has overlapping edits at character spans "
+                f"{previous[:2]} and {current[:2]}; refusing to risk corrupting the file. "
+                "This usually means a (pin ...) node shares a source line with "
+                "(instances ...) or (size ...) -- reformat the file in KiCad and retry."
+            )
+
+
 def _splice(text: str, sheet: SheetBlock, edits: list[tuple[int, int, str]]) -> str:
     """Apply ``(start, end, replacement)`` edits inside one sheet block."""
+    _check_non_overlapping(sheet, edits)
     block = text[sheet.start : sheet.end]
     for start, end, replacement in sorted(edits, key=lambda edit: edit[0], reverse=True):
         local_start, local_end = start - sheet.start, end - sheet.start
