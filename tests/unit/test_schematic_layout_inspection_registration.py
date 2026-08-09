@@ -83,10 +83,12 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
     assert free["properties"]["count"]["default"] == 1
     assert free["properties"]["cell_width_mm"]["default"] == 25.4
     assert free["properties"]["cell_height_mm"]["default"] == 17.78
-    tuple_schema = free["properties"]["keepout_regions"]["anyOf"][0]["items"]
-    assert tuple_schema["minItems"] == 4
-    assert tuple_schema["maxItems"] == 4
-    assert len(tuple_schema["prefixItems"]) == 4
+    rectangle_schema = free["properties"]["keepout_regions"]["anyOf"][0]["items"]
+    assert rectangle_schema["type"] == "array"
+    assert rectangle_schema["minItems"] == 4
+    assert rectangle_schema["maxItems"] == 4
+    assert rectangle_schema["items"] == {"type": "number"}
+    assert "prefixItems" not in rectangle_schema
 
 
 def test_registration_preserves_headless_metadata() -> None:

@@ -29,6 +29,20 @@ def _load_schema(path: Path) -> dict[str, object]:
     return schema
 
 
+def _array_paths_missing_items(node: object, path: str = "$") -> list[str]:
+    """Return array-schema paths rejected by stricter MCP hosts."""
+    missing: list[str] = []
+    if isinstance(node, dict):
+        if node.get("type") == "array" and "items" not in node:
+            missing.append(path)
+        for key, value in node.items():
+            missing.extend(_array_paths_missing_items(value, f"{path}/{key}"))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            missing.extend(_array_paths_missing_items(value, f"{path}/{index}"))
+    return missing
+
+
 # ---------------------------------------------------------------------------
 # Tool inputSchema structural contract
 # ---------------------------------------------------------------------------
@@ -47,6 +61,19 @@ def test_every_tool_has_valid_input_schema() -> None:
         )
         # Validate it's a valid JSON Schema
         Draft202012Validator.check_schema(schema)
+
+
+def test_every_array_schema_declares_items_for_host_compatibility() -> None:
+    """Stricter MCP hosts require every array node to declare ``items``."""
+    server = build_server("full")
+    violations: list[str] = []
+
+    for tool in server.list_tools_sync():
+        violations.extend(
+            f"{tool.name}:{path}" for path in _array_paths_missing_items(tool.inputSchema)
+        )
+
+    assert not violations, "array schemas missing items: " + ", ".join(violations)
 
 
 def test_every_tool_input_schema_root_is_object() -> None:

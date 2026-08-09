@@ -5,14 +5,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Annotated
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
 from ..schematic.layout_inspection import SchematicLayoutInspectionService
 from .metadata import headless_compatible
 
 _DEFAULT_CELL_WIDTH_MM = 25.4
 _DEFAULT_CELL_HEIGHT_MM = 17.78
+_KeepoutRegion = Annotated[list[float], Field(min_length=4, max_length=4)]
 
 
 @dataclass(frozen=True)
@@ -49,7 +52,7 @@ def register(mcp: FastMCP, dependencies: SchematicLayoutInspectionDependencies) 
         count: int = 1,
         cell_width_mm: float = _DEFAULT_CELL_WIDTH_MM,
         cell_height_mm: float = _DEFAULT_CELL_HEIGHT_MM,
-        keepout_regions: list[tuple[float, float, float, float]] | None = None,
+        keepout_regions: list[_KeepoutRegion] | None = None,
     ) -> str:
         """Find N collision-free placement coordinates for new symbols.
 
@@ -68,9 +71,14 @@ def register(mcp: FastMCP, dependencies: SchematicLayoutInspectionDependencies) 
         Returns:
             A list of (x_mm, y_mm) coordinate pairs, one per requested slot.
         """
+        normalized_keepouts = (
+            None
+            if keepout_regions is None
+            else [(region[0], region[1], region[2], region[3]) for region in keepout_regions]
+        )
         return service.free_placement(
             count,
             cell_width_mm,
             cell_height_mm,
-            keepout_regions,
+            normalized_keepouts,
         )
