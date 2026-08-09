@@ -183,6 +183,74 @@ def test_nim_request_classifies_provider_failures_without_raw_body() -> None:
         assert raw_body not in json.dumps(result)
 
 
+def test_nim_request_sanitizes_provider_request_field_from_validation_error() -> None:
+    raw_message = "temperature invalid for secret-token-do-not-retain"
+    raw_input = {"temperature": "private-value-do-not-retain"}
+    result = request_nvidia_nim(
+        model="nvidia/test-model",
+        prompt="Inspect private board content that must not escape.",
+        api_key="test-key",
+        catalog=(),
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                422,
+                json={
+                    "detail": [
+                        {
+                            "type": "less_than_equal",
+                            "loc": ["body", "temperature"],
+                            "msg": raw_message,
+                            "input": raw_input,
+                        }
+                    ]
+                },
+            )
+        ),
+    )
+
+    assert result == {
+        "schema_version": 1,
+        "status": "error",
+        "failure_kind": "provider_request_rejected",
+        "failure_detail": "request_temperature",
+    }
+    serialized = json.dumps(result)
+    assert raw_message not in serialized
+    assert "private-value-do-not-retain" not in serialized
+    assert "Inspect private board content" not in serialized
+
+
+def test_nim_request_sanitizes_unknown_provider_validation_location() -> None:
+    result = request_nvidia_nim(
+        model="nvidia/test-model",
+        prompt="Inspect.",
+        api_key="test-key",
+        catalog=(),
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                422,
+                json={
+                    "detail": [
+                        {
+                            "loc": ["body", "private_provider_field"],
+                            "msg": "sensitive-provider-message",
+                            "input": "sensitive-provider-input",
+                        }
+                    ]
+                },
+            )
+        ),
+    )
+
+    assert result == {
+        "schema_version": 1,
+        "status": "error",
+        "failure_kind": "provider_request_rejected",
+        "failure_detail": "request_unknown",
+    }
+    assert "sensitive-provider" not in json.dumps(result)
+
+
 def test_nim_request_exposes_only_bounded_retry_after_hint() -> None:
     result = request_nvidia_nim(
         model="nvidia/test-model",

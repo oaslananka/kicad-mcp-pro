@@ -28,6 +28,14 @@ FailureDetail = Literal[
     "duplicate_tool",
     "kind_tool_mismatch",
     "usage_shape",
+    "request_messages",
+    "request_model",
+    "request_reasoning_effort",
+    "request_max_tokens",
+    "request_temperature",
+    "request_top_p",
+    "request_stream",
+    "request_unknown",
 ]
 
 FailureKind = Literal[
@@ -59,6 +67,18 @@ MODEL_OUTPUT_FAILURE_DETAILS: frozenset[FailureDetail] = frozenset(
         "duplicate_tool",
         "kind_tool_mismatch",
         "usage_shape",
+    }
+)
+PROVIDER_REQUEST_FAILURE_DETAILS: frozenset[FailureDetail] = frozenset(
+    {
+        "request_messages",
+        "request_model",
+        "request_reasoning_effort",
+        "request_max_tokens",
+        "request_temperature",
+        "request_top_p",
+        "request_stream",
+        "request_unknown",
     }
 )
 
@@ -122,9 +142,15 @@ class AdapterObservation:
         if (self.run is None) == (self.failure_kind is None):
             raise ValueError("AdapterObservation needs exactly one of run or failure_kind.")
         if self.failure_detail is not None:
-            if self.failure_kind != "model_output_invalid":
-                raise ValueError("failure_detail is valid only for model_output_invalid.")
-            if self.failure_detail not in MODEL_OUTPUT_FAILURE_DETAILS:
+            if self.failure_kind == "model_output_invalid":
+                allowed_details = MODEL_OUTPUT_FAILURE_DETAILS
+            elif self.failure_kind == "provider_request_rejected":
+                allowed_details = PROVIDER_REQUEST_FAILURE_DETAILS
+            else:
+                raise ValueError(
+                    "failure_detail is valid only for model output or provider request failures."
+                )
+            if self.failure_detail not in allowed_details:
                 raise ValueError("failure_detail is not allowlisted.")
         if self.retry_after_seconds is not None:
             if self.failure_kind not in _RETRY_AFTER_FAILURE_KINDS:
@@ -223,10 +249,13 @@ def _parse_adapter_payload(value: object) -> AdapterObservation:
         failure_detail: FailureDetail | None = None
         if "failure_detail" in raw:
             detail_raw = raw.get("failure_detail")
-            if (
-                failure_raw != "model_output_invalid"
-                or detail_raw not in MODEL_OUTPUT_FAILURE_DETAILS
-            ):
+            if failure_raw == "model_output_invalid":
+                allowed_details = MODEL_OUTPUT_FAILURE_DETAILS
+            elif failure_raw == "provider_request_rejected":
+                allowed_details = PROVIDER_REQUEST_FAILURE_DETAILS
+            else:
+                allowed_details = frozenset()
+            if detail_raw not in allowed_details:
                 raise ValueError("Adapter response has an unsupported failure_detail.")
             failure_detail = cast(FailureDetail, detail_raw)
         retry_after_seconds: float | None = None
