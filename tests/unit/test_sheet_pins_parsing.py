@@ -138,3 +138,40 @@ def test_pin_types_are_the_kicad_vocabulary() -> None:
 @pytest.mark.parametrize("text", ["", "(kicad_sch\n)\n"])
 def test_parse_sheet_blocks_tolerates_documents_without_sheets(text: str) -> None:
     assert parse_sheet_blocks(text) == ()
+
+
+def test_parse_sheet_blocks_ignores_a_parenthesis_inside_a_property_string() -> None:
+    # A stray ")" inside the quoted Sheetname value must not be mistaken for
+    # the real closing parenthesis of the (property ...) node: the scanner is
+    # string-aware, so it should keep tracking depth correctly and still find
+    # the sheet's true boundaries and its sibling Sheetfile property.
+    text = SHEET_BLOCK.replace('"05_audio"', '"05_audio)"', 1)
+
+    blocks = parse_sheet_blocks(text)
+
+    assert len(blocks) == 1
+    block = blocks[0]
+    assert block.name == "05_audio)"
+    assert block.filename == "main_05_audio.kicad_sch"
+    assert text[block.start : block.end].startswith("(sheet\n")
+    assert text[block.start : block.end].endswith(")")
+    start, end = block.size_span
+    assert text[start:end] == "(size 30.48 20.32)"
+
+
+def test_parse_sheet_blocks_skips_an_unbalanced_block_without_raising() -> None:
+    # A truncated document: a second (sheet ...) block never closes. The
+    # parser must skip it via its ValueError/continue path rather than raise,
+    # while still returning the earlier, well-formed block.
+    truncated = (
+        SHEET_BLOCK + "\t(sheet\n"
+        "\t\t(at 60.96 90.17)\n"
+        "\t\t(size 30.48 20.32)\n"
+        '\t\t(property "Sheetname" "06_truncated"\n'
+        "\t\t\t(at 60.96 89.4584 0)\n"
+    )
+
+    blocks = parse_sheet_blocks(truncated)
+
+    assert len(blocks) == 1
+    assert blocks[0].name == "05_audio"
