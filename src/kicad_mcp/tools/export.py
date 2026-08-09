@@ -19,16 +19,18 @@ from ..config import get_config
 from ..discovery import get_cli_capabilities
 from ..export.board_stats import ExportBoardStatsService
 from ..export.drill import ExportDrillService
+from ..export.gerber import ExportGerberService
 from ..export.netlist import ExportNetlistService
 from ..export.pcb_pdf import ExportPcbPdfService
 from ..export.sch_pdf import ExportSchPdfService
 from ..export.sch_python_bom import ExportSchPythonBomService
 from ..export.sch_vector import ExportSchVectorService
 from ..mcp_media import image_tool_result, text_tool_result
-from ..models.export import ExportBOMInput, ExportGerberInput
+from ..models.export import ExportBOMInput
 from . import (
     export_board_stats,
     export_drill,
+    export_gerber,
     export_netlist,
     export_pcb_pdf,
     export_sch_pdf,
@@ -261,6 +263,15 @@ async def _report_progress(
 
 def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
     """Register export tools."""
+    gerber_service = ExportGerberService(
+        get_pcb_file=_get_pcb_file,
+        ensure_output_dir=_ensure_output_dir,
+        get_gerber_command=lambda: get_cli_capabilities(get_config().kicad_cli).gerber_command,
+        active_variant_args=_active_variant_args,
+        run_cli_variants=_run_cli_variants,
+        format_file_list=_format_file_list,
+    )
+
     drill_service = ExportDrillService(
         get_pcb_file=_get_pcb_file,
         ensure_output_dir=_ensure_output_dir,
@@ -298,77 +309,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         run_cli=_run_cli,
         format_file_list=_format_file_list,
     )
-
-    def _export_gerber(
-        output_subdir: str = "gerber",
-        layers: list[str] | None = None,
-        variant_name: str | None = None,
-    ) -> str:
-        payload = ExportGerberInput(output_subdir=output_subdir, layers=layers or [])
-        pcb_file = _get_pcb_file()
-        try:
-            out_dir = _ensure_output_dir(payload.output_subdir)
-        except ValueError as exc:
-            return f"Invalid output path: {exc}"
-        caps = get_cli_capabilities(get_config().kicad_cli)
-
-        layer_args = []
-        if payload.layers:
-            layer_args = ["--layers", ",".join(payload.layers)]
-        variant_args = _active_variant_args(variant_name)
-
-        gerber_commands = ["gerbers", "gerber"]
-        if caps.gerber_command not in gerber_commands:
-            gerber_commands.append(caps.gerber_command)
-        variants: list[list[str]] = []
-        for gerber_command in gerber_commands:
-            variants.extend(
-                [
-                    [
-                        "pcb",
-                        "export",
-                        gerber_command,
-                        *variant_args,
-                        "--output",
-                        str(out_dir),
-                        *layer_args,
-                        str(pcb_file),
-                    ],
-                    [
-                        "pcb",
-                        "export",
-                        gerber_command,
-                        *variant_args,
-                        "--input",
-                        str(pcb_file),
-                        "--output",
-                        str(out_dir),
-                        *layer_args,
-                    ],
-                ]
-            )
-        code, _, stderr = _run_cli_variants(variants)
-        if code != 0:
-            return f"Gerber export failed: {stderr or 'unknown error'}"
-
-        files = sorted(out_dir.glob("*.gbr")) + sorted(out_dir.glob("*.g*"))
-        return _format_file_list(files, f"Gerber export completed in {out_dir}:")
-
-    @headless_compatible
-    async def export_gerber(
-        output_subdir: str = "gerber",
-        layers: list[str] | None = None,
-        ctx: Context[Any, Any, Any] | None = None,
-    ) -> str:
-        """Export Gerber manufacturing files."""
-        import anyio
-
-        await _report_progress(ctx, 5, 100, "Starting Gerber export...")
-        result = await anyio.to_thread.run_sync(
-            lambda: _with_low_level_export_notice(_export_gerber(output_subdir, layers))
-        )
-        await _report_progress(ctx, 100, 100, "Gerber export complete.")
-        return result
 
     def _export_bom(format: str = "csv", variant_name: str | None = None) -> str:
         payload = ExportBOMInput(format=format)
@@ -1345,7 +1285,9 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
 
         await _report_progress(ctx, 25, 100, "Exporting Gerbers...")
         results = [
-            await anyio.to_thread.run_sync(lambda: _export_gerber(variant_name=variant_name)),
+            await anyio.to_thread.run_sync(
+                lambda: gerber_service.export(variant_name=variant_name)
+            ),
         ]
         await _report_progress(ctx, 45, 100, "Exporting drill files...")
         results.extend(
@@ -1400,7 +1342,14 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         return "\n\n".join(results)
 
     if include_low_level_exports:
-        mcp.tool()(export_gerber)
+        export_gerber.register(
+            mcp,
+            export_gerber.ExportGerberDependencies(
+                service=gerber_service,
+                add_low_level_notice=_with_low_level_export_notice,
+                report_progress=_report_progress,
+            ),
+        )
         export_drill.register(
             mcp,
             export_drill.ExportDrillDependencies(
