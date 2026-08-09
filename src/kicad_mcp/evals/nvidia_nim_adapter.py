@@ -34,6 +34,15 @@ _MISTRAL_MEDIUM_MODEL = "mistralai/mistral-medium-3.5-128b"
 _MINIMAX_MODEL = "minimaxai/minimax-m3"
 _MINIMAX_MODEL_ALIASES = frozenset({_MINIMAX_MODEL, "minimax-m3"})
 _MAX_RETRY_AFTER_SECONDS = 120.0
+_PROVIDER_REQUEST_FIELD_DETAILS: dict[str, FailureDetail] = {
+    "messages": "request_messages",
+    "model": "request_model",
+    "reasoning_effort": "request_reasoning_effort",
+    "max_tokens": "request_max_tokens",
+    "temperature": "request_temperature",
+    "top_p": "request_top_p",
+    "stream": "request_stream",
+}
 _GEMMA_MODEL = "google/gemma-4-31b-it"
 _RESPONSE_KINDS = frozenset({"tool_calls", "answer", "confirmation", "refusal"})
 _TOOL_ROW = re.compile(
@@ -495,6 +504,32 @@ def _failure_for_status(status_code: int) -> FailureKind:
     if status_code >= 500:
         return "provider_unavailable"
     return "provider_request_rejected"
+
+
+def _provider_request_failure_detail(response: httpx.Response) -> FailureDetail | None:
+    """Return only an allowlisted request field from one validation response."""
+    try:
+        payload = response.json()
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    detail = payload.get("detail")
+    entries = detail if isinstance(detail, list) else [detail]
+    saw_location = False
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        location = entry.get("loc")
+        if not isinstance(location, list | tuple):
+            continue
+        saw_location = True
+        for segment in reversed(location):
+            if isinstance(segment, str):
+                mapped = _PROVIDER_REQUEST_FIELD_DETAILS.get(segment)
+                if mapped is not None:
+                    return mapped
+    return "request_unknown" if saw_location else None
 
 
 def _json_object(content: str) -> dict[str, Any]:
@@ -1109,11 +1144,15 @@ def request_openai_compatible_chat(
         return _failure("provider_unavailable")
     if response.status_code >= 400:
         failure_kind = _failure_for_status(response.status_code)
+        failure_detail = None
         retry_after_seconds = None
+        if response.status_code == 422 and failure_kind == "provider_request_rejected":
+            failure_detail = _provider_request_failure_detail(response)
         if failure_kind in {"provider_rate_limit", "provider_unavailable"}:
             retry_after_seconds = _bounded_retry_after_seconds(response.headers.get("Retry-After"))
         return _failure(
             failure_kind,
+            failure_detail,
             retry_after_seconds=retry_after_seconds,
         )
     try:

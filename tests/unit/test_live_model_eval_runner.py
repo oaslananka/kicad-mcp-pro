@@ -397,6 +397,29 @@ def test_adapter_observation_rejects_non_allowlisted_failure_detail() -> None:
         )
 
 
+def test_subprocess_adapter_accepts_allowlisted_provider_request_failure_detail(
+    tmp_path: Path,
+) -> None:
+    configuration = _subprocess_configuration(
+        tmp_path,
+        """\
+import json
+print(json.dumps({
+    "schema_version": 1,
+    "status": "error",
+    "failure_kind": "provider_request_rejected",
+    "failure_detail": "request_temperature"
+}))
+""",
+    )
+
+    observation = SubprocessAdapter(configuration).invoke(_case())
+
+    assert observation.failure_kind == "provider_request_rejected"
+    assert observation.failure_detail == "request_temperature"
+    assert observation.run is None
+
+
 def test_subprocess_adapter_accepts_allowlisted_model_output_failure_detail(
     tmp_path: Path,
 ) -> None:
@@ -455,6 +478,12 @@ print(json.dumps({
             "status": "error",
             "failure_kind": "provider_unavailable",
             "failure_detail": "provider_json",
+        },
+        {
+            "schema_version": 1,
+            "status": "error",
+            "failure_kind": "provider_request_rejected",
+            "failure_detail": "raw-provider-text",
         },
     ],
 )
