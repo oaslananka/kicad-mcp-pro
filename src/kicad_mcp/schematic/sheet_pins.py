@@ -17,7 +17,7 @@ exhaustively unit-testable without KiCad installed.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Final
 
@@ -221,3 +221,263 @@ def parse_sheet_blocks(text: str) -> tuple[SheetBlock, ...]:
             )
         )
     return tuple(blocks)
+
+
+_TEXT_WIDTH_RATIO: Final = 0.6
+"""Heuristic: average glyph advance as a fraction of the font height.
+
+KiCad's stroke font has no fixed advance, so this only estimates how wide a pin
+label renders. It is used solely to decide whether a sheet needs to get wider,
+never to place anything.
+"""
+
+_EDGE_GEOMETRY: Final[dict[str, tuple[int, str]]] = {
+    "right": (0, "right"),
+    "bottom": (270, "left"),
+    "left": (180, "left"),
+    "top": (90, "right"),
+}
+"""Rotation and justification per edge, clockwise from right.
+
+Taken from ``kicad_sch_api``'s own edge table so hand-placed pins and imported
+pins render identically.
+"""
+
+
+@dataclass(frozen=True)
+class SheetPinPlacement:
+    """One sheet pin, resolved to absolute schematic coordinates."""
+
+    name: str
+    pin_type: str
+    edge: str
+    x_mm: float
+    y_mm: float
+    rotation: int
+    justify: str
+    uuid: str
+    """Existing pin's UUID, or ``""`` for a new pin the caller must stamp."""
+    action: str
+    """``add``, ``retype`` or ``keep``."""
+
+
+@dataclass(frozen=True)
+class SheetPinPlan:
+    """The full, deterministic pin layout of one sheet symbol."""
+
+    placements: tuple[SheetPinPlacement, ...]
+    size: tuple[float, float]
+    orphans: tuple[str, ...]
+    conflicts: tuple[str, ...]
+    overflow: tuple[str, ...]
+    notes: tuple[str, ...]
+
+
+def _snap(value: float, grid_mm: float) -> float:
+    if grid_mm <= 0:
+        return round(value, 4)
+    return round(round(value / grid_mm) * grid_mm, 4)
+
+
+def _ceil_to_grid(value: float, grid_mm: float) -> float:
+    if grid_mm <= 0:
+        return round(value, 4)
+    steps = value / grid_mm
+    rounded = round(steps)
+    if abs(steps - rounded) < 1e-9:
+        steps = rounded
+    else:
+        steps = int(steps) + 1
+    return round(steps * grid_mm, 4)
+
+
+def _is_on_grid(value: float, grid_mm: float) -> bool:
+    if grid_mm <= 0:
+        return True
+    steps = value / grid_mm
+    return abs(steps - round(steps)) < 1e-9
+
+
+def _sort_key(name: str) -> tuple[str, str]:
+    return (name.casefold(), name)
+
+
+def _edge_extent(count: int, pitch_mm: float, margin_mm: float) -> float:
+    if count == 0:
+        return 0.0
+    return 2 * margin_mm + (count - 1) * pitch_mm
+
+
+def _edge_capacity(height_mm: float, pitch_mm: float, margin_mm: float) -> int:
+    usable = height_mm - 2 * margin_mm
+    if usable < 0:
+        return 0
+    if pitch_mm <= 0:
+        return 1
+    return int(usable / pitch_mm + 1e-9) + 1
+
+
+def _text_width(names: Sequence[str], text_height_mm: float) -> float:
+    longest = max((len(name) for name in names), default=0)
+    return longest * _TEXT_WIDTH_RATIO * text_height_mm
+
+
+def placement_on_edge(
+    sheet: SheetBlock,
+    name: str,
+    pin_type: str,
+    edge: str,
+    position_along_edge: float,
+    uuid: str,
+) -> SheetPinPlacement:
+    """Resolve one pin on any of the four edges to absolute coordinates.
+
+    ``position_along_edge`` follows kicad-sch-api's convention, clockwise from
+    the right edge: ``right`` measures from the top, ``bottom`` and ``top`` from
+    the left, and ``left`` from the bottom.
+    """
+    if pin_type not in PIN_TYPES:
+        raise ValueError(f"Unknown sheet pin type '{pin_type}'. Use one of {', '.join(PIN_TYPES)}.")
+    if edge not in _EDGE_GEOMETRY:
+        raise ValueError(f"Unknown sheet edge '{edge}'. Use one of {', '.join(EDGES)}.")
+
+    origin_x, origin_y = sheet.origin
+    width, height = sheet.size
+    rotation, justify = _EDGE_GEOMETRY[edge]
+    if edge == "right":
+        x_mm, y_mm = origin_x + width, origin_y + position_along_edge
+    elif edge == "bottom":
+        x_mm, y_mm = origin_x + position_along_edge, origin_y + height
+    elif edge == "left":
+        x_mm, y_mm = origin_x, origin_y + height - position_along_edge
+    else:
+        x_mm, y_mm = origin_x + position_along_edge, origin_y
+
+    return SheetPinPlacement(
+        name=name,
+        pin_type=pin_type,
+        edge=edge,
+        x_mm=round(x_mm, 4),
+        y_mm=round(y_mm, 4),
+        rotation=rotation,
+        justify=justify,
+        uuid=uuid,
+        action="add",
+    )
+
+
+def plan_sheet_pins(
+    labels: Sequence[tuple[str, str]],
+    sheet: SheetBlock,
+    *,
+    grid_mm: float,
+    pitch_mm: float = DEFAULT_PITCH_MM,
+    margin_mm: float = DEFAULT_MARGIN_MM,
+    text_height_mm: float = DEFAULT_TEXT_HEIGHT_MM,
+    grow_sheet: bool = True,
+) -> SheetPinPlan:
+    """Lay out every pin of one sheet symbol from its child's labels.
+
+    Inputs go on the left edge and everything else on the right, alphabetically
+    within each edge. The layout covers *all* pins, not only the new ones: KiCad
+    measures a left-edge pin from the bottom of the sheet, so growing the sheet
+    would silently move any left pin whose offset was left untouched.
+    """
+    desired: dict[str, str] = {}
+    conflicts: list[str] = []
+    for raw_name, raw_shape in labels:
+        shape = raw_shape if raw_shape in PIN_TYPES else "input"
+        if raw_name in desired:
+            if desired[raw_name] != shape and raw_name not in conflicts:
+                conflicts.append(raw_name)
+            continue
+        desired[raw_name] = shape
+
+    existing = {name: (pin_type, uuid) for name, pin_type, uuid in sheet.pins}
+    orphans = tuple(sorted((name for name in existing if name not in desired), key=_sort_key))
+
+    entries: list[tuple[str, str, str, str]] = []
+    for name in sorted(set(desired) | set(existing), key=_sort_key):
+        if name in desired:
+            pin_type = desired[name]
+            action = (
+                "add"
+                if name not in existing
+                else ("keep" if existing[name][0] == pin_type else "retype")
+            )
+        else:
+            pin_type = existing[name][0]
+            action = "keep"
+        entries.append((name, pin_type, existing.get(name, ("", ""))[1], action))
+
+    left = [entry for entry in entries if entry[1] == "input"]
+    right = [entry for entry in entries if entry[1] != "input"]
+
+    origin_x, origin_y = sheet.origin
+    width, height = sheet.size
+    notes: list[str] = []
+    overflow: list[str] = []
+
+    if grow_sheet:
+        needed_height = max(
+            _edge_extent(len(left), pitch_mm, margin_mm),
+            _edge_extent(len(right), pitch_mm, margin_mm),
+        )
+        height = max(height, _ceil_to_grid(needed_height, grid_mm))
+        needed_width = (
+            _text_width([entry[0] for entry in left], text_height_mm)
+            + _text_width([entry[0] for entry in right], text_height_mm)
+            + margin_mm
+        )
+        width = max(width, _ceil_to_grid(needed_width, grid_mm))
+        if width > sheet.size[0]:
+            notes.append(
+                "Sheet width was grown from an estimated text width "
+                "(heuristic: 0.6 x font height per character), not a measured one."
+            )
+    else:
+        capacity = _edge_capacity(height, pitch_mm, margin_mm)
+        overflow = sorted(
+            [entry[0] for entry in left[capacity:]] + [entry[0] for entry in right[capacity:]],
+            key=_sort_key,
+        )
+        left, right = left[:capacity], right[:capacity]
+
+    if not _is_on_grid(origin_x, grid_mm):
+        notes.append(
+            f"Sheet origin x={origin_x} is not on the {grid_mm} mm grid, so its edge pins "
+            "cannot be either. Run sch_align_to_grid before wiring."
+        )
+    if pitch_mm > 0 and grid_mm > 0 and not _is_on_grid(pitch_mm / grid_mm, 1.0):
+        notes.append(
+            f"Pin pitch {pitch_mm} mm is not a multiple of the {grid_mm} mm grid; "
+            "positions were snapped individually."
+        )
+
+    placements: list[SheetPinPlacement] = []
+    for edge, column in (("left", left), ("right", right)):
+        x_mm = origin_x if edge == "left" else round(origin_x + width, 4)
+        rotation, justify = _EDGE_GEOMETRY[edge]
+        for index, (name, pin_type, uuid, action) in enumerate(column):
+            placements.append(
+                SheetPinPlacement(
+                    name=name,
+                    pin_type=pin_type,
+                    edge=edge,
+                    x_mm=x_mm,
+                    y_mm=_snap(origin_y + margin_mm + index * pitch_mm, grid_mm),
+                    rotation=rotation,
+                    justify=justify,
+                    uuid=uuid,
+                    action=action,
+                )
+            )
+
+    return SheetPinPlan(
+        placements=tuple(placements),
+        size=(round(width, 4), round(height, 4)),
+        orphans=orphans,
+        conflicts=tuple(conflicts),
+        overflow=tuple(overflow),
+        notes=tuple(notes),
+    )
