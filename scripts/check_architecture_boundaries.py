@@ -17,6 +17,7 @@ SRC_ROOT = REPO_ROOT / "src"
 DOMAIN_MODULES = {
     "kicad_mcp.tools.pcb": SRC_ROOT / "kicad_mcp" / "tools" / "pcb.py",
     "kicad_mcp.export.board_stats": SRC_ROOT / "kicad_mcp" / "export" / "board_stats.py",
+    "kicad_mcp.export.bom": SRC_ROOT / "kicad_mcp" / "export" / "bom.py",
     "kicad_mcp.export.drill": SRC_ROOT / "kicad_mcp" / "export" / "drill.py",
     "kicad_mcp.export.gerber": SRC_ROOT / "kicad_mcp" / "export" / "gerber.py",
     "kicad_mcp.export.netlist": SRC_ROOT / "kicad_mcp" / "export" / "netlist.py",
@@ -24,6 +25,7 @@ DOMAIN_MODULES = {
     "kicad_mcp.export.sch_pdf": SRC_ROOT / "kicad_mcp" / "export" / "sch_pdf.py",
     "kicad_mcp.export.sch_python_bom": SRC_ROOT / "kicad_mcp" / "export" / "sch_python_bom.py",
     "kicad_mcp.export.sch_vector": SRC_ROOT / "kicad_mcp" / "export" / "sch_vector.py",
+    "kicad_mcp.tools.export_bom": SRC_ROOT / "kicad_mcp" / "tools" / "export_bom.py",
     "kicad_mcp.tools.export_board_stats": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -244,6 +246,7 @@ DOMAIN_MODULES = {
 PURE_HELPERS = {
     "kicad_mcp.validation.drc_runner",
     "kicad_mcp.export.board_stats",
+    "kicad_mcp.export.bom",
     "kicad_mcp.export.drill",
     "kicad_mcp.export.gerber",
     "kicad_mcp.export.netlist",
@@ -301,6 +304,7 @@ FORBIDDEN_PURE_IMPORT_PREFIXES = (
 
 ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.validation_policy_state": ("kicad_mcp.tools.validation",),
+    "kicad_mcp.tools.export_bom": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_board_stats": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_drill": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_gerber": ("kicad_mcp.tools.export",),
@@ -339,6 +343,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
 
 REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.pcb": 300,
+    "kicad_mcp.tools.export_bom": 100,
     "kicad_mcp.tools.export_board_stats": 100,
     "kicad_mcp.tools.export_drill": 100,
     "kicad_mcp.tools.export_gerber": 100,
