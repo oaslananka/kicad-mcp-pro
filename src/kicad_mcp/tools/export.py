@@ -21,9 +21,16 @@ from ..export.board_stats import ExportBoardStatsService
 from ..export.drill import ExportDrillService
 from ..export.netlist import ExportNetlistService
 from ..export.pcb_pdf import ExportPcbPdfService
+from ..export.sch_pdf import ExportSchPdfService
 from ..mcp_media import image_tool_result, text_tool_result
 from ..models.export import ExportBOMInput, ExportGerberInput
-from . import export_board_stats, export_drill, export_netlist, export_pcb_pdf
+from . import (
+    export_board_stats,
+    export_drill,
+    export_netlist,
+    export_pcb_pdf,
+    export_sch_pdf,
+)
 from .aliases import notify_deprecated, register_alias
 from .export_support import (
     _ensure_output_dir,
@@ -267,6 +274,13 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         default_layers=DEFAULT_PCB_PDF_LAYERS,
     )
 
+    sch_pdf_service = ExportSchPdfService(
+        get_sch_file=_get_sch_file,
+        ensure_output_dir=lambda: _ensure_output_dir(),
+        active_variant_args=_active_variant_args,
+        run_cli_variants=_run_cli_variants,
+    )
+
     def _export_gerber(
         output_subdir: str = "gerber",
         layers: list[str] | None = None,
@@ -462,35 +476,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
             Output file name (relative to the export output directory).
         """
         return _with_low_level_export_notice(_export_3d_pdf(output_path))
-
-    def _export_sch_pdf() -> str:
-        sch_file = _get_sch_file()
-        out_dir = _ensure_output_dir()
-        out_file = out_dir / "schematic.pdf"
-        variant_args = _active_variant_args()
-        code, stdout, stderr = _run_cli_variants(
-            [
-                ["sch", "export", "pdf", *variant_args, "--output", str(out_file), str(sch_file)],
-                [
-                    "sch",
-                    "export",
-                    "pdf",
-                    *variant_args,
-                    "--input",
-                    str(sch_file),
-                    "--output",
-                    str(out_file),
-                ],
-            ]
-        )
-        if code != 0:
-            return f"Schematic PDF export failed: {stderr or stdout or 'unknown error'}"
-        return f"Schematic PDF exported to {out_file}"
-
-    @headless_compatible
-    def export_sch_pdf() -> str:
-        """Export the schematic to PDF."""
-        return _with_low_level_export_notice(_export_sch_pdf())
 
     @headless_compatible
     def sch_export_svg(
@@ -1544,7 +1529,13 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
                 add_low_level_notice=_with_low_level_export_notice,
             ),
         )
-        mcp.tool()(export_sch_pdf)
+        export_sch_pdf.register(
+            mcp,
+            export_sch_pdf.ExportSchPdfDependencies(
+                service=sch_pdf_service,
+                add_low_level_notice=_with_low_level_export_notice,
+            ),
+        )
         mcp.tool()(export_sch_svg)
         mcp.tool()(export_sch_dxf)
         mcp.tool()(export_sch_python_bom)
