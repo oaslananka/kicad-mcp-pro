@@ -1,4 +1,87 @@
-# Dependabot is disabled — Renovate handles all dependency updates.
-# See renovate.json for the active configuration.
 version: 2
-updates: []
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Istanbul"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "npm"
+    directories:
+      - "/"
+      - "/packages/mcp-npm"
+      - "/packages/kicad-fixtures"
+      - "/integrations/chatgpt-app/apps-sdk"
+      - "/integrations/opencode/plugins/kicad-mcp-plugin"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Istanbul"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Istanbul"
+    labels:
+      - "dependencies"
+      - "ci"
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Istanbul"
+    labels:
+      - "dependencies"
+      - "ci"
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Istanbul"
+    labels:
+      - "dependencies"
+      - "ci"
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "cargo"
+    directory: "/src-tauri"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Istanbul"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: "chore(deps)"

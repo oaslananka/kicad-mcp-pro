@@ -5,7 +5,7 @@ KiCad MCP Pro is distributed under the MIT license. Third-party packages are tra
 ## Policy
 
 - Keep the root LICENSE as the project license source of truth.
-- Review dependency updates for license changes when Renovate opens update PRs.
+- Review dependency updates for license changes when Dependabot opens update PRs.
 - Do not vendor external code unless source, version, license, update procedure, and reason are documented.
 - Add a NOTICE file only if an asset or dependency requires attribution beyond the MIT license file.
 
@@ -17,7 +17,7 @@ KiCad MCP Pro is distributed under the MIT license. Third-party packages are tra
 | Python packages | pyproject.toml, uv.lock |
 | JavaScript packages | package.json, pnpm-lock.yaml |
 | Rust packages | Cargo manifests and lockfiles where present |
-| Dependency updates | renovate.json with vulnerability alerts and lockfile maintenance |
+| Dependency updates | .github/dependabot.yml plus Dependabot alerts/security updates |
 | Dependency security audit | scripts/audit_dependencies.py and security:audit |
 
 ## REUSE posture

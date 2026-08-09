@@ -74,7 +74,7 @@ jobs:
               - 'pyproject.toml'
               - 'uv.lock'
               - 'Dockerfile'
-              - 'renovate.json'
+              - '.github/dependabot.yml'
             docs:
               - 'docs/**'
               - 'README.md'

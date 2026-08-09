@@ -16,7 +16,7 @@
   "manualActionsRequired": [
     "Keep the active main repository ruleset enabled and align required checks after CI job name changes.",
     "Add independent human PR review only if a second trusted maintainer joins.",
-    "Keep private vulnerability reporting, Renovate vulnerability alerts, secret scanning, and push protection enabled.",
+    "Keep private vulnerability reporting, Dependabot alerts/security updates, secret scanning, and push protection enabled.",
     "Keep CODEOWNERS available; enforce code-owner review only when maintainer coverage exists."
   ],
   "project": {

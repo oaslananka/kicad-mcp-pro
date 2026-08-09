@@ -80,7 +80,7 @@ MCP client (agent)  --tool calls-->  KiCad MCP Pro
 
 ## Supply chain and release integrity
 
-- Dependabot/Renovate, CodeQL, Gitleaks, Trivy, Hadolint, Bandit, and pip-audit cover the
+- Dependabot, CodeQL, Gitleaks, Trivy, Hadolint, Bandit, and pip-audit cover the
   main automated scan layers.
 - Release artifacts are built by GitHub Actions and accompanied by an SBOM, Sigstore
   signatures, checksums, and GitHub artifact attestations, so an artifact is traceable to

@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -298,11 +299,31 @@ def test_release_validation_runs_for_tauri_dependency_changes() -> None:
     assert '- "scripts/check_release_preflight.py"' in workflow
 
 
-def test_renovate_updates_cargo_manifests_and_lockfiles() -> None:
-    config = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
+def test_dependabot_covers_repository_dependency_ecosystems_and_lockfiles() -> None:
+    config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+    updates = config["updates"]
+    ecosystems = {entry["package-ecosystem"] for entry in updates}
 
-    assert "cargo" in config["enabledManagers"]
-    assert config["lockFileMaintenance"]["enabled"] is True
+    assert {"uv", "npm", "github-actions", "docker", "docker-compose", "cargo"} <= ecosystems
+    assert (
+        next(entry for entry in updates if entry["package-ecosystem"] == "uv")["directory"] == "/"
+    )
+    assert (
+        next(entry for entry in updates if entry["package-ecosystem"] == "cargo")["directory"]
+        == "/src-tauri"
+    )
+
+    npm_directories = set(
+        next(entry for entry in updates if entry["package-ecosystem"] == "npm")["directories"]
+    )
+    assert "/" in npm_directories
+    assert "/integrations/chatgpt-app/apps-sdk" in npm_directories
+
+    policy = (ROOT / "docs" / "development" / "dependency-management.md").read_text(
+        encoding="utf-8"
+    )
+    for lockfile in ("uv.lock", "pnpm-lock.yaml", "package-lock.json", "src-tauri/Cargo.lock"):
+        assert lockfile in policy
 
 
 def test_release_preflight_rejects_missing_tauri_lockfile(

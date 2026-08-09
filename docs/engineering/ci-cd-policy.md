@@ -29,7 +29,7 @@ categories.
 | **npm** | `packages/**`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.node-version`, `.npmrc`, `commitlint.config.cjs`, `.commitlintrc.json` |
 | **schemas** | `packages/protocol-schemas/**` |
 | **workflows** | `.github/workflows/**`, `.github/actions/**` |
-| **dependencies** | `package.json`, `pnpm-lock.yaml`, `pyproject.toml`, `uv.lock`, `Dockerfile`, `renovate.json` |
+| **dependencies** | `package.json`, `pnpm-lock.yaml`, `pyproject.toml`, `uv.lock`, `Dockerfile`, `.github/dependabot.yml` |
 | **release** | `.release-please-manifest.json`, `release-please-config.json`, `server.json`, `Dockerfile`, `docker-entrypoint.sh`, `docker-compose.yml` |
 | **kicad** | `src/kicad_mcp/tools/schematic*.py`, `src/kicad_mcp/tools/pcb*.py`, `tests/integration/**`, `tests/fixtures/**`, `scripts/kicad_canary.py`, `compatibility.yaml`, `test-fixtures/**` |
 
@@ -131,21 +131,20 @@ aggregate gate.
 | **Trivy** (in CI `security` job) | no-op on docs-only | Filesystem vulnerability scan is code-focused. |
 | **SonarQube Cloud** | Runs (Automatic Analysis, not workflow-gated) | Not a required check; see below for scope. |
 
-### Dependency Graph and Renovate
+### Dependency Graph and Dependabot
 
 GitHub's Dependency Graph (`vulnerability-alerts` API) is **enabled** on this
-repository. It must be enabled for the Dependency Review action to function
-at all — without it, Dependency Review fails on every PR regardless of path
-filtering, with the error "Dependency review is not supported on this
-repository."
+repository. It must stay enabled for Dependency Review and Dependabot alerts.
 
-`renovate.json` already exists at the repo root and is well-configured
-(`config:best-practices`, `security:openssf-scorecard`, `pinDigests` for
-GitHub Actions and Docker, `vulnerabilityAlerts` + `osvVulnerabilityAlerts`).
-It currently has no effect because the Mend Renovate GitHub App is not
-installed on this repository/org — installing the app is the only remaining
-step to activate it; `dependabot.yml` is intentionally left disabled in favor
-of it.
+`.github/dependabot.yml` is the active dependency-update configuration. It covers
+`uv`, npm/pnpm package locations, GitHub Actions, Docker/Docker Compose, and Cargo.
+Dependabot security updates own automated vulnerable-dependency remediation. The
+repository intentionally has no active Renovate configuration or Mend Renovate App
+requirement, avoiding two bots opening overlapping update pull requests.
+
+Dependabot update PRs use the same protected-branch path as maintainer PRs. Required
+status checks and the active `main` ruleset remain authoritative; the dependency bot
+does not bypass them.
 
 ### SonarQube Cloud scope
 

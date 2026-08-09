@@ -10,7 +10,6 @@ Dockerfile*
 !README.md
 !LICENSE
 pyrightconfig.json
-renovate.json
 release-please-config.json
 commitlint.config.cjs
 mkdocs.yml
