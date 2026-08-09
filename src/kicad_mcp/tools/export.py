@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import hashlib
 import json
 import re
@@ -18,6 +17,7 @@ from mcp.types import CallToolResult
 from ..config import get_config
 from ..discovery import get_cli_capabilities
 from ..export.board_stats import ExportBoardStatsService
+from ..export.bom import ExportBomService
 from ..export.drill import ExportDrillService
 from ..export.gerber import ExportGerberService
 from ..export.netlist import ExportNetlistService
@@ -26,9 +26,9 @@ from ..export.sch_pdf import ExportSchPdfService
 from ..export.sch_python_bom import ExportSchPythonBomService
 from ..export.sch_vector import ExportSchVectorService
 from ..mcp_media import image_tool_result, text_tool_result
-from ..models.export import ExportBOMInput
 from . import (
     export_board_stats,
+    export_bom,
     export_drill,
     export_gerber,
     export_netlist,
@@ -114,6 +114,18 @@ def _read_preview(path: Path) -> str:
     if len(content) > cfg.max_text_response_chars:
         return f"{content[: cfg.max_text_response_chars]}\n... [truncated]"
     return content
+
+
+def _bom_project_schematic_files() -> list[Path]:
+    from .schematic import project_schematic_files
+
+    return project_schematic_files()
+
+
+def _bom_schematic_component_rows() -> list[dict[str, str]]:
+    from .library import _schematic_component_rows
+
+    return _schematic_component_rows()
 
 
 LOW_LEVEL_EXPORT_NOTICE = (
@@ -272,6 +284,16 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         format_file_list=_format_file_list,
     )
 
+    bom_service = ExportBomService(
+        get_sch_file=_get_sch_file,
+        ensure_output_dir=lambda: _ensure_output_dir(),
+        active_variant_args=_active_variant_args,
+        run_cli_variants=_run_cli_variants,
+        read_preview=_read_preview,
+        project_schematic_files=_bom_project_schematic_files,
+        schematic_component_rows=_bom_schematic_component_rows,
+    )
+
     drill_service = ExportDrillService(
         get_pcb_file=_get_pcb_file,
         ensure_output_dir=_ensure_output_dir,
@@ -309,82 +331,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         run_cli=_run_cli,
         format_file_list=_format_file_list,
     )
-
-    def _export_bom(format: str = "csv", variant_name: str | None = None) -> str:
-        payload = ExportBOMInput(format=format)
-        sch_file = _get_sch_file()
-        out_dir = _ensure_output_dir()
-        suffix = "csv" if payload.format == "csv" else "xml"
-        out_file = out_dir / f"bom.{suffix}"
-        if payload.format == "csv":
-            try:
-                from .library import _schematic_component_rows
-                from .schematic import project_schematic_files
-
-                schematic_files = project_schematic_files()
-                if len(schematic_files) > 1:
-                    rows = _schematic_component_rows()
-                    with out_file.open("w", newline="", encoding="utf-8") as handle:
-                        writer = csv.DictWriter(
-                            handle,
-                            fieldnames=[
-                                "reference",
-                                "value",
-                                "footprint",
-                                "lib_id",
-                                "lcsc",
-                                "mpn",
-                                "manufacturer",
-                                "populate",
-                            ],
-                        )
-                        writer.writeheader()
-                        writer.writerows(rows)
-                    return (
-                        f"BOM exported to {out_file}\n"
-                        f"Consolidated {len(rows)} reference(s) from "
-                        f"{len(schematic_files)} schematic files.\n\n"
-                        f"{_read_preview(out_file)}"
-                    )
-            except (OSError, ValueError, RuntimeError) as exc:
-                return f"BOM export failed: {exc}"
-        variant_args = _active_variant_args(variant_name)
-        code, _, stderr = _run_cli_variants(
-            [
-                [
-                    "sch",
-                    "export",
-                    "bom",
-                    *variant_args,
-                    "--output",
-                    str(out_file),
-                    "--format-preset",
-                    "CSV",
-                    str(sch_file),
-                ],
-                [
-                    "sch",
-                    "export",
-                    "bom",
-                    *variant_args,
-                    "--input",
-                    str(sch_file),
-                    "--output",
-                    str(out_file),
-                    "--format-preset",
-                    "CSV",
-                ],
-                ["sch", "export", "python-bom", "--output", str(out_file), str(sch_file)],
-            ]
-        )
-        if code != 0 and not out_file.exists():
-            return f"BOM export failed: {stderr or 'unknown error'}"
-        return f"BOM exported to {out_file}\n\n{_read_preview(out_file)}"
-
-    @headless_compatible
-    def export_bom(format: str = "csv") -> str:
-        """Export a bill of materials."""
-        return _with_low_level_export_notice(_export_bom(format))
 
     def _export_3d_pdf(output_path: str = "") -> str:
         pcb_file = _get_pcb_file()
@@ -1300,7 +1246,9 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         await _report_progress(ctx, 65, 100, "Exporting BOM...")
         results.extend(
             [
-                await anyio.to_thread.run_sync(lambda: _export_bom(variant_name=variant_name)),
+                await anyio.to_thread.run_sync(
+                    lambda: bom_service.export(variant_name=variant_name)
+                ),
             ]
         )
         await _report_progress(ctx, 85, 100, "Exporting pick-and-place data...")
@@ -1357,7 +1305,13 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
                 add_low_level_notice=_with_low_level_export_notice,
             ),
         )
-        mcp.tool()(export_bom)
+        export_bom.register(
+            mcp,
+            export_bom.ExportBomDependencies(
+                service=bom_service,
+                add_low_level_notice=_with_low_level_export_notice,
+            ),
+        )
         export_netlist.register(
             mcp,
             export_netlist.ExportNetlistDependencies(
