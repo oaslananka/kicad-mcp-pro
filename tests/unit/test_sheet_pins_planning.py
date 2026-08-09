@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from kicad_mcp.schematic.sheet_pins import (
     SheetBlock,
+    SheetPinRecord,
     placement_on_edge,
     plan_sheet_pins,
 )
@@ -15,12 +16,23 @@ def _sheet(
     origin: tuple[float, float] = (80.01, 30.48),
     size: tuple[float, float] = (30.48, 20.32),
 ) -> SheetBlock:
+    """Build a ``SheetBlock`` for planning tests.
+
+    ``pins`` stays the lightweight ``(name, pin_type, uuid)`` shape these
+    tests already use -- only identity and type matter to ``plan_sheet_pins``
+    for *existing* pins, which computes fresh positions for everything it
+    places. Position/rotation are stubbed at the origin.
+    """
+    records = tuple(
+        SheetPinRecord(name=name, pin_type=pin_type, x_mm=0.0, y_mm=0.0, rotation=0, uuid=uuid)
+        for name, pin_type, uuid in pins
+    )
     return SheetBlock(
         name="02_mcu",
         filename="main_02_mcu.kicad_sch",
         origin=origin,
         size=size,
-        pins=pins,
+        pins=records,
         start=0,
         end=1,
         size_span=(0, 1),

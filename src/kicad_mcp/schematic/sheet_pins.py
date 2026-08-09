@@ -39,10 +39,28 @@ _SHEET_RE = re.compile(r"\(sheet(?![A-Za-z0-9_])")
 _TWO_FLOATS_RE = re.compile(r"\(\w+\s+(-?[\d.]+)\s+(-?[\d.]+)\s*\)")
 _PROPERTY_RE = re.compile(r'\(property\s+"((?:[^"\\]|\\.)*)"\s+"((?:[^"\\]|\\.)*)"')
 _PIN_HEAD_RE = re.compile(r'\(pin\s+"((?:[^"\\]|\\.)*)"\s+([A-Za-z_]+)')
+_PIN_AT_RE = re.compile(r"\(at\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*\)")
 _UUID_RE = re.compile(r'\(uuid\s+"([^"]*)"\s*\)')
 _HIER_LABEL_RE = re.compile(
     r'\(hierarchical_label\s+"((?:[^"\\]|\\.)*)"\s*(?:\(shape\s+([A-Za-z_]+)\s*\))?'
 )
+
+
+@dataclass(frozen=True)
+class SheetPinRecord:
+    """One existing ``(pin ...)`` node of a sheet block, as parsed from text.
+
+    Carries the pin's own absolute position and rotation -- not just its name,
+    type and UUID -- so a caller can verify what the writer actually placed,
+    not merely that it placed *something*.
+    """
+
+    name: str
+    pin_type: str
+    x_mm: float
+    y_mm: float
+    rotation: int
+    uuid: str
 
 
 @dataclass(frozen=True)
@@ -53,8 +71,8 @@ class SheetBlock:
     filename: str
     origin: tuple[float, float]
     size: tuple[float, float]
-    pins: tuple[tuple[str, str, str], ...]
-    """Existing pins as ``(name, pin_type, uuid)`` in file order."""
+    pins: tuple[SheetPinRecord, ...]
+    """Existing pins, in file order."""
     start: int
     end: int
     size_span: tuple[int, int]
@@ -166,7 +184,7 @@ def parse_sheet_blocks(text: str) -> tuple[SheetBlock, ...]:
         origin: tuple[float, float] | None = None
         size: tuple[float, float] | None = None
         size_span: tuple[int, int] | None = None
-        pins: list[tuple[str, str, str]] = []
+        pins: list[SheetPinRecord] = []
         pin_spans: list[tuple[int, int]] = []
         instances_start: int | None = None
 
@@ -192,11 +210,15 @@ def parse_sheet_blocks(text: str) -> tuple[SheetBlock, ...]:
                 if head is None:
                     continue
                 uuid_match = _UUID_RE.search(text, child_start, child_end)
+                at_match = _PIN_AT_RE.search(text, child_start, child_end)
                 pins.append(
-                    (
-                        _unescape(head.group(1)),
-                        head.group(2),
-                        uuid_match.group(1) if uuid_match else "",
+                    SheetPinRecord(
+                        name=_unescape(head.group(1)),
+                        pin_type=head.group(2),
+                        x_mm=float(at_match.group(1)) if at_match else 0.0,
+                        y_mm=float(at_match.group(2)) if at_match else 0.0,
+                        rotation=int(float(at_match.group(3))) if at_match else 0,
+                        uuid=uuid_match.group(1) if uuid_match else "",
                     )
                 )
                 pin_spans.append(_line_span(text, child_start, child_end))
@@ -249,6 +271,20 @@ from the bottom), while ``plan_sheet_pins`` measures top-down so its left and
 right columns read in the same direction. See each function's docstring for
 why.
 """
+
+_ROTATION_TO_EDGE: Final[dict[int, str]] = {
+    rotation: edge for edge, (rotation, _justify) in _EDGE_GEOMETRY.items()
+}
+
+
+def edge_for_rotation(rotation: int) -> str | None:
+    """Return the sheet edge a pin's rotation places it on, or ``None`` if unrecognized.
+
+    The inverse of ``_EDGE_GEOMETRY``: only the four rotations KiCad itself
+    writes for a sheet pin (0/90/180/270) map to an edge. Anything else --
+    a hand-edited or foreign file -- reports no edge rather than a guess.
+    """
+    return _ROTATION_TO_EDGE.get(rotation)
 
 
 @dataclass(frozen=True)
@@ -412,7 +448,7 @@ def plan_sheet_pins(
             continue
         desired[raw_name] = shape
 
-    existing = {name: (pin_type, uuid) for name, pin_type, uuid in sheet.pins}
+    existing = {pin.name: (pin.pin_type, pin.uuid) for pin in sheet.pins}
     orphans = tuple(sorted((name for name in existing if name not in desired), key=_sort_key))
 
     entries: list[tuple[str, str, str, str]] = []
@@ -603,7 +639,7 @@ def apply_plan(text: str, sheet: SheetBlock, plan: SheetPinPlan) -> str:
 
 def insert_pin(text: str, sheet: SheetBlock, placement: SheetPinPlacement) -> str:
     """Add a single pin to a sheet block without touching size or other pins."""
-    if any(name == placement.name for name, _type, _uuid in sheet.pins):
+    if any(pin.name == placement.name for pin in sheet.pins):
         raise ValueError(
             f"Sheet '{sheet.name}' already has a pin named '{placement.name}'. "
             "Use sch_import_sheet_pins to reconcile it with the child sheet."

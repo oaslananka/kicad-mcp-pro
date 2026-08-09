@@ -7,6 +7,7 @@ import pytest
 from kicad_mcp.schematic.sheet_pins import (
     SheetPinPlacement,
     SheetPinPlan,
+    SheetPinRecord,
     _splice,  # internal invariant (non-overlapping edit spans), tested directly below
     apply_plan,
     insert_pin,
@@ -224,7 +225,16 @@ def test_apply_plan_relocates_a_pin_that_sits_after_instances() -> None:
     were assumed disjoint without checking.
     """
     sheet = parse_sheet_blocks(ROOT_WITH_PIN_AFTER_INSTANCES)[0]
-    assert sheet.pins == (("VIN", "input", "bbbbbbbb-1111-2222-3333-444444444444"),)
+    assert sheet.pins == (
+        SheetPinRecord(
+            name="VIN",
+            pin_type="input",
+            x_mm=80.01,
+            y_mm=33.02,
+            rotation=180,
+            uuid="bbbbbbbb-1111-2222-3333-444444444444",
+        ),
+    )
     assert sheet.instances_start is not None
     # This is the adversarial layout itself: the existing pin's span starts
     # strictly after the instances anchor, the opposite of what KiCad writes.
@@ -238,7 +248,16 @@ def test_apply_plan_relocates_a_pin_that_sits_after_instances() -> None:
     assert updated.index('(pin "VIN"') < updated.index("(instances")
 
     reparsed = parse_sheet_blocks(updated)[0]
-    assert reparsed.pins == (("VIN", "input", "bbbbbbbb-1111-2222-3333-444444444444"),)
+    assert reparsed.pins == (
+        SheetPinRecord(
+            name="VIN",
+            pin_type="input",
+            x_mm=80.01,
+            y_mm=33.02,
+            rotation=180,
+            uuid="bbbbbbbb-1111-2222-3333-444444444444",
+        ),
+    )
     assert reparsed.instances_start is not None
     assert reparsed.pin_spans[0][0] < reparsed.instances_start
 

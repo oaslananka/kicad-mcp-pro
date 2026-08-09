@@ -4,6 +4,8 @@ import pytest
 
 from kicad_mcp.schematic.sheet_pins import (
     PIN_TYPES,
+    SheetPinRecord,
+    edge_for_rotation,
     parse_hierarchical_labels,
     parse_sheet_blocks,
 )
@@ -94,11 +96,28 @@ def test_parse_sheet_blocks_reads_existing_pins_with_uuids() -> None:
 
     block = parse_sheet_blocks(text)[0]
 
-    assert block.pins == (("I2S_BCLK", "output", "aaaaaaaa-1111-2222-3333-444444444444"),)
+    assert block.pins == (
+        SheetPinRecord(
+            name="I2S_BCLK",
+            pin_type="output",
+            x_mm=60.96,
+            y_mm=92.71,
+            rotation=0,
+            uuid="aaaaaaaa-1111-2222-3333-444444444444",
+        ),
+    )
     start, end = block.pin_spans[0]
     # The span covers whole lines, so deleting it leaves no orphan indentation.
     assert text[start:end].startswith('\t\t(pin "I2S_BCLK"')
     assert text[start:end].endswith("\t\t)\n")
+
+
+def test_edge_for_rotation_maps_the_four_kicad_rotations() -> None:
+    assert edge_for_rotation(0) == "right"
+    assert edge_for_rotation(90) == "top"
+    assert edge_for_rotation(180) == "left"
+    assert edge_for_rotation(270) == "bottom"
+    assert edge_for_rotation(45) is None
 
 
 def test_parse_hierarchical_labels_keeps_file_order_and_shape() -> None:

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from .sheet_pins import parse_sheet_blocks
+from .sheet_pins import edge_for_rotation, parse_sheet_blocks
 
 
 class SheetManagerLike(Protocol):
@@ -207,7 +207,10 @@ class SchematicTopologyService:
             )
 
         lines = [f"Sheet '{sheet_name}' has {len(block.pins)} pins:"]
-        lines.extend(f"- {name} ({pin_type})" for name, pin_type, _uuid in block.pins)
+        for pin in block.pins:
+            edge = edge_for_rotation(pin.rotation)
+            kind = f"{pin.pin_type}, {edge}" if edge else pin.pin_type
+            lines.append(f"- {pin.name} ({kind}) @ ({pin.x_mm}, {pin.y_mm}) mm")
         lines.append(
             f"Sheet symbol at ({block.origin[0]}, {block.origin[1]}) mm, "
             f"{block.size[0]} x {block.size[1]} mm."

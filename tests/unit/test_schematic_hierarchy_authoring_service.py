@@ -518,8 +518,8 @@ def test_import_sheet_pins_applies_multiple_sheets_in_one_transaction(tmp_path: 
 
     parsed = {block.name: block for block in parse_sheet_blocks(written)}
     assert set(parsed) == {"01_power", "02_mcu"}
-    assert {name for name, _pin_type, _uuid in parsed["01_power"].pins} == {"VBUS", "GND", "EN"}
-    assert {name for name, _pin_type, _uuid in parsed["02_mcu"].pins} == {"VIN", "VOUT"}
+    assert {pin.name for pin in parsed["01_power"].pins} == {"VBUS", "GND", "EN"}
+    assert {pin.name for pin in parsed["02_mcu"].pins} == {"VIN", "VOUT"}
     assert "01_power" in report
     assert "02_mcu" in report
 
@@ -563,7 +563,7 @@ def test_import_sheet_pins_keeps_an_orphan_pin_and_reports_it(tmp_path: Path) ->
 
     written = store.files["root.kicad_sch"]
     parsed = parse_sheet_blocks(written)[0]
-    assert {name for name, _pin_type, _uuid in parsed.pins} == {"OLD_SIGNAL", "VIN", "VOUT"}
+    assert {pin.name for pin in parsed.pins} == {"OLD_SIGNAL", "VIN", "VOUT"}
     assert "OLD_SIGNAL" in report
 
 
