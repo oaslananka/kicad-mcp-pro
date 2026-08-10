@@ -22,6 +22,7 @@ from ..export.drill import ExportDrillService
 from ..export.gerber import ExportGerberService
 from ..export.netlist import ExportNetlistService
 from ..export.pcb_3d_pdf import ExportPcb3dPdfService
+from ..export.pcb_file_formats import ExportPcbFileFormatsService
 from ..export.pcb_pdf import ExportPcbPdfService
 from ..export.pcb_vector import ExportPcbVectorService
 from ..export.sch_pdf import ExportSchPdfService
@@ -35,13 +36,13 @@ from . import (
     export_gerber,
     export_netlist,
     export_pcb_3d_pdf,
+    export_pcb_file_formats,
     export_pcb_pdf,
     export_pcb_vector,
     export_sch_pdf,
     export_sch_python_bom,
     export_sch_vector,
 )
-from .aliases import notify_deprecated, register_alias
 from .export_support import (
     _ensure_output_dir,
     _get_pcb_file,
@@ -325,6 +326,19 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         default_layers=DEFAULT_PCB_PDF_LAYERS,
     )
 
+    pcb_file_formats_service = ExportPcbFileFormatsService(
+        get_pcb_file=_get_pcb_file,
+        is_supported=lambda format_name: bool(
+            getattr(
+                get_cli_capabilities(get_config().kicad_cli),
+                "supports_ipc_d356" if format_name == "ipc_d356" else f"supports_{format_name}",
+            )
+        ),
+        resolve_output_file=_resolve_output_file,
+        active_variant_args=_active_variant_args,
+        run_cli=_run_cli,
+    )
+
     pcb_vector_service = ExportPcbVectorService(
         get_pcb_file=_get_pcb_file,
         get_capabilities=lambda: get_cli_capabilities(get_config().kicad_cli),
@@ -400,370 +414,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
             return f"Schematic PostScript export failed: {stderr or stdout or 'unknown error'}"
         files = sorted(out_dir.glob("*.ps")) if out_dir.is_dir() else []
         return _format_file_list(files, f"Schematic PostScript export completed in {out_dir}:")
-
-    def _export_3d_model(
-        cli_command: str,
-        output_path: str,
-        *,
-        supported: bool,
-        default_name: str,
-        label: str,
-        # 3D options:
-        force: bool = False,
-        no_unspecified: bool = False,
-        no_dnp: bool = False,
-        variant_name: str | None = None,
-        grid_origin: bool = False,
-        drill_origin: bool = False,
-        subst_models: bool = False,
-        board_only: bool = False,
-        cut_vias_in_body: bool = False,
-        no_board_body: bool = False,
-        no_components: bool = False,
-        component_filter: str = "",
-        include_tracks: bool = False,
-        include_pads: bool = False,
-        include_zones: bool = False,
-        include_inner_copper: bool = False,
-        include_silkscreen: bool = False,
-        include_soldermask: bool = False,
-        fuse_shapes: bool = False,
-        fill_all_vias: bool = False,
-        no_extra_pad_thickness: bool = False,
-        min_distance: str = "",
-        net_filter: str = "",
-        user_origin: str = "",
-        # VRML specific:
-        units: str = "",
-        models_dir: str = "",
-        models_relative: bool = False,
-    ) -> str:
-        pcb_file = _get_pcb_file()
-        if not supported:
-            return f"{label} export is not supported by the detected KiCad CLI."
-
-        try:
-            out_file = _resolve_output_file("3d", output_path, default_name=default_name)
-        except ValueError as exc:
-            return f"Invalid output path: {exc}"
-
-        cmd = ["pcb", "export", cli_command]
-        if force:
-            cmd.append("--force")
-        if no_unspecified:
-            cmd.append("--no-unspecified")
-        if no_dnp:
-            cmd.append("--no-dnp")
-
-        variant_args = _active_variant_args(variant_name)
-        cmd.extend(variant_args)
-
-        if grid_origin:
-            cmd.append("--grid-origin")
-        if drill_origin:
-            cmd.append("--drill-origin")
-        if subst_models:
-            cmd.append("--subst-models")
-        if board_only:
-            cmd.append("--board-only")
-        if cut_vias_in_body:
-            cmd.append("--cut-vias-in-body")
-        if no_board_body:
-            cmd.append("--no-board-body")
-        if no_components:
-            cmd.append("--no-components")
-        if component_filter:
-            cmd.extend(["--component-filter", component_filter])
-        if include_tracks:
-            cmd.append("--include-tracks")
-        if include_pads:
-            cmd.append("--include-pads")
-        if include_zones:
-            cmd.append("--include-zones")
-        if include_inner_copper:
-            cmd.append("--include-inner-copper")
-        if include_silkscreen:
-            cmd.append("--include-silkscreen")
-        if include_soldermask:
-            cmd.append("--include-soldermask")
-        if fuse_shapes:
-            cmd.append("--fuse-shapes")
-        if fill_all_vias:
-            cmd.append("--fill-all-vias")
-        if no_extra_pad_thickness:
-            cmd.append("--no-extra-pad-thickness")
-        if min_distance:
-            cmd.extend(["--min-distance", min_distance])
-        if net_filter:
-            cmd.extend(["--net-filter", net_filter])
-        if user_origin:
-            cmd.extend(["--user-origin", user_origin])
-
-        # VRML specific:
-        if units:
-            cmd.extend(["--units", units])
-        if models_dir:
-            cmd.extend(["--models-dir", models_dir])
-        if models_relative:
-            cmd.append("--models-relative")
-
-        cmd.extend(["--output", str(out_file)])
-        cmd.append(str(pcb_file))
-
-        code, stdout, stderr = _run_cli(*cmd)
-        if code != 0:
-            return f"{label} export failed: {stderr or stdout or 'unknown error'}"
-        return f"{label} model exported to {out_file}"
-
-    @headless_compatible
-    def pcb_export_brep(
-        output_file: str = "",
-        variant_name: str | None = None,
-        **kwargs: Any,  # noqa: ANN401
-    ) -> str:
-        """Export solid model to BREP format."""
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        return _export_3d_model(
-            "brep",
-            output_file,
-            supported=caps.supports_brep,
-            default_name="board.brep",
-            label="BREP",
-            variant_name=variant_name,
-            **kwargs,
-        )
-
-    @headless_compatible
-    def export_brep(output_path: str = "") -> str:
-        """Export BREP format for the active board."""
-        return _with_low_level_export_notice(pcb_export_brep(output_file=output_path))
-
-    @headless_compatible
-    def pcb_export_glb(
-        output_file: str = "",
-        variant_name: str | None = None,
-        **kwargs: Any,  # noqa: ANN401
-    ) -> str:
-        """Export solid model to GLB format."""
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        return _export_3d_model(
-            "glb",
-            output_file,
-            supported=caps.supports_glb,
-            default_name="board.glb",
-            label="GLB",
-            variant_name=variant_name,
-            **kwargs,
-        )
-
-    @headless_compatible
-    def export_glb(output_path: str = "") -> str:
-        """Export GLB format for the active board."""
-        return _with_low_level_export_notice(pcb_export_glb(output_file=output_path))
-
-    @headless_compatible
-    def pcb_export_gencad(output_file: str = "", **kwargs: Any) -> str:  # noqa: ANN401
-        """Export board to GenCAD format."""
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        return _export_3d_model(
-            "gencad",
-            output_file,
-            supported=caps.supports_gencad,
-            default_name="board.gencad",
-            label="GenCAD",
-            **kwargs,
-        )
-
-    @headless_compatible
-    def export_gencad(output_path: str = "") -> str:
-        """Export GenCAD format for the active board."""
-        return _with_low_level_export_notice(pcb_export_gencad(output_file=output_path))
-
-    @headless_compatible
-    def pcb_export_ipcd356(output_file: str = "") -> str:
-        """Export netlist to IPC-D-356 format."""
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        return _export_3d_model(
-            "ipcd356",
-            output_file,
-            supported=caps.supports_ipc_d356,
-            default_name="board.d356",
-            label="IPC-D-356",
-        )
-
-    @headless_compatible
-    def export_ipc_d356(output_path: str = "") -> str:
-        """Export IPC-D-356 format for the active board."""
-        return _with_low_level_export_notice(pcb_export_ipcd356(output_file=output_path))
-
-    @headless_compatible
-    def pcb_export_ply(
-        output_file: str = "",
-        variant_name: str | None = None,
-        **kwargs: Any,  # noqa: ANN401
-    ) -> str:
-        """Export solid model to PLY format."""
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        return _export_3d_model(
-            "ply",
-            output_file,
-            supported=caps.supports_ply,
-            default_name="board.ply",
-            label="PLY",
-            variant_name=variant_name,
-            **kwargs,
-        )
-
-    @headless_compatible
-    def export_ply(output_path: str = "") -> str:
-        """Export PLY format for the active board."""
-        return _with_low_level_export_notice(pcb_export_ply(output_file=output_path))
-
-    @headless_compatible
-    def pcb_export_stl(
-        output_file: str = "",
-        variant_name: str | None = None,
-        **kwargs: Any,  # noqa: ANN401
-    ) -> str:
-        """Export solid model to STL format."""
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        return _export_3d_model(
-            "stl",
-            output_file,
-            supported=caps.supports_stl,
-            default_name="board.stl",
-            label="STL",
-            variant_name=variant_name,
-            **kwargs,
-        )
-
-    @headless_compatible
-    def export_stl(output_path: str = "") -> str:
-        """Export STL format for the active board."""
-        return _with_low_level_export_notice(pcb_export_stl(output_file=output_path))
-
-    @headless_compatible
-    def pcb_export_u3d(
-        output_file: str = "",
-        variant_name: str | None = None,
-        **kwargs: Any,  # noqa: ANN401
-    ) -> str:
-        """Export solid model to U3D format."""
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        return _export_3d_model(
-            "u3d",
-            output_file,
-            supported=caps.supports_u3d,
-            default_name="board.u3d",
-            label="U3D",
-            variant_name=variant_name,
-            **kwargs,
-        )
-
-    @headless_compatible
-    def export_u3d(output_path: str = "") -> str:
-        """Export U3D format for the active board."""
-        return _with_low_level_export_notice(pcb_export_u3d(output_file=output_path))
-
-    @headless_compatible
-    def pcb_export_vrml(
-        output_file: str = "",
-        units: str = "in",
-        models_dir: str = "",
-        models_relative: bool = False,
-        variant_name: str | None = None,
-        **kwargs: Any,  # noqa: ANN401,
-    ) -> str:
-        """Export solid model to VRML format."""
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        return _export_3d_model(
-            "vrml",
-            output_file,
-            supported=caps.supports_vrml,
-            default_name="board.wrl",
-            label="VRML",
-            units=units,
-            models_dir=models_dir,
-            models_relative=models_relative,
-            variant_name=variant_name,
-            **kwargs,
-        )
-
-    @headless_compatible
-    def export_vrml(output_path: str = "") -> str:
-        """Export VRML format for the active board."""
-        return _with_low_level_export_notice(pcb_export_vrml(output_file=output_path))
-
-    @headless_compatible
-    def pcb_export_ps(output_file: str = "", variant_name: str | None = None, **kwargs: Any) -> str:  # noqa: ANN401
-        """Export PCB rendering to PostScript format."""
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        return _export_3d_model(
-            "ps",
-            output_file,
-            supported=caps.supports_ps,
-            default_name="board.ps",
-            label="PostScript",
-            variant_name=variant_name,
-            **kwargs,
-        )
-
-    @headless_compatible
-    def export_ps(output_path: str = "") -> str:
-        """Export PostScript format for the active board."""
-        return _with_low_level_export_notice(pcb_export_ps(output_file=output_path))
-
-    @headless_compatible
-    def export_3d_step() -> str:
-        """Deprecated alias of ``export_step``; exports a STEP model for the active board.
-
-        Retained for backward compatibility. Prefer ``export_step``, which accepts an
-        optional output path. This alias logs a one-time deprecation warning.
-        """
-        notify_deprecated("export_3d_step")
-        return export_step()
-
-    @headless_compatible
-    def export_step(output_path: str = "") -> str:
-        """Export a STEP model for the active board."""
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        return _with_low_level_export_notice(
-            _export_3d_model(
-                "step",
-                output_path,
-                supported=caps.supports_step,
-                default_name="board.step",
-                label="STEP",
-            )
-        )
-
-    @headless_compatible
-    def export_stepz(output_path: str = "") -> str:
-        """Export a STEPZ model for the active board."""
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        return _with_low_level_export_notice(
-            _export_3d_model(
-                "stpz",
-                output_path,
-                supported=caps.supports_stepz,
-                default_name="board.stepz",
-                label="STEPZ",
-            )
-        )
-
-    @headless_compatible
-    def export_xao(output_path: str = "") -> str:
-        """Export an XAO model for the active board."""
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        return _with_low_level_export_notice(
-            _export_3d_model(
-                "xao",
-                output_path,
-                supported=caps.supports_xao,
-                default_name="board.xao",
-                label="XAO",
-            )
-        )
 
     def _export_3d_render(
         output_file: str = "render.png",
@@ -1247,19 +897,13 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
                 add_low_level_notice=_with_low_level_export_notice,
             ),
         )
-        register_alias(mcp, export_3d_step, "export_step")
-        mcp.tool()(export_step)
-        mcp.tool()(export_stepz)
-        mcp.tool()(export_xao)
-        mcp.tool()(export_brep)
-        mcp.tool()(export_glb)
-        mcp.tool()(export_gencad)
-        mcp.tool()(export_ipc_d356)
-        mcp.tool()(export_ply)
-        mcp.tool()(export_stl)
-        mcp.tool()(export_u3d)
-        mcp.tool()(export_vrml)
-        mcp.tool()(export_ps)
+        export_pcb_file_formats.register(
+            mcp,
+            export_pcb_file_formats.ExportPcbFileFormatsDependencies(
+                service=pcb_file_formats_service,
+                add_low_level_notice=_with_low_level_export_notice,
+            ),
+        )
         export_pcb_3d_pdf.register(
             mcp,
             export_pcb_3d_pdf.ExportPcb3dPdfDependencies(
