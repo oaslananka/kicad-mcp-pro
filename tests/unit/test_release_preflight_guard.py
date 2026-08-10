@@ -368,7 +368,7 @@ def test_dependabot_groups_routine_updates_without_grouping_major_versions() -> 
         "uv": ("python-minor-patch", {"minor", "patch"}),
         "github-actions": ("actions-minor-patch", {"minor", "patch"}),
         "docker": ("containers-patch", {"patch"}),
-        "docker-compose": ("compose-minor-patch", {"minor", "patch"}),
+        "docker-compose": ("compose-patch", {"patch"}),
         "cargo": ("cargo-minor-patch", {"minor", "patch"}),
     }
     for ecosystem, (group_name, update_types) in expected_version_groups.items():
@@ -428,7 +428,7 @@ def test_mergify_only_autoqueues_safe_grouped_dependabot_updates() -> None:
         "npm-wrapper-minor-patch",
         "actions-minor-patch",
         "containers-patch",
-        "compose-minor-patch",
+        "compose-patch",
         "cargo-minor-patch",
     ):
         assert group_name in head_condition

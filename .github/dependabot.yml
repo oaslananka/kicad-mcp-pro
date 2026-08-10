@@ -182,12 +182,11 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
-      compose-minor-patch:
+      compose-patch:
         applies-to: "version-updates"
         patterns:
           - "*"
         update-types:
-          - "minor"
           - "patch"
 
   - package-ecosystem: "cargo"
