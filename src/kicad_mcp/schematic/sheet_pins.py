@@ -106,6 +106,14 @@ class SheetBlock:
     """Whole-line spans of the existing ``(pin ...)`` blocks, parallel to ``pins``."""
     instances_start: int | None
     """Start of the ``(instances ...)`` node -- the anchor new pins go before."""
+    at_span: tuple[int, int]
+    """Character span of the sheet's own ``(at x y)`` node.
+
+    Carried so a caller can move a sheet by rewriting one node instead of
+    re-emitting the block, which would lose any hand-tuned styling.
+    """
+    pin_at_spans: tuple[tuple[int, int], ...]
+    """Character span of each pin's ``(at x y rot)`` node, parallel to ``pins``."""
 
 
 def _unescape(raw: str) -> str:
@@ -207,15 +215,19 @@ def _scan_sheet_blocks(text: str) -> Iterator[SheetBlock | SkippedSheetBlock]:
         name = ""
         filename = ""
         origin: tuple[float, float] | None = None
+        at_span: tuple[int, int] | None = None
         size: tuple[float, float] | None = None
         size_span: tuple[int, int] | None = None
         pins: list[SheetPinRecord] = []
         pin_spans: list[tuple[int, int]] = []
+        pin_at_spans: list[tuple[int, int]] = []
         instances_start: int | None = None
 
         for tag, child_start, child_end in _children(text, start, end):
             if tag == "at" and origin is None:
                 origin = _two_floats(text, child_start, child_end)
+                if origin is not None:
+                    at_span = (child_start, child_end)
             elif tag == "size" and size is None:
                 size = _two_floats(text, child_start, child_end)
                 if size is not None:
@@ -247,10 +259,11 @@ def _scan_sheet_blocks(text: str) -> Iterator[SheetBlock | SkippedSheetBlock]:
                     )
                 )
                 pin_spans.append(_line_span(text, child_start, child_end))
+                pin_at_spans.append(at_match.span() if at_match else (child_start, child_start))
             elif tag == "instances" and instances_start is None:
                 instances_start = child_start
 
-        if not name or origin is None or size is None or size_span is None:
+        if not name or origin is None or at_span is None or size is None or size_span is None:
             missing = [
                 label
                 for label, present in (
@@ -278,6 +291,8 @@ def _scan_sheet_blocks(text: str) -> Iterator[SheetBlock | SkippedSheetBlock]:
             size_span=size_span,
             pin_spans=tuple(pin_spans),
             instances_start=instances_start,
+            at_span=at_span,
+            pin_at_spans=tuple(pin_at_spans),
         )
 
 

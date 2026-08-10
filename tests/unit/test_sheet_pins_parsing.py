@@ -268,3 +268,38 @@ def test_parse_skipped_sheet_blocks_reports_an_unnamed_block() -> None:
 
 def test_parse_skipped_sheet_blocks_is_empty_for_a_healthy_document() -> None:
     assert parse_skipped_sheet_blocks(SHEET_BLOCK) == ()
+
+
+def test_parse_sheet_blocks_exposes_the_at_spans_for_moving() -> None:
+    text = SHEET_BLOCK.replace(
+        "\t\t(instances\n",
+        '\t\t(pin "VIN" input\n'
+        "\t\t\t(at 30.48 92.71 180)\n"
+        "\t\t\t(effects\n"
+        "\t\t\t\t(font\n"
+        "\t\t\t\t\t(size 1.27 1.27)\n"
+        "\t\t\t\t)\n"
+        "\t\t\t\t(justify left)\n"
+        "\t\t\t)\n"
+        '\t\t\t(uuid "bbbbbbbb-1111-2222-3333-444444444444")\n'
+        "\t\t)\n"
+        "\t\t(instances\n",
+        1,
+    )
+
+    block = parse_sheet_blocks(text)[0]
+
+    start, end = block.at_span
+    assert text[start:end] == "(at 30.48 90.17)"
+    assert len(block.pin_at_spans) == len(block.pins) == 1
+    pin_start, pin_end = block.pin_at_spans[0]
+    assert text[pin_start:pin_end] == "(at 30.48 92.71 180)"
+
+
+def test_at_spans_are_empty_when_there_are_no_pins() -> None:
+    block = parse_sheet_blocks(SHEET_BLOCK)[0]
+
+    assert block.pin_at_spans == ()
+    start, end = block.at_span
+    text_of = SHEET_BLOCK[start:end]
+    assert text_of.startswith("(at ")

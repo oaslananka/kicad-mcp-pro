@@ -48,6 +48,8 @@ def _sheet(
         size_span=(0, 1),
         pin_spans=tuple((0, 1) for _ in pins),
         instances_start=0,
+        at_span=(0, 1),
+        pin_at_spans=tuple((0, 1) for _ in pins),
     )
 
 
