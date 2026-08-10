@@ -77,14 +77,21 @@ def test_a_tight_gap_shifts_the_right_column_by_a_whole_grid_step() -> None:
 
 
 def test_the_requirement_comes_from_the_facing_names_not_the_longest() -> None:
-    # The long name is on the LEFT edge of the left sheet, so it faces nothing.
+    # The long name is on the LEFT edge of the left sheet (rotation 180), so it
+    # faces away from the gap and must not count toward the requirement. The
+    # 15.0 mm gap is chosen to sit strictly between the two possible answers:
+    # need_correct = 2*2.54 + 0.762("X") + 0.762("Y") + 2.54 = 9.144 mm (fits)
+    # need_rotation_blind = 2*2.54 + 12.192("A_VERY_LONG_NAME") + 0.762 + 2.54
+    #                     = 20.574 mm (needs a shift)
+    # so a version of _facing_width that dropped the rotation filter would
+    # make this test fail, not just pass more coarsely.
     left = _sheet(
         "left",
         0.0,
         0.0,
         pins=(_pin("A_VERY_LONG_NAME", 0.0, 2.54, 180), _pin("X", 30.48, 2.54, 0)),
     )
-    right = _sheet("right", 60.96, 0.0, pins=(_pin("Y", 60.96, 2.54, 180),))
+    right = _sheet("right", 45.48, 0.0, pins=(_pin("Y", 45.48, 2.54, 180),))
 
     plan = plan_spread((left, right), attached={}, grid_mm=GRID, margin_mm=2.54)
 
@@ -138,6 +145,28 @@ def test_a_shift_past_the_page_edge_is_reported_not_applied() -> None:
 
     assert plan.shifts == ()
     assert plan.overflow_mm > 0
+
+
+def test_the_heuristic_is_disclosed_even_when_the_shift_would_overflow() -> None:
+    # The overflow figure is computed from right_edge, which itself embeds the
+    # heuristic-driven shift (48.26 + 250.0 + 3.81 mm) whenever page_width_mm
+    # is set and the plan is rejected on the early-return overflow path. The
+    # disclosure must survive that return, not just the accepted-plan path.
+    left = _sheet("left", 0.0, 0.0, pins=(_pin("SPI2_MOSI", 30.48, 2.54, 0),))
+    right = _sheet("right", 48.26, 0.0, w=250.0, pins=(_pin("SPI2_MOSI", 48.26, 2.54, 180),))
+
+    plan = plan_spread(
+        (left, right),
+        attached={},
+        grid_mm=GRID,
+        margin_mm=2.54,
+        page_width_mm=PAPER_WIDTHS_MM["A4"],
+    )
+
+    assert plan.shifts == ()
+    assert plan.overflow_mm > 0
+    assert any("usable" in note.casefold() for note in plan.notes)
+    assert any("heuristic" in note.casefold() for note in plan.notes)
 
 
 def test_an_unknown_paper_size_skips_the_check_and_says_so() -> None:

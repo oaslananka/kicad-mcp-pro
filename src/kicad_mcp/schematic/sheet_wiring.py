@@ -191,6 +191,17 @@ def plan_spread(
         )
         right_edge = max(right_edge, column.x_max + dx)
 
+    # Disclosed before either return below: right_edge -- and so the overflow
+    # figure computed from it -- was itself derived from the estimated text
+    # width whenever a shift came from the heuristic, not just min_gap_mm.
+    # Both the accepted plan and the rejected (overflow) one carry the number,
+    # so both must carry the disclosure.
+    if heuristic_drove_a_shift:
+        notes.append(
+            "Column spacing was derived from an estimated text width "
+            "(heuristic: 0.6 x font height per character), not a measured one."
+        )
+
     overflow = 0.0
     if page_width_mm is None:
         notes.append(
@@ -212,12 +223,6 @@ def plan_spread(
                 overflow_mm=overflow,
                 notes=tuple(notes),
             )
-
-    if heuristic_drove_a_shift:
-        notes.append(
-            "Column spacing was derived from an estimated text width "
-            "(heuristic: 0.6 x font height per character), not a measured one."
-        )
 
     return SpreadPlan(
         shifts=tuple(shifts),
