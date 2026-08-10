@@ -34,8 +34,10 @@ def test_toolchain_contract_is_exact_and_cross_file_consistent() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "dev-bootstrap.yml").read_text(encoding="utf-8")
     assert f"ARG UV_VERSION={contract.uv_version}" in dockerfile
-    assert f"uv {contract.uv_version}" in workflow
-    assert f"uvx {contract.uv_version}" in workflow
+    expected_uv_check = f'test "$(uv --version | awk \'{{print $2}}\')" = "{contract.uv_version}"'
+    expected_uvx_check = f'test "$(uvx --version | awk \'{{print $2}}\')" = "{contract.uv_version}"'
+    assert expected_uv_check in workflow
+    assert expected_uvx_check in workflow
     assert rust_config["toolchain"]["channel"] == contract.rust_toolchain
 
 
