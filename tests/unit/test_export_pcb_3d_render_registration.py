@@ -34,10 +34,10 @@ def _response_type():
 class FakePcb3dRenderService:
     def __init__(self, response: RenderResponse) -> None:
         self.response = response
-        self.calls: list[dict[str, object]] = []
+        self.calls: list[object] = []
 
-    def render(self, **kwargs: object) -> RenderResponse:
-        self.calls.append(kwargs)
+    def render(self, options: object) -> RenderResponse:
+        self.calls.append(options)
         return self.response
 
 
@@ -193,30 +193,29 @@ def test_registration_preserves_text_result_notice_and_delegation() -> None:
     text = next(item for item in result.content if isinstance(item, TextContent))
     assert text.text == "notice::raw render"
     assert result.structuredContent is None
-    assert service.calls == [
-        {
-            "output_file": "custom.png",
-            "side": "bottom",
-            "zoom": 2.0,
-            "width": None,
-            "height": None,
-            "quality": None,
-            "preset": None,
-            "use_board_stackup_colors": False,
-            "floor": True,
-            "perspective": True,
-            "pan_x": None,
-            "pan_y": None,
-            "rotate_x": None,
-            "rotate_y": None,
-            "rotate_z": None,
-            "light_top": None,
-            "light_bottom": None,
-            "light_side": None,
-            "light_camera": None,
-            "light_side_elevation": None,
-        }
-    ]
+    assert len(service.calls) == 1
+    assert vars(service.calls[0]) == {
+        "output_file": "custom.png",
+        "side": "bottom",
+        "zoom": 2.0,
+        "width": None,
+        "height": None,
+        "quality": None,
+        "preset": None,
+        "use_board_stackup_colors": False,
+        "floor": True,
+        "perspective": True,
+        "pan_x": None,
+        "pan_y": None,
+        "rotate_x": None,
+        "rotate_y": None,
+        "rotate_z": None,
+        "light_top": None,
+        "light_bottom": None,
+        "light_side": None,
+        "light_camera": None,
+        "light_side_elevation": None,
+    }
 
 
 def test_registration_preserves_image_result_metadata_and_text(tmp_path: Path) -> None:

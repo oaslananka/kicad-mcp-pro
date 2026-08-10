@@ -3,14 +3,27 @@ from __future__ import annotations
 import importlib
 import importlib.util
 from pathlib import Path
-from typing import Any
+from types import ModuleType
+from typing import Any, Protocol
+
+
+def _service_module() -> ModuleType:
+    spec = importlib.util.find_spec("kicad_mcp.export.pcb_3d_render")
+    assert spec is not None, "PCB 3D render service module must be extracted"
+    return importlib.import_module("kicad_mcp.export.pcb_3d_render")
 
 
 def _service_type() -> type[Any]:
-    spec = importlib.util.find_spec("kicad_mcp.export.pcb_3d_render")
-    assert spec is not None, "PCB 3D render service module must be extracted"
-    module = importlib.import_module("kicad_mcp.export.pcb_3d_render")
-    return module.ExportPcb3dRenderService
+    return _service_module().ExportPcb3dRenderService
+
+
+class RenderService(Protocol):
+    def render(self, options: object) -> object: ...
+
+
+def _render(service: RenderService, **overrides: object) -> object:
+    options = _service_module().Pcb3dRenderOptions(**overrides)
+    return service.render(options)
 
 
 def _service(
@@ -70,7 +83,7 @@ def _service(
 def test_render_preserves_default_argv_and_active_variant_order(tmp_path: Path) -> None:
     service, calls = _service(tmp_path, variant_args=["--variant", "assembly-a"])
 
-    response = service.render()
+    response = _render(service)
 
     out_file = tmp_path / "output" / "3d" / "render.png"
     assert calls["pcb"] == [None]
@@ -102,7 +115,8 @@ def test_render_preserves_default_argv_and_active_variant_order(tmp_path: Path) 
 def test_render_preserves_all_optional_flags_and_order(tmp_path: Path) -> None:
     service, calls = _service(tmp_path)
 
-    service.render(
+    _render(
+        service,
         output_file="custom.jpg",
         side="bottom",
         zoom=2.5,
@@ -171,7 +185,7 @@ def test_render_preserves_all_optional_flags_and_order(tmp_path: Path) -> None:
 def test_render_preserves_partial_pan_and_rotation_defaults(tmp_path: Path) -> None:
     service, calls = _service(tmp_path)
 
-    service.render(pan_y=3.0, rotate_y=12.0)
+    _render(service, pan_y=3.0, rotate_y=12.0)
 
     args = calls["cli"][0][0]
     assert args[args.index("--pan") + 1] == "0.0,3.0"
@@ -180,24 +194,24 @@ def test_render_preserves_partial_pan_and_rotation_defaults(tmp_path: Path) -> N
 
 def test_render_preserves_capability_and_path_failures(tmp_path: Path) -> None:
     unsupported, unsupported_calls = _service(tmp_path, supported=False)
-    response = unsupported.render()
+    response = _render(unsupported)
     assert response.text == "3D render export is not supported by the detected KiCad CLI."
     assert unsupported_calls["pcb"] == [None]
     assert unsupported_calls["resolve"] == []
     assert unsupported_calls["cli"] == []
 
     invalid, invalid_calls = _service(tmp_path)
-    response = invalid.render(output_file="bad.png")
+    response = _render(invalid, output_file="bad.png")
     assert response.text == "Invalid output path: unsafe output"
     assert invalid_calls["cli"] == []
 
 
 def test_render_preserves_failure_precedence_and_ignores_stdout(tmp_path: Path) -> None:
     stderr_service, _ = _service(tmp_path, cli_result=(2, "stdout detail", "stderr detail"))
-    assert stderr_service.render().text == "3D render failed: stderr detail"
+    assert _render(stderr_service).text == "3D render failed: stderr detail"
 
     stdout_only_service, _ = _service(tmp_path, cli_result=(2, "stdout detail", ""))
-    assert stdout_only_service.render().text == "3D render failed: unknown error"
+    assert _render(stdout_only_service).text == "3D render failed: unknown error"
 
 
 def test_render_returns_image_response_with_human_size_when_artifact_exists(tmp_path: Path) -> None:
@@ -206,7 +220,7 @@ def test_render_returns_image_response_with_human_size_when_artifact_exists(tmp_
     out_file.parent.mkdir(parents=True)
     out_file.write_bytes(b"png-bytes")
 
-    response = service.render(output_file="board.png")
+    response = _render(service, output_file="board.png")
 
     assert response.text is None
     assert response.image_path == out_file

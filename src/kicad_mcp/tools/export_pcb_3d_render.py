@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from mcp.server.fastmcp import FastMCP
 from mcp.types import CallToolResult
 
-from ..export.pcb_3d_render import ExportPcb3dRenderService
+from ..export.pcb_3d_render import ExportPcb3dRenderService, Pcb3dRenderOptions
 from ..mcp_media import image_tool_result, text_tool_result
 from .metadata import headless_compatible
 
@@ -31,7 +31,7 @@ def register(mcp: FastMCP, dependencies: ExportPcb3dRenderDependencies) -> None:
 
     @mcp.tool()
     @headless_compatible
-    def export_3d_render(
+    def export_3d_render(  # NOSONAR -- exact public MCP compatibility signature
         output_file: str = "render.png",
         side: str = "top",
         zoom: float = 1.0,
@@ -85,26 +85,28 @@ def register(mcp: FastMCP, dependencies: ExportPcb3dRenderDependencies) -> None:
             Side light elevation angle in degrees.
         """
         response = service.render(
-            output_file=output_file,
-            side=side,
-            zoom=zoom,
-            width=width,
-            height=height,
-            quality=quality,
-            preset=preset,
-            use_board_stackup_colors=use_board_stackup_colors,
-            floor=floor,
-            perspective=perspective,
-            pan_x=pan_x,
-            pan_y=pan_y,
-            rotate_x=rotate_x,
-            rotate_y=rotate_y,
-            rotate_z=rotate_z,
-            light_top=light_top,
-            light_bottom=light_bottom,
-            light_side=light_side,
-            light_camera=light_camera,
-            light_side_elevation=light_side_elevation,
+            Pcb3dRenderOptions(
+                output_file=output_file,
+                side=side,
+                zoom=zoom,
+                width=width,
+                height=height,
+                quality=quality,
+                preset=preset,
+                use_board_stackup_colors=use_board_stackup_colors,
+                floor=floor,
+                perspective=perspective,
+                pan_x=pan_x,
+                pan_y=pan_y,
+                rotate_x=rotate_x,
+                rotate_y=rotate_y,
+                rotate_z=rotate_z,
+                light_top=light_top,
+                light_bottom=light_bottom,
+                light_side=light_side,
+                light_camera=light_camera,
+                light_side_elevation=light_side_elevation,
+            )
         )
         if response.text is not None:
             return text_tool_result(add_low_level_notice(response.text))
