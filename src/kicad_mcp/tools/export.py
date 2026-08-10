@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP
-from mcp.types import CallToolResult
 
 from ..config import get_config
 from ..discovery import get_cli_capabilities
@@ -22,13 +21,13 @@ from ..export.drill import ExportDrillService
 from ..export.gerber import ExportGerberService
 from ..export.netlist import ExportNetlistService
 from ..export.pcb_3d_pdf import ExportPcb3dPdfService
+from ..export.pcb_3d_render import ExportPcb3dRenderService
 from ..export.pcb_file_formats import ExportPcbFileFormatsService
 from ..export.pcb_pdf import ExportPcbPdfService
 from ..export.pcb_vector import ExportPcbVectorService
 from ..export.sch_pdf import ExportSchPdfService
 from ..export.sch_python_bom import ExportSchPythonBomService
 from ..export.sch_vector import ExportSchVectorService
-from ..mcp_media import image_tool_result, text_tool_result
 from . import (
     export_board_stats,
     export_bom,
@@ -36,6 +35,7 @@ from . import (
     export_gerber,
     export_netlist,
     export_pcb_3d_pdf,
+    export_pcb_3d_render,
     export_pcb_file_formats,
     export_pcb_pdf,
     export_pcb_vector,
@@ -318,6 +318,15 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         run_cli_variants=_run_cli_variants,
     )
 
+    pcb_3d_render_service = ExportPcb3dRenderService(
+        get_pcb_file=_get_pcb_file,
+        is_supported=lambda: get_cli_capabilities(get_config().kicad_cli).supports_render,
+        resolve_output_file=_resolve_output_file,
+        active_variant_args=_active_variant_args,
+        run_cli_variants=_run_cli_variants,
+        human_size=_human_size,
+    )
+
     pcb_pdf_service = ExportPcbPdfService(
         get_pcb_file=_get_pcb_file,
         ensure_output_dir=_ensure_output_dir,
@@ -368,183 +377,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         run_cli=_run_cli,
         format_file_list=_format_file_list,
     )
-
-    def _export_3d_render(
-        output_file: str = "render.png",
-        side: str = "top",
-        zoom: float = 1.0,
-        width: int | None = None,
-        height: int | None = None,
-        quality: float | None = None,
-        preset: str | None = None,
-        use_board_stackup_colors: bool = False,
-        floor: bool = True,
-        perspective: bool = True,
-        pan_x: float | None = None,
-        pan_y: float | None = None,
-        rotate_x: float | None = None,
-        rotate_y: float | None = None,
-        rotate_z: float | None = None,
-        light_top: float | None = None,
-        light_bottom: float | None = None,
-        light_side: float | None = None,
-        light_camera: float | None = None,
-        light_side_elevation: float | None = None,
-    ) -> str | tuple[Path, str]:
-        pcb_file = _get_pcb_file()
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        if not caps.supports_render:
-            return "3D render export is not supported by the detected KiCad CLI."
-
-        try:
-            out_file = _resolve_output_file("3d", output_file, default_name="render.png")
-        except ValueError as exc:
-            return f"Invalid output path: {exc}"
-
-        args: list[str] = ["pcb", "render", "--output", str(out_file)]
-        args.extend(["--side", side])
-        args.extend(["--zoom", str(zoom)])
-        if width is not None:
-            args.extend(["--width", str(width)])
-        if height is not None:
-            args.extend(["--height", str(height)])
-        if quality is not None:
-            args.extend(["--quality", str(quality)])
-        if preset:
-            args.extend(["--preset", preset])
-        if use_board_stackup_colors:
-            args.append("--use-board-stackup-colors")
-        if not floor:
-            args.append("--no-floor")
-        if not perspective:
-            args.append("--orthographic")
-        if pan_x is not None or pan_y is not None:
-            px = pan_x if pan_x is not None else 0.0
-            py = pan_y if pan_y is not None else 0.0
-            args.extend(["--pan", f"{px},{py}"])
-        if any(v is not None for v in (rotate_x, rotate_y, rotate_z)):
-            rx = rotate_x or 0
-            ry = rotate_y or 0
-            rz = rotate_z or 0
-            args.extend(["--rotate", f"{rx},{ry},{rz}"])
-        if light_top is not None:
-            args.extend(["--light-top", str(light_top)])
-        if light_bottom is not None:
-            args.extend(["--light-bottom", str(light_bottom)])
-        if light_side is not None:
-            args.extend(["--light-side", str(light_side)])
-        if light_camera is not None:
-            args.extend(["--light-camera", str(light_camera)])
-        if light_side_elevation is not None:
-            args.extend(["--light-side-elevation", str(light_side_elevation)])
-
-        variant_args = _active_variant_args()
-        args.extend(variant_args)
-        args.append(str(pcb_file))
-
-        code, _, stderr = _run_cli_variants([args])
-        if code != 0:
-            return f"3D render failed: {stderr or 'unknown error'}"
-        if out_file.exists():
-            file_size = _human_size(out_file.stat().st_size)
-            return out_file, f"Rendered board image exported to {out_file} ({file_size})"
-        return f"Rendered board image exported to {out_file}"
-
-    @headless_compatible
-    def export_3d_render(
-        output_file: str = "render.png",
-        side: str = "top",
-        zoom: float = 1.0,
-        width: int | None = None,
-        height: int | None = None,
-        quality: float | None = None,
-        preset: str | None = None,
-        use_board_stackup_colors: bool = False,
-        floor: bool = True,
-        perspective: bool = True,
-        pan_x: float | None = None,
-        pan_y: float | None = None,
-        rotate_x: float | None = None,
-        rotate_y: float | None = None,
-        rotate_z: float | None = None,
-        light_top: float | None = None,
-        light_bottom: float | None = None,
-        light_side: float | None = None,
-        light_camera: float | None = None,
-        light_side_elevation: float | None = None,
-    ) -> CallToolResult:
-        """Render a 3D view of the active PCB board to a PNG image.
-
-        Parameters
-        ----------
-        output_file : str
-            Output file name (PNG or JPG). Defaults to ``render.png``.
-        side : str
-            View direction: ``top``, ``bottom``, ``front``, ``back``, ``left``, ``right``.
-        zoom : float
-            Camera zoom factor (0.05–20.0).
-        width, height : int | None
-            Output image dimensions in pixels.
-        quality : float | None
-            Rendering quality (0.0–1.0).
-        preset : str | None
-            Render preset name (e.g. ``photo``, ``standard``).
-        use_board_stackup_colors : bool
-            Use the board stackup-defined colors.
-        floor : bool
-            Show the reflective floor. Default True.
-        perspective : bool
-            Perspective projection. Set False for orthographic.
-        pan_x, pan_y : float | None
-            Camera pan offset in mm.
-        rotate_x, rotate_y, rotate_z : float | None
-            Camera rotation in degrees.
-        light_top, light_bottom, light_side, light_camera : float | None
-            Light intensity for each direction (0.0–1.0).
-        light_side_elevation : float | None
-            Side light elevation angle in degrees.
-        """
-        result = _export_3d_render(
-            output_file=output_file,
-            side=side,
-            zoom=zoom,
-            width=width,
-            height=height,
-            quality=quality,
-            preset=preset,
-            use_board_stackup_colors=use_board_stackup_colors,
-            floor=floor,
-            perspective=perspective,
-            pan_x=pan_x,
-            pan_y=pan_y,
-            rotate_x=rotate_x,
-            rotate_y=rotate_y,
-            rotate_z=rotate_z,
-            light_top=light_top,
-            light_bottom=light_bottom,
-            light_side=light_side,
-            light_camera=light_camera,
-            light_side_elevation=light_side_elevation,
-        )
-        if isinstance(result, str):
-            return text_tool_result(_with_low_level_export_notice(result))
-        image_path, summary = result
-        metadata = {
-            "status": "ok",
-            "png_path": str(image_path),
-            "side": side,
-            "zoom": zoom,
-            "width": width,
-            "height": height,
-            "preset": preset,
-        }
-        return image_tool_result(
-            image_path,
-            metadata,
-            text=_with_low_level_export_notice(
-                f"{summary}\n{json.dumps(metadata, indent=2)}",
-            ),
-        )
 
     def _export_pick_and_place(
         format: str = "csv",
@@ -865,7 +697,13 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
                 add_low_level_notice=_with_low_level_export_notice,
             ),
         )
-        mcp.tool()(export_3d_render)
+        export_pcb_3d_render.register(
+            mcp,
+            export_pcb_3d_render.ExportPcb3dRenderDependencies(
+                service=pcb_3d_render_service,
+                add_low_level_notice=_with_low_level_export_notice,
+            ),
+        )
         mcp.tool()(export_pick_and_place)
         mcp.tool()(export_ipc2581)
         mcp.tool()(export_odb)

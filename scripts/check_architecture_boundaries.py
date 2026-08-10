@@ -14,6 +14,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
 
+_EXPORT_PCB_3D_RENDER_ADAPTER = "kicad_mcp.tools.export_pcb_3d_render"
+
 DOMAIN_MODULES = {
     "kicad_mcp.tools.pcb": SRC_ROOT / "kicad_mcp" / "tools" / "pcb.py",
     "kicad_mcp.export.board_stats": SRC_ROOT / "kicad_mcp" / "export" / "board_stats.py",
@@ -22,6 +24,7 @@ DOMAIN_MODULES = {
     "kicad_mcp.export.gerber": SRC_ROOT / "kicad_mcp" / "export" / "gerber.py",
     "kicad_mcp.export.netlist": SRC_ROOT / "kicad_mcp" / "export" / "netlist.py",
     "kicad_mcp.export.pcb_3d_pdf": SRC_ROOT / "kicad_mcp" / "export" / "pcb_3d_pdf.py",
+    "kicad_mcp.export.pcb_3d_render": SRC_ROOT / "kicad_mcp" / "export" / "pcb_3d_render.py",
     "kicad_mcp.export.pcb_file_formats": SRC_ROOT / "kicad_mcp" / "export" / "pcb_file_formats.py",
     "kicad_mcp.export.pcb_pdf": SRC_ROOT / "kicad_mcp" / "export" / "pcb_pdf.py",
     "kicad_mcp.export.pcb_vector": SRC_ROOT / "kicad_mcp" / "export" / "pcb_vector.py",
@@ -37,6 +40,7 @@ DOMAIN_MODULES = {
     "kicad_mcp.tools.export_gerber": SRC_ROOT / "kicad_mcp" / "tools" / "export_gerber.py",
     "kicad_mcp.tools.export_netlist": SRC_ROOT / "kicad_mcp" / "tools" / "export_netlist.py",
     "kicad_mcp.tools.export_pcb_3d_pdf": SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_3d_pdf.py",
+    _EXPORT_PCB_3D_RENDER_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_3d_render.py",
     "kicad_mcp.tools.export_pcb_file_formats": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -262,6 +266,7 @@ PURE_HELPERS = {
     "kicad_mcp.export.gerber",
     "kicad_mcp.export.netlist",
     "kicad_mcp.export.pcb_3d_pdf",
+    "kicad_mcp.export.pcb_3d_render",
     "kicad_mcp.export.pcb_file_formats",
     "kicad_mcp.export.pcb_pdf",
     "kicad_mcp.export.pcb_vector",
@@ -326,6 +331,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.export_gerber": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_netlist": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_pcb_3d_pdf": ("kicad_mcp.tools.export",),
+    _EXPORT_PCB_3D_RENDER_ADAPTER: ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_pcb_file_formats": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_pcb_pdf": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_pcb_vector": ("kicad_mcp.tools.export",),
@@ -368,6 +374,7 @@ REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.export_gerber": 100,
     "kicad_mcp.tools.export_netlist": 100,
     "kicad_mcp.tools.export_pcb_3d_pdf": 100,
+    _EXPORT_PCB_3D_RENDER_ADAPTER: 140,
     "kicad_mcp.tools.export_pcb_file_formats": 100,
     "kicad_mcp.tools.export_pcb_pdf": 100,
     "kicad_mcp.tools.export_pcb_vector": 100,
