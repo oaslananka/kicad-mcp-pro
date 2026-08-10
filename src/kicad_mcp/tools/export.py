@@ -23,6 +23,7 @@ from ..export.gerber import ExportGerberService
 from ..export.netlist import ExportNetlistService
 from ..export.pcb_3d_pdf import ExportPcb3dPdfService
 from ..export.pcb_pdf import ExportPcbPdfService
+from ..export.pcb_vector import ExportPcbVectorService
 from ..export.sch_pdf import ExportSchPdfService
 from ..export.sch_python_bom import ExportSchPythonBomService
 from ..export.sch_vector import ExportSchVectorService
@@ -35,6 +36,7 @@ from . import (
     export_netlist,
     export_pcb_3d_pdf,
     export_pcb_pdf,
+    export_pcb_vector,
     export_sch_pdf,
     export_sch_python_bom,
     export_sch_vector,
@@ -321,6 +323,15 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         active_variant_args=_active_variant_args,
         run_cli_variants=_run_cli_variants,
         default_layers=DEFAULT_PCB_PDF_LAYERS,
+    )
+
+    pcb_vector_service = ExportPcbVectorService(
+        get_pcb_file=_get_pcb_file,
+        get_capabilities=lambda: get_cli_capabilities(get_config().kicad_cli),
+        ensure_output_dir=_ensure_output_dir,
+        active_variant_args=_active_variant_args,
+        run_cli_variants=_run_cli_variants,
+        format_file_list=_format_file_list,
     )
 
     sch_pdf_service = ExportSchPdfService(
@@ -753,85 +764,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
                 label="XAO",
             )
         )
-
-    def _export_svg(layer: str = "F.Cu") -> str:
-        pcb_file = _get_pcb_file()
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        if not caps.supports_svg:
-            return "SVG export is not supported by the detected KiCad CLI."
-
-        out_dir = _ensure_output_dir("svg")
-        variant_args = _active_variant_args()
-        code, _, stderr = _run_cli_variants(
-            [
-                [
-                    "pcb",
-                    "export",
-                    "svg",
-                    *variant_args,
-                    "--mode-multi",
-                    "--layers",
-                    layer,
-                    "--output",
-                    str(out_dir),
-                    str(pcb_file),
-                ],
-            ]
-        )
-        if code != 0:
-            return f"SVG export failed: {stderr or 'unknown error'}"
-        files = sorted(out_dir.glob("*.svg"))
-        return _format_file_list(files, f"SVG export completed in {out_dir}:")
-
-    @headless_compatible
-    def export_svg(layer: str = "F.Cu") -> str:
-        """Export a board layer to SVG when supported."""
-        return _with_low_level_export_notice(_export_svg(layer))
-
-    def _export_dxf(layer: str = "Edge.Cuts") -> str:
-        pcb_file = _get_pcb_file()
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        if not caps.supports_dxf:
-            return "DXF export is not supported by the detected KiCad CLI."
-
-        out_dir = _ensure_output_dir("dxf")
-        variant_args = _active_variant_args()
-        code, _, stderr = _run_cli_variants(
-            [
-                [
-                    "pcb",
-                    "export",
-                    "dxf",
-                    *variant_args,
-                    "--layers",
-                    layer,
-                    "--output",
-                    str(out_dir),
-                    str(pcb_file),
-                ],
-                [
-                    "pcb",
-                    "export",
-                    "dxf",
-                    *variant_args,
-                    "--input",
-                    str(pcb_file),
-                    "--layers",
-                    layer,
-                    "--output",
-                    str(out_dir),
-                ],
-            ]
-        )
-        if code != 0:
-            return f"DXF export failed: {stderr or 'unknown error'}"
-        files = sorted(out_dir.glob("*.dxf"))
-        return _format_file_list(files, f"DXF export completed in {out_dir}:")
-
-    @headless_compatible
-    def export_dxf(layer: str = "Edge.Cuts") -> str:
-        """Export a board layer to DXF when supported."""
-        return _with_low_level_export_notice(_export_dxf(layer))
 
     def _export_3d_render(
         output_file: str = "render.png",
@@ -1339,8 +1271,13 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         mcp.tool()(export_pick_and_place)
         mcp.tool()(export_ipc2581)
         mcp.tool()(export_odb)
-        mcp.tool()(export_svg)
-        mcp.tool()(export_dxf)
+        export_pcb_vector.register(
+            mcp,
+            export_pcb_vector.ExportPcbVectorDependencies(
+                service=pcb_vector_service,
+                add_low_level_notice=_with_low_level_export_notice,
+            ),
+        )
 
     board_stats_dependencies = export_board_stats.ExportBoardStatsDependencies(
         service=ExportBoardStatsService(
