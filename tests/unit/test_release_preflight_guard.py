@@ -400,6 +400,27 @@ def test_mergify_only_autoqueues_safe_grouped_dependabot_updates() -> None:
     assert "security" not in head_condition
 
 
+def test_mergify_merge_conditions_mirror_repository_ruleset_required_checks() -> None:
+    ruleset = json.loads((ROOT / ".github" / "rulesets" / "main.json").read_text(encoding="utf-8"))
+    required_contexts = {
+        check["context"]
+        for rule in ruleset["rules"]
+        if rule["type"] == "required_status_checks"
+        for check in rule["parameters"]["required_status_checks"]
+    }
+    assert required_contexts
+
+    mergify = yaml.safe_load((ROOT / ".mergify.yml").read_text(encoding="utf-8"))
+    queue = next(rule for rule in mergify["queue_rules"] if rule["name"] == "safe-dependencies")
+    explicit_check_conditions = {
+        condition.removeprefix("check-success = ")
+        for condition in queue["merge_conditions"]
+        if condition.startswith("check-success = ")
+    }
+
+    assert explicit_check_conditions == required_contexts
+
+
 def test_release_preflight_rejects_missing_tauri_lockfile(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

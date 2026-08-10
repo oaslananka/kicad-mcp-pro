@@ -147,9 +147,11 @@ minor/patch version updates are grouped per ecosystem, while major and runtime-s
 updates remain individually reviewable and security updates use separate groups.
 Required status checks and the active `main` ruleset remain authoritative; neither
 Dependabot nor Mergify bypasses them. Mergify may automatically queue only the explicitly
-allowlisted routine Dependabot groups, one PR at a time, after applying the repository's
-GitHub protection/ruleset conditions. Human, release, security, major, and other
-ungrouped PRs are not auto-queued by repository policy.
+allowlisted routine Dependabot groups, one PR at a time. Its merge conditions explicitly
+mirror the required contexts declared in `.github/rulesets/main.json`; repository tests
+require an exact match, so Mergify does not rely on external ruleset-discovery APIs to
+decide that CI is complete. Human, release, security, major, and other ungrouped PRs are
+not auto-queued by repository policy.
 
 ### SonarQube Cloud scope
 
