@@ -21,6 +21,7 @@ from ..export.bom import ExportBomService
 from ..export.drill import ExportDrillService
 from ..export.gerber import ExportGerberService
 from ..export.netlist import ExportNetlistService
+from ..export.pcb_3d_pdf import ExportPcb3dPdfService
 from ..export.pcb_pdf import ExportPcbPdfService
 from ..export.sch_pdf import ExportSchPdfService
 from ..export.sch_python_bom import ExportSchPythonBomService
@@ -32,6 +33,7 @@ from . import (
     export_drill,
     export_gerber,
     export_netlist,
+    export_pcb_3d_pdf,
     export_pcb_pdf,
     export_sch_pdf,
     export_sch_python_bom,
@@ -303,6 +305,16 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         format_file_list=_format_file_list,
     )
 
+    pcb_3d_pdf_service = ExportPcb3dPdfService(
+        get_pcb_file=_get_pcb_file,
+        supports_3d_pdf=lambda: get_cli_capabilities(get_config().kicad_cli).supports_3d_pdf,
+        resolve_output_file=lambda output_path: _resolve_output_file(
+            "pdf", output_path, default_name="board-3d.pdf"
+        ),
+        active_variant_args=lambda: _active_variant_args(),
+        run_cli_variants=_run_cli_variants,
+    )
+
     pcb_pdf_service = ExportPcbPdfService(
         get_pcb_file=_get_pcb_file,
         ensure_output_dir=_ensure_output_dir,
@@ -331,55 +343,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         run_cli=_run_cli,
         format_file_list=_format_file_list,
     )
-
-    def _export_3d_pdf(output_path: str = "") -> str:
-        pcb_file = _get_pcb_file()
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        if not caps.supports_3d_pdf:
-            return "3D PDF export is not supported by the detected KiCad CLI."
-
-        try:
-            out_file = _resolve_output_file("pdf", output_path, default_name="board-3d.pdf")
-        except ValueError as exc:
-            return f"Invalid output path: {exc}"
-        variant_args = _active_variant_args()
-        code, _, stderr = _run_cli_variants(
-            [
-                [
-                    "pcb",
-                    "export",
-                    "3d-pdf",
-                    *variant_args,
-                    "--output",
-                    str(out_file),
-                    str(pcb_file),
-                ],
-                [
-                    "pcb",
-                    "export",
-                    "3d-pdf",
-                    *variant_args,
-                    "--input",
-                    str(pcb_file),
-                    "--output",
-                    str(out_file),
-                ],
-            ]
-        )
-        if code != 0:
-            return f"3D PDF export failed: {stderr or 'unknown error'}"
-        return f"3D PDF exported to {out_file}"
-
-    @headless_compatible
-    def pcb_export_3d_pdf(output_path: str = "") -> str:
-        """Export the PCB to a 3D PDF.
-
-        Parameters
-        ----------
-        output_path : str
-            Output file name (relative to the export output directory).
-        """
-        return _with_low_level_export_notice(_export_3d_pdf(output_path))
 
     @headless_compatible
     def sch_export_ps(
@@ -1365,7 +1328,13 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         mcp.tool()(export_u3d)
         mcp.tool()(export_vrml)
         mcp.tool()(export_ps)
-        mcp.tool()(pcb_export_3d_pdf)
+        export_pcb_3d_pdf.register(
+            mcp,
+            export_pcb_3d_pdf.ExportPcb3dPdfDependencies(
+                service=pcb_3d_pdf_service,
+                add_low_level_notice=_with_low_level_export_notice,
+            ),
+        )
         mcp.tool()(export_3d_render)
         mcp.tool()(export_pick_and_place)
         mcp.tool()(export_ipc2581)
