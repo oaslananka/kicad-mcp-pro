@@ -1,0 +1,28 @@
+merge_queue:
+  mode: serial
+  max_parallel_checks: 1
+
+queue_rules:
+  - name: safe-dependencies
+    batch_size: 1
+    merge_method: squash
+    branch_protection_injection_mode: queue
+    max_checks_retries: 0
+    queue_conditions:
+      - base = main
+      - author = dependabot[bot]
+      - -draft
+      - dependabot-update-type != version-update:semver-major
+      - head ~= ^dependabot/.*/(python-minor-patch|npm-minor-patch|actions-minor-patch|containers-patch|compose-minor-patch|cargo-minor-patch)(?:-|$)
+
+pull_request_rules:
+  - name: Queue safe grouped Dependabot updates
+    conditions:
+      - base = main
+      - author = dependabot[bot]
+      - -draft
+      - dependabot-update-type != version-update:semver-major
+      - head ~= ^dependabot/.*/(python-minor-patch|npm-minor-patch|actions-minor-patch|containers-patch|compose-minor-patch|cargo-minor-patch)(?:-|$)
+    actions:
+      queue:
+        name: safe-dependencies

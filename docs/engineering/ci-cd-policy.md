@@ -142,9 +142,14 @@ Dependabot security updates own automated vulnerable-dependency remediation. The
 repository intentionally has no active Renovate configuration or Mend Renovate App
 requirement, avoiding two bots opening overlapping update pull requests.
 
-Dependabot update PRs use the same protected-branch path as maintainer PRs. Required
-status checks and the active `main` ruleset remain authoritative; the dependency bot
-does not bypass them.
+Dependabot update PRs use the same protected-branch path as maintainer PRs. Routine
+minor/patch version updates are grouped per ecosystem, while major and runtime-sensitive
+updates remain individually reviewable and security updates use separate groups.
+Required status checks and the active `main` ruleset remain authoritative; neither
+Dependabot nor Mergify bypasses them. Mergify may automatically queue only the explicitly
+allowlisted routine Dependabot groups, one PR at a time, after applying the repository's
+GitHub protection/ruleset conditions. Human, release, security, major, and other
+ungrouped PRs are not auto-queued by repository policy.
 
 ### SonarQube Cloud scope
 
