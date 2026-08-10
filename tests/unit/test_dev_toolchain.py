@@ -14,7 +14,7 @@ def test_toolchain_contract_is_exact_and_cross_file_consistent() -> None:
     contract = load_toolchain_contract(ROOT)
 
     assert contract.python_version == "3.13.12"
-    assert contract.uv_version == "0.10.8"
+    assert contract.uv_version == "0.11.31"
     assert contract.node_version == "24.11.0"
     assert contract.pnpm_version == "11.5.0"
     assert contract.task_version == "3.52.0"
@@ -31,6 +31,11 @@ def test_toolchain_contract_is_exact_and_cross_file_consistent() -> None:
     assert package["packageManager"] == f"pnpm@{contract.pnpm_version}"
     assert package["engines"]["node"].startswith(f">={contract.node_version} ")
     assert uv_config["required-version"] == contract.uv_version
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "dev-bootstrap.yml").read_text(encoding="utf-8")
+    assert f"ARG UV_VERSION={contract.uv_version}" in dockerfile
+    assert f"uv {contract.uv_version}" in workflow
+    assert f"uvx {contract.uv_version}" in workflow
     assert rust_config["toolchain"]["channel"] == contract.rust_toolchain
 
 

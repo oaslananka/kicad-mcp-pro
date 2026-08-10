@@ -38,7 +38,7 @@ def test_bootstrap_plan_is_repository_scoped_and_exact() -> None:
         "rust": "1.97.1",
         "rustup": "1.29.0",
         "task": "3.52.0",
-        "uv": "0.10.8",
+        "uv": "0.11.31",
     }
     for path in (plan.cache_root, plan.tool_root, plan.venv_root, plan.environment_file):
         assert path == ROOT or ROOT in path.parents

@@ -27,7 +27,7 @@ The first command installs the exact versions committed in
 `scripts/dev-toolchain.env`:
 
 - Python 3.13.12
-- uv and uvx 0.10.8
+- uv and uvx 0.11.31
 - Node.js 24.11.0
 - pnpm 11.5.0
 - Task 3.52.0
