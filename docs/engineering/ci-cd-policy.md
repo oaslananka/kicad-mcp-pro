@@ -143,8 +143,10 @@ repository intentionally has no active Renovate configuration or Mend Renovate A
 requirement, avoiding two bots opening overlapping update pull requests.
 
 Dependabot update PRs use the same protected-branch path as maintainer PRs. Routine
-minor/patch version updates are grouped per ecosystem, while major and runtime-sensitive
-updates remain individually reviewable and security updates use separate groups.
+minor/patch version updates are grouped per ecosystem and package-manager boundary, while
+major and runtime-sensitive updates remain individually reviewable and security updates
+use separate groups. npm/pnpm update entries stay single-directory so independent pnpm
+workspace and npm lockfile scopes are never combined into one Dependabot updater job.
 Required status checks and the active `main` ruleset remain authoritative; neither
 Dependabot nor Mergify bypasses them. Mergify may automatically queue only the explicitly
 allowlisted routine Dependabot groups, one PR at a time. Queue and merge conditions are
