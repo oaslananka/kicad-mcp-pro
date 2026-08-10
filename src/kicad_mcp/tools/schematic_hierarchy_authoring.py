@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Annotated
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
 from ..models.schematic import (
     CreateSheetInput,
@@ -16,6 +18,14 @@ from ..models.schematic import (
     SheetPinInput,
 )
 from ..schematic.hierarchy_authoring import SchematicHierarchyAuthoringService
+
+_SheetPinPair = Annotated[list[str], Field(min_length=2, max_length=2)]
+"""One ``[name, pin_type]`` pair as a fixed-length array, not a tuple.
+
+A ``tuple[str, str]`` annotation makes FastMCP emit an inner array schema with
+``prefixItems`` and no ``items``, which stricter MCP hosts reject; the adapter
+normalizes back to tuples before the service sees them.
+"""
 
 
 @dataclass(frozen=True)
@@ -36,20 +46,21 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
         x_mm: float,
         y_mm: float,
         snap_to_grid: bool = True,
-        sheet_pins: list[tuple[str, str]] | None = None,
+        sheet_pins: list[_SheetPinPair] | None = None,
     ) -> str:
         """Create a child schematic sheet and add it to the active top-level schematic.
 
-        Optional ``sheet_pins`` is a list of ``(name, type)`` pairs laid out by
-        the same rules as ``sch_import_sheet_pins``.
+        Optional ``sheet_pins`` is a list of ``[name, type]`` two-element arrays,
+        laid out by the same rules as ``sch_import_sheet_pins``.
         """
+        normalized_pins = [] if sheet_pins is None else [(pair[0], pair[1]) for pair in sheet_pins]
         payload = CreateSheetInput(
             name=name,
             filename=filename,
             x_mm=x_mm,
             y_mm=y_mm,
             snap_to_grid=snap_to_grid,
-            sheet_pins=sheet_pins or [],
+            sheet_pins=normalized_pins,
         )
         return service.create_sheet(
             payload.name,
@@ -166,6 +177,18 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
         measures from the top, ``bottom`` and ``top`` from the left, and ``left``
         from the bottom. Use ``sch_import_sheet_pins`` to derive every pin from
         the child sheet instead of placing them one by one.
+
+        Limitations, all deliberate:
+
+        - The position is used exactly as given. It is **not** snapped to the
+          schematic grid, so a pin placed off-grid will have no wire snap to it.
+          ``sch_import_sheet_pins`` does snap.
+        - A position past the end of an edge is accepted, which puts the pin
+          off the sheet symbol -- ``position_along_edge=1000.0`` on a 20 mm
+          sheet yields y around -949. Nothing warns.
+        - ``top`` and ``bottom`` pins survive here, but ``sch_import_sheet_pins``
+          only ever places pins on ``left`` and ``right``. A later import
+          relocates a hand-placed top or bottom pin to one of those two edges.
         """
         payload = SheetPinInput.model_validate(
             {
@@ -200,10 +223,23 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
 
         Every pin of a touched sheet is re-laid-out, including existing ones,
         because KiCad measures left-edge pins from the bottom -- so a growing
-        sheet would otherwise move them. Existing pins keep their name, type
-        source and UUID; pins without a matching label are reported, never
-        deleted. Sheet width growth uses an estimated text width (heuristic:
-        0.6 x font height per character), not a measured one.
+        sheet would otherwise move them. An existing pin keeps its name and its
+        UUID, and is moved to wherever this layout puts it; its type is changed
+        if the child sheet's label shape now says something else. Pins without a
+        matching label are reported, never deleted. Only the ``left`` and
+        ``right`` edges are used, so a pin hand-placed on ``top`` or ``bottom``
+        with ``sch_add_sheet_pin`` is relocated. The report counts added,
+        retyped, moved and unchanged pins separately.
+
+        ``grow_sheet`` (default on) lets the sheet symbol grow to fit its pins:
+        taller for the fuller edge, and wider if the estimated label text of the
+        two columns would collide. The sheet never shrinks and never moves.
+        Width growth uses an estimated text width (heuristic: 0.6 x font height
+        per character), not a measured one, and says so in the report. Turning
+        ``grow_sheet`` off keeps the size fixed, and any sheet whose pins then do
+        not fit is skipped **entirely** -- reported, with nothing written for it
+        -- rather than partially written. A half-pinned sheet is worse than an
+        unchanged one.
 
         Leave ``sheet`` empty to process every child sheet. Use ``dry_run`` to
         see the report without writing.

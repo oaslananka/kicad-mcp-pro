@@ -11,10 +11,11 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Annotated, Protocol, cast
 
 from kipy.proto.board.board_types_pb2 import ViaType
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
 from ..config import get_config
 from ..connection import get_board
@@ -68,6 +69,7 @@ from ..utils.units import nm_to_mm
 from ..verdicts import three_level_verdict, warn_max_from
 from .design_intent_state import resolve_design_intent
 
+_ViaPosition = Annotated[list[float], Field(min_length=2, max_length=2)]
 _DEFAULT_OUTER_DIELECTRIC_MM = 0.18
 _DEFAULT_BOARD_THICKNESS_MM = 1.6
 
@@ -857,12 +859,15 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     def si_check_via_stub(
         frequency_ghz: float,
-        via_positions: list[tuple[float, float]] | None = None,
+        via_positions: list[_ViaPosition] | None = None,
         er: float = 4.0,
     ) -> str:
-        """Estimate via-stub resonance and risk for selected vias on the active board."""
+        """Estimate via-stub resonance and risk for selected vias on the active board.
+
+        ``via_positions`` are ``[x_mm, y_mm]`` two-element arrays.
+        """
         payload = ViaStubInput(
-            via_positions=via_positions or [],
+            via_positions=[(position[0], position[1]) for position in via_positions or []],
             frequency_ghz=frequency_ghz,
             er=er,
         )

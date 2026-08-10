@@ -8,6 +8,20 @@ queue_rules:
     merge_method: squash
     branch_protection_injection_mode: queue
     max_checks_retries: 0
+    merge_conditions:
+      - check-success = mcp-server (ubuntu-24.04)
+      - check-success = mcp-server (windows-2025)
+      - check-success = mcp-server (macos-15)
+      - check-success = mcp-npm (ubuntu-24.04)
+      - check-success = mcp-npm (windows-2025)
+      - check-success = mcp-npm (macos-15)
+      - check-success = protocol-schemas
+      - check-success = scan
+      - check-success = analyze (python)
+      - check-success = analyze (javascript-typescript)
+      - check-success = Required PR Gate
+      - check-success = dependency-review
+      - check-success = Live Model Release Policy
     queue_conditions:
       - base = main
       - author = dependabot[bot]

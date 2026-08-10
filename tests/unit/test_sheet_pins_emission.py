@@ -94,7 +94,6 @@ def _placement(**overrides: object) -> SheetPinPlacement:
     base = {
         "name": "I2S_BCLK",
         "pin_type": "output",
-        "edge": "right",
         "x_mm": 110.49,
         "y_mm": 33.02,
         "rotation": 0,
@@ -276,3 +275,47 @@ def test_splice_refuses_overlapping_edits() -> None:
             sheet,
             [(sheet.start + 5, sheet.start + 15, "a"), (sheet.start + 10, sheet.start + 20, "b")],
         )
+
+
+SINGLE_LINE_ROOT = (
+    "(kicad_sch (sheet (at 80.01 30.48) (size 30.48 20.32) "
+    '(property "Sheetname" "02_mcu" (at 80.01 29.77 0)) '
+    '(property "Sheetfile" "child.kicad_sch" (at 80.01 51.38 0)) '
+    '(instances (project "main" (path "/1" (page "2"))))))\n'
+)
+"""A ``(sheet ...)`` block on one line -- legal S-expression, and what older
+KiCad and third-party generators emit. Nothing before the pin anchor on that
+line is indentation, so an unguarded ``_indent_of`` would prefix every emitted
+line with the sheet's own text."""
+
+ONE_LINE_SHEET_AT_COLUMN_ZERO = (
+    '(sheet (at 80.01 30.48) (size 30.48 20.32) (property "Sheetname" "02_mcu" '
+    '(at 80.01 29.77 0)) (instances (project "main" (path "/1" (page "2")))))\n'
+)
+"""The same hazard with the sheet starting at column zero: the anchor's line
+start is *not* before ``sheet.start``, so only the non-whitespace prefix check
+catches it."""
+
+
+def test_apply_plan_refuses_a_sheet_written_on_one_line() -> None:
+    sheet = parse_sheet_blocks(SINGLE_LINE_ROOT)[0]
+    plan = _stamp(plan_sheet_pins((("VIN", "input"),), sheet, grid_mm=GRID))
+
+    with pytest.raises(ValueError, match="02_mcu"):
+        apply_plan(SINGLE_LINE_ROOT, sheet, plan)
+
+
+def test_insert_pin_refuses_a_sheet_written_on_one_line() -> None:
+    sheet = parse_sheet_blocks(SINGLE_LINE_ROOT)[0]
+
+    with pytest.raises(ValueError, match="02_mcu"):
+        insert_pin(SINGLE_LINE_ROOT, sheet, _placement(name="MANUAL"))
+
+
+def test_apply_plan_refuses_a_one_line_sheet_starting_at_column_zero() -> None:
+    sheet = parse_sheet_blocks(ONE_LINE_SHEET_AT_COLUMN_ZERO)[0]
+    assert sheet.start == 0
+    plan = _stamp(plan_sheet_pins((("VIN", "input"),), sheet, grid_mm=GRID))
+
+    with pytest.raises(ValueError, match="mid-line"):
+        apply_plan(ONE_LINE_SHEET_AT_COLUMN_ZERO, sheet, plan)

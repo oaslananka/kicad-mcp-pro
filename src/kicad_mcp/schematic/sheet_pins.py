@@ -34,12 +34,21 @@ DEFAULT_PITCH_MM: Final = 2.54
 DEFAULT_MARGIN_MM: Final = 2.54
 DEFAULT_TEXT_HEIGHT_MM: Final = 1.27
 
+_FLOAT = r"-?(?:\d+(?:\.\d+)?|\.\d+)"
+"""One decimal number, with *at most one* decimal point.
+
+A looser ``[\\d.]+`` also matches nonsense like ``80.0.1``, which then reaches
+``float()`` and raises out of ``parse_sheet_blocks`` -- contradicting its
+documented contract that an unusable block is skipped. Matching only real
+numbers turns such a block back into a skip.
+"""
+
 _TAG_RE = re.compile(r"\(\s*([A-Za-z_][A-Za-z0-9_]*)")
 _SHEET_RE = re.compile(r"\(sheet(?![A-Za-z0-9_])")
-_TWO_FLOATS_RE = re.compile(r"\(\w+\s+(-?[\d.]+)\s+(-?[\d.]+)\s*\)")
+_TWO_FLOATS_RE = re.compile(rf"\(\w+\s+({_FLOAT})\s+({_FLOAT})\s*\)")
 _PROPERTY_RE = re.compile(r'\(property\s+"((?:[^"\\]|\\.)*)"\s+"((?:[^"\\]|\\.)*)"')
 _PIN_HEAD_RE = re.compile(r'\(pin\s+"((?:[^"\\]|\\.)*)"\s+([A-Za-z_]+)')
-_PIN_AT_RE = re.compile(r"\(at\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*\)")
+_PIN_AT_RE = re.compile(rf"\(at\s+({_FLOAT})\s+({_FLOAT})\s+({_FLOAT})\s*\)")
 _UUID_RE = re.compile(r'\(uuid\s+"([^"]*)"\s*\)')
 _HIER_LABEL_RE = re.compile(
     r'\(hierarchical_label\s+"((?:[^"\\]|\\.)*)"\s*(?:\(shape\s+([A-Za-z_]+)\s*\))?'
@@ -61,6 +70,22 @@ class SheetPinRecord:
     y_mm: float
     rotation: int
     uuid: str
+
+
+@dataclass(frozen=True)
+class SkippedSheetBlock:
+    """A ``(sheet ...)`` block ``parse_sheet_blocks`` refused to address.
+
+    Kept so a caller can tell "no such sheet" from "that sheet is in the file
+    but is not safely addressable" -- on a degraded file those are very
+    different instructions to the user.
+    """
+
+    name: str
+    """``Sheetname`` if the block had a readable one, otherwise ``""``."""
+    reason: str
+    """Why it was skipped, phrased for a tool report."""
+    start: int
 
 
 @dataclass(frozen=True)
@@ -165,18 +190,18 @@ def parse_hierarchical_labels(text: str) -> tuple[tuple[str, str], ...]:
     return tuple(labels)
 
 
-def parse_sheet_blocks(text: str) -> tuple[SheetBlock, ...]:
-    """Return every ``(sheet ...)`` block of a schematic with its text spans.
-
-    Blocks that lack a name, a position, or a size are skipped: they cannot be
-    addressed or spliced safely.
-    """
-    blocks: list[SheetBlock] = []
+def _scan_sheet_blocks(text: str) -> Iterator[SheetBlock | SkippedSheetBlock]:
+    """Yield one result per ``(sheet ...)`` match: an addressable block or a skip."""
     for match in _SHEET_RE.finditer(text):
         start = match.start()
         try:
             end = _block_end(text, start)
         except ValueError:
+            yield SkippedSheetBlock(
+                name="",
+                reason="its parentheses are unbalanced",
+                start=start,
+            )
             continue
 
         name = ""
@@ -226,23 +251,52 @@ def parse_sheet_blocks(text: str) -> tuple[SheetBlock, ...]:
                 instances_start = child_start
 
         if not name or origin is None or size is None or size_span is None:
+            missing = [
+                label
+                for label, present in (
+                    ('a "Sheetname" property', bool(name)),
+                    ("a readable (at x y) position", origin is not None),
+                    ("a readable (size w h)", size is not None and size_span is not None),
+                )
+                if not present
+            ]
+            yield SkippedSheetBlock(
+                name=name,
+                reason=f"it has no {' and no '.join(missing)}",
+                start=start,
+            )
             continue
 
-        blocks.append(
-            SheetBlock(
-                name=name,
-                filename=filename,
-                origin=origin,
-                size=size,
-                pins=tuple(pins),
-                start=start,
-                end=end,
-                size_span=size_span,
-                pin_spans=tuple(pin_spans),
-                instances_start=instances_start,
-            )
+        yield SheetBlock(
+            name=name,
+            filename=filename,
+            origin=origin,
+            size=size,
+            pins=tuple(pins),
+            start=start,
+            end=end,
+            size_span=size_span,
+            pin_spans=tuple(pin_spans),
+            instances_start=instances_start,
         )
-    return tuple(blocks)
+
+
+def parse_sheet_blocks(text: str) -> tuple[SheetBlock, ...]:
+    """Return every ``(sheet ...)`` block of a schematic with its text spans.
+
+    Blocks that lack a name, a position, or a size are skipped: they cannot be
+    addressed or spliced safely. A malformed number is treated the same way --
+    the block is skipped, never a raised ``ValueError``. Use
+    ``parse_skipped_sheet_blocks`` to report what was skipped and why.
+    """
+    return tuple(block for block in _scan_sheet_blocks(text) if isinstance(block, SheetBlock))
+
+
+def parse_skipped_sheet_blocks(text: str) -> tuple[SkippedSheetBlock, ...]:
+    """Return the ``(sheet ...)`` blocks ``parse_sheet_blocks`` left out, with reasons."""
+    return tuple(
+        block for block in _scan_sheet_blocks(text) if isinstance(block, SkippedSheetBlock)
+    )
 
 
 _TEXT_WIDTH_RATIO: Final = 0.6
@@ -289,11 +343,16 @@ def edge_for_rotation(rotation: int) -> str | None:
 
 @dataclass(frozen=True)
 class SheetPinPlacement:
-    """One sheet pin, resolved to absolute schematic coordinates."""
+    """One sheet pin, resolved to absolute schematic coordinates.
+
+    There is deliberately no ``edge`` field. ``rotation`` already determines the
+    edge exactly -- ``edge_for_rotation`` is the inverse of the table both
+    producers place from -- so a stored ``edge`` would be a second copy of the
+    same fact, free to disagree with the one KiCad actually reads.
+    """
 
     name: str
     pin_type: str
-    edge: str
     x_mm: float
     y_mm: float
     rotation: int
@@ -301,7 +360,14 @@ class SheetPinPlacement:
     uuid: str
     """Existing pin's UUID, or ``""`` for a new pin the caller must stamp."""
     action: str
-    """``add``, ``retype`` or ``keep``."""
+    """``add``, ``retype``, ``move`` or ``keep``.
+
+    ``keep`` means the pin is re-emitted byte-identical -- same type, same
+    position, same rotation. A pin the layout relocates is ``move``, never
+    ``keep``: the file *is* rewritten for it, and a report that called that
+    "unchanged" would be false. A pin that is both retyped and relocated
+    reports ``retype``; either way the report says the pin changed.
+    """
 
 
 @dataclass(frozen=True)
@@ -343,6 +409,22 @@ def _is_on_grid(value: float, grid_mm: float) -> bool:
 
 def _sort_key(name: str) -> tuple[str, str]:
     return (name.casefold(), name)
+
+
+def _is_placed_at(record: SheetPinRecord | None, x_mm: float, y_mm: float, rotation: int) -> bool:
+    """Return whether an existing pin already sits exactly where the plan wants it.
+
+    Compared at the emitted precision (4 decimals), because that is what the
+    writer would put in the file -- the question is whether the write is a
+    no-op for this pin, not whether the floats are bit-identical.
+    """
+    if record is None:
+        return False
+    return (
+        round(record.x_mm, 4) == round(x_mm, 4)
+        and round(record.y_mm, 4) == round(y_mm, 4)
+        and record.rotation == rotation
+    )
 
 
 def _edge_extent(count: int, pitch_mm: float, margin_mm: float) -> float:
@@ -404,7 +486,6 @@ def placement_on_edge(
     return SheetPinPlacement(
         name=name,
         pin_type=pin_type,
-        edge=edge,
         x_mm=round(x_mm, 4),
         y_mm=round(y_mm, 4),
         rotation=rotation,
@@ -448,22 +529,21 @@ def plan_sheet_pins(
             continue
         desired[raw_name] = shape
 
-    existing = {pin.name: (pin.pin_type, pin.uuid) for pin in sheet.pins}
+    existing = {pin.name: pin for pin in sheet.pins}
     orphans = tuple(sorted((name for name in existing if name not in desired), key=_sort_key))
 
-    entries: list[tuple[str, str, str, str]] = []
+    entries: list[tuple[str, str, SheetPinRecord | None, str]] = []
     for name in sorted(set(desired) | set(existing), key=_sort_key):
+        record = existing.get(name)
         if name in desired:
             pin_type = desired[name]
             action = (
-                "add"
-                if name not in existing
-                else ("keep" if existing[name][0] == pin_type else "retype")
+                "add" if record is None else ("keep" if record.pin_type == pin_type else "retype")
             )
         else:
-            pin_type = existing[name][0]
+            pin_type = existing[name].pin_type
             action = "keep"
-        entries.append((name, pin_type, existing.get(name, ("", ""))[1], action))
+        entries.append((name, pin_type, record, action))
 
     left = [entry for entry in entries if entry[1] == "input"]
     right = [entry for entry in entries if entry[1] != "input"]
@@ -513,17 +593,21 @@ def plan_sheet_pins(
     for edge, column in (("left", left), ("right", right)):
         x_mm = origin_x if edge == "left" else round(origin_x + width, 4)
         rotation, justify = _EDGE_GEOMETRY[edge]
-        for index, (name, pin_type, uuid, action) in enumerate(column):
+        for index, (name, pin_type, record, action) in enumerate(column):
+            y_mm = _snap(origin_y + margin_mm + index * pitch_mm, grid_mm)
+            if action == "keep" and not _is_placed_at(record, x_mm, y_mm, rotation):
+                # The type matches, but this layout puts the pin somewhere else.
+                # The file is rewritten for it, so it is not "unchanged".
+                action = "move"
             placements.append(
                 SheetPinPlacement(
                     name=name,
                     pin_type=pin_type,
-                    edge=edge,
                     x_mm=x_mm,
-                    y_mm=_snap(origin_y + margin_mm + index * pitch_mm, grid_mm),
+                    y_mm=y_mm,
                     rotation=rotation,
                     justify=justify,
-                    uuid=uuid,
+                    uuid="" if record is None else record.uuid,
                     action=action,
                 )
             )
@@ -569,9 +653,36 @@ def _line_start(text: str, index: int) -> int:
     return text.rfind("\n", 0, index) + 1
 
 
-def _indent_of(text: str, index: int) -> str:
+def _indent_of(text: str, sheet: SheetBlock, index: int) -> str:
+    """Return the anchor line's leading whitespace, or refuse if it is not whitespace.
+
+    Every emitted ``(pin ...)`` line is prefixed with this string. On a
+    ``(sheet ...)`` block written on a single line -- a legal S-expression that
+    older KiCad and third-party generators do produce -- the slice before the
+    anchor is the sheet's own text, and using it as an indent would duplicate
+    the whole block once per emitted line and lose the ``(size ...)`` edit.
+
+    The corrupt result never reaches disk (the write seam rejects it on paren
+    balance, and the duplicate UUIDs independently), but the caller would see an
+    opaque "unbalanced parentheses" instead of something it can act on. This is
+    the named error.
+    """
     line_start = _line_start(text, index)
-    return text[line_start:index]
+    if line_start < sheet.start:
+        raise ValueError(
+            f"Sheet '{sheet.name}' shares its first line with earlier content, so a new "
+            "pin cannot be indented safely; refusing to risk corrupting the file. "
+            "Open the file in KiCad and save it once to get one node per line, then retry."
+        )
+    prefix = text[line_start:index]
+    if prefix.strip():
+        raise ValueError(
+            f"Sheet '{sheet.name}' has its pin anchor mid-line, after {prefix.strip()[:40]!r}, "
+            "so a new pin cannot be indented safely; refusing to risk corrupting the file. "
+            "This usually means the whole (sheet ...) block is written on one line -- "
+            "open the file in KiCad and save it once, then retry."
+        )
+    return prefix
 
 
 def _require_anchor(sheet: SheetBlock) -> int:
@@ -584,13 +695,16 @@ def _require_anchor(sheet: SheetBlock) -> int:
 
 
 def _check_non_overlapping(sheet: SheetBlock, edits: list[tuple[int, int, str]]) -> None:
-    """Guard the one precondition ``_splice`` actually depends on.
+    """Guard ``_splice``'s edit-ordering precondition.
 
     Replaying edits in descending order of ``start`` is only safe if the spans
     are pairwise non-overlapping -- see ``_splice``. A ``(pin ...)`` node
     sharing a physical source line with ``(instances ...)`` or ``(size ...)``
     would violate that (their line-widened spans would collide), so this is a
     loud, named ``ValueError`` instead of a silently corrupted schematic.
+
+    This is not the only precondition a safe write has: ``_indent_of`` guards
+    the other, that the anchor line's prefix is really indentation.
     """
     ordered = sorted(edits, key=lambda edit: edit[0])
     for previous, current in zip(ordered, ordered[1:], strict=False):
@@ -630,7 +744,7 @@ def apply_plan(text: str, sheet: SheetBlock, plan: SheetPinPlan) -> str:
         )
     ]
     edits.extend((start, end, "") for start, end in sheet.pin_spans)
-    indent = _indent_of(text, anchor)
+    indent = _indent_of(text, sheet, anchor)
     rendered = "".join(sheet_pin_block(placement, indent) for placement in plan.placements)
     line_start = _line_start(text, anchor)
     edits.append((line_start, line_start, rendered))
@@ -645,6 +759,6 @@ def insert_pin(text: str, sheet: SheetBlock, placement: SheetPinPlacement) -> st
             "Use sch_import_sheet_pins to reconcile it with the child sheet."
         )
     anchor = _require_anchor(sheet)
-    indent = _indent_of(text, anchor)
+    indent = _indent_of(text, sheet, anchor)
     line_start = _line_start(text, anchor)
     return _splice(text, sheet, [(line_start, line_start, sheet_pin_block(placement, indent))])

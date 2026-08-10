@@ -10,7 +10,7 @@ import uuid
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Protocol, cast
+from typing import Annotated, Any, Protocol, cast
 
 import structlog
 from kipy.board_types import (
@@ -29,6 +29,7 @@ from kipy.proto.board import board_types_pb2
 from kipy.proto.board.board_types_pb2 import BoardLayer, ViaType, ZoneType
 from kipy.proto.common import types as common_types
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
 from ..config import get_config
 from ..connection import KiCadConnectionError, board_transaction, get_board
@@ -114,6 +115,7 @@ from .metadata import headless_compatible, requires_kicad_running
 from .schematic import _iter_child_sheet_paths, parse_schematic_file
 
 logger = structlog.get_logger(__name__)
+_KeepoutRegion = Annotated[list[float], Field(min_length=4, max_length=4)]
 BOARD_FILE_VERSION = "20250216"
 STRING_PATTERN = r'"((?:\\.|[^"\\])*)"'
 FLOAT_PATTERN = r"-?\d+(?:\.\d+)?"
@@ -4429,7 +4431,7 @@ def _register_advanced_placement_tools(mcp: FastMCP) -> None:
         seed: int = 42,
         grid_mm: float = 0.5,
         max_seconds: float = 0.0,
-        keepout_regions: list[tuple[float, float, float, float]] | None = None,
+        keepout_regions: list[_KeepoutRegion] | None = None,
     ) -> str:
         """Run a force-directed spring-embedder placement algorithm on a set of components.
 
@@ -4459,7 +4461,7 @@ def _register_advanced_placement_tools(mcp: FastMCP) -> None:
                 value caps runtime on pathologically large boards but makes the
                 result depend on host speed (not reproducible).
             keepout_regions: Optional rectangular keepouts as
-                ``[(x_min, y_min, x_max, y_max), ...]`` in mm.
+                ``[[x_min, y_min, x_max, y_max], ...]`` in mm.
 
         Returns:
             JSON string with optimised positions for each component.
@@ -4492,7 +4494,9 @@ def _register_advanced_placement_tools(mcp: FastMCP) -> None:
             seed=seed,
             grid_mm=grid_mm,
             max_seconds=max_seconds,
-            keepout_regions=list(keepout_regions or []),
+            keepout_regions=[
+                (region[0], region[1], region[2], region[3]) for region in keepout_regions or []
+            ],
         )
         stats: dict[str, object] = {}
         result = force_directed_placement(comps, placement_nets, cfg, stats=stats)

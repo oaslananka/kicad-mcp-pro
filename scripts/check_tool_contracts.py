@@ -7,12 +7,35 @@ import sys
 from typing import Any
 
 from kicad_mcp.capabilities import AccessTier, all_records, metadata_coverage
+from kicad_mcp.operating_modes import OperatingMode
 from kicad_mcp.server import build_server
+from kicad_mcp.tools.router import available_profiles
 
 
 async def _tool_schemas() -> dict[str, dict[str, Any]]:
     server = build_server("full")
     return {tool.name: dict(tool.inputSchema or {}) for tool in await server.list_tools()}
+
+
+async def _declared_tool_schemas() -> dict[str, dict[str, Any]]:
+    """Return every tool schema any declared profile can surface.
+
+    ``build_server("full")`` alone is not enough: its listing is narrowed twice
+    more, by the default read-only operating mode and by the runtime IPC filter,
+    so no mutating tool reaches a schema check on a machine without KiCad
+    running. Both narrowings are lifted here on purpose -- a schema is a static
+    contract, and a host that never sees a tool today will see it the moment the
+    operator switches modes.
+    """
+    schemas: dict[str, dict[str, Any]] = {}
+    for profile in available_profiles():
+        server = build_server(profile)
+        server.operating_mode = OperatingMode.EXPERIMENTAL
+        server.allow_experimental_tools = True
+        server.filter_runtime_tools = False
+        for tool in await server.list_tools():
+            schemas.setdefault(tool.name, dict(tool.inputSchema or {}))
+    return schemas
 
 
 def _schema_properties(schema: dict[str, Any]) -> dict[str, Any]:
@@ -58,7 +81,7 @@ async def lint() -> list[str]:
                 errors.append(f"Read-only profile '{profile}' exposes mutating tool {tool_name}")
 
     schemas = await _tool_schemas()
-    for tool_name, schema in schemas.items():
+    for tool_name, schema in sorted((await _declared_tool_schemas()).items()):
         for path in _array_schema_paths_missing_items(schema):
             errors.append(
                 f"{tool_name} input schema array at {path} must declare items "
