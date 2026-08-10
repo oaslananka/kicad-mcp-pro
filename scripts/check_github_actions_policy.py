@@ -6,6 +6,7 @@ import argparse
 import json
 import re
 from pathlib import Path
+from typing import cast
 
 import yaml
 
@@ -41,6 +42,15 @@ def _iter_uses(value: object) -> list[str]:
     return found
 
 
+def has_sha_pinned_action(workflow_text: str, action_path: str) -> bool:
+    """Return whether workflow text uses an Action path at an immutable SHA."""
+    pattern = re.compile(
+        rf"(?m)^\s*(?:-\s*)?uses:\s*['\"]?{re.escape(action_path)}@"
+        rf"[0-9a-fA-F]{{40}}['\"]?(?:\s+#.*)?\s*$"
+    )
+    return pattern.search(workflow_text) is not None
+
+
 def _permission_writes(value: object, context: str, errors: list[str]) -> set[str]:
     if value is None:
         return set()
@@ -71,9 +81,11 @@ def validate_repository(root: Path, policy: dict[str, object]) -> list[str]:
     if settings != expected_settings:
         errors.append("actions-policy.json: repository_settings do not match the hardened baseline")
 
-    github_owned = set(policy.get("github_owned_action_owners", []))
-    allowed_repositories = set(policy.get("allowed_action_repositories", []))
-    allowed_transitive_repositories = set(policy.get("allowed_transitive_action_repositories", []))
+    github_owned = set(cast(list[str], policy.get("github_owned_action_owners", [])))
+    allowed_repositories = set(cast(list[str], policy.get("allowed_action_repositories", [])))
+    allowed_transitive_repositories = set(
+        cast(list[str], policy.get("allowed_transitive_action_repositories", []))
+    )
     overlapping_repositories = sorted(allowed_repositories & allowed_transitive_repositories)
     if overlapping_repositories:
         errors.append(
@@ -180,7 +192,7 @@ def validate_repository(root: Path, policy: dict[str, object]) -> list[str]:
         for line in codeowners_path.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     }
-    required_rules = set(policy.get("required_codeowner_rules", []))
+    required_rules = set(cast(list[str], policy.get("required_codeowner_rules", [])))
     missing_rules = sorted(required_rules - codeowners)
     if missing_rules:
         errors.append(f"CODEOWNERS is missing protected rules: {missing_rules!r}")

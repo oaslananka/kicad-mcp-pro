@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from scripts.check_github_actions_policy import has_sha_pinned_action
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -67,7 +69,7 @@ def test_python_token_fallback_is_manual_approved_and_tokenized() -> None:
     assert "Validate emergency authorization" in workflow
     assert "pypi-token" in workflow
     assert "testpypi-token" in workflow
-    assert "pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b" in workflow
+    assert has_sha_pinned_action(workflow, "pypa/gh-action-pypi-publish")
     assert "id-token: write" not in workflow
 
 

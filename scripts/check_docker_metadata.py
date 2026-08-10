@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -11,6 +12,13 @@ REPO_ROOT = PACKAGE_ROOT
 MCP_SERVER_NAME = "io.github.oaslananka/kicad-mcp-pro"
 GHCR_IMAGE = "ghcr.io/oaslananka/kicad-mcp-pro"
 OLD_GHCR_IMAGE = "ghcr.io/oaslananka/kicad-mcp-pro/kicad-mcp-pro"
+
+
+def _has_sha_pinned_action(workflow_text: str, action_path: str) -> bool:
+    pattern = re.compile(
+        rf"(?m)^\s*(?:-\s*)?uses:\s*{re.escape(action_path)}@[0-9a-fA-F]{{40}}(?:\s+#.*)?\s*$"
+    )
+    return pattern.search(workflow_text) is not None
 
 
 def _read(path: str) -> str:
@@ -98,34 +106,13 @@ def main() -> int:
         "outputs: type=cacheonly": "container workflow must verify multi-arch builds on PRs",
         "packages: write": "container workflow must have GHCR package write permission",
         "id-token: write": "container workflow must have OIDC permission for signing",
-        "docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a": (
-            "container workflow must pin setup-qemu-action"
-        ),
         "tonistiigi/binfmt:qemu-v10.0.4@sha256:": (
             "container workflow must pin the QEMU binfmt image by digest"
-        ),
-        "docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5": (
-            "container workflow must pin setup-buildx-action"
         ),
         "moby/buildkit:v0.26.2@sha256:": (
             "container workflow must pin the BuildKit driver image by digest"
         ),
-        "docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee": (
-            "container workflow must pin docker/login-action"
-        ),
-        "docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9": (
-            "container workflow must pin docker/metadata-action"
-        ),
-        "docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf": (
-            "container workflow must pin docker/build-push-action"
-        ),
-        "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25": (
-            "container workflow must pin trivy-action"
-        ),
         "version: v0.70.0": "container workflow must pin Trivy CLI",
-        "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6": (
-            "container workflow must pin cosign-installer"
-        ),
         "cosign-release: v3.0.6": "container workflow must pin cosign CLI",
         "cosign sign --yes": "container workflow must sign the image digest",
         "sbom: true": "container workflow must attach a BuildKit SBOM",
@@ -133,6 +120,19 @@ def main() -> int:
     }
     for marker, message in workflow_markers.items():
         if marker not in container_workflow:
+            errors.append(message)
+
+    required_actions = {
+        "docker/setup-qemu-action": "container workflow must pin setup-qemu-action",
+        "docker/setup-buildx-action": "container workflow must pin setup-buildx-action",
+        "docker/login-action": "container workflow must pin docker/login-action",
+        "docker/metadata-action": "container workflow must pin docker/metadata-action",
+        "docker/build-push-action": "container workflow must pin docker/build-push-action",
+        "aquasecurity/trivy-action": "container workflow must pin trivy-action",
+        "sigstore/cosign-installer": "container workflow must pin cosign-installer",
+    }
+    for action_path, message in required_actions.items():
+        if not _has_sha_pinned_action(container_workflow, action_path):
             errors.append(message)
 
     docs_to_scan = [

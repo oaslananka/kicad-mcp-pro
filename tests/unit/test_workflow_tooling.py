@@ -4,6 +4,8 @@ from pathlib import Path
 
 import yaml
 
+from scripts.check_github_actions_policy import has_sha_pinned_action
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -73,6 +75,6 @@ def test_direct_javascript_actions_use_node24_releases() -> None:
         for path in sorted((ROOT / ".github" / "workflows").glob("*.yml"))
     )
 
-    assert "dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d" in workflows
+    assert has_sha_pinned_action(workflows, "dorny/paths-filter")
     assert "dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36" not in workflows
     assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" not in workflows
