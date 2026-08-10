@@ -344,6 +344,14 @@ async def test_wire_sheet_pins_adds_two_stubs_and_matching_local_labels(
     after = top_file.read_text(encoding="utf-8")
     assert after.count("\t(wire\n") == 2
     assert after.count('(label "SHARED"') == 2
+    # Local, not global: a global_label on a root sheet leaks its name into
+    # every other sheet of the project (KiCad joins global labels by name
+    # across the whole hierarchy), which is a materially different -- and
+    # wrong -- circuit that would still look right at a glance. The count
+    # above only reads "(label ...)" nodes, so it would silently read 0 (not
+    # fail loudly) if this ever emitted "(global_label ...)" instead; assert
+    # the absence directly so that guarantee is not incidental.
+    assert "(global_label" not in after
     assert "Wired 2 sheet pin(s): added 2 stub(s) and labels." in wire_report
 
     # The title block must survive this write exactly as it survived the
