@@ -16,7 +16,7 @@ services:
       - kicad-mcp-output:/tmp/kicad-mcp-output
 
   freerouting:
-    image: ghcr.io/freerouting/freerouting:2.1.0@sha256:2e3fd0275ce3baf62f6479bcf8e8ddb3b7795159a2f3db7e3fd057a5240e504f
+    image: ghcr.io/freerouting/freerouting:2.3.0@sha256:815ee604d0d95fe87cbe8e4671e3db493aee692fbe77e5703aa3f47dd6a1e447
     volumes:
       - ${KICAD_PROJECT_DIR:-./example}:/data
 
