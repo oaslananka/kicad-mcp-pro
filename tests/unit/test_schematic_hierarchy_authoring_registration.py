@@ -105,8 +105,8 @@ def test_registration_preserves_names_descriptions_and_defaults() -> None:
     }
     assert tools["sch_create_sheet"].description == (
         "Create a child schematic sheet and add it to the active top-level schematic.\n\n"
-        "Optional ``sheet_pins`` is a list of ``(name, type)`` pairs laid out by\n"
-        "the same rules as ``sch_import_sheet_pins``.\n"
+        "Optional ``sheet_pins`` is a list of ``[name, type]`` two-element arrays,\n"
+        "laid out by the same rules as ``sch_import_sheet_pins``.\n"
     )
     label_description = (
         "Add a {kind} label, preserving the requested shape and rotation.\n\n"
@@ -231,6 +231,22 @@ def test_registration_preserves_missing_label_and_pydantic_validation() -> None:
             y_mm=2.0,
             sheet_pins=[("VIN", "sideways")],
         )
+
+
+def test_create_sheet_normalizes_host_supplied_pin_arrays_to_tuples() -> None:
+    """A host sends ``[[name, type], ...]``; the service must still see tuples."""
+    server, service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    tools["sch_create_sheet"].fn(
+        name="Power",
+        filename="power",
+        x_mm=1.0,
+        y_mm=2.0,
+        sheet_pins=[["VIN", "input"], ["VOUT", "output"]],
+    )
+
+    assert service.calls[0][1][5] == (("VIN", "input"), ("VOUT", "output"))
 
 
 def test_create_sheet_forwards_sheet_pins_as_a_tuple() -> None:

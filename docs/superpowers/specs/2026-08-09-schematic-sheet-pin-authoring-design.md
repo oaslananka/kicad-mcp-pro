@@ -108,13 +108,13 @@ class SheetBlock:
 class SheetPinPlacement:
     name: str
     pin_type: str
-    edge: str               # left | right (plan_sheet_pins) or all four (placement_on_edge)
     x_mm: float
     y_mm: float
-    rotation: int            # left -> 180, right -> 0 (and 90/270 for top/bottom)
+    rotation: int            # left -> 180, right -> 0 (and 90/270 for top/bottom);
+                             # the edge, via edge_for_rotation -- no separate field
     justify: str
     uuid: str                 # existing UUID, or "" for a new pin the caller must stamp
-    action: str                # "add" | "retype" | "keep"
+    action: str                # "add" | "retype" | "move" | "keep"
 
 @dataclass(frozen=True)
 class SheetPinPlan:
@@ -162,13 +162,14 @@ removes every existing `(pin ...)` block, and inserts the new ones before the
 `tests/integration/test_schematic_connectivity_gate.py` used to reach by hand
 before this feature existed.
 
-The splice itself is guarded by a private `_check_non_overlapping` helper that
-`apply_plan` and `insert_pin` both go through via `_splice`: replaying edits in
-descending order of `start` is only safe if the spans are pairwise
+The splice itself is guarded by two private preconditions that `apply_plan` and
+`insert_pin` both go through. `_check_non_overlapping` (via `_splice`): replaying
+edits in descending order of `start` is only safe if the spans are pairwise
 non-overlapping, and a `(pin ...)` node sharing a physical source line with
-`(instances ...)` or `(size ...)` would violate that. When it happens, the
-module raises a named `ValueError` instead of silently corrupting the
-schematic.
+`(instances ...)` or `(size ...)` would violate that. `_indent_of`: the text
+before the anchor on its line has to be indentation, which it is not when the
+whole `(sheet ...)` block is written on one line. Either way the module raises a
+named `ValueError` instead of silently corrupting the schematic.
 
 ### 3.2 `schematic/hierarchy_authoring.py` (extended)
 
@@ -262,8 +263,8 @@ in the output. The sheet symbol never shrinks and is never moved.
 
 With `grow_sheet=False` the size stays fixed. Pins that then no longer fit
 their edge land in `SheetPinPlan.overflow`; for that sheet **nothing at all**
-is written, and the report names the affected pins and the height that would
-be required. A half-pinned sheet would be worse than an unchanged one.
+is written, and the report names the affected pins. A half-pinned sheet would
+be worse than an unchanged one.
 
 **Grid alignment:** the *absolute* pin position is snapped to the schematic
 grid (`SCHEMATIC_GRID_MM`, default 1.27 mm), and `position_along_edge` is
@@ -288,7 +289,9 @@ stable IDs keep the git diff small and reviewable -- at 81 pins that is the
 difference between a reviewable and an unreviewable commit.
 
 A second run with no changes to the child sheet produces the same plan, does
-not change the file, and reports only "keep".
+not change the file, and reports only "unchanged". A pin whose type matches but
+whose position this layout changes is reported as "moved", not "unchanged" --
+the file is rewritten for it.
 
 `dry_run=True` produces the same report and writes nothing.
 
@@ -315,8 +318,15 @@ measures from the bottom, `right` from the top).
   write
 - Child sheet file missing or unreadable -> that sheet is skipped and listed
   as blocked in the report; the remaining sheets still run
-- Sheet block without an `(instances` node or without `(size` -> sheet is
-  skipped and reported instead of splicing at the wrong place
+- Sheet block without `(size` (or without a name, or with an unparseable
+  number) -> the parser cannot address it, so it is left out and named as
+  unaddressable when it was asked for by name; the remaining sheets still run
+- Sheet block without an `(instances` node -> there is no safe splice anchor,
+  so the **whole transaction** is abandoned and reported: nothing is written
+  for any sheet in the run. Same for a `(sheet ...)` block written on one line,
+  where the pin anchor's line prefix is not indentation. All-or-nothing is the
+  point (see the single-transaction note below); a partially pinned hierarchy
+  is worse than an unchanged one
 - Sheet moved or resized since it was read -> the write-time geometry guard
   (Section 3.2) aborts the transaction and reports old vs. new origin/size
 - Node loss on write -> `transactional_write` rolls back and raises

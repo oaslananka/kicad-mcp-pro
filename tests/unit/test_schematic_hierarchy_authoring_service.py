@@ -692,3 +692,217 @@ def test_add_sheet_pin_rejects_a_sheet_that_moved_before_the_write(tmp_path: Pat
     assert store.writes == []
     assert "02_mcu" in report
     assert "moved" in report.casefold() or "resized" in report.casefold()
+
+
+ROOT_TEXT_WITH_RIGHT_EDGE_INPUT = """(kicad_sch
+\t(sheet
+\t\t(at 80.01 30.48)
+\t\t(size 30.48 20.32)
+\t\t(property "Sheetname" "02_mcu"
+\t\t\t(at 80.01 29.77 0)
+\t\t)
+\t\t(property "Sheetfile" "child.kicad_sch"
+\t\t\t(at 80.01 51.38 0)
+\t\t)
+\t\t(pin "VIN" input
+\t\t\t(at 110.49 33.02 0)
+\t\t\t(effects
+\t\t\t\t(font
+\t\t\t\t\t(size 1.27 1.27)
+\t\t\t\t)
+\t\t\t\t(justify right)
+\t\t\t)
+\t\t\t(uuid "keep-uuid")
+\t\t)
+\t\t(instances
+\t\t\t(project "main" (path "/1" (page "2")))
+\t\t)
+\t)
+)
+"""
+"""An `input` pin on the right edge -- what ``sch_add_sheet_pin(edge="right")``
+writes. The import layout puts inputs on the left, so this pin is relocated."""
+
+VIN_ONLY_CHILD_TEXT = '(hierarchical_label "VIN"\n\t(shape input)\n\t(at 1 2 0)\n)\n'
+
+
+def test_import_sheet_pins_reports_a_repositioned_pin_as_moved(tmp_path: Path) -> None:
+    store = _TextStore(
+        {"root.kicad_sch": ROOT_TEXT_WITH_RIGHT_EDGE_INPUT, "child.kicad_sch": VIN_ONLY_CHILD_TEXT}
+    )
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.import_sheet_pins(None, True, False)
+
+    written = store.files["root.kicad_sch"]
+    assert "(at 80.01 33.02 180)" in written
+    assert "- 02_mcu: 0 added, 0 retyped, 1 moved, 0 unchanged" in report
+    assert "1 unchanged" not in report
+
+
+def test_import_sheet_pins_omits_per_sheet_lines_when_nothing_was_written(
+    tmp_path: Path,
+) -> None:
+    """One sheet lacks ``(instances ...)``, so the whole transaction aborts.
+    Printing "1 added" for the sibling sheet would describe a write that never
+    happened.
+    """
+    root_text = ROOT_TEXT_TWO_SHEETS.replace(
+        '\t\t(instances\n\t\t\t(project "main" (path "/1" (page "3")))\n\t\t)\n', ""
+    )
+    store = _TextStore(
+        {
+            "root.kicad_sch": root_text,
+            "power.kicad_sch": POWER_CHILD_TEXT,
+            "mcu.kicad_sch": CHILD_TEXT,
+        }
+    )
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.import_sheet_pins(None, True, False)
+
+    assert store.writes == []
+    assert "added" not in report
+    assert report.startswith("Could not import sheet pins:")
+    assert "02_mcu" in report
+
+
+def test_both_import_failure_paths_have_the_same_shape(tmp_path: Path) -> None:
+    """The replay check and the write seam must report failure identically --
+    one prefix, one line, no planning lines.
+    """
+    replay_store = _TextStore(
+        {"root.kicad_sch": ROOT_TEXT_NO_ANCHOR, "child.kicad_sch": CHILD_TEXT}
+    )
+    replay_report = _pin_service(replay_store, tmp_path / "root.kicad_sch").import_sheet_pins(
+        None, True, False
+    )
+
+    write_store = _GeometryDriftStore(
+        {"root.kicad_sch": ROOT_TEXT, "child.kicad_sch": CHILD_TEXT},
+        drifted_root_text=ROOT_TEXT_MOVED,
+    )
+    write_report = _pin_service(write_store, tmp_path / "root.kicad_sch").import_sheet_pins(
+        None, True, False
+    )
+
+    for report in (replay_report, write_report):
+        assert report.startswith("Could not import sheet pins: ")
+        assert "\n" not in report
+
+
+class _VanishingSheetStore(_TextStore):
+    """The sheet is gone from the text the write seam hands the mutator."""
+
+    def transactional_write(self, mutator, sch_file=None):  # type: ignore[no-untyped-def]
+        name = (sch_file or Path("root.kicad_sch")).name
+        if name == "root.kicad_sch":
+            self.files[name] = "(kicad_sch\n)\n"
+        return super().transactional_write(mutator, sch_file)
+
+
+def test_import_sheet_pins_reports_a_sheet_that_vanished_before_the_write(
+    tmp_path: Path,
+) -> None:
+    """Silently skipping it would still print "Imported sheet pins." and
+    "1 added" for a sheet that was never touched.
+    """
+    store = _VanishingSheetStore({"root.kicad_sch": ROOT_TEXT, "child.kicad_sch": CHILD_TEXT})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.import_sheet_pins(None, True, False)
+
+    assert "Imported sheet pins." not in report
+    assert "added" not in report
+    assert "02_mcu" in report
+    assert "disappeared" in report
+
+
+ROOT_TEXT_DEGRADED_SHEET = ROOT_TEXT.replace("\t\t(size 30.48 20.32)\n", "", 1)
+
+
+def test_import_sheet_pins_distinguishes_an_unusable_sheet_from_a_missing_one(
+    tmp_path: Path,
+) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_DEGRADED_SHEET, "child.kicad_sch": CHILD_TEXT})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    degraded = service.import_sheet_pins("02_mcu", True, False)
+    missing = service.import_sheet_pins("nope", True, False)
+
+    assert "not found" not in degraded
+    assert "cannot be addressed" in degraded
+    assert "size" in degraded
+    assert "not found" in missing
+
+
+def test_add_sheet_pin_warns_when_the_schematic_cannot_be_read(tmp_path: Path) -> None:
+    store = _TextStore({})
+    warnings: list[tuple[str, dict[str, Any]]] = []
+    service = replace(
+        _pin_service(store, tmp_path / "root.kicad_sch"),
+        warn=lambda event, **fields: warnings.append((event, fields)),
+    )
+
+    report = service.add_sheet_pin("02_mcu", "MANUAL", "input", "left", 5.08)
+
+    assert "Could not read" in report
+    assert [event for event, _fields in warnings] == ["schematic_add_sheet_pin_unreadable"]
+
+
+def test_create_sheet_says_pins_were_not_applied_to_an_existing_sheet(tmp_path: Path) -> None:
+    root_path = tmp_path / "demo.kicad_sch"
+    service, _root, _child, _tx, _warnings = _service(
+        root_path=root_path,
+        root=_RootSchematic(duplicate=True),
+    )
+
+    report = service.create_sheet("Power", "power", 10.0, 20.0, True, (("VIN", "input"),))
+
+    assert "already exists" in report
+    assert "no sheet pins were applied" in report
+
+
+def test_create_sheet_folds_an_unreadable_root_into_its_report(tmp_path: Path) -> None:
+    """``_apply_sheet_pins`` documents that it never raises. It runs after the
+    sheet is created and saved, outside any ``try`` in ``create_sheet``, so an
+    OSError escaping it would fail a call that in fact created the sheet.
+    """
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT, "child.kicad_sch": CHILD_TEXT})
+    warnings: list[tuple[str, dict[str, Any]]] = []
+
+    def _explode(_path: Path) -> str:
+        raise OSError("root vanished")
+
+    service = replace(
+        _pin_service(store, tmp_path / "root.kicad_sch"),
+        read_text=_explode,
+        warn=lambda event, **fields: warnings.append((event, fields)),
+    )
+
+    report = service.create_sheet(
+        "02_mcu", "child.kicad_sch", 80.01, 30.48, True, (("VIN", "input"),)
+    )
+
+    assert "was created" in report
+    assert "root vanished" in report
+    assert [event for event, _fields in warnings] == ["schematic_create_sheet_pins_failed"]
+
+
+def test_create_sheet_surfaces_the_heuristic_width_note(tmp_path: Path) -> None:
+    """The same disclosure sch_import_sheet_pins makes. Without it the tool can
+    widen a sheet from an estimated text width and say nothing.
+    """
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT, "child.kicad_sch": CHILD_TEXT})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.create_sheet(
+        "02_mcu",
+        "child.kicad_sch",
+        80.01,
+        30.48,
+        True,
+        (("A_VERY_LONG_INPUT_SIGNAL_NAME", "input"), ("A_VERY_LONG_OUTPUT_SIGNAL_NAME", "output")),
+    )
+
+    assert "heuristic" in report

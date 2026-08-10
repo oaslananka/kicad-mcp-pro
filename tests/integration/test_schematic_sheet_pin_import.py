@@ -162,7 +162,7 @@ async def test_import_creates_one_pin_per_label_and_keeps_the_title_block(
     after = top_file.read_text(encoding="utf-8")
     assert '(pin "VIN" input' in after
     assert '(pin "VOUT" output' in after
-    assert "- child: 2 added, 0 retyped, 0 unchanged" in report
+    assert "- child: 2 added, 0 retyped, 0 moved, 0 unchanged" in report
 
     # The whole reason for the text-splice write path: everything outside the
     # sheet block -- including every (comment N ...) node -- is untouched.
