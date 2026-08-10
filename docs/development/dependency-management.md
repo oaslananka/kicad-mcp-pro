@@ -31,10 +31,12 @@ Dependabot pull requests are ordinary protected pull requests: required CI and t
 `main` ruleset still apply, and no dependency bot is allowed to bypass those gates.
 Mergify provides a serial, one-PR-at-a-time queue for the routine grouped version
 updates only. The queue explicitly mirrors every required status-check context from
-`.github/rulesets/main.json` as a successful-check merge condition; automatic GitHub
-ruleset discovery is defense-in-depth rather than the enforcement source. The mirror is
-covered by a repository regression test so ruleset/check changes cannot silently drift.
-The queue uses squash merges and does not retry failed checks automatically.
+`.github/rulesets/main.json`. Eligibility and required-check conditions are identical at
+queue and merge time so strict up-to-date rulesets use Mergify's in-place check model
+instead of a second draft-PR CI phase. Automatic GitHub ruleset discovery is
+defense-in-depth rather than the enforcement source. Repository regression tests prevent
+ruleset/check or queue/merge-condition drift. The queue uses squash merges and does not
+retry failed checks automatically.
 Human-authored, release, security, major, and otherwise ungrouped dependency pull
 requests remain a maintainer decision.
 

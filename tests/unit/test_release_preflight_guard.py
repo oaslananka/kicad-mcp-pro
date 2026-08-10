@@ -421,6 +421,15 @@ def test_mergify_merge_conditions_mirror_repository_ruleset_required_checks() ->
     assert explicit_check_conditions == required_contexts
 
 
+def test_mergify_uses_in_place_checks_with_strict_main_ruleset() -> None:
+    config = yaml.safe_load((ROOT / ".mergify.yml").read_text(encoding="utf-8"))
+    queue = next(rule for rule in config["queue_rules"] if rule["name"] == "safe-dependencies")
+
+    assert config["merge_queue"]["max_parallel_checks"] == 1
+    assert queue["batch_size"] == 1
+    assert queue["queue_conditions"] == queue["merge_conditions"]
+
+
 def test_release_preflight_rejects_missing_tauri_lockfile(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
