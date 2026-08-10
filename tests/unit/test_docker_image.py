@@ -9,7 +9,18 @@ from pathlib import Path
 
 import pytest
 
+from scripts import check_docker_metadata
+
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_docker_metadata_action_pin_contract_accepts_sha_rotation() -> None:
+    action = "docker/setup-qemu-action"
+    workflow = f"uses: {action}@{'a' * 40}"
+
+    assert check_docker_metadata._has_sha_pinned_action(workflow, action)
+    assert not check_docker_metadata._has_sha_pinned_action(f"uses: {action}@v3", action)
+    assert not check_docker_metadata._has_sha_pinned_action(workflow, "docker/setup-buildx-action")
 
 
 def _docker() -> str:
