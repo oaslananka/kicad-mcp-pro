@@ -32,8 +32,8 @@ def register(mcp: FastMCP, dependencies: ExportPcb3dRenderDependencies) -> None:
     @mcp.tool()
     @headless_compatible
     # S107 is intentionally suppressed: this signature is the published MCP contract.
-    def export_3d_render(  # noqa: S107
-        output_file: str = "render.png",
+    def export_3d_render(
+        output_file: str = "render.png",  # noqa: S107
         side: str = "top",
         zoom: float = 1.0,
         width: int | None = None,
