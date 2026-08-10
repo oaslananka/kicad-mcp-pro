@@ -15,6 +15,7 @@ from .sheet_pins import (
     SheetPinPlan,
     _format_mm,
     apply_plan,
+    check_edits_non_overlapping,
     insert_pin,
     parse_hierarchical_labels,
     parse_sheet_blocks,
@@ -777,8 +778,10 @@ class SchematicHierarchyAuthoringService:
         dx_by_sheet: dict[str, float] = {
             name: shift.dx_mm for shift in plan.shifts for name in shift.sheet_names
         }
+        skipped_pins: list[tuple[str, str]] = []
 
         def mutator(current: str) -> str:
+            skipped_pins.clear()
             current_blocks = {block.name: block for block in parse_sheet_blocks(current)}
             edits: list[tuple[int, int, str]] = []
             for name, dx in dx_by_sheet.items():
@@ -794,6 +797,14 @@ class SchematicHierarchyAuthoringService:
                     )
                 )
                 for pin, (pin_start, pin_end) in zip(block.pins, block.pin_at_spans, strict=True):
+                    if pin_start == pin_end:
+                        # No (at ...) node could be parsed for this pin (see
+                        # SheetBlock.pin_at_spans). Inserting text at a
+                        # zero-width span would add a spurious (at ...) next to
+                        # the pin rather than replace one, producing malformed
+                        # output -- leave it alone and report it instead.
+                        skipped_pins.append((name, pin.name))
+                        continue
                     new_pin_x = round(pin.x_mm + dx, 4)
                     edits.append(
                         (
@@ -802,6 +813,7 @@ class SchematicHierarchyAuthoringService:
                             f"(at {_format_mm(new_pin_x)} {_format_mm(pin.y_mm)} {pin.rotation})",
                         )
                     )
+            check_edits_non_overlapping(edits, root_path.name)
             for start, end, replacement in sorted(edits, key=lambda edit: edit[0], reverse=True):
                 current = current[:start] + replacement + current[end:]
             return current
@@ -811,6 +823,13 @@ class SchematicHierarchyAuthoringService:
         except ValueError as exc:
             self.warn("schematic_spread_sheets_failed", error=str(exc))
             return f"Could not spread sheets: {exc}"
+
+        if skipped_pins:
+            lines.append(
+                "Left in place (no readable (at ...) node to rewrite): "
+                + ", ".join(f"'{pin}' on '{sheet}'" for sheet, pin in skipped_pins)
+                + ". Open the file in KiCad and save it once, then retry."
+            )
 
         if mutated == root_text:
             return "\n".join(["Sheets are already spread out; nothing was written.", *lines])

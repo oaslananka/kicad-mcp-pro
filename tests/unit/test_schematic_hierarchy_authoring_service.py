@@ -1044,6 +1044,39 @@ def test_wire_sheet_pins_dry_run_writes_nothing(tmp_path: Path) -> None:
     assert "dry run" in report.casefold()
 
 
+def test_wire_sheet_pins_restricts_writes_to_the_named_sheet(tmp_path: Path) -> None:
+    """``sheet`` limits *which sheet's pins get a new stub and label* -- a
+    version that ignored the argument would wire both sheets and this test
+    would not notice from a bare count alone, so it also asserts the untouched
+    sheet's own pin block survives byte-for-byte.
+    """
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_TWO_SHEETS_WITH_PINS})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    service.wire_sheet_pins("01_power", 2.54, False)
+
+    written = store.files["root.kicad_sch"]
+    assert written.count("(wire ") == 1
+    assert written.count("(label ") == 1
+    # The stub starts exactly on 01_power's own pin -- never on 02_mcu's.
+    assert "(xy 70.0 35.0)" in written
+    assert "(xy 80.01 45.0)" not in written
+    # 02_mcu's own (pin "VBUS" ...) block, in full, is byte-identical to the
+    # source text -- not merely "no wire near it", but untouched outright.
+    assert (
+        '\t\t(pin "VBUS" input\n'
+        "\t\t\t(at 80.01 45.0 180)\n"
+        "\t\t\t(effects\n"
+        "\t\t\t\t(font\n"
+        "\t\t\t\t\t(size 1.27 1.27)\n"
+        "\t\t\t\t)\n"
+        "\t\t\t\t(justify right)\n"
+        "\t\t\t)\n"
+        '\t\t\t(uuid "pin-mcu-uuid")\n'
+        "\t\t)\n"
+    ) in written
+
+
 ROOT_TEXT_ONE_SHEET_ONE_PIN = """(kicad_sch
 \t(paper "A4")
 \t(sheet
@@ -1129,6 +1162,61 @@ column 2 (with its one pin) to move right by a computed, grid-snapped ``dx``.
 Column 1 has no pin, so it is never in the shift map and its ``(at 0.0 0.0)``
 must survive untouched."""
 
+ROOT_TEXT_SPREAD_WITH_BROKEN_PIN = """(kicad_sch
+\t(paper "A4")
+\t(sheet
+\t\t(at 0.0 0.0)
+\t\t(size 20.0 20.0)
+\t\t(property "Sheetname" "01_left"
+\t\t\t(at 0.0 -1.0 0)
+\t\t)
+\t\t(property "Sheetfile" "left.kicad_sch"
+\t\t\t(at 0.0 21.0 0)
+\t\t)
+\t\t(instances
+\t\t\t(project "main" (path "/1" (page "2")))
+\t\t)
+\t)
+\t(sheet
+\t\t(at 25.0 0.0)
+\t\t(size 20.0 20.0)
+\t\t(property "Sheetname" "02_right"
+\t\t\t(at 25.0 -1.0 0)
+\t\t)
+\t\t(property "Sheetfile" "right.kicad_sch"
+\t\t\t(at 25.0 21.0 0)
+\t\t)
+\t\t(pin "OUT" output
+\t\t\t(at 45.0 10.0 0)
+\t\t\t(effects
+\t\t\t\t(font
+\t\t\t\t\t(size 1.27 1.27)
+\t\t\t\t)
+\t\t\t\t(justify left)
+\t\t\t)
+\t\t\t(uuid "pin-out-uuid")
+\t\t)
+\t\t(pin "BROKEN" input
+\t\t\t(effects
+\t\t\t\t(font
+\t\t\t\t\t(size 1.27 1.27)
+\t\t\t\t)
+\t\t\t\t(justify right)
+\t\t\t)
+\t\t\t(uuid "broken-uuid")
+\t\t)
+\t\t(instances
+\t\t\t(project "main" (path "/1" (page "3")))
+\t\t)
+\t)
+)
+"""
+"""Same as ``ROOT_TEXT_SPREAD_TWO_COLUMNS``, but ``02_right`` has a second pin,
+``BROKEN``, with no ``(at ...)`` node at all -- ``_scan_sheet_blocks`` records a
+zero-width span for it. ``spread_sheets`` must leave it alone rather than
+splice at that zero-width span, which would insert a spurious ``(at ...)``
+instead of replacing one."""
+
 _SPREAD_PIN_EFFECTS_AND_UUID = (
     "\t\t\t(effects\n"
     "\t\t\t\t(font\n"
@@ -1187,6 +1275,33 @@ def test_spread_sheets_refuses_to_push_past_the_page_edge(tmp_path: Path) -> Non
 
     assert store.writes == []
     assert "usable" in report.casefold() or "past" in report.casefold()
+
+
+def test_spread_sheets_skips_a_pin_with_no_readable_at_node(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_SPREAD_WITH_BROKEN_PIN})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.spread_sheets(10.0, 2.54, False)
+
+    written = store.files["root.kicad_sch"]
+    # The document must still parse cleanly -- the strongest evidence that the
+    # zero-width span was not spliced into.
+    parsed = {block.name: block for block in parse_sheet_blocks(written)}
+    right = parsed["02_right"]
+    out_pin = next(pin for pin in right.pins if pin.name == "OUT")
+    broken_pin = next(pin for pin in right.pins if pin.name == "BROKEN")
+
+    dx = right.origin[0] - 25.0
+    assert dx > 0
+    # OUT still moved normally...
+    assert out_pin.x_mm - 45.0 == dx
+    # ...but BROKEN's block -- including its now-absent (at ...) -- is
+    # untouched: no (at ...) was inserted for it.
+    assert '\t\t(pin "BROKEN" input\n\t\t\t(effects\n' in written
+    assert broken_pin.x_mm == 0.0
+    assert broken_pin.y_mm == 0.0
+    assert "BROKEN" in report
+    assert "02_right" in report
 
 
 def test_both_methods_write_once_for_all_sheets(tmp_path: Path) -> None:

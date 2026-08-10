@@ -709,27 +709,41 @@ def _require_anchor(sheet: SheetBlock) -> int:
     return sheet.instances_start
 
 
-def _check_non_overlapping(sheet: SheetBlock, edits: list[tuple[int, int, str]]) -> None:
-    """Guard ``_splice``'s edit-ordering precondition.
+def check_edits_non_overlapping(edits: Sequence[tuple[int, int, str]], subject: str) -> None:
+    """Guard a splice's edit-ordering precondition: no two spans may overlap.
 
-    Replaying edits in descending order of ``start`` is only safe if the spans
-    are pairwise non-overlapping -- see ``_splice``. A ``(pin ...)`` node
+    Replaying ``(start, end, replacement)`` edits in descending order of
+    ``start`` over a shared text buffer -- the technique both ``_splice``
+    (one sheet block) and ``spread_sheets`` (the whole document) use -- is
+    only safe if the spans are pairwise non-overlapping: an earlier edit's
+    start must never fall inside a later edit's span, or replaying them out
+    of order silently clobbers whichever one loses. A ``(pin ...)`` node
     sharing a physical source line with ``(instances ...)`` or ``(size ...)``
-    would violate that (their line-widened spans would collide), so this is a
-    loud, named ``ValueError`` instead of a silently corrupted schematic.
+    is one way real files trigger this, so it is a loud, named ``ValueError``
+    instead of a silently corrupted schematic.
 
-    This is not the only precondition a safe write has: ``_indent_of`` guards
-    the other, that the anchor line's prefix is really indentation.
+    ``subject`` names what the caller is editing -- a single sheet
+    (``"Sheet 'X'"``) or a whole document (a filename) -- so the message
+    reads correctly either way.
     """
     ordered = sorted(edits, key=lambda edit: edit[0])
     for previous, current in zip(ordered, ordered[1:], strict=False):
         if current[0] < previous[1]:
             raise ValueError(
-                f"Sheet '{sheet.name}' has overlapping edits at character spans "
+                f"{subject} has overlapping edits at character spans "
                 f"{previous[:2]} and {current[:2]}; refusing to risk corrupting the file. "
                 "This usually means a (pin ...) node shares a source line with "
                 "(instances ...) or (size ...) -- reformat the file in KiCad and retry."
             )
+
+
+def _check_non_overlapping(sheet: SheetBlock, edits: list[tuple[int, int, str]]) -> None:
+    """Guard ``_splice``'s edit-ordering precondition for one sheet's edits.
+
+    This is not the only precondition a safe write has: ``_indent_of`` guards
+    the other, that the anchor line's prefix is really indentation.
+    """
+    check_edits_non_overlapping(edits, f"Sheet '{sheet.name}'")
 
 
 def _splice(text: str, sheet: SheetBlock, edits: list[tuple[int, int, str]]) -> str:
