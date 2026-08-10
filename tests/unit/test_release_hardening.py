@@ -16,6 +16,7 @@ from kicad_mcp.compatibility import MCP_PROTOCOL_VERSION
 from kicad_mcp.config import get_config, reset_config
 from kicad_mcp.discovery import CliCapabilities
 from kicad_mcp.server import CLI_FAILURE_TOOL_NAMES, HEAVY_TOOL_NAMES, build_server
+from scripts.check_github_actions_policy import has_sha_pinned_action
 from tests.conftest import call_tool_text
 
 EXPOSED_HOST = "0." + "0.0.0"
@@ -641,10 +642,7 @@ def test_release_and_publish_workflows_are_monorepo_ready() -> None:
     publish_extension = _workflow("publish-extension.yml")
     publish_mcp = _workflow("publish-mcp-registry.yml")
 
-    assert (
-        "googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7"
-        in release_please
-    )
+    assert has_sha_pinned_action(release_please, "googleapis/release-please-action")
     assert "config-file: release-please-config.json" in release_please
     assert "manifest-file: .release-please-manifest.json" in release_please
     assert "set -euo pipefail" in release_please
@@ -656,7 +654,7 @@ def test_release_and_publish_workflows_are_monorepo_ready() -> None:
     assert "--head release-please--branches--main" not in release_please
 
     assert "id-token: write" in publish_python
-    assert "pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b" in publish_python
+    assert has_sha_pinned_action(publish_python, "pypa/gh-action-pypi-publish")
     assert "PYPI_TOKEN" not in publish_python
     assert "TEST_PYPI_TOKEN" not in publish_python
 
@@ -689,7 +687,7 @@ def test_security_and_publish_workflows_emit_supply_chain_evidence() -> None:
     publish_python = _workflow("publish-python.yml")
     publish_extension = _workflow("publish-extension.yml")
 
-    assert "actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294" in security
+    assert has_sha_pinned_action(security, "actions/dependency-review-action")
     assert "fail-on-severity: high" in security
     assert "show-patched-versions: true" in security
 
@@ -731,7 +729,7 @@ def test_mcpb_release_workflow_attaches_attested_versioned_bundle() -> None:
     assert 'SOURCE_COMMIT="$(git rev-parse HEAD)"' in workflow
     assert '"sourceCommit": os.environ["SOURCE_COMMIT"]' in workflow
     assert '"sourceCommit": os.environ["GITHUB_SHA"]' not in workflow
-    assert "actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26" in workflow
+    assert has_sha_pinned_action(workflow, "actions/attest")
     assert "subject-checksums: release-assets/mcpb/kicad-mcp-pro-mcpb-SHA256SUMS.txt" in workflow
     assert 'gh release upload "$release_tag" release-assets/mcpb/* --clobber' in workflow
     assert "attestations: write" in workflow
@@ -803,22 +801,16 @@ def test_docker_metadata_contains_mcp_oci_label_and_release_image_contract() -> 
     assert "ghcr.io/oaslananka/kicad-mcp-pro:latest" in container_workflow
     assert "packages: write" in container_workflow
     assert "id-token: write" in container_workflow
-    assert "docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a" in container_workflow
+    assert has_sha_pinned_action(container_workflow, "docker/setup-qemu-action")
     assert "tonistiigi/binfmt:qemu-v10.0.4@sha256:" in container_workflow
-    assert (
-        "docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5" in container_workflow
-    )
+    assert has_sha_pinned_action(container_workflow, "docker/setup-buildx-action")
     assert "moby/buildkit:v0.26.2@sha256:" in container_workflow
-    assert "docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee" in container_workflow
-    assert "docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9" in container_workflow
-    assert "docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf" in container_workflow
-    assert (
-        "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6" in container_workflow
-    )
+    assert has_sha_pinned_action(container_workflow, "docker/login-action")
+    assert has_sha_pinned_action(container_workflow, "docker/metadata-action")
+    assert has_sha_pinned_action(container_workflow, "docker/build-push-action")
+    assert has_sha_pinned_action(container_workflow, "sigstore/cosign-installer")
     assert "cosign-release: v3.0.6" in container_workflow
-    assert (
-        "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25" in container_workflow
-    )
+    assert has_sha_pinned_action(container_workflow, "aquasecurity/trivy-action")
     assert "version: v0.70.0" in container_workflow
     assert "sbom: true" in container_workflow
     assert "provenance: mode=max" in container_workflow
@@ -834,9 +826,9 @@ def test_scorecard_workflow_uses_pinned_actions_without_artifact_storage() -> No
     assert "checks: read" in workflow
     assert "pull-requests: read" in workflow
     assert "statuses: read" in workflow
-    assert "ossf/scorecard-action@62b2cac7ed8198b15735ed49ab1e5cf35480ba46" in workflow
+    assert has_sha_pinned_action(workflow, "ossf/scorecard-action")
     assert "results_format: sarif" in workflow
-    assert "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in workflow
+    assert has_sha_pinned_action(workflow, "actions/upload-artifact")
 
 
 def test_scorecard_ci_tests_false_positive_has_auditable_evidence() -> None:
@@ -1343,8 +1335,8 @@ def test_development_bootstrap_workflow_proves_clean_host_and_kicad_canary() -> 
     assert "uv 0.10.8" in workflow
     assert "v24.11.0" in workflow
     assert "11.5.0" in workflow
-    assert "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10" in workflow
-    assert "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in workflow
+    assert has_sha_pinned_action(workflow, "actions/checkout")
+    assert has_sha_pinned_action(workflow, "actions/upload-artifact")
     assert "kicad-canary:" in workflow
     assert "ppa:kicad/kicad-10.0-releases" in workflow
     assert 'test "$(kicad-cli version)" = "10.0.5"' in workflow

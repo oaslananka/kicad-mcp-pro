@@ -8,6 +8,8 @@ from types import ModuleType
 
 import pytest
 
+from scripts.check_github_actions_policy import has_sha_pinned_action
+
 ROOT = Path(__file__).resolve().parents[2]
 CHECKSUM_NAME = "kicad-mcp-pro-gui-SHA256SUMS.txt"
 SBOM_NAME = "kicad-mcp-pro-gui-sbom.cdx.json"
@@ -187,7 +189,7 @@ def test_gui_release_workflow_attests_and_verifies_published_installer_inventory
     assert "scripts/generate_gui_release_evidence.py generate" in workflow
     assert "scripts/generate_gui_release_evidence.py verify-local" in workflow
     assert "scripts/generate_gui_release_evidence.py verify-published" in workflow
-    assert "actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26" in workflow
+    assert has_sha_pinned_action(workflow, "actions/attest")
     assert f"subject-checksums: release-evidence/gui/{CHECKSUM_NAME}" in workflow
     assert f"sbom-path: release-evidence/gui/{SBOM_NAME}" in workflow
     assert "attestations: write" in workflow
