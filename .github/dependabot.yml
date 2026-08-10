@@ -26,12 +26,7 @@ updates:
           - "*"
 
   - package-ecosystem: "npm"
-    directories:
-      - "/"
-      - "/packages/mcp-npm"
-      - "/packages/kicad-fixtures"
-      - "/integrations/chatgpt-app/apps-sdk"
-      - "/integrations/opencode/plugins/kicad-mcp-plugin"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -43,14 +38,89 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
-      npm-minor-patch:
+      npm-root-minor-patch:
         applies-to: "version-updates"
         patterns:
           - "*"
         update-types:
           - "minor"
           - "patch"
-      npm-security:
+      npm-root-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/integrations/chatgpt-app/apps-sdk"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Istanbul"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-chatgpt-app-minor-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      npm-chatgpt-app-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/kicad-fixtures"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Istanbul"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-fixtures-minor-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      npm-fixtures-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/mcp-npm"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Istanbul"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-wrapper-minor-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      npm-wrapper-security:
         applies-to: "security-updates"
         patterns:
           - "*"

@@ -21,11 +21,14 @@ part of the active update path, so the repository does not keep a second bot
 configuration that could create duplicate update pull requests.
 
 Dependabot runs weekly on Monday using the repository's Europe/Istanbul maintenance
-window. Routine minor/patch version updates are grouped per ecosystem to reduce PR and
-CI churn; major updates remain individual pull requests. Docker version automation is
-more conservative: only patch updates are grouped, leaving runtime-sensitive image
-minor/major changes for explicit maintainer review. Security updates use separate
-per-ecosystem groups and are never mixed with routine version-update groups.
+window. Routine minor/patch version updates are grouped per ecosystem and package-manager
+boundary to reduce PR and CI churn; major updates remain individual pull requests. The
+npm/pnpm configuration uses separate single-directory entries for the root pnpm project,
+the ChatGPT Apps npm project, the fixture pnpm package, and the npm wrapper so Dependabot
+does not mix independent lockfile/workspace scopes in one update job. Docker version
+automation is more conservative: only patch updates are grouped, leaving runtime-sensitive
+image minor/major changes for explicit maintainer review. Security updates use separate
+groups and are never mixed with routine version-update groups.
 
 Dependabot pull requests are ordinary protected pull requests: required CI and the
 `main` ruleset still apply, and no dependency bot is allowed to bypass those gates.

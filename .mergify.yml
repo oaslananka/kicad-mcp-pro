@@ -13,7 +13,7 @@ queue_rules:
       - author = dependabot[bot]
       - -draft
       - dependabot-update-type != version-update:semver-major
-      - head ~= ^dependabot/.*/(python-minor-patch|npm-minor-patch|actions-minor-patch|containers-patch|compose-minor-patch|cargo-minor-patch)(?:-|$)
+      - head ~= ^dependabot/.*/(python-minor-patch|npm-root-minor-patch|npm-chatgpt-app-minor-patch|npm-fixtures-minor-patch|npm-wrapper-minor-patch|actions-minor-patch|containers-patch|compose-minor-patch|cargo-minor-patch)(?:-|$)
       - check-success = mcp-server (ubuntu-24.04)
       - check-success = mcp-server (windows-2025)
       - check-success = mcp-server (macos-15)
@@ -32,7 +32,7 @@ queue_rules:
       - author = dependabot[bot]
       - -draft
       - dependabot-update-type != version-update:semver-major
-      - head ~= ^dependabot/.*/(python-minor-patch|npm-minor-patch|actions-minor-patch|containers-patch|compose-minor-patch|cargo-minor-patch)(?:-|$)
+      - head ~= ^dependabot/.*/(python-minor-patch|npm-root-minor-patch|npm-chatgpt-app-minor-patch|npm-fixtures-minor-patch|npm-wrapper-minor-patch|actions-minor-patch|containers-patch|compose-minor-patch|cargo-minor-patch)(?:-|$)
       - check-success = mcp-server (ubuntu-24.04)
       - check-success = mcp-server (windows-2025)
       - check-success = mcp-server (macos-15)
@@ -54,7 +54,7 @@ pull_request_rules:
       - author = dependabot[bot]
       - -draft
       - dependabot-update-type != version-update:semver-major
-      - head ~= ^dependabot/.*/(python-minor-patch|npm-minor-patch|actions-minor-patch|containers-patch|compose-minor-patch|cargo-minor-patch)(?:-|$)
+      - head ~= ^dependabot/.*/(python-minor-patch|npm-root-minor-patch|npm-chatgpt-app-minor-patch|npm-fixtures-minor-patch|npm-wrapper-minor-patch|actions-minor-patch|containers-patch|compose-minor-patch|cargo-minor-patch)(?:-|$)
     actions:
       queue:
         name: safe-dependencies
