@@ -303,3 +303,95 @@ def test_at_spans_are_empty_when_there_are_no_pins() -> None:
     start, end = block.at_span
     text_of = SHEET_BLOCK[start:end]
     assert text_of.startswith("(at ")
+
+
+def test_at_span_is_exact_for_a_negative_coordinate_with_irregular_whitespace() -> None:
+    # A hand-edited or foreign-tool file may not use KiCad's own spacing. The
+    # span must still cover exactly the (at ...) node so an in-place rewrite
+    # replaces only that text.
+    text = SHEET_BLOCK.replace("(at 30.48 90.17)", "(at   -30.48   90.17  )", 1)
+
+    block = parse_sheet_blocks(text)[0]
+
+    assert block.origin == (-30.48, 90.17)
+    start, end = block.at_span
+    assert text[start:end] == "(at   -30.48   90.17  )"
+
+
+def test_at_span_is_exact_when_at_appears_after_other_children() -> None:
+    # (at ...) is usually the sheet's first child, but nothing guarantees that
+    # ordering. Move it after (uuid ...) and confirm the span still addresses
+    # exactly that node, not a neighboring one.
+    text = (
+        "(kicad_sch\n"
+        "\t(sheet\n"
+        "\t\t(size 30.48 20.32)\n"
+        '\t\t(uuid "24299bd7-4c16-4845-810e-d9ee5fee95c1")\n'
+        "\t\t(at 30.48 90.17)\n"
+        '\t\t(property "Sheetname" "05_audio"\n'
+        "\t\t\t(at 30.48 89.4584 0)\n"
+        "\t\t)\n"
+        '\t\t(property "Sheetfile" "main_05_audio.kicad_sch"\n'
+        "\t\t\t(at 30.48 111.0746 0)\n"
+        "\t\t)\n"
+        "\t\t(instances\n"
+        '\t\t\t(project "main"\n'
+        '\t\t\t\t(path "/96451635-9025-4257-b58e-c68f0fc02308"\n'
+        '\t\t\t\t\t(page "5")\n'
+        "\t\t\t\t)\n"
+        "\t\t\t)\n"
+        "\t\t)\n"
+        "\t)\n"
+        ")\n"
+    )
+
+    block = parse_sheet_blocks(text)[0]
+
+    assert block.origin == (30.48, 90.17)
+    start, end = block.at_span
+    assert text[start:end] == "(at 30.48 90.17)"
+
+
+def test_pin_at_span_is_exact_for_a_pin_block_written_on_one_line() -> None:
+    # Older KiCad and third-party generators may write a whole (pin ...) node
+    # on a single line, with no space between the type and the nested (at).
+    text = SHEET_BLOCK.replace(
+        "\t\t(instances\n",
+        '\t\t(pin "A" input(at -1.0 2.0 90))\n\t\t(instances\n',
+        1,
+    )
+
+    block = parse_sheet_blocks(text)[0]
+
+    assert block.pins[0].x_mm == -1.0
+    assert block.pins[0].y_mm == 2.0
+    assert block.pins[0].rotation == 90
+    start, end = block.pin_at_spans[0]
+    assert text[start:end] == "(at -1.0 2.0 90)"
+
+
+def test_pin_at_spans_stay_parallel_when_a_pin_has_no_at_node_at_all() -> None:
+    # A pin missing (at ...) entirely -- not merely malformed -- must not break
+    # the parallelism between pins and pin_at_spans: the second pin's real span
+    # must survive the first pin's total absence.
+    text = SHEET_BLOCK.replace(
+        "\t\t(instances\n",
+        '\t\t(pin "FIRST" input\n'
+        '\t\t\t(uuid "aaaaaaaa-0000-0000-0000-000000000000")\n'
+        "\t\t)\n"
+        '\t\t(pin "SECOND" output\n'
+        "\t\t\t(at 10.0 20.0 0)\n"
+        '\t\t\t(uuid "bbbbbbbb-0000-0000-0000-000000000000")\n'
+        "\t\t)\n"
+        "\t\t(instances\n",
+        1,
+    )
+
+    block = parse_sheet_blocks(text)[0]
+
+    assert len(block.pins) == len(block.pin_at_spans) == 2
+    assert block.pins[0].x_mm == 0.0
+    assert block.pins[0].y_mm == 0.0
+    assert block.pins[0].rotation == 0
+    start, end = block.pin_at_spans[1]
+    assert text[start:end] == "(at 10.0 20.0 0)"
