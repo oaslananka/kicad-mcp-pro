@@ -8,7 +8,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from ..models.schematic import GetSheetInfoInput, TraceNetInput
+from ..models.schematic import GetSheetInfoInput, ListSheetPinsInput, TraceNetInput
 from ..schematic.topology import SchematicTopologyService
 
 type ActiveSchematicFile = Callable[[], Path]
@@ -36,6 +36,15 @@ def register(mcp: FastMCP, dependencies: SchematicTopologyDependencies) -> None:
         """Return metadata for a specific child sheet."""
         payload = GetSheetInfoInput(sheet_name=sheet_name)
         return service.sheet_info(
+            dependencies.active_schematic_file(),
+            payload.sheet_name,
+        )
+
+    @mcp.tool()
+    def sch_list_sheet_pins(sheet_name: str) -> str:
+        """List the hierarchical sheet pins of one child sheet symbol."""
+        payload = ListSheetPinsInput(sheet_name=sheet_name)
+        return service.list_sheet_pins(
             dependencies.active_schematic_file(),
             payload.sheet_name,
         )

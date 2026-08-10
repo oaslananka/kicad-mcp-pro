@@ -3,7 +3,7 @@
     "build": {
       "callableTools": 24,
       "catalogCharacters": 9348,
-      "catalogReductionVsExpertPct": 95.6,
+      "catalogReductionVsExpertPct": 95.7,
       "declaredTools": 24,
       "estimatedCatalogTokens": 2337,
       "forbiddenToolExposures": 2,
@@ -18,7 +18,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 5,
       "readOnlyCoveragePct": 20.0,
-      "toolReductionVsExpertPct": 93.6,
+      "toolReductionVsExpertPct": 93.7,
       "tools": [
         "kicad_get_project_info",
         "kicad_get_tools_in_category",
@@ -49,7 +49,7 @@
     "default": {
       "callableTools": 24,
       "catalogCharacters": 9374,
-      "catalogReductionVsExpertPct": 95.6,
+      "catalogReductionVsExpertPct": 95.7,
       "declaredTools": 24,
       "estimatedCatalogTokens": 2344,
       "forbiddenToolExposures": 0,
@@ -64,7 +64,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 12,
       "readOnlyCoveragePct": 48.0,
-      "toolReductionVsExpertPct": 93.6,
+      "toolReductionVsExpertPct": 93.7,
       "tools": [
         "dfm_run_manufacturer_check",
         "kicad_get_project_info",
@@ -93,11 +93,11 @@
       ]
     },
     "expert": {
-      "callableTools": 377,
-      "catalogCharacters": 214791,
+      "callableTools": 380,
+      "catalogCharacters": 217483,
       "catalogReductionVsExpertPct": 0.0,
-      "declaredTools": 377,
-      "estimatedCatalogTokens": 53698,
+      "declaredTools": 380,
+      "estimatedCatalogTokens": 54371,
       "forbiddenToolExposures": 8,
       "goldenCases": 65,
       "goldenCasesCovered": 55,
@@ -373,6 +373,7 @@
         "sch_add_no_connect",
         "sch_add_pin_labels",
         "sch_add_power_symbol",
+        "sch_add_sheet_pin",
         "sch_add_symbol",
         "sch_add_wire",
         "sch_align_to_grid",
@@ -403,7 +404,9 @@
         "sch_get_symbols",
         "sch_get_template_info",
         "sch_get_wires",
+        "sch_import_sheet_pins",
         "sch_instantiate_template",
+        "sch_list_sheet_pins",
         "sch_list_sheets",
         "sch_list_swappable_pins",
         "sch_list_templates",
@@ -494,7 +497,7 @@
     "release": {
       "callableTools": 24,
       "catalogCharacters": 7213,
-      "catalogReductionVsExpertPct": 96.6,
+      "catalogReductionVsExpertPct": 96.7,
       "declaredTools": 24,
       "estimatedCatalogTokens": 1804,
       "forbiddenToolExposures": 0,
@@ -509,7 +512,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 8,
       "readOnlyCoveragePct": 32.0,
-      "toolReductionVsExpertPct": 93.6,
+      "toolReductionVsExpertPct": 93.7,
       "tools": [
         "check_design_for_manufacture",
         "dfm_run_manufacturer_check",
@@ -540,7 +543,7 @@
     "review": {
       "callableTools": 24,
       "catalogCharacters": 9374,
-      "catalogReductionVsExpertPct": 95.6,
+      "catalogReductionVsExpertPct": 95.7,
       "declaredTools": 24,
       "estimatedCatalogTokens": 2344,
       "forbiddenToolExposures": 0,
@@ -555,7 +558,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 12,
       "readOnlyCoveragePct": 48.0,
-      "toolReductionVsExpertPct": 93.6,
+      "toolReductionVsExpertPct": 93.7,
       "tools": [
         "dfm_run_manufacturer_check",
         "kicad_get_project_info",

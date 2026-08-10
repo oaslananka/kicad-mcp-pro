@@ -135,6 +135,13 @@ class PowerSymbolInput(BaseModel):
     snap_to_grid: bool = True
 
 
+SheetPinType = Literal["input", "output", "bidirectional", "tri_state", "passive"]
+SheetEdge = Literal["left", "right", "top", "bottom"]
+
+SheetPinLabel = tuple[Annotated[str, Field(min_length=1, max_length=240)], SheetPinType]
+"""One ``(name, pin_type)`` pair, laid out by ``sch_import_sheet_pins``'s rules."""
+
+
 class CreateSheetInput(BaseModel):
     """Create a child schematic sheet on the active top-level schematic."""
 
@@ -143,6 +150,25 @@ class CreateSheetInput(BaseModel):
     x_mm: CoordMM
     y_mm: CoordMM
     snap_to_grid: bool = True
+    sheet_pins: list[SheetPinLabel] = Field(default_factory=list, max_length=256)
+
+
+class SheetPinInput(BaseModel):
+    """One hierarchical sheet pin placed at an explicit edge position."""
+
+    sheet: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=240)
+    pin_type: SheetPinType = "input"
+    edge: SheetEdge = "left"
+    position_along_edge: CoordMM = 2.54
+
+
+class ImportSheetPinsInput(BaseModel):
+    """Mirror a child sheet's hierarchical labels onto its sheet symbol."""
+
+    sheet: str | None = Field(default=None, max_length=120)
+    grow_sheet: bool = True
+    dry_run: bool = False
 
 
 class HierarchicalLabelInput(BaseModel):
@@ -180,6 +206,12 @@ class ModifyLabelInput(BaseModel):
 
 class GetSheetInfoInput(BaseModel):
     """Query parameters for a specific child sheet."""
+
+    sheet_name: str = Field(min_length=1, max_length=120)
+
+
+class ListSheetPinsInput(BaseModel):
+    """Select one child sheet symbol to list pins for."""
 
     sheet_name: str = Field(min_length=1, max_length=120)
 

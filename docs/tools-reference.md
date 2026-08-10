@@ -131,7 +131,7 @@ Built-in prompt helpers for the critic/fixer loop:
 
 Machine-maintained catalog. Refresh with `pnpm run docs:tools`.
 
-Total public tools: 377.
+Total public tools: 380.
 
 | Tool | Profile(s) | Read-Only | Destructive | Open-World | Idempotent | Headless | Requires KiCad Running | Summary |
 |---|---|---:|---:|---:|---:|---:|---:|---|
@@ -396,6 +396,7 @@ Total public tools: 377.
 | `sch_add_no_connect` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Add a no-connect marker, snapping it to the 1.27 mm / 50 mil grid by default. |
 | `sch_add_pin_labels` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Connect placed-symbol pins to nets with a short outward wire stub plus a |
 | `sch_add_power_symbol` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Add a power symbol, snapping its anchor to the 1.27 mm / 50 mil grid by default. |
+| `sch_add_sheet_pin` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Add one hierarchical sheet pin to a sheet symbol at an explicit position. |
 | `sch_add_symbol` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | yes | no | Add a schematic symbol at an absolute coordinate. |
 | `sch_add_wire` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Add a schematic wire, snapping endpoints to the 1.27 mm / 50 mil grid by default. |
 | `sch_align_to_grid` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Snap off-grid symbols, labels, wires, and junctions onto the drawing grid. |
@@ -426,7 +427,9 @@ Total public tools: 377.
 | `sch_get_symbols` | agent_full, builder, critic, default, expert, full, high_speed, power, review, schematic, schematic_authoring, schematic_only, simulation | yes | no | no | yes | no | no | List all schematic symbols, optionally from a child sheet. This KiCad MCP Pro tool supports production EDA automation... |
 | `sch_get_template_info` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | yes | no | no | yes | yes | no | Return full details for a subcircuit template. |
 | `sch_get_wires` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | yes | no | no | yes | no | no | List all wires in the schematic, optionally from a child sheet. |
+| `sch_import_sheet_pins` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | yes | no | no | no | Mirror each child sheet's hierarchical labels as pins on its sheet symbol. |
 | `sch_instantiate_template` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Instantiate a subcircuit template — returns a structured action plan. |
+| `sch_list_sheet_pins` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | no | no | List the hierarchical sheet pins of one child sheet symbol. |
 | `sch_list_sheets` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | no | no | List child sheets from the active top-level schematic. This KiCad MCP Pro tool supports production EDA automation wor... |
 | `sch_list_swappable_pins` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | List candidate pins and units that can participate in a swap workflow. |
 | `sch_list_templates` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | List all available reference subcircuit templates. |
@@ -776,6 +779,7 @@ Total public tools: 377.
 - `sch_add_no_connect`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_add_pin_labels`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_add_power_symbol`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
+- `sch_add_sheet_pin`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_add_symbol`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `sch_add_wire`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_align_to_grid`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
@@ -806,7 +810,9 @@ Total public tools: 377.
 - `sch_get_symbols`: profiles=agent_full, builder, critic, default, expert, full, high_speed, power, review, schematic, schematic_authoring, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=no; requiresKiCadRunning=no.
 - `sch_get_template_info`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
 - `sch_get_wires`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=no; requiresKiCadRunning=no.
+- `sch_import_sheet_pins`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=yes; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_instantiate_template`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
+- `sch_list_sheet_pins`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_list_sheets`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_list_swappable_pins`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `sch_list_templates`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.

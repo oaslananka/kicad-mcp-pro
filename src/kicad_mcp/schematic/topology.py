@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from .sheet_pins import edge_for_rotation, parse_sheet_blocks
+
 
 class SheetManagerLike(Protocol):
     """Sheet-manager surface consumed by topology inspection."""
@@ -34,6 +36,7 @@ type WithDiagnostics = Callable[[str, Path], str]
 type BuildConnectivityGroups = Callable[[Path], list[dict[str, Any]]]
 type IterChildSheetPaths = Callable[[Path], list[tuple[str, Path]]]
 type ParseSchematic = Callable[[Path], Mapping[str, Any]]
+type ReadText = Callable[[Path], str]
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,7 @@ class SchematicTopologyService:
     iter_child_sheet_paths: IterChildSheetPaths
     parse_schematic: ParseSchematic
     warn: Warn
+    read_text: ReadText
 
     def list_sheets(self, schematic_file: Path) -> str:
         """List direct child sheets from the active top-level schematic."""
@@ -175,4 +179,40 @@ class SchematicTopologyService:
         if child_matches:
             lines.append("Child sheet matches:")
             lines.extend(child_matches)
+        return "\n".join(lines)
+
+    def list_sheet_pins(self, schematic_file: Path, sheet_name: str) -> str:
+        """List the hierarchical sheet pins of one child sheet symbol."""
+        try:
+            text = self.read_text(schematic_file)
+        except OSError as exc:
+            self.warn(
+                "schematic_list_sheet_pins_failed",
+                schematic_file=str(schematic_file),
+                sheet_name=sheet_name,
+                error=str(exc),
+            )
+            return f"Could not read '{schematic_file.name}': {exc}"
+
+        block = next(
+            (candidate for candidate in parse_sheet_blocks(text) if candidate.name == sheet_name),
+            None,
+        )
+        if block is None:
+            return f"Sheet '{sheet_name}' was not found."
+        if not block.pins:
+            return (
+                f"Sheet '{sheet_name}' has no sheet pins. "
+                "Run sch_import_sheet_pins to derive them from its hierarchical labels."
+            )
+
+        lines = [f"Sheet '{sheet_name}' has {len(block.pins)} pins:"]
+        for pin in block.pins:
+            edge = edge_for_rotation(pin.rotation)
+            kind = f"{pin.pin_type}, {edge}" if edge else pin.pin_type
+            lines.append(f"- {pin.name} ({kind}) @ ({pin.x_mm}, {pin.y_mm}) mm")
+        lines.append(
+            f"Sheet symbol at ({block.origin[0]}, {block.origin[1]}) mm, "
+            f"{block.size[0]} x {block.size[1]} mm."
+        )
         return "\n".join(lines)

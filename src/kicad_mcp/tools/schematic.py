@@ -5783,6 +5783,7 @@ def _register_inspection_and_analysis(mcp: FastMCP) -> None:
         iter_child_sheet_paths=_iter_child_sheet_paths,
         parse_schematic=parse_schematic_file,
         warn=logger.warning,
+        read_text=lambda path: path.read_text(encoding="utf-8"),
     )
     schematic_topology.register(
         mcp,
@@ -5903,6 +5904,9 @@ def _register_authoring(mcp: FastMCP) -> None:
         transactional_write=transactional_write,
         reload_schematic=_reload_schematic,
         warn=logger.warning,
+        read_text=lambda path: path.read_text(encoding="utf-8"),
+        grid_mm=lambda: SCHEMATIC_GRID_MM,
+        new_uuid=new_uuid,
     )
     schematic_hierarchy_authoring.register(
         mcp,

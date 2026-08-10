@@ -51,6 +51,7 @@ def _service(
         iter_child_sheet_paths=lambda _path: child_paths or [],
         parse_schematic=lambda path: (parsed or {})[path],
         warn=lambda event, **context: warning_records.append((event, context)),
+        read_text=lambda _path: (_ for _ in ()).throw(AssertionError("must not read text")),
     )
 
 
