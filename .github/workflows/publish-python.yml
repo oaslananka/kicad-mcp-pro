@@ -57,7 +57,7 @@ jobs:
           (cd dist && sha256sum --check ../release-evidence/SHA256SUMS.txt)
       - name: Attest Python distributions
         id: attest-python
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-checksums: release-evidence/SHA256SUMS.txt
           sbom-path: release-evidence/sbom.cdx.json
@@ -138,7 +138,7 @@ jobs:
           else
             echo "already_published=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
         if: steps.check-published.outputs.already_published != 'true'
         with:
           packages-dir: dist
@@ -206,7 +206,7 @@ jobs:
           else
             echo "already_published=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
         if: steps.check-published.outputs.already_published != 'true'
         with:
           packages-dir: dist
