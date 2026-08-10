@@ -326,6 +326,80 @@ def test_dependabot_covers_repository_dependency_ecosystems_and_lockfiles() -> N
         assert lockfile in policy
 
 
+def test_dependabot_groups_routine_updates_without_grouping_major_versions() -> None:
+    config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+    updates = {entry["package-ecosystem"]: entry for entry in config["updates"]}
+
+    expected_version_groups = {
+        "uv": ("python-minor-patch", {"minor", "patch"}),
+        "npm": ("npm-minor-patch", {"minor", "patch"}),
+        "github-actions": ("actions-minor-patch", {"minor", "patch"}),
+        "docker": ("containers-patch", {"patch"}),
+        "docker-compose": ("compose-minor-patch", {"minor", "patch"}),
+        "cargo": ("cargo-minor-patch", {"minor", "patch"}),
+    }
+    for ecosystem, (group_name, update_types) in expected_version_groups.items():
+        group = updates[ecosystem]["groups"][group_name]
+        assert group["applies-to"] == "version-updates"
+        assert group["patterns"] == ["*"]
+        assert set(group["update-types"]) == update_types
+        assert "major" not in group["update-types"]
+
+    for ecosystem, group_name in {
+        "uv": "python-security",
+        "npm": "npm-security",
+        "cargo": "cargo-security",
+    }.items():
+        group = updates[ecosystem]["groups"][group_name]
+        assert group["applies-to"] == "security-updates"
+        assert group["patterns"] == ["*"]
+
+
+def test_mergify_only_autoqueues_safe_grouped_dependabot_updates() -> None:
+    config = yaml.safe_load((ROOT / ".mergify.yml").read_text(encoding="utf-8"))
+
+    assert "merge_protections" not in config
+    assert "merge_protections_settings" not in config
+    assert config["merge_queue"] == {"mode": "serial", "max_parallel_checks": 1}
+
+    assert len(config["queue_rules"]) == 1
+    queue = config["queue_rules"][0]
+    assert queue["name"] == "safe-dependencies"
+    assert queue["batch_size"] == 1
+    assert queue["merge_method"] == "squash"
+    assert queue["branch_protection_injection_mode"] == "queue"
+    assert queue["max_checks_retries"] == 0
+
+    required_conditions = {
+        "base = main",
+        "author = dependabot[bot]",
+        "-draft",
+        "dependabot-update-type != version-update:semver-major",
+    }
+    assert required_conditions <= set(queue["queue_conditions"])
+
+    assert len(config["pull_request_rules"]) == 1
+    rule = config["pull_request_rules"][0]
+    assert rule["actions"] == {"queue": {"name": "safe-dependencies"}}
+    assert required_conditions <= set(rule["conditions"])
+
+    head_conditions = [
+        condition for condition in rule["conditions"] if condition.startswith("head ~= ")
+    ]
+    assert len(head_conditions) == 1
+    head_condition = head_conditions[0]
+    for group_name in (
+        "python-minor-patch",
+        "npm-minor-patch",
+        "actions-minor-patch",
+        "containers-patch",
+        "compose-minor-patch",
+        "cargo-minor-patch",
+    ):
+        assert group_name in head_condition
+    assert "security" not in head_condition
+
+
 def test_release_preflight_rejects_missing_tauri_lockfile(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

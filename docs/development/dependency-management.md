@@ -21,8 +21,19 @@ part of the active update path, so the repository does not keep a second bot
 configuration that could create duplicate update pull requests.
 
 Dependabot runs weekly on Monday using the repository's Europe/Istanbul maintenance
-window. Its pull requests are ordinary protected pull requests: required CI and the
+window. Routine minor/patch version updates are grouped per ecosystem to reduce PR and
+CI churn; major updates remain individual pull requests. Docker version automation is
+more conservative: only patch updates are grouped, leaving runtime-sensitive image
+minor/major changes for explicit maintainer review. Security updates use separate
+per-ecosystem groups and are never mixed with routine version-update groups.
+
+Dependabot pull requests are ordinary protected pull requests: required CI and the
 `main` ruleset still apply, and no dependency bot is allowed to bypass those gates.
+Mergify provides a serial, one-PR-at-a-time queue for the routine grouped version
+updates only. Its queue injects the repository's GitHub protection/ruleset conditions,
+uses squash merges, and does not retry failed checks automatically. Human-authored,
+release, security, major, and otherwise ungrouped dependency pull requests remain a
+maintainer decision.
 
 ## Lockfile maintenance
 
@@ -40,11 +51,12 @@ installs and therefore rejects stale or unexpectedly regenerated lockfiles.
 
 ## Update process
 
-1. Dependabot opens a focused dependency pull request from the default branch.
+1. Dependabot opens either a routine ecosystem group or an individual higher-risk dependency pull request from the default branch.
 2. Review the dependency source, package name, version change, release notes, and license impact.
 3. Run the required CI, security checks, tests, and relevant package builds.
 4. Confirm the matching lockfile changed only as expected.
-5. Merge only after required checks pass; major/runtime-sensitive updates receive maintainer review.
+5. Routine grouped minor/patch version updates may enter the Mergify queue automatically; the GitHub ruleset and required checks remain mandatory.
+6. Security, major, runtime-sensitive, release, human-authored, and ungrouped updates require an explicit maintainer merge decision.
 
 ## Vulnerability monitoring
 

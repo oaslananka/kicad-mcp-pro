@@ -12,6 +12,18 @@ updates:
     open-pull-requests-limit: 4
     commit-message:
       prefix: "chore(deps)"
+    groups:
+      python-minor-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      python-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
 
   - package-ecosystem: "npm"
     directories:
@@ -30,6 +42,18 @@ updates:
     open-pull-requests-limit: 4
     commit-message:
       prefix: "chore(deps)"
+    groups:
+      npm-minor-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      npm-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -44,6 +68,14 @@ updates:
     open-pull-requests-limit: 4
     commit-message:
       prefix: "chore(deps)"
+    groups:
+      actions-minor-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "docker"
     directory: "/"
@@ -58,6 +90,13 @@ updates:
     open-pull-requests-limit: 4
     commit-message:
       prefix: "chore(deps)"
+    groups:
+      containers-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
 
   - package-ecosystem: "docker-compose"
     directory: "/"
@@ -72,6 +111,14 @@ updates:
     open-pull-requests-limit: 4
     commit-message:
       prefix: "chore(deps)"
+    groups:
+      compose-minor-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "cargo"
     directory: "/src-tauri"
@@ -85,3 +132,15 @@ updates:
     open-pull-requests-limit: 4
     commit-message:
       prefix: "chore(deps)"
+    groups:
+      cargo-minor-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      cargo-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
