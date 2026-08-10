@@ -20,63 +20,47 @@ class FakeCapabilities:
     supports_dxf: bool = True
 
 
-class FakeEnsureOutputDir:
-    def __init__(self, outputs: dict[str, Path]) -> None:
-        self.outputs = outputs
-        self.calls: list[str] = []
-
-    def __call__(self, subdir: str) -> Path:
-        self.calls.append(subdir)
-        return self.outputs[subdir]
-
-
-class FakeCli:
-    def __init__(self, result: tuple[int, str, str] = (0, "", "")) -> None:
-        self.result = result
-        self.calls: list[list[list[str]]] = []
-
-    def __call__(self, variants: list[list[str]]) -> tuple[int, str, str]:
-        self.calls.append(variants)
-        return self.result
-
-
-class FakeFormatter:
-    def __init__(self) -> None:
-        self.calls: list[tuple[list[Path], str]] = []
-
-    def __call__(self, files: list[Path], heading: str) -> str:
-        self.calls.append((files, heading))
-        return f"formatted::{heading}::{','.join(path.name for path in files)}"
-
-
 def _service(
     tmp_path: Path,
     *,
     capabilities: FakeCapabilities | None = None,
     variant_args: list[str] | None = None,
-    cli: FakeCli | None = None,
+    cli_result: tuple[int, str, str] = (0, "", ""),
 ):
     service_type = _service_type()
-    svg_dir = tmp_path / "svg"
-    dxf_dir = tmp_path / "dxf"
-    svg_dir.mkdir(exist_ok=True)
-    dxf_dir.mkdir(exist_ok=True)
-    ensure = FakeEnsureOutputDir({"svg": svg_dir, "dxf": dxf_dir})
-    active_cli = cli or FakeCli()
-    formatter = FakeFormatter()
+    output_dirs = {"svg": tmp_path / "svg", "dxf": tmp_path / "dxf"}
+    for directory in output_dirs.values():
+        directory.mkdir(exist_ok=True)
+
+    ensure_calls: list[str] = []
+    cli_calls: list[list[list[str]]] = []
+    formatter_calls: list[tuple[list[Path], str]] = []
+
+    def ensure_output_dir(subdir: str) -> Path:
+        ensure_calls.append(subdir)
+        return output_dirs[subdir]
+
+    def run_cli_variants(variants: list[list[str]]) -> tuple[int, str, str]:
+        cli_calls.append(variants)
+        return cli_result
+
+    def format_file_list(files: list[Path], heading: str) -> str:
+        formatter_calls.append((files, heading))
+        return f"formatted::{heading}::{','.join(path.name for path in files)}"
+
     service = service_type(
         get_pcb_file=lambda: tmp_path / "demo.kicad_pcb",
         get_capabilities=lambda: capabilities or FakeCapabilities(),
-        ensure_output_dir=ensure,
+        ensure_output_dir=ensure_output_dir,
         active_variant_args=lambda: list(variant_args or []),
-        run_cli_variants=active_cli,
-        format_file_list=formatter,
+        run_cli_variants=run_cli_variants,
+        format_file_list=format_file_list,
     )
-    return service, ensure, active_cli, formatter
+    return service, ensure_calls, cli_calls, formatter_calls
 
 
 def test_svg_preserves_multi_mode_variant_argv_and_sorted_files(tmp_path: Path) -> None:
-    service, ensure, cli, formatter = _service(
+    service, ensure_calls, cli_calls, formatter_calls = _service(
         tmp_path,
         variant_args=["--variant", "assembly-a"],
     )
@@ -86,8 +70,8 @@ def test_svg_preserves_multi_mode_variant_argv_and_sorted_files(tmp_path: Path) 
 
     result = service.export_svg("Edge.Cuts")
 
-    assert ensure.calls == ["svg"]
-    assert cli.calls == [
+    assert ensure_calls == ["svg"]
+    assert cli_calls == [
         [
             [
                 "pcb",
@@ -104,14 +88,14 @@ def test_svg_preserves_multi_mode_variant_argv_and_sorted_files(tmp_path: Path) 
             ]
         ]
     ]
-    assert formatter.calls == [
+    assert formatter_calls == [
         ([svg_dir / "a.svg", svg_dir / "b.svg"], f"SVG export completed in {svg_dir}:")
     ]
     assert result == f"formatted::SVG export completed in {svg_dir}:::a.svg,b.svg"
 
 
 def test_dxf_preserves_variant_and_both_cli_fallbacks(tmp_path: Path) -> None:
-    service, ensure, cli, formatter = _service(
+    service, ensure_calls, cli_calls, formatter_calls = _service(
         tmp_path,
         variant_args=["--variant", "assembly-b"],
     )
@@ -122,8 +106,8 @@ def test_dxf_preserves_variant_and_both_cli_fallbacks(tmp_path: Path) -> None:
     result = service.export_dxf("B.Cu")
 
     pcb = str(tmp_path / "demo.kicad_pcb")
-    assert ensure.calls == ["dxf"]
-    assert cli.calls == [
+    assert ensure_calls == ["dxf"]
+    assert cli_calls == [
         [
             [
                 "pcb",
@@ -152,30 +136,28 @@ def test_dxf_preserves_variant_and_both_cli_fallbacks(tmp_path: Path) -> None:
             ],
         ]
     ]
-    assert formatter.calls == [
+    assert formatter_calls == [
         ([dxf_dir / "a.dxf", dxf_dir / "z.dxf"], f"DXF export completed in {dxf_dir}:")
     ]
     assert result == f"formatted::DXF export completed in {dxf_dir}:::a.dxf,z.dxf"
 
 
 def test_vector_exports_preserve_unsupported_capability_messages(tmp_path: Path) -> None:
-    service, ensure, cli, formatter = _service(
+    service, ensure_calls, cli_calls, formatter_calls = _service(
         tmp_path,
         capabilities=FakeCapabilities(supports_svg=False, supports_dxf=False),
     )
 
     assert service.export_svg() == "SVG export is not supported by the detected KiCad CLI."
     assert service.export_dxf() == "DXF export is not supported by the detected KiCad CLI."
-    assert ensure.calls == []
-    assert cli.calls == []
-    assert formatter.calls == []
+    assert ensure_calls == []
+    assert cli_calls == []
+    assert formatter_calls == []
 
 
 def test_vector_exports_preserve_failure_text_and_ignore_stdout(tmp_path: Path) -> None:
-    svg_cli = FakeCli((2, "stdout detail", "stderr detail"))
-    svg_service, _ensure, _cli, _formatter = _service(tmp_path, cli=svg_cli)
+    svg_service, *_ = _service(tmp_path, cli_result=(2, "stdout detail", "stderr detail"))
     assert svg_service.export_svg() == "SVG export failed: stderr detail"
 
-    dxf_cli = FakeCli((2, "stdout detail", ""))
-    dxf_service, _ensure, _cli, _formatter = _service(tmp_path, cli=dxf_cli)
+    dxf_service, *_ = _service(tmp_path, cli_result=(2, "stdout detail", ""))
     assert dxf_service.export_dxf() == "DXF export failed: unknown error"

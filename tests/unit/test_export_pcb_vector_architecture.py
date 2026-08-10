@@ -1,31 +1,8 @@
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
 from scripts import check_architecture_boundaries as boundaries
-
-
-def _imports(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    imports: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imports.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            imports.add(node.module or "")
-    return imports
-
-
-def _function_span(path: Path, name: str) -> int:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    matches = [
-        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name
-    ]
-    assert len(matches) == 1
-    node = matches[0]
-    assert node.end_lineno is not None
-    return node.end_lineno - node.lineno + 1
 
 
 def test_architecture_checker_tracks_export_pcb_vector_modules() -> None:
@@ -35,16 +12,17 @@ def test_architecture_checker_tracks_export_pcb_vector_modules() -> None:
 
 
 def test_export_pcb_vector_adapter_does_not_import_monolith() -> None:
-    adapter = boundaries.SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_vector.py"
-    assert adapter.exists()
-    assert "kicad_mcp.tools.export" not in _imports(adapter)
+    module_name = "kicad_mcp.tools.export_pcb_vector"
+    adapter = boundaries.DOMAIN_MODULES[module_name]
+    assert "kicad_mcp.tools.export" not in boundaries._imports_for(module_name, adapter)
 
 
 def test_export_pcb_vector_register_stays_below_100_lines() -> None:
-    adapter = boundaries.SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_vector.py"
-    assert adapter.exists()
-    assert _function_span(adapter, "register") <= 100
-    assert boundaries.REGISTER_LINE_LIMITS["kicad_mcp.tools.export_pcb_vector"] == 100
+    module_name = "kicad_mcp.tools.export_pcb_vector"
+    span = boundaries._function_span(boundaries.DOMAIN_MODULES[module_name], "register")
+    assert span is not None
+    assert span <= 100
+    assert boundaries.REGISTER_LINE_LIMITS[module_name] == 100
 
 
 def test_export_composition_root_no_longer_owns_pcb_vector_tools() -> None:
@@ -53,9 +31,9 @@ def test_export_composition_root_no_longer_owns_pcb_vector_tools() -> None:
     register_node = next(
         node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "register"
     )
-    nested = {
+    nested_names = {
         node.name
         for node in register_node.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
-    assert nested.isdisjoint({"_export_svg", "export_svg", "_export_dxf", "export_dxf"})
+    assert nested_names.isdisjoint({"_export_svg", "export_svg", "_export_dxf", "export_dxf"})
