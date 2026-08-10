@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -8,6 +9,30 @@ from typing import Any
 
 from kicad_mcp.schematic.hierarchy_authoring import SchematicHierarchyAuthoringService
 from kicad_mcp.schematic.sheet_pins import parse_sheet_blocks
+
+
+def _fake_wire_block(x1: float, y1: float, x2: float, y2: float) -> str:
+    return f"\t(wire (pts (xy {x1} {y1}) (xy {x2} {y2})))"
+
+
+def _fake_label_block(
+    name, x, y, rotation=0, global_label=False, shape=None, kind=None, justify=None
+):  # type: ignore[no-untyped-def]
+    return f'\t({kind or "label"} "{name}" (at {x} {y} {rotation}) (justify {justify}))'
+
+
+_FAKE_WIRE_RE = re.compile(
+    r"\(wire\s*\(pts\s*\(xy\s+(-?[\d.]+)\s+(-?[\d.]+)\)\s*\(xy\s+(-?[\d.]+)\s+(-?[\d.]+)\)\)"
+)
+
+
+def _fake_parse_wire_endpoints(content: str) -> tuple[tuple[float, float], ...]:
+    """Mirror the composition root's ``_wire_endpoints`` over ``_fake_wire_block``'s text."""
+    points: list[tuple[float, float]] = []
+    for match in _FAKE_WIRE_RE.finditer(content):
+        points.append((float(match.group(1)), float(match.group(2))))
+        points.append((float(match.group(3)), float(match.group(4))))
+    return tuple(points)
 
 
 class _ChildSchematic:
@@ -127,6 +152,8 @@ def _service(
             read_text=lambda path: path.read_text(encoding="utf-8"),
             grid_mm=lambda: 1.27,
             new_uuid=lambda: "uuid-fake",
+            wire_block=_fake_wire_block,
+            parse_wire_endpoints=_fake_parse_wire_endpoints,
         ),
         root_schematic,
         child_schematic,
@@ -320,6 +347,16 @@ class _TextStore:
         return updated
 
 
+def _fake_append_before_sheet_instances(current: str, block: str) -> str:
+    """Mirror the composition root's fallback: no top-level (sheet_instances) marker
+    ever appears in these fixtures, so the block goes in just before the final paren.
+    """
+    marker = "\t(sheet_instances"
+    if marker in current:
+        return current.replace(marker, f"{block}\n{marker}", 1)
+    return current.rstrip().rstrip(")") + f"\n{block}\n)\n"
+
+
 def _pin_service(store: _TextStore, root: Path) -> SchematicHierarchyAuthoringService:
     counter = iter(f"uuid-{index}" for index in range(1000))
     return SchematicHierarchyAuthoringService(
@@ -331,14 +368,16 @@ def _pin_service(store: _TextStore, root: Path) -> SchematicHierarchyAuthoringSe
         snap_notice=lambda before, after: "",
         project_name=lambda: "main",
         default_sheet_size=(30.48, 20.32),
-        label_block=lambda *args, **kwargs: "",
-        append_before_sheet_instances=lambda current, block: current,
+        label_block=_fake_label_block,
+        append_before_sheet_instances=_fake_append_before_sheet_instances,
         transactional_write=store.transactional_write,
         reload_schematic=lambda: "reloaded",
         warn=lambda event, **fields: None,
         read_text=store.read,
         grid_mm=lambda: 1.27,
         new_uuid=lambda: next(counter),
+        wire_block=_fake_wire_block,
+        parse_wire_endpoints=_fake_parse_wire_endpoints,
     )
 
 
@@ -906,3 +945,261 @@ def test_create_sheet_surfaces_the_heuristic_width_note(tmp_path: Path) -> None:
     )
 
     assert "heuristic" in report
+
+
+# ---------------------------------------------------------------------------
+# wire_sheet_pins / spread_sheets
+# ---------------------------------------------------------------------------
+
+ROOT_TEXT_TWO_SHEETS_WITH_PINS = """(kicad_sch
+\t(paper "A4")
+\t(sheet
+\t\t(at 50.0 30.0)
+\t\t(size 20.0 20.0)
+\t\t(property "Sheetname" "01_power"
+\t\t\t(at 50.0 29.0 0)
+\t\t)
+\t\t(property "Sheetfile" "power.kicad_sch"
+\t\t\t(at 50.0 51.0 0)
+\t\t)
+\t\t(pin "VBUS" output
+\t\t\t(at 70.0 35.0 0)
+\t\t\t(effects
+\t\t\t\t(font
+\t\t\t\t\t(size 1.27 1.27)
+\t\t\t\t)
+\t\t\t\t(justify left)
+\t\t\t)
+\t\t\t(uuid "pin-power-uuid")
+\t\t)
+\t\t(instances
+\t\t\t(project "main" (path "/1" (page "2")))
+\t\t)
+\t)
+\t(sheet
+\t\t(at 80.01 30.48)
+\t\t(size 30.48 20.32)
+\t\t(property "Sheetname" "02_mcu"
+\t\t\t(at 80.01 29.77 0)
+\t\t)
+\t\t(property "Sheetfile" "mcu.kicad_sch"
+\t\t\t(at 80.01 51.38 0)
+\t\t)
+\t\t(pin "VBUS" input
+\t\t\t(at 80.01 45.0 180)
+\t\t\t(effects
+\t\t\t\t(font
+\t\t\t\t\t(size 1.27 1.27)
+\t\t\t\t)
+\t\t\t\t(justify right)
+\t\t\t)
+\t\t\t(uuid "pin-mcu-uuid")
+\t\t)
+\t\t(instances
+\t\t\t(project "main" (path "/1" (page "3")))
+\t\t)
+\t)
+)
+"""
+"""Two sheets, each with one pin named ``VBUS`` -- a matching pair. The two
+pins sit on different rows (y=35 vs y=45) so their local labels never overlap
+and the collision check stays quiet."""
+
+
+def test_wire_sheet_pins_adds_one_stub_and_one_label_per_pin(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_TWO_SHEETS_WITH_PINS})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.wire_sheet_pins(None, 2.54, False)
+
+    written = store.files["root.kicad_sch"]
+    assert written.count("(wire ") == 2
+    assert written.count("(label ") == 2
+    assert '(label "VBUS"' in written
+    assert len(store.writes) == 1
+    assert "2" in report
+
+
+def test_wire_sheet_pins_is_a_no_op_on_the_second_run(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_TWO_SHEETS_WITH_PINS})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+    service.wire_sheet_pins(None, 2.54, False)
+    after_first = store.files["root.kicad_sch"]
+
+    report = service.wire_sheet_pins(None, 2.54, False)
+
+    assert len(store.writes) == 1
+    assert store.files["root.kicad_sch"] == after_first
+    assert "already" in report.casefold()
+
+
+def test_wire_sheet_pins_dry_run_writes_nothing(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_TWO_SHEETS_WITH_PINS})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.wire_sheet_pins(None, 2.54, True)
+
+    assert store.writes == []
+    assert "(wire " not in store.files["root.kicad_sch"]
+    assert "dry run" in report.casefold()
+
+
+ROOT_TEXT_ONE_SHEET_ONE_PIN = """(kicad_sch
+\t(paper "A4")
+\t(sheet
+\t\t(at 80.01 30.48)
+\t\t(size 30.48 20.32)
+\t\t(property "Sheetname" "02_mcu"
+\t\t\t(at 80.01 29.77 0)
+\t\t)
+\t\t(property "Sheetfile" "child.kicad_sch"
+\t\t\t(at 80.01 51.38 0)
+\t\t)
+\t\t(pin "LONELY" input
+\t\t\t(at 80.01 35.0 180)
+\t\t\t(effects
+\t\t\t\t(font
+\t\t\t\t\t(size 1.27 1.27)
+\t\t\t\t)
+\t\t\t\t(justify right)
+\t\t\t)
+\t\t\t(uuid "lonely-uuid")
+\t\t)
+\t\t(instances
+\t\t\t(project "main" (path "/1" (page "2")))
+\t\t)
+\t)
+)
+"""
+"""One sheet with one pin ("LONELY") that has no matching pin anywhere else in
+the document -- its stub-and-label would connect to nothing."""
+
+
+def test_wire_sheet_pins_reports_an_orphan_name(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_ONE_SHEET_ONE_PIN})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.wire_sheet_pins(None, 2.54, False)
+
+    assert "LONELY" in report
+
+
+ROOT_TEXT_SPREAD_TWO_COLUMNS = """(kicad_sch
+\t(paper "A4")
+\t(sheet
+\t\t(at 0.0 0.0)
+\t\t(size 20.0 20.0)
+\t\t(property "Sheetname" "01_left"
+\t\t\t(at 0.0 -1.0 0)
+\t\t)
+\t\t(property "Sheetfile" "left.kicad_sch"
+\t\t\t(at 0.0 21.0 0)
+\t\t)
+\t\t(instances
+\t\t\t(project "main" (path "/1" (page "2")))
+\t\t)
+\t)
+\t(sheet
+\t\t(at 25.0 0.0)
+\t\t(size 20.0 20.0)
+\t\t(property "Sheetname" "02_right"
+\t\t\t(at 25.0 -1.0 0)
+\t\t)
+\t\t(property "Sheetfile" "right.kicad_sch"
+\t\t\t(at 25.0 21.0 0)
+\t\t)
+\t\t(pin "OUT" output
+\t\t\t(at 45.0 10.0 0)
+\t\t\t(effects
+\t\t\t\t(font
+\t\t\t\t\t(size 1.27 1.27)
+\t\t\t\t)
+\t\t\t\t(justify left)
+\t\t\t)
+\t\t\t(uuid "pin-out-uuid")
+\t\t)
+\t\t(instances
+\t\t\t(project "main" (path "/1" (page "3")))
+\t\t)
+\t)
+)
+"""
+"""Two columns 5 mm apart (20 -> 25). A ``min_gap_mm`` bigger than that forces
+column 2 (with its one pin) to move right by a computed, grid-snapped ``dx``.
+Column 1 has no pin, so it is never in the shift map and its ``(at 0.0 0.0)``
+must survive untouched."""
+
+_SPREAD_PIN_EFFECTS_AND_UUID = (
+    "\t\t\t(effects\n"
+    "\t\t\t\t(font\n"
+    "\t\t\t\t\t(size 1.27 1.27)\n"
+    "\t\t\t\t)\n"
+    "\t\t\t\t(justify left)\n"
+    "\t\t\t)\n"
+    '\t\t\t(uuid "pin-out-uuid")'
+)
+
+
+def test_spread_sheets_rewrites_only_at_nodes(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_SPREAD_TWO_COLUMNS})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    service.spread_sheets(10.0, 2.54, False)
+
+    written = store.files["root.kicad_sch"]
+    parsed = {block.name: block for block in parse_sheet_blocks(written)}
+
+    left = parsed["01_left"]
+    right = parsed["02_right"]
+    assert left.origin == (0.0, 0.0)
+
+    dx = right.origin[0] - 25.0
+    assert dx > 0
+    assert right.pins[0].x_mm - 45.0 == dx
+    assert right.pins[0].y_mm == 10.0
+    assert right.pins[0].rotation == 0
+
+    # Everything else about the pin -- its (effects ...) and (uuid ...) -- is
+    # byte-identical to the source text; only the (at ...) node was rewritten.
+    assert _SPREAD_PIN_EFFECTS_AND_UUID in written
+
+
+def test_spread_sheets_refuses_when_a_pin_is_already_wired(tmp_path: Path) -> None:
+    wired_text = ROOT_TEXT_SPREAD_TWO_COLUMNS.replace(
+        "\t(sheet\n\t\t(at 0.0 0.0)",
+        "\t(wire\n\t\t(pts (xy 45.0 10.0) (xy 48.0 10.0))\n\t\t(stroke (width 0) (type solid))\n"
+        '\t\t(uuid "existing-wire-uuid")\n\t)\n\t(sheet\n\t\t(at 0.0 0.0)',
+    )
+    store = _TextStore({"root.kicad_sch": wired_text})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.spread_sheets(10.0, 2.54, False)
+
+    assert store.writes == []
+    assert "02_right" in report
+
+
+def test_spread_sheets_refuses_to_push_past_the_page_edge(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_SPREAD_TWO_COLUMNS})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.spread_sheets(1000.0, 2.54, False)
+
+    assert store.writes == []
+    assert "usable" in report.casefold() or "past" in report.casefold()
+
+
+def test_both_methods_write_once_for_all_sheets(tmp_path: Path) -> None:
+    wiring_store = _TextStore({"root.kicad_sch": ROOT_TEXT_TWO_SHEETS_WITH_PINS})
+    wiring_service = _pin_service(wiring_store, tmp_path / "root.kicad_sch")
+
+    wiring_service.wire_sheet_pins(None, 2.54, False)
+
+    assert len(wiring_store.writes) == 1
+
+    spread_store = _TextStore({"root.kicad_sch": ROOT_TEXT_SPREAD_TWO_COLUMNS})
+    spread_service = _pin_service(spread_store, tmp_path / "root.kicad_sch")
+
+    spread_service.spread_sheets(10.0, 2.54, False)
+
+    assert len(spread_store.writes) == 1

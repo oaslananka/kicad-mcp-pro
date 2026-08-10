@@ -2305,6 +2305,15 @@ def _extract_wires(content: str) -> list[dict[str, Any]]:
     return wires
 
 
+def _wire_endpoints(content: str) -> tuple[tuple[float, float], ...]:
+    """Return both endpoints of every wire in the document."""
+    points: list[tuple[float, float]] = []
+    for wire in _extract_wires(content):
+        points.append((wire["x1"], wire["y1"]))
+        points.append((wire["x2"], wire["y2"]))
+    return tuple(points)
+
+
 def _wire_segments_from_content(content: str) -> list[tuple[float, float, float, float]]:
     return [
         (float(wire["x1"]), float(wire["y1"]), float(wire["x2"]), float(wire["y2"]))
@@ -5907,6 +5916,8 @@ def _register_authoring(mcp: FastMCP) -> None:
         read_text=lambda path: path.read_text(encoding="utf-8"),
         grid_mm=lambda: SCHEMATIC_GRID_MM,
         new_uuid=new_uuid,
+        wire_block=wire_block,
+        parse_wire_endpoints=_wire_endpoints,
     )
     schematic_hierarchy_authoring.register(
         mcp,
