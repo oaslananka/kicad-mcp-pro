@@ -55,7 +55,7 @@ jobs:
           fi
           echo "tarball=../../release-assets/protocol-schemas/$(basename "$tarball_path")" >> "$GITHUB_OUTPUT"
       - name: Attest tarball
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-checksums: release-assets/protocol-schemas/SHA256SUMS.txt
           sbom-path: release-assets/protocol-schemas/sbom.cdx.json
