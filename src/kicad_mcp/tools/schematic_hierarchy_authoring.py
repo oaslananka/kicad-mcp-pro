@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Annotated
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
 from ..models.schematic import (
     CreateSheetInput,
@@ -16,6 +18,14 @@ from ..models.schematic import (
     SheetPinInput,
 )
 from ..schematic.hierarchy_authoring import SchematicHierarchyAuthoringService
+
+_SheetPinPair = Annotated[list[str], Field(min_length=2, max_length=2)]
+"""One ``[name, pin_type]`` pair as a fixed-length array, not a tuple.
+
+A ``tuple[str, str]`` annotation makes FastMCP emit an inner array schema with
+``prefixItems`` and no ``items``, which stricter MCP hosts reject; the adapter
+normalizes back to tuples before the service sees them.
+"""
 
 
 @dataclass(frozen=True)
@@ -36,20 +46,21 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
         x_mm: float,
         y_mm: float,
         snap_to_grid: bool = True,
-        sheet_pins: list[tuple[str, str]] | None = None,
+        sheet_pins: list[_SheetPinPair] | None = None,
     ) -> str:
         """Create a child schematic sheet and add it to the active top-level schematic.
 
-        Optional ``sheet_pins`` is a list of ``(name, type)`` pairs laid out by
-        the same rules as ``sch_import_sheet_pins``.
+        Optional ``sheet_pins`` is a list of ``[name, type]`` two-element arrays,
+        laid out by the same rules as ``sch_import_sheet_pins``.
         """
+        normalized_pins = [] if sheet_pins is None else [(pair[0], pair[1]) for pair in sheet_pins]
         payload = CreateSheetInput(
             name=name,
             filename=filename,
             x_mm=x_mm,
             y_mm=y_mm,
             snap_to_grid=snap_to_grid,
-            sheet_pins=sheet_pins or [],
+            sheet_pins=normalized_pins,
         )
         return service.create_sheet(
             payload.name,

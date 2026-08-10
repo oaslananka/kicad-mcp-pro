@@ -13,9 +13,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
+from mcp.types import Tool
 
+from kicad_mcp.operating_modes import OperatingMode
 from kicad_mcp.server import build_server
 from kicad_mcp.server_info import get_server_info_contract
+from kicad_mcp.tools.router import available_profiles
 
 SCHEMA_ROOT = Path(__file__).resolve().parents[2] / "packages" / "protocol-schemas" / "schemas"
 TOOL_DISCOVERY_SCHEMA = SCHEMA_ROOT / "mcp-tool-discovery.schema.json"
@@ -63,17 +66,54 @@ def test_every_tool_has_valid_input_schema() -> None:
         Draft202012Validator.check_schema(schema)
 
 
+def _declared_tools() -> dict[str, Tool]:
+    """Return every tool any declared profile can surface, keyed by name.
+
+    ``build_server("full")`` on its own is not enough. Its listing is narrowed
+    twice more -- by the default read-only operating mode and by the runtime IPC
+    filter -- so on a machine with no KiCad running it contains no mutating tool
+    at all, and a broken write-tool schema sails straight through. Both
+    narrowings are lifted here deliberately: an input schema is a static
+    contract, and every tool listed by any profile has to satisfy it.
+    """
+    tools: dict[str, Tool] = {}
+    for profile in available_profiles():
+        server = build_server(profile)
+        server.operating_mode = OperatingMode.EXPERIMENTAL
+        server.allow_experimental_tools = True
+        server.filter_runtime_tools = False
+        for tool in server.list_tools_sync():
+            tools.setdefault(tool.name, tool)
+    return tools
+
+
 def test_every_array_schema_declares_items_for_host_compatibility() -> None:
     """Stricter MCP hosts require every array node to declare ``items``."""
-    server = build_server("full")
     violations: list[str] = []
 
-    for tool in server.list_tools_sync():
-        violations.extend(
-            f"{tool.name}:{path}" for path in _array_paths_missing_items(tool.inputSchema)
-        )
+    for name, tool in sorted(_declared_tools().items()):
+        violations.extend(f"{name}:{path}" for path in _array_paths_missing_items(tool.inputSchema))
 
     assert not violations, "array schemas missing items: " + ", ".join(violations)
+
+
+def test_sch_create_sheet_sheet_pins_is_a_host_compatible_array() -> None:
+    """``sheet_pins`` must be a list of two-element string arrays, not tuples.
+
+    Regression guard for the ``list[tuple[str, str]]`` signature, which emits an
+    inner ``prefixItems`` array with no ``items``. The tool is a write tool, so
+    it is invisible to a plain ``build_server("full")`` listing -- which is
+    exactly how the defect reached this branch.
+    """
+    tool = _declared_tools()["sch_create_sheet"]
+    schema = tool.inputSchema["properties"]["sheet_pins"]
+    pair_schema = schema["anyOf"][0]["items"]
+
+    assert pair_schema["type"] == "array"
+    assert pair_schema["minItems"] == 2
+    assert pair_schema["maxItems"] == 2
+    assert pair_schema["items"] == {"type": "string"}
+    assert "prefixItems" not in pair_schema
 
 
 def test_every_tool_input_schema_root_is_object() -> None:
