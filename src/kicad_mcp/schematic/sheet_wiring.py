@@ -19,6 +19,7 @@ no FastMCP.
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
@@ -27,6 +28,7 @@ from .sheet_pins import (
     DEFAULT_TEXT_HEIGHT_MM,
     SheetBlock,
     _ceil_to_grid,
+    _is_on_grid,
     _snap,
     _text_width,
     edge_for_rotation,
@@ -312,10 +314,23 @@ def plan_sheet_wiring(
                 continue
             dx, dy, rotation, justify = _STUB_GEOMETRY[edge]
             vertical_present = vertical_present or rotation == 90
-            x1 = _snap(pin.x_mm, grid_mm)
-            y1 = _snap(pin.y_mm, grid_mm)
-            x2 = _snap(pin.x_mm + dx * stub_mm, grid_mm)
-            y2 = _snap(pin.y_mm + dy * stub_mm, grid_mm)
+            if not (_is_on_grid(pin.x_mm, grid_mm) and _is_on_grid(pin.y_mm, grid_mm)):
+                notes.append(
+                    f"Pin '{pin.name}' on sheet '{sheet.name}' is at "
+                    f"({pin.x_mm}, {pin.y_mm}), which is not on the {grid_mm} mm "
+                    "grid. Run sch_align_to_grid before wiring."
+                )
+            # The wire's start has to be the pin's own position, exactly -- KiCad
+            # connects only on exact coordinate equality, so snapping x1/y1 would
+            # move the start off the pin and leave the wire touching nothing. Only
+            # the far end moves, and only along the stub's own axis (`dx` or `dy`
+            # is zero, never both): the perpendicular coordinate is copied straight
+            # from the pin so the stub stays a straight line out of it, even when
+            # the pin itself sits off-grid.
+            x1 = pin.x_mm
+            y1 = pin.y_mm
+            x2 = _snap(pin.x_mm + dx * stub_mm, grid_mm) if dx else pin.x_mm
+            y2 = _snap(pin.y_mm + dy * stub_mm, grid_mm) if dy else pin.y_mm
             action = "keep" if (round(x1, 3), round(y1, 3)) in occupied else "add"
             placements.append(
                 StubPlacement(
@@ -369,7 +384,7 @@ def _find_label_collisions(
     placements: Sequence[StubPlacement],
     text_height_mm: float,
 ) -> tuple[tuple[str, ...], bool]:
-    """Report pairs of horizontal labels whose text would overlap.
+    """Report every pair of horizontal labels whose text would overlap.
 
     Only labels with ``label_rotation == 0`` (from left/right edge pins) are
     checked. Vertical labels (``label_rotation == 90``, from top/bottom edge
@@ -414,19 +429,21 @@ def _find_label_collisions(
                 spans.append((placement.label_x_mm - width, placement.label_x_mm, placement))
         spans.sort(key=lambda item: item[0])
 
-        # Sweep by the running rightmost edge seen so far, not by comparing
-        # each span only to its immediate predecessor: after the sort, a wide
-        # label that swallows two shorter ones downstream would otherwise be
-        # reported against just the first of them, silently missing the
-        # second overlap.
-        reach_hi, reach_owner = spans[0][1], spans[0][2]
-        for lo, hi, placement in spans[1:]:
-            if lo < reach_hi:
+        # Every pair, not a single left-to-right sweep: a row is at most a
+        # handful of labels (however many sheets face each other at one y),
+        # so O(n^2) costs nothing here, and it is the only way to catch every
+        # overlapping pair -- a wide label that swallows two narrower,
+        # mutually non-overlapping ones needs both pairs reported, and three
+        # labels that overlap in a chain (A-B, B-C, and also A-C, without A
+        # swallowing C) need all three, which a single running-maximum sweep
+        # does not produce: the "reach" owner moves on to B once B's span
+        # exceeds A's, so A-C is never compared once C arrives.
+        for (a_lo, a_hi, a), (b_lo, b_hi, b) in itertools.combinations(spans, 2):
+            lo, hi = max(a_lo, b_lo), min(a_hi, b_hi)
+            if lo < hi:
                 found.append(
-                    f"'{reach_owner.name}' on '{reach_owner.sheet_name}' and "
-                    f"'{placement.name}' on '{placement.sheet_name}' overlap by "
-                    f"{reach_hi - lo:.2f} mm at y={reach_owner.label_y_mm:.2f} mm"
+                    f"'{a.name}' on '{a.sheet_name}' and '{b.name}' on "
+                    f"'{b.sheet_name}' overlap by {hi - lo:.2f} mm at "
+                    f"y={a.label_y_mm:.2f} mm"
                 )
-            if hi > reach_hi:
-                reach_hi, reach_owner = hi, placement
     return tuple(found), compared
