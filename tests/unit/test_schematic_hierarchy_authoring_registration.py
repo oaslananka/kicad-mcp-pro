@@ -84,6 +84,14 @@ class FakeHierarchyAuthoringService:
         self.calls.append(("import_sheet_pins", (sheet, grow_sheet, dry_run)))
         return "imported"
 
+    def wire_sheet_pins(self, sheet: str | None, stub_mm: float, dry_run: bool) -> str:
+        self.calls.append(("wire_sheet_pins", (sheet, stub_mm, dry_run)))
+        return "wired"
+
+    def spread_sheets(self, min_gap_mm: float | None, margin_mm: float, dry_run: bool) -> str:
+        self.calls.append(("spread_sheets", (min_gap_mm, margin_mm, dry_run)))
+        return "spread"
+
 
 def _registered() -> tuple[FastMCP, FakeHierarchyAuthoringService]:
     server = FastMCP("schematic-hierarchy-authoring-test")
@@ -102,6 +110,8 @@ def test_registration_preserves_names_descriptions_and_defaults() -> None:
         "sch_add_global_label",
         "sch_add_sheet_pin",
         "sch_import_sheet_pins",
+        "sch_wire_sheet_pins",
+        "sch_spread_sheets",
     }
     assert tools["sch_create_sheet"].description == (
         "Create a child schematic sheet and add it to the active top-level schematic.\n\n"
@@ -329,3 +339,72 @@ def test_sheet_pin_input_rejects_an_unknown_edge() -> None:
         SheetPinInput(
             sheet="s", name="n", pin_type="input", edge="sideways", position_along_edge=0.0
         )
+
+
+def test_wiring_tools_are_registered() -> None:
+    server, _service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert {"sch_wire_sheet_pins", "sch_spread_sheets"} <= set(tools)
+
+
+def test_wire_sheet_pins_defaults_to_every_sheet_and_default_stub() -> None:
+    server, service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert tools["sch_wire_sheet_pins"].fn() == "wired"
+
+    assert service.calls == [("wire_sheet_pins", (None, 2.54, False))]
+
+
+def test_wire_sheet_pins_forwards_its_arguments_verbatim() -> None:
+    server, service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert tools["sch_wire_sheet_pins"].fn(sheet="02_mcu", stub_mm=5.08, dry_run=True) == "wired"
+
+    assert service.calls == [("wire_sheet_pins", ("02_mcu", 5.08, True))]
+
+
+def test_wire_sheet_pins_rejects_a_non_positive_stub() -> None:
+    server, _service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    with pytest.raises(ValidationError):
+        tools["sch_wire_sheet_pins"].fn(stub_mm=0.0)
+    with pytest.raises(ValidationError):
+        tools["sch_wire_sheet_pins"].fn(stub_mm=-2.54)
+
+
+def test_spread_sheets_defaults_to_auto_gap_and_default_margin() -> None:
+    server, service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert tools["sch_spread_sheets"].fn() == "spread"
+
+    assert service.calls == [("spread_sheets", (None, 2.54, False))]
+
+
+def test_spread_sheets_forwards_its_arguments_verbatim() -> None:
+    server, service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert tools["sch_spread_sheets"].fn(min_gap_mm=25.4, margin_mm=5.08, dry_run=True) == "spread"
+
+    assert service.calls == [("spread_sheets", (25.4, 5.08, True))]
+
+
+def test_spread_sheets_rejects_a_negative_margin() -> None:
+    server, _service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    with pytest.raises(ValidationError):
+        tools["sch_spread_sheets"].fn(margin_mm=-1.0)
+
+
+def test_spread_sheets_rejects_a_negative_min_gap() -> None:
+    server, _service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    with pytest.raises(ValidationError):
+        tools["sch_spread_sheets"].fn(min_gap_mm=-1.0)

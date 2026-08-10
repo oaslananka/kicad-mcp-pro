@@ -131,7 +131,7 @@ Built-in prompt helpers for the critic/fixer loop:
 
 Machine-maintained catalog. Refresh with `pnpm run docs:tools`.
 
-Total public tools: 380.
+Total public tools: 382.
 
 | Tool | Profile(s) | Read-Only | Destructive | Open-World | Idempotent | Headless | Requires KiCad Running | Summary |
 |---|---|---:|---:|---:|---:|---:|---:|---|
@@ -452,6 +452,7 @@ Total public tools: 380.
 | `sch_set_hop_over` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | yes | yes | no | Toggle KiCad 10 hop-over display in the active project settings. |
 | `sch_set_sheet_size` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | yes | yes | no | Change the schematic sheet (paper) size. |
 | `sch_set_title_block_info` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | yes | yes | no | Set schematic title block fields on the root sheet or a child sheet. |
+| `sch_spread_sheets` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | no | no | Move sheet-symbol columns apart to make room for stub-and-label wiring. |
 | `sch_straighten_wires` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Straighten almost-orthogonal wire segments onto the horizontal/vertical axis. |
 | `sch_swap_gates` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Record a gate-swap back-annotation intent for a multi-unit component. |
 | `sch_swap_pins` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Record a pin-swap back-annotation intent for a component. |
@@ -462,6 +463,7 @@ Total public tools: 380.
 | `sch_visual_baseline_compare` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Compare a sheet's current render against its stored visual baseline. |
 | `sch_visual_baseline_set` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Capture the current render of a schematic sheet as its visual baseline. |
 | `sch_visual_qa` | agent_full, builder, critic, default, expert, full, high_speed, power, review, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Run headless visual/readability QA on the active schematic sheet(s). |
+| `sch_wire_sheet_pins` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | no | no | Connect sheet pins by giving each one a wire stub and a local label. |
 | `schematic_connectivity_gate` | agent_full, analysis, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, pcb, pcb_layout, power, release_manager, schematic, schematic_authoring | no | no | no | no | yes | no | Evaluate whether schematic structure and hierarchy look electrically meaningful. This KiCad MCP Pro tool supports pro... |
 | `schematic_design_rule_check` | agent_full, analysis, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, pcb, pcb_layout, power, release_manager, schematic, schematic_authoring | no | no | no | no | yes | no | Check the schematic against professional electrical-design rules (advisory). |
 | `schematic_quality_gate` | agent_full, analysis, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, pcb, pcb_layout, power, release_manager, schematic, schematic_authoring | yes | no | no | yes | yes | no | Evaluate whether the schematic is clean enough to proceed. This KiCad MCP Pro tool supports production EDA automation... |
@@ -835,6 +837,7 @@ Total public tools: 380.
 - `sch_set_hop_over`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
 - `sch_set_sheet_size`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
 - `sch_set_title_block_info`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
+- `sch_spread_sheets`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_straighten_wires`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `sch_swap_gates`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `sch_swap_pins`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
@@ -845,6 +848,7 @@ Total public tools: 380.
 - `sch_visual_baseline_compare`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `sch_visual_baseline_set`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `sch_visual_qa`: profiles=agent_full, builder, critic, default, expert, full, high_speed, power, review, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
+- `sch_wire_sheet_pins`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `schematic_connectivity_gate`: profiles=agent_full, analysis, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, pcb, pcb_layout, power, release_manager, schematic, schematic_authoring; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `schematic_design_rule_check`: profiles=agent_full, analysis, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, pcb, pcb_layout, power, release_manager, schematic, schematic_authoring; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `schematic_quality_gate`: profiles=agent_full, analysis, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, pcb, pcb_layout, power, release_manager, schematic, schematic_authoring; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
