@@ -7379,10 +7379,10 @@
     "requires_kicad_running": false
   },
   {
-    "destructive": false,
+    "destructive": true,
     "experimental": false,
     "headless": false,
-    "idempotent": false,
+    "idempotent": true,
     "name": "sch_spread_sheets",
     "open_world": false,
     "profiles": [
@@ -7629,10 +7629,10 @@
     "requires_kicad_running": false
   },
   {
-    "destructive": false,
+    "destructive": true,
     "experimental": false,
     "headless": false,
-    "idempotent": false,
+    "idempotent": true,
     "name": "sch_wire_sheet_pins",
     "open_world": false,
     "profiles": [

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -13,9 +12,7 @@ from .sheet_pins import (
     PIN_TYPES,
     SheetBlock,
     SheetPinPlan,
-    _format_mm,
     apply_plan,
-    check_edits_non_overlapping,
     insert_pin,
     parse_hierarchical_labels,
     parse_sheet_blocks,
@@ -23,7 +20,13 @@ from .sheet_pins import (
     placement_on_edge,
     plan_sheet_pins,
 )
-from .sheet_wiring import PAPER_WIDTHS_MM, plan_sheet_wiring, plan_spread
+from .sheet_wiring import (
+    apply_spread_shifts,
+    attached_pin_names,
+    page_width_mm,
+    plan_sheet_wiring,
+    plan_spread,
+)
 
 
 class SchematicTarget(Protocol):
@@ -130,8 +133,6 @@ type GridMM = Callable[[], float]
 type NewUUID = Callable[[], str]
 type WireBlock = Callable[[float, float, float, float], str]
 type ParseWireEndpoints = Callable[[str], tuple[tuple[float, float], ...]]
-
-_PAPER_RE = re.compile(r'\(paper\s+"([^"]+)"')
 
 
 @dataclass(frozen=True)
@@ -688,11 +689,7 @@ class SchematicHierarchyAuthoringService:
 
         lines = list(plan.notes)
         if plan.orphans:
-            lines.append(
-                "Pins with no match on another sheet, wired anyway: "
-                + ", ".join(plan.orphans)
-                + "."
-            )
+            lines.append("Pins with no match on another sheet: " + ", ".join(plan.orphans) + ".")
         if plan.collisions:
             lines.extend(f"note: {collision}" for collision in plan.collisions)
 
@@ -748,15 +745,8 @@ class SchematicHierarchyAuthoringService:
             return f"{root_path.name} has no child sheets, so there is nothing to spread."
 
         wired_points = self.parse_wire_endpoints(root_text)
-        occupied = {(round(x, 3), round(y, 3)) for x, y in wired_points}
-        attached: dict[str, list[str]] = {}
-        for block in blocks:
-            for pin in block.pins:
-                if (round(pin.x_mm, 3), round(pin.y_mm, 3)) in occupied:
-                    attached.setdefault(block.name, []).append(pin.name)
-
-        paper_match = _PAPER_RE.search(root_text)
-        page_width_mm = PAPER_WIDTHS_MM.get(paper_match.group(1)) if paper_match else None
+        attached = attached_pin_names(blocks, wired_points)
+        effective_page_width_mm = page_width_mm(root_text)
 
         plan = plan_spread(
             blocks,
@@ -764,7 +754,7 @@ class SchematicHierarchyAuthoringService:
             grid_mm=self.grid_mm(),
             margin_mm=margin_mm,
             min_gap_mm=min_gap_mm,
-            page_width_mm=page_width_mm,
+            page_width_mm=effective_page_width_mm,
         )
         lines = list(plan.notes)
 
@@ -781,42 +771,13 @@ class SchematicHierarchyAuthoringService:
         skipped_pins: list[tuple[str, str]] = []
 
         def mutator(current: str) -> str:
-            skipped_pins.clear()
-            current_blocks = {block.name: block for block in parse_sheet_blocks(current)}
-            edits: list[tuple[int, int, str]] = []
-            for name, dx in dx_by_sheet.items():
-                block = current_blocks.get(name)
-                if block is None:
-                    raise ValueError(f"Sheet '{name}' disappeared before the spread write.")
-                new_x = round(block.origin[0] + dx, 4)
-                edits.append(
-                    (
-                        block.at_span[0],
-                        block.at_span[1],
-                        f"(at {_format_mm(new_x)} {_format_mm(block.origin[1])})",
-                    )
-                )
-                for pin, (pin_start, pin_end) in zip(block.pins, block.pin_at_spans, strict=True):
-                    if pin_start == pin_end:
-                        # No (at ...) node could be parsed for this pin (see
-                        # SheetBlock.pin_at_spans). Inserting text at a
-                        # zero-width span would add a spurious (at ...) next to
-                        # the pin rather than replace one, producing malformed
-                        # output -- leave it alone and report it instead.
-                        skipped_pins.append((name, pin.name))
-                        continue
-                    new_pin_x = round(pin.x_mm + dx, 4)
-                    edits.append(
-                        (
-                            pin_start,
-                            pin_end,
-                            f"(at {_format_mm(new_pin_x)} {_format_mm(pin.y_mm)} {pin.rotation})",
-                        )
-                    )
-            check_edits_non_overlapping(edits, root_path.name)
-            for start, end, replacement in sorted(edits, key=lambda edit: edit[0], reverse=True):
-                current = current[:start] + replacement + current[end:]
-            return current
+            updated, skipped = apply_spread_shifts(
+                current,
+                dx_by_sheet,
+                subject=root_path.name,
+            )
+            skipped_pins[:] = skipped
+            return updated
 
         try:
             mutated = mutator(root_text)

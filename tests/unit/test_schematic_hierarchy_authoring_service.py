@@ -1108,6 +1108,21 @@ ROOT_TEXT_ONE_SHEET_ONE_PIN = """(kicad_sch
 the document -- its stub-and-label would connect to nothing."""
 
 
+def test_wire_sheet_pins_orphan_report_does_not_claim_unselected_pins_were_wired(
+    tmp_path: Path,
+) -> None:
+    text = ROOT_TEXT_TWO_SHEETS_WITH_PINS.replace(
+        '(pin "VBUS" output', '(pin "POWER_ONLY" output', 1
+    ).replace('(pin "VBUS" input', '(pin "MCU_ONLY" input', 1)
+    store = _TextStore({"root.kicad_sch": text})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.wire_sheet_pins("01_power", 2.54, False)
+
+    assert "Pins with no match on another sheet: MCU_ONLY, POWER_ONLY." in report
+    assert "wired anyway" not in report
+
+
 def test_wire_sheet_pins_reports_an_orphan_name(tmp_path: Path) -> None:
     store = _TextStore({"root.kicad_sch": ROOT_TEXT_ONE_SHEET_ONE_PIN})
     service = _pin_service(store, tmp_path / "root.kicad_sch")
@@ -1265,6 +1280,37 @@ def test_spread_sheets_refuses_when_a_pin_is_already_wired(tmp_path: Path) -> No
 
     assert store.writes == []
     assert "02_right" in report
+
+
+def test_spread_sheets_does_not_treat_a_nearby_wire_as_attached(tmp_path: Path) -> None:
+    text = ROOT_TEXT_SPREAD_TWO_COLUMNS.replace(
+        "(at 45.0 10.0 0)",
+        "(at 45.0004 10.0 0)",
+        1,
+    ).replace(
+        "\t(sheet\n\t\t(at 0.0 0.0)",
+        "\t(wire (pts (xy 45.00049 10.0) (xy 48.0 10.0)))\n\t(sheet\n\t\t(at 0.0 0.0)",
+        1,
+    )
+    store = _TextStore({"root.kicad_sch": text})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.spread_sheets(10.0, 2.54, False)
+
+    assert len(store.writes) == 1
+    assert "Spread 1 sheet(s): 02_right." in report
+
+
+def test_spread_sheets_uses_portrait_page_width_for_overflow(tmp_path: Path) -> None:
+    text = ROOT_TEXT_SPREAD_TWO_COLUMNS.replace('(paper "A4")', '(paper "A4" portrait)', 1)
+    store = _TextStore({"root.kicad_sch": text})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.spread_sheets(180.0, 2.54, False)
+
+    assert store.writes == []
+    assert "Nothing was moved." in report
+    assert "past the usable edge" in report
 
 
 def test_spread_sheets_refuses_to_push_past_the_page_edge(tmp_path: Path) -> None:

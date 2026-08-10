@@ -206,6 +206,18 @@ def test_an_off_grid_pin_gets_a_note_pointing_at_sch_align_to_grid() -> None:
     assert any("OFFGRID" in note and "sch_align_to_grid" in note for note in plan.notes)
 
 
+def test_a_nearby_wire_endpoint_at_different_emitted_coordinate_is_not_kept() -> None:
+    sheet = _sheet("s", 0.0, 0.0, (_pin("N", 30.4804, 2.54, 0),))
+
+    plan = plan_sheet_wiring(
+        (sheet,),
+        wired_points=((30.48049, 2.54),),
+        grid_mm=GRID,
+    )
+
+    assert plan.placements[0].action == "add"
+
+
 def test_an_existing_wire_at_an_off_grid_pins_exact_position_is_kept() -> None:
     sheet = _sheet("s", 0.0, 0.0, (_pin("N", 30.48, 3.0, 0),))
 

@@ -20,6 +20,8 @@ no FastMCP.
 from __future__ import annotations
 
 import itertools
+import re
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
@@ -27,11 +29,15 @@ from typing import Final
 from .sheet_pins import (
     DEFAULT_TEXT_HEIGHT_MM,
     SheetBlock,
+    SheetPinRecord,
     _ceil_to_grid,
+    _format_mm,
     _is_on_grid,
     _snap,
     _text_width,
+    check_edits_non_overlapping,
     edge_for_rotation,
+    parse_sheet_blocks,
 )
 
 DEFAULT_STUB_MM: Final = 2.54
@@ -45,19 +51,55 @@ the worksheet settings, which are not in the schematic file. Ten millimetres is
 a deliberately conservative stand-in, not a measurement.
 """
 
-PAPER_WIDTHS_MM: Final[dict[str, float]] = {
-    "A4": 297.0,
-    "A3": 420.0,
-    "A2": 594.0,
-    "A1": 841.0,
-    "A0": 1189.0,
-    "A": 279.4,
-    "B": 431.8,
-    "C": 558.8,
-    "D": 863.6,
-    "E": 1117.6,
+PAPER_SIZES_MM: Final[dict[str, tuple[float, float]]] = {
+    "A4": (297.0, 210.0),
+    "A3": (420.0, 297.0),
+    "A2": (594.0, 420.0),
+    "A1": (841.0, 594.0),
+    "A0": (1189.0, 841.0),
+    "A": (279.4, 215.9),
+    "B": (431.8, 279.4),
+    "C": (558.8, 431.8),
+    "D": (863.6, 558.8),
+    "E": (1117.6, 863.6),
 }
-"""Landscape widths. ``(paper "A4" portrait)`` swaps width and height."""
+"""Landscape ``(width, height)`` pairs for named KiCad paper sizes."""
+
+PAPER_WIDTHS_MM: Final[dict[str, float]] = {name: size[0] for name, size in PAPER_SIZES_MM.items()}
+"""Landscape widths retained for callers that only need the default orientation."""
+
+_PAPER_RE = re.compile(r'\(paper\s+"([^"]+)"(?:\s+(portrait))?', re.IGNORECASE)
+
+
+def page_width_mm(text: str) -> float | None:
+    """Return the effective page width, respecting KiCad's optional portrait flag."""
+    match = _PAPER_RE.search(text)
+    if match is None:
+        return None
+    size = PAPER_SIZES_MM.get(match.group(1).upper())
+    if size is None:
+        return None
+    landscape_width, landscape_height = size
+    return landscape_height if match.group(2) else landscape_width
+
+
+def _coord_key(x: float, y: float) -> tuple[float, float]:
+    """Normalize coordinates to the four-decimal precision emitted by this package."""
+    return round(float(x), 4), round(float(y), 4)
+
+
+def attached_pin_names(
+    sheets: Sequence[SheetBlock],
+    wired_points: Sequence[tuple[float, float]],
+) -> dict[str, list[str]]:
+    """Return sheet pin names that have a wire endpoint at the same emitted coordinate."""
+    occupied = {_coord_key(x, y) for x, y in wired_points}
+    attached: dict[str, list[str]] = {}
+    for sheet in sheets:
+        names = [pin.name for pin in sheet.pins if _coord_key(pin.x_mm, pin.y_mm) in occupied]
+        if names:
+            attached[sheet.name] = names
+    return attached
 
 
 @dataclass(frozen=True)
@@ -126,6 +168,69 @@ def _facing_width(
     return _text_width(labels, text_height_mm)
 
 
+def _required_gap(
+    sheets: Sequence[SheetBlock],
+    left_col: SheetColumn,
+    right_col: SheetColumn,
+    *,
+    stub_mm: float,
+    margin_mm: float,
+    text_height_mm: float,
+    min_gap_mm: float | None,
+) -> tuple[float, bool]:
+    """Return the required gap and whether it came from the text-width estimate."""
+    if min_gap_mm is not None:
+        return min_gap_mm, False
+    required = (
+        2 * stub_mm
+        + _facing_width(sheets, left_col.sheet_names, 0, text_height_mm)
+        + _facing_width(sheets, right_col.sheet_names, 180, text_height_mm)
+        + margin_mm
+    )
+    return required, True
+
+
+def _column_shifts(
+    sheets: Sequence[SheetBlock],
+    columns: Sequence[SheetColumn],
+    *,
+    grid_mm: float,
+    stub_mm: float,
+    margin_mm: float,
+    text_height_mm: float,
+    min_gap_mm: float | None,
+) -> tuple[tuple[ColumnShift, ...], bool]:
+    """Return cumulative rightward shifts and whether an estimate drove a shift."""
+    shifts: list[ColumnShift] = []
+    accumulated = 0.0
+    heuristic_drove_a_shift = False
+    for left_col, right_col in zip(columns, columns[1:], strict=False):
+        have = right_col.x_min - left_col.x_max
+        need, estimated = _required_gap(
+            sheets,
+            left_col,
+            right_col,
+            stub_mm=stub_mm,
+            margin_mm=margin_mm,
+            text_height_mm=text_height_mm,
+            min_gap_mm=min_gap_mm,
+        )
+        if have < need:
+            accumulated += _ceil_to_grid(need - have, grid_mm)
+            heuristic_drove_a_shift = heuristic_drove_a_shift or estimated
+        if accumulated > 0:
+            shifts.append(ColumnShift(sheet_names=right_col.sheet_names, dx_mm=accumulated))
+    return tuple(shifts), heuristic_drove_a_shift
+
+
+def _spread_right_edge(columns: Sequence[SheetColumn], shifts: Sequence[ColumnShift]) -> float:
+    shift_by_column = {shift.sheet_names: shift.dx_mm for shift in shifts}
+    return max(
+        (column.x_max + shift_by_column.get(column.sheet_names, 0.0) for column in columns),
+        default=0.0,
+    )
+
+
 def plan_spread(
     sheets: Sequence[SheetBlock],
     *,
@@ -137,43 +242,21 @@ def plan_spread(
     min_gap_mm: float | None = None,
     page_width_mm: float | None = None,
 ) -> SpreadPlan:
-    """Plan the column shifts that make room for stub labels.
-
-    The requirement for each gap comes from the names that actually face each
-    other across it -- the longest right-edge name on the left and the longest
-    left-edge name on the right -- so a long name pointing away from the gap
-    does not push the columns apart for nothing.
-
-    ``margin_mm`` exists because the text width is estimated, not measured; with
-    no margin, noise in that estimate decides whether a gap "fits".
-    """
+    """Plan whole-column shifts that make room for stub labels without moving wired sheets."""
     columns = group_columns(sheets)
-    notes: list[str] = []
-    shifts: list[ColumnShift] = []
-    accumulated = 0.0
-    heuristic_drove_a_shift = False
-
-    for left_col, right_col in zip(columns, columns[1:], strict=False):
-        have = right_col.x_min - left_col.x_max
-        if min_gap_mm is not None:
-            need = min_gap_mm
-        else:
-            need = (
-                2 * stub_mm
-                + _facing_width(sheets, left_col.sheet_names, 0, text_height_mm)
-                + _facing_width(sheets, right_col.sheet_names, 180, text_height_mm)
-                + margin_mm
-            )
-            heuristic_drove_a_shift = heuristic_drove_a_shift or have < need
-        if have < need:
-            accumulated += _ceil_to_grid(need - have, grid_mm)
-        if accumulated > 0:
-            shifts.append(ColumnShift(sheet_names=right_col.sheet_names, dx_mm=accumulated))
-
+    shifts, heuristic_drove_a_shift = _column_shifts(
+        sheets,
+        columns,
+        grid_mm=grid_mm,
+        stub_mm=stub_mm,
+        margin_mm=margin_mm,
+        text_height_mm=text_height_mm,
+        min_gap_mm=min_gap_mm,
+    )
     moving = {name for shift in shifts for name in shift.sheet_names}
     blocked = tuple(sorted(name for name in moving if attached.get(name)))
     if blocked:
-        notes.append(
+        note = (
             "No sheet was moved: "
             + ", ".join(blocked)
             + " already has a wire on a pin, and moving a sheet would silently "
@@ -184,57 +267,33 @@ def plan_spread(
             blocked=blocked,
             right_edge_mm=max((s.origin[0] + s.size[0] for s in sheets), default=0.0),
             overflow_mm=0.0,
-            notes=tuple(notes),
+            notes=(note,),
         )
 
-    right_edge = 0.0
-    for column in columns:
-        dx = next(
-            (s.dx_mm for s in shifts if s.sheet_names == column.sheet_names),
-            0.0,
-        )
-        right_edge = max(right_edge, column.x_max + dx)
-
-    # Disclosed before either return below: right_edge -- and so the overflow
-    # figure computed from it -- was itself derived from the estimated text
-    # width whenever a shift came from the heuristic, not just min_gap_mm.
-    # Both the accepted plan and the rejected (overflow) one carry the number,
-    # so both must carry the disclosure.
+    right_edge = _spread_right_edge(columns, shifts)
+    notes: list[str] = []
     if heuristic_drove_a_shift:
         notes.append(
             "Column spacing was derived from an estimated text width "
             "(heuristic: 1.1 x font height per character), not a measured one."
         )
 
-    overflow = 0.0
     if page_width_mm is None:
         notes.append(
             "Paper size is unknown, so the page-edge check was skipped rather than guessed."
         )
-    else:
-        usable = page_width_mm - PAGE_MARGIN_MM
-        if right_edge > usable:
-            overflow = round(right_edge - usable, 4)
-            notes.append(
-                f"Spreading would reach x={right_edge:.2f} mm, {overflow:.2f} mm past "
-                f"the usable edge at {usable:.2f} mm. Nothing was moved; widen the "
-                "paper or shorten the stubs."
-            )
-            return SpreadPlan(
-                shifts=(),
-                blocked=(),
-                right_edge_mm=right_edge,
-                overflow_mm=overflow,
-                notes=tuple(notes),
-            )
+        return SpreadPlan(tuple(shifts), (), right_edge, 0.0, tuple(notes))
 
-    return SpreadPlan(
-        shifts=tuple(shifts),
-        blocked=(),
-        right_edge_mm=right_edge,
-        overflow_mm=overflow,
-        notes=tuple(notes),
-    )
+    usable = page_width_mm - PAGE_MARGIN_MM
+    overflow = max(round(right_edge - usable, 4), 0.0)
+    if overflow:
+        notes.append(
+            f"Spreading would reach x={right_edge:.2f} mm, {overflow:.2f} mm past "
+            f"the usable edge at {usable:.2f} mm. Nothing was moved; widen the "
+            "paper or shorten the stubs."
+        )
+        return SpreadPlan((), (), right_edge, overflow, tuple(notes))
+    return SpreadPlan(tuple(shifts), (), right_edge, 0.0, tuple(notes))
 
 
 _STUB_GEOMETRY: Final[dict[str, tuple[float, float, int, str]]] = {
@@ -280,6 +339,53 @@ class WiringPlan:
     notes: tuple[str, ...]
 
 
+def _sheet_pin_pairs(sheets: Sequence[SheetBlock]) -> list[tuple[str, SheetPinRecord]]:
+    return [(sheet.name, pin) for sheet in sheets for pin in sheet.pins]
+
+
+def _plan_stub_placement(
+    sheet_name: str,
+    pin: SheetPinRecord,
+    *,
+    occupied: set[tuple[float, float]],
+    grid_mm: float,
+    stub_mm: float,
+) -> tuple[StubPlacement | None, tuple[str, ...], bool]:
+    edge = edge_for_rotation(pin.rotation)
+    if edge is None:
+        note = (
+            f"Pin '{pin.name}' on sheet '{sheet_name}' has rotation {pin.rotation}, "
+            "which is not one of KiCad's four edge rotations; it was left unwired."
+        )
+        return None, (note,), False
+
+    dx, dy, rotation, justify = _STUB_GEOMETRY[edge]
+    notes: list[str] = []
+    if not (_is_on_grid(pin.x_mm, grid_mm) and _is_on_grid(pin.y_mm, grid_mm)):
+        notes.append(
+            f"Pin '{pin.name}' on sheet '{sheet_name}' is at ({pin.x_mm}, {pin.y_mm}), "
+            f"which is not on the {grid_mm} mm grid. Run sch_align_to_grid before wiring."
+        )
+
+    x1, y1 = pin.x_mm, pin.y_mm
+    x2 = _snap(pin.x_mm + dx * stub_mm, grid_mm) if dx else pin.x_mm
+    y2 = _snap(pin.y_mm + dy * stub_mm, grid_mm) if dy else pin.y_mm
+    placement = StubPlacement(
+        name=pin.name,
+        sheet_name=sheet_name,
+        x1_mm=x1,
+        y1_mm=y1,
+        x2_mm=x2,
+        y2_mm=y2,
+        label_x_mm=x2,
+        label_y_mm=y2,
+        label_rotation=rotation,
+        label_justify=justify,
+        action="keep" if _coord_key(x1, y1) in occupied else "add",
+    )
+    return placement, tuple(notes), rotation == 90
+
+
 def plan_sheet_wiring(
     sheets: Sequence[SheetBlock],
     *,
@@ -288,65 +394,26 @@ def plan_sheet_wiring(
     stub_mm: float = DEFAULT_STUB_MM,
     text_height_mm: float = DEFAULT_TEXT_HEIGHT_MM,
 ) -> WiringPlan:
-    """Plan a stub and a local label for every sheet pin in the document.
-
-    Same-named local labels on one sheet are one net, so this connects sheets
-    without routing a single wire between them.
-    """
-    occupied = {(round(x, 3), round(y, 3)) for x, y in wired_points}
-    counts: dict[str, int] = {}
-    for sheet in sheets:
-        for pin in sheet.pins:
-            counts[pin.name] = counts.get(pin.name, 0) + 1
-
+    """Plan a stub and local label for every addressable sheet pin in the document."""
+    occupied = {_coord_key(x, y) for x, y in wired_points}
+    pairs = _sheet_pin_pairs(sheets)
+    counts = Counter(pin.name for _sheet_name, pin in pairs)
     placements: list[StubPlacement] = []
     notes: list[str] = []
     vertical_present = False
-    for sheet in sheets:
-        for pin in sheet.pins:
-            edge = edge_for_rotation(pin.rotation)
-            if edge is None:
-                notes.append(
-                    f"Pin '{pin.name}' on sheet '{sheet.name}' has rotation "
-                    f"{pin.rotation}, which is not one of KiCad's four edge "
-                    "rotations; it was left unwired."
-                )
-                continue
-            dx, dy, rotation, justify = _STUB_GEOMETRY[edge]
-            vertical_present = vertical_present or rotation == 90
-            if not (_is_on_grid(pin.x_mm, grid_mm) and _is_on_grid(pin.y_mm, grid_mm)):
-                notes.append(
-                    f"Pin '{pin.name}' on sheet '{sheet.name}' is at "
-                    f"({pin.x_mm}, {pin.y_mm}), which is not on the {grid_mm} mm "
-                    "grid. Run sch_align_to_grid before wiring."
-                )
-            # The wire's start has to be the pin's own position, exactly -- KiCad
-            # connects only on exact coordinate equality, so snapping x1/y1 would
-            # move the start off the pin and leave the wire touching nothing. Only
-            # the far end moves, and only along the stub's own axis (`dx` or `dy`
-            # is zero, never both): the perpendicular coordinate is copied straight
-            # from the pin so the stub stays a straight line out of it, even when
-            # the pin itself sits off-grid.
-            x1 = pin.x_mm
-            y1 = pin.y_mm
-            x2 = _snap(pin.x_mm + dx * stub_mm, grid_mm) if dx else pin.x_mm
-            y2 = _snap(pin.y_mm + dy * stub_mm, grid_mm) if dy else pin.y_mm
-            action = "keep" if (round(x1, 3), round(y1, 3)) in occupied else "add"
-            placements.append(
-                StubPlacement(
-                    name=pin.name,
-                    sheet_name=sheet.name,
-                    x1_mm=x1,
-                    y1_mm=y1,
-                    x2_mm=x2,
-                    y2_mm=y2,
-                    label_x_mm=x2,
-                    label_y_mm=y2,
-                    label_rotation=rotation,
-                    label_justify=justify,
-                    action=action,
-                )
-            )
+
+    for sheet_name, pin in pairs:
+        placement, pin_notes, is_vertical = _plan_stub_placement(
+            sheet_name,
+            pin,
+            occupied=occupied,
+            grid_mm=grid_mm,
+            stub_mm=stub_mm,
+        )
+        notes.extend(pin_notes)
+        vertical_present = vertical_present or is_vertical
+        if placement is not None:
+            placements.append(placement)
 
     orphans = tuple(sorted(name for name, count in counts.items() if count < 2))
     collisions, heuristic_compared = _find_label_collisions(placements, text_height_mm)
@@ -354,12 +421,6 @@ def plan_sheet_wiring(
         notes.append(
             "Some labels overlap. Run sch_spread_sheets first to make room, or shorten the stubs."
         )
-    # Disclosed only when the estimate actually shaped a conclusion (two labels
-    # were compared, whether or not they turned out to overlap) -- mirroring
-    # `plan_spread`'s `heuristic_drove_a_shift`. A lone label on its row has
-    # nothing to compare against, so the width estimate was computed but never
-    # used to decide anything; disclosing it there would be noise, and noise
-    # trains people to skip the note when it actually matters.
     if heuristic_compared:
         notes.append(
             "Overlap was judged from an estimated text width "
@@ -372,11 +433,38 @@ def plan_sheet_wiring(
             "ever places pins on the left and right edges, so a top/bottom pin "
             "only exists after hand-editing; check those by eye."
         )
-    return WiringPlan(
-        placements=tuple(placements),
-        orphans=orphans,
-        collisions=collisions,
-        notes=tuple(notes),
+    return WiringPlan(tuple(placements), orphans, collisions, tuple(notes))
+
+
+type _LabelSpan = tuple[float, float, StubPlacement]
+
+
+def _horizontal_label_rows(
+    placements: Sequence[StubPlacement],
+) -> dict[float, list[StubPlacement]]:
+    rows: dict[float, list[StubPlacement]] = {}
+    for placement in placements:
+        if placement.label_rotation == 0:
+            rows.setdefault(round(placement.label_y_mm, 4), []).append(placement)
+    return rows
+
+
+def _label_span(placement: StubPlacement, text_height_mm: float) -> _LabelSpan:
+    width = _text_width([placement.name], text_height_mm)
+    if placement.label_justify == "left":
+        return placement.label_x_mm, placement.label_x_mm + width, placement
+    return placement.label_x_mm - width, placement.label_x_mm, placement
+
+
+def _collision_description(first: _LabelSpan, second: _LabelSpan) -> str | None:
+    a_lo, a_hi, a = first
+    b_lo, b_hi, b = second
+    lo, hi = max(a_lo, b_lo), min(a_hi, b_hi)
+    if lo >= hi:
+        return None
+    return (
+        f"'{a.name}' on '{a.sheet_name}' and '{b.name}' on '{b.sheet_name}' "
+        f"overlap by {hi - lo:.2f} mm at y={a.label_y_mm:.2f} mm"
     )
 
 
@@ -384,66 +472,81 @@ def _find_label_collisions(
     placements: Sequence[StubPlacement],
     text_height_mm: float,
 ) -> tuple[tuple[str, ...], bool]:
-    """Report every pair of horizontal labels whose text would overlap.
-
-    Only labels with ``label_rotation == 0`` (from left/right edge pins) are
-    checked. Vertical labels (``label_rotation == 90``, from top/bottom edge
-    pins) are skipped outright, not approximated: this module's own placement
-    rule never produces a top/bottom pin (see ``_STUB_GEOMETRY``), so a
-    vertical label only exists after someone hand-edits a pin's rotation, and
-    correctly judging its text-flow direction under a 90-degree rotation plus
-    KiCad's own justify convention is not something this function can verify
-    without a live render -- guessing wrong would be worse than not checking,
-    because it would report false confidence instead of no answer.
-    ``plan_sheet_wiring`` discloses this gap once, in its notes, whenever any
-    vertical label is present, so it is never silently unhandled.
-
-    Returns the collision descriptions, and whether a real comparison was
-    attempted at all (two same-row labels, whether or not they overlapped) --
-    callers use the second value to decide whether the text-width heuristic
-    actually shaped this plan's conclusion.
-    """
-    rows: dict[float, list[StubPlacement]] = {}
-    for placement in placements:
-        if placement.label_rotation != 0:
-            continue
-        # Rounded to the same four decimal places `_snap` itself emits (see
-        # `sheet_pins._is_placed_at`'s "compared at the emitted precision"
-        # rationale): two labels meant to share a row always come from the
-        # same grid-snapped y, so this only absorbs float noise -- it never
-        # merges rows that were meant to differ, nor splits ones that match.
-        rows.setdefault(round(placement.label_y_mm, 4), []).append(placement)
-
+    """Report every overlapping pair of horizontal labels and whether any pair was compared."""
     found: list[str] = []
     compared = False
-    for _y, row in sorted(rows.items()):
+    for _y, row in sorted(_horizontal_label_rows(placements).items()):
         if len(row) < 2:
             continue
         compared = True
-        spans: list[tuple[float, float, StubPlacement]] = []
-        for placement in row:
-            width = _text_width([placement.name], text_height_mm)
-            if placement.label_justify == "left":
-                spans.append((placement.label_x_mm, placement.label_x_mm + width, placement))
-            else:
-                spans.append((placement.label_x_mm - width, placement.label_x_mm, placement))
-        spans.sort(key=lambda item: item[0])
-
-        # Every pair, not a single left-to-right sweep: a row is at most a
-        # handful of labels (however many sheets face each other at one y),
-        # so O(n^2) costs nothing here, and it is the only way to catch every
-        # overlapping pair -- a wide label that swallows two narrower,
-        # mutually non-overlapping ones needs both pairs reported, and three
-        # labels that overlap in a chain (A-B, B-C, and also A-C, without A
-        # swallowing C) need all three, which a single running-maximum sweep
-        # does not produce: the "reach" owner moves on to B once B's span
-        # exceeds A's, so A-C is never compared once C arrives.
-        for (a_lo, a_hi, a), (b_lo, b_hi, b) in itertools.combinations(spans, 2):
-            lo, hi = max(a_lo, b_lo), min(a_hi, b_hi)
-            if lo < hi:
-                found.append(
-                    f"'{a.name}' on '{a.sheet_name}' and '{b.name}' on "
-                    f"'{b.sheet_name}' overlap by {hi - lo:.2f} mm at "
-                    f"y={a.label_y_mm:.2f} mm"
-                )
+        spans = sorted(
+            (_label_span(placement, text_height_mm) for placement in row), key=lambda x: x[0]
+        )
+        for first, second in itertools.combinations(spans, 2):
+            description = _collision_description(first, second)
+            if description is not None:
+                found.append(description)
     return tuple(found), compared
+
+
+def _pin_shift_edits(
+    block: SheetBlock,
+    dx_mm: float,
+) -> tuple[list[tuple[int, int, str]], list[tuple[str, str]]]:
+    edits: list[tuple[int, int, str]] = []
+    skipped: list[tuple[str, str]] = []
+    for pin, (pin_start, pin_end) in zip(block.pins, block.pin_at_spans, strict=True):
+        if pin_start == pin_end:
+            skipped.append((block.name, pin.name))
+            continue
+        new_pin_x = round(pin.x_mm + dx_mm, 4)
+        edits.append(
+            (
+                pin_start,
+                pin_end,
+                f"(at {_format_mm(new_pin_x)} {_format_mm(pin.y_mm)} {pin.rotation})",
+            )
+        )
+    return edits, skipped
+
+
+def _sheet_shift_edits(
+    block: SheetBlock,
+    dx_mm: float,
+) -> tuple[list[tuple[int, int, str]], list[tuple[str, str]]]:
+    new_x = round(block.origin[0] + dx_mm, 4)
+    edits = [
+        (
+            block.at_span[0],
+            block.at_span[1],
+            f"(at {_format_mm(new_x)} {_format_mm(block.origin[1])})",
+        )
+    ]
+    pin_edits, skipped = _pin_shift_edits(block, dx_mm)
+    edits.extend(pin_edits)
+    return edits, skipped
+
+
+def apply_spread_shifts(
+    text: str,
+    dx_by_sheet: Mapping[str, float],
+    *,
+    subject: str,
+) -> tuple[str, tuple[tuple[str, str], ...]]:
+    """Apply only sheet/pin ``(at ...)`` rewrites for a validated spread plan."""
+    blocks = {block.name: block for block in parse_sheet_blocks(text)}
+    edits: list[tuple[int, int, str]] = []
+    skipped: list[tuple[str, str]] = []
+    for name, dx_mm in dx_by_sheet.items():
+        block = blocks.get(name)
+        if block is None:
+            raise ValueError(f"Sheet '{name}' disappeared before the spread write.")
+        block_edits, block_skipped = _sheet_shift_edits(block, dx_mm)
+        edits.extend(block_edits)
+        skipped.extend(block_skipped)
+
+    check_edits_non_overlapping(edits, subject)
+    updated = text
+    for start, end, replacement in sorted(edits, key=lambda edit: edit[0], reverse=True):
+        updated = updated[:start] + replacement + updated[end:]
+    return updated, tuple(skipped)
