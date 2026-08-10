@@ -38,6 +38,16 @@ def test_cryptography_security_floor_is_patched() -> None:
     assert Version(locked) >= Version("50.0.0")
 
 
+def test_root_pnpm_lock_uses_current_js_yaml_security_floor() -> None:
+    workspace = yaml.safe_load((ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8"))
+    lock = (ROOT / "pnpm-lock.yaml").read_text(encoding="utf-8")
+    versions = {Version(value) for value in re.findall(r"js-yaml@(\d+\.\d+\.\d+)", lock)}
+
+    assert Version(workspace["overrides"]["js-yaml"]) >= Version("4.3.1")
+    assert versions
+    assert min(versions) >= Version("4.3.1")
+
+
 def test_root_pnpm_lock_uses_patched_fast_uri() -> None:
     workspace = yaml.safe_load((ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8"))
     lock = (ROOT / "pnpm-lock.yaml").read_text(encoding="utf-8")
