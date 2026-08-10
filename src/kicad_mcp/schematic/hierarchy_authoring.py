@@ -16,6 +16,7 @@ from .sheet_pins import (
     insert_pin,
     parse_hierarchical_labels,
     parse_sheet_blocks,
+    parse_skipped_sheet_blocks,
     placement_on_edge,
     plan_sheet_pins,
 )
@@ -188,7 +189,14 @@ class SchematicHierarchyAuthoringService:
         try:
             schematic = self.load_schematic(top_schematic_path)
             if schematic.sheets.get_sheet_by_name(name) is not None:
-                return f"Sheet '{name}' already exists."
+                already = f"Sheet '{name}' already exists."
+                if sheet_pins:
+                    already += (
+                        " Nothing was created and no sheet pins were applied -- this early "
+                        "return does not touch an existing sheet. Use sch_add_sheet_pin or "
+                        "sch_import_sheet_pins to add pins to it."
+                    )
+                return already
             if not child_path.exists():
                 child_schematic = create_schematic(name)
                 child_schematic.save(child_path, preserve_format=True)
@@ -328,29 +336,42 @@ class SchematicHierarchyAuthoringService:
         the same text splice ``import_sheet_pins`` uses: never through
         ``kicad_sch_api.add_sheet()``'s own ``sheet_pins`` argument, whose
         load/save round trip silently drops ``(comment N ...)`` nodes from the
-        schematic's ``title_block``. Never raises -- a failure here is folded
-        into the returned string so the sheet stays reported as created even
-        if its pins could not be written.
+        schematic's ``title_block``.
+
+        Never raises. ``create_sheet`` calls it outside any ``try`` and after
+        the sheet is already on disk, so an ``OSError`` from the re-read or a
+        ``ValueError`` from planning would otherwise surface as a failed
+        ``sch_create_sheet`` for a sheet that was in fact created. Every failure
+        is folded into the returned string instead.
         """
         plan_labels = tuple(sheet_pins)
-        root_text = self.read_text(top_schematic_path)
-        block = next(
-            (candidate for candidate in parse_sheet_blocks(root_text) if candidate.name == name),
-            None,
-        )
-        if block is None:
-            return f"\nSheet '{name}' was created, but its block could not be re-read to add pins."
+        try:
+            root_text = self.read_text(top_schematic_path)
+            block = next(
+                (
+                    candidate
+                    for candidate in parse_sheet_blocks(root_text)
+                    if candidate.name == name
+                ),
+                None,
+            )
+            if block is None:
+                return (
+                    f"\nSheet '{name}' was created, but its block could not be re-read to add pins."
+                )
+            plan = self._stamp_uuids(plan_sheet_pins(plan_labels, block, grid_mm=self.grid_mm()))
+        except Exception as exc:
+            self.warn("schematic_create_sheet_pins_failed", name=name, error=str(exc))
+            return f"\nSheet '{name}' was created, but its pins could not be planned: {exc}"
 
-        plan = self._stamp_uuids(plan_sheet_pins(plan_labels, block, grid_mm=self.grid_mm()))
-
-        def mutator(current: str, _name: str = name, _plan: SheetPinPlan = plan) -> str:
+        def mutator(current: str) -> str:
             target = next(
-                (candidate for candidate in parse_sheet_blocks(current) if candidate.name == _name),
+                (candidate for candidate in parse_sheet_blocks(current) if candidate.name == name),
                 None,
             )
             if target is None:
-                raise ValueError(f"Sheet '{_name}' disappeared before the pin write.")
-            return apply_plan(current, target, _plan)
+                raise ValueError(f"Sheet '{name}' disappeared before the pin write.")
+            return apply_plan(current, target, plan)
 
         try:
             self.transactional_write(mutator, top_schematic_path)
@@ -364,16 +385,27 @@ class SchematicHierarchyAuthoringService:
             pin_detail += (
                 f" Conflicting pin types for {', '.join(plan.conflicts)} (first occurrence wins)."
             )
+        # The same disclosures sch_import_sheet_pins surfaces -- notably that a
+        # widened sheet was widened from an estimated text width. Dropping them
+        # here would let sch_create_sheet resize a sheet and say nothing.
+        pin_detail += "".join(f"\nnote: {note}" for note in plan.notes)
         return pin_detail
 
     @staticmethod
     def _describe(sheet: SheetBlock, plan: SheetPinPlan) -> str:
-        counts = {"add": 0, "retype": 0, "keep": 0}
+        """Summarize what a plan would do to one sheet.
+
+        Only ever appended to a report on a path where that plan was in fact
+        written (or explicitly labelled a preview). ``moved`` is counted apart
+        from ``unchanged`` because a repositioned pin is rewritten in the file,
+        and calling it unchanged would be a false statement about the write.
+        """
+        counts = {"add": 0, "retype": 0, "move": 0, "keep": 0}
         for placement in plan.placements:
             counts[placement.action] += 1
         detail = (
             f"- {sheet.name}: {counts['add']} added, {counts['retype']} retyped, "
-            f"{counts['keep']} unchanged"
+            f"{counts['move']} moved, {counts['keep']} unchanged"
         )
         if plan.size != sheet.size:
             detail += f"; resized to {plan.size[0]} x {plan.size[1]} mm"
@@ -401,6 +433,22 @@ class SchematicHierarchyAuthoringService:
         if sheet is not None:
             blocks = tuple(block for block in blocks if block.name == sheet)
             if not blocks:
+                skipped = next(
+                    (
+                        candidate
+                        for candidate in parse_skipped_sheet_blocks(root_text)
+                        if candidate.name == sheet
+                    ),
+                    None,
+                )
+                if skipped is not None:
+                    # The sheet is in the file; it is the block that is unusable.
+                    # Saying "not found" here would send the user looking for a
+                    # name that is right there.
+                    return (
+                        f"Sheet '{sheet}' is in {root_path.name} but cannot be addressed: "
+                        f"{skipped.reason}. Fix that block in KiCad and retry."
+                    )
                 return f"Sheet '{sheet}' was not found in {root_path.name}."
         if not blocks:
             return f"{root_path.name} has no child sheets, so there is nothing to import."
@@ -445,7 +493,10 @@ class SchematicHierarchyAuthoringService:
                     None,
                 )
                 if block is None:
-                    continue
+                    raise ValueError(
+                        f"Sheet '{name}' disappeared between the read and the write, so its "
+                        "pins were not applied. Re-run sch_import_sheet_pins."
+                    )
                 if block.origin != origin or block.size != size:
                     raise ValueError(
                         f"Sheet '{name}' moved or resized since it was read "
@@ -458,8 +509,12 @@ class SchematicHierarchyAuthoringService:
         try:
             mutated = mutator(root_text)
         except ValueError as exc:
+            # No per-sheet lines here, and none on the write-failure path below.
+            # They describe the *plan*; on a failed path nothing was written, so
+            # printing "1 added" for a sheet the transaction rolled back would
+            # be false. The two failure returns therefore have the same shape.
             self.warn("schematic_import_sheet_pins_failed", error=str(exc))
-            return "\n".join([f"Could not import sheet pins: {exc}", *lines])
+            return f"Could not import sheet pins: {exc}"
 
         if mutated == root_text:
             return "\n".join(["Sheet pins are already up to date; nothing was written.", *lines])
@@ -470,7 +525,7 @@ class SchematicHierarchyAuthoringService:
             self.transactional_write(mutator, root_path)
         except Exception as exc:
             self.warn("schematic_import_sheet_pins_failed", error=str(exc))
-            return f"Could not write sheet pins: {exc}"
+            return f"Could not import sheet pins: {exc}"
 
         result = self.reload_schematic()
         return "\n".join([result, "Imported sheet pins.", *lines])
@@ -493,6 +548,7 @@ class SchematicHierarchyAuthoringService:
         try:
             root_text = self.read_text(root_path)
         except OSError as exc:
+            self.warn("schematic_add_sheet_pin_unreadable", sheet=sheet, error=str(exc))
             return f"Could not read the top-level schematic: {exc}"
 
         block = next(
@@ -500,6 +556,19 @@ class SchematicHierarchyAuthoringService:
             None,
         )
         if block is None:
+            skipped = next(
+                (
+                    candidate
+                    for candidate in parse_skipped_sheet_blocks(root_text)
+                    if candidate.name == sheet
+                ),
+                None,
+            )
+            if skipped is not None:
+                return (
+                    f"Sheet '{sheet}' is in {root_path.name} but cannot be addressed: "
+                    f"{skipped.reason}. Fix that block in KiCad and retry."
+                )
             return f"Sheet '{sheet}' was not found in {root_path.name}."
 
         placement = placement_on_edge(

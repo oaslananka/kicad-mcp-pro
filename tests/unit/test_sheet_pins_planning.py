@@ -11,23 +11,32 @@ from kicad_mcp.schematic.sheet_pins import (
 GRID = 1.27
 
 
+def _record(
+    name: str,
+    pin_type: str,
+    uuid: str,
+    *,
+    x_mm: float = 0.0,
+    y_mm: float = 0.0,
+    rotation: int = 0,
+) -> SheetPinRecord:
+    """One existing pin. Position defaults to the origin, i.e. *not* where the
+    layout would put it -- which is what makes such a pin ``move`` rather than
+    ``keep``. Tests that want ``keep`` must state the planned position.
+    """
+    return SheetPinRecord(
+        name=name, pin_type=pin_type, x_mm=x_mm, y_mm=y_mm, rotation=rotation, uuid=uuid
+    )
+
+
 def _sheet(
     *,
-    pins: tuple[tuple[str, str, str], ...] = (),
+    pins: tuple[SheetPinRecord, ...] = (),
     origin: tuple[float, float] = (80.01, 30.48),
     size: tuple[float, float] = (30.48, 20.32),
 ) -> SheetBlock:
-    """Build a ``SheetBlock`` for planning tests.
-
-    ``pins`` stays the lightweight ``(name, pin_type, uuid)`` shape these
-    tests already use -- only identity and type matter to ``plan_sheet_pins``
-    for *existing* pins, which computes fresh positions for everything it
-    places. Position/rotation are stubbed at the origin.
-    """
-    records = tuple(
-        SheetPinRecord(name=name, pin_type=pin_type, x_mm=0.0, y_mm=0.0, rotation=0, uuid=uuid)
-        for name, pin_type, uuid in pins
-    )
+    """Build a ``SheetBlock`` for planning tests."""
+    records = pins
     return SheetBlock(
         name="02_mcu",
         filename="main_02_mcu.kicad_sch",
@@ -113,7 +122,9 @@ def test_positions_are_snapped_to_the_schematic_grid() -> None:
 
 
 def test_existing_pin_with_the_same_type_is_kept_with_its_uuid() -> None:
-    sheet = _sheet(pins=(("IN", "input", "aaaa-bbbb"),))
+    sheet = _sheet(
+        pins=(_record("IN", "input", "aaaa-bbbb", x_mm=80.01, y_mm=33.02, rotation=180),)
+    )
 
     plan = plan_sheet_pins((("IN", "input"),), sheet, grid_mm=GRID)
 
@@ -122,7 +133,7 @@ def test_existing_pin_with_the_same_type_is_kept_with_its_uuid() -> None:
 
 
 def test_existing_pin_with_a_different_type_is_retyped_to_match_the_child() -> None:
-    sheet = _sheet(pins=(("IN", "input", "aaaa-bbbb"),))
+    sheet = _sheet(pins=(_record("IN", "input", "aaaa-bbbb"),))
 
     plan = plan_sheet_pins((("IN", "output"),), sheet, grid_mm=GRID)
 
@@ -143,7 +154,7 @@ def test_a_new_pin_carries_an_empty_uuid_for_the_caller_to_fill() -> None:
 
 
 def test_a_pin_without_a_matching_label_is_reported_but_never_dropped() -> None:
-    sheet = _sheet(pins=(("STALE", "output", "cccc"),))
+    sheet = _sheet(pins=(_record("STALE", "output", "cccc"),))
 
     plan = plan_sheet_pins((("IN", "input"),), sheet, grid_mm=GRID)
 
@@ -186,7 +197,17 @@ def test_the_plan_is_stable_across_runs() -> None:
     labels = (("B", "input"), ("A", "output"))
     first = plan_sheet_pins(labels, _sheet(), grid_mm=GRID)
     sheet = _sheet(
-        pins=tuple((p.name, p.pin_type, "uuid-" + p.name) for p in first.placements),
+        pins=tuple(
+            _record(
+                p.name,
+                p.pin_type,
+                "uuid-" + p.name,
+                x_mm=p.x_mm,
+                y_mm=p.y_mm,
+                rotation=p.rotation,
+            )
+            for p in first.placements
+        ),
         size=first.size,
     )
 
@@ -210,3 +231,36 @@ def test_placement_on_edge_mirrors_the_library_edge_semantics() -> None:
     assert (bottom.x_mm, bottom.y_mm, bottom.rotation, bottom.justify) == (85.09, 50.8, 270, "left")
     assert (left.x_mm, left.y_mm, left.rotation, left.justify) == (80.01, 45.72, 180, "left")
     assert (top.x_mm, top.y_mm, top.rotation, top.justify) == (85.09, 30.48, 90, "right")
+
+
+def test_an_existing_pin_the_layout_relocates_is_moved_not_kept() -> None:
+    """An `input` pin on the right edge -- exactly what ``sch_add_sheet_pin``
+    with ``edge="right"`` produces -- is relocated to the left column by the
+    import layout. Its type is unchanged, but the file is rewritten for it, so
+    calling it "unchanged" would be a false report of the write.
+    """
+    sheet = _sheet(pins=(_record("VIN", "input", "aaaa", x_mm=110.49, y_mm=33.02, rotation=0),))
+
+    plan = plan_sheet_pins((("VIN", "input"),), sheet, grid_mm=GRID)
+
+    placement = plan.placements[0]
+    assert placement.action == "move"
+    assert (placement.x_mm, placement.y_mm, placement.rotation) == (80.01, 33.02, 180)
+    assert placement.uuid == "aaaa"
+
+
+def test_an_orphan_pin_the_layout_relocates_is_moved_not_kept() -> None:
+    sheet = _sheet(pins=(_record("STALE", "output", "cccc"),))
+
+    plan = plan_sheet_pins((), sheet, grid_mm=GRID)
+
+    assert plan.orphans == ("STALE",)
+    assert plan.placements[0].action == "move"
+
+
+def test_a_retyped_pin_that_also_moves_still_reports_retype() -> None:
+    sheet = _sheet(pins=(_record("IN", "input", "aaaa"),))
+
+    plan = plan_sheet_pins((("IN", "output"),), sheet, grid_mm=GRID)
+
+    assert plan.placements[0].action == "retype"

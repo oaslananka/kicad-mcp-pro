@@ -360,7 +360,14 @@ class SheetPinPlacement:
     uuid: str
     """Existing pin's UUID, or ``""`` for a new pin the caller must stamp."""
     action: str
-    """``add``, ``retype`` or ``keep``."""
+    """``add``, ``retype``, ``move`` or ``keep``.
+
+    ``keep`` means the pin is re-emitted byte-identical -- same type, same
+    position, same rotation. A pin the layout relocates is ``move``, never
+    ``keep``: the file *is* rewritten for it, and a report that called that
+    "unchanged" would be false. A pin that is both retyped and relocated
+    reports ``retype``; either way the report says the pin changed.
+    """
 
 
 @dataclass(frozen=True)
@@ -402,6 +409,22 @@ def _is_on_grid(value: float, grid_mm: float) -> bool:
 
 def _sort_key(name: str) -> tuple[str, str]:
     return (name.casefold(), name)
+
+
+def _is_placed_at(record: SheetPinRecord | None, x_mm: float, y_mm: float, rotation: int) -> bool:
+    """Return whether an existing pin already sits exactly where the plan wants it.
+
+    Compared at the emitted precision (4 decimals), because that is what the
+    writer would put in the file -- the question is whether the write is a
+    no-op for this pin, not whether the floats are bit-identical.
+    """
+    if record is None:
+        return False
+    return (
+        round(record.x_mm, 4) == round(x_mm, 4)
+        and round(record.y_mm, 4) == round(y_mm, 4)
+        and record.rotation == rotation
+    )
 
 
 def _edge_extent(count: int, pitch_mm: float, margin_mm: float) -> float:
@@ -506,22 +529,21 @@ def plan_sheet_pins(
             continue
         desired[raw_name] = shape
 
-    existing = {pin.name: (pin.pin_type, pin.uuid) for pin in sheet.pins}
+    existing = {pin.name: pin for pin in sheet.pins}
     orphans = tuple(sorted((name for name in existing if name not in desired), key=_sort_key))
 
-    entries: list[tuple[str, str, str, str]] = []
+    entries: list[tuple[str, str, SheetPinRecord | None, str]] = []
     for name in sorted(set(desired) | set(existing), key=_sort_key):
+        record = existing.get(name)
         if name in desired:
             pin_type = desired[name]
             action = (
-                "add"
-                if name not in existing
-                else ("keep" if existing[name][0] == pin_type else "retype")
+                "add" if record is None else ("keep" if record.pin_type == pin_type else "retype")
             )
         else:
-            pin_type = existing[name][0]
+            pin_type = existing[name].pin_type
             action = "keep"
-        entries.append((name, pin_type, existing.get(name, ("", ""))[1], action))
+        entries.append((name, pin_type, record, action))
 
     left = [entry for entry in entries if entry[1] == "input"]
     right = [entry for entry in entries if entry[1] != "input"]
@@ -571,16 +593,21 @@ def plan_sheet_pins(
     for edge, column in (("left", left), ("right", right)):
         x_mm = origin_x if edge == "left" else round(origin_x + width, 4)
         rotation, justify = _EDGE_GEOMETRY[edge]
-        for index, (name, pin_type, uuid, action) in enumerate(column):
+        for index, (name, pin_type, record, action) in enumerate(column):
+            y_mm = _snap(origin_y + margin_mm + index * pitch_mm, grid_mm)
+            if action == "keep" and not _is_placed_at(record, x_mm, y_mm, rotation):
+                # The type matches, but this layout puts the pin somewhere else.
+                # The file is rewritten for it, so it is not "unchanged".
+                action = "move"
             placements.append(
                 SheetPinPlacement(
                     name=name,
                     pin_type=pin_type,
                     x_mm=x_mm,
-                    y_mm=_snap(origin_y + margin_mm + index * pitch_mm, grid_mm),
+                    y_mm=y_mm,
                     rotation=rotation,
                     justify=justify,
-                    uuid=uuid,
+                    uuid="" if record is None else record.uuid,
                     action=action,
                 )
             )
