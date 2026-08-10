@@ -61,3 +61,17 @@ def test_export_composition_root_no_longer_owns_vector_tools() -> None:
     assert nested.isdisjoint(
         {"sch_export_svg", "export_sch_svg", "sch_export_dxf", "export_sch_dxf"}
     )
+
+
+def test_export_composition_root_does_not_keep_unregistered_schematic_postscript() -> None:
+    root = boundaries.SRC_ROOT / "kicad_mcp" / "tools" / "export.py"
+    tree = ast.parse(root.read_text(encoding="utf-8"), filename=str(root))
+    register_node = next(
+        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "register"
+    )
+    nested = {
+        node.name
+        for node in register_node.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert "sch_export_ps" not in nested

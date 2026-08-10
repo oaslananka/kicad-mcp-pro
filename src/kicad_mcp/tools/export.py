@@ -369,52 +369,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         format_file_list=_format_file_list,
     )
 
-    @headless_compatible
-    def sch_export_ps(
-        output_dir: str = "",
-        pages: str = "",
-        variant_name: str = "",
-        theme: str = "",
-        black_and_white: bool = False,
-        exclude_drawing_sheet: bool = False,
-        draw_hop_over: bool = False,
-        no_background_color: bool = False,
-    ) -> str:
-        """Export schematic to PostScript format."""
-        sch_file = _get_sch_file()
-        try:
-            out_dir = (
-                _ensure_output_dir("ps")
-                if not output_dir
-                else _resolve_output_file("ps", output_dir, default_name="")
-            )
-        except ValueError as exc:
-            return f"Invalid output path: {exc}"
-
-        cmd = ["sch", "export", "ps"]
-        if pages:
-            cmd.extend(["--pages", pages])
-        if variant_name:
-            cmd.extend(["--variant", variant_name])
-        if theme:
-            cmd.extend(["--theme", theme])
-        if black_and_white:
-            cmd.append("--black-and-white")
-        if exclude_drawing_sheet:
-            cmd.append("--exclude-drawing-sheet")
-        if draw_hop_over:
-            cmd.append("--draw-hop-over")
-        if no_background_color:
-            cmd.append("--no-background-color")
-        cmd.extend(["--output", str(out_dir)])
-        cmd.append(str(sch_file))
-
-        code, stdout, stderr = _run_cli(*cmd)
-        if code != 0:
-            return f"Schematic PostScript export failed: {stderr or stdout or 'unknown error'}"
-        files = sorted(out_dir.glob("*.ps")) if out_dir.is_dir() else []
-        return _format_file_list(files, f"Schematic PostScript export completed in {out_dir}:")
-
     def _export_3d_render(
         output_file: str = "render.png",
         side: str = "top",
