@@ -3,6 +3,7 @@ from __future__ import annotations
 from kicad_mcp.schematic.sheet_pins import (
     SheetBlock,
     SheetPinRecord,
+    edge_for_rotation,
     placement_on_edge,
     plan_sheet_pins,
 )
@@ -53,8 +54,10 @@ def test_inputs_go_left_and_everything_else_goes_right() -> None:
     plan = plan_sheet_pins(labels, _sheet(), grid_mm=GRID)
 
     by_name = {p.name: p for p in plan.placements}
-    assert by_name["USB_DP"].edge == "left"
-    assert {by_name[n].edge for n in ("I2C1_SDA", "I2S_BCLK", "SENSE", "HIZ")} == {"right"}
+    assert edge_for_rotation(by_name["USB_DP"].rotation) == "left"
+    assert {
+        edge_for_rotation(by_name[n].rotation) for n in ("I2C1_SDA", "I2S_BCLK", "SENSE", "HIZ")
+    } == {"right"}
 
 
 def test_each_edge_is_alphabetical_and_pitched() -> None:
@@ -62,7 +65,7 @@ def test_each_edge_is_alphabetical_and_pitched() -> None:
 
     plan = plan_sheet_pins(labels, _sheet(), grid_mm=GRID)
 
-    left = [p for p in plan.placements if p.edge == "left"]
+    left = [p for p in plan.placements if edge_for_rotation(p.rotation) == "left"]
     assert [p.name for p in left] == ["alpha", "Bravo", "CHARLIE"]
     assert [p.y_mm for p in left] == [33.02, 35.56, 38.1]
 
@@ -70,8 +73,8 @@ def test_each_edge_is_alphabetical_and_pitched() -> None:
 def test_left_pins_sit_on_the_left_border_and_face_inward() -> None:
     plan = plan_sheet_pins((("IN", "input"), ("OUT", "output")), _sheet(), grid_mm=GRID)
 
-    left = next(p for p in plan.placements if p.edge == "left")
-    right = next(p for p in plan.placements if p.edge == "right")
+    left = next(p for p in plan.placements if edge_for_rotation(p.rotation) == "left")
+    right = next(p for p in plan.placements if edge_for_rotation(p.rotation) == "right")
     assert (left.x_mm, left.rotation, left.justify) == (80.01, 180, "left")
     assert (right.x_mm, right.rotation, right.justify) == (110.49, 0, "right")
 
@@ -124,7 +127,11 @@ def test_existing_pin_with_a_different_type_is_retyped_to_match_the_child() -> N
     plan = plan_sheet_pins((("IN", "output"),), sheet, grid_mm=GRID)
 
     placement = plan.placements[0]
-    assert (placement.action, placement.pin_type, placement.edge) == ("retype", "output", "right")
+    assert (
+        placement.action,
+        placement.pin_type,
+        edge_for_rotation(placement.rotation),
+    ) == ("retype", "output", "right")
     assert placement.uuid == "aaaa-bbbb"
 
 
@@ -185,8 +192,8 @@ def test_the_plan_is_stable_across_runs() -> None:
 
     second = plan_sheet_pins(labels, sheet, grid_mm=GRID)
 
-    assert [(p.name, p.edge, p.x_mm, p.y_mm) for p in second.placements] == [
-        (p.name, p.edge, p.x_mm, p.y_mm) for p in first.placements
+    assert [(p.name, p.rotation, p.x_mm, p.y_mm) for p in second.placements] == [
+        (p.name, p.rotation, p.x_mm, p.y_mm) for p in first.placements
     ]
     assert {p.action for p in second.placements} == {"keep"}
 

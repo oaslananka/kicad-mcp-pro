@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 
+from kicad_mcp.models.schematic import SheetEdge, SheetPinType
 from kicad_mcp.schematic.sheet_pins import (
+    EDGES,
     PIN_TYPES,
     SheetPinRecord,
     edge_for_rotation,
     parse_hierarchical_labels,
     parse_sheet_blocks,
+    parse_skipped_sheet_blocks,
 )
 
 SHEET_BLOCK = """(kicad_sch
@@ -154,6 +159,18 @@ def test_pin_types_are_the_kicad_vocabulary() -> None:
     assert PIN_TYPES == ("input", "output", "bidirectional", "tri_state", "passive")
 
 
+def test_the_validated_literals_match_the_runtime_tuples() -> None:
+    """The same vocabulary is declared twice -- keep the two copies identical.
+
+    ``models.schematic`` validates the tool arguments against a ``Literal`` and
+    ``sheet_pins`` checks them again at runtime against a tuple. Nothing else
+    ties the two together, so a value added to one and not the other would be
+    accepted at the boundary and rejected inside, or the reverse.
+    """
+    assert get_args(SheetPinType) == PIN_TYPES
+    assert get_args(SheetEdge) == EDGES
+
+
 @pytest.mark.parametrize("text", ["", "(kicad_sch\n)\n"])
 def test_parse_sheet_blocks_tolerates_documents_without_sheets(text: str) -> None:
     assert parse_sheet_blocks(text) == ()
@@ -194,3 +211,60 @@ def test_parse_sheet_blocks_skips_an_unbalanced_block_without_raising() -> None:
 
     assert len(blocks) == 1
     assert blocks[0].name == "05_audio"
+
+
+def test_parse_sheet_blocks_skips_a_block_whose_number_has_two_decimal_points() -> None:
+    # "80.0.1" is not a number. Matching it as one lets float() raise straight
+    # out of parse_sheet_blocks, escaping every tool entry point and breaking
+    # the function's documented contract that an unusable block is skipped.
+    text = SHEET_BLOCK.replace("(at 30.48 90.17)", "(at 80.0.1 90.17)", 1)
+
+    assert parse_sheet_blocks(text) == ()
+
+    skipped = parse_skipped_sheet_blocks(text)
+    assert len(skipped) == 1
+    assert skipped[0].name == "05_audio"
+    assert "position" in skipped[0].reason
+
+
+def test_parse_sheet_blocks_skips_a_pin_position_with_two_decimal_points() -> None:
+    # Same defect one level down: a malformed (at ...) inside a (pin ...) node
+    # must degrade to the zero fallback, not raise.
+    text = SHEET_BLOCK.replace(
+        "\t\t(instances\n",
+        '\t\t(pin "BROKEN" input\n\t\t\t(at 1.2.3 4.0 0)\n\t\t\t(uuid "u")\n\t\t)\n'
+        "\t\t(instances\n",
+        1,
+    )
+
+    blocks = parse_sheet_blocks(text)
+
+    assert len(blocks) == 1
+    assert blocks[0].pins == (
+        SheetPinRecord(name="BROKEN", pin_type="input", x_mm=0.0, y_mm=0.0, rotation=0, uuid="u"),
+    )
+
+
+def test_parse_skipped_sheet_blocks_names_a_sheet_without_a_size() -> None:
+    text = SHEET_BLOCK.replace("\t\t(size 30.48 20.32)\n", "", 1)
+
+    assert parse_sheet_blocks(text) == ()
+
+    skipped = parse_skipped_sheet_blocks(text)
+    assert len(skipped) == 1
+    assert skipped[0].name == "05_audio"
+    assert "size" in skipped[0].reason
+
+
+def test_parse_skipped_sheet_blocks_reports_an_unnamed_block() -> None:
+    text = SHEET_BLOCK.replace('"Sheetname"', '"Sheetnam"', 1)
+
+    skipped = parse_skipped_sheet_blocks(text)
+
+    assert len(skipped) == 1
+    assert skipped[0].name == ""
+    assert "Sheetname" in skipped[0].reason
+
+
+def test_parse_skipped_sheet_blocks_is_empty_for_a_healthy_document() -> None:
+    assert parse_skipped_sheet_blocks(SHEET_BLOCK) == ()
