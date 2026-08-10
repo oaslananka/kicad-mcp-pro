@@ -55,14 +55,18 @@ _PIN_Y = 33.02  # 26 x 1.27 mm, inside both sheets' vertical span
 _ALPHA_PIN_X = _ALPHA_ORIGIN[0] + _ALPHA_SIZE[0]  # 64.77 -- alpha's right edge
 _BETA_PIN_X = _BETA_ORIGIN[0]  # 68.58 -- beta's left edge
 
-_EXPECTED_SPREAD_DX = 13.97
+_EXPECTED_SPREAD_DX = 21.59
 """What plan_spread must compute for this geometry (verified by hand):
 
 need = 2*stub_mm + facing_width(alpha, rot=0) + facing_width(beta, rot=180) + margin_mm
-     = 2*2.54 + (6 chars * 0.6 * 1.27) + (6 chars * 0.6 * 1.27) + 2.54
-     = 5.08 + 4.572 + 4.572 + 2.54 = 16.764
+     = 2*2.54 + (6 chars * 1.1 * 1.27) + (6 chars * 1.1 * 1.27) + 2.54
+     = 5.08 + 8.382 + 8.382 + 2.54 = 24.384
 have = beta.x_min(68.58) - alpha.x_max(64.77) = 3.81
-shift = ceil_to_grid(16.764 - 3.81, 1.27) = ceil_to_grid(12.954, 1.27) = 13.97
+shift = ceil_to_grid(24.384 - 3.81, 1.27) = ceil_to_grid(20.574, 1.27) = 21.59
+
+(_TEXT_WIDTH_RATIO was measured empirically at 1.1 mm-per-character-height on
+2026-08-10 -- see its docstring in kicad_mcp.schematic.sheet_pins -- replacing
+the earlier, unmeasured 0.6 that undershot real KiCad label widths by ~30%.)
 """
 
 _ALPHA_PIN = SheetPinPlacement(

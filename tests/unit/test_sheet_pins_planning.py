@@ -105,7 +105,12 @@ def test_width_grows_only_when_the_two_text_columns_would_collide() -> None:
     plan = plan_sheet_pins(labels, _sheet(), grid_mm=GRID)
 
     assert plan.size[0] > 30.48
-    assert plan.size[0] % GRID == 0.0
+    # Not `plan.size[0] % GRID == 0.0`: float modulo near an exact multiple is
+    # unreliable (e.g. `72.39 % 1.27` == 1.2699999999999996, not ~0, even
+    # though 72.39 / 1.27 == 57.0 exactly) -- the same round-trip check
+    # `test_a_tight_gap_shifts_the_right_column_by_a_whole_grid_step` in
+    # test_sheet_wiring_spread.py already uses for this reason.
+    assert round(plan.size[0] / GRID, 6) == round(plan.size[0] / GRID)
 
 
 def test_size_is_untouched_when_everything_already_fits() -> None:

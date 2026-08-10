@@ -133,7 +133,9 @@ def test_the_reported_overlap_is_the_true_intersection_not_the_full_span_diff() 
     """A wide label that fully swallows a narrower one must report the
     narrow one's own width as the overlap, not the wide label's whole span.
     """
-    text_height_mm = 100 / 6  # width = 10 * len(name) at this height, for round numbers below
+    # width = 10 * len(name) at this height, for round numbers below
+    # (ratio 1.1 * text_height_mm must equal 10.0, so text_height_mm = 10 / 1.1).
+    text_height_mm = 100 / 11
     wide = StubPlacement(
         name="A" * 10,
         sheet_name="wide",

@@ -63,7 +63,8 @@ def test_a_gap_that_already_fits_produces_no_shift() -> None:
 
 
 def test_a_tight_gap_shifts_the_right_column_by_a_whole_grid_step() -> None:
-    # 9-char names both sides: 2*2.54 stub + 2*6.858 text = 18.796 needed.
+    # 9-char names both sides: 2*2.54 stub + 2*12.573 text = 30.226 needed
+    # (text width at ratio 1.1: 1.1 * 1.27 mm * 9 chars = 12.573 mm each side).
     left = _sheet("left", 0.0, 0.0, pins=(_pin("SPI2_MOSI", 30.48, 2.54, 0),))
     right = _sheet("right", 48.26, 0.0, pins=(_pin("SPI2_MOSI", 48.26, 2.54, 180),))
 
@@ -73,16 +74,17 @@ def test_a_tight_gap_shifts_the_right_column_by_a_whole_grid_step() -> None:
     shift = plan.shifts[0].dx_mm
     assert shift > 0
     assert round(shift / GRID, 6) == round(shift / GRID)
-    assert (48.26 + shift) - 30.48 >= 2 * 2.54 + 2 * 6.858 + 2.54
+    assert (48.26 + shift) - 30.48 >= 2 * 2.54 + 2 * 12.573 + 2.54
 
 
 def test_the_requirement_comes_from_the_facing_names_not_the_longest() -> None:
     # The long name is on the LEFT edge of the left sheet (rotation 180), so it
     # faces away from the gap and must not count toward the requirement. The
-    # 15.0 mm gap is chosen to sit strictly between the two possible answers:
-    # need_correct = 2*2.54 + 0.762("X") + 0.762("Y") + 2.54 = 9.144 mm (fits)
-    # need_rotation_blind = 2*2.54 + 12.192("A_VERY_LONG_NAME") + 0.762 + 2.54
-    #                     = 20.574 mm (needs a shift)
+    # 15.0 mm gap is chosen to sit strictly between the two possible answers
+    # (text width at ratio 1.1: 1.1 * 1.27 mm * char count):
+    # need_correct = 2*2.54 + 1.397("X") + 1.397("Y") + 2.54 = 10.414 mm (fits)
+    # need_rotation_blind = 2*2.54 + 22.352("A_VERY_LONG_NAME") + 1.397 + 2.54
+    #                     = 31.369 mm (needs a shift)
     # so a version of _facing_width that dropped the rotation filter would
     # make this test fail, not just pass more coarsely.
     left = _sheet(
@@ -129,9 +131,10 @@ def test_a_sheet_with_an_attached_wire_blocks_the_whole_plan() -> None:
 
 def test_a_shift_past_the_page_edge_is_reported_not_applied() -> None:
     # w=200.0 was the brief's original value, but it does not overflow an A4
-    # page: right_edge = 48.26 + 200.0 + 3.81 (the required shift) = 252.07 mm,
-    # which is under the 287.0 mm usable width (297.0 - PAGE_MARGIN_MM). 250.0
-    # is the smallest round width that does overflow: right_edge = 302.07 mm.
+    # page: right_edge = 48.26 + 200.0 + 15.24 (the required shift, at ratio
+    # 1.1) = 263.50 mm, which is under the 287.0 mm usable width (297.0 -
+    # PAGE_MARGIN_MM). 250.0 is a round width that does overflow:
+    # right_edge = 48.26 + 250.0 + 15.24 = 313.50 mm.
     left = _sheet("left", 0.0, 0.0, pins=(_pin("SPI2_MOSI", 30.48, 2.54, 0),))
     right = _sheet("right", 48.26, 0.0, w=250.0, pins=(_pin("SPI2_MOSI", 48.26, 2.54, 180),))
 
@@ -149,9 +152,10 @@ def test_a_shift_past_the_page_edge_is_reported_not_applied() -> None:
 
 def test_the_heuristic_is_disclosed_even_when_the_shift_would_overflow() -> None:
     # The overflow figure is computed from right_edge, which itself embeds the
-    # heuristic-driven shift (48.26 + 250.0 + 3.81 mm) whenever page_width_mm
-    # is set and the plan is rejected on the early-return overflow path. The
-    # disclosure must survive that return, not just the accepted-plan path.
+    # heuristic-driven shift (48.26 + 250.0 + 15.24 mm, at ratio 1.1) whenever
+    # page_width_mm is set and the plan is rejected on the early-return
+    # overflow path. The disclosure must survive that return, not just the
+    # accepted-plan path.
     left = _sheet("left", 0.0, 0.0, pins=(_pin("SPI2_MOSI", 30.48, 2.54, 0),))
     right = _sheet("right", 48.26, 0.0, w=250.0, pins=(_pin("SPI2_MOSI", 48.26, 2.54, 180),))
 

@@ -314,12 +314,42 @@ def parse_skipped_sheet_blocks(text: str) -> tuple[SkippedSheetBlock, ...]:
     )
 
 
-_TEXT_WIDTH_RATIO: Final = 0.6
-"""Heuristic: average glyph advance as a fraction of the font height.
+_TEXT_WIDTH_RATIO: Final = 1.1
+"""Heuristic: glyph advance as a fraction of the font height, chosen high.
 
-KiCad's stroke font has no fixed advance, so this only estimates how wide a pin
-label renders. It is used solely to decide whether a sheet needs to get wider,
-never to place anything.
+KiCad's stroke font has no fixed advance -- per-glyph width varies roughly
+2.4x, from a narrow ``I`` to a wide ``M``/``W`` -- so this can only ever
+estimate how wide a pin label renders. It is used solely to decide whether a
+sheet needs to get wider or two labels would collide, never to place anything.
+
+Measured 2026-08-10 against ``kicad-cli 10.0.5`` (``sch export svg``, which
+emits an accessibility ``<text>`` node per label carrying KiCad's own computed
+``textLength`` in mm -- the real rendered advance, not a pixel count) at the
+default 1.27 mm text height:
+
+- The 83 hierarchical/local label names actually used on this repo's own
+  ``hardware/transmitter/pcb/main`` board (``I2C1_SDA``, ``JOY_LSW``,
+  ``MOD_INT4``, ...) gave a per-name ratio (``textLength / (len(name) *
+  1.27)``) with mean 0.951, median 0.945, stdev 0.053, and a max of 1.030
+  (``PWR_QON``) across the sample.
+- Every uppercase letter, digit and underscore measured individually (10
+  repeats each, to separate the ~0.20 mm fixed per-label offset from the
+  per-glyph slope) ranged from 0.476 (``I``, narrowest) to 1.143 (``M``/``W``,
+  widest); most letters and all digits fall in 0.86-1.05.
+- The previous constant, 0.6, was roughly 30% below even the *mean* of the
+  real-name sample -- consistent with the observed defect: labels from
+  neighbouring sheets overlapping in a rendered PDF while this module's
+  collision check reported none.
+
+The relationship is linear in character count (a fixed intercept of ~0.20 mm
+plus a per-character slope, confirmed across strings from 1 to 38 characters
+built from repeated single glyphs), so a single per-character ratio is the
+right shape of model -- it just cannot be exact for every glyph mix. 1.1 sits
+above the observed mean and above the real-name sample's max, so an
+under-count that recreates the original defect is unlikely for realistic net
+names; it does not fully cover an adversarial all-``M``/``W`` label, but
+extra headroom there only costs page width, which is the safe direction to
+be wrong in.
 """
 
 _EDGE_GEOMETRY: Final[dict[str, tuple[int, str]]] = {
@@ -583,7 +613,7 @@ def plan_sheet_pins(
         if width > sheet.size[0]:
             notes.append(
                 "Sheet width was grown from an estimated text width "
-                "(heuristic: 0.6 x font height per character), not a measured one."
+                "(heuristic: 1.1 x font height per character), not a measured one."
             )
     else:
         capacity = _edge_capacity(height, pitch_mm, margin_mm)

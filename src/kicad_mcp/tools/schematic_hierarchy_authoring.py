@@ -236,7 +236,7 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
         ``grow_sheet`` (default on) lets the sheet symbol grow to fit its pins:
         taller for the fuller edge, and wider if the estimated label text of the
         two columns would collide. The sheet never shrinks and never moves.
-        Width growth uses an estimated text width (heuristic: 0.6 x font height
+        Width growth uses an estimated text width (heuristic: 1.1 x font height
         per character), not a measured one, and says so in the report. Turning
         ``grow_sheet`` off keeps the size fixed, and any sheet whose pins then do
         not fit is skipped **entirely** -- reported, with nothing written for it
@@ -273,7 +273,7 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
         columns is derived from the pin names that actually face each other
         across it (the longest right-edge name on the left, the longest
         left-edge name on the right), plus ``margin_mm``. That per-character
-        width is an *estimate* (0.6 x font height per character), not a
+        width is an *estimate* (1.1 x font height per character), not a
         measured one, so the margin absorbs noise in the estimate; the report
         says so whenever the estimate drove a move. Set ``min_gap_mm`` to use a
         fixed gap instead and skip the estimate entirely.
@@ -314,7 +314,7 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
         A pin that already has a wire on it is left alone. A pin name that
         appears on only one sheet symbol is reported rather than silently
         skipped, because its label would dangle with no matching net to join.
-        Label overlap is judged from an *estimated* text width (0.6 x font
+        Label overlap is judged from an *estimated* text width (1.1 x font
         height per character), not a measured one, and the report says so
         whenever that estimate was actually used to decide something. Labels
         from top- and bottom-edge pins are not checked for overlap at all --

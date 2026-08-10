@@ -203,7 +203,7 @@ def plan_spread(
     if heuristic_drove_a_shift:
         notes.append(
             "Column spacing was derived from an estimated text width "
-            "(heuristic: 0.6 x font height per character), not a measured one."
+            "(heuristic: 1.1 x font height per character), not a measured one."
         )
 
     overflow = 0.0
@@ -363,7 +363,7 @@ def plan_sheet_wiring(
     if heuristic_compared:
         notes.append(
             "Overlap was judged from an estimated text width "
-            "(heuristic: 0.6 x font height per character), not a measured one."
+            "(heuristic: 1.1 x font height per character), not a measured one."
         )
     if vertical_present:
         notes.append(
