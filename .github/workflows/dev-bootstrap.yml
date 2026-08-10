@@ -82,8 +82,8 @@ jobs:
           set -euo pipefail
           source .dev-env.sh
           test "$(python --version)" = "Python 3.13.12"
-          test "$(uv --version)" = "uv 0.10.8"
-          test "$(uvx --version)" = "uvx 0.10.8"
+          test "$(uv --version | awk '{print $2}')" = "0.11.31"
+          test "$(uvx --version | awk '{print $2}')" = "0.11.31"
           test "$(node --version)" = "v24.11.0"
           test "$(pnpm --version)" = "11.5.0"
           python scripts/dev_environment.py --doctor --json --ci \

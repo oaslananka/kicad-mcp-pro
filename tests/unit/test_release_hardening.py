@@ -1332,7 +1332,8 @@ def test_development_bootstrap_workflow_proves_clean_host_and_kicad_canary() -> 
     assert "./scripts/bootstrap-dev.sh --core-only --ci --json" in workflow
     assert "python3 -m json.tool" in workflow
     assert "Python 3.13.12" in workflow
-    assert "uv 0.10.8" in workflow
+    assert 'test "$(uv --version | awk \'{print $2}\')" = "0.11.31"' in workflow
+    assert 'test "$(uvx --version | awk \'{print $2}\')" = "0.11.31"' in workflow
     assert "v24.11.0" in workflow
     assert "11.5.0" in workflow
     assert has_sha_pinned_action(workflow, "actions/checkout")
