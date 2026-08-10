@@ -428,7 +428,7 @@
         },
         "schematic": {
           "availableCount": 37,
-          "blockedCount": 50,
+          "blockedCount": 52,
           "canarySurfaces": [
             "read",
             "write",
@@ -446,9 +446,9 @@
           "selectedBackends": {
             "guarded-schematic-file": 14,
             "local-engine": 23,
-            "unavailable": 50
+            "unavailable": 52
           },
-          "toolCount": 87
+          "toolCount": 89
         },
         "signal_integrity": {
           "availableCount": 12,
@@ -751,7 +751,7 @@
           "toolCount": 15
         },
         "schematic": {
-          "availableCount": 87,
+          "availableCount": 89,
           "blockedCount": 0,
           "canarySurfaces": [
             "read",
@@ -769,10 +769,10 @@
           ],
           "selectedBackends": {
             "guarded-schematic-file": 14,
-            "kicad-gui-ipc": 50,
+            "kicad-gui-ipc": 52,
             "local-engine": 23
           },
-          "toolCount": 87
+          "toolCount": 89
         },
         "signal_integrity": {
           "availableCount": 12,
@@ -1075,7 +1075,7 @@
           "toolCount": 15
         },
         "schematic": {
-          "availableCount": 87,
+          "availableCount": 89,
           "blockedCount": 0,
           "canarySurfaces": [
             "read",
@@ -1093,10 +1093,10 @@
           ],
           "selectedBackends": {
             "guarded-schematic-file": 14,
-            "kicad-11-headless-ipc": 50,
+            "kicad-11-headless-ipc": 52,
             "local-engine": 23
           },
-          "toolCount": 87
+          "toolCount": 89
         },
         "signal_integrity": {
           "availableCount": 12,
@@ -1196,7 +1196,7 @@
     "previewBaseline": "11.x",
     "publicSupportClaim": "KiCad 11 remains preview until native canaries pass.",
     "stableBaseline": "10.0.x",
-    "toolCount": 380
+    "toolCount": 382
   },
   "tools": [
     {
@@ -8828,6 +8828,30 @@
       },
       "runtime": "kicad_ipc",
       "tier": "write",
+      "tool": "sch_spread_sheets",
+      "writesFiles": true
+    },
+    {
+      "category": "schematic",
+      "routes": {
+        "degradedNoKiCad": {
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
+        },
+        "kicad10Gui": {
+          "available": true,
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": "ipc-transaction-and-postcondition-check"
+        },
+        "kicad11Headless": {
+          "available": true,
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": "ipc-transaction-and-postcondition-check"
+        }
+      },
+      "runtime": "kicad_ipc",
+      "tier": "write",
       "tool": "sch_straighten_wires",
       "writesFiles": true
     },
@@ -9046,6 +9070,30 @@
       "tier": "read",
       "tool": "sch_visual_qa",
       "writesFiles": false
+    },
+    {
+      "category": "schematic",
+      "routes": {
+        "degradedNoKiCad": {
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
+        },
+        "kicad10Gui": {
+          "available": true,
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": "ipc-transaction-and-postcondition-check"
+        },
+        "kicad11Headless": {
+          "available": true,
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": "ipc-transaction-and-postcondition-check"
+        }
+      },
+      "runtime": "kicad_ipc",
+      "tier": "write",
+      "tool": "sch_wire_sheet_pins",
+      "writesFiles": true
     },
     {
       "category": "validation",

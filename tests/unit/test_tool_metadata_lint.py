@@ -106,6 +106,13 @@ def test_read_only_prefix_takes_precedence_over_write_infix() -> None:
         )
 
 
+def test_sheet_wiring_mutations_are_destructive_and_idempotent() -> None:
+    for tool_name in ("sch_spread_sheets", "sch_wire_sheet_pins"):
+        annotations = infer_tool_annotations(tool_name).model_dump(exclude_none=True)
+        assert annotations.get("destructiveHint") is True
+        assert annotations.get("idempotentHint") is True
+
+
 @pytest.mark.anyio
 async def test_tool_contract_linter_passes() -> None:
     assert await lint_tool_contracts() == []

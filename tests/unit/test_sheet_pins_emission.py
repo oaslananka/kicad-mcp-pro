@@ -10,6 +10,7 @@ from kicad_mcp.schematic.sheet_pins import (
     SheetPinRecord,
     _splice,  # internal invariant (non-overlapping edit spans), tested directly below
     apply_plan,
+    check_edits_non_overlapping,
     insert_pin,
     parse_sheet_blocks,
     plan_sheet_pins,
@@ -259,6 +260,19 @@ def test_apply_plan_relocates_a_pin_that_sits_after_instances() -> None:
     )
     assert reparsed.instances_start is not None
     assert reparsed.pin_spans[0][0] < reparsed.instances_start
+
+
+def test_check_edits_non_overlapping_refuses_overlapping_spans() -> None:
+    """The generic guard ``_splice`` calls internally (via ``_check_non_overlapping``)
+    and that ``spread_sheets`` (``hierarchy_authoring.py``) calls directly across a
+    whole document's edits, exercised standalone with fabricated overlapping spans.
+    """
+    with pytest.raises(ValueError, match="root.kicad_sch"):
+        check_edits_non_overlapping([(5, 15, "a"), (10, 20, "b")], "root.kicad_sch")
+
+
+def test_check_edits_non_overlapping_accepts_disjoint_spans() -> None:
+    check_edits_non_overlapping([(0, 5, "a"), (5, 10, "b"), (20, 30, "c")], "root.kicad_sch")
 
 
 def test_splice_refuses_overlapping_edits() -> None:

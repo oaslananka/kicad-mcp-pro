@@ -20,6 +20,13 @@ from .sheet_pins import (
     placement_on_edge,
     plan_sheet_pins,
 )
+from .sheet_wiring import (
+    apply_spread_shifts,
+    attached_pin_names,
+    page_width_mm,
+    plan_sheet_wiring,
+    plan_spread,
+)
 
 
 class SchematicTarget(Protocol):
@@ -124,6 +131,8 @@ type ReloadSchematic = Callable[[], str]
 type ReadText = Callable[[Path], str]
 type GridMM = Callable[[], float]
 type NewUUID = Callable[[], str]
+type WireBlock = Callable[[float, float, float, float], str]
+type ParseWireEndpoints = Callable[[str], tuple[tuple[float, float], ...]]
 
 
 @dataclass(frozen=True)
@@ -146,6 +155,8 @@ class SchematicHierarchyAuthoringService:
     read_text: ReadText
     grid_mm: GridMM
     new_uuid: NewUUID
+    wire_block: WireBlock
+    parse_wire_endpoints: ParseWireEndpoints
 
     @staticmethod
     def _format_target_detail(target: SchematicTarget) -> str:
@@ -602,3 +613,199 @@ class SchematicHierarchyAuthoringService:
             f"{result}\nAdded pin '{name}' ({pin_type}) to sheet '{sheet}' "
             f"on the {edge} edge at {placement.x_mm}, {placement.y_mm} mm."
         )
+
+    def wire_sheet_pins(
+        self,
+        sheet: str | None,
+        stub_mm: float,
+        dry_run: bool,
+    ) -> str:
+        """Add a stub wire and a local label at every sheet pin.
+
+        A sheet pin alone joins nothing -- two sheets become one net only once
+        something in the parent connects their pins, and matching names are not
+        enough (unlike global labels). This writes the stub-then-label idiom:
+        a short wire out of the pin, then a *local* label carrying its name at
+        the far end. Same-named local labels on one sheet are one net, so no
+        wire ever has to route between sheet symbols.
+
+        ``sheet``, if given, limits which sheet's pins get a new stub and label
+        this call -- every sheet's pins still count towards orphan and
+        collision detection, since a name only "matches" once its counterpart
+        elsewhere in the document is known.
+        """
+        root_path = self.active_schematic_file()
+        try:
+            root_text = self.read_text(root_path)
+        except OSError as exc:
+            self.warn("schematic_wire_sheet_pins_unreadable", error=str(exc))
+            return f"Could not read the top-level schematic: {exc}"
+
+        blocks = parse_sheet_blocks(root_text)
+        if not blocks:
+            return f"{root_path.name} has no child sheets, so there is nothing to wire."
+        if sheet is not None and not any(block.name == sheet for block in blocks):
+            return f"Sheet '{sheet}' was not found in {root_path.name}."
+
+        wired_points = self.parse_wire_endpoints(root_text)
+        plan = plan_sheet_wiring(
+            blocks,
+            wired_points=wired_points,
+            grid_mm=self.grid_mm(),
+            stub_mm=stub_mm,
+        )
+        targets = tuple(
+            placement
+            for placement in plan.placements
+            if placement.action == "add" and (sheet is None or placement.sheet_name == sheet)
+        )
+
+        def mutator(current: str) -> str:
+            for placement in targets:
+                current = self.append_before_sheet_instances(
+                    current,
+                    self.wire_block(
+                        placement.x1_mm, placement.y1_mm, placement.x2_mm, placement.y2_mm
+                    ),
+                )
+                current = self.append_before_sheet_instances(
+                    current,
+                    self.label_block(
+                        placement.name,
+                        placement.label_x_mm,
+                        placement.label_y_mm,
+                        placement.label_rotation,
+                        kind="label",
+                        justify=placement.label_justify,
+                    ),
+                )
+            return current
+
+        try:
+            mutated = mutator(root_text)
+        except Exception as exc:
+            self.warn("schematic_wire_sheet_pins_failed", error=str(exc))
+            return f"Could not wire sheet pins: {exc}"
+
+        lines = list(plan.notes)
+        if plan.orphans:
+            lines.append("Pins with no match on another sheet: " + ", ".join(plan.orphans) + ".")
+        if plan.collisions:
+            lines.extend(f"note: {collision}" for collision in plan.collisions)
+
+        if mutated == root_text:
+            return "\n".join(["Sheet pins are already wired; nothing was written.", *lines])
+        if dry_run:
+            return "\n".join(
+                [
+                    f"Dry run -- would add {len(targets)} stub(s) and label(s); "
+                    "nothing was written.",
+                    *lines,
+                ]
+            )
+
+        try:
+            self.transactional_write(mutator, root_path)
+        except Exception as exc:
+            self.warn("schematic_wire_sheet_pins_failed", error=str(exc))
+            return f"Could not wire sheet pins: {exc}"
+
+        result = self.reload_schematic()
+        return "\n".join(
+            [
+                result,
+                f"Wired {len(targets)} sheet pin(s): added {len(targets)} stub(s) and labels.",
+                *lines,
+            ]
+        )
+
+    def spread_sheets(
+        self,
+        min_gap_mm: float | None,
+        margin_mm: float,
+        dry_run: bool,
+    ) -> str:
+        """Move sheet-symbol columns apart to make room for stub-and-label wiring.
+
+        Only ``(at ...)`` nodes move -- the sheet's own, and each of its pins',
+        preserving every pin's rotation -- so nothing else about a sheet symbol
+        or its pins (styling, UUIDs) is touched. A sheet with a wire already on
+        one of its pins is never moved: moving it would silently disconnect
+        that wire, since KiCad joins on exact coordinate equality.
+        """
+        root_path = self.active_schematic_file()
+        try:
+            root_text = self.read_text(root_path)
+        except OSError as exc:
+            self.warn("schematic_spread_sheets_unreadable", error=str(exc))
+            return f"Could not read the top-level schematic: {exc}"
+
+        blocks = parse_sheet_blocks(root_text)
+        if not blocks:
+            return f"{root_path.name} has no child sheets, so there is nothing to spread."
+
+        wired_points = self.parse_wire_endpoints(root_text)
+        attached = attached_pin_names(blocks, wired_points)
+        effective_page_width_mm = page_width_mm(root_text)
+
+        plan = plan_spread(
+            blocks,
+            attached=attached,
+            grid_mm=self.grid_mm(),
+            margin_mm=margin_mm,
+            min_gap_mm=min_gap_mm,
+            page_width_mm=effective_page_width_mm,
+        )
+        lines = list(plan.notes)
+
+        if plan.blocked:
+            return "\n".join(["Nothing was moved.", *lines])
+        if plan.overflow_mm:
+            return "\n".join(["Nothing was moved.", *lines])
+        if not plan.shifts:
+            return "\n".join(["Sheets are already spread out; nothing was written.", *lines])
+
+        dx_by_sheet: dict[str, float] = {
+            name: shift.dx_mm for shift in plan.shifts for name in shift.sheet_names
+        }
+        skipped_pins: list[tuple[str, str]] = []
+
+        def mutator(current: str) -> str:
+            updated, skipped = apply_spread_shifts(
+                current,
+                dx_by_sheet,
+                subject=root_path.name,
+            )
+            skipped_pins[:] = skipped
+            return updated
+
+        try:
+            mutated = mutator(root_text)
+        except ValueError as exc:
+            self.warn("schematic_spread_sheets_failed", error=str(exc))
+            return f"Could not spread sheets: {exc}"
+
+        if skipped_pins:
+            lines.append(
+                "Left in place (no readable (at ...) node to rewrite): "
+                + ", ".join(f"'{pin}' on '{sheet}'" for sheet, pin in skipped_pins)
+                + ". Open the file in KiCad and save it once, then retry."
+            )
+
+        if mutated == root_text:
+            return "\n".join(["Sheets are already spread out; nothing was written.", *lines])
+
+        moved = ", ".join(sorted(dx_by_sheet))
+        if dry_run:
+            return "\n".join(
+                [f"Dry run -- would move {len(dx_by_sheet)} sheet(s): {moved}.", *lines]
+            )
+
+        try:
+            self.transactional_write(mutator, root_path)
+        except Exception as exc:
+            self.warn("schematic_spread_sheets_failed", error=str(exc))
+            return f"Could not spread sheets: {exc}"
+
+        result = self.reload_schematic()
+        return "\n".join([result, f"Spread {len(dx_by_sheet)} sheet(s): {moved}.", *lines])

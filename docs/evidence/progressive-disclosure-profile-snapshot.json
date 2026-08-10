@@ -3,7 +3,7 @@
     "build": {
       "callableTools": 24,
       "catalogCharacters": 9348,
-      "catalogReductionVsExpertPct": 95.7,
+      "catalogReductionVsExpertPct": 95.8,
       "declaredTools": 24,
       "estimatedCatalogTokens": 2337,
       "forbiddenToolExposures": 2,
@@ -49,7 +49,7 @@
     "default": {
       "callableTools": 24,
       "catalogCharacters": 9374,
-      "catalogReductionVsExpertPct": 95.7,
+      "catalogReductionVsExpertPct": 95.8,
       "declaredTools": 24,
       "estimatedCatalogTokens": 2344,
       "forbiddenToolExposures": 0,
@@ -93,11 +93,11 @@
       ]
     },
     "expert": {
-      "callableTools": 380,
-      "catalogCharacters": 218874,
+      "callableTools": 382,
+      "catalogCharacters": 222935,
       "catalogReductionVsExpertPct": 0.0,
-      "declaredTools": 380,
-      "estimatedCatalogTokens": 54719,
+      "declaredTools": 382,
+      "estimatedCatalogTokens": 55734,
       "forbiddenToolExposures": 8,
       "goldenCases": 65,
       "goldenCasesCovered": 55,
@@ -429,6 +429,7 @@
         "sch_set_hop_over",
         "sch_set_sheet_size",
         "sch_set_title_block_info",
+        "sch_spread_sheets",
         "sch_straighten_wires",
         "sch_swap_gates",
         "sch_swap_pins",
@@ -439,6 +440,7 @@
         "sch_visual_baseline_compare",
         "sch_visual_baseline_set",
         "sch_visual_qa",
+        "sch_wire_sheet_pins",
         "schematic_connectivity_gate",
         "schematic_design_rule_check",
         "schematic_quality_gate",
@@ -497,7 +499,7 @@
     "release": {
       "callableTools": 24,
       "catalogCharacters": 7213,
-      "catalogReductionVsExpertPct": 96.7,
+      "catalogReductionVsExpertPct": 96.8,
       "declaredTools": 24,
       "estimatedCatalogTokens": 1804,
       "forbiddenToolExposures": 0,
@@ -543,7 +545,7 @@
     "review": {
       "callableTools": 24,
       "catalogCharacters": 9374,
-      "catalogReductionVsExpertPct": 95.7,
+      "catalogReductionVsExpertPct": 95.8,
       "declaredTools": 24,
       "estimatedCatalogTokens": 2344,
       "forbiddenToolExposures": 0,

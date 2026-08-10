@@ -171,6 +171,22 @@ class ImportSheetPinsInput(BaseModel):
     dry_run: bool = False
 
 
+class SpreadSheetsInput(BaseModel):
+    """Move sheet columns apart so stub labels have room."""
+
+    min_gap_mm: float | None = Field(default=None, ge=0.0, le=500.0)
+    margin_mm: float = Field(default=2.54, ge=0.0, le=50.0)
+    dry_run: bool = False
+
+
+class WireSheetPinsInput(BaseModel):
+    """Connect sheet pins with stubs and local labels."""
+
+    sheet: str | None = Field(default=None, max_length=120)
+    stub_mm: float = Field(default=2.54, gt=0.0, le=50.0)
+    dry_run: bool = False
+
+
 class HierarchicalLabelInput(BaseModel):
     """Hierarchical label placement parameters."""
 

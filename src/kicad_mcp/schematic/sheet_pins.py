@@ -106,6 +106,14 @@ class SheetBlock:
     """Whole-line spans of the existing ``(pin ...)`` blocks, parallel to ``pins``."""
     instances_start: int | None
     """Start of the ``(instances ...)`` node -- the anchor new pins go before."""
+    at_span: tuple[int, int]
+    """Character span of the sheet's own ``(at x y)`` node.
+
+    Carried so a caller can move a sheet by rewriting one node instead of
+    re-emitting the block, which would lose any hand-tuned styling.
+    """
+    pin_at_spans: tuple[tuple[int, int], ...]
+    """Character span of each pin's ``(at x y rot)`` node, parallel to ``pins``."""
 
 
 def _unescape(raw: str) -> str:
@@ -207,15 +215,19 @@ def _scan_sheet_blocks(text: str) -> Iterator[SheetBlock | SkippedSheetBlock]:
         name = ""
         filename = ""
         origin: tuple[float, float] | None = None
+        at_span: tuple[int, int] | None = None
         size: tuple[float, float] | None = None
         size_span: tuple[int, int] | None = None
         pins: list[SheetPinRecord] = []
         pin_spans: list[tuple[int, int]] = []
+        pin_at_spans: list[tuple[int, int]] = []
         instances_start: int | None = None
 
         for tag, child_start, child_end in _children(text, start, end):
             if tag == "at" and origin is None:
                 origin = _two_floats(text, child_start, child_end)
+                if origin is not None:
+                    at_span = (child_start, child_end)
             elif tag == "size" and size is None:
                 size = _two_floats(text, child_start, child_end)
                 if size is not None:
@@ -247,10 +259,11 @@ def _scan_sheet_blocks(text: str) -> Iterator[SheetBlock | SkippedSheetBlock]:
                     )
                 )
                 pin_spans.append(_line_span(text, child_start, child_end))
+                pin_at_spans.append(at_match.span() if at_match else (child_start, child_start))
             elif tag == "instances" and instances_start is None:
                 instances_start = child_start
 
-        if not name or origin is None or size is None or size_span is None:
+        if not name or origin is None or at_span is None or size is None or size_span is None:
             missing = [
                 label
                 for label, present in (
@@ -278,6 +291,8 @@ def _scan_sheet_blocks(text: str) -> Iterator[SheetBlock | SkippedSheetBlock]:
             size_span=size_span,
             pin_spans=tuple(pin_spans),
             instances_start=instances_start,
+            at_span=at_span,
+            pin_at_spans=tuple(pin_at_spans),
         )
 
 
@@ -299,12 +314,42 @@ def parse_skipped_sheet_blocks(text: str) -> tuple[SkippedSheetBlock, ...]:
     )
 
 
-_TEXT_WIDTH_RATIO: Final = 0.6
-"""Heuristic: average glyph advance as a fraction of the font height.
+_TEXT_WIDTH_RATIO: Final = 1.1
+"""Heuristic: glyph advance as a fraction of the font height, chosen high.
 
-KiCad's stroke font has no fixed advance, so this only estimates how wide a pin
-label renders. It is used solely to decide whether a sheet needs to get wider,
-never to place anything.
+KiCad's stroke font has no fixed advance -- per-glyph width varies roughly
+2.4x, from a narrow ``I`` to a wide ``M``/``W`` -- so this can only ever
+estimate how wide a pin label renders. It is used solely to decide whether a
+sheet needs to get wider or two labels would collide, never to place anything.
+
+Measured 2026-08-10 against ``kicad-cli 10.0.5`` (``sch export svg``, which
+emits an accessibility ``<text>`` node per label carrying KiCad's own computed
+``textLength`` in mm -- the real rendered advance, not a pixel count) at the
+default 1.27 mm text height:
+
+- The 83 hierarchical/local label names actually used on this repo's own
+  ``hardware/transmitter/pcb/main`` board (``I2C1_SDA``, ``JOY_LSW``,
+  ``MOD_INT4``, ...) gave a per-name ratio (``textLength / (len(name) *
+  1.27)``) with mean 0.951, median 0.945, stdev 0.053, and a max of 1.030
+  (``PWR_QON``) across the sample.
+- Every uppercase letter, digit and underscore measured individually (10
+  repeats each, to separate the ~0.20 mm fixed per-label offset from the
+  per-glyph slope) ranged from 0.476 (``I``, narrowest) to 1.143 (``M``/``W``,
+  widest); most letters and all digits fall in 0.86-1.05.
+- The previous constant, 0.6, was roughly 30% below even the *mean* of the
+  real-name sample -- consistent with the observed defect: labels from
+  neighbouring sheets overlapping in a rendered PDF while this module's
+  collision check reported none.
+
+The relationship is linear in character count (a fixed intercept of ~0.20 mm
+plus a per-character slope, confirmed across strings from 1 to 38 characters
+built from repeated single glyphs), so a single per-character ratio is the
+right shape of model -- it just cannot be exact for every glyph mix. 1.1 sits
+above the observed mean and above the real-name sample's max, so an
+under-count that recreates the original defect is unlikely for realistic net
+names; it does not fully cover an adversarial all-``M``/``W`` label, but
+extra headroom there only costs page width, which is the safe direction to
+be wrong in.
 """
 
 _EDGE_GEOMETRY: Final[dict[str, tuple[int, str]]] = {
@@ -568,7 +613,7 @@ def plan_sheet_pins(
         if width > sheet.size[0]:
             notes.append(
                 "Sheet width was grown from an estimated text width "
-                "(heuristic: 0.6 x font height per character), not a measured one."
+                "(heuristic: 1.1 x font height per character), not a measured one."
             )
     else:
         capacity = _edge_capacity(height, pitch_mm, margin_mm)
@@ -694,27 +739,41 @@ def _require_anchor(sheet: SheetBlock) -> int:
     return sheet.instances_start
 
 
-def _check_non_overlapping(sheet: SheetBlock, edits: list[tuple[int, int, str]]) -> None:
-    """Guard ``_splice``'s edit-ordering precondition.
+def check_edits_non_overlapping(edits: Sequence[tuple[int, int, str]], subject: str) -> None:
+    """Guard a splice's edit-ordering precondition: no two spans may overlap.
 
-    Replaying edits in descending order of ``start`` is only safe if the spans
-    are pairwise non-overlapping -- see ``_splice``. A ``(pin ...)`` node
+    Replaying ``(start, end, replacement)`` edits in descending order of
+    ``start`` over a shared text buffer -- the technique both ``_splice``
+    (one sheet block) and ``spread_sheets`` (the whole document) use -- is
+    only safe if the spans are pairwise non-overlapping: an earlier edit's
+    start must never fall inside a later edit's span, or replaying them out
+    of order silently clobbers whichever one loses. A ``(pin ...)`` node
     sharing a physical source line with ``(instances ...)`` or ``(size ...)``
-    would violate that (their line-widened spans would collide), so this is a
-    loud, named ``ValueError`` instead of a silently corrupted schematic.
+    is one way real files trigger this, so it is a loud, named ``ValueError``
+    instead of a silently corrupted schematic.
 
-    This is not the only precondition a safe write has: ``_indent_of`` guards
-    the other, that the anchor line's prefix is really indentation.
+    ``subject`` names what the caller is editing -- a single sheet
+    (``"Sheet 'X'"``) or a whole document (a filename) -- so the message
+    reads correctly either way.
     """
     ordered = sorted(edits, key=lambda edit: edit[0])
     for previous, current in zip(ordered, ordered[1:], strict=False):
         if current[0] < previous[1]:
             raise ValueError(
-                f"Sheet '{sheet.name}' has overlapping edits at character spans "
+                f"{subject} has overlapping edits at character spans "
                 f"{previous[:2]} and {current[:2]}; refusing to risk corrupting the file. "
                 "This usually means a (pin ...) node shares a source line with "
                 "(instances ...) or (size ...) -- reformat the file in KiCad and retry."
             )
+
+
+def _check_non_overlapping(sheet: SheetBlock, edits: list[tuple[int, int, str]]) -> None:
+    """Guard ``_splice``'s edit-ordering precondition for one sheet's edits.
+
+    This is not the only precondition a safe write has: ``_indent_of`` guards
+    the other, that the anchor line's prefix is really indentation.
+    """
+    check_edits_non_overlapping(edits, f"Sheet '{sheet.name}'")
 
 
 def _splice(text: str, sheet: SheetBlock, edits: list[tuple[int, int, str]]) -> str:

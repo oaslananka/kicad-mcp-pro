@@ -130,6 +130,7 @@ def get_tool_metadata(tool_name: str) -> ToolMetadata | None:
 # sequence-sensitive writes (add/create/place/route/build/commit) are deliberately
 # excluded, so they are classified non-idempotent.
 _IDEMPOTENT_WRITE_TOKENS = ("set_", "save", "refill", "export", "upgrade", "reset_")
+_IDEMPOTENT_TOOL_NAMES = {"sch_spread_sheets", "sch_wire_sheet_pins"}
 
 
 def _is_read_only_name(normalized: str) -> bool:
@@ -152,7 +153,7 @@ def is_tool_idempotent(tool_name: str) -> bool:
     error rather than blindly re-calling.
     """
     normalized = tool_name.casefold()
-    if _is_read_only_name(normalized):
+    if _is_read_only_name(normalized) or normalized in _IDEMPOTENT_TOOL_NAMES:
         return True
     return any(token in normalized for token in _IDEMPOTENT_WRITE_TOKENS)
 
@@ -178,6 +179,8 @@ def infer_tool_annotations(
                 "_move_",
                 "_place_",
                 "_route_",
+                "_spread_",
+                "_wire_",
                 "_set_",
                 "_update_",
                 "_export_",

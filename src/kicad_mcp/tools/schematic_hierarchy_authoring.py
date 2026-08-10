@@ -16,6 +16,8 @@ from ..models.schematic import (
     HierarchicalLabelInput,
     ImportSheetPinsInput,
     SheetPinInput,
+    SpreadSheetsInput,
+    WireSheetPinsInput,
 )
 from ..schematic.hierarchy_authoring import SchematicHierarchyAuthoringService
 
@@ -234,7 +236,7 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
         ``grow_sheet`` (default on) lets the sheet symbol grow to fit its pins:
         taller for the fuller edge, and wider if the estimated label text of the
         two columns would collide. The sheet never shrinks and never moves.
-        Width growth uses an estimated text width (heuristic: 0.6 x font height
+        Width growth uses an estimated text width (heuristic: 1.1 x font height
         per character), not a measured one, and says so in the report. Turning
         ``grow_sheet`` off keeps the size fixed, and any sheet whose pins then do
         not fit is skipped **entirely** -- reported, with nothing written for it
@@ -248,3 +250,85 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
             {"sheet": sheet, "grow_sheet": grow_sheet, "dry_run": dry_run}
         )
         return service.import_sheet_pins(payload.sheet, payload.grow_sheet, payload.dry_run)
+
+    @mcp.tool()
+    def sch_spread_sheets(
+        min_gap_mm: float | None = None,
+        margin_mm: float = 2.54,
+        dry_run: bool = False,
+    ) -> str:
+        """Move sheet-symbol columns apart to make room for stub-and-label wiring.
+
+        Sheets are grouped into columns by overlapping x-span, and only whole
+        columns move -- and only to the right, never left and never vertically.
+        Run this **before** ``sch_wire_sheet_pins``, not after: it refuses to
+        move a sheet already wired on a pin, since that would silently
+        disconnect the wire (KiCad joins on exact coordinate equality), and
+        ``sch_wire_sheet_pins`` wires every pin it touches by default. If any
+        sheet that must move has a wired pin, the **whole** spread is refused,
+        not just that sheet's own column, since a partial spread would leave
+        the untouched columns' stub-and-label layout unplanned for.
+
+        With ``min_gap_mm`` unset, the gap required between two neighboring
+        columns is derived from the pin names that actually face each other
+        across it (the longest right-edge name on the left, the longest
+        left-edge name on the right), plus ``margin_mm``. That per-character
+        width is an *estimate* (1.1 x font height per character), not a
+        measured one, so the margin absorbs noise in the estimate; the report
+        says so whenever the estimate drove a move. Set ``min_gap_mm`` to use a
+        fixed gap instead and skip the estimate entirely.
+
+        An unrecognized paper size skips the page-edge overflow check --
+        disclosed as skipped, never guessed. A pin whose ``(at ...)`` node
+        can't be read is left in place and reported, never rewritten blind.
+
+        Use ``dry_run`` to see the report without writing.
+        """
+        payload = SpreadSheetsInput.model_validate(
+            {"min_gap_mm": min_gap_mm, "margin_mm": margin_mm, "dry_run": dry_run}
+        )
+        return service.spread_sheets(payload.min_gap_mm, payload.margin_mm, payload.dry_run)
+
+    @mcp.tool()
+    def sch_wire_sheet_pins(
+        sheet: str | None = None,
+        stub_mm: float = 2.54,
+        dry_run: bool = False,
+    ) -> str:
+        """Connect sheet pins by giving each one a wire stub and a local label.
+
+        A sheet pin alone joins nothing -- two sheets become one net only once
+        something in the parent schematic connects their pins, and matching
+        names are not enough (unlike global labels). This writes a short wire
+        stub out of every sheet pin, then a **local** label carrying the pin's
+        name at the far end. Same-named local labels on one sheet are one net;
+        that is what actually joins the sheets, not the pins themselves, and no
+        wire ever has to route between sheet symbols (crossing wires in KiCad
+        merge geometrically into silent shorts).
+
+        Run ``sch_spread_sheets`` first, not after: once a pin is wired here,
+        ``sch_spread_sheets`` refuses to move any sheet with a wire on one of
+        its pins, and since this tool wires every pin it touches by default,
+        running it first leaves ``sch_spread_sheets`` nothing it can move.
+
+        A pin that already has a wire on it is left alone. A pin name that
+        appears on only one sheet symbol is reported rather than silently
+        skipped, because its label would dangle with no matching net to join.
+        Label overlap is judged from an *estimated* text width (1.1 x font
+        height per character), not a measured one, and the report says so
+        whenever that estimate was actually used to decide something. Labels
+        from top- and bottom-edge pins are not checked for overlap at all --
+        judging a vertical label's text-flow direction correctly would need a
+        live render this tool doesn't have, and a wrong guess would be worse
+        than no check; the report calls this out whenever such a pin exists.
+
+        ``sheet``, if given, limits which sheet's pins get a *new* stub and
+        label; every sheet's pins still count toward orphan and overlap
+        detection, since a name only "matches" once its counterpart elsewhere
+        in the document is known. Use ``dry_run`` to see the report without
+        writing.
+        """
+        payload = WireSheetPinsInput.model_validate(
+            {"sheet": sheet, "stub_mm": stub_mm, "dry_run": dry_run}
+        )
+        return service.wire_sheet_pins(payload.sheet, payload.stub_mm, payload.dry_run)
