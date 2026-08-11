@@ -17,6 +17,7 @@ SRC_ROOT = REPO_ROOT / "src"
 _EXPORT_PCB_3D_RENDER_ADAPTER = "kicad_mcp.tools.export_pcb_3d_render"
 _EXPORT_PCB_MANUFACTURING_OUTPUTS_ADAPTER = "kicad_mcp.tools.export_pcb_manufacturing_outputs"
 _EXPORT_MANUFACTURING_PACKAGE_ADAPTER = "kicad_mcp.tools.export_manufacturing_package"
+_LIBRARY_CATALOG_ADAPTER = "kicad_mcp.tools.library_catalog"
 
 DOMAIN_MODULES = {
     "kicad_mcp.tools.pcb": SRC_ROOT / "kicad_mcp" / "tools" / "pcb.py",
@@ -41,6 +42,7 @@ DOMAIN_MODULES = {
     "kicad_mcp.export.sch_pdf": SRC_ROOT / "kicad_mcp" / "export" / "sch_pdf.py",
     "kicad_mcp.export.sch_python_bom": SRC_ROOT / "kicad_mcp" / "export" / "sch_python_bom.py",
     "kicad_mcp.export.sch_vector": SRC_ROOT / "kicad_mcp" / "export" / "sch_vector.py",
+    "kicad_mcp.library.catalog": SRC_ROOT / "kicad_mcp" / "library" / "catalog.py",
     "kicad_mcp.tools.export_bom": SRC_ROOT / "kicad_mcp" / "tools" / "export_bom.py",
     "kicad_mcp.tools.export_board_stats": SRC_ROOT
     / "kicad_mcp"
@@ -71,6 +73,7 @@ DOMAIN_MODULES = {
     / "tools"
     / "export_sch_python_bom.py",
     "kicad_mcp.tools.export_sch_vector": SRC_ROOT / "kicad_mcp" / "tools" / "export_sch_vector.py",
+    _LIBRARY_CATALOG_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "library_catalog.py",
     "kicad_mcp.tools.validation": SRC_ROOT / "kicad_mcp" / "tools" / "validation.py",
     "kicad_mcp.validation.drc_runner": SRC_ROOT / "kicad_mcp" / "validation" / "drc_runner.py",
     "kicad_mcp.validation.policy_state": SRC_ROOT / "kicad_mcp" / "validation" / "policy_state.py",
@@ -293,6 +296,7 @@ PURE_HELPERS = {
     "kicad_mcp.export.sch_pdf",
     "kicad_mcp.export.sch_python_bom",
     "kicad_mcp.export.sch_vector",
+    "kicad_mcp.library.catalog",
     "kicad_mcp.validation.policy_state",
     "kicad_mcp.companion.context",
     "kicad_mcp.ipc.command_queue",
@@ -360,6 +364,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.export_sch_pdf": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_sch_python_bom": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_sch_vector": ("kicad_mcp.tools.export",),
+    _LIBRARY_CATALOG_ADAPTER: ("kicad_mcp.tools.library",),
     "kicad_mcp.tools.pcb_basic_inspection": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_board_inspection": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_file_inspection": ("kicad_mcp.tools.pcb",),
@@ -405,6 +410,7 @@ REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.export_sch_pdf": 100,
     "kicad_mcp.tools.export_sch_python_bom": 100,
     "kicad_mcp.tools.export_sch_vector": 100,
+    _LIBRARY_CATALOG_ADAPTER: 160,
     "kicad_mcp.tools.validation": 300,
     "kicad_mcp.tools.validation_policy_state": 300,
     "kicad_mcp.tools.pcb_basic_inspection": 300,
