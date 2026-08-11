@@ -18,6 +18,7 @@ from ..library.catalog import (
     symbol_library_dir,
 )
 from ..library.component_contract import LibraryComponentContractService
+from ..library.local_authoring import LibraryLocalAuthoringService
 from ..library_resolution import (
     footprint_file as _footprint_file,
 )
@@ -36,8 +37,8 @@ from ..utils.component_search import (
 )
 from ..utils.library_tables import parse_lib_table as _shared_parse_lib_table
 from ..utils.library_tables import resolve_kicad_env
-from ..utils.sexpr import _extract_block, _sexpr_string
-from . import library_catalog, library_component_contract
+from ..utils.sexpr import _extract_block
+from . import library_catalog, library_component_contract, library_local_authoring
 from .metadata import headless_compatible
 from .schematic import get_schematic_backend, project_schematic_files, update_symbol_property
 
@@ -477,62 +478,17 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    def lib_assign_footprint(reference: str, library: str, footprint: str) -> str:
-        """Assign a footprint property to a schematic symbol."""
-        path = _footprint_file(library, footprint)
-        if not path.exists():
-            return f"Footprint '{library}:{footprint}' was not found."
-        assignment = f"{library}:{footprint}"
-        update_symbol_property(reference, "Footprint", assignment)
-        return f"Assigned footprint '{assignment}' to '{reference}'."
-
-    @mcp.tool()
-    @headless_compatible
-    def lib_create_custom_symbol(name: str, pins: list[dict[str, Any]]) -> str:
-        """Create a simple custom symbol in the active project directory."""
-        cfg = get_config()
-        if cfg.project_dir is None:
-            return "No active project is configured."
-
-        library_file = cfg.project_dir / "custom_symbols.kicad_sym"
-        if library_file.exists():
-            content = library_file.read_text(encoding="utf-8", errors="ignore")
-        else:
-            content = '(kicad_symbol_lib (version 20250316) (generator "kicad-mcp-pro"))\n'
-
-        pin_blocks = []
-        x = 0.0
-        y = 0.0
-        for index, pin in enumerate(pins, start=1):
-            pin_number = str(pin.get("number", index))
-            pin_name = str(pin.get("name", f"PIN{index}"))
-            pin_blocks.append(
-                "\t\t(pin passive line\n"
-                f"\t\t\t(at {x} {y} 180)\n"
-                "\t\t\t(length 2.54)\n"
-                f"\t\t\t(name {_sexpr_string(pin_name)} "
-                "(effects (font (size 1.27 1.27))))\n"
-                f"\t\t\t(number {_sexpr_string(pin_number)} "
-                "(effects (font (size 1.27 1.27))))\n"
-                "\t\t)\n"
-            )
-            y -= 2.54
-
-        symbol_block = (
-            f"\t(symbol {_sexpr_string(name)}\n"
-            '\t\t(property "Reference" "U" (id 0) (at 0 5.08 0) '
-            "(effects (font (size 1.27 1.27))))\n"
-            f'\t\t(property "Value" {_sexpr_string(name)} (id 1) (at 0 -5.08 0) '
-            "(effects (font (size 1.27 1.27))))\n" + "".join(pin_blocks) + "\t)\n"
-        )
-        if content.rstrip().endswith(")"):
-            content = content.rstrip()[:-1] + f"\n{symbol_block})\n"
-        else:
-            content += symbol_block
-        library_file.write_text(content, encoding="utf-8")
-        return f"Created custom symbol '{name}' in {library_file}."
+    local_authoring_service = LibraryLocalAuthoringService(
+        footprint_file=lambda library, footprint: _footprint_file(library, footprint),
+        update_symbol_property=lambda reference, field, value: update_symbol_property(
+            reference, field, value
+        ),
+        project_dir=lambda: get_config().project_dir,
+    )
+    library_local_authoring.register(
+        mcp,
+        library_local_authoring.LibraryLocalAuthoringDependencies(service=local_authoring_service),
+    )
 
     @mcp.tool()
     @headless_compatible
