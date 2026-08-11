@@ -45,5 +45,4 @@ def test_export_composition_root_moves_only_low_level_manufacturing_outputs() ->
         for node in register_node.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
-    assert nested_names.isdisjoint(OWNED_FUNCTIONS)
-    assert "export_manufacturing_package" in nested_names
+    assert nested_names.isdisjoint(OWNED_FUNCTIONS | {"export_manufacturing_package"})
