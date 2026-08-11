@@ -12,6 +12,55 @@ from ..models import contract_verifier as cv
 from ..models.component_contracts import find_component_contract
 
 
+def _resolve_symbol(
+    schematic_files: list[Path], reference: str
+) -> tuple[tuple[str, str], str | None] | None:
+    for sch_file in schematic_files:
+        try:
+            sch_text = sch_file.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        found = cv.find_symbol_instance(sch_text, reference)
+        if found is not None:
+            return found, cv.extract_lib_symbol_block(sch_text, found[0])
+    return None
+
+
+def _datasheet_from_symbol(symbol_block: str | None) -> str:
+    if symbol_block is None:
+        return ""
+    match = re.search(r'\(property\s+"Datasheet"\s+"([^"]*)"', symbol_block)
+    if match is None or match.group(1) in ("", "~"):
+        return ""
+    return match.group(1)
+
+
+def _footprint_evidence(
+    footprint_file: Callable[[str, str], Path], footprint_id: str
+) -> tuple[cv.FootprintShape, bool]:
+    if not footprint_id or ":" not in footprint_id:
+        return cv.FootprintShape(), False
+    fp_library, fp_name = footprint_id.split(":", 1)
+    try:
+        fp_path = footprint_file(fp_library, fp_name)
+    except (OSError, ValueError):
+        return cv.FootprintShape(), False
+    if not fp_path.exists():
+        return cv.FootprintShape(), False
+    return (
+        cv.parse_footprint(fp_path.read_text(encoding="utf-8", errors="ignore")),
+        True,
+    )
+
+
+def _footprint_note(footprint_id: str, footprint_read: bool) -> str | None:
+    if footprint_id and not footprint_read:
+        return "Footprint file could not be located; pad-level checks were skipped."
+    if not footprint_id:
+        return "No footprint is assigned to this reference; pad checks were skipped."
+    return None
+
+
 @dataclass(frozen=True)
 class LibraryComponentContractService:
     """Resolve local project evidence and delegate structural verification."""
@@ -24,46 +73,15 @@ class LibraryComponentContractService:
         if not reference:
             return json.dumps({"error": "reference must not be empty."})
 
-        resolved: tuple[str, str] | None = None
-        symbol_block: str | None = None
-        for sch_file in self.project_schematic_files():
-            try:
-                sch_text = sch_file.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
-                continue
-            found = cv.find_symbol_instance(sch_text, reference)
-            if found is not None:
-                resolved = found
-                symbol_block = cv.extract_lib_symbol_block(sch_text, found[0])
-                break
-
-        if resolved is None:
+        resolved_symbol = _resolve_symbol(self.project_schematic_files(), reference)
+        if resolved_symbol is None:
             return json.dumps(
                 {"error": f"No placed symbol with reference '{reference}' was found."}
             )
 
-        lib_id, footprint_id = resolved
+        (lib_id, footprint_id), symbol_block = resolved_symbol
         pins = cv.parse_symbol_pins(symbol_block) if symbol_block else ()
-        datasheet = ""
-        if symbol_block:
-            ds_match = re.search(r'\(property\s+"Datasheet"\s+"([^"]*)"', symbol_block)
-            if ds_match and ds_match.group(1) not in ("", "~"):
-                datasheet = ds_match.group(1)
-
-        footprint_shape = cv.FootprintShape()
-        footprint_read = False
-        if footprint_id and ":" in footprint_id:
-            fp_library, fp_name = footprint_id.split(":", 1)
-            try:
-                fp_path = self.footprint_file(fp_library, fp_name)
-            except (OSError, ValueError):
-                fp_path = None
-            if fp_path is not None and fp_path.exists():
-                footprint_shape = cv.parse_footprint(
-                    fp_path.read_text(encoding="utf-8", errors="ignore")
-                )
-                footprint_read = True
-
+        footprint_shape, footprint_read = _footprint_evidence(self.footprint_file, footprint_id)
         contract = find_component_contract(lib_id=lib_id, footprint=footprint_id)
         report = cv.verify_contract(
             reference=reference,
@@ -71,15 +89,11 @@ class LibraryComponentContractService:
             footprint_id=footprint_id,
             pins=pins,
             footprint=footprint_shape,
-            datasheet=datasheet,
+            datasheet=_datasheet_from_symbol(symbol_block),
             known_contract_category=contract.category if contract else "",
         )
         result = report.as_dict()
-        notes: list[str] = []
-        if footprint_id and not footprint_read:
-            notes.append("Footprint file could not be located; pad-level checks were skipped.")
-        elif not footprint_id:
-            notes.append("No footprint is assigned to this reference; pad checks were skipped.")
-        if notes:
-            result["notes"] = notes
+        note = _footprint_note(footprint_id, footprint_read)
+        if note is not None:
+            result["notes"] = [note]
         return json.dumps(result, indent=2)

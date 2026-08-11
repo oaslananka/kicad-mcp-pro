@@ -37,3 +37,20 @@ def test_library_root_no_longer_owns_component_contract_tool() -> None:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
     assert "lib_verify_component_contract" not in nested_names
+
+
+def test_component_contract_verify_remains_thin_orchestration() -> None:
+    service = boundaries.SRC_ROOT / "kicad_mcp" / "library" / "component_contract.py"
+    tree = ast.parse(service.read_text(encoding="utf-8"), filename=str(service))
+    service_class = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "LibraryComponentContractService"
+    )
+    verify = next(
+        node
+        for node in service_class.body
+        if isinstance(node, ast.FunctionDef) and node.name == "verify"
+    )
+    assert verify.end_lineno is not None
+    assert verify.end_lineno - verify.lineno + 1 <= 40
