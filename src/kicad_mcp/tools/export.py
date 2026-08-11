@@ -23,6 +23,7 @@ from ..export.netlist import ExportNetlistService
 from ..export.pcb_3d_pdf import ExportPcb3dPdfService
 from ..export.pcb_3d_render import ExportPcb3dRenderService
 from ..export.pcb_file_formats import ExportPcbFileFormatsService
+from ..export.pcb_manufacturing_outputs import ExportPcbManufacturingOutputsService
 from ..export.pcb_pdf import ExportPcbPdfService
 from ..export.pcb_vector import ExportPcbVectorService
 from ..export.sch_pdf import ExportSchPdfService
@@ -37,6 +38,7 @@ from . import (
     export_pcb_3d_pdf,
     export_pcb_3d_render,
     export_pcb_file_formats,
+    export_pcb_manufacturing_outputs,
     export_pcb_pdf,
     export_pcb_vector,
     export_sch_pdf,
@@ -348,6 +350,16 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         run_cli=_run_cli,
     )
 
+    pcb_manufacturing_outputs_service = ExportPcbManufacturingOutputsService(
+        get_pcb_file=_get_pcb_file,
+        get_capabilities=lambda: get_cli_capabilities(get_config().kicad_cli),
+        ensure_output_dir=_ensure_output_dir,
+        resolve_output_file=_resolve_output_file,
+        active_variant_args=_active_variant_args,
+        run_cli_variants=_run_cli_variants,
+        format_file_list=_format_file_list,
+    )
+
     pcb_vector_service = ExportPcbVectorService(
         get_pcb_file=_get_pcb_file,
         get_capabilities=lambda: get_cli_capabilities(get_config().kicad_cli),
@@ -377,153 +389,6 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         run_cli=_run_cli,
         format_file_list=_format_file_list,
     )
-
-    def _export_pick_and_place(
-        format: str = "csv",
-        variant_name: str | None = None,
-    ) -> str:
-        pcb_file = _get_pcb_file()
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        pos_cmd = caps.position_command
-
-        out_dir = _ensure_output_dir("pos")
-        variant_args = _active_variant_args(variant_name)
-        code, _, stderr = _run_cli_variants(
-            [
-                [
-                    "pcb",
-                    "export",
-                    pos_cmd,
-                    *variant_args,
-                    "--format",
-                    format,
-                    "--output",
-                    str(out_dir),
-                    str(pcb_file),
-                ],
-                [
-                    "pcb",
-                    "export",
-                    pos_cmd,
-                    *variant_args,
-                    "--format",
-                    format,
-                    "--input",
-                    str(pcb_file),
-                    "--output",
-                    str(out_dir),
-                ],
-            ]
-        )
-        if code != 0:
-            return f"Pick and place export failed: {stderr or 'unknown error'}"
-        files = sorted(out_dir.iterdir()) if out_dir.exists() else []
-        return _format_file_list(files, f"Pick and place data exported to {out_dir}:")
-
-    @headless_compatible
-    def export_pick_and_place(format: str = "csv", variant: str | None = None) -> str:
-        """Export pick and place (CPL) data for the active PCB.
-
-        Parameters
-        ----------
-        format : str
-            Output format (e.g. ``csv``, ``ascii``).
-        variant : str | None
-            Optional design variant name. When set, exports variant-specific
-            pick-and-place data (component population, value, footprint
-            overrides). Uses the active variant when omitted.
-        """
-        return _with_low_level_export_notice(
-            _export_pick_and_place(format=format, variant_name=variant)
-        )
-
-    def _export_ipc2581(variant_name: str | None = None) -> str:
-        pcb_file = _get_pcb_file()
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        if not caps.supports_ipc2581:
-            return "IPC-2581 export is not supported by the detected KiCad CLI."
-
-        try:
-            out_file = _resolve_output_file("ipc2581", "", default_name="board.ipc2581")
-        except ValueError as exc:
-            return f"Invalid output path: {exc}"
-        variant_args = _active_variant_args(variant_name)
-        code, _, stderr = _run_cli_variants(
-            [
-                [
-                    "pcb",
-                    "export",
-                    "ipc2581",
-                    *variant_args,
-                    "--output",
-                    str(out_file),
-                    str(pcb_file),
-                ],
-                [
-                    "pcb",
-                    "export",
-                    "ipc2581",
-                    *variant_args,
-                    "--input",
-                    str(pcb_file),
-                    "--output",
-                    str(out_file),
-                ],
-            ]
-        )
-        if code != 0:
-            return f"IPC-2581 export failed: {stderr or 'unknown error'}"
-        return f"IPC-2581 exported to {out_file}"
-
-    @headless_compatible
-    def export_ipc2581() -> str:
-        """Export the active PCB to IPC-2581 format."""
-        return _with_low_level_export_notice(_export_ipc2581())
-
-    def _export_odb(variant_name: str | None = None) -> str:
-        pcb_file = _get_pcb_file()
-        caps = get_cli_capabilities(get_config().kicad_cli)
-        if not caps.supports_odb_export:
-            return "ODB++ export is not supported by the detected KiCad CLI."
-
-        try:
-            out_file = _resolve_output_file("odb", "", default_name="board.odb")
-        except ValueError as exc:
-            return f"Invalid output path: {exc}"
-        variant_args = _active_variant_args(variant_name)
-        code, _, stderr = _run_cli_variants(
-            [
-                [
-                    "pcb",
-                    "export",
-                    "odb",
-                    *variant_args,
-                    "--compression",
-                    "--output",
-                    str(out_file),
-                    str(pcb_file),
-                ],
-                [
-                    "pcb",
-                    "export",
-                    "odb",
-                    *variant_args,
-                    "--compression",
-                    "--input",
-                    str(pcb_file),
-                    "--output",
-                    str(out_file),
-                ],
-            ]
-        )
-        if code != 0:
-            return f"ODB++ export failed: {stderr or 'unknown error'}"
-        return f"ODB++ exported to {out_file}"
-
-    @headless_compatible
-    def export_odb() -> str:
-        """Export the active PCB to ODB++ format."""
-        return _with_low_level_export_notice(_export_odb())
 
     @headless_compatible
     async def export_manufacturing_package(
@@ -586,16 +451,20 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         results.extend(
             [
                 await anyio.to_thread.run_sync(
-                    lambda: _export_pick_and_place(variant_name=variant_name)
+                    lambda: pcb_manufacturing_outputs_service.export_pick_and_place(
+                        variant_name=variant_name
+                    )
                 ),
             ]
         )
         ipc_result = await anyio.to_thread.run_sync(
-            lambda: _export_ipc2581(variant_name=variant_name)
+            lambda: pcb_manufacturing_outputs_service.export_ipc2581(variant_name=variant_name)
         )
         if not ipc_result.startswith("IPC-2581 export is not supported"):
             results.append(ipc_result)
-        odb_result = await anyio.to_thread.run_sync(lambda: _export_odb(variant_name=variant_name))
+        odb_result = await anyio.to_thread.run_sync(
+            lambda: pcb_manufacturing_outputs_service.export_odb(variant_name=variant_name)
+        )
         if not odb_result.startswith("ODB++ export is not supported"):
             results.append(odb_result)
         report_path = _write_handoff_report(
@@ -704,9 +573,13 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
                 add_low_level_notice=_with_low_level_export_notice,
             ),
         )
-        mcp.tool()(export_pick_and_place)
-        mcp.tool()(export_ipc2581)
-        mcp.tool()(export_odb)
+        export_pcb_manufacturing_outputs.register(
+            mcp,
+            export_pcb_manufacturing_outputs.ExportPcbManufacturingOutputsDependencies(
+                service=pcb_manufacturing_outputs_service,
+                add_low_level_notice=_with_low_level_export_notice,
+            ),
+        )
         export_pcb_vector.register(
             mcp,
             export_pcb_vector.ExportPcbVectorDependencies(
