@@ -54,10 +54,7 @@ export interface McpServerInfoCompatibilityRange {
 }
 
 export type McpOperatingMode =
-  | "readonly"
-  | "write"
-  | "manufacturing"
-  | "experimental";
+  "readonly" | "write" | "manufacturing" | "experimental";
 
 export interface McpToolOperatingModeAvailability {
   available: boolean;
@@ -141,10 +138,7 @@ export interface McpServerInfoContract {
         {
           preferredBackends: string[];
           kicad11Support:
-            | "preview"
-            | "partial"
-            | "independent"
-            | "not-applicable";
+            "preview" | "partial" | "independent" | "not-applicable";
           canarySurfaces: Array<"read" | "write" | "export">;
           fallbackPolicy: string;
           mutationGuard: string | null;
@@ -176,12 +170,7 @@ export interface McpToolCapabilityMetadata {
   profiles: string[];
   tier: "read" | "write" | "export" | "publish" | "human_only";
   runtime:
-    | "none"
-    | "kicad_cli"
-    | "kicad_ipc"
-    | "ngspice"
-    | "freerouting"
-    | "docker";
+    "none" | "kicad_cli" | "kicad_ipc" | "ngspice" | "freerouting" | "docker";
   supports_dry_run: boolean;
   human_gate_required: boolean;
   description: string;
