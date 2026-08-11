@@ -97,6 +97,55 @@ def read_symbol_file(library: str) -> str | None:
     return path.read_text(encoding="utf-8", errors="ignore")
 
 
+_PIN_START_RE = re.compile(r"\(pin\s+")
+
+
+def _matching_symbols(
+    index: dict[str, dict[str, str]], query: str, library_filter: str
+) -> list[dict[str, str]]:
+    query_lower = query.lower()
+    library_filter_lower = library_filter.lower()
+    matches: list[dict[str, str]] = []
+    for item in index.values():
+        if library_filter_lower and item["library"].lower() != library_filter_lower:
+            continue
+        haystack = f"{item['name']} {item['description']} {item['keywords']}".lower()
+        if query_lower in haystack:
+            matches.append(item)
+    return matches
+
+
+def _render_symbol_match(item: dict[str, str]) -> str:
+    parts = [f"- {item['library']}:{item['name']}"]
+    alias = item.get("alias", "")
+    description = item.get("description", "")
+    keywords = item.get("keywords", "")
+    if alias:
+        parts.append(f" (alias: {alias})")
+    if description:
+        parts.append(f" - {description}")
+    if keywords:
+        parts.append(f" [keywords: {keywords}]")
+    return "".join(parts)
+
+
+def _extract_symbol_pins(block: str) -> list[tuple[str, str, str]]:
+    """Extract pins from isolated balanced blocks, preserving duplicate numbers."""
+    pins: list[tuple[str, str, str]] = []
+    cursor = 0
+    while True:
+        match = _PIN_START_RE.search(block, cursor)
+        if match is None:
+            return pins
+        pin_block, consumed = _extract_block(block, match.start())
+        cursor = match.start() + max(consumed, 1)
+        type_match = re.match(r"\(pin\s+(\w+)", pin_block)
+        name_match = re.search(r'\(name\s+"([^"]*)"', pin_block)
+        number_match = re.search(r'\(number\s+"([^"]*)"', pin_block)
+        if type_match and name_match and number_match:
+            pins.append((type_match.group(1), name_match.group(1), number_match.group(1)))
+
+
 @dataclass(frozen=True)
 class LibraryCatalogService:
     """Read/search symbol and footprint catalogs without FastMCP dependencies."""
@@ -131,14 +180,7 @@ class LibraryCatalogService:
         if page_size < 1:
             return "page_size must be >= 1."
         page_size = min(page_size, 500)
-        query_lower = query.lower()
-        results = []
-        for item in self.get_symbol_index().values():
-            if library_filter and item["library"].lower() != library_filter.lower():
-                continue
-            haystack = f"{item['name']} {item['description']} {item['keywords']}".lower()
-            if query_lower in haystack:
-                results.append(item)
+        results = _matching_symbols(self.get_symbol_index(), query, library_filter)
         total = len(results)
         if total == 0:
             return f"No symbols matched '{query}'."
@@ -152,18 +194,7 @@ class LibraryCatalogService:
             f"Symbol matches for '{query}' "
             f"(page {page}/{total_pages}, {len(page_results)} shown, {total} total):"
         ]
-        for item in page_results:
-            alias = item.get("alias", "")
-            desc = item.get("description", "")
-            kw = item.get("keywords", "")
-            parts = [f"- {item['library']}:{item['name']}"]
-            if alias:
-                parts.append(f" (alias: {alias})")
-            if desc:
-                parts.append(f" - {desc}")
-            if kw:
-                parts.append(f" [keywords: {kw}]")
-            lines.append("".join(parts))
+        lines.extend(_render_symbol_match(item) for item in page_results)
         if end < total:
             lines.append(f"... and {total - end} more matches (use page={page + 1})")
         return "\n".join(lines)
@@ -180,22 +211,14 @@ class LibraryCatalogService:
         keywords = re.search(r'\(property\s+"ki_keywords"\s+"([^"]*)"', block)
         datasheet = re.search(r'\(property\s+"Datasheet"\s+"([^"]*)"', block)
         footprint = re.search(r'\(property\s+"Footprint"\s+"([^"]*)"', block)
-        pins = re.findall(
-            r'\(pin\s+(\w+)\s+\w+.*?\(name\s+"([^"]*)".*?\(number\s+"([^"]*)"',
-            block,
-            re.DOTALL,
-        )
+        pins = _extract_symbol_pins(block)
         if not pins:
             extends = re.search(r'\(extends\s+"([^"]+)"\)', block)
             if extends:
                 parent_start = content.find(f'(symbol "{extends.group(1)}"')
                 if parent_start != -1:
                     parent_block, _ = _extract_block(content, parent_start)
-                    pins = re.findall(
-                        r'\(pin\s+(\w+)\s+\w+.*?\(name\s+"([^"]*)".*?\(number\s+"([^"]*)"',
-                        parent_block,
-                        re.DOTALL,
-                    )
+                    pins = _extract_symbol_pins(parent_block)
         lines = [f"Symbol: {library}:{symbol_name}"]
         if description:
             lines.append(f"- Description: {description.group(1)}")

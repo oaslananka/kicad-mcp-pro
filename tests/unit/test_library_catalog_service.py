@@ -143,6 +143,27 @@ def test_get_symbol_info_preserves_missing_properties_and_inherited_pins(tmp_pat
     assert "- Pins: 2" in alias
 
 
+def test_symbol_pin_parsing_does_not_bleed_between_blocks_and_preserves_duplicates(
+    tmp_path: Path,
+) -> None:
+    service, _ = _service(tmp_path)
+    malformed = """(kicad_symbol_lib
+  (symbol \"X\"
+    (pin passive line (name \"BROKEN\"))
+    (pin input line (name \"GOOD\") (number \"1\"))
+    (pin output line (name \"DUP\") (number \"1\"))))"""
+    object.__setattr__(
+        service, "read_symbol_file", lambda library: malformed if library == "Device" else None
+    )
+
+    text = service.get_symbol_info("Device", "X")
+
+    assert "- Pins: 2" in text
+    assert "  - 1 GOOD (input)" in text
+    assert "  - 1 DUP (output)" in text
+    assert "BROKEN" not in text
+
+
 def test_search_footprints_preserves_filter_validation_and_pagination(tmp_path: Path) -> None:
     service, _ = _service(tmp_path)
     assert service.search_footprints("R", page=0) == "page must be >= 1."
