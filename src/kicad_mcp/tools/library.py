@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import re
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -12,8 +11,12 @@ from typing import Any, cast
 from mcp.server.fastmcp import FastMCP
 
 from ..config import get_config
-from ..library_resolution import (
-    active_project_dir as _project_dir,
+from ..library.catalog import (
+    LibraryCatalogService,
+    get_symbol_index,
+    read_symbol_file,
+    rebuild_symbol_index,
+    symbol_library_dir,
 )
 from ..library_resolution import (
     footprint_file as _footprint_file,
@@ -24,7 +27,6 @@ from ..library_resolution import (
 from ..models import contract_verifier as cv
 from ..models.component_contracts import find_component_contract
 from ..models.verdict import Finding, Verdict, VerdictReport, stable_finding_id
-from ..utils.cache import ttl_cache
 from ..utils.component_search import (
     ComponentRecord,
     ComponentSearchClient,
@@ -34,28 +36,15 @@ from ..utils.component_search import (
     NexarClient,
     normalize_lcsc_code,
 )
-from ..utils.library_tables import (
-    lib_table_paths as _lib_table_paths,
-)
-from ..utils.library_tables import (
-    parse_lib_table as _parse_lib_table,
-)
-from ..utils.library_tables import (
-    resolve_kicad_env,
-)
+from ..utils.library_tables import parse_lib_table as _shared_parse_lib_table
+from ..utils.library_tables import resolve_kicad_env
 from ..utils.sexpr import _extract_block, _sexpr_string
+from . import library_catalog
 from .metadata import headless_compatible
 from .schematic import get_schematic_backend, project_schematic_files, update_symbol_property
 
-_symbol_index: dict[str, dict[str, str]] | None = None
-_symbol_index_lock = threading.Lock()
-
-
-def _symbol_library_dir() -> Path:
-    cfg = get_config()
-    if cfg.symbol_library_dir is None or not cfg.symbol_library_dir.exists():
-        raise FileNotFoundError("No KiCad symbol library directory is configured.")
-    return cfg.symbol_library_dir
+# Compatibility alias retained for downstream/tests that historically imported it here.
+_parse_lib_table = _shared_parse_lib_table
 
 
 def _footprint_library_dir() -> Path:
@@ -68,72 +57,6 @@ def _footprint_library_dir() -> Path:
 def _resolve_kicad_env(uri: str, project_dir: Path | None) -> str:
     """Compatibility wrapper around shared KiCad environment substitution."""
     return resolve_kicad_env(uri, project_dir)
-
-
-def _symbol_library_files() -> dict[str, Path]:
-    """Map every discoverable symbol-library nickname to its ``.kicad_sym`` file.
-
-    Combines the configured single directory with the project and global
-    ``sym-lib-table`` entries (work order / issue #78), so libraries registered through
-    KiCad's library tables are discovered, not just one flat directory.
-    """
-    files: dict[str, Path] = {}
-    cfg = get_config()
-    if cfg.symbol_library_dir is not None and cfg.symbol_library_dir.exists():
-        for sym_file in sorted(cfg.symbol_library_dir.glob("*.kicad_sym")):
-            files.setdefault(sym_file.stem, sym_file)
-    project_dir = _project_dir()
-    for table in _lib_table_paths("sym-lib-table", project_dir):
-        for nickname, sym_path in _parse_lib_table(table, project_dir).items():
-            files.setdefault(nickname, sym_path)
-    return files
-
-
-def _build_symbol_index() -> dict[str, dict[str, str]]:
-    index: dict[str, dict[str, str]] = {}
-    for library, sym_file in _symbol_library_files().items():
-        try:
-            content = sym_file.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
-            continue
-        for match in re.finditer(r'\(symbol\s+"([^"]+)"', content):
-            symbol_name = match.group(1)
-            if re.search(r"_\d+_\d+$", symbol_name):
-                continue
-            key = f"{library}:{symbol_name}"
-            description_match = re.search(
-                rf'\(symbol\s+"{re.escape(symbol_name)}".*?\(property\s+"Description"\s+"([^"]*)"',
-                content,
-                re.DOTALL,
-            )
-            keyword_match = re.search(
-                rf'\(symbol\s+"{re.escape(symbol_name)}".*?\(property\s+"ki_keywords"\s+"([^"]*)"',
-                content,
-                re.DOTALL,
-            )
-            index[key] = {
-                "library": library,
-                "name": symbol_name,
-                "description": description_match.group(1) if description_match else "",
-                "keywords": keyword_match.group(1) if keyword_match else "",
-            }
-    return index
-
-
-def _get_symbol_index() -> dict[str, dict[str, str]]:
-    global _symbol_index
-    if _symbol_index is None:
-        with _symbol_index_lock:
-            if _symbol_index is None:
-                _symbol_index = _build_symbol_index()
-    return _symbol_index
-
-
-def _read_symbol_file(library: str) -> str | None:
-    path = _symbol_library_files().get(library)
-    if path is None or not path.exists():
-        return None
-    return path.read_text(encoding="utf-8", errors="ignore")
 
 
 def _component_search_client(source: str) -> ComponentSearchClient:
@@ -531,235 +454,19 @@ def _group_bom_rows(symbol_rows: list[dict[str, str]]) -> list[dict[str, Any]]:
 
 def register(mcp: FastMCP) -> None:
     """Register library tools."""
-
-    @mcp.tool()
-    @headless_compatible
-    def lib_list_libraries() -> str:
-        """List configured symbol and footprint libraries."""
-        symbol_libs = sorted(path.stem for path in _symbol_library_dir().glob("*.kicad_sym"))
-        footprint_libs = sorted(f"{nickname}.pretty" for nickname in _footprint_library_dirs())
-        lines = [f"Symbol libraries ({len(symbol_libs)} total):"]
-        lines.extend(f"- {name}" for name in symbol_libs[:50])
-        lines.append("")
-        lines.append(f"Footprint libraries ({len(footprint_libs)} total):")
-        lines.extend(f"- {name}" for name in footprint_libs[:50])
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    @ttl_cache(ttl_seconds=60)
-    def lib_search_symbols(
-        query: str,
-        library_filter: str = "",
-        page: int = 1,
-        page_size: int = 50,
-    ) -> str:
-        """Search symbol libraries by name, description, or keywords.
-
-        Parameters
-        ----------
-        query : str
-            Search term (case-insensitive substring match).
-        library_filter : str
-            Optional library name to narrow the search.
-        page : int
-            Page number (1-based). Default 1.
-        page_size : int
-            Results per page. Default 50, max 500.
-        """
-        if page < 1:
-            return "page must be >= 1."
-        if page_size < 1:
-            return "page_size must be >= 1."
-        page_size = min(page_size, 500)
-        index = _get_symbol_index()
-        query_lower = query.lower()
-        results = []
-        for item in index.values():
-            if library_filter and item["library"].lower() != library_filter.lower():
-                continue
-            haystack = f"{item['name']} {item['description']} {item['keywords']}".lower()
-            if query_lower in haystack:
-                results.append(item)
-        total = len(results)
-        if total == 0:
-            return f"No symbols matched '{query}'."
-        total_pages = max(1, (total + page_size - 1) // page_size)
-        if page > total_pages:
-            return f"Page {page} exceeds total pages ({total_pages})."
-        start = (page - 1) * page_size
-        end = start + page_size
-        page_results = results[start:end]
-        truncated = end < total
-        lines = [
-            f"Symbol matches for '{query}' "
-            f"(page {page}/{total_pages}, {len(page_results)} shown, {total} total):"
-        ]
-        for item in page_results:
-            alias = item.get("alias", "")
-            desc = item.get("description", "")
-            kw = item.get("keywords", "")
-            parts = [f"- {item['library']}:{item['name']}"]
-            if alias:
-                parts.append(f" (alias: {alias})")
-            if desc:
-                parts.append(f" - {desc}")
-            if kw:
-                parts.append(f" [keywords: {kw}]")
-            lines.append("".join(parts))
-        if truncated:
-            lines.append(f"... and {total - end} more matches (use page={page + 1})")
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def lib_get_symbol_info(library: str, symbol_name: str) -> str:
-        """Return details for a single symbol."""
-        content = _read_symbol_file(library)
-        if content is None:
-            return f"Symbol library '{library}' was not found."
-
-        start = content.find(f'(symbol "{symbol_name}"')
-        if start == -1:
-            return f"Symbol '{library}:{symbol_name}' was not found."
-        block, _ = _extract_block(content, start)
-        description = re.search(r'\(property\s+"Description"\s+"([^"]*)"', block)
-        keywords = re.search(r'\(property\s+"ki_keywords"\s+"([^"]*)"', block)
-        datasheet = re.search(r'\(property\s+"Datasheet"\s+"([^"]*)"', block)
-        footprint = re.search(r'\(property\s+"Footprint"\s+"([^"]*)"', block)
-        pins = re.findall(
-            r'\(pin\s+(\w+)\s+\w+.*?\(name\s+"([^"]*)".*?\(number\s+"([^"]*)"', block, re.DOTALL
-        )
-        if not pins:
-            # Derived symbols inherit their pins from the parent via (extends "...").
-            extends = re.search(r'\(extends\s+"([^"]+)"\)', block)
-            if extends:
-                parent_start = content.find(f'(symbol "{extends.group(1)}"')
-                if parent_start != -1:
-                    parent_block, _ = _extract_block(content, parent_start)
-                    pins = re.findall(
-                        r'\(pin\s+(\w+)\s+\w+.*?\(name\s+"([^"]*)".*?\(number\s+"([^"]*)"',
-                        parent_block,
-                        re.DOTALL,
-                    )
-        lines = [f"Symbol: {library}:{symbol_name}"]
-        if description:
-            lines.append(f"- Description: {description.group(1)}")
-        if keywords:
-            lines.append(f"- Keywords: {keywords.group(1)}")
-        if footprint:
-            lines.append(f"- Default footprint: {footprint.group(1)}")
-        if datasheet:
-            lines.append(f"- Datasheet: {datasheet.group(1)}")
-        if pins:
-            lines.append(f"- Pins: {len(pins)}")
-            for pin in pins:
-                lines.append(f"  - {pin[2]} {pin[1]} ({pin[0]})")
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def lib_search_footprints(
-        query: str,
-        library_filter: str = "",
-        page: int = 1,
-        page_size: int = 50,
-    ) -> str:
-        """Search footprint libraries by footprint name.
-
-        Parameters
-        ----------
-        query : str
-            Search term (case-insensitive substring match).
-        library_filter : str
-            Optional library name to narrow the search.
-        page : int
-            Page number (1-based). Default 1.
-        page_size : int
-            Results per page. Default 50, max 500.
-        """
-        if page < 1:
-            return "page must be >= 1."
-        if page_size < 1:
-            return "page_size must be >= 1."
-        page_size = min(page_size, 500)
-        results: list[str] = []
-        for nickname, library_dir in _footprint_library_dirs().items():
-            if library_filter and library_filter.lower() not in nickname.lower():
-                continue
-            for footprint in library_dir.glob("*.kicad_mod"):
-                if query.lower() in footprint.stem.lower():
-                    results.append(f"{nickname}:{footprint.stem}")
-        total = len(results)
-        if total == 0:
-            return f"No footprints matched '{query}'."
-        total_pages = max(1, (total + page_size - 1) // page_size)
-        if page > total_pages:
-            return f"Page {page} exceeds total pages ({total_pages})."
-        start = (page - 1) * page_size
-        end = start + page_size
-        page_results = results[start:end]
-        truncated = end < total
-        lines = [
-            f"Footprint matches for '{query}' "
-            f"(page {page}/{total_pages}, {len(page_results)} shown, {total} total):"
-        ]
-        lines.extend(f"- {item}" for item in page_results)
-        if truncated:
-            lines.append(f"... and {total - end} more matches (use page={page + 1})")
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def lib_list_footprints(library: str) -> str:
-        """List footprints in a specific library."""
-        library_dir = _footprint_library_dirs().get(library)
-        if library_dir is None or not library_dir.exists():
-            return f"Footprint library '{library}' was not found."
-        footprints = sorted(path.stem for path in library_dir.glob("*.kicad_mod"))
-        lines = [f"Footprints in {library} ({len(footprints)} total):"]
-        lines.extend(f"- {name}" for name in footprints[: get_config().max_items_per_response])
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def lib_rebuild_index() -> str:
-        """Rebuild the in-memory symbol search index."""
-        global _symbol_index
-        with _symbol_index_lock:
-            _symbol_index = _build_symbol_index()
-            count = len(_symbol_index)
-        return f"Rebuilt the symbol index with {count} entries."
-
-    @mcp.tool()
-    @headless_compatible
-    def lib_get_footprint_info(library: str, footprint: str) -> str:
-        """Return details for a single footprint."""
-        path = _footprint_file(library, footprint)
-        if not path.exists():
-            return f"Footprint '{library}:{footprint}' was not found."
-        content = path.read_text(encoding="utf-8", errors="ignore")
-        model_match = re.search(r'\(model\s+"([^"]+)"', content)
-        return "\n".join(
-            [
-                f"Footprint: {library}:{footprint}",
-                f"- File: {path}",
-                f"- 3D model: {model_match.group(1) if model_match else '(none)'}",
-            ]
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def lib_get_footprint_3d_model(library: str, footprint: str) -> str:
-        """Return the configured 3D model path for a footprint."""
-        path = _footprint_file(library, footprint)
-        if not path.exists():
-            return f"Footprint '{library}:{footprint}' was not found."
-        content = path.read_text(encoding="utf-8", errors="ignore")
-        model_match = re.search(r'\(model\s+"([^"]+)"', content)
-        if model_match is None:
-            return f"Footprint '{library}:{footprint}' does not define a 3D model."
-        return model_match.group(1)
+    catalog_service = LibraryCatalogService(
+        symbol_library_dir=symbol_library_dir,
+        footprint_library_dirs=_footprint_library_dirs,
+        get_symbol_index=get_symbol_index,
+        read_symbol_file=read_symbol_file,
+        rebuild_symbol_index=rebuild_symbol_index,
+        footprint_file=_footprint_file,
+        max_items_per_response=lambda: get_config().max_items_per_response,
+    )
+    library_catalog.register(
+        mcp,
+        library_catalog.LibraryCatalogDependencies(service=catalog_service),
+    )
 
     @mcp.tool()
     @headless_compatible
@@ -905,7 +612,7 @@ def register(mcp: FastMCP) -> None:
     @headless_compatible
     def lib_get_datasheet_url(library: str, symbol_name: str) -> str:
         """Return a datasheet URL from the symbol library when available."""
-        content = _read_symbol_file(library)
+        content = catalog_service.read_symbol_file(library)
         if content is None:
             return f"Symbol library '{library}' was not found."
         match = re.search(
