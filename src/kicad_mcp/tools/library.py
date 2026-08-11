@@ -38,7 +38,12 @@ from ..utils.component_search import (
 from ..utils.library_tables import parse_lib_table as _shared_parse_lib_table
 from ..utils.library_tables import resolve_kicad_env
 from ..utils.sexpr import _extract_block
-from . import library_catalog, library_component_contract, library_local_authoring
+from . import (
+    library_catalog,
+    library_component_contract,
+    library_datasheet,
+    library_local_authoring,
+)
 from .metadata import headless_compatible
 from .schematic import get_schematic_backend, project_schematic_files, update_symbol_property
 
@@ -490,21 +495,10 @@ def register(mcp: FastMCP) -> None:
         library_local_authoring.LibraryLocalAuthoringDependencies(service=local_authoring_service),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    def lib_get_datasheet_url(library: str, symbol_name: str) -> str:
-        """Return a datasheet URL from the symbol library when available."""
-        content = catalog_service.read_symbol_file(library)
-        if content is None:
-            return f"Symbol library '{library}' was not found."
-        match = re.search(
-            rf'\(symbol\s+"{re.escape(symbol_name)}".*?\(property\s+"Datasheet"\s+"([^"]*)"',
-            content,
-            re.DOTALL,
-        )
-        if match is None or not match.group(1):
-            return f"No datasheet URL was found for '{library}:{symbol_name}'."
-        return match.group(1)
+    library_datasheet.register(
+        mcp,
+        library_datasheet.LibraryDatasheetDependencies(service=catalog_service),
+    )
 
     @mcp.tool()
     @headless_compatible
