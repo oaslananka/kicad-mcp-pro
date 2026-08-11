@@ -67,12 +67,18 @@ def test_manufacturing_package_uses_shared_bom_service() -> None:
     register_node = next(
         node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "register"
     )
-    manufacturing = next(
-        node
+    service_call = next(
+        node.value
         for node in register_node.body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "export_manufacturing_package"
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "ExportManufacturingPackageService"
     )
-    calls = [node for node in ast.walk(manufacturing) if isinstance(node, ast.Call)]
+    export_bom = next(
+        keyword.value for keyword in service_call.keywords if keyword.arg == "export_bom"
+    )
+    calls = [node for node in ast.walk(export_bom) if isinstance(node, ast.Call)]
     assert any(
         isinstance(call.func, ast.Attribute)
         and isinstance(call.func.value, ast.Name)

@@ -16,6 +16,7 @@ SRC_ROOT = REPO_ROOT / "src"
 
 _EXPORT_PCB_3D_RENDER_ADAPTER = "kicad_mcp.tools.export_pcb_3d_render"
 _EXPORT_PCB_MANUFACTURING_OUTPUTS_ADAPTER = "kicad_mcp.tools.export_pcb_manufacturing_outputs"
+_EXPORT_MANUFACTURING_PACKAGE_ADAPTER = "kicad_mcp.tools.export_manufacturing_package"
 
 DOMAIN_MODULES = {
     "kicad_mcp.tools.pcb": SRC_ROOT / "kicad_mcp" / "tools" / "pcb.py",
@@ -23,6 +24,10 @@ DOMAIN_MODULES = {
     "kicad_mcp.export.bom": SRC_ROOT / "kicad_mcp" / "export" / "bom.py",
     "kicad_mcp.export.drill": SRC_ROOT / "kicad_mcp" / "export" / "drill.py",
     "kicad_mcp.export.gerber": SRC_ROOT / "kicad_mcp" / "export" / "gerber.py",
+    "kicad_mcp.export.manufacturing_package": SRC_ROOT
+    / "kicad_mcp"
+    / "export"
+    / "manufacturing_package.py",
     "kicad_mcp.export.netlist": SRC_ROOT / "kicad_mcp" / "export" / "netlist.py",
     "kicad_mcp.export.pcb_3d_pdf": SRC_ROOT / "kicad_mcp" / "export" / "pcb_3d_pdf.py",
     "kicad_mcp.export.pcb_3d_render": SRC_ROOT / "kicad_mcp" / "export" / "pcb_3d_render.py",
@@ -43,6 +48,10 @@ DOMAIN_MODULES = {
     / "export_board_stats.py",
     "kicad_mcp.tools.export_drill": SRC_ROOT / "kicad_mcp" / "tools" / "export_drill.py",
     "kicad_mcp.tools.export_gerber": SRC_ROOT / "kicad_mcp" / "tools" / "export_gerber.py",
+    _EXPORT_MANUFACTURING_PACKAGE_ADAPTER: SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "export_manufacturing_package.py",
     "kicad_mcp.tools.export_netlist": SRC_ROOT / "kicad_mcp" / "tools" / "export_netlist.py",
     "kicad_mcp.tools.export_pcb_3d_pdf": SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_3d_pdf.py",
     _EXPORT_PCB_3D_RENDER_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_3d_render.py",
@@ -273,6 +282,7 @@ PURE_HELPERS = {
     "kicad_mcp.export.bom",
     "kicad_mcp.export.drill",
     "kicad_mcp.export.gerber",
+    "kicad_mcp.export.manufacturing_package",
     "kicad_mcp.export.netlist",
     "kicad_mcp.export.pcb_3d_pdf",
     "kicad_mcp.export.pcb_3d_render",
@@ -339,6 +349,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.export_board_stats": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_drill": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_gerber": ("kicad_mcp.tools.export",),
+    _EXPORT_MANUFACTURING_PACKAGE_ADAPTER: ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_netlist": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_pcb_3d_pdf": ("kicad_mcp.tools.export",),
     _EXPORT_PCB_3D_RENDER_ADAPTER: ("kicad_mcp.tools.export",),
@@ -383,6 +394,7 @@ REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.export_board_stats": 100,
     "kicad_mcp.tools.export_drill": 100,
     "kicad_mcp.tools.export_gerber": 100,
+    _EXPORT_MANUFACTURING_PACKAGE_ADAPTER: 100,
     "kicad_mcp.tools.export_netlist": 100,
     "kicad_mcp.tools.export_pcb_3d_pdf": 100,
     _EXPORT_PCB_3D_RENDER_ADAPTER: 140,
