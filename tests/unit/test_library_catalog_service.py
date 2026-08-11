@@ -198,3 +198,24 @@ def test_list_rebuild_and_footprint_details_preserve_exact_behavior(tmp_path: Pa
         == "Footprint 'Resistor_SMD:R_0603' does not define a 3D model."
     )
     assert service.get_footprint_3d_model("Missing", "X") == "Footprint 'Missing:X' was not found."
+
+
+def test_get_datasheet_url_preserves_exact_missing_and_match_behavior(tmp_path: Path) -> None:
+    service, _ = _service(tmp_path)
+    assert service.get_datasheet_url("Missing", "R") == "Symbol library 'Missing' was not found."
+    assert (
+        service.get_datasheet_url("Device", "Missing")
+        == "No datasheet URL was found for 'Device:Missing'."
+    )
+    assert service.get_datasheet_url("Device", "R") == "https://example.com/r.pdf"
+
+    no_url = """(kicad_symbol_lib
+  (symbol "NoUrl"
+    (property "Datasheet" "")))"""
+    object.__setattr__(
+        service, "read_symbol_file", lambda library: no_url if library == "Device" else None
+    )
+    assert (
+        service.get_datasheet_url("Device", "NoUrl")
+        == "No datasheet URL was found for 'Device:NoUrl'."
+    )

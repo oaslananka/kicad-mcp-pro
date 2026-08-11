@@ -234,6 +234,19 @@ class LibraryCatalogService:
                 lines.append(f"  - {pin[2]} {pin[1]} ({pin[0]})")
         return "\n".join(lines)
 
+    def get_datasheet_url(self, library: str, symbol_name: str) -> str:
+        content = self.read_symbol_file(library)
+        if content is None:
+            return f"Symbol library '{library}' was not found."
+        match = re.search(
+            rf'\(symbol\s+"{re.escape(symbol_name)}".*?\(property\s+"Datasheet"\s+"([^"]*)"',
+            content,
+            re.DOTALL,
+        )
+        if match is None or not match.group(1):
+            return f"No datasheet URL was found for '{library}:{symbol_name}'."
+        return match.group(1)
+
     def search_footprints(
         self,
         query: str,

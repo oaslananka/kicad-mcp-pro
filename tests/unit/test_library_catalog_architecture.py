@@ -13,6 +13,7 @@ OWNED_FUNCTIONS = {
     "lib_rebuild_index",
     "lib_get_footprint_info",
     "lib_get_footprint_3d_model",
+    "lib_get_datasheet_url",
 }
 
 
@@ -20,12 +21,27 @@ def test_architecture_checker_tracks_library_catalog_modules() -> None:
     assert "kicad_mcp.library.catalog" in boundaries.DOMAIN_MODULES
     assert "kicad_mcp.library.catalog" in boundaries.PURE_HELPERS
     assert "kicad_mcp.tools.library_catalog" in boundaries.DOMAIN_MODULES
+    assert "kicad_mcp.tools.library_datasheet" in boundaries.DOMAIN_MODULES
 
 
 def test_library_catalog_adapter_does_not_import_library_monolith() -> None:
     module_name = "kicad_mcp.tools.library_catalog"
     adapter = boundaries.DOMAIN_MODULES[module_name]
     assert "kicad_mcp.tools.library" not in boundaries._imports_for(module_name, adapter)
+
+
+def test_library_datasheet_adapter_does_not_import_library_monolith() -> None:
+    module_name = "kicad_mcp.tools.library_datasheet"
+    adapter = boundaries.DOMAIN_MODULES[module_name]
+    assert "kicad_mcp.tools.library" not in boundaries._imports_for(module_name, adapter)
+
+
+def test_library_datasheet_register_stays_below_reviewed_limit() -> None:
+    module_name = "kicad_mcp.tools.library_datasheet"
+    span = boundaries._function_span(boundaries.DOMAIN_MODULES[module_name], "register")
+    assert span is not None
+    assert span <= 100
+    assert boundaries.REGISTER_LINE_LIMITS[module_name] == 100
 
 
 def test_library_catalog_register_stays_below_reviewed_limit() -> None:

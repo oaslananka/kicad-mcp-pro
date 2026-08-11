@@ -18,6 +18,7 @@ _EXPORT_PCB_3D_RENDER_ADAPTER = "kicad_mcp.tools.export_pcb_3d_render"
 _EXPORT_PCB_MANUFACTURING_OUTPUTS_ADAPTER = "kicad_mcp.tools.export_pcb_manufacturing_outputs"
 _EXPORT_MANUFACTURING_PACKAGE_ADAPTER = "kicad_mcp.tools.export_manufacturing_package"
 _LIBRARY_CATALOG_ADAPTER = "kicad_mcp.tools.library_catalog"
+_LIBRARY_DATASHEET_ADAPTER = "kicad_mcp.tools.library_datasheet"
 _LIBRARY_LOCAL_AUTHORING_ADAPTER = "kicad_mcp.tools.library_local_authoring"
 _LIBRARY_COMPONENT_CONTRACT_ADAPTER = "kicad_mcp.tools.library_component_contract"
 
@@ -81,6 +82,7 @@ DOMAIN_MODULES = {
     / "export_sch_python_bom.py",
     "kicad_mcp.tools.export_sch_vector": SRC_ROOT / "kicad_mcp" / "tools" / "export_sch_vector.py",
     _LIBRARY_CATALOG_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "library_catalog.py",
+    _LIBRARY_DATASHEET_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "library_datasheet.py",
     _LIBRARY_LOCAL_AUTHORING_ADAPTER: SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -382,6 +384,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.export_sch_python_bom": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_sch_vector": ("kicad_mcp.tools.export",),
     _LIBRARY_CATALOG_ADAPTER: ("kicad_mcp.tools.library",),
+    _LIBRARY_DATASHEET_ADAPTER: ("kicad_mcp.tools.library",),
     "kicad_mcp.tools.pcb_basic_inspection": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_board_inspection": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_file_inspection": ("kicad_mcp.tools.pcb",),
@@ -428,6 +431,7 @@ REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.export_sch_python_bom": 100,
     "kicad_mcp.tools.export_sch_vector": 100,
     _LIBRARY_CATALOG_ADAPTER: 160,
+    _LIBRARY_DATASHEET_ADAPTER: 100,
     _LIBRARY_LOCAL_AUTHORING_ADAPTER: 100,
     _LIBRARY_COMPONENT_CONTRACT_ADAPTER: 100,
     "kicad_mcp.tools.validation": 300,
