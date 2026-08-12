@@ -54,6 +54,7 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
         with:
           enable-cache: true
+          prune-cache: true
           version-file: uv.toml
 
       - name: Install KiCad 10.0.x CLI
@@ -94,6 +95,7 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
         with:
           enable-cache: true
+          prune-cache: true
           version-file: uv.toml
 
       - name: Install KiCad nightly preview CLI

@@ -153,6 +153,7 @@ jobs:
         if: env.skip_ci != 'true'
         with:
           enable-cache: true
+          prune-cache: true
           version-file: uv.toml
       - run: corepack enable
         if: env.skip_ci != 'true'
@@ -203,6 +204,7 @@ jobs:
         if: env.skip_ci != 'true'
         with:
           enable-cache: true
+          prune-cache: true
           version-file: uv.toml
       - name: Install Python dependencies
         if: env.skip_ci != 'true'
@@ -267,6 +269,7 @@ jobs:
         if: env.skip_ci != 'true'
         with:
           enable-cache: true
+          prune-cache: true
           version-file: uv.toml
       - run: uv sync --all-extras --frozen
         if: env.skip_ci != 'true'
@@ -398,6 +401,7 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
         with:
           enable-cache: true
+          prune-cache: true
           version-file: uv.toml
       - run: uv sync --all-extras --frozen
       - run: uv run --all-extras python scripts/check_github_actions_policy.py
