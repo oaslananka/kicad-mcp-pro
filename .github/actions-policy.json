@@ -26,7 +26,8 @@
     "ossf/scorecard-action",
     "peaceiris/actions-gh-pages",
     "pypa/gh-action-pypi-publish",
-    "sigstore/cosign-installer"
+    "sigstore/cosign-installer",
+    "SonarSource/sonarqube-scan-action"
   ],
   "workflow_write_permissions": {
     "auto-assign.yml": {
