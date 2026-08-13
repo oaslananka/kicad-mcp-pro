@@ -278,10 +278,10 @@ def test_committed_release_policy_tracks_model_facing_inputs_only() -> None:
 
     baseline = yaml.safe_load(BASELINE_PATH.read_text(encoding="utf-8"))
     assert baseline["approved"] is True
-    assert baseline["approved_at"] == "2026-08-03"
-    assert baseline["source_revision"] == "11c2da2c3efcb4044497fc465d8c85412cfe1623"
+    assert baseline["approved_at"] == "2026-08-14"
+    assert baseline["source_revision"] == "68b6bd6985808323deb951bc0fe85175c2ed2e7f"
     assert baseline["agent_contract_digest"] == (
-        "ba938eb0bb38b2200c006eaf1626f094c9f7088df03c95f136e777d29da7dde6"
+        "d843962dceeea2163fca86d4d3b0f16688e916d58eceac9caabadd9ccbe2a0f3"
     )
     assert baseline["evidence"] == {
         "workflow_run_id": 30788805474,
