@@ -231,6 +231,20 @@ def _erc_violations(
     return violations
 
 
+def _erc_severity_summary(violations: list[dict[str, object]]) -> dict[str, int]:
+    """Return violation counts keyed by severity (e.g. ``{"error": 2, "warning": 1}``).
+
+    Preserves whatever severity strings the report carries (so severities beyond
+    error/warning still surface), defaulting to ``"error"`` when a violation omits one —
+    matching the conservative default used when turning violations into findings.
+    """
+    counts: dict[str, int] = {}
+    for violation in violations:
+        severity = str(violation.get("severity") or "error").casefold()
+        counts[severity] = counts.get(severity, 0) + 1
+    return counts
+
+
 def _type_breakdown(entries: list[dict[str, object]]) -> str:
     counts: dict[str, int] = {}
     for entry in entries:
@@ -587,6 +601,7 @@ def _erc_report_payload(
         )
 
     violations = _erc_violations(report)
+    severity_summary = _erc_severity_summary(violations)
     lines = ["ERC summary:", f"- Violations: {len(violations)}"]
     if violations:
         lines.append(_format_violations("Violations", violations))
@@ -617,7 +632,14 @@ def _erc_report_payload(
         metadata={
             "report_path": str(path),
             "available": True,
-            "violations": len(violations),
+            # ``violations`` is the aggregated flat list across all sheets (each entry
+            # retains its ``sheet_path`` plus existing fields); ``violation_count`` keeps
+            # the previous scalar so nothing that read it silently breaks. ``summary``
+            # gives counts by severity so a consumer sees a non-clean schematic at a
+            # glance instead of missing per-sheet violations.
+            "violation_count": len(violations),
+            "violations": violations,
+            "summary": severity_summary,
         },
     )
 
@@ -2791,7 +2813,7 @@ def _build_project_release_readiness_payload(
             else "[ ]"
         )
         + " Review DRC evidence and confirm zero blocking findings.",
-        ("[x]" if erc.available and int(erc.metadata.get("violations", 0)) == 0 else "[ ]")
+        ("[x]" if erc.available and int(erc.metadata.get("violation_count", 0)) == 0 else "[ ]")
         + " Review ERC evidence and confirm zero blocking findings.",
         ("[x]" if manufacturing.status == "PASS" else "[ ]")
         + " Confirm the selected manufacturing profile and DFM checks.",
