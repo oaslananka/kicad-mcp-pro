@@ -40,6 +40,12 @@ def register(mcp: FastMCP, dependencies: SchematicDestructiveEditDependencies) -
         return service.delete_label(name, x_mm, y_mm)
 
     @mcp.tool()
+    def sch_delete_no_connect(x_mm: float, y_mm: float) -> str:
+        """Delete the no-connect marker(s) at the given coordinate. Use
+        sch_get_symbols()/sch_get_connectivity_graph() to find pin positions."""
+        return service.delete_no_connect(x_mm, y_mm)
+
+    @mcp.tool()
     def sch_move_label(
         name: str,
         x_mm: float,

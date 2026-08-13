@@ -6454,6 +6454,29 @@
     "experimental": false,
     "headless": false,
     "idempotent": false,
+    "name": "sch_delete_no_connect",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "critic",
+      "expert",
+      "full",
+      "high_speed",
+      "power",
+      "schematic",
+      "schematic_authoring",
+      "schematic_only",
+      "simulation"
+    ],
+    "read_only": false,
+    "requires_kicad_running": false
+  },
+  {
+    "destructive": true,
+    "experimental": false,
+    "headless": false,
+    "idempotent": false,
     "name": "sch_delete_symbol",
     "open_world": false,
     "profiles": [

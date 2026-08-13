@@ -42,6 +42,7 @@ def _service(
     symbol_matches: Mapping[str, list[tuple[str, int, int, dict[str, Any]]]] | None = None,
     symbol_blocks: Mapping[str, dict[str, Any]] | None = None,
     label_blocks: Mapping[str, dict[str, Any]] | None = None,
+    no_connect_blocks: Mapping[str, dict[str, Any]] | None = None,
     snap_result: tuple[float, float] | None = None,
     snap_message: str = "",
     justify_calls: list[tuple[str, str]] | None = None,
@@ -66,6 +67,9 @@ def _service(
 
     def parse_label(block: str) -> dict[str, Any] | None:
         return (label_blocks or {}).get(block)
+
+    def parse_no_connect(block: str) -> dict[str, Any] | None:
+        return (no_connect_blocks or {}).get(block)
 
     def normalize_justify(value: str | None) -> str | None:
         if value is None or value.strip().casefold() in {"", "none"}:
@@ -102,6 +106,7 @@ def _service(
             parse_symbol_block=parse_symbol,
             coordinate_key=lambda x, y: (round(float(x), 4), round(float(y), 4)),
             parse_label_block=parse_label,
+            parse_no_connect_block=parse_no_connect,
             snap_point=lambda x, y, enabled: snap_result if enabled and snap_result else (x, y),
             snap_notice=lambda _original, _snapped: snap_message,
             normalize_label_justify=normalize_justify,
@@ -226,6 +231,46 @@ def test_delete_label_preserves_missing_result() -> None:
     service, transaction = _service(current="aa(label-gnd)bb")
 
     assert service.delete_label("GND", 1.0, 2.0) == ("No label 'GND' found near (1, 2).")
+    assert transaction.calls == [True]
+    assert transaction.updated is None
+
+
+def test_delete_no_connect_removes_marker_at_grid_snapped_coordinate() -> None:
+    current = "aa(no_connect-a)bb"
+    service, transaction = _service(
+        current=current,
+        no_connect_blocks={"(no_connect-a)": {"x": 50.8, "y": 50.8}},
+        snap_result=(50.8, 50.8),
+    )
+
+    assert service.delete_no_connect(50.0, 50.0) == (
+        "Reloaded schematic.\nDeleted 1 no-connect marker(s) at (50, 50)."
+    )
+    assert transaction.calls == [True]
+    assert transaction.updated == "aabb"
+
+
+def test_delete_no_connect_skips_nonmatching_marker_before_target() -> None:
+    current = "aa(no_connect-other)bb(no_connect-a)cc"
+    service, transaction = _service(
+        current=current,
+        no_connect_blocks={
+            "(no_connect-other)": {"x": 1.0, "y": 2.0},
+            "(no_connect-a)": {"x": 50.0, "y": 50.0},
+        },
+    )
+
+    assert service.delete_no_connect(50.0, 50.0) == (
+        "Reloaded schematic.\nDeleted 1 no-connect marker(s) at (50, 50)."
+    )
+    assert transaction.calls == [True]
+    assert transaction.updated == "aa(no_connect-other)bbcc"
+
+
+def test_delete_no_connect_preserves_missing_result() -> None:
+    service, transaction = _service(current="aa(no_connect-a)bb")
+
+    assert service.delete_no_connect(1.0, 2.0) == ("No no-connect marker found near (1, 2).")
     assert transaction.calls == [True]
     assert transaction.updated is None
 

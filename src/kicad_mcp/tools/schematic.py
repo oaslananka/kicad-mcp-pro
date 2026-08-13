@@ -4312,6 +4312,17 @@ def _extract_no_connects(content: str) -> set[tuple[float, float]]:
     return points
 
 
+def _parse_no_connect_block(block: str) -> dict[str, Any] | None:
+    """Parse a single ``(no_connect (at X Y) ...)`` block into its coordinate."""
+    match = re.match(
+        r"\(no_connect\s+\(at\s+([-\d.]+)\s+([-\d.]+)",
+        block,
+    )
+    if match is None:
+        return None
+    return {"x": float(match.group(1)), "y": float(match.group(2))}
+
+
 def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
     data = parse_schematic_file(sch_file)
     try:
@@ -5838,6 +5849,7 @@ def _register_authoring(mcp: FastMCP) -> None:
         parse_symbol_block=_parse_symbol_block,
         coordinate_key=_coord_pair_key,
         parse_label_block=_parse_label_block,
+        parse_no_connect_block=_parse_no_connect_block,
         snap_point=_snap_point,
         snap_notice=_snap_notice,
         normalize_label_justify=_normalize_label_justify,

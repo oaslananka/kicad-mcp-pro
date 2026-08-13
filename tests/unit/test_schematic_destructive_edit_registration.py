@@ -26,6 +26,10 @@ class FakeDestructiveEditService:
         self.calls.append(("delete_label", (name, x_mm, y_mm)))
         return "label-deleted"
 
+    def delete_no_connect(self, x_mm: float, y_mm: float) -> str:
+        self.calls.append(("delete_no_connect", (x_mm, y_mm)))
+        return "no-connect-deleted"
+
     def move_label(
         self,
         name: str,
@@ -70,6 +74,7 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
         "sch_delete_wire",
         "sch_delete_symbol",
         "sch_delete_label",
+        "sch_delete_no_connect",
         "sch_move_label",
         "sch_modify_label",
     }
@@ -98,9 +103,14 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
         '"left top" to move the text clear of the icon, or "none" to restore\n'
         "KiCad's centered default.\n"
     )
+    assert tools["sch_delete_no_connect"].description == (
+        "Delete the no-connect marker(s) at the given coordinate. Use\n"
+        "sch_get_symbols()/sch_get_connectivity_graph() to find pin positions."
+    )
     assert tools["sch_delete_wire"].parameters["required"] == ["wire_id"]
     assert tools["sch_delete_symbol"].parameters["required"] == ["reference"]
     assert tools["sch_delete_label"].parameters["required"] == ["name", "x_mm", "y_mm"]
+    assert tools["sch_delete_no_connect"].parameters["required"] == ["x_mm", "y_mm"]
     assert tools["sch_move_label"].parameters["required"] == [
         "name",
         "x_mm",
@@ -125,12 +135,14 @@ def test_registration_delegates_exact_arguments() -> None:
     assert tools["sch_delete_wire"].fn("abc") == "wire-deleted"
     assert tools["sch_delete_symbol"].fn("R1") == "symbol-deleted"
     assert tools["sch_delete_label"].fn("VCC", 1.0, 2.0) == "label-deleted"
+    assert tools["sch_delete_no_connect"].fn(1.0, 2.0) == "no-connect-deleted"
     assert tools["sch_move_label"].fn("VCC", 1.0, 2.0, 3.0, 4.0, 90, True) == ("label-moved")
     assert tools["sch_modify_label"].fn("VCC", 3.0, 4.0, "left top") == ("label-modified")
     assert service.calls == [
         ("delete_wire", ("abc",)),
         ("delete_symbol", ("R1",)),
         ("delete_label", ("VCC", 1.0, 2.0)),
+        ("delete_no_connect", (1.0, 2.0)),
         ("move_label", ("VCC", 1.0, 2.0, 3.0, 4.0, 90, True)),
         ("modify_label", ("VCC", 3.0, 4.0, "left top")),
     ]
