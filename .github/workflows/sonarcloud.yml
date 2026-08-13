@@ -46,7 +46,7 @@ jobs:
             --ignore=tests/e2e
 
       - name: SonarCloud Scan
-        uses: sonarsource/sonarcloud-github-action@v4.0.0
+        uses: SonarSource/sonarqube-scan-action@v8.2.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
