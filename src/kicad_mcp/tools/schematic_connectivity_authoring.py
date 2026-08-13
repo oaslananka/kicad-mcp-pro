@@ -31,6 +31,7 @@ def register(mcp: FastMCP, dependencies: SchematicConnectivityAuthoringDependenc
         global_labels: bool = True,
         sheet: str | None = None,
         sheet_file: str | None = None,
+        label_kind: str | None = None,
     ) -> str:
         """Connect placed-symbol pins to nets with a short outward wire stub plus a
         terminal placed clear of the symbol body (avoids label-on-pin overlap).
@@ -42,6 +43,13 @@ def register(mcp: FastMCP, dependencies: SchematicConnectivityAuthoringDependenc
         other nets get labels. Pins that share a ``net`` are joined by their
         common terminal name. This is the clean alternative to placing bare
         labels directly on pins.
+
+        ``label_kind`` selects the emitted label type for non-power nets:
+        ``"local"``, ``"global"``, or ``"hierarchical"``. When set it takes
+        precedence over the legacy ``global_labels`` boolean, enabling batch
+        placement of hierarchical labels at sheet boundaries. A hierarchical
+        connection may add an optional ``"shape"`` (e.g. ``"input"``,
+        ``"output"``, ``"bidirectional"``) passed through to the label.
         """
         return service.add_pin_labels(
             connections=connections,
@@ -49,6 +57,7 @@ def register(mcp: FastMCP, dependencies: SchematicConnectivityAuthoringDependenc
             global_labels=global_labels,
             sheet=sheet,
             sheet_file=sheet_file,
+            label_kind=label_kind,
         )
 
     @mcp.tool()
