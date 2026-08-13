@@ -5577,7 +5577,8 @@ def _snapshot_sheet_before_replace(sch_file: Path) -> tuple[int, int, Path | Non
     if symbol_count == 0 and label_count == 0:
         return symbol_count, label_count, None
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    backup_path = sch_file.with_suffix(f"{sch_file.suffix}.{timestamp}.bak")
+    nonce = time.time_ns()
+    backup_path = sch_file.with_suffix(f"{sch_file.suffix}.{timestamp}.{nonce}.bak")
     backup_path.write_text(content, encoding="utf-8")
     return symbol_count, label_count, backup_path
 
