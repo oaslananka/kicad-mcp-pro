@@ -58,6 +58,7 @@ class AddLabelInput(BaseModel):
     rotation: Literal[0, 90, 180, 270] = 0
     snap_to_grid: bool = True
     global_label: bool = False
+    kind: Literal["label", "global_label", "hierarchical_label"] | None = None
     shape: Literal["input", "output", "bidirectional", "tri_state", "passive"] | None = None
     justify: LabelJustify | None = None
 

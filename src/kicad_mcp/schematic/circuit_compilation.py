@@ -85,6 +85,7 @@ class LabelBlock(Protocol):
         *,
         global_label: bool,
         shape: str | None,
+        kind: str | None,
     ) -> str: ...
 
 
@@ -294,6 +295,7 @@ class SchematicCircuitCompilationService:
                     label.rotation,
                     global_label=label.global_label,
                     shape=label.shape,
+                    kind=label.kind,
                 )
             )
 
