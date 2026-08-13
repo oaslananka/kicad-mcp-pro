@@ -241,6 +241,8 @@ def _erc_severity_summary(violations: list[dict[str, object]]) -> dict[str, int]
     counts: dict[str, int] = {}
     for violation in violations:
         severity = str(violation.get("severity") or "error").casefold()
+        if severity in {"warning", "warn", "marginal"}:
+            severity = "warning"
         counts[severity] = counts.get(severity, 0) + 1
     return counts
 
