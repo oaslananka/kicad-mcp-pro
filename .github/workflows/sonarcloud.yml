@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# SonarCloud analysis — runs on every push to main/develop and on PRs.
+# Requires SONAR_TOKEN repository secret from https://sonarcloud.io.
+# ---------------------------------------------------------------------------
+name: SonarCloud
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read      # checkout
+  pull-requests: read # PR decoration
+
+jobs:
+  sonarcloud:
+    name: SonarCloud Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history for accurate blame / new-code detection
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run tests with coverage
+        run: |
+          uv run --all-extras pytest tests/ \
+            --cov=src/kicad_mcp \
+            --cov-report=xml:coverage.xml \
+            -q \
+            -x \
+            --ignore=tests/gui \
+            --ignore=tests/e2e
+
+      - name: SonarCloud Scan
+        uses: sonarsource/sonarcloud-github-action@v4.0.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
