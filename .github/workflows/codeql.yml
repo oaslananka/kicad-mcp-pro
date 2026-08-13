@@ -24,7 +24,7 @@ jobs:
     outputs:
       docs_only: ${{ steps.check.outputs.docs_only }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
@@ -80,7 +80,7 @@ jobs:
         run: |
           echo "::notice::Skipping CodeQL analysis — docs-only PR detected (no code changes)"
           echo "skip_ci=true" >> "$GITHUB_ENV"
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         if: env.skip_ci != 'true'
         with:
           persist-credentials: false
