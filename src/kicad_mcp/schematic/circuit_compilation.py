@@ -72,6 +72,7 @@ class PlaceSymbolBlock(Protocol):
         unit: int = 1,
         project_name: str,
         root_uuid: str,
+        properties: dict[str, str] | None = None,
     ) -> str: ...
 
 
@@ -245,6 +246,7 @@ class SchematicCircuitCompilationService:
                     unit=symbol.unit,
                     project_name=project_name,
                     root_uuid=root_uuid,
+                    properties=symbol.properties,
                 )
             )
 
