@@ -13,10 +13,10 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "dotenv": "^16.4.0",
+    "dotenv": "^17.4.2",
     "express": "4.22.2",
     "express-rate-limit": "^8.6.2",
-    "zod": "^3.23.0"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
