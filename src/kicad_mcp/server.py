@@ -651,8 +651,8 @@ def _tools_without_capability_record() -> list[str]:
 
     A tool with no record falls back to ``AccessTier.WRITE`` in
     :func:`_ipc_runtime_allows_tool`, which can silently hide it from
-    ``tools/list`` (e.g. a file-based ``sch_*`` tool disappearing when the
-    KiCad schematic window is closed). Surfacing the gap loudly at startup
+    ``tools/list`` (for example, a ``sch_*`` tool may be treated as requiring
+    "live schematic write" capability at runtime). Surfacing the gap loudly at startup
     keeps the omission discoverable instead of silent.
     """
     from .tools.router import TOOL_CATEGORIES
