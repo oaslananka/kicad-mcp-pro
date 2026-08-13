@@ -5551,6 +5551,38 @@ def _write_compiled_schematic(content: str, path: Path, allow_node_loss: bool) -
     )
 
 
+def _count_schematic_nodes(content: str) -> tuple[int, int]:
+    """Return ``(symbol_count, label_count)`` for placed nodes in ``content``.
+
+    Only top-level placed ``(symbol ...)`` instances are counted (library symbol
+    definitions inside ``(lib_symbols ...)`` are ignored), alongside every
+    ``label`` / ``global_label`` / ``hierarchical_label``.
+    """
+    symbol_count = len(_find_all_placed_symbol_blocks(content))
+    label_count = len(re.findall(r"\((?:label|global_label|hierarchical_label)\b", content))
+    return symbol_count, label_count
+
+
+def _snapshot_sheet_before_replace(sch_file: Path) -> tuple[int, int, Path | None]:
+    """Count existing nodes and back up ``sch_file`` before a destructive rebuild.
+
+    Returns ``(symbol_count, label_count, backup_path)``. When the sheet is absent
+    or empty (no placed symbols or labels) no backup is written and ``backup_path``
+    is ``None``, so callers never claim a spurious backup for empty sheets.
+    """
+    if not sch_file.is_file():
+        return 0, 0, None
+    content = sch_file.read_text(encoding="utf-8")
+    symbol_count, label_count = _count_schematic_nodes(content)
+    if symbol_count == 0 and label_count == 0:
+        return symbol_count, label_count, None
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    nonce = time.time_ns()
+    backup_path = sch_file.with_suffix(f"{sch_file.suffix}.{timestamp}.{nonce}.bak")
+    backup_path.write_text(content, encoding="utf-8")
+    return symbol_count, label_count, backup_path
+
+
 def _active_project_name() -> str:
     config = get_config()
     return config.project_file.stem if config.project_file is not None else "KiCadMCP"
@@ -5694,6 +5726,7 @@ def _register_inspection_and_analysis(mcp: FastMCP) -> None:
     circuit_compilation_service = SchematicCircuitCompilationService(
         active_schematic_file=lambda: _get_schematic_file(),
         project_name=_active_project_name,
+        snapshot_before_replace=_snapshot_sheet_before_replace,
         read_sheet_paper=lambda path: _read_sheet_paper(path),
         read_sheet_paper_declaration=lambda path: _read_sheet_paper_declaration(path),
         prepare_inputs=_prepare_circuit_compilation_inputs,
