@@ -646,6 +646,37 @@ class _StaticTokenVerifier:
         self._expected_token = token
 
 
+def _tools_without_capability_record() -> list[str]:
+    """Return registered router tools that have no capability record.
+
+    A tool with no record falls back to ``AccessTier.WRITE`` in
+    :func:`_ipc_runtime_allows_tool`, which can silently hide it from
+    ``tools/list`` (for example, a ``sch_*`` tool may be treated as requiring
+    "live schematic write" capability at runtime). Surfacing the gap loudly at startup
+    keeps the omission discoverable instead of silent.
+    """
+    from .tools.router import TOOL_CATEGORIES
+
+    routed = {tool_name for info in TOOL_CATEGORIES.values() for tool_name in info["tools"]}
+    return sorted(name for name in routed if get_capability_record(name) is None)
+
+
+def _audit_capability_records() -> list[str]:
+    """Log a single WARNING when registered tools lack a capability record."""
+    missing = _tools_without_capability_record()
+    if missing:
+        logger.warning(
+            "capability_records_missing",
+            message=(
+                "Registered tools have no capability record and fall back to a "
+                "WRITE tier; they may be hidden from tools/list at runtime."
+            ),
+            count=len(missing),
+            tools=missing,
+        )
+    return missing
+
+
 def _tool_requires_ipc(tool_name: str) -> bool:
     record = get_capability_record(tool_name)
     if record is not None and record.runtime is RuntimeRequirement.KICAD_IPC:
@@ -2123,6 +2154,7 @@ def _print_startup_diagnostics(cfg: KiCadMCPConfig, *, probe_runtime: bool = Tru
         gate_mode="release-export-only",
         ipc_status=ipc_status,
     )
+    _audit_capability_records()
     _print_startup_onboarding()
 
 
