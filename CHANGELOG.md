@@ -10,6 +10,25 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.32.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.31.0...mcp-server-v3.32.0) (2026-08-14)
+
+
+### Features
+
+* **schematic:** add label_kind to sch_add_pin_labels for hierarchical labels ([#663](https://github.com/oaslananka/kicad-mcp-pro/issues/663)) ([0e47ce3](https://github.com/oaslananka/kicad-mcp-pro/commit/0e47ce36b5b572aa709c05ebeff4ec5c3056743b))
+* **schematic:** add per-net scope to sch_build_circuit ([#667](https://github.com/oaslananka/kicad-mcp-pro/issues/667)) ([743aced](https://github.com/oaslananka/kicad-mcp-pro/commit/743aced96849f1f4dc00468f08f8c7a092b0fdc3))
+* **schematic:** add sch_delete_no_connect ([#666](https://github.com/oaslananka/kicad-mcp-pro/issues/666)) ([38c4170](https://github.com/oaslananka/kicad-mcp-pro/commit/38c417014f2df04b7da60d722afc8a811195ed0d))
+* **schematic:** report replaced/written counts and back up the sheet in sch_build_circuit ([#668](https://github.com/oaslananka/kicad-mcp-pro/issues/668)) ([68b6bd6](https://github.com/oaslananka/kicad-mcp-pro/commit/68b6bd6985808323deb951bc0fe85175c2ed2e7f))
+* **schematic:** support per-symbol properties in sch_build_circuit ([#665](https://github.com/oaslananka/kicad-mcp-pro/issues/665)) ([df38dcb](https://github.com/oaslananka/kicad-mcp-pro/commit/df38dcb55d33e0e4ce5b3ab6db49afed992d62e2))
+
+
+### Bug Fixes
+
+* **ci:** correct SonarCloud config and align docs with CI-based analysis ([#677](https://github.com/oaslananka/kicad-mcp-pro/issues/677)) ([789d674](https://github.com/oaslananka/kicad-mcp-pro/commit/789d67444a59ba849f86daab4d08eefc23d32735))
+* **ci:** make Sonar source and test scopes disjoint ([#678](https://github.com/oaslananka/kicad-mcp-pro/issues/678)) ([a9c59fd](https://github.com/oaslananka/kicad-mcp-pro/commit/a9c59fda3c2599d97494a96a5282d8a55ff80fc2))
+* **ci:** skip SonarCloud scan for fork pull requests ([#679](https://github.com/oaslananka/kicad-mcp-pro/issues/679)) ([033e9cc](https://github.com/oaslananka/kicad-mcp-pro/commit/033e9cc10bb0d246d04834c889115b1740be23b8))
+* **quality:** resolve SonarCloud issues across codebase ([#674](https://github.com/oaslananka/kicad-mcp-pro/issues/674)) ([68c2a49](https://github.com/oaslananka/kicad-mcp-pro/commit/68c2a498b23df18414c739c72e90cc8bac974216))
+
 ## [3.31.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.30.1...mcp-server-v3.31.0) (2026-08-13)
 
 
