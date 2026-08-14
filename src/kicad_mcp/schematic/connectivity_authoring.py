@@ -18,6 +18,20 @@ class SchematicTargetLike(Protocol):
     def description(self) -> str: ...
 
 
+class LabelBlockEmitter(Protocol):
+    def __call__(
+        self,
+        name: str,
+        x: float,
+        y: float,
+        rotation: int = 0,
+        global_label: bool = False,
+        shape: str | None = None,
+        kind: str | None = None,
+        justify: str | None = None,
+    ) -> str: ...
+
+
 class BoundingBoxLike(Protocol):
     """Obstacle bounds consumed by the injected router."""
 
@@ -38,6 +52,15 @@ ParsedSchematic = dict[str, Any]
 Mutator = Callable[[str], str]
 PinPositions = dict[str, tuple[float, float]]
 WireSegment = tuple[float, float, float, float]
+
+#: Maps the public ``label_kind`` values to the ``kind`` accepted by ``label_block``.
+LABEL_SHAPES = frozenset({"input", "output", "bidirectional", "tri_state", "passive"})
+
+LABEL_KIND_TO_BLOCK_KIND: dict[str, str] = {
+    "local": "label",
+    "global": "global_label",
+    "hierarchical": "hierarchical_label",
+}
 
 
 @dataclass(frozen=True)
@@ -61,7 +84,7 @@ class SchematicConnectivityAuthoringService:
     power_symbol_rotation_from_vector: Callable[[float, float], int]
     place_symbol_block: Callable[..., str]
     terminal_rotation_from_vector: Callable[[float, float], int]
-    label_block: Callable[[str, float, float, int, bool], str]
+    label_block: LabelBlockEmitter
     append_before_sheet_instances: Callable[[str, str], str]
     transactional_write: Callable[[Mutator, Path | None], str]
     reload_schematic: Callable[[], str]
@@ -88,8 +111,24 @@ class SchematicConnectivityAuthoringService:
         global_labels: bool = True,
         sheet: str | None = None,
         sheet_file: str | None = None,
+        label_kind: str | None = None,
     ) -> str:
-        """Add outward pin stubs plus labels or power terminals."""
+        """Add outward pin stubs plus labels or power terminals.
+
+        ``label_kind`` (``"local"`` | ``"global"`` | ``"hierarchical"``) selects the
+        emitted label type and, when provided, takes precedence over the legacy
+        ``global_labels`` boolean. Hierarchical connections may carry an optional
+        per-connection ``"shape"`` (``input``/``output``/``bidirectional``/...).
+        """
+        if label_kind is not None and label_kind not in LABEL_KIND_TO_BLOCK_KIND:
+            raise ValueError(
+                f"label_kind must be one of {sorted(LABEL_KIND_TO_BLOCK_KIND)}, got {label_kind!r}"
+            )
+        block_kind = (
+            LABEL_KIND_TO_BLOCK_KIND[label_kind]
+            if label_kind is not None
+            else ("global_label" if global_labels else "label")
+        )
         target = self.resolve_target(sheet, sheet_file)
         data = self.parse_schematic(target.path)
         placed: dict[str, dict[str, Any]] = {}
@@ -226,7 +265,19 @@ class SchematicConnectivityAuthoringService:
                 results.append(f"{ref}.{pin} -> {net} (power) @ ({ex}, {ey}){suffix}")
             else:
                 rotation = self.terminal_rotation_from_vector(ux, uy)
-                terminal_blocks.append(self.label_block(net, ex, ey, rotation, global_labels))
+                shape = conn.get("shape")
+                if shape is not None and (not isinstance(shape, str) or shape not in LABEL_SHAPES):
+                    raise ValueError(f"shape must be one of {sorted(LABEL_SHAPES)}, got {shape!r}")
+                terminal_blocks.append(
+                    self.label_block(
+                        net,
+                        ex,
+                        ey,
+                        rotation,
+                        kind=block_kind,
+                        shape=shape,
+                    )
+                )
                 results.append(f"{ref}.{pin} -> {net} @ ({ex}, {ey}){suffix}")
 
         if not (wire_blocks or terminal_blocks):
