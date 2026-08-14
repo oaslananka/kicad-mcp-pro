@@ -104,8 +104,8 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
         "KiCad's centered default.\n"
     )
     assert tools["sch_delete_no_connect"].description == (
-        "Delete the no-connect marker(s) at the given coordinate. Use\n"
-        "sch_get_symbols()/sch_get_connectivity_graph() to find pin positions."
+        "Delete the no-connect marker(s) at the given coordinate.\n"
+        "Use sch_get_symbols()/sch_get_connectivity_graph() to find pin positions."
     )
     assert tools["sch_delete_wire"].parameters["required"] == ["wire_id"]
     assert tools["sch_delete_symbol"].parameters["required"] == ["reference"]
