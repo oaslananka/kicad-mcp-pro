@@ -112,6 +112,13 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
         "wire segments between pins.  That star-routing can cross unrelated pins or\n"
         "labels and KiCad will merge them by geometry, so it can introduce silent\n"
         "shorts on non-trivial netlists — prefer the default terminal strategy.\n\n"
+        "Each symbol may carry an optional ``properties`` mapping (``dict[str, str]``);\n"
+        "every key/value is written verbatim as an additional schematic symbol field,\n"
+        "alongside the standard fields — handy for order numbers such as\n"
+        '``{"MPN": "...", "Mouser": "...", "LCSC": "..."}`` without a second\n'
+        "``sch_update_properties`` pass.  Keys colliding with the standard\n"
+        "Reference/Value/Footprint/Datasheet fields are ignored in favour of the\n"
+        "dedicated ``reference``/``value``/``footprint`` inputs (those always win).\n\n"
         "Recommended workflow:\n"
         "  1. Call ``sch_find_free_placement(count=N)`` to obtain safe coordinates.\n"
         "  2. Pass those coordinates in the ``symbols`` list.\n"
