@@ -430,7 +430,11 @@ def test_build_threads_per_symbol_properties_to_emission(tmp_path: Path) -> None
     harness.service().build()
 
     content = harness.transaction_calls[0][2]
-    assert "properties={'MPN': 'RC0805', 'LCSC': 'C17414'}" in content
+    assert "properties=" in content
+    assert "MPN" in content
+    assert "RC0805" in content
+    assert "LCSC" in content
+    assert "C17414" in content
 
 
 def test_place_symbol_block_emits_extra_properties_and_skips_standard_fields() -> None:

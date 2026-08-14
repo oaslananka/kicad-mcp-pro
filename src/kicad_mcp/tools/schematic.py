@@ -4644,16 +4644,17 @@ def place_symbol_block(
         if is_power_symbol
         else "\t\t\t(effects (font (size 1.27 1.27)))"
     )
-    extra_properties = ""
+    extra_property_blocks: list[str] = []
     for field_name, field_value in (properties or {}).items():
         if field_name in STANDARD_SYMBOL_FIELDS:
             continue
-        extra_properties += (
+        extra_property_blocks.append(
             f"\t\t(property {_sexpr_string(field_name)} {_sexpr_string(field_value)}\n"
             f"\t\t\t(at {_fmt_mm(x)} {_fmt_mm(y)} 0)\n"
             "\t\t\t(effects (font (size 1.27 1.27)) (hide yes))\n"
             "\t\t)\n"
         )
+    extra_properties = "".join(extra_property_blocks)
     return (
         "\t(symbol\n"
         f"\t\t(lib_id {_sexpr_string(lib_id)})\n"
