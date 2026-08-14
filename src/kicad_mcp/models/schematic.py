@@ -6,6 +6,13 @@ from typing import Annotated, Literal
 
 from pydantic import AliasChoices, BaseModel, Field
 
+STANDARD_SYMBOL_FIELDS = frozenset({"Reference", "Value", "Footprint", "Datasheet"})
+"""Standard symbol fields emitted from dedicated inputs.
+
+Keys colliding with these in ``AddSymbolInput.properties`` are ignored so the
+explicit ``reference`` / ``value`` / ``footprint`` inputs always win.
+"""
+
 CoordMM = Annotated[
     float,
     Field(ge=-2000.0, le=2000.0, description="Coordinate in millimeters."),
@@ -37,6 +44,14 @@ class AddSymbolInput(BaseModel):
     rotation: Literal[0, 90, 180, 270] = 0
     unit: int = Field(default=1, ge=1, le=64)
     snap_to_grid: bool = True
+    properties: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Extra symbol fields written verbatim as additional (property ...) "
+            "entries. Keys colliding with the standard Reference/Value/Footprint/"
+            "Datasheet fields are ignored in favour of the dedicated inputs."
+        ),
+    )
 
 
 class AddWireInput(BaseModel):
@@ -58,6 +73,7 @@ class AddLabelInput(BaseModel):
     rotation: Literal[0, 90, 180, 270] = 0
     snap_to_grid: bool = True
     global_label: bool = False
+    kind: Literal["label", "global_label", "hierarchical_label"] | None = None
     shape: Literal["input", "output", "bidirectional", "tri_state", "passive"] | None = None
     justify: LabelJustify | None = None
 

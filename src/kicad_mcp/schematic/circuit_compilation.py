@@ -72,6 +72,7 @@ class PlaceSymbolBlock(Protocol):
         unit: int = 1,
         project_name: str,
         root_uuid: str,
+        properties: dict[str, str] | None = None,
     ) -> str: ...
 
 
@@ -85,6 +86,7 @@ class LabelBlock(Protocol):
         *,
         global_label: bool,
         shape: str | None,
+        kind: str | None,
     ) -> str: ...
 
 
@@ -247,6 +249,7 @@ class SchematicCircuitCompilationService:
                     unit=symbol.unit,
                     project_name=project_name,
                     root_uuid=root_uuid,
+                    properties=symbol.properties,
                 )
             )
 
@@ -296,6 +299,7 @@ class SchematicCircuitCompilationService:
                     label.rotation,
                     global_label=label.global_label,
                     shape=label.shape,
+                    kind=label.kind,
                 )
             )
 

@@ -25,6 +25,7 @@ from ..connection import KiCadConnectionError, get_kicad
 from ..discovery import is_numbered_duplicate_kicad_file
 from ..errors import SchematicWriteUnsafeError
 from ..models.schematic import (
+    STANDARD_SYMBOL_FIELDS,
     AddLabelInput,
     AddSymbolInput,
     AddWireInput,
@@ -1326,6 +1327,30 @@ def _set_point(item: dict[str, Any], x: float, y: float) -> None:
 def _net_name(net: dict[str, Any]) -> str:
     value = net.get("name", net.get("net", net.get("label", "")))
     return str(value)
+
+
+_NET_SCOPE_TO_LABEL_KIND = {
+    "local": "label",
+    "global": "global_label",
+    "hierarchical": "hierarchical_label",
+}
+
+
+def _net_label_kind(net: dict[str, Any]) -> str | None:
+    """Map an optional per-net ``scope`` to a label ``kind`` for terminal labels.
+
+    Returns ``None`` when ``scope`` is omitted so callers keep the historical
+    default (global labels).  ``local`` → plain label, ``global`` → global label,
+    ``hierarchical`` → hierarchical label.  Any other value raises ``ValueError``.
+    """
+    scope = net.get("scope")
+    if scope is None:
+        return None
+    try:
+        return _NET_SCOPE_TO_LABEL_KIND[scope]
+    except (KeyError, TypeError):
+        allowed = ", ".join(sorted(_NET_SCOPE_TO_LABEL_KIND))
+        raise ValueError(f"Invalid net scope {scope!r}; expected one of: {allowed}.") from None
 
 
 def _is_power_net(name: str) -> bool:
@@ -3737,6 +3762,37 @@ def _power_symbol_rotation_from_vector(ux: float, uy: float) -> int:
     return 90
 
 
+def _terminal_label_spec(
+    net_name: str,
+    x_mm: float,
+    y_mm: float,
+    rotation: int,
+    label_kind: str | None,
+    shape: str | None,
+) -> dict[str, Any]:
+    """Build a terminal-label spec, honoring an optional per-net label kind.
+
+    With no explicit ``label_kind`` (net ``scope`` omitted) this preserves the
+    historical default: a bidirectional global label.  ``local`` / ``global`` /
+    ``hierarchical`` scopes select the matching label kind instead.
+    """
+    spec: dict[str, Any] = {
+        "name": net_name,
+        "x_mm": x_mm,
+        "y_mm": y_mm,
+        "rotation": rotation,
+        "snap_to_grid": False,
+    }
+    if label_kind is None:
+        spec["global_label"] = True
+        spec["shape"] = "bidirectional"
+        return spec
+    spec["kind"] = label_kind
+    if label_kind == "hierarchical_label":
+        spec["shape"] = shape or "bidirectional"
+    return spec
+
+
 def _plan_netlist_pin_terminals(
     symbols: list[AddSymbolInput],
     powers: list[PowerSymbolInput],
@@ -3826,8 +3882,14 @@ def _plan_netlist_pin_terminals(
         "symbol_center_resolutions": 0,
     }
 
+    net_label_kinds: dict[str, str | None] = {}
+    net_label_shapes: dict[str, str | None] = {}
     for net in nets:
         net_name = _net_name(net)
+        label_kind = _net_label_kind(net)
+        net_label_kinds[net_name] = label_kind
+        net_shape = net.get("shape") if label_kind == "hierarchical_label" else None
+        net_label_shapes[net_name] = net_shape
         endpoints = _net_endpoints(net)
         unresolved_endpoints: list[str] = []
         unresolved_details: list[str] = []
@@ -3932,15 +3994,14 @@ def _plan_netlist_pin_terminals(
                 )
             else:
                 terminal_labels.append(
-                    {
-                        "name": net_name,
-                        "x_mm": ex,
-                        "y_mm": ey,
-                        "rotation": rotation,
-                        "snap_to_grid": False,
-                        "global_label": True,
-                        "shape": "bidirectional",
-                    }
+                    _terminal_label_spec(
+                        net_name,
+                        ex,
+                        ey,
+                        rotation,
+                        net_label_kinds[net_name],
+                        net_label_shapes[net_name],
+                    )
                 )
             generated_terminal_count += 1
             net_names_seen.add(net_name)
@@ -3979,15 +4040,14 @@ def _plan_netlist_pin_terminals(
             {"name": "PWR_FLAG", "x_mm": fx, "y_mm": fy, "rotation": 0, "snap_to_grid": False}
         )
         terminal_labels.append(
-            {
-                "name": net_name,
-                "x_mm": fx,
-                "y_mm": fy,
-                "rotation": 0,
-                "snap_to_grid": False,
-                "global_label": True,
-                "shape": "bidirectional",
-            }
+            _terminal_label_spec(
+                net_name,
+                fx,
+                fy,
+                0,
+                net_label_kinds.get(net_name),
+                net_label_shapes.get(net_name),
+            )
         )
         flag_x += NETLIST_LAYOUT_COLUMN_SPACING_MM
 
@@ -4617,8 +4677,15 @@ def place_symbol_block(
     unit: int = 1,
     project_name: str = "KiCadMCP",
     root_uuid: str = "",
+    properties: dict[str, str] | None = None,
 ) -> str:
-    """Build a schematic symbol instance block."""
+    """Build a schematic symbol instance block.
+
+    ``properties`` are extra fields written verbatim as additional
+    ``(property ...)`` entries. Keys colliding with the standard
+    Reference/Value/Footprint/Datasheet fields are ignored so the dedicated
+    ``reference``/``value``/``footprint`` inputs always take precedence.
+    """
     symbol_uuid = new_uuid()
     root = root_uuid or new_uuid()
     is_power_symbol = lib_id.startswith("power:") or reference.startswith("#PWR")
@@ -4636,6 +4703,17 @@ def place_symbol_block(
         if is_power_symbol
         else "\t\t\t(effects (font (size 1.27 1.27)))"
     )
+    extra_property_blocks: list[str] = []
+    for field_name, field_value in (properties or {}).items():
+        if field_name in STANDARD_SYMBOL_FIELDS:
+            continue
+        extra_property_blocks.append(
+            f"\t\t(property {_sexpr_string(field_name)} {_sexpr_string(field_value)}\n"
+            f"\t\t\t(at {_fmt_mm(x)} {_fmt_mm(y)} 0)\n"
+            "\t\t\t(effects (font (size 1.27 1.27)) (hide yes))\n"
+            "\t\t)\n"
+        )
+    extra_properties = "".join(extra_property_blocks)
     return (
         "\t(symbol\n"
         f"\t\t(lib_id {_sexpr_string(lib_id)})\n"
@@ -4662,6 +4740,7 @@ def place_symbol_block(
         f"\t\t\t(at {_fmt_mm(x)} {_fmt_mm(y)} 0)\n"
         "\t\t\t(effects (font (size 1.27 1.27)) (hide yes))\n"
         "\t\t)\n"
+        f"{extra_properties}"
         "\t\t(instances\n"
         f"\t\t\t(project {_sexpr_string(project_name)}\n"
         f'\t\t\t\t(path "/{root}"\n'

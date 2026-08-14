@@ -85,6 +85,71 @@ async def test_default_build_circuit_emits_no_routed_wires(sample_project, mock_
 
 
 @pytest.mark.anyio
+async def test_build_circuit_scope_selects_label_kind(sample_project, mock_kicad) -> None:
+    """Per-net ``scope`` selects the emitted terminal label kind end-to-end."""
+    server = build_server("schematic")
+    nets = [
+        {
+            "name": "SIG_A",
+            "endpoints": ["R1.1", "R2.1", "R3.1"],
+            "scope": "hierarchical",
+            "shape": "input",
+        },
+        {"name": "SIG_B", "endpoints": ["R1.2", "R2.2", "R3.2"], "scope": "local"},
+    ]
+    await call_tool_text(
+        server,
+        "sch_build_circuit",
+        {"symbols": _SHARED_RAIL_SYMBOLS, "nets": nets},
+    )
+
+    schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
+
+    # Hierarchical scope emits hierarchical labels carrying the requested shape;
+    # no global label for SIG_A survives.
+    assert schematic.count('(hierarchical_label "SIG_A"') == 3
+    assert "(shape input)" in schematic
+    assert '(global_label "SIG_A"' not in schematic
+    # Local scope emits plain sheet-local labels (not global) for the SIG_B net.
+    assert schematic.count('(label "SIG_B"') == 3
+    assert '(global_label "SIG_B"' not in schematic
+
+
+@pytest.mark.anyio
+async def test_build_circuit_defaults_to_global_label_without_scope(
+    sample_project, mock_kicad
+) -> None:
+    """Regression: omitting ``scope`` still emits global labels (unchanged default)."""
+    server = build_server("schematic")
+    await call_tool_text(
+        server,
+        "sch_build_circuit",
+        {"symbols": _SHARED_RAIL_SYMBOLS, "nets": _SHARED_RAIL_NETS},
+    )
+
+    schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
+
+    assert schematic.count('(global_label "SIG_A"') == 3
+    assert '(hierarchical_label "SIG_A"' not in schematic
+    assert '(label "SIG_A"' not in schematic
+
+
+@pytest.mark.anyio
+async def test_build_circuit_rejects_invalid_scope(sample_project, mock_kicad) -> None:
+    server = build_server("schematic")
+    result = await call_tool_text(
+        server,
+        "sch_build_circuit",
+        {
+            "symbols": _SHARED_RAIL_SYMBOLS,
+            "nets": [{"name": "SIG_A", "endpoints": ["R1.1"], "scope": "sheet"}],
+        },
+    )
+
+    assert "Invalid net scope" in result
+
+
+@pytest.mark.anyio
 async def test_unsafe_opt_in_still_routes_wires(sample_project, mock_kicad) -> None:
     """The routed planner remains reachable, but only behind the explicit flag."""
     server = build_server("schematic")
