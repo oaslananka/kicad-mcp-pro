@@ -282,6 +282,7 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "sch_move_symbol",
             "sch_delete_wire",
             "sch_delete_label",
+            "sch_delete_no_connect",
             "sch_move_label",
             "sch_modify_label",
             "sch_analyze_net_compilation",

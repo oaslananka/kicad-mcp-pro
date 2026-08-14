@@ -511,6 +511,29 @@ async def test_schematic_add_no_connect(sample_project, mock_kicad) -> None:
 
 
 @pytest.mark.anyio
+async def test_schematic_delete_no_connect(sample_project, mock_kicad) -> None:
+    """sch_delete_no_connect should remove a matching no-connect marker."""
+    server = build_server("schematic")
+    await call_tool_text(server, "sch_add_no_connect", {"x_mm": 30.0, "y_mm": 30.0})
+    assert "(no_connect" in (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
+
+    result = await call_tool_text(
+        server,
+        "sch_delete_no_connect",
+        {"x_mm": 30.0, "y_mm": 30.0},
+    )
+    assert "Deleted" in result
+    assert "(no_connect" not in (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
+
+    missing = await call_tool_text(
+        server,
+        "sch_delete_no_connect",
+        {"x_mm": 90.0, "y_mm": 90.0},
+    )
+    assert "No no-connect marker found" in missing
+
+
+@pytest.mark.anyio
 async def test_schematic_add_hierarchical_label(sample_project, mock_kicad) -> None:
     """sch_add_hierarchical_label should add hierarchical labels with shapes."""
     server = build_server("schematic")

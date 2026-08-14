@@ -58,6 +58,7 @@ class SchematicDestructiveEditService:
     parse_symbol_block: ParseBlock
     coordinate_key: CoordinateKey
     parse_label_block: ParseBlock
+    parse_no_connect_block: ParseBlock
     snap_point: SnapPoint
     snap_notice: SnapNotice
     normalize_label_justify: NormalizeLabelJustify
@@ -233,6 +234,55 @@ class SchematicDestructiveEditService:
         return (
             f"{self.reload_schematic()}\n"
             f"Deleted {removed} label(s) '{name}' at "
+            f"({self.format_mm(x_mm)}, {self.format_mm(y_mm)})."
+        )
+
+    def delete_no_connect(self, x_mm: float, y_mm: float) -> str:
+        """Delete no-connect marker(s) at raw or grid-snapped coordinates."""
+        tolerance = 0.05
+        removed = 0
+        snapped_x, snapped_y = self.snap_point(x_mm, y_mm, True)
+
+        def matches_target(parsed: ParsedRecord) -> bool:
+            for target_x, target_y in ((x_mm, y_mm), (snapped_x, snapped_y)):
+                if (
+                    abs(float(parsed["x"]) - target_x) <= tolerance
+                    and abs(float(parsed["y"]) - target_y) <= tolerance
+                ):
+                    return True
+            return False
+
+        def mutator(current: str) -> str:
+            nonlocal removed
+            pieces: list[str] = []
+            cursor = 0
+            last = 0
+            while cursor < len(current):
+                if current[cursor:].startswith("(no_connect"):
+                    block, length = self.extract_block(current, cursor)
+                    parsed = self.parse_no_connect_block(block) if block else None
+                    if parsed is not None and matches_target(parsed):
+                        pieces.append(current[last:cursor])
+                        cursor += length
+                        last = cursor
+                        removed += 1
+                        continue
+                cursor += 1
+            pieces.append(current[last:])
+            if removed == 0:
+                raise ValueError(
+                    f"No no-connect marker found near "
+                    f"({self.format_mm(x_mm)}, {self.format_mm(y_mm)})."
+                )
+            return "".join(pieces)
+
+        try:
+            self.transactional_write(mutator, allow_node_loss=True)
+        except ValueError as exc:
+            return str(exc)
+        return (
+            f"{self.reload_schematic()}\n"
+            f"Deleted {removed} no-connect marker(s) at "
             f"({self.format_mm(x_mm)}, {self.format_mm(y_mm)})."
         )
 
