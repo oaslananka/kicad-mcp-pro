@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
             thresholds_path=args.thresholds,
         )
         write_release_gate_report(args.output, report)
-    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+    except (OSError, TypeError, ValueError):
         print("live-model release gate failed: invalid configuration or evidence", file=sys.stderr)
         return 2
     print(

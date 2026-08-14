@@ -340,7 +340,7 @@ def test_committed_baseline_records_reviewed_required_configurations() -> None:
     baseline = yaml.safe_load((ROOT / "evals/live/baselines.yaml").read_text(encoding="utf-8"))
 
     assert baseline["approved"] is True
-    assert baseline["approved_at"] == "2026-08-03"
+    assert baseline["approved_at"] == "2026-08-14"
     assert baseline["required_configurations"] == list(CONFIG_IDS)
     assert list(baseline["configurations"]) == list(CONFIG_IDS)
     for config_id, model, host in zip(CONFIG_IDS, MODELS, HOSTS, strict=True):
