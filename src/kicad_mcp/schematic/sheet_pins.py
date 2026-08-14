@@ -582,9 +582,12 @@ def plan_sheet_pins(
         record = existing.get(name)
         if name in desired:
             pin_type = desired[name]
-            action = (
-                "add" if record is None else ("keep" if record.pin_type == pin_type else "retype")
-            )
+            if record is None:
+                action = "add"
+            elif record.pin_type == pin_type:
+                action = "keep"
+            else:
+                action = "retype"
         else:
             pin_type = existing[name].pin_type
             action = "keep"

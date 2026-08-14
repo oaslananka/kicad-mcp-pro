@@ -16,7 +16,7 @@ def resolve_kicad_env(uri: str, project_dir: Path | None) -> str:
             return str(project_dir)
         return os.environ.get(name, match.group(0))
 
-    return re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", _sub, uri)
+    return re.sub(r"\$\{([A-Za-z_]\w*)\}", _sub, uri)
 
 
 def parse_lib_table(path: Path, project_dir: Path | None) -> dict[str, Path]:

@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.31.0](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v3.30.1...kicad-mcp-gui-v3.31.0) (2026-08-13)
+
+
+### Bug Fixes
+
+* **gui:** enforce backend compatibility contract ([#591](https://github.com/oaslananka/kicad-mcp-pro/issues/591)) ([0d755f4](https://github.com/oaslananka/kicad-mcp-pro/commit/0d755f43ed884ac7b72002af098049b8c40619c4)), closes [#574](https://github.com/oaslananka/kicad-mcp-pro/issues/574)
+
 ## [3.30.1](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v3.30.0...kicad-mcp-gui-v3.30.1) (2026-08-05)
 
 

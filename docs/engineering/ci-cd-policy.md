@@ -129,7 +129,7 @@ aggregate gate.
 | **Dependency Review** | ✅ Always | Required context; evaluates dependency-graph changes and succeeds when no dependency delta exists. |
 | **Scorecard** | Not triggered on PR | Runs on push to main and weekly schedule. |
 | **Trivy** (in CI `security` job) | no-op on docs-only | Filesystem vulnerability scan is code-focused. |
-| **SonarQube Cloud** | Runs (Automatic Analysis, not workflow-gated) | Not a required check; see below for scope. |
+| **SonarQube Cloud** | Runs (CI-based via `sonarcloud.yml`, not workflow-gated) | Not a required check; see below for scope. |
 
 ### Dependency Graph and Dependabot
 
@@ -159,12 +159,15 @@ not auto-queued by repository policy.
 
 ### SonarQube Cloud scope
 
-This project has no Sonar CI workflow — it runs under SonarQube Cloud's
-**Automatic Analysis** mode, which reads `.sonarcloud.properties` from the
-default branch (a different file from the `sonar-project.properties` format
-used by CI-based scans; if both existed, Automatic Analysis would ignore its
-own settings and fall back to the properties file, so only one may be
-present). `.sonarcloud.properties` sets `sonar.tests` to classify `tests/`,
+This project runs **CI-based analysis** via
+`.github/workflows/sonarcloud.yml`, which triggers on every push to `main`
+and on pull requests. The workflow installs dependencies, runs the full test
+suite with coverage, and invokes `SonarSource/sonarqube-scan-action` (pinned
+to v8.2.0). The scanner reads `sonar-project.properties` from the repository
+root — this is the CI-based configuration file (distinct from
+`.sonarcloud.properties`, which is used only by SonarCloud's Automatic
+Analysis mode and must not coexist with a CI workflow).
+`sonar-project.properties` sets `sonar.tests` to classify `tests/`,
 `packages/protocol-schemas/test/`, and `packages/kicad-fixtures/test/` as
 test code. This only affects path classification — it does not exclude any
 file from analysis, and it does not change rule severities or Quality
