@@ -178,8 +178,9 @@ class CompilationHarness:
         *,
         global_label: bool,
         shape: str | None,
+        kind: str | None = None,
     ) -> str:
-        return f"LABEL:{name},{x},{y},{rotation},{global_label},{shape}"
+        return f"LABEL:{name},{x},{y},{rotation},{global_label},{shape},{kind}"
 
     def normalize_connectivity(self, content: str) -> str:
         self.events.append("normalize")
@@ -394,8 +395,41 @@ def test_build_deduplicates_libraries_and_generates_all_element_types(tmp_path: 
     assert "reference=R1" in content and "reference=R2" in content
     assert "reference=#PWR001" in content and "reference=#PWR002" in content
     assert "WIRE:1.0,2.0->3.0,4.0" in content
-    assert "LABEL:NET_A,3.0,4.0,90,True,input" in content
+    assert "LABEL:NET_A,3.0,4.0,90,True,input,None" in content
     assert "project_name=demo-project" in content
+
+
+def test_build_threads_label_kind_to_label_block(tmp_path: Path) -> None:
+    harness = CompilationHarness(tmp_path)
+    harness.prepared = PreparedCircuitInputs(
+        symbols=[],
+        powers=[],
+        labels=[
+            AddLabelInput(
+                name="BUS",
+                x_mm=1.0,
+                y_mm=2.0,
+                kind="hierarchical_label",
+                shape="input",
+            )
+        ],
+        wires=[],
+        nets=[],
+        generated_wires=[],
+        unresolved_nets=[],
+        resolution_stats={
+            "resolved_endpoints": 0,
+            "unresolved_endpoints": 0,
+            "pin_alias_resolutions": 0,
+            "symbol_center_resolutions": 0,
+        },
+        chosen_paper="A4",
+    )
+
+    harness.service().build(snap_to_grid=False)
+
+    content = harness.transaction_calls[0][2]
+    assert "LABEL:BUS,1.0,2.0,0,False,input,hierarchical_label" in content
 
 
 def test_build_threads_per_symbol_properties_to_emission(tmp_path: Path) -> None:
