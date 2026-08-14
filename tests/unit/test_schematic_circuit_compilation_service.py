@@ -40,6 +40,8 @@ class CompilationHarness:
             },
             chosen_paper="A4",
         )
+        self.snapshot_result: tuple[int, int, Path | None] = (0, 0, None)
+        self.snapshot_calls: list[Path] = []
         self.prepare_calls: list[dict[str, Any]] = []
         self.report_calls: list[dict[str, Any]] = []
         self.library_calls: list[tuple[str, str]] = []
@@ -51,6 +53,7 @@ class CompilationHarness:
         return SchematicCircuitCompilationService(
             active_schematic_file=lambda: self.schematic,
             project_name=lambda: "demo-project",
+            snapshot_before_replace=self.snapshot_before_replace,
             read_sheet_paper=lambda path: self.start_paper,
             read_sheet_paper_declaration=lambda path: self.paper_declaration,
             prepare_inputs=self.prepare_inputs,
@@ -69,6 +72,10 @@ class CompilationHarness:
             reload_schematic=self.reload_schematic,
             warn_unresolved=self.warn_unresolved,
         )
+
+    def snapshot_before_replace(self, path: Path) -> tuple[int, int, Path | None]:
+        self.snapshot_calls.append(path)
+        return self.snapshot_result
 
     def prepare_inputs(
         self,
@@ -305,7 +312,12 @@ def test_build_empty_preserves_paper_and_transaction_order(tmp_path: Path) -> No
 
     result = harness.service().build()
 
-    assert result == "reloaded"
+    assert result == (
+        "reloaded\n"
+        "Sheet replaced: removed 0 symbol(s) and 0 label(s), "
+        "wrote 0 symbol(s) and 0 label(s)."
+    )
+    assert harness.snapshot_calls == [harness.schematic]
     assert harness.events == ["normalize", "validate", "write", "reload"]
     path, allow_node_loss, content = harness.transaction_calls[0]
     assert path == harness.schematic
@@ -337,7 +349,12 @@ def test_build_promotes_named_paper_when_auto_layout_grows(tmp_path: Path) -> No
     result = harness.service().build(auto_layout=True)
 
     assert '\t(paper "A3")' in harness.transaction_calls[0][2]
-    assert result == "reloaded\nApplied auto-layout to schematic symbols."
+    assert result == (
+        "reloaded\n"
+        "Sheet replaced: removed 0 symbol(s) and 0 label(s), "
+        "wrote 0 symbol(s) and 0 label(s).\n"
+        "Applied auto-layout to schematic symbols."
+    )
 
 
 def test_build_deduplicates_libraries_and_generates_all_element_types(tmp_path: Path) -> None:
@@ -502,3 +519,49 @@ def test_build_reports_unsafe_routed_wire_note(tmp_path: Path) -> None:
 
     assert "Generated 1 routed wire segment(s) in unsafe routed mode" in result
     assert "prefer the default terminal strategy" in result
+
+
+def test_build_reports_replaced_counts_and_backup_for_nonempty_sheet(
+    tmp_path: Path,
+) -> None:
+    harness = CompilationHarness(tmp_path)
+    backup = tmp_path / "demo.kicad_sch.20260813-101112.bak"
+    harness.snapshot_result = (32, 120, backup)
+    harness.prepared = PreparedCircuitInputs(
+        symbols=[_symbol("R1"), _symbol("R2")],
+        powers=[_power("GND")],
+        labels=[AddLabelInput(name="NET_A", x_mm=3.0, y_mm=4.0)],
+        wires=[],
+        nets=[],
+        generated_wires=[],
+        unresolved_nets=[],
+        resolution_stats={
+            "resolved_endpoints": 0,
+            "unresolved_endpoints": 0,
+            "pin_alias_resolutions": 0,
+            "symbol_center_resolutions": 0,
+        },
+        chosen_paper="A4",
+    )
+
+    result = harness.service().build()
+
+    assert harness.snapshot_calls == [harness.schematic]
+    assert (
+        "Sheet replaced: removed 32 symbol(s) and 120 label(s), "
+        "wrote 3 symbol(s) and 1 label(s)." in result
+    )
+    assert f"Backup of the previous sheet: {backup}." in result
+
+
+def test_build_empty_sheet_makes_no_backup_claim(tmp_path: Path) -> None:
+    harness = CompilationHarness(tmp_path)
+    harness.snapshot_result = (0, 0, None)
+
+    result = harness.service().build()
+
+    assert (
+        "Sheet replaced: removed 0 symbol(s) and 0 label(s), "
+        "wrote 0 symbol(s) and 0 label(s)." in result
+    )
+    assert "Backup" not in result

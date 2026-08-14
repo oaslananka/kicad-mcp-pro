@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
                 opencode_bin=args.opencode_bin,
                 timeout_seconds=args.timeout_seconds,
             )
-        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        except (OSError, TypeError, ValueError):
             result = {
                 "schema_version": 1,
                 "status": "error",
