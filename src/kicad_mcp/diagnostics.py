@@ -621,7 +621,7 @@ def _uv_requirement_satisfied(current: str, required: str) -> bool:
 
 def _uv_version_hint(required: str) -> str:
     exact = required.strip().removeprefix("==")
-    if re.fullmatch(r"[0-9][A-Za-z0-9.!+_-]*", exact):
+    if re.fullmatch(r"\d[A-Za-z0-9.!+_-]*", exact):
         return (
             f"Use the repo-compatible uv version, for example: uv self update {exact}. "
             "Then rerun uv sync --all-extras --frozen."

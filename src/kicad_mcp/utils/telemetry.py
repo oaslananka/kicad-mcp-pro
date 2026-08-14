@@ -105,7 +105,7 @@ def _http_signal_endpoint(endpoint: str | None, signal: str) -> str | None:
         return endpoint
     if path in {"", "/"}:
         new_path = desired
-    elif path.endswith("/v1/traces") or path.endswith("/v1/metrics"):
+    elif path.endswith(("/v1/traces", "/v1/metrics")):
         new_path = f"{path.rsplit('/v1/', 1)[0]}{desired}"
     else:
         new_path = f"{path}{desired}"

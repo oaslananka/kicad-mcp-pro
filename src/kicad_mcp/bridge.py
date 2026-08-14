@@ -520,7 +520,7 @@ def _start_daemon(state: BridgeState) -> None:
 
         creationflags = 0
         if sys.platform == "win32":
-            # DETACHED_PROCESS = 0x00000008, CREATE_NEW_PROCESS_GROUP = 0x00000200
+            # Windows process flags: DETACHED_PROCESS and CREATE_NEW_PROCESS_GROUP
             creationflags = 0x00000008 | 0x00000200
 
         proc = subprocess.Popen(

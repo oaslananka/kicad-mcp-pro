@@ -4339,7 +4339,7 @@ def _register_teardrop_tools(mcp: FastMCP) -> None:
                 if start_distance > tolerance_nm and end_distance > tolerance_nm:
                     continue
 
-                near_x_nm, near_y_nm, far_x_nm, far_y_nm = (
+                _, _, far_x_nm, far_y_nm = (
                     (
                         _coord_nm(track.start, "x"),
                         _coord_nm(track.start, "y"),

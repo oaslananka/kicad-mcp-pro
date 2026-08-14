@@ -1029,7 +1029,7 @@ class KiCadFastMCP(FastMCP):
                     },
                 )
                 return result
-            except (KiCadNotRunningError, IpcDisconnectedError, KiCadConnectionTimeoutError) as exc:
+            except KiCadNotRunningError as exc:
                 status = "error"
                 error_code = exc.code
                 _error_detail["error_code"] = exc.code
@@ -1705,10 +1705,12 @@ def _is_origin_allowed(origin: str, cfg: KiCadMCPConfig) -> bool:
     if origin in cfg.cors_origin_list:
         return True
     parsed_origin = urlparse(origin)
-    origin_host = parsed_origin.hostname or ""
-    origin_port = parsed_origin.port or (
-        80 if parsed_origin.scheme == "http" else 443 if parsed_origin.scheme == "https" else None
-    )
+    origin_port = parsed_origin.port
+    if origin_port is None:
+        if parsed_origin.scheme == "http":
+            origin_port = 80
+        elif parsed_origin.scheme == "https":
+            origin_port = 443
     server_hosts = {cfg.host}
     if cfg.host.strip().casefold() in LOOPBACK_HOSTS:
         server_hosts.update(LOOPBACK_HOSTS)
@@ -2737,12 +2739,87 @@ def init(
         raise typer.Exit(1) from exc
 
     # --- 5. Verify ---
+def _status_icon(status: str) -> str:
+    if status == "ok":
+        return "✅"
+    if status in {"warn", "degraded"}:
+        return "⚠️"
+    return "❌"
+
+
+@app.command()
+def doctor() -> None:
+    """Run interactive diagnostics and print a guided checklist."""
+    # (previous doctor body)
+    _run_doctor_checks()
+
+
+def _run_doctor_checks() -> None:
+    typer.echo("╔══════════════════════════════════════════╗")
+    typer.echo("║       KiCad MCP Pro — Doctor            ║")
+    typer.echo("╚══════════════════════════════════════════╝\n")
+
+    # 1. Python version
+    typer.echo("1. Python Environment")
+    typer.echo(f"   Version: {sys.version.split()[0]} ({'✅' if sys.version_info >= (3, 11) else '❌'})")
+    typer.echo(f"   Prefix:  {sys.prefix}")
+
+    # 2. Dependencies
+    typer.echo("\n2. Core Dependencies")
+    deps = {
+        "fastmcp": "FastMCP framework",
+        "pydantic": "Data validation",
+        "typer": "CLI framework",
+        "rich": "Terminal formatting",
+    }
+    for mod, desc in deps.items():
+        try:
+            __import__(mod)
+            typer.echo(f"   ✅ {mod}: {desc}")
+        except ImportError:
+            typer.echo(f"   ❌ {mod}: {desc} (MISSING)")
+
+    # 3. KiCad CLI discovery
+    typer.echo("\n3. KiCad CLI Discovery")
+    cli_path = discover_kicad_cli()
+    if cli_path:
+        version = find_kicad_version(cli_path)
+        typer.echo(f"   ✅ Found: {cli_path}")
+        typer.echo(f"   Version: {version or 'unknown'}")
+    else:
+        typer.echo("   ⚠️  kicad-cli not found in PATH or standard locations")
+        typer.echo("      Export and conversion tools will not be available.")
+        typer.echo("      Install KiCad 8.0+ or set KICAD_MCP_KICAD_CLI.")
+
+    # 4. IPC / Live Connection
+    typer.echo("\n4. IPC & Live Connection")
+    ipc_state = get_ipc_capability_state()
+    if ipc_state.reachable:
+        typer.echo("   ✅ KiCad IPC: Connected")
+        typer.echo(f"   API version: {ipc_state.version}")
+        typer.echo(f"   Commands supported: {len(ipc_state.commands)}")
+    else:
+        typer.echo("   ⚠️  KiCad IPC: Not reachable (optional for stdio mode)")
+        for diag in ipc_state.diagnostics:
+            typer.echo(f"      {diag}")
+
+    # 5. Project Configuration
+    typer.echo("\n5. Project Configuration")
+    cfg = get_config()
+    if cfg.project_dir:
+        typer.echo(f"   Project dir: {cfg.project_dir} ({'✅' if cfg.project_dir.exists() else '❌'})")
+        typer.echo(f"   PCB file:    {cfg.pcb_file or 'not set'}")
+        typer.echo(f"   SCH file:    {cfg.sch_file or 'not set'}")
+    else:
+        typer.echo("   ℹ️  No project directory configured (set via KICAD_MCP_PROJECT_DIR)")
+
+    # 6. Overall health check
     try:
         report = build_health_report()
         status_icon = "✅" if report.ok else "⚠️"
         typer.echo(f"\n  Health:  {report.status} {status_icon}")
         for check in report.checks:
-            icon = "✅" if check.status == "ok" else "⚠️" if check.status == "warn" else "❌"
+            icon = _status_icon(check.status)
             typer.echo(f"    {icon} {check.name}: {check.message}")
     except Exception as exc:
         typer.echo(f"\n  Health:  Check failed - {exc}")
@@ -2817,12 +2894,12 @@ def status(
     # ── Checks ──
     typer.echo(f"\n{'─── Health Checks ───'}")
     for check in report.checks:
-        icon = "✅" if check.status == "ok" else "⚠️" if check.status == "warn" else "❌"
+        icon = _status_icon(check.status)
         typer.echo(f"  {icon}  {check.name}: {check.message}")
         if check.hint:
             typer.echo(f"      Hint: {check.hint}")
 
-    overall_icon = "✅" if report.ok else "⚠️" if report.status == "degraded" else "❌"
+    overall_icon = _status_icon(report.status)
     typer.echo(f"\n  Overall: {report.status} {overall_icon}")
 
 
@@ -2867,9 +2944,7 @@ def log(
                     if not line:
                         time.sleep(0.1)
                         continue
-                    if level and _log_level_match(line, level):
-                        typer.echo(line.rstrip())
-                    elif not level:
+                    if not level or _log_level_match(line, level):
                         typer.echo(line.rstrip())
         except KeyboardInterrupt:
             pass
@@ -2879,9 +2954,7 @@ def log(
             all_lines = f.readlines()
         tail = all_lines[-lines:] if lines < len(all_lines) else all_lines
         for line in tail:
-            if level and _log_level_match(line, level):
-                typer.echo(line.rstrip())
-            elif not level:
+            if not level or _log_level_match(line, level):
                 typer.echo(line.rstrip())
 
 

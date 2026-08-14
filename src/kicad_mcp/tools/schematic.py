@@ -2760,7 +2760,7 @@ def _resolve_kicad_table_uri(uri: str, project_dir: Path | None) -> str:
             return str(project_dir)
         return os.environ.get(name, match.group(0))
 
-    return re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", _sub, uri)
+    return re.sub(r"\$\{([A-Za-z_]\w*)\}", _sub, uri)
 
 
 def _project_symbol_library_files() -> dict[str, Path]:
@@ -5385,7 +5385,7 @@ def _population_records(
 
 def _parse_wire_block(block: str) -> dict[str, Any] | None:
     pts_match = re.search(
-        (r"\(pts\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s+" r"\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s*\)"),
+        r"\(pts\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s*\)",
         block,
     )
     if pts_match is None:

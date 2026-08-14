@@ -231,6 +231,7 @@ class TaskManager:
             if not record.finished:
                 record.mark("cancelled", message="Task was cancelled.")
                 record._finished_event.set()
+            raise
         except Exception as exc:
             if not record.cancelled:
                 record.finish(error=f"{type(exc).__name__}: {exc}")

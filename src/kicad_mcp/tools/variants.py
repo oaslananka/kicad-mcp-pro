@@ -27,16 +27,16 @@ def _variants_path() -> Path:
             "Resolution: call kicad_set_project('/absolute/path/to/project') first.\n"
             "Help: https://oaslananka.github.io/kicad-mcp-pro/installation/"
         )
-    target = cfg.project_dir / _VARIANTS_DIRNAME
+    target = (cfg.project_dir / _VARIANTS_DIRNAME).resolve()
     target.mkdir(parents=True, exist_ok=True)
-    return target / _VARIANTS_FILENAME
+    return (target / _VARIANTS_FILENAME).resolve()
 
 
 def _project_variants_path() -> Path | None:
     cfg = get_config()
     if cfg.project_file is None or not cfg.project_file.exists():
         return None
-    return cfg.project_file
+    return cfg.project_file.resolve()
 
 
 def _base_components() -> dict[str, dict[str, Any]]:
@@ -128,7 +128,8 @@ def _load_state() -> dict[str, Any]:
 
 def _save_state(state: dict[str, Any]) -> Path:
     if (project_path := _project_variants_path()) is not None:
-        payload = _load_project_payload(project_path)
+        proj_resolved = project_path.resolve()
+        payload = _load_project_payload(proj_resolved)
         default_variant = str(state.get("default_variant", "default"))
         active_variant = str(state.get("active_variant", default_variant))
         payload[_PROJECT_VARIANTS_KEY] = {
@@ -136,9 +137,9 @@ def _save_state(state: dict[str, Any]) -> Path:
             "active_variant": active_variant,
             "variants": cast(dict[str, Any], state.get("variants", {})),
         }
-        project_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        return project_path
-    path = _variants_path()
+        proj_resolved.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return proj_resolved
+    path = _variants_path().resolve()
     path.write_text(json.dumps(state, indent=2), encoding="utf-8")
     return path
 

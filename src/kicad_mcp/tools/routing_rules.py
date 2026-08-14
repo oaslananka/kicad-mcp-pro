@@ -16,13 +16,14 @@ def _rules_file_path() -> Path:
             "before editing routing rules."
         )
 
-    existing = sorted(cfg.project_dir.glob("*.kicad_dru"))
+    proj_dir = cfg.project_dir.resolve()
+    existing = sorted(proj_dir.glob("*.kicad_dru"))
     if existing:
-        return existing[0]
+        return existing[0].resolve()
 
     if cfg.project_file is not None:
-        return cfg.project_dir / f"{cfg.project_file.stem}.kicad_dru"
-    return cfg.project_dir / "design_rules.kicad_dru"
+        return (proj_dir / f"{cfg.project_file.stem}.kicad_dru").resolve()
+    return (proj_dir / "design_rules.kicad_dru").resolve()
 
 
 def _is_balanced(content: str) -> bool:
@@ -50,26 +51,15 @@ def _is_balanced(content: str) -> bool:
 
 
 def _load_rules_content(path: Path) -> str:
-    if not path.exists():
-        return "(rules)\n"
-    content = path.read_text(encoding="utf-8")
-    if not content.strip():
-        return "(rules)\n"
-    if not _is_balanced(content):
-        raise ValueError(
-            "Refusing to write an invalid design rules file with unbalanced parentheses."
-        )
-    return content
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    return "(rules\n)\n"
 
 
 def _upsert_rule(content: str, rule_name: str, rule_body: str) -> str:
-    search = f"(rule {_sexpr_string(rule_name)}"
-    index = content.find(search)
-    if index >= 0:
-        block, consumed = _extract_block(content, index)
-        if not block or consumed == 0:
-            raise ValueError(f"Could not replace existing rule block for {rule_name}.")
-        updated = content[:index] + rule_body + content[index + consumed :]
+    block = _extract_block(content, "rule", rule_name)
+    if block:
+        updated = content.replace(block, rule_body, 1)
     else:
         stripped = content.rstrip()
         insert_at = stripped.rfind(")")
@@ -84,7 +74,7 @@ def _upsert_rule(content: str, rule_name: str, rule_body: str) -> str:
 
 
 def _write_rule(rule_name: str, rule_body: str) -> Path:
-    path = _rules_file_path()
+    path = _rules_file_path().resolve()
     content = _load_rules_content(path)
     updated = _upsert_rule(content, rule_name, rule_body)
     path.write_text(updated, encoding="utf-8")

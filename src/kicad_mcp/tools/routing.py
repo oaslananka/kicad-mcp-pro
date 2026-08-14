@@ -1054,8 +1054,7 @@ def register(mcp: FastMCP) -> None:
                 # Basic creepage: 0.5 mm per 100 V for basic insulation (IPC-2221 grade B1)
                 clearance_mm = max(0.5, voltage_v / 100.0 * 0.5)
             via_dia = max(0.6, width_mm + 0.3)
-            via_drill = max(0.3, via_dia * 0.6)
-            safe_name = re.sub(r"[^A-Za-z0-9_]", "_", rail_name).strip("_") or "RAIL"
+            safe_name = re.sub(r"\W", "_", rail_name).strip("_") or "RAIL"
             rule_name = f"pwr_{safe_name}"
             rule_body = "\n".join(
                 [
@@ -1087,7 +1086,7 @@ def register(mcp: FastMCP) -> None:
             net_prefix: str = iface.net_prefix
             if not net_prefix:
                 continue
-            dp_name = re.sub(r"[^A-Za-z0-9_]", "_", net_prefix).strip("_") or "IFACE"
+            dp_name = re.sub(r"\W", "_", net_prefix).strip("_") or "IFACE"
             if iface.differential and iface.impedance_target_ohm:
                 imp = iface.impedance_target_ohm
                 # Approximate differential-pair gap from impedance

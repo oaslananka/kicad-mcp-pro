@@ -480,7 +480,6 @@ def _do214(variant: str, density: DensityLevel = "B") -> str:
     cx = body_l / 2 + pad_w / 2
     cyard_x = cx + pad_w / 2 + 0.25
     cyard_y = pad_h_adj / 2 + 0.25
-    name = f"DO-214{variant_up[-2:]}" if len(variant_up) > 3 else f"DO-214{variant_up[2:]}"
     name = f"D_{variant_up}"
     lines = _fp_header(
         name,

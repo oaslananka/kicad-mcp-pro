@@ -2691,10 +2691,10 @@ def _export_release_readiness_report(
                 "<!doctype html>",
                 '<html><head><meta charset="utf-8">',
                 "<title>Project release readiness</title>",
-                "<style>"
-                "body{font-family:Segoe UI,Arial,sans-serif;margin:2rem;}"
-                "pre{white-space:pre-wrap;font-family:Consolas,Monaco,monospace;line-height:1.45;}"
-                "@media print{body{margin:1cm;}}"
+                "<style>",
+                "body{font-family:Segoe UI,Arial,sans-serif;margin:2rem;}",
+                "pre{white-space:pre-wrap;font-family:Consolas,Monaco,monospace;line-height:1.45;}",
+                "@media print{body{margin:1cm;}}",
                 "</style>",
                 "</head><body>",
                 f"<pre>{escape(payload.text)}</pre>",
@@ -3348,7 +3348,7 @@ def _build_constraint_node(
     min_value: float | str | None,
     max_value: float | str | None,
 ) -> SExprNode:
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", constraint_type):
+    if not re.fullmatch(r"[A-Za-z_]\w*", constraint_type):
         raise ValueError("constraint_type must be a simple KiCad rule atom such as clearance.")
     node: SExprNode = ["constraint", constraint_type]
     min_atom = _coerce_constraint_value(min_value)
@@ -3441,7 +3441,7 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
             _build_constraint_node(constraint_type, min_value, max_value),
             ["severity", severity],
         ]
-        path = _rules_file_path()
+        path = _rules_file_path().resolve()
         root, version = parse_dru(_load_rules_content(path))
         upsert_rule(root, rule_node)
         path.write_text(dump_dru(root, version=version), encoding="utf-8")
@@ -3457,7 +3457,7 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
         """Delete a custom DRC rule from the active rules file."""
         from .routing_rules import _load_rules_content, _rules_file_path
 
-        path = _rules_file_path()
+        path = _rules_file_path().resolve()
         root, version = parse_dru(_load_rules_content(path))
         if not delete_rule(root, rule_name):
             raise ValueError(f"Rule '{rule_name}' was not found.")
@@ -3474,7 +3474,7 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
         """Enable or disable a custom DRC rule."""
         from .routing_rules import _load_rules_content, _rules_file_path
 
-        path = _rules_file_path()
+        path = _rules_file_path().resolve()
         root, version = parse_dru(_load_rules_content(path))
         rule = find_rule(root, rule_name)
         if rule is None:
@@ -3512,13 +3512,13 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
         """Export the active custom DRC rules file for sharing or CI."""
         from .routing_rules import _rules_file_path
 
-        source = _rules_file_path()
+        source = _rules_file_path().resolve()
         cfg = get_config()
         target = (
             cfg.resolve_within_project(output_path, allow_absolute=False)
             if output_path
             else cfg.ensure_output_dir("drc") / source.name
-        )
+        ).resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
         return f"Custom DRC rules exported to {target}."

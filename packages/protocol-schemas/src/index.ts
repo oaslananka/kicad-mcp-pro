@@ -540,7 +540,7 @@ function validatePayloadSchemaMajor(
 }
 
 function majorVersion(version: string): number | undefined {
-  const match = /^([0-9]+)\.[0-9]+\.[0-9]+$/.exec(version);
+  const match = /^(\d+)\.\d+\.\d+$/.exec(version);
   return match ? Number(match[1]) : undefined;
 }
 

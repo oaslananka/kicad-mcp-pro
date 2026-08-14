@@ -92,6 +92,7 @@ def register(mcp: FastMCP) -> None:
         src = Path(source_path)
         if not src.is_absolute():
             src = cfg.resolve_within_project(source_path)
+        src = src.resolve()
 
         if not src.exists():
             raise FileNotFoundError(f"Source file '{src}' does not exist.")

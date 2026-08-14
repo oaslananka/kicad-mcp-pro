@@ -91,6 +91,7 @@ def _write_mcp_config(client: str, snippet: dict[str, Any]) -> Path | None:
     config_path = _resolve_config_path(client)
     if config_path is None:
         return None
+    config_path = config_path.resolve()
 
     if config_path.exists():
         existing: dict[str, Any] = json.loads(config_path.read_text(encoding="utf-8"))
@@ -119,7 +120,7 @@ def _generate_mcp_config(
     if transport == "stdio":
         args: list[str] = [f"kicad-mcp-pro@{version}"]
     else:
-        args = [f"kicad-mcp-pro@{version}", "--transport", transport]
+        args = [f"kicad-mcp-pro@{version}", "--transport", transport, "--port", str(port)]
 
     return {
         "mcpServers": {

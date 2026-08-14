@@ -14,7 +14,7 @@ function collectTests(directory) {
       files.push(fullPath);
     }
   }
-  return files.sort();
+  return files.sort((a, b) => a.localeCompare(b));
 }
 
 const testFiles = collectTests(testRoot);

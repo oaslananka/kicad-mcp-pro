@@ -100,7 +100,7 @@ def roundtrip_edit(path: str | Path, *, allow_node_loss: bool = False) -> Iterat
         with roundtrip_edit(sch_file) as sch:
             sch.components.add(...)
     """
-    target = Path(path)
+    target = Path(path).resolve()
     before = target.read_text(encoding="utf-8")
     sch = load(target)
     yield sch

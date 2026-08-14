@@ -137,7 +137,7 @@ def validate_repository(root: Path, policy: dict[str, object]) -> list[str]:
             actual_writes[workflow.name] = workflow_writes
 
         for action in _iter_uses(data):
-            if action.startswith("./") or action.startswith("docker://"):
+            if action.startswith(("./", "docker://")):
                 continue
             if "@" not in action:
                 errors.append(f"{workflow.name}: action has no immutable ref: {action}")

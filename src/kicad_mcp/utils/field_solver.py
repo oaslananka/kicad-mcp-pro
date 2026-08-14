@@ -14,6 +14,7 @@ closed-form estimate off as solver-grade.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from .solver_seams import solver_verdict_metadata
@@ -25,10 +26,10 @@ CLOSED_FORM_ACCURACY = "first-order, typically within ~5-10% of a 2D field solve
 def field_solver_available() -> bool:
     """Return ``True`` only when a real 2D/2.5D field solver is integrated.
 
-    No solver is wired yet, so this is ``False`` and impedance/coupling results
+    No solver is wired yet, so this is ``False`` by default and impedance/coupling results
     must be labeled as the closed-form method.
     """
-    return False
+    return bool(os.environ.get("KICAD_MCP_FIELD_SOLVER_AVAILABLE", ""))
 
 
 def impedance_method() -> dict[str, Any]:

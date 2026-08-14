@@ -131,7 +131,7 @@ export function loadKicadFixtureManifest(
 }
 
 export function getKicadFixture(
-  fixtureId: KicadFixtureId | string,
+  fixtureId: KicadFixtureId | (string & {}),
   manifest = loadKicadFixtureManifest(),
 ): KicadFixtureManifestEntry {
   const fixture = manifest.fixtures.find((entry) => entry.id === fixtureId);
@@ -142,14 +142,14 @@ export function getKicadFixture(
 }
 
 export function kicadFixturePath(
-  fixtureId: KicadFixtureId | string,
+  fixtureId: KicadFixtureId | (string & {}),
   ...segments: string[]
 ): string {
   return path.join(kicadFixturesRoot(), fixtureId, ...segments);
 }
 
 export function kicadExpectedPath(
-  fixtureId: KicadFixtureId | string,
+  fixtureId: KicadFixtureId | (string & {}),
   ...segments: string[]
 ): string {
   return path.join(kicadExpectedRoot(), fixtureId, ...segments);

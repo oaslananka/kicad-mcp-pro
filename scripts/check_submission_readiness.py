@@ -56,6 +56,15 @@ FORBIDDEN_NAMESPACE = tuple(
         ("kicad-mcp-pro", "-", "lab"),
     )
 )
+_STATUS_PASS = _STATUS_PASS
+_STATUS_FAIL = _STATUS_FAIL
+_STATUS_WARN = _STATUS_WARN
+_CHECK_DEMO_CAST = _CHECK_DEMO_CAST
+_CHECK_PRIVACY = _CHECK_PRIVACY
+_CHECK_SCREENSHOTS = _CHECK_SCREENSHOTS
+_CHECK_SUBMISSION_DOCS = _CHECK_SUBMISSION_DOCS
+_CHECK_REVIEWER_PROMPTS = _CHECK_REVIEWER_PROMPTS
+_CHECK_README = _CHECK_README
 ORG_CI_RUNNER = "ubuntu-24.04"
 OBSOLETE_SELF_HOSTED_WORKFLOWS = {
     "docker-publish.yml",
@@ -118,8 +127,8 @@ def _namespace_check() -> CheckResult:
         if found:
             hits.append(f"{path.relative_to(ROOT)}: {', '.join(found)}")
     if hits:
-        return CheckResult("namespace regression", "FAIL", "; ".join(hits[:10]))
-    return CheckResult("namespace regression", "PASS", "no forbidden owner strings")
+        return CheckResult("namespace regression", _STATUS_FAIL, "; ".join(hits[:10]))
+    return CheckResult("namespace regression", _STATUS_PASS, "no forbidden owner strings")
 
 
 def _runner_check() -> CheckResult:
@@ -143,10 +152,10 @@ def _runner_check() -> CheckResult:
                     "self-hosted runner is not allowed"
                 )
     if hits:
-        return CheckResult("runner regression", "FAIL", "; ".join(hits))
+        return CheckResult("runner regression", _STATUS_FAIL, "; ".join(hits))
     return CheckResult(
         "runner regression",
-        "PASS",
+        _STATUS_PASS,
         "monorepo workflows use GitHub-hosted runners only",
     )
 
@@ -169,8 +178,8 @@ def _version_check() -> CheckResult:
     match = re.search(r'__version__\s*=\s*"([^"]+)"', init_text)
     versions["src/kicad_mcp/__init__.py"] = match.group(1) if match else ""
     if len(set(versions.values())) != 1:
-        return CheckResult("version metadata sync", "FAIL", json.dumps(versions, sort_keys=True))
-    return CheckResult("version metadata sync", "PASS", next(iter(versions.values())))
+        return CheckResult("version metadata sync", _STATUS_FAIL, json.dumps(versions, sort_keys=True))
+    return CheckResult("version metadata sync", _STATUS_PASS, next(iter(versions.values())))
 
 
 def _pypi_check() -> CheckResult:
@@ -179,26 +188,26 @@ def _pypi_check() -> CheckResult:
     try:
         with urlopen("https://pypi.org/pypi/kicad-mcp-pro/json", timeout=10) as response:  # noqa: S310
             payload = json.loads(response.read().decode("utf-8"))
-    except (OSError, URLError, TimeoutError) as exc:
-        return CheckResult("pypi reachability", "WARN", f"offline or unavailable: {exc}")
+    except OSError as exc:
+        return CheckResult("pypi reachability", _STATUS_WARN, f"offline or unavailable: {exc}")
     releases = payload.get("releases", {})
     if version not in releases:
         return CheckResult(
             "pypi current version",
-            "WARN",
+            _STATUS_WARN,
             f"{version} is not published yet; expected for in-flight release branches",
         )
-    return CheckResult("pypi current version", "PASS", f"{version} is published")
+    return CheckResult("pypi current version", _STATUS_PASS, f"{version} is published")
 
 
 def _privacy_check() -> CheckResult:
     path = ROOT / "docs" / "privacy.md"
     if not path.is_file():
-        return CheckResult("privacy policy", "FAIL", "docs/privacy.md missing")
+        return CheckResult(_CHECK_PRIVACY, _STATUS_FAIL, "docs/privacy.md missing")
     text = _read_text(path).lower()
     if "data" not in text or "telemetry" not in text:
-        return CheckResult("privacy policy", "FAIL", "missing data or telemetry language")
-    return CheckResult("privacy policy", "PASS", "privacy.md covers data and telemetry")
+        return CheckResult(_CHECK_PRIVACY, _STATUS_FAIL, "missing data or telemetry language")
+    return CheckResult(_CHECK_PRIVACY, _STATUS_PASS, "privacy.md covers data and telemetry")
 
 
 def _image_size(path: Path) -> tuple[int, int]:
@@ -215,8 +224,8 @@ def _icon_check() -> CheckResult:
         elif _image_size(path) != (size, size):
             errors.append(f"{path.relative_to(ROOT)} has {_image_size(path)}")
     if errors:
-        return CheckResult("icon assets", "FAIL", "; ".join(errors))
-    return CheckResult("icon assets", "PASS", "all icon sizes present")
+        return CheckResult("icon assets", _STATUS_FAIL, "; ".join(errors))
+    return CheckResult("icon assets", _STATUS_PASS, "all icon sizes present")
 
 
 def _screenshot_check() -> CheckResult:
@@ -239,26 +248,26 @@ def _screenshot_check() -> CheckResult:
             if placeholders.get(filename) == digest:
                 errors.append(f"{filename} is still the placeholder")
     if errors:
-        return CheckResult("screenshot assets", "FAIL", "; ".join(errors))
-    return CheckResult("screenshot assets", "PASS", "all screenshot slots valid")
+        return CheckResult(_CHECK_SCREENSHOTS, _STATUS_FAIL, "; ".join(errors))
+    return CheckResult(_CHECK_SCREENSHOTS, _STATUS_PASS, "all screenshot slots valid")
 
 
 def _demo_cast_check() -> CheckResult:
     path = ROOT / "docs" / "assets" / "demo.cast"
     gif_path = ROOT / "docs" / "assets" / "demo.gif"
     if not path.is_file():
-        return CheckResult("demo cast", "FAIL", "docs/assets/demo.cast missing")
+        return CheckResult(_CHECK_DEMO_CAST, _STATUS_FAIL, "docs/assets/demo.cast missing")
     if not gif_path.is_file():
-        return CheckResult("demo cast", "FAIL", "docs/assets/demo.gif missing")
+        return CheckResult(_CHECK_DEMO_CAST, _STATUS_FAIL, "docs/assets/demo.gif missing")
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
         header = json.loads(lines[0])
         frames = [json.loads(line) for line in lines[1:] if line.strip()]
     except (IndexError, json.JSONDecodeError) as exc:
-        return CheckResult("demo cast", "FAIL", str(exc))
+        return CheckResult(_CHECK_DEMO_CAST, _STATUS_FAIL, str(exc))
     if header.get("version") != 2 or not all(isinstance(frame, list) for frame in frames):
-        return CheckResult("demo cast", "FAIL", "invalid asciinema v2 structure")
-    return CheckResult("demo cast", "PASS", f"{len(frames)} frames and demo.gif present")
+        return CheckResult(_CHECK_DEMO_CAST, _STATUS_FAIL, "invalid asciinema v2 structure")
+    return CheckResult(_CHECK_DEMO_CAST, _STATUS_PASS, f"{len(frames)} frames and demo.gif present")
 
 
 def _submission_docs_check() -> CheckResult:
@@ -272,8 +281,8 @@ def _submission_docs_check() -> CheckResult:
         if line_count < 150:
             errors.append(f"{filename} has {line_count} lines")
     if errors:
-        return CheckResult("submission docs", "FAIL", "; ".join(errors))
-    return CheckResult("submission docs", "PASS", "six files at >=150 lines")
+        return CheckResult(_CHECK_SUBMISSION_DOCS, _STATUS_FAIL, "; ".join(errors))
+    return CheckResult(_CHECK_SUBMISSION_DOCS, _STATUS_PASS, "six files at >=150 lines")
 
 
 def _reviewer_prompts_check() -> CheckResult:
@@ -281,11 +290,11 @@ def _reviewer_prompts_check() -> CheckResult:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        return CheckResult("reviewer prompts", "FAIL", str(exc))
+        return CheckResult(_CHECK_REVIEWER_PROMPTS, _STATUS_FAIL, str(exc))
     prompts = payload.get("prompts")
     if not isinstance(prompts, list) or len(prompts) != 5:
-        return CheckResult("reviewer prompts", "FAIL", "expected exactly five prompts")
-    return CheckResult("reviewer prompts", "PASS", "five prompts")
+        return CheckResult(_CHECK_REVIEWER_PROMPTS, _STATUS_FAIL, "expected exactly five prompts")
+    return CheckResult(_CHECK_REVIEWER_PROMPTS, _STATUS_PASS, "five prompts")
 
 
 def _readme_check() -> CheckResult:
@@ -301,8 +310,8 @@ def _readme_check() -> CheckResult:
     }
     missing = [label for label, marker in required.items() if marker not in text]
     if missing:
-        return CheckResult("README listing references", "FAIL", ", ".join(missing))
-    return CheckResult("README listing references", "PASS", "monorepo package identity linked")
+        return CheckResult(_CHECK_README, _STATUS_FAIL, ", ".join(missing))
+    return CheckResult(_CHECK_README, _STATUS_PASS, "monorepo package identity linked")
 
 
 def _chatgpt_app_check() -> CheckResult:
@@ -313,7 +322,7 @@ def _chatgpt_app_check() -> CheckResult:
         source = (app_root / "src" / "server.ts").read_text(encoding="utf-8")
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     except (OSError, json.JSONDecodeError) as exc:
-        return CheckResult("ChatGPT App contract", "FAIL", str(exc))
+        return CheckResult("ChatGPT App contract", _STATUS_FAIL, str(exc))
 
     version = package.get("version")
     scripts = package.get("scripts", {})
@@ -330,10 +339,10 @@ def _chatgpt_app_check() -> CheckResult:
     }
     failed = [name for name, passed in required.items() if not passed]
     if failed:
-        return CheckResult("ChatGPT App contract", "FAIL", ", ".join(failed))
+        return CheckResult("ChatGPT App contract", _STATUS_FAIL, ", ".join(failed))
     return CheckResult(
         "ChatGPT App contract",
-        "PASS",
+        _STATUS_PASS,
         f"{version}: package, manifest, read-only metadata, E2E, and required CI aligned",
     )
 
@@ -350,10 +359,10 @@ def _server_schema_check() -> CheckResult:
             key=lambda error: list(error.path),
         )
     except (OSError, json.JSONDecodeError, jsonschema.SchemaError) as exc:
-        return CheckResult("server schema", "FAIL", str(exc))
+        return CheckResult("server schema", _STATUS_FAIL, str(exc))
     if errors:
-        return CheckResult("server schema", "FAIL", errors[0].message)
-    return CheckResult("server schema", "PASS", "server.json validates")
+        return CheckResult("server schema", _STATUS_FAIL, errors[0].message)
+    return CheckResult("server schema", _STATUS_PASS, "server.json validates")
 
 
 def run_checks() -> list[CheckResult]:
@@ -395,7 +404,7 @@ def main() -> int:
     for result in results:
         detail = result.detail.replace("|", "\\|")
         print(f"| {result.name} | {result.status} | {detail} |")
-    return 1 if any(result.status == "FAIL" for result in results) else 0
+    return 1 if any(result.status == _STATUS_FAIL for result in results) else 0
 
 
 if __name__ == "__main__":

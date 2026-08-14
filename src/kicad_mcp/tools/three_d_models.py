@@ -40,11 +40,12 @@ def _find_footprint_file(library: str, footprint: str) -> Path | None:
 
 
 def _read_footprint_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8", errors="ignore")
+    return path.resolve().read_text(encoding="utf-8", errors="ignore")
 
 
 def _write_footprint_text(path: Path, text: str) -> None:
-    path.write_text(text, encoding="utf-8")
+    resolved = path.resolve()
+    resolved.write_text(text, encoding="utf-8")
 
 
 def _find_3d_model_refs(text: str) -> list[dict[str, object]]:
