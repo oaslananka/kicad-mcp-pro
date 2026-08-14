@@ -403,3 +403,21 @@ def test_add_missing_junctions_runs_fixer_before_reload(tmp_path: Path) -> None:
 
     assert order == ["fix", "reload"]
     assert result == "Reloaded\nFixed"
+
+
+@pytest.mark.parametrize("shape", ["not-a-shape", 123])
+def test_add_pin_labels_rejects_invalid_shape_values(tmp_path: Path, shape: object) -> None:
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": [_symbol()], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (12.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    with pytest.raises(ValueError, match="shape must be one of"):
+        harness.service.add_pin_labels(
+            [{"reference": "U1", "pin": "1", "net": "SIG", "shape": shape}],
+            label_kind="hierarchical",
+        )
+
+    assert harness.writes == []

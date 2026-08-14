@@ -18,6 +18,20 @@ class SchematicTargetLike(Protocol):
     def description(self) -> str: ...
 
 
+class LabelBlockEmitter(Protocol):
+    def __call__(
+        self,
+        name: str,
+        x: float,
+        y: float,
+        rotation: int = 0,
+        global_label: bool = False,
+        shape: str | None = None,
+        kind: str | None = None,
+        justify: str | None = None,
+    ) -> str: ...
+
+
 class BoundingBoxLike(Protocol):
     """Obstacle bounds consumed by the injected router."""
 
@@ -40,6 +54,8 @@ PinPositions = dict[str, tuple[float, float]]
 WireSegment = tuple[float, float, float, float]
 
 #: Maps the public ``label_kind`` values to the ``kind`` accepted by ``label_block``.
+LABEL_SHAPES = frozenset({"input", "output", "bidirectional", "tri_state", "passive"})
+
 LABEL_KIND_TO_BLOCK_KIND: dict[str, str] = {
     "local": "label",
     "global": "global_label",
@@ -68,7 +84,7 @@ class SchematicConnectivityAuthoringService:
     power_symbol_rotation_from_vector: Callable[[float, float], int]
     place_symbol_block: Callable[..., str]
     terminal_rotation_from_vector: Callable[[float, float], int]
-    label_block: Callable[..., str]
+    label_block: LabelBlockEmitter
     append_before_sheet_instances: Callable[[str, str], str]
     transactional_write: Callable[[Mutator, Path | None], str]
     reload_schematic: Callable[[], str]
@@ -250,6 +266,8 @@ class SchematicConnectivityAuthoringService:
             else:
                 rotation = self.terminal_rotation_from_vector(ux, uy)
                 shape = conn.get("shape")
+                if shape is not None and (not isinstance(shape, str) or shape not in LABEL_SHAPES):
+                    raise ValueError(f"shape must be one of {sorted(LABEL_SHAPES)}, got {shape!r}")
                 terminal_blocks.append(
                     self.label_block(
                         net,
@@ -257,7 +275,7 @@ class SchematicConnectivityAuthoringService:
                         ey,
                         rotation,
                         kind=block_kind,
-                        shape=str(shape) if shape is not None else None,
+                        shape=shape,
                     )
                 )
                 results.append(f"{ref}.{pin} -> {net} @ ({ex}, {ey}){suffix}")
