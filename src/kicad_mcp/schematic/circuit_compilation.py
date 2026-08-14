@@ -72,6 +72,7 @@ class PlaceSymbolBlock(Protocol):
         unit: int = 1,
         project_name: str,
         root_uuid: str,
+        properties: dict[str, str] | None = None,
     ) -> str: ...
 
 
@@ -85,6 +86,7 @@ class LabelBlock(Protocol):
         *,
         global_label: bool,
         shape: str | None,
+        kind: str | None,
     ) -> str: ...
 
 
@@ -94,6 +96,7 @@ class SchematicCircuitCompilationService:
 
     active_schematic_file: Callable[[], Path]
     project_name: Callable[[], str]
+    snapshot_before_replace: Callable[[Path], tuple[int, int, Path | None]]
     read_sheet_paper: Callable[[Path], str]
     read_sheet_paper_declaration: Callable[[Path], str]
     prepare_inputs: PrepareInputs
@@ -160,6 +163,7 @@ class SchematicCircuitCompilationService:
     ) -> str:
         """Build and replace the active schematic from structured circuit inputs."""
         schematic_file = self.active_schematic_file()
+        removed_symbols, removed_labels, backup_path = self.snapshot_before_replace(schematic_file)
         start_paper = self.read_sheet_paper(schematic_file)
         prepared = self.prepare_inputs(
             symbols=symbols,
@@ -245,6 +249,7 @@ class SchematicCircuitCompilationService:
                     unit=symbol.unit,
                     project_name=project_name,
                     root_uuid=root_uuid,
+                    properties=symbol.properties,
                 )
             )
 
@@ -294,6 +299,7 @@ class SchematicCircuitCompilationService:
                     label.rotation,
                     global_label=label.global_label,
                     shape=label.shape,
+                    kind=label.kind,
                 )
             )
 
@@ -325,7 +331,16 @@ class SchematicCircuitCompilationService:
         self.validate_schematic_text(content)
         self.transactional_write(content, schematic_file, True)
         result = self.reload_schematic()
-        notes: list[str] = []
+        written_symbols = len(prepared.symbols) + len(prepared.powers)
+        written_labels = len(prepared.labels)
+        summary = (
+            f"Sheet replaced: removed {removed_symbols} symbol(s) and "
+            f"{removed_labels} label(s), wrote {written_symbols} symbol(s) and "
+            f"{written_labels} label(s)."
+        )
+        if backup_path is not None:
+            summary += f" Backup of the previous sheet: {backup_path}."
+        notes: list[str] = [summary]
         if auto_layout:
             notes.append("Applied auto-layout to schematic symbols.")
         if prepared.nets:

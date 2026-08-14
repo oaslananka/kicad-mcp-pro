@@ -10,8 +10,10 @@ from kicad_mcp.config import get_config
 from kicad_mcp.connection import KiCadConnectionError
 from kicad_mcp.server import (
     KiCadFastMCP,
+    _audit_capability_records,
     _ensure_thread_aware_stdout,
     _print_startup_diagnostics,
+    _tools_without_capability_record,
     build_server,
     main_callback,
 )
@@ -44,6 +46,47 @@ def test_print_startup_diagnostics_logs_expected_fields(
     assert payload["gate_mode"] == "release-export-only"
     assert str(payload["project_dir"]).endswith("project")
     assert str(payload["ipc_status"]).startswith("unavailable")
+
+
+def test_all_registered_tools_have_capability_records() -> None:
+    # Regression guard: every routed tool must carry a capability record so it is
+    # never silently hidden from tools/list via the WRITE-tier fallback.
+    assert _tools_without_capability_record() == []
+
+
+def test_capability_audit_detects_missing_record(monkeypatch) -> None:
+    warnings: list[tuple[str, dict[str, object]]] = []
+
+    monkeypatch.setattr(
+        "kicad_mcp.server._tools_without_capability_record",
+        lambda: ["sch_add_hierarchical_label", "sch_create_sheet"],
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.server.logger.warning",
+        lambda event, **kwargs: warnings.append((event, kwargs)),
+    )
+
+    missing = _audit_capability_records()
+
+    assert missing == ["sch_add_hierarchical_label", "sch_create_sheet"]
+    assert len(warnings) == 1
+    event, kwargs = warnings[0]
+    assert event == "capability_records_missing"
+    assert kwargs["count"] == 2
+    assert kwargs["tools"] == ["sch_add_hierarchical_label", "sch_create_sheet"]
+
+
+def test_capability_audit_stays_silent_when_records_complete(monkeypatch) -> None:
+    warnings: list[str] = []
+
+    monkeypatch.setattr("kicad_mcp.server._tools_without_capability_record", list)
+    monkeypatch.setattr(
+        "kicad_mcp.server.logger.warning",
+        lambda event, **_kwargs: warnings.append(event),
+    )
+
+    assert _audit_capability_records() == []
+    assert warnings == []
 
 
 def test_print_startup_diagnostics_warns_when_stdio_uses_auth_token(

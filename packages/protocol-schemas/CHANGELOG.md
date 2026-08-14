@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v1.4.0...protocol-schemas-v1.4.1) (2026-08-13)
+
+
+### Reverts
+
+* roll back grouped dependency update [#628](https://github.com/oaslananka/kicad-mcp-pro/issues/628) ([#631](https://github.com/oaslananka/kicad-mcp-pro/issues/631)) ([54a2d54](https://github.com/oaslananka/kicad-mcp-pro/commit/54a2d54a063548ad663978c0fee25d054980d69b))
+
 ## [1.4.0](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v1.3.0...protocol-schemas-v1.4.0) (2026-07-26)
 
 

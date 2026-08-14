@@ -84,10 +84,23 @@ def register(
         error (or are surfaced as warnings) instead of silently producing a
         disconnected schematic.
 
+        Each net may set an optional ``scope`` to control the emitted terminal
+        label kind: ``"global"`` (default when omitted, connects across the whole
+        design), ``"local"`` (sheet-local label), or ``"hierarchical"`` (with an
+        optional ``shape`` of input/output/bidirectional for sheet-pin wiring).
+
         Set ``unsafe_routed_wires=True`` only if you explicitly want routed Manhattan
         wire segments between pins.  That star-routing can cross unrelated pins or
         labels and KiCad will merge them by geometry, so it can introduce silent
         shorts on non-trivial netlists — prefer the default terminal strategy.
+
+        Each symbol may carry an optional ``properties`` mapping (``dict[str, str]``);
+        every key/value is written verbatim as an additional schematic symbol field,
+        alongside the standard fields — handy for order numbers such as
+        ``{"MPN": "...", "Mouser": "...", "LCSC": "..."}`` without a second
+        ``sch_update_properties`` pass.  Keys colliding with the standard
+        Reference/Value/Footprint/Datasheet fields are ignored in favour of the
+        dedicated ``reference``/``value``/``footprint`` inputs (those always win).
 
         Recommended workflow:
           1. Call ``sch_find_free_placement(count=N)`` to obtain safe coordinates.

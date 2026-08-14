@@ -60,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
                 timeout_seconds=args.timeout_seconds,
                 structured_output=args.structured_output,
             )
-        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        except (OSError, TypeError, ValueError):
             result = {
                 "schema_version": 1,
                 "status": "error",

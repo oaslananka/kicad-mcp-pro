@@ -325,7 +325,7 @@ def verify_published(published_dir: Path, evidence_path: Path) -> None:
     _read_json_object(published_dir / sbom_name)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -344,7 +344,7 @@ def main() -> int:
     verify_published_parser.add_argument("--published-dir", type=Path, required=True)
     verify_published_parser.add_argument("--evidence", type=Path, required=True)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.command == "generate":
         generate(
@@ -361,7 +361,7 @@ def main() -> int:
     if args.command == "verify-published":
         verify_published(args.published_dir, args.evidence)
         return 0
-    raise AssertionError(f"Unhandled command: {args.command}")
+    return 1
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 schema_version: 1
 approved: true
-approved_at: '2026-08-03'
-source_revision: 11c2da2c3efcb4044497fc465d8c85412cfe1623
-agent_contract_digest: ba938eb0bb38b2200c006eaf1626f094c9f7088df03c95f136e777d29da7dde6
+approved_at: '2026-08-14'
+source_revision: 68b6bd6985808323deb951bc0fe85175c2ed2e7f
+agent_contract_digest: d843962dceeea2163fca86d4d3b0f16688e916d58eceac9caabadd9ccbe2a0f3
 evidence:
   workflow_run_id: 30788805474
   aggregate_sha256: 587603f5c191b46f3faf317ecc9947c07df47c52d566b40d33cbddcbbd9a59b4

@@ -167,7 +167,7 @@ def evaluate_release_gate(
             if config_id in evidence_by_id:
                 raise ValueError(f"duplicate evidence for {config_id}")
             evidence_by_id[config_id] = evidence
-        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        except (OSError, TypeError, ValueError) as exc:
             _append(
                 classifications,
                 "infrastructure_failures",

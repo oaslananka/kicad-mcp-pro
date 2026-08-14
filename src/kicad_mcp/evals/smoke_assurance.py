@@ -69,7 +69,7 @@ def evaluate_smoke_assurance(
             else:
                 raise ValueError("unsupported status state")
             status_by_id[config_id] = status
-        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        except (OSError, TypeError, ValueError) as exc:
             _append(
                 classifications,
                 "integrity_failures",
@@ -94,7 +94,7 @@ def evaluate_smoke_assurance(
             if evidence.get("source_revision") != expected_source_revision:
                 raise ValueError(f"source revision mismatch for {config_id}")
             evidence_by_id[config_id] = evidence
-        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        except (OSError, TypeError, ValueError) as exc:
             _append(
                 classifications,
                 "integrity_failures",

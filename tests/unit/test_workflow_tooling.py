@@ -78,3 +78,31 @@ def test_direct_javascript_actions_use_node24_releases() -> None:
     assert has_sha_pinned_action(workflows, "dorny/paths-filter")
     assert "dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36" not in workflows
     assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" not in workflows
+
+
+def test_sonar_source_and_test_scopes_are_disjoint() -> None:
+    raw = (ROOT / "sonar-project.properties").read_text(encoding="utf-8")
+    logical = raw.replace("\\\n", "")
+    properties: dict[str, list[str]] = {}
+    for line in logical.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        properties[key] = [item.strip() for item in value.split(",") if item.strip()]
+
+    exclusions = properties["sonar.exclusions"]
+    assert "packages/protocol-schemas/test/**" in exclusions
+    assert "packages/kicad-fixtures/test/**" in exclusions
+    assert "sonar.test.exclusions" not in properties
+
+
+def test_sonar_skips_fork_pull_requests_before_secret_bearing_steps() -> None:
+    path = ROOT / ".github" / "workflows" / "sonarcloud.yml"
+    raw = path.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(raw)
+    condition = workflow["jobs"]["sonarcloud"]["if"]
+
+    assert "pull_request_target" not in raw
+    assert "github.event_name != 'pull_request'" in condition
+    assert "github.event.pull_request.head.repo.full_name == github.repository" in condition

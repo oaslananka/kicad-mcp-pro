@@ -24,6 +24,7 @@ class FakeConnectivityAuthoringService:
         global_labels: bool = True,
         sheet: str | None = None,
         sheet_file: str | None = None,
+        label_kind: str | None = None,
     ) -> str:
         self.calls.append(
             (
@@ -34,6 +35,7 @@ class FakeConnectivityAuthoringService:
                     "global_labels": global_labels,
                     "sheet": sheet,
                     "sheet_file": sheet_file,
+                    "label_kind": label_kind,
                 },
             )
         )
@@ -91,7 +93,13 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
         "the symbol and reads outward. Power nets get conventional power symbols;\n"
         "other nets get labels. Pins that share a ``net`` are joined by their\n"
         "common terminal name. This is the clean alternative to placing bare\n"
-        "labels directly on pins.\n"
+        "labels directly on pins.\n\n"
+        "``label_kind`` selects the emitted label type for non-power nets:\n"
+        '``"local"``, ``"global"``, or ``"hierarchical"``. When set it takes\n'
+        "precedence over the legacy ``global_labels`` boolean, enabling batch\n"
+        "placement of hierarchical labels at sheet boundaries. A hierarchical\n"
+        'connection may add an optional ``"shape"`` (e.g. ``"input"``,\n'
+        '``"output"``, ``"bidirectional"``) passed through to the label.\n'
     )
     assert tools["sch_route_wire_between_pins"].description == (
         "Route deterministic Manhattan wire segments between two placed symbol pins."
@@ -122,6 +130,11 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
                 "anyOf": [{"type": "string"}, {"type": "null"}],
                 "default": None,
                 "title": "Sheet File",
+            },
+            "label_kind": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "title": "Label Kind",
             },
         },
         "required": ["connections"],
@@ -208,6 +221,7 @@ def test_registration_delegates_exact_arguments() -> None:
                 "global_labels": False,
                 "sheet": "Power",
                 "sheet_file": None,
+                "label_kind": None,
             },
         ),
         (

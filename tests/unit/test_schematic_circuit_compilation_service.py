@@ -15,6 +15,7 @@ from kicad_mcp.schematic.circuit_compilation import (
     PreparedCircuitInputs,
     SchematicCircuitCompilationService,
 )
+from kicad_mcp.tools.schematic import place_symbol_block
 
 
 class CompilationHarness:
@@ -39,6 +40,8 @@ class CompilationHarness:
             },
             chosen_paper="A4",
         )
+        self.snapshot_result: tuple[int, int, Path | None] = (0, 0, None)
+        self.snapshot_calls: list[Path] = []
         self.prepare_calls: list[dict[str, Any]] = []
         self.report_calls: list[dict[str, Any]] = []
         self.library_calls: list[tuple[str, str]] = []
@@ -50,6 +53,7 @@ class CompilationHarness:
         return SchematicCircuitCompilationService(
             active_schematic_file=lambda: self.schematic,
             project_name=lambda: "demo-project",
+            snapshot_before_replace=self.snapshot_before_replace,
             read_sheet_paper=lambda path: self.start_paper,
             read_sheet_paper_declaration=lambda path: self.paper_declaration,
             prepare_inputs=self.prepare_inputs,
@@ -68,6 +72,10 @@ class CompilationHarness:
             reload_schematic=self.reload_schematic,
             warn_unresolved=self.warn_unresolved,
         )
+
+    def snapshot_before_replace(self, path: Path) -> tuple[int, int, Path | None]:
+        self.snapshot_calls.append(path)
+        return self.snapshot_result
 
     def prepare_inputs(
         self,
@@ -144,6 +152,7 @@ class CompilationHarness:
         unit: int = 1,
         project_name: str,
         root_uuid: str,
+        properties: dict[str, str] | None = None,
     ) -> str:
         values = {
             "lib_id": lib_id,
@@ -156,6 +165,7 @@ class CompilationHarness:
             "unit": unit,
             "project_name": project_name,
             "root_uuid": root_uuid,
+            "properties": properties or {},
         }
         return "SYMBOL:" + ",".join(f"{key}={value}" for key, value in sorted(values.items()))
 
@@ -168,8 +178,9 @@ class CompilationHarness:
         *,
         global_label: bool,
         shape: str | None,
+        kind: str | None = None,
     ) -> str:
-        return f"LABEL:{name},{x},{y},{rotation},{global_label},{shape}"
+        return f"LABEL:{name},{x},{y},{rotation},{global_label},{shape},{kind}"
 
     def normalize_connectivity(self, content: str) -> str:
         self.events.append("normalize")
@@ -302,7 +313,12 @@ def test_build_empty_preserves_paper_and_transaction_order(tmp_path: Path) -> No
 
     result = harness.service().build()
 
-    assert result == "reloaded"
+    assert result == (
+        "reloaded\n"
+        "Sheet replaced: removed 0 symbol(s) and 0 label(s), "
+        "wrote 0 symbol(s) and 0 label(s)."
+    )
+    assert harness.snapshot_calls == [harness.schematic]
     assert harness.events == ["normalize", "validate", "write", "reload"]
     path, allow_node_loss, content = harness.transaction_calls[0]
     assert path == harness.schematic
@@ -334,7 +350,12 @@ def test_build_promotes_named_paper_when_auto_layout_grows(tmp_path: Path) -> No
     result = harness.service().build(auto_layout=True)
 
     assert '\t(paper "A3")' in harness.transaction_calls[0][2]
-    assert result == "reloaded\nApplied auto-layout to schematic symbols."
+    assert result == (
+        "reloaded\n"
+        "Sheet replaced: removed 0 symbol(s) and 0 label(s), "
+        "wrote 0 symbol(s) and 0 label(s).\n"
+        "Applied auto-layout to schematic symbols."
+    )
 
 
 def test_build_deduplicates_libraries_and_generates_all_element_types(tmp_path: Path) -> None:
@@ -374,8 +395,106 @@ def test_build_deduplicates_libraries_and_generates_all_element_types(tmp_path: 
     assert "reference=R1" in content and "reference=R2" in content
     assert "reference=#PWR001" in content and "reference=#PWR002" in content
     assert "WIRE:1.0,2.0->3.0,4.0" in content
-    assert "LABEL:NET_A,3.0,4.0,90,True,input" in content
+    assert "LABEL:NET_A,3.0,4.0,90,True,input,None" in content
     assert "project_name=demo-project" in content
+
+
+def test_build_threads_label_kind_to_label_block(tmp_path: Path) -> None:
+    harness = CompilationHarness(tmp_path)
+    harness.prepared = PreparedCircuitInputs(
+        symbols=[],
+        powers=[],
+        labels=[
+            AddLabelInput(
+                name="BUS",
+                x_mm=1.0,
+                y_mm=2.0,
+                kind="hierarchical_label",
+                shape="input",
+            )
+        ],
+        wires=[],
+        nets=[],
+        generated_wires=[],
+        unresolved_nets=[],
+        resolution_stats={
+            "resolved_endpoints": 0,
+            "unresolved_endpoints": 0,
+            "pin_alias_resolutions": 0,
+            "symbol_center_resolutions": 0,
+        },
+        chosen_paper="A4",
+    )
+
+    harness.service().build(snap_to_grid=False)
+
+    content = harness.transaction_calls[0][2]
+    assert "LABEL:BUS,1.0,2.0,0,False,input,hierarchical_label" in content
+
+
+def test_build_threads_per_symbol_properties_to_emission(tmp_path: Path) -> None:
+    harness = CompilationHarness(tmp_path)
+    symbol = AddSymbolInput(
+        library="Device",
+        symbol_name="R",
+        x_mm=10.0,
+        y_mm=20.0,
+        reference="R1",
+        value="10k",
+        footprint="Resistor_SMD:R_0805",
+        properties={"MPN": "RC0805", "LCSC": "C17414"},
+    )
+    harness.prepared = PreparedCircuitInputs(
+        symbols=[symbol],
+        powers=[],
+        labels=[],
+        wires=[],
+        nets=[],
+        generated_wires=[],
+        unresolved_nets=[],
+        resolution_stats={
+            "resolved_endpoints": 0,
+            "unresolved_endpoints": 0,
+            "pin_alias_resolutions": 0,
+            "symbol_center_resolutions": 0,
+        },
+        chosen_paper="A4",
+    )
+
+    harness.service().build()
+
+    content = harness.transaction_calls[0][2]
+    assert "properties=" in content
+    assert "MPN" in content
+    assert "RC0805" in content
+    assert "LCSC" in content
+    assert "C17414" in content
+
+
+def test_place_symbol_block_emits_extra_properties_and_skips_standard_fields() -> None:
+    block = place_symbol_block(
+        "Device:R",
+        20.0,
+        20.0,
+        "R1",
+        "10k",
+        "Resistor_SMD:R_0805",
+        properties={
+            "MPN": "RC0805FR-0710KL",
+            "LCSC": "C17414",
+            # Colliding standard field must be ignored in favour of the input value.
+            "Value": "999k",
+        },
+    )
+    assert '(property "MPN" "RC0805FR-0710KL"' in block
+    assert '(property "LCSC" "C17414"' in block
+    # Standard Value field keeps the explicit input; the colliding property is dropped.
+    assert block.count('(property "Value" "10k"') == 1
+    assert '"999k"' not in block
+    # Standard fields are still emitted exactly once each.
+    assert block.count('(property "Reference"') == 1
+    assert block.count('(property "Footprint"') == 1
+    assert block.count('(property "Datasheet"') == 1
 
 
 def test_build_reports_terminalized_and_partial_unresolved_notes(tmp_path: Path) -> None:
@@ -438,3 +557,49 @@ def test_build_reports_unsafe_routed_wire_note(tmp_path: Path) -> None:
 
     assert "Generated 1 routed wire segment(s) in unsafe routed mode" in result
     assert "prefer the default terminal strategy" in result
+
+
+def test_build_reports_replaced_counts_and_backup_for_nonempty_sheet(
+    tmp_path: Path,
+) -> None:
+    harness = CompilationHarness(tmp_path)
+    backup = tmp_path / "demo.kicad_sch.20260813-101112.bak"
+    harness.snapshot_result = (32, 120, backup)
+    harness.prepared = PreparedCircuitInputs(
+        symbols=[_symbol("R1"), _symbol("R2")],
+        powers=[_power("GND")],
+        labels=[AddLabelInput(name="NET_A", x_mm=3.0, y_mm=4.0)],
+        wires=[],
+        nets=[],
+        generated_wires=[],
+        unresolved_nets=[],
+        resolution_stats={
+            "resolved_endpoints": 0,
+            "unresolved_endpoints": 0,
+            "pin_alias_resolutions": 0,
+            "symbol_center_resolutions": 0,
+        },
+        chosen_paper="A4",
+    )
+
+    result = harness.service().build()
+
+    assert harness.snapshot_calls == [harness.schematic]
+    assert (
+        "Sheet replaced: removed 32 symbol(s) and 120 label(s), "
+        "wrote 3 symbol(s) and 1 label(s)." in result
+    )
+    assert f"Backup of the previous sheet: {backup}." in result
+
+
+def test_build_empty_sheet_makes_no_backup_claim(tmp_path: Path) -> None:
+    harness = CompilationHarness(tmp_path)
+    harness.snapshot_result = (0, 0, None)
+
+    result = harness.service().build()
+
+    assert (
+        "Sheet replaced: removed 0 symbol(s) and 0 label(s), "
+        "wrote 0 symbol(s) and 0 label(s)." in result
+    )
+    assert "Backup" not in result

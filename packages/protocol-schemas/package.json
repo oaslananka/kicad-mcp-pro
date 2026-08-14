@@ -1,6 +1,6 @@
 {
   "name": "@oaslananka/kicad-protocol-schemas",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Shared versioned protocol schemas and validators for KiCad Studio Kit extension/MCP compatibility contracts.",
   "license": "MIT",
   "repository": {

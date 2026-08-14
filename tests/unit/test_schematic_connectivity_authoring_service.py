@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from kicad_mcp.schematic.connectivity_authoring import (
     BoundingBoxLike,
     SchematicConnectivityAuthoringService,
@@ -65,11 +67,15 @@ def _harness(
         name: str,
         x: float,
         y: float,
-        rotation: int,
+        rotation: int = 0,
         global_label: bool = False,
+        shape: str | None = None,
+        kind: str | None = None,
+        justify: str | None = None,
     ) -> str:
-        calls.append(("label_block", (name, x, y, rotation, global_label)))
-        return f"LABEL({name},{x},{y},{rotation},{global_label})"
+        effective_kind = kind or ("global_label" if global_label else "label")
+        calls.append(("label_block", (name, x, y, rotation, effective_kind, shape)))
+        return f"LABEL({name},{x},{y},{rotation},{effective_kind},{shape})"
 
     def place_symbol_block(
         *,
@@ -217,7 +223,66 @@ def test_add_pin_labels_writes_signal_stub_and_target_detail(tmp_path: Path) -> 
     path, content = harness.writes[0]
     assert path == tmp_path / "board.kicad_sch"
     assert "WIRE(12.0,20.0->17.08,20.0)" in content
-    assert "LABEL(SIG,17.08,20.0,0,False)" in content
+    assert "LABEL(SIG,17.08,20.0,0,label,None)" in content
+
+
+def test_add_pin_labels_emits_hierarchical_label_with_shape(tmp_path: Path) -> None:
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": [_symbol()], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (12.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    result = harness.service.add_pin_labels(
+        [{"reference": "U1", "pin": "1", "net": "SIG", "shape": "input"}],
+        label_kind="hierarchical",
+    )
+
+    assert "U1.1 -> SIG @ (17.08, 20.0)" in result
+    content = harness.writes[0][1]
+    assert "LABEL(SIG,17.08,20.0,0,hierarchical_label,input)" in content
+    assert ("label_block", ("SIG", 17.08, 20.0, 0, "hierarchical_label", "input")) in harness.calls
+
+
+def test_add_pin_labels_label_kind_overrides_global_labels(tmp_path: Path) -> None:
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": [_symbol()], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (12.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    harness.service.add_pin_labels(
+        [{"reference": "U1", "pin": "1", "net": "SIG"}],
+        global_labels=True,
+        label_kind="local",
+    )
+
+    assert "LABEL(SIG,17.08,20.0,0,label,None)" in harness.writes[0][1]
+
+
+def test_add_pin_labels_defaults_to_global_label(tmp_path: Path) -> None:
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": [_symbol()], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (12.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    harness.service.add_pin_labels([{"reference": "U1", "pin": "1", "net": "SIG"}])
+
+    assert "LABEL(SIG,17.08,20.0,0,global_label,None)" in harness.writes[0][1]
+
+
+def test_add_pin_labels_rejects_invalid_label_kind(tmp_path: Path) -> None:
+    harness = _harness(tmp_path)
+
+    with pytest.raises(ValueError, match="label_kind must be one of"):
+        harness.service.add_pin_labels(
+            [{"reference": "U1", "pin": "1", "net": "SIG"}],
+            label_kind="sheet",
+        )
 
 
 def test_add_pin_labels_resolves_alias_and_places_power_symbol(tmp_path: Path) -> None:
@@ -338,3 +403,21 @@ def test_add_missing_junctions_runs_fixer_before_reload(tmp_path: Path) -> None:
 
     assert order == ["fix", "reload"]
     assert result == "Reloaded\nFixed"
+
+
+@pytest.mark.parametrize("shape", ["not-a-shape", 123])
+def test_add_pin_labels_rejects_invalid_shape_values(tmp_path: Path, shape: object) -> None:
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": [_symbol()], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (12.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    with pytest.raises(ValueError, match="shape must be one of"):
+        harness.service.add_pin_labels(
+            [{"reference": "U1", "pin": "1", "net": "SIG", "shape": shape}],
+            label_kind="hierarchical",
+        )
+
+    assert harness.writes == []
