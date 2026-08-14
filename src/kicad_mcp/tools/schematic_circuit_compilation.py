@@ -94,6 +94,14 @@ def register(
         labels and KiCad will merge them by geometry, so it can introduce silent
         shorts on non-trivial netlists — prefer the default terminal strategy.
 
+        Each symbol may carry an optional ``properties`` mapping (``dict[str, str]``);
+        every key/value is written verbatim as an additional schematic symbol field,
+        alongside the standard fields — handy for order numbers such as
+        ``{"MPN": "...", "Mouser": "...", "LCSC": "..."}`` without a second
+        ``sch_update_properties`` pass.  Keys colliding with the standard
+        Reference/Value/Footprint/Datasheet fields are ignored in favour of the
+        dedicated ``reference``/``value``/``footprint`` inputs (those always win).
+
         Recommended workflow:
           1. Call ``sch_find_free_placement(count=N)`` to obtain safe coordinates.
           2. Pass those coordinates in the ``symbols`` list.

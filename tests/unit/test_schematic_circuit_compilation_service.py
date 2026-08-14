@@ -15,6 +15,7 @@ from kicad_mcp.schematic.circuit_compilation import (
     PreparedCircuitInputs,
     SchematicCircuitCompilationService,
 )
+from kicad_mcp.tools.schematic import place_symbol_block
 
 
 class CompilationHarness:
@@ -151,6 +152,7 @@ class CompilationHarness:
         unit: int = 1,
         project_name: str,
         root_uuid: str,
+        properties: dict[str, str] | None = None,
     ) -> str:
         values = {
             "lib_id": lib_id,
@@ -163,6 +165,7 @@ class CompilationHarness:
             "unit": unit,
             "project_name": project_name,
             "root_uuid": root_uuid,
+            "properties": properties or {},
         }
         return "SYMBOL:" + ",".join(f"{key}={value}" for key, value in sorted(values.items()))
 
@@ -427,6 +430,71 @@ def test_build_threads_label_kind_to_label_block(tmp_path: Path) -> None:
 
     content = harness.transaction_calls[0][2]
     assert "LABEL:BUS,1.0,2.0,0,False,input,hierarchical_label" in content
+
+
+def test_build_threads_per_symbol_properties_to_emission(tmp_path: Path) -> None:
+    harness = CompilationHarness(tmp_path)
+    symbol = AddSymbolInput(
+        library="Device",
+        symbol_name="R",
+        x_mm=10.0,
+        y_mm=20.0,
+        reference="R1",
+        value="10k",
+        footprint="Resistor_SMD:R_0805",
+        properties={"MPN": "RC0805", "LCSC": "C17414"},
+    )
+    harness.prepared = PreparedCircuitInputs(
+        symbols=[symbol],
+        powers=[],
+        labels=[],
+        wires=[],
+        nets=[],
+        generated_wires=[],
+        unresolved_nets=[],
+        resolution_stats={
+            "resolved_endpoints": 0,
+            "unresolved_endpoints": 0,
+            "pin_alias_resolutions": 0,
+            "symbol_center_resolutions": 0,
+        },
+        chosen_paper="A4",
+    )
+
+    harness.service().build()
+
+    content = harness.transaction_calls[0][2]
+    assert "properties=" in content
+    assert "MPN" in content
+    assert "RC0805" in content
+    assert "LCSC" in content
+    assert "C17414" in content
+
+
+def test_place_symbol_block_emits_extra_properties_and_skips_standard_fields() -> None:
+    block = place_symbol_block(
+        "Device:R",
+        20.0,
+        20.0,
+        "R1",
+        "10k",
+        "Resistor_SMD:R_0805",
+        properties={
+            "MPN": "RC0805FR-0710KL",
+            "LCSC": "C17414",
+            # Colliding standard field must be ignored in favour of the input value.
+            "Value": "999k",
+        },
+    )
+    assert '(property "MPN" "RC0805FR-0710KL"' in block
+    assert '(property "LCSC" "C17414"' in block
+    # Standard Value field keeps the explicit input; the colliding property is dropped.
+    assert block.count('(property "Value" "10k"') == 1
+    assert '"999k"' not in block
+    # Standard fields are still emitted exactly once each.
+    assert block.count('(property "Reference"') == 1
+    assert block.count('(property "Footprint"') == 1
+    assert block.count('(property "Datasheet"') == 1
 
 
 def test_build_reports_terminalized_and_partial_unresolved_notes(tmp_path: Path) -> None:

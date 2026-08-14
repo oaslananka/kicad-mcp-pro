@@ -95,3 +95,14 @@ def test_sonar_source_and_test_scopes_are_disjoint() -> None:
     assert "packages/protocol-schemas/test/**" in exclusions
     assert "packages/kicad-fixtures/test/**" in exclusions
     assert "sonar.test.exclusions" not in properties
+
+
+def test_sonar_skips_fork_pull_requests_before_secret_bearing_steps() -> None:
+    path = ROOT / ".github" / "workflows" / "sonarcloud.yml"
+    raw = path.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(raw)
+    condition = workflow["jobs"]["sonarcloud"]["if"]
+
+    assert "pull_request_target" not in raw
+    assert "github.event_name != 'pull_request'" in condition
+    assert "github.event.pull_request.head.repo.full_name == github.repository" in condition

@@ -25,6 +25,7 @@ from ..connection import KiCadConnectionError, get_kicad
 from ..discovery import is_numbered_duplicate_kicad_file
 from ..errors import SchematicWriteUnsafeError
 from ..models.schematic import (
+    STANDARD_SYMBOL_FIELDS,
     AddLabelInput,
     AddSymbolInput,
     AddWireInput,
@@ -4676,8 +4677,15 @@ def place_symbol_block(
     unit: int = 1,
     project_name: str = "KiCadMCP",
     root_uuid: str = "",
+    properties: dict[str, str] | None = None,
 ) -> str:
-    """Build a schematic symbol instance block."""
+    """Build a schematic symbol instance block.
+
+    ``properties`` are extra fields written verbatim as additional
+    ``(property ...)`` entries. Keys colliding with the standard
+    Reference/Value/Footprint/Datasheet fields are ignored so the dedicated
+    ``reference``/``value``/``footprint`` inputs always take precedence.
+    """
     symbol_uuid = new_uuid()
     root = root_uuid or new_uuid()
     is_power_symbol = lib_id.startswith("power:") or reference.startswith("#PWR")
@@ -4695,6 +4703,17 @@ def place_symbol_block(
         if is_power_symbol
         else "\t\t\t(effects (font (size 1.27 1.27)))"
     )
+    extra_property_blocks: list[str] = []
+    for field_name, field_value in (properties or {}).items():
+        if field_name in STANDARD_SYMBOL_FIELDS:
+            continue
+        extra_property_blocks.append(
+            f"\t\t(property {_sexpr_string(field_name)} {_sexpr_string(field_value)}\n"
+            f"\t\t\t(at {_fmt_mm(x)} {_fmt_mm(y)} 0)\n"
+            "\t\t\t(effects (font (size 1.27 1.27)) (hide yes))\n"
+            "\t\t)\n"
+        )
+    extra_properties = "".join(extra_property_blocks)
     return (
         "\t(symbol\n"
         f"\t\t(lib_id {_sexpr_string(lib_id)})\n"
@@ -4721,6 +4740,7 @@ def place_symbol_block(
         f"\t\t\t(at {_fmt_mm(x)} {_fmt_mm(y)} 0)\n"
         "\t\t\t(effects (font (size 1.27 1.27)) (hide yes))\n"
         "\t\t)\n"
+        f"{extra_properties}"
         "\t\t(instances\n"
         f"\t\t\t(project {_sexpr_string(project_name)}\n"
         f'\t\t\t\t(path "/{root}"\n'
