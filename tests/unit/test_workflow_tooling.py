@@ -78,3 +78,20 @@ def test_direct_javascript_actions_use_node24_releases() -> None:
     assert has_sha_pinned_action(workflows, "dorny/paths-filter")
     assert "dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36" not in workflows
     assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" not in workflows
+
+
+def test_sonar_source_and_test_scopes_are_disjoint() -> None:
+    raw = (ROOT / "sonar-project.properties").read_text(encoding="utf-8")
+    logical = raw.replace("\\\n", "")
+    properties: dict[str, list[str]] = {}
+    for line in logical.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        properties[key] = [item.strip() for item in value.split(",") if item.strip()]
+
+    exclusions = properties["sonar.exclusions"]
+    assert "packages/protocol-schemas/test/**" in exclusions
+    assert "packages/kicad-fixtures/test/**" in exclusions
+    assert "sonar.test.exclusions" not in properties
