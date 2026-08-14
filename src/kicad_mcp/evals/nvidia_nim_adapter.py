@@ -703,7 +703,7 @@ def _parse_completion(
 def _normalized_token_sequence(text: str) -> tuple[str, ...]:
     normalized: list[str] = []
     for token in _WORD_TOKEN.findall(text.lower()):
-        if re.fullmatch(r"[a-z]+[0-9]+", token):
+        if re.fullmatch(r"[a-z]+\d+", token):
             normalized.append("reference")
         else:
             normalized.append(_TOKEN_ALIASES.get(token, token))
@@ -1199,7 +1199,7 @@ def request_openai_compatible_chat(
         )
     try:
         response_payload = response.json()
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except (TypeError, ValueError):
         return _failure("model_output_invalid", "provider_json")
     try:
         return _parse_completion(

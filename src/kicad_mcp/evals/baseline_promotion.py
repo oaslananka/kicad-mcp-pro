@@ -64,7 +64,7 @@ def generate_approved_baseline(
     try:
         report = _mapping(json.loads(aggregate_path.read_text(encoding="utf-8")), "Aggregate")
         validate_sanitized_evidence(report)
-    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+    except (OSError, TypeError, ValueError) as exc:
         raise BaselinePromotionError(f"Aggregate report is invalid: {type(exc).__name__}.") from exc
 
     template = _mapping(

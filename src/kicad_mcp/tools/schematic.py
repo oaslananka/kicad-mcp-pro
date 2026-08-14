@@ -5570,15 +5570,19 @@ def _snapshot_sheet_before_replace(sch_file: Path) -> tuple[int, int, Path | Non
     or empty (no placed symbols or labels) no backup is written and ``backup_path``
     is ``None``, so callers never claim a spurious backup for empty sheets.
     """
-    if not sch_file.is_file():
+    resolved_file = sch_file.resolve()
+    if not resolved_file.is_file():
         return 0, 0, None
-    content = sch_file.read_text(encoding="utf-8")
+    content = resolved_file.read_text(encoding="utf-8")
     symbol_count, label_count = _count_schematic_nodes(content)
     if symbol_count == 0 and label_count == 0:
         return symbol_count, label_count, None
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     nonce = time.time_ns()
-    backup_path = sch_file.with_suffix(f"{sch_file.suffix}.{timestamp}.{nonce}.bak")
+    parent_dir = resolved_file.parent.resolve()
+    backup_path = (parent_dir / f"{resolved_file.name}.{timestamp}.{nonce}.bak").resolve()
+    if parent_dir not in backup_path.parents and backup_path.parent != parent_dir:
+        raise ValueError(f"Unsafe backup path: {backup_path}")
     backup_path.write_text(content, encoding="utf-8")
     return symbol_count, label_count, backup_path
 

@@ -325,7 +325,7 @@ def verify_published(published_dir: Path, evidence_path: Path) -> None:
     _read_json_object(published_dir / sbom_name)
 
 
-def main() -> int:
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -354,15 +354,13 @@ def main() -> int:
             source_commit=args.source_commit,
             release_tag=args.release_tag,
         )
-        return 0
-    if args.command == "verify-local":
+    elif args.command == "verify-local":
         verify_local(args.artifact_dir, args.evidence_dir)
-        return 0
-    if args.command == "verify-published":
+    elif args.command == "verify-published":
         verify_published(args.published_dir, args.evidence)
-        return 0
-    raise AssertionError(f"Unhandled command: {args.command}")
+    else:
+        raise AssertionError(f"Unhandled command: {args.command}")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

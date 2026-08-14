@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from .sheet_pins import (
     EDGES,
@@ -332,7 +332,7 @@ class SchematicHierarchyAuthoringService:
             placement if placement.uuid else replace(placement, uuid=self.new_uuid())
             for placement in plan.placements
         )
-        return replace(plan, placements=placements)
+        return cast(SheetPinPlan, replace(plan, placements=placements))
 
     def _apply_sheet_pins(
         self,
