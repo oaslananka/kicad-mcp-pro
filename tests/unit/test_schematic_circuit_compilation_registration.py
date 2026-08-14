@@ -108,6 +108,10 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
         "geometry.  Nets that cannot resolve to a routable pin endpoint raise a clear\n"
         "error (or are surfaced as warnings) instead of silently producing a\n"
         "disconnected schematic.\n\n"
+        "Each net may set an optional ``scope`` to control the emitted terminal\n"
+        'label kind: ``"global"`` (default when omitted, connects across the whole\n'
+        'design), ``"local"`` (sheet-local label), or ``"hierarchical"`` (with an\n'
+        "optional ``shape`` of input/output/bidirectional for sheet-pin wiring).\n\n"
         "Set ``unsafe_routed_wires=True`` only if you explicitly want routed Manhattan\n"
         "wire segments between pins.  That star-routing can cross unrelated pins or\n"
         "labels and KiCad will merge them by geometry, so it can introduce silent\n"
