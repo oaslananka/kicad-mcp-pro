@@ -154,7 +154,7 @@ class ValidationPolicyStateService:
     def _load_erc_severity(self) -> dict[str, str]:
         path = self._state_path("erc_severity.json")
         if not path.exists():
-            payload = {rule: "error" for rule in ERC_RULE_NAMES}
+            payload = dict.fromkeys(ERC_RULE_NAMES, "error")
             path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
             return payload
         return cast(dict[str, str], json.loads(path.read_text(encoding="utf-8")))

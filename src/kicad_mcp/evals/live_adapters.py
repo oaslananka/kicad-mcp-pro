@@ -324,7 +324,7 @@ class ReplayAdapter:
                 payload = dict(value)
                 payload.pop("case_id")
                 observation = _parse_adapter_payload(payload)
-            except (json.JSONDecodeError, TypeError, ValueError):
+            except (TypeError, ValueError):
                 continue
             templates.setdefault(case_id.strip(), []).append(observation)
         self._templates = {case_id: tuple(values) for case_id, values in templates.items()}
@@ -399,7 +399,7 @@ class SubprocessAdapter:
         try:
             payload = json.loads(completed.stdout)
             observation = _parse_adapter_payload(payload)
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except (TypeError, ValueError):
             return _failure("protocol_error")
         if completed.returncode != 0 and observation.failure_kind is None:
             return _failure("protocol_error")

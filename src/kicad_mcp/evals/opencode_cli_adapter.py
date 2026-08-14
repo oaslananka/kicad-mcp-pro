@@ -255,7 +255,7 @@ def request_opencode_cli(
             output_tokens=event.output_tokens,
             estimated_cost_micros=event.estimated_cost_micros,
         )
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except (TypeError, ValueError):
         return {"schema_version": 1, "status": "error", "failure_kind": "model_output_invalid"}
 
 

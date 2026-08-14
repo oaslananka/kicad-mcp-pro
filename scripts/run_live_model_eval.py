@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
             checkpoint=lambda progress: write_evidence(args.output, progress),
         )
         write_evidence(args.output, report)
-    except (EvalConfigurationError, EvidenceSanitizationError, OSError, ValueError):
+    except (OSError, ValueError):
         print("live-model eval failed: configuration, adapter, or evidence error", file=sys.stderr)
         return 2
 

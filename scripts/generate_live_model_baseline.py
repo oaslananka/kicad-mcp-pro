@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
             approved_at=args.approved_at,
         )
         write_approved_baseline(args.output, baseline)
-    except (OSError, TypeError, ValueError, BaselinePromotionError) as exc:
+    except (OSError, TypeError, ValueError) as exc:
         print(f"live-model baseline generation failed: {exc}", file=sys.stderr)
         return 2
     print(f"wrote approved live-model baseline for {baseline['source_revision']}")
