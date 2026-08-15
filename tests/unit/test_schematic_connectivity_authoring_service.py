@@ -491,6 +491,129 @@ def test_add_missing_junctions_runs_fixer_before_reload(tmp_path: Path) -> None:
     assert result == "Reloaded\nFixed"
 
 
+def _unit_symbol(reference: str, lib_id: str, unit: int, x: float) -> dict[str, Any]:
+    return {
+        "reference": reference,
+        "lib_id": lib_id,
+        "value": "PESD5V0L4UG",
+        "x": x,
+        "y": 20.0,
+        "rotation": 0,
+        "unit": unit,
+    }
+
+
+def test_add_pin_labels_resolves_pin_on_non_last_multiunit_block(tmp_path: Path) -> None:
+    # Four units share reference D810. Pin 3 lives on unit 2 (a non-last block),
+    # so last-unit-wins resolution used to report "pin not found".
+    symbols = [
+        _unit_symbol("D810", "Power_Protection:PESD5V0L4UG", unit, x)
+        for unit, x in ((1, 10.0), (2, 30.0), (3, 50.0), (4, 70.0))
+    ]
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": symbols, "power_symbols": []},
+        pin_positions={
+            ("Power_Protection", "PESD5V0L4UG"): {"3": (32.0, 20.0)},
+        },
+        power_net=lambda name: False,
+    )
+
+    # Only unit 2 exposes pin "3"; wire the getter so every non-matching unit
+    # returns nothing, mirroring real per-unit pin geometry.
+    original = harness.service.get_pin_positions
+
+    def per_unit(
+        library: str, name: str, x: float, y: float, rotation: int, unit: int
+    ) -> dict[str, tuple[float, float]]:
+        if (library, name) == ("Power_Protection", "PESD5V0L4UG") and unit != 2:
+            return {}
+        return original(library, name, x, y, rotation, unit)
+
+    object.__setattr__(harness.service, "get_pin_positions", per_unit)
+
+    result = harness.service.add_pin_labels(
+        [{"reference": "D810", "pin": "3", "net": "SIG"}],
+    )
+
+    assert "pin not found" not in result
+    assert "D810.3 -> SIG @ (37.08, 20.0)" in result
+    assert len(harness.writes) == 1
+
+
+def test_add_pin_labels_explicit_unit_disambiguates_shared_pin(tmp_path: Path) -> None:
+    # Both units expose pin "1"; an explicit unit selects unit 2's geometry.
+    symbols = [
+        _unit_symbol("D810", "Power_Protection:PESD5V0L4UG", 1, 10.0),
+        _unit_symbol("D810", "Power_Protection:PESD5V0L4UG", 2, 30.0),
+    ]
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": symbols, "power_symbols": []},
+        pin_positions={("Power_Protection", "PESD5V0L4UG"): {"1": (12.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    original = harness.service.get_pin_positions
+
+    def per_unit(
+        library: str, name: str, x: float, y: float, rotation: int, unit: int
+    ) -> dict[str, tuple[float, float]]:
+        # Position tracks the block origin x so we can tell the units apart.
+        return (
+            {"1": (x + 2.0, y)}
+            if (library, name)
+            == (
+                "Power_Protection",
+                "PESD5V0L4UG",
+            )
+            else original(library, name, x, y, rotation, unit)
+        )
+
+    object.__setattr__(harness.service, "get_pin_positions", per_unit)
+
+    result = harness.service.add_pin_labels(
+        [{"reference": "D810", "pin": "1", "net": "SIG", "unit": 2}],
+    )
+
+    # Unit 2 origin x is 30 -> pin at 32 -> stub end at 37.08.
+    assert "D810.1 -> SIG @ (37.08, 20.0)" in result
+
+
+def test_add_pin_labels_rejects_non_integer_unit(tmp_path: Path) -> None:
+    symbols = [
+        _unit_symbol("D810", "Power_Protection:PESD5V0L4UG", 1, 10.0),
+        _unit_symbol("D810", "Power_Protection:PESD5V0L4UG", 2, 30.0),
+    ]
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": symbols, "power_symbols": []},
+        pin_positions={("Power_Protection", "PESD5V0L4UG"): {"1": (12.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    with pytest.raises(ValueError, match="unit must be an integer"):
+        harness.service.add_pin_labels(
+            [{"reference": "D810", "pin": "1", "net": "SIG", "unit": "2a"}],
+        )
+
+    assert harness.writes == []
+
+
+def test_add_pin_labels_single_unit_regression(tmp_path: Path) -> None:
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": [_symbol()], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (12.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    result = harness.service.add_pin_labels([{"reference": "U1", "pin": "1", "net": "SIG"}])
+
+    assert "U1.1 -> SIG @ (17.08, 20.0)" in result
+    assert "LABEL(SIG,17.08,20.0,0,global_label,None)" in harness.writes[0][1]
+
+
 @pytest.mark.parametrize("shape", ["not-a-shape", 123])
 def test_add_pin_labels_rejects_invalid_shape_values(tmp_path: Path, shape: object) -> None:
     harness = _harness(
