@@ -131,17 +131,20 @@ class SchematicConnectivityAuthoringService:
         )
         target = self.resolve_target(sheet, sheet_file)
         data = self.parse_schematic(target.path)
-        placed: dict[str, dict[str, Any]] = {}
+        # A reference may map to several placed blocks (multi-unit symbols share a
+        # reference across their units), so track every block per reference and
+        # resolve pins across all of them instead of only the last one placed.
+        placed: dict[str, list[dict[str, Any]]] = {}
         placed_kind: dict[str, str] = {}
         for sym in data.get("symbols", []):
             ref = str(sym.get("reference", ""))
             if ref:
-                placed[ref] = sym
+                placed.setdefault(ref, []).append(sym)
                 placed_kind[ref] = "symbol"
         for sym in data.get("power_symbols", []):
             ref = str(sym.get("reference", ""))
             if ref:
-                placed[ref] = sym
+                placed.setdefault(ref, []).append(sym)
                 placed_kind[ref] = "power_symbol"
 
         project_name = self.project_name()
@@ -150,6 +153,11 @@ class SchematicConnectivityAuthoringService:
         terminal_blocks: list[str] = []
         power_lib_defs: dict[str, str] = {}
         occupied_terminals: list[tuple[float, float]] = []
+        #: Terminals already emitted for a resolved (pin coordinate, net) pair. Stacked
+        #: pins (several named pins drawn at one coordinate, e.g. the paired GND/VBUS
+        #: pins of a USB-C receptacle) share this key so they reuse the single stub
+        #: instead of being staggered into orphaned symbols.
+        stacked_terminals: dict[tuple[float, float, str], tuple[float, float]] = {}
         dense_terminal_mode = len(connections) >= 12
         terminal_clearance_mm = self.snap_tolerance_mm if dense_terminal_mode else 6.0
         stagger_step_mm = 2.54
@@ -168,35 +176,86 @@ class SchematicConnectivityAuthoringService:
             if not (ref and pin and net):
                 results.append(f"SKIP {conn}: needs reference, pin, net")
                 continue
-            sym = placed.get(ref)
-            if sym is None:
+            blocks = placed.get(ref)
+            if not blocks:
                 results.append(f"{ref}.{pin}: reference not found")
                 continue
+            # An explicit ``unit`` in the connection disambiguates when two units
+            # of the same reference expose an identically named pin.
+            wanted_unit = conn.get("unit")
+            candidates = blocks
+            if wanted_unit is not None:
+                try:
+                    wanted_unit_number = int(wanted_unit)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"unit must be an integer, got {wanted_unit!r}") from exc
+                candidates = [
+                    block
+                    for block in blocks
+                    if int(block.get("unit", 1) or 1) == wanted_unit_number
+                ]
+                if not candidates:
+                    results.append(f"{ref}.{pin}: unit {wanted_unit} not found")
+                    continue
             is_power_symbol_ref = placed_kind.get(ref) == "power_symbol"
-            lib_id = str(sym.get("lib_id", ""))
-            if ":" not in lib_id:
-                results.append(
-                    f"{ref}.{pin}: symbol type not supported: unresolved lib_id '{lib_id}'"
+
+            # Resolve ``pin`` across every placed block sharing this reference so
+            # multi-unit symbols work regardless of which unit was placed last.
+            sym = candidates[0]
+            point: tuple[float, float] | None = None
+            pin_positions: PinPositions = {}
+            library = ""
+            symbol_name = ""
+            is_power_symbol = False
+            unresolved_lib_id: str | None = None
+            for block in candidates:
+                lib_id = str(block.get("lib_id", ""))
+                if ":" not in lib_id:
+                    unresolved_lib_id = lib_id
+                    continue
+                block_library, block_symbol_name = lib_id.split(":", 1)
+                block_ox = float(block.get("x", 0.0))
+                block_oy = float(block.get("y", 0.0))
+                block_rot = int(block.get("rotation", 0) or 0)
+                block_unit = int(block.get("unit", 1) or 1)
+                block_positions = self.get_pin_positions(
+                    block_library, block_symbol_name, block_ox, block_oy, block_rot, block_unit
                 )
-                continue
-            library, symbol_name = lib_id.split(":", 1)
-            is_power_symbol = library == "power" or ref.startswith("#PWR")
+                candidate_point = block_positions.get(pin)
+                if candidate_point is None:
+                    aliases = self.get_pin_alias_positions(
+                        block_library,
+                        block_symbol_name,
+                        block_ox,
+                        block_oy,
+                        block_rot,
+                        block_unit,
+                    )
+                    candidate_point = aliases.get(pin) or aliases.get(pin.upper())
+                if candidate_point is not None:
+                    sym = block
+                    point = candidate_point
+                    pin_positions = block_positions
+                    library = block_library
+                    symbol_name = block_symbol_name
+                    is_power_symbol = block_library == "power" or ref.startswith("#PWR")
+                    break
+
+            if point is None:
+                # No block resolved the pin: fall back to the first block's geometry
+                # for the power-symbol / lib_id error paths preserved below.
+                lib_id = str(sym.get("lib_id", ""))
+                if ":" not in lib_id:
+                    results.append(
+                        f"{ref}.{pin}: symbol type not supported: "
+                        f"unresolved lib_id '{unresolved_lib_id or lib_id}'"
+                    )
+                    continue
+                library, symbol_name = lib_id.split(":", 1)
+                is_power_symbol = library == "power" or ref.startswith("#PWR")
+
             ox = float(sym.get("x", 0.0))
             oy = float(sym.get("y", 0.0))
-            rot = int(sym.get("rotation", 0) or 0)
-            unit = int(sym.get("unit", 1) or 1)
-            pin_positions = self.get_pin_positions(library, symbol_name, ox, oy, rot, unit)
-            point = pin_positions.get(pin)
-            if point is None:
-                aliases = self.get_pin_alias_positions(
-                    library,
-                    symbol_name,
-                    ox,
-                    oy,
-                    rot,
-                    unit,
-                )
-                point = aliases.get(pin) or aliases.get(pin.upper())
             if point is None and is_power_symbol_ref:
                 if pin != "1":
                     results.append(f"{ref}.{pin}: symbol type not supported for pin '{pin}'")
@@ -217,13 +276,19 @@ class SchematicConnectivityAuthoringService:
                 elif is_power_symbol and not pin_positions:
                     results.append(
                         f"{ref}.{pin}: symbol type not supported: "
-                        f"{lib_id} has no resolvable pin geometry"
+                        f"{sym.get('lib_id', '')} has no resolvable pin geometry"
                     )
                     continue
                 else:
                     results.append(f"{ref}.{pin}: pin not found")
                     continue
             px, py = point
+            stack_key = (round(px, 4), round(py, 4), net)
+            shared_terminal = stacked_terminals.get(stack_key)
+            if shared_terminal is not None:
+                sx, sy = shared_terminal
+                results.append(f"{ref}.{pin} -> {net} (stacked on shared terminal @ ({sx}, {sy}))")
+                continue
             ux, uy = self.pin_label_stub_direction(point, (ox, oy), pin_positions.values())
             length = max(stub_mm, 10.16) if uy else stub_mm
             ex = round(px + ux * length, 4)
@@ -262,6 +327,7 @@ class SchematicConnectivityAuthoringService:
                         root_uuid=root_uuid,
                     )
                 )
+                stacked_terminals[stack_key] = (ex, ey)
                 results.append(f"{ref}.{pin} -> {net} (power) @ ({ex}, {ey}){suffix}")
             else:
                 rotation = self.terminal_rotation_from_vector(ux, uy)
@@ -278,6 +344,7 @@ class SchematicConnectivityAuthoringService:
                         shape=shape,
                     )
                 )
+                stacked_terminals[stack_key] = (ex, ey)
                 results.append(f"{ref}.{pin} -> {net} @ ({ex}, {ey}){suffix}")
 
         if not (wire_blocks or terminal_blocks):

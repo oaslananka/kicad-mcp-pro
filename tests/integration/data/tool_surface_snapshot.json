@@ -7237,7 +7237,7 @@
       "simulation"
     ],
     "read_only": false,
-    "requires_kicad_running": false
+    "requires_kicad_running": true
   },
   {
     "destructive": false,
