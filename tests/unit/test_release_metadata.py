@@ -83,6 +83,8 @@ def test_release_metadata_is_synchronised() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     mkdocs = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
     security = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+    sonar = (ROOT / "sonar-project.properties").read_text(encoding="utf-8")
+    release_config = json.loads((ROOT / "release-please-config.json").read_text(encoding="utf-8"))
 
     assert server_json["$schema"] == REGISTRY_SCHEMA
     assert server_json["version"] == version
@@ -127,6 +129,12 @@ def test_release_metadata_is_synchronised() -> None:
     assert "development/v2-migration.md" in mkdocs
     assert "https://github.com/oaslananka/kicad-mcp-pro/security/advisories/new" in security
     assert "Do not open public issues for active vulnerabilities." in security
+    assert f"sonar.projectVersion={version}" in sonar
+    assert "x-release-please-start-version" in sonar
+    assert "x-release-please-end" in sonar
+    assert {"type": "generic", "path": "sonar-project.properties"} in release_config["packages"][
+        "."
+    ]["extra-files"]
 
 
 def test_kicad_studio_contract_documents_current_http_bridge() -> None:
