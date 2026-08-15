@@ -121,7 +121,11 @@ def test_registration_preserves_metadata() -> None:
     assert jumper.headless_compatible is True
     assert jumper.requires_kicad_running is False
     assert metadata["sch_annotate"] is None
-    assert metadata["sch_reload"] is None
+
+    reload_metadata = metadata["sch_reload"]
+    assert reload_metadata is not None
+    assert reload_metadata.headless_compatible is False
+    assert reload_metadata.requires_kicad_running is True
 
 
 def test_registration_delegates_exact_arguments() -> None:
