@@ -328,6 +328,92 @@ def test_add_pin_labels_skips_missing_power_library_symbol(tmp_path: Path) -> No
     assert harness.writes == []
 
 
+def test_add_pin_labels_merges_stacked_power_pins_into_one_terminal(tmp_path: Path) -> None:
+    # A USB-C receptacle stacks its four GND pins on a single coordinate; all four
+    # connections must share ONE power symbol and stub, not spawn orphans.
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": [_symbol()], "power_symbols": []},
+        pin_positions={
+            ("Device", "R"): {
+                "A1": (12.0, 20.0),
+                "A12": (12.0, 20.0),
+                "B1": (12.0, 20.0),
+                "B12": (12.0, 20.0),
+            }
+        },
+    )
+
+    result = harness.service.add_pin_labels(
+        [
+            {"reference": "U1", "pin": "A1", "net": "GND"},
+            {"reference": "U1", "pin": "A12", "net": "GND"},
+            {"reference": "U1", "pin": "B1", "net": "GND"},
+            {"reference": "U1", "pin": "B12", "net": "GND"},
+        ]
+    )
+
+    # Exactly one wire stub and one power symbol are emitted.
+    assert sum(name == "wire_block" for name, _ in harness.calls) == 1
+    assert sum(name == "place_symbol_block" for name, _ in harness.calls) == 1
+    content = harness.writes[0][1]
+    assert content.count("POWER(GND,17.08,20.0)") == 1
+    assert content.count("WIRE(12.0,20.0->17.08,20.0)") == 1
+    # The co-connected pins are still reported, never staggered.
+    assert "U1.A1 -> GND (power) @ (17.08, 20.0)" in result
+    assert "U1.A12 -> GND (stacked on shared terminal @ (17.08, 20.0))" in result
+    assert "U1.B1 -> GND (stacked on shared terminal @ (17.08, 20.0))" in result
+    assert "U1.B12 -> GND (stacked on shared terminal @ (17.08, 20.0))" in result
+    assert "staggered" not in result
+    assert "Added 1 pin terminal(s) with stubs" in result
+
+
+def test_add_pin_labels_merges_stacked_signal_pins_into_one_label(tmp_path: Path) -> None:
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": [_symbol()], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (12.0, 20.0), "2": (12.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    result = harness.service.add_pin_labels(
+        [
+            {"reference": "U1", "pin": "1", "net": "SIG"},
+            {"reference": "U1", "pin": "2", "net": "SIG"},
+        ]
+    )
+
+    assert sum(name == "wire_block" for name, _ in harness.calls) == 1
+    assert sum(name == "label_block" for name, _ in harness.calls) == 1
+    assert "U1.1 -> SIG @ (17.08, 20.0)" in result
+    assert "U1.2 -> SIG (stacked on shared terminal @ (17.08, 20.0))" in result
+    assert "staggered" not in result
+
+
+def test_add_pin_labels_still_staggers_distinct_colliding_coordinates(tmp_path: Path) -> None:
+    # Genuinely distinct pin coordinates whose terminal endpoints collide must
+    # still be staggered apart -- unchanged behavior.
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": [_symbol()], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (12.0, 20.0), "2": (13.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    result = harness.service.add_pin_labels(
+        [
+            {"reference": "U1", "pin": "1", "net": "A"},
+            {"reference": "U1", "pin": "2", "net": "B"},
+        ]
+    )
+
+    assert sum(name == "wire_block" for name, _ in harness.calls) == 2
+    assert sum(name == "label_block" for name, _ in harness.calls) == 2
+    assert "U1.1 -> A @ (17.08, 20.0)" in result
+    assert "U1.2 -> B @ (23.16, 20.0); staggered 2 step(s)" in result
+    assert "stacked on shared terminal" not in result
+
+
 def test_route_wire_between_pins_reports_missing_reference_and_pin(tmp_path: Path) -> None:
     missing_ref = _harness(
         tmp_path,
@@ -403,6 +489,129 @@ def test_add_missing_junctions_runs_fixer_before_reload(tmp_path: Path) -> None:
 
     assert order == ["fix", "reload"]
     assert result == "Reloaded\nFixed"
+
+
+def _unit_symbol(reference: str, lib_id: str, unit: int, x: float) -> dict[str, Any]:
+    return {
+        "reference": reference,
+        "lib_id": lib_id,
+        "value": "PESD5V0L4UG",
+        "x": x,
+        "y": 20.0,
+        "rotation": 0,
+        "unit": unit,
+    }
+
+
+def test_add_pin_labels_resolves_pin_on_non_last_multiunit_block(tmp_path: Path) -> None:
+    # Four units share reference D810. Pin 3 lives on unit 2 (a non-last block),
+    # so last-unit-wins resolution used to report "pin not found".
+    symbols = [
+        _unit_symbol("D810", "Power_Protection:PESD5V0L4UG", unit, x)
+        for unit, x in ((1, 10.0), (2, 30.0), (3, 50.0), (4, 70.0))
+    ]
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": symbols, "power_symbols": []},
+        pin_positions={
+            ("Power_Protection", "PESD5V0L4UG"): {"3": (32.0, 20.0)},
+        },
+        power_net=lambda name: False,
+    )
+
+    # Only unit 2 exposes pin "3"; wire the getter so every non-matching unit
+    # returns nothing, mirroring real per-unit pin geometry.
+    original = harness.service.get_pin_positions
+
+    def per_unit(
+        library: str, name: str, x: float, y: float, rotation: int, unit: int
+    ) -> dict[str, tuple[float, float]]:
+        if (library, name) == ("Power_Protection", "PESD5V0L4UG") and unit != 2:
+            return {}
+        return original(library, name, x, y, rotation, unit)
+
+    object.__setattr__(harness.service, "get_pin_positions", per_unit)
+
+    result = harness.service.add_pin_labels(
+        [{"reference": "D810", "pin": "3", "net": "SIG"}],
+    )
+
+    assert "pin not found" not in result
+    assert "D810.3 -> SIG @ (37.08, 20.0)" in result
+    assert len(harness.writes) == 1
+
+
+def test_add_pin_labels_explicit_unit_disambiguates_shared_pin(tmp_path: Path) -> None:
+    # Both units expose pin "1"; an explicit unit selects unit 2's geometry.
+    symbols = [
+        _unit_symbol("D810", "Power_Protection:PESD5V0L4UG", 1, 10.0),
+        _unit_symbol("D810", "Power_Protection:PESD5V0L4UG", 2, 30.0),
+    ]
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": symbols, "power_symbols": []},
+        pin_positions={("Power_Protection", "PESD5V0L4UG"): {"1": (12.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    original = harness.service.get_pin_positions
+
+    def per_unit(
+        library: str, name: str, x: float, y: float, rotation: int, unit: int
+    ) -> dict[str, tuple[float, float]]:
+        # Position tracks the block origin x so we can tell the units apart.
+        return (
+            {"1": (x + 2.0, y)}
+            if (library, name)
+            == (
+                "Power_Protection",
+                "PESD5V0L4UG",
+            )
+            else original(library, name, x, y, rotation, unit)
+        )
+
+    object.__setattr__(harness.service, "get_pin_positions", per_unit)
+
+    result = harness.service.add_pin_labels(
+        [{"reference": "D810", "pin": "1", "net": "SIG", "unit": 2}],
+    )
+
+    # Unit 2 origin x is 30 -> pin at 32 -> stub end at 37.08.
+    assert "D810.1 -> SIG @ (37.08, 20.0)" in result
+
+
+def test_add_pin_labels_rejects_non_integer_unit(tmp_path: Path) -> None:
+    symbols = [
+        _unit_symbol("D810", "Power_Protection:PESD5V0L4UG", 1, 10.0),
+        _unit_symbol("D810", "Power_Protection:PESD5V0L4UG", 2, 30.0),
+    ]
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": symbols, "power_symbols": []},
+        pin_positions={("Power_Protection", "PESD5V0L4UG"): {"1": (12.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    with pytest.raises(ValueError, match="unit must be an integer"):
+        harness.service.add_pin_labels(
+            [{"reference": "D810", "pin": "1", "net": "SIG", "unit": "2a"}],
+        )
+
+    assert harness.writes == []
+
+
+def test_add_pin_labels_single_unit_regression(tmp_path: Path) -> None:
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": [_symbol()], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (12.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    result = harness.service.add_pin_labels([{"reference": "U1", "pin": "1", "net": "SIG"}])
+
+    assert "U1.1 -> SIG @ (17.08, 20.0)" in result
+    assert "LABEL(SIG,17.08,20.0,0,global_label,None)" in harness.writes[0][1]
 
 
 @pytest.mark.parametrize("shape", ["not-a-shape", 123])
