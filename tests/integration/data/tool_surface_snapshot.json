@@ -6477,6 +6477,29 @@
     "experimental": false,
     "headless": false,
     "idempotent": false,
+    "name": "sch_delete_sheet",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "critic",
+      "expert",
+      "full",
+      "high_speed",
+      "power",
+      "schematic",
+      "schematic_authoring",
+      "schematic_only",
+      "simulation"
+    ],
+    "read_only": false,
+    "requires_kicad_running": false
+  },
+  {
+    "destructive": true,
+    "experimental": false,
+    "headless": false,
+    "idempotent": false,
     "name": "sch_delete_symbol",
     "open_world": false,
     "profiles": [
@@ -7036,6 +7059,29 @@
     "headless": false,
     "idempotent": false,
     "name": "sch_move_label",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "critic",
+      "expert",
+      "full",
+      "high_speed",
+      "power",
+      "schematic",
+      "schematic_authoring",
+      "schematic_only",
+      "simulation"
+    ],
+    "read_only": false,
+    "requires_kicad_running": false
+  },
+  {
+    "destructive": true,
+    "experimental": false,
+    "headless": false,
+    "idempotent": false,
+    "name": "sch_move_sheet",
     "open_world": false,
     "profiles": [
       "agent_full",

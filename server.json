@@ -135,7 +135,7 @@
   "remotes": [],
   "_meta": {
     "io.github.oaslananka/kicad-mcp-pro": {
-      "longDescription": "KiCad MCP Pro is a production-grade MCP server for KiCad EDA. It provides 383 tools for PCB design, schematic capture, DRC/ERC validation, BOM generation, simulation, DFM analysis, and manufacturing export. Integrates with Claude Code, ChatGPT, VS Code Copilot, Cursor, and other MCP hosts. Uses KiCad CLI for file-backed operations when KiCad is available on PATH.",
+      "longDescription": "KiCad MCP Pro is a production-grade MCP server for KiCad EDA. It provides 385 tools for PCB design, schematic capture, DRC/ERC validation, BOM generation, simulation, DFM analysis, and manufacturing export. Integrates with Claude Code, ChatGPT, VS Code Copilot, Cursor, and other MCP hosts. Uses KiCad CLI for file-backed operations when KiCad is available on PATH.",
       "categories": [
         "developer-tools",
         "electronic-design-automation",

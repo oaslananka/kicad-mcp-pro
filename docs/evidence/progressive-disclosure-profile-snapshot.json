@@ -3,7 +3,7 @@
     "build": {
       "callableTools": 24,
       "catalogCharacters": 9348,
-      "catalogReductionVsExpertPct": 95.8,
+      "catalogReductionVsExpertPct": 95.9,
       "declaredTools": 24,
       "estimatedCatalogTokens": 2337,
       "forbiddenToolExposures": 2,
@@ -18,7 +18,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 5,
       "readOnlyCoveragePct": 20.0,
-      "toolReductionVsExpertPct": 93.7,
+      "toolReductionVsExpertPct": 93.8,
       "tools": [
         "kicad_get_project_info",
         "kicad_get_tools_in_category",
@@ -64,7 +64,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 12,
       "readOnlyCoveragePct": 48.0,
-      "toolReductionVsExpertPct": 93.7,
+      "toolReductionVsExpertPct": 93.8,
       "tools": [
         "dfm_run_manufacturer_check",
         "kicad_get_project_info",
@@ -93,11 +93,11 @@
       ]
     },
     "expert": {
-      "callableTools": 383,
-      "catalogCharacters": 224655,
+      "callableTools": 385,
+      "catalogCharacters": 225700,
       "catalogReductionVsExpertPct": 0.0,
-      "declaredTools": 383,
-      "estimatedCatalogTokens": 56164,
+      "declaredTools": 385,
+      "estimatedCatalogTokens": 56425,
       "forbiddenToolExposures": 8,
       "goldenCases": 65,
       "goldenCasesCovered": 55,
@@ -390,6 +390,7 @@
         "sch_create_sheet",
         "sch_delete_label",
         "sch_delete_no_connect",
+        "sch_delete_sheet",
         "sch_delete_symbol",
         "sch_delete_wire",
         "sch_find_free_placement",
@@ -415,6 +416,7 @@
         "sch_modify_label",
         "sch_modify_property",
         "sch_move_label",
+        "sch_move_sheet",
         "sch_move_symbol",
         "sch_normalize_power_orientation",
         "sch_normalize_text_sizes",
@@ -515,7 +517,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 8,
       "readOnlyCoveragePct": 32.0,
-      "toolReductionVsExpertPct": 93.7,
+      "toolReductionVsExpertPct": 93.8,
       "tools": [
         "check_design_for_manufacture",
         "dfm_run_manufacturer_check",
@@ -561,7 +563,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 12,
       "readOnlyCoveragePct": 48.0,
-      "toolReductionVsExpertPct": 93.7,
+      "toolReductionVsExpertPct": 93.8,
       "tools": [
         "dfm_run_manufacturer_check",
         "kicad_get_project_info",

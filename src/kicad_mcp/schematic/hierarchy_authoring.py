@@ -13,7 +13,9 @@ from .sheet_pins import (
     SheetBlock,
     SheetPinPlan,
     apply_plan,
+    delete_sheet_block,
     insert_pin,
+    move_sheet_block,
     parse_hierarchical_labels,
     parse_sheet_blocks,
     parse_skipped_sheet_blocks,
@@ -613,6 +615,131 @@ class SchematicHierarchyAuthoringService:
             f"{result}\nAdded pin '{name}' ({pin_type}) to sheet '{sheet}' "
             f"on the {edge} edge at {placement.x_mm}, {placement.y_mm} mm."
         )
+
+    def _find_sheet_block(self, root_path: Path, root_text: str, name: str) -> SheetBlock | str:
+        """Return the addressable block named ``name``, or a report string if it is not one.
+
+        Mirrors the lookup ``add_sheet_pin`` and ``import_sheet_pins`` use: a
+        block that is in the file but unaddressable (bad ``(at ...)``, missing
+        size) is reported as such rather than as "not found", so the user is not
+        sent looking for a name that is right there.
+        """
+        block = next(
+            (candidate for candidate in parse_sheet_blocks(root_text) if candidate.name == name),
+            None,
+        )
+        if block is not None:
+            return block
+        skipped = next(
+            (
+                candidate
+                for candidate in parse_skipped_sheet_blocks(root_text)
+                if candidate.name == name
+            ),
+            None,
+        )
+        if skipped is not None:
+            return (
+                f"Sheet '{name}' is in {root_path.name} but cannot be addressed: "
+                f"{skipped.reason}. Fix that block in KiCad and retry."
+            )
+        return f"Sheet '{name}' was not found in {root_path.name}."
+
+    def move_sheet(self, name: str, x_mm: float, y_mm: float, snap_to_grid: bool) -> str:
+        """Move the hierarchical sheet symbol named ``name`` to a new anchor coordinate.
+
+        Only ``(at ...)`` nodes move -- the sheet's own and each of its pins',
+        preserving every pin's offset from the anchor and its rotation -- so
+        nothing else about the sheet symbol (size, styling, UUIDs, its
+        ``(instances ...)`` path) is touched.
+        """
+        root_path = self.active_schematic_file()
+        try:
+            root_text = self.read_text(root_path)
+        except OSError as exc:
+            self.warn("schematic_move_sheet_unreadable", name=name, error=str(exc))
+            return f"Could not read the top-level schematic: {exc}"
+
+        block = self._find_sheet_block(root_path, root_text, name)
+        if isinstance(block, str):
+            return block
+
+        new_x, new_y = self.snap_point(x_mm, y_mm, snap_to_grid)
+        snap_note = self.snap_notice((x_mm, y_mm), (new_x, new_y))
+        skipped_pins: list[str] = []
+
+        def mutator(current: str) -> str:
+            target = next(
+                (candidate for candidate in parse_sheet_blocks(current) if candidate.name == name),
+                None,
+            )
+            if target is None:
+                raise ValueError(f"Sheet '{name}' disappeared before the write.")
+            if target.origin != block.origin or target.size != block.size:
+                raise ValueError(
+                    f"Sheet '{name}' moved or resized since it was read "
+                    f"(origin {block.origin} -> {target.origin}, "
+                    f"size {block.size} -> {target.size}); "
+                    "refusing to overwrite it. Re-run sch_move_sheet."
+                )
+            updated, skipped = move_sheet_block(current, target, new_x, new_y)
+            skipped_pins[:] = skipped
+            return updated
+
+        try:
+            self.transactional_write(mutator, root_path)
+        except Exception as exc:
+            self.warn("schematic_move_sheet_failed", name=name, error=str(exc))
+            return f"Could not move sheet '{name}': {exc}"
+
+        result = self.reload_schematic()
+        lines = [result, f"Moved sheet '{name}' to {new_x}, {new_y} mm."]
+        if skipped_pins:
+            lines.append(
+                "Left these pins in place (no readable (at ...) node to rewrite): "
+                + ", ".join(skipped_pins)
+                + ". Open the file in KiCad and save it once, then retry."
+            )
+        if snap_note:
+            lines.append(snap_note)
+        return "\n".join(lines)
+
+    def delete_sheet(self, name: str) -> str:
+        """Remove the hierarchical sheet symbol named ``name`` from the top-level schematic.
+
+        The ``(sheet ...)`` block carries its own ``(instances ...)`` path
+        bookkeeping, so removing the block is the exact inverse of
+        ``sch_create_sheet``. The child ``.kicad_sch`` file on disk is left
+        untouched -- only the sheet symbol in the parent is removed.
+        """
+        root_path = self.active_schematic_file()
+        try:
+            root_text = self.read_text(root_path)
+        except OSError as exc:
+            self.warn("schematic_delete_sheet_unreadable", name=name, error=str(exc))
+            return f"Could not read the top-level schematic: {exc}"
+
+        block = self._find_sheet_block(root_path, root_text, name)
+        if isinstance(block, str):
+            return block
+
+        def mutator(current: str) -> str:
+            target = next(
+                (candidate for candidate in parse_sheet_blocks(current) if candidate.name == name),
+                None,
+            )
+            if target is None:
+                raise ValueError(f"Sheet '{name}' disappeared before the write.")
+            return delete_sheet_block(current, target)
+
+        try:
+            self.transactional_write(mutator, root_path, allow_node_loss=True)
+        except Exception as exc:
+            self.warn("schematic_delete_sheet_failed", name=name, error=str(exc))
+            return f"Could not delete sheet '{name}': {exc}"
+
+        result = self.reload_schematic()
+        return f"{result}\nDeleted sheet '{name}' from {root_path.name}."
 
     def wire_sheet_pins(
         self,

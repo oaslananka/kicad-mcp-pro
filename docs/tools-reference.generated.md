@@ -1,6 +1,6 @@
 Machine-maintained catalog. Refresh with `pnpm run docs:tools`.
 
-Total public tools: 383.
+Total public tools: 385.
 
 | Tool | Profile(s) | Read-Only | Destructive | Open-World | Idempotent | Headless | Requires KiCad Running | Summary |
 |---|---|---:|---:|---:|---:|---:|---:|---|
@@ -282,6 +282,7 @@ Total public tools: 383.
 | `sch_create_sheet` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | no | no | Create a child schematic sheet and add it to the active top-level schematic. |
 | `sch_delete_label` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Delete label(s) (local/global/hierarchical) matching ``name`` at the |
 | `sch_delete_no_connect` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Delete the no-connect marker(s) at the given coordinate. |
+| `sch_delete_sheet` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Remove the hierarchical sheet named ``name`` (its ``Sheetname``) from the parent. |
 | `sch_delete_symbol` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Remove a placed symbol and any directly attached wire segments. |
 | `sch_delete_wire` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Remove a specific wire segment using its UUID or unique UUID prefix. |
 | `sch_find_free_placement` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Find N collision-free placement coordinates for new symbols. |
@@ -307,6 +308,7 @@ Total public tools: 383.
 | `sch_modify_label` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Set the text justification of an existing label (local/global/ |
 | `sch_modify_property` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | yes | no | Modify a schematic symbol property by reference. This KiCad MCP Pro tool supports production EDA automation workflows... |
 | `sch_move_label` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Move the label matching ``name`` at (x_mm, y_mm) to a new coordinate, |
+| `sch_move_sheet` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | no | no | Move the hierarchical sheet named ``name`` (its ``Sheetname``) to a new anchor. |
 | `sch_move_symbol` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | no | yes | no | Move an existing symbol instance to a new absolute coordinate. |
 | `sch_normalize_power_orientation` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Upright sideways power/ground symbols, rotating about the pin to keep the net. |
 | `sch_normalize_text_sizes` | agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Normalise outlier font sizes onto the sheet's dominant size. |
@@ -668,6 +670,7 @@ Total public tools: 383.
 - `sch_create_sheet`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_delete_label`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_delete_no_connect`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
+- `sch_delete_sheet`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_delete_symbol`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_delete_wire`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_find_free_placement`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
@@ -693,6 +696,7 @@ Total public tools: 383.
 - `sch_modify_label`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_modify_property`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `sch_move_label`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
+- `sch_move_sheet`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `sch_move_symbol`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `sch_normalize_power_orientation`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `sch_normalize_text_sizes`: profiles=agent_full, builder, critic, expert, full, high_speed, power, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
