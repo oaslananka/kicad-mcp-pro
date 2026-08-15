@@ -150,6 +150,11 @@ class SchematicConnectivityAuthoringService:
         terminal_blocks: list[str] = []
         power_lib_defs: dict[str, str] = {}
         occupied_terminals: list[tuple[float, float]] = []
+        #: Terminals already emitted for a resolved (pin coordinate, net) pair. Stacked
+        #: pins (several named pins drawn at one coordinate, e.g. the paired GND/VBUS
+        #: pins of a USB-C receptacle) share this key so they reuse the single stub
+        #: instead of being staggered into orphaned symbols.
+        stacked_terminals: dict[tuple[float, float, str], tuple[float, float]] = {}
         dense_terminal_mode = len(connections) >= 12
         terminal_clearance_mm = self.snap_tolerance_mm if dense_terminal_mode else 6.0
         stagger_step_mm = 2.54
@@ -224,6 +229,12 @@ class SchematicConnectivityAuthoringService:
                     results.append(f"{ref}.{pin}: pin not found")
                     continue
             px, py = point
+            stack_key = (round(px, 4), round(py, 4), net)
+            shared_terminal = stacked_terminals.get(stack_key)
+            if shared_terminal is not None:
+                sx, sy = shared_terminal
+                results.append(f"{ref}.{pin} -> {net} (stacked on shared terminal @ ({sx}, {sy}))")
+                continue
             ux, uy = self.pin_label_stub_direction(point, (ox, oy), pin_positions.values())
             length = max(stub_mm, 10.16) if uy else stub_mm
             ex = round(px + ux * length, 4)
@@ -262,6 +273,7 @@ class SchematicConnectivityAuthoringService:
                         root_uuid=root_uuid,
                     )
                 )
+                stacked_terminals[stack_key] = (ex, ey)
                 results.append(f"{ref}.{pin} -> {net} (power) @ ({ex}, {ey}){suffix}")
             else:
                 rotation = self.terminal_rotation_from_vector(ux, uy)
@@ -278,6 +290,7 @@ class SchematicConnectivityAuthoringService:
                         shape=shape,
                     )
                 )
+                stacked_terminals[stack_key] = (ex, ey)
                 results.append(f"{ref}.{pin} -> {net} @ ({ex}, {ey}){suffix}")
 
         if not (wire_blocks or terminal_blocks):
