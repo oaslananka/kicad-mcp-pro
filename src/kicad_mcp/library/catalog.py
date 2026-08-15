@@ -103,14 +103,18 @@ _PIN_START_RE = re.compile(r"\(pin\s+")
 def _matching_symbols(
     index: dict[str, dict[str, str]], query: str, library_filter: str
 ) -> list[dict[str, str]]:
-    query_lower = query.lower()
+    # Split the query into whitespace-separated terms. A single-term query keeps the
+    # original whole-query substring behavior; a multi-term query requires EVERY term
+    # to appear (case-insensitive) somewhere in the combined name/description/keywords
+    # haystack (AND across terms, OR across fields).
+    terms = [term.lower() for term in query.split()]
     library_filter_lower = library_filter.lower()
     matches: list[dict[str, str]] = []
     for item in index.values():
         if library_filter_lower and item["library"].lower() != library_filter_lower:
             continue
         haystack = f"{item['name']} {item['description']} {item['keywords']}".lower()
-        if query_lower in haystack:
+        if all(term in haystack for term in terms):
             matches.append(item)
     return matches
 

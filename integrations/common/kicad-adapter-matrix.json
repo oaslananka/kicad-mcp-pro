@@ -427,8 +427,8 @@
           "toolCount": 15
         },
         "schematic": {
-          "availableCount": 37,
-          "blockedCount": 54,
+          "availableCount": 90,
+          "blockedCount": 1,
           "canarySurfaces": [
             "read",
             "write",
@@ -444,9 +444,9 @@
             "kicad-cli"
           ],
           "selectedBackends": {
-            "guarded-schematic-file": 14,
+            "guarded-schematic-file": 67,
             "local-engine": 23,
-            "unavailable": 54
+            "unavailable": 1
           },
           "toolCount": 91
         },
@@ -768,8 +768,8 @@
             "kicad-cli"
           ],
           "selectedBackends": {
-            "guarded-schematic-file": 14,
-            "kicad-gui-ipc": 54,
+            "guarded-schematic-file": 67,
+            "kicad-gui-ipc": 1,
             "local-engine": 23
           },
           "toolCount": 91
@@ -1092,8 +1092,8 @@
             "kicad-cli"
           ],
           "selectedBackends": {
-            "guarded-schematic-file": 14,
-            "kicad-11-headless-ipc": 54,
+            "guarded-schematic-file": 67,
+            "kicad-11-headless-ipc": 1,
             "local-engine": 23
           },
           "toolCount": 91
@@ -7203,22 +7203,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_add_bus",
       "writesFiles": true
@@ -7227,22 +7227,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_add_bus_wire_entry",
       "writesFiles": true
@@ -7275,22 +7275,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_add_global_label",
       "writesFiles": true
@@ -7299,22 +7299,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_add_hierarchical_label",
       "writesFiles": true
@@ -7323,22 +7323,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_add_jumper",
       "writesFiles": true
@@ -7371,22 +7371,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_add_labels",
       "writesFiles": true
@@ -7395,22 +7395,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_add_missing_junctions",
       "writesFiles": true
@@ -7443,22 +7443,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_add_pin_labels",
       "writesFiles": true
@@ -7467,22 +7467,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_add_power_symbol",
       "writesFiles": true
@@ -7491,22 +7491,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_add_sheet_pin",
       "writesFiles": true
@@ -7563,22 +7563,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_align_to_grid",
       "writesFiles": true
@@ -7635,22 +7635,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_apply_plan",
       "writesFiles": true
@@ -7683,22 +7683,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_auto_place_symbols",
       "writesFiles": true
@@ -7707,22 +7707,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_auto_resize_sheet",
       "writesFiles": true
@@ -7731,22 +7731,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_autoplace_fields",
       "writesFiles": true
@@ -7827,22 +7827,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_create_sheet",
       "writesFiles": true
@@ -7851,22 +7851,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_delete_label",
       "writesFiles": true
@@ -7875,22 +7875,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_delete_no_connect",
       "writesFiles": true
@@ -7899,22 +7899,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_delete_symbol",
       "writesFiles": true
@@ -7923,22 +7923,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_delete_wire",
       "writesFiles": true
@@ -7971,22 +7971,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_fix_readability",
       "writesFiles": true
@@ -8259,22 +8259,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_import_sheet_pins",
       "writesFiles": true
@@ -8403,22 +8403,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_live_preview",
       "writesFiles": true
@@ -8427,22 +8427,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_modify_label",
       "writesFiles": true
@@ -8475,22 +8475,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_move_label",
       "writesFiles": true
@@ -8499,22 +8499,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_move_symbol",
       "writesFiles": true
@@ -8523,22 +8523,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_normalize_power_orientation",
       "writesFiles": true
@@ -8547,22 +8547,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_normalize_text_sizes",
       "writesFiles": true
@@ -8571,22 +8571,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_plan_from_spec",
       "writesFiles": true
@@ -8595,22 +8595,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_preview_plan",
       "writesFiles": true
@@ -8691,22 +8691,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_resolve_label_overlaps",
       "writesFiles": true
@@ -8715,22 +8715,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_rollback_plan",
       "writesFiles": true
@@ -8739,22 +8739,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_route_wire_between_pins",
       "writesFiles": true
@@ -8763,22 +8763,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_set_dnp",
       "writesFiles": true
@@ -8787,22 +8787,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_set_hop_over",
       "writesFiles": true
@@ -8811,22 +8811,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_set_sheet_size",
       "writesFiles": true
@@ -8859,22 +8859,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_spread_sheets",
       "writesFiles": true
@@ -8883,22 +8883,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_straighten_wires",
       "writesFiles": true
@@ -8907,22 +8907,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_swap_gates",
       "writesFiles": true
@@ -8931,22 +8931,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_swap_pins",
       "writesFiles": true
@@ -9027,22 +9027,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_verify_plan",
       "writesFiles": true
@@ -9051,22 +9051,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_visual_baseline_compare",
       "writesFiles": true
@@ -9075,22 +9075,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_visual_baseline_set",
       "writesFiles": true
@@ -9123,22 +9123,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "sch_wire_sheet_pins",
       "writesFiles": true
@@ -10011,22 +10011,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "variant_clone",
       "writesFiles": true
@@ -10035,22 +10035,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "variant_create",
       "writesFiles": true
@@ -10059,22 +10059,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "variant_delete",
       "writesFiles": true
@@ -10083,22 +10083,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "variant_diff_bom",
       "writesFiles": true
@@ -10107,22 +10107,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "export",
       "tool": "variant_export_bom",
       "writesFiles": true
@@ -10131,22 +10131,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "export",
       "tool": "variant_export_manufacturing_package",
       "writesFiles": true
@@ -10155,22 +10155,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "export",
       "tool": "variant_export_schematic",
       "writesFiles": true
@@ -10227,22 +10227,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "variant_set_active",
       "writesFiles": true
@@ -10251,22 +10251,22 @@
       "category": "schematic",
       "routes": {
         "degradedNoKiCad": {
-          "available": false,
-          "backend": "unavailable",
+          "available": true,
+          "backend": "guarded-schematic-file",
           "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "kicad-gui-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "kicad-11-headless-ipc",
-          "mutationGuard": "ipc-transaction-and-postcondition-check"
+          "backend": "guarded-schematic-file",
+          "mutationGuard": "atomic-roundtrip-loss-detection"
         }
       },
-      "runtime": "kicad_ipc",
+      "runtime": "none",
       "tier": "write",
       "tool": "variant_set_component_override",
       "writesFiles": true
