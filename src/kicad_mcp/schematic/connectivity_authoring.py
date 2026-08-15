@@ -185,8 +185,14 @@ class SchematicConnectivityAuthoringService:
             wanted_unit = conn.get("unit")
             candidates = blocks
             if wanted_unit is not None:
+                try:
+                    wanted_unit_number = int(wanted_unit)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"unit must be an integer, got {wanted_unit!r}") from exc
                 candidates = [
-                    block for block in blocks if int(block.get("unit", 1) or 1) == int(wanted_unit)
+                    block
+                    for block in blocks
+                    if int(block.get("unit", 1) or 1) == wanted_unit_number
                 ]
                 if not candidates:
                     results.append(f"{ref}.{pin}: unit {wanted_unit} not found")

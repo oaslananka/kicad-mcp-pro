@@ -580,6 +580,26 @@ def test_add_pin_labels_explicit_unit_disambiguates_shared_pin(tmp_path: Path) -
     assert "D810.1 -> SIG @ (37.08, 20.0)" in result
 
 
+def test_add_pin_labels_rejects_non_integer_unit(tmp_path: Path) -> None:
+    symbols = [
+        _unit_symbol("D810", "Power_Protection:PESD5V0L4UG", 1, 10.0),
+        _unit_symbol("D810", "Power_Protection:PESD5V0L4UG", 2, 30.0),
+    ]
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": symbols, "power_symbols": []},
+        pin_positions={("Power_Protection", "PESD5V0L4UG"): {"1": (12.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    with pytest.raises(ValueError, match="unit must be an integer"):
+        harness.service.add_pin_labels(
+            [{"reference": "D810", "pin": "1", "net": "SIG", "unit": "2a"}],
+        )
+
+    assert harness.writes == []
+
+
 def test_add_pin_labels_single_unit_regression(tmp_path: Path) -> None:
     harness = _harness(
         tmp_path,
