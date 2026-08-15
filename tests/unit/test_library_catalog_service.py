@@ -124,6 +124,37 @@ def test_search_symbols_preserves_validation_filter_pagination_and_rendering(
     assert "- Device:R_Alias (alias: R) - Alias resistor [keywords: alias]" in second
 
 
+def test_search_symbols_multi_word_query_matches_terms_across_fields(tmp_path: Path) -> None:
+    service, _ = _service(tmp_path)
+    # "R_Alias" has name "R_Alias", description "Alias resistor", keywords "alias".
+    # "alias resistor" requires both terms; "alias" appears in name/keywords and
+    # "resistor" appears in the description, so AND-across-terms / OR-across-fields
+    # matches even though no single field contains the whole phrase.
+    text = service.search_symbols("alias resistor", library_filter="Device")
+    assert "- Device:R_Alias (alias: R) - Alias resistor [keywords: alias]" in text
+    # "Device:R" has neither "alias" in any field, so it must be excluded.
+    assert "- Device:R -" not in text
+
+
+def test_search_symbols_multi_word_query_excludes_when_a_term_is_absent(tmp_path: Path) -> None:
+    service, _ = _service(tmp_path)
+    # "resistor" matches R and R_Alias, but "microcontroller" appears in no matching
+    # field of those symbols, so the AND semantics yield no match.
+    assert (
+        service.search_symbols("resistor microcontroller")
+        == "No symbols matched 'resistor microcontroller'."
+    )
+
+
+def test_search_symbols_single_word_query_stays_substring(tmp_path: Path) -> None:
+    service, _ = _service(tmp_path)
+    # A single term is a plain substring match: "controll" is a substring of
+    # "Controller"/"Microcontroller" and matches, exactly as before this change.
+    text = service.search_symbols("controll")
+    assert "- MCU:Controller - Microcontroller [keywords: mcu]" in text
+    assert "- Device:R " not in text
+
+
 def test_get_symbol_info_preserves_missing_properties_and_inherited_pins(tmp_path: Path) -> None:
     service, _ = _service(tmp_path)
     assert service.get_symbol_info("Missing", "R") == "Symbol library 'Missing' was not found."

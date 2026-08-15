@@ -41,10 +41,16 @@ def register(mcp: FastMCP, dependencies: LibraryCatalogDependencies) -> None:
     ) -> str:
         """Search symbol libraries by name, description, or keywords.
 
+        The query is split into whitespace-separated terms. A symbol matches when
+        EVERY term is found (case-insensitive) in any of its name, description, or
+        keywords (AND across terms, OR across fields). A single-term query behaves
+        as a plain case-insensitive substring match.
+
         Parameters
         ----------
         query : str
-            Search term (case-insensitive substring match).
+            Search terms. Multiple whitespace-separated terms are matched with AND
+            semantics; a single term is a case-insensitive substring match.
         library_filter : str
             Optional library name to narrow the search.
         page : int
