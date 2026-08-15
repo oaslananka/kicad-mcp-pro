@@ -5,7 +5,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from kicad_mcp.schematic.basic_authoring import SchematicBasicAuthoringService
+from kicad_mcp.schematic.basic_authoring import (
+    LabelBatchEntry,
+    SchematicBasicAuthoringService,
+)
 
 
 class _TransactionRecorder:
@@ -114,8 +117,8 @@ def _service(
         wire_block=lambda *coords: f"(wire {' '.join(str(value) for value in coords)})",
         bus_entry_block=lambda x, y, direction: f"(bus-entry {x} {y} {direction})",
         no_connect_block=lambda x, y: f"(no-connect {x} {y})",
-        label_block=lambda name, x, y, rotation, justify=None: (
-            f"(label {name} {x} {y} {rotation} {justify})"
+        label_block=lambda name, x, y, rotation, kind=None, shape=None, justify=None: (
+            f"({kind or 'label'} {name} {x} {y} {rotation} {shape} {justify})"
         ),
         append_before_sheet_instances=lambda current, block: current.replace(
             "(sheet_instances)", f"{block}\n(sheet_instances)", 1
@@ -293,7 +296,44 @@ def test_add_label_preserves_justify_target_and_result_order() -> None:
     )
     assert reload.calls == 1
     assert transaction.calls[0][0] == Path("Power")
-    assert "(label VCC 10.16 20.32 90 left)" in str(transaction.updated)
+    assert "(label VCC 10.16 20.32 90 None left)" in str(transaction.updated)
+
+
+def test_add_labels_batch_emits_all_kinds_in_single_write() -> None:
+    service, transaction, reload, _calls = _service()
+
+    result = service.add_labels_batch(
+        [
+            LabelBatchEntry("NET1", 10.0, 20.0, 0, "label", None, None, False),
+            LabelBatchEntry("VCC", 11.0, 21.0, 90, "global_label", None, None, False),
+            LabelBatchEntry("CLK", 12.0, 22.0, 0, "hierarchical_label", "input", None, False),
+        ],
+        "Power",
+        None,
+    )
+
+    # Single transactional write and single reload for the whole batch.
+    assert reload.calls == 1
+    assert len(transaction.calls) == 1
+    assert transaction.calls[0][0] == Path("Power")
+    updated = str(transaction.updated)
+    assert "(label NET1 10.0 20.0 0 None None)" in updated
+    assert "(global_label VCC 11.0 21.0 90 None None)" in updated
+    assert "(hierarchical_label CLK 12.0 22.0 0 input None)" in updated
+    assert result == ("Reloaded schematic.\nTarget schematic (child): Power\nPlaced 3 label(s).")
+
+
+def test_add_labels_batch_reports_snap_notes_per_entry() -> None:
+    service, _transaction, _reload, _calls = _service()
+
+    result = service.add_labels_batch(
+        [LabelBatchEntry("NET1", 10.0, 20.0, 0, "label", None, None, True)],
+        None,
+        None,
+    )
+
+    assert "Grid snap: (10.0, 20.0) -> (10.16, 20.32)" in result
+    assert "Placed 1 label(s)." in result
 
 
 def test_add_power_symbol_preserves_generated_reference_and_placement_message() -> None:
