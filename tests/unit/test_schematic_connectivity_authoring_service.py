@@ -328,6 +328,92 @@ def test_add_pin_labels_skips_missing_power_library_symbol(tmp_path: Path) -> No
     assert harness.writes == []
 
 
+def test_add_pin_labels_merges_stacked_power_pins_into_one_terminal(tmp_path: Path) -> None:
+    # A USB-C receptacle stacks its four GND pins on a single coordinate; all four
+    # connections must share ONE power symbol and stub, not spawn orphans.
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": [_symbol()], "power_symbols": []},
+        pin_positions={
+            ("Device", "R"): {
+                "A1": (12.0, 20.0),
+                "A12": (12.0, 20.0),
+                "B1": (12.0, 20.0),
+                "B12": (12.0, 20.0),
+            }
+        },
+    )
+
+    result = harness.service.add_pin_labels(
+        [
+            {"reference": "U1", "pin": "A1", "net": "GND"},
+            {"reference": "U1", "pin": "A12", "net": "GND"},
+            {"reference": "U1", "pin": "B1", "net": "GND"},
+            {"reference": "U1", "pin": "B12", "net": "GND"},
+        ]
+    )
+
+    # Exactly one wire stub and one power symbol are emitted.
+    assert sum(name == "wire_block" for name, _ in harness.calls) == 1
+    assert sum(name == "place_symbol_block" for name, _ in harness.calls) == 1
+    content = harness.writes[0][1]
+    assert content.count("POWER(GND,17.08,20.0)") == 1
+    assert content.count("WIRE(12.0,20.0->17.08,20.0)") == 1
+    # The co-connected pins are still reported, never staggered.
+    assert "U1.A1 -> GND (power) @ (17.08, 20.0)" in result
+    assert "U1.A12 -> GND (stacked on shared terminal @ (17.08, 20.0))" in result
+    assert "U1.B1 -> GND (stacked on shared terminal @ (17.08, 20.0))" in result
+    assert "U1.B12 -> GND (stacked on shared terminal @ (17.08, 20.0))" in result
+    assert "staggered" not in result
+    assert "Added 1 pin terminal(s) with stubs" in result
+
+
+def test_add_pin_labels_merges_stacked_signal_pins_into_one_label(tmp_path: Path) -> None:
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": [_symbol()], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (12.0, 20.0), "2": (12.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    result = harness.service.add_pin_labels(
+        [
+            {"reference": "U1", "pin": "1", "net": "SIG"},
+            {"reference": "U1", "pin": "2", "net": "SIG"},
+        ]
+    )
+
+    assert sum(name == "wire_block" for name, _ in harness.calls) == 1
+    assert sum(name == "label_block" for name, _ in harness.calls) == 1
+    assert "U1.1 -> SIG @ (17.08, 20.0)" in result
+    assert "U1.2 -> SIG (stacked on shared terminal @ (17.08, 20.0))" in result
+    assert "staggered" not in result
+
+
+def test_add_pin_labels_still_staggers_distinct_colliding_coordinates(tmp_path: Path) -> None:
+    # Genuinely distinct pin coordinates whose terminal endpoints collide must
+    # still be staggered apart -- unchanged behavior.
+    harness = _harness(
+        tmp_path,
+        parsed={"uuid": "root", "symbols": [_symbol()], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (12.0, 20.0), "2": (13.0, 20.0)}},
+        power_net=lambda name: False,
+    )
+
+    result = harness.service.add_pin_labels(
+        [
+            {"reference": "U1", "pin": "1", "net": "A"},
+            {"reference": "U1", "pin": "2", "net": "B"},
+        ]
+    )
+
+    assert sum(name == "wire_block" for name, _ in harness.calls) == 2
+    assert sum(name == "label_block" for name, _ in harness.calls) == 2
+    assert "U1.1 -> A @ (17.08, 20.0)" in result
+    assert "U1.2 -> B @ (23.16, 20.0); staggered 2 step(s)" in result
+    assert "stacked on shared terminal" not in result
+
+
 def test_route_wire_between_pins_reports_missing_reference_and_pin(tmp_path: Path) -> None:
     missing_ref = _harness(
         tmp_path,
