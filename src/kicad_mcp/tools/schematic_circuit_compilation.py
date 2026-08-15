@@ -64,6 +64,7 @@ def register(
         snap_to_grid: bool = True,
         auto_layout: bool = False,
         unsafe_routed_wires: bool = False,
+        max_paper: str = "A3",
     ) -> str:
         """Build (overwrite) the active schematic from structured symbol, wire, and label inputs.
 
@@ -102,6 +103,15 @@ def register(
         Reference/Value/Footprint/Datasheet fields are ignored in favour of the
         dedicated ``reference``/``value``/``footprint`` inputs (those always win).
 
+        With ``auto_layout=True`` the placement engine grows the sheet up the ISO-A
+        ladder (A4 → A3 → A2 → A1 → A0) only as far as ``max_paper`` (default
+        ``"A3"``). When the content does not fit at ``max_paper`` it is packed into
+        additional columns / rows on that sheet instead of growing to a larger
+        page — a bigger sheet is rarely what you want and A3 is the practical
+        limit. Pass a larger cap (e.g. ``max_paper="A0"``) to restore the old
+        unbounded growth. ``max_paper`` must be one of A4/A3/A2/A1/A0; any other
+        value raises ``ValueError``.
+
         Recommended workflow:
           1. Call ``sch_find_free_placement(count=N)`` to obtain safe coordinates.
           2. Pass those coordinates in the ``symbols`` list.
@@ -116,4 +126,5 @@ def register(
             snap_to_grid=snap_to_grid,
             auto_layout=auto_layout,
             unsafe_routed_wires=unsafe_routed_wires,
+            max_paper=max_paper,
         )

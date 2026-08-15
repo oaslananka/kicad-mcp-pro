@@ -89,6 +89,7 @@ class CompilationHarness:
         auto_layout: bool = False,
         unsafe_routed_wires: bool = False,
         paper: str = "A4",
+        max_paper: str = "A3",
     ) -> PreparedCircuitInputs:
         self.prepare_calls.append(
             {
@@ -101,6 +102,7 @@ class CompilationHarness:
                 "auto_layout": auto_layout,
                 "unsafe_routed_wires": unsafe_routed_wires,
                 "paper": paper,
+                "max_paper": max_paper,
             }
         )
         return self.prepared
@@ -260,6 +262,7 @@ def test_analyze_delegates_preparation_and_report_arguments(tmp_path: Path) -> N
             "auto_layout": True,
             "unsafe_routed_wires": True,
             "paper": "A4",
+            "max_paper": "A3",
         }
     ]
     assert harness.report_calls[0]["explicit_wires"] == 1
