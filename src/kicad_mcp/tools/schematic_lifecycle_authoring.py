@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from mcp.server.fastmcp import FastMCP
 
 from ..schematic.lifecycle_authoring import SchematicLifecycleAuthoringService
-from .metadata import headless_compatible
+from .metadata import headless_compatible, requires_kicad_running
 
 
 @dataclass(frozen=True)
@@ -49,6 +49,7 @@ def register(mcp: FastMCP, dependencies: SchematicLifecycleAuthoringDependencies
         return service.annotate(start_number=start_number, order=order)
 
     @mcp.tool()
+    @requires_kicad_running
     def sch_reload() -> str:
         """Ask KiCad to reload the active schematic."""
         return service.reload()

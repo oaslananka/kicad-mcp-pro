@@ -84,7 +84,13 @@ def test_registration_preserves_exact_names_descriptions_schemas_and_metadata() 
     )
     assert tools["lib_search_symbols"].description == (
         "Search symbol libraries by name, description, or keywords.\n\n"
-        "Parameters\n----------\nquery : str\n    Search term (case-insensitive substring match).\n"
+        "The query is split into whitespace-separated terms. A symbol matches when\n"
+        "EVERY term is found (case-insensitive) in any of its name, description, or\n"
+        "keywords (AND across terms, OR across fields). A single-term query behaves\n"
+        "as a plain case-insensitive substring match.\n\n"
+        "Parameters\n----------\nquery : str\n"
+        "    Search terms. Multiple whitespace-separated terms are matched with AND\n"
+        "    semantics; a single term is a case-insensitive substring match.\n"
         "library_filter : str\n    Optional library name to narrow the search.\n"
         "page : int\n    Page number (1-based). Default 1.\n"
         "page_size : int\n    Results per page. Default 50, max 500.\n"
