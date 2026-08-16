@@ -444,7 +444,9 @@ def _runtime_for_tool(name: str, category: str, tier: AccessTier) -> RuntimeRequ
         return RuntimeRequirement.KICAD_CLI
     if category == "validation" and name in {"run_drc", "run_erc", "validate_design"}:
         return RuntimeRequirement.KICAD_CLI
-    if category in {"pcb_read", "pcb_write", "schematic"} and tier is not AccessTier.READ:
+    if category == "schematic":
+        return RuntimeRequirement.KICAD_IPC if name == "sch_reload" else RuntimeRequirement.NONE
+    if category in {"pcb_read", "pcb_write"} and tier is not AccessTier.READ:
         return RuntimeRequirement.KICAD_IPC
     return RuntimeRequirement.NONE
 

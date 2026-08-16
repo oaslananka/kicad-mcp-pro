@@ -106,6 +106,32 @@ def test_file_backed_schematic_authoring_tools_do_not_require_live_kicad_ipc() -
         assert record.writes_files is True
 
 
+def test_file_backed_schematic_category_tools_do_not_require_live_ipc() -> None:
+    records = all_records()
+    file_backed = {
+        "sch_create_sheet",
+        "sch_add_pin_labels",
+        "sch_live_preview",
+        "sch_delete_no_connect",
+        "variant_create",
+    }
+
+    assert file_backed.issubset(records)
+    for tool_name in file_backed:
+        record = records[tool_name]
+        assert record.runtime is RuntimeRequirement.NONE, tool_name
+        assert record.writes_files is True, tool_name
+        assert record.writes_kicad_gui_state is False, tool_name
+
+
+def test_sch_reload_remains_live_ipc_only() -> None:
+    record = get("sch_reload")
+
+    assert record is not None
+    assert record.runtime is RuntimeRequirement.KICAD_IPC
+    assert record.writes_kicad_gui_state is True
+
+
 def test_profile_results_are_copies() -> None:
     records = all_records()
     records.clear()
