@@ -47,8 +47,22 @@ class PlaceSymbolBlock(Protocol):
     ) -> str: ...
 
 
+@dataclass(frozen=True)
+class LabelBatchEntry:
+    """One resolved label placement handed to ``add_labels_batch``."""
+
+    name: str
+    x_mm: float
+    y_mm: float
+    rotation: int
+    kind: str
+    shape: str | None
+    justify: str | None
+    snap_to_grid: bool
+
+
 class LabelBlock(Protocol):
-    """Create a local-label S-expression block."""
+    """Create a local/global/hierarchical label S-expression block."""
 
     def __call__(
         self,
@@ -57,6 +71,8 @@ class LabelBlock(Protocol):
         y: float,
         rotation: int = 0,
         *,
+        kind: str | None = None,
+        shape: str | None = None,
         justify: str | None = None,
     ) -> str: ...
 
@@ -366,6 +382,49 @@ class SchematicBasicAuthoringService:
         result = self.reload_schematic()
         return "\n".join(
             part for part in (result, self._format_target_detail(target), snap_note) if part
+        )
+
+    def add_labels_batch(
+        self,
+        labels: list[LabelBatchEntry],
+        sheet: str | None,
+        sheet_file: str | None,
+    ) -> str:
+        """Place many labels (local/global/hierarchical) in one transactional write.
+
+        Every label block is snapped, rendered and appended together so a batch
+        either lands entirely or not at all — matching the single-label path.
+        """
+        target = self.resolve_target(sheet=sheet, sheet_file=sheet_file)
+        rendered: list[str] = []
+        snap_notes: list[str] = []
+        for entry in labels:
+            label_x, label_y = self.snap_point(entry.x_mm, entry.y_mm, entry.snap_to_grid)
+            note = self.snap_notice((entry.x_mm, entry.y_mm), (label_x, label_y))
+            if note:
+                snap_notes.append(note)
+            rendered.append(
+                self.label_block(
+                    entry.name,
+                    label_x,
+                    label_y,
+                    entry.rotation,
+                    kind=entry.kind,
+                    shape=entry.shape,
+                    justify=entry.justify,
+                )
+            )
+        combined = "\n".join(rendered)
+        self.transactional_write(
+            lambda current: self.append_before_sheet_instances(current, combined),
+            target.path,
+        )
+        result = self.reload_schematic()
+        summary = f"Placed {len(labels)} label(s)."
+        return "\n".join(
+            part
+            for part in (result, self._format_target_detail(target), summary, *snap_notes)
+            if part
         )
 
     def add_power_symbol(

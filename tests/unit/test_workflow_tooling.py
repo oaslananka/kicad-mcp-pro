@@ -106,3 +106,4 @@ def test_sonar_skips_fork_pull_requests_before_secret_bearing_steps() -> None:
     assert "pull_request_target" not in raw
     assert "github.event_name != 'pull_request'" in condition
     assert "github.event.pull_request.head.repo.full_name == github.repository" in condition
+    assert "github.event.pull_request.user.login != 'dependabot[bot]'" in condition

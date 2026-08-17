@@ -78,6 +78,38 @@ class AddLabelInput(BaseModel):
     justify: LabelJustify | None = None
 
 
+_LABEL_KIND_BY_ALIAS: dict[str, str] = {
+    "local": "label",
+    "global": "global_label",
+    "hierarchical": "hierarchical_label",
+}
+"""Maps the user-facing ``kind`` aliases to the emitter label kinds."""
+
+
+class AddLabelsBatchEntry(BaseModel):
+    """One label placement inside a batch request."""
+
+    name: str = Field(min_length=1, max_length=240)
+    x_mm: CoordMM
+    y_mm: CoordMM
+    rotation: Literal[0, 90, 180, 270] = 0
+    kind: Literal["local", "global", "hierarchical"] = "local"
+    shape: Literal["input", "output", "bidirectional", "tri_state", "passive"] | None = None
+    justify: LabelJustify | None = None
+    snap_to_grid: bool = True
+
+    @property
+    def emitter_kind(self) -> str:
+        """Return the ``label_block`` kind for this entry's user-facing alias."""
+        return _LABEL_KIND_BY_ALIAS[self.kind]
+
+
+class AddLabelsBatchInput(BaseModel):
+    """Batch schematic label placement parameters."""
+
+    labels: list[AddLabelsBatchEntry] = Field(min_length=1)
+
+
 class AddBusInput(BaseModel):
     """Schematic bus parameters."""
 
