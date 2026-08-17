@@ -1092,9 +1092,14 @@ def _ladder_cap_index(max_paper: str | None) -> int:
     entry; validation is the caller's responsibility (see
     ``_prepare_build_circuit_inputs``).
     """
-    if max_paper is None or max_paper not in _PAPER_LADDER:
+    if max_paper is None:
         return len(_PAPER_LADDER) - 1
-    return _PAPER_LADDER.index(max_paper)
+    try:
+        return _PAPER_LADDER.index(max_paper)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid max_paper {max_paper!r}. Expected one of {', '.join(_PAPER_LADDER)} or None."
+        ) from exc
 
 
 def select_paper_for_capacity(
@@ -1791,11 +1796,11 @@ def _apply_basic_auto_layout(
     laid_out_powers = [dict(item) for item in power_symbols]
     laid_out_labels = [dict(item) for item in labels]
 
-    # Grow the sheet up the paper ladder until the whole layout (symbols + GND
-    # band + label band) fits, so nothing is placed off-sheet. The climb is
-    # capped at ``max_paper`` — beyond it we stay put and pack more columns/rows
-    # onto the capped sheet instead of growing further. Columns are taken from
-    # the chosen paper's usable width.
+    # Grow the sheet up the paper ladder while the layout fits the candidate.
+    # The climb is capped at ``max_paper``; once the cap is reached, placement
+    # continues using that paper's column grid instead of selecting a larger
+    # sheet. Extremely dense inputs can still exceed the capped page height, so
+    # callers must rely on visual/layout validation rather than the cap alone.
     n_gnd = sum(1 for p in laid_out_powers if str(p.get("name", "")).upper().startswith("GND"))
     start_paper = paper if paper in _PAPER_LADDER else "A4"
     start_index = _PAPER_LADDER.index(start_paper)

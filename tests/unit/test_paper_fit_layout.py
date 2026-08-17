@@ -5,6 +5,7 @@ from __future__ import annotations
 from kicad_mcp.tools.schematic import (
     _PAPER_LADDER,
     _apply_basic_auto_layout,
+    _ladder_cap_index,
     _sheet_usable_rows,
     select_paper_for_capacity,
 )
@@ -70,6 +71,13 @@ def test_symbol_footprint_cells_scales_with_extent() -> None:
     assert rows >= 2 and cols >= 1
 
 
+def test_ladder_cap_index_rejects_unknown_paper() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="Invalid max_paper"):
+        _ladder_cap_index("A9")
+
+
 def test_select_paper_respects_max_paper_cap() -> None:
     # A row count that would normally climb past A3 is capped at A3.
     a3_rows = _sheet_usable_rows("A3")
@@ -92,7 +100,7 @@ def test_basic_layout_caps_at_a3_and_uses_multiple_rows() -> None:
     )
     # Without a cap the same input grows beyond A3 (the reported behaviour).
     _sym2, _pwr2, _lbl2, uncapped_paper = _apply_basic_auto_layout(
-        symbols, [{"name": "GND"}], [], max_paper="A0"
+        symbols, [{"name": "GND"}], [], max_paper=None
     )
     assert capped_paper == "A3"
     assert _PAPER_LADDER.index(uncapped_paper) > _PAPER_LADDER.index("A3")

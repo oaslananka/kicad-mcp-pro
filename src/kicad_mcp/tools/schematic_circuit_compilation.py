@@ -105,12 +105,13 @@ def register(
 
         With ``auto_layout=True`` the placement engine grows the sheet up the ISO-A
         ladder (A4 → A3 → A2 → A1 → A0) only as far as ``max_paper`` (default
-        ``"A3"``). When the content does not fit at ``max_paper`` it is packed into
-        additional columns / rows on that sheet instead of growing to a larger
-        page — a bigger sheet is rarely what you want and A3 is the practical
-        limit. Pass a larger cap (e.g. ``max_paper="A0"``) to restore the old
-        unbounded growth. ``max_paper`` must be one of A4/A3/A2/A1/A0; any other
-        value raises ``ValueError``.
+        ``"A3"``). Once the cap is reached, placement continues on that paper
+        instead of selecting a larger page. This limits paper growth but does not
+        guarantee that arbitrarily dense inputs fit within the capped page; use
+        visual/layout validation or explicit coordinates for dense designs. Pass
+        a larger cap (e.g. ``max_paper="A0"``) for the historical largest-paper
+        behavior. ``max_paper`` must be one of A4/A3/A2/A1/A0; any other value
+        raises ``ValueError``.
 
         Recommended workflow:
           1. Call ``sch_find_free_placement(count=N)`` to obtain safe coordinates.

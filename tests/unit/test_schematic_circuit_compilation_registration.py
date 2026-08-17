@@ -127,12 +127,13 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
         "dedicated ``reference``/``value``/``footprint`` inputs (those always win).\n\n"
         "With ``auto_layout=True`` the placement engine grows the sheet up the ISO-A\n"
         "ladder (A4 → A3 → A2 → A1 → A0) only as far as ``max_paper`` (default\n"
-        '``"A3"``). When the content does not fit at ``max_paper`` it is packed into\n'
-        "additional columns / rows on that sheet instead of growing to a larger\n"
-        "page — a bigger sheet is rarely what you want and A3 is the practical\n"
-        'limit. Pass a larger cap (e.g. ``max_paper="A0"``) to restore the old\n'
-        "unbounded growth. ``max_paper`` must be one of A4/A3/A2/A1/A0; any other\n"
-        "value raises ``ValueError``.\n\n"
+        '``"A3"``). Once the cap is reached, placement continues on that paper\n'
+        "instead of selecting a larger page. This limits paper growth but does not\n"
+        "guarantee that arbitrarily dense inputs fit within the capped page; use\n"
+        "visual/layout validation or explicit coordinates for dense designs. Pass\n"
+        'a larger cap (e.g. ``max_paper="A0"``) for the historical largest-paper\n'
+        "behavior. ``max_paper`` must be one of A4/A3/A2/A1/A0; any other value\n"
+        "raises ``ValueError``.\n\n"
         "Recommended workflow:\n"
         "  1. Call ``sch_find_free_placement(count=N)`` to obtain safe coordinates.\n"
         "  2. Pass those coordinates in the ``symbols`` list.\n"
