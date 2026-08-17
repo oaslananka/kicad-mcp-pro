@@ -3,7 +3,7 @@
     "build": {
       "callableTools": 24,
       "catalogCharacters": 9348,
-      "catalogReductionVsExpertPct": 95.8,
+      "catalogReductionVsExpertPct": 95.9,
       "declaredTools": 24,
       "estimatedCatalogTokens": 2337,
       "forbiddenToolExposures": 2,
@@ -18,7 +18,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 5,
       "readOnlyCoveragePct": 20.0,
-      "toolReductionVsExpertPct": 93.7,
+      "toolReductionVsExpertPct": 93.8,
       "tools": [
         "kicad_get_project_info",
         "kicad_get_tools_in_category",
@@ -64,7 +64,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 12,
       "readOnlyCoveragePct": 48.0,
-      "toolReductionVsExpertPct": 93.7,
+      "toolReductionVsExpertPct": 93.8,
       "tools": [
         "dfm_run_manufacturer_check",
         "kicad_get_project_info",
@@ -93,11 +93,11 @@
       ]
     },
     "expert": {
-      "callableTools": 383,
-      "catalogCharacters": 225022,
+      "callableTools": 384,
+      "catalogCharacters": 225814,
       "catalogReductionVsExpertPct": 0.0,
-      "declaredTools": 383,
-      "estimatedCatalogTokens": 56256,
+      "declaredTools": 384,
+      "estimatedCatalogTokens": 56454,
       "forbiddenToolExposures": 8,
       "goldenCases": 65,
       "goldenCasesCovered": 55,
@@ -369,6 +369,7 @@
         "sch_add_hierarchical_label",
         "sch_add_jumper",
         "sch_add_label",
+        "sch_add_labels",
         "sch_add_missing_junctions",
         "sch_add_no_connect",
         "sch_add_pin_labels",
@@ -515,7 +516,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 8,
       "readOnlyCoveragePct": 32.0,
-      "toolReductionVsExpertPct": 93.7,
+      "toolReductionVsExpertPct": 93.8,
       "tools": [
         "check_design_for_manufacture",
         "dfm_run_manufacturer_check",
@@ -561,7 +562,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 12,
       "readOnlyCoveragePct": 48.0,
-      "toolReductionVsExpertPct": 93.7,
+      "toolReductionVsExpertPct": 93.8,
       "tools": [
         "dfm_run_manufacturer_check",
         "kicad_get_project_info",
