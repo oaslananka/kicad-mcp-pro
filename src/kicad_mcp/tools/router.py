@@ -263,6 +263,7 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "sch_add_component",
             "sch_add_wire",
             "sch_add_label",
+            "sch_add_labels",
             "sch_add_pin_labels",
             "sch_add_global_label",
             "sch_add_hierarchical_label",
