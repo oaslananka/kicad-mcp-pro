@@ -127,3 +127,22 @@ def test_live_model_workflows_install_opencode_from_lockfile() -> None:
     assert '"opencode-linux-x64": "1.18.10"' in package
     assert '"opencode-ai"' not in package
     assert '"lockfileVersion": 3' in lockfile
+
+
+def test_live_model_workflows_expose_locked_opencode_binary_on_path() -> None:
+    live_workflows = [
+        ROOT / ".github" / "workflows" / "live-model-assurance.yml",
+        ROOT / ".github" / "workflows" / "live-model-eval.yml",
+        ROOT / ".github" / "workflows" / "live-model-release-gate.yml",
+    ]
+    expected = (
+        'echo "$GITHUB_WORKSPACE/evals/live/node_modules/opencode-linux-x64/bin" >> "$GITHUB_PATH"'
+    )
+
+    for path in live_workflows:
+        raw = path.read_text(encoding="utf-8")
+        install_count = raw.count(
+            "npm ci --prefix evals/live --ignore-scripts --no-audit --no-fund"
+        )
+        assert install_count > 0
+        assert raw.count(expected) == install_count
