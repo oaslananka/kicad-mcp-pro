@@ -1377,8 +1377,11 @@ def test_live_model_eval_workflow_is_manual_protected_and_config_sync_backed() -
     assert "OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}" in workflow
     assert "if: startsWith(inputs.configuration_id, 'opencode-cli-')" in workflow
     assert f'OPENCODE_CLI_VERSION: "{OPENCODE_CLI_VERSION}"' in workflow
-    assert '"opencode-ai@$OPENCODE_CLI_VERSION"' in workflow
-    assert 'test "$(opencode --version)" = "$OPENCODE_CLI_VERSION"' in workflow
+    assert "npm ci --prefix evals/live --ignore-scripts --no-audit --no-fund" in workflow
+    assert (
+        'test "$(evals/live/node_modules/opencode-linux-x64/bin/opencode --version)" '
+        '= "$OPENCODE_CLI_VERSION"' in workflow
+    )
     assert 'test -n "$NVIDIA_API_KEY"' not in workflow
     assert 'test "$CONFIGURATION_ID" != "replay-golden"' in workflow
     assert "--config evals/live/configurations.yaml" in workflow
