@@ -339,7 +339,7 @@ class _TextStore:
         except KeyError as exc:
             raise OSError(f"missing {path.name}") from exc
 
-    def transactional_write(self, mutator, sch_file=None):  # type: ignore[no-untyped-def]
+    def transactional_write(self, mutator, sch_file=None, *, allow_node_loss=False):  # type: ignore[no-untyped-def]
         name = (sch_file or Path("root.kicad_sch")).name
         updated = mutator(self.files[name])
         self.files[name] = updated
@@ -1364,3 +1364,120 @@ def test_both_methods_write_once_for_all_sheets(tmp_path: Path) -> None:
     spread_service.spread_sheets(10.0, 2.54, False)
 
     assert len(spread_store.writes) == 1
+
+
+ROOT_TEXT_WITH_PIN = """(kicad_sch
+\t(title_block
+\t\t(comment 1 "keep me")
+\t)
+\t(sheet
+\t\t(at 80.01 30.48)
+\t\t(size 30.48 20.32)
+\t\t(property "Sheetname" "02_mcu"
+\t\t\t(at 80.01 29.77 0)
+\t\t)
+\t\t(property "Sheetfile" "child.kicad_sch"
+\t\t\t(at 80.01 51.38 0)
+\t\t)
+\t\t(pin "VOUT" output
+\t\t\t(at 110.49 33.02 180)
+\t\t\t(effects (font (size 1.27 1.27)))
+\t\t\t(uuid "pin-uuid")
+\t\t)
+\t\t(instances
+\t\t\t(project "main" (path "/1" (page "2")))
+\t\t)
+\t)
+\t(sheet_instances
+\t\t(path "/" (page "1"))
+\t)
+)
+"""
+
+
+def test_move_sheet_updates_the_anchor_and_drags_pins(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_WITH_PIN})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.move_sheet("02_mcu", 100.0, 40.0, False)
+
+    written = store.files["root.kicad_sch"]
+    (block,) = parse_sheet_blocks(written)
+    assert block.origin == (100.0, 40.0)
+    # The pin kept its (110.49 - 80.01, 33.02 - 30.48) offset and its rotation.
+    (pin,) = block.pins
+    assert pin.x_mm == 130.48
+    assert pin.y_mm == 42.54
+    assert pin.rotation == 180
+    assert "Moved sheet '02_mcu' to 100.0, 40.0 mm." in report
+    assert store.files["root.kicad_sch"].count("(instances") == 1
+
+
+def test_move_sheet_snaps_when_requested(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_WITH_PIN})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+    # Snap every coordinate to the 1.27 mm grid used by the fake service.
+    service = replace(service, snap_point=lambda x, y, snap: (127.0, 38.1) if snap else (x, y))
+
+    report = service.move_sheet("02_mcu", 126.5, 38.0, True)
+
+    (block,) = parse_sheet_blocks(store.files["root.kicad_sch"])
+    assert block.origin == (127.0, 38.1)
+    assert "127.0, 38.1 mm" in report
+
+
+def test_move_sheet_reports_a_missing_name(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_WITH_PIN})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.move_sheet("does_not_exist", 10.0, 20.0, False)
+
+    assert "was not found" in report
+    assert store.writes == []
+
+
+def test_delete_sheet_removes_the_whole_block(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_WITH_PIN})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.delete_sheet("02_mcu")
+
+    written = store.files["root.kicad_sch"]
+    assert parse_sheet_blocks(written) == ()
+    assert "(sheet\n" not in written
+    assert '(property "Sheetname"' not in written
+    # The sheet's own (instances ...) bookkeeping went with the block; the
+    # root-level (sheet_instances ...) node is left in place.
+    assert "(instances\n" not in written
+    assert "(sheet_instances" in written
+    assert "Deleted sheet '02_mcu'" in report
+
+
+def test_delete_sheet_refuses_concurrent_move_or_resize(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_WITH_PIN})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    def concurrent_write(mutator, sch_file=None, *, allow_node_loss=False):  # type: ignore[no-untyped-def]
+        store.files["root.kicad_sch"] = store.files["root.kicad_sch"].replace(
+            "(at 80.01 30.48)", "(at 81.28 30.48)", 1
+        )
+        return store.transactional_write(mutator, sch_file, allow_node_loss=allow_node_loss)
+
+    service = replace(service, transactional_write=concurrent_write)
+
+    report = service.delete_sheet("02_mcu")
+
+    (block,) = parse_sheet_blocks(store.files["root.kicad_sch"])
+    assert block.origin == (81.28, 30.48)
+    assert "moved or resized since it was read" in report
+    assert "Re-run sch_delete_sheet" in report
+
+
+def test_delete_sheet_reports_a_missing_name(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_WITH_PIN})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    report = service.delete_sheet("does_not_exist")
+
+    assert "was not found" in report
+    assert store.writes == []
