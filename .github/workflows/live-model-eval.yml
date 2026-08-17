@@ -119,6 +119,7 @@ jobs:
           set -euo pipefail
           npm ci --prefix evals/live --ignore-scripts --no-audit --no-fund
           test "$(evals/live/node_modules/opencode-linux-x64/bin/opencode --version)" = "$OPENCODE_CLI_VERSION"
+          echo "$GITHUB_WORKSPACE/evals/live/node_modules/opencode-linux-x64/bin" >> "$GITHUB_PATH"
       - name: Run bounded billed evaluation
         env:
           CONFIGURATION_ID: ${{ inputs.configuration_id }}
