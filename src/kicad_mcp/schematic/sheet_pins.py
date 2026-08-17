@@ -824,3 +824,58 @@ def insert_pin(text: str, sheet: SheetBlock, placement: SheetPinPlacement) -> st
     indent = _indent_of(text, sheet, anchor)
     line_start = _line_start(text, anchor)
     return _splice(text, sheet, [(line_start, line_start, sheet_pin_block(placement, indent))])
+
+
+def move_sheet_block(
+    text: str, sheet: SheetBlock, new_x_mm: float, new_y_mm: float
+) -> tuple[str, tuple[str, ...]]:
+    """Move a sheet symbol's anchor to ``(new_x_mm, new_y_mm)``, dragging its pins.
+
+    Only ``(at ...)`` nodes are rewritten -- the sheet's own and each pin's --
+    so nothing else about the block (size, styling, UUIDs, the ``Sheetname`` and
+    ``Sheetfile`` property positions, the ``(instances ...)`` path) is touched.
+    The pins keep their offset from the anchor and their rotation, mirroring how
+    ``sch_spread_sheets`` shifts a column, so a pin that already sits on a wire
+    stays exactly where it was relative to the symbol.
+
+    A pin whose ``(at ...)`` node could not be located when the block was parsed
+    (``pin_at_spans`` entry of zero width) is left in place rather than rewritten
+    blind; its name is returned so the caller can report it.
+    """
+    origin_x, origin_y = sheet.origin
+    dx = new_x_mm - origin_x
+    dy = new_y_mm - origin_y
+    edits: list[tuple[int, int, str]] = [
+        (
+            sheet.at_span[0],
+            sheet.at_span[1],
+            f"(at {_format_mm(round(new_x_mm, 4))} {_format_mm(round(new_y_mm, 4))})",
+        )
+    ]
+    skipped: list[str] = []
+    for pin, (pin_start, pin_end) in zip(sheet.pins, sheet.pin_at_spans, strict=True):
+        if pin_start == pin_end:
+            skipped.append(pin.name)
+            continue
+        new_pin_x = round(pin.x_mm + dx, 4)
+        new_pin_y = round(pin.y_mm + dy, 4)
+        edits.append(
+            (
+                pin_start,
+                pin_end,
+                f"(at {_format_mm(new_pin_x)} {_format_mm(new_pin_y)} {pin.rotation})",
+            )
+        )
+    return _splice(text, sheet, edits), tuple(skipped)
+
+
+def delete_sheet_block(text: str, sheet: SheetBlock) -> str:
+    """Remove a whole ``(sheet ...)`` block, including its own line's indentation.
+
+    The block carries its own ``(instances ...)`` node -- the per-sheet path
+    bookkeeping ``sch_create_sheet`` writes -- so removing the block is the exact
+    inverse of creating it. The root-level ``(sheet_instances ...)`` node holds
+    only the root path and is not keyed by child sheet, so it is left untouched.
+    """
+    start, end = _line_span(text, sheet.start, sheet.end)
+    return text[:start] + text[end:]

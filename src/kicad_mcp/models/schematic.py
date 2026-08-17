@@ -201,6 +201,21 @@ class CreateSheetInput(BaseModel):
     sheet_pins: list[SheetPinLabel] = Field(default_factory=list, max_length=256)
 
 
+class MoveSheetInput(BaseModel):
+    """Move a hierarchical sheet symbol to a new anchor coordinate."""
+
+    name: str = Field(min_length=1, max_length=120)
+    x_mm: CoordMM
+    y_mm: CoordMM
+    snap_to_grid: bool = True
+
+
+class DeleteSheetInput(BaseModel):
+    """Remove a hierarchical sheet symbol from the top-level schematic."""
+
+    name: str = Field(min_length=1, max_length=120)
+
+
 class SheetPinInput(BaseModel):
     """One hierarchical sheet pin placed at an explicit edge position."""
 

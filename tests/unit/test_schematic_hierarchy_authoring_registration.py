@@ -29,6 +29,14 @@ class FakeHierarchyAuthoringService:
         self.calls.append(("create_sheet", (name, filename, x_mm, y_mm, snap_to_grid, sheet_pins)))
         return "sheet"
 
+    def move_sheet(self, name: str, x_mm: float, y_mm: float, snap_to_grid: bool) -> str:
+        self.calls.append(("move_sheet", (name, x_mm, y_mm, snap_to_grid)))
+        return "moved"
+
+    def delete_sheet(self, name: str) -> str:
+        self.calls.append(("delete_sheet", (name,)))
+        return "deleted"
+
     def add_hierarchical_label(
         self,
         text: str,
@@ -106,6 +114,8 @@ def test_registration_preserves_names_descriptions_and_defaults() -> None:
 
     assert set(tools) == {
         "sch_create_sheet",
+        "sch_move_sheet",
+        "sch_delete_sheet",
         "sch_add_hierarchical_label",
         "sch_add_global_label",
         "sch_add_sheet_pin",
@@ -287,6 +297,56 @@ def test_create_sheet_forwards_sheet_pins_as_a_tuple() -> None:
             ),
         )
     ]
+
+
+def test_move_and_delete_sheet_tools_are_registered() -> None:
+    server, _service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert {"sch_move_sheet", "sch_delete_sheet"} <= set(tools)
+    assert tools["sch_move_sheet"].parameters["required"] == ["name", "x_mm", "y_mm"]
+    assert tools["sch_move_sheet"].parameters["properties"]["snap_to_grid"]["default"] is True
+    assert tools["sch_delete_sheet"].parameters["required"] == ["name"]
+
+
+def test_move_sheet_forwards_its_arguments_verbatim() -> None:
+    server, service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert (
+        tools["sch_move_sheet"].fn(name="Power", x_mm=10.0, y_mm=20.0, snap_to_grid=False)
+        == "moved"
+    )
+
+    assert service.calls == [("move_sheet", ("Power", 10.0, 20.0, False))]
+
+
+def test_move_sheet_defaults_to_snapping() -> None:
+    server, service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert tools["sch_move_sheet"].fn(name="Power", x_mm=1.0, y_mm=2.0) == "moved"
+
+    assert service.calls == [("move_sheet", ("Power", 1.0, 2.0, True))]
+
+
+def test_delete_sheet_forwards_its_name() -> None:
+    server, service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert tools["sch_delete_sheet"].fn(name="Power") == "deleted"
+
+    assert service.calls == [("delete_sheet", ("Power",))]
+
+
+def test_move_and_delete_sheet_reject_an_empty_name() -> None:
+    server, _service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    with pytest.raises(ValidationError):
+        tools["sch_move_sheet"].fn(name="", x_mm=1.0, y_mm=2.0)
+    with pytest.raises(ValidationError):
+        tools["sch_delete_sheet"].fn(name="")
 
 
 def test_sheet_pin_tools_are_registered() -> None:

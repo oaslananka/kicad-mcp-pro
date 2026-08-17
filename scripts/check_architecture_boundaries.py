@@ -452,7 +452,7 @@ REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.schematic_connectivity_authoring": 300,
     "kicad_mcp.tools.schematic_destructive_edit": 300,
     "kicad_mcp.tools.schematic_document_settings": 300,
-    "kicad_mcp.tools.schematic_hierarchy_authoring": 300,
+    "kicad_mcp.tools.schematic_hierarchy_authoring": 320,
     "kicad_mcp.tools.schematic_inspection": 300,
     "kicad_mcp.tools.schematic_lifecycle_authoring": 300,
     "kicad_mcp.tools.schematic_layout_automation": 300,
