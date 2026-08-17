@@ -1084,26 +1084,48 @@ def _paper_capacity_rows(
     return _sheet_usable_cols(paper, cell_w), _sheet_usable_rows(paper, cell_h)
 
 
+def _ladder_cap_index(max_paper: str | None) -> int:
+    """Return the ladder index the auto-layout climb may not exceed.
+
+    ``max_paper=None`` means "no cap" (the historical unbounded behaviour) and
+    yields the largest ladder entry. Any other value must be a known ladder
+    entry; validation is the caller's responsibility (see
+    ``_prepare_build_circuit_inputs``).
+    """
+    if max_paper is None:
+        return len(_PAPER_LADDER) - 1
+    try:
+        return _PAPER_LADDER.index(max_paper)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid max_paper {max_paper!r}. Expected one of {', '.join(_PAPER_LADDER)} or None."
+        ) from exc
+
+
 def select_paper_for_capacity(
     required_rows: int,
     *,
     start_paper: str = "A4",
+    max_paper: str | None = None,
     cell_w: float = AUTO_LAYOUT_COLUMN_SPACING_MM,
     cell_h: float = AUTO_LAYOUT_ROW_SPACING_MM,
 ) -> str:
     """Return the smallest standard paper (>= ``start_paper``) holding ``required_rows``.
 
     Never downsizes below ``start_paper`` so an explicit large sheet is preserved.
-    If even the largest ladder entry is too small the largest is returned — the
-    caller still gets a defined, on-ladder size rather than an overflow.
+    The climb never grows the sheet beyond ``max_paper``: if ``required_rows`` does
+    not fit at the cap, the cap is returned and callers place multi-column /
+    multi-row within it rather than climbing higher. ``max_paper=None`` restores
+    the historical unbounded climb (largest ladder entry is the effective cap).
     """
     start = start_paper if start_paper in _PAPER_LADDER else "A4"
     start_index = _PAPER_LADDER.index(start)
-    for paper in _PAPER_LADDER[start_index:]:
+    cap_index = max(start_index, _ladder_cap_index(max_paper))
+    for paper in _PAPER_LADDER[start_index : cap_index + 1]:
         _, usable_rows = _paper_capacity_rows(paper, cell_w=cell_w, cell_h=cell_h)
         if usable_rows >= required_rows:
             return paper
-    return _PAPER_LADDER[-1]
+    return _PAPER_LADDER[cap_index]
 
 
 def _read_sheet_paper(sch_file: Path) -> str:
@@ -1611,6 +1633,7 @@ def _apply_netlist_auto_layout(
     nets: list[dict[str, Any]],
     *,
     paper: str = "A4",
+    max_paper: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], str]:
     laid_out_symbols = [dict(item) for item in symbols]
     laid_out_powers = [dict(item) for item in power_symbols]
@@ -1638,7 +1661,11 @@ def _apply_netlist_auto_layout(
     total_cells = sum(fc * fr for fc, fr in footprints.values()) or 1
     required_rows = math.ceil(total_cells / usable_cols) + 2
     chosen_paper = select_paper_for_capacity(
-        required_rows, start_paper=start_paper, cell_w=cell_w, cell_h=cell_h
+        required_rows,
+        start_paper=start_paper,
+        max_paper=max_paper,
+        cell_w=cell_w,
+        cell_h=cell_h,
     )
 
     # Use occupancy grid to avoid symbol collisions in netlist layout too.
@@ -1763,17 +1790,23 @@ def _apply_basic_auto_layout(
     labels: list[dict[str, Any]],
     *,
     paper: str = "A4",
+    max_paper: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], str]:
     laid_out_symbols = [dict(item) for item in symbols]
     laid_out_powers = [dict(item) for item in power_symbols]
     laid_out_labels = [dict(item) for item in labels]
 
-    # Grow the sheet up the paper ladder until the whole layout (symbols + GND
-    # band + label band) fits, so nothing is placed off-sheet. Columns are taken
-    # from the chosen paper's usable width.
+    # Grow the sheet up the paper ladder while the layout fits the candidate.
+    # The climb is capped at ``max_paper``; once the cap is reached, placement
+    # continues using that paper's column grid instead of selecting a larger
+    # sheet. Extremely dense inputs can still exceed the capped page height, so
+    # callers must rely on visual/layout validation rather than the cap alone.
     n_gnd = sum(1 for p in laid_out_powers if str(p.get("name", "")).upper().startswith("GND"))
-    chosen_paper = paper if paper in _PAPER_LADDER else "A4"
-    for candidate in _PAPER_LADDER[_PAPER_LADDER.index(chosen_paper) :]:
+    start_paper = paper if paper in _PAPER_LADDER else "A4"
+    start_index = _PAPER_LADDER.index(start_paper)
+    cap_index = max(start_index, _ladder_cap_index(max_paper))
+    chosen_paper = start_paper
+    for candidate in _PAPER_LADDER[start_index : cap_index + 1]:
         cols = _sheet_usable_cols(candidate)
         bottom = _basic_layout_bottom_row(len(laid_out_symbols), n_gnd, len(laid_out_labels), cols)
         # +1 for the GND/label bands' own rows already counted; the positive-rail
@@ -4173,6 +4206,7 @@ def _prepare_build_circuit_inputs(
     auto_layout: bool = False,
     unsafe_routed_wires: bool = False,
     paper: str = "A4",
+    max_paper: str = "A3",
 ) -> tuple[
     list[AddSymbolInput],
     list[PowerSymbolInput],
@@ -4184,6 +4218,10 @@ def _prepare_build_circuit_inputs(
     dict[str, int],
     str,
 ]:
+    if max_paper not in _PAPER_LADDER:
+        raise ValueError(
+            f"Invalid max_paper {max_paper!r}. Expected one of {', '.join(_PAPER_LADDER)}."
+        )
     raw_symbols = [dict(item) for item in (symbols or [])]
     raw_powers = [dict(item) for item in (power_symbols or [])]
     raw_labels = [dict(item) for item in (labels or [])]
@@ -4198,6 +4236,7 @@ def _prepare_build_circuit_inputs(
                 raw_labels,
                 raw_nets,
                 paper=chosen_paper,
+                max_paper=max_paper,
             )
         else:
             raw_symbols, raw_powers, raw_labels, chosen_paper = _apply_basic_auto_layout(
@@ -4205,6 +4244,7 @@ def _prepare_build_circuit_inputs(
                 raw_powers,
                 raw_labels,
                 paper=chosen_paper,
+                max_paper=max_paper,
             )
 
     validated_symbols = [AddSymbolInput.model_validate(item) for item in raw_symbols]
@@ -5608,6 +5648,7 @@ def _prepare_circuit_compilation_inputs(
     auto_layout: bool = False,
     unsafe_routed_wires: bool = False,
     paper: str = "A4",
+    max_paper: str = "A3",
 ) -> PreparedCircuitInputs:
     prepared = _prepare_build_circuit_inputs(
         symbols=symbols,
@@ -5619,6 +5660,7 @@ def _prepare_circuit_compilation_inputs(
         auto_layout=auto_layout,
         unsafe_routed_wires=unsafe_routed_wires,
         paper=paper,
+        max_paper=max_paper,
     )
     return PreparedCircuitInputs(
         symbols=prepared[0],
