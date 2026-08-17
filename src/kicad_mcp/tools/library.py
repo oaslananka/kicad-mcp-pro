@@ -843,13 +843,44 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @headless_compatible
-    def lib_check_stock_availability(refs: list[str], source: str = "jlcsearch") -> str:
-        """Check live stock availability for the requested schematic references."""
-        wanted = {ref.strip().upper() for ref in refs if ref.strip()}
-        if not wanted:
+    def lib_check_stock_availability(
+        refs: list[str] | None = None,
+        source: str = "jlcsearch",
+        mpns: list[str] | None = None,
+    ) -> str:
+        """Check live stock availability by schematic reference or part number.
+
+        Provide ``refs`` to look up stock for schematic references (resolving each
+        reference to its part number via the active schematic), or ``mpns`` to look
+        up stock directly by manufacturer part number / LCSC code without needing a
+        schematic. This lets you vet a BOM before the schematic exists. Supply at
+        least one of ``refs`` or ``mpns``.
+        """
+        wanted_mpns = [mpn.strip() for mpn in (mpns or []) if mpn.strip()]
+        wanted = {ref.strip().upper() for ref in (refs or []) if ref.strip()}
+        if not wanted and not wanted_mpns:
+            if refs is None and mpns is None:
+                return "Provide at least one of 'refs' or 'mpns'."
             return "No references were supplied."
         try:
             client = _component_search_client(source)
+        except (RuntimeError, ValueError, FileNotFoundError, OSError) as exc:
+            return f"Stock availability check failed: {exc}"
+
+        if wanted_mpns:
+            lines = [f"Stock availability from {source}:"]
+            for mpn in wanted_mpns:
+                part = client.get_part(mpn)
+                if part is None:
+                    lines.append(f"- {mpn}: unresolved (no matching part found)")
+                    continue
+                price = f"${part.price:.6f}" if part.price is not None else "(n/a)"
+                lines.append(
+                    f"- {mpn}: {part.lcsc_code} | {part.mpn} | stock {part.stock:,} | {price}"
+                )
+            return "\n".join(lines)
+
+        try:
             rows = _schematic_component_rows()
         except (RuntimeError, ValueError, FileNotFoundError, OSError) as exc:
             return f"Stock availability check failed: {exc}"
