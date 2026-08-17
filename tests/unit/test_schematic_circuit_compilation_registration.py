@@ -55,6 +55,7 @@ class FakeCircuitCompilationService:
         snap_to_grid: bool = True,
         auto_layout: bool = False,
         unsafe_routed_wires: bool = False,
+        max_paper: str = "A3",
     ) -> str:
         self.calls.append(
             (
@@ -68,6 +69,7 @@ class FakeCircuitCompilationService:
                     "snap_to_grid": snap_to_grid,
                     "auto_layout": auto_layout,
                     "unsafe_routed_wires": unsafe_routed_wires,
+                    "max_paper": max_paper,
                 },
             )
         )
@@ -123,24 +125,39 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
         "``sch_update_properties`` pass.  Keys colliding with the standard\n"
         "Reference/Value/Footprint/Datasheet fields are ignored in favour of the\n"
         "dedicated ``reference``/``value``/``footprint`` inputs (those always win).\n\n"
+        "With ``auto_layout=True`` the placement engine grows the sheet up the ISO-A\n"
+        "ladder (A4 → A3 → A2 → A1 → A0) only as far as ``max_paper`` (default\n"
+        '``"A3"``). Once the cap is reached, placement continues on that paper\n'
+        "instead of selecting a larger page. This limits paper growth but does not\n"
+        "guarantee that arbitrarily dense inputs fit within the capped page; use\n"
+        "visual/layout validation or explicit coordinates for dense designs. Pass\n"
+        'a larger cap (e.g. ``max_paper="A0"``) for the historical largest-paper\n'
+        "behavior. ``max_paper`` must be one of A4/A3/A2/A1/A0; any other value\n"
+        "raises ``ValueError``.\n\n"
         "Recommended workflow:\n"
         "  1. Call ``sch_find_free_placement(count=N)`` to obtain safe coordinates.\n"
         "  2. Pass those coordinates in the ``symbols`` list.\n"
         "  3. OR set ``auto_layout=True`` and omit coordinates entirely.\n"
     )
 
+    base_properties = {
+        "symbols",
+        "wires",
+        "labels",
+        "power_symbols",
+        "nets",
+        "snap_to_grid",
+        "auto_layout",
+        "unsafe_routed_wires",
+    }
     for name, tool in tools.items():
         properties = tool.parameters["properties"]
-        assert set(properties) == {
-            "symbols",
-            "wires",
-            "labels",
-            "power_symbols",
-            "nets",
-            "snap_to_grid",
-            "auto_layout",
-            "unsafe_routed_wires",
-        }
+        expected = set(base_properties)
+        if name == "sch_build_circuit":
+            # sch_build_circuit exposes the paper-growth cap; analyze does not.
+            expected.add("max_paper")
+            assert properties["max_paper"]["default"] == "A3"
+        assert set(properties) == expected
         assert properties["symbols"]["default"] is None
         assert properties["snap_to_grid"]["default"] is True
         assert properties["auto_layout"]["default"] is False
@@ -173,4 +190,6 @@ def test_registration_delegates_exact_arguments() -> None:
 
     assert tools["sch_analyze_net_compilation"].fn(**kwargs) == "analysis"
     assert tools["sch_build_circuit"].fn(**kwargs) == "built"
-    assert service.calls == [("analyze", kwargs), ("build", kwargs)]
+    # build forwards the extra max_paper cap at its default when unspecified.
+    build_kwargs = {**kwargs, "max_paper": "A3"}
+    assert service.calls == [("analyze", kwargs), ("build", build_kwargs)]

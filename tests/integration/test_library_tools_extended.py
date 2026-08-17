@@ -374,6 +374,12 @@ async def test_library_live_component_surface(
     bad_qty = await call_tool_text(server, "lib_get_bom_with_pricing", {"quantity": 0})
     stock = await call_tool_text(server, "lib_check_stock_availability", {"refs": ["U1", "D1"]})
     no_refs = await call_tool_text(server, "lib_check_stock_availability", {"refs": []})
+    stock_by_mpn = await call_tool_text(
+        server,
+        "lib_check_stock_availability",
+        {"mpns": ["LM1117-3.3", "NOSUCHPART"]},
+    )
+    no_inputs = await call_tool_text(server, "lib_check_stock_availability", {})
     alternatives = await call_tool_text(
         server,
         "lib_find_alternative_parts",
@@ -434,6 +440,11 @@ async def test_library_live_component_surface(
     assert "U1: C123" in stock
     assert "D1: unresolved" in stock
     assert "No references were supplied" in no_refs
+    assert "Stock availability" in stock_by_mpn
+    assert "LM1117-3.3: C123" in stock_by_mpn
+    assert "stock 5,000" in stock_by_mpn
+    assert "NOSUCHPART: unresolved" in stock_by_mpn
+    assert "Provide at least one of 'refs' or 'mpns'." in no_inputs
     assert "Alternative parts for C123" in alternatives
     assert "No base component details" in no_base
     assert "Part recommendations" in recommend
@@ -513,6 +524,37 @@ async def test_library_live_component_edge_cases(
     assert "Footprint hint" not in no_auto_footprint
     assert "Could not update schematic properties" in update_failed
     assert ("U2", "LCSC", "C999") in updates
+
+
+@pytest.mark.anyio
+async def test_check_stock_by_mpn_skips_schematic(
+    sample_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    monkeypatch.setattr(
+        "kicad_mcp.tools.library._component_search_client",
+        lambda _src: FakeComponentClient(),
+    )
+
+    def fail_rows() -> list[dict[str, str]]:
+        raise AssertionError("schematic resolution must not run for the mpns path")
+
+    monkeypatch.setattr("kicad_mcp.tools.library._schematic_component_rows", fail_rows)
+
+    by_mpn = await call_tool_text(
+        server,
+        "lib_check_stock_availability",
+        {"mpns": ["LM1117-3.3", "BAT54"]},
+    )
+    neither = await call_tool_text(server, "lib_check_stock_availability", {})
+
+    assert "Stock availability" in by_mpn
+    assert "LM1117-3.3: C123" in by_mpn
+    assert "BAT54: C789" in by_mpn
+    assert "stock 5,000" in by_mpn
+    assert "Provide at least one of 'refs' or 'mpns'." in neither
 
 
 @pytest.mark.anyio
