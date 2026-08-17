@@ -451,7 +451,14 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     assert workflow.count("name: Install pinned OpenCode CLI") == 2
     assert workflow.count('OPENCODE_CLI_VERSION: "1.18.10"') == 2
     assert workflow.count("if: startsWith(matrix.configuration, 'opencode-cli-')") == 2
-    assert workflow.count('test "$(opencode --version)" = "$OPENCODE_CLI_VERSION"') == 2
+    assert workflow.count("npm ci --prefix evals/live --ignore-scripts --no-audit --no-fund") == 2
+    assert (
+        workflow.count(
+            'test "$(evals/live/node_modules/opencode-linux-x64/bin/opencode --version)" '
+            '= "$OPENCODE_CLI_VERSION"'
+        )
+        == 2
+    )
     assert workflow.count('nvidia-*) test -n "$NVIDIA_API_KEY" ;;') == 2
     assert workflow.count('opencode-cli-*) test -n "$OPENCODE_ZEN_API_KEY" ;;') == 2
     assert workflow.count("Unsupported blocking configuration: $CONFIGURATION_ID") == 2
