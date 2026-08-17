@@ -1,6 +1,6 @@
 # ---------------------------------------------------------------------------
-# SonarCloud analysis — runs on every push to main and on PRs.
-# Requires SONAR_TOKEN repository secret from https://sonarcloud.io.
+# SonarCloud analysis — runs on every push to main and on trusted same-repository PRs.
+# Requires SONAR_TOKEN repository secret; Dependabot/fork PRs cannot receive it.
 # ---------------------------------------------------------------------------
 name: SonarCloud
 
@@ -20,7 +20,8 @@ jobs:
     if: >
       (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
       (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
