@@ -93,11 +93,11 @@
       ]
     },
     "expert": {
-      "callableTools": 385,
-      "catalogCharacters": 226067,
+      "callableTools": 386,
+      "catalogCharacters": 226859,
       "catalogReductionVsExpertPct": 0.0,
-      "declaredTools": 385,
-      "estimatedCatalogTokens": 56517,
+      "declaredTools": 386,
+      "estimatedCatalogTokens": 56715,
       "forbiddenToolExposures": 8,
       "goldenCases": 65,
       "goldenCasesCovered": 55,
@@ -369,6 +369,7 @@
         "sch_add_hierarchical_label",
         "sch_add_jumper",
         "sch_add_label",
+        "sch_add_labels",
         "sch_add_missing_junctions",
         "sch_add_no_connect",
         "sch_add_pin_labels",
