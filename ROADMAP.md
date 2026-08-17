@@ -100,22 +100,22 @@ version-agnostic so it does not drift.
 ### M9 — Apps UI, Hybrid Bridge & Distribution
 - The [M9 milestone](https://github.com/oaslananka/kicad-mcp-pro/milestone/9)
   remains open for objective distribution and trust-boundary evidence.
-- Reproducible Tauri builds (#571), updater trust-path cleanup (#572), and the
-  bridge coroutine regression (#575) are complete; PR #569 verified the
-  supported public-safe read-only ChatGPT Apps surface.
-- Remaining work is tracked by #412 (hosted deployment and directory-readiness
-  evidence), #573 (desktop installer integrity/provenance release evidence), and
-  #574 (an explicit desktop-to-backend compatibility contract). The implementation
-  for #573 is merged in PR #586, but the issue remains open until its required
-  release-candidate evidence is recorded.
+- Reproducible Tauri builds (#571), updater trust-path cleanup (#572), the bridge
+  coroutine regression (#575), desktop/backend compatibility (#574), and desktop
+  installer integrity/provenance evidence (#573) are complete; PR #569 verified
+  the supported public-safe read-only ChatGPT Apps surface.
+- The only open M9 issue is #412, which tracks hosted deployment and
+  directory-readiness evidence. The `kicad-mcp-gui-v3.32.0` release exercised the
+  post-#586 GUI evidence workflow successfully, including published-asset
+  verification, which completed #573.
 
 ### M10 — Agent Design OS & Workflow Surface
 - The [M10 milestone](https://github.com/oaslananka/kicad-mcp-pro/milestone/10)
   is now the active governance and maintainability hardening backlog.
-- After this roadmap refresh (#579), the open set is #576 (one dependency-update
-  source of truth), #577 (incremental composition-root decomposition), #578
-  (OpenSSF Signed-Releases reconciliation), and #580 (public Best Practices badge
-  submission).
+- The dependency-update source-of-truth work (#576) and OpenSSF Signed-Releases
+  reconciliation (#578) are complete. The remaining open set is #577
+  (incremental composition-root decomposition) and #580 (public Best Practices
+  badge submission).
 - These are hardening and governance tasks; their presence does not imply that
   unfinished controls or future capabilities have shipped.
 
