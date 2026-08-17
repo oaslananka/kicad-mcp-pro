@@ -1,0 +1,8 @@
+{
+  "name": "kicad-mcp-live-eval-tools",
+  "private": true,
+  "version": "0.0.0",
+  "dependencies": {
+    "opencode-linux-x64": "1.18.10"
+  }
+}

@@ -107,3 +107,23 @@ def test_sonar_skips_fork_pull_requests_before_secret_bearing_steps() -> None:
     assert "github.event_name != 'pull_request'" in condition
     assert "github.event.pull_request.head.repo.full_name == github.repository" in condition
     assert "github.event.pull_request.user.login != 'dependabot[bot]'" in condition
+
+
+def test_live_model_workflows_install_opencode_from_lockfile() -> None:
+    live_workflows = [
+        ROOT / ".github" / "workflows" / "live-model-assurance.yml",
+        ROOT / ".github" / "workflows" / "live-model-eval.yml",
+        ROOT / ".github" / "workflows" / "live-model-release-gate.yml",
+    ]
+
+    for path in live_workflows:
+        raw = path.read_text(encoding="utf-8")
+        assert "npm install --global" not in raw
+        assert "npm ci --prefix evals/live --ignore-scripts --no-audit --no-fund" in raw
+        assert "evals/live/node_modules/opencode-linux-x64/bin/opencode --version" in raw
+
+    package = (ROOT / "evals" / "live" / "package.json").read_text(encoding="utf-8")
+    lockfile = (ROOT / "evals" / "live" / "package-lock.json").read_text(encoding="utf-8")
+    assert '"opencode-linux-x64": "1.18.10"' in package
+    assert '"opencode-ai"' not in package
+    assert '"lockfileVersion": 3' in lockfile

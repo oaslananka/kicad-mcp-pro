@@ -117,8 +117,8 @@ jobs:
           OPENCODE_CLI_VERSION: "1.18.10"
         run: |
           set -euo pipefail
-          npm install --global --no-audit --no-fund "opencode-ai@$OPENCODE_CLI_VERSION"
-          test "$(opencode --version)" = "$OPENCODE_CLI_VERSION"
+          npm ci --prefix evals/live --ignore-scripts --no-audit --no-fund
+          test "$(evals/live/node_modules/opencode-linux-x64/bin/opencode --version)" = "$OPENCODE_CLI_VERSION"
       - name: Run bounded billed evaluation
         env:
           CONFIGURATION_ID: ${{ inputs.configuration_id }}
