@@ -146,3 +146,16 @@ def test_live_model_workflows_expose_locked_opencode_binary_on_path() -> None:
         )
         assert install_count > 0
         assert raw.count(expected) == install_count
+
+
+def test_docs_only_skip_steps_use_bash_on_cross_platform_matrix_jobs() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+
+    for job_name in ("mcp-server", "mcp-npm"):
+        steps = workflow["jobs"][job_name]["steps"]
+        skip_step = next(
+            step for step in steps if step.get("name") == "Skip heavy CI for docs-only PR"
+        )
+        assert skip_step["shell"] == "bash"
