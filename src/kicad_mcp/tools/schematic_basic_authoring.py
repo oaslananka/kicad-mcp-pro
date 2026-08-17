@@ -10,11 +10,12 @@ from ..models.schematic import (
     AddBusInput,
     AddBusWireEntryInput,
     AddLabelInput,
+    AddLabelsBatchInput,
     AddNoConnectInput,
     AddSymbolInput,
     AddWireInput,
 )
-from ..schematic.basic_authoring import SchematicBasicAuthoringService
+from ..schematic.basic_authoring import LabelBatchEntry, SchematicBasicAuthoringService
 from .metadata import headless_compatible
 
 
@@ -23,6 +24,34 @@ class SchematicBasicAuthoringDependencies:
     """Basic authoring service injected by the schematic composition root."""
 
     service: SchematicBasicAuthoringService
+
+
+def _add_labels_batch(
+    service: SchematicBasicAuthoringService,
+    labels: list[dict[str, object]],
+    sheet: str | None,
+    sheet_file: str | None,
+) -> str:
+    """Validate a batch label request and delegate to the service.
+
+    ``labels`` entries are validated individually so an invalid ``kind`` (or any
+    other field) is reported with the offending entry index.
+    """
+    payload = AddLabelsBatchInput(labels=labels)
+    resolved = [
+        LabelBatchEntry(
+            name=entry.name,
+            x_mm=entry.x_mm,
+            y_mm=entry.y_mm,
+            rotation=entry.rotation,
+            kind=entry.emitter_kind,
+            shape=entry.shape,
+            justify=entry.justify,
+            snap_to_grid=entry.snap_to_grid,
+        )
+        for entry in payload.labels
+    ]
+    return service.add_labels_batch(resolved, sheet, sheet_file)
 
 
 def register(mcp: FastMCP, dependencies: SchematicBasicAuthoringDependencies) -> None:
@@ -297,3 +326,17 @@ def register(mcp: FastMCP, dependencies: SchematicBasicAuthoringDependencies) ->
             sheet,
             sheet_file,
         )
+
+    @mcp.tool()
+    def sch_add_labels(
+        labels: list[dict[str, object]],
+        sheet: str | None = None,
+        sheet_file: str | None = None,
+    ) -> str:
+        """Place many labels in one call, snapping each to the 1.27 mm / 50 mil grid.
+
+        Each ``labels`` entry is a dict: ``name``, ``x_mm``, ``y_mm`` and optional
+        ``rotation``, ``kind`` ("local"|"global"|"hierarchical"; default "local"),
+        ``shape`` (for hierarchical/global labels), ``justify`` and
+        ``snap_to_grid``. An invalid ``kind`` names the offending entry index."""
+        return _add_labels_batch(service, labels, sheet, sheet_file)
