@@ -1453,6 +1453,26 @@ def test_delete_sheet_removes_the_whole_block(tmp_path: Path) -> None:
     assert "Deleted sheet '02_mcu'" in report
 
 
+def test_delete_sheet_refuses_concurrent_move_or_resize(tmp_path: Path) -> None:
+    store = _TextStore({"root.kicad_sch": ROOT_TEXT_WITH_PIN})
+    service = _pin_service(store, tmp_path / "root.kicad_sch")
+
+    def concurrent_write(mutator, sch_file=None, *, allow_node_loss=False):  # type: ignore[no-untyped-def]
+        store.files["root.kicad_sch"] = store.files["root.kicad_sch"].replace(
+            "(at 80.01 30.48)", "(at 81.28 30.48)", 1
+        )
+        return store.transactional_write(mutator, sch_file, allow_node_loss=allow_node_loss)
+
+    service = replace(service, transactional_write=concurrent_write)
+
+    report = service.delete_sheet("02_mcu")
+
+    (block,) = parse_sheet_blocks(store.files["root.kicad_sch"])
+    assert block.origin == (81.28, 30.48)
+    assert "moved or resized since it was read" in report
+    assert "Re-run sch_delete_sheet" in report
+
+
 def test_delete_sheet_reports_a_missing_name(tmp_path: Path) -> None:
     store = _TextStore({"root.kicad_sch": ROOT_TEXT_WITH_PIN})
     service = _pin_service(store, tmp_path / "root.kicad_sch")

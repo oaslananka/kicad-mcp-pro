@@ -730,6 +730,13 @@ class SchematicHierarchyAuthoringService:
             )
             if target is None:
                 raise ValueError(f"Sheet '{name}' disappeared before the write.")
+            if target.origin != block.origin or target.size != block.size:
+                raise ValueError(
+                    f"Sheet '{name}' moved or resized since it was read "
+                    f"(origin {block.origin} -> {target.origin}, "
+                    f"size {block.size} -> {target.size}); "
+                    "refusing to delete it. Re-run sch_delete_sheet."
+                )
             return delete_sheet_block(current, target)
 
         try:
