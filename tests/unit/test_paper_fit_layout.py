@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from kicad_mcp.tools.schematic import (
+    _PAPER_LADDER,
     _apply_basic_auto_layout,
+    _ladder_cap_index,
     _sheet_usable_rows,
     select_paper_for_capacity,
 )
@@ -67,6 +69,65 @@ def test_symbol_footprint_cells_scales_with_extent() -> None:
     # A tall multi-pin part (extent height 40 mm + margin) needs >1 row.
     cols, rows = _symbol_footprint_cells((0.0, 0.0, 6.0, 40.0), 38.1, 35.56)
     assert rows >= 2 and cols >= 1
+
+
+def test_ladder_cap_index_rejects_unknown_paper() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="Invalid max_paper"):
+        _ladder_cap_index("A9")
+
+
+def test_select_paper_respects_max_paper_cap() -> None:
+    # A row count that would normally climb past A3 is capped at A3.
+    a3_rows = _sheet_usable_rows("A3")
+    chosen = select_paper_for_capacity(a3_rows + 50, start_paper="A4", max_paper="A3")
+    assert chosen == "A3"
+    # A higher cap permits the larger sheet.
+    chosen_a2 = select_paper_for_capacity(a3_rows + 50, start_paper="A4", max_paper="A2")
+    assert chosen_a2 == "A2"
+    # No cap restores the historical unbounded climb.
+    assert select_paper_for_capacity(100_000, start_paper="A4", max_paper=None) == "A0"
+
+
+def test_basic_layout_caps_at_a3_and_uses_multiple_rows() -> None:
+    # Enough parts that the uncapped climb would grow past A3; the A3 cap keeps
+    # the sheet at A3 and packs the parts across multiple columns/rows instead
+    # of climbing to a larger page.
+    symbols = [{"reference": f"R{i}"} for i in range(200)]
+    capped_sym, _pwr, _lbl, capped_paper = _apply_basic_auto_layout(
+        symbols, [{"name": "GND"}], [], max_paper="A3"
+    )
+    # Without a cap the same input grows beyond A3 (the reported behaviour).
+    _sym2, _pwr2, _lbl2, uncapped_paper = _apply_basic_auto_layout(
+        symbols, [{"name": "GND"}], [], max_paper=None
+    )
+    assert capped_paper == "A3"
+    assert _PAPER_LADDER.index(uncapped_paper) > _PAPER_LADDER.index("A3")
+    rows = {round(float(s["y_mm"]), 2) for s in capped_sym}
+    cols = {round(float(s["x_mm"]), 2) for s in capped_sym}
+    assert len(rows) > 1  # multi-row, not a single oversized row
+    assert len(cols) > 1  # multi-column
+
+
+def test_basic_layout_max_paper_a2_permits_a2() -> None:
+    # Enough parts to overflow A3 climb to A2 when the cap allows it.
+    symbols = [{"reference": f"R{i}"} for i in range(400)]
+    _sym, _pwr, _lbl, paper = _apply_basic_auto_layout(symbols, [], [], max_paper="A2")
+    assert paper == "A2"
+
+
+def test_prepare_inputs_rejects_invalid_max_paper() -> None:
+    import pytest
+
+    from kicad_mcp.tools.schematic import _prepare_build_circuit_inputs
+
+    with pytest.raises(ValueError, match="Invalid max_paper"):
+        _prepare_build_circuit_inputs(
+            symbols=[{"library": "Device", "symbol_name": "R", "reference": "R1"}],
+            auto_layout=True,
+            max_paper="A9",
+        )
 
 
 def test_next_free_block_reserves_non_overlapping_blocks() -> None:
