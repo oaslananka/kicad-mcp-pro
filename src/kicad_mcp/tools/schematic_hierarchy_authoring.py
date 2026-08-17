@@ -12,9 +12,11 @@ from pydantic import Field
 
 from ..models.schematic import (
     CreateSheetInput,
+    DeleteSheetInput,
     GlobalLabelInput,
     HierarchicalLabelInput,
     ImportSheetPinsInput,
+    MoveSheetInput,
     SheetPinInput,
     SpreadSheetsInput,
     WireSheetPinsInput,
@@ -72,6 +74,31 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
             payload.snap_to_grid,
             tuple(payload.sheet_pins),
         )
+
+    @mcp.tool()
+    def sch_move_sheet(
+        name: str,
+        x_mm: float,
+        y_mm: float,
+        snap_to_grid: bool = True,
+    ) -> str:
+        """Move the hierarchical sheet named ``name`` (its ``Sheetname``) to a new anchor.
+
+        Only the sheet's ``(at ...)`` anchor and its pins move; each pin keeps its
+        offset and rotation. Size, styling, UUIDs and the child file are untouched.
+        """
+        payload = MoveSheetInput(name=name, x_mm=x_mm, y_mm=y_mm, snap_to_grid=snap_to_grid)
+        return service.move_sheet(payload.name, payload.x_mm, payload.y_mm, payload.snap_to_grid)
+
+    @mcp.tool()
+    def sch_delete_sheet(name: str) -> str:
+        """Remove the hierarchical sheet named ``name`` (its ``Sheetname``) from the parent.
+
+        Deletes the whole ``(sheet ...)`` block including its instance/path
+        bookkeeping -- the inverse of ``sch_create_sheet``. The child file is left
+        in place. Reports if the name is not found.
+        """
+        return service.delete_sheet(DeleteSheetInput(name=name).name)
 
     @mcp.tool()
     def sch_add_hierarchical_label(

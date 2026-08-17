@@ -38,6 +38,7 @@ class PrepareInputs(Protocol):
         auto_layout: bool = False,
         unsafe_routed_wires: bool = False,
         paper: str = "A4",
+        max_paper: str = "A3",
     ) -> PreparedCircuitInputs: ...
 
 
@@ -160,6 +161,7 @@ class SchematicCircuitCompilationService:
         snap_to_grid: bool = True,
         auto_layout: bool = False,
         unsafe_routed_wires: bool = False,
+        max_paper: str = "A3",
     ) -> str:
         """Build and replace the active schematic from structured circuit inputs."""
         schematic_file = self.active_schematic_file()
@@ -175,6 +177,7 @@ class SchematicCircuitCompilationService:
             auto_layout=auto_layout,
             unsafe_routed_wires=unsafe_routed_wires,
             paper=start_paper,
+            max_paper=max_paper,
         )
         if prepared.unresolved_nets:
             self.warn_unresolved(

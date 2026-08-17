@@ -6,6 +6,7 @@ import pytest
 from mcp.server.fastmcp import FastMCP
 from pydantic import ValidationError
 
+from kicad_mcp.schematic.basic_authoring import LabelBatchEntry
 from kicad_mcp.tools.metadata import get_tool_metadata
 from kicad_mcp.tools.schematic_basic_authoring import (
     SchematicBasicAuthoringDependencies,
@@ -78,6 +79,23 @@ class FakeBasicAuthoringService:
         self.calls.append(("add_label", args))
         return "label"
 
+    def add_labels_batch(
+        self,
+        labels: list[LabelBatchEntry],
+        sheet: str | None,
+        sheet_file: str | None,
+    ) -> str:
+        args = (
+            tuple(
+                (e.name, e.x_mm, e.y_mm, e.rotation, e.kind, e.shape, e.justify, e.snap_to_grid)
+                for e in labels
+            ),
+            sheet,
+            sheet_file,
+        )
+        self.calls.append(("add_labels_batch", args))
+        return "labels"
+
     def add_power_symbol(
         self,
         name: str,
@@ -148,6 +166,7 @@ def test_registration_preserves_names_descriptions_and_schema_defaults() -> None
         "sch_add_component",
         "sch_add_wire",
         "sch_add_label",
+        "sch_add_labels",
         "sch_add_power_symbol",
         "sch_add_bus",
         "sch_add_bus_wire_entry",
@@ -221,6 +240,7 @@ def test_registration_preserves_headless_metadata() -> None:
     assert get_tool_metadata("sch_add_component").headless_compatible is True  # type: ignore[union-attr]
     assert get_tool_metadata("sch_add_wire") is None
     assert get_tool_metadata("sch_add_label") is None
+    assert get_tool_metadata("sch_add_labels") is None
     assert get_tool_metadata("sch_add_power_symbol") is None
     assert get_tool_metadata("sch_add_bus") is None
     assert get_tool_metadata("sch_add_bus_wire_entry") is None
@@ -321,6 +341,62 @@ def test_registration_preserves_label_missing_value_and_pydantic_validation() ->
             y_mm=2.0,
             reference="R1",
             value="10k",
+        )
+
+
+def test_registration_delegates_labels_batch_with_kind_mapping_and_defaults() -> None:
+    server, service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert (
+        tools["sch_add_labels"].fn(
+            labels=[
+                {"name": "NET1", "x_mm": 1.0, "y_mm": 2.0},
+                {
+                    "name": "VCC",
+                    "x_mm": 3.0,
+                    "y_mm": 4.0,
+                    "rotation": 90,
+                    "kind": "global",
+                },
+                {
+                    "name": "CLK",
+                    "x_mm": 5.0,
+                    "y_mm": 6.0,
+                    "kind": "hierarchical",
+                    "shape": "input",
+                },
+            ],
+            sheet="Power",
+        )
+        == "labels"
+    )
+    assert service.calls == [
+        (
+            "add_labels_batch",
+            (
+                (
+                    ("NET1", 1.0, 2.0, 0, "label", None, None, True),
+                    ("VCC", 3.0, 4.0, 90, "global_label", None, None, True),
+                    ("CLK", 5.0, 6.0, 0, "hierarchical_label", "input", None, True),
+                ),
+                "Power",
+                None,
+            ),
+        )
+    ]
+
+
+def test_registration_reports_invalid_batch_label_kind_with_entry_index() -> None:
+    server, _service = _registered()
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    with pytest.raises(ValidationError, match=r"labels\.1\.kind"):
+        tools["sch_add_labels"].fn(
+            labels=[
+                {"name": "NET1", "x_mm": 1.0, "y_mm": 2.0},
+                {"name": "BAD", "x_mm": 3.0, "y_mm": 4.0, "kind": "nonsense"},
+            ],
         )
 
 
