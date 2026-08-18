@@ -51,18 +51,31 @@ def upgrade_generated_file(
             original = safe_path.read_bytes()
         except OSError as exc:
             return GeneratedFormatUpgradeResult(upgraded=False, detail=str(exc))
-        try:
-            code, stdout, stderr = run_cli(kind, "upgrade", "--force", str(safe_path))
-        except OSError as exc:
-            safe_path.write_bytes(original)
-            return GeneratedFormatUpgradeResult(upgraded=False, detail=str(exc))
-        if code == 0 and safe_path.is_file():
+
+        temp_names = {
+            "pcb": "generated.kicad_pcb",
+            "sch": "generated.kicad_sch",
+            "sym": "generated.kicad_sym",
+        }
+        with tempfile.TemporaryDirectory(prefix="kicad-mcp-format-") as temp_dir:
+            temp_file = Path(temp_dir) / temp_names[kind]
+            temp_file.write_bytes(original)
+            try:
+                code, stdout, stderr = run_cli(kind, "upgrade", "--force", str(temp_file))
+            except OSError as exc:
+                return GeneratedFormatUpgradeResult(upgraded=False, detail=str(exc))
+            if code != 0:
+                return GeneratedFormatUpgradeResult(
+                    upgraded=False,
+                    detail=stderr or stdout or "KiCad format upgrade failed.",
+                )
+            if not temp_file.is_file():
+                return GeneratedFormatUpgradeResult(
+                    upgraded=False,
+                    detail="KiCad format upgrade did not preserve the temporary output file.",
+                )
+            safe_path.write_bytes(temp_file.read_bytes())
             return GeneratedFormatUpgradeResult(upgraded=True)
-        safe_path.write_bytes(original)
-        return GeneratedFormatUpgradeResult(
-            upgraded=False,
-            detail=stderr or stdout or "KiCad format upgrade failed.",
-        )
 
     try:
         content = safe_path.read_text(encoding="utf-8")

@@ -25,16 +25,27 @@ def test_generated_writers_do_not_embed_numeric_format_versions() -> None:
     assert offenders == [], "Move writer format versions behind the shared format contract"
 
 
-def test_generated_format_migrator_upgrades_in_place_formats(tmp_path: Path) -> None:
+def test_generated_format_migrator_upgrades_non_footprint_formats_via_temp_copy(
+    tmp_path: Path,
+) -> None:
     import kicad_mcp.file_formats as formats
 
     migrate = getattr(formats, "upgrade_generated_file", None)
     assert migrate is not None, "Format contract must expose a generated-file migrator"
 
     calls: list[tuple[str, ...]] = []
+    expected_names = {
+        "pcb": "generated.kicad_pcb",
+        "sch": "generated.kicad_sch",
+        "sym": "generated.kicad_sym",
+    }
 
     def run_cli(*args: str) -> tuple[int, str, str]:
         calls.append(args)
+        temp_file = Path(args[-1])
+        assert temp_file.name == expected_names[args[0]]
+        assert temp_file.parent != tmp_path
+        temp_file.write_text(f"canonical-{args[0]}", encoding="utf-8")
         return 0, "saved", ""
 
     for kind, suffix in (("pcb", ".kicad_pcb"), ("sch", ".kicad_sch"), ("sym", ".kicad_sym")):
@@ -42,11 +53,12 @@ def test_generated_format_migrator_upgrades_in_place_formats(tmp_path: Path) -> 
         path.write_text("legacy", encoding="utf-8")
         result = migrate(path, kind, run_cli, allowed_root=tmp_path)
         assert result.upgraded is True
+        assert path.read_text(encoding="utf-8") == f"canonical-{kind}"
 
-    assert calls == [
-        ("pcb", "upgrade", "--force", str(tmp_path / "demo.kicad_pcb")),
-        ("sch", "upgrade", "--force", str(tmp_path / "demo.kicad_sch")),
-        ("sym", "upgrade", "--force", str(tmp_path / "demo.kicad_sym")),
+    assert [call[:3] for call in calls] == [
+        ("pcb", "upgrade", "--force"),
+        ("sch", "upgrade", "--force"),
+        ("sym", "upgrade", "--force"),
     ]
 
 
@@ -101,7 +113,7 @@ def test_generated_format_migrator_keeps_writer_dialect_when_cli_is_unavailable(
     assert target.read_text(encoding="utf-8") == original
 
 
-def test_generated_format_migrator_restores_original_file_on_failed_in_place_upgrade(
+def test_generated_format_migrator_keeps_target_unchanged_when_temp_upgrade_fails(
     tmp_path: Path,
 ) -> None:
     from kicad_mcp.file_formats import upgrade_generated_file
@@ -110,8 +122,10 @@ def test_generated_format_migrator_restores_original_file_on_failed_in_place_upg
     original = '(kicad_pcb (version 20250316) (generator "kicad-mcp-pro"))\n'
     target.write_text(original, encoding="utf-8")
 
-    def run_cli(*_args: str) -> tuple[int, str, str]:
-        target.write_text("partially rewritten", encoding="utf-8")
+    def run_cli(*args: str) -> tuple[int, str, str]:
+        temp_file = Path(args[-1])
+        assert temp_file != target
+        temp_file.write_text("partially rewritten", encoding="utf-8")
         return 1, "", "conversion failed"
 
     result = upgrade_generated_file(target, "pcb", run_cli, allowed_root=tmp_path)
