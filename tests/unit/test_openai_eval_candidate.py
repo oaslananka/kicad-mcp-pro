@@ -16,16 +16,16 @@ def test_openai_candidate_adapter_files_exist() -> None:
 
 def test_committed_openai_candidate_is_nonblocking_and_key_scoped() -> None:
     configurations = load_configurations(CONFIGURATIONS)
-    configuration = configurations["openai-gpt-5-mini-2025-08-07"]
+    configuration = configurations["openai-gpt-5.4-mini-2026-03-17"]
 
     assert configuration.host == "openai"
-    assert configuration.model == "gpt-5-mini-2025-08-07"
+    assert configuration.model == "gpt-5.4-mini-2026-03-17"
     assert configuration.required_env == ("OPENAI_KEY",)
     assert configuration.command == (
         "python",
         "scripts/openai_eval_adapter.py",
         "--model",
-        "gpt-5-mini-2025-08-07",
+        "gpt-5.4-mini-2026-03-17",
         "--structured-output",
         "json_schema",
     )
@@ -41,7 +41,7 @@ def test_manual_live_eval_workflow_exposes_only_the_openai_candidate_key() -> No
     release_gate = (ROOT / ".github/workflows/live-model-release-gate.yml").read_text(
         encoding="utf-8"
     )
-    assert "openai-gpt-5-mini-2025-08-07" not in release_gate
+    assert "openai-gpt-5.4-mini-2026-03-17" not in release_gate
     assert "OPENAI_KEY" not in release_gate
 
 
@@ -51,7 +51,7 @@ def test_openai_adapter_exposes_only_the_reviewed_snapshot() -> None:
     assert (
         openai_adapter.OPENAI_CHAT_COMPLETIONS_URL == "https://api.openai.com/v1/chat/completions"
     )
-    assert openai_adapter.OPENAI_EVAL_MODELS == frozenset({"gpt-5-mini-2025-08-07"})
+    assert openai_adapter.OPENAI_EVAL_MODELS == frozenset({"gpt-5.4-mini-2026-03-17"})
     assert callable(openai_adapter.request_openai)
 
 
@@ -74,9 +74,9 @@ def test_openai_request_uses_fixed_gpt5_profile_and_sanitizes_response() -> None
         assert str(request.url) == "https://api.openai.com/v1/chat/completions"
         assert request.headers["Authorization"].startswith("Bearer ")
         payload = json.loads(request.content)
-        assert payload["model"] == "gpt-5-mini-2025-08-07"
+        assert payload["model"] == "gpt-5.4-mini-2026-03-17"
         assert payload["max_completion_tokens"] == 1024
-        assert payload["reasoning_effort"] == "minimal"
+        assert payload["reasoning_effort"] == "none"
         assert payload["stream"] is False
         assert "max_tokens" not in payload
         assert "temperature" not in payload
@@ -105,7 +105,7 @@ def test_openai_request_uses_fixed_gpt5_profile_and_sanitizes_response() -> None
         )
 
     result = request_openai(
-        model="gpt-5-mini-2025-08-07",
+        model="gpt-5.4-mini-2026-03-17",
         prompt="Summarize the board.",
         api_key="dummy-test-key",
         catalog=({"name": "pcb_get_board_summary", "summary": "Summarize."},),
@@ -150,7 +150,7 @@ def test_openai_cli_fails_closed_without_key(monkeypatch, capsys) -> None:
         io.StringIO('{"schema_version":1,"case_id":"x","prompt":"Inspect."}'),
     )
 
-    exit_code = openai_cli.main(["--model", "gpt-5-mini-2025-08-07"])
+    exit_code = openai_cli.main(["--model", "gpt-5.4-mini-2026-03-17"])
 
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 1
@@ -190,11 +190,11 @@ def test_openai_cli_delegates_valid_request_without_exposing_key(monkeypatch, ca
     monkeypatch.setattr(openai_cli, "request_openai", fake_request_openai, raising=False)
     monkeypatch.setattr(openai_cli, "load_eval_tool_catalog", lambda *_args: (), raising=False)
 
-    exit_code = openai_cli.main(["--model", "gpt-5-mini-2025-08-07"])
+    exit_code = openai_cli.main(["--model", "gpt-5.4-mini-2026-03-17"])
 
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 0
     assert payload["status"] == "ok"
-    assert observed["model"] == "gpt-5-mini-2025-08-07"
+    assert observed["model"] == "gpt-5.4-mini-2026-03-17"
     assert observed["api_key"] == "dummy-test-key"
     assert observed["structured_output"] == "json_schema"
