@@ -442,7 +442,7 @@ def build_chat_payload(
             "model": model,
             "messages": messages,
             "max_completion_tokens": 1024,
-            "reasoning_effort": "minimal",
+            "reasoning_effort": "none",
             "stream": False,
         }
     else:

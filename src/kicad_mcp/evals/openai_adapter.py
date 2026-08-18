@@ -13,7 +13,7 @@ from .nvidia_nim_adapter import (
 )
 
 OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
-OPENAI_EVAL_MODELS = frozenset({"gpt-5-mini-2025-08-07"})
+OPENAI_EVAL_MODELS = frozenset({"gpt-5.4-mini-2026-03-17"})
 
 
 def request_openai(
