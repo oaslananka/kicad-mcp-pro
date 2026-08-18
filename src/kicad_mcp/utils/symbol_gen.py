@@ -15,6 +15,7 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
+from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION
 from .sexpr import _sexpr_string
 
 PinType = Literal[
@@ -145,7 +146,7 @@ def generate_symbol(
 
     lines: list[str] = [
         "(kicad_symbol_lib",
-        "\t(version 20250316)",
+        f"\t(version {GENERATED_SEXPR_DIALECT_VERSION})",
         '\t(generator "kicad-mcp-symbol-gen")',
         f"\t(symbol {_escape(name)}",
         "\t\t(pin_names (offset 1.016))",

@@ -15,7 +15,7 @@ from kicad_mcp.tools.gates import GateOutcome
 
 def test_board_file_helpers_parse_geometry_nets_and_frame() -> None:
     empty = board_file._normalize_board_content("   ")
-    assert "(version 20250216)" in empty
+    assert f"(version {board_file.BOARD_FILE_VERSION})" in empty
     assert board_file._normalize_board_content("(kicad_pcb)") == empty
 
     content = """

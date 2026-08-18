@@ -121,6 +121,21 @@ async def test_library_symbol_footprint_and_generator_surface(
     sample_project: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    format_upgrades: list[tuple[str, str, Path]] = []
+
+    class UpgradeResult:
+        upgraded = True
+        detail = ""
+
+    def upgrade_generated(path: Path, kind: str, _run_cli, *, allowed_root: Path) -> UpgradeResult:
+        format_upgrades.append((kind, path.name, allowed_root))
+        return UpgradeResult()
+
+    monkeypatch.setattr(
+        "kicad_mcp.tools.library.upgrade_generated_file",
+        upgrade_generated,
+        raising=False,
+    )
     server = build_server("full")
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
 
@@ -271,6 +286,11 @@ async def test_library_symbol_footprint_and_generator_surface(
     assert "Part sourcing compliance: FAIL" in derating_bad
     assert "Invalid pin specification" in symbol_bad_pin
     assert "Symbol saved" in symbol_gen
+    assert format_upgrades == [
+        ("sym", "custom_symbols.kicad_sym", sample_project),
+        ("fp", "R.kicad_mod", sample_project),
+        ("sym", "generated.kicad_sym", sample_project),
+    ]
     assert "Assigned footprint" in assigned
     assert "C123" in lcsc
 

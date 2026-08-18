@@ -1,0 +1,208 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+WRITER_FILES = (
+    "src/kicad_mcp/library/local_authoring.py",
+    "src/kicad_mcp/schematic/circuit_compilation.py",
+    "src/kicad_mcp/tools/board_file.py",
+    "src/kicad_mcp/tools/pcb.py",
+    "src/kicad_mcp/tools/project.py",
+    "src/kicad_mcp/utils/footprint_gen.py",
+    "src/kicad_mcp/utils/symbol_gen.py",
+)
+
+
+def test_generated_writers_do_not_embed_numeric_format_versions() -> None:
+    offenders: list[str] = []
+    for relative in WRITER_FILES:
+        text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+        for version in ("20250216", "20250316"):
+            if version in text:
+                offenders.append(f"{relative}: {version}")
+
+    assert offenders == [], "Move writer format versions behind the shared format contract"
+
+
+def test_generated_format_migrator_upgrades_non_footprint_formats_via_temp_copy(
+    tmp_path: Path,
+) -> None:
+    import kicad_mcp.file_formats as formats
+
+    migrate = getattr(formats, "upgrade_generated_file", None)
+    assert migrate is not None, "Format contract must expose a generated-file migrator"
+
+    calls: list[tuple[str, ...]] = []
+    expected_names = {
+        "pcb": "generated.kicad_pcb",
+        "sch": "generated.kicad_sch",
+        "sym": "generated.kicad_sym",
+    }
+
+    def run_cli(*args: str) -> tuple[int, str, str]:
+        calls.append(args)
+        temp_file = Path(args[-1])
+        assert temp_file.name == expected_names[args[0]]
+        assert temp_file.parent != tmp_path
+        temp_file.write_text(f"canonical-{args[0]}", encoding="utf-8")
+        return 0, "saved", ""
+
+    for kind, suffix in (("pcb", ".kicad_pcb"), ("sch", ".kicad_sch"), ("sym", ".kicad_sym")):
+        path = tmp_path / f"demo{suffix}"
+        path.write_text("legacy", encoding="utf-8")
+        result = migrate(path, kind, run_cli, allowed_root=tmp_path)
+        assert result.upgraded is True
+        assert path.read_text(encoding="utf-8") == f"canonical-{kind}"
+
+    assert [call[:3] for call in calls] == [
+        ("pcb", "upgrade", "--force"),
+        ("sch", "upgrade", "--force"),
+        ("sym", "upgrade", "--force"),
+    ]
+
+
+def test_generated_format_migrator_preserves_footprint_name(tmp_path: Path) -> None:
+    import kicad_mcp.file_formats as formats
+
+    migrate = getattr(formats, "upgrade_generated_file", None)
+    assert migrate is not None, "Format contract must expose a generated-file migrator"
+
+    target = tmp_path / "custom-output-name.kicad_mod"
+    target.write_text(
+        '(footprint "C_0603"\n\t(version 20250316)\n\t(generator "kicad-mcp")\n)\n',
+        encoding="utf-8",
+    )
+
+    def run_cli(*args: str) -> tuple[int, str, str]:
+        assert args[:4] == ("fp", "upgrade", "--force", "--output")
+        output_dir = Path(args[4])
+        input_dir = Path(args[5])
+        input_file = input_dir / "C_0603.kicad_mod"
+        assert input_file.is_file()
+        output_dir.mkdir(parents=True)
+        (output_dir / input_file.name).write_text(
+            '(footprint "C_0603"\n\t(version 20260206)\n\t(generator "pcbnew")\n)\n',
+            encoding="utf-8",
+        )
+        return 0, "", ""
+
+    result = migrate(target, "fp", run_cli, allowed_root=tmp_path)
+
+    assert result.upgraded is True
+    assert '(footprint "C_0603"' in target.read_text(encoding="utf-8")
+    assert "20260206" in target.read_text(encoding="utf-8")
+
+
+def test_generated_format_migrator_keeps_writer_dialect_when_cli_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp.file_formats import upgrade_generated_file
+
+    target = tmp_path / "demo.kicad_sch"
+    original = "(kicad_sch\n\t(version 20250316)\n)\n"
+    target.write_text(original, encoding="utf-8")
+
+    def run_cli(*_args: str) -> tuple[int, str, str]:
+        raise FileNotFoundError("kicad-cli missing")
+
+    result = upgrade_generated_file(target, "sch", run_cli, allowed_root=tmp_path)
+
+    assert result.upgraded is False
+    assert "kicad-cli missing" in result.detail
+    assert target.read_text(encoding="utf-8") == original
+
+
+def test_generated_format_migrator_keeps_target_unchanged_when_temp_upgrade_fails(
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp.file_formats import upgrade_generated_file
+
+    target = tmp_path / "demo.kicad_pcb"
+    original = '(kicad_pcb (version 20250316) (generator "kicad-mcp-pro"))\n'
+    target.write_text(original, encoding="utf-8")
+
+    def run_cli(*args: str) -> tuple[int, str, str]:
+        temp_file = Path(args[-1])
+        assert temp_file != target
+        temp_file.write_text("partially rewritten", encoding="utf-8")
+        return 1, "", "conversion failed"
+
+    result = upgrade_generated_file(target, "pcb", run_cli, allowed_root=tmp_path)
+
+    assert result.upgraded is False
+    assert result.detail == "conversion failed"
+    assert target.read_text(encoding="utf-8") == original
+
+
+def test_generated_format_migrator_rejects_target_outside_allowed_root(tmp_path: Path) -> None:
+    from kicad_mcp.file_formats import upgrade_generated_file
+
+    allowed_root = tmp_path / "workspace"
+    allowed_root.mkdir()
+    target = tmp_path / "outside.kicad_pcb"
+    original = '(kicad_pcb (version 20250316) (generator "kicad-mcp-pro"))\n'
+    target.write_text(original, encoding="utf-8")
+    calls: list[tuple[str, ...]] = []
+
+    def run_cli(*args: str) -> tuple[int, str, str]:
+        calls.append(args)
+        return 0, "", ""
+
+    result = upgrade_generated_file(target, "pcb", run_cli, allowed_root=allowed_root)
+
+    assert result.upgraded is False
+    assert "outside the allowed root" in result.detail
+    assert calls == []
+    assert target.read_text(encoding="utf-8") == original
+
+
+def test_generated_format_migrator_rejects_unparseable_footprint(tmp_path: Path) -> None:
+    from kicad_mcp.file_formats import upgrade_generated_file
+
+    target = tmp_path / "broken.kicad_mod"
+    target.write_text("(not_a_footprint)\n", encoding="utf-8")
+
+    result = upgrade_generated_file(target, "fp", lambda *_args: (0, "", ""), allowed_root=tmp_path)
+
+    assert result.upgraded is False
+    assert "name could not be resolved" in result.detail
+
+
+def test_generated_format_migrator_rejects_unsafe_footprint_name(tmp_path: Path) -> None:
+    from kicad_mcp.file_formats import upgrade_generated_file
+
+    target = tmp_path / "unsafe.kicad_mod"
+    target.write_text('(footprint "../escape"\n)\n', encoding="utf-8")
+
+    result = upgrade_generated_file(target, "fp", lambda *_args: (0, "", ""), allowed_root=tmp_path)
+
+    assert result.upgraded is False
+    assert "not safe" in result.detail
+
+
+def test_generated_format_migrator_reports_footprint_cli_failure(tmp_path: Path) -> None:
+    from kicad_mcp.file_formats import upgrade_generated_file
+
+    target = tmp_path / "demo.kicad_mod"
+    target.write_text('(footprint "Demo"\n)\n', encoding="utf-8")
+
+    def run_cli(*_args: str) -> tuple[int, str, str]:
+        return 1, "", "conversion failed"
+
+    result = upgrade_generated_file(target, "fp", run_cli, allowed_root=tmp_path)
+
+    assert result.upgraded is False
+    assert result.detail == "conversion failed"
+
+
+def test_generated_format_migrator_reports_missing_footprint_output(tmp_path: Path) -> None:
+    from kicad_mcp.file_formats import upgrade_generated_file
+
+    target = tmp_path / "demo.kicad_mod"
+    target.write_text('(footprint "Demo"\n)\n', encoding="utf-8")
+
+    result = upgrade_generated_file(target, "fp", lambda *_args: (0, "", ""), allowed_root=tmp_path)
+
+    assert result.upgraded is False
+    assert "did not produce" in result.detail

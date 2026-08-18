@@ -33,6 +33,7 @@ from pydantic import Field
 
 from ..config import get_config
 from ..connection import KiCadConnectionError, board_transaction, get_board
+from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION, upgrade_generated_file
 from ..ipc.command_queue import get_command_queue
 from ..library_resolution import footprint_file as _footprint_file
 from ..models.common import _FootprintLike, _PadLike
@@ -110,13 +111,13 @@ from . import (
     pcb_title_block_management,
     pcb_transaction_lifecycle,
 )
-from .export_support import _run_cli_variants
+from .export_support import _run_cli, _run_cli_variants
 from .metadata import headless_compatible, requires_kicad_running
 from .schematic import _iter_child_sheet_paths, parse_schematic_file
 
 logger = structlog.get_logger(__name__)
 _KeepoutRegion = Annotated[list[float], Field(min_length=4, max_length=4)]
-BOARD_FILE_VERSION = "20250216"
+BOARD_FILE_VERSION = GENERATED_SEXPR_DIALECT_VERSION
 STRING_PATTERN = r'"((?:\\.|[^"\\])*)"'
 FLOAT_PATTERN = r"-?\d+(?:\.\d+)?"
 PLACEMENT_MARGIN_MM = 1.27
@@ -590,6 +591,15 @@ def _get_pcb_file_for_sync() -> Path:
         )
     if not path.exists():
         path.write_text(_default_board_text(), encoding="utf-8")
+        format_upgrade = upgrade_generated_file(
+            path, "pcb", _run_cli, allowed_root=get_config().workspace
+        )
+        if not format_upgrade.upgraded:
+            logger.warning(
+                "generated_board_format_migration_unavailable",
+                path=str(path),
+                detail=format_upgrade.detail,
+            )
     return path
 
 
@@ -634,6 +644,15 @@ def _transactional_board_write(mutator: Callable[[str], str]) -> str:
         handle.write(updated)
         temp_path = Path(handle.name)
     temp_path.replace(board_file)
+    format_upgrade = upgrade_generated_file(
+        board_file, "pcb", _run_cli, allowed_root=get_config().workspace
+    )
+    if not format_upgrade.upgraded:
+        logger.warning(
+            "generated_board_format_migration_unavailable",
+            path=str(board_file),
+            detail=format_upgrade.detail,
+        )
     clear_ttl_cache()
     return str(board_file)
 

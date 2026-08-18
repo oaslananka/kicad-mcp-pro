@@ -56,10 +56,12 @@ def test_create_custom_symbol_requires_active_project() -> None:
 
 def test_create_custom_symbol_preserves_defaults_and_file_shape(tmp_path: Path) -> None:
     module = _module()
+    upgrades: list[Path] = []
     service = module.LibraryLocalAuthoringService(
         footprint_file=lambda _library, _footprint: Path("missing"),
         update_symbol_property=lambda _ref, _field, _value: None,
         project_dir=lambda: tmp_path,
+        upgrade_symbol_library=lambda path: upgrades.append(path),
     )
 
     result = service.create_custom_symbol("Demo", [{}, {"number": "A", "name": "VIN"}])
@@ -67,6 +69,7 @@ def test_create_custom_symbol_preserves_defaults_and_file_shape(tmp_path: Path) 
     content = library_file.read_text(encoding="utf-8")
 
     assert result == f"Created custom symbol 'Demo' in {library_file}."
+    assert upgrades == [library_file]
     assert content.startswith('(kicad_symbol_lib (version 20250316) (generator "kicad-mcp-pro")\n')
     assert '\t(symbol "Demo"' in content
     assert "(at 0.0 0.0 180)" in content

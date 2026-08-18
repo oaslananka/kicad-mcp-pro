@@ -23,6 +23,7 @@ from ..discovery import (
     find_recent_projects,
     scan_project_dir,
 )
+from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION, upgrade_generated_file
 from ..models.component_contracts import find_component_contract
 from ..models.intent import (
     ComplianceTarget,
@@ -52,6 +53,7 @@ from .design_intent_state import (
     RFKeepoutIntent,
     set_design_intent_resolver,
 )
+from .export_support import _run_cli
 from .fixers import fixers_for_gate, sampling_prompt_for_gate
 from .metadata import headless_compatible
 from .router import TOOL_CATEGORIES, available_profiles
@@ -2377,13 +2379,14 @@ def register(mcp: FastMCP) -> None:
             encoding="utf-8",
         )
         pcb_file.write_text(
-            '(kicad_pcb (version 20250316) (generator "kicad-mcp-pro"))\n',
+            f"(kicad_pcb (version {GENERATED_SEXPR_DIALECT_VERSION}) "
+            '(generator "kicad-mcp-pro"))\n',
             encoding="utf-8",
         )
         sch_file.write_text(
             (
                 "(kicad_sch\n"
-                "\t(version 20250316)\n"
+                f"\t(version {GENERATED_SEXPR_DIALECT_VERSION})\n"
                 '\t(generator "kicad-mcp-pro")\n'
                 f'\t(uuid "{uuid.uuid4()}")\n'
                 '\t(paper "A4")\n'
@@ -2395,6 +2398,19 @@ def register(mcp: FastMCP) -> None:
             encoding="utf-8",
         )
 
+        format_upgrades = [
+            (
+                pcb_file,
+                "pcb",
+                upgrade_generated_file(pcb_file, "pcb", _run_cli, allowed_root=project_dir),
+            ),
+            (
+                sch_file,
+                "sch",
+                upgrade_generated_file(sch_file, "sch", _run_cli, allowed_root=project_dir),
+            ),
+        ]
+
         cfg.apply_project(
             project_dir,
             project_file=project_file,
@@ -2403,14 +2419,19 @@ def register(mcp: FastMCP) -> None:
             output_dir=project_dir / "output",
         )
         reset_connection()
-        return "\n".join(
-            [
-                f"Created project '{payload.name}' at {project_dir}.",
-                f"- Project file: {project_file}",
-                f"- PCB file: {pcb_file}",
-                f"- Schematic file: {sch_file}",
-            ]
-        )
+        lines = [
+            f"Created project '{payload.name}' at {project_dir}.",
+            f"- Project file: {project_file}",
+            f"- PCB file: {pcb_file}",
+            f"- Schematic file: {sch_file}",
+        ]
+        for generated_file, kind, result in format_upgrades:
+            if not result.upgraded:
+                lines.append(
+                    f"- Format note ({kind}): kept repository writer dialect for "
+                    f"{generated_file.name}; KiCad migration was unavailable ({result.detail})."
+                )
+        return "\n".join(lines)
 
     @mcp.tool()
     @headless_compatible
