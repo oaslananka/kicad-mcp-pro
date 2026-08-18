@@ -591,7 +591,9 @@ def _get_pcb_file_for_sync() -> Path:
         )
     if not path.exists():
         path.write_text(_default_board_text(), encoding="utf-8")
-        format_upgrade = upgrade_generated_file(path, "pcb", _run_cli)
+        format_upgrade = upgrade_generated_file(
+            path, "pcb", _run_cli, allowed_root=get_config().workspace
+        )
         if not format_upgrade.upgraded:
             logger.warning(
                 "generated_board_format_migration_unavailable",
@@ -642,7 +644,9 @@ def _transactional_board_write(mutator: Callable[[str], str]) -> str:
         handle.write(updated)
         temp_path = Path(handle.name)
     temp_path.replace(board_file)
-    format_upgrade = upgrade_generated_file(board_file, "pcb", _run_cli)
+    format_upgrade = upgrade_generated_file(
+        board_file, "pcb", _run_cli, allowed_root=get_config().workspace
+    )
     if not format_upgrade.upgraded:
         logger.warning(
             "generated_board_format_migration_unavailable",

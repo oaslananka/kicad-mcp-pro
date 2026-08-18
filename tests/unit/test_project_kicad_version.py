@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -120,14 +121,14 @@ async def test_create_new_project_migrates_generated_board_and_schematic(
 ) -> None:
     import kicad_mcp.tools.project as project_tools
 
-    calls: list[tuple[str, str]] = []
+    calls: list[tuple[str, str, Path]] = []
 
     class Result:
         upgraded = True
         detail = ""
 
-    def migrate(path, kind, _run_cli):
-        calls.append((kind, path.name))
+    def migrate(path, kind, _run_cli, *, allowed_root):
+        calls.append((kind, path.name, allowed_root))
         return Result()
 
     monkeypatch.setattr(project_tools, "upgrade_generated_file", migrate, raising=False)
@@ -140,7 +141,8 @@ async def test_create_new_project_migrates_generated_board_and_schematic(
     )
 
     assert "Created project 'migrated'" in output
+    project_root = tmp_path / "migrated"
     assert calls == [
-        ("pcb", "migrated.kicad_pcb"),
-        ("sch", "migrated.kicad_sch"),
+        ("pcb", "migrated.kicad_pcb", project_root),
+        ("sch", "migrated.kicad_sch", project_root),
     ]

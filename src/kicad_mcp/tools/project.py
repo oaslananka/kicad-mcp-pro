@@ -2399,8 +2399,16 @@ def register(mcp: FastMCP) -> None:
         )
 
         format_upgrades = [
-            (pcb_file, "pcb", upgrade_generated_file(pcb_file, "pcb", _run_cli)),
-            (sch_file, "sch", upgrade_generated_file(sch_file, "sch", _run_cli)),
+            (
+                pcb_file,
+                "pcb",
+                upgrade_generated_file(pcb_file, "pcb", _run_cli, allowed_root=project_dir),
+            ),
+            (
+                sch_file,
+                "sch",
+                upgrade_generated_file(sch_file, "sch", _run_cli, allowed_root=project_dir),
+            ),
         ]
 
         cfg.apply_project(

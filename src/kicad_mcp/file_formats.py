@@ -31,28 +31,41 @@ def upgrade_generated_file(
     path: Path,
     kind: GeneratedFileKind,
     run_cli: RunCli,
+    *,
+    allowed_root: Path,
 ) -> GeneratedFormatUpgradeResult:
-    """Migrate a generated file with KiCad while preserving the writer dialect fallback."""
+    """Migrate one generated file after constraining it to a trusted filesystem root."""
+    try:
+        resolved_root = allowed_root.expanduser().resolve(strict=True)
+        resolved_path = path.expanduser().resolve(strict=True)
+        relative_path = resolved_path.relative_to(resolved_root)
+        safe_path = (resolved_root / relative_path).resolve(strict=True)
+    except (OSError, ValueError) as exc:
+        return GeneratedFormatUpgradeResult(
+            upgraded=False,
+            detail=f"Generated file is outside the allowed root or unavailable: {exc}",
+        )
+
     if kind != "fp":
         try:
-            original = path.read_bytes()
+            original = safe_path.read_bytes()
         except OSError as exc:
             return GeneratedFormatUpgradeResult(upgraded=False, detail=str(exc))
         try:
-            code, stdout, stderr = run_cli(kind, "upgrade", "--force", str(path))
+            code, stdout, stderr = run_cli(kind, "upgrade", "--force", str(safe_path))
         except OSError as exc:
-            path.write_bytes(original)
+            safe_path.write_bytes(original)
             return GeneratedFormatUpgradeResult(upgraded=False, detail=str(exc))
-        if code == 0 and path.is_file():
+        if code == 0 and safe_path.is_file():
             return GeneratedFormatUpgradeResult(upgraded=True)
-        path.write_bytes(original)
+        safe_path.write_bytes(original)
         return GeneratedFormatUpgradeResult(
             upgraded=False,
             detail=stderr or stdout or "KiCad format upgrade failed.",
         )
 
     try:
-        content = path.read_text(encoding="utf-8")
+        content = safe_path.read_text(encoding="utf-8")
     except OSError as exc:
         return GeneratedFormatUpgradeResult(upgraded=False, detail=str(exc))
 
@@ -100,5 +113,5 @@ def upgrade_generated_file(
                 upgraded=False,
                 detail="KiCad footprint upgrade did not produce the expected output file.",
             )
-        path.write_text(upgraded_file.read_text(encoding="utf-8"), encoding="utf-8")
+        safe_path.write_text(upgraded_file.read_text(encoding="utf-8"), encoding="utf-8")
         return GeneratedFormatUpgradeResult(upgraded=True)

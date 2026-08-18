@@ -462,7 +462,9 @@ def register(mcp: FastMCP) -> None:
             reference, field, value
         ),
         project_dir=lambda: get_config().project_dir,
-        upgrade_symbol_library=lambda path: upgrade_generated_file(path, "sym", _run_cli),
+        upgrade_symbol_library=lambda path: upgrade_generated_file(
+            path, "sym", _run_cli, allowed_root=get_config().workspace
+        ),
     )
     library_local_authoring.register(
         mcp,
@@ -577,7 +579,9 @@ def register(mcp: FastMCP) -> None:
 
         out_file.parent.mkdir(parents=True, exist_ok=True)
         out_file.write_text(sexpr, encoding="utf-8")
-        format_upgrade = upgrade_generated_file(out_file, "fp", _run_cli)
+        format_upgrade = upgrade_generated_file(
+            out_file, "fp", _run_cli, allowed_root=cfg.workspace
+        )
         result = (
             f"Footprint saved to {out_file}\n"
             f"Package: {package}, Density: {density}"
@@ -796,7 +800,9 @@ def register(mcp: FastMCP) -> None:
 
         out_file.parent.mkdir(parents=True, exist_ok=True)
         out_file.write_text(sexpr, encoding="utf-8")
-        format_upgrade = upgrade_generated_file(out_file, "sym", _run_cli)
+        format_upgrade = upgrade_generated_file(
+            out_file, "sym", _run_cli, allowed_root=cfg.workspace
+        )
         result = (
             f"Symbol saved to {out_file}\n"
             f"Name: {name}, Pins: {len(pin_specs)}, Ref prefix: {reference_prefix}"

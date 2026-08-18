@@ -5882,7 +5882,9 @@ def _register_inspection_and_analysis(mcp: FastMCP) -> None:
         normalize_connectivity=lambda content: _normalize_schematic_wire_connectivity(content),
         validate_schematic_text=lambda content: _validate_schematic_text(content),
         transactional_write=_write_compiled_schematic,
-        upgrade_schematic=lambda path: upgrade_generated_file(path, "sch", _run_cli),
+        upgrade_schematic=lambda path: upgrade_generated_file(
+            path, "sch", _run_cli, allowed_root=get_config().workspace
+        ),
         reload_schematic=lambda: _reload_schematic(),
         warn_unresolved=lambda payload: logger.warning(
             "schematic_netlist_routing_incomplete",

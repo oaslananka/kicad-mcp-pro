@@ -121,14 +121,14 @@ async def test_library_symbol_footprint_and_generator_surface(
     sample_project: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    format_upgrades: list[tuple[str, str]] = []
+    format_upgrades: list[tuple[str, str, Path]] = []
 
     class UpgradeResult:
         upgraded = True
         detail = ""
 
-    def upgrade_generated(path: Path, kind: str, _run_cli) -> UpgradeResult:
-        format_upgrades.append((kind, path.name))
+    def upgrade_generated(path: Path, kind: str, _run_cli, *, allowed_root: Path) -> UpgradeResult:
+        format_upgrades.append((kind, path.name, allowed_root))
         return UpgradeResult()
 
     monkeypatch.setattr(
@@ -287,9 +287,9 @@ async def test_library_symbol_footprint_and_generator_surface(
     assert "Invalid pin specification" in symbol_bad_pin
     assert "Symbol saved" in symbol_gen
     assert format_upgrades == [
-        ("sym", "custom_symbols.kicad_sym"),
-        ("fp", "R.kicad_mod"),
-        ("sym", "generated.kicad_sym"),
+        ("sym", "custom_symbols.kicad_sym", sample_project),
+        ("fp", "R.kicad_mod", sample_project),
+        ("sym", "generated.kicad_sym", sample_project),
     ]
     assert "Assigned footprint" in assigned
     assert "C123" in lcsc

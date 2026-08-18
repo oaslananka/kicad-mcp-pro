@@ -40,7 +40,7 @@ def test_generated_format_migrator_upgrades_in_place_formats(tmp_path: Path) -> 
     for kind, suffix in (("pcb", ".kicad_pcb"), ("sch", ".kicad_sch"), ("sym", ".kicad_sym")):
         path = tmp_path / f"demo{suffix}"
         path.write_text("legacy", encoding="utf-8")
-        result = migrate(path, kind, run_cli)
+        result = migrate(path, kind, run_cli, allowed_root=tmp_path)
         assert result.upgraded is True
 
     assert calls == [
@@ -75,7 +75,7 @@ def test_generated_format_migrator_preserves_footprint_name(tmp_path: Path) -> N
         )
         return 0, "", ""
 
-    result = migrate(target, "fp", run_cli)
+    result = migrate(target, "fp", run_cli, allowed_root=tmp_path)
 
     assert result.upgraded is True
     assert '(footprint "C_0603"' in target.read_text(encoding="utf-8")
@@ -94,7 +94,7 @@ def test_generated_format_migrator_keeps_writer_dialect_when_cli_is_unavailable(
     def run_cli(*_args: str) -> tuple[int, str, str]:
         raise FileNotFoundError("kicad-cli missing")
 
-    result = upgrade_generated_file(target, "sch", run_cli)
+    result = upgrade_generated_file(target, "sch", run_cli, allowed_root=tmp_path)
 
     assert result.upgraded is False
     assert "kicad-cli missing" in result.detail
@@ -114,8 +114,30 @@ def test_generated_format_migrator_restores_original_file_on_failed_in_place_upg
         target.write_text("partially rewritten", encoding="utf-8")
         return 1, "", "conversion failed"
 
-    result = upgrade_generated_file(target, "pcb", run_cli)
+    result = upgrade_generated_file(target, "pcb", run_cli, allowed_root=tmp_path)
 
     assert result.upgraded is False
     assert result.detail == "conversion failed"
+    assert target.read_text(encoding="utf-8") == original
+
+
+def test_generated_format_migrator_rejects_target_outside_allowed_root(tmp_path: Path) -> None:
+    from kicad_mcp.file_formats import upgrade_generated_file
+
+    allowed_root = tmp_path / "workspace"
+    allowed_root.mkdir()
+    target = tmp_path / "outside.kicad_pcb"
+    original = '(kicad_pcb (version 20250316) (generator "kicad-mcp-pro"))\n'
+    target.write_text(original, encoding="utf-8")
+    calls: list[tuple[str, ...]] = []
+
+    def run_cli(*args: str) -> tuple[int, str, str]:
+        calls.append(args)
+        return 0, "", ""
+
+    result = upgrade_generated_file(target, "pcb", run_cli, allowed_root=allowed_root)
+
+    assert result.upgraded is False
+    assert "outside the allowed root" in result.detail
+    assert calls == []
     assert target.read_text(encoding="utf-8") == original
