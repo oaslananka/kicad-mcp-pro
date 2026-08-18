@@ -1203,7 +1203,7 @@ def request_openai_compatible_chat(
         failure_kind = _failure_for_status(response.status_code)
         failure_detail = None
         retry_after_seconds = None
-        if response.status_code == 422 and failure_kind == "provider_request_rejected":
+        if failure_kind == "provider_request_rejected":
             failure_detail = _provider_request_failure_detail(response)
         if failure_kind in {"provider_rate_limit", "provider_unavailable"}:
             retry_after_seconds = _bounded_retry_after_seconds(response.headers.get("Retry-After"))
