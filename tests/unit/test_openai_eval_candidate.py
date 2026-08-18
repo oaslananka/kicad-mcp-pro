@@ -126,13 +126,15 @@ def test_openai_request_rejects_unreviewed_model_before_network() -> None:
 
     from kicad_mcp.evals.openai_adapter import request_openai
 
+    transport = httpx.MockTransport(lambda _request: pytest.fail("network called"))
+
     with pytest.raises(ValueError, match="reviewed OpenAI eval model"):
         request_openai(
             model="gpt-5-mini",
             prompt="Inspect.",
             api_key="dummy-test-key",
             catalog=(),
-            transport=httpx.MockTransport(lambda _request: pytest.fail("network called")),
+            transport=transport,
         )
 
 
