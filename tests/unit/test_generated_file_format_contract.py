@@ -141,3 +141,54 @@ def test_generated_format_migrator_rejects_target_outside_allowed_root(tmp_path:
     assert "outside the allowed root" in result.detail
     assert calls == []
     assert target.read_text(encoding="utf-8") == original
+
+
+def test_generated_format_migrator_rejects_unparseable_footprint(tmp_path: Path) -> None:
+    from kicad_mcp.file_formats import upgrade_generated_file
+
+    target = tmp_path / "broken.kicad_mod"
+    target.write_text("(not_a_footprint)\n", encoding="utf-8")
+
+    result = upgrade_generated_file(target, "fp", lambda *_args: (0, "", ""), allowed_root=tmp_path)
+
+    assert result.upgraded is False
+    assert "name could not be resolved" in result.detail
+
+
+def test_generated_format_migrator_rejects_unsafe_footprint_name(tmp_path: Path) -> None:
+    from kicad_mcp.file_formats import upgrade_generated_file
+
+    target = tmp_path / "unsafe.kicad_mod"
+    target.write_text('(footprint "../escape"\n)\n', encoding="utf-8")
+
+    result = upgrade_generated_file(target, "fp", lambda *_args: (0, "", ""), allowed_root=tmp_path)
+
+    assert result.upgraded is False
+    assert "not safe" in result.detail
+
+
+def test_generated_format_migrator_reports_footprint_cli_failure(tmp_path: Path) -> None:
+    from kicad_mcp.file_formats import upgrade_generated_file
+
+    target = tmp_path / "demo.kicad_mod"
+    target.write_text('(footprint "Demo"\n)\n', encoding="utf-8")
+
+    def run_cli(*_args: str) -> tuple[int, str, str]:
+        return 1, "", "conversion failed"
+
+    result = upgrade_generated_file(target, "fp", run_cli, allowed_root=tmp_path)
+
+    assert result.upgraded is False
+    assert result.detail == "conversion failed"
+
+
+def test_generated_format_migrator_reports_missing_footprint_output(tmp_path: Path) -> None:
+    from kicad_mcp.file_formats import upgrade_generated_file
+
+    target = tmp_path / "demo.kicad_mod"
+    target.write_text('(footprint "Demo"\n)\n', encoding="utf-8")
+
+    result = upgrade_generated_file(target, "fp", lambda *_args: (0, "", ""), allowed_root=tmp_path)
+
+    assert result.upgraded is False
+    assert "did not produce" in result.detail
