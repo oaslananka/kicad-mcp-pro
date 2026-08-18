@@ -16,6 +16,7 @@ from typing import Literal
 
 GENERATED_SEXPR_DIALECT_VERSION = "20250316"
 GeneratedFileKind = Literal["pcb", "sch", "sym", "fp"]
+NonFootprintGeneratedFileKind = Literal["pcb", "sch", "sym"]
 RunCli = Callable[..., tuple[int, str, str]]
 
 
@@ -27,56 +28,50 @@ class GeneratedFormatUpgradeResult:
     detail: str = ""
 
 
-def upgrade_generated_file(
-    path: Path,
-    kind: GeneratedFileKind,
-    run_cli: RunCli,
-    *,
-    allowed_root: Path,
-) -> GeneratedFormatUpgradeResult:
-    """Migrate one generated file after constraining it to a trusted filesystem root."""
-    try:
-        resolved_root = allowed_root.expanduser().resolve(strict=True)
-        resolved_path = path.expanduser().resolve(strict=True)
-        relative_path = resolved_path.relative_to(resolved_root)
-        safe_path = (resolved_root / relative_path).resolve(strict=True)
-    except (OSError, ValueError) as exc:
-        return GeneratedFormatUpgradeResult(
-            upgraded=False,
-            detail=f"Generated file is outside the allowed root or unavailable: {exc}",
-        )
+def _resolve_generated_path(path: Path, allowed_root: Path) -> Path:
+    resolved_root = allowed_root.expanduser().resolve(strict=True)
+    resolved_path = path.expanduser().resolve(strict=True)
+    relative_path = resolved_path.relative_to(resolved_root)
+    return (resolved_root / relative_path).resolve(strict=True)
 
-    if kind != "fp":
+
+def _upgrade_non_footprint(
+    safe_path: Path,
+    kind: NonFootprintGeneratedFileKind,
+    run_cli: RunCli,
+) -> GeneratedFormatUpgradeResult:
+    try:
+        original = safe_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return GeneratedFormatUpgradeResult(upgraded=False, detail=str(exc))
+
+    temp_names = {
+        "pcb": "generated.kicad_pcb",
+        "sch": "generated.kicad_sch",
+        "sym": "generated.kicad_sym",
+    }
+    with tempfile.TemporaryDirectory(prefix="kicad-mcp-format-") as temp_dir:
+        temp_file = Path(temp_dir) / temp_names[kind]
+        temp_file.write_text(original, encoding="utf-8")
         try:
-            original = safe_path.read_text(encoding="utf-8")
+            code, stdout, stderr = run_cli(kind, "upgrade", "--force", str(temp_file))
         except OSError as exc:
             return GeneratedFormatUpgradeResult(upgraded=False, detail=str(exc))
+        if code != 0:
+            return GeneratedFormatUpgradeResult(
+                upgraded=False,
+                detail=stderr or stdout or "KiCad format upgrade failed.",
+            )
+        if not temp_file.is_file():
+            return GeneratedFormatUpgradeResult(
+                upgraded=False,
+                detail="KiCad format upgrade did not preserve the temporary output file.",
+            )
+        safe_path.write_text(temp_file.read_text(encoding="utf-8"), encoding="utf-8")
+        return GeneratedFormatUpgradeResult(upgraded=True)
 
-        temp_names = {
-            "pcb": "generated.kicad_pcb",
-            "sch": "generated.kicad_sch",
-            "sym": "generated.kicad_sym",
-        }
-        with tempfile.TemporaryDirectory(prefix="kicad-mcp-format-") as temp_dir:
-            temp_file = Path(temp_dir) / temp_names[kind]
-            temp_file.write_text(original, encoding="utf-8")
-            try:
-                code, stdout, stderr = run_cli(kind, "upgrade", "--force", str(temp_file))
-            except OSError as exc:
-                return GeneratedFormatUpgradeResult(upgraded=False, detail=str(exc))
-            if code != 0:
-                return GeneratedFormatUpgradeResult(
-                    upgraded=False,
-                    detail=stderr or stdout or "KiCad format upgrade failed.",
-                )
-            if not temp_file.is_file():
-                return GeneratedFormatUpgradeResult(
-                    upgraded=False,
-                    detail="KiCad format upgrade did not preserve the temporary output file.",
-                )
-            safe_path.write_text(temp_file.read_text(encoding="utf-8"), encoding="utf-8")
-            return GeneratedFormatUpgradeResult(upgraded=True)
 
+def _upgrade_footprint(safe_path: Path, run_cli: RunCli) -> GeneratedFormatUpgradeResult:
     try:
         content = safe_path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -128,3 +123,24 @@ def upgrade_generated_file(
             )
         safe_path.write_text(upgraded_file.read_text(encoding="utf-8"), encoding="utf-8")
         return GeneratedFormatUpgradeResult(upgraded=True)
+
+
+def upgrade_generated_file(
+    path: Path,
+    kind: GeneratedFileKind,
+    run_cli: RunCli,
+    *,
+    allowed_root: Path,
+) -> GeneratedFormatUpgradeResult:
+    """Migrate one generated file after constraining it to a trusted filesystem root."""
+    try:
+        safe_path = _resolve_generated_path(path, allowed_root)
+    except (OSError, ValueError) as exc:
+        return GeneratedFormatUpgradeResult(
+            upgraded=False,
+            detail=f"Generated file is outside the allowed root or unavailable: {exc}",
+        )
+
+    if kind == "fp":
+        return _upgrade_footprint(safe_path, run_cli)
+    return _upgrade_non_footprint(safe_path, kind, run_cli)
