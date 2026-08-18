@@ -10,6 +10,7 @@ from typing import Any, cast
 from mcp.server.fastmcp import FastMCP
 
 from ..config import get_config
+from ..file_formats import upgrade_generated_file
 from ..library.catalog import (
     LibraryCatalogService,
     get_symbol_index,
@@ -45,6 +46,7 @@ from . import (
     library_local_authoring,
     library_sourcing,
 )
+from .export_support import _run_cli
 from .metadata import headless_compatible
 from .schematic import get_schematic_backend, project_schematic_files, update_symbol_property
 
@@ -460,6 +462,7 @@ def register(mcp: FastMCP) -> None:
             reference, field, value
         ),
         project_dir=lambda: get_config().project_dir,
+        upgrade_symbol_library=lambda path: upgrade_generated_file(path, "sym", _run_cli),
     )
     library_local_authoring.register(
         mcp,
@@ -574,12 +577,19 @@ def register(mcp: FastMCP) -> None:
 
         out_file.parent.mkdir(parents=True, exist_ok=True)
         out_file.write_text(sexpr, encoding="utf-8")
-        return (
+        format_upgrade = upgrade_generated_file(out_file, "fp", _run_cli)
+        result = (
             f"Footprint saved to {out_file}\n"
             f"Package: {package}, Density: {density}"
             + (f", {pin_count} pins" if pin_count else "")
             + (f", {pitch_mm:.2f}mm pitch" if pitch_mm else "")
         )
+        if not format_upgrade.upgraded:
+            result += (
+                "\nFormat note: kept repository writer dialect; "
+                f"KiCad migration was unavailable ({format_upgrade.detail})."
+            )
+        return result
 
     @mcp.tool()
     @headless_compatible
@@ -786,10 +796,17 @@ def register(mcp: FastMCP) -> None:
 
         out_file.parent.mkdir(parents=True, exist_ok=True)
         out_file.write_text(sexpr, encoding="utf-8")
-        return (
+        format_upgrade = upgrade_generated_file(out_file, "sym", _run_cli)
+        result = (
             f"Symbol saved to {out_file}\n"
             f"Name: {name}, Pins: {len(pin_specs)}, Ref prefix: {reference_prefix}"
         )
+        if not format_upgrade.upgraded:
+            result += (
+                "\nFormat note: kept repository writer dialect; "
+                f"KiCad migration was unavailable ({format_upgrade.detail})."
+            )
+        return result
 
     @mcp.tool()
     @headless_compatible

@@ -28,6 +28,7 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
+from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION
 from .sexpr import _sexpr_string
 
 DensityLevel = Literal["A", "B", "C"]
@@ -66,7 +67,7 @@ def _fp_header(
         tags = f"{tags} {ipc_density_tag(density)}"
     return [
         f"(footprint {_sexpr_string(name)}",
-        "\t(version 20250316)",
+        f"\t(version {GENERATED_SEXPR_DIALECT_VERSION})",
         '\t(generator "kicad-mcp-footprint-gen")',
         f"\t(layer {_sexpr_string(_LAYER_CU)})",
         f"\t(descr {_sexpr_string(description)})",
@@ -78,7 +79,7 @@ def _fp_header(
 def _fp_header_tht(name: str, description: str, tags: str) -> list[str]:
     return [
         f"(footprint {_sexpr_string(name)}",
-        "\t(version 20250316)",
+        f"\t(version {GENERATED_SEXPR_DIALECT_VERSION})",
         '\t(generator "kicad-mcp-footprint-gen")',
         f"\t(layer {_sexpr_string(_LAYER_CU)})",
         f"\t(descr {_sexpr_string(description)})",

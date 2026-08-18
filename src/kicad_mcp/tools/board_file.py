@@ -8,10 +8,11 @@ import time
 from collections.abc import Iterable
 from typing import Any
 
+from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION
 from ..utils import telemetry as otel
 from ..utils.sexpr import _extract_block
 
-BOARD_FILE_VERSION = "20250216"
+BOARD_FILE_VERSION = GENERATED_SEXPR_DIALECT_VERSION
 FLOAT_PATTERN = r"-?\d+(?:\.\d+)?"
 STRING_PATTERN = r'"((?:\\.|[^"\\])*)"'
 

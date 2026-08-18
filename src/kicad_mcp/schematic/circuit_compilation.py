@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION, GeneratedFormatUpgradeResult
 from ..models.schematic import AddLabelInput, AddSymbolInput, AddWireInput, PowerSymbolInput
 
 
@@ -113,6 +114,7 @@ class SchematicCircuitCompilationService:
     normalize_connectivity: Callable[[str], str]
     validate_schematic_text: Callable[[str], None]
     transactional_write: Callable[[str, Path, bool], None]
+    upgrade_schematic: Callable[[Path], GeneratedFormatUpgradeResult]
     reload_schematic: Callable[[], str]
     warn_unresolved: Callable[[dict[str, Any]], None]
 
@@ -314,7 +316,7 @@ class SchematicCircuitCompilationService:
         library_section += "\t)"
         content = (
             "(kicad_sch\n"
-            "\t(version 20250316)\n"
+            f"\t(version {GENERATED_SEXPR_DIALECT_VERSION})\n"
             '\t(generator "kicad-mcp-pro")\n'
             f'\t(uuid "{root_uuid}")\n'
             f"\t{paper_declaration}\n"
@@ -333,6 +335,7 @@ class SchematicCircuitCompilationService:
         content = self.normalize_connectivity(content)
         self.validate_schematic_text(content)
         self.transactional_write(content, schematic_file, True)
+        format_upgrade = self.upgrade_schematic(schematic_file)
         result = self.reload_schematic()
         written_symbols = len(prepared.symbols) + len(prepared.powers)
         written_labels = len(prepared.labels)
@@ -344,6 +347,11 @@ class SchematicCircuitCompilationService:
         if backup_path is not None:
             summary += f" Backup of the previous sheet: {backup_path}."
         notes: list[str] = [summary]
+        if not format_upgrade.upgraded:
+            notes.append(
+                "Format note: kept repository writer dialect; "
+                f"KiCad migration was unavailable ({format_upgrade.detail})."
+            )
         if auto_layout:
             notes.append("Applied auto-layout to schematic symbols.")
         if prepared.nets:

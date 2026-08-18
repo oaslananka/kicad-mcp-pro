@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION
 from ..utils.sexpr import _sexpr_string
 
 
@@ -53,6 +54,7 @@ class LibraryLocalAuthoringService:
     footprint_file: Callable[[str, str], Path]
     update_symbol_property: Callable[[str, str, str], object]
     project_dir: Callable[[], Path | None]
+    upgrade_symbol_library: Callable[[Path], object] | None = None
 
     def assign_footprint(self, reference: str, library: str, footprint: str) -> str:
         path = self.footprint_file(library, footprint)
@@ -71,7 +73,12 @@ class LibraryLocalAuthoringService:
         if library_file.exists():
             content = library_file.read_text(encoding="utf-8", errors="ignore")
         else:
-            content = '(kicad_symbol_lib (version 20250316) (generator "kicad-mcp-pro"))\n'
+            content = (
+                f"(kicad_symbol_lib (version {GENERATED_SEXPR_DIALECT_VERSION}) "
+                '(generator "kicad-mcp-pro"))\n'
+            )
         content = _append_symbol(content, _render_symbol_block(name, pins))
         library_file.write_text(content, encoding="utf-8")
+        if self.upgrade_symbol_library is not None:
+            self.upgrade_symbol_library(library_file)
         return f"Created custom symbol '{name}' in {library_file}."

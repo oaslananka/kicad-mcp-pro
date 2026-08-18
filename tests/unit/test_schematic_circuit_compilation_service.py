@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from kicad_mcp.file_formats import GeneratedFormatUpgradeResult
 from kicad_mcp.models.schematic import (
     AddLabelInput,
     AddSymbolInput,
@@ -47,6 +48,7 @@ class CompilationHarness:
         self.library_calls: list[tuple[str, str]] = []
         self.warn_calls: list[dict[str, Any]] = []
         self.transaction_calls: list[tuple[Path, bool, str]] = []
+        self.format_upgrade_calls: list[Path] = []
         self.events: list[str] = []
 
     def service(self) -> SchematicCircuitCompilationService:
@@ -69,6 +71,7 @@ class CompilationHarness:
             normalize_connectivity=self.normalize_connectivity,
             validate_schematic_text=self.validate_schematic_text,
             transactional_write=self.transactional_write,
+            upgrade_schematic=self.upgrade_schematic,
             reload_schematic=self.reload_schematic,
             warn_unresolved=self.warn_unresolved,
         )
@@ -197,6 +200,11 @@ class CompilationHarness:
         self.transaction_calls.append((path, allow_node_loss, content))
         path.write_text(content, encoding="utf-8")
 
+    def upgrade_schematic(self, path: Path) -> GeneratedFormatUpgradeResult:
+        self.events.append("upgrade")
+        self.format_upgrade_calls.append(path)
+        return GeneratedFormatUpgradeResult(upgraded=True)
+
     def reload_schematic(self) -> str:
         self.events.append("reload")
         return "reloaded"
@@ -322,7 +330,8 @@ def test_build_empty_preserves_paper_and_transaction_order(tmp_path: Path) -> No
         "wrote 0 symbol(s) and 0 label(s)."
     )
     assert harness.snapshot_calls == [harness.schematic]
-    assert harness.events == ["normalize", "validate", "write", "reload"]
+    assert harness.events == ["normalize", "validate", "write", "upgrade", "reload"]
+    assert harness.format_upgrade_calls == [harness.schematic]
     path, allow_node_loss, content = harness.transaction_calls[0]
     assert path == harness.schematic
     assert allow_node_loss is True

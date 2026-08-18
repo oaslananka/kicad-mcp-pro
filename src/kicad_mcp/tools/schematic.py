@@ -24,6 +24,7 @@ from ..config import get_config
 from ..connection import KiCadConnectionError, get_kicad
 from ..discovery import is_numbered_duplicate_kicad_file
 from ..errors import SchematicWriteUnsafeError
+from ..file_formats import upgrade_generated_file
 from ..models.schematic import (
     STANDARD_SYMBOL_FIELDS,
     AddLabelInput,
@@ -101,6 +102,7 @@ from . import (
     schematic_template_instantiation,
     schematic_topology,
 )
+from .export_support import _run_cli
 from .schematic_constants import (
     _SCHEMATIC_STATE_DIRNAME,
     _SHEET_MARGIN_MM,
@@ -5880,6 +5882,7 @@ def _register_inspection_and_analysis(mcp: FastMCP) -> None:
         normalize_connectivity=lambda content: _normalize_schematic_wire_connectivity(content),
         validate_schematic_text=lambda content: _validate_schematic_text(content),
         transactional_write=_write_compiled_schematic,
+        upgrade_schematic=lambda path: upgrade_generated_file(path, "sch", _run_cli),
         reload_schematic=lambda: _reload_schematic(),
         warn_unresolved=lambda payload: logger.warning(
             "schematic_netlist_routing_incomplete",

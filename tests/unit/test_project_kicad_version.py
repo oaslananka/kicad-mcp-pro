@@ -111,3 +111,36 @@ async def test_create_new_project_uses_installed_kicad_template(
     assert payload["libraries"] == {"pinned": True}
     assert payload["net_settings"] == {"classes": ["Default"]}
     assert sorted(payload) == sorted(template_payload)
+
+
+@pytest.mark.anyio
+async def test_create_new_project_migrates_generated_board_and_schematic(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import kicad_mcp.tools.project as project_tools
+
+    calls: list[tuple[str, str]] = []
+
+    class Result:
+        upgraded = True
+        detail = ""
+
+    def migrate(path, kind, _run_cli):
+        calls.append((kind, path.name))
+        return Result()
+
+    monkeypatch.setattr(project_tools, "upgrade_generated_file", migrate, raising=False)
+
+    server = create_server()
+    output = await call_tool_text(
+        server,
+        "kicad_create_new_project",
+        {"path": str(tmp_path), "name": "migrated"},
+    )
+
+    assert "Created project 'migrated'" in output
+    assert calls == [
+        ("pcb", "migrated.kicad_pcb"),
+        ("sch", "migrated.kicad_sch"),
+    ]
