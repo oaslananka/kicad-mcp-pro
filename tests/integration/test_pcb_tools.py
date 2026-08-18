@@ -10,6 +10,7 @@ from kipy.proto.board import board_types_pb2
 from kipy.proto.board.board_types_pb2 import BoardLayer, ViaType
 from kipy.proto.common import types as common_types
 
+from kicad_mcp.file_formats import GENERATED_SEXPR_DIALECT_VERSION
 from kicad_mcp.server import build_server
 from kicad_mcp.tools.validation import GateOutcome
 from kicad_mcp.utils.sexpr import _extract_block
@@ -320,7 +321,7 @@ async def test_pcb_sync_from_schematic_adds_missing_footprints(
     assert "Fully net-mapped refs: 2" in result
     assert "Partially net-mapped refs: 0" in result
     assert "Refs with unresolved pad nets: (none)" in result
-    assert "(version 20250216)" in pcb_text
+    assert f"(version {GENERATED_SEXPR_DIALECT_VERSION})" in pcb_text
     assert pcb_text.count('(footprint "R_0805"') == 2
     assert '(property "Reference" "R1"' in pcb_text
     assert '(property "Reference" "R2"' in pcb_text
