@@ -7,14 +7,17 @@ agent_contract_paths:
   - evals/tool_selection/**
   - evals/live/configurations.yaml
   - src/kicad_mcp/evals/live_adapters.py
+  - src/kicad_mcp/evals/chat_eval_cli.py
   - src/kicad_mcp/evals/live_config.py
   - src/kicad_mcp/evals/live_runner.py
   - src/kicad_mcp/evals/nvidia_nim_adapter.py
+  - src/kicad_mcp/evals/openai_adapter.py
   - src/kicad_mcp/evals/opencode_cli_adapter.py
   - src/kicad_mcp/evals/opencode_zen_adapter.py
   - src/kicad_mcp/evals/tool_selection.py
   - scripts/generate_tools_reference.py
   - scripts/nvidia_nim_eval_adapter.py
+  - scripts/openai_eval_adapter.py
   - scripts/opencode_cli_eval_adapter.py
   - scripts/opencode_zen_eval_adapter.py
   - scripts/run_live_model_eval.py

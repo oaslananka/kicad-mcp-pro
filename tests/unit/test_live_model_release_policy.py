@@ -423,3 +423,28 @@ def test_contract_digest_ignores_inherited_git_repository_environment(
     digest = compute_agent_contract_digest(repo, policy, ref=revision)
 
     assert len(digest) == 64
+
+
+def test_committed_release_policy_covers_provider_adapter_implementations() -> None:
+    import fnmatch
+
+    policy = load_release_policy(POLICY_PATH)
+
+    def covered(relative_path: str) -> bool:
+        return any(
+            fnmatch.fnmatchcase(relative_path, pattern) for pattern in policy.agent_contract_paths
+        )
+
+    provider_modules = sorted(
+        path.relative_to(ROOT).as_posix()
+        for path in (ROOT / "src/kicad_mcp/evals").glob("*_adapter.py")
+    )
+    provider_scripts = sorted(
+        path.relative_to(ROOT).as_posix() for path in (ROOT / "scripts").glob("*_eval_adapter.py")
+    )
+    shared_harness = "src/kicad_mcp/evals/chat_eval_cli.py"
+    uncovered = [
+        path for path in [*provider_modules, *provider_scripts, shared_harness] if not covered(path)
+    ]
+
+    assert uncovered == []
