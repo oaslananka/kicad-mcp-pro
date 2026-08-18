@@ -17,7 +17,12 @@ from pydantic import BaseModel, Field
 from .. import __version__
 from ..config import get_config
 from ..connection import KiCadConnectionError, get_kicad, reset_connection
-from ..discovery import find_kicad_version, find_recent_projects, scan_project_dir
+from ..discovery import (
+    discover_library_paths,
+    find_kicad_version,
+    find_recent_projects,
+    scan_project_dir,
+)
 from ..models.component_contracts import find_component_contract
 from ..models.intent import (
     ComplianceTarget,
@@ -347,6 +352,38 @@ def _new_project_files(project_dir: Path, name: str) -> tuple[Path, Path, Path]:
     pcb_file = project_dir / f"{name}.kicad_pcb"
     sch_file = project_dir / f"{name}.kicad_sch"
     return project_file, pcb_file, sch_file
+
+
+def _minimal_project_payload(project_file: Path) -> dict[str, Any]:
+    return {
+        "board": {"design_settings": {}},
+        "meta": {"filename": project_file.name, "version": 1},
+        "schematic": {"legacy_lib_dir": "", "page_layout_descr_file": ""},
+    }
+
+
+def _new_project_payload(kicad_cli: Path, project_file: Path) -> dict[str, Any]:
+    share_root = discover_library_paths(kicad_cli).get("root")
+    if share_root is not None:
+        template_file = share_root / "template" / "kicad.kicad_pro"
+        if template_file.is_file():
+            try:
+                payload = json.loads(template_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning(
+                    "kicad_project_template_read_failed",
+                    template=str(template_file),
+                    error=str(exc),
+                )
+            else:
+                if isinstance(payload, dict) and isinstance(payload.get("meta"), dict):
+                    payload["meta"]["filename"] = project_file.name
+                    return cast(dict[str, Any], payload)
+                logger.warning(
+                    "kicad_project_template_invalid",
+                    template=str(template_file),
+                )
+    return _minimal_project_payload(project_file)
 
 
 def _project_spec_dir() -> Path:
@@ -2336,14 +2373,7 @@ def register(mcp: FastMCP) -> None:
 
         project_file, pcb_file, sch_file = _new_project_files(project_dir, payload.name)
         project_file.write_text(
-            json.dumps(
-                {
-                    "board": {"design_settings": {}},
-                    "meta": {"filename": project_file.name, "version": 1},
-                    "schematic": {"legacy_lib_dir": "", "page_layout_descr_file": ""},
-                },
-                indent=2,
-            ),
+            json.dumps(_new_project_payload(cfg.kicad_cli, project_file), indent=2),
             encoding="utf-8",
         )
         pcb_file.write_text(

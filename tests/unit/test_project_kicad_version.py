@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from kicad_mcp.server import create_server
@@ -65,3 +67,47 @@ async def test_kicad_get_version_partial_document_availability_sch_error(
     assert "IPC version: 10.0.0-mock" in output
     assert "Open PCB documents: 1" in output
     assert "Open schematic documents: unavailable" in output
+
+
+@pytest.mark.anyio
+async def test_create_new_project_uses_installed_kicad_template(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    share_root = tmp_path / "kicad-share"
+    template_dir = share_root / "template"
+    template_dir.mkdir(parents=True)
+    template_payload = {
+        "board": {"design_settings": {"rules": "template"}},
+        "boards": ["template-board"],
+        "libraries": {"pinned": True},
+        "meta": {"filename": "kicad.kicad_pro", "version": 1},
+        "net_settings": {"classes": ["Default"]},
+        "pcbnew": {"last_paths": {}},
+        "sheets": ["root"],
+        "text_variables": {"COMPANY": "Example"},
+    }
+    (template_dir / "kicad.kicad_pro").write_text(json.dumps(template_payload), encoding="utf-8")
+
+    import kicad_mcp.tools.project as project_tools
+
+    monkeypatch.setattr(
+        project_tools,
+        "discover_library_paths",
+        lambda _cli: {"root": share_root, "symbols": None, "footprints": None},
+        raising=False,
+    )
+
+    server = create_server()
+    output = await call_tool_text(
+        server,
+        "kicad_create_new_project",
+        {"path": str(tmp_path), "name": "fresh"},
+    )
+
+    assert "Created project 'fresh'" in output
+    payload = json.loads((tmp_path / "fresh" / "fresh.kicad_pro").read_text(encoding="utf-8"))
+    assert payload["meta"]["filename"] == "fresh.kicad_pro"
+    assert payload["libraries"] == {"pinned": True}
+    assert payload["net_settings"] == {"classes": ["Default"]}
+    assert sorted(payload) == sorted(template_payload)
