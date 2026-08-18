@@ -104,6 +104,20 @@ configurations:
       max_total_tokens: 3000000
       max_total_cost_micros: 0
 
+  - id: openai-gpt-5-mini-2025-08-07
+    host: openai
+    model: gpt-5-mini-2025-08-07
+    adapter: subprocess
+    command: [python, scripts/openai_eval_adapter.py, --model, gpt-5-mini-2025-08-07, --structured-output, json_schema]
+    required_env: [OPENAI_KEY]
+    limits:
+      timeout_seconds: 70
+      max_retries: 2
+      max_cases: 325
+      max_total_tool_calls: 1000
+      max_total_tokens: 3000000
+      max_total_cost_micros: 2000000
+
   - id: opencode-minimax-m3
     host: opencode-zen
     model: minimax-m3

@@ -124,6 +124,7 @@ jobs:
         env:
           CONFIGURATION_ID: ${{ inputs.configuration_id }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
           OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
           REPEATS: ${{ inputs.repeats }}
           SCOPE: ${{ inputs.scope }}
