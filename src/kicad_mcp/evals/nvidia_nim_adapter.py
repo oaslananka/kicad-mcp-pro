@@ -19,6 +19,7 @@ from .tool_selection import all_referenced_tools, load_cases
 
 NVIDIA_NIM_CHAT_COMPLETIONS_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 StructuredOutputMode = Literal["none", "guided_json", "json_schema"]
+ChatRequestProfile = Literal["default", "openai-gpt5"]
 
 
 class _ModelOutputValidationError(ValueError):
@@ -362,6 +363,7 @@ def build_chat_payload(
     prompt: str,
     catalog: Sequence[ToolCatalogEntry | Mapping[str, object]],
     structured_output: StructuredOutputMode = "none",
+    request_profile: ChatRequestProfile = "default",
 ) -> dict[str, Any]:
     """Build one capability-aware classification request without case expectations."""
     catalog_values = _catalog_values(catalog)
@@ -426,14 +428,25 @@ def build_chat_payload(
             }
         ]
 
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0,
-        "top_p": 1,
-        "max_tokens": 256,
-        "stream": False,
-    }
+    if request_profile == "default":
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0,
+            "top_p": 1,
+            "max_tokens": 256,
+            "stream": False,
+        }
+    elif request_profile == "openai-gpt5":
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_completion_tokens": 1024,
+            "reasoning_effort": "minimal",
+            "stream": False,
+        }
+    else:
+        raise ValueError("Unsupported chat request profile.")
     if model == _NEMOTRON_MODEL:
         payload["chat_template_kwargs"] = {"enable_thinking": False}
     elif model == _MISTRAL_MEDIUM_MODEL:
@@ -1158,6 +1171,7 @@ def request_openai_compatible_chat(
     timeout_seconds: float = 50,
     transport: httpx.BaseTransport | None = None,
     structured_output: StructuredOutputMode = "none",
+    request_profile: ChatRequestProfile = "default",
 ) -> dict[str, object]:
     """Invoke one reviewed OpenAI-compatible chat endpoint and sanitize the result."""
     if not endpoint.startswith("https://"):
@@ -1169,6 +1183,7 @@ def request_openai_compatible_chat(
         prompt=prompt,
         catalog=catalog_values,
         structured_output=structured_output,
+        request_profile=request_profile,
     )
     try:
         with httpx.Client(timeout=timeout_seconds, transport=transport) as client:
