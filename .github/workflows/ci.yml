@@ -137,6 +137,7 @@ jobs:
     steps:
       - name: Skip heavy CI for docs-only PR
         if: needs.changes.outputs.docs_only == 'true'
+        shell: bash
         run: |
           echo "::notice::Skipping mcp-server CI — docs-only PR detected"
           echo "skip_ci=true" >> "$GITHUB_ENV"
@@ -301,6 +302,7 @@ jobs:
       - name: Skip heavy CI for docs-only PR
         if: needs.changes.outputs.docs_only == 'true'
         working-directory: ${{ github.workspace }}
+        shell: bash
         run: |
           echo "::notice::Skipping mcp-npm CI — docs-only PR detected"
           echo "skip_ci=true" >> "$GITHUB_ENV"
