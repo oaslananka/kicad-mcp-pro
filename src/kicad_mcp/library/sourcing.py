@@ -2,12 +2,80 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
 from ..models.verdict import Finding, Verdict, VerdictReport, stable_finding_id
 from ..utils.component_search import ComponentRecord, ComponentSearchClient, normalize_lcsc_code
+
+_RECOMMENDATION_NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?(?:e[-+]?\d+)?")
+_PACKAGE_FOOTPRINT_HINTS = {
+    "SOT-23": "SOT-23",
+    "SOT-223": "SOT-223",
+    "SOIC-8": "SOIC-8_3.9x4.9mm_P1.27mm",
+    "SSOP-20": "SSOP-20_4.4x6.5mm_P0.65mm",
+}
+
+
+def _footprint_binding_line(
+    update_symbol_property: Callable[[str, str, str], object],
+    sym_ref: str,
+    package: str,
+) -> str:
+    if not package:
+        return "- Footprint: package info unavailable — run lib_assign_footprint() manually."
+
+    hint = _PACKAGE_FOOTPRINT_HINTS.get(package.upper(), package)
+    try:
+        update_symbol_property(sym_ref, "Footprint", hint)
+    except Exception as exc:
+        return (
+            f"- Footprint hint: {package} — "
+            "run lib_generate_footprint_ipc7351() or lib_assign_footprint() manually."
+            f" (automatic assignment failed: {exc})"
+        )
+    return f"- Footprint hint: {package} (assigned to symbol)"
+
+
+def _recommendation_unit_scale(key: str) -> float:
+    key = key.lower()
+    if key.endswith("_mohm"):
+        return 0.001
+    if key.endswith("_uf"):
+        return 1.0
+    if key.endswith("_nf"):
+        return 0.001
+    if key.endswith("_pf"):
+        return 1e-6
+    if key.endswith("_mhz"):
+        return 1.0
+    if key.endswith("_khz"):
+        return 0.001
+    return 1.0
+
+
+def _matches_recommendation_requirements(
+    item: ComponentRecord, requirements: dict[str, Any]
+) -> bool:
+    if not requirements:
+        return True
+    numbers = [
+        float(match) for match in _RECOMMENDATION_NUMBER_RE.findall(item.description.lower())
+    ]
+    for key, value in requirements.items():
+        scale = _recommendation_unit_scale(key)
+        if isinstance(value, dict):
+            lower = float(value.get("min", float("-inf"))) * scale
+            upper = float(value.get("max", float("inf"))) * scale
+            if not any(lower <= number <= upper for number in numbers):
+                return False
+        elif isinstance(value, int | float):
+            target = float(value) * scale
+            if numbers and not any(number >= target * 0.8 for number in numbers):
+                return False
+    return True
 
 
 def _worst_verdict(values: list[Verdict]) -> Verdict:
@@ -503,3 +571,83 @@ class LibrarySourcingService:
             ordered,
             max_items=10,
         )
+
+    def recommend_part(
+        self,
+        category: str,
+        requirements: dict[str, Any],
+        package: str = "",
+        only_basic: bool = True,
+        source: str = "jlcsearch",
+        max_results: int = 10,
+    ) -> str:
+        """Recommend a purchasable part given electrical requirements."""
+        try:
+            client = self.component_search_client(source)
+            results = client.search(
+                category,
+                package=package or None,
+                only_basic=only_basic,
+                limit=50,
+            )
+        except (RuntimeError, ValueError, OSError) as exc:
+            return f"Part recommendation search failed: {exc}"
+
+        filtered = [item for item in results if item.stock > 0]
+        matched = [
+            item for item in filtered if _matches_recommendation_requirements(item, requirements)
+        ]
+        ordered = self.sort_component_results(matched, sort_by="price")[:max_results]
+
+        lines = [f"Part recommendations for '{category}' (source={source}):"]
+        if requirements:
+            req_str = ", ".join(f"{key}={value}" for key, value in list(requirements.items())[:5])
+            lines.append(f"Requirements: {req_str}")
+        if not ordered:
+            lines.append("No matching parts found. Try broadening the category or requirements.")
+        else:
+            lines.extend(
+                [
+                    "",
+                    "Use lib_bind_part_to_symbol() to assign the chosen part to a schematic ref.",
+                ]
+            )
+        return self.format_component_lines("\n".join(lines), ordered, max_items=max_results)
+
+    def bind_part_to_symbol(
+        self,
+        sym_ref: str,
+        lcsc_code_or_mpn: str,
+        auto_assign_footprint: bool = True,
+        source: str = "jlcsearch",
+    ) -> str:
+        """Assign a live part to a schematic symbol and optionally its footprint."""
+        try:
+            client = self.component_search_client(source)
+            part = client.get_part(lcsc_code_or_mpn)
+        except (RuntimeError, ValueError, OSError) as exc:
+            return f"Part lookup failed: {exc}"
+
+        if part is None:
+            return f"No part found for '{lcsc_code_or_mpn}' on {source}."
+
+        try:
+            self.update_symbol_property(sym_ref, "LCSC", part.lcsc_code)
+            self.update_symbol_property(sym_ref, "MPN", part.mpn or "")
+        except Exception as exc:
+            return f"Could not update schematic properties for '{sym_ref}': {exc}"
+
+        lines = [
+            f"Bound '{lcsc_code_or_mpn}' to {sym_ref}:",
+            f"- LCSC: {part.lcsc_code}",
+            f"- MPN: {part.mpn or '(n/a)'}",
+            f"- Description: {part.description or '(n/a)'}",
+            f"- Package: {part.package or '(n/a)'}",
+        ]
+
+        if auto_assign_footprint:
+            lines.append(
+                _footprint_binding_line(self.update_symbol_property, sym_ref, part.package)
+            )
+
+        return "\n".join(lines)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from mcp.server.fastmcp import FastMCP
 
@@ -51,6 +51,24 @@ class LibrarySourcingServiceProtocol(Protocol):
 
     def find_alternative_parts(
         self, lcsc_code: str, tolerance_percent: float = 10.0, source: str = "jlcsearch"
+    ) -> str: ...
+
+    def recommend_part(
+        self,
+        category: str,
+        requirements: dict[str, Any],
+        package: str = "",
+        only_basic: bool = True,
+        source: str = "jlcsearch",
+        max_results: int = 10,
+    ) -> str: ...
+
+    def bind_part_to_symbol(
+        self,
+        sym_ref: str,
+        lcsc_code_or_mpn: str,
+        auto_assign_footprint: bool = True,
+        source: str = "jlcsearch",
     ) -> str: ...
 
 
@@ -169,3 +187,65 @@ def register(mcp: FastMCP, deps: LibrarySourcingDependencies) -> None:
     ) -> str:
         """Find nearby alternative parts for the supplied LCSC code."""
         return deps.service.find_alternative_parts(lcsc_code, tolerance_percent, source)
+
+
+def register_part_selection(mcp: FastMCP, deps: LibrarySourcingDependencies) -> None:
+    """Register part recommendation and binding at their legacy public position."""
+
+    @mcp.tool()
+    @headless_compatible
+    def lib_recommend_part(
+        category: str,
+        requirements: dict[str, Any],
+        package: str = "",
+        only_basic: bool = True,
+        source: str = "jlcsearch",
+        max_results: int = 10,
+    ) -> str:
+        """Recommend a purchasable part given electrical requirements.
+
+        Args:
+            category: Component category keyword to search (e.g. "LDO regulator",
+                "N-channel MOSFET", "ferrite bead", "ESD protection").
+            requirements: Dict of electrical parameter hints used for post-search
+                filtering. Common keys: ``voltage_v``, ``current_a``, ``vgs_v``,
+                ``rds_on_mohm``, ``psrr_db``, ``capacitance_uf``, ``resistance_ohm``.
+                Values can be numbers (min) or ``{"min": x, "max": y}`` dicts.
+            package: Optional SMD package filter (e.g. "SOT-23", "SOIC-8").
+            only_basic: Prefer JLCPCB basic parts (lower assembly cost).
+            source: Parts source: ``"jlcsearch"``, ``"nexar"``, or ``"digikey"``.
+            max_results: Maximum number of recommendations to return.
+
+        Returns:
+            Ranked list of part recommendations with LCSC code, MPN, package, price.
+        """
+        return deps.service.recommend_part(
+            category, requirements, package, only_basic, source, max_results
+        )
+
+    @mcp.tool()
+    @headless_compatible
+    def lib_bind_part_to_symbol(
+        sym_ref: str,
+        lcsc_code_or_mpn: str,
+        auto_assign_footprint: bool = True,
+        source: str = "jlcsearch",
+    ) -> str:
+        """Assign a live part (LCSC/MPN) to a schematic symbol and optionally its footprint.
+
+        This is the recommended tool for closing the part-selection loop after
+        lib_recommend_part() or lib_search_components() returns a suitable part.
+
+        Args:
+            sym_ref: Schematic reference designator (e.g. "U1", "C4").
+            lcsc_code_or_mpn: LCSC part code or manufacturer part number.
+            auto_assign_footprint: If True, attempts to assign the footprint from
+                the live part data to the symbol. Requires the schematic backend.
+            source: Parts source for detail lookup.
+
+        Returns:
+            Confirmation of LCSC/MPN assignment and footprint status.
+        """
+        return deps.service.bind_part_to_symbol(
+            sym_ref, lcsc_code_or_mpn, auto_assign_footprint, source
+        )

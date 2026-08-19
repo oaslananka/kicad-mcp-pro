@@ -12,6 +12,8 @@ OWNED_FUNCTIONS = {
     "lib_get_bom_with_pricing",
     "lib_check_stock_availability",
     "lib_find_alternative_parts",
+    "lib_recommend_part",
+    "lib_bind_part_to_symbol",
 }
 
 
@@ -47,3 +49,31 @@ def test_library_root_no_longer_owns_sourcing_tools() -> None:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
     assert nested_names.isdisjoint(OWNED_FUNCTIONS)
+
+
+def test_library_sourcing_part_selection_register_stays_bounded() -> None:
+    module_name = "kicad_mcp.tools.library_sourcing"
+    span = boundaries._function_span(
+        boundaries.DOMAIN_MODULES[module_name], "register_part_selection"
+    )
+    assert span is not None
+    assert span <= 100
+
+
+def test_library_sourcing_bind_part_stays_thin() -> None:
+    import ast
+
+    service = boundaries.SRC_ROOT / "kicad_mcp" / "library" / "sourcing.py"
+    tree = ast.parse(service.read_text(encoding="utf-8"), filename=str(service))
+    service_class = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "LibrarySourcingService"
+    )
+    method = next(
+        node
+        for node in service_class.body
+        if isinstance(node, ast.FunctionDef) and node.name == "bind_part_to_symbol"
+    )
+    assert method.end_lineno is not None
+    assert method.end_lineno - method.lineno + 1 <= 45
