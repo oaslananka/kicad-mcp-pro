@@ -19,6 +19,7 @@ from ..library.catalog import (
     symbol_library_dir,
 )
 from ..library.component_contract import LibraryComponentContractService
+from ..library.footprint_engineering import LibraryFootprintEngineeringService
 from ..library.local_authoring import LibraryLocalAuthoringService
 from ..library.sourcing import LibrarySourcingService
 from ..library_resolution import (
@@ -43,6 +44,7 @@ from . import (
     library_catalog,
     library_component_contract,
     library_datasheet,
+    library_footprint_engineering,
     library_local_authoring,
     library_sourcing,
 )
@@ -506,192 +508,21 @@ def register(mcp: FastMCP) -> None:
     sourcing_deps = library_sourcing.LibrarySourcingDependencies(service=sourcing_service)
     library_sourcing.register(mcp, sourcing_deps)
 
-    @mcp.tool()
-    @headless_compatible
-    def lib_generate_footprint_ipc7351(
-        package: str,
-        density: str = "B",
-        pin_count: int | None = None,
-        pitch_mm: float | None = None,
-        body_l_mm: float | None = None,
-        body_w_mm: float | None = None,
-        rows: int = 1,
-        exposed_pad_mm: float | None = None,
-        ball_diameter_mm: float | None = None,
-        output_path: str = "",
-    ) -> str:
-        """Generate an IPC-7351B compliant KiCad footprint (.kicad_mod) and save it.
-
-        Supported packages: 0201, 0402, 0603, 0805, 1206, 1210, 2512 (chip passives),
-        SOT-23, SOT-223, SOT-89, SOT-363/SOT-26, SC-70/SOT-323, SOD-123, SOD-323,
-        SMA/SMB/SMC (DO-214), DPAK/TO-252, D2PAK/TO-263,
-        SOIC, SOP, SSOP, TSSOP (dual SMD), QFP, LQFP, TQFP (quad flat),
-        QFN, DFN (no-lead), BGA (ball grid array), PinHeader (through-hole).
-
-        Args:
-            package: Package family name (case-insensitive).
-            density: IPC-7351B density level: A (generous), B (nominal), C (compact).
-            pin_count: Number of leads / balls (required for multi-lead packages).
-            pitch_mm: Lead pitch in mm.
-            body_l_mm: Body length in mm.
-            body_w_mm: Body width in mm (QFP only; defaults to body_l_mm).
-            rows: BGA rows or PinHeader row count (1 or 2).
-            exposed_pad_mm: Exposed pad size for QFN in mm.
-            ball_diameter_mm: BGA ball diameter in mm.
-            output_path: Optional relative path inside output_dir. Defaults to
-                ``footprints/<package>.kicad_mod``.
-
-        Returns:
-            Confirmation with the saved file path, or an error message.
-        """
-        from ..utils.footprint_gen import generate_footprint
-
-        if density not in ("A", "B", "C"):
-            return f"Invalid density '{density}'. Must be A, B, or C."
-
-        try:
-            sexpr = generate_footprint(
-                package,
-                pin_count=pin_count,
-                pitch_mm=pitch_mm,
-                body_l_mm=body_l_mm,
-                body_w_mm=body_w_mm,
-                density=density,  # type: ignore[arg-type]
-                rows=rows,
-                exposed_pad_mm=exposed_pad_mm,
-                ball_diameter_mm=ball_diameter_mm,
-            )
-        except ValueError as exc:
-            return f"Footprint generation failed: {exc}"
-
-        cfg = get_config()
-        if output_path:
-            out_file = cfg.resolve_within_project(output_path)
-        else:
-            out_dir = (cfg.output_dir or cfg.project_dir / "output") / "footprints"  # type: ignore[operator]
-            out_dir.mkdir(parents=True, exist_ok=True)
-            safe_name = package.upper().replace("/", "_").replace(" ", "_")
-            if pin_count:
-                safe_name += f"-{pin_count}"
-            out_file = out_dir / f"{safe_name}.kicad_mod"
-
-        out_file.parent.mkdir(parents=True, exist_ok=True)
-        out_file.write_text(sexpr, encoding="utf-8")
-        format_upgrade = upgrade_generated_file(
-            out_file, "fp", _run_cli, allowed_root=cfg.workspace
-        )
-        result = (
-            f"Footprint saved to {out_file}\n"
-            f"Package: {package}, Density: {density}"
-            + (f", {pin_count} pins" if pin_count else "")
-            + (f", {pitch_mm:.2f}mm pitch" if pitch_mm else "")
-        )
-        if not format_upgrade.upgraded:
-            result += (
-                "\nFormat note: kept repository writer dialect; "
-                f"KiCad migration was unavailable ({format_upgrade.detail})."
-            )
-        return result
-
-    @mcp.tool()
-    @headless_compatible
-    def lib_validate_footprint_ipc7351(
-        footprint_path: str,
-        size_code: str,
-        density: str = "B",
-        tolerance_mm: float = 0.12,
-    ) -> str:
-        """Validate a two-terminal chip footprint against its IPC-7351B nominal (hard gate).
-
-        Reads the .kicad_mod at ``footprint_path`` (relative to the project), parses its
-        SMD pads, and compares pad width/height/pitch to the IPC-7351B nominal for the
-        given chip ``size_code`` and ``density``. Gross deviation is a blocking FAIL,
-        minor deviation WARNs, a match PASSes. Scope: chip passives (0201–2512) against
-        the IPC-7351B *standard* nominal — not a datasheet-specific land-pattern check.
-        """
-        from ..utils.footprint_validate import parse_smd_pads, validate_chip_footprint
-
-        if density not in ("A", "B", "C"):
-            return f"Invalid density '{density}'. Must be A, B, or C."
-        cfg = get_config()
-        try:
-            path = cfg.resolve_within_project(footprint_path)
-        except Exception as exc:  # noqa: BLE001 - surface any path-safety rejection
-            return f"Invalid footprint path: {exc}"
-        if not path.exists():
-            return f"Footprint file not found: {path}"
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        pads = parse_smd_pads(text)
-        try:
-            result = validate_chip_footprint(
-                size_code,
-                pads,
-                density=density,  # type: ignore[arg-type]
-                tol_mm=tolerance_mm,
-            )
-        except ValueError as exc:
-            return f"Validation failed: {exc}"
-        lines = [f"Footprint IPC-7351B validation: {result.verdict}", f"- {result.summary}"]
-        lines.extend(f"  - {finding}" for finding in result.findings)
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def lib_certify_footprint(footprint_path: str) -> str:
-        """Certify a footprint against package, documentation, and standard checks (#201).
-
-        Reads the .kicad_mod at ``footprint_path`` (relative to the project) and runs
-        package-agnostic certification: pad count vs the package name (SOIC/QFP/QFN/
-        SOT/DIP…), documentation-layer completeness (courtyard/fab/silkscreen), and the
-        recorded IPC-7351 density. Returns one aggregate PASS/WARN/FAIL with per-check
-        findings; a missing courtyard or too-few pads is a blocking FAIL. Headless — no
-        KiCad IPC. For two-terminal chip *geometry* use lib_validate_footprint_ipc7351.
-        """
-        import re as _re
-
-        from ..utils.footprint_validate import (
-            FootprintCheck,
-            check_footprint_documentation_layers,
-            check_footprint_pad_count,
-            parse_ipc_density,
-        )
-
-        cfg = get_config()
-        try:
-            path = cfg.resolve_within_project(footprint_path)
-        except Exception as exc:  # noqa: BLE001 - surface any path-safety rejection
-            return f"Invalid footprint path: {exc}"
-        if not path.exists():
-            return f"Footprint file not found: {path}"
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        name_match = _re.search(r'\(footprint\s+"([^"]+)"', text)
-        footprint_name = name_match.group(1) if name_match else path.stem
-
-        checks: list[tuple[str, FootprintCheck]] = []
-        pad_check = check_footprint_pad_count(footprint_name, text)
-        if pad_check is not None:
-            checks.append(("pad-count", pad_check))
-        checks.append(("documentation-layers", check_footprint_documentation_layers(text)))
-
-        verdicts = {check.verdict for _, check in checks}
-        overall = "FAIL" if "FAIL" in verdicts else "WARN" if "WARN" in verdicts else "PASS"
-
-        density = parse_ipc_density(text)
-        lines = [
-            f"Footprint certification: {overall}",
-            f"- Footprint: {footprint_name}",
-            f"- IPC-7351 density recorded: {density}"
-            if density
-            else "- IPC-7351 density: not recorded",
-        ]
-        if pad_check is None:
-            lines.append(
-                "- [INFO] pad-count: package name does not encode a certifiable pin count."
-            )
-        for label, check in checks:
-            lines.append(f"- [{check.verdict}] {label}: {check.summary}")
-            lines.extend(f"    - {finding}" for finding in check.findings)
-        return "\n".join(lines)
+    footprint_engineering_service = LibraryFootprintEngineeringService(
+        resolve_within_project=lambda path: get_config().resolve_within_project(path),
+        default_output_dir=lambda: (
+            get_config().output_dir or cast(Path, get_config().project_dir) / "output"
+        ),
+        upgrade_generated_footprint=lambda path: upgrade_generated_file(
+            path, "fp", _run_cli, allowed_root=get_config().workspace
+        ),
+    )
+    library_footprint_engineering.register(
+        mcp,
+        library_footprint_engineering.LibraryFootprintEngineeringDependencies(
+            service=footprint_engineering_service
+        ),
+    )
 
     @mcp.tool()
     @headless_compatible
