@@ -14,6 +14,7 @@ OWNED_FUNCTIONS = {
     "lib_find_alternative_parts",
     "lib_recommend_part",
     "lib_bind_part_to_symbol",
+    "lib_check_derating",
 }
 
 
@@ -77,3 +78,10 @@ def test_library_sourcing_bind_part_stays_thin() -> None:
     )
     assert method.end_lineno is not None
     assert method.end_lineno - method.lineno + 1 <= 45
+
+
+def test_library_sourcing_compliance_register_stays_bounded() -> None:
+    module_name = "kicad_mcp.tools.library_sourcing"
+    span = boundaries._function_span(boundaries.DOMAIN_MODULES[module_name], "register_compliance")
+    assert span is not None
+    assert span <= 60

@@ -219,3 +219,29 @@ def test_recommend_part_rejects_numeric_requirement_below_threshold() -> None:
 
     assert "C902" not in result
     assert "No matching parts found" in result
+
+
+def test_check_derating_compliance_preserves_pass_and_avl_output() -> None:
+    service = _service(FakeClient([]), [])
+
+    result = service.check_derating_compliance(
+        "capacitor", "voltage", 25.0, 12.0, "Murata", ["Murata", "TDK"]
+    )
+
+    assert result == (
+        "Part sourcing compliance: PASS\n"
+        "- Derating [PASS]: capacitor voltage: utilization 48% is within the 80% "
+        "derating limit.\n"
+        "- AVL [PASS]: Murata is on the approved-vendor list."
+    )
+
+
+def test_check_derating_compliance_preserves_warning_and_error_behavior() -> None:
+    service = _service(FakeClient([]), [])
+
+    warning = service.check_derating_compliance("resistor", "power", 1.0, 0.58)
+    assert warning.startswith("Part sourcing compliance: WARN\n- Derating [WARN]:")
+    assert "- AVL [WARN]: No approved-vendor list configured — AVL not enforced." in warning
+
+    failure = service.check_derating_compliance("unobtanium", "flux", 1.0, 0.1)
+    assert failure.startswith("Derating check failed: No derating policy for 'unobtanium'/'flux'.")

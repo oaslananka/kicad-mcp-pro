@@ -19,6 +19,7 @@ CORE_NAMES = [
     "lib_find_alternative_parts",
 ]
 PART_SELECTION_NAMES = ["lib_recommend_part", "lib_bind_part_to_symbol"]
+COMPLIANCE_NAMES = ["lib_check_derating"]
 
 
 def _adapter() -> ModuleType:
@@ -112,6 +113,28 @@ class FakeSourcingService:
         self.calls.append(("alternatives", lcsc_code, tolerance_percent, source))
         return "alternatives"
 
+    def check_derating_compliance(
+        self,
+        kind: str,
+        parameter: str,
+        rated_value: float,
+        operating_value: float,
+        manufacturer: str = "",
+        approved_vendors: list[str] | None = None,
+    ) -> str:
+        self.calls.append(
+            (
+                "derating",
+                kind,
+                parameter,
+                rated_value,
+                operating_value,
+                manufacturer,
+                approved_vendors,
+            )
+        )
+        return "derating"
+
     def recommend_part(
         self,
         category: str,
@@ -199,4 +222,53 @@ def test_part_selection_registration_preserves_names_defaults_and_delegation() -
     assert service.calls == [
         ("recommend", "LDO", requirements, "", True, "jlcsearch", 10),
         ("bind", "U1", "C123", True, "jlcsearch"),
+    ]
+
+
+def test_compliance_registration_preserves_contract_and_delegation() -> None:
+    adapter = _adapter()
+    server = FastMCP("library-sourcing-compliance-test")
+    service = FakeSourcingService()
+    deps = adapter.LibrarySourcingDependencies(service=service)
+
+    adapter.register_compliance(server, deps)
+
+    tools = server._tool_manager.list_tools()
+    assert [tool.name for tool in tools] == COMPLIANCE_NAMES
+    tool = tools[0]
+    assert tool.description.startswith(
+        "Check a part choice for reliability derating and approved-vendor (AVL) compliance."
+    )
+    metadata = get_tool_metadata("lib_check_derating")
+    assert metadata is not None
+    assert metadata.headless_compatible is True
+    assert metadata.requires_kicad_running is False
+    assert tool.fn("capacitor", "voltage", 25.0, 12.0) == "derating"
+    assert service.calls == [
+        ("derating", "capacitor", "voltage", 25.0, 12.0, "", None),
+    ]
+
+
+def test_library_root_preserves_compliance_registration_order() -> None:
+    from kicad_mcp.tools.library import register
+
+    server = FastMCP("library-sourcing-compliance-order-test")
+    register(server)
+    names = [tool.name for tool in server._tool_manager.list_tools()]
+    relevant = [
+        name
+        for name in names
+        if name
+        in {
+            "lib_certify_footprint",
+            "lib_check_derating",
+            "lib_generate_symbol_from_pintable",
+            "lib_recommend_part",
+        }
+    ]
+    assert relevant == [
+        "lib_certify_footprint",
+        "lib_check_derating",
+        "lib_generate_symbol_from_pintable",
+        "lib_recommend_part",
     ]
