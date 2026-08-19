@@ -5,10 +5,19 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION
 from ..utils.sexpr import _sexpr_string
+from ..utils.symbol_gen import PinSpec, generate_symbol
+
+
+class UpgradeResultProtocol(Protocol):
+    @property
+    def upgraded(self) -> bool: ...
+
+    @property
+    def detail(self) -> str: ...
 
 
 def _render_pin_blocks(pins: list[dict[str, Any]]) -> str:
@@ -54,7 +63,9 @@ class LibraryLocalAuthoringService:
     footprint_file: Callable[[str, str], Path]
     update_symbol_property: Callable[[str, str, str], object]
     project_dir: Callable[[], Path | None]
-    upgrade_symbol_library: Callable[[Path], object] | None = None
+    upgrade_symbol_library: Callable[[Path], UpgradeResultProtocol | None] | None = None
+    resolve_within_project: Callable[[str], Path] | None = None
+    default_output_dir: Callable[[], Path] | None = None
 
     def assign_footprint(self, reference: str, library: str, footprint: str) -> str:
         path = self.footprint_file(library, footprint)
@@ -82,3 +93,75 @@ class LibraryLocalAuthoringService:
         if self.upgrade_symbol_library is not None:
             self.upgrade_symbol_library(library_file)
         return f"Created custom symbol '{name}' in {library_file}."
+
+    def generate_symbol_from_pintable(
+        self,
+        name: str,
+        pins: list[dict[str, Any]],
+        reference_prefix: str = "U",
+        description: str = "",
+        datasheet: str = "",
+        footprint_hint: str = "",
+        output_path: str = "",
+    ) -> str:
+        """Generate a KiCad symbol library from structured pin-table data."""
+        pin_specs: list[PinSpec] = []
+        for raw in pins:
+            try:
+                pin_specs.append(
+                    PinSpec(
+                        number=raw["number"],
+                        name=raw["name"],
+                        pin_type=raw.get("pin_type", "bidirectional"),
+                        side=raw.get("side", "left"),
+                        unit=int(raw.get("unit", 1)),
+                    )
+                )
+            except (KeyError, ValueError) as exc:
+                return f"Invalid pin specification: {exc} — raw: {raw}"
+
+        try:
+            sexpr = generate_symbol(
+                name,
+                pin_specs,
+                reference_prefix=reference_prefix,
+                description=description,
+                datasheet=datasheet,
+                footprint_hint=footprint_hint,
+            )
+        except Exception as exc:
+            return f"Symbol generation failed: {exc}"
+
+        if output_path:
+            if self.resolve_within_project is None:
+                return "No project path resolver is configured."
+            out_file = self.resolve_within_project(output_path)
+        else:
+            if self.default_output_dir is not None:
+                out_dir = self.default_output_dir() / "symbols"
+            else:
+                project_dir = self.project_dir()
+                if project_dir is None:
+                    return "No active project is configured."
+                out_dir = project_dir / "output" / "symbols"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            safe_name = name.replace(" ", "_").replace("/", "_")
+            out_file = out_dir / f"{safe_name}.kicad_sym"
+
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        out_file.write_text(sexpr, encoding="utf-8")
+        format_upgrade = (
+            self.upgrade_symbol_library(out_file)
+            if self.upgrade_symbol_library is not None
+            else None
+        )
+        result = (
+            f"Symbol saved to {out_file}\n"
+            f"Name: {name}, Pins: {len(pin_specs)}, Ref prefix: {reference_prefix}"
+        )
+        if format_upgrade is not None and not format_upgrade.upgraded:
+            result += (
+                "\nFormat note: kept repository writer dialect; "
+                f"KiCad migration was unavailable ({format_upgrade.detail})."
+            )
+        return result

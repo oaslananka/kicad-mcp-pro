@@ -133,3 +133,77 @@ def test_root_wiring_preserves_late_monkeypatch_lookup(
         "Assigned footprint 'Resistor_SMD:R_0805' to 'R1'."
     )
     assert updates == [("R1", "Footprint", "Resistor_SMD:R_0805")]
+
+
+class FakePinTableService(FakeService):
+    def generate_symbol_from_pintable(
+        self,
+        name: str,
+        pins: list[dict[str, object]],
+        reference_prefix: str = "U",
+        description: str = "",
+        datasheet: str = "",
+        footprint_hint: str = "",
+        output_path: str = "",
+    ) -> str:
+        self.calls.append(
+            (
+                "generate-pintable",
+                name,
+                pins,
+                reference_prefix,
+                description,
+                datasheet,
+                footprint_hint,
+                output_path,
+            )
+        )
+        return "generated"
+
+
+def test_pin_table_registration_preserves_exact_contract_and_delegation() -> None:
+    adapter = _adapter()
+    server = FastMCP("library-local-authoring-pintable-test")
+    service = FakePinTableService()
+    deps = adapter.LibraryLocalAuthoringDependencies(service=service)
+
+    adapter.register_pin_table_generator(server, deps)
+
+    tools = server._tool_manager.list_tools()
+    assert [tool.name for tool in tools] == ["lib_generate_symbol_from_pintable"]
+    tool = tools[0]
+    assert tool.description.startswith(
+        "Generate a KiCad symbol (.kicad_sym) from a pin table and save it."
+    )
+    metadata = get_tool_metadata(tool.name)
+    assert metadata is not None
+    assert metadata.headless_compatible is True
+    assert metadata.requires_kicad_running is False
+    pins: list[dict[str, object]] = [{"number": "1", "name": "VIN"}]
+    assert tool.fn("Demo", pins) == "generated"
+    assert service.calls == [("generate-pintable", "Demo", pins, "U", "", "", "", "")]
+
+
+def test_library_root_preserves_pin_table_generator_late_position() -> None:
+    from kicad_mcp.tools.library import register
+
+    server = FastMCP("library-local-authoring-pintable-order-test")
+    register(server)
+    names = [tool.name for tool in server._tool_manager.list_tools()]
+    relevant = [
+        name
+        for name in names
+        if name
+        in {
+            "lib_check_derating",
+            "lib_generate_symbol_from_pintable",
+            "lib_recommend_part",
+            "lib_bind_part_to_symbol",
+        }
+    ]
+    assert relevant == [
+        "lib_check_derating",
+        "lib_generate_symbol_from_pintable",
+        "lib_recommend_part",
+        "lib_bind_part_to_symbol",
+    ]
