@@ -11,6 +11,32 @@ from ..models.verdict import Finding, Verdict, VerdictReport, stable_finding_id
 from ..utils.component_search import ComponentRecord, ComponentSearchClient, normalize_lcsc_code
 
 _RECOMMENDATION_NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?(?:e[-+]?\d+)?")
+_PACKAGE_FOOTPRINT_HINTS = {
+    "SOT-23": "SOT-23",
+    "SOT-223": "SOT-223",
+    "SOIC-8": "SOIC-8_3.9x4.9mm_P1.27mm",
+    "SSOP-20": "SSOP-20_4.4x6.5mm_P0.65mm",
+}
+
+
+def _footprint_binding_line(
+    update_symbol_property: Callable[[str, str, str], object],
+    sym_ref: str,
+    package: str,
+) -> str:
+    if not package:
+        return "- Footprint: package info unavailable — run lib_assign_footprint() manually."
+
+    hint = _PACKAGE_FOOTPRINT_HINTS.get(package.upper(), package)
+    try:
+        update_symbol_property(sym_ref, "Footprint", hint)
+    except Exception as exc:
+        return (
+            f"- Footprint hint: {package} — "
+            "run lib_generate_footprint_ipc7351() or lib_assign_footprint() manually."
+            f" (automatic assignment failed: {exc})"
+        )
+    return f"- Footprint hint: {package} (assigned to symbol)"
 
 
 def _recommendation_unit_scale(key: str) -> float:
@@ -619,38 +645,9 @@ class LibrarySourcingService:
             f"- Package: {part.package or '(n/a)'}",
         ]
 
-        if auto_assign_footprint and part.package:
-            assigned = False
-            assignment_error = ""
-            try:
-                package_map = {
-                    "SOT-23": "SOT-23",
-                    "SOT-223": "SOT-223",
-                    "SOIC-8": "SOIC-8_3.9x4.9mm_P1.27mm",
-                    "SSOP-20": "SSOP-20_4.4x6.5mm_P0.65mm",
-                }
-                hint = package_map.get(part.package.upper(), part.package)
-                self.update_symbol_property(sym_ref, "Footprint", hint)
-                assigned = True
-            except Exception as exc:
-                assignment_error = str(exc)
-
-            if assigned:
-                lines.append(f"- Footprint hint: {part.package} (assigned to symbol)")
-            else:
-                error_suffix = (
-                    f" (automatic assignment failed: {assignment_error})"
-                    if assignment_error
-                    else ""
-                )
-                lines.append(
-                    f"- Footprint hint: {part.package} — "
-                    "run lib_generate_footprint_ipc7351() or lib_assign_footprint() manually."
-                    f"{error_suffix}"
-                )
-        elif auto_assign_footprint:
+        if auto_assign_footprint:
             lines.append(
-                "- Footprint: package info unavailable — run lib_assign_footprint() manually."
+                _footprint_binding_line(self.update_symbol_property, sym_ref, part.package)
             )
 
         return "\n".join(lines)
