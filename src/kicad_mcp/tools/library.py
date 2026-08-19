@@ -464,14 +464,18 @@ def register(mcp: FastMCP) -> None:
             reference, field, value
         ),
         project_dir=lambda: get_config().project_dir,
+        resolve_within_project=lambda path: get_config().resolve_within_project(path),
+        default_output_dir=lambda: (
+            get_config().output_dir or cast(Path, get_config().project_dir) / "output"
+        ),
         upgrade_symbol_library=lambda path: upgrade_generated_file(
             path, "sym", _run_cli, allowed_root=get_config().workspace
         ),
     )
-    library_local_authoring.register(
-        mcp,
-        library_local_authoring.LibraryLocalAuthoringDependencies(service=local_authoring_service),
+    local_authoring_deps = library_local_authoring.LibraryLocalAuthoringDependencies(
+        service=local_authoring_service
     )
+    library_local_authoring.register(mcp, local_authoring_deps)
 
     library_datasheet.register(
         mcp,
@@ -557,90 +561,6 @@ def register(mcp: FastMCP) -> None:
         ]
         return "\n".join(lines)
 
-    @mcp.tool()
-    @headless_compatible
-    def lib_generate_symbol_from_pintable(
-        name: str,
-        pins: list[dict[str, Any]],
-        reference_prefix: str = "U",
-        description: str = "",
-        datasheet: str = "",
-        footprint_hint: str = "",
-        output_path: str = "",
-    ) -> str:
-        """Generate a KiCad symbol (.kicad_sym) from a pin table and save it.
-
-        Each pin dict must contain:
-            ``number`` (str | int), ``name`` (str).
-        Optional per-pin keys:
-            ``pin_type`` (input/output/bidirectional/passive/power_in/power_out/…),
-            ``side`` (left/right/top/bottom), ``unit`` (int ≥ 1).
-
-        Args:
-            name: Symbol name, used as both the library entry and the default value.
-            pins: List of pin specification dicts.
-            reference_prefix: Ref-des prefix (U, J, Q, R, …).
-            description: Short human description.
-            datasheet: Datasheet URL or path.
-            footprint_hint: Default footprint (e.g. "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm").
-            output_path: Optional relative path inside output_dir. Defaults to
-                ``symbols/<name>.kicad_sym``.
-
-        Returns:
-            Confirmation with the saved file path, or an error message.
-        """
-        from ..utils.symbol_gen import PinSpec, generate_symbol
-
-        pin_specs: list[PinSpec] = []
-        for raw in pins:
-            try:
-                pin_specs.append(
-                    PinSpec(
-                        number=raw["number"],
-                        name=raw["name"],
-                        pin_type=raw.get("pin_type", "bidirectional"),
-                        side=raw.get("side", "left"),
-                        unit=int(raw.get("unit", 1)),
-                    )
-                )
-            except (KeyError, ValueError) as exc:
-                return f"Invalid pin specification: {exc} — raw: {raw}"
-
-        try:
-            sexpr = generate_symbol(
-                name,
-                pin_specs,
-                reference_prefix=reference_prefix,
-                description=description,
-                datasheet=datasheet,
-                footprint_hint=footprint_hint,
-            )
-        except Exception as exc:
-            return f"Symbol generation failed: {exc}"
-
-        cfg = get_config()
-        if output_path:
-            out_file = cfg.resolve_within_project(output_path)
-        else:
-            out_dir = (cfg.output_dir or cfg.project_dir / "output") / "symbols"  # type: ignore[operator]
-            out_dir.mkdir(parents=True, exist_ok=True)
-            safe_name = name.replace(" ", "_").replace("/", "_")
-            out_file = out_dir / f"{safe_name}.kicad_sym"
-
-        out_file.parent.mkdir(parents=True, exist_ok=True)
-        out_file.write_text(sexpr, encoding="utf-8")
-        format_upgrade = upgrade_generated_file(
-            out_file, "sym", _run_cli, allowed_root=cfg.workspace
-        )
-        result = (
-            f"Symbol saved to {out_file}\n"
-            f"Name: {name}, Pins: {len(pin_specs)}, Ref prefix: {reference_prefix}"
-        )
-        if not format_upgrade.upgraded:
-            result += (
-                "\nFormat note: kept repository writer dialect; "
-                f"KiCad migration was unavailable ({format_upgrade.detail})."
-            )
-        return result
+    library_local_authoring.register_pin_table_generator(mcp, local_authoring_deps)
 
     library_sourcing.register_part_selection(mcp, sourcing_deps)

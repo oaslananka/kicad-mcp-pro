@@ -108,3 +108,151 @@ def test_create_custom_symbol_appends_and_escapes_sexpr_strings(tmp_path: Path) 
     assert '\n\t(symbol "Injected"' not in content
     assert "\n\t(pin output line" not in block
     assert _sexpr_string(pin_name) in block
+
+
+class _UpgradeResult:
+    def __init__(self, *, upgraded: bool, detail: str = "") -> None:
+        self.upgraded = upgraded
+        self.detail = detail
+
+
+def _pin_table_service(
+    tmp_path: Path,
+    *,
+    upgraded: bool = True,
+):
+    module = _module()
+    upgrades: list[Path] = []
+
+    def upgrade(path: Path) -> _UpgradeResult:
+        upgrades.append(path)
+        return _UpgradeResult(upgraded=upgraded, detail="cli unavailable")
+
+    service = module.LibraryLocalAuthoringService(
+        footprint_file=lambda _library, _footprint: Path("missing"),
+        update_symbol_property=lambda _ref, _field, _value: None,
+        project_dir=lambda: tmp_path,
+        upgrade_symbol_library=upgrade,
+        resolve_within_project=lambda relative: tmp_path / relative,
+        default_output_dir=lambda: tmp_path / "output",
+    )
+    return service, upgrades
+
+
+def test_generate_symbol_from_pintable_preserves_custom_path_and_migration_note(
+    tmp_path: Path,
+) -> None:
+    service, upgrades = _pin_table_service(tmp_path, upgraded=False)
+
+    result = service.generate_symbol_from_pintable(
+        "Demo IC",
+        [
+            {"number": "1", "name": "VIN", "pin_type": "power_in", "side": "left"},
+            {"number": "2", "name": "VOUT", "pin_type": "power_out", "side": "right"},
+        ],
+        reference_prefix="U",
+        description="Demo regulator",
+        datasheet="https://example.invalid/demo.pdf",
+        footprint_hint="Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+        output_path="custom/Demo.kicad_sym",
+    )
+
+    path = tmp_path / "custom" / "Demo.kicad_sym"
+    assert path.exists()
+    content = path.read_text(encoding="utf-8")
+    assert content.startswith("(kicad_symbol_lib")
+    assert 'property "Reference" "U"' in content
+    assert 'property "Description" "Demo regulator"' in content
+    assert upgrades == [path]
+    assert result.startswith(f"Symbol saved to {path}\nName: Demo IC, Pins: 2, Ref prefix: U")
+    assert "Format note: kept repository writer dialect" in result
+    assert "cli unavailable" in result
+
+
+def test_generate_symbol_from_pintable_preserves_default_output_name(tmp_path: Path) -> None:
+    service, upgrades = _pin_table_service(tmp_path)
+
+    result = service.generate_symbol_from_pintable(
+        "Demo/IC",
+        [{"number": 1, "name": "A"}],
+        reference_prefix="J",
+    )
+
+    path = tmp_path / "output" / "symbols" / "Demo_IC.kicad_sym"
+    assert path.exists()
+    assert upgrades == [path]
+    assert result.startswith(f"Symbol saved to {path}\nName: Demo/IC, Pins: 1, Ref prefix: J")
+    assert "Format note:" not in result
+
+
+def test_generate_symbol_from_pintable_reports_invalid_pin_specification(tmp_path: Path) -> None:
+    service, upgrades = _pin_table_service(tmp_path)
+
+    result = service.generate_symbol_from_pintable("Demo", [{"number": "1"}])
+
+    assert result.startswith("Invalid pin specification:")
+    assert "raw: {'number': '1'}" in result
+    assert upgrades == []
+
+
+def test_generate_symbol_from_pintable_reports_generation_failure(tmp_path: Path) -> None:
+    service, upgrades = _pin_table_service(tmp_path)
+
+    result = service.generate_symbol_from_pintable(
+        "Demo",
+        [{"number": "1", "name": "A", "side": "diagonal"}],
+    )
+
+    assert result.startswith("Symbol generation failed:")
+    assert upgrades == []
+
+
+def test_generate_symbol_from_pintable_requires_resolver_for_custom_path(tmp_path: Path) -> None:
+    module = _module()
+    service = module.LibraryLocalAuthoringService(
+        footprint_file=lambda _library, _footprint: Path("missing"),
+        update_symbol_property=lambda _ref, _field, _value: None,
+        project_dir=lambda: tmp_path,
+    )
+
+    result = service.generate_symbol_from_pintable(
+        "Demo",
+        [{"number": "1", "name": "A"}],
+        output_path="custom/Demo.kicad_sym",
+    )
+
+    assert result == "No project path resolver is configured."
+
+
+def test_generate_symbol_from_pintable_falls_back_to_project_output(tmp_path: Path) -> None:
+    module = _module()
+    service = module.LibraryLocalAuthoringService(
+        footprint_file=lambda _library, _footprint: Path("missing"),
+        update_symbol_property=lambda _ref, _field, _value: None,
+        project_dir=lambda: tmp_path,
+    )
+
+    result = service.generate_symbol_from_pintable(
+        "Fallback",
+        [{"number": "1", "name": "A"}],
+    )
+
+    path = tmp_path / "output" / "symbols" / "Fallback.kicad_sym"
+    assert path.exists()
+    assert result.startswith(f"Symbol saved to {path}")
+
+
+def test_generate_symbol_from_pintable_requires_project_for_fallback_output() -> None:
+    module = _module()
+    service = module.LibraryLocalAuthoringService(
+        footprint_file=lambda _library, _footprint: Path("missing"),
+        update_symbol_property=lambda _ref, _field, _value: None,
+        project_dir=lambda: None,
+    )
+
+    result = service.generate_symbol_from_pintable(
+        "Demo",
+        [{"number": "1", "name": "A"}],
+    )
+
+    assert result == "No active project is configured."

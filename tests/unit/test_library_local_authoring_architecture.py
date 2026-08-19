@@ -39,3 +39,24 @@ def test_library_root_no_longer_owns_local_authoring_tools() -> None:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
     assert nested_names.isdisjoint(OWNED_FUNCTIONS)
+
+
+def test_pin_table_generator_registration_stays_bounded() -> None:
+    module = boundaries.DOMAIN_MODULES["kicad_mcp.tools.library_local_authoring"]
+    span = boundaries._function_span(module, "register_pin_table_generator")
+    assert span is not None
+    assert span <= 100
+
+
+def test_library_root_no_longer_owns_pin_table_generator() -> None:
+    root = boundaries.SRC_ROOT / "kicad_mcp" / "tools" / "library.py"
+    tree = ast.parse(root.read_text(encoding="utf-8"), filename=str(root))
+    register_node = next(
+        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "register"
+    )
+    nested_names = {
+        node.name
+        for node in register_node.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert "lib_generate_symbol_from_pintable" not in nested_names
