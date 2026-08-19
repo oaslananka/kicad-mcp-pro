@@ -49,7 +49,6 @@ from . import (
     library_sourcing,
 )
 from .export_support import _run_cli
-from .metadata import headless_compatible
 from .schematic import get_schematic_backend, project_schematic_files, update_symbol_property
 
 # Compatibility alias retained for downstream/tests that historically imported it here.
@@ -528,38 +527,7 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    def lib_check_derating(
-        kind: str,
-        parameter: str,
-        rated_value: float,
-        operating_value: float,
-        manufacturer: str = "",
-        approved_vendors: list[str] | None = None,
-    ) -> str:
-        """Check a part choice for reliability derating and approved-vendor (AVL) compliance.
-
-        Verifies the operating value stays within the derating limit for the
-        component ``kind``/``parameter`` (e.g. capacitor/voltage <= 80% of rated),
-        and — when ``approved_vendors`` is given — that ``manufacturer`` is on the
-        approved-vendor list. Returns one PASS/WARN/FAIL verdict. Derating factors
-        are conservative general-practice values, not a specific MIL/IPC mandate.
-        """
-        from ..utils.derating import _worst, avl_check, derating_check
-
-        try:
-            derating = derating_check(kind, parameter, rated_value, operating_value)
-        except ValueError as exc:
-            return f"Derating check failed: {exc}"
-        avl_verdict, avl_summary = avl_check(manufacturer, approved_vendors or [])
-        overall = _worst(derating.verdict, avl_verdict)
-        lines = [
-            f"Part sourcing compliance: {overall}",
-            f"- Derating [{derating.verdict}]: {derating.summary}",
-            f"- AVL [{avl_verdict}]: {avl_summary}",
-        ]
-        return "\n".join(lines)
+    library_sourcing.register_compliance(mcp, sourcing_deps)
 
     library_local_authoring.register_pin_table_generator(mcp, local_authoring_deps)
 

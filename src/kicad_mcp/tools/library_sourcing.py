@@ -53,6 +53,16 @@ class LibrarySourcingServiceProtocol(Protocol):
         self, lcsc_code: str, tolerance_percent: float = 10.0, source: str = "jlcsearch"
     ) -> str: ...
 
+    def check_derating_compliance(
+        self,
+        kind: str,
+        parameter: str,
+        rated_value: float,
+        operating_value: float,
+        manufacturer: str = "",
+        approved_vendors: list[str] | None = None,
+    ) -> str: ...
+
     def recommend_part(
         self,
         category: str,
@@ -187,6 +197,37 @@ def register(mcp: FastMCP, deps: LibrarySourcingDependencies) -> None:
     ) -> str:
         """Find nearby alternative parts for the supplied LCSC code."""
         return deps.service.find_alternative_parts(lcsc_code, tolerance_percent, source)
+
+
+def register_compliance(mcp: FastMCP, deps: LibrarySourcingDependencies) -> None:
+    """Register reliability/AVL compliance at its legacy public position."""
+
+    @mcp.tool()
+    @headless_compatible
+    def lib_check_derating(
+        kind: str,
+        parameter: str,
+        rated_value: float,
+        operating_value: float,
+        manufacturer: str = "",
+        approved_vendors: list[str] | None = None,
+    ) -> str:
+        """Check a part choice for reliability derating and approved-vendor (AVL) compliance.
+
+        Verifies the operating value stays within the derating limit for the
+        component ``kind``/``parameter`` (e.g. capacitor/voltage <= 80% of rated),
+        and — when ``approved_vendors`` is given — that ``manufacturer`` is on the
+        approved-vendor list. Returns one PASS/WARN/FAIL verdict. Derating factors
+        are conservative general-practice values, not a specific MIL/IPC mandate.
+        """
+        return deps.service.check_derating_compliance(
+            kind,
+            parameter,
+            rated_value,
+            operating_value,
+            manufacturer,
+            approved_vendors,
+        )
 
 
 def register_part_selection(mcp: FastMCP, deps: LibrarySourcingDependencies) -> None:

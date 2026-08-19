@@ -9,6 +9,7 @@ from typing import Any, cast
 
 from ..models.verdict import Finding, Verdict, VerdictReport, stable_finding_id
 from ..utils.component_search import ComponentRecord, ComponentSearchClient, normalize_lcsc_code
+from ..utils.derating import _worst, avl_check, derating_check
 
 _RECOMMENDATION_NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?(?:e[-+]?\d+)?")
 _PACKAGE_FOOTPRINT_HINTS = {
@@ -571,6 +572,29 @@ class LibrarySourcingService:
             ordered,
             max_items=10,
         )
+
+    def check_derating_compliance(
+        self,
+        kind: str,
+        parameter: str,
+        rated_value: float,
+        operating_value: float,
+        manufacturer: str = "",
+        approved_vendors: list[str] | None = None,
+    ) -> str:
+        """Check reliability derating and approved-vendor compliance for a part choice."""
+        try:
+            derating = derating_check(kind, parameter, rated_value, operating_value)
+        except ValueError as exc:
+            return f"Derating check failed: {exc}"
+        avl_verdict, avl_summary = avl_check(manufacturer, approved_vendors or [])
+        overall = _worst(derating.verdict, avl_verdict)
+        lines = [
+            f"Part sourcing compliance: {overall}",
+            f"- Derating [{derating.verdict}]: {derating.summary}",
+            f"- AVL [{avl_verdict}]: {avl_summary}",
+        ]
+        return "\n".join(lines)
 
     def recommend_part(
         self,
