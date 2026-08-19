@@ -56,6 +56,24 @@ def _append_symbol(content: str, symbol_block: str) -> str:
     return content + symbol_block
 
 
+def _pin_specs_from_rows(pins: list[dict[str, Any]]) -> tuple[list[PinSpec], str | None]:
+    pin_specs: list[PinSpec] = []
+    for raw in pins:
+        try:
+            pin_specs.append(
+                PinSpec(
+                    number=raw["number"],
+                    name=raw["name"],
+                    pin_type=raw.get("pin_type", "bidirectional"),
+                    side=raw.get("side", "left"),
+                    unit=int(raw.get("unit", 1)),
+                )
+            )
+        except (KeyError, ValueError) as exc:
+            return [], f"Invalid pin specification: {exc} — raw: {raw}"
+    return pin_specs, None
+
+
 @dataclass(frozen=True, slots=True)
 class LibraryLocalAuthoringService:
     """File-backed local library authoring independent of FastMCP."""
@@ -105,20 +123,9 @@ class LibraryLocalAuthoringService:
         output_path: str = "",
     ) -> str:
         """Generate a KiCad symbol library from structured pin-table data."""
-        pin_specs: list[PinSpec] = []
-        for raw in pins:
-            try:
-                pin_specs.append(
-                    PinSpec(
-                        number=raw["number"],
-                        name=raw["name"],
-                        pin_type=raw.get("pin_type", "bidirectional"),
-                        side=raw.get("side", "left"),
-                        unit=int(raw.get("unit", 1)),
-                    )
-                )
-            except (KeyError, ValueError) as exc:
-                return f"Invalid pin specification: {exc} — raw: {raw}"
+        pin_specs, pin_error = _pin_specs_from_rows(pins)
+        if pin_error is not None:
+            return pin_error
 
         try:
             sexpr = generate_symbol(
