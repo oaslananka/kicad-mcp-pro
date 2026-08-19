@@ -42,8 +42,10 @@ from ..models.state import (
 from ..models.verdict import Finding, SuggestedFix, Verdict, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
 from ..path_safety import assert_within
+from ..project.context import ProjectContextService
 from ..prompts.workflows import render_professional_circuit_design_prompt
 from ..utils.cache import clear_ttl_cache, ttl_cache
+from . import project_context
 from .design_intent_state import (
     DecouplingPairIntent,
     ProjectDesignIntent,
@@ -1478,50 +1480,19 @@ def _next_action_payload() -> ProjectNextActionPayload:
 def register(mcp: FastMCP) -> None:
     """Register project management tools."""
 
-    @mcp.tool()
-    @headless_compatible
-    def kicad_set_project(
-        project_dir: str,
-        pcb_file: str = "",
-        sch_file: str = "",
-        output_dir: str = "",
-    ) -> str:
-        """Set the active KiCad project directory and file paths."""
-        cfg = get_config()
-        project_path = Path(project_dir).expanduser().resolve()
-        if not project_path.exists() or not project_path.is_dir():
-            return "Project directory does not exist or is not a directory."
-
-        scan = scan_project_dir(project_path)
-        selected_pcb = Path(pcb_file).expanduser().resolve() if pcb_file else scan.get("pcb")
-        selected_sch = Path(sch_file).expanduser().resolve() if sch_file else scan.get("schematic")
-        selected_project = scan.get("project")
-        if selected_project is not None and selected_pcb is None and selected_sch is None:
-            return (
-                "E_PROJECT_SCAN_INCOMPLETE: Found a .kicad_pro file but no matching "
-                ".kicad_pcb or .kicad_sch file in the selected directory. "
-                "Add at least one board or schematic file before activating this project."
-            )
-        selected_output = (
-            Path(output_dir).expanduser().resolve() if output_dir else project_path / "output"
-        )
-
-        cfg.apply_project(
-            project_path,
-            project_file=selected_project,
-            pcb_file=selected_pcb,
-            sch_file=selected_sch,
-            output_dir=selected_output,
-        )
-        clear_ttl_cache()
-        reset_connection()
-        return _render_project_info()
-
-    @mcp.tool()
-    @headless_compatible
-    def kicad_get_project_info() -> str:
-        """Show the currently configured KiCad project paths."""
-        return _render_project_info()
+    context_service = ProjectContextService(
+        scan_project_dir=scan_project_dir,
+        apply_project=lambda project_dir, **kwargs: get_config().apply_project(
+            project_dir, **kwargs
+        ),
+        clear_cache=clear_ttl_cache,
+        reset_connection=reset_connection,
+        render_project_info=_render_project_info,
+    )
+    project_context.register(
+        mcp,
+        project_context.ProjectContextDependencies(service=context_service),
+    )
 
     @mcp.tool()
     @headless_compatible
