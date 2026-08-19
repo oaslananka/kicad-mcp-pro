@@ -9,7 +9,7 @@ from mcp.server.fastmcp import FastMCP
 from kicad_mcp.models.verdict import VerdictReport
 from kicad_mcp.tools.metadata import get_tool_metadata
 
-NAMES = [
+CORE_NAMES = [
     "lib_search_components",
     "lib_get_component_details",
     "lib_check_sourcing_policy",
@@ -18,6 +18,7 @@ NAMES = [
     "lib_check_stock_availability",
     "lib_find_alternative_parts",
 ]
+PART_SELECTION_NAMES = ["lib_recommend_part", "lib_bind_part_to_symbol"]
 
 
 def _adapter() -> ModuleType:
@@ -111,6 +112,30 @@ class FakeSourcingService:
         self.calls.append(("alternatives", lcsc_code, tolerance_percent, source))
         return "alternatives"
 
+    def recommend_part(
+        self,
+        category: str,
+        requirements: dict[str, object],
+        package: str = "",
+        only_basic: bool = True,
+        source: str = "jlcsearch",
+        max_results: int = 10,
+    ) -> str:
+        self.calls.append(
+            ("recommend", category, requirements, package, only_basic, source, max_results)
+        )
+        return "recommend"
+
+    def bind_part_to_symbol(
+        self,
+        sym_ref: str,
+        lcsc_code_or_mpn: str,
+        auto_assign_footprint: bool = True,
+        source: str = "jlcsearch",
+    ) -> str:
+        self.calls.append(("bind", sym_ref, lcsc_code_or_mpn, auto_assign_footprint, source))
+        return "bind"
+
 
 def _registered() -> tuple[FastMCP, FakeSourcingService]:
     adapter = _adapter()
@@ -123,8 +148,8 @@ def _registered() -> tuple[FastMCP, FakeSourcingService]:
 def test_registration_preserves_names_order_and_headless_metadata() -> None:
     server, _service = _registered()
     tools = server._tool_manager.list_tools()
-    assert [tool.name for tool in tools] == NAMES
-    for name in NAMES:
+    assert [tool.name for tool in tools] == CORE_NAMES
+    for name in CORE_NAMES:
         metadata = get_tool_metadata(name)
         assert metadata is not None
         assert metadata.headless_compatible is True
@@ -151,4 +176,27 @@ def test_registration_preserves_defaults_and_delegation() -> None:
         ("bom", 1, "jlcsearch"),
         ("stock", None, "jlcsearch", None),
         ("alternatives", "C123", 10.0, "jlcsearch"),
+    ]
+
+
+def test_part_selection_registration_preserves_names_defaults_and_delegation() -> None:
+    adapter = _adapter()
+    server = FastMCP("library-part-selection-test")
+    service = FakeSourcingService()
+    adapter.register_part_selection(server, adapter.LibrarySourcingDependencies(service=service))
+    tools = server._tool_manager.list_tools()
+    assert [tool.name for tool in tools] == PART_SELECTION_NAMES
+    for name in PART_SELECTION_NAMES:
+        metadata = get_tool_metadata(name)
+        assert metadata is not None
+        assert metadata.headless_compatible is True
+        assert metadata.requires_kicad_running is False
+
+    by_name = {tool.name: tool for tool in tools}
+    requirements = {"voltage_v": 5.0}
+    assert by_name["lib_recommend_part"].fn("LDO", requirements) == "recommend"
+    assert by_name["lib_bind_part_to_symbol"].fn("U1", "C123") == "bind"
+    assert service.calls == [
+        ("recommend", "LDO", requirements, "", True, "jlcsearch", 10),
+        ("bind", "U1", "C123", True, "jlcsearch"),
     ]
