@@ -43,9 +43,10 @@ from ..models.verdict import Finding, SuggestedFix, Verdict, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
 from ..path_safety import assert_within
 from ..project.context import ProjectContextService
+from ..project.discovery import ProjectDiscoveryService
 from ..prompts.workflows import render_professional_circuit_design_prompt
 from ..utils.cache import clear_ttl_cache, ttl_cache
-from . import project_context
+from . import project_context, project_discovery
 from .design_intent_state import (
     DecouplingPairIntent,
     ProjectDesignIntent,
@@ -76,12 +77,6 @@ PROJECT_SPEC_FILENAME = "project_spec.json"
 LEGACY_DESIGN_INTENT_FILENAME = "design_intent.json"
 DEFAULT_INFERRED_DECOUPLING_DISTANCE_MM = 6.0
 _REPORTED_LEGACY_INTENT_PATHS: set[Path] = set()
-
-
-class ScanDirectoryInput(BaseModel):
-    """Directory scan parameters."""
-
-    path: str = Field(min_length=1, max_length=1000)
 
 
 class CreateProjectInput(BaseModel):
@@ -2295,36 +2290,14 @@ def register(mcp: FastMCP) -> None:
             next_tool=next_tool,
         )
 
-    @mcp.tool()
-    @headless_compatible
-    def kicad_list_recent_projects() -> str:
-        """List recently opened KiCad projects from KiCad's config files."""
-        projects = find_recent_projects()
-        if not projects:
-            return "No recent KiCad projects were found on this machine."
-
-        lines = [f"Found {len(projects)} recent project(s):"]
-        for index, project in enumerate(projects, start=1):
-            lines.append(f"{index}. {project}")
-        lines.append("")
-        lines.append("Call `kicad_set_project()` with one of these paths to activate it.")
-        return "\n".join(lines)
-
-    @mcp.tool()
-    @headless_compatible
-    def kicad_scan_directory(path: str) -> str:
-        """Scan a directory and report any KiCad project files it contains."""
-        payload = ScanDirectoryInput(path=path)
-        directory = Path(payload.path).expanduser().resolve()
-        if not directory.exists() or not directory.is_dir():
-            return "The supplied path is not a directory."
-
-        scan = scan_project_dir(directory)
-        lines = [f"Scan results for {directory}:"]
-        lines.append(f"- Project file: {scan['project'] or '(none)'}")
-        lines.append(f"- PCB file: {scan['pcb'] or '(none)'}")
-        lines.append(f"- Schematic file: {scan['schematic'] or '(none)'}")
-        return "\n".join(lines)
+    discovery_service = ProjectDiscoveryService(
+        find_recent_projects=find_recent_projects,
+        scan_project_dir=scan_project_dir,
+    )
+    project_discovery.register(
+        mcp,
+        project_discovery.ProjectDiscoveryDependencies(service=discovery_service),
+    )
 
     @mcp.tool()
     @headless_compatible
