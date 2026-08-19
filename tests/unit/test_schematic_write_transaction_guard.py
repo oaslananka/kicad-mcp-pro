@@ -32,7 +32,7 @@ _FILE_HANDLE_NAMES = {"sch_file", "pcb_file", "board_file"}
 _ALLOWLIST: dict[str, str] = {
     # Brand-new project scaffolding: the files do not exist yet, so there is no
     # prior content to transact against — initial creation, not mutation.
-    "project.py::kicad_create_new_project": "writes fresh empty .kicad_pcb/.kicad_sch files",
+    "creation.py::create": "writes fresh empty .kicad_pcb/.kicad_sch files",
 }
 
 
