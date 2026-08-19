@@ -26,6 +26,7 @@ _LIBRARY_COMPONENT_CONTRACT_ADAPTER = "kicad_mcp.tools.library_component_contrac
 _PROJECT_CONTEXT_ADAPTER = "kicad_mcp.tools.project_context"
 _PROJECT_CREATION_ADAPTER = "kicad_mcp.tools.project_creation"
 _PROJECT_DISCOVERY_ADAPTER = "kicad_mcp.tools.project_discovery"
+_PROJECT_ROOT_MODULE = "kicad_mcp.tools.project"
 
 DOMAIN_MODULES = {
     "kicad_mcp.tools.pcb": SRC_ROOT / "kicad_mcp" / "tools" / "pcb.py",
@@ -413,9 +414,9 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     _LIBRARY_DATASHEET_ADAPTER: ("kicad_mcp.tools.library",),
     _LIBRARY_FOOTPRINT_ENGINEERING_ADAPTER: ("kicad_mcp.tools.library",),
     _LIBRARY_SOURCING_ADAPTER: ("kicad_mcp.tools.library",),
-    _PROJECT_CONTEXT_ADAPTER: ("kicad_mcp.tools.project",),
-    _PROJECT_CREATION_ADAPTER: ("kicad_mcp.tools.project",),
-    _PROJECT_DISCOVERY_ADAPTER: ("kicad_mcp.tools.project",),
+    _PROJECT_CONTEXT_ADAPTER: (_PROJECT_ROOT_MODULE,),
+    _PROJECT_CREATION_ADAPTER: (_PROJECT_ROOT_MODULE,),
+    _PROJECT_DISCOVERY_ADAPTER: (_PROJECT_ROOT_MODULE,),
     "kicad_mcp.tools.pcb_basic_inspection": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_board_inspection": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_file_inspection": ("kicad_mcp.tools.pcb",),
