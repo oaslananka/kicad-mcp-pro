@@ -24,6 +24,7 @@ _LIBRARY_LOCAL_AUTHORING_ADAPTER = "kicad_mcp.tools.library_local_authoring"
 _LIBRARY_SOURCING_ADAPTER = "kicad_mcp.tools.library_sourcing"
 _LIBRARY_COMPONENT_CONTRACT_ADAPTER = "kicad_mcp.tools.library_component_contract"
 _PROJECT_CONTEXT_ADAPTER = "kicad_mcp.tools.project_context"
+_PROJECT_CREATION_ADAPTER = "kicad_mcp.tools.project_creation"
 _PROJECT_DISCOVERY_ADAPTER = "kicad_mcp.tools.project_discovery"
 
 DOMAIN_MODULES = {
@@ -61,6 +62,7 @@ DOMAIN_MODULES = {
     / "library"
     / "component_contract.py",
     "kicad_mcp.project.context": SRC_ROOT / "kicad_mcp" / "project" / "context.py",
+    "kicad_mcp.project.creation": SRC_ROOT / "kicad_mcp" / "project" / "creation.py",
     "kicad_mcp.project.discovery": SRC_ROOT / "kicad_mcp" / "project" / "discovery.py",
     "kicad_mcp.tools.export_bom": SRC_ROOT / "kicad_mcp" / "tools" / "export_bom.py",
     "kicad_mcp.tools.export_board_stats": SRC_ROOT
@@ -108,6 +110,7 @@ DOMAIN_MODULES = {
     / "tools"
     / "library_component_contract.py",
     _PROJECT_CONTEXT_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_context.py",
+    _PROJECT_CREATION_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_creation.py",
     _PROJECT_DISCOVERY_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_discovery.py",
     "kicad_mcp.tools.validation": SRC_ROOT / "kicad_mcp" / "tools" / "validation.py",
     "kicad_mcp.validation.drc_runner": SRC_ROOT / "kicad_mcp" / "validation" / "drc_runner.py",
@@ -337,6 +340,7 @@ PURE_HELPERS = {
     "kicad_mcp.library.sourcing",
     "kicad_mcp.library.component_contract",
     "kicad_mcp.project.context",
+    "kicad_mcp.project.creation",
     "kicad_mcp.project.discovery",
     "kicad_mcp.validation.policy_state",
     "kicad_mcp.companion.context",
@@ -410,6 +414,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     _LIBRARY_FOOTPRINT_ENGINEERING_ADAPTER: ("kicad_mcp.tools.library",),
     _LIBRARY_SOURCING_ADAPTER: ("kicad_mcp.tools.library",),
     _PROJECT_CONTEXT_ADAPTER: ("kicad_mcp.tools.project",),
+    _PROJECT_CREATION_ADAPTER: ("kicad_mcp.tools.project",),
     _PROJECT_DISCOVERY_ADAPTER: ("kicad_mcp.tools.project",),
     "kicad_mcp.tools.pcb_basic_inspection": ("kicad_mcp.tools.pcb",),
     "kicad_mcp.tools.pcb_board_inspection": ("kicad_mcp.tools.pcb",),
@@ -463,6 +468,7 @@ REGISTER_LINE_LIMITS = {
     _LIBRARY_SOURCING_ADAPTER: 180,
     _LIBRARY_COMPONENT_CONTRACT_ADAPTER: 100,
     _PROJECT_CONTEXT_ADAPTER: 55,
+    _PROJECT_CREATION_ADAPTER: 55,
     _PROJECT_DISCOVERY_ADAPTER: 55,
     "kicad_mcp.tools.validation": 300,
     "kicad_mcp.tools.validation_policy_state": 300,

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import math
 import re
-import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -23,7 +22,7 @@ from ..discovery import (
     find_recent_projects,
     scan_project_dir,
 )
-from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION, upgrade_generated_file
+from ..file_formats import upgrade_generated_file
 from ..models.component_contracts import find_component_contract
 from ..models.intent import (
     ComplianceTarget,
@@ -43,10 +42,11 @@ from ..models.verdict import Finding, SuggestedFix, Verdict, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
 from ..path_safety import assert_within
 from ..project.context import ProjectContextService
+from ..project.creation import ProjectCreationService
 from ..project.discovery import ProjectDiscoveryService
 from ..prompts.workflows import render_professional_circuit_design_prompt
 from ..utils.cache import clear_ttl_cache, ttl_cache
-from . import project_context, project_discovery
+from . import project_context, project_creation, project_discovery
 from .design_intent_state import (
     DecouplingPairIntent,
     ProjectDesignIntent,
@@ -77,13 +77,6 @@ PROJECT_SPEC_FILENAME = "project_spec.json"
 LEGACY_DESIGN_INTENT_FILENAME = "design_intent.json"
 DEFAULT_INFERRED_DECOUPLING_DISTANCE_MM = 6.0
 _REPORTED_LEGACY_INTENT_PATHS: set[Path] = set()
-
-
-class CreateProjectInput(BaseModel):
-    """New project creation parameters."""
-
-    path: str = Field(min_length=1, max_length=1000)
-    name: str = Field(min_length=1, max_length=120)
 
 
 class ProjectSpecPayload(BaseModel):
@@ -2299,83 +2292,22 @@ def register(mcp: FastMCP) -> None:
         project_discovery.ProjectDiscoveryDependencies(service=discovery_service),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    def kicad_create_new_project(path: str, name: str, confirm_overwrite: bool = False) -> str:
-        """Create a new minimal KiCad project structure and activate it."""
-        payload = CreateProjectInput(path=path, name=name)
-        cfg = get_config()
-        base_dir = Path(payload.path).expanduser().resolve()
-        if cfg.workspace_root is not None:
-            assert_within(cfg.workspace, base_dir)
-        project_dir = base_dir / payload.name
-        if project_dir.exists() and any(project_dir.iterdir()) and not confirm_overwrite:
-            return (
-                "Refusing to create a project over an existing non-empty directory.\n"
-                f"- Directory: {project_dir}\n"
-                "Choose a new name/path or rerun with confirm_overwrite=true."
-            )
-        project_dir.mkdir(parents=True, exist_ok=True)
-
-        project_file, pcb_file, sch_file = _new_project_files(project_dir, payload.name)
-        project_file.write_text(
-            json.dumps(_new_project_payload(cfg.kicad_cli, project_file), indent=2),
-            encoding="utf-8",
-        )
-        pcb_file.write_text(
-            f"(kicad_pcb (version {GENERATED_SEXPR_DIALECT_VERSION}) "
-            '(generator "kicad-mcp-pro"))\n',
-            encoding="utf-8",
-        )
-        sch_file.write_text(
-            (
-                "(kicad_sch\n"
-                f"\t(version {GENERATED_SEXPR_DIALECT_VERSION})\n"
-                '\t(generator "kicad-mcp-pro")\n'
-                f'\t(uuid "{uuid.uuid4()}")\n'
-                '\t(paper "A4")\n'
-                "\t(lib_symbols)\n"
-                '\t(sheet_instances (path "/" (page "1")))\n'
-                "\t(embedded_fonts no)\n"
-                ")\n"
-            ),
-            encoding="utf-8",
-        )
-
-        format_upgrades = [
-            (
-                pcb_file,
-                "pcb",
-                upgrade_generated_file(pcb_file, "pcb", _run_cli, allowed_root=project_dir),
-            ),
-            (
-                sch_file,
-                "sch",
-                upgrade_generated_file(sch_file, "sch", _run_cli, allowed_root=project_dir),
-            ),
-        ]
-
-        cfg.apply_project(
-            project_dir,
-            project_file=project_file,
-            pcb_file=pcb_file,
-            sch_file=sch_file,
-            output_dir=project_dir / "output",
-        )
-        reset_connection()
-        lines = [
-            f"Created project '{payload.name}' at {project_dir}.",
-            f"- Project file: {project_file}",
-            f"- PCB file: {pcb_file}",
-            f"- Schematic file: {sch_file}",
-        ]
-        for generated_file, kind, result in format_upgrades:
-            if not result.upgraded:
-                lines.append(
-                    f"- Format note ({kind}): kept repository writer dialect for "
-                    f"{generated_file.name}; KiCad migration was unavailable ({result.detail})."
-                )
-        return "\n".join(lines)
+    creation_service = ProjectCreationService(
+        get_config=lambda: get_config(),
+        assert_within=lambda root, candidate: assert_within(root, candidate),
+        new_project_files=lambda project_dir, name: _new_project_files(project_dir, name),
+        new_project_payload=lambda kicad_cli, project_file: _new_project_payload(
+            kicad_cli, project_file
+        ),
+        upgrade_file=lambda path, kind, allowed_root: upgrade_generated_file(
+            path, kind, _run_cli, allowed_root=allowed_root
+        ),
+        reset_connection=lambda: reset_connection(),
+    )
+    project_creation.register(
+        mcp,
+        project_creation.ProjectCreationDependencies(service=creation_service),
+    )
 
     @mcp.tool()
     @headless_compatible
