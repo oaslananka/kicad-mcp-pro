@@ -143,7 +143,12 @@ class LibraryFootprintEngineeringService:
         checks.append(("documentation-layers", check_footprint_documentation_layers(text)))
 
         verdicts = {check.verdict for _, check in checks}
-        overall = "FAIL" if "FAIL" in verdicts else "WARN" if "WARN" in verdicts else "PASS"
+        if "FAIL" in verdicts:
+            overall = "FAIL"
+        elif "WARN" in verdicts:
+            overall = "WARN"
+        else:
+            overall = "PASS"
         density = parse_ipc_density(text)
         lines = [
             f"Footprint certification: {overall}",

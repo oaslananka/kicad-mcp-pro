@@ -159,3 +159,43 @@ def test_generate_named_package_with_pin_count_is_certifiable(tmp_path: Path) ->
 
     assert "SOIC-8.kicad_mod" in generated
     assert "pad-count" in certified
+
+
+def test_certify_footprint_reports_fail_for_missing_required_pads(tmp_path: Path) -> None:
+    service, _ = _service(tmp_path)
+    path = tmp_path / "fail.kicad_mod"
+    path.write_text(
+        """(footprint "SOIC-8"
+  (fp_line (start -1 -1) (end 1 -1) (layer "F.CrtYd"))
+  (fp_line (start -1 -1) (end 1 -1) (layer "F.Fab"))
+  (fp_line (start -1 -1) (end 1 -1) (layer "F.SilkS"))
+  (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))
+  (pad "2" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))
+  (pad "3" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))
+  (pad "4" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))
+  (pad "5" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))
+  (pad "6" smd rect (at 0 0) (size 1 1) (layers "F.Cu")))\n""",
+        encoding="utf-8",
+    )
+
+    result = service.certify_footprint("fail.kicad_mod")
+
+    assert result.startswith("Footprint certification: FAIL")
+    assert "pad-count" in result
+
+
+def test_certify_footprint_reports_warn_for_missing_documentation_graphics(
+    tmp_path: Path,
+) -> None:
+    service, _ = _service(tmp_path)
+    path = tmp_path / "warn.kicad_mod"
+    path.write_text(
+        """(footprint "Custom"
+  (fp_line (start -1 -1) (end 1 -1) (layer "F.CrtYd")))\n""",
+        encoding="utf-8",
+    )
+
+    result = service.certify_footprint("warn.kicad_mod")
+
+    assert result.startswith("Footprint certification: WARN")
+    assert "documentation-layers" in result
