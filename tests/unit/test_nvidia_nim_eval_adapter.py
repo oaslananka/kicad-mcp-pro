@@ -159,12 +159,12 @@ def test_nim_request_marks_missing_usage_as_unavailable_not_model_failure() -> N
 def test_nim_request_classifies_provider_failures_without_raw_body() -> None:
     raw_body = "provider-body-that-must-not-escape"
 
-    for status, expected in (
-        (401, "provider_auth"),
-        (403, "provider_auth"),
-        (429, "provider_rate_limit"),
-        (503, "provider_unavailable"),
-        (400, "provider_request_rejected"),
+    for status, expected, expected_detail in (
+        (401, "provider_auth", None),
+        (403, "provider_auth", None),
+        (429, "provider_rate_limit", None),
+        (503, "provider_unavailable", None),
+        (400, "provider_request_rejected", "request_unknown"),
     ):
         result = request_nvidia_nim(
             model="nvidia/test-model",
@@ -175,11 +175,14 @@ def test_nim_request_classifies_provider_failures_without_raw_body() -> None:
                 lambda _request, status=status: httpx.Response(status, text=raw_body)
             ),
         )
-        assert result == {
+        expected_result = {
             "schema_version": 1,
             "status": "error",
             "failure_kind": expected,
         }
+        if expected_detail is not None:
+            expected_result["failure_detail"] = expected_detail
+        assert result == expected_result
         assert raw_body not in json.dumps(result)
 
 
@@ -249,6 +252,37 @@ def test_nim_request_sanitizes_unknown_provider_validation_location() -> None:
         "failure_detail": "request_unknown",
     }
     assert "sensitive-provider" not in json.dumps(result)
+
+
+def test_nim_request_sanitizes_provider_error_param_on_bad_request() -> None:
+    raw_message = "model rejected with private-provider-context"
+    result = request_nvidia_nim(
+        model="nvidia/test-model",
+        prompt="Private board prompt must not escape.",
+        api_key="dummy-test-key",
+        catalog=(),
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "param": "model",
+                        "message": raw_message,
+                    }
+                },
+            )
+        ),
+    )
+
+    assert result == {
+        "schema_version": 1,
+        "status": "error",
+        "failure_kind": "provider_request_rejected",
+        "failure_detail": "request_model",
+    }
+    serialized = json.dumps(result)
+    assert raw_message not in serialized
+    assert "Private board prompt" not in serialized
 
 
 def test_nim_request_sanitizes_provider_error_param() -> None:
