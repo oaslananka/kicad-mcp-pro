@@ -163,7 +163,7 @@ git commit -m "refactor(project): extract validation loop service"
 - Consumes: `ProjectValidationLoopService`, `sampling_prompt_for_gate`, FastMCP `Context`.
 - Produces: `resolve_fixer_callable()`, bounded `register()`, `project_auto_fix_loop`, and `project_full_validation_loop` registrations.
 
-- [ ] **Step 1: Write failing adapter tests**
+- [x] **Step 1: Write failing adapter tests**
 
 Use a fake service recording method arguments. Assert:
 
@@ -183,7 +183,7 @@ system_prompt == "You are a KiCad expert. Reply briefly and directly."
 
 Add tests that unavailable sampling returns `""`, sampling exceptions return `""`, progress `ValueError` is swallowed, and `resolve_fixer_callable` returns `None` for malformed/missing callables.
 
-- [ ] **Step 2: Run adapter tests and verify RED**
+- [x] **Step 2: Run adapter tests and verify RED**
 
 ```bash
 .venv/bin/pytest -q tests/unit/test_project_validation_loop_registration.py
@@ -191,7 +191,7 @@ Add tests that unavailable sampling returns `""`, sampling exceptions return `""
 
 Expected: import failure because `kicad_mcp.tools.project_validation_loops` does not exist.
 
-- [ ] **Step 3: Implement the adapter**
+- [x] **Step 3: Implement the adapter**
 
 Create top-level infrastructure helpers:
 
@@ -223,7 +223,7 @@ class ProjectValidationLoopDependencies:
 
 Keep `register()` bounded by delegating sampling/progress to the top-level helpers. Register auto-fix first, full-validation second, preserving current signatures/docstrings.
 
-- [ ] **Step 4: Run adapter tests and verify GREEN**
+- [x] **Step 4: Run adapter tests and verify GREEN**
 
 ```bash
 .venv/bin/pytest -q tests/unit/test_project_validation_loop_registration.py
@@ -231,7 +231,7 @@ Keep `register()` bounded by delegating sampling/progress to the top-level helpe
 
 Expected: all adapter tests pass.
 
-- [ ] **Step 5: Run Ruff/Mypy for Task 2**
+- [x] **Step 5: Run Ruff/Mypy for Task 2**
 
 ```bash
 .venv/bin/ruff check src/kicad_mcp/tools/project_validation_loops.py tests/unit/test_project_validation_loop_registration.py
@@ -241,7 +241,7 @@ Expected: all adapter tests pass.
 
 Expected: exit 0.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 ```bash
 git add src/kicad_mcp/tools/project_validation_loops.py tests/unit/test_project_validation_loop_registration.py
