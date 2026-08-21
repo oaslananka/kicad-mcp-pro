@@ -13,6 +13,8 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from ..config import get_config
+from ..errors import UnsafePathError
+from ..path_safety import relative_subpath, resolve_under
 from .metadata import headless_compatible
 
 
@@ -24,14 +26,42 @@ def _footprint_3d_dir() -> Path:
     return cfg.footprint_library_dir
 
 
+def _safe_library_component(value: str, *, label: str) -> str:
+    candidate = relative_subpath(value)
+    if (
+        not value.strip()
+        or value in {".", ".."}
+        or "/" in value
+        or "\\" in value
+        or len(candidate.parts) != 1
+    ):
+        raise UnsafePathError(
+            f"{label} must be a single path component inside the footprint library."
+        )
+    return candidate.name
+
+
 def _find_footprint_file(library: str, footprint: str) -> Path | None:
     """Locate a ``.kicad_mod`` or ``.pretty`` footprint file."""
     lib_dir = _footprint_3d_dir()
-    # Try library as subdirectory of footprint_library_dir
+    library_name = _safe_library_component(library, label="library")
+    footprint_name = _safe_library_component(footprint, label="footprint")
     candidates = [
-        lib_dir / library / f"{footprint}.kicad_mod",
-        lib_dir / library / f"{footprint}.pretty",
-        lib_dir / f"{library}.pretty" / f"{footprint}.kicad_mod",
+        resolve_under(
+            lib_dir,
+            Path(library_name) / f"{footprint_name}.kicad_mod",
+            allow_absolute=False,
+        ),
+        resolve_under(
+            lib_dir,
+            Path(library_name) / f"{footprint_name}.pretty",
+            allow_absolute=False,
+        ),
+        resolve_under(
+            lib_dir,
+            Path(f"{library_name}.pretty") / f"{footprint_name}.kicad_mod",
+            allow_absolute=False,
+        ),
     ]
     for cand in candidates:
         if cand.exists():
@@ -251,10 +281,10 @@ def register(mcp: FastMCP) -> None:
             3D model file path to assign to all matched footprints.
         """
         lib_dir = _footprint_3d_dir()
-        # Find the library directory
+        library_name = _safe_library_component(library, label="library")
         lib_candidates = [
-            lib_dir / library,
-            lib_dir / f"{library}.pretty",
+            resolve_under(lib_dir, library_name, allow_absolute=False),
+            resolve_under(lib_dir, f"{library_name}.pretty", allow_absolute=False),
         ]
         lib_path: Path | None = None
         for cand in lib_candidates:
@@ -265,11 +295,12 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(f"Library '{library}' directory not found.")
 
         compiled = re.compile(footprint_pattern)
-        matched = [p for p in lib_path.iterdir() if p.suffix in (".kicad_mod", ".pretty")]
+        matched = [path for path in lib_path.iterdir() if path.suffix in (".kicad_mod", ".pretty")]
         updated = 0
-        for fp_file in matched:
-            if not compiled.search(fp_file.stem):
+        for candidate in matched:
+            if not compiled.search(candidate.stem):
                 continue
+            fp_file = resolve_under(lib_dir, candidate)
             text = _read_footprint_text(fp_file)
             # Remove existing models and add new one
             text = re.sub(r'\(model\s+"[^"]*".*?\)\s*', "", text, flags=re.DOTALL)
