@@ -39,6 +39,7 @@ from ..path_safety import assert_within
 from ..project.context import ProjectContextService
 from ..project.creation import ProjectCreationService
 from ..project.discovery import ProjectDiscoveryService
+from ..project.edit_impact import ProjectEditImpactService
 from ..project.runtime import ProjectRuntimeService
 from ..project.workflow import ProjectWorkflowService
 from ..prompts.workflows import render_professional_circuit_design_prompt
@@ -47,6 +48,8 @@ from . import (
     project_context,
     project_creation,
     project_discovery,
+    project_edit_impact,
+    project_edit_revalidation,
     project_runtime,
     project_workflow,
 )
@@ -1516,116 +1519,26 @@ def register(mcp: FastMCP) -> None:
             notes=resolution.notes,
         )
 
-    @mcp.tool()
-    @headless_compatible
-    def project_assess_edit_impact(baseline_spec_json: str = "") -> str:
-        """Scope re-validation after an edit: semantic-diff the design intent and report
-        which gates must re-run.
+    from .gates import _combined_status
+    from .validation import PROJECT_GATE_CATEGORIES, _evaluate_project_gate, _format_gate
 
-        Compares a baseline design spec — the declared/saved intent, or an explicit
-        baseline passed as ``baseline_spec_json`` — against the intent inferred from the
-        current board, then maps each change to the gates it can invalidate. Re-run only
-        the impacted gates and keep the rest as already-proven. Use after editing an
-        existing project so a small change does not force a full re-validation.
-        """
-        from .edit_impact import impact_of_changes, render_impact_report, semantic_intent_diff
-
-        if baseline_spec_json.strip():
-            try:
-                baseline = json.loads(baseline_spec_json)
-            except json.JSONDecodeError as exc:
-                return f"Invalid baseline_spec_json: {exc}"
-            if not isinstance(baseline, dict):
-                return "baseline_spec_json must be a JSON object (a design spec)."
-        else:
-            baseline = load_design_intent().model_dump()
-
-        try:
-            inferred, _notes = _infer_design_intent_from_board()
-        except KiCadConnectionError as exc:
-            return f"Could not infer the current board intent: {exc}"
-        changes = semantic_intent_diff(baseline, inferred.model_dump())
-        report = impact_of_changes(changes)
-        return render_impact_report(report)
-
-    @mcp.tool()
-    @headless_compatible
-    def project_revalidate_after_edit(
-        baseline_spec_json: str = "",
-        manufacturer: str = "",
-        tier: str = "",
-    ) -> str:
-        """Re-run only the gates an edit could have invalidated; prove the rest preserved.
-
-        Computes the semantic intent diff (like ``project_assess_edit_impact``), then
-        actually re-runs only the impacted project gates -- skipping unaffected ones -- so
-        a small edit does not force a full re-validation. Impacted analysis categories that
-        the sign-off gate does not cover (signal integrity, power, thermal, EMC) are listed
-        with the tool to re-run for each.
-        """
-        from .edit_impact import impact_of_changes, semantic_intent_diff
-        from .gates import _combined_status
-        from .validation import (
-            PROJECT_GATE_CATEGORIES,
-            _evaluate_project_gate,
-            _format_gate,
-        )
-
-        analysis_tools = {
-            "signal_integrity": "si_calculate_trace_impedance / si_analyze_high_speed_channel",
-            "power": "check_power_integrity / pdn_calculate_voltage_drop",
-            "thermal": "thermal_simulate_plane_spreading / thermal_calculate_via_count",
-            "emc": "emc_run_full_compliance",
-        }
-
-        if baseline_spec_json.strip():
-            try:
-                baseline = json.loads(baseline_spec_json)
-            except json.JSONDecodeError as exc:
-                return f"Invalid baseline_spec_json: {exc}"
-            if not isinstance(baseline, dict):
-                return "baseline_spec_json must be a JSON object (a design spec)."
-        else:
-            baseline = load_design_intent().model_dump()
-
-        try:
-            inferred, _notes = _infer_design_intent_from_board()
-        except KiCadConnectionError as exc:
-            return f"Could not infer the current board intent: {exc}"
-
-        changes = semantic_intent_diff(baseline, inferred.model_dump())
-        report = impact_of_changes(changes)
-        affected = set(report.affected_gates)
-        runnable = affected & set(PROJECT_GATE_CATEGORIES)
-        analysis_affected = sorted(affected - set(PROJECT_GATE_CATEGORIES))
-        preserved = sorted(set(PROJECT_GATE_CATEGORIES) - runnable)
-
-        lines = [f"Selective re-validation after edit: {report.summary}", ""]
-        if not changes:
-            lines.append("No gates were re-run; every previously-passing gate is preserved.")
-            return "\n".join(lines)
-
-        if runnable:
-            outcomes = _evaluate_project_gate(
-                manufacturer=manufacturer or None,
-                tier=tier or None,
-                only_categories=runnable,
-            )
-            status = _combined_status(outcomes)
-            lines.append(f"Re-ran impacted project gates ({', '.join(sorted(runnable))}): {status}")
-            lines.extend(_format_gate(outcome) for outcome in outcomes)
-        else:
-            lines.append("No bundled project gate was impacted by this edit.")
-
-        if analysis_affected:
-            lines.append("")
-            lines.append("Impacted analysis categories to re-run with their own tools:")
-            for category in analysis_affected:
-                lines.append(f"- {category}: {analysis_tools.get(category, '(analysis tool)')}")
-
-        lines.append("")
-        lines.append(f"Preserved project gates (not re-run): {', '.join(preserved) or '(none)'}")
-        return "\n".join(lines)
+    edit_impact_service = ProjectEditImpactService(
+        load_baseline=lambda: load_design_intent().model_dump(),
+        infer_current=lambda: _infer_design_intent_from_board()[0].model_dump(),
+        evaluate_project_gate=_evaluate_project_gate,
+        combined_status=_combined_status,
+        format_gate=_format_gate,
+        project_gate_categories=PROJECT_GATE_CATEGORIES,
+        inference_error_types=(KiCadConnectionError,),
+    )
+    project_edit_impact.register(
+        mcp,
+        project_edit_impact.ProjectEditImpactDependencies(service=edit_impact_service),
+    )
+    project_edit_revalidation.register(
+        mcp,
+        project_edit_revalidation.ProjectEditRevalidationDependencies(service=edit_impact_service),
+    )
 
     @mcp.tool()
     @headless_compatible
