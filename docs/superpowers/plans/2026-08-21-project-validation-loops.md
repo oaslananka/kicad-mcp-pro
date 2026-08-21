@@ -32,7 +32,7 @@
 - Consumes: injected `evaluate_project_gate()`, `fixers_for_gate(name)`, and `resolve_callable(import_str)` callbacks.
 - Produces: `GateOutcomeLike`, `FixerActionLike`, `AutoFixAction`, `AutoFixLoopPayload`, `ProjectValidationLoopService.auto_fix_loop()`, and `ProjectValidationLoopService.full_validation_loop()`.
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Create tests using small fake outcome/fixer dataclasses. Cover these exact behaviors:
 
@@ -79,7 +79,7 @@ Also add tests for:
 - `full_validation_loop(suggest)` never resolves/invokes a fixer;
 - `full_validation_loop` resolver miss and fixer exception stop the loop with current text/action semantics.
 
-- [ ] **Step 2: Run the new service test file and verify RED**
+- [x] **Step 2: Run the new service test file and verify RED**
 
 Run:
 
@@ -89,7 +89,7 @@ Run:
 
 Expected: collection/import failure because `kicad_mcp.project.validation_loops` does not exist.
 
-- [ ] **Step 3: Implement the minimal domain module**
+- [x] **Step 3: Implement the minimal domain module**
 
 Create `validation_loops.py` with:
 
@@ -126,7 +126,7 @@ class AutoFixLoopPayload(BaseModel):
 
 Implement `_combined_status()` structurally with the exact precedence from the spec. Implement `ProjectValidationLoopService` and copy the existing loop semantics exactly, replacing direct FastMCP sampling/progress calls with injected async callbacks.
 
-- [ ] **Step 4: Run service tests and verify GREEN**
+- [x] **Step 4: Run service tests and verify GREEN**
 
 ```bash
 .venv/bin/pytest -q tests/unit/test_project_validation_loop_service.py
@@ -134,7 +134,7 @@ Implement `_combined_status()` structurally with the exact precedence from the s
 
 Expected: all service tests pass.
 
-- [ ] **Step 5: Run Ruff and Mypy on the new domain module**
+- [x] **Step 5: Run Ruff and Mypy on the new domain module**
 
 ```bash
 .venv/bin/ruff check src/kicad_mcp/project/validation_loops.py tests/unit/test_project_validation_loop_service.py
@@ -144,7 +144,7 @@ Expected: all service tests pass.
 
 Expected: exit 0 for all three commands.
 
-- [ ] **Step 6: Commit Task 1**
+- [x] **Step 6: Commit Task 1**
 
 ```bash
 git add src/kicad_mcp/project/validation_loops.py tests/unit/test_project_validation_loop_service.py
