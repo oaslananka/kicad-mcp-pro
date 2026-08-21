@@ -264,9 +264,11 @@ def register(mcp: FastMCP) -> None:
         from ..tools.validation import _evaluate_project_gate
 
         try:
-            return ProjectNextActionService(
-                evaluate_project_gate=_evaluate_project_gate
-            ).next_action().text
+            return (
+                ProjectNextActionService(evaluate_project_gate=_evaluate_project_gate)
+                .next_action()
+                .text
+            )
         except Exception as exc:
             return _blocked_resource("Project next action", exc)
 
