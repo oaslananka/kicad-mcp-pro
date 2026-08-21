@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 import math
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 import structlog
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 from .. import __version__
@@ -41,6 +41,15 @@ from ..project.discovery import ProjectDiscoveryService
 from ..project.edit_impact import ProjectEditImpactService
 from ..project.next_action import GateOutcomeLike, ProjectNextActionService
 from ..project.runtime import ProjectRuntimeService
+from ..project.validation_loops import (
+    AutoFixAction as AutoFixAction,
+)
+from ..project.validation_loops import (
+    AutoFixLoopPayload as AutoFixLoopPayload,
+)
+from ..project.validation_loops import (
+    ProjectValidationLoopService,
+)
 from ..project.workflow import ProjectWorkflowService
 from ..prompts.workflows import render_professional_circuit_design_prompt
 from ..utils.cache import clear_ttl_cache, ttl_cache
@@ -52,6 +61,7 @@ from . import (
     project_edit_revalidation,
     project_next_action,
     project_runtime,
+    project_validation_loops,
     project_workflow,
 )
 from .design_intent_state import (
@@ -120,29 +130,6 @@ class ProjectImportDesignSpecPayload(BaseModel):
     placeholders: list[str] = Field(default_factory=list)
     extras: dict[str, Any] = Field(default_factory=dict)
     parsed: ProjectDesignSpec = Field(default_factory=ProjectDesignSpec)
-
-
-class AutoFixAction(BaseModel):
-    """One step in the auto-fix loop action plan."""
-
-    gate: str
-    status: str
-    auto_fixed: bool = False
-    auto_fix_description: str = ""
-    agent_tool: str = ""
-    agent_description: str = ""
-    sampling_guidance: str = ""
-
-
-class AutoFixLoopPayload(BaseModel):
-    """Structured result returned by project_auto_fix_loop."""
-
-    text: str
-    gate_status: str
-    iterations_used: int = 0
-    actions: list[AutoFixAction] = Field(default_factory=list)
-    remaining_issues: int = 0
-    ready_for_release: bool = False
 
 
 class DesignReportPayload(BaseModel):
@@ -1185,6 +1172,20 @@ def _evaluate_project_gate_for_next_action() -> Sequence[GateOutcomeLike]:
     return _evaluate_project_gate()
 
 
+def _evaluate_project_gate_for_validation_loops() -> Sequence[GateOutcomeLike]:
+    from .validation import _evaluate_project_gate
+
+    return _evaluate_project_gate()
+
+
+def _sampling_prompt_for_validation_loops(
+    gate_name: str,
+    summary: str,
+    details: list[str] | None = None,
+) -> str:
+    return sampling_prompt_for_gate(gate_name, summary, details)
+
+
 def register(mcp: FastMCP) -> None:
     """Register project management tools."""
 
@@ -1496,318 +1497,18 @@ def register(mcp: FastMCP) -> None:
         project_next_action.ProjectNextActionDependencies(service=next_action_service),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    async def project_auto_fix_loop(
-        max_iterations: int = 5,
-        ctx: Context[Any, Any, Any] | None = None,
-    ) -> AutoFixLoopPayload:
-        """Run the project quality gate and automatically apply server-side fixes.
-
-        Each iteration:
-        1. Evaluates all project quality gates.
-        2. For **auto-applicable** gates (annotation, zone refill) — calls the
-           underlying fix implementation directly on the server, then re-evaluates.
-        3. For gates requiring **agent action** — returns the tool name and
-           description so the agent can call it, then the agent must call this
-           tool again to continue.
-
-        The loop runs up to ``max_iterations`` times applying auto-fixes.  It
-        stops early when all gates pass or when no further auto-fix is possible
-        without agent involvement.
-
-        Args:
-            max_iterations: Maximum number of auto-fix + re-evaluate cycles to
-                attempt before returning control to the agent (1–20).
-        """
-        import importlib
-
-        from .gates import GateOutcome, _combined_status
-        from .validation import _evaluate_project_gate
-
-        max_iterations = max(1, min(max_iterations, 20))
-        iterations_used = 0
-        auto_fix_log: list[str] = []
-
-        def _resolve_callable(import_str: str) -> Callable[[], object] | None:
-            if not import_str:
-                return None
-            try:
-                mod_path, func_name = import_str.rsplit(":", 1)
-                full_mod = f"kicad_mcp.{mod_path}"
-                mod = importlib.import_module(full_mod)
-                candidate = getattr(mod, func_name, None)
-                return candidate if callable(candidate) else None
-            except Exception:
-                return None
-
-        async def _sample_guidance(outcome: GateOutcome) -> str:
-            if ctx is None:
-                return ""
-            sample = getattr(ctx, "sample", None)
-            if not callable(sample):
-                return ""
-            try:
-                result = await sample(
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": sampling_prompt_for_gate(
-                                outcome.name,
-                                outcome.summary,
-                                outcome.details,
-                            ),
-                        }
-                    ],
-                    max_tokens=256,
-                    system_prompt="You are a KiCad expert. Reply briefly and directly.",
-                )
-            except Exception:
-                return ""
-
-            content = getattr(result, "content", None)
-            if isinstance(content, list) and content:
-                return str(getattr(content[0], "text", "") or "")
-            return ""
-
-        async def _report_progress(progress: float, total: float, message: str) -> None:
-            if ctx is None:
-                return
-            try:
-                await ctx.report_progress(progress, total, message)
-            except ValueError:
-                return
-
-        await _report_progress(0, 100, "Project quality gate is being evaluated...")
-
-        outcomes = _evaluate_project_gate()
-        iterations_used += 1
-
-        for _iter in range(max_iterations - 1):
-            applied_any = False
-            for outcome in outcomes:
-                if outcome.status == "PASS":
-                    continue
-                fixers = fixers_for_gate(outcome.name)
-                auto_fixer = next((f for f in fixers if f.auto_applicable), None)
-                if auto_fixer is None:
-                    continue
-                fn = _resolve_callable(auto_fixer.callable_import)
-                if fn is None:
-                    continue
-                try:
-                    fix_result = fn()
-                    auto_fix_log.append(
-                        f"[iter {iterations_used}] Auto-fixed '{outcome.name}' "
-                        f"via {auto_fixer.tool}: {fix_result}"
-                    )
-                    applied_any = True
-                except Exception as exc:
-                    auto_fix_log.append(
-                        f"[iter {iterations_used}] Auto-fix '{auto_fixer.tool}' "
-                        f"for '{outcome.name}' raised: {exc}"
-                    )
-
-            if not applied_any:
-                break
-
-            progress = min(90, 10 + (iterations_used * 15))
-            await _report_progress(
-                progress,
-                100,
-                f"Re-evaluating quality gates after iteration {iterations_used}...",
-            )
-            outcomes = _evaluate_project_gate()
-            iterations_used += 1
-
-            if all(o.status == "PASS" for o in outcomes):
-                break
-
-        actions: list[AutoFixAction] = []
-        for outcome in outcomes:
-            if outcome.status == "PASS":
-                continue
-            fixers = fixers_for_gate(outcome.name)
-            auto_fixer = next((f for f in fixers if f.auto_applicable), None)
-            agent_fixer = next((f for f in fixers if not f.auto_applicable), None)
-            sampling_guidance = await _sample_guidance(outcome)
-            actions.append(
-                AutoFixAction(
-                    gate=outcome.name,
-                    status=outcome.status,
-                    auto_fixed=False,
-                    auto_fix_description=(auto_fixer.description if auto_fixer is not None else ""),
-                    agent_tool=(
-                        (agent_fixer.tool if agent_fixer is not None else "")
-                        or (auto_fixer.tool if auto_fixer is not None else "")
-                    ),
-                    agent_description=(
-                        (agent_fixer.description if agent_fixer is not None else "")
-                        or (auto_fixer.description if auto_fixer is not None else "")
-                    ),
-                    sampling_guidance=sampling_guidance,
-                )
-            )
-
-        remaining = sum(1 for a in actions if not a.auto_fixed)
-        ready = len(actions) == 0
-
-        lines = [f"project_auto_fix_loop: {iterations_used}/{max_iterations} iteration(s) used."]
-        if auto_fix_log:
-            lines.append("Server-side auto-fixes applied:")
-            lines.extend(f"  {entry}" for entry in auto_fix_log)
-        if ready:
-            lines.append("Status: PASS — all gates pass. Ready for manufacturing release.")
-        else:
-            lines.append(
-                f"Status: {len(actions)} gate(s) still failing ({remaining} require agent action)."
-            )
-            for action in actions:
-                lines.append(
-                    f"  [AGENT] {action.gate}: call {action.agent_tool}() "
-                    f"— {action.agent_description}"
-                )
-                if action.sampling_guidance:
-                    lines.append(f"    Sampling guidance: {action.sampling_guidance}")
-            lines.append("After applying the recommended tool, call project_auto_fix_loop() again.")
-
-        combined = _combined_status(
-            [
-                GateOutcome(
-                    name=o.name,
-                    status=o.status,
-                    summary=o.summary,
-                    details=o.details,
-                )
-                for o in outcomes
-            ]
-        )
-
-        await _report_progress(100, 100, "Project auto-fix loop completed.")
-
-        return AutoFixLoopPayload(
-            text="\n".join(lines),
-            gate_status=combined,
-            iterations_used=iterations_used,
-            actions=actions,
-            remaining_issues=remaining,
-            ready_for_release=ready,
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def project_full_validation_loop(
-        max_iterations: int = 5,
-        fix_tier: Literal["auto_only", "suggest"] = "auto_only",
-    ) -> AutoFixLoopPayload:
-        """Run ERC/DRC/project gates in a bounded fix-and-rerun validation loop."""
-        import importlib
-
-        from .gates import GateOutcome, _combined_status
-        from .validation import _evaluate_project_gate
-
-        max_iterations = max(1, min(max_iterations, 20))
-        outcomes = _evaluate_project_gate()
-        fix_log: list[str] = []
-        iterations_used = 1
-
-        def _resolve_callable(import_str: str) -> Callable[[], object] | None:
-            if not import_str:
-                return None
-            try:
-                mod_path, func_name = import_str.rsplit(":", 1)
-                module = importlib.import_module(f"kicad_mcp.{mod_path}")
-                candidate = getattr(module, func_name, None)
-                return candidate if callable(candidate) else None
-            except Exception:
-                return None
-
-        while iterations_used < max_iterations:
-            if all(outcome.status == "PASS" for outcome in outcomes):
-                break
-            blocker = next((outcome for outcome in outcomes if outcome.status != "PASS"), None)
-            if blocker is None:
-                break
-            fixers = fixers_for_gate(blocker.name)
-            auto_fixer = next((fixer for fixer in fixers if fixer.auto_applicable), None)
-            if auto_fixer is None or fix_tier == "suggest":
-                break
-            fn = _resolve_callable(auto_fixer.callable_import)
-            if fn is None:
-                break
-            try:
-                fix_result = fn()
-                fix_log.append(
-                    f"[iter {iterations_used}] {blocker.name}: {auto_fixer.tool} -> {fix_result}"
-                )
-            except Exception as exc:
-                fix_log.append(
-                    f"[iter {iterations_used}] {blocker.name}: {auto_fixer.tool} raised {exc}"
-                )
-                break
-            outcomes = _evaluate_project_gate()
-            iterations_used += 1
-
-        actions: list[AutoFixAction] = []
-        for outcome in outcomes:
-            if outcome.status == "PASS":
-                continue
-            fixers = fixers_for_gate(outcome.name)
-            agent_fixer = next((fixer for fixer in fixers if not fixer.auto_applicable), None)
-            auto_fixer = next((fixer for fixer in fixers if fixer.auto_applicable), None)
-            chosen = agent_fixer or auto_fixer
-            actions.append(
-                AutoFixAction(
-                    gate=outcome.name,
-                    status=outcome.status,
-                    auto_fixed=False,
-                    auto_fix_description=auto_fixer.description if auto_fixer else "",
-                    agent_tool=chosen.tool if chosen else "project_quality_gate",
-                    agent_description=chosen.description if chosen else outcome.summary,
-                )
-            )
-
-        combined = _combined_status(
-            [
-                GateOutcome(
-                    name=outcome.name,
-                    status=outcome.status,
-                    summary=outcome.summary,
-                    details=outcome.details,
-                )
-                for outcome in outcomes
-            ]
-        )
-        lines = [
-            f"project_full_validation_loop: {iterations_used}/{max_iterations} iteration(s) used.",
-        ]
-        if fix_log:
-            lines.append("Auto-fixes applied:")
-            lines.extend(f"  {entry}" for entry in fix_log)
-        if not actions:
-            lines.append("PASS after validation loop.")
-        elif fix_tier == "suggest":
-            lines.append("Suggested fixes:")
-            lines.extend(
-                f"  [SUGGEST] {action.gate}: call {action.agent_tool}() "
-                f"- {action.agent_description}"
-                for action in actions
-            )
-        else:
-            lines.append("PARTIAL: remaining issues require agent or manual action.")
-            lines.extend(
-                f"  [REMAINING] {action.gate}: call {action.agent_tool}() "
-                f"- {action.agent_description}"
-                for action in actions
-            )
-        return AutoFixLoopPayload(
-            text="\n".join(lines),
-            gate_status=combined,
-            iterations_used=iterations_used,
-            actions=actions,
-            remaining_issues=len(actions),
-            ready_for_release=not actions,
-        )
+    validation_loop_service = ProjectValidationLoopService(
+        evaluate_project_gate=_evaluate_project_gate_for_validation_loops,
+        fixers_for_gate=lambda gate_name: fixers_for_gate(gate_name),
+        resolve_callable=project_validation_loops.resolve_fixer_callable,
+    )
+    project_validation_loops.register(
+        mcp,
+        project_validation_loops.ProjectValidationLoopDependencies(
+            service=validation_loop_service,
+            sampling_prompt_for_gate=_sampling_prompt_for_validation_loops,
+        ),
+    )
 
     @mcp.tool()
     @headless_compatible
