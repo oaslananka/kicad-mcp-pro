@@ -40,6 +40,16 @@ from ..project.creation import ProjectCreationService
 from ..project.discovery import ProjectDiscoveryService
 from ..project.edit_impact import ProjectEditImpactService
 from ..project.next_action import GateOutcomeLike, ProjectNextActionService
+from ..project.reporting import (
+    DesignReportPayload as DesignReportPayload,
+)
+from ..project.reporting import (
+    FixerActionLike,
+    GateHistoryLike,
+    ProjectDesignIntentLike,
+    ProjectReportingService,
+    ProjectSpecResolutionLike,
+)
 from ..project.runtime import ProjectRuntimeService
 from ..project.validation_loops import (
     AutoFixAction as AutoFixAction,
@@ -60,6 +70,7 @@ from . import (
     project_edit_impact,
     project_edit_revalidation,
     project_next_action,
+    project_reporting,
     project_runtime,
     project_validation_loops,
     project_workflow,
@@ -130,19 +141,6 @@ class ProjectImportDesignSpecPayload(BaseModel):
     placeholders: list[str] = Field(default_factory=list)
     extras: dict[str, Any] = Field(default_factory=dict)
     parsed: ProjectDesignSpec = Field(default_factory=ProjectDesignSpec)
-
-
-class DesignReportPayload(BaseModel):
-    """Comprehensive design-status report combining intent, gates, and recommended actions."""
-
-    text: str
-    gate_status: str
-    intent_source: ProjectSpecSource = "none"
-    power_rails_count: int = 0
-    interfaces_count: int = 0
-    compliance_count: int = 0
-    has_mechanical_constraint: bool = False
-    next_tool: str = ""
 
 
 def _render_project_info() -> str:
@@ -1186,6 +1184,30 @@ def _sampling_prompt_for_validation_loops(
     return sampling_prompt_for_gate(gate_name, summary, details)
 
 
+def _history_for_active_project_for_reporting() -> GateHistoryLike:
+    from ..resources.gate_history import GateHistory
+
+    return GateHistory.for_active_project()
+
+
+def _resolve_design_intent_for_reporting() -> ProjectSpecResolutionLike:
+    return cast(ProjectSpecResolutionLike, resolve_design_intent())
+
+
+def _render_design_intent_for_reporting(intent: ProjectDesignIntentLike) -> str:
+    return _render_design_intent(cast(ProjectDesignIntent, intent))
+
+
+def _evaluate_project_gate_for_reporting() -> Sequence[GateOutcomeLike]:
+    from .validation import _evaluate_project_gate
+
+    return _evaluate_project_gate()
+
+
+def _fixers_for_gate_for_reporting(gate_name: str) -> Sequence[FixerActionLike]:
+    return cast(Sequence[FixerActionLike], fixers_for_gate(gate_name))
+
+
 def register(mcp: FastMCP) -> None:
     """Register project management tools."""
 
@@ -1510,93 +1532,17 @@ def register(mcp: FastMCP) -> None:
         ),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    def project_gate_trend(gate_name: str, last_n: int = 10) -> str:
-        """Return persisted quality-gate trend history for one gate."""
-        from ..resources.gate_history import GateHistory
-
-        history = GateHistory.for_active_project()
-        payload = {
-            "gate_name": gate_name,
-            "history": history.trend(gate_name, max(1, min(last_n, 100))),
-            "regressions": history.regression_check(),
-        }
-        return json.dumps(payload, indent=2, sort_keys=True)
-
-    @mcp.tool()
-    @headless_compatible
-    def project_design_report() -> DesignReportPayload:
-        """Generate a comprehensive design-status report.
-
-        Combines intent summary, v2 spec richness, project gate evaluation, and
-        a prioritised list of next steps into a single structured report.
-        This is the recommended first call after opening a project to understand
-        its current state.
-        """
-        from .gates import GateOutcome, _combined_status
-        from .validation import _evaluate_project_gate
-
-        resolution = resolve_design_intent()
-        intent = resolution.resolved
-
-        outcomes = _evaluate_project_gate()
-        combined = _combined_status(
-            [
-                GateOutcome(
-                    name=o.name,
-                    status=o.status,
-                    summary=o.summary,
-                    details=o.details,
-                )
-                for o in outcomes
-            ]
-        )
-        failing = [o for o in outcomes if o.status != "PASS"]
-
-        lines = [
-            "# Project Design Report",
-            "",
-            "## Design Intent",
-            _render_design_intent(intent),
-            "",
-            f"## Gate Status: {combined}",
-        ]
-        if failing:
-            lines.append(f"Failing gates ({len(failing)}):")
-            for outcome in failing:
-                fixers = fixers_for_gate(outcome.name)
-                hint = fixers[0].tool if fixers else "project_quality_gate"
-                lines.append(f"- [{outcome.status}] {outcome.name}: {outcome.summary}")
-                lines.append(f"  -> Suggested: {hint}()")
-        else:
-            lines.append("All gates PASS — ready for export_manufacturing_package().")
-
-        lines += [
-            "",
-            "## Resolution Notes",
-            *[f"- {n}" for n in resolution.notes[:8]],
-        ]
-
-        next_tool = failing[0].name if failing else "export_manufacturing_package"
-        if failing:
-            fixers = fixers_for_gate(failing[0].name)
-            next_tool = fixers[0].tool if fixers else "project_quality_gate"
-
-        return DesignReportPayload(
-            text="\n".join(lines),
-            gate_status=combined,
-            intent_source=resolution.source,
-            power_rails_count=len(intent.power_rails),
-            interfaces_count=len(intent.interfaces),
-            compliance_count=len(intent.compliance),
-            has_mechanical_constraint=(
-                bool(intent.mechanical.mount_holes)
-                or bool(intent.mechanical.connector_placement)
-                or intent.mechanical.max_height_mm is not None
-            ),
-            next_tool=next_tool,
-        )
+    reporting_service = ProjectReportingService(
+        history_for_active_project=_history_for_active_project_for_reporting,
+        resolve_design_intent=_resolve_design_intent_for_reporting,
+        render_design_intent=_render_design_intent_for_reporting,
+        evaluate_project_gate=_evaluate_project_gate_for_reporting,
+        fixers_for_gate=_fixers_for_gate_for_reporting,
+    )
+    project_reporting.register(
+        mcp,
+        project_reporting.ProjectReportingDependencies(service=reporting_service),
+    )
 
     discovery_service = ProjectDiscoveryService(
         find_recent_projects=find_recent_projects,
