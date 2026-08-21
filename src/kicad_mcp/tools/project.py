@@ -23,6 +23,7 @@ from ..discovery import (
     scan_project_dir,
 )
 from ..file_formats import upgrade_generated_file
+from ..ipc.runtime_probe import probe_project_runtime
 from ..models.component_contracts import find_component_contract
 from ..models.intent import (
     ComplianceTarget,
@@ -44,9 +45,10 @@ from ..path_safety import assert_within
 from ..project.context import ProjectContextService
 from ..project.creation import ProjectCreationService
 from ..project.discovery import ProjectDiscoveryService
+from ..project.runtime import ProjectRuntimeService
 from ..prompts.workflows import render_professional_circuit_design_prompt
 from ..utils.cache import clear_ttl_cache, ttl_cache
-from . import project_context, project_creation, project_discovery
+from . import project_context, project_creation, project_discovery, project_runtime
 from .design_intent_state import (
     DecouplingPairIntent,
     ProjectDesignIntent,
@@ -867,7 +869,6 @@ def import_design_spec(
 def _normalize_design_intent(intent: ProjectDesignIntent) -> ProjectDesignIntent:
     return ProjectDesignIntent.model_validate(
         {
-            # v1 fields
             "connector_refs": _normalized_unique(intent.connector_refs),
             "decoupling_pairs": [
                 {
@@ -890,7 +891,6 @@ def _normalize_design_intent(intent: ProjectDesignIntent) -> ProjectDesignIntent
             "functional_spacing_mm": intent.functional_spacing_mm,
             "thermal_hotspots": _normalized_unique(intent.thermal_hotspots),
             "critical_frequencies_mhz": intent.critical_frequencies_mhz,
-            # v2 fields — pass through as-is (already validated by Pydantic)
             "power_rails": [rail.model_dump() for rail in intent.power_rails],
             "interfaces": [iface.model_dump() for iface in intent.interfaces],
             "mechanical": intent.mechanical.model_dump(),
@@ -1025,7 +1025,6 @@ def _render_design_intent(intent: ProjectDesignIntent) -> str:
             f"size=({region.w_mm:.2f} x {region.h_mm:.2f}) mm"
         )
 
-    # v2 fields
     if intent.power_rails:
         lines.append(f"- Power rails: {len(intent.power_rails)}")
         for rail in intent.power_rails[:12]:
@@ -1230,7 +1229,6 @@ def _merge_design_intent(
 ) -> ProjectDesignIntent:
     return _normalize_design_intent(
         ProjectDesignIntent(
-            # v1 — explicit wins, fall back to inferred
             connector_refs=explicit.connector_refs or inferred.connector_refs,
             decoupling_pairs=explicit.decoupling_pairs or inferred.decoupling_pairs,
             critical_nets=explicit.critical_nets or inferred.critical_nets,
@@ -1246,7 +1244,6 @@ def _merge_design_intent(
             functional_spacing_mm=explicit.functional_spacing_mm,
             thermal_hotspots=explicit.thermal_hotspots,
             critical_frequencies_mhz=explicit.critical_frequencies_mhz,
-            # v2 — explicit only (inference does not produce these)
             power_rails=explicit.power_rails,
             interfaces=explicit.interfaces,
             mechanical=explicit.mechanical,
@@ -1515,7 +1512,6 @@ def register(mcp: FastMCP) -> None:
         functional_spacing_mm: float | None = None,
         thermal_hotspots: list[str] | None = None,
         critical_frequencies_mhz: list[float] | None = None,
-        # v2 parameters
         power_rails: list[dict[str, Any]] | None = None,
         interfaces: list[dict[str, Any]] | None = None,
         mechanical: dict[str, Any] | None = None,
@@ -1575,7 +1571,6 @@ def register(mcp: FastMCP) -> None:
                 if critical_frequencies_mhz is None
                 else critical_frequencies_mhz
             ),
-            # v2 fields
             power_rails=(
                 existing.power_rails
                 if power_rails is None
@@ -1907,9 +1902,6 @@ def register(mcp: FastMCP) -> None:
         iterations_used = 0
         auto_fix_log: list[str] = []
 
-        # ------------------------------------------------------------------ #
-        # Helper: resolve a "tools.module:function" import string to callable  #
-        # ------------------------------------------------------------------ #
         def _resolve_callable(import_str: str) -> Callable[[], object] | None:
             if not import_str:
                 return None
@@ -1964,8 +1956,7 @@ def register(mcp: FastMCP) -> None:
         outcomes = _evaluate_project_gate()
         iterations_used += 1
 
-        for _iter in range(max_iterations - 1):  # -1 because we already ran once above
-            # Find the first failing gate that has an auto-applicable fixer
+        for _iter in range(max_iterations - 1):
             applied_any = False
             for outcome in outcomes:
                 if outcome.status == "PASS":
@@ -1991,9 +1982,8 @@ def register(mcp: FastMCP) -> None:
                     )
 
             if not applied_any:
-                break  # Nothing left for the server to do — hand off to agent
+                break
 
-            # Re-evaluate after applying fixes
             progress = min(90, 10 + (iterations_used * 15))
             await _report_progress(
                 progress,
@@ -2004,11 +1994,8 @@ def register(mcp: FastMCP) -> None:
             iterations_used += 1
 
             if all(o.status == "PASS" for o in outcomes):
-                break  # All gates green — done
+                break
 
-        # ------------------------------------------------------------------ #
-        # Build the final action list for the agent                           #
-        # ------------------------------------------------------------------ #
         actions: list[AutoFixAction] = []
         for outcome in outcomes:
             if outcome.status == "PASS":
@@ -2309,43 +2296,16 @@ def register(mcp: FastMCP) -> None:
         project_creation.ProjectCreationDependencies(service=creation_service),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    def kicad_get_version() -> str:
-        """Get KiCad version information and current connection status."""
-        cfg = get_config()
-        lines = [f"# KiCad MCP Pro Server v{__version__}", f"CLI path: {cfg.kicad_cli}"]
-
-        cli_version = find_kicad_version(cfg.kicad_cli)
-        lines.append(f"CLI version: {cli_version or 'unavailable'}")
-
-        try:
-            from kipy.proto.common.types.base_types_pb2 import DocumentType
-
-            kicad = get_kicad()
-            lines.append(f"IPC version: {kicad.get_version()}")
-
-            try:
-                pcb_docs = kicad.get_open_documents(DocumentType.DOCTYPE_PCB)
-                lines.append(f"Open PCB documents: {len(pcb_docs)}")
-            except Exception:
-                lines.append("Open PCB documents: unavailable")
-
-            try:
-                sch_docs = kicad.get_open_documents(DocumentType.DOCTYPE_SCHEMATIC)
-                lines.append(f"Open schematic documents: {len(sch_docs)}")
-            except Exception:
-                lines.append("Open schematic documents: unavailable")
-
-        except KiCadConnectionError as exc:
-            lines.append(f"IPC connection: unavailable ({exc})")
-        except Exception as exc:
-            logger.debug("kicad_version_ipc_probe_failed", error=str(exc))
-            lines.append("IPC connection: unavailable")
-
-        lines.append("")
-        lines.append("Use `kicad_set_project()` to configure an active project.")
-        return "\n".join(lines)
+    runtime_service = ProjectRuntimeService(
+        server_version=__version__,
+        get_config=lambda: get_config(),
+        find_kicad_version=lambda path: find_kicad_version(path),
+        probe_ipc=lambda: probe_project_runtime(client_factory=get_kicad),
+    )
+    project_runtime.register(
+        mcp,
+        project_runtime.ProjectRuntimeDependencies(service=runtime_service),
+    )
 
     @mcp.tool()
     @headless_compatible
