@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -33,13 +33,13 @@ from ..models.intent import (
     PowerRailSpec,
     ThermalEnvelope,
 )
-from ..models.verdict import Finding, SuggestedFix, Verdict, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
 from ..path_safety import assert_within
 from ..project.context import ProjectContextService
 from ..project.creation import ProjectCreationService
 from ..project.discovery import ProjectDiscoveryService
 from ..project.edit_impact import ProjectEditImpactService
+from ..project.next_action import GateOutcomeLike, ProjectNextActionService
 from ..project.runtime import ProjectRuntimeService
 from ..project.workflow import ProjectWorkflowService
 from ..prompts.workflows import render_professional_circuit_design_prompt
@@ -50,6 +50,7 @@ from . import (
     project_discovery,
     project_edit_impact,
     project_edit_revalidation,
+    project_next_action,
     project_runtime,
     project_workflow,
 )
@@ -119,19 +120,6 @@ class ProjectImportDesignSpecPayload(BaseModel):
     placeholders: list[str] = Field(default_factory=list)
     extras: dict[str, Any] = Field(default_factory=dict)
     parsed: ProjectDesignSpec = Field(default_factory=ProjectDesignSpec)
-
-
-class ProjectNextActionPayload(BaseModel):
-    """Structured next-action recommendation derived from the project gate."""
-
-    text: str
-    status: str
-    verdict: Verdict = "PASS"
-    gate: str = ""
-    reason: str = ""
-    suggested_tool: str = ""
-    findings: list[Finding] = Field(default_factory=list)
-    next_action: str = ""
 
 
 class AutoFixAction(BaseModel):
@@ -1191,125 +1179,10 @@ def _render_project_spec_resolution(resolution: ProjectSpecResolution) -> str:
     return "\n".join(lines)
 
 
-def _queue_reason_from_details(details: list[str], summary: str) -> str:
-    for detail in details:
-        cleaned = detail.strip()
-        if cleaned.startswith("FAIL: "):
-            return cleaned[6:]
-        if cleaned.startswith("WARN: "):
-            return cleaned[6:]
-        if cleaned.startswith("BLOCKED: "):
-            return cleaned[9:]
-    return summary
-
-
-def _suggested_tool_for_gate(name: str) -> str:
-    return {
-        "Schematic": "run_erc()",
-        "Schematic connectivity": "schematic_connectivity_gate()",
-        "PCB": "run_drc()",
-        "Placement": "pcb_score_placement()",
-        "PCB transfer": "pcb_transfer_quality_gate()",
-        "Manufacturing": "manufacturing_quality_gate()",
-        "Footprint parity": "validate_footprints_vs_schematic()",
-    }.get(name, "project_quality_gate()")
-
-
-def _tool_name_from_hint(tool_hint: str) -> str:
-    return tool_hint.removesuffix("()")
-
-
-def _next_action_finding(
-    *,
-    status: str,
-    gate: str,
-    reason: str,
-    suggested_tool: str,
-) -> Finding:
-    severity = "warning" if status == "EMPTY" else "error"
-    return Finding(
-        id=stable_finding_id("project_next_action", gate or "project", status, reason),
-        severity=severity,
-        location=gate or "Project",
-        description=reason,
-        suggested_fix=SuggestedFix(tool=_tool_name_from_hint(suggested_tool), args={}),
-    )
-
-
-def _next_action_payload() -> ProjectNextActionPayload:
+def _evaluate_project_gate_for_next_action() -> Sequence[GateOutcomeLike]:
     from .validation import _evaluate_project_gate
 
-    try:
-        outcomes = _evaluate_project_gate()
-    except Exception as exc:
-        reason = f"Project quality gate could not be evaluated: {exc}"
-        lines = [
-            "Project next action:",
-            "- Status: BLOCKED",
-            "- Suggested tool: kicad_get_project_info()",
-            f"- Reason: {reason}",
-        ]
-        return ProjectNextActionPayload(
-            text="\n".join(lines),
-            status="BLOCKED",
-            verdict="FAIL",
-            reason=reason,
-            suggested_tool="kicad_get_project_info()",
-            findings=[
-                _next_action_finding(
-                    status="BLOCKED",
-                    gate="Project",
-                    reason=reason,
-                    suggested_tool="kicad_get_project_info()",
-                )
-            ],
-            next_action="kicad_get_project_info()",
-        )
-    actionable = [outcome for outcome in outcomes if outcome.status != "PASS"]
-    if not actionable:
-        lines = [
-            "Project next action:",
-            "- Status: PASS",
-            "- Suggested tool: export_manufacturing_package()",
-            "- Reason: No blocking issues remain.",
-        ]
-        return ProjectNextActionPayload(
-            text="\n".join(lines),
-            status="PASS",
-            verdict="PASS",
-            reason="No blocking issues remain.",
-            suggested_tool="export_manufacturing_package()",
-            next_action="export_manufacturing_package()",
-        )
-
-    actionable.sort(key=lambda outcome: (0 if outcome.status == "BLOCKED" else 1, outcome.name))
-    target = actionable[0]
-    reason = _queue_reason_from_details(target.details, target.summary)
-    suggested_tool = _suggested_tool_for_gate(target.name)
-    lines = [
-        "Project next action:",
-        f"- Status: {target.status}",
-        f"- Gate: {target.name}",
-        f"- Suggested tool: {suggested_tool}",
-        f"- Reason: {reason}",
-    ]
-    return ProjectNextActionPayload(
-        text="\n".join(lines),
-        status=target.status,
-        verdict="WARN" if target.status == "EMPTY" else "FAIL",
-        gate=target.name,
-        reason=reason,
-        suggested_tool=suggested_tool,
-        findings=[
-            _next_action_finding(
-                status=target.status,
-                gate=target.name,
-                reason=reason,
-                suggested_tool=suggested_tool,
-            )
-        ],
-        next_action=suggested_tool,
-    )
+    return _evaluate_project_gate()
 
 
 def register(mcp: FastMCP) -> None:
@@ -1333,6 +1206,10 @@ def register(mcp: FastMCP) -> None:
     project_workflow.register(
         mcp,
         project_workflow.ProjectWorkflowDependencies(service=workflow_service),
+    )
+
+    next_action_service = ProjectNextActionService(
+        evaluate_project_gate=_evaluate_project_gate_for_next_action
     )
 
     @mcp.tool()
@@ -1614,11 +1491,10 @@ def register(mcp: FastMCP) -> None:
             design_notes="\n".join(notes),
         )
 
-    @mcp.tool()
-    @headless_compatible
-    def project_get_next_action() -> ProjectNextActionPayload:
-        """Return the next high-priority action derived from the current project gate."""
-        return _next_action_payload()
+    project_next_action.register(
+        mcp,
+        project_next_action.ProjectNextActionDependencies(service=next_action_service),
+    )
 
     @mcp.tool()
     @headless_compatible

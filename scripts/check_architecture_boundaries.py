@@ -28,6 +28,7 @@ _PROJECT_CREATION_ADAPTER = "kicad_mcp.tools.project_creation"
 _PROJECT_DISCOVERY_ADAPTER = "kicad_mcp.tools.project_discovery"
 _PROJECT_EDIT_IMPACT_ADAPTER = "kicad_mcp.tools.project_edit_impact"
 _PROJECT_EDIT_REVALIDATION_ADAPTER = "kicad_mcp.tools.project_edit_revalidation"
+_PROJECT_NEXT_ACTION_ADAPTER = "kicad_mcp.tools.project_next_action"
 _PROJECT_RUNTIME_ADAPTER = "kicad_mcp.tools.project_runtime"
 _PROJECT_WORKFLOW_ADAPTER = "kicad_mcp.tools.project_workflow"
 _PROJECT_ROOT_MODULE = "kicad_mcp.tools.project"
@@ -70,6 +71,7 @@ DOMAIN_MODULES = {
     "kicad_mcp.project.creation": SRC_ROOT / "kicad_mcp" / "project" / "creation.py",
     "kicad_mcp.project.discovery": SRC_ROOT / "kicad_mcp" / "project" / "discovery.py",
     "kicad_mcp.project.edit_impact": SRC_ROOT / "kicad_mcp" / "project" / "edit_impact.py",
+    "kicad_mcp.project.next_action": SRC_ROOT / "kicad_mcp" / "project" / "next_action.py",
     "kicad_mcp.project.runtime": SRC_ROOT / "kicad_mcp" / "project" / "runtime.py",
     "kicad_mcp.project.workflow": SRC_ROOT / "kicad_mcp" / "project" / "workflow.py",
     "kicad_mcp.tools.export_bom": SRC_ROOT / "kicad_mcp" / "tools" / "export_bom.py",
@@ -125,6 +127,7 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "project_edit_revalidation.py",
+    _PROJECT_NEXT_ACTION_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_next_action.py",
     _PROJECT_RUNTIME_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_runtime.py",
     _PROJECT_WORKFLOW_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_workflow.py",
     "kicad_mcp.tools.validation": SRC_ROOT / "kicad_mcp" / "tools" / "validation.py",
@@ -358,6 +361,7 @@ PURE_HELPERS = {
     "kicad_mcp.project.creation",
     "kicad_mcp.project.discovery",
     "kicad_mcp.project.edit_impact",
+    "kicad_mcp.project.next_action",
     "kicad_mcp.project.runtime",
     "kicad_mcp.project.workflow",
     "kicad_mcp.validation.policy_state",
@@ -436,6 +440,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     _PROJECT_DISCOVERY_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_EDIT_IMPACT_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_EDIT_REVALIDATION_ADAPTER: (_PROJECT_ROOT_MODULE,),
+    _PROJECT_NEXT_ACTION_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_RUNTIME_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_WORKFLOW_ADAPTER: (_PROJECT_ROOT_MODULE,),
     "kicad_mcp.tools.pcb_basic_inspection": ("kicad_mcp.tools.pcb",),
@@ -494,6 +499,7 @@ REGISTER_LINE_LIMITS = {
     _PROJECT_DISCOVERY_ADAPTER: 55,
     _PROJECT_EDIT_IMPACT_ADAPTER: 55,
     _PROJECT_EDIT_REVALIDATION_ADAPTER: 55,
+    _PROJECT_NEXT_ACTION_ADAPTER: 55,
     _PROJECT_RUNTIME_ADAPTER: 55,
     _PROJECT_WORKFLOW_ADAPTER: 55,
     "kicad_mcp.tools.validation": 300,
