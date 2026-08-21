@@ -9,6 +9,9 @@ def test_architecture_checker_tracks_project_workflow_modules() -> None:
     assert "kicad_mcp.project.workflow" in boundaries.DOMAIN_MODULES
     assert "kicad_mcp.project.workflow" in boundaries.PURE_HELPERS
     assert "kicad_mcp.tools.project_workflow" in boundaries.DOMAIN_MODULES
+    assert boundaries.ADAPTER_FORBIDDEN_IMPORT_PREFIXES["kicad_mcp.tools.project_workflow"] == (
+        "kicad_mcp.tools.project",
+    )
 
 
 def test_project_workflow_modules_do_not_import_project_monolith() -> None:
