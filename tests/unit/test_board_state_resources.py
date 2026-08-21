@@ -103,10 +103,6 @@ def test_register_resources_exposes_success_paths(monkeypatch, tmp_path: Path) -
         lambda: SimpleNamespace(model_dump_json=lambda indent=2: '{"critical_nets": []}'),
     )
     monkeypatch.setattr(
-        "kicad_mcp.tools.project._next_action_payload",
-        lambda: SimpleNamespace(text="next-step"),
-    )
-    monkeypatch.setattr(
         "kicad_mcp.tools.validation._evaluate_project_gate",
         lambda: [GateOutcome("PCB", "PASS", "All clear")],
     )
@@ -144,7 +140,12 @@ def test_register_resources_exposes_success_paths(monkeypatch, tmp_path: Path) -
     assert '"file_count": 2' in mcp.resources["kicad://project/manifest"]()
     assert mcp.resources["kicad://project/spec"]() == "spec:demo"
     assert '"critical_nets": []' in mcp.resources["kicad://project/design_intent"]()
-    assert mcp.resources["kicad://project/next_action"]() == "next-step"
+    assert mcp.resources["kicad://project/next_action"]() == (
+        "Project next action:\n"
+        "- Status: PASS\n"
+        "- Suggested tool: export_manufacturing_package()\n"
+        "- Reason: No blocking issues remain."
+    )
     assert mcp.resources["kicad://board/netlist"]() == "abcdefgh\n... [truncated]"
     assert mcp.resources["kicad://project/quality_gate"]() == "gate-count:1"
     assert '"history"' in mcp.resources["kicad://project/gate_history"]()
@@ -178,10 +179,6 @@ def test_register_resources_exposes_blocked_paths(monkeypatch, tmp_path: Path) -
         lambda: (_ for _ in ()).throw(RuntimeError("spec failed")),
     )
     monkeypatch.setattr(
-        "kicad_mcp.tools.project._next_action_payload",
-        lambda: (_ for _ in ()).throw(RuntimeError("next failed")),
-    )
-    monkeypatch.setattr(
         "kicad_mcp.tools.validation._evaluate_project_gate",
         lambda: (_ for _ in ()).throw(RuntimeError("gate failed")),
     )
@@ -206,7 +203,7 @@ def test_register_resources_exposes_blocked_paths(monkeypatch, tmp_path: Path) -
     assert '"file_count": 0' in mcp.resources["kicad://project/manifest"]()
     assert "Project design spec: BLOCKED" in mcp.resources["kicad://project/spec"]()
     assert '"status": "blocked"' in mcp.resources["kicad://project/design_intent"]()
-    assert "Project next action: BLOCKED" in mcp.resources["kicad://project/next_action"]()
+    assert "- Status: BLOCKED" in mcp.resources["kicad://project/next_action"]()
     assert "KiCad is not connected" in mcp.resources["kicad://board/netlist"]()
     assert "Project quality gate: BLOCKED" in mcp.resources["kicad://project/quality_gate"]()
     assert '"status": "blocked"' in mcp.resources["kicad://project/gate_history"]()
