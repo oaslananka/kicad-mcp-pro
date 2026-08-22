@@ -16,7 +16,9 @@ from kicad_mcp.tools.three_d_models import (
     _find_3d_model_refs,
     _find_footprint_file,
     _search_3d_model_files,
+    _write_footprint_text,
 )
+from kicad_mcp.utils.sexpr import _sexpr_string
 from tests.conftest import call_tool_text
 
 
@@ -211,3 +213,272 @@ async def test_bulk_assign_ignores_nonmatching_symlink_entry(
     assert result == "Updated 1 footprint(s) in library 'Library' with model 'safe.step'."
     assert "safe.step" in matching.read_text(encoding="utf-8")
     assert outside.read_text(encoding="utf-8") == "(footprint (version 20250316))\n"
+
+
+def test_write_footprint_text_rejects_path_outside_library_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "footprints"
+    root.mkdir()
+    outside = tmp_path / "outside.kicad_mod"
+    outside.write_text("original", encoding="utf-8")
+    monkeypatch.setenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR", str(root))
+
+    with pytest.raises(UnsafePathError):
+        _write_footprint_text(outside, "changed")
+
+    assert outside.read_text(encoding="utf-8") == "original"
+
+
+@pytest.mark.anyio
+async def test_set_3d_model_path_escapes_sexpr_string_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "footprints"
+    library = root / "Library"
+    library.mkdir(parents=True)
+    footprint = library / "Part.kicad_mod"
+    footprint.write_text("(footprint (version 20250316))\n", encoding="utf-8")
+    monkeypatch.setenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR", str(root))
+    server = create_server()
+    malicious = 'safe.step")\n  (property "Injected" "yes")\n  (model "x'
+
+    result = await call_tool_text(
+        server,
+        "lib_set_3d_model_path",
+        {"library": "Library", "footprint": "Part", "model_path": malicious},
+    )
+
+    content = footprint.read_text(encoding="utf-8")
+    assert "3D model set" in result
+    assert f"(model {_sexpr_string(malicious)}" in content
+    assert '\n  (property "Injected" "yes")' not in content
+
+
+@pytest.mark.anyio
+async def test_bulk_assign_escapes_sexpr_string_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "footprints"
+    library = root / "Library"
+    library.mkdir(parents=True)
+    footprint = library / "Part.kicad_mod"
+    footprint.write_text("(footprint (version 20250316))\n", encoding="utf-8")
+    monkeypatch.setenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR", str(root))
+    server = create_server()
+    malicious = 'safe.step")\n  (property "Injected" "yes")\n  (model "x'
+
+    result = await call_tool_text(
+        server,
+        "lib_bulk_assign_3d_models",
+        {"library": "Library", "footprint_pattern": "^Part$", "model_path": malicious},
+    )
+
+    content = footprint.read_text(encoding="utf-8")
+    assert "Updated 1 footprint" in result
+    assert f"(model {_sexpr_string(malicious)}" in content
+    assert '\n  (property "Injected" "yes")' not in content
+
+
+@pytest.mark.anyio
+async def test_set_3d_model_path_rejects_non_numeric_xyz_before_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "footprints"
+    library = root / "Library"
+    library.mkdir(parents=True)
+    footprint = library / "Part.kicad_mod"
+    original = "(footprint (version 20250316))\n"
+    footprint.write_text(original, encoding="utf-8")
+    monkeypatch.setenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR", str(root))
+    server = create_server()
+
+    result = await call_tool_text(
+        server,
+        "lib_set_3d_model_path",
+        {
+            "library": "Library",
+            "footprint": "Part",
+            "model_path": "safe.step",
+            "offset_xyz": "0 0 0)(property",
+        },
+    )
+
+    assert "must be three space-separated numbers" in result
+    assert footprint.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.anyio
+async def test_set_3d_model_path_replaces_escaped_model_path_cleanly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "footprints"
+    library = root / "Library"
+    library.mkdir(parents=True)
+    footprint = library / "Part.kicad_mod"
+    footprint.write_text("(footprint (version 20250316))\n", encoding="utf-8")
+    monkeypatch.setenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR", str(root))
+    server = create_server()
+    malicious = 'safe.step")\n  (property "Injected" "yes")\n  (model "x'
+
+    await call_tool_text(
+        server,
+        "lib_set_3d_model_path",
+        {"library": "Library", "footprint": "Part", "model_path": malicious},
+    )
+    await call_tool_text(
+        server,
+        "lib_set_3d_model_path",
+        {"library": "Library", "footprint": "Part", "model_path": "second.step"},
+    )
+
+    assert footprint.read_text(encoding="utf-8") == (
+        '(footprint (version 20250316)\n  (model "second.step"\n  )\n)'
+    )
+
+
+@pytest.mark.anyio
+async def test_bulk_assign_replaces_escaped_model_path_cleanly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "footprints"
+    library = root / "Library"
+    library.mkdir(parents=True)
+    footprint = library / "Part.kicad_mod"
+    footprint.write_text("(footprint (version 20250316))\n", encoding="utf-8")
+    monkeypatch.setenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR", str(root))
+    server = create_server()
+    malicious = 'safe.step")\n  (property "Injected" "yes")\n  (model "x'
+
+    await call_tool_text(
+        server,
+        "lib_set_3d_model_path",
+        {"library": "Library", "footprint": "Part", "model_path": malicious},
+    )
+    await call_tool_text(
+        server,
+        "lib_bulk_assign_3d_models",
+        {"library": "Library", "footprint_pattern": "^Part$", "model_path": "second.step"},
+    )
+
+    assert footprint.read_text(encoding="utf-8") == (
+        '(footprint (version 20250316)\n  (model "second.step"\n  )\n)'
+    )
+
+
+@pytest.mark.anyio
+async def test_remove_3d_model_matches_escaped_model_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "footprints"
+    library = root / "Library"
+    library.mkdir(parents=True)
+    footprint = library / "Part.kicad_mod"
+    footprint.write_text("(footprint (version 20250316))\n", encoding="utf-8")
+    monkeypatch.setenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR", str(root))
+    server = create_server()
+    malicious = 'safe.step")\n  (property "Injected" "yes")\n  (model "x'
+
+    await call_tool_text(
+        server,
+        "lib_set_3d_model_path",
+        {"library": "Library", "footprint": "Part", "model_path": malicious},
+    )
+    result = await call_tool_text(
+        server,
+        "lib_remove_3d_model",
+        {"library": "Library", "footprint": "Part", "model_path": malicious},
+    )
+
+    assert "Removed 1 3D model" in result
+    assert "Injected" not in footprint.read_text(encoding="utf-8")
+
+
+@pytest.mark.anyio
+async def test_set_3d_model_path_preserves_valid_xyz_attributes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "footprints"
+    library = root / "Library"
+    library.mkdir(parents=True)
+    footprint = library / "Part.kicad_mod"
+    footprint.write_text("(footprint (version 20250316))\n", encoding="utf-8")
+    monkeypatch.setenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR", str(root))
+    server = create_server()
+
+    result = await call_tool_text(
+        server,
+        "lib_set_3d_model_path",
+        {
+            "library": "Library",
+            "footprint": "Part",
+            "model_path": "safe.step",
+            "offset_xyz": "1 2 3",
+            "scale_xyz": "1.5 2 0.5",
+            "rotate_xyz": "0 90 180",
+        },
+    )
+
+    content = footprint.read_text(encoding="utf-8")
+    assert "3D model set" in result
+    assert "(offset (xyz 1 2 3))" in content
+    assert "(scale (xyz 1.5 2 0.5))" in content
+    assert "(rotate (xyz 0 90 180))" in content
+
+
+@pytest.mark.anyio
+async def test_set_3d_model_path_ignores_model_text_inside_quoted_property(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "footprints"
+    library = root / "Library"
+    library.mkdir(parents=True)
+    footprint = library / "Part.kicad_mod"
+    original_property = '(property "Note" "literal (model \\"fake.step\\") text")'
+    footprint.write_text(
+        f'(footprint (version 20250316)\n  {original_property}\n  (model "old.step"\n  )\n)\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR", str(root))
+    server = create_server()
+
+    await call_tool_text(
+        server,
+        "lib_set_3d_model_path",
+        {"library": "Library", "footprint": "Part", "model_path": "new.step"},
+    )
+
+    content = footprint.read_text(encoding="utf-8")
+    assert original_property in content
+    refs = _find_3d_model_refs(content)
+    assert [ref["path"] for ref in refs] == ["new.step"]
+
+
+@pytest.mark.anyio
+async def test_remove_3d_model_keeps_nonmatching_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "footprints"
+    library = root / "Library"
+    library.mkdir(parents=True)
+    footprint = library / "Part.kicad_mod"
+    footprint.write_text(
+        "(footprint (version 20250316)\n"
+        '  (model "keep.step"\n  )\n'
+        '  (model "remove.step"\n  )\n'
+        ")\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR", str(root))
+    server = create_server()
+
+    result = await call_tool_text(
+        server,
+        "lib_remove_3d_model",
+        {"library": "Library", "footprint": "Part", "model_path": "remove.step"},
+    )
+
+    content = footprint.read_text(encoding="utf-8")
+    assert "Removed 1 3D model" in result
+    refs = _find_3d_model_refs(content)
+    assert [ref["path"] for ref in refs] == ["keep.step"]
