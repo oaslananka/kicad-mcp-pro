@@ -392,3 +392,93 @@ async def test_remove_3d_model_matches_escaped_model_path(
 
     assert "Removed 1 3D model" in result
     assert "Injected" not in footprint.read_text(encoding="utf-8")
+
+
+@pytest.mark.anyio
+async def test_set_3d_model_path_preserves_valid_xyz_attributes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "footprints"
+    library = root / "Library"
+    library.mkdir(parents=True)
+    footprint = library / "Part.kicad_mod"
+    footprint.write_text("(footprint (version 20250316))\n", encoding="utf-8")
+    monkeypatch.setenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR", str(root))
+    server = create_server()
+
+    result = await call_tool_text(
+        server,
+        "lib_set_3d_model_path",
+        {
+            "library": "Library",
+            "footprint": "Part",
+            "model_path": "safe.step",
+            "offset_xyz": "1 2 3",
+            "scale_xyz": "1.5 2 0.5",
+            "rotate_xyz": "0 90 180",
+        },
+    )
+
+    content = footprint.read_text(encoding="utf-8")
+    assert "3D model set" in result
+    assert "(offset (xyz 1 2 3))" in content
+    assert "(scale (xyz 1.5 2 0.5))" in content
+    assert "(rotate (xyz 0 90 180))" in content
+
+
+@pytest.mark.anyio
+async def test_set_3d_model_path_ignores_model_text_inside_quoted_property(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "footprints"
+    library = root / "Library"
+    library.mkdir(parents=True)
+    footprint = library / "Part.kicad_mod"
+    original_property = '(property "Note" "literal (model \\"fake.step\\") text")'
+    footprint.write_text(
+        f'(footprint (version 20250316)\n  {original_property}\n  (model "old.step"\n  )\n)\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR", str(root))
+    server = create_server()
+
+    await call_tool_text(
+        server,
+        "lib_set_3d_model_path",
+        {"library": "Library", "footprint": "Part", "model_path": "new.step"},
+    )
+
+    content = footprint.read_text(encoding="utf-8")
+    assert original_property in content
+    refs = _find_3d_model_refs(content)
+    assert [ref["path"] for ref in refs] == ["new.step"]
+
+
+@pytest.mark.anyio
+async def test_remove_3d_model_keeps_nonmatching_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "footprints"
+    library = root / "Library"
+    library.mkdir(parents=True)
+    footprint = library / "Part.kicad_mod"
+    footprint.write_text(
+        "(footprint (version 20250316)\n"
+        '  (model "keep.step"\n  )\n'
+        '  (model "remove.step"\n  )\n'
+        ")\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("KICAD_MCP_FOOTPRINT_LIBRARY_DIR", str(root))
+    server = create_server()
+
+    result = await call_tool_text(
+        server,
+        "lib_remove_3d_model",
+        {"library": "Library", "footprint": "Part", "model_path": "remove.step"},
+    )
+
+    content = footprint.read_text(encoding="utf-8")
+    assert "Removed 1 3D model" in result
+    refs = _find_3d_model_refs(content)
+    assert [ref["path"] for ref in refs] == ["keep.step"]
