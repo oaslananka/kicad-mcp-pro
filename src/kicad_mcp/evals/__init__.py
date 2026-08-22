@@ -36,6 +36,21 @@ from .live_runner import (
     validate_sanitized_evidence,
     write_evidence,
 )
+from .task_outcomes import (
+    ALL_TASK_STAGES,
+    TASK_OUTCOME_SCHEMA_VERSION,
+    AttemptClassification,
+    AttemptRecord,
+    BenchmarkContract,
+    EvidenceSufficiencyContract,
+    FailureCategory,
+    ManufacturingEvidence,
+    MutationEvidence,
+    StageEvidence,
+    TaskContract,
+    TimingEvidence,
+    ValidationEvidence,
+)
 from .tool_selection import (
     AgentRun,
     CaseResult,
@@ -54,6 +69,19 @@ from .tool_selection import (
 )
 
 __all__ = [
+    "AttemptClassification",
+    "FailureCategory",
+    "ManufacturingEvidence",
+    "MutationEvidence",
+    "StageEvidence",
+    "TimingEvidence",
+    "ValidationEvidence",
+    "ALL_TASK_STAGES",
+    "TASK_OUTCOME_SCHEMA_VERSION",
+    "AttemptRecord",
+    "BenchmarkContract",
+    "EvidenceSufficiencyContract",
+    "TaskContract",
     "AdapterObservation",
     "CaseExecution",
     "EvalConfiguration",
