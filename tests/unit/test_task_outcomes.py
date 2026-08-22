@@ -201,3 +201,40 @@ def test_attempt_rejects_duplicate_stage_evidence() -> None:
 
     with pytest.raises(ValidationError, match="stages must be unique"):
         evals.AttemptRecord.model_validate(payload)
+
+
+def test_parse_attempt_record_accepts_complete_v1_mapping() -> None:
+    record = evals.parse_attempt_record(valid_attempt_payload())
+    assert record.schema_version == "pcb-task-outcome.v1"
+    assert record.classification == "success"
+
+
+def test_parse_benchmark_contract_rejects_v2_mapping() -> None:
+    payload = valid_benchmark_payload()
+    payload["schema_version"] = "pcb-task-outcome.v2"
+
+    with pytest.raises(ValidationError):
+        evals.parse_benchmark_contract(payload)
+
+
+def test_attempt_render_is_byte_reproducible() -> None:
+    record = evals.parse_attempt_record(valid_attempt_payload())
+    assert (
+        evals.render_attempt_record(record).encode() == evals.render_attempt_record(record).encode()
+    )
+
+
+def test_attempt_render_ends_with_one_newline_and_sorted_keys() -> None:
+    rendered = evals.render_attempt_record(evals.parse_attempt_record(valid_attempt_payload()))
+    assert rendered.endswith("\n")
+    assert not rendered.endswith("\n\n")
+    assert rendered.index('"agent"') < rendered.index('"attempt_id"')
+
+
+def test_attempt_render_rejects_private_path_values() -> None:
+    payload = valid_attempt_payload()
+    payload["agent"] = "/home/private/agent-config"
+    record = evals.parse_attempt_record(payload)
+
+    with pytest.raises(evals.EvidenceSanitizationError):
+        evals.render_attempt_record(record)

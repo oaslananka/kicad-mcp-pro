@@ -50,6 +50,10 @@ from .task_outcomes import (
     TaskContract,
     TimingEvidence,
     ValidationEvidence,
+    parse_attempt_record,
+    parse_benchmark_contract,
+    render_attempt_record,
+    render_benchmark_contract,
 )
 from .tool_selection import (
     AgentRun,
@@ -76,6 +80,10 @@ __all__ = [
     "StageEvidence",
     "TimingEvidence",
     "ValidationEvidence",
+    "parse_attempt_record",
+    "parse_benchmark_contract",
+    "render_attempt_record",
+    "render_benchmark_contract",
     "ALL_TASK_STAGES",
     "TASK_OUTCOME_SCHEMA_VERSION",
     "AttemptRecord",

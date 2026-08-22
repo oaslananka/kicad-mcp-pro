@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .evidence_sanitization import validate_sanitized_evidence
 
 TASK_OUTCOME_SCHEMA_VERSION = "pcb-task-outcome.v1"
 
@@ -254,3 +258,29 @@ class AttemptRecord(_EvidenceModel):
         if self.failure_reason_code is None:
             raise ValueError("failed attempt requires a failure reason code")
         return self
+
+
+def parse_benchmark_contract(payload: Mapping[str, object]) -> BenchmarkContract:
+    """Parse one strict v1 benchmark contract mapping."""
+    return BenchmarkContract.model_validate(payload)
+
+
+def parse_attempt_record(payload: Mapping[str, object]) -> AttemptRecord:
+    """Parse one strict v1 attempt evidence mapping."""
+    return AttemptRecord.model_validate(payload)
+
+
+def _render_evidence(value: BaseModel) -> str:
+    payload = value.model_dump(mode="json", exclude_none=True)
+    validate_sanitized_evidence(payload)
+    return json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+
+
+def render_benchmark_contract(contract: BenchmarkContract) -> str:
+    """Render one benchmark contract as deterministic sanitized JSON."""
+    return _render_evidence(contract)
+
+
+def render_attempt_record(record: AttemptRecord) -> str:
+    """Render one attempt record as deterministic sanitized JSON."""
+    return _render_evidence(record)
