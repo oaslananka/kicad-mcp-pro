@@ -11,6 +11,7 @@ from typing import Any, cast
 from mcp.server.fastmcp import FastMCP
 
 from ..config import get_config
+from ..path_safety import resolve_under
 from .metadata import headless_compatible
 from .schematic import native_population_flags, parse_schematic_file
 
@@ -89,11 +90,21 @@ def _load_project_payload(path: Path) -> dict[str, Any]:
     return cast(dict[str, Any], payload)
 
 
+def _write_variant_state(path: Path, state: dict[str, Any]) -> Path:
+    cfg = get_config()
+    if cfg.project_dir is None:
+        raise ValueError("No active project directory is configured.")
+    safe_path = resolve_under(cfg.project_dir, path)
+    with safe_path.open("w", encoding="utf-8") as handle:
+        handle.write(json.dumps(state, indent=2))
+    return safe_path
+
+
 def _load_sidecar_state() -> dict[str, Any]:
     path = _variants_path()
     if not path.exists():
         state = _default_state()
-        path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        _write_variant_state(path, state)
         return state
     return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
 
@@ -136,11 +147,9 @@ def _save_state(state: dict[str, Any]) -> Path:
             "active_variant": active_variant,
             "variants": cast(dict[str, Any], state.get("variants", {})),
         }
-        project_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        return project_path
+        return _write_variant_state(project_path, payload)
     path = _variants_path()
-    path.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    return path
+    return _write_variant_state(path, state)
 
 
 def _variant_names(state: dict[str, Any]) -> list[str]:
@@ -236,7 +245,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     @headless_compatible
     def variant_list() -> str:
-        """List available design variants and basic component counts."""
+        """List available design variants and basic [REDACTED] counts."""
         state = _load_state()
         payload = {
             "default_variant": state.get("default_variant", "default"),
