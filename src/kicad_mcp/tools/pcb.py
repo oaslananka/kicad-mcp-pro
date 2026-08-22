@@ -2649,7 +2649,13 @@ def _register_board_rules_tools(mcp: FastMCP) -> None:
         min_hole_to_hole_mm: float = 0.25,
     ) -> str:
         """Write board-level manufacturing constraints into the active .kicad_dru file."""
-        from .routing_rules import _load_rules_content, _mm, _rules_file_path, _upsert_rule
+        from .routing_rules import (
+            _load_rules_content,
+            _mm,
+            _rules_file_path,
+            _upsert_rule,
+            _write_rules_content,
+        )
 
         payload = SetDesignRulesInput(
             min_trace_width_mm=min_trace_width_mm,
@@ -2704,7 +2710,7 @@ def _register_board_rules_tools(mcp: FastMCP) -> None:
                     ]
                 )
                 content = _upsert_rule(content, rule_name, rule_body)
-            path.write_text(content, encoding="utf-8")
+            path = _write_rules_content(path, content)
         except (OSError, ValueError) as exc:
             return f"Board design rule update failed: {exc}"
 
