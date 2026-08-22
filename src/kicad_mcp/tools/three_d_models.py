@@ -7,6 +7,7 @@ FAZ 7 — lib_set_3d_model_path, lib_remove_3d_model,
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from mcp.server.fastmcp import FastMCP
 from ..config import get_config
 from ..errors import UnsafePathError
 from ..path_safety import relative_subpath, resolve_under
+from ..utils.sexpr import _extract_block, _sexpr_string, _unescape_sexpr_string
 from .metadata import headless_compatible
 
 
@@ -74,19 +76,76 @@ def _read_footprint_text(path: Path) -> str:
 
 
 def _write_footprint_text(path: Path, text: str) -> None:
-    path.write_text(text, encoding="utf-8")
+    safe_path = resolve_under(_footprint_3d_dir(), path)
+    with safe_path.open("w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
+def _validated_xyz(value: str, *, label: str) -> str:
+    parts = value.strip().split()
+    try:
+        valid = len(parts) == 3 and all(math.isfinite(float(part)) for part in parts)
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError(f"{label} must be three space-separated numbers.")
+    return " ".join(parts)
+
+
+def _model_blocks(text: str) -> list[tuple[int, int, str]]:
+    blocks: list[tuple[int, int, str]] = []
+    index = 0
+    in_string = False
+    escaped = False
+    while index < len(text):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "(" and text.startswith("(model", index):
+            boundary = index + len("(model")
+            if boundary < len(text) and text[boundary].isspace():
+                block, consumed = _extract_block(text, index)
+                if consumed:
+                    blocks.append((index, index + consumed, block))
+                    index += consumed
+                    continue
+        index += 1
+    return blocks
+
+
+def _model_path_from_block(block: str) -> str | None:
+    match = re.match(r'^\(model\s+"((?:\\.|[^"\\])*)"', block)
+    if match is None:
+        return None
+    return _unescape_sexpr_string(match.group(1))
+
+
+def _remove_3d_model_blocks(text: str, *, model_path: str | None = None) -> str:
+    for start, end, block in reversed(_model_blocks(text)):
+        if model_path is not None and _model_path_from_block(block) != model_path:
+            continue
+        text = text[:start] + text[end:]
+    return text
 
 
 def _find_3d_model_refs(text: str) -> list[dict[str, object]]:
     """Return list of ``{path, offset_xyz, scale_xyz, rotate_xyz}`` entries."""
     refs: list[dict[str, object]] = []
-    for match in re.finditer(
-        r'\(model\s+"([^"]+)"\s*(.*?)\)\s*',
-        text,
-        re.DOTALL,
-    ):
-        model_path = match.group(1)
-        inner = match.group(2)
+    for _, _, block in _model_blocks(text):
+        model_path = _model_path_from_block(block)
+        if model_path is None:
+            continue
+        match = re.match(r'^\(model\s+"((?:\\.|[^"\\])*)"', block)
+        if match is None:
+            continue
+        inner = block[match.end() : -1]
         ox = _sexpr_float(inner, "offset", "xyz", index=0)
         oy = _sexpr_float(inner, "offset", "xyz", index=1)
         oz = _sexpr_float(inner, "offset", "xyz", index=2)
@@ -191,25 +250,16 @@ def register(mcp: FastMCP) -> None:
         # Build the model S-expression
         attrs = ""
         if offset_xyz:
-            parts = offset_xyz.strip().split()
-            if len(parts) != 3:
-                raise ValueError("offset_xyz must be three space-separated numbers.")
-            attrs += f"\n    (offset (xyz {parts[0]} {parts[1]} {parts[2]}))"
+            attrs += f"\n    (offset (xyz {_validated_xyz(offset_xyz, label='offset_xyz')}))"
         if scale_xyz:
-            parts = scale_xyz.strip().split()
-            if len(parts) != 3:
-                raise ValueError("scale_xyz must be three space-separated numbers.")
-            attrs += f"\n    (scale (xyz {parts[0]} {parts[1]} {parts[2]}))"
+            attrs += f"\n    (scale (xyz {_validated_xyz(scale_xyz, label='scale_xyz')}))"
         if rotate_xyz:
-            parts = rotate_xyz.strip().split()
-            if len(parts) != 3:
-                raise ValueError("rotate_xyz must be three space-separated numbers.")
-            attrs += f"\n    (rotate (xyz {parts[0]} {parts[1]} {parts[2]}))"
+            attrs += f"\n    (rotate (xyz {_validated_xyz(rotate_xyz, label='rotate_xyz')}))"
 
-        new_model = f'(model "{model_path}"{attrs}\n  )'
+        new_model = f"(model {_sexpr_string(model_path)}{attrs}\n  )"
 
         # Remove any existing model reference, then insert new one before closing )
-        text = re.sub(r'\(model\s+"[^"]*".*?\)\s*', "", text, flags=re.DOTALL)
+        text = _remove_3d_model_blocks(text)
         # Insert the new model before the final closing parenthesis
         text = text.rstrip()
         if text.endswith(")"):
@@ -244,16 +294,7 @@ def register(mcp: FastMCP) -> None:
         text = _read_footprint_text(fp_file)
         before_count = len(_find_3d_model_refs(text))
 
-        if model_path:
-            escaped = re.escape(model_path)
-            text = re.sub(
-                rf'\(model\s+"{escaped}".*?\)\s*',
-                "",
-                text,
-                flags=re.DOTALL,
-            )
-        else:
-            text = re.sub(r'\(model\s+"[^"]*".*?\)\s*', "", text, flags=re.DOTALL)
+        text = _remove_3d_model_blocks(text, model_path=model_path if model_path else None)
 
         _write_footprint_text(fp_file, text)
         after_count = len(_find_3d_model_refs(text))
@@ -303,8 +344,8 @@ def register(mcp: FastMCP) -> None:
             fp_file = resolve_under(lib_dir, candidate)
             text = _read_footprint_text(fp_file)
             # Remove existing models and add new one
-            text = re.sub(r'\(model\s+"[^"]*".*?\)\s*', "", text, flags=re.DOTALL)
-            new_model = f'(model "{model_path}"\n  )'
+            text = _remove_3d_model_blocks(text)
+            new_model = f"(model {_sexpr_string(model_path)}\n  )"
             text = text.rstrip()
             if text.endswith(")"):
                 text = text[:-1].rstrip() + f"\n  {new_model}\n)"
