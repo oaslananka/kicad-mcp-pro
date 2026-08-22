@@ -100,7 +100,7 @@ def roundtrip_edit(path: str | Path, *, allow_node_loss: bool = False) -> Iterat
         with roundtrip_edit(sch_file) as sch:
             sch.components.add(...)
     """
-    target = Path(path)
+    target = Path(path).expanduser().resolve()
     before = target.read_text(encoding="utf-8")
     sch = load(target)
     yield sch
@@ -109,7 +109,8 @@ def roundtrip_edit(path: str | Path, *, allow_node_loss: bool = False) -> Iterat
     if not allow_node_loss:
         lost = dropped_nodes(before, after)
         if lost:
-            target.write_text(before, encoding="utf-8")
+            with target.open("w", encoding="utf-8") as handle:
+                handle.write(before)
             detail = ", ".join(f"{kind} {b}->{a}" for kind, (b, a) in sorted(lost.items()))
             raise SchematicWriteUnsafeError(
                 f"Refusing to write {target.name}: the round trip dropped structure "
