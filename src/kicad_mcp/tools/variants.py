@@ -245,7 +245,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     @headless_compatible
     def variant_list() -> str:
-        """List available design variants and basic [REDACTED] counts."""
+        """List available design variants and basic component counts."""
         state = _load_state()
         payload = {
             "default_variant": state.get("default_variant", "default"),

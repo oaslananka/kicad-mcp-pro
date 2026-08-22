@@ -23,6 +23,7 @@ from ..discovery import get_cli_capabilities
 from ..models.common import _FootprintLike
 from ..models.component_contracts import find_component_contract
 from ..models.verdict import Finding, SuggestedFix, Verdict, VerdictReport, stable_finding_id
+from ..path_safety import resolve_under
 from ..pcb.board_access import BoardAccessError, board_footprints
 from ..utils.dru import (
     SExprNode,
@@ -3255,19 +3256,27 @@ def _drc_state_path() -> Path:
     return target / "drc_rules_state.json"
 
 
+def _write_drc_state(path: Path, payload: dict[str, object]) -> Path:
+    cfg = get_config()
+    if cfg.project_dir is None:
+        raise ValueError("No active project is configured.")
+    safe_path = resolve_under(cfg.project_dir, path)
+    with safe_path.open("w", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, indent=2))
+    return safe_path
+
+
 def _load_drc_state() -> dict[str, object]:
     path = _drc_state_path()
     if not path.exists():
         payload: dict[str, object] = {"enabled": {}, "severity": {}}
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        _write_drc_state(path, payload)
         return payload
     return cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
 
 
 def _save_drc_state(payload: dict[str, object]) -> Path:
-    path = _drc_state_path()
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    return path
+    return _write_drc_state(_drc_state_path(), payload)
 
 
 def _rule_child_nodes(
@@ -3427,7 +3436,7 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
         severity: str = "error",
     ) -> str:
         """Create or update a custom DRC rule in the active ``.kicad_dru`` file."""
-        from .routing_rules import _load_rules_content, _rules_file_path
+        from .routing_rules import _load_rules_content, _rules_file_path, _write_rules_content
 
         if not name.strip():
             raise ValueError("Rule name must not be empty.")
@@ -3444,7 +3453,7 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
         path = _rules_file_path()
         root, version = parse_dru(_load_rules_content(path))
         upsert_rule(root, rule_node)
-        path.write_text(dump_dru(root, version=version), encoding="utf-8")
+        path = _write_rules_content(path, dump_dru(root, version=version))
         state = _load_drc_state()
         cast(dict[str, bool], state.setdefault("enabled", {}))[name] = True
         cast(dict[str, str], state.setdefault("severity", {}))[name] = severity
@@ -3455,13 +3464,13 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
     @headless_compatible
     def drc_rule_delete(rule_name: str) -> str:
         """Delete a custom DRC rule from the active rules file."""
-        from .routing_rules import _load_rules_content, _rules_file_path
+        from .routing_rules import _load_rules_content, _rules_file_path, _write_rules_content
 
         path = _rules_file_path()
         root, version = parse_dru(_load_rules_content(path))
         if not delete_rule(root, rule_name):
             raise ValueError(f"Rule '{rule_name}' was not found.")
-        path.write_text(dump_dru(root, version=version), encoding="utf-8")
+        path = _write_rules_content(path, dump_dru(root, version=version))
         state = _load_drc_state()
         cast(dict[str, bool], state.setdefault("enabled", {})).pop(rule_name, None)
         cast(dict[str, str], state.setdefault("severity", {})).pop(rule_name, None)
@@ -3472,7 +3481,7 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
     @headless_compatible
     def drc_rule_enable(rule_name: str, enabled: bool = True) -> str:
         """Enable or disable a custom DRC rule."""
-        from .routing_rules import _load_rules_content, _rules_file_path
+        from .routing_rules import _load_rules_content, _rules_file_path, _write_rules_content
 
         path = _rules_file_path()
         root, version = parse_dru(_load_rules_content(path))
@@ -3501,7 +3510,7 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
             ["severity", "ignore" if not enabled else existing_severity],
         )
         upsert_rule(root, replacement)
-        path.write_text(dump_dru(root, version=version), encoding="utf-8")
+        path = _write_rules_content(path, dump_dru(root, version=version))
         _save_drc_state(state)
         state_text = "enabled" if enabled else "disabled"
         return f"Custom DRC rule '{rule_name}' {state_text}."
