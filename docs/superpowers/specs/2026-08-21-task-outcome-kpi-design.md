@@ -1,6 +1,6 @@
 # End-to-End PCB Task Outcome KPI Design
 
-Issue: #729  
+Issue: #729
 Related: #728, #730, #210
 
 ## Problem
