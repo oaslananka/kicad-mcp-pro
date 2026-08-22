@@ -92,31 +92,38 @@ def _validated_xyz(value: str, *, label: str) -> str:
     return " ".join(parts)
 
 
+def _skip_sexpr_string(text: str, start: int) -> int:
+    index = start + 1
+    while index < len(text):
+        if text[index] == "\\":
+            index += 2
+            continue
+        if text[index] == '"':
+            return index + 1
+        index += 1
+    return len(text)
+
+
 def _model_blocks(text: str) -> list[tuple[int, int, str]]:
     blocks: list[tuple[int, int, str]] = []
     index = 0
-    in_string = False
-    escaped = False
     while index < len(text):
-        char = text[index]
-        if in_string:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                in_string = False
-        elif char == '"':
-            in_string = True
-        elif char == "(" and text.startswith("(model", index):
-            boundary = index + len("(model")
-            if boundary < len(text) and text[boundary].isspace():
-                block, consumed = _extract_block(text, index)
-                if consumed:
-                    blocks.append((index, index + consumed, block))
-                    index += consumed
-                    continue
-        index += 1
+        if text[index] == '"':
+            index = _skip_sexpr_string(text, index)
+            continue
+        if not text.startswith("(model", index):
+            index += 1
+            continue
+        boundary = index + len("(model")
+        if boundary >= len(text) or not text[boundary].isspace():
+            index += 1
+            continue
+        block, consumed = _extract_block(text, index)
+        if not consumed:
+            index += 1
+            continue
+        blocks.append((index, index + consumed, block))
+        index += consumed
     return blocks
 
 
