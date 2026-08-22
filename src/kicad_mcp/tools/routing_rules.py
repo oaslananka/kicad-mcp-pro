@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..config import get_config
+from ..path_safety import resolve_under
 from ..utils.sexpr import _extract_block, _sexpr_string
 
 
@@ -83,12 +84,21 @@ def _upsert_rule(content: str, rule_name: str, rule_body: str) -> str:
     return updated
 
 
+def _write_rules_content(path: Path, content: str) -> Path:
+    cfg = get_config()
+    if cfg.project_dir is None:
+        raise ValueError("No project directory is configured.")
+    safe_path = resolve_under(cfg.project_dir, path)
+    with safe_path.open("w", encoding="utf-8") as handle:
+        handle.write(content)
+    return safe_path
+
+
 def _write_rule(rule_name: str, rule_body: str) -> Path:
     path = _rules_file_path()
     content = _load_rules_content(path)
     updated = _upsert_rule(content, rule_name, rule_body)
-    path.write_text(updated, encoding="utf-8")
-    return path
+    return _write_rules_content(path, updated)
 
 
 def _mm(value: float) -> str:

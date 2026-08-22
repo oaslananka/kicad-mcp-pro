@@ -13,7 +13,7 @@ from typing import Any, cast
 from mcp.server.fastmcp import FastMCP
 
 from ..config import get_config
-from ..path_safety import assert_within
+from ..path_safety import assert_within, resolve_under
 from .metadata import headless_compatible
 
 
@@ -46,6 +46,14 @@ def _project_dir() -> Path:
     if cfg.project_dir is None:
         raise ValueError("No active project directory is configured.")
     return cfg.project_dir
+
+
+def _resolve_embed_source(source_path: str) -> Path:
+    cfg = get_config()
+    source = Path(source_path)
+    if source.is_absolute():
+        return resolve_under(cfg.workspace, source)
+    return cfg.resolve_within_project(source_path)
 
 
 def register(mcp: FastMCP) -> None:
@@ -88,10 +96,7 @@ def register(mcp: FastMCP) -> None:
         description : str
             Optional human description of the embedded file.
         """
-        cfg = get_config()
-        src = Path(source_path)
-        if not src.is_absolute():
-            src = cfg.resolve_within_project(source_path)
+        src = _resolve_embed_source(source_path)
 
         if not src.exists():
             raise FileNotFoundError(f"Source file '{src}' does not exist.")

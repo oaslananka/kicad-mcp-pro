@@ -260,10 +260,15 @@ def register(mcp: FastMCP) -> None:
     @mcp.resource("kicad://project/next_action")
     def project_next_action_resource() -> str:
         """Server-recommended next action derived from the fix queue."""
-        from ..tools.project import _next_action_payload
+        from ..project.next_action import ProjectNextActionService
+        from ..tools.validation import _evaluate_project_gate
 
         try:
-            return _next_action_payload().text
+            return (
+                ProjectNextActionService(evaluate_project_gate=_evaluate_project_gate)
+                .next_action()
+                .text
+            )
         except Exception as exc:
             return _blocked_resource("Project next action", exc)
 

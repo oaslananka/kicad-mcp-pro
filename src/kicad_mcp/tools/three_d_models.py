@@ -7,12 +7,16 @@ FAZ 7 — lib_set_3d_model_path, lib_remove_3d_model,
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
 from ..config import get_config
+from ..errors import UnsafePathError
+from ..path_safety import relative_subpath, resolve_under
+from ..utils.sexpr import _extract_block, _sexpr_string, _unescape_sexpr_string
 from .metadata import headless_compatible
 
 
@@ -24,14 +28,42 @@ def _footprint_3d_dir() -> Path:
     return cfg.footprint_library_dir
 
 
+def _safe_library_component(value: str, *, label: str) -> str:
+    candidate = relative_subpath(value)
+    if (
+        not value.strip()
+        or value in {".", ".."}
+        or "/" in value
+        or "\\" in value
+        or len(candidate.parts) != 1
+    ):
+        raise UnsafePathError(
+            f"{label} must be a single path component inside the footprint library."
+        )
+    return candidate.name
+
+
 def _find_footprint_file(library: str, footprint: str) -> Path | None:
     """Locate a ``.kicad_mod`` or ``.pretty`` footprint file."""
     lib_dir = _footprint_3d_dir()
-    # Try library as subdirectory of footprint_library_dir
+    library_name = _safe_library_component(library, label="library")
+    footprint_name = _safe_library_component(footprint, label="footprint")
     candidates = [
-        lib_dir / library / f"{footprint}.kicad_mod",
-        lib_dir / library / f"{footprint}.pretty",
-        lib_dir / f"{library}.pretty" / f"{footprint}.kicad_mod",
+        resolve_under(
+            lib_dir,
+            Path(library_name) / f"{footprint_name}.kicad_mod",
+            allow_absolute=False,
+        ),
+        resolve_under(
+            lib_dir,
+            Path(library_name) / f"{footprint_name}.pretty",
+            allow_absolute=False,
+        ),
+        resolve_under(
+            lib_dir,
+            Path(f"{library_name}.pretty") / f"{footprint_name}.kicad_mod",
+            allow_absolute=False,
+        ),
     ]
     for cand in candidates:
         if cand.exists():
@@ -44,19 +76,83 @@ def _read_footprint_text(path: Path) -> str:
 
 
 def _write_footprint_text(path: Path, text: str) -> None:
-    path.write_text(text, encoding="utf-8")
+    safe_path = resolve_under(_footprint_3d_dir(), path)
+    with safe_path.open("w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
+def _validated_xyz(value: str, *, label: str) -> str:
+    parts = value.strip().split()
+    try:
+        valid = len(parts) == 3 and all(math.isfinite(float(part)) for part in parts)
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError(f"{label} must be three space-separated numbers.")
+    return " ".join(parts)
+
+
+def _skip_sexpr_string(text: str, start: int) -> int:
+    index = start + 1
+    while index < len(text):
+        if text[index] == "\\":
+            index += 2
+            continue
+        if text[index] == '"':
+            return index + 1
+        index += 1
+    return len(text)
+
+
+def _model_blocks(text: str) -> list[tuple[int, int, str]]:
+    blocks: list[tuple[int, int, str]] = []
+    index = 0
+    while index < len(text):
+        if text[index] == '"':
+            index = _skip_sexpr_string(text, index)
+            continue
+        if not text.startswith("(model", index):
+            index += 1
+            continue
+        boundary = index + len("(model")
+        if boundary >= len(text) or not text[boundary].isspace():
+            index += 1
+            continue
+        block, consumed = _extract_block(text, index)
+        if not consumed:
+            index += 1
+            continue
+        blocks.append((index, index + consumed, block))
+        index += consumed
+    return blocks
+
+
+def _model_path_from_block(block: str) -> str | None:
+    match = re.match(r'^\(model\s+"((?:\\.|[^"\\])*)"', block)
+    if match is None:
+        return None
+    return _unescape_sexpr_string(match.group(1))
+
+
+def _remove_3d_model_blocks(text: str, *, model_path: str | None = None) -> str:
+    for start, end, block in reversed(_model_blocks(text)):
+        if model_path is not None and _model_path_from_block(block) != model_path:
+            continue
+        text = text[:start] + text[end:]
+    return text
 
 
 def _find_3d_model_refs(text: str) -> list[dict[str, object]]:
     """Return list of ``{path, offset_xyz, scale_xyz, rotate_xyz}`` entries."""
     refs: list[dict[str, object]] = []
-    for match in re.finditer(
-        r'\(model\s+"([^"]+)"\s*(.*?)\)\s*',
-        text,
-        re.DOTALL,
-    ):
-        model_path = match.group(1)
-        inner = match.group(2)
+    for _, _, block in _model_blocks(text):
+        model_path = _model_path_from_block(block)
+        if model_path is None:
+            continue
+        match = re.match(r'^\(model\s+"((?:\\.|[^"\\])*)"', block)
+        if match is None:
+            continue
+        inner = block[match.end() : -1]
         ox = _sexpr_float(inner, "offset", "xyz", index=0)
         oy = _sexpr_float(inner, "offset", "xyz", index=1)
         oz = _sexpr_float(inner, "offset", "xyz", index=2)
@@ -161,25 +257,16 @@ def register(mcp: FastMCP) -> None:
         # Build the model S-expression
         attrs = ""
         if offset_xyz:
-            parts = offset_xyz.strip().split()
-            if len(parts) != 3:
-                raise ValueError("offset_xyz must be three space-separated numbers.")
-            attrs += f"\n    (offset (xyz {parts[0]} {parts[1]} {parts[2]}))"
+            attrs += f"\n    (offset (xyz {_validated_xyz(offset_xyz, label='offset_xyz')}))"
         if scale_xyz:
-            parts = scale_xyz.strip().split()
-            if len(parts) != 3:
-                raise ValueError("scale_xyz must be three space-separated numbers.")
-            attrs += f"\n    (scale (xyz {parts[0]} {parts[1]} {parts[2]}))"
+            attrs += f"\n    (scale (xyz {_validated_xyz(scale_xyz, label='scale_xyz')}))"
         if rotate_xyz:
-            parts = rotate_xyz.strip().split()
-            if len(parts) != 3:
-                raise ValueError("rotate_xyz must be three space-separated numbers.")
-            attrs += f"\n    (rotate (xyz {parts[0]} {parts[1]} {parts[2]}))"
+            attrs += f"\n    (rotate (xyz {_validated_xyz(rotate_xyz, label='rotate_xyz')}))"
 
-        new_model = f'(model "{model_path}"{attrs}\n  )'
+        new_model = f"(model {_sexpr_string(model_path)}{attrs}\n  )"
 
         # Remove any existing model reference, then insert new one before closing )
-        text = re.sub(r'\(model\s+"[^"]*".*?\)\s*', "", text, flags=re.DOTALL)
+        text = _remove_3d_model_blocks(text)
         # Insert the new model before the final closing parenthesis
         text = text.rstrip()
         if text.endswith(")"):
@@ -214,16 +301,7 @@ def register(mcp: FastMCP) -> None:
         text = _read_footprint_text(fp_file)
         before_count = len(_find_3d_model_refs(text))
 
-        if model_path:
-            escaped = re.escape(model_path)
-            text = re.sub(
-                rf'\(model\s+"{escaped}".*?\)\s*',
-                "",
-                text,
-                flags=re.DOTALL,
-            )
-        else:
-            text = re.sub(r'\(model\s+"[^"]*".*?\)\s*', "", text, flags=re.DOTALL)
+        text = _remove_3d_model_blocks(text, model_path=model_path if model_path else None)
 
         _write_footprint_text(fp_file, text)
         after_count = len(_find_3d_model_refs(text))
@@ -251,10 +329,10 @@ def register(mcp: FastMCP) -> None:
             3D model file path to assign to all matched footprints.
         """
         lib_dir = _footprint_3d_dir()
-        # Find the library directory
+        library_name = _safe_library_component(library, label="library")
         lib_candidates = [
-            lib_dir / library,
-            lib_dir / f"{library}.pretty",
+            resolve_under(lib_dir, library_name, allow_absolute=False),
+            resolve_under(lib_dir, f"{library_name}.pretty", allow_absolute=False),
         ]
         lib_path: Path | None = None
         for cand in lib_candidates:
@@ -265,15 +343,16 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(f"Library '{library}' directory not found.")
 
         compiled = re.compile(footprint_pattern)
-        matched = [p for p in lib_path.iterdir() if p.suffix in (".kicad_mod", ".pretty")]
+        matched = [path for path in lib_path.iterdir() if path.suffix in (".kicad_mod", ".pretty")]
         updated = 0
-        for fp_file in matched:
-            if not compiled.search(fp_file.stem):
+        for candidate in matched:
+            if not compiled.search(candidate.stem):
                 continue
+            fp_file = resolve_under(lib_dir, candidate)
             text = _read_footprint_text(fp_file)
             # Remove existing models and add new one
-            text = re.sub(r'\(model\s+"[^"]*".*?\)\s*', "", text, flags=re.DOTALL)
-            new_model = f'(model "{model_path}"\n  )'
+            text = _remove_3d_model_blocks(text)
+            new_model = f"(model {_sexpr_string(model_path)}\n  )"
             text = text.rstrip()
             if text.endswith(")"):
                 text = text[:-1].rstrip() + f"\n  {new_model}\n)"

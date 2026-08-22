@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 import structlog
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 from .. import __version__
@@ -23,6 +23,7 @@ from ..discovery import (
     scan_project_dir,
 )
 from ..file_formats import upgrade_generated_file
+from ..ipc.runtime_probe import probe_project_runtime
 from ..models.component_contracts import find_component_contract
 from ..models.intent import (
     ComplianceTarget,
@@ -32,21 +33,48 @@ from ..models.intent import (
     PowerRailSpec,
     ThermalEnvelope,
 )
-from ..models.state import (
-    DesignWorkflowState,
-    WorkflowPhaseState,
-    WorkflowPhaseStatus,
-    WorkflowRole,
-)
-from ..models.verdict import Finding, SuggestedFix, Verdict, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
 from ..path_safety import assert_within
 from ..project.context import ProjectContextService
 from ..project.creation import ProjectCreationService
 from ..project.discovery import ProjectDiscoveryService
+from ..project.edit_impact import ProjectEditImpactService
+from ..project.next_action import GateOutcomeLike, ProjectNextActionService
+from ..project.reporting import (
+    DesignReportPayload as DesignReportPayload,
+)
+from ..project.reporting import (
+    FixerActionLike,
+    GateHistoryLike,
+    ProjectDesignIntentLike,
+    ProjectReportingService,
+    ProjectSpecResolutionLike,
+)
+from ..project.runtime import ProjectRuntimeService
+from ..project.validation_loops import (
+    AutoFixAction as AutoFixAction,
+)
+from ..project.validation_loops import (
+    AutoFixLoopPayload as AutoFixLoopPayload,
+)
+from ..project.validation_loops import (
+    ProjectValidationLoopService,
+)
+from ..project.workflow import ProjectWorkflowService
 from ..prompts.workflows import render_professional_circuit_design_prompt
 from ..utils.cache import clear_ttl_cache, ttl_cache
-from . import project_context, project_creation, project_discovery
+from . import (
+    project_context,
+    project_creation,
+    project_discovery,
+    project_edit_impact,
+    project_edit_revalidation,
+    project_next_action,
+    project_reporting,
+    project_runtime,
+    project_validation_loops,
+    project_workflow,
+)
 from .design_intent_state import (
     DecouplingPairIntent,
     ProjectDesignIntent,
@@ -113,209 +141,6 @@ class ProjectImportDesignSpecPayload(BaseModel):
     placeholders: list[str] = Field(default_factory=list)
     extras: dict[str, Any] = Field(default_factory=dict)
     parsed: ProjectDesignSpec = Field(default_factory=ProjectDesignSpec)
-
-
-class ProjectNextActionPayload(BaseModel):
-    """Structured next-action recommendation derived from the project gate."""
-
-    text: str
-    status: str
-    verdict: Verdict = "PASS"
-    gate: str = ""
-    reason: str = ""
-    suggested_tool: str = ""
-    findings: list[Finding] = Field(default_factory=list)
-    next_action: str = ""
-
-
-class AutoFixAction(BaseModel):
-    """One step in the auto-fix loop action plan."""
-
-    gate: str
-    status: str
-    auto_fixed: bool = False
-    auto_fix_description: str = ""
-    agent_tool: str = ""
-    agent_description: str = ""
-    sampling_guidance: str = ""
-
-
-class AutoFixLoopPayload(BaseModel):
-    """Structured result returned by project_auto_fix_loop."""
-
-    text: str
-    gate_status: str
-    iterations_used: int = 0
-    actions: list[AutoFixAction] = Field(default_factory=list)
-    remaining_issues: int = 0
-    ready_for_release: bool = False
-
-
-class DesignReportPayload(BaseModel):
-    """Comprehensive design-status report combining intent, gates, and recommended actions."""
-
-    text: str
-    gate_status: str
-    intent_source: ProjectSpecSource = "none"
-    power_rails_count: int = 0
-    interfaces_count: int = 0
-    compliance_count: int = 0
-    has_mechanical_constraint: bool = False
-    next_tool: str = ""
-
-
-_AGENT_WORKFLOW_PHASES: tuple[dict[str, object], ...] = (
-    {
-        "phase": "requirements_review",
-        "role": "Planner",
-        "high_level_tool": "review_requirements_and_missing_inputs",
-        "next_action": "project_get_design_spec()",
-        "gates": [],
-    },
-    {
-        "phase": "schematic_capture",
-        "role": "Builder",
-        "high_level_tool": "create_schematic_from_intent",
-        "next_action": "sch_build_circuit()",
-        "gates": ["Schematic", "Connectivity"],
-    },
-    {
-        "phase": "schematic_verification",
-        "role": "Verifier",
-        "high_level_tool": "verify_schematic_semantics",
-        "next_action": "schematic_design_rule_check()",
-        "gates": ["Schematic", "Connectivity"],
-    },
-    {
-        "phase": "parts_and_footprints",
-        "role": "Builder",
-        "high_level_tool": "assign_parts_and_footprints_with_evidence",
-        "next_action": "validate_footprints_vs_schematic()",
-        "gates": ["PCB"],
-    },
-    {
-        "phase": "constraints",
-        "role": "Planner",
-        "high_level_tool": "generate_board_constraints",
-        "next_action": "drc_check_rule_conflicts()",
-        "gates": ["DFM"],
-    },
-    {
-        "phase": "placement",
-        "role": "Builder",
-        "high_level_tool": "place_board_professionally",
-        "next_action": "pcb_placement_quality_report()",
-        "gates": ["Placement"],
-    },
-    {
-        "phase": "routing",
-        "role": "Builder",
-        "high_level_tool": "route_board_with_quality_gates",
-        "next_action": "route_autoroute_freerouting()",
-        "gates": ["PCB"],
-    },
-    {
-        "phase": "full_verification",
-        "role": "Verifier",
-        "high_level_tool": "run_full_design_verification",
-        "next_action": "project_quality_gate_report()",
-        "gates": ["Schematic", "Connectivity", "PCB", "Placement", "DFM", "Manufacturing"],
-    },
-    {
-        "phase": "fix_loop",
-        "role": "Fixer",
-        "high_level_tool": "fix_design_until_gate_passes",
-        "next_action": "project_full_validation_loop()",
-        "gates": ["Schematic", "Connectivity", "PCB", "Placement", "DFM", "Manufacturing"],
-    },
-    {
-        "phase": "manufacturing_release",
-        "role": "Release Manager",
-        "high_level_tool": "prepare_manufacturing_release",
-        "next_action": "export_manufacturing_package()",
-        "gates": ["Manufacturing", "DFM"],
-    },
-)
-
-
-def _build_design_workflow(completed_phases: list[str]) -> DesignWorkflowState:
-    """Build the typed design-workflow state from the phases already completed.
-
-    The first phase not in ``completed_phases`` becomes ``READY`` (the current
-    step); earlier ones are ``COMPLETE`` and later ones ``PENDING``. With every
-    phase complete the last phase is reported as the current one.
-    """
-    completed = {name.strip() for name in completed_phases if name.strip()}
-    phases: list[WorkflowPhaseState] = []
-    current_index: int | None = None
-    for index, spec in enumerate(_AGENT_WORKFLOW_PHASES):
-        name = str(spec["phase"])
-        if name in completed:
-            status: WorkflowPhaseStatus = "COMPLETE"
-        elif current_index is None:
-            status = "READY"
-            current_index = index
-        else:
-            status = "PENDING"
-        role = cast(WorkflowRole, spec["role"])
-        phases.append(
-            WorkflowPhaseState(
-                phase=name,
-                role=role,
-                status=status,
-                high_level_tool=str(spec["high_level_tool"]),
-                next_action=str(spec["next_action"]),
-                gates=list(cast("list[str]", spec["gates"])),
-                human_gate_required=role == "Release Manager",
-            )
-        )
-
-    if current_index is None:
-        current = phases[-1]
-        return DesignWorkflowState(
-            current_phase=current.phase,
-            current_role=current.role,
-            overall_status="COMPLETE",
-            phases=phases,
-            next_action="All phases complete — the design is ready for release.",
-            human_gate_required=False,
-        )
-    current = phases[current_index]
-    return DesignWorkflowState(
-        current_phase=current.phase,
-        current_role=current.role,
-        overall_status="READY",
-        phases=phases,
-        next_action=current.next_action,
-        human_gate_required=current.human_gate_required,
-    )
-
-
-_PHASE_STATUS_MARKER: dict[WorkflowPhaseStatus, str] = {
-    "COMPLETE": "x",
-    "READY": ">",
-    "PENDING": " ",
-    "NEEDS_REVIEW": "?",
-    "BLOCKED": "!",
-}
-
-
-def _render_design_workflow(state: DesignWorkflowState) -> str:
-    lines = [
-        "Professional PCB design workflow",
-        f"- Current phase: {state.current_phase} ({state.current_role})",
-        f"- Overall status: {state.overall_status}",
-        f"- Next action: {state.next_action}",
-    ]
-    if state.human_gate_required:
-        lines.append("- Human gate required before this phase can complete.")
-    lines.append("")
-    lines.append("Phases:")
-    for phase in state.phases:
-        marker = _PHASE_STATUS_MARKER.get(phase.status, " ")
-        gates = f" — gates: {', '.join(phase.gates)}" if phase.gates else ""
-        lines.append(f"  [{marker}] {phase.phase} ({phase.role}) -> {phase.next_action}{gates}")
-    return "\n".join(lines)
 
 
 def _render_project_info() -> str:
@@ -867,7 +692,6 @@ def import_design_spec(
 def _normalize_design_intent(intent: ProjectDesignIntent) -> ProjectDesignIntent:
     return ProjectDesignIntent.model_validate(
         {
-            # v1 fields
             "connector_refs": _normalized_unique(intent.connector_refs),
             "decoupling_pairs": [
                 {
@@ -890,7 +714,6 @@ def _normalize_design_intent(intent: ProjectDesignIntent) -> ProjectDesignIntent
             "functional_spacing_mm": intent.functional_spacing_mm,
             "thermal_hotspots": _normalized_unique(intent.thermal_hotspots),
             "critical_frequencies_mhz": intent.critical_frequencies_mhz,
-            # v2 fields — pass through as-is (already validated by Pydantic)
             "power_rails": [rail.model_dump() for rail in intent.power_rails],
             "interfaces": [iface.model_dump() for iface in intent.interfaces],
             "mechanical": intent.mechanical.model_dump(),
@@ -1025,7 +848,6 @@ def _render_design_intent(intent: ProjectDesignIntent) -> str:
             f"size=({region.w_mm:.2f} x {region.h_mm:.2f}) mm"
         )
 
-    # v2 fields
     if intent.power_rails:
         lines.append(f"- Power rails: {len(intent.power_rails)}")
         for rail in intent.power_rails[:12]:
@@ -1230,7 +1052,6 @@ def _merge_design_intent(
 ) -> ProjectDesignIntent:
     return _normalize_design_intent(
         ProjectDesignIntent(
-            # v1 — explicit wins, fall back to inferred
             connector_refs=explicit.connector_refs or inferred.connector_refs,
             decoupling_pairs=explicit.decoupling_pairs or inferred.decoupling_pairs,
             critical_nets=explicit.critical_nets or inferred.critical_nets,
@@ -1246,7 +1067,6 @@ def _merge_design_intent(
             functional_spacing_mm=explicit.functional_spacing_mm,
             thermal_hotspots=explicit.thermal_hotspots,
             critical_frequencies_mhz=explicit.critical_frequencies_mhz,
-            # v2 — explicit only (inference does not produce these)
             power_rails=explicit.power_rails,
             interfaces=explicit.interfaces,
             mechanical=explicit.mechanical,
@@ -1344,125 +1164,48 @@ def _render_project_spec_resolution(resolution: ProjectSpecResolution) -> str:
     return "\n".join(lines)
 
 
-def _queue_reason_from_details(details: list[str], summary: str) -> str:
-    for detail in details:
-        cleaned = detail.strip()
-        if cleaned.startswith("FAIL: "):
-            return cleaned[6:]
-        if cleaned.startswith("WARN: "):
-            return cleaned[6:]
-        if cleaned.startswith("BLOCKED: "):
-            return cleaned[9:]
-    return summary
-
-
-def _suggested_tool_for_gate(name: str) -> str:
-    return {
-        "Schematic": "run_erc()",
-        "Schematic connectivity": "schematic_connectivity_gate()",
-        "PCB": "run_drc()",
-        "Placement": "pcb_score_placement()",
-        "PCB transfer": "pcb_transfer_quality_gate()",
-        "Manufacturing": "manufacturing_quality_gate()",
-        "Footprint parity": "validate_footprints_vs_schematic()",
-    }.get(name, "project_quality_gate()")
-
-
-def _tool_name_from_hint(tool_hint: str) -> str:
-    return tool_hint.removesuffix("()")
-
-
-def _next_action_finding(
-    *,
-    status: str,
-    gate: str,
-    reason: str,
-    suggested_tool: str,
-) -> Finding:
-    severity = "warning" if status == "EMPTY" else "error"
-    return Finding(
-        id=stable_finding_id("project_next_action", gate or "project", status, reason),
-        severity=severity,
-        location=gate or "Project",
-        description=reason,
-        suggested_fix=SuggestedFix(tool=_tool_name_from_hint(suggested_tool), args={}),
-    )
-
-
-def _next_action_payload() -> ProjectNextActionPayload:
+def _evaluate_project_gate_for_next_action() -> Sequence[GateOutcomeLike]:
     from .validation import _evaluate_project_gate
 
-    try:
-        outcomes = _evaluate_project_gate()
-    except Exception as exc:
-        reason = f"Project quality gate could not be evaluated: {exc}"
-        lines = [
-            "Project next action:",
-            "- Status: BLOCKED",
-            "- Suggested tool: kicad_get_project_info()",
-            f"- Reason: {reason}",
-        ]
-        return ProjectNextActionPayload(
-            text="\n".join(lines),
-            status="BLOCKED",
-            verdict="FAIL",
-            reason=reason,
-            suggested_tool="kicad_get_project_info()",
-            findings=[
-                _next_action_finding(
-                    status="BLOCKED",
-                    gate="Project",
-                    reason=reason,
-                    suggested_tool="kicad_get_project_info()",
-                )
-            ],
-            next_action="kicad_get_project_info()",
-        )
-    actionable = [outcome for outcome in outcomes if outcome.status != "PASS"]
-    if not actionable:
-        lines = [
-            "Project next action:",
-            "- Status: PASS",
-            "- Suggested tool: export_manufacturing_package()",
-            "- Reason: No blocking issues remain.",
-        ]
-        return ProjectNextActionPayload(
-            text="\n".join(lines),
-            status="PASS",
-            verdict="PASS",
-            reason="No blocking issues remain.",
-            suggested_tool="export_manufacturing_package()",
-            next_action="export_manufacturing_package()",
-        )
+    return _evaluate_project_gate()
 
-    actionable.sort(key=lambda outcome: (0 if outcome.status == "BLOCKED" else 1, outcome.name))
-    target = actionable[0]
-    reason = _queue_reason_from_details(target.details, target.summary)
-    suggested_tool = _suggested_tool_for_gate(target.name)
-    lines = [
-        "Project next action:",
-        f"- Status: {target.status}",
-        f"- Gate: {target.name}",
-        f"- Suggested tool: {suggested_tool}",
-        f"- Reason: {reason}",
-    ]
-    return ProjectNextActionPayload(
-        text="\n".join(lines),
-        status=target.status,
-        verdict="WARN" if target.status == "EMPTY" else "FAIL",
-        gate=target.name,
-        reason=reason,
-        suggested_tool=suggested_tool,
-        findings=[
-            _next_action_finding(
-                status=target.status,
-                gate=target.name,
-                reason=reason,
-                suggested_tool=suggested_tool,
-            )
-        ],
-        next_action=suggested_tool,
-    )
+
+def _evaluate_project_gate_for_validation_loops() -> Sequence[GateOutcomeLike]:
+    from .validation import _evaluate_project_gate
+
+    return _evaluate_project_gate()
+
+
+def _sampling_prompt_for_validation_loops(
+    gate_name: str,
+    summary: str,
+    details: list[str] | None = None,
+) -> str:
+    return sampling_prompt_for_gate(gate_name, summary, details)
+
+
+def _history_for_active_project_for_reporting() -> GateHistoryLike:
+    from ..resources.gate_history import GateHistory
+
+    return GateHistory.for_active_project()
+
+
+def _resolve_design_intent_for_reporting() -> ProjectSpecResolutionLike:
+    return cast(ProjectSpecResolutionLike, resolve_design_intent())
+
+
+def _render_design_intent_for_reporting(intent: ProjectDesignIntentLike) -> str:
+    return _render_design_intent(cast(ProjectDesignIntent, intent))
+
+
+def _evaluate_project_gate_for_reporting() -> Sequence[GateOutcomeLike]:
+    from .validation import _evaluate_project_gate
+
+    return _evaluate_project_gate()
+
+
+def _fixers_for_gate_for_reporting(gate_name: str) -> Sequence[FixerActionLike]:
+    return cast(Sequence[FixerActionLike], fixers_for_gate(gate_name))
 
 
 def register(mcp: FastMCP) -> None:
@@ -1482,20 +1225,15 @@ def register(mcp: FastMCP) -> None:
         project_context.ProjectContextDependencies(service=context_service),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    def project_design_workflow(completed_phases: list[str] | None = None) -> str:
-        """Return the professional PCB design workflow as a typed phase state machine.
+    workflow_service = ProjectWorkflowService()
+    project_workflow.register(
+        mcp,
+        project_workflow.ProjectWorkflowDependencies(service=workflow_service),
+    )
 
-        Lays out the canonical Planner -> Builder -> Verifier -> Fixer -> Release
-        sequence, with the high-level tool and the quality gates each phase must pass.
-        Pass the phases already finished in ``completed_phases``; the tool marks them
-        COMPLETE, reports the first remaining phase as READY (the current step) with
-        its next action and gates, and flags when a human gate is required. Read-only
-        and headless — use it to drive an autonomous design run step by step.
-        """
-        state = _build_design_workflow(completed_phases or [])
-        return _render_design_workflow(state)
+    next_action_service = ProjectNextActionService(
+        evaluate_project_gate=_evaluate_project_gate_for_next_action
+    )
 
     @mcp.tool()
     @headless_compatible
@@ -1515,7 +1253,6 @@ def register(mcp: FastMCP) -> None:
         functional_spacing_mm: float | None = None,
         thermal_hotspots: list[str] | None = None,
         critical_frequencies_mhz: list[float] | None = None,
-        # v2 parameters
         power_rails: list[dict[str, Any]] | None = None,
         interfaces: list[dict[str, Any]] | None = None,
         mechanical: dict[str, Any] | None = None,
@@ -1575,7 +1312,6 @@ def register(mcp: FastMCP) -> None:
                 if critical_frequencies_mhz is None
                 else critical_frequencies_mhz
             ),
-            # v2 fields
             power_rails=(
                 existing.power_rails
                 if power_rails is None
@@ -1683,116 +1419,26 @@ def register(mcp: FastMCP) -> None:
             notes=resolution.notes,
         )
 
-    @mcp.tool()
-    @headless_compatible
-    def project_assess_edit_impact(baseline_spec_json: str = "") -> str:
-        """Scope re-validation after an edit: semantic-diff the design intent and report
-        which gates must re-run.
+    from .gates import _combined_status
+    from .validation import PROJECT_GATE_CATEGORIES, _evaluate_project_gate, _format_gate
 
-        Compares a baseline design spec — the declared/saved intent, or an explicit
-        baseline passed as ``baseline_spec_json`` — against the intent inferred from the
-        current board, then maps each change to the gates it can invalidate. Re-run only
-        the impacted gates and keep the rest as already-proven. Use after editing an
-        existing project so a small change does not force a full re-validation.
-        """
-        from .edit_impact import impact_of_changes, render_impact_report, semantic_intent_diff
-
-        if baseline_spec_json.strip():
-            try:
-                baseline = json.loads(baseline_spec_json)
-            except json.JSONDecodeError as exc:
-                return f"Invalid baseline_spec_json: {exc}"
-            if not isinstance(baseline, dict):
-                return "baseline_spec_json must be a JSON object (a design spec)."
-        else:
-            baseline = load_design_intent().model_dump()
-
-        try:
-            inferred, _notes = _infer_design_intent_from_board()
-        except KiCadConnectionError as exc:
-            return f"Could not infer the current board intent: {exc}"
-        changes = semantic_intent_diff(baseline, inferred.model_dump())
-        report = impact_of_changes(changes)
-        return render_impact_report(report)
-
-    @mcp.tool()
-    @headless_compatible
-    def project_revalidate_after_edit(
-        baseline_spec_json: str = "",
-        manufacturer: str = "",
-        tier: str = "",
-    ) -> str:
-        """Re-run only the gates an edit could have invalidated; prove the rest preserved.
-
-        Computes the semantic intent diff (like ``project_assess_edit_impact``), then
-        actually re-runs only the impacted project gates -- skipping unaffected ones -- so
-        a small edit does not force a full re-validation. Impacted analysis categories that
-        the sign-off gate does not cover (signal integrity, power, thermal, EMC) are listed
-        with the tool to re-run for each.
-        """
-        from .edit_impact import impact_of_changes, semantic_intent_diff
-        from .gates import _combined_status
-        from .validation import (
-            PROJECT_GATE_CATEGORIES,
-            _evaluate_project_gate,
-            _format_gate,
-        )
-
-        analysis_tools = {
-            "signal_integrity": "si_calculate_trace_impedance / si_analyze_high_speed_channel",
-            "power": "check_power_integrity / pdn_calculate_voltage_drop",
-            "thermal": "thermal_simulate_plane_spreading / thermal_calculate_via_count",
-            "emc": "emc_run_full_compliance",
-        }
-
-        if baseline_spec_json.strip():
-            try:
-                baseline = json.loads(baseline_spec_json)
-            except json.JSONDecodeError as exc:
-                return f"Invalid baseline_spec_json: {exc}"
-            if not isinstance(baseline, dict):
-                return "baseline_spec_json must be a JSON object (a design spec)."
-        else:
-            baseline = load_design_intent().model_dump()
-
-        try:
-            inferred, _notes = _infer_design_intent_from_board()
-        except KiCadConnectionError as exc:
-            return f"Could not infer the current board intent: {exc}"
-
-        changes = semantic_intent_diff(baseline, inferred.model_dump())
-        report = impact_of_changes(changes)
-        affected = set(report.affected_gates)
-        runnable = affected & set(PROJECT_GATE_CATEGORIES)
-        analysis_affected = sorted(affected - set(PROJECT_GATE_CATEGORIES))
-        preserved = sorted(set(PROJECT_GATE_CATEGORIES) - runnable)
-
-        lines = [f"Selective re-validation after edit: {report.summary}", ""]
-        if not changes:
-            lines.append("No gates were re-run; every previously-passing gate is preserved.")
-            return "\n".join(lines)
-
-        if runnable:
-            outcomes = _evaluate_project_gate(
-                manufacturer=manufacturer or None,
-                tier=tier or None,
-                only_categories=runnable,
-            )
-            status = _combined_status(outcomes)
-            lines.append(f"Re-ran impacted project gates ({', '.join(sorted(runnable))}): {status}")
-            lines.extend(_format_gate(outcome) for outcome in outcomes)
-        else:
-            lines.append("No bundled project gate was impacted by this edit.")
-
-        if analysis_affected:
-            lines.append("")
-            lines.append("Impacted analysis categories to re-run with their own tools:")
-            for category in analysis_affected:
-                lines.append(f"- {category}: {analysis_tools.get(category, '(analysis tool)')}")
-
-        lines.append("")
-        lines.append(f"Preserved project gates (not re-run): {', '.join(preserved) or '(none)'}")
-        return "\n".join(lines)
+    edit_impact_service = ProjectEditImpactService(
+        load_baseline=lambda: load_design_intent().model_dump(),
+        infer_current=lambda: _infer_design_intent_from_board()[0].model_dump(),
+        evaluate_project_gate=_evaluate_project_gate,
+        combined_status=_combined_status,
+        format_gate=_format_gate,
+        project_gate_categories=PROJECT_GATE_CATEGORIES,
+        inference_error_types=(KiCadConnectionError,),
+    )
+    project_edit_impact.register(
+        mcp,
+        project_edit_impact.ProjectEditImpactDependencies(service=edit_impact_service),
+    )
+    project_edit_revalidation.register(
+        mcp,
+        project_edit_revalidation.ProjectEditRevalidationDependencies(service=edit_impact_service),
+    )
 
     @mcp.tool()
     @headless_compatible
@@ -1868,420 +1514,35 @@ def register(mcp: FastMCP) -> None:
             design_notes="\n".join(notes),
         )
 
-    @mcp.tool()
-    @headless_compatible
-    def project_get_next_action() -> ProjectNextActionPayload:
-        """Return the next high-priority action derived from the current project gate."""
-        return _next_action_payload()
+    project_next_action.register(
+        mcp,
+        project_next_action.ProjectNextActionDependencies(service=next_action_service),
+    )
 
-    @mcp.tool()
-    @headless_compatible
-    async def project_auto_fix_loop(
-        max_iterations: int = 5,
-        ctx: Context[Any, Any, Any] | None = None,
-    ) -> AutoFixLoopPayload:
-        """Run the project quality gate and automatically apply server-side fixes.
+    validation_loop_service = ProjectValidationLoopService(
+        evaluate_project_gate=_evaluate_project_gate_for_validation_loops,
+        fixers_for_gate=lambda gate_name: fixers_for_gate(gate_name),
+        resolve_callable=project_validation_loops.resolve_fixer_callable,
+    )
+    project_validation_loops.register(
+        mcp,
+        project_validation_loops.ProjectValidationLoopDependencies(
+            service=validation_loop_service,
+            sampling_prompt_for_gate=_sampling_prompt_for_validation_loops,
+        ),
+    )
 
-        Each iteration:
-        1. Evaluates all project quality gates.
-        2. For **auto-applicable** gates (annotation, zone refill) — calls the
-           underlying fix implementation directly on the server, then re-evaluates.
-        3. For gates requiring **agent action** — returns the tool name and
-           description so the agent can call it, then the agent must call this
-           tool again to continue.
-
-        The loop runs up to ``max_iterations`` times applying auto-fixes.  It
-        stops early when all gates pass or when no further auto-fix is possible
-        without agent involvement.
-
-        Args:
-            max_iterations: Maximum number of auto-fix + re-evaluate cycles to
-                attempt before returning control to the agent (1–20).
-        """
-        import importlib
-
-        from .gates import GateOutcome, _combined_status
-        from .validation import _evaluate_project_gate
-
-        max_iterations = max(1, min(max_iterations, 20))
-        iterations_used = 0
-        auto_fix_log: list[str] = []
-
-        # ------------------------------------------------------------------ #
-        # Helper: resolve a "tools.module:function" import string to callable  #
-        # ------------------------------------------------------------------ #
-        def _resolve_callable(import_str: str) -> Callable[[], object] | None:
-            if not import_str:
-                return None
-            try:
-                mod_path, func_name = import_str.rsplit(":", 1)
-                full_mod = f"kicad_mcp.{mod_path}"
-                mod = importlib.import_module(full_mod)
-                candidate = getattr(mod, func_name, None)
-                return candidate if callable(candidate) else None
-            except Exception:
-                return None
-
-        async def _sample_guidance(outcome: GateOutcome) -> str:
-            if ctx is None:
-                return ""
-            sample = getattr(ctx, "sample", None)
-            if not callable(sample):
-                return ""
-            try:
-                result = await sample(
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": sampling_prompt_for_gate(
-                                outcome.name,
-                                outcome.summary,
-                                outcome.details,
-                            ),
-                        }
-                    ],
-                    max_tokens=256,
-                    system_prompt="You are a KiCad expert. Reply briefly and directly.",
-                )
-            except Exception:
-                return ""
-
-            content = getattr(result, "content", None)
-            if isinstance(content, list) and content:
-                return str(getattr(content[0], "text", "") or "")
-            return ""
-
-        async def _report_progress(progress: float, total: float, message: str) -> None:
-            if ctx is None:
-                return
-            try:
-                await ctx.report_progress(progress, total, message)
-            except ValueError:
-                return
-
-        await _report_progress(0, 100, "Project quality gate is being evaluated...")
-
-        outcomes = _evaluate_project_gate()
-        iterations_used += 1
-
-        for _iter in range(max_iterations - 1):  # -1 because we already ran once above
-            # Find the first failing gate that has an auto-applicable fixer
-            applied_any = False
-            for outcome in outcomes:
-                if outcome.status == "PASS":
-                    continue
-                fixers = fixers_for_gate(outcome.name)
-                auto_fixer = next((f for f in fixers if f.auto_applicable), None)
-                if auto_fixer is None:
-                    continue
-                fn = _resolve_callable(auto_fixer.callable_import)
-                if fn is None:
-                    continue
-                try:
-                    fix_result = fn()
-                    auto_fix_log.append(
-                        f"[iter {iterations_used}] Auto-fixed '{outcome.name}' "
-                        f"via {auto_fixer.tool}: {fix_result}"
-                    )
-                    applied_any = True
-                except Exception as exc:
-                    auto_fix_log.append(
-                        f"[iter {iterations_used}] Auto-fix '{auto_fixer.tool}' "
-                        f"for '{outcome.name}' raised: {exc}"
-                    )
-
-            if not applied_any:
-                break  # Nothing left for the server to do — hand off to agent
-
-            # Re-evaluate after applying fixes
-            progress = min(90, 10 + (iterations_used * 15))
-            await _report_progress(
-                progress,
-                100,
-                f"Re-evaluating quality gates after iteration {iterations_used}...",
-            )
-            outcomes = _evaluate_project_gate()
-            iterations_used += 1
-
-            if all(o.status == "PASS" for o in outcomes):
-                break  # All gates green — done
-
-        # ------------------------------------------------------------------ #
-        # Build the final action list for the agent                           #
-        # ------------------------------------------------------------------ #
-        actions: list[AutoFixAction] = []
-        for outcome in outcomes:
-            if outcome.status == "PASS":
-                continue
-            fixers = fixers_for_gate(outcome.name)
-            auto_fixer = next((f for f in fixers if f.auto_applicable), None)
-            agent_fixer = next((f for f in fixers if not f.auto_applicable), None)
-            sampling_guidance = await _sample_guidance(outcome)
-            actions.append(
-                AutoFixAction(
-                    gate=outcome.name,
-                    status=outcome.status,
-                    auto_fixed=False,
-                    auto_fix_description=(auto_fixer.description if auto_fixer is not None else ""),
-                    agent_tool=(
-                        (agent_fixer.tool if agent_fixer is not None else "")
-                        or (auto_fixer.tool if auto_fixer is not None else "")
-                    ),
-                    agent_description=(
-                        (agent_fixer.description if agent_fixer is not None else "")
-                        or (auto_fixer.description if auto_fixer is not None else "")
-                    ),
-                    sampling_guidance=sampling_guidance,
-                )
-            )
-
-        remaining = sum(1 for a in actions if not a.auto_fixed)
-        ready = len(actions) == 0
-
-        lines = [f"project_auto_fix_loop: {iterations_used}/{max_iterations} iteration(s) used."]
-        if auto_fix_log:
-            lines.append("Server-side auto-fixes applied:")
-            lines.extend(f"  {entry}" for entry in auto_fix_log)
-        if ready:
-            lines.append("Status: PASS — all gates pass. Ready for manufacturing release.")
-        else:
-            lines.append(
-                f"Status: {len(actions)} gate(s) still failing ({remaining} require agent action)."
-            )
-            for action in actions:
-                lines.append(
-                    f"  [AGENT] {action.gate}: call {action.agent_tool}() "
-                    f"— {action.agent_description}"
-                )
-                if action.sampling_guidance:
-                    lines.append(f"    Sampling guidance: {action.sampling_guidance}")
-            lines.append("After applying the recommended tool, call project_auto_fix_loop() again.")
-
-        combined = _combined_status(
-            [
-                GateOutcome(
-                    name=o.name,
-                    status=o.status,
-                    summary=o.summary,
-                    details=o.details,
-                )
-                for o in outcomes
-            ]
-        )
-
-        await _report_progress(100, 100, "Project auto-fix loop completed.")
-
-        return AutoFixLoopPayload(
-            text="\n".join(lines),
-            gate_status=combined,
-            iterations_used=iterations_used,
-            actions=actions,
-            remaining_issues=remaining,
-            ready_for_release=ready,
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def project_full_validation_loop(
-        max_iterations: int = 5,
-        fix_tier: Literal["auto_only", "suggest"] = "auto_only",
-    ) -> AutoFixLoopPayload:
-        """Run ERC/DRC/project gates in a bounded fix-and-rerun validation loop."""
-        import importlib
-
-        from .gates import GateOutcome, _combined_status
-        from .validation import _evaluate_project_gate
-
-        max_iterations = max(1, min(max_iterations, 20))
-        outcomes = _evaluate_project_gate()
-        fix_log: list[str] = []
-        iterations_used = 1
-
-        def _resolve_callable(import_str: str) -> Callable[[], object] | None:
-            if not import_str:
-                return None
-            try:
-                mod_path, func_name = import_str.rsplit(":", 1)
-                module = importlib.import_module(f"kicad_mcp.{mod_path}")
-                candidate = getattr(module, func_name, None)
-                return candidate if callable(candidate) else None
-            except Exception:
-                return None
-
-        while iterations_used < max_iterations:
-            if all(outcome.status == "PASS" for outcome in outcomes):
-                break
-            blocker = next((outcome for outcome in outcomes if outcome.status != "PASS"), None)
-            if blocker is None:
-                break
-            fixers = fixers_for_gate(blocker.name)
-            auto_fixer = next((fixer for fixer in fixers if fixer.auto_applicable), None)
-            if auto_fixer is None or fix_tier == "suggest":
-                break
-            fn = _resolve_callable(auto_fixer.callable_import)
-            if fn is None:
-                break
-            try:
-                fix_result = fn()
-                fix_log.append(
-                    f"[iter {iterations_used}] {blocker.name}: {auto_fixer.tool} -> {fix_result}"
-                )
-            except Exception as exc:
-                fix_log.append(
-                    f"[iter {iterations_used}] {blocker.name}: {auto_fixer.tool} raised {exc}"
-                )
-                break
-            outcomes = _evaluate_project_gate()
-            iterations_used += 1
-
-        actions: list[AutoFixAction] = []
-        for outcome in outcomes:
-            if outcome.status == "PASS":
-                continue
-            fixers = fixers_for_gate(outcome.name)
-            agent_fixer = next((fixer for fixer in fixers if not fixer.auto_applicable), None)
-            auto_fixer = next((fixer for fixer in fixers if fixer.auto_applicable), None)
-            chosen = agent_fixer or auto_fixer
-            actions.append(
-                AutoFixAction(
-                    gate=outcome.name,
-                    status=outcome.status,
-                    auto_fixed=False,
-                    auto_fix_description=auto_fixer.description if auto_fixer else "",
-                    agent_tool=chosen.tool if chosen else "project_quality_gate",
-                    agent_description=chosen.description if chosen else outcome.summary,
-                )
-            )
-
-        combined = _combined_status(
-            [
-                GateOutcome(
-                    name=outcome.name,
-                    status=outcome.status,
-                    summary=outcome.summary,
-                    details=outcome.details,
-                )
-                for outcome in outcomes
-            ]
-        )
-        lines = [
-            f"project_full_validation_loop: {iterations_used}/{max_iterations} iteration(s) used.",
-        ]
-        if fix_log:
-            lines.append("Auto-fixes applied:")
-            lines.extend(f"  {entry}" for entry in fix_log)
-        if not actions:
-            lines.append("PASS after validation loop.")
-        elif fix_tier == "suggest":
-            lines.append("Suggested fixes:")
-            lines.extend(
-                f"  [SUGGEST] {action.gate}: call {action.agent_tool}() "
-                f"- {action.agent_description}"
-                for action in actions
-            )
-        else:
-            lines.append("PARTIAL: remaining issues require agent or manual action.")
-            lines.extend(
-                f"  [REMAINING] {action.gate}: call {action.agent_tool}() "
-                f"- {action.agent_description}"
-                for action in actions
-            )
-        return AutoFixLoopPayload(
-            text="\n".join(lines),
-            gate_status=combined,
-            iterations_used=iterations_used,
-            actions=actions,
-            remaining_issues=len(actions),
-            ready_for_release=not actions,
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def project_gate_trend(gate_name: str, last_n: int = 10) -> str:
-        """Return persisted quality-gate trend history for one gate."""
-        from ..resources.gate_history import GateHistory
-
-        history = GateHistory.for_active_project()
-        payload = {
-            "gate_name": gate_name,
-            "history": history.trend(gate_name, max(1, min(last_n, 100))),
-            "regressions": history.regression_check(),
-        }
-        return json.dumps(payload, indent=2, sort_keys=True)
-
-    @mcp.tool()
-    @headless_compatible
-    def project_design_report() -> DesignReportPayload:
-        """Generate a comprehensive design-status report.
-
-        Combines intent summary, v2 spec richness, project gate evaluation, and
-        a prioritised list of next steps into a single structured report.
-        This is the recommended first call after opening a project to understand
-        its current state.
-        """
-        from .gates import GateOutcome, _combined_status
-        from .validation import _evaluate_project_gate
-
-        resolution = resolve_design_intent()
-        intent = resolution.resolved
-
-        outcomes = _evaluate_project_gate()
-        combined = _combined_status(
-            [
-                GateOutcome(
-                    name=o.name,
-                    status=o.status,
-                    summary=o.summary,
-                    details=o.details,
-                )
-                for o in outcomes
-            ]
-        )
-        failing = [o for o in outcomes if o.status != "PASS"]
-
-        lines = [
-            "# Project Design Report",
-            "",
-            "## Design Intent",
-            _render_design_intent(intent),
-            "",
-            f"## Gate Status: {combined}",
-        ]
-        if failing:
-            lines.append(f"Failing gates ({len(failing)}):")
-            for outcome in failing:
-                fixers = fixers_for_gate(outcome.name)
-                hint = fixers[0].tool if fixers else "project_quality_gate"
-                lines.append(f"- [{outcome.status}] {outcome.name}: {outcome.summary}")
-                lines.append(f"  -> Suggested: {hint}()")
-        else:
-            lines.append("All gates PASS — ready for export_manufacturing_package().")
-
-        lines += [
-            "",
-            "## Resolution Notes",
-            *[f"- {n}" for n in resolution.notes[:8]],
-        ]
-
-        next_tool = failing[0].name if failing else "export_manufacturing_package"
-        if failing:
-            fixers = fixers_for_gate(failing[0].name)
-            next_tool = fixers[0].tool if fixers else "project_quality_gate"
-
-        return DesignReportPayload(
-            text="\n".join(lines),
-            gate_status=combined,
-            intent_source=resolution.source,
-            power_rails_count=len(intent.power_rails),
-            interfaces_count=len(intent.interfaces),
-            compliance_count=len(intent.compliance),
-            has_mechanical_constraint=(
-                bool(intent.mechanical.mount_holes)
-                or bool(intent.mechanical.connector_placement)
-                or intent.mechanical.max_height_mm is not None
-            ),
-            next_tool=next_tool,
-        )
+    reporting_service = ProjectReportingService(
+        history_for_active_project=_history_for_active_project_for_reporting,
+        resolve_design_intent=_resolve_design_intent_for_reporting,
+        render_design_intent=_render_design_intent_for_reporting,
+        evaluate_project_gate=_evaluate_project_gate_for_reporting,
+        fixers_for_gate=_fixers_for_gate_for_reporting,
+    )
+    project_reporting.register(
+        mcp,
+        project_reporting.ProjectReportingDependencies(service=reporting_service),
+    )
 
     discovery_service = ProjectDiscoveryService(
         find_recent_projects=find_recent_projects,
@@ -2309,43 +1570,16 @@ def register(mcp: FastMCP) -> None:
         project_creation.ProjectCreationDependencies(service=creation_service),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    def kicad_get_version() -> str:
-        """Get KiCad version information and current connection status."""
-        cfg = get_config()
-        lines = [f"# KiCad MCP Pro Server v{__version__}", f"CLI path: {cfg.kicad_cli}"]
-
-        cli_version = find_kicad_version(cfg.kicad_cli)
-        lines.append(f"CLI version: {cli_version or 'unavailable'}")
-
-        try:
-            from kipy.proto.common.types.base_types_pb2 import DocumentType
-
-            kicad = get_kicad()
-            lines.append(f"IPC version: {kicad.get_version()}")
-
-            try:
-                pcb_docs = kicad.get_open_documents(DocumentType.DOCTYPE_PCB)
-                lines.append(f"Open PCB documents: {len(pcb_docs)}")
-            except Exception:
-                lines.append("Open PCB documents: unavailable")
-
-            try:
-                sch_docs = kicad.get_open_documents(DocumentType.DOCTYPE_SCHEMATIC)
-                lines.append(f"Open schematic documents: {len(sch_docs)}")
-            except Exception:
-                lines.append("Open schematic documents: unavailable")
-
-        except KiCadConnectionError as exc:
-            lines.append(f"IPC connection: unavailable ({exc})")
-        except Exception as exc:
-            logger.debug("kicad_version_ipc_probe_failed", error=str(exc))
-            lines.append("IPC connection: unavailable")
-
-        lines.append("")
-        lines.append("Use `kicad_set_project()` to configure an active project.")
-        return "\n".join(lines)
+    runtime_service = ProjectRuntimeService(
+        server_version=__version__,
+        get_config=lambda: get_config(),
+        find_kicad_version=lambda path: find_kicad_version(path),
+        probe_ipc=lambda: probe_project_runtime(client_factory=get_kicad),
+    )
+    project_runtime.register(
+        mcp,
+        project_runtime.ProjectRuntimeDependencies(service=runtime_service),
+    )
 
     @mcp.tool()
     @headless_compatible
