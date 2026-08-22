@@ -1638,3 +1638,9 @@ def test_runner_emits_sanitized_atomic_checkpoint_before_and_after_observations(
     assert "prompt" not in rendered
     assert "raw_response" not in rendered
     assert "authorization" not in rendered
+
+
+def test_evidence_sanitizer_has_shared_eval_module() -> None:
+    import importlib.util
+
+    assert importlib.util.find_spec("kicad_mcp.evals.evidence_sanitization") is not None

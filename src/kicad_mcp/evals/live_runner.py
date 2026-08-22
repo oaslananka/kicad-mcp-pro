@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .evidence_sanitization import EvidenceSanitizationError, validate_sanitized_evidence
 from .live_adapters import (
     AdapterObservation,
     EvalAdapter,
@@ -57,10 +58,6 @@ __all__ = [
     "validate_sanitized_evidence",
     "write_evidence",
 ]
-
-
-class EvidenceSanitizationError(ValueError):
-    """Raised when an evidence payload contains forbidden sensitive material."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,31 +150,6 @@ _RETRYABLE_FAILURES = frozenset(
 
 _RATE_LIMIT_BACKOFF_BASE_SECONDS = 30.0
 _MAX_PROVIDER_BACKOFF_SECONDS = 120.0
-_FORBIDDEN_EVIDENCE_KEYS = frozenset(
-    {
-        "authorization",
-        "command",
-        "credential",
-        "credentials",
-        "prompt",
-        "raw_request",
-        "raw_response",
-        "required_env",
-        "secret",
-        "secrets",
-        "trace_path",
-        "transcript",
-    }
-)
-_SENSITIVE_EVIDENCE_VALUE = re.compile(
-    r"(?i)(?:bearer\s+\S+|sk-[A-Za-z0-9_-]{8,}|"
-    r"(?:api[_-]?key|access[_-]?token|secret)\s*[:=]\s*\S+)"
-)
-_PRIVATE_ABSOLUTE_PATH = re.compile(
-    r"(?:/(?:home|root|srv|tmp|var)/|[A-Za-z]:\\(?:Users|Temp|ProgramData)\\)"
-)
-
-
 def _execution_failure(
     case: EvalCase,
     run_index: int,
@@ -434,24 +406,6 @@ def execute_evaluation(
     if checkpoint is not None:
         checkpoint(final_report)
     return final_report
-
-
-def validate_sanitized_evidence(value: object) -> None:
-    """Reject evidence keys or string values that could expose sensitive material."""
-    if isinstance(value, dict):
-        for key, child in value.items():
-            normalized_key = str(key).casefold()
-            if normalized_key in _FORBIDDEN_EVIDENCE_KEYS:
-                raise EvidenceSanitizationError(f"Forbidden evidence key: {key!r}.")
-            validate_sanitized_evidence(child)
-        return
-    if isinstance(value, list | tuple):
-        for child in value:
-            validate_sanitized_evidence(child)
-        return
-    if isinstance(value, str):
-        if _SENSITIVE_EVIDENCE_VALUE.search(value) or _PRIVATE_ABSOLUTE_PATH.search(value):
-            raise EvidenceSanitizationError("Evidence contains a sensitive string value.")
 
 
 def write_evidence(path: str | Path, report: EvaluationReport) -> Path:
