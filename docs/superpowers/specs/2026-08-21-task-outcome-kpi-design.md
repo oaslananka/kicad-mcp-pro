@@ -191,7 +191,26 @@ A pure aggregator accepts attempt records and returns a versioned summary contai
 - confidence interval for rate metrics when the denominator is non-zero;
 - target evaluation (`met`, `not_met`, `insufficient_evidence`).
 
-Initial target values come from #729 but target evaluation must distinguish insufficient sample evidence from a passing percentage. The first implementation should use a reviewed binomial confidence interval rather than inventing model-specific statistical assumptions.
+Initial target values come from #729 but target evaluation must distinguish insufficient sample evidence from a passing percentage.
+
+#### Evidence sufficiency and deterministic target status
+
+Evidence sufficiency is part of the versioned benchmark contract, not inferred after results are observed. Before attempts begin, each benchmark-suite version must declare:
+
+- the minimum total valid-attempt count required for headline publication;
+- minimum valid-attempt counts for every task class the suite claims to represent;
+- minimum denominators for recovery-required mutations, DRC-required tasks, and manufacturing-release tasks when those KPIs are claimed;
+- the confidence level used for published rate intervals.
+
+For schema v1 the confidence level is fixed at 95%, and rate metrics use the two-sided Wilson score interval with `z = 1.959963984540054`. JSON evidence stores the unrounded rate and interval values; rounding is presentation-only. Changing the interval method or confidence level is a scoring-contract change and requires a new reviewed schema/benchmark version.
+
+Target status is deterministic:
+
+- `insufficient_evidence` when the applicable total, per-task-class, or KPI-specific minimum denominator is not met; a zero denominator never becomes an implicit 100% score;
+- `not_met` when evidence is sufficient but the point estimate is below the declared target, or when a hard-safety condition such as file corruption is violated;
+- `met` only when evidence is sufficient, the point estimate meets the declared target, and all hard-safety conditions for that KPI remain satisfied.
+
+The confidence interval is always reported as uncertainty evidence; it does not change the denominator, excuse provider/tool failures, or permit post-hoc reclassification. A suite that declares a KPI not applicable must do so in its task contract before execution and cannot advertise that KPI as a met headline target.
 
 ### 9. Existing eval integration
 
