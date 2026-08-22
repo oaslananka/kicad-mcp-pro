@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .evidence_sanitization import validate_sanitized_evidence
 
-TASK_OUTCOME_SCHEMA_VERSION = "pcb-task-outcome.v1"
+TASK_OUTCOME_SCHEMA_VERSION: Literal["pcb-task-outcome.v1"] = "pcb-task-outcome.v1"
 
 AttemptClassification = Literal[
     "success",
