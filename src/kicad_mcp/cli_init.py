@@ -91,9 +91,10 @@ def _write_mcp_config(client: str, snippet: dict[str, Any]) -> Path | None:
     config_path = _resolve_config_path(client)
     if config_path is None:
         return None
+    write_target = config_path.expanduser().resolve()
 
-    if config_path.exists():
-        existing: dict[str, Any] = json.loads(config_path.read_text(encoding="utf-8"))
+    if write_target.exists():
+        existing: dict[str, Any] = json.loads(write_target.read_text(encoding="utf-8"))
     else:
         existing = {}
 
@@ -102,11 +103,9 @@ def _write_mcp_config(client: str, snippet: dict[str, Any]) -> Path | None:
     existing_servers.update(snippet.get("mcpServers", {}))
     existing["mcpServers"] = existing_servers
 
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        json.dumps(existing, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    write_target.parent.mkdir(parents=True, exist_ok=True)
+    with write_target.open("w", encoding="utf-8") as handle:
+        handle.write(json.dumps(existing, indent=2, ensure_ascii=False) + "\n")
     return config_path
 
 

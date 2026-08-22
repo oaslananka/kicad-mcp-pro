@@ -5,9 +5,11 @@ from pathlib import Path
 
 import pytest
 
+from kicad_mcp import cli_init
 from kicad_mcp.config import reset_config
-from kicad_mcp.errors import UnsafePathError
+from kicad_mcp.errors import SchematicWriteUnsafeError, UnsafePathError
 from kicad_mcp.tools import routing_rules, validation, variants
+from kicad_mcp.utils import schematic_roundtrip
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -117,3 +119,77 @@ def test_validation_rule_writes_route_through_safe_writer(function_name: str) ->
     calls = _function_calls(path, function_name)
 
     assert "_write_rules_content" in calls
+
+
+def test_client_config_write_pins_symlink_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_target = tmp_path / "client-config.json"
+    original_target.write_text(
+        '{"mcpServers": {"existing": {"command": "npx"}}}',
+        encoding="utf-8",
+    )
+    outside_target = tmp_path / "outside-config.json"
+    outside_payload = '{"sentinel": true}'
+    outside_target.write_text(outside_payload, encoding="utf-8")
+    alias = tmp_path / "config-alias.json"
+    try:
+        alias.symlink_to(original_target)
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable: {exc}")
+
+    monkeypatch.setattr(cli_init, "_resolve_config_path", lambda _client: alias)
+    snippet = cli_init._generate_mcp_config("streamable-http", 3334)
+    real_dumps = cli_init.json.dumps
+    switched = False
+
+    def retargeting_dumps(*args: object, **kwargs: object) -> str:
+        nonlocal switched
+        rendered = real_dumps(*args, **kwargs)
+        if not switched:
+            alias.unlink()
+            alias.symlink_to(outside_target)
+            switched = True
+        return rendered
+
+    monkeypatch.setattr(cli_init.json, "dumps", retargeting_dumps)
+    result = cli_init._write_mcp_config("cursor", snippet)
+
+    assert result == alias
+    assert "kicad-mcp-pro" in original_target.read_text(encoding="utf-8")
+    assert outside_target.read_text(encoding="utf-8") == outside_payload
+
+
+def test_schematic_roundtrip_restore_pins_symlink_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = '(kicad_sch (global_label "G"))\n'
+    corrupted = "(kicad_sch)\n"
+    original_target = tmp_path / "original.kicad_sch"
+    original_target.write_text(original, encoding="utf-8")
+    outside_target = tmp_path / "outside.kicad_sch"
+    outside_payload = "outside sentinel\n"
+    outside_target.write_text(outside_payload, encoding="utf-8")
+    alias = tmp_path / "schematic-alias.kicad_sch"
+    try:
+        alias.symlink_to(original_target)
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable: {exc}")
+
+    class RetargetingSchematic:
+        def save(self) -> object:
+            original_target.write_text(corrupted, encoding="utf-8")
+            alias.unlink()
+            alias.symlink_to(outside_target)
+            return None
+
+    monkeypatch.setattr(schematic_roundtrip, "load", lambda _path: RetargetingSchematic())
+
+    with pytest.raises(SchematicWriteUnsafeError):
+        with schematic_roundtrip.roundtrip_edit(alias):
+            pass
+
+    assert original_target.read_text(encoding="utf-8") == original
+    assert outside_target.read_text(encoding="utf-8") == outside_payload
