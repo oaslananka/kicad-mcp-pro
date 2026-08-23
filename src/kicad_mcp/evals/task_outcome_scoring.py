@@ -61,9 +61,7 @@ class RateKpi(_SummaryModel):
 class TaskOutcomeSummary(_SummaryModel):
     """Deterministic aggregate of complete task-outcome attempt evidence."""
 
-    schema_version: Literal["pcb-task-outcome-summary.v1"] = (
-        TASK_OUTCOME_SUMMARY_SCHEMA_VERSION
-    )
+    schema_version: Literal["pcb-task-outcome-summary.v1"] = TASK_OUTCOME_SUMMARY_SCHEMA_VERSION
     benchmark_id: str
     benchmark_version: str
     attempts_total: int = Field(ge=0)
@@ -98,10 +96,7 @@ def _wilson_interval(numerator: int, denominator: int) -> WilsonInterval | None:
     center = (proportion + z_squared / (2.0 * denominator)) / scale
     half_width = (
         _WILSON_Z_95
-        * sqrt(
-            (proportion * (1.0 - proportion) + z_squared / (4.0 * denominator))
-            / denominator
-        )
+        * sqrt((proportion * (1.0 - proportion) + z_squared / (4.0 * denominator)) / denominator)
         / scale
     )
     return WilsonInterval(
@@ -239,15 +234,13 @@ def _attempt_succeeded(task: TaskContract, record: AttemptRecord) -> bool:
         return False
     if not _mutation_integrity_passes(record):
         return False
-    if (
-        task.stage_requirements["manufacturing_generation"] == "required"
-        and not _manufacturing_generation_passes(record)
-    ):
+    if task.stage_requirements[
+        "manufacturing_generation"
+    ] == "required" and not _manufacturing_generation_passes(record):
         return False
-    if (
-        task.stage_requirements["manufacturing_reproducibility"] == "required"
-        and not _manufacturing_reproducible(record)
-    ):
+    if task.stage_requirements[
+        "manufacturing_reproducibility"
+    ] == "required" and not _manufacturing_reproducible(record):
         return False
     return True
 
@@ -382,8 +375,7 @@ def aggregate_task_outcomes(
         target=_MANUFACTURING_REPRODUCIBILITY_TARGET,
         sufficient=(
             globally_sufficient
-            and manufacturing_release_tasks
-            >= sufficiency.minimum_manufacturing_release_tasks
+            and manufacturing_release_tasks >= sufficiency.minimum_manufacturing_release_tasks
         ),
     )
 
