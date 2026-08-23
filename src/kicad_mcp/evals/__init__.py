@@ -44,6 +44,7 @@ from .task_outcomes import (
     BenchmarkContract,
     EvidenceSufficiencyContract,
     FailureCategory,
+    InfrastructureInvalidEvidence,
     ManufacturingEvidence,
     MutationEvidence,
     StageEvidence,
@@ -75,6 +76,7 @@ from .tool_selection import (
 __all__ = [
     "AttemptClassification",
     "FailureCategory",
+    "InfrastructureInvalidEvidence",
     "ManufacturingEvidence",
     "MutationEvidence",
     "StageEvidence",

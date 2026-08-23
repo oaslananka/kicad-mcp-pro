@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -41,6 +41,9 @@ TaskStage = Literal[
     "parse_reopen",
 ]
 StageRequirement = Literal["required", "not_applicable"]
+ValidationKind = Literal["erc", "drc"]
+StableReasonCode = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")]
+ArtifactDigest = Annotated[str, Field(min_length=1, max_length=256)]
 
 ALL_TASK_STAGES: tuple[TaskStage, ...] = (
     "requirements",
@@ -86,11 +89,21 @@ class TaskContract(_EvidenceModel):
     task_class: str = Field(min_length=1)
     version: str = Field(min_length=1)
     stage_requirements: dict[TaskStage, StageRequirement]
+    validation_exception_reason_codes: dict[ValidationKind, tuple[StableReasonCode, ...]] = Field(
+        default_factory=dict
+    )
 
     @model_validator(mode="after")
     def _require_all_stage_declarations(self) -> TaskContract:
         if set(self.stage_requirements) != set(ALL_TASK_STAGES):
             raise ValueError("task contract stage requirements must declare every v1 stage")
+        for kind, reason_codes in self.validation_exception_reason_codes.items():
+            if self.stage_requirements[kind] != "required":
+                raise ValueError(
+                    f"{kind} validation exceptions require the validation stage to be required"
+                )
+            if len(reason_codes) != len(set(reason_codes)):
+                raise ValueError(f"{kind} validation exception reason codes must be unique")
         return self
 
 
@@ -138,15 +151,13 @@ class StageEvidence(_EvidenceModel):
 class ValidationEvidence(_EvidenceModel):
     """Execution and disposition evidence for ERC or DRC."""
 
-    kind: Literal["erc", "drc"]
+    kind: ValidationKind
     required: bool
     execution_attempted: bool
     execution_completed: bool
     result_consumed: bool
     disposition: Literal["resolved", "accepted", "blocking", "exception", "not_applicable"]
-    exception_reason_code: str | None = Field(
-        default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
-    )
+    exception_reason_code: StableReasonCode | None = None
 
     @model_validator(mode="after")
     def _validate_execution_state(self) -> ValidationEvidence:
@@ -162,15 +173,23 @@ class ValidationEvidence(_EvidenceModel):
 
 
 class MutationEvidence(_EvidenceModel):
-    """Normalized recovery and integrity evidence for one mutation."""
+    """Normalized recovery and integrity evidence for one attempted mutation."""
 
     mutation_id: str = Field(min_length=1, max_length=128)
+    attempted: Literal[True] = True
+    execution_state: Literal["completed", "interrupted", "failed"]
     recovery_required: bool
     recovery_succeeded: bool | None = None
     duplicate_application_detected: bool = False
     state_divergence_detected: bool = False
     corruption_detected: bool = False
     final_state_verified: bool
+
+    @model_validator(mode="after")
+    def _validate_recovery_state(self) -> MutationEvidence:
+        if not self.recovery_required and self.recovery_succeeded is not None:
+            raise ValueError("recovery result requires a recovery-required mutation")
+        return self
 
 
 class ManufacturingEvidence(_EvidenceModel):
@@ -180,7 +199,7 @@ class ManufacturingEvidence(_EvidenceModel):
     generation_completed: bool
     regeneration_completed: bool
     comparison: Literal["byte_identical", "normalized_equivalent", "divergent", "not_run"]
-    artifact_manifest_digest: str | None = Field(default=None, min_length=1, max_length=256)
+    artifact_manifest_digests: tuple[ArtifactDigest, ArtifactDigest] | None = None
     normalization_rules_version: str | None = Field(default=None, min_length=1, max_length=128)
 
     @model_validator(mode="after")
@@ -189,9 +208,21 @@ class ManufacturingEvidence(_EvidenceModel):
             self.generation_completed and self.regeneration_completed
         ):
             raise ValueError("manufacturing comparison requires two completed generations")
+        if self.comparison != "not_run" and self.artifact_manifest_digests is None:
+            raise ValueError("manufacturing comparison requires both artifact-set manifest digests")
+        if self.comparison == "not_run" and self.artifact_manifest_digests is not None:
+            raise ValueError("artifact-set manifest digests require a manufacturing comparison")
         if self.comparison == "normalized_equivalent" and not self.normalization_rules_version:
             raise ValueError("normalized comparison requires a normalization rules version")
         return self
+
+
+class InfrastructureInvalidEvidence(_EvidenceModel):
+    """Reviewed proof that an invalid run stopped before task execution."""
+
+    reason_code: StableReasonCode
+    reviewed: Literal[True]
+    task_execution_started: Literal[False]
 
 
 class AttemptRecord(_EvidenceModel):
@@ -216,16 +247,15 @@ class AttemptRecord(_EvidenceModel):
     timing: TimingEvidence
     classification: AttemptClassification
     failure_category: FailureCategory | None = None
-    failure_reason_code: str | None = Field(
-        default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
-    )
+    failure_reason_code: StableReasonCode | None = None
     retry_count: int = Field(ge=0)
-    start_state: Literal["clean", "recovered"]
+    start_state: Literal["clean", "reviewed_recovered"]
     manual_repair: bool
     stages: tuple[StageEvidence, ...]
     validations: tuple[ValidationEvidence, ...] = ()
     mutations: tuple[MutationEvidence, ...] = ()
     manufacturing: ManufacturingEvidence | None = None
+    infrastructure_evidence: InfrastructureInvalidEvidence | None = None
 
     @model_validator(mode="after")
     def _validate_record(self) -> AttemptRecord:
@@ -238,6 +268,18 @@ class AttemptRecord(_EvidenceModel):
             raise ValueError("attempt validation kinds must be unique")
         if len(mutation_ids) != len(set(mutation_ids)):
             raise ValueError("attempt mutation ids must be unique")
+
+        if self.classification == "infrastructure_invalid":
+            if self.infrastructure_evidence is None:
+                raise ValueError("infrastructure-invalid evidence must be reviewed and pre-task")
+            if self.failure_reason_code != self.infrastructure_evidence.reason_code:
+                raise ValueError(
+                    "infrastructure-invalid evidence reason must match failure reason code"
+                )
+        elif self.infrastructure_evidence is not None:
+            raise ValueError(
+                "infrastructure-invalid evidence is only valid for infrastructure_invalid attempts"
+            )
 
         allowed_categories: dict[str, set[str]] = {
             "task_failure": {"design", "unclassified_failure"},

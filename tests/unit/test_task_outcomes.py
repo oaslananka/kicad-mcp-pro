@@ -219,9 +219,10 @@ def test_parse_benchmark_contract_rejects_v2_mapping() -> None:
 
 def test_attempt_render_is_byte_reproducible() -> None:
     record = evals.parse_attempt_record(valid_attempt_payload())
-    assert (
-        evals.render_attempt_record(record).encode() == evals.render_attempt_record(record).encode()
-    )
+    first_render = evals.render_attempt_record(record).encode()
+    second_render = evals.render_attempt_record(record).encode()
+
+    assert first_render == second_render
 
 
 def test_attempt_render_ends_with_one_newline_and_sorted_keys() -> None:
@@ -238,3 +239,141 @@ def test_attempt_render_rejects_private_path_values() -> None:
 
     with pytest.raises(evals.EvidenceSanitizationError):
         evals.render_attempt_record(record)
+
+
+def test_task_contract_predeclares_validation_exception_reason_codes() -> None:
+    payload = valid_benchmark_payload()
+    payload["tasks"][0]["validation_exception_reason_codes"] = {"drc": ["kicad_cli_unavailable"]}
+
+    contract = evals.BenchmarkContract.model_validate(payload)
+
+    assert contract.tasks[0].validation_exception_reason_codes == {
+        "drc": ("kicad_cli_unavailable",)
+    }
+
+
+def test_attempt_start_state_requires_reviewed_recovery_label() -> None:
+    payload = valid_attempt_payload()
+    payload["start_state"] = "reviewed_recovered"
+    record = evals.AttemptRecord.model_validate(payload)
+    assert record.start_state == "reviewed_recovered"
+
+    payload["start_state"] = "recovered"
+    with pytest.raises(ValidationError):
+        evals.AttemptRecord.model_validate(payload)
+
+
+def test_infrastructure_invalid_requires_reviewed_pre_task_evidence() -> None:
+    payload = valid_attempt_payload(classification="infrastructure_invalid")
+
+    with pytest.raises(ValidationError, match="infrastructure-invalid evidence"):
+        evals.AttemptRecord.model_validate(payload)
+
+
+def test_mutation_evidence_records_attempt_and_execution_state() -> None:
+    evidence = evals.MutationEvidence.model_validate(
+        {
+            "mutation_id": "mutation-001",
+            "attempted": True,
+            "execution_state": "interrupted",
+            "recovery_required": True,
+            "recovery_succeeded": False,
+            "duplicate_application_detected": False,
+            "state_divergence_detected": False,
+            "corruption_detected": False,
+            "final_state_verified": True,
+        }
+    )
+
+    assert evidence.attempted is True
+    assert evidence.execution_state == "interrupted"
+
+
+def test_mutation_recovery_result_requires_recovery_denominator() -> None:
+    with pytest.raises(ValidationError, match="recovery result"):
+        evals.MutationEvidence.model_validate(
+            {
+                "mutation_id": "mutation-001",
+                "attempted": True,
+                "execution_state": "completed",
+                "recovery_required": False,
+                "recovery_succeeded": True,
+                "final_state_verified": True,
+            }
+        )
+
+
+def test_manufacturing_comparison_records_both_artifact_set_digests() -> None:
+    evidence = evals.ManufacturingEvidence.model_validate(
+        {
+            "required": True,
+            "generation_completed": True,
+            "regeneration_completed": True,
+            "comparison": "byte_identical",
+            "artifact_manifest_digests": [
+                "sha256:" + "a" * 64,
+                "sha256:" + "b" * 64,
+            ],
+        }
+    )
+
+    assert len(evidence.artifact_manifest_digests or ()) == 2
+
+
+def test_task_contract_rejects_exception_policy_for_not_applicable_validation() -> None:
+    payload = valid_benchmark_payload()
+    payload["tasks"][0]["stage_requirements"]["erc"] = "not_applicable"
+    payload["tasks"][0]["validation_exception_reason_codes"] = {"erc": ["erc_engine_unavailable"]}
+
+    with pytest.raises(ValidationError, match="exceptions require"):
+        evals.BenchmarkContract.model_validate(payload)
+
+
+def test_infrastructure_invalid_evidence_reason_must_match_failure_reason() -> None:
+    payload = valid_attempt_payload(classification="infrastructure_invalid")
+    payload["infrastructure_evidence"] = {
+        "reason_code": "different_reason",
+        "reviewed": True,
+        "task_execution_started": False,
+    }
+
+    with pytest.raises(ValidationError, match="reason must match"):
+        evals.AttemptRecord.model_validate(payload)
+
+
+def test_infrastructure_invalid_accepts_reviewed_pre_task_evidence() -> None:
+    payload = valid_attempt_payload(classification="infrastructure_invalid")
+    payload["infrastructure_evidence"] = {
+        "reason_code": "fixture_failure",
+        "reviewed": True,
+        "task_execution_started": False,
+    }
+
+    record = evals.AttemptRecord.model_validate(payload)
+    assert record.infrastructure_evidence is not None
+    assert record.infrastructure_evidence.reviewed is True
+    assert record.infrastructure_evidence.task_execution_started is False
+
+
+def test_non_infrastructure_attempt_rejects_infrastructure_evidence() -> None:
+    payload = valid_attempt_payload()
+    payload["infrastructure_evidence"] = {
+        "reason_code": "fixture_failure",
+        "reviewed": True,
+        "task_execution_started": False,
+    }
+
+    with pytest.raises(ValidationError, match="only valid"):
+        evals.AttemptRecord.model_validate(payload)
+
+
+def test_manufacturing_comparison_requires_both_artifact_set_digests() -> None:
+    with pytest.raises(ValidationError, match="both artifact-set manifest digests"):
+        evals.ManufacturingEvidence.model_validate(
+            {
+                "required": True,
+                "generation_completed": True,
+                "regeneration_completed": True,
+                "comparison": "byte_identical",
+            }
+        )

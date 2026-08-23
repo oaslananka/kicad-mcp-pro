@@ -336,11 +336,21 @@ class TaskContract(_EvidenceModel):
     task_class: str = Field(min_length=1)
     version: str = Field(min_length=1)
     stage_requirements: dict[TaskStage, Literal["required", "not_applicable"]]
+    validation_exception_reason_codes: dict[Literal["erc", "drc"], tuple[StableReasonCode, ...]] = Field(
+        default_factory=dict
+    )
 
     @model_validator(mode="after")
     def _require_all_stage_declarations(self) -> TaskContract:
         if set(self.stage_requirements) != set(ALL_TASK_STAGES):
             raise ValueError("task contract stage requirements must declare every v1 stage")
+        for kind, reason_codes in self.validation_exception_reason_codes.items():
+            if self.stage_requirements[kind] != "required":
+                raise ValueError(
+                    f"{kind} validation exceptions require the validation stage to be required"
+                )
+            if len(reason_codes) != len(set(reason_codes)):
+                raise ValueError(f"{kind} validation exception reason codes must be unique")
         return self
 
 
@@ -454,6 +464,8 @@ class ValidationEvidence(_EvidenceModel):
 
 class MutationEvidence(_EvidenceModel):
     mutation_id: str = Field(min_length=1)
+    attempted: Literal[True] = True
+    execution_state: Literal["completed", "interrupted", "failed"]
     recovery_required: bool
     recovery_succeeded: bool | None = None
     duplicate_application_detected: bool = False
@@ -467,7 +479,7 @@ class ManufacturingEvidence(_EvidenceModel):
     generation_completed: bool
     regeneration_completed: bool
     comparison: Literal["byte_identical", "normalized_equivalent", "divergent", "not_run"]
-    artifact_manifest_digest: str | None = None
+    artifact_manifest_digests: tuple[ArtifactDigest, ArtifactDigest] | None = None
     normalization_rules_version: str | None = None
 ```
 
@@ -496,12 +508,13 @@ class AttemptRecord(_EvidenceModel):
     failure_category: FailureCategory | None = None
     failure_reason_code: str | None = None
     retry_count: int = Field(ge=0)
-    start_state: Literal["clean", "recovered"]
+    start_state: Literal["clean", "reviewed_recovered"]
     manual_repair: bool
     stages: tuple[StageEvidence, ...]
     validations: tuple[ValidationEvidence, ...] = ()
     mutations: tuple[MutationEvidence, ...] = ()
     manufacturing: ManufacturingEvidence | None = None
+    infrastructure_evidence: InfrastructureInvalidEvidence | None = None
 ```
 
 Use these explicit structural validators; do not convert invalid records into a different classification:
@@ -582,6 +595,15 @@ def _validate_record(self) -> AttemptRecord:
 ```
 
 Keep `failure_reason_code` bounded to stable identifier syntax (letters/digits plus `._:-`), not free-form provider text. Insert each validator into the corresponding model defined in the preceding step; do not duplicate model classes.
+
+Reviewer hardening before publication must also preserve the approved design's accounting semantics:
+
+- validation exception reason codes are predeclared by the task contract and only for required ERC/DRC stages;
+- every mutation record explicitly states that the mutation was attempted plus `completed` / `interrupted` / `failed` execution state;
+- `recovery_succeeded` is absent unless the mutation contributes to the recovery-required denominator;
+- recovered starts use the explicit `reviewed_recovered` value rather than an ambiguous `recovered` label;
+- `infrastructure_invalid` requires reviewed evidence proving task execution did not start and its stable reason must match the top-level failure reason;
+- a manufacturing comparison carries both independently generated artifact-set manifest digests.
 
 - [ ] **Step 9: Verify all model tests GREEN**
 
