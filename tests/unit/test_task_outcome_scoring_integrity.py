@@ -93,7 +93,7 @@ def test_integrity_incidents_are_hard_failures(
         attempted=True,
         execution_state="completed",
         recovery_required=False,
-        final_state_verified=False,
+        final_state_verified=True,
     ).model_copy(update={incident_field: True})
 
     summary = evals.aggregate_task_outcomes(_contract(), [_attempt(mutation)])
