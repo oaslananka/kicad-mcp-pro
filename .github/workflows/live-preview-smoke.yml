@@ -57,3 +57,4 @@ jobs:
           name: live-preview-smoke-${{ github.run_id }}
           path: artifacts/live-preview-smoke
           if-no-files-found: warn
+          retention-days: 7

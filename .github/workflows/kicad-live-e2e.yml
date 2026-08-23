@@ -82,6 +82,7 @@ jobs:
           name: kicad-10-0-5-canary
           path: artifacts/kicad-10-0-5
           if-no-files-found: warn
+          retention-days: 14
 
   kicad-11-preview-smoke:
     name: KiCad 11 preview smoke
@@ -199,6 +200,7 @@ jobs:
           name: kicad-11-headless-read
           path: artifacts/kicad-11-preview/read
           if-no-files-found: error
+          retention-days: 14
 
       - name: Upload KiCad 11 headless write report
         if: always()
@@ -207,6 +209,7 @@ jobs:
           name: kicad-11-headless-write
           path: artifacts/kicad-11-preview/write
           if-no-files-found: error
+          retention-days: 14
 
       - name: Upload KiCad 11 headless export report
         if: always()
@@ -215,6 +218,7 @@ jobs:
           name: kicad-11-headless-export
           path: artifacts/kicad-11-preview/export
           if-no-files-found: error
+          retention-days: 14
 
       - name: Upload KiCad 11 preview smoke artifacts
         if: always()
@@ -223,3 +227,4 @@ jobs:
           name: kicad-11-preview-smoke
           path: artifacts/kicad-11-preview
           if-no-files-found: error
+          retention-days: 14

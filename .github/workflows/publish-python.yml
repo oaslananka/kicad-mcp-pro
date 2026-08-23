@@ -67,10 +67,12 @@ jobs:
           path: |
             dist/*.whl
             dist/*.tar.gz
+          retention-days: 14
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: python-release-evidence
           path: release-evidence
+          retention-days: 14
       - name: Attach Python evidence to GitHub Release
         if: github.event_name == 'push'
         env:
