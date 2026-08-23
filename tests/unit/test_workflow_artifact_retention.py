@@ -9,8 +9,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_upload_artifact_steps_declare_explicit_retention() -> None:
     violations: list[str] = []
+    workflow_dir = ROOT / ".github" / "workflows"
+    workflow_paths = sorted((*workflow_dir.glob("*.yml"), *workflow_dir.glob("*.yaml")))
 
-    for path in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+    for path in workflow_paths:
         workflow = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         for job_name, job in (workflow.get("jobs") or {}).items():
             for index, step in enumerate(job.get("steps") or []):
