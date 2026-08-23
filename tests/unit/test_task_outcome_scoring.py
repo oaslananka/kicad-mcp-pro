@@ -26,7 +26,11 @@ def _contract(
     minimum_drc_required_tasks: int = 1,
     minimum_manufacturing_release_tasks: int = 0,
     manufacturing: bool = False,
+    require_erc: bool = False,
 ) -> evals.BenchmarkContract:
+    stage_requirements = _stage_requirements(manufacturing=manufacturing)
+    if require_erc:
+        stage_requirements["erc"] = "required"
     return evals.BenchmarkContract.model_validate(
         {
             "schema_version": "pcb-task-outcome.v1",
@@ -37,7 +41,7 @@ def _contract(
                     "task_id": "route-usb-board",
                     "task_class": "pcb-edit",
                     "version": "v1",
-                    "stage_requirements": _stage_requirements(manufacturing=manufacturing),
+                    "stage_requirements": stage_requirements,
                 }
             ],
             "evidence_sufficiency": {
@@ -256,6 +260,17 @@ def test_required_drc_not_executed_fails_task_and_drc_target() -> None:
     assert summary.required_drc_execution.status == "not_met"
 
 
+def test_missing_required_erc_evidence_fails_task_closed() -> None:
+    summary = evals.aggregate_task_outcomes(
+        _contract(require_erc=True),
+        [_attempt("erc-missing")],
+    )
+
+    assert summary.successful_attempts == 0
+    assert summary.failed_attempts == 1
+    assert summary.failure_categories == {"unclassified_failure": 1}
+
+
 def test_corruption_is_a_hard_failure_even_when_attempt_is_classified_success() -> None:
     mutation = {
         "mutation_id": "m-corrupt",
@@ -275,6 +290,73 @@ def test_corruption_is_a_hard_failure_even_when_attempt_is_classified_success() 
     assert summary.file_corruption_incidents == 1
     assert summary.file_corruption_status == "not_met"
     assert summary.successful_attempts == 0
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        {
+            "mutation_id": "m-recovery-failed",
+            "attempted": True,
+            "execution_state": "interrupted",
+            "recovery_required": True,
+            "recovery_succeeded": False,
+            "duplicate_application_detected": False,
+            "state_divergence_detected": False,
+            "corruption_detected": False,
+            "final_state_verified": True,
+        },
+        {
+            "mutation_id": "m-unrecovered-interruption",
+            "attempted": True,
+            "execution_state": "interrupted",
+            "recovery_required": False,
+            "duplicate_application_detected": False,
+            "state_divergence_detected": False,
+            "corruption_detected": False,
+            "final_state_verified": True,
+        },
+    ],
+)
+def test_invalid_mutation_recovery_states_fail_task_closed(mutation: dict[str, Any]) -> None:
+    summary = evals.aggregate_task_outcomes(
+        _contract(),
+        [_attempt("invalid-mutation", mutations=[mutation])],
+    )
+
+    assert summary.successful_attempts == 0
+    assert summary.failed_attempts == 1
+    assert summary.failure_categories == {"unclassified_failure": 1}
+
+
+@pytest.mark.parametrize(
+    "manufacturing",
+    [
+        {
+            "required": True,
+            "generation_completed": False,
+            "regeneration_completed": False,
+            "comparison": "not_run",
+        },
+        {
+            "required": True,
+            "generation_completed": True,
+            "regeneration_completed": False,
+            "comparison": "not_run",
+        },
+    ],
+)
+def test_incomplete_manufacturing_evidence_fails_task_closed(
+    manufacturing: dict[str, Any],
+) -> None:
+    summary = evals.aggregate_task_outcomes(
+        _contract(manufacturing=True),
+        [_attempt("manufacturing-incomplete", manufacturing=manufacturing)],
+    )
+
+    assert summary.successful_attempts == 0
+    assert summary.failed_attempts == 1
+    assert summary.failure_categories == {"unclassified_failure": 1}
 
 
 def test_zero_or_below_minimum_denominator_is_insufficient_evidence() -> None:
@@ -313,3 +395,27 @@ def test_attempt_identity_mismatch_is_rejected_instead_of_cross_scored() -> None
 
     with pytest.raises(evals.TaskOutcomeScoringError, match="benchmark"):
         evals.aggregate_task_outcomes(_contract(), [record])
+
+
+@pytest.mark.parametrize(
+    ("update", "message"),
+    [
+        ({"task_id": "missing-task"}, "unknown task"),
+        ({"task_contract_version": "v2"}, "task identity"),
+    ],
+)
+def test_task_identity_mismatch_is_rejected_instead_of_cross_scored(
+    update: dict[str, str],
+    message: str,
+) -> None:
+    record = _attempt("wrong-task").model_copy(update=update)
+
+    with pytest.raises(evals.TaskOutcomeScoringError, match=message):
+        evals.aggregate_task_outcomes(_contract(), [record])
+
+
+def test_duplicate_attempt_ids_are_rejected_instead_of_double_counted() -> None:
+    record = _attempt("duplicate")
+
+    with pytest.raises(evals.TaskOutcomeScoringError, match="unique"):
+        evals.aggregate_task_outcomes(_contract(), [record, record])
