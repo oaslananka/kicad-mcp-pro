@@ -112,6 +112,7 @@ git commit -m "refactor(eval): share evidence sanitization"
   - `ValidationEvidence`
   - `MutationEvidence`
   - `ManufacturingEvidence`
+  - `InfrastructureInvalidEvidence`
   - `AttemptRecord`
 
 - [ ] **Step 1: Write RED tests for package-level contract availability**
@@ -268,6 +269,10 @@ TaskStage = Literal[
     "manufacturing_reproducibility",
     "parse_reopen",
 ]
+StageRequirement = Literal["required", "not_applicable"]
+ValidationKind = Literal["erc", "drc"]
+StableReasonCode = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")]
+ArtifactDigest = Annotated[str, Field(min_length=1, max_length=256)]
 ALL_TASK_STAGES: tuple[TaskStage, ...] = (
     "requirements",
     "schematic",
@@ -285,7 +290,7 @@ class _EvidenceModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 ```
 
-Use bounded string fields (`min_length=1`) for IDs/versions, `Field(ge=0)` for counters, and the existing source-revision convention of a lowercase 40-character Git SHA.
+Import `Annotated` alongside `Literal` from `typing`. Use bounded string fields (`min_length=1`) for IDs/versions, `Field(ge=0)` for counters, and the existing source-revision convention of a lowercase 40-character Git SHA.
 
 - [ ] **Step 4: Write RED tests for the benchmark contract**
 
@@ -327,16 +332,22 @@ class EvidenceSufficiencyContract(_EvidenceModel):
     minimum_recovery_required_mutations: int = Field(ge=0)
     minimum_drc_required_tasks: int = Field(ge=0)
     minimum_manufacturing_release_tasks: int = Field(ge=0)
-    confidence_level: Literal[0.95] = 0.95
+    confidence_level: float = Field(default=0.95, ge=0.95, le=0.95)
     interval_method: Literal["wilson"] = "wilson"
+
+    @model_validator(mode="after")
+    def _validate_class_minima(self) -> EvidenceSufficiencyContract:
+        if any(value < 1 for value in self.minimum_valid_attempts_by_task_class.values()):
+            raise ValueError("per-task-class evidence minima must be at least 1")
+        return self
 
 
 class TaskContract(_EvidenceModel):
     task_id: str = Field(min_length=1)
     task_class: str = Field(min_length=1)
     version: str = Field(min_length=1)
-    stage_requirements: dict[TaskStage, Literal["required", "not_applicable"]]
-    validation_exception_reason_codes: dict[Literal["erc", "drc"], tuple[StableReasonCode, ...]] = Field(
+    stage_requirements: dict[TaskStage, StageRequirement]
+    validation_exception_reason_codes: dict[ValidationKind, tuple[StableReasonCode, ...]] = Field(
         default_factory=dict
     )
 
@@ -368,9 +379,6 @@ class BenchmarkContract(_EvidenceModel):
         task_ids = [task.task_id for task in self.tasks]
         if len(task_ids) != len(set(task_ids)):
             raise ValueError("benchmark contract task ids must be unique")
-        class_minima = self.evidence_sufficiency.minimum_valid_attempts_by_task_class
-        if any(value < 1 for value in class_minima.values()):
-            raise ValueError("per-task-class evidence minima must be at least 1")
         return self
 ```
 
@@ -453,13 +461,13 @@ class StageEvidence(_EvidenceModel):
 
 
 class ValidationEvidence(_EvidenceModel):
-    kind: Literal["erc", "drc"]
+    kind: ValidationKind
     required: bool
     execution_attempted: bool
     execution_completed: bool
     result_consumed: bool
     disposition: Literal["resolved", "accepted", "blocking", "exception", "not_applicable"]
-    exception_reason_code: str | None = None
+    exception_reason_code: StableReasonCode | None = None
 
 
 class MutationEvidence(_EvidenceModel):
@@ -481,6 +489,12 @@ class ManufacturingEvidence(_EvidenceModel):
     comparison: Literal["byte_identical", "normalized_equivalent", "divergent", "not_run"]
     artifact_manifest_digests: tuple[ArtifactDigest, ArtifactDigest] | None = None
     normalization_rules_version: str | None = None
+
+
+class InfrastructureInvalidEvidence(_EvidenceModel):
+    reason_code: StableReasonCode
+    reviewed: Literal[True]
+    task_execution_started: Literal[False]
 ```
 
 `AttemptRecord` must include the spec's pinned identity/accounting fields:
@@ -506,7 +520,7 @@ class AttemptRecord(_EvidenceModel):
     timing: TimingEvidence
     classification: AttemptClassification
     failure_category: FailureCategory | None = None
-    failure_reason_code: str | None = None
+    failure_reason_code: StableReasonCode | None = None
     retry_count: int = Field(ge=0)
     start_state: Literal["clean", "reviewed_recovered"]
     manual_repair: bool
@@ -547,6 +561,14 @@ def _validate_execution_state(self) -> ValidationEvidence:
     return self
 
 
+# Add this method inside MutationEvidence.
+@model_validator(mode="after")
+def _validate_recovery_state(self) -> MutationEvidence:
+    if not self.recovery_required and self.recovery_succeeded is not None:
+        raise ValueError("recovery result requires a recovery-required mutation")
+    return self
+
+
 # Add this method inside ManufacturingEvidence.
 @model_validator(mode="after")
 def _validate_comparison_state(self) -> ManufacturingEvidence:
@@ -554,6 +576,10 @@ def _validate_comparison_state(self) -> ManufacturingEvidence:
         self.generation_completed and self.regeneration_completed
     ):
         raise ValueError("manufacturing comparison requires two completed generations")
+    if self.comparison != "not_run" and self.artifact_manifest_digests is None:
+        raise ValueError("manufacturing comparison requires both artifact-set manifest digests")
+    if self.comparison == "not_run" and self.artifact_manifest_digests is not None:
+        raise ValueError("artifact-set manifest digests require a manufacturing comparison")
     if self.comparison == "normalized_equivalent" and not self.normalization_rules_version:
         raise ValueError("normalized comparison requires a normalization rules version")
     return self
@@ -571,6 +597,18 @@ def _validate_record(self) -> AttemptRecord:
         raise ValueError("attempt validation kinds must be unique")
     if len(mutation_ids) != len(set(mutation_ids)):
         raise ValueError("attempt mutation ids must be unique")
+
+    if self.classification == "infrastructure_invalid":
+        if self.infrastructure_evidence is None:
+            raise ValueError("infrastructure-invalid evidence must be reviewed and pre-task")
+        if self.failure_reason_code != self.infrastructure_evidence.reason_code:
+            raise ValueError(
+                "infrastructure-invalid evidence reason must match failure reason code"
+            )
+    elif self.infrastructure_evidence is not None:
+        raise ValueError(
+            "infrastructure-invalid evidence is only valid for infrastructure_invalid attempts"
+        )
 
     allowed_categories: dict[str, set[str]] = {
         "task_failure": {"design", "unclassified_failure"},
@@ -685,7 +723,10 @@ Do not catch and weaken `ValidationError`; callers need the original field-level
 ```python
 def test_attempt_render_is_byte_reproducible() -> None:
     record = evals.parse_attempt_record(valid_attempt_payload())
-    assert evals.render_attempt_record(record).encode() == evals.render_attempt_record(record).encode()
+    first_render = evals.render_attempt_record(record).encode()
+    second_render = evals.render_attempt_record(record).encode()
+
+    assert first_render == second_render
 
 
 def test_attempt_render_ends_with_one_newline_and_sorted_keys() -> None:
