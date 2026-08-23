@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable
+from dataclasses import dataclass
 from math import sqrt
 from typing import Literal
 
@@ -85,6 +86,30 @@ class TaskOutcomeSummary(_SummaryModel):
     manufacturing_release_tasks: int = Field(ge=0)
     manufacturing_reproducible_tasks: int = Field(ge=0)
     manufacturing_reproducibility: RateKpi
+
+
+@dataclass(frozen=True, slots=True)
+class _OutcomeCounts:
+    successful_attempts: int
+    failure_categories: Counter[str]
+
+
+@dataclass(frozen=True, slots=True)
+class _MutationCounts:
+    mutation_attempts: int
+    recovery_required_mutations: int
+    successful_recoveries: int
+    duplicate_application_incidents: int
+    state_divergence_incidents: int
+    file_corruption_incidents: int
+
+
+@dataclass(frozen=True, slots=True)
+class _ReleaseEvidenceCounts:
+    drc_required_tasks: int
+    drc_executed_and_consumed_tasks: int
+    manufacturing_release_tasks: int
+    manufacturing_reproducible_tasks: int
 
 
 def _wilson_interval(numerator: int, denominator: int) -> WilsonInterval | None:
@@ -271,43 +296,40 @@ def _recovery_succeeded(record: AttemptRecord, mutation_index: int) -> bool:
     )
 
 
-def aggregate_task_outcomes(
+def _validated_tasks_for_attempts(
     contract: BenchmarkContract,
-    attempts: Iterable[AttemptRecord],
-) -> TaskOutcomeSummary:
-    """Aggregate complete attempts without dropping valid failures from denominators."""
-    records = list(attempts)
+    records: list[AttemptRecord],
+) -> dict[str, TaskContract]:
     attempt_ids = [record.attempt_id for record in records]
     if len(attempt_ids) != len(set(attempt_ids)):
         raise TaskOutcomeScoringError("Attempt ids must be unique within one aggregate.")
 
     tasks = _task_map(contract)
-    task_by_attempt: dict[str, TaskContract] = {}
-    for record in records:
-        task_by_attempt[record.attempt_id] = _validate_attempt_identity(
+    return {
+        record.attempt_id: _validate_attempt_identity(
             contract,
             tasks.get(record.task_id),
             record,
         )
+        for record in records
+    }
 
-    invalid_records = [
-        record for record in records if record.classification == "infrastructure_invalid"
-    ]
-    valid_records = [
-        record for record in records if record.classification != "infrastructure_invalid"
-    ]
-    globally_sufficient = _global_evidence_sufficient(contract, valid_records)
 
+def _count_task_outcomes(
+    valid_records: list[AttemptRecord],
+    task_by_attempt: dict[str, TaskContract],
+) -> _OutcomeCounts:
     successful_attempts = 0
     failure_categories: Counter[str] = Counter()
     for record in valid_records:
-        task = task_by_attempt[record.attempt_id]
-        if _attempt_succeeded(task, record):
+        if _attempt_succeeded(task_by_attempt[record.attempt_id], record):
             successful_attempts += 1
-            continue
-        failure_categories[record.failure_category or "unclassified_failure"] += 1
+        else:
+            failure_categories[record.failure_category or "unclassified_failure"] += 1
+    return _OutcomeCounts(successful_attempts, failure_categories)
 
-    mutation_attempts = sum(len(record.mutations) for record in valid_records)
+
+def _count_mutation_outcomes(valid_records: list[AttemptRecord]) -> _MutationCounts:
     recovery_required_mutations = 0
     successful_recoveries = 0
     duplicate_application_incidents = 0
@@ -317,12 +339,24 @@ def aggregate_task_outcomes(
         for index, mutation in enumerate(record.mutations):
             if mutation.recovery_required:
                 recovery_required_mutations += 1
-                if _recovery_succeeded(record, index):
-                    successful_recoveries += 1
+                successful_recoveries += int(_recovery_succeeded(record, index))
             duplicate_application_incidents += int(mutation.duplicate_application_detected)
             state_divergence_incidents += int(mutation.state_divergence_detected)
             file_corruption_incidents += int(mutation.corruption_detected)
+    return _MutationCounts(
+        mutation_attempts=sum(len(record.mutations) for record in valid_records),
+        recovery_required_mutations=recovery_required_mutations,
+        successful_recoveries=successful_recoveries,
+        duplicate_application_incidents=duplicate_application_incidents,
+        state_divergence_incidents=state_divergence_incidents,
+        file_corruption_incidents=file_corruption_incidents,
+    )
 
+
+def _count_release_evidence(
+    valid_records: list[AttemptRecord],
+    task_by_attempt: dict[str, TaskContract],
+) -> _ReleaseEvidenceCounts:
     drc_required_tasks = 0
     drc_executed_and_consumed_tasks = 0
     manufacturing_release_tasks = 0
@@ -342,49 +376,89 @@ def aggregate_task_outcomes(
                 drc_executed_and_consumed_tasks += 1
         if task.stage_requirements["manufacturing_reproducibility"] == "required":
             manufacturing_release_tasks += 1
-            if _manufacturing_reproducible(record):
-                manufacturing_reproducible_tasks += 1
+            manufacturing_reproducible_tasks += int(_manufacturing_reproducible(record))
+    return _ReleaseEvidenceCounts(
+        drc_required_tasks=drc_required_tasks,
+        drc_executed_and_consumed_tasks=drc_executed_and_consumed_tasks,
+        manufacturing_release_tasks=manufacturing_release_tasks,
+        manufacturing_reproducible_tasks=manufacturing_reproducible_tasks,
+    )
+
+
+def _file_corruption_status(
+    *,
+    incidents: int,
+    globally_sufficient: bool,
+    mutation_attempts: int,
+) -> TargetStatus:
+    if incidents:
+        return "not_met"
+    if globally_sufficient and mutation_attempts:
+        return "met"
+    return "insufficient_evidence"
+
+
+def _partition_attempts(
+    records: list[AttemptRecord],
+) -> tuple[list[AttemptRecord], list[AttemptRecord]]:
+    invalid_records = [
+        record for record in records if record.classification == "infrastructure_invalid"
+    ]
+    valid_records = [
+        record for record in records if record.classification != "infrastructure_invalid"
+    ]
+    return invalid_records, valid_records
+
+
+def aggregate_task_outcomes(
+    contract: BenchmarkContract,
+    attempts: Iterable[AttemptRecord],
+) -> TaskOutcomeSummary:
+    """Aggregate complete attempts without dropping valid failures from denominators."""
+    records = list(attempts)
+    task_by_attempt = _validated_tasks_for_attempts(contract, records)
+    invalid_records, valid_records = _partition_attempts(records)
+    globally_sufficient = _global_evidence_sufficient(contract, valid_records)
+    outcomes = _count_task_outcomes(valid_records, task_by_attempt)
+    mutations = _count_mutation_outcomes(valid_records)
+    release_evidence = _count_release_evidence(valid_records, task_by_attempt)
 
     sufficiency = contract.evidence_sufficiency
     task_success = _rate_kpi(
-        numerator=successful_attempts,
+        numerator=outcomes.successful_attempts,
         denominator=len(valid_records),
         target=_TASK_SUCCESS_TARGET,
         sufficient=globally_sufficient,
     )
     mutation_recovery = _rate_kpi(
-        numerator=successful_recoveries,
-        denominator=recovery_required_mutations,
+        numerator=mutations.successful_recoveries,
+        denominator=mutations.recovery_required_mutations,
         target=_MUTATION_RECOVERY_TARGET,
         sufficient=(
             globally_sufficient
-            and recovery_required_mutations >= sufficiency.minimum_recovery_required_mutations
+            and mutations.recovery_required_mutations
+            >= sufficiency.minimum_recovery_required_mutations
         ),
     )
     required_drc_execution = _rate_kpi(
-        numerator=drc_executed_and_consumed_tasks,
-        denominator=drc_required_tasks,
+        numerator=release_evidence.drc_executed_and_consumed_tasks,
+        denominator=release_evidence.drc_required_tasks,
         target=_DRC_EXECUTION_TARGET,
         sufficient=(
-            globally_sufficient and drc_required_tasks >= sufficiency.minimum_drc_required_tasks
+            globally_sufficient
+            and release_evidence.drc_required_tasks >= sufficiency.minimum_drc_required_tasks
         ),
     )
     manufacturing_reproducibility = _rate_kpi(
-        numerator=manufacturing_reproducible_tasks,
-        denominator=manufacturing_release_tasks,
+        numerator=release_evidence.manufacturing_reproducible_tasks,
+        denominator=release_evidence.manufacturing_release_tasks,
         target=_MANUFACTURING_REPRODUCIBILITY_TARGET,
         sufficient=(
             globally_sufficient
-            and manufacturing_release_tasks >= sufficiency.minimum_manufacturing_release_tasks
+            and release_evidence.manufacturing_release_tasks
+            >= sufficiency.minimum_manufacturing_release_tasks
         ),
     )
-
-    if file_corruption_incidents:
-        file_corruption_status: TargetStatus = "not_met"
-    elif globally_sufficient and mutation_attempts:
-        file_corruption_status = "met"
-    else:
-        file_corruption_status = "insufficient_evidence"
 
     return TaskOutcomeSummary(
         benchmark_id=contract.benchmark_id,
@@ -392,23 +466,27 @@ def aggregate_task_outcomes(
         attempts_total=len(records),
         valid_attempts=len(valid_records),
         infrastructure_invalid_attempts=len(invalid_records),
-        successful_attempts=successful_attempts,
-        failed_attempts=len(valid_records) - successful_attempts,
-        failure_categories=dict(sorted(failure_categories.items())),
+        successful_attempts=outcomes.successful_attempts,
+        failed_attempts=len(valid_records) - outcomes.successful_attempts,
+        failure_categories=dict(sorted(outcomes.failure_categories.items())),
         task_success=task_success,
-        mutation_attempts=mutation_attempts,
-        recovery_required_mutations=recovery_required_mutations,
-        successful_recoveries=successful_recoveries,
+        mutation_attempts=mutations.mutation_attempts,
+        recovery_required_mutations=mutations.recovery_required_mutations,
+        successful_recoveries=mutations.successful_recoveries,
         mutation_recovery=mutation_recovery,
-        duplicate_application_incidents=duplicate_application_incidents,
-        state_divergence_incidents=state_divergence_incidents,
-        file_corruption_incidents=file_corruption_incidents,
-        file_corruption_status=file_corruption_status,
-        drc_required_tasks=drc_required_tasks,
-        drc_executed_and_consumed_tasks=drc_executed_and_consumed_tasks,
+        duplicate_application_incidents=mutations.duplicate_application_incidents,
+        state_divergence_incidents=mutations.state_divergence_incidents,
+        file_corruption_incidents=mutations.file_corruption_incidents,
+        file_corruption_status=_file_corruption_status(
+            incidents=mutations.file_corruption_incidents,
+            globally_sufficient=globally_sufficient,
+            mutation_attempts=mutations.mutation_attempts,
+        ),
+        drc_required_tasks=release_evidence.drc_required_tasks,
+        drc_executed_and_consumed_tasks=release_evidence.drc_executed_and_consumed_tasks,
         required_drc_execution=required_drc_execution,
-        manufacturing_release_tasks=manufacturing_release_tasks,
-        manufacturing_reproducible_tasks=manufacturing_reproducible_tasks,
+        manufacturing_release_tasks=release_evidence.manufacturing_release_tasks,
+        manufacturing_reproducible_tasks=release_evidence.manufacturing_reproducible_tasks,
         manufacturing_reproducibility=manufacturing_reproducibility,
     )
 
