@@ -7,6 +7,13 @@ import pytest
 import kicad_mcp.evals as evals
 
 
+def _stage_requirements() -> dict[str, str]:
+    requirements = {stage: "not_applicable" for stage in evals.ALL_TASK_STAGES}
+    for stage in ("requirements", "pcb", "drc", "parse_reopen"):
+        requirements[stage] = "required"
+    return requirements
+
+
 def _contract() -> evals.BenchmarkContract:
     return evals.BenchmarkContract(
         benchmark_id="pcb-reference-suite",
@@ -16,12 +23,7 @@ def _contract() -> evals.BenchmarkContract:
                 task_id="route-usb-board",
                 task_class="pcb-edit",
                 version="v1",
-                stage_requirements={
-                    stage: "required"
-                    if stage in {"requirements", "pcb", "drc", "parse_reopen"}
-                    else "not_applicable"
-                    for stage in evals.ALL_TASK_STAGES
-                },
+                stage_requirements=_stage_requirements(),
             ),
         ),
         evidence_sufficiency=evals.EvidenceSufficiencyContract(
