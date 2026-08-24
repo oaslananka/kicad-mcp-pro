@@ -23,6 +23,7 @@ _LIBRARY_FOOTPRINT_ENGINEERING_ADAPTER = "kicad_mcp.tools.library_footprint_engi
 _LIBRARY_LOCAL_AUTHORING_ADAPTER = "kicad_mcp.tools.library_local_authoring"
 _LIBRARY_SOURCING_ADAPTER = "kicad_mcp.tools.library_sourcing"
 _LIBRARY_COMPONENT_CONTRACT_ADAPTER = "kicad_mcp.tools.library_component_contract"
+_LIBRARY_ROOT_MODULE = "kicad_mcp.tools.library"
 _PROJECT_CONTEXT_ADAPTER = "kicad_mcp.tools.project_context"
 _PROJECT_CREATION_ADAPTER = "kicad_mcp.tools.project_creation"
 _PROJECT_DISCOVERY_ADAPTER = "kicad_mcp.tools.project_discovery"
@@ -445,10 +446,10 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     "kicad_mcp.tools.export_sch_pdf": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_sch_python_bom": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_sch_vector": ("kicad_mcp.tools.export",),
-    _LIBRARY_CATALOG_ADAPTER: ("kicad_mcp.tools.library",),
-    _LIBRARY_DATASHEET_ADAPTER: ("kicad_mcp.tools.library",),
-    _LIBRARY_FOOTPRINT_ENGINEERING_ADAPTER: ("kicad_mcp.tools.library",),
-    _LIBRARY_SOURCING_ADAPTER: ("kicad_mcp.tools.library",),
+    _LIBRARY_CATALOG_ADAPTER: (_LIBRARY_ROOT_MODULE,),
+    _LIBRARY_DATASHEET_ADAPTER: (_LIBRARY_ROOT_MODULE,),
+    _LIBRARY_FOOTPRINT_ENGINEERING_ADAPTER: (_LIBRARY_ROOT_MODULE,),
+    _LIBRARY_SOURCING_ADAPTER: (_LIBRARY_ROOT_MODULE,),
     _PROJECT_CONTEXT_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_CREATION_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_DISCOVERY_ADAPTER: (_PROJECT_ROOT_MODULE,),
