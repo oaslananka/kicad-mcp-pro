@@ -38,6 +38,14 @@ def test_test_driver_forwards_junit_args_and_preserves_external_basetemp(
     assert captured[-2:] == ["--basetemp", str(external)]
 
 
+def test_full_suite_emits_json_for_local_patch_gate() -> None:
+    module = _load_run_pytest()
+
+    assert "--cov-report=xml" in module.SUITES["full"]
+    assert "--cov-report=json" in module.SUITES["full"]
+    assert "--cov-fail-under=83" in module.SUITES["full"]
+
+
 def test_ci_uploads_coverage_and_failed_test_results_with_oidc() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
@@ -47,18 +55,44 @@ def test_ci_uploads_coverage_and_failed_test_results_with_oidc() -> None:
     assert "report_type: test_results" in workflow
     assert "continue-on-error: true" in workflow
     assert "--junitxml=python.junit.xml" in workflow
+    assert "--coverage-file coverage.json" in workflow
     assert "steps.python-tests.outcome == 'failure'" in workflow
     assert "needs.changes.outputs.python != 'true'" in workflow
     assert "needs.changes.outputs.workflows != 'true'" in workflow
     assert "needs: [changes, mcp-server, coverage, mcp-npm" in workflow
 
 
-def test_codecov_yaml_starts_in_informational_mode() -> None:
+def test_codecov_yaml_keeps_project_observability_and_enforces_patch_target() -> None:
     config = yaml.safe_load((ROOT / "codecov.yml").read_text(encoding="utf-8"))
 
     assert config["codecov"]["branch"] == "main"
     assert config["coverage"]["status"]["project"]["default"]["target"] == "auto"
     assert config["coverage"]["status"]["project"]["default"]["informational"] is True
-    assert config["coverage"]["status"]["patch"]["default"]["informational"] is True
+    patch = config["coverage"]["status"]["patch"]["default"]
+    assert patch["target"] == "90%"
+    assert patch["threshold"] == "0%"
+    assert patch["informational"] is False
     assert config["flags"]["python-full"]["paths"] == ["src/kicad_mcp/"]
     assert "bundle_analysis" not in config
+
+
+def test_ci_enforces_patch_coverage_only_for_python_pull_requests() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "name: Enforce Python patch coverage" in workflow
+    assert "id: patch-coverage" in workflow
+    assert "github.event_name == 'pull_request'" in workflow
+    assert "needs.changes.outputs.python == 'true'" in workflow
+    assert "steps.python-tests.outcome == 'success'" in workflow
+    assert "github.event.pull_request.base.sha" in workflow
+    parsed = yaml.safe_load(workflow)
+    coverage_steps = parsed["jobs"]["coverage"]["steps"]
+    checkout = next(
+        step for step in coverage_steps if str(step.get("uses", "")).startswith("actions/checkout@")
+    )
+    assert checkout["with"]["fetch-depth"] == 0
+    assert checkout["with"]["persist-credentials"] is False
+    assert "scripts/check_patch_coverage.py" in workflow
+    assert "--min-percent 90" in workflow
+    assert "steps.patch-coverage.outcome == 'failure'" in workflow
+    assert "name: Propagate Python coverage or test failure" in workflow
