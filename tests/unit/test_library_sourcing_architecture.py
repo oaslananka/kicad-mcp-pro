@@ -85,3 +85,13 @@ def test_library_sourcing_compliance_register_stays_bounded() -> None:
     span = boundaries._function_span(boundaries.DOMAIN_MODULES[module_name], "register_compliance")
     assert span is not None
     assert span <= 60
+
+
+def test_architecture_checker_library_root_has_one_literal_source() -> None:
+    script = boundaries.REPO_ROOT / "scripts" / "check_architecture_boundaries.py"
+    tree = ast.parse(script.read_text(encoding="utf-8"), filename=str(script))
+    count = sum(
+        isinstance(node, ast.Constant) and node.value == "kicad_mcp.tools.library"
+        for node in ast.walk(tree)
+    )
+    assert count == 1
