@@ -23,6 +23,7 @@ SUITES = {
         "--cov=kicad_mcp",
         "--cov-report=term-missing",
         "--cov-report=xml",
+        "--cov-report=json",
         "--cov-fail-under=83",
     ],
 }
