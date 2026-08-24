@@ -197,8 +197,8 @@ class ProjectEditImpactService:
         current, error = self._infer()
         if error:
             return error
-        baseline_value = cast("dict[str, Any]", baseline)
-        current_value = cast("dict[str, Any]", current)
+        baseline_value = cast(dict[str, Any], baseline)
+        current_value = cast(dict[str, Any], current)
         changes = semantic_intent_diff(baseline_value, current_value)
         return render_impact_report(impact_of_changes(changes))
 
@@ -214,8 +214,8 @@ class ProjectEditImpactService:
         current, error = self._infer()
         if error:
             return error
-        baseline_value = cast("dict[str, Any]", baseline)
-        current_value = cast("dict[str, Any]", current)
+        baseline_value = cast(dict[str, Any], baseline)
+        current_value = cast(dict[str, Any], current)
 
         changes = semantic_intent_diff(baseline_value, current_value)
         report = impact_of_changes(changes)

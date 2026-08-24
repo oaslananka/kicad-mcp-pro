@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 
 from ..models.verdict import Finding, SuggestedFix, Verdict, stable_finding_id
 
+_NEXT_ACTION_HEADING = "Project next action:"
+
 
 class GateOutcomeLike(Protocol):
     @property
@@ -90,7 +92,7 @@ class ProjectNextActionService:
             reason = f"Project quality gate could not be evaluated: {exc}"
             suggested_tool = "kicad_get_project_info()"
             lines = [
-                "Project next action:",
+                _NEXT_ACTION_HEADING,
                 "- Status: BLOCKED",
                 f"- Suggested tool: {suggested_tool}",
                 f"- Reason: {reason}",
@@ -117,7 +119,7 @@ class ProjectNextActionService:
             suggested_tool = "export_manufacturing_package()"
             reason = "No blocking issues remain."
             lines = [
-                "Project next action:",
+                _NEXT_ACTION_HEADING,
                 "- Status: PASS",
                 f"- Suggested tool: {suggested_tool}",
                 f"- Reason: {reason}",
@@ -136,7 +138,7 @@ class ProjectNextActionService:
         reason = _queue_reason_from_details(target.details, target.summary)
         suggested_tool = _suggested_tool_for_gate(target.name)
         lines = [
-            "Project next action:",
+            _NEXT_ACTION_HEADING,
             f"- Status: {target.status}",
             f"- Gate: {target.name}",
             f"- Suggested tool: {suggested_tool}",
