@@ -62,11 +62,12 @@ def _service(
     grouped_rows: list[dict[str, Any]] | None = None,
     lookup_component: Callable[..., ComponentRecord | None] | None = None,
     schematic_component_rows: Callable[[], list[dict[str, str]]] | None = None,
+    component_search_client: Callable[[str], FakeClient] | None = None,
 ) -> LibrarySourcingService:
     source_rows = rows or []
     grouped = grouped_rows if grouped_rows is not None else []
     return LibrarySourcingService(
-        component_search_client=lambda _source: client,
+        component_search_client=component_search_client or (lambda _source: client),
         parse_passive_parametric_query=lambda *_args, **_kwargs: None,
         rank_passive_parametric_results=lambda results, _query: (list(results), {}),
         format_passive_parametric_lines=lambda heading, results, _evidence, **_kwargs: (
@@ -199,6 +200,18 @@ def test_bom_and_stock_keep_filenotfounderror_as_environment_failure() -> None:
     assert (
         service.check_stock_availability(refs=["R1"])
         == "Stock availability check failed: schematic vanished"
+    )
+
+
+def test_stock_availability_preserves_client_filenotfounderror_as_environment_failure() -> None:
+    def missing_client(_source: str) -> FakeClient:
+        raise FileNotFoundError("provider executable vanished")
+
+    service = _service(FakeClient(), component_search_client=missing_client)
+
+    assert (
+        service.check_stock_availability(refs=["R1"])
+        == "Stock availability check failed: provider executable vanished"
     )
 
 
