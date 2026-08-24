@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import NamedTuple
 
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+_SHA40_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _MAX_UNCOVERED_DETAILS = 50
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class PatchCoverage(NamedTuple):
@@ -30,6 +32,24 @@ def _normalize_path(value: str) -> str:
     return value.replace("\\", "/").removeprefix("./")
 
 
+def _target_header(line: str) -> tuple[bool, str | None]:
+    if not line.startswith("+++ "):
+        return False, None
+    raw_path = line[4:].split("\t", 1)[0]
+    if raw_path == "/dev/null":
+        return True, None
+    return True, _normalize_path(raw_path.removeprefix("b/"))
+
+
+def _record_target_line(line: str, target_line: int, changed_lines: set[int]) -> int:
+    if line.startswith("+"):
+        changed_lines.add(target_line)
+        return target_line + 1
+    if line.startswith("-") or line.startswith("\\"):
+        return target_line
+    return target_line + 1
+
+
 def parse_changed_lines(diff_text: str) -> dict[str, set[int]]:
     """Return added target-line numbers from a zero-context unified diff."""
     changed: dict[str, set[int]] = {}
@@ -37,12 +57,10 @@ def parse_changed_lines(diff_text: str) -> dict[str, set[int]]:
     target_line: int | None = None
 
     for line in diff_text.splitlines():
-        if line.startswith("+++ "):
-            raw_path = line[4:].split("\t", 1)[0]
-            if raw_path == "/dev/null":
-                current_path = None
-            else:
-                current_path = _normalize_path(raw_path.removeprefix("b/"))
+        is_header, header_path = _target_header(line)
+        if is_header:
+            current_path = header_path
+            if current_path is not None:
                 changed.setdefault(current_path, set())
             target_line = None
             continue
@@ -54,17 +72,30 @@ def parse_changed_lines(diff_text: str) -> dict[str, set[int]]:
 
         if current_path is None or target_line is None:
             continue
-        if line.startswith("+"):
-            changed[current_path].add(target_line)
-            target_line += 1
-        elif line.startswith("-"):
-            continue
-        elif line.startswith("\\"):
-            continue
-        else:
-            target_line += 1
+        target_line = _record_target_line(line, target_line, changed[current_path])
 
     return {path: lines for path, lines in changed.items() if lines}
+
+
+def _validate_base_ref(base_ref: str) -> str:
+    if _SHA40_RE.fullmatch(base_ref) is None:
+        raise ValueError("--base-ref must be a 40-character hexadecimal commit SHA")
+    return base_ref.lower()
+
+
+def _resolve_repo_file(path: Path) -> Path:
+    if path != Path("coverage.json"):
+        raise ValueError("--coverage-file must be the repository-local coverage.json")
+
+    root = REPO_ROOT.resolve(strict=True)
+    resolved = (root / "coverage.json").resolve(strict=True)
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"Coverage file is outside repository root: {resolved}") from exc
+    if not resolved.is_file():
+        raise ValueError(f"Coverage path is not a file: {resolved}")
+    return resolved
 
 
 def read_coverage_json(path: Path) -> dict[str, dict[int, int]]:
@@ -128,19 +159,17 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if not args.coverage_file.is_file():
-        print(f"Patch coverage report not found: {args.coverage_file}", file=sys.stderr)
-        return 2
     if not 0.0 <= args.min_percent <= 100.0:
         print("--min-percent must be between 0 and 100", file=sys.stderr)
         return 2
 
     try:
-        changed = parse_changed_lines(_git_diff(args.base_ref))
-        coverage = read_coverage_json(args.coverage_file)
+        base_ref = _validate_base_ref(args.base_ref)
+        coverage_file = _resolve_repo_file(args.coverage_file)
+        changed = parse_changed_lines(_git_diff(base_ref))
+        coverage = read_coverage_json(coverage_file)
     except (
         OSError,
-        json.JSONDecodeError,
         subprocess.CalledProcessError,
         TypeError,
         ValueError,
