@@ -392,9 +392,10 @@ def test_wilson_interval_is_reported_and_aggregation_is_input_order_stable() -> 
 
 def test_attempt_identity_mismatch_is_rejected_instead_of_cross_scored() -> None:
     record = _attempt("wrong-version").model_copy(update={"benchmark_version": "v2"})
+    contract = _contract()
 
     with pytest.raises(evals.TaskOutcomeScoringError, match="benchmark"):
-        evals.aggregate_task_outcomes(_contract(), [record])
+        evals.aggregate_task_outcomes(contract, [record])
 
 
 @pytest.mark.parametrize(
@@ -409,13 +410,15 @@ def test_task_identity_mismatch_is_rejected_instead_of_cross_scored(
     message: str,
 ) -> None:
     record = _attempt("wrong-task").model_copy(update=update)
+    contract = _contract()
 
     with pytest.raises(evals.TaskOutcomeScoringError, match=message):
-        evals.aggregate_task_outcomes(_contract(), [record])
+        evals.aggregate_task_outcomes(contract, [record])
 
 
 def test_duplicate_attempt_ids_are_rejected_instead_of_double_counted() -> None:
     record = _attempt("duplicate")
+    contract = _contract()
 
     with pytest.raises(evals.TaskOutcomeScoringError, match="unique"):
-        evals.aggregate_task_outcomes(_contract(), [record, record])
+        evals.aggregate_task_outcomes(contract, [record, record])
