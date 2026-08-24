@@ -97,6 +97,14 @@ def test_sonar_source_and_test_scopes_are_disjoint() -> None:
     assert "sonar.test.exclusions" not in properties
 
 
+def test_sonar_s8541_exception_is_limited_to_github_workflows() -> None:
+    raw = (ROOT / "sonar-project.properties").read_text(encoding="utf-8")
+
+    assert "sonar.issue.ignore.multicriteria.e1.ruleKey=githubactions:S8541" in raw
+    assert "sonar.issue.ignore.multicriteria.e1.resourceKey=.github/workflows/**" in raw
+    assert "sonar.issue.ignore.multicriteria.e1.resourceKey=**\n" not in raw
+
+
 def test_sonar_skips_fork_pull_requests_before_secret_bearing_steps() -> None:
     path = ROOT / ".github" / "workflows" / "sonarcloud.yml"
     raw = path.read_text(encoding="utf-8")
