@@ -243,13 +243,10 @@ class ProjectValidationLoopService:
 
     def _resolve_full_auto_fix(
         self,
-        outcomes: Sequence[GateOutcomeLike],
+        blocker: GateOutcomeLike,
         fix_tier: Literal["auto_only", "suggest"],
-    ) -> tuple[GateOutcomeLike, FixerActionLike, Callable[[], object]] | None:
+    ) -> tuple[FixerActionLike, Callable[[], object]] | None:
         if fix_tier == "suggest":
-            return None
-        blocker = next((outcome for outcome in outcomes if outcome.status != "PASS"), None)
-        if blocker is None:
             return None
         auto_fixer = self._auto_fixer(list(self.fixers_for_gate(blocker.name)))
         if auto_fixer is None:
@@ -257,7 +254,7 @@ class ProjectValidationLoopService:
         fn = self.resolve_callable(auto_fixer.callable_import)
         if fn is None:
             return None
-        return blocker, auto_fixer, fn
+        return auto_fixer, fn
 
     def _run_full_iterations(
         self,
@@ -271,10 +268,11 @@ class ProjectValidationLoopService:
         while iterations_used < max_iterations:
             if all(outcome.status == "PASS" for outcome in outcomes):
                 break
-            resolved = self._resolve_full_auto_fix(outcomes, fix_tier)
+            blocker = next(outcome for outcome in outcomes if outcome.status != "PASS")
+            resolved = self._resolve_full_auto_fix(blocker, fix_tier)
             if resolved is None:
                 break
-            blocker, auto_fixer, fn = resolved
+            auto_fixer, fn = resolved
             try:
                 fix_result = fn()
             except Exception as exc:

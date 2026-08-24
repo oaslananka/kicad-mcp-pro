@@ -109,6 +109,39 @@ async def test_auto_fix_loop_applies_fixer_re_evaluates_and_reports_progress() -
 
 
 @pytest.mark.anyio
+async def test_auto_fix_loop_skips_passing_gate_and_returns_ready_after_fix() -> None:
+    runs = iter(
+        [
+            [Outcome("Already-good", "PASS", "ok"), Outcome("PCB", "FAIL", "zones stale")],
+            [Outcome("Already-good", "PASS", "ok"), Outcome("PCB", "PASS", "fixed")],
+        ]
+    )
+    fixer_lookups: list[str] = []
+
+    def fixers(name: str) -> list[Fixer]:
+        fixer_lookups.append(name)
+        return [Fixer("pcb_refill_zones", "Refill zones.", True, "tools.pcb:refill")]
+
+    service = _service(
+        evaluate_project_gate=lambda: next(runs),
+        fixers_for_gate=fixers,
+        resolve_callable=lambda _path: lambda: "refilled",
+    )
+
+    result = await service.auto_fix_loop(
+        max_iterations=3,
+        sample_guidance=lambda _outcome: _value(""),
+        report_progress=_ignore_progress,
+    )
+
+    assert fixer_lookups == ["PCB"]
+    assert result.iterations_used == 2
+    assert result.ready_for_release is True
+    assert result.actions == []
+    assert "Status: PASS — all gates pass." in result.text
+
+
+@pytest.mark.anyio
 async def test_auto_fix_loop_resolver_miss_skips_mutation_and_returns_action() -> None:
     service = _service(
         evaluate_project_gate=lambda: [Outcome("PCB", "FAIL", "zones stale")],
@@ -283,6 +316,39 @@ def test_full_validation_loop_suggest_never_resolves_or_invokes_fixer() -> None:
     assert result.remaining_issues == 1
     assert result.actions[0].agent_tool == "pcb_place_decoupling_caps"
     assert "Suggested fixes:" in result.text
+
+
+def test_full_validation_loop_auto_only_stops_without_auto_fixer() -> None:
+    resolved: list[str] = []
+    service = _service(
+        evaluate_project_gate=lambda: [Outcome("Placement", "FAIL", "caps too far")],
+        fixers_for_gate=lambda _name: [
+            Fixer("pcb_place_decoupling_caps", "Move bypass capacitors near ICs.")
+        ],
+        resolve_callable=lambda path: resolved.append(path) or (lambda: "unexpected"),
+    )
+
+    result = service.full_validation_loop(max_iterations=3, fix_tier="auto_only")
+
+    assert resolved == []
+    assert result.iterations_used == 1
+    assert result.actions[0].agent_tool == "pcb_place_decoupling_caps"
+
+
+def test_full_validation_loop_auto_only_stops_when_resolver_misses() -> None:
+    service = _service(
+        evaluate_project_gate=lambda: [Outcome("PCB", "FAIL", "zones stale")],
+        fixers_for_gate=lambda _name: [
+            Fixer("pcb_refill_zones", "Refill zones.", True, "tools.pcb:refill")
+        ],
+        resolve_callable=lambda _path: None,
+    )
+
+    result = service.full_validation_loop(max_iterations=3, fix_tier="auto_only")
+
+    assert result.iterations_used == 1
+    assert result.actions[0].agent_tool == "pcb_refill_zones"
+    assert result.ready_for_release is False
 
 
 def test_full_validation_loop_fixer_exception_stops_with_current_action_plan() -> None:
