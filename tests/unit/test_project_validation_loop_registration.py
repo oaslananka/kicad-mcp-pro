@@ -231,13 +231,9 @@ async def test_progress_bridge_ignores_value_error_only() -> None:
 
     assert ctx.progress_calls == [(5, 100, "message")]
 
+    failing_ctx = FakeContext(progress_error=RuntimeError("transport failed"))
     with pytest.raises(RuntimeError, match="transport failed"):
-        await _report_progress(
-            FakeContext(progress_error=RuntimeError("transport failed")),
-            5,
-            100,
-            "message",
-        )
+        await _report_progress(failing_ctx, 5, 100, "message")
 
 
 def test_resolve_fixer_callable_handles_valid_missing_and_malformed_imports(
