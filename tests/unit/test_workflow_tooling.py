@@ -94,6 +94,7 @@ def test_sonar_source_and_test_scopes_are_disjoint() -> None:
     exclusions = properties["sonar.exclusions"]
     assert "packages/protocol-schemas/test/**" in exclusions
     assert "packages/kicad-fixtures/test/**" in exclusions
+    assert "**/*.png" in exclusions
     assert "sonar.test.exclusions" not in properties
 
 
