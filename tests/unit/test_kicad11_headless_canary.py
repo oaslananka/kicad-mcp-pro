@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 from scripts import kicad11_headless_canary
 
 
@@ -74,6 +76,8 @@ def test_canary_reports_read_write_and_export_separately(
     _install_fake_kipy(monkeypatch)
     _install_fake_runner(monkeypatch)
     cli = tmp_path / "kicad-cli"
+    cli.write_text("fake cli\n", encoding="utf-8")
+    cli.chmod(0o755)
     board = tmp_path / "demo.kicad_pcb"
     board.write_text("(kicad_pcb)\n", encoding="utf-8")
     artifacts = tmp_path / "artifacts"
@@ -109,3 +113,55 @@ def test_canary_writes_blocked_reports_when_nightly_is_unavailable(tmp_path: Pat
         payload = json.loads((artifacts / surface / "summary.json").read_text(encoding="utf-8"))
         assert payload["status"] == "blocked"
         assert "nightly package unavailable" in payload["reason"]
+
+
+def test_canary_rejects_non_kicad_executable_before_runner(monkeypatch, tmp_path: Path) -> None:
+    board = tmp_path / "demo.kicad_pcb"
+    board.write_text("(kicad_pcb)\n", encoding="utf-8")
+    fake_cli = tmp_path / "python"
+    fake_cli.write_text("not kicad\n", encoding="utf-8")
+    fake_cli.chmod(0o755)
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], *, timeout: int = 60) -> subprocess.CompletedProcess[str]:
+        _ = timeout
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="11.0.0\n", stderr="")
+
+    monkeypatch.setattr(kicad11_headless_canary, "_run", fake_run)
+
+    with pytest.raises(ValueError, match="KiCad CLI executable"):
+        kicad11_headless_canary.run_canary(
+            artifacts=tmp_path / "artifacts",
+            kicad_cli=fake_cli,
+            project_or_file=board,
+            require_ready=True,
+        )
+
+    assert calls == []
+
+
+def test_canary_rejects_non_kicad_input_before_runner(monkeypatch, tmp_path: Path) -> None:
+    cli = tmp_path / "kicad-cli"
+    cli.write_text("fake cli\n", encoding="utf-8")
+    cli.chmod(0o755)
+    payload = tmp_path / "notes.txt"
+    payload.write_text("not a KiCad design\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], *, timeout: int = 60) -> subprocess.CompletedProcess[str]:
+        _ = timeout
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="11.0.0\n", stderr="")
+
+    monkeypatch.setattr(kicad11_headless_canary, "_run", fake_run)
+
+    with pytest.raises(ValueError, match="KiCad project or design file"):
+        kicad11_headless_canary.run_canary(
+            artifacts=tmp_path / "artifacts",
+            kicad_cli=cli,
+            project_or_file=payload,
+            require_ready=True,
+        )
+
+    assert calls == []
