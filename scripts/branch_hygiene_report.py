@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -12,12 +13,19 @@ from urllib.parse import quote
 DEFAULT_REPO = "oaslananka/kicad-mcp-pro"
 PROTECTED_BRANCHES = {"main", "master", "develop", "gh-pages"}
 PROTECTED_PREFIXES = ("release/", "hotfix/")
+_REPOSITORY = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}/(?!\.{1,2}$)[A-Za-z0-9._-]{1,100}")
 
 
 @dataclass(frozen=True)
 class StaleBranch:
     name: str
     last_commit: str
+
+
+def _validated_repo(repo: str) -> str:
+    if not _REPOSITORY.fullmatch(repo):
+        raise ValueError(f"Repository must be owner/name, got {repo!r}")
+    return repo
 
 
 def _run_gh(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -195,8 +203,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        report, stale_count = render_report(args.repo, args.days)
-    except RuntimeError as exc:
+        repo = _validated_repo(args.repo)
+        report, stale_count = render_report(repo, args.days)
+    except (RuntimeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
