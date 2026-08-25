@@ -54,20 +54,9 @@ async function fetchBytes(url) {
 }
 
 function trustedRegistryBase(registryUrl) {
-  let registry;
-  try {
-    registry = new URL(registryUrl);
-  } catch {
-    throw new Error("Release verification requires the trusted npm registry");
-  }
   if (
-    registry.protocol !== "https:" ||
-    registry.origin !== TRUSTED_REGISTRY_ORIGIN ||
-    registry.username ||
-    registry.password ||
-    (registry.pathname !== "/" && registry.pathname !== "") ||
-    registry.search ||
-    registry.hash
+    registryUrl !== DEFAULT_REGISTRY_URL &&
+    registryUrl !== `${DEFAULT_REGISTRY_URL}/`
   ) {
     throw new Error("Release verification requires the trusted npm registry");
   }
