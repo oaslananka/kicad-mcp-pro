@@ -21,6 +21,7 @@ OPENCODE_ZEN_FREE_MODELS = frozenset(
         "ling-3.0-flash-free",
         "north-mini-code-free",
         "nemotron-3-ultra-free",
+        "nemotron-3.5-lightning-free",
     }
 )
 OPENCODE_ZEN_PAID_MODELS = frozenset({"minimax-m3"})
