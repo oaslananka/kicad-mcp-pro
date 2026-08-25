@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   packageMetadataUrl,
+  packageTarballUrl,
   verifyPublishedNpmDigest,
 } from "../../scripts/verify-npm-release.mjs";
 
@@ -16,6 +17,17 @@ const VERSION = "3.33.0";
 function temporaryDirectory() {
   return mkdtempSync(join(tmpdir(), "kicad-npm-verifier-"));
 }
+
+test("tarball URL is derived from canonical package identity", () => {
+  assert.equal(
+    packageTarballUrl("kicad-mcp-pro", "3.32.0"),
+    "https://registry.npmjs.org/kicad-mcp-pro/-/kicad-mcp-pro-3.32.0.tgz",
+  );
+  assert.equal(
+    packageTarballUrl("@oaslananka/kicad-protocol-schemas", "1.4.1"),
+    "https://registry.npmjs.org/%40oaslananka/kicad-protocol-schemas/-/kicad-protocol-schemas-1.4.1.tgz",
+  );
+});
 
 test("package metadata rejects an untrusted registry origin", () => {
   assert.throws(

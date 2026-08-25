@@ -63,7 +63,7 @@ function trustedRegistryBase(registryUrl) {
   return DEFAULT_REGISTRY_URL;
 }
 
-function trustedTarballUrl(rawUrl) {
+function validatePublishedTarballMetadata(rawUrl) {
   let tarball;
   try {
     tarball = new URL(rawUrl);
@@ -81,7 +81,6 @@ function trustedTarballUrl(rawUrl) {
   ) {
     throw new Error("npm tarball URL must use the trusted npm registry");
   }
-  return new URL(tarball.pathname, `${DEFAULT_REGISTRY_URL}/`).href;
 }
 
 export function packageMetadataUrl(
@@ -91,6 +90,19 @@ export function packageMetadataUrl(
 ) {
   const trustedRegistry = trustedRegistryBase(registryUrl);
   return `${trustedRegistry}/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`;
+}
+
+export function packageTarballUrl(packageName, version) {
+  const packageParts = packageName.split("/");
+  const tarballBaseName = packageParts.at(-1);
+  if (!tarballBaseName || packageParts.length > 2) {
+    throw new Error("Invalid npm package name for release verification");
+  }
+  const packagePath = packageParts.map(encodeURIComponent).join("/");
+  return (
+    `${DEFAULT_REGISTRY_URL}/${packagePath}/-/` +
+    `${encodeURIComponent(tarballBaseName)}-${encodeURIComponent(version)}.tgz`
+  );
 }
 
 async function retry(task, attempts, delayMs) {
@@ -123,8 +135,9 @@ export async function verifyPublishedNpmDigest({
   );
   const rawTarballUrl = metadata?.dist?.tarball;
   if (!rawTarballUrl) throw new Error("npm metadata has no tarball URL");
+  validatePublishedTarballMetadata(rawTarballUrl);
 
-  const tarballUrl = trustedTarballUrl(rawTarballUrl);
+  const tarballUrl = packageTarballUrl(packageName, version);
   const tarball = await fetchBytes(tarballUrl);
   const tarballName = basename(new URL(tarballUrl).pathname);
   let expected = checksums.get(tarballName);
