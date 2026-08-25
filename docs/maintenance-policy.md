@@ -40,7 +40,7 @@ combinations that have an upstream no-fix or metadata mismatch, and each
 acknowledgement must be recorded in `scripts/audit_dependencies.py` with
 authoritative source URLs.
 
-The Tauri lockfile is additionally checked with pinned `cargo-audit` in GUI CI.
+The Tauri lockfile is additionally checked with pinned `cargo-audit` in the required CI security gate when Rust audit inputs change.
 Known RustSec findings are tracked in `.github/security/rustsec-baseline.json` by
 exact advisory, package, version, and category with a rationale and revisit trigger;
 new findings and stale baseline entries fail closed rather than being globally ignored.

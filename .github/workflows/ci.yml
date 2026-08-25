@@ -28,6 +28,7 @@ jobs:
       schemas: ${{ steps.filter.outputs.schemas }}
       workflows: ${{ steps.filter.outputs.workflows }}
       dependencies: ${{ steps.filter.outputs.dependencies }}
+      rustsec: ${{ steps.filter.outputs.rustsec }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -68,6 +69,14 @@ jobs:
               - '.github/actions/**'
               - '.github/actions-policy.json'
               - 'codecov.yml'
+            rustsec:
+              - 'src-tauri/Cargo.lock'
+              - 'src-tauri/Cargo.toml'
+              - 'src-tauri/.cargo/audit.toml'
+              - 'rust-toolchain.toml'
+              - 'scripts/check_rustsec_audit.py'
+              - '.github/security/rustsec-baseline.json'
+              - '.github/workflows/ci.yml'
             dependencies:
               - 'package.json'
               - 'pnpm-lock.yaml'
@@ -102,6 +111,7 @@ jobs:
                 "${{ steps.filter.outputs.schemas }}" == 'false' && \
                 "${{ steps.filter.outputs.workflows }}" == 'false' && \
                 "${{ steps.filter.outputs.dependencies }}" == 'false' && \
+                "${{ steps.filter.outputs.rustsec }}" == 'false' && \
                 "${{ steps.filter.outputs.docs }}" == 'true' ]]; then
             echo 'docs_only=true' >> "$GITHUB_OUTPUT"
           else
@@ -120,6 +130,7 @@ jobs:
             echo '| schemas | ${{ steps.filter.outputs.schemas }} |'
             echo '| workflows | ${{ steps.filter.outputs.workflows }} |'
             echo '| dependencies | ${{ steps.filter.outputs.dependencies }} |'
+            echo '| rustsec | ${{ steps.filter.outputs.rustsec }} |'
             echo '| docs | ${{ steps.filter.outputs.docs }} |'
             echo '| **docs_only** | **${{ steps.check.outputs.docs_only }}** |'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -464,6 +475,30 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           version: v0.70.0
+      - name: Install pinned cargo-audit
+        if: >-
+          env.skip_ci != 'true' &&
+          (needs.changes.outputs.rustsec == 'true' || github.event_name == 'workflow_dispatch')
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Verify reviewed RustSec dependency baseline
+        if: >-
+          env.skip_ci != 'true' &&
+          (needs.changes.outputs.rustsec == 'true' || github.event_name == 'workflow_dispatch')
+        working-directory: src-tauri
+        shell: bash
+        run: |
+          set -euo pipefail
+          audit_status=0
+          cargo audit --json --no-yanked > ../rustsec-audit.json || audit_status=$?
+          if [ "$audit_status" -gt 1 ]; then
+            echo "cargo-audit failed before producing valid audit evidence (exit=$audit_status)" >&2
+            exit "$audit_status"
+          fi
+          audit_version="$(cargo audit --version | awk '{print $2}')"
+          python3 ../scripts/check_rustsec_audit.py \
+            --report ../rustsec-audit.json \
+            --baseline ../.github/security/rustsec-baseline.json \
+            --cargo-audit-version "$audit_version"
 
   required-pr-gate:
     name: Required PR Gate

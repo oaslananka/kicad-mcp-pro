@@ -130,15 +130,29 @@ def test_validator_requires_review_metadata_and_exact_tool_version(tmp_path: Pat
         )
 
 
-def test_gui_ci_runs_pinned_rustsec_audit_on_linux() -> None:
+def test_required_security_gate_enforces_pinned_rustsec_audit() -> None:
     root = Path(__file__).resolve().parents[2]
-    workflow = (root / ".github" / "workflows" / "gui-ci.yml").read_text(encoding="utf-8")
+    workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
+    assert "rustsec: ${{ steps.filter.outputs.rustsec }}" in workflow
+    for protected_path in (
+        "src-tauri/Cargo.lock",
+        "src-tauri/Cargo.toml",
+        "src-tauri/.cargo/audit.toml",
+        "rust-toolchain.toml",
+        "scripts/check_rustsec_audit.py",
+        ".github/security/rustsec-baseline.json",
+    ):
+        assert protected_path in workflow
     assert "cargo install cargo-audit --version 0.22.2 --locked" in workflow
     assert "cargo audit --json --no-yanked" in workflow
     assert "scripts/check_rustsec_audit.py" in workflow
-    assert "rustsec-audit:" in workflow
     assert ".github/security/rustsec-baseline.json" in workflow
+    required_gate_needs = (
+        "needs: [changes, mcp-server, coverage, mcp-npm, chatgpt-app, "
+        "protocol-schemas, mcp-2026-compat, workflow-policy, security]"
+    )
+    assert required_gate_needs in workflow
 
 
 def test_repository_baseline_tracks_exact_scorecard_rustsec_inventory() -> None:
