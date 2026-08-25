@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
-_SHA40_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _MAX_UNCOVERED_DETAILS = 50
+_COVERAGE_FILE = Path("coverage.json")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -45,7 +45,7 @@ def _record_target_line(line: str, target_line: int, changed_lines: set[int]) ->
     if line.startswith("+"):
         changed_lines.add(target_line)
         return target_line + 1
-    if line.startswith("-") or line.startswith("\\"):
+    if line.startswith(("-", "\\")):
         return target_line
     return target_line + 1
 
@@ -77,18 +77,12 @@ def parse_changed_lines(diff_text: str) -> dict[str, set[int]]:
     return {path: lines for path, lines in changed.items() if lines}
 
 
-def _validate_base_ref(base_ref: str) -> str:
-    if _SHA40_RE.fullmatch(base_ref) is None:
-        raise ValueError("--base-ref must be a 40-character hexadecimal commit SHA")
-    return base_ref.lower()
-
-
 def _resolve_repo_file(path: Path) -> Path:
-    if path != Path("coverage.json"):
-        raise ValueError("--coverage-file must be the repository-local coverage.json")
+    if path != _COVERAGE_FILE:
+        raise ValueError(f"--coverage-file must be the repository-local {_COVERAGE_FILE}")
 
     root = REPO_ROOT.resolve(strict=True)
-    resolved = (root / "coverage.json").resolve(strict=True)
+    resolved = (root / _COVERAGE_FILE).resolve(strict=True)
     try:
         resolved.relative_to(root)
     except ValueError as exc:
@@ -135,13 +129,13 @@ def check_threshold(result: PatchCoverage, minimum: float) -> bool:
     return result.percent >= minimum
 
 
-def _git_diff(base_ref: str) -> str:
+def _git_diff() -> str:
     command = [
         "git",
         "diff",
         "--unified=0",
         "--diff-filter=ACMR",
-        f"{base_ref}...HEAD",
+        "HEAD^1...HEAD",
         "--",
         "src/kicad_mcp",
     ]
@@ -151,8 +145,7 @@ def _git_diff(base_ref: str) -> str:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-ref", required=True)
-    parser.add_argument("--coverage-file", type=Path, default=Path("coverage.json"))
+    parser.add_argument("--coverage-file", type=Path, default=_COVERAGE_FILE)
     parser.add_argument("--min-percent", type=float, default=90.0)
     return parser
 
@@ -164,9 +157,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        base_ref = _validate_base_ref(args.base_ref)
         coverage_file = _resolve_repo_file(args.coverage_file)
-        changed = parse_changed_lines(_git_diff(base_ref))
+        changed = parse_changed_lines(_git_diff())
         coverage = read_coverage_json(coverage_file)
     except (
         OSError,
