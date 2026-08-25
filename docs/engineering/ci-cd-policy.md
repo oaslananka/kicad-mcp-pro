@@ -1,4 +1,4 @@
-﻿# CI/CD Policy â€” Path-Aware Risk-Based Gating
+# CI/CD Policy — Path-Aware Risk-Based Gating
 
 > **Status**: Active
 > **Last updated**: 2026-07-08
@@ -8,13 +8,13 @@
 This repository uses **path-aware CI/CD gating** to run the right checks for
 each pull request based on which files changed. The goals are:
 
-1. **Minimize unnecessary compute** â€” docs-only PRs should not wait for full
+1. **Minimize unnecessary compute** — docs-only PRs should not wait for full
    OS-matrix CI, CodeQL, or package builds.
-2. **Maintain security posture** â€” secret scanning always runs; code analysis
+2. **Maintain security posture** — secret scanning always runs; code analysis
    runs on code changes; dependency review runs when lockfiles change.
-3. **Never break required checks** â€” all branch-protection required checks
+3. **Never break required checks** — all branch-protection required checks
    report a status (success via no-op or full run) on every PR.
-4. **Keep release workflows safe** â€” real publish only happens on release/tag
+4. **Keep release workflows safe** — real publish only happens on release/tag
    events with environment protection, OIDC, attestation, and cosign.
 
 ## Change Categories
@@ -44,14 +44,14 @@ would incorrectly no-op on a real dependency/Dockerfile change.
 
 | Job / Check | Docs-only PR | Python PR | NPM PR | Schema PR | Workflow PR | Full / Mixed PR |
 |-------------|:------------:|:---------:|:------:|:---------:|:-----------:|:---------------:|
-| `mcp-server` (3 OS) | no-op âœ… | **full** | no-op âœ… | no-op âœ… | **full** | **full** |
-| `CI Tests / Coverage` | no-op âœ… | **full** | no-op âœ… | no-op âœ… | **full** | **full** |
-| `mcp-npm` (3 OS) | no-op âœ… | no-op âœ… | **full** | no-op âœ… | **full** | **full** |
-| `protocol-schemas` | no-op âœ… | **full** | **full** | **full** | **full** | **full** |
+| `mcp-server` (3 OS) | no-op ✅ | **full** | no-op ✅ | no-op ✅ | **full** | **full** |
+| `CI Tests / Coverage` | no-op ✅ | **full** | no-op ✅ | no-op ✅ | **full** | **full** |
+| `mcp-npm` (3 OS) | no-op ✅ | no-op ✅ | **full** | no-op ✅ | **full** | **full** |
+| `protocol-schemas` | no-op ✅ | **full** | **full** | **full** | **full** | **full** |
 | `scan` (Gitleaks) | **full** | **full** | **full** | **full** | **full** | **full** |
-| `analyze` (CodeQL) | no-op âœ… | **full** | **full** | **full** | **full** | **full** |
+| `analyze` (CodeQL) | no-op ✅ | **full** | **full** | **full** | **full** | **full** |
 | Dependency Review | **full** | **full** | **full** | **full** | **full** | **full** |
-| `required-pr-gate` | âœ… pass | âœ… pass/fail | âœ… pass/fail | âœ… pass/fail | âœ… pass/fail | âœ… pass/fail |
+| `required-pr-gate` | ✅ pass | ✅ pass/fail | ✅ pass/fail | ✅ pass/fail | ✅ pass/fail | ✅ pass/fail |
 
 **no-op** means the job runs and reports success, but skips expensive steps.
 This ensures the required status check is never left pending.
@@ -124,9 +124,9 @@ aggregate gate.
 
 | Workflow | Runs on docs-only PR? | Rationale |
 |----------|:---------------------:|-----------|
-| **Gitleaks** (`scan`) | âœ… Always | Fast; secrets can appear in any file. |
+| **Gitleaks** (`scan`) | ✅ Always | Fast; secrets can appear in any file. |
 | **CodeQL** (`analyze`) | no-op | Code analysis is irrelevant for docs changes. Scheduled full scan runs weekly regardless. |
-| **Dependency Review** | âœ… Always | Required context; evaluates dependency-graph changes and succeeds when no dependency delta exists. |
+| **Dependency Review** | ✅ Always | Required context; evaluates dependency-graph changes and succeeds when no dependency delta exists. |
 | **Scorecard** | Not triggered on PR | Runs on push to main and weekly schedule. |
 | **Trivy** (in CI `security` job) | no-op on docs-only | Filesystem vulnerability scan is code-focused. |
 | **SonarQube Cloud** | Runs (CI-based via `sonarcloud.yml`, not workflow-gated) | Not a required check; see below for scope. |
@@ -164,15 +164,15 @@ This project runs **CI-based analysis** via
 and on pull requests. The workflow installs dependencies, runs the full test
 suite with coverage, and invokes `SonarSource/sonarqube-scan-action` (pinned
 to v8.2.1). The scanner reads `sonar-project.properties` from the repository
-root â€” this is the CI-based configuration file (distinct from
+root — this is the CI-based configuration file (distinct from
 `.sonarcloud.properties`, which is used only by SonarCloud's Automatic
 Analysis mode and must not coexist with a CI workflow).
 `sonar-project.properties` sets `sonar.tests` to classify `tests/`,
 `packages/protocol-schemas/test/`, and `packages/kicad-fixtures/test/` as
-test code. This only affects path classification â€” it does not exclude any
+test code. This only affects path classification — it does not exclude any
 file from analysis, and it does not change rule severities or Quality
 Profiles (those require SonarQube Cloud UI/admin access, not a repo file).
-`SonarCloud Scan` is a required status check for trusted same-repository PRs. Dependabot and fork PRs keep the job-level secret-isolation guard; GitHub treats that conditional skip as a successful required-check conclusion, and Mergify mirrors success/skipped/neutral outcomes.
+SonarCloud Scan is a required status check for trusted same-repository PRs. Dependabot and fork PRs keep the job-level secret-isolation guard; GitHub treats that conditional skip as a successful required-check conclusion, and Mergify mirrors success/skipped/neutral outcomes.
 
 ## Publish Workflows
 
@@ -190,14 +190,14 @@ All publish workflows enforce strict safety:
 
 | Workflow | PR Behavior | Release Behavior |
 |----------|------------|-----------------|
-| Publish Python | N/A | Build â†’ attest â†’ publish to PyPI with OIDC |
-| Publish npm | N/A | Pack â†’ attest â†’ publish with provenance |
-| Publish Container | Dry-run build (cacheonly) | Push to GHCR â†’ Trivy scan â†’ cosign sign |
-| Publish MCP Registry | Dry-run validate | Wait for artifacts â†’ publish to registry |
-| Publish Protocol Schemas | N/A | Build â†’ attest â†’ publish to npm |
-| GUI Release | N/A | Build Tauri â†’ create GitHub Release |
+| Publish Python | N/A | Build → attest → publish to PyPI with OIDC |
+| Publish npm | N/A | Pack → attest → publish with provenance |
+| Publish Container | Dry-run build (cacheonly) | Push to GHCR → Trivy scan → cosign sign |
+| Publish MCP Registry | Dry-run validate | Wait for artifacts → publish to registry |
+| Publish Protocol Schemas | N/A | Build → attest → publish to npm |
+| GUI Release | N/A | Build Tauri → create GitHub Release |
 
-## Supply Chain â€” Action Pinning
+## Supply Chain — Action Pinning
 
 Every third-party action reference across `.github/workflows/` is pinned to a
 commit SHA (not a mutable tag like `@v4` or `@main`). This is verified by:
