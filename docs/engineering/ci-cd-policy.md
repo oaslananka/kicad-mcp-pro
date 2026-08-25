@@ -107,7 +107,7 @@ It exists to let branch protection eventually depend on **one** check instead
 of pinning every individual matrix context, so job renames or new matrix
 entries don't require a ruleset edit.
 
-`Required PR Gate` is active in ruleset `18233373`. The existing operating-
+`Required PR Gate` is active in ruleset `20631071`. The existing operating-
 system matrix, protocol schema, secret scan, CodeQL, and dependency-review
 contexts remain required alongside it. New internal jobs such as `coverage`
 become merge-blocking by joining the aggregate gate; they should not be added
