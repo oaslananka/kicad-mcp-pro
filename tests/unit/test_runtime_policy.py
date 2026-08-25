@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from scripts import runtime_policy
 from scripts.runtime_policy import (
     DriftSourceVersions,
@@ -195,3 +197,8 @@ def test_fetch_current_versions_reads_release_feeds(monkeypatch) -> None:
     assert current.python_bugfix_minors == ("3.13", "3.14")
     assert current.kicad_stable == "10.0.4"
     assert current.source_errors == ()
+
+
+def test_snapshot_from_git_ref_rejects_option_like_ref_before_git_invocation() -> None:
+    with pytest.raises(ValueError, match="safe Git ref"):
+        runtime_policy.snapshot_from_git_ref("--help")
