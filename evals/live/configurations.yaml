@@ -199,9 +199,15 @@ configurations:
     host: opencode-zen-cli
     model: nemotron-3.5-lightning-free
     adapter: subprocess
-    command: [python, scripts/opencode_cli_eval_adapter.py, --model, nemotron-3.5-lightning-free, --opencode-bin, opencode, --timeout-seconds, "65"]
+    command: [python, scripts/opencode_cli_eval_adapter.py, --model, nemotron-3.5-lightning-free, --opencode-bin, opencode, --timeout-seconds, "90"]
     required_env: [OPENCODE_ZEN_API_KEY]
-    limits: *opencode_free_limits
+    limits:
+      timeout_seconds: 95
+      max_retries: 2
+      max_cases: 325
+      max_total_tool_calls: 1000
+      max_total_tokens: 3000000
+      max_total_cost_micros: 0
 
   - id: opencode-cli-deepseek-v4-flash-free
     host: opencode-zen-cli
