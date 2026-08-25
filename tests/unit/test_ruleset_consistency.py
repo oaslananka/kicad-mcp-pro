@@ -88,3 +88,7 @@ def test_ruleset_defines_required_status_checks() -> None:
 
 def test_ruleset_requires_live_model_release_policy() -> None:
     assert "Live Model Release Policy" in required_contexts()
+
+
+def test_ruleset_requires_sonarcloud_scan() -> None:
+    assert "SonarCloud Scan" in required_contexts()
