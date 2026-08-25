@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 const DEFAULT_REGISTRY_URL = "https://registry.npmjs.org";
 const DEFAULT_RETRIES = 6;
 const DEFAULT_RETRY_DELAY_MS = 10_000;
+const TRUSTED_REGISTRY_ORIGIN = new URL(DEFAULT_REGISTRY_URL).origin;
 
 function parseArgs(args) {
   const parsed = new Map();
@@ -39,15 +40,59 @@ function sha256(buffer) {
 }
 
 async function fetchJson(url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`GET ${url} failed: ${response.status}`);
+  const response = await fetch(url, { redirect: "error" });
+  if (!response.ok)
+    throw new Error(`npm registry metadata request failed: ${response.status}`);
   return response.json();
 }
 
 async function fetchBytes(url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`GET ${url} failed: ${response.status}`);
+  const response = await fetch(url, { redirect: "error" });
+  if (!response.ok)
+    throw new Error(`npm registry tarball request failed: ${response.status}`);
   return Buffer.from(await response.arrayBuffer());
+}
+
+function trustedRegistryBase(registryUrl) {
+  let registry;
+  try {
+    registry = new URL(registryUrl);
+  } catch {
+    throw new Error("Release verification requires the trusted npm registry");
+  }
+  if (
+    registry.protocol !== "https:" ||
+    registry.origin !== TRUSTED_REGISTRY_ORIGIN ||
+    registry.username ||
+    registry.password ||
+    (registry.pathname !== "/" && registry.pathname !== "") ||
+    registry.search ||
+    registry.hash
+  ) {
+    throw new Error("Release verification requires the trusted npm registry");
+  }
+  return DEFAULT_REGISTRY_URL;
+}
+
+function trustedTarballUrl(rawUrl) {
+  let tarball;
+  try {
+    tarball = new URL(rawUrl);
+  } catch {
+    throw new Error("npm metadata returned an invalid tarball URL");
+  }
+  if (
+    tarball.protocol !== "https:" ||
+    tarball.origin !== TRUSTED_REGISTRY_ORIGIN ||
+    tarball.username ||
+    tarball.password ||
+    tarball.search ||
+    tarball.hash ||
+    !tarball.pathname.endsWith(".tgz")
+  ) {
+    throw new Error("npm tarball URL must use the trusted npm registry");
+  }
+  return new URL(tarball.pathname, `${DEFAULT_REGISTRY_URL}/`).href;
 }
 
 export function packageMetadataUrl(
@@ -55,7 +100,8 @@ export function packageMetadataUrl(
   version,
   registryUrl = DEFAULT_REGISTRY_URL,
 ) {
-  return `${registryUrl.replace(/\/$/, "")}/${encodeURIComponent(packageName)}/${version}`;
+  const trustedRegistry = trustedRegistryBase(registryUrl);
+  return `${trustedRegistry}/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`;
 }
 
 async function retry(task, attempts, delayMs) {
@@ -86,12 +132,10 @@ export async function verifyPublishedNpmDigest({
     retries,
     retryDelayMs,
   );
-  const tarballUrl = metadata?.dist?.tarball;
-  if (!tarballUrl)
-    throw new Error(
-      `npm metadata for ${packageName}@${version} has no tarball URL`,
-    );
+  const rawTarballUrl = metadata?.dist?.tarball;
+  if (!rawTarballUrl) throw new Error("npm metadata has no tarball URL");
 
+  const tarballUrl = trustedTarballUrl(rawTarballUrl);
   const tarball = await fetchBytes(tarballUrl);
   const tarballName = basename(new URL(tarballUrl).pathname);
   let expected = checksums.get(tarballName);
@@ -103,26 +147,22 @@ export async function verifyPublishedNpmDigest({
       name.endsWith(".tgz"),
     );
     if (tarballEntries.length === 0) {
-      throw new Error(`No .tgz entry found in checksums file ${checksumsPath}`);
+      throw new Error("No .tgz entry found in checksums file");
     }
     if (tarballEntries.length > 1) {
       throw new Error(
-        `${tarballName} not found in checksums and multiple .tgz entries exist (` +
-          `${tarballEntries.map(([n]) => n).join(", ")}). ` +
-          `Cannot unambiguously match. Add an explicit entry for ${tarballName}.`,
+        "Published tarball did not match the checksums file and multiple .tgz entries exist",
       );
     }
-    const [entryName, entryDigest] = tarballEntries[0];
+    const [, entryDigest] = tarballEntries[0];
     console.log(
-      `[warn] tarball basename differs: local="${entryName}" registry="${tarballName}" — matching by digest`,
+      "[warn] tarball basename differs; matching the sole .tgz entry by digest",
     );
     expected = entryDigest;
   }
   const actual = sha256(tarball);
   if (expected !== actual) {
-    throw new Error(
-      `${tarballName} sha256 mismatch: expected ${expected}, got ${actual}`,
-    );
+    throw new Error("Published npm tarball sha256 mismatch");
   }
 
   mkdirSync(outputDir, { recursive: true });
