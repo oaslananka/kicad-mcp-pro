@@ -66,3 +66,19 @@ def test_non_quota_create_artifact_failure_is_not_artifact_quota() -> None:
 
     payload = json.loads(result.stdout)
     assert payload["classification"] != "artifact-quota-exhausted"
+
+
+def test_classifier_resolves_github_cli_from_fixed_system_paths() -> None:
+    root = Path(__file__).resolve().parents[2]
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is required for scripts/classify-gh-failure.mjs tests")
+
+    subprocess.run(
+        [node, "--test", "tests/js/classify-gh-failure-security.test.mjs"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
