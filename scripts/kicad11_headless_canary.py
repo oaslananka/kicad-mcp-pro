@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import json
+import os
 import re
 import subprocess
 from collections.abc import Callable
@@ -14,6 +15,10 @@ from pathlib import Path
 from typing import Any, cast
 
 SURFACES = ("read", "write", "export")
+_KICAD_CLI_NAMES = frozenset(
+    {"kicad-cli", "kicad-cli.exe", "kicad-nightly-cli", "kicad-nightly-cli.exe"}
+)
+_KICAD_INPUT_SUFFIXES = frozenset({".kicad_pro", ".kicad_pcb", ".kicad_sch"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +29,28 @@ class SurfaceReport:
     reason: str
     evidence: list[str]
     backend: str
+
+
+def _validated_kicad_cli(path: Path) -> Path:
+    try:
+        resolved = path.expanduser().resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"KiCad CLI executable does not exist: {path}") from exc
+    if resolved.name.casefold() not in _KICAD_CLI_NAMES or not resolved.is_file():
+        raise ValueError(f"KiCad CLI executable is not an approved kicad-cli binary: {path}")
+    if not os.access(resolved, os.X_OK):
+        raise ValueError(f"KiCad CLI executable is not executable: {path}")
+    return resolved
+
+
+def _validated_project_or_file(path: Path) -> Path:
+    try:
+        resolved = path.expanduser().resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"KiCad project or design file does not exist: {path}") from exc
+    if not resolved.is_file() or resolved.suffix.casefold() not in _KICAD_INPUT_SUFFIXES:
+        raise ValueError(f"KiCad project or design file has an unsupported path: {path}")
+    return resolved
 
 
 def _report_payload(report: SurfaceReport) -> dict[str, object]:
@@ -200,6 +227,9 @@ def run_canary(
                 SurfaceReport(surface, "blocked", None, reason, [], "unavailable"),
             )
         return 1 if require_ready else 0
+
+    kicad_cli = _validated_kicad_cli(kicad_cli)
+    project_or_file = _validated_project_or_file(project_or_file)
 
     version, version_evidence = _version(kicad_cli)
     api_advertised, api_evidence = _api_server_help(kicad_cli)
