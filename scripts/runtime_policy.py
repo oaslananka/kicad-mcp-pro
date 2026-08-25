@@ -29,6 +29,8 @@ PYTHON_RELEASES_URL = "https://peps.python.org/api/python-releases.json"
 KICAD_LINUX_DOWNLOAD_URL = "https://www.kicad.org/download/linux/"
 HTTP_HEADERS = {"User-Agent": "kicad-mcp-runtime-drift/1.0"}
 GIT_EXECUTABLE = shutil.which("git") or "git"
+_SAFE_GIT_REF = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/@+,-]{0,254}")
+_GIT_OBJECT_ID = re.compile(r"[0-9a-fA-F]{40,64}")
 
 DEFAULT_VSCODE_CHANGELOG = (
     Path("apps/vscode-extension/CHANGELOG.md")
@@ -317,9 +319,39 @@ def snapshot_from_repo(root: Path = REPO_ROOT) -> RuntimeSupportSnapshot:
     )
 
 
-def _show_text(ref: str, path: Path) -> str:
+def _validated_git_ref(ref: str) -> str:
+    invalid_component = any(
+        component.startswith(".") or component.endswith(".lock") for component in ref.split("/")
+    )
+    if (
+        not _SAFE_GIT_REF.fullmatch(ref)
+        or ".." in ref
+        or "//" in ref
+        or ref.endswith((".", "/"))
+        or invalid_component
+    ):
+        raise ValueError(f"base_ref must be a safe Git ref, got {ref!r}")
+    return ref
+
+
+def _resolve_commit(ref: str) -> str:
+    safe_ref = _validated_git_ref(ref)
     result = subprocess.run(
-        [GIT_EXECUTABLE, "show", f"{ref}:{path.as_posix()}"],
+        [GIT_EXECUTABLE, "rev-parse", "--verify", "--end-of-options", f"{safe_ref}^{{commit}}"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    commit = result.stdout.strip()
+    if not _GIT_OBJECT_ID.fullmatch(commit):
+        raise ValueError("git rev-parse returned an invalid commit object id")
+    return commit
+
+
+def _show_text(commit: str, path: Path) -> str:
+    result = subprocess.run(
+        [GIT_EXECUTABLE, "show", f"{commit}:{path.as_posix()}"],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
@@ -328,21 +360,22 @@ def _show_text(ref: str, path: Path) -> str:
     return result.stdout
 
 
-def _extension_package_from_git(ref: str) -> dict[str, Any]:
+def _extension_package_from_git(commit: str) -> dict[str, Any]:
     """Read VS Code extension package.json from a git ref, or return an empty fallback."""
     try:
-        return json.loads(_show_text(ref, Path("apps/vscode-extension/package.json")))
+        return json.loads(_show_text(commit, Path("apps/vscode-extension/package.json")))
     except subprocess.CalledProcessError:
         return {"engines": {"vscode": "^0.0.0", "node": ">=0.0.0"}}
 
 
 def snapshot_from_git_ref(ref: str) -> RuntimeSupportSnapshot:
     """Build a runtime support snapshot from files at a git ref."""
+    commit = _resolve_commit(ref)
     compatibility = _read_yaml_text(
-        _show_text(ref, Path("compatibility.yaml")), label="compatibility.yaml"
+        _show_text(commit, Path("compatibility.yaml")), label="compatibility.yaml"
     )
-    extension_package = _extension_package_from_git(ref)
-    pyproject = _read_toml_text(_show_text(ref, Path("pyproject.toml")))
+    extension_package = _extension_package_from_git(commit)
+    pyproject = _read_toml_text(_show_text(commit, Path("pyproject.toml")))
     return _snapshot_from_metadata(
         compatibility=compatibility,
         extension_package=extension_package,
@@ -351,8 +384,9 @@ def snapshot_from_git_ref(ref: str) -> RuntimeSupportSnapshot:
 
 
 def _changed_files(base_ref: str) -> tuple[Path, ...]:
+    base_commit = _resolve_commit(base_ref)
     result = subprocess.run(
-        [GIT_EXECUTABLE, "diff", "--name-only", f"{base_ref}...HEAD"],
+        [GIT_EXECUTABLE, "diff", "--name-only", f"{base_commit}...HEAD"],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
