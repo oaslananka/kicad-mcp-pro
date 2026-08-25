@@ -8,8 +8,8 @@ const GH_EXECUTABLE_PATHS = Object.freeze({
   linux: ["/usr/bin/gh", "/usr/local/bin/gh"],
   darwin: ["/usr/local/bin/gh", "/opt/homebrew/bin/gh"],
   win32: [
-    "C:\\Program Files\\GitHub CLI\\gh.exe",
-    "C:\\Program Files (x86)\\GitHub CLI\\gh.exe",
+    String.raw`C:\Program Files\GitHub CLI\gh.exe`,
+    String.raw`C:\Program Files (x86)\GitHub CLI\gh.exe`,
   ],
 });
 
