@@ -84,7 +84,9 @@ def test_ci_enforces_patch_coverage_only_for_python_pull_requests() -> None:
     assert "github.event_name == 'pull_request'" in workflow
     assert "needs.changes.outputs.python == 'true'" in workflow
     assert "steps.python-tests.outcome == 'success'" in workflow
-    assert "github.event.pull_request.base.sha" in workflow
+    assert "github.event.pull_request.base.sha" not in workflow
+    assert "BASE_SHA:" not in workflow
+    assert "--base-ref" not in workflow
     parsed = yaml.safe_load(workflow)
     coverage_steps = parsed["jobs"]["coverage"]["steps"]
     checkout = next(
@@ -92,6 +94,7 @@ def test_ci_enforces_patch_coverage_only_for_python_pull_requests() -> None:
     )
     assert checkout["with"]["fetch-depth"] == 0
     assert checkout["with"]["persist-credentials"] is False
+    assert "ref" not in checkout["with"]
     assert "scripts/check_patch_coverage.py" in workflow
     assert "--min-percent 90" in workflow
     assert "steps.patch-coverage.outcome == 'failure'" in workflow
