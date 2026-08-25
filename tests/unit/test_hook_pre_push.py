@@ -94,6 +94,52 @@ def test_changed_files_uses_pre_commit_push_range(monkeypatch: MonkeyPatch) -> N
     assert calls == [["diff", "--name-only", "--diff-filter=ACMRTUXB", f"{'a' * 40}..{'b' * 40}"]]
 
 
+def test_explicit_base_rejects_option_like_ref_before_git_invocation(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_git_output(arguments: list[str]) -> str:
+        calls.append(arguments)
+        raise AssertionError(arguments)
+
+    monkeypatch.setattr(hook_pre_push, "_git_output", fake_git_output)
+
+    try:
+        hook_pre_push.changed_files("--help")
+    except ValueError as exc:
+        assert "safe Git ref" in str(exc)
+    else:
+        raise AssertionError("option-like base ref should be rejected")
+
+    assert calls == []
+
+
+def test_explicit_base_is_canonicalized_before_merge_base(monkeypatch: MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+    commit = "e" * 40
+    merge_base = "f" * 40
+
+    def fake_git_output(arguments: list[str]) -> str:
+        calls.append(arguments)
+        if arguments[0] == "rev-parse":
+            return commit
+        if arguments[0] == "merge-base":
+            return merge_base
+        if arguments[0] == "diff":
+            return "src/kicad_mcp/server.py"
+        raise AssertionError(arguments)
+
+    monkeypatch.setattr(hook_pre_push, "_git_output", fake_git_output)
+
+    assert hook_pre_push.changed_files("origin/main") == ["src/kicad_mcp/server.py"]
+    assert calls == [
+        ["rev-parse", "--verify", "--end-of-options", "origin/main^{commit}"],
+        ["merge-base", commit, "HEAD"],
+        ["diff", "--name-only", "--diff-filter=ACMRTUXB", f"{merge_base}..HEAD"],
+    ]
+
+
 def test_new_branch_falls_back_to_main_merge_base(monkeypatch: MonkeyPatch) -> None:
     calls: list[list[str]] = []
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -17,6 +18,8 @@ from shutil import which
 ROOT = Path(__file__).resolve().parents[1]
 ZERO_SHA = "0" * 40
 MAX_TARGET_TEST_FILES = 12
+_SAFE_GIT_REF = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/@+,-]{0,254}")
+_GIT_OBJECT_ID = re.compile(r"[0-9a-fA-F]{40,64}")
 
 
 @dataclass(frozen=True)
@@ -285,9 +288,33 @@ def _git_output(arguments: list[str]) -> str:
     return completed.stdout.strip()
 
 
+def _validated_git_ref(ref: str) -> str:
+    invalid_component = any(
+        component.startswith(".") or component.endswith(".lock") for component in ref.split("/")
+    )
+    if (
+        not _SAFE_GIT_REF.fullmatch(ref)
+        or ".." in ref
+        or "//" in ref
+        or ref.endswith((".", "/"))
+        or invalid_component
+    ):
+        raise ValueError(f"base must be a safe Git ref, got {ref!r}")
+    return ref
+
+
+def _resolve_commit(ref: str) -> str:
+    safe_ref = _validated_git_ref(ref)
+    commit = _git_output(["rev-parse", "--verify", "--end-of-options", f"{safe_ref}^{{commit}}"])
+    if not _GIT_OBJECT_ID.fullmatch(commit):
+        raise ValueError("git rev-parse returned an invalid commit object id")
+    return commit
+
+
 def changed_files(base: str | None) -> list[str]:
     if base:
-        from_ref = _git_output(["merge-base", base, "HEAD"])
+        base_commit = _resolve_commit(base)
+        from_ref = _git_output(["merge-base", base_commit, "HEAD"])
         to_ref = "HEAD"
     else:
         from_ref = os.environ.get("PRE_COMMIT_FROM_REF", "").strip()
