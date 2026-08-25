@@ -92,3 +92,14 @@ def test_ruleset_requires_live_model_release_policy() -> None:
 
 def test_ruleset_requires_sonarcloud_scan() -> None:
     assert "SonarCloud Scan" in required_contexts()
+
+
+def test_ruleset_preserves_extra_approval_for_unattributed_changes() -> None:
+    ruleset = json.loads(RULESET.read_text(encoding="utf-8"))
+    pull_request_rule = next(
+        rule for rule in ruleset["rules"] if rule.get("type") == "pull_request"
+    )
+    assert (
+        pull_request_rule["parameters"].get("require_extra_approval_for_unattributed_changes")
+        is True
+    )
