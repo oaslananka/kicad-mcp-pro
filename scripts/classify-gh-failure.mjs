@@ -2,6 +2,16 @@
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
+
+const GH_EXECUTABLE_PATHS = Object.freeze({
+  linux: ["/usr/bin/gh", "/usr/local/bin/gh"],
+  darwin: ["/usr/local/bin/gh", "/opt/homebrew/bin/gh"],
+  win32: [
+    "C:\\Program Files\\GitHub CLI\\gh.exe",
+    "C:\\Program Files (x86)\\GitHub CLI\\gh.exe",
+  ],
+});
 
 const CLASSES = [
   {
@@ -275,9 +285,23 @@ function parseArgs(argv) {
   return args;
 }
 
+export function resolveGhExecutable(
+  platform = process.platform,
+  exists = fs.existsSync,
+) {
+  const candidates = GH_EXECUTABLE_PATHS[platform] ?? [];
+  const executable = candidates.find((candidate) => exists(candidate));
+  if (!executable) {
+    throw new Error(
+      `GitHub CLI was not found in trusted system locations for ${platform}`,
+    );
+  }
+  return executable;
+}
+
 function readRunLog(repo, runId) {
   return execFileSync(
-    "gh",
+    resolveGhExecutable(),
     ["run", "view", runId, "--repo", repo, "--log-failed"],
     {
       encoding: "utf8",
@@ -341,9 +365,11 @@ function main() {
   );
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(`classify-gh-failure: ${error.message}`);
-  process.exitCode = 2;
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`classify-gh-failure: ${error.message}`);
+    process.exitCode = 2;
+  }
 }
