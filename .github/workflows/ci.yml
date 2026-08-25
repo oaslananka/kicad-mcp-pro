@@ -480,7 +480,7 @@ jobs:
             [mcp-server]="${{ needs.mcp-server.result }}"
             [coverage]="${{ needs.coverage.result }}"
             [mcp-npm]="${{ needs.mcp-npm.result }}"
-            [chatgpt-app]="${{ needs.chatgpt_app.result }}"
+            [chatgpt-app]="${{ needs.chatgpt-app.result }}"
             [protocol-schemas]="${{ needs.protocol-schemas.result }}"
             [mcp-2026-compat]="${{ needs.mcp-2026-compat.result }}"
             [workflow-policy]="${{ needs.workflow-policy.result }}"
