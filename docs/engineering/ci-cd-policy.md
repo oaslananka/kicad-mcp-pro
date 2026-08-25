@@ -79,6 +79,10 @@ a status on every PR:
 | 8 | `scan` | `gitleaks.yml` | `scan` |
 | 9 | `analyze (python)` | `codeql.yml` | `analyze` |
 | 10 | `analyze (javascript-typescript)` | `codeql.yml` | `analyze` |
+| 11 | `Required PR Gate` | `ci.yml` | `required-pr-gate` |
+| 12 | `SonarCloud Scan` | `sonarcloud.yml` | `sonarcloud` |
+| 13 | `dependency-review` | `dependency-review.yml` | `dependency-review` |
+| 14 | `Live Model Release Policy` | `live-model-assurance.yml` | `release-policy` |
 
 ### Step-Level No-Op Pattern
 
@@ -129,7 +133,7 @@ aggregate gate.
 | **Dependency Review** | ✅ Always | Required context; evaluates dependency-graph changes and succeeds when no dependency delta exists. |
 | **Scorecard** | Not triggered on PR | Runs on push to main and weekly schedule. |
 | **Trivy** (in CI `security` job) | no-op on docs-only | Filesystem vulnerability scan is code-focused. |
-| **SonarQube Cloud** | Runs (CI-based via `sonarcloud.yml`, not workflow-gated) | Not a required check; see below for scope. |
+| **SonarQube Cloud** | Runs for trusted same-repository PRs; conditionally skips Dependabot/forks | Required as `SonarCloud Scan`; see below for skip semantics. |
 
 ### Dependency Graph and Dependabot
 
