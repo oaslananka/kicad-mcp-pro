@@ -79,6 +79,10 @@ a status on every PR:
 | 8 | `scan` | `gitleaks.yml` | `scan` |
 | 9 | `analyze (python)` | `codeql.yml` | `analyze` |
 | 10 | `analyze (javascript-typescript)` | `codeql.yml` | `analyze` |
+| 11 | `Required PR Gate` | `ci.yml` | `required-pr-gate` |
+| 12 | `SonarCloud Scan` | `sonarcloud.yml` | `sonarcloud` |
+| 13 | `dependency-review` | `dependency-review.yml` | `dependency-review` |
+| 14 | `Live Model Release Policy` | `live-model-assurance.yml` | `release-policy` |
 
 ### Step-Level No-Op Pattern
 
@@ -103,7 +107,7 @@ It exists to let branch protection eventually depend on **one** check instead
 of pinning every individual matrix context, so job renames or new matrix
 entries don't require a ruleset edit.
 
-`Required PR Gate` is active in ruleset `18233373`. The existing operating-
+`Required PR Gate` is active in ruleset `20631071`. The existing operating-
 system matrix, protocol schema, secret scan, CodeQL, and dependency-review
 contexts remain required alongside it. New internal jobs such as `coverage`
 become merge-blocking by joining the aggregate gate; they should not be added
@@ -129,7 +133,7 @@ aggregate gate.
 | **Dependency Review** | ✅ Always | Required context; evaluates dependency-graph changes and succeeds when no dependency delta exists. |
 | **Scorecard** | Not triggered on PR | Runs on push to main and weekly schedule. |
 | **Trivy** (in CI `security` job) | no-op on docs-only | Filesystem vulnerability scan is code-focused. |
-| **SonarQube Cloud** | Runs (CI-based via `sonarcloud.yml`, not workflow-gated) | Not a required check; see below for scope. |
+| **SonarQube Cloud** | Runs for trusted same-repository PRs; conditionally skips Dependabot/forks | Required as `SonarCloud Scan`; see below for skip semantics. |
 
 ### Dependency Graph and Dependabot
 
@@ -163,7 +167,7 @@ This project runs **CI-based analysis** via
 `.github/workflows/sonarcloud.yml`, which triggers on every push to `main`
 and on pull requests. The workflow installs dependencies, runs the full test
 suite with coverage, and invokes `SonarSource/sonarqube-scan-action` (pinned
-to v8.2.0). The scanner reads `sonar-project.properties` from the repository
+to v8.2.1). The scanner reads `sonar-project.properties` from the repository
 root — this is the CI-based configuration file (distinct from
 `.sonarcloud.properties`, which is used only by SonarCloud's Automatic
 Analysis mode and must not coexist with a CI workflow).
@@ -172,7 +176,7 @@ Analysis mode and must not coexist with a CI workflow).
 test code. This only affects path classification — it does not exclude any
 file from analysis, and it does not change rule severities or Quality
 Profiles (those require SonarQube Cloud UI/admin access, not a repo file).
-Sonar is not a required status check, so it cannot block merges either way.
+SonarCloud Scan is a required status check for trusted same-repository PRs. Dependabot and fork PRs keep the job-level secret-isolation guard; GitHub treats that conditional skip as a successful required-check conclusion, and Mergify mirrors success/skipped/neutral outcomes.
 
 ## Publish Workflows
 

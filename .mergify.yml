@@ -25,6 +25,10 @@ queue_rules:
       - check-success = analyze (python)
       - check-success = analyze (javascript-typescript)
       - check-success = Required PR Gate
+      - or:
+          - check-success = SonarCloud Scan
+          - check-skipped = SonarCloud Scan
+          - check-neutral = SonarCloud Scan
       - check-success = dependency-review
       - check-success = Live Model Release Policy
     queue_conditions:
@@ -44,6 +48,10 @@ queue_rules:
       - check-success = analyze (python)
       - check-success = analyze (javascript-typescript)
       - check-success = Required PR Gate
+      - or:
+          - check-success = SonarCloud Scan
+          - check-skipped = SonarCloud Scan
+          - check-neutral = SonarCloud Scan
       - check-success = dependency-review
       - check-success = Live Model Release Policy
 

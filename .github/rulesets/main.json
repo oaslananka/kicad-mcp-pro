@@ -26,6 +26,7 @@
         "dismiss_stale_reviews_on_push": true,
         "require_code_owner_review": false,
         "require_last_push_approval": false,
+        "require_extra_approval_for_unattributed_changes": true,
         "required_approving_review_count": 0,
         "required_review_thread_resolution": true,
         "allowed_merge_methods": [
@@ -73,6 +74,9 @@
           },
           {
             "context": "Required PR Gate"
+          },
+          {
+            "context": "SonarCloud Scan"
           },
           {
             "context": "dependency-review"

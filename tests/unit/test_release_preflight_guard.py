@@ -408,7 +408,10 @@ def test_mergify_only_autoqueues_safe_grouped_dependabot_updates() -> None:
         "-draft",
         "dependabot-update-type != version-update:semver-major",
     }
-    assert required_conditions <= set(queue["queue_conditions"])
+    queue_string_conditions = {
+        condition for condition in queue["queue_conditions"] if isinstance(condition, str)
+    }
+    assert required_conditions <= queue_string_conditions
 
     assert len(config["pull_request_rules"]) == 1
     rule = config["pull_request_rules"][0]
@@ -450,8 +453,20 @@ def test_mergify_merge_conditions_mirror_repository_ruleset_required_checks() ->
     explicit_check_conditions = {
         condition.removeprefix("check-success = ")
         for condition in queue["merge_conditions"]
-        if condition.startswith("check-success = ")
+        if isinstance(condition, str) and condition.startswith("check-success = ")
     }
+    sonar_condition = next(
+        (condition for condition in queue["merge_conditions"] if isinstance(condition, dict)),
+        None,
+    )
+    assert sonar_condition == {
+        "or": [
+            "check-success = SonarCloud Scan",
+            "check-skipped = SonarCloud Scan",
+            "check-neutral = SonarCloud Scan",
+        ]
+    }
+    explicit_check_conditions.add("SonarCloud Scan")
 
     assert explicit_check_conditions == required_contexts
 
