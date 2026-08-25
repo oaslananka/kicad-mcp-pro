@@ -67,6 +67,7 @@ def test_opencode_free_model_allowlist_matches_reviewed_experimental_set() -> No
             "ling-3.0-flash-free",
             "north-mini-code-free",
             "nemotron-3-ultra-free",
+            "nemotron-3.5-lightning-free",
         }
     )
 
