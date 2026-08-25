@@ -106,13 +106,11 @@ def test_main_fails_when_changed_executable_lines_are_below_threshold(
     monkeypatch.setattr(
         checker,
         "_git_diff",
-        lambda _base: "+++ b/src/kicad_mcp/a.py\n@@ -10,0 +11 @@\n+changed\n",
+        lambda: "+++ b/src/kicad_mcp/a.py\n@@ -10,0 +11 @@\n+changed\n",
     )
 
     result = checker.main(
         [
-            "--base-ref",
-            "a" * 40,
             "--coverage-file",
             "coverage.json",
             "--min-percent",
@@ -126,33 +124,31 @@ def test_main_fails_when_changed_executable_lines_are_below_threshold(
     assert "src/kicad_mcp/a.py:11" in captured.err
 
 
-def test_main_rejects_non_sha_base_ref_before_git(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+def test_git_diff_uses_synthetic_pull_request_base_without_cli_input(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     checker = _load_checker()
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    coverage = repo_root / "coverage.json"
-    coverage.write_text('{"files":{}}', encoding="utf-8")
-    monkeypatch.setattr(checker, "REPO_ROOT", repo_root)
-    monkeypatch.setattr(
-        checker,
-        "_git_diff",
-        lambda _base: pytest.fail("git diff must not run for an invalid base SHA"),
-    )
+    captured: list[str] = []
 
-    result = checker.main(
-        [
-            "--base-ref",
-            "main",
-            "--coverage-file",
-            "coverage.json",
-        ]
-    )
+    class Completed:
+        stdout = "diff-output"
 
-    captured = capsys.readouterr()
-    assert result == 2
-    assert "40-character hexadecimal commit SHA" in captured.err
+    def fake_run(command: list[str], **_kwargs: object) -> Completed:
+        captured.extend(command)
+        return Completed()
+
+    monkeypatch.setattr(checker.subprocess, "run", fake_run)
+
+    assert checker._git_diff() == "diff-output"
+    assert captured == [
+        "git",
+        "diff",
+        "--unified=0",
+        "--diff-filter=ACMR",
+        "HEAD^1...HEAD",
+        "--",
+        "src/kicad_mcp",
+    ]
 
 
 def test_main_rejects_noncanonical_coverage_file_path(
@@ -164,12 +160,10 @@ def test_main_rejects_noncanonical_coverage_file_path(
     outside = tmp_path / "coverage.json"
     outside.write_text('{"files":{}}', encoding="utf-8")
     monkeypatch.setattr(checker, "REPO_ROOT", repo_root)
-    monkeypatch.setattr(checker, "_git_diff", lambda _base: "")
+    monkeypatch.setattr(checker, "_git_diff", lambda: "")
 
     result = checker.main(
         [
-            "--base-ref",
-            "a" * 40,
             "--coverage-file",
             str(outside),
         ]
@@ -193,13 +187,11 @@ def test_main_rejects_coverage_symlink_escaping_repository(
     monkeypatch.setattr(
         checker,
         "_git_diff",
-        lambda _base: pytest.fail("git diff must not run for an escaping coverage file"),
+        lambda: pytest.fail("git diff must not run for an escaping coverage file"),
     )
 
     result = checker.main(
         [
-            "--base-ref",
-            "a" * 40,
             "--coverage-file",
             "coverage.json",
         ]
