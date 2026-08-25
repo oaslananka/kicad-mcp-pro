@@ -200,6 +200,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         if: env.skip_ci != 'true'
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         if: env.skip_ci != 'true'
@@ -218,6 +219,20 @@ jobs:
           uv run python scripts/run_pytest.py full
           --junitxml=python.junit.xml
           -o junit_family=legacy
+      - name: Enforce Python patch coverage
+        id: patch-coverage
+        if: >-
+          env.skip_ci != 'true' &&
+          github.event_name == 'pull_request' &&
+          needs.changes.outputs.python == 'true' &&
+          steps.python-tests.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          # pull_request checks out GitHub's synthetic merge commit; HEAD^1 is its base parent.
+          uv run python scripts/check_patch_coverage.py \
+            --coverage-file coverage.json \
+            --min-percent 90
       - name: Upload Python coverage to Codecov
         if: env.skip_ci != 'true' && !cancelled() && hashFiles('coverage.xml') != ''
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
@@ -243,10 +258,21 @@ jobs:
           flags: python-full
           name: python-full-tests
           verbose: true
-      - name: Propagate Python test failure
-        if: env.skip_ci != 'true' && steps.python-tests.outcome == 'failure'
+      - name: Propagate Python coverage or test failure
+        if: >-
+          env.skip_ci != 'true' &&
+          (steps.python-tests.outcome == 'failure' ||
+           steps.patch-coverage.outcome == 'failure')
+        env:
+          PYTHON_TEST_OUTCOME: ${{ steps.python-tests.outcome }}
+          PATCH_COVERAGE_OUTCOME: ${{ steps.patch-coverage.outcome }}
         run: |
-          echo "Full Python suite failed; Codecov uploads were attempted before failing the job."
+          if [[ "$PYTHON_TEST_OUTCOME" == "failure" ]]; then
+            echo "Full Python suite failed; Codecov uploads were attempted before failing the job."
+          fi
+          if [[ "$PATCH_COVERAGE_OUTCOME" == "failure" ]]; then
+            echo "Python patch coverage gate failed; see the preceding gate output for details."
+          fi
           exit 1
 
   mcp-2026-compat:
