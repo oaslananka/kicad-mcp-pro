@@ -30,9 +30,9 @@ def test_lightning_cli_candidate_is_reviewed_bounded_and_nonblocking() -> None:
         "--opencode-bin",
         "opencode",
         "--timeout-seconds",
-        "90",
+        "120",
     )
-    assert configuration.limits.timeout_seconds == 95
+    assert configuration.limits.timeout_seconds == 125
     assert configuration.limits.max_retries == 2
     assert configuration.limits.max_total_cost_micros == 0
 
