@@ -14,6 +14,9 @@ on:
       - ".github/workflows/gui-ci.yml"
       - "pyproject.toml"
       - "uv.lock"
+      - "rust-toolchain.toml"
+      - "scripts/check_rustsec_audit.py"
+      - ".github/security/rustsec-baseline.json"
   pull_request:
     branches: [main]
     paths:
@@ -27,6 +30,9 @@ on:
       - ".github/workflows/gui-ci.yml"
       - "pyproject.toml"
       - "uv.lock"
+      - "rust-toolchain.toml"
+      - "scripts/check_rustsec_audit.py"
+      - ".github/security/rustsec-baseline.json"
   workflow_dispatch:
 
 permissions:
@@ -74,6 +80,32 @@ jobs:
         run: uv run playwright install --with-deps chromium
       - name: Run dashboard E2E tests
         run: E2E=1 uv run pytest tests/e2e/test_web_dashboard.py -v
+
+  rustsec-audit:
+    if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install pinned cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Verify reviewed RustSec dependency baseline
+        working-directory: src-tauri
+        shell: bash
+        run: |
+          set -euo pipefail
+          audit_status=0
+          cargo audit --json --no-yanked > ../rustsec-audit.json || audit_status=$?
+          if [ "$audit_status" -gt 1 ]; then
+            echo "cargo-audit failed before producing valid audit evidence (exit=$audit_status)" >&2
+            exit "$audit_status"
+          fi
+          audit_version="$(cargo audit --version | awk '{print $2}')"
+          python3 ../scripts/check_rustsec_audit.py \
+            --report ../rustsec-audit.json \
+            --baseline ../.github/security/rustsec-baseline.json \
+            --cargo-audit-version "$audit_version"
 
   tauri-check:
     if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'

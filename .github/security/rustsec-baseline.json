@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "cargo_audit_version": "0.22.2",
+  "advisories": [
+    {
+      "id": "RUSTSEC-2024-0370",
+      "package": "proc-macro-error",
+      "version": "1.0.4",
+      "category": "unmaintained",
+      "rationale": "Transitive build dependency through the GTK/glib macro stack; it is not a direct application dependency.",
+      "revisit": "Re-evaluate when the upstream GTK/Tauri dependency chain replaces proc-macro-error or removes the GTK3 macro stack.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2024-0370"
+    },
+    {
+      "id": "RUSTSEC-2024-0411",
+      "package": "gdkwayland-sys",
+      "version": "0.18.2",
+      "category": "unmaintained",
+      "rationale": "Transitive through the upstream-supported Tauri 2 Linux GTK3/WebKit/tray stack; the application does not depend on this crate directly.",
+      "revisit": "Re-evaluate when upstream Tauri/Wry removes the GTK3 0.18 dependency family or adopts a supported GTK4 path.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2024-0411"
+    },
+    {
+      "id": "RUSTSEC-2024-0412",
+      "package": "gdk",
+      "version": "0.18.2",
+      "category": "unmaintained",
+      "rationale": "Transitive through the upstream-supported Tauri 2 Linux GTK3/WebKit/tray stack; the application does not depend on this crate directly.",
+      "revisit": "Re-evaluate when upstream Tauri/Wry removes the GTK3 0.18 dependency family or adopts a supported GTK4 path.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2024-0412"
+    },
+    {
+      "id": "RUSTSEC-2024-0413",
+      "package": "atk",
+      "version": "0.18.2",
+      "category": "unmaintained",
+      "rationale": "Transitive through the upstream-supported Tauri 2 Linux GTK3/WebKit/tray stack; the application does not depend on this crate directly.",
+      "revisit": "Re-evaluate when upstream Tauri/Wry removes the GTK3 0.18 dependency family or adopts a supported GTK4 path.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2024-0413"
+    },
+    {
+      "id": "RUSTSEC-2024-0414",
+      "package": "gdkx11-sys",
+      "version": "0.18.2",
+      "category": "unmaintained",
+      "rationale": "Transitive through the upstream-supported Tauri 2 Linux GTK3/WebKit/tray stack; the application does not depend on this crate directly.",
+      "revisit": "Re-evaluate when upstream Tauri/Wry removes the GTK3 0.18 dependency family or adopts a supported GTK4 path.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2024-0414"
+    },
+    {
+      "id": "RUSTSEC-2024-0415",
+      "package": "gtk",
+      "version": "0.18.2",
+      "category": "unmaintained",
+      "rationale": "Transitive through the upstream-supported Tauri 2 Linux GTK3/WebKit/tray stack; the application does not depend on this crate directly.",
+      "revisit": "Re-evaluate when upstream Tauri/Wry removes the GTK3 0.18 dependency family or adopts a supported GTK4 path.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2024-0415"
+    },
+    {
+      "id": "RUSTSEC-2024-0416",
+      "package": "atk-sys",
+      "version": "0.18.2",
+      "category": "unmaintained",
+      "rationale": "Transitive through the upstream-supported Tauri 2 Linux GTK3/WebKit/tray stack; the application does not depend on this crate directly.",
+      "revisit": "Re-evaluate when upstream Tauri/Wry removes the GTK3 0.18 dependency family or adopts a supported GTK4 path.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2024-0416"
+    },
+    {
+      "id": "RUSTSEC-2024-0417",
+      "package": "gdkx11",
+      "version": "0.18.2",
+      "category": "unmaintained",
+      "rationale": "Transitive through the upstream-supported Tauri 2 Linux GTK3/WebKit/tray stack; the application does not depend on this crate directly.",
+      "revisit": "Re-evaluate when upstream Tauri/Wry removes the GTK3 0.18 dependency family or adopts a supported GTK4 path.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2024-0417"
+    },
+    {
+      "id": "RUSTSEC-2024-0418",
+      "package": "gdk-sys",
+      "version": "0.18.2",
+      "category": "unmaintained",
+      "rationale": "Transitive through the upstream-supported Tauri 2 Linux GTK3/WebKit/tray stack; the application does not depend on this crate directly.",
+      "revisit": "Re-evaluate when upstream Tauri/Wry removes the GTK3 0.18 dependency family or adopts a supported GTK4 path.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2024-0418"
+    },
+    {
+      "id": "RUSTSEC-2024-0419",
+      "package": "gtk3-macros",
+      "version": "0.18.2",
+      "category": "unmaintained",
+      "rationale": "Transitive through the upstream-supported Tauri 2 Linux GTK3/WebKit/tray stack; the application does not depend on this crate directly.",
+      "revisit": "Re-evaluate when upstream Tauri/Wry removes the GTK3 0.18 dependency family or adopts a supported GTK4 path.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2024-0419"
+    },
+    {
+      "id": "RUSTSEC-2024-0420",
+      "package": "gtk-sys",
+      "version": "0.18.2",
+      "category": "unmaintained",
+      "rationale": "Transitive through the upstream-supported Tauri 2 Linux GTK3/WebKit/tray stack; the application does not depend on this crate directly.",
+      "revisit": "Re-evaluate when upstream Tauri/Wry removes the GTK3 0.18 dependency family or adopts a supported GTK4 path.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2024-0420"
+    },
+    {
+      "id": "RUSTSEC-2024-0429",
+      "package": "glib",
+      "version": "0.18.5",
+      "category": "unsound",
+      "rationale": "Transitive through Tauri GTK3. The affected glib::VariantStrIter API is not referenced directly by src-tauri/src; RustSec patches this advisory in glib >=0.20, outside the current upstream GTK3 stack.",
+      "revisit": "Re-evaluate if VariantStrIter becomes reachable in application code or when upstream Tauri supports glib >=0.20 / GTK4.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2024-0429"
+    },
+    {
+      "id": "RUSTSEC-2025-0075",
+      "package": "unic-char-range",
+      "version": "0.9.0",
+      "category": "unmaintained",
+      "rationale": "Transitive through urlpattern -> tauri-utils; the application does not depend on rust-unic crates directly.",
+      "revisit": "Re-evaluate when upstream tauri-utils/urlpattern removes rust-unic or adopts a maintained Unicode dependency.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2025-0075"
+    },
+    {
+      "id": "RUSTSEC-2025-0080",
+      "package": "unic-common",
+      "version": "0.9.0",
+      "category": "unmaintained",
+      "rationale": "Transitive through urlpattern -> tauri-utils; the application does not depend on rust-unic crates directly.",
+      "revisit": "Re-evaluate when upstream tauri-utils/urlpattern removes rust-unic or adopts a maintained Unicode dependency.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2025-0080"
+    },
+    {
+      "id": "RUSTSEC-2025-0081",
+      "package": "unic-char-property",
+      "version": "0.9.0",
+      "category": "unmaintained",
+      "rationale": "Transitive through urlpattern -> tauri-utils; the application does not depend on rust-unic crates directly.",
+      "revisit": "Re-evaluate when upstream tauri-utils/urlpattern removes rust-unic or adopts a maintained Unicode dependency.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2025-0081"
+    },
+    {
+      "id": "RUSTSEC-2025-0098",
+      "package": "unic-ucd-version",
+      "version": "0.9.0",
+      "category": "unmaintained",
+      "rationale": "Transitive through urlpattern -> tauri-utils; the application does not depend on rust-unic crates directly.",
+      "revisit": "Re-evaluate when upstream tauri-utils/urlpattern removes rust-unic or adopts a maintained Unicode dependency.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2025-0098"
+    },
+    {
+      "id": "RUSTSEC-2025-0100",
+      "package": "unic-ucd-ident",
+      "version": "0.9.0",
+      "category": "unmaintained",
+      "rationale": "Transitive through urlpattern -> tauri-utils; the application does not depend on rust-unic crates directly.",
+      "revisit": "Re-evaluate when upstream tauri-utils/urlpattern removes rust-unic or adopts a maintained Unicode dependency.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2025-0100"
+    }
+  ]
+}
