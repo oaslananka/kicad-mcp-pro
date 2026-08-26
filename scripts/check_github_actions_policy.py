@@ -22,9 +22,11 @@ def _load_yaml(path: Path) -> dict[str, object]:
     return data
 
 
-def load_policy(path: Path = DEFAULT_POLICY, *, root: Path = REPO_ROOT) -> dict[str, object]:
+def load_policy(
+    path: Path = DEFAULT_POLICY, *, allowed_root: Path = REPO_ROOT
+) -> dict[str, object]:
     try:
-        resolved_root = root.expanduser().resolve(strict=True)
+        resolved_root = allowed_root.expanduser().resolve(strict=True)
         candidate = path.expanduser()
         resolved = (
             (resolved_root / candidate).resolve(strict=True)
@@ -34,11 +36,11 @@ def load_policy(path: Path = DEFAULT_POLICY, *, root: Path = REPO_ROOT) -> dict[
         resolved.relative_to(resolved_root)
     except (OSError, ValueError) as exc:
         raise ValueError(
-            "GitHub Actions policy must be an existing file inside the repository root"
+            "GitHub Actions policy must be an existing file inside the checker repository root"
         ) from exc
     if not resolved.is_file():
         raise ValueError(
-            "GitHub Actions policy must be an existing file inside the repository root"
+            "GitHub Actions policy must be an existing file inside the checker repository root"
         )
 
     data = json.loads(resolved.read_text(encoding="utf-8"))
@@ -225,7 +227,7 @@ def main() -> None:
     args = parser.parse_args()
 
     root = args.root.expanduser().resolve(strict=True)
-    policy = load_policy(args.policy, root=root)
+    policy = load_policy(args.policy)
     errors = validate_repository(root, policy)
     if errors:
         for error in errors:
