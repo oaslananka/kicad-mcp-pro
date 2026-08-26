@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 class RustSecAuditError(ValueError):
     """Raised when RustSec audit evidence is invalid or differs from baseline."""
@@ -32,9 +34,21 @@ def _object(value: object, description: str) -> dict[str, Any]:
     return cast(dict[str, Any], value)
 
 
-def _load_object(path: Path, description: str) -> dict[str, Any]:
+def _load_object(path: Path, description: str, allowed_root: Path) -> dict[str, Any]:
     try:
-        return _object(json.loads(path.read_text(encoding="utf-8")), description)
+        root = allowed_root.expanduser().resolve(strict=True)
+        resolved = path.expanduser().resolve(strict=True)
+        resolved.relative_to(root)
+    except (OSError, ValueError) as exc:
+        raise RustSecAuditError(
+            f"{description} must be an existing file inside the repository root"
+        ) from exc
+    if not resolved.is_file():
+        raise RustSecAuditError(
+            f"{description} must be an existing file inside the repository root"
+        )
+    try:
+        return _object(json.loads(resolved.read_text(encoding="utf-8")), description)
     except (OSError, json.JSONDecodeError) as exc:
         raise RustSecAuditError(f"{description} is unreadable or invalid JSON") from exc
 
@@ -110,11 +124,17 @@ def _baseline_findings(baseline: dict[str, Any], cargo_audit_version: str) -> se
     return findings
 
 
-def validate_report(*, report_path: Path, baseline_path: Path, cargo_audit_version: str) -> None:
+def validate_report(
+    *,
+    report_path: Path,
+    baseline_path: Path,
+    cargo_audit_version: str,
+    allowed_root: Path = ROOT,
+) -> None:
     """Fail unless cargo-audit findings match the exact reviewed baseline."""
-    actual = _report_findings(_load_object(report_path, "cargo-audit report"))
+    actual = _report_findings(_load_object(report_path, "cargo-audit report", allowed_root))
     expected = _baseline_findings(
-        _load_object(baseline_path, "RustSec baseline"), cargo_audit_version
+        _load_object(baseline_path, "RustSec baseline", allowed_root), cargo_audit_version
     )
     unexpected = sorted(actual - expected)
     stale = sorted(expected - actual)

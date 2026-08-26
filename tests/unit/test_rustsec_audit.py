@@ -61,6 +61,7 @@ def test_validator_accepts_exact_reviewed_rustsec_baseline(tmp_path: Path) -> No
         report_path=_report(tmp_path / "audit.json"),
         baseline_path=_baseline(tmp_path / "baseline.json"),
         cargo_audit_version="0.22.2",
+        allowed_root=tmp_path,
     )
 
 
@@ -87,11 +88,13 @@ def test_validator_fails_closed_on_unreviewed_finding_drift(
     report_path = tmp_path / "drift.json"
     report_path.write_text(json.dumps(report), encoding="utf-8")
 
+    baseline_path = _baseline(tmp_path / "baseline.json")
     with pytest.raises(RustSecAuditError, match=message):
         validate_report(
             report_path=report_path,
-            baseline_path=_baseline(tmp_path / "baseline.json"),
+            baseline_path=baseline_path,
             cargo_audit_version="0.22.2",
+            allowed_root=tmp_path,
         )
 
 
@@ -101,11 +104,13 @@ def test_validator_rejects_stale_baseline_entries(tmp_path: Path) -> None:
     report_path = tmp_path / "missing.json"
     report_path.write_text(json.dumps(report), encoding="utf-8")
 
+    baseline_path = _baseline(tmp_path / "baseline.json")
     with pytest.raises(RustSecAuditError, match="stale RustSec baseline entries"):
         validate_report(
             report_path=report_path,
-            baseline_path=_baseline(tmp_path / "baseline.json"),
+            baseline_path=baseline_path,
             cargo_audit_version="0.22.2",
+            allowed_root=tmp_path,
         )
 
 
@@ -115,18 +120,46 @@ def test_validator_requires_review_metadata_and_exact_tool_version(tmp_path: Pat
     baseline["advisories"][0]["revisit"] = ""
     baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
 
+    report_path = _report(tmp_path / "audit.json")
     with pytest.raises(RustSecAuditError, match="review metadata"):
         validate_report(
-            report_path=_report(tmp_path / "audit.json"),
+            report_path=report_path,
             baseline_path=baseline_path,
             cargo_audit_version="0.22.2",
+            allowed_root=tmp_path,
         )
 
+    second_baseline_path = _baseline(tmp_path / "baseline-2.json")
     with pytest.raises(RustSecAuditError, match="cargo-audit version"):
         validate_report(
-            report_path=_report(tmp_path / "audit.json"),
-            baseline_path=_baseline(tmp_path / "baseline-2.json"),
+            report_path=report_path,
+            baseline_path=second_baseline_path,
             cargo_audit_version="0.23.0",
+            allowed_root=tmp_path,
+        )
+
+
+@pytest.mark.parametrize("outside_input", ["report", "baseline"])
+def test_validator_rejects_paths_outside_allowed_root(
+    tmp_path: Path,
+    outside_input: str,
+) -> None:
+    allowed_root = tmp_path / "repo"
+    allowed_root.mkdir()
+    report_path = _report(allowed_root / "audit.json")
+    baseline_path = _baseline(allowed_root / "baseline.json")
+    outside_path = _report(tmp_path / "outside.json")
+    if outside_input == "report":
+        report_path = outside_path
+    else:
+        baseline_path = outside_path
+
+    with pytest.raises(RustSecAuditError, match="inside the repository root"):
+        validate_report(
+            report_path=report_path,
+            baseline_path=baseline_path,
+            cargo_audit_version="0.22.2",
+            allowed_root=allowed_root,
         )
 
 
