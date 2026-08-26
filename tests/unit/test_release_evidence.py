@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import importlib.util
 import json
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace, TracebackType
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -84,6 +87,31 @@ def test_verify_local_rejects_checksum_mismatch(tmp_path: Path) -> None:
         assert "sha256 mismatch" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("verify_local should reject mismatched checksums")
+
+
+def test_verify_local_rejects_checksum_path_traversal(tmp_path: Path) -> None:
+    module = _load_script()
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    outside = tmp_path / "outside.whl"
+    outside.write_bytes(b"outside artifact")
+    digest = hashlib.sha256(outside.read_bytes()).hexdigest()
+    checksums = tmp_path / "SHA256SUMS.txt"
+    checksums.write_text(f"{digest}  ../outside.whl\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="artifact filename"):
+        module.verify_local(checksums, artifacts)
+
+
+def test_verify_local_rejects_checksum_windows_path_escape(tmp_path: Path) -> None:
+    module = _load_script()
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    checksums = tmp_path / "SHA256SUMS.txt"
+    checksums.write_text(f"{'0' * 64}  ..\\outside.whl\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="artifact filename"):
+        module.verify_local(checksums, artifacts)
 
 
 def test_verify_pypi_accepts_matching_published_digests(tmp_path: Path, monkeypatch) -> None:
