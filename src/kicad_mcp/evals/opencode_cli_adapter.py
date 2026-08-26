@@ -14,6 +14,7 @@ from typing import Any
 
 from .nvidia_nim_adapter import (
     ToolCatalogEntry,
+    _ModelOutputValidationError,
     build_chat_payload,
     normalize_classifier_text,
 )
@@ -255,6 +256,13 @@ def request_opencode_cli(
             output_tokens=event.output_tokens,
             estimated_cost_micros=event.estimated_cost_micros,
         )
+    except _ModelOutputValidationError as exc:
+        return {
+            "schema_version": 1,
+            "status": "error",
+            "failure_kind": "model_output_invalid",
+            "failure_detail": exc.detail,
+        }
     except (TypeError, ValueError):
         return {"schema_version": 1, "status": "error", "failure_kind": "model_output_invalid"}
 
