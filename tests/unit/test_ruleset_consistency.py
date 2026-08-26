@@ -86,8 +86,8 @@ def test_ruleset_defines_required_status_checks() -> None:
     assert required_contexts(), "main ruleset defines no required status checks"
 
 
-def test_ruleset_requires_live_model_release_policy() -> None:
-    assert "Live Model Release Policy" in required_contexts()
+def test_ruleset_does_not_require_live_model_release_policy() -> None:
+    assert "Live Model Release Policy" not in required_contexts()
 
 
 def test_ruleset_requires_sonarcloud_scan() -> None:

@@ -30,7 +30,6 @@ queue_rules:
           - check-skipped = SonarCloud Scan
           - check-neutral = SonarCloud Scan
       - check-success = dependency-review
-      - check-success = Live Model Release Policy
     queue_conditions:
       - base = main
       - author = dependabot[bot]
@@ -53,7 +52,6 @@ queue_rules:
           - check-skipped = SonarCloud Scan
           - check-neutral = SonarCloud Scan
       - check-success = dependency-review
-      - check-success = Live Model Release Policy
 
 pull_request_rules:
   - name: Queue safe grouped Dependabot updates

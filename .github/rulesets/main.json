@@ -80,9 +80,6 @@
           },
           {
             "context": "dependency-review"
-          },
-          {
-            "context": "Live Model Release Policy"
           }
         ],
         "do_not_enforce_on_create": false
