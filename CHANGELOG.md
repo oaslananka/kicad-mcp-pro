@@ -10,6 +10,14 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.33.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.33.0...mcp-server-v3.33.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* **security:** confine release checksum artifacts ([#789](https://github.com/oaslananka/kicad-mcp-pro/issues/789)) ([81a2518](https://github.com/oaslananka/kicad-mcp-pro/commit/81a251872229e3a91593c4b92e22cd9e39d324fc))
+* **security:** constrain GitHub Actions policy path ([#792](https://github.com/oaslananka/kicad-mcp-pro/issues/792)) ([b7a6292](https://github.com/oaslananka/kicad-mcp-pro/commit/b7a629292ffc9c55719a7eeed1a042f02a905ee9))
+
 ## [3.33.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.32.0...mcp-server-v3.33.0) (2026-08-26)
 
 
