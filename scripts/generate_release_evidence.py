@@ -13,7 +13,7 @@ import tomllib
 import urllib.error
 import urllib.request
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, cast
 from urllib.parse import quote
 
@@ -114,6 +114,19 @@ def _write_checksum_file(artifacts: list[Path], output_dir: Path) -> Path:
     return checksum_path
 
 
+def _release_artifact_filename(raw_filename: str) -> str:
+    """Return one basename-only release artifact filename."""
+    filename = raw_filename.strip()
+    if (
+        not filename
+        or filename in {".", ".."}
+        or PurePosixPath(filename).name != filename
+        or PureWindowsPath(filename).name != filename
+    ):
+        raise ValueError(f"Unsafe release artifact filename in checksum manifest: {filename!r}")
+    return filename
+
+
 def _read_checksums(checksum_file: Path) -> dict[str, str]:
     """Read a SHA256SUMS file into a filename-to-digest mapping."""
     checksums: dict[str, str] = {}
@@ -121,7 +134,7 @@ def _read_checksums(checksum_file: Path) -> dict[str, str]:
         if not line.strip():
             continue
         digest, filename = line.split(maxsplit=1)
-        checksums[filename.strip()] = digest.strip()
+        checksums[_release_artifact_filename(filename)] = digest.strip()
     return checksums
 
 
