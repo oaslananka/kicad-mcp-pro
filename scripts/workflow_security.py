@@ -9,6 +9,24 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+ZIZMOR_MIN_SEVERITIES = ("unknown", "informational", "low", "medium", "high")
+
+
+def _canonical_min_severity(value: str) -> str:
+    """Return a fixed zizmor severity token for an allowlisted CLI value."""
+    match value:
+        case "unknown":
+            return "unknown"
+        case "informational":
+            return "informational"
+        case "low":
+            return "low"
+        case "medium":
+            return "medium"
+        case "high":
+            return "high"
+        case _:
+            raise ValueError(f"Unsupported zizmor minimum severity: {value!r}")
 
 
 def main() -> None:
@@ -16,9 +34,10 @@ def main() -> None:
     parser.add_argument(
         "--min-severity",
         default="high",
-        choices=["unknown", "informational", "low", "medium", "high"],
+        choices=ZIZMOR_MIN_SEVERITIES,
     )
     args = parser.parse_args()
+    min_severity = _canonical_min_severity(args.min_severity)
 
     binary = shutil.which("zizmor")
     if binary is None:
@@ -33,7 +52,7 @@ def main() -> None:
         binary,
         "--offline",
         "--min-severity",
-        args.min_severity,
+        min_severity,
         str(REPO_ROOT / ".github" / "workflows"),
     ]
     raise SystemExit(subprocess.run(command, check=False).returncode)
