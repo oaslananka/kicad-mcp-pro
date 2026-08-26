@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 import scripts.check_github_actions_policy as actions_policy
 from scripts.check_github_actions_policy import load_policy, validate_repository
@@ -136,3 +139,86 @@ jobs:
     errors = validate_repository(tmp_path, _baseline_policy())
 
     assert any("write-permission matrix differs" in error for error in errors)
+
+
+def test_load_policy_rejects_file_outside_repository(tmp_path: Path) -> None:
+    external_policy = tmp_path / "actions-policy.json"
+    external_policy.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="inside the checker repository root"):
+        load_policy(external_policy)
+
+
+def test_main_keeps_canonical_default_policy_for_explicit_repository_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    captured: dict[str, object] = {}
+
+    def validate(root: Path, policy: dict[str, object]) -> list[str]:
+        captured["root"] = root
+        captured["policy"] = policy
+        return []
+
+    monkeypatch.setattr(actions_policy, "validate_repository", validate)
+    monkeypatch.setattr("sys.argv", ["check_github_actions_policy.py", "--root", str(tmp_path)])
+
+    actions_policy.main()
+
+    expected_policy = json.loads(actions_policy.DEFAULT_POLICY.read_text(encoding="utf-8"))
+    assert captured == {"root": tmp_path.resolve(), "policy": expected_policy}
+    assert "GitHub Actions policy passed for 0 workflows." in capsys.readouterr().out
+
+
+def test_main_rejects_custom_policy_from_external_repository_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    policy_path = tmp_path / "actions-policy.json"
+    policy_path.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "check_github_actions_policy.py",
+            "--root",
+            str(tmp_path),
+            "--policy",
+            str(policy_path),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="inside the checker repository root"):
+        actions_policy.main()
+
+
+def test_load_policy_rejects_symlink_escape_from_repository_root(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    external_policy = tmp_path / "external-policy.json"
+    external_policy.write_text("{}\n", encoding="utf-8")
+    policy_link = repository / "policy.json"
+    policy_link.symlink_to(external_policy)
+
+    with pytest.raises(ValueError, match="inside the checker repository root"):
+        load_policy(policy_link, allowed_root=repository)
+
+
+def test_load_policy_rejects_relative_parent_traversal(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    external_policy = tmp_path / "external-policy.json"
+    external_policy.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="inside the checker repository root"):
+        load_policy(Path("../external-policy.json"), allowed_root=repository)
+
+
+def test_load_policy_accepts_relative_policy_inside_injected_allowed_root(tmp_path: Path) -> None:
+    github_dir = tmp_path / ".github"
+    github_dir.mkdir()
+    (github_dir / "actions-policy.json").write_text(
+        json.dumps(_baseline_policy()) + "\n", encoding="utf-8"
+    )
+
+    assert (
+        load_policy(Path(".github/actions-policy.json"), allowed_root=tmp_path)
+        == _baseline_policy()
+    )
