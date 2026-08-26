@@ -256,3 +256,23 @@ def test_cli_script_fails_closed_without_key(
         "schema_version": 1,
         "status": "error",
     }
+
+
+def test_request_preserves_sanitized_classifier_failure_detail() -> None:
+    def invalid(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout=_events(text="not-json"), stderr="")
+
+    result = request_opencode_cli(
+        model="nemotron-3.5-lightning-free",
+        prompt="Publish the approved release tag.",
+        api_key="test-key",
+        catalog=(),
+        run_process=invalid,
+    )
+
+    assert result == {
+        "schema_version": 1,
+        "status": "error",
+        "failure_kind": "model_output_invalid",
+        "failure_detail": "json_parse",
+    }
