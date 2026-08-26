@@ -27,6 +27,7 @@ jobs:
        (github.event.pull_request.head.repo.full_name == github.repository &&
         github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -44,6 +45,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --frozen
 
+      # Keep an independent full-suite coverage run: cross-workflow artifact reuse must
+      # preserve exact-SHA integrity and the existing PR/fork trust boundary.
       - name: Run tests with coverage
         run: uv run --all-extras --frozen python scripts/run_pytest.py full
 
