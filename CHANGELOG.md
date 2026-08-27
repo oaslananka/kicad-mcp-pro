@@ -10,6 +10,14 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.33.3](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.33.2...mcp-server-v3.33.3) (2026-08-27)
+
+
+### Bug Fixes
+
+* **ci:** fail fast on release metadata drift ([#801](https://github.com/oaslananka/kicad-mcp-pro/issues/801)) ([75eca55](https://github.com/oaslananka/kicad-mcp-pro/commit/75eca55cc4e0d601a816464f6cb3c9dccb710360))
+* **ci:** stop live model assurance on pull requests ([#803](https://github.com/oaslananka/kicad-mcp-pro/issues/803)) ([01b591e](https://github.com/oaslananka/kicad-mcp-pro/commit/01b591e477fc54a23e086c49ca62740659bd9951))
+
 ## [3.33.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.33.1...mcp-server-v3.33.2) (2026-08-27)
 
 
