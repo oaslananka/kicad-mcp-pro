@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.33.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.33.1...mcp-server-v3.33.2) (2026-08-27)
+
+
+### Documentation
+
+* **security:** reconcile OpenSSF Silver status ([#799](https://github.com/oaslananka/kicad-mcp-pro/issues/799)) ([f5156a8](https://github.com/oaslananka/kicad-mcp-pro/commit/f5156a81cda94c7adbb9b4ec0779b4efcfa6e6b8))
+
 ## [3.33.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.33.0...mcp-server-v3.33.1) (2026-08-26)
 
 
