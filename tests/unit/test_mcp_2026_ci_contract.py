@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 CI = ROOT / ".github" / "workflows" / "ci.yml"
 
@@ -21,12 +23,11 @@ def test_candidate_protocol_contract_runs_in_an_independent_required_ci_job() ->
     assert "uv run pytest tests/integration/test_mcp_2026_host_smoke.py -q" in " ".join(
         workflow.split()
     )
-    assert (
-        "needs: [changes, mcp-server, coverage, mcp-npm, chatgpt-app, protocol-schemas, "
-        "mcp-2026-compat, workflow-policy, security]"
-    ) in workflow
+    jobs = yaml.safe_load(workflow)["jobs"]
+    required_needs = set(jobs["required-pr-gate"]["needs"])
+    assert {"release-metadata", "mcp-2026-compat"} <= required_needs
     assert '[mcp-2026-compat]="${{ needs.mcp-2026-compat.result }}"' in workflow
     assert (
-        "for job in changes mcp-server coverage mcp-npm chatgpt-app protocol-schemas "
-        "mcp-2026-compat workflow-policy security"
+        "for job in changes release-metadata mcp-server coverage mcp-npm chatgpt-app "
+        "protocol-schemas mcp-2026-compat workflow-policy security"
     ) in " ".join(workflow.split())
