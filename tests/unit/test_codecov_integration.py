@@ -59,7 +59,9 @@ def test_ci_uploads_coverage_and_failed_test_results_with_oidc() -> None:
     assert "steps.python-tests.outcome == 'failure'" in workflow
     assert "needs.changes.outputs.python != 'true'" in workflow
     assert "needs.changes.outputs.workflows != 'true'" in workflow
-    assert "needs: [changes, mcp-server, coverage, mcp-npm" in workflow
+    jobs = yaml.safe_load(workflow)["jobs"]
+    required_needs = set(jobs["required-pr-gate"]["needs"])
+    assert {"changes", "release-metadata", "mcp-server", "coverage", "mcp-npm"} <= required_needs
 
 
 def test_codecov_yaml_keeps_project_observability_and_enforces_patch_target() -> None:

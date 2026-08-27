@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts.check_rustsec_audit import RustSecAuditError, validate_report
 
@@ -181,11 +182,9 @@ def test_required_security_gate_enforces_pinned_rustsec_audit() -> None:
     assert "cargo audit --json --no-yanked" in workflow
     assert "scripts/check_rustsec_audit.py" in workflow
     assert ".github/security/rustsec-baseline.json" in workflow
-    required_gate_needs = (
-        "needs: [changes, mcp-server, coverage, mcp-npm, chatgpt-app, "
-        "protocol-schemas, mcp-2026-compat, workflow-policy, security]"
-    )
-    assert required_gate_needs in workflow
+    jobs = yaml.safe_load(workflow)["jobs"]
+    required_needs = set(jobs["required-pr-gate"]["needs"])
+    assert {"release-metadata", "security"} <= required_needs
 
 
 def test_repository_baseline_tracks_exact_scorecard_rustsec_inventory() -> None:

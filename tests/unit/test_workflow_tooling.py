@@ -64,8 +64,8 @@ def test_workflow_policy_runs_actionlint_and_zizmor_in_required_gate() -> None:
     assert "scripts/check_workflows.py --actionlint" in workflow
     assert "scripts/workflow_security.py --min-severity high" in workflow
     assert (
-        "needs: [changes, mcp-server, coverage, mcp-npm, chatgpt-app, protocol-schemas, "
-        "mcp-2026-compat, workflow-policy, security]" in workflow
+        "needs: [changes, release-metadata, mcp-server, coverage, mcp-npm, chatgpt-app, "
+        "protocol-schemas, mcp-2026-compat, workflow-policy, security]" in workflow
     )
 
 
@@ -168,3 +168,37 @@ def test_docs_only_skip_steps_use_bash_on_cross_platform_matrix_jobs() -> None:
             step for step in steps if step.get("name") == "Skip heavy CI for docs-only PR"
         )
         assert skip_step["shell"] == "bash"
+
+
+def test_ci_fails_fast_on_public_metadata_drift_before_heavy_jobs() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    jobs = workflow["jobs"]
+
+    metadata_gate = jobs["release-metadata"]
+    metadata_commands = "\n".join(
+        str(step.get("run", "")) for step in metadata_gate["steps"] if isinstance(step, dict)
+    )
+    assert "scripts/sync_mcp_metadata.py --check" in metadata_commands
+
+    gated_jobs = {
+        "mcp-server",
+        "coverage",
+        "mcp-2026-compat",
+        "mcp-npm",
+        "chatgpt-app",
+        "protocol-schemas",
+        "workflow-policy",
+        "security",
+    }
+    for job_name in gated_jobs:
+        job = jobs[job_name]
+        needs = job["needs"] if isinstance(job["needs"], list) else [job["needs"]]
+        assert "release-metadata" in needs
+        assert "needs.release-metadata.result == 'success'" in job["if"]
+
+    required_gate_needs = jobs["required-pr-gate"]["needs"]
+    assert "release-metadata" in required_gate_needs
+    required_gate_script = jobs["required-pr-gate"]["steps"][0]["run"]
+    assert '[release-metadata]="${{ needs.release-metadata.result }}"' in required_gate_script
