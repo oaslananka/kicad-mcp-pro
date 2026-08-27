@@ -321,6 +321,12 @@ class KiCadMCPConfig(BaseSettings):
             raise ValueError("public_base_url must be a fully qualified HTTP(S) origin")
         if parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError("public_base_url cannot contain credentials, query, or fragment")
+        try:
+            parsed_port = parsed.port
+        except ValueError as exc:
+            raise ValueError("public_base_url must contain a valid port") from exc
+        if parsed.netloc.endswith(":") and parsed_port is None:
+            raise ValueError("public_base_url must contain a valid port")
         if parsed.path not in {"", "/"}:
             raise ValueError(
                 "public_base_url must not contain a path; mount_path is appended separately"
@@ -423,7 +429,6 @@ class KiCadMCPConfig(BaseSettings):
                 )
 
         exposed_host = self.host.strip().casefold() not in LOOPBACK_HOSTS
-        proxy_boundary = self.http_boundary in {"loopback-proxy", "tls-proxy"}
         if (exposed_host or self.http_boundary == "tls-proxy") and not self.auth_token:
             raise ValueError("protected HTTP transport requires auth_token")
         if (exposed_host or self.http_boundary == "tls-proxy") and self.auth_token:
@@ -453,8 +458,6 @@ class KiCadMCPConfig(BaseSettings):
                 raise ValueError("tls-proxy public_base_url must use HTTPS")
             return
 
-        if proxy_boundary:
-            raise ValueError(f"unsupported http_boundary: {self.http_boundary}")
         if self.public_base_url is not None and not self.direct_tls_enabled:
             raise ValueError(
                 "public_base_url requires an explicit http_boundary when TLS is not direct"

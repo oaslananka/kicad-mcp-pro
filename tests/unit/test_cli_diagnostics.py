@@ -251,6 +251,36 @@ def test_cli_dashboard_rejects_non_loopback_host(sample_project: Path, monkeypat
     assert "loopback" in result.output.casefold()
 
 
+def test_cli_dashboard_normalizes_loopback_host_for_urls_and_runtime(
+    sample_project: Path, monkeypatch
+) -> None:
+    _ = sample_project
+    calls: list[dict[str, object]] = []
+    opened: list[str] = []
+    monkeypatch.setenv("KICAD_MCP_TRANSPORT", "stdio")
+    monkeypatch.setenv("KICAD_MCP_HOST", "127.0.0.1")
+    monkeypatch.setenv("KICAD_MCP_PORT", "3334")
+    monkeypatch.setattr(
+        "kicad_mcp.server._run_server_from_options", lambda **kwargs: calls.append(kwargs)
+    )
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+
+    result = CliRunner().invoke(
+        app, ["dashboard", "--host", " localhost ", "--port", "4444", "--open"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert opened == ["http://localhost:4444/ui"]
+    assert calls == [
+        {
+            "transport": "streamable-http",
+            "host": "localhost",
+            "port": 4444,
+            "operating_mode": None,
+        }
+    ]
+
+
 def test_cli_dashboard_accepts_mode_option() -> None:
     """The dashboard subcommand declares --mode, matching serve's operating-mode option.
 

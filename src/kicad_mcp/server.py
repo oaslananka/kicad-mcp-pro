@@ -19,7 +19,7 @@ from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TextIO, cast
-from urllib.parse import urlunsplit
+from urllib.parse import urlparse, urlunsplit
 
 import anyio
 import structlog
@@ -881,7 +881,7 @@ class KiCadFastMCP(FastMCP):
 
     async def run_streamable_http_async(
         self,
-    ) -> None:  # pragma: no cover - exercised via unit doubles
+    ) -> None:
         """Run Streamable HTTP with optional direct TLS termination."""
         import uvicorn
 
@@ -896,7 +896,7 @@ class KiCadFastMCP(FastMCP):
         )
         await uvicorn.Server(uvicorn_config).serve()
 
-    async def run_sse_async(self, mount_path: str | None = None) -> None:  # pragma: no cover
+    async def run_sse_async(self, mount_path: str | None = None) -> None:
         """Run legacy SSE with the same TLS policy as Streamable HTTP."""
         import uvicorn
 
@@ -1731,20 +1731,39 @@ def _server_base_url(cfg: KiCadMCPConfig) -> str:
     return cfg.advertised_http_base_url
 
 
-def _is_origin_allowed(origin: str, cfg: KiCadMCPConfig) -> bool:
-    from urllib.parse import urlparse
+def _http_origin(value: str) -> tuple[str, str, int] | None:
+    parsed = urlparse(value)
+    scheme = parsed.scheme.casefold()
+    if scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    if parsed.netloc.endswith(":") and port is None:
+        return None
+    effective_port = port or (80 if scheme == "http" else 443)
+    return scheme, parsed.hostname.casefold(), effective_port
 
+
+def _is_origin_allowed(origin: str, cfg: KiCadMCPConfig) -> bool:
     if origin in cfg.cors_origin_list:
         return True
-    parsed_origin = urlparse(origin)
-    origin_host = parsed_origin.hostname or ""
-    origin_port = parsed_origin.port or (
-        80 if parsed_origin.scheme == "http" else 443 if parsed_origin.scheme == "https" else None
-    )
-    server_hosts = {cfg.host}
-    if cfg.host.strip().casefold() in LOOPBACK_HOSTS:
+
+    origin_parts = _http_origin(origin)
+    server_parts = _http_origin(cfg.advertised_http_base_url)
+    if origin_parts is None or server_parts is None:
+        return False
+
+    origin_scheme, origin_host, origin_port = origin_parts
+    server_scheme, server_host, server_port = server_parts
+    if origin_scheme != server_scheme or origin_port != server_port:
+        return False
+
+    server_hosts = {server_host}
+    if server_host in LOOPBACK_HOSTS:
         server_hosts.update(LOOPBACK_HOSTS)
-    return origin_host in server_hosts and origin_port == cfg.port
+    return origin_host in server_hosts
 
 
 def _bearer_token(request: Request) -> str:
@@ -2947,6 +2966,7 @@ def dashboard(
             "dashboard --host must be a loopback host; use the server HTTP mode behind TLS "
             "or a protected public endpoint for remote access"
         )
+    host = host.strip()
 
     # Override settings for dashboard mode
     os.environ["KICAD_MCP_TRANSPORT"] = "streamable-http"

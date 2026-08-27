@@ -13,9 +13,14 @@ from mcp.types import CallToolResult
 from starlette.testclient import TestClient
 
 from kicad_mcp.compatibility import MCP_PROTOCOL_VERSION
-from kicad_mcp.config import get_config, reset_config
+from kicad_mcp.config import KiCadMCPConfig, get_config, reset_config
 from kicad_mcp.discovery import CliCapabilities
-from kicad_mcp.server import CLI_FAILURE_TOOL_NAMES, HEAVY_TOOL_NAMES, build_server
+from kicad_mcp.server import (
+    CLI_FAILURE_TOOL_NAMES,
+    HEAVY_TOOL_NAMES,
+    _is_origin_allowed,
+    build_server,
+)
 from scripts.check_github_actions_policy import has_sha_pinned_action
 from tests.conftest import call_tool_text
 
@@ -1233,6 +1238,42 @@ def test_dashboard_auth_middleware(sample_project: Path) -> None:
     # 4. Health endpoint: should be open without auth (200)
     response = client.get("/api/health")
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("host", "http_boundary", "public_base_url"),
+    [
+        (EXPOSED_HOST, "loopback-proxy", "http://127.0.0.1:3334"),
+        ("127.0.0.1", "tls-proxy", "https://mcp.example.test"),
+    ],
+)
+def test_proxy_public_origin_is_allowed(
+    sample_project: Path,
+    host: str,
+    http_boundary: str,
+    public_base_url: str,
+) -> None:
+    _ = sample_project
+    cfg = KiCadMCPConfig(
+        transport="streamable-http",
+        host=host,
+        auth_token=STRONG_TOKEN,
+        http_boundary=http_boundary,
+        public_base_url=public_base_url,
+    )
+
+    assert _is_origin_allowed(public_base_url, cfg)
+    assert not _is_origin_allowed("https://malicious.example", cfg)
+
+
+def test_origin_check_rejects_malformed_port_and_scheme_mismatch(sample_project: Path) -> None:
+    _ = sample_project
+    cfg = KiCadMCPConfig(transport="streamable-http", host="127.0.0.1")
+
+    assert not _is_origin_allowed("http://127.0.0.1:99999", cfg)
+    assert not _is_origin_allowed("http://127.0.0.1:", cfg)
+    assert not _is_origin_allowed("file://127.0.0.1", cfg)
+    assert not _is_origin_allowed(f"https://127.0.0.1:{cfg.port}", cfg)
 
 
 def test_dashboard_origin_checks(sample_project: Path) -> None:
