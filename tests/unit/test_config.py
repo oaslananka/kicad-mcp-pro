@@ -115,13 +115,296 @@ def test_http_transport_allows_loopback_without_token(sample_project: Path, host
     assert cfg.auth_token is None
 
 
-def test_http_transport_allows_exposed_host_with_strong_token(sample_project: Path) -> None:
+def test_http_transport_rejects_plaintext_exposed_host_even_with_strong_token(
+    sample_project: Path,
+) -> None:
     _ = sample_project
     credential = "x" * 32
 
-    cfg = KiCadMCPConfig(transport="streamable-http", host=EXPOSED_IPV4, auth_token=credential)
+    with pytest.raises(ValueError, match="TLS or a protected public endpoint"):
+        KiCadMCPConfig(
+            transport="streamable-http",
+            host=EXPOSED_IPV4,
+            auth_token=credential,
+        )
+
+
+def test_http_transport_allows_exposed_bind_behind_loopback_boundary(
+    sample_project: Path,
+) -> None:
+    _ = sample_project
+    credential = "x" * 32
+
+    cfg = KiCadMCPConfig(
+        transport="streamable-http",
+        host=EXPOSED_IPV4,
+        auth_token=credential,
+        http_boundary="loopback-proxy",
+        public_base_url="http://127.0.0.1:3334",
+    )
 
     assert cfg.auth_token == credential
+    assert cfg.public_base_url == "http://127.0.0.1:3334"
+
+
+def test_http_transport_allows_exposed_bind_behind_https_boundary(
+    sample_project: Path,
+) -> None:
+    _ = sample_project
+
+    cfg = KiCadMCPConfig(
+        transport="streamable-http",
+        host=EXPOSED_IPV4,
+        auth_token="x" * 32,
+        http_boundary="tls-proxy",
+        public_base_url="https://mcp.example.test/",
+    )
+
+    assert cfg.public_base_url == "https://mcp.example.test"
+
+
+def test_http_transport_rejects_public_url_without_explicit_proxy_boundary(
+    sample_project: Path,
+) -> None:
+    _ = sample_project
+
+    with pytest.raises(ValueError, match="explicit http_boundary"):
+        KiCadMCPConfig(
+            transport="streamable-http",
+            host=EXPOSED_IPV4,
+            auth_token="x" * 32,
+            public_base_url="http://127.0.0.1:3334",
+        )
+
+
+def test_loopback_proxy_boundary_requires_bind_all_host(sample_project: Path) -> None:
+    _ = sample_project
+
+    with pytest.raises(ValueError, match="loopback-proxy requires a bind-all host"):
+        KiCadMCPConfig(
+            transport="streamable-http",
+            host=LAN_IPV4,
+            auth_token="x" * 32,
+            http_boundary="loopback-proxy",
+            public_base_url="http://127.0.0.1:3334",
+        )
+
+
+@pytest.mark.parametrize(
+    "public_base_url",
+    ["https://mcp.example.test:99999", "https://mcp.example.test:"],
+)
+def test_public_base_url_rejects_invalid_ports(
+    sample_project: Path,
+    public_base_url: str,
+) -> None:
+    _ = sample_project
+
+    with pytest.raises(ValueError, match="valid port"):
+        KiCadMCPConfig(
+            transport="streamable-http",
+            host="127.0.0.1",
+            auth_token="x" * 32,
+            http_boundary="tls-proxy",
+            public_base_url=public_base_url,
+        )
+
+
+@pytest.mark.parametrize(
+    ("public_base_url", "message"),
+    [
+        ("not-a-url", "fully qualified"),
+        ("https://user@example.test", "credentials"),
+        ("https://example.test/mcp", "must not contain a path"),
+    ],
+)
+def test_public_base_url_rejects_non_origin_values(
+    sample_project: Path,
+    public_base_url: str,
+    message: str,
+) -> None:
+    _ = sample_project
+
+    with pytest.raises(ValueError, match=message):
+        KiCadMCPConfig(public_base_url=public_base_url)
+
+
+def test_direct_tls_requires_existing_certificate_and_key_files(
+    sample_project: Path, tmp_path: Path
+) -> None:
+    _ = sample_project
+    cert = tmp_path / "server.crt"
+    key = tmp_path / "server.key"
+    key.write_text("private-key", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="tls_cert_file does not exist"):
+        KiCadMCPConfig(
+            transport="streamable-http",
+            host=LAN_IPV4,
+            auth_token="x" * 32,
+            tls_cert_file=cert,
+            tls_key_file=key,
+        )
+
+    cert.write_text("certificate", encoding="utf-8")
+    key.unlink()
+    with pytest.raises(ValueError, match="tls_key_file does not exist"):
+        KiCadMCPConfig(
+            transport="streamable-http",
+            host=LAN_IPV4,
+            auth_token="x" * 32,
+            tls_cert_file=cert,
+            tls_key_file=key,
+        )
+
+
+@pytest.mark.parametrize(
+    ("http_boundary", "public_base_url", "message"),
+    [
+        ("loopback-proxy", None, "loopback-proxy requires public_base_url"),
+        (
+            "loopback-proxy",
+            "https://mcp.example.test",
+            "loopback-proxy public_base_url must be loopback HTTP",
+        ),
+        ("tls-proxy", None, "tls-proxy requires public_base_url"),
+        (
+            "tls-proxy",
+            "http://127.0.0.1:3334",
+            "tls-proxy public_base_url must use HTTPS",
+        ),
+    ],
+)
+def test_proxy_boundaries_require_matching_public_base_url(
+    sample_project: Path,
+    http_boundary: str,
+    public_base_url: str | None,
+    message: str,
+) -> None:
+    _ = sample_project
+
+    with pytest.raises(ValueError, match=message):
+        KiCadMCPConfig(
+            transport="streamable-http",
+            host=EXPOSED_IPV4,
+            auth_token="x" * 32,
+            http_boundary=http_boundary,
+            public_base_url=public_base_url,
+        )
+
+
+@pytest.mark.parametrize("http_boundary", ["loopback-proxy", "tls-proxy"])
+def test_proxy_boundaries_reject_direct_tls(
+    sample_project: Path, tmp_path: Path, http_boundary: str
+) -> None:
+    _ = sample_project
+    cert = tmp_path / "server.crt"
+    key = tmp_path / "server.key"
+    cert.write_text("certificate", encoding="utf-8")
+    key.write_text("private-key", encoding="utf-8")
+    public_base_url = (
+        "http://127.0.0.1:3334" if http_boundary == "loopback-proxy" else "https://mcp.example.test"
+    )
+
+    with pytest.raises(ValueError, match=f"{http_boundary} cannot also enable direct TLS"):
+        KiCadMCPConfig(
+            transport="streamable-http",
+            host=EXPOSED_IPV4,
+            auth_token="x" * 32,
+            http_boundary=http_boundary,
+            public_base_url=public_base_url,
+            tls_cert_file=cert,
+            tls_key_file=key,
+        )
+
+
+def test_bind_all_direct_tls_requires_advertised_public_base_url(
+    sample_project: Path, tmp_path: Path
+) -> None:
+    _ = sample_project
+    cert = tmp_path / "server.crt"
+    key = tmp_path / "server.key"
+    cert.write_text("certificate", encoding="utf-8")
+    key.write_text("private-key", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="bind-all direct TLS requires public_base_url"):
+        KiCadMCPConfig(
+            transport="streamable-http",
+            host=EXPOSED_IPV4,
+            auth_token="x" * 32,
+            tls_cert_file=cert,
+            tls_key_file=key,
+        )
+
+
+def test_http_transport_rejects_remote_plaintext_public_base_url(sample_project: Path) -> None:
+    _ = sample_project
+
+    with pytest.raises(ValueError, match="public_base_url must use HTTPS or loopback HTTP"):
+        KiCadMCPConfig(
+            transport="streamable-http",
+            host=EXPOSED_IPV4,
+            auth_token="x" * 32,
+            public_base_url="http://192.168.1.42:3334",
+        )
+
+
+def test_http_transport_accepts_direct_tls_certificate_pair(
+    sample_project: Path, tmp_path: Path
+) -> None:
+    _ = sample_project
+    cert = tmp_path / "server.crt"
+    key = tmp_path / "server.key"
+    cert.write_text("certificate", encoding="utf-8")
+    key.write_text("private-key", encoding="utf-8")
+
+    cfg = KiCadMCPConfig(
+        transport="streamable-http",
+        host=LAN_IPV4,
+        auth_token="x" * 32,
+        tls_cert_file=cert,
+        tls_key_file=key,
+    )
+
+    assert cfg.tls_cert_file == cert
+    assert cfg.tls_key_file == key
+    assert cfg.advertised_http_base_url == f"https://{LAN_IPV4}:3334"
+
+
+def test_direct_tls_rejects_plaintext_public_base_url(sample_project: Path, tmp_path: Path) -> None:
+    _ = sample_project
+    cert = tmp_path / "server.crt"
+    key = tmp_path / "server.key"
+    cert.write_text("certificate", encoding="utf-8")
+    key.write_text("private-key", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="direct TLS public_base_url must use HTTPS"):
+        KiCadMCPConfig(
+            transport="streamable-http",
+            host=LAN_IPV4,
+            auth_token="x" * 32,
+            tls_cert_file=cert,
+            tls_key_file=key,
+            public_base_url="http://127.0.0.1:3334",
+        )
+
+
+def test_http_transport_rejects_incomplete_tls_certificate_pair(
+    sample_project: Path, tmp_path: Path
+) -> None:
+    _ = sample_project
+    cert = tmp_path / "server.crt"
+    cert.write_text("certificate", encoding="utf-8")
+
+    with pytest.raises(
+        ValueError, match="tls_cert_file and tls_key_file must be configured together"
+    ):
+        KiCadMCPConfig(
+            transport="streamable-http",
+            host=LAN_IPV4,
+            auth_token="x" * 32,
+            tls_cert_file=cert,
+        )
 
 
 def test_watch_dir_does_not_override_explicit_project(tmp_path: Path, monkeypatch) -> None:

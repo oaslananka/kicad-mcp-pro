@@ -310,10 +310,11 @@ The default endpoint is:
 http://127.0.0.1:3334/mcp
 ```
 
-The loopback examples above do not need `KICAD_MCP_AUTH_TOKEN`. Set
-`KICAD_MCP_AUTH_TOKEN` only when HTTP binds outside loopback or crosses a tunnel or remote
-network boundary. Clients must then send the same value as a bearer token. Store the token
-in local environment or secret storage and never in a checked-in config example.
+The loopback examples above do not need `KICAD_MCP_AUTH_TOKEN`. Non-loopback HTTP requires
+a strong bearer token plus an explicit `KICAD_MCP_HTTP_BOUNDARY`: direct TLS certificate/key
+termination, `loopback-proxy` for a bind-all container published only to host loopback, or
+`tls-proxy` with an HTTPS `KICAD_MCP_PUBLIC_BASE_URL`. Clients must send the same bearer token.
+Store tokens and TLS key material in local environment/secret storage, never checked-in examples.
 
 VS Code HTTP example:
 

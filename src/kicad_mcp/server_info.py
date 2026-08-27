@@ -20,7 +20,6 @@ from .ipc.client import KiCadIpcClient
 from .operating_modes import operating_mode_contract
 
 SERVER_INFO_SCHEMA_VERSION = "1.3.0"
-_BIND_ALL_HOSTS = {"0.0.0.0", "::"}  # noqa: S104 - bind-all sentinel, not a socket bind.
 _SEMVER_NUMBER_RE = re.compile(r"\d+")
 TransportType = Literal["stdio", "streamable-http", "sse"]
 
@@ -145,8 +144,7 @@ def _endpoint(transport_type: TransportType | None = None) -> str | None:
     selected_transport = transport_type or _transport_type()
     if selected_transport == "stdio":
         return None
-    host = _format_host_for_url(_advertised_host(cfg.host))
-    return f"http://{host}:{cfg.port}{cfg.mount_path}"
+    return f"{cfg.advertised_http_base_url}{cfg.mount_path}"
 
 
 def _diagnostics(*, cli_found: bool, live_diagnostics: tuple[str, ...]) -> list[str]:
@@ -183,21 +181,6 @@ def _cached_cli_discovery(cli_path: Path) -> _CliDiscovery:
     discovered = _CliDiscovery(found=True, version=capabilities.version, capabilities=capabilities)
     _CLI_DISCOVERY_CACHE[key] = discovered
     return discovered
-
-
-def _advertised_host(host: str) -> str:
-    normalized = host.strip()
-    if normalized in _BIND_ALL_HOSTS:
-        return "127.0.0.1"
-    return normalized
-
-
-def _format_host_for_url(host: str) -> str:
-    if host.startswith("[") and host.endswith("]"):
-        return host
-    if ":" in host:
-        return f"[{host}]"
-    return host
 
 
 def _compatibility_range() -> dict[str, dict[str, str]]:

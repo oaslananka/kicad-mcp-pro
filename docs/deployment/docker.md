@@ -13,6 +13,8 @@ container so Docker port publishing can reach the server.
 docker run --rm \
   -p 127.0.0.1:3334:3334 \
   -e KICAD_MCP_AUTH_TOKEN="replace-with-strong-32-character-token" \
+  -e KICAD_MCP_HTTP_BOUNDARY="loopback-proxy" \
+  -e KICAD_MCP_PUBLIC_BASE_URL="http://127.0.0.1:3334" \
   -e KICAD_MCP_PROJECT_DIR=/projects \
   -e KICAD_MCP_OUTPUT_DIR=/tmp/kicad-mcp-output \
   -v "$PWD:/projects:ro" \
@@ -43,6 +45,8 @@ terminating proxy or tunnel.
 | `KICAD_MCP_HOST`        | Defaults to `0.0.0.0` inside Docker so published port `3334` reaches the server.                                 |
 | `KICAD_MCP_PORT`        | Defaults to `3334`.                                                                                              |
 | `KICAD_MCP_AUTH_TOKEN`  | Required when HTTP binds outside loopback. Use a 32+ character token and pass it as a bearer token from clients. |
+| `KICAD_MCP_HTTP_BOUNDARY` | Set `loopback-proxy` when Docker publishes `3334` only to host loopback; use `tls-proxy` behind a trusted HTTPS tunnel/reverse proxy. |
+| `KICAD_MCP_PUBLIC_BASE_URL` | Required for proxy boundary modes. Use loopback HTTP with `loopback-proxy`; use the external HTTPS origin with `tls-proxy`. |
 | `KICAD_MCP_PROJECT_DIR` | In-container project mount path, typically `/projects`.                                                          |
 | `KICAD_MCP_OUTPUT_DIR`  | Writable output directory for generated artifacts.                                                               |
 | `KICAD_MCP_KICAD_CLI`   | Optional path to `kicad-cli` if it is mounted or bundled.                                                        |
@@ -69,11 +73,12 @@ Override `KICAD_PROJECT_DIR` to point at a local KiCad project.
    cloudflared tunnel --url http://127.0.0.1:3334
    ```
 
-3. In the ChatGPT connector configuration, set the MCP URL to
+3. Restart the server/container with `KICAD_MCP_HTTP_BOUNDARY=tls-proxy` and `KICAD_MCP_PUBLIC_BASE_URL=https://<tunnel-host>` so discovery/auth metadata matches the protected HTTPS endpoint.
+4. In the ChatGPT connector configuration, set the MCP URL to
    `https://<tunnel-host>/mcp`.
-4. Configure authentication as a bearer token using the same
+5. Configure authentication as a bearer token using the same
    `KICAD_MCP_AUTH_TOKEN`.
-5. Keep the KiCad project mounted read-only unless the workflow intentionally
+6. Keep the KiCad project mounted read-only unless the workflow intentionally
    writes generated project files.
 
 ## KiCad CLI Images

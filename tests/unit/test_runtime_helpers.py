@@ -80,6 +80,8 @@ def test_main_callback_preserves_env_when_cli_options_missing(
     monkeypatch.setenv("KICAD_MCP_TRANSPORT", "http")
     monkeypatch.setenv("KICAD_MCP_HOST", DOCKER_BIND_HOST)
     monkeypatch.setenv("KICAD_MCP_AUTH_TOKEN", STRONG_ENV_TOKEN)
+    monkeypatch.setenv("KICAD_MCP_HTTP_BOUNDARY", "loopback-proxy")
+    monkeypatch.setenv("KICAD_MCP_PUBLIC_BASE_URL", "http://127.0.0.1:4444")
     monkeypatch.setenv("KICAD_MCP_PORT", "4444")
     monkeypatch.setenv("KICAD_MCP_LOG_LEVEL", "DEBUG")
     monkeypatch.setenv("KICAD_MCP_LOG_FORMAT", "json")
@@ -109,6 +111,8 @@ def test_main_callback_preserves_env_when_cli_options_missing(
 
     assert os.environ["KICAD_MCP_HOST"] == DOCKER_BIND_HOST
     assert os.environ["KICAD_MCP_PORT"] == "4444"
+    assert os.environ["KICAD_MCP_HTTP_BOUNDARY"] == "loopback-proxy"
+    assert os.environ["KICAD_MCP_PUBLIC_BASE_URL"] == "http://127.0.0.1:4444"
     assert os.environ["KICAD_MCP_PROFILE"] == "pcb_only"
     assert os.environ["KICAD_MCP_ENABLE_EXPERIMENTAL_TOOLS"] == "true"
     assert profiles == ["pcb_only"]

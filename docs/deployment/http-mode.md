@@ -29,6 +29,9 @@ send it on subsequent Streamable HTTP requests.
 - `KICAD_MCP_PORT=3334`
 - `KICAD_MCP_CORS_ORIGINS=https://app.example.com,http://127.0.0.1:3334`
 - `KICAD_MCP_AUTH_TOKEN=...`
+- `KICAD_MCP_HTTP_BOUNDARY=direct|loopback-proxy|tls-proxy` (default: `direct`)
+- `KICAD_MCP_PUBLIC_BASE_URL=https://mcp.example.com` for `tls-proxy`, or a loopback HTTP origin for `loopback-proxy` container publishing
+- `KICAD_MCP_TLS_CERT_FILE=/path/to/server.crt` and `KICAD_MCP_TLS_KEY_FILE=/path/to/server.key` for direct TLS termination
 - `KICAD_MCP_STATEFUL_HTTP=true`
 - `KICAD_MCP_ENABLE_METRICS=true`
 - `KICAD_MCP_LEGACY_SSE=true`
@@ -55,4 +58,7 @@ send it on subsequent Streamable HTTP requests.
 - When bearer auth is enabled, cross-origin `POST /mcp` requests are checked against `KICAD_MCP_CORS_ORIGINS`.
 - If you run over `stdio`, `KICAD_MCP_AUTH_TOKEN` is ignored and a startup warning is emitted.
 - Use explicit origins instead of wildcard origins so the allowlist stays valid and auditable.
+- A bearer token alone is not sufficient for a non-loopback HTTP bind. The server fails closed unless `KICAD_MCP_HTTP_BOUNDARY` explicitly selects direct TLS, a bind-all container published only to loopback, or a trusted TLS-terminating proxy/tunnel.
+- `loopback-proxy` requires a bind-all server host plus a loopback HTTP `KICAD_MCP_PUBLIC_BASE_URL`. `tls-proxy` requires an HTTPS public base URL. The default `direct` boundary requires certificate/key TLS for non-loopback binds.
+- When direct TLS is used, certificate and key files must both be configured. Bind-all direct TLS also requires `KICAD_MCP_PUBLIC_BASE_URL` so discovery never advertises `0.0.0.0`/`::`.
 - Token rotation is intentionally in-memory; update your environment or TOML config separately for persistence.

@@ -90,6 +90,10 @@ def main() -> int:
     compose = _read("docker-compose.yml")
     if ":latest" in compose:
         errors.append("docker-compose.yml must not use :latest images")
+    if "KICAD_MCP_HTTP_BOUNDARY: loopback-proxy" not in compose:
+        errors.append("docker-compose.yml must declare the loopback-proxy HTTP boundary")
+    if "KICAD_MCP_PUBLIC_BASE_URL: http://127.0.0.1:3334" not in compose:
+        errors.append("docker-compose.yml must declare its loopback public HTTP origin")
     if "ghcr.io/freerouting/freerouting:2.1.0@sha256:" not in compose:
         errors.append("docker-compose.yml must pin the freerouting image by digest")
 
@@ -150,6 +154,8 @@ def main() -> int:
         "KICAD_MCP_PROJECT_DIR",
         "KICAD_MCP_AUTH_TOKEN",
         "KICAD_MCP_TRANSPORT",
+        "KICAD_MCP_HTTP_BOUNDARY",
+        "KICAD_MCP_PUBLIC_BASE_URL",
         "ChatGPT connector",
         "https://www.kicad.org/about/licenses/",
     ):

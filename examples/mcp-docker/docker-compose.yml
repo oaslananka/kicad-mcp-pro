@@ -8,6 +8,8 @@ services:
       KICAD_MCP_TRANSPORT: streamable-http
       KICAD_MCP_HOST: 0.0.0.0
       KICAD_MCP_AUTH_TOKEN: ${KICAD_MCP_AUTH_TOKEN:?Set KICAD_MCP_AUTH_TOKEN}
+      KICAD_MCP_HTTP_BOUNDARY: loopback-proxy
+      KICAD_MCP_PUBLIC_BASE_URL: http://127.0.0.1:3334
       KICAD_MCP_PROJECT_DIR: /projects
       KICAD_MCP_OUTPUT_DIR: /tmp/kicad-mcp-output
     volumes:

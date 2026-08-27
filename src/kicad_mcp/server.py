@@ -19,6 +19,7 @@ from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TextIO, cast
+from urllib.parse import urlparse, urlunsplit
 
 import anyio
 import structlog
@@ -878,6 +879,38 @@ class KiCadFastMCP(FastMCP):
         ]
         return self._filter_tools(rendered)
 
+    async def run_streamable_http_async(
+        self,
+    ) -> None:
+        """Run Streamable HTTP with optional direct TLS termination."""
+        import uvicorn
+
+        cfg = get_config()
+        uvicorn_config = uvicorn.Config(
+            self.streamable_http_app(),
+            host=self.settings.host,
+            port=self.settings.port,
+            log_level=self.settings.log_level.lower(),
+            ssl_certfile=str(cfg.tls_cert_file) if cfg.direct_tls_enabled else None,
+            ssl_keyfile=str(cfg.tls_key_file) if cfg.direct_tls_enabled else None,
+        )
+        await uvicorn.Server(uvicorn_config).serve()
+
+    async def run_sse_async(self, mount_path: str | None = None) -> None:
+        """Run legacy SSE with the same TLS policy as Streamable HTTP."""
+        import uvicorn
+
+        cfg = get_config()
+        uvicorn_config = uvicorn.Config(
+            self.sse_app(mount_path),
+            host=self.settings.host,
+            port=self.settings.port,
+            log_level=self.settings.log_level.lower(),
+            ssl_certfile=str(cfg.tls_cert_file) if cfg.direct_tls_enabled else None,
+            ssl_keyfile=str(cfg.tls_key_file) if cfg.direct_tls_enabled else None,
+        )
+        await uvicorn.Server(uvicorn_config).serve()
+
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
         cfg = get_config()
@@ -1695,24 +1728,42 @@ class _DashboardAuthMiddleware(BaseHTTPMiddleware):
 
 
 def _server_base_url(cfg: KiCadMCPConfig) -> str:
-    host = cfg.host if cfg.host not in {"0.0.0.0", "::"} else "127.0.0.1"  # noqa: S104
-    return f"http://{host}:{cfg.port}"
+    return cfg.advertised_http_base_url
+
+
+def _http_origin(value: str) -> tuple[str, str, int] | None:
+    parsed = urlparse(value)
+    scheme = parsed.scheme.casefold()
+    if scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    if parsed.netloc.endswith(":") and port is None:
+        return None
+    effective_port = port or (80 if scheme == "http" else 443)
+    return scheme, parsed.hostname.casefold(), effective_port
 
 
 def _is_origin_allowed(origin: str, cfg: KiCadMCPConfig) -> bool:
-    from urllib.parse import urlparse
-
     if origin in cfg.cors_origin_list:
         return True
-    parsed_origin = urlparse(origin)
-    origin_host = parsed_origin.hostname or ""
-    origin_port = parsed_origin.port or (
-        80 if parsed_origin.scheme == "http" else 443 if parsed_origin.scheme == "https" else None
-    )
-    server_hosts = {cfg.host}
-    if cfg.host.strip().casefold() in LOOPBACK_HOSTS:
+
+    origin_parts = _http_origin(origin)
+    server_parts = _http_origin(cfg.advertised_http_base_url)
+    if origin_parts is None or server_parts is None:
+        return False
+
+    origin_scheme, origin_host, origin_port = origin_parts
+    server_scheme, server_host, server_port = server_parts
+    if origin_scheme != server_scheme or origin_port != server_port:
+        return False
+
+    server_hosts = {server_host}
+    if server_host in LOOPBACK_HOSTS:
         server_hosts.update(LOOPBACK_HOSTS)
-    return origin_host in server_hosts and origin_port == cfg.port
+    return origin_host in server_hosts
 
 
 def _bearer_token(request: Request) -> str:
@@ -2910,6 +2961,13 @@ def dashboard(
         )
         raise typer.Exit(1)
 
+    if not _is_loopback_host(host):
+        raise typer.BadParameter(
+            "dashboard --host must be a loopback host; use the server HTTP mode behind TLS "
+            "or a protected public endpoint for remote access"
+        )
+    host = host.strip()
+
     # Override settings for dashboard mode
     os.environ["KICAD_MCP_TRANSPORT"] = "streamable-http"
     os.environ["KICAD_MCP_HOST"] = host
@@ -2924,14 +2982,19 @@ def dashboard(
             # stdout might be closed or not a valid file descriptor
             pass
 
-    _safe_echo(f"Starting KiCad MCP Pro dashboard on http://{host}:{port}/ui")
-    _safe_echo(f"  API: http://{host}:{port}/api/status")
-    _safe_echo(f"  Log stream: http://{host}:{port}/api/logs/stream")
+    url_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    authority = f"{url_host}:{port}"
+    dashboard_url = urlunsplit(("http", authority, "/ui", "", ""))
+    api_url = urlunsplit(("http", authority, "/api/status", "", ""))
+    logs_url = urlunsplit(("http", authority, "/api/logs/stream", "", ""))
+    _safe_echo(f"Starting KiCad MCP Pro dashboard on {dashboard_url}")
+    _safe_echo(f"  API: {api_url}")
+    _safe_echo(f"  Log stream: {logs_url}")
 
     if open_browser:
         import webbrowser
 
-        webbrowser.open(f"http://{host}:{port}/ui")
+        webbrowser.open(dashboard_url)
 
     # Reset config and start with explicit transport, host, and port
     from .config import reset_config

@@ -319,13 +319,15 @@ def test_server_info_contract_preserves_remote_advertised_host(
     monkeypatch.setenv("KICAD_MCP_TRANSPORT", "http")
     monkeypatch.setenv("KICAD_MCP_HOST", "192.168.1.42")
     monkeypatch.setenv("KICAD_MCP_AUTH_TOKEN", "remote-test-token-with-enough-entropy")
+    monkeypatch.setenv("KICAD_MCP_HTTP_BOUNDARY", "tls-proxy")
+    monkeypatch.setenv("KICAD_MCP_PUBLIC_BASE_URL", "https://mcp.example.test")
     monkeypatch.setattr("kicad_mcp.server_info.get_kicad", lambda: object())
     monkeypatch.setattr("kicad_mcp.server_info.get_board", lambda: object())
 
     payload = get_server_info_contract()
 
     _validate_contract(payload)
-    assert payload["transport"]["endpoint"] == "http://192.168.1.42:3334/mcp"
+    assert payload["transport"]["endpoint"] == "https://mcp.example.test/mcp"
 
 
 def test_server_info_contract_brackets_ipv6_loopback(monkeypatch, sample_project) -> None:
