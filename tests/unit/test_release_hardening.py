@@ -343,13 +343,17 @@ def test_non_loopback_http_requires_auth_token(sample_project: Path) -> None:
         reset_config()
 
 
-def test_non_loopback_http_accepts_strong_token(sample_project: Path) -> None:
+def test_non_loopback_http_accepts_strong_token_behind_https_boundary(
+    sample_project: Path,
+) -> None:
     _ = sample_project
     cfg = get_config()
     try:
         cfg.transport = "streamable-http"
         cfg.host = EXPOSED_HOST
         cfg.auth_token = STRONG_TOKEN
+        cfg.http_boundary = "tls-proxy"
+        cfg.public_base_url = "https://mcp.example.test"
 
         assert build_server("minimal").settings.host == EXPOSED_HOST
     finally:
@@ -363,6 +367,8 @@ def test_exposed_metrics_require_authentication(sample_project: Path) -> None:
         cfg.transport = "streamable-http"
         cfg.host = EXPOSED_HOST
         cfg.auth_token = STRONG_TOKEN
+        cfg.http_boundary = "tls-proxy"
+        cfg.public_base_url = "https://mcp.example.test"
         cfg.enable_metrics = True
         server = build_server("minimal")
         client = TestClient(server.streamable_http_app())

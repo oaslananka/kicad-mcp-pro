@@ -241,6 +241,16 @@ def test_cli_dashboard_help_exposes_mode_option(sample_project: Path) -> None:
     assert dashboard_help.exit_code == 0, dashboard_help.output
 
 
+def test_cli_dashboard_rejects_non_loopback_host(sample_project: Path, monkeypatch) -> None:
+    _ = sample_project
+    monkeypatch.setattr("kicad_mcp.server._run_server_from_options", lambda **_kwargs: None)
+
+    result = CliRunner().invoke(app, ["dashboard", "--host", "192.168.1.42"])
+
+    assert result.exit_code != 0
+    assert "loopback" in result.output.casefold()
+
+
 def test_cli_dashboard_accepts_mode_option() -> None:
     """The dashboard subcommand declares --mode, matching serve's operating-mode option.
 

@@ -162,6 +162,7 @@ nav:
       - Release and Supply-Chain Security: security/release-security.md
       - Release Signing: security/release-signing.md
       - Security Requirements: security/requirements.md
+      - Sonar Vulnerability Disposition: security/sonar-vulnerability-disposition.md
       - Input Validation: security/input-validation.md
       - Assurance Case: security/assurance-case.md
       - Scorecard Exceptions: security/scorecard-exceptions.md

@@ -34,6 +34,8 @@ Run the default streamable HTTP server for local connector testing:
 docker run --rm \
   -p 127.0.0.1:3334:3334 \
   -e KICAD_MCP_AUTH_TOKEN="replace-with-strong-32-character-token" \
+  -e KICAD_MCP_HTTP_BOUNDARY="loopback-proxy" \
+  -e KICAD_MCP_PUBLIC_BASE_URL="http://127.0.0.1:3334" \
   -e KICAD_MCP_PROJECT_DIR=/projects \
   -v "$PWD:/projects:ro" \
   ghcr.io/oaslananka/kicad-mcp-pro:<version>

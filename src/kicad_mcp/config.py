@@ -21,6 +21,7 @@ from .path_safety import assert_within, normalize_workspace_root, relative_subpa
 
 CONFIG_FILE = Path.home() / ".config" / "kicad-mcp-pro" / "config.toml"
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+BIND_ALL_HOSTS = {"0.0.0.0", "::"}  # noqa: S104 - bind-all sentinels, not socket binds.
 
 
 def _discover_kicad_cli() -> Path:
@@ -85,6 +86,23 @@ class KiCadMCPConfig(BaseSettings):
     mount_path: str = Field(default="/mcp")
     cors_origins: str = Field(default="")
     auth_token: str | None = Field(default=None)
+    http_boundary: Literal["direct", "loopback-proxy", "tls-proxy"] = Field(
+        default="direct",
+        description=(
+            "HTTP exposure boundary: direct socket, bind-all container published to loopback, "
+            "or trusted TLS-terminating proxy/tunnel."
+        ),
+    )
+    public_base_url: str | None = Field(
+        default=None,
+        description=(
+            "Externally reachable HTTP origin for a protected deployment boundary. "
+            "Use HTTPS for remote access or loopback HTTP for container-to-host "
+            "loopback publishing."
+        ),
+    )
+    tls_cert_file: Path | None = Field(default=None)
+    tls_key_file: Path | None = Field(default=None)
     allow_query_token_auth: bool = Field(default=False)
     legacy_sse: bool = Field(default=False)
     stateful_http: bool = Field(default=False)
@@ -235,6 +253,8 @@ class KiCadMCPConfig(BaseSettings):
         "symbol_library_dir",
         "footprint_library_dir",
         "log_file",
+        "tls_cert_file",
+        "tls_key_file",
         mode="before",
     )
     @classmethod
@@ -286,9 +306,28 @@ class KiCadMCPConfig(BaseSettings):
             if parsed.scheme not in {"http", "https", "vscode-webview"} or not parsed.netloc:
                 raise ValueError(
                     "KICAD_MCP_CORS_ORIGINS entries must be fully qualified "
-                    "http://, https://, or vscode-webview:// URLs."
+                    "HTTP, HTTPS, or vscode-webview URLs."
                 )
         return ",".join(origins)
+
+    @field_validator("public_base_url")
+    @classmethod
+    def _validate_public_base_url(cls, value: str | None) -> str | None:
+        if value in (None, ""):
+            return None
+        normalized = value.strip().rstrip("/")
+        parsed = urlparse(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("public_base_url must be a fully qualified HTTP(S) origin")
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError("public_base_url cannot contain credentials, query, or fragment")
+        if parsed.path not in {"", "/"}:
+            raise ValueError(
+                "public_base_url must not contain a path; mount_path is appended separately"
+            )
+        if parsed.scheme == "http" and parsed.hostname.strip().casefold() not in LOOPBACK_HOSTS:
+            raise ValueError("public_base_url must use HTTPS or loopback HTTP")
+        return normalized
 
     @field_validator("transport", mode="before")
     @classmethod
@@ -369,11 +408,85 @@ class KiCadMCPConfig(BaseSettings):
         """Fail closed before exposing HTTP transports on non-loopback interfaces."""
         if self.transport == "stdio":
             return
+        has_cert = self.tls_cert_file is not None
+        has_key = self.tls_key_file is not None
+        if has_cert != has_key:
+            raise ValueError("tls_cert_file and tls_key_file must be configured together")
+        if self.tls_cert_file is not None and self.tls_key_file is not None:
+            if not self.tls_cert_file.is_file():
+                raise ValueError(
+                    f"tls_cert_file does not exist or is not a file: {self.tls_cert_file}"
+                )
+            if not self.tls_key_file.is_file():
+                raise ValueError(
+                    f"tls_key_file does not exist or is not a file: {self.tls_key_file}"
+                )
+
         exposed_host = self.host.strip().casefold() not in LOOPBACK_HOSTS
-        if exposed_host and not self.auth_token:
-            raise ValueError("HTTP transport on non-loopback host requires auth_token")
-        if exposed_host and self.auth_token and len(self.auth_token) < 32:
-            raise ValueError("HTTP auth_token for non-loopback host must be at least 32 characters")
+        proxy_boundary = self.http_boundary in {"loopback-proxy", "tls-proxy"}
+        if (exposed_host or self.http_boundary == "tls-proxy") and not self.auth_token:
+            raise ValueError("protected HTTP transport requires auth_token")
+        if (exposed_host or self.http_boundary == "tls-proxy") and self.auth_token:
+            if len(self.auth_token) < 32:
+                raise ValueError(
+                    "HTTP auth_token for protected transport must be at least 32 characters"
+                )
+
+        if self.http_boundary == "loopback-proxy":
+            if self.host.strip().casefold() not in BIND_ALL_HOSTS:
+                raise ValueError("loopback-proxy requires a bind-all host")
+            if self.direct_tls_enabled:
+                raise ValueError("loopback-proxy cannot also enable direct TLS")
+            if self.public_base_url is None:
+                raise ValueError("loopback-proxy requires public_base_url")
+            parsed = urlparse(self.public_base_url)
+            if parsed.scheme != "http" or parsed.hostname not in LOOPBACK_HOSTS:
+                raise ValueError("loopback-proxy public_base_url must be loopback HTTP")
+            return
+
+        if self.http_boundary == "tls-proxy":
+            if self.direct_tls_enabled:
+                raise ValueError("tls-proxy cannot also enable direct TLS")
+            if self.public_base_url is None:
+                raise ValueError("tls-proxy requires public_base_url")
+            if urlparse(self.public_base_url).scheme != "https":
+                raise ValueError("tls-proxy public_base_url must use HTTPS")
+            return
+
+        if proxy_boundary:
+            raise ValueError(f"unsupported http_boundary: {self.http_boundary}")
+        if self.public_base_url is not None and not self.direct_tls_enabled:
+            raise ValueError(
+                "public_base_url requires an explicit http_boundary when TLS is not direct"
+            )
+        if exposed_host and not self.direct_tls_enabled:
+            raise ValueError(
+                "HTTP transport on non-loopback host requires direct TLS or a protected public "
+                "endpoint via explicit http_boundary"
+            )
+        if exposed_host and self.host.strip().casefold() in BIND_ALL_HOSTS:
+            if self.public_base_url is None:
+                raise ValueError(
+                    "bind-all direct TLS requires public_base_url for safe endpoint advertisement"
+                )
+        if self.public_base_url is not None and urlparse(self.public_base_url).scheme != "https":
+            raise ValueError("direct TLS public_base_url must use HTTPS")
+
+    @property
+    def direct_tls_enabled(self) -> bool:
+        """Return whether uvicorn should terminate TLS directly."""
+        return self.tls_cert_file is not None and self.tls_key_file is not None
+
+    @property
+    def advertised_http_base_url(self) -> str:
+        """Return the supported externally reachable HTTP origin for discovery/auth metadata."""
+        if self.public_base_url is not None:
+            return self.public_base_url
+        host = self.host if self.host not in BIND_ALL_HOSTS else "127.0.0.1"
+        if ":" in host and not (host.startswith("[") and host.endswith("]")):
+            host = f"[{host}]"
+        scheme = "https" if self.direct_tls_enabled else "http"
+        return f"{scheme}://{host}:{self.port}"
 
     def _refresh_paths(self) -> None:
         """Refresh derived project and library paths."""

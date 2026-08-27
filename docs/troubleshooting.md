@@ -69,4 +69,4 @@ Then resolve the blocking gate and rerun the export. The project fix queue resou
 
 ## HTTP Transport Does Not Connect
 
-Check `KICAD_MCP_HOST`, `KICAD_MCP_PORT`, `KICAD_MCP_AUTH_TOKEN`, and `KICAD_MCP_CORS_ORIGINS`. For local-only Studio bridge deployments, port `27185` is a good convention; the default server port is `3334`.
+Check `KICAD_MCP_HOST`, `KICAD_MCP_PORT`, `KICAD_MCP_AUTH_TOKEN`, `KICAD_MCP_HTTP_BOUNDARY`, `KICAD_MCP_PUBLIC_BASE_URL`, and `KICAD_MCP_CORS_ORIGINS`. Non-loopback binds fail closed unless the boundary is direct TLS, `loopback-proxy`, or `tls-proxy`. For local-only Studio bridge deployments, port `27185` is a good convention; the default server port is `3334`.
