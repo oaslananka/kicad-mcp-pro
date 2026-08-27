@@ -28,7 +28,7 @@ _FORBIDDEN_EVIDENCE_KEYS = frozenset(
     }
 )
 _SENSITIVE_EVIDENCE_VALUE = re.compile(
-    r"(?i)(?:bearer\s+\S+|sk-[A-Za-z0-9_-]{8,}|"
+    r"(?i)(?:bearer\s+\S+|(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{8,}|"
     r"(?:api[_-]?key|access[_-]?token|secret)\s*[:=]\s*\S+)"
 )
 _PRIVATE_ABSOLUTE_PATH = re.compile(

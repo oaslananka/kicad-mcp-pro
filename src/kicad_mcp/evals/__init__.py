@@ -36,6 +36,10 @@ from .live_runner import (
     validate_sanitized_evidence,
     write_evidence,
 )
+from .task_outcome_reporting import (
+    render_task_outcome_summary_json,
+    render_task_outcome_summary_text,
+)
 from .task_outcome_scoring import (
     TASK_OUTCOME_SUMMARY_SCHEMA_VERSION,
     RateKpi,
@@ -101,6 +105,8 @@ __all__ = [
     "parse_benchmark_contract",
     "render_attempt_record",
     "render_benchmark_contract",
+    "render_task_outcome_summary_json",
+    "render_task_outcome_summary_text",
     "ALL_TASK_STAGES",
     "TASK_OUTCOME_SCHEMA_VERSION",
     "TASK_OUTCOME_SUMMARY_SCHEMA_VERSION",
