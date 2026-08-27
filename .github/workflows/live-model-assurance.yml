@@ -3,14 +3,12 @@ name: Live Model Assurance
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: live-model-assurance-${{ github.event.pull_request.number || github.sha }}
+  group: live-model-assurance-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -25,7 +23,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.sha }}
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
           enable-cache: false
@@ -34,27 +32,13 @@ jobs:
       - name: Classify assurance requirement
         id: policy
         env:
-          EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.before || '' }}
-          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          PULL_REQUEST_HEAD: ${{ github.head_ref || '' }}
-          PULL_REQUEST_IS_SAME_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = "push" ]; then
-            uv run --all-extras python scripts/check_live_model_release_policy.py \
-              --github-output "$GITHUB_OUTPUT" \
-              push --base-ref "$BASE_SHA" --head-ref "$HEAD_SHA"
-          elif [ "$PULL_REQUEST_HEAD" = "release-please--branches--main" ] && \
-               [ "$PULL_REQUEST_IS_SAME_REPOSITORY" = "true" ]; then
-            uv run --all-extras python scripts/check_live_model_release_policy.py \
-              --github-output "$GITHUB_OUTPUT" \
-              release --ref "$HEAD_SHA"
-          else
-            uv run --all-extras python scripts/check_live_model_release_policy.py \
-              --github-output "$GITHUB_OUTPUT" \
-              noop --ref "$HEAD_SHA"
-          fi
+          uv run --all-extras python scripts/check_live_model_release_policy.py \
+            --github-output "$GITHUB_OUTPUT" \
+            push --base-ref "$BASE_SHA" --head-ref "$HEAD_SHA"
 
   smoke:
     name: Live model smoke (${{ matrix.configuration }})
@@ -72,7 +56,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.sha }}
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
           enable-cache: false
@@ -90,7 +74,7 @@ jobs:
       - name: Run bounded live smoke
         env:
           CONFIGURATION_ID: ${{ matrix.configuration }}
-          SOURCE_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          SOURCE_REVISION: ${{ github.sha }}
           NVIDIA_API_KEY: ${{ startsWith(matrix.configuration, 'nvidia-') && secrets.NVIDIA_API_KEY || '' }}
           OPENCODE_ZEN_API_KEY: ${{ startsWith(matrix.configuration, 'opencode-cli-') && secrets.OPENCODE_ZEN_API_KEY || '' }}
         run: |
@@ -170,7 +154,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.sha }}
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
           enable-cache: false
@@ -186,7 +170,7 @@ jobs:
         id: assurance
         continue-on-error: true
         env:
-          SOURCE_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          SOURCE_REVISION: ${{ github.sha }}
         run: |
           uv run --all-extras python scripts/evaluate_live_model_smoke_assurance.py \
             --evidence-root artifacts/downloaded \

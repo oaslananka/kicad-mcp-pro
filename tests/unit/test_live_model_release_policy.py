@@ -370,13 +370,14 @@ def test_live_model_assurance_workflow_is_risk_based_and_secret_safe() -> None:
     workflow = (ROOT / ".github/workflows/live-model-assurance.yml").read_text(encoding="utf-8")
 
     assert "push:\n    branches: [main]" in workflow
-    assert "pull_request:\n    branches: [main]" in workflow
+    assert "pull_request:" not in workflow
     assert "permissions:\n  contents: read" in workflow
-    assert "release-please--branches--main" in workflow
-    assert "github.event.pull_request.head.repo.full_name == github.repository" in workflow
+    assert "release-please--branches--main" not in workflow
+    assert "github.event.pull_request" not in workflow
     assert "check_live_model_release_policy.py" in workflow
     assert " push " in workflow or " push\n" in workflow
-    assert " release " in workflow or " release\n" in workflow
+    assert " release " not in workflow
+    assert " noop " not in workflow
     assert "environment: live-model-evals" in workflow
     assert "max-parallel: 1" in workflow
     assert "timeout-minutes: 17" in workflow
