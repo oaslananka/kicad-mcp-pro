@@ -51,6 +51,7 @@ class ProjectCreationService:
     new_project_payload: Callable[[Path, Path], dict[str, object]]
     upgrade_file: Callable[[Path, Literal["pcb", "sch"], Path], FormatUpgradeResultProtocol]
     reset_connection: Callable[[], None]
+    reset_live_edit: Callable[[], None]
 
     def create(self, path: str, name: str, *, confirm_overwrite: bool = False) -> str:
         cfg = self.get_config()
@@ -103,6 +104,7 @@ class ProjectCreationService:
             output_dir=project_dir / "output",
         )
         self.reset_connection()
+        self.reset_live_edit()
 
         lines = [
             f"Created project '{name}' at {project_dir}.",

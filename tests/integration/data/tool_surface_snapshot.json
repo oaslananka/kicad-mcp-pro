@@ -3576,6 +3576,28 @@
   {
     "destructive": false,
     "experimental": false,
+    "headless": false,
+    "idempotent": true,
+    "name": "pcb_get_live_edit_state",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "build",
+      "builder",
+      "expert",
+      "full",
+      "high_speed",
+      "pcb",
+      "pcb_layout",
+      "pcb_only",
+      "power"
+    ],
+    "read_only": true,
+    "requires_kicad_running": false
+  },
+  {
+    "destructive": false,
+    "experimental": false,
     "headless": true,
     "idempotent": true,
     "name": "pcb_get_net_statistics",

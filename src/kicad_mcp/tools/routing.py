@@ -12,13 +12,14 @@ from kipy.geometry import Vector2
 from mcp.server.fastmcp import Context, FastMCP
 
 from ..config import get_config
-from ..connection import board_transaction, get_board
+from ..connection import get_board
 from ..errors import ManualStepRequiredError
 from ..models.common import _PadLike
 from ..models.pcb import AddTrackInput
 from ..models.tool_result import ArtifactRef, StateDelta, ToolResult
 from ..pcb.board_access import board_nets_filtered, board_pads, board_tracks
 from ..pcb.geometry import point_xy_mm, track_segment_length_mm
+from ..pcb.live_edit_runtime import execute_live_board_mutation
 from ..utils.freerouting import FreeRoutingRunner
 from ..utils.layers import resolve_layer
 from ..utils.router_core import apply_ses_to_pcb
@@ -286,8 +287,11 @@ def register(mcp: FastMCP) -> None:
             net = Net()
             net.name = payload.net_name
             track.net = net
-        with board_transaction() as board:
-            board.create_items([track])
+        execute_live_board_mutation(
+            "route_single_track",
+            lambda board: list(board.create_items([track])),
+            verifier=None,
+        )
         return "Single track routed successfully."
 
     @mcp.tool()
@@ -341,8 +345,11 @@ def register(mcp: FastMCP) -> None:
                 net.name = payload.net_name
                 track.net = net
             tracks.append(track)
-        with board_transaction() as board:
-            board.create_items(tracks)
+        execute_live_board_mutation(
+            "route_from_pad_to_pad",
+            lambda board: list(board.create_items(tracks)),
+            verifier=None,
+        )
         return (
             f"Created an orthogonal two-segment route from {ref1}:{pad1} to {ref2}:{pad2}. "
             "Run DRC to verify the path."

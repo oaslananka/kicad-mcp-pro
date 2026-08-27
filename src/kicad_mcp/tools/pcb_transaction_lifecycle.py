@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -22,6 +23,8 @@ class TransactionLifecycleService(Protocol):
     def drop(self) -> str: ...
 
     def revert(self) -> str: ...
+
+    def status_payload(self) -> dict[str, object]: ...
 
 
 @dataclass(frozen=True)
@@ -84,3 +87,8 @@ def register(mcp: FastMCP, dependencies: PcbTransactionLifecycleDependencies) ->
             Confirmation message with revert status.
         """
         return service.revert()
+
+    @mcp.tool()
+    def pcb_get_live_edit_state() -> str:
+        """Return sanitized native-live PCB transaction state as deterministic JSON."""
+        return json.dumps(service.status_payload(), sort_keys=True)

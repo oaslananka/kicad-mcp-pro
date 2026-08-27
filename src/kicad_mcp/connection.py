@@ -24,6 +24,7 @@ logger = structlog.get_logger(__name__)
 _lock = threading.RLock()
 _session: KiCadSession | None = None
 _kicad: object | None = None
+_connection_generation = 0
 
 
 def _get_session() -> KiCadSession:
@@ -82,10 +83,18 @@ def get_board() -> Board:
         raise _connection_error(exc) from exc
 
 
+def get_connection_epoch() -> tuple[int, int]:
+    """Return an internal epoch that changes after explicit reset or IPC disconnect."""
+    with _lock:
+        session_generation = _session.continuity_generation if _session is not None else -1
+        return (_connection_generation, session_generation)
+
+
 def reset_connection() -> None:
     """Force reconnect on next use."""
-    global _session, _kicad
+    global _session, _kicad, _connection_generation
     with _lock:
+        _connection_generation += 1
         if _kicad is not None:
             close_fn = getattr(_kicad, "close", None)
             if callable(close_fn):

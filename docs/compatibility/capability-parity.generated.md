@@ -2,23 +2,23 @@
 
 Machine-generated from `docs/compatibility/capability-parity-matrix.yaml`. Refresh with `uv run python scripts/build_parity_matrix.py`.
 
-KiCad baseline: `10.0.x` · Updated: 2026-06-17
+KiCad baseline: `10.0.x` · Updated: 2026-08-28
 
-**Overall: 58 / 76 programmatically-reachable capabilities driven = 76.3%** (18 partial, 0 gap; 4 GUI-only with no KiCad API, excluded from the denominator).
+**Overall: 59 / 77 programmatically-reachable capabilities driven = 76.6%** (18 partial, 0 gap; 4 GUI-only with no KiCad API, excluded from the denominator).
 
 ## Coverage by domain
 
 | Domain | Coverage | Covered | Partial | Gap | GUI-only (no API) |
 |---|---:|---:|---:|---:|---:|
 | `schematic_edit` | 84.6% | 11 | 2 | 0 | 1 |
-| `pcb_edit` | 93.8% | 15 | 1 | 0 | 1 |
+| `pcb_edit` | 94.1% | 16 | 1 | 0 | 1 |
 | `routing` | 66.7% | 4 | 2 | 0 | 1 |
 | `library` | 57.1% | 4 | 3 | 0 | 0 |
 | `analysis` | 23.1% | 3 | 10 | 0 | 0 |
 | `export` | 100.0% | 9 | 0 | 0 | 0 |
 | `project` | 100.0% | 5 | 0 | 0 | 0 |
 | `cosmetics` | 100.0% | 7 | 0 | 0 | 1 |
-| **Overall** | **76.3%** | 58 | 18 | 0 | 4 |
+| **Overall** | **76.6%** | 59 | 18 | 0 | 4 |
 
 ## Closeable surface (gap, then partial)
 
@@ -87,7 +87,8 @@ Footprint place/move, track/via/zone/stackup/rules/groups/teardrops/fanout on .k
 | Manage design blocks / reusable groups | `file` | `pcb_block_create_from_selection` | `covered` | 10.0.x | pcb_block_list, pcb_block_place. |
 | Read / set board groups | `ipc` | `pcb_get_groups` | `covered` | 10.0.x | pcb_get_groups for inspection; pcb_group_by_function and pcb_block_* for grouping. |
 | Read / set drawing origin | `ipc` | `pcb_set_origin` | `covered` | 10.0.x | pcb_get_origin / pcb_set_origin. |
-| Begin / push / revert an IPC commit transaction | `ipc` | `pcb_push_commit` | `covered` | 10.0.x | pcb_begin_commit / push_commit / drop_commit / revert. |
+| Begin / push / revert an IPC commit transaction | `ipc` | `pcb_push_commit` | `covered` | 10.0.x | pcb_begin_commit / pcb_push_commit / pcb_drop_commit / pcb_revert expose the native KiCad commit lifecycle. Transaction participation is limited to reviewed verified mutations; unsupported writes fail before side effects while a native-live session is active. |
+| Report verified native-live transaction and recovery state | `ipc` | `pcb_get_live_edit_state` | `covered` | 10.0.x | Path-free state reports board fingerprint, verified/ambiguous mutation counts, recovery requirement, and terminal outcome without representing file-backed or schematic writes as native-live IPC. |
 | Interactive push-and-shove routing | `gui-only` | — | `gui-only-no-api` | 10.0.x | KiCad's interactive router (push/shove, walkaround) has no IPC/CLI surface. |
 
 ### `routing`

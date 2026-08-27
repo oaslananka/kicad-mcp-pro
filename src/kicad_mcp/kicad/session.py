@@ -9,6 +9,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Literal, Protocol, TypedDict
 
+from kipy.errors import ApiError
+from kipy.proto.common import ApiStatusCode
+
 from ..errors import (
     IpcDisconnectedError,
     KiCadBoardNotOpenError,
@@ -97,6 +100,8 @@ def _classify_ipc_error(exc: BaseException) -> IpcErrorKind:
         return "timeout"
     if isinstance(exc, (ConnectionError, EOFError)):
         return "disconnected"
+    if isinstance(exc, ApiError) and exc.code == ApiStatusCode.AS_TOKEN_MISMATCH:
+        return "disconnected"
     lowered = str(exc).casefold()
     if any(pattern in lowered for pattern in _TIMEOUT_PATTERNS):
         return "timeout"
@@ -125,17 +130,25 @@ class KiCadSession:
         self._lock = threading.RLock()
         self._client: object | None = None
         self._last_connect_time: float = 0.0
+        self._continuity_generation = 0
 
     def _get_ttl(self) -> float:
         """Return the configured IPC cache TTL in seconds."""
         return self._config_factory().ipc_cache_ttl
 
+    @property
+    def continuity_generation(self) -> int:
+        """Return the generation of continuity-breaking resets/disconnects."""
+        with self._lock:
+            return self._continuity_generation
+
     def reset(self) -> None:
-        """Close and clear the cached client."""
+        """Close and clear the cached client and invalidate transaction continuity."""
         with self._lock:
             self._close_client()
             self._client = None
             self._last_connect_time = 0.0
+            self._continuity_generation += 1
 
     def _close_client(self) -> None:
         """Safely close the current client connection."""
@@ -171,17 +184,43 @@ class KiCadSession:
             kwargs["timeout_ms"] = int(cfg.ipc_connection_timeout * 1000)
         return kwargs
 
-    def client(self) -> object:
-        """Return a connected KiCad IPC client with TTL caching and auto-reconnect.
+    def _probe_cached_continuity(self) -> bool:
+        """Prove the cached client still targets the same KiCad instance.
 
-        If the cached client is older than ``ipc_cache_ttl`` seconds, the session
-        is automatically torn down and reconnected.  On failure the connection is
-        retried with exponential backoff (0.5s, 1s, 2s) up to the configured
-        retry count.  After all retries are exhausted an ``IpcDisconnectedError``
-        (retryable, ``IPC_DISCONNECTED``) is raised.
+        KiCad's response token is bound to one running application instance.  The
+        kipy client automatically reuses the learned token on later requests, so a
+        lightweight request detects a restarted server as ``AS_TOKEN_MISMATCH``.
+        Raw tokens are never read, logged, or exposed here.
+        """
+        client = self._client
+        if client is None:
+            return False
+        get_version = getattr(client, "get_version", None)
+        if not callable(get_version):
+            self.reset()
+            return False
+        try:
+            get_version()
+        except Exception as exc:
+            kind = _classify_ipc_error(exc)
+            if kind in ("timeout", "disconnected"):
+                self.reset()
+                return False
+            if self._logger is not None:
+                self._logger.debug("kicad_continuity_probe_deferred", kind=kind)
+        self._last_connect_time = time.monotonic()
+        return True
+
+    def client(self) -> object:
+        """Return a connected KiCad IPC client with TTL continuity checks.
+
+        Once the cache TTL elapses, probe the existing authenticated KiCad client
+        before replacing it.  A healthy same-instance client is retained so native
+        transactions can span the TTL.  Timeout, disconnect, or KiCad token mismatch
+        invalidates continuity, increments the session generation, and reconnects.
         """
         with self._lock:
-            # TTL check — expired cache → force reconnect
+            # TTL check — validate continuity before replacing an authenticated client.
             if self._client is not None:
                 elapsed = time.monotonic() - self._last_connect_time
                 if elapsed > self._get_ttl():
@@ -191,8 +230,7 @@ class KiCadSession:
                             elapsed_seconds=round(elapsed, 2),
                             ttl_seconds=self._get_ttl(),
                         )
-                    self._close_client()
-                    self._client = None
+                    self._probe_cached_continuity()
 
             if self._client is None:
                 self._client = self._connect_with_retry()

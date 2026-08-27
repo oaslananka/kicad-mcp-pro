@@ -35,6 +35,7 @@ from ..models.intent import (
 )
 from ..operating_modes import OperatingMode, active_operating_mode
 from ..path_safety import assert_within
+from ..pcb.live_edit_runtime import reset_live_edit_service
 from ..project.context import ProjectContextService
 from ..project.creation import ProjectCreationService
 from ..project.discovery import ProjectDiscoveryService
@@ -1218,6 +1219,7 @@ def register(mcp: FastMCP) -> None:
         ),
         clear_cache=clear_ttl_cache,
         reset_connection=reset_connection,
+        reset_live_edit=reset_live_edit_service,
         render_project_info=_render_project_info,
     )
     project_context.register(
@@ -1564,6 +1566,7 @@ def register(mcp: FastMCP) -> None:
             path, kind, _run_cli, allowed_root=allowed_root
         ),
         reset_connection=lambda: reset_connection(),
+        reset_live_edit=reset_live_edit_service,
     )
     project_creation.register(
         mcp,

@@ -28,6 +28,7 @@ class ProjectContextService:
     apply_project: ApplyProjectProtocol
     clear_cache: Callable[[], None]
     reset_connection: Callable[[], None]
+    reset_live_edit: Callable[[], None]
     render_project_info: Callable[[], str]
 
     def set_project(
@@ -65,6 +66,7 @@ class ProjectContextService:
         )
         self.clear_cache()
         self.reset_connection()
+        self.reset_live_edit()
         return self.render_project_info()
 
     def get_project_info(self) -> str:

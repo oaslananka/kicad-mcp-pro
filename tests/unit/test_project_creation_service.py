@@ -29,6 +29,7 @@ def test_create_refuses_nonempty_directory_without_confirmation(tmp_path: Path) 
         new_project_payload=lambda _cli, project_file: {"meta": {"filename": project_file.name}},
         upgrade_file=lambda _path, _kind, _root: SimpleNamespace(upgraded=True, detail=""),
         reset_connection=lambda: None,
+        reset_live_edit=lambda: None,
     )
 
     output = service.create(str(tmp_path), "demo", confirm_overwrite=False)
@@ -58,6 +59,7 @@ def test_create_checks_workspace_boundary_before_refusing_existing_dir(tmp_path:
         new_project_payload=lambda _cli, project_file: {"meta": {"filename": project_file.name}},
         upgrade_file=lambda _path, _kind, _root: SimpleNamespace(upgraded=True, detail=""),
         reset_connection=lambda: None,
+        reset_live_edit=lambda: None,
     )
 
     service.create(str(tmp_path), "demo")
@@ -67,7 +69,7 @@ def test_create_checks_workspace_boundary_before_refusing_existing_dir(tmp_path:
 def test_create_reports_unavailable_format_migration(tmp_path: Path) -> None:
     service_cls = _service_type()
     applied: list[Path] = []
-    resets: list[bool] = []
+    resets: list[object] = []
     cfg = SimpleNamespace(
         workspace_root=None,
         workspace=tmp_path,
@@ -87,6 +89,7 @@ def test_create_reports_unavailable_format_migration(tmp_path: Path) -> None:
             upgraded=False, detail="cli unavailable"
         ),
         reset_connection=lambda: resets.append(True),
+        reset_live_edit=lambda: resets.append("live-edit"),
     )
 
     output = service.create(str(tmp_path), "fresh")
@@ -94,4 +97,4 @@ def test_create_reports_unavailable_format_migration(tmp_path: Path) -> None:
     assert "Format note (sch)" in output
     assert "cli unavailable" in output
     assert applied == [tmp_path / "fresh"]
-    assert resets == [True]
+    assert resets == [True, "live-edit"]

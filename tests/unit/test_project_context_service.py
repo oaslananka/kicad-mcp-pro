@@ -37,6 +37,7 @@ def test_set_project_applies_scanned_paths_and_runtime_resets(tmp_path: Path) ->
         apply_project=lambda project_dir, **kwargs: applied.append((project_dir, kwargs)),
         clear_cache=lambda: events.append("cache"),
         reset_connection=lambda: events.append("connection"),
+        reset_live_edit=lambda: events.append("live-edit"),
         render_project_info=lambda: "project-info",
     )
 
@@ -54,7 +55,7 @@ def test_set_project_applies_scanned_paths_and_runtime_resets(tmp_path: Path) ->
             },
         )
     ]
-    assert events == ["cache", "connection"]
+    assert events == ["cache", "connection", "live-edit"]
 
 
 def test_set_project_preserves_explicit_file_and_output_overrides(tmp_path: Path) -> None:
@@ -72,6 +73,7 @@ def test_set_project_preserves_explicit_file_and_output_overrides(tmp_path: Path
         apply_project=lambda project_dir, **kwargs: applied.append((project_dir, kwargs)),
         clear_cache=lambda: None,
         reset_connection=lambda: None,
+        reset_live_edit=lambda: None,
         render_project_info=lambda: "project-info",
     )
 
@@ -100,6 +102,7 @@ def test_set_project_rejects_missing_directory_without_side_effects(tmp_path: Pa
         apply_project=lambda *_args, **_kwargs: events.append("apply"),
         clear_cache=lambda: events.append("cache"),
         reset_connection=lambda: events.append("connection"),
+        reset_live_edit=lambda: events.append("live-edit"),
         render_project_info=lambda: "project-info",
     )
 
@@ -119,6 +122,7 @@ def test_set_project_preserves_incomplete_project_error(tmp_path: Path) -> None:
         apply_project=lambda *_args, **_kwargs: None,
         clear_cache=lambda: None,
         reset_connection=lambda: None,
+        reset_live_edit=lambda: None,
         render_project_info=lambda: "project-info",
     )
 
@@ -136,6 +140,7 @@ def test_get_project_info_delegates_to_renderer() -> None:
         apply_project=lambda *_args, **_kwargs: None,
         clear_cache=lambda: None,
         reset_connection=lambda: None,
+        reset_live_edit=lambda: None,
         render_project_info=lambda: "current-project-info",
     )
 

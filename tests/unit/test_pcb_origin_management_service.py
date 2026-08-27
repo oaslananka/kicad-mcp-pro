@@ -19,6 +19,7 @@ def _service(board: object, vectors: list[tuple[int, int]]) -> PcbOriginService:
 
     return PcbOriginService(
         get_board=lambda: board,
+        run_mutation=lambda _operation, command: command(),
         vector_from_xy=vector_from_xy,
         mm_to_nm=lambda value: int(round(value * 1_000_000)),
         coord_nm=lambda origin, axis: int(origin[axis]),  # type: ignore[index]
@@ -91,6 +92,7 @@ def test_connection_errors_preserve_legacy_messages(
 
     service = PcbOriginService(
         get_board=fail,
+        run_mutation=lambda _operation, command: command(),
         vector_from_xy=lambda x, y: (x, y),
         mm_to_nm=lambda value: int(value),
         coord_nm=lambda origin, axis: 0,
@@ -107,6 +109,7 @@ def test_unexpected_origin_errors_are_not_hidden() -> None:
 
     service = PcbOriginService(
         get_board=fail,
+        run_mutation=lambda _operation, command: command(),
         vector_from_xy=lambda x, y: (x, y),
         mm_to_nm=lambda value: int(value),
         coord_nm=lambda origin, axis: 0,

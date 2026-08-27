@@ -32,10 +32,23 @@ def _service(board: object, calls: list[str]) -> PcbTransactionLifecycleService:
 def test_transaction_operations_use_the_existing_queue_names() -> None:
     calls: list[str] = []
     effects: list[str] = []
+    commit = object()
+
+    def begin_commit() -> object:
+        effects.append("begin")
+        return commit
+
     board = SimpleNamespace(
-        begin_commit=lambda: effects.append("begin"),
-        push_commit=lambda: effects.append("push"),
-        drop_commit=lambda: effects.append("drop"),
+        name="demo.kicad_pcb",
+        get_project=lambda: SimpleNamespace(path="/workspace/demo/demo.kicad_pro", name="demo"),
+        get_as_string=lambda: "(kicad_pcb)",
+        begin_commit=begin_commit,
+        push_commit=lambda received, _message="": effects.append(
+            "push" if received is commit else "push-wrong-handle"
+        ),
+        drop_commit=lambda received: effects.append(
+            "drop" if received is commit else "drop-wrong-handle"
+        ),
         revert=lambda: effects.append("revert"),
     )
     service = _service(board, calls)
@@ -44,12 +57,21 @@ def test_transaction_operations_use_the_existing_queue_names() -> None:
         "Transaction group started. Use pcb_push_commit to apply or pcb_drop_commit to discard."
     )
     assert service.push() == "Transaction group committed successfully."
+    assert service.begin() == (
+        "Transaction group started. Use pcb_push_commit to apply or pcb_drop_commit to discard."
+    )
     assert service.drop() == "Transaction group discarded successfully."
     assert service.revert() == (
         "Board reverted to last saved state. All unsaved changes have been discarded."
     )
-    assert calls == ["pcb_begin_commit", "pcb_push_commit", "pcb_drop_commit", "pcb_revert"]
-    assert effects == ["begin", "push", "drop", "revert"]
+    assert calls == [
+        "pcb_begin_commit",
+        "pcb_push_commit",
+        "pcb_begin_commit",
+        "pcb_drop_commit",
+        "pcb_revert",
+    ]
+    assert effects == ["begin", "push", "begin", "drop", "revert"]
 
 
 @pytest.mark.parametrize(

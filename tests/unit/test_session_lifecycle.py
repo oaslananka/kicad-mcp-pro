@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from kipy.errors import ApiError
+from kipy.proto.common import ApiStatusCode
 
 from kicad_mcp.errors import (
     IpcDisconnectedError,
@@ -93,7 +95,9 @@ def test_connect_is_cached_within_ttl() -> None:
 def test_reset_clears_cache() -> None:
     session = _make_session()
     c1 = session.client()
+    assert session.continuity_generation == 0
     session.reset()
+    assert session.continuity_generation == 1
     c2 = session.client()
     assert c1 is not c2
     assert c1.closed is True  # closed by reset
@@ -117,37 +121,77 @@ class _MonotonicClock:
         return self._now
 
 
-def test_ttl_expiry_triggers_reconnect() -> None:
-    """When TTL expires the session must close and reconnect."""
+class _ContinuityProbeClient(_FakeClient):
+    def __init__(self, *, probe: Callable[[], None]) -> None:
+        super().__init__()
+        self._probe = probe
+
+    def get_version(self) -> str:
+        self._probe()
+        return "10.0.5"
+
+
+def test_ttl_expiry_probes_healthy_cached_client_without_breaking_continuity() -> None:
+    """TTL freshness checks must not invalidate a still-live KiCad transaction."""
+    clock = _MonotonicClock()
+    factory_call_count = 0
+    probe_count = 0
+
+    def probe() -> None:
+        nonlocal probe_count
+        probe_count += 1
+
+    def factory() -> _ContinuityProbeClient:
+        nonlocal factory_call_count
+        factory_call_count += 1
+        return _ContinuityProbeClient(probe=probe)
+
+    session = _make_session(client_factory=factory, config=FakeConfig(ipc_cache_ttl=5.0))
+
+    with pytest.MonkeyPatch().context() as mp:
+        mp.setattr(time, "monotonic", clock)
+        first = session.client()
+        clock.advance(6.0)
+        second = session.client()
+
+    assert second is first
+    assert first.closed is False
+    assert factory_call_count == 1
+    assert probe_count == 1
+    assert session.continuity_generation == 0
+
+
+def test_ttl_probe_token_mismatch_reconnects_and_breaks_continuity() -> None:
+    """A restarted KiCad instance must invalidate the previous transaction epoch."""
     clock = _MonotonicClock()
     factory_call_count = 0
 
-    def factory() -> _FakeClient:
+    def factory() -> _ContinuityProbeClient:
         nonlocal factory_call_count
         factory_call_count += 1
-        return _FakeClient()
+        if factory_call_count == 1:
+            return _ContinuityProbeClient(
+                probe=lambda: (_ for _ in ()).throw(
+                    ApiError(
+                        "KiCad token mismatch",
+                        code=ApiStatusCode.AS_TOKEN_MISMATCH,
+                    )
+                )
+            )
+        return _ContinuityProbeClient(probe=lambda: None)
 
-    config = FakeConfig(ipc_cache_ttl=5.0)
-    session = _make_session(client_factory=factory, config=config)
+    session = _make_session(client_factory=factory, config=FakeConfig(ipc_cache_ttl=5.0))
 
-    # Override time.monotonic with clock
-    session._last_connect_time = 0.0  # ensure no time bias
-
-    # First call connects
     with pytest.MonkeyPatch().context() as mp:
         mp.setattr(time, "monotonic", clock)
-        c1 = session.client()
-        assert factory_call_count == 1
+        first = session.client()
+        clock.advance(6.0)
+        second = session.client()
 
-        clock.advance(3.0)  # still within TTL
-        session.client()
-        assert factory_call_count == 1  # no new connect
-
-        clock.advance(3.0)  # now past 5s TTL (total 6s)
-        c2 = session.client()
-        assert factory_call_count == 2  # triggered reconnect
-        assert c1 is not c2
-        assert c1.closed is True
+    assert second is not first
+    assert first.closed is True
+    assert factory_call_count == 2
+    assert session.continuity_generation == 1
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +307,15 @@ def test_reconnect_after_reset() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_classify_ipc_error_treats_kicad_token_mismatch_as_disconnect() -> None:
+    error = ApiError(
+        "request reached another KiCad instance",
+        code=ApiStatusCode.AS_TOKEN_MISMATCH,
+    )
+
+    assert _classify_ipc_error(error) == "disconnected"
+
+
 def test_classify_ipc_error_prefers_type_over_message() -> None:
     # Typed failures are classified by type — even when the message says nothing
     # about the failure mode — so a reworded/localized message can't flip them.
@@ -323,6 +376,7 @@ def test_board_disconnect_invalidates_cache_and_reconnects() -> None:
     assert session.board() is live_board
     assert factory_calls == 2  # reconnected after the disconnect
     assert clients[0].closed is True  # stale client was closed, not reused
+    assert session.continuity_generation == 1
 
 
 def test_board_disconnect_exhausted_raises_ipc_disconnected() -> None:

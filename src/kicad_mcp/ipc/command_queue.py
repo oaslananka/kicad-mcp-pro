@@ -45,6 +45,10 @@ class RetryClass(StrEnum):
     TIMEOUT = "timeout"
 
 
+class AmbiguousMutationError(RuntimeError):
+    """A mutating IPC call may have applied before its transport response failed."""
+
+
 def classify_error(exc: BaseException) -> RetryClass:
     """Classify an exception for retry handling.
 
@@ -69,7 +73,7 @@ class JournalEntry:
     correlation_id: str
     idempotency_key: str | None
     attempts: int
-    status: str  # "success" | "failed" | "deduplicated"
+    status: str  # "success" | "failed" | "deduplicated" | "ambiguous"
     duration_s: float
     error_code: str | None = None
     error_class: str | None = None
@@ -209,6 +213,56 @@ class KiCadCommandQueue:
                     return result
             # Unreachable: the loop either returns or raises.
             raise last_exc  # pragma: no cover
+
+    def execute_mutation(
+        self,
+        operation: str,
+        command: Callable[[], T],
+        *,
+        correlation_id: str = "",
+    ) -> T:
+        """Execute one mutating IPC command exactly once under the queue lock.
+
+        A timeout or retryable transport failure after the callable starts is
+        ambiguous: KiCad may already have applied the mutation even though the
+        response was lost.  Automatic replay is therefore disabled for this path.
+        """
+        with self._lock:
+            started = self._time()
+            try:
+                result = command()
+            except Exception as exc:  # noqa: BLE001 - classified and journaled below
+                classification = classify_error(exc)
+                ambiguous = classification in (RetryClass.RETRYABLE, RetryClass.TIMEOUT)
+                self._journal.append(
+                    JournalEntry(
+                        operation=operation,
+                        correlation_id=correlation_id,
+                        idempotency_key=None,
+                        attempts=1,
+                        status="ambiguous" if ambiguous else "failed",
+                        duration_s=self._time() - started,
+                        error_code=getattr(exc, "code", None),
+                        error_class=type(exc).__name__,
+                    )
+                )
+                if ambiguous:
+                    raise AmbiguousMutationError(
+                        f"Mutation {operation!r} may have been applied before the IPC "
+                        "failure; automatic retry is disabled."
+                    ) from exc
+                raise
+            self._journal.append(
+                JournalEntry(
+                    operation=operation,
+                    correlation_id=correlation_id,
+                    idempotency_key=None,
+                    attempts=1,
+                    status="success",
+                    duration_s=self._time() - started,
+                )
+            )
+            return result
 
     @property
     def journal(self) -> tuple[JournalEntry, ...]:
