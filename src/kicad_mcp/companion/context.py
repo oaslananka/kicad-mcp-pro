@@ -211,6 +211,24 @@ def _validate_loopback_base_url(base_url: str) -> None:
         raise ValueError("KiCad companion can only connect to a loopback http(s) MCP endpoint.")
 
 
+def _mcp_tool_error_message(payload: object) -> str | None:
+    """Return a user-facing MCP tool error message, or ``None`` for success."""
+    if not isinstance(payload, dict):
+        return None
+    result = payload.get("result")
+    if not isinstance(result, dict) or result.get("isError") is not True:
+        return None
+    content = result.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            text = item.get("text")
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+    return "MCP tool call failed."
+
+
 class StudioContextClient:
     """Minimal JSON-RPC client that pushes context to a running kicad-mcp-pro server."""
 
@@ -319,19 +337,9 @@ class StudioContextClient:
             if isinstance(raw, bytes):
                 raw = raw.decode("utf-8")
             payload = json.loads(raw) if raw else {}
-            result = payload.get("result") if isinstance(payload, dict) else None
-            if isinstance(result, dict) and result.get("isError") is True:
-                message = "MCP tool call failed."
-                content = result.get("content")
-                if isinstance(content, list):
-                    for item in content:
-                        if not isinstance(item, dict):
-                            continue
-                        text = item.get("text")
-                        if isinstance(text, str) and text.strip():
-                            message = text.strip()
-                            break
-                raise RuntimeError(message)
+            error_message = _mcp_tool_error_message(payload)
+            if error_message is not None:
+                raise RuntimeError(error_message)
             return payload
         finally:
             response.close()
