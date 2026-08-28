@@ -213,9 +213,7 @@ def _validate_loopback_base_url(base_url: str) -> None:
 
 def _mcp_tool_error_message(payload: object) -> str | None:
     """Return a user-facing MCP tool error message, or ``None`` for success."""
-    if not isinstance(payload, dict):
-        return None
-    result = payload.get("result")
+    result = payload.get("result") if isinstance(payload, dict) else None
     if not isinstance(result, dict) or result.get("isError") is not True:
         return None
     content = result.get("content")
