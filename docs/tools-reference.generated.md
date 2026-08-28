@@ -1,6 +1,6 @@
 Machine-maintained catalog. Refresh with `pnpm run docs:tools`.
 
-Total public tools: 386.
+Total public tools: 387.
 
 | Tool | Profile(s) | Read-Only | Destructive | Open-World | Idempotent | Headless | Requires KiCad Running | Summary |
 |---|---|---:|---:|---:|---:|---:|---:|---|
@@ -167,6 +167,7 @@ Total public tools: 386.
 | `pcb_get_groups` | agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager | yes | no | no | yes | yes | no | List board groups (KiCad 10.0.0+). |
 | `pcb_get_impedance_for_trace` | agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager | yes | no | no | yes | yes | no | Estimate trace impedance for the supplied width on the named stackup layer. |
 | `pcb_get_layers` | agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager | yes | no | no | yes | yes | no | List enabled board layers. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_get_live_edit_state` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | yes | no | no | yes | no | no | Return sanitized native-live PCB transaction state as deterministic JSON. |
 | `pcb_get_net_statistics` | agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager | yes | no | no | yes | yes | no | Return statistical data about all nets in the active PCB. |
 | `pcb_get_nets` | agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager | yes | no | no | yes | yes | no | List all board nets. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
 | `pcb_get_origin` | agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager | yes | no | no | yes | yes | no | Get the current board origin (drill origin) in millimeters. |
@@ -556,6 +557,7 @@ Total public tools: 386.
 - `pcb_get_groups`: profiles=agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
 - `pcb_get_impedance_for_trace`: profiles=agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
 - `pcb_get_layers`: profiles=agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_live_edit_state`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=no; requiresKiCadRunning=no.
 - `pcb_get_net_statistics`: profiles=agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
 - `pcb_get_nets`: profiles=agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
 - `pcb_get_origin`: profiles=agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.

@@ -13,7 +13,7 @@ from typing import Any
 _RAW = r"""
 {
   "schemaVersion": 1,
-  "updated": "2026-06-17",
+  "updated": "2026-08-28",
   "kicad_baseline": "10.0.x",
   "status_vocabulary": {
     "covered": "A registered MCP tool fully drives this capability.",
@@ -274,7 +274,15 @@ _RAW = r"""
           "mcp_tool": "pcb_push_commit",
           "status": "covered",
           "kicad_version_introduced": "10.0.x",
-          "notes": "pcb_begin_commit / push_commit / drop_commit / revert."
+          "notes": "pcb_begin_commit / pcb_push_commit / pcb_drop_commit / pcb_revert expose the native KiCad commit lifecycle. Transaction participation is limited to reviewed verified mutations; unsupported writes fail before side effects while a native-live session is active."
+        },
+        {
+          "capability": "Report verified native-live transaction and recovery state",
+          "kicad_channel": "ipc",
+          "mcp_tool": "pcb_get_live_edit_state",
+          "status": "covered",
+          "kicad_version_introduced": "10.0.x",
+          "notes": "Path-free state reports board fingerprint, verified/ambiguous mutation counts, recovery requirement, and terminal outcome without representing file-backed or schematic writes as native-live IPC."
         },
         {
           "capability": "Interactive push-and-shove routing",

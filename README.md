@@ -37,7 +37,7 @@
 </p>
 
 <!-- parity-coverage-badge:start -->
-[![KiCad programmatic parity](https://img.shields.io/badge/KiCad_programmatic_parity-76.3%25-green)](docs/compatibility/capability-parity.generated.md)
+[![KiCad programmatic parity](https://img.shields.io/badge/KiCad_programmatic_parity-76.6%25-green)](docs/compatibility/capability-parity.generated.md)
 <!-- parity-coverage-badge:end -->
 
 <p>
@@ -67,7 +67,13 @@ review, **not** a substitute for a 2D/3D field solver, EM/FEA simulation, or for
 sign-off. Live component sourcing uses the JLCPCB public catalog by default; Nexar,
 DigiKey, and Mouser are available only when their API credentials are configured. What
 fraction of KiCad's programmatic surface the server drives is tracked openly in the
-[capability-parity matrix](docs/compatibility/capability-parity.generated.md).
+[capability-parity matrix](docs/compatibility/capability-parity.generated.md). Raw tool count and
+capability coverage are inventory metrics, not the headline product-quality measure. End-to-end
+task outcome, mutation recovery, corruption, required DRC execution, and manufacturing
+reproducibility are the outcome KPIs. The committed
+[native-live example evidence](docs/evidence/task-outcomes/2026-08-28-native-live-example/)
+intentionally reports `insufficient_evidence`; representative-corpus target attainment remains
+separate until the qualification work in #730 is complete.
 
 ## Project identity
 

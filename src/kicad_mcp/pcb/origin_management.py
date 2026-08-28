@@ -5,6 +5,12 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Protocol
+
+
+class RunMutation(Protocol):
+    def __call__[T](self, operation: str, command: Callable[[], T]) -> T: ...
+
 
 type GetBoard = Callable[[], object]
 type VectorFromXY = Callable[[int, int], object]
@@ -19,6 +25,7 @@ class PcbOriginService:
     """Read and update the board drill origin through injected dependencies."""
 
     get_board: GetBoard
+    run_mutation: RunMutation
     vector_from_xy: VectorFromXY
     mm_to_nm: MmToNm
     coord_nm: CoordNm
@@ -36,7 +43,7 @@ class PcbOriginService:
                 int(self.mm_to_nm(x_mm)),
                 int(self.mm_to_nm(y_mm)),
             )
-            set_origin(origin)
+            self.run_mutation("pcb_set_origin", lambda: set_origin(origin))
             return f"Board origin set to ({x_mm:.3f}, {y_mm:.3f}) mm."
         except self.connection_errors as exc:
             return f"Failed to set origin: {exc}"

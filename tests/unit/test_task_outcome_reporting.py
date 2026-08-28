@@ -106,5 +106,6 @@ def test_eval_package_exports_task_outcome_report_renderers() -> None:
     [render_task_outcome_summary_json, render_task_outcome_summary_text],
 )
 def test_report_renderers_reject_sensitive_evidence(renderer) -> None:
+    summary = _summary(benchmark_id="/home/private/pcb-reference-suite")
     with pytest.raises(EvidenceSanitizationError, match="sensitive string"):
-        renderer(_summary(benchmark_id="/home/private/pcb-reference-suite"))
+        renderer(summary)

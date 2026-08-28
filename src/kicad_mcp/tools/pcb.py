@@ -7,12 +7,13 @@ import math
 import re
 import time
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Annotated, Any, Protocol, cast
 
 import structlog
+from kipy.board import Board
 from kipy.board_types import (
     BoardCircle,
     BoardItem,
@@ -32,9 +33,8 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from ..config import get_config
-from ..connection import KiCadConnectionError, board_transaction, get_board
+from ..connection import KiCadConnectionError, get_board
 from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION, upgrade_generated_file
-from ..ipc.command_queue import get_command_queue
 from ..library_resolution import footprint_file as _footprint_file
 from ..models.common import _FootprintLike, _PadLike
 from ..models.pcb import (
@@ -76,15 +76,19 @@ from ..pcb.board_inspection import PcbBoardInspectionService
 from ..pcb.file_inspection import PcbFileInspectionService
 from ..pcb.footprint_transform import (
     FootprintRotationError,
+    RotationAttribute,
     apply_footprint_rotation,
     verify_footprint_rotation,
 )
 from ..pcb.groups_inspection import PcbGroupsInspectionService
+from ..pcb.live_edit_runtime import (
+    execute_live_board_mutation,
+    get_live_edit_service,
+)
 from ..pcb.origin_management import PcbOriginService
 from ..pcb.session_inspection import PcbSessionInspectionService
 from ..pcb.stackup_management import PcbStackupManagementService
 from ..pcb.title_block_management import PcbTitleBlockService
-from ..pcb.transaction_lifecycle import PcbTransactionLifecycleService
 from ..utils import telemetry as otel
 from ..utils.cache import clear_ttl_cache
 from ..utils.impedance import TraceType, copper_thickness_mm, trace_impedance
@@ -142,8 +146,95 @@ _COPPER_LAYER_SEQUENCE = [
 
 
 def _run_queued_ipc_mutation[T](operation: str, command: Callable[[], T]) -> T:
-    """Serialize a live KiCad GUI mutation through the central IPC queue."""
-    return get_command_queue().execute(operation, command, correlation_id=operation)
+    """Serialize one live KiCad GUI mutation through the canonical native-live service."""
+    return execute_live_board_mutation(
+        operation,
+        lambda _board: command(),
+        verifier=None,
+    )
+
+
+def _native_live_transaction_active() -> bool:
+    """Return whether the canonical native-live service has a staged transaction."""
+    return get_live_edit_service().status_payload()["state"] == "active"
+
+
+def _staged_message(operation: str) -> str:
+    return (
+        f"{operation} staged in the active native-live transaction. "
+        "Final live verification is pending pcb_push_commit."
+    )
+
+
+def _item_id_value(item: object) -> str:
+    return str(getattr(getattr(item, "id", None), "value", ""))
+
+
+def _reload_created_items(board: Board, created: Iterable[object]) -> list[object]:
+    try:
+        created_items = list(created)
+    except TypeError:
+        return []
+    ids = [getattr(item, "id", None) for item in created_items]
+    if not ids or any(item_id is None for item_id in ids):
+        return []
+    get_items_by_id = getattr(board, "get_items_by_id", None)
+    if not callable(get_items_by_id):
+        return []
+    reloaded = list(get_items_by_id(ids))
+    expected_ids = {_item_id_value(item) for item in created_items}
+    actual_ids = {_item_id_value(item) for item in reloaded}
+    if "" in expected_ids or expected_ids != actual_ids:
+        return []
+    return reloaded
+
+
+def _net_name(item: object) -> str:
+    return str(getattr(getattr(item, "net", None), "name", ""))
+
+
+def _verify_created_track(board: Board, created: Iterable[object], expected: Track) -> bool:
+    reloaded = _reload_created_items(board, created)
+    if len(reloaded) != 1:
+        return False
+    actual = cast(Any, reloaded[0])
+    try:
+        return (
+            _coord_nm(actual.start, "x") == _coord_nm(expected.start, "x")
+            and _coord_nm(actual.start, "y") == _coord_nm(expected.start, "y")
+            and _coord_nm(actual.end, "x") == _coord_nm(expected.end, "x")
+            and _coord_nm(actual.end, "y") == _coord_nm(expected.end, "y")
+            and int(actual.layer) == int(expected.layer)
+            and int(actual.width) == int(expected.width)
+            and _net_name(actual) == _net_name(expected)
+        )
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
+def _verify_created_via(board: Board, created: Iterable[object], expected: Via) -> bool:
+    reloaded = _reload_created_items(board, created)
+    if len(reloaded) != 1:
+        return False
+    actual = cast(Any, reloaded[0])
+    try:
+        return (
+            _coord_nm(actual.position, "x") == _coord_nm(expected.position, "x")
+            and _coord_nm(actual.position, "y") == _coord_nm(expected.position, "y")
+            and int(actual.diameter) == int(expected.diameter)
+            and int(actual.drill_diameter) == int(expected.drill_diameter)
+            and int(actual.type) == int(expected.type)
+            and _net_name(actual) == _net_name(expected)
+        )
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
+def _verify_deleted_items(board: Board, item_ids: tuple[object, ...]) -> bool:
+    get_items_by_id = getattr(board, "get_items_by_id", None)
+    if not callable(get_items_by_id):
+        return False
+    return len(list(get_items_by_id(list(item_ids)))) == 0
 
 
 class _ComponentPlacement(Protocol):
@@ -530,12 +621,60 @@ def _apply_stackup_to_board(content: str, layers: list[StackupLayerSpec]) -> str
     return _replace_or_append_root_block(updated, "setup", refreshed_setup)
 
 
-def _find_footprint_by_reference(reference: str) -> _FootprintLike | None:
-    board = get_board()
+def _find_footprint_on_board(board: object, reference: str) -> _FootprintLike | None:
     for footprint in cast(Iterable[_FootprintLike], board_footprints(board)):
         if footprint.reference_field.text.value == reference:
             return footprint
     return None
+
+
+def _find_footprint_by_reference(reference: str) -> _FootprintLike | None:
+    return _find_footprint_on_board(get_board(), reference)
+
+
+def _verify_footprint_transform(
+    board: object,
+    _updated: object,
+    *,
+    reference: str,
+    x_mm: float,
+    y_mm: float,
+    rotation_attribute: RotationAttribute,
+    rotation_deg: float,
+) -> bool:
+    refreshed = _find_footprint_on_board(board, reference)
+    if refreshed is None:
+        return False
+    try:
+        position_ok = _coord_nm(refreshed.position, "x") == mm_to_nm(x_mm) and _coord_nm(
+            refreshed.position, "y"
+        ) == mm_to_nm(y_mm)
+        if not position_ok:
+            return False
+        verify_footprint_rotation(
+            refreshed,
+            rotation_attribute,
+            rotation_deg,
+        )
+        return True
+    except (AttributeError, FootprintRotationError, TypeError, ValueError):
+        return False
+
+
+def _verify_footprint_layer(
+    board: object,
+    _updated: object,
+    *,
+    reference: str,
+    expected_layer: int,
+) -> bool:
+    refreshed = _find_footprint_on_board(board, reference)
+    if refreshed is None:
+        return False
+    try:
+        return int(refreshed.layer) == int(expected_layer)
+    except (AttributeError, TypeError, ValueError):
+        return False
 
 
 def _format_selection_id(item: object) -> str:
@@ -623,8 +762,10 @@ def run_auto_refill_zones() -> str:
     from ..connection import get_board as _get_board
 
     try:
-        board = _get_board()
-        board.refill_zones(block=True, max_poll_seconds=60.0)
+        _run_queued_ipc_mutation(
+            "pcb_refill_zones",
+            lambda: _get_board().refill_zones(block=True, max_poll_seconds=60.0),
+        )
         return "Zones refilled successfully."
     except KiCadConnectionError:
         return (
@@ -2749,15 +2890,20 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
             width_mm=width_mm,
             net_name=net_name,
         )
-        with board_transaction() as board:
-            track = Track()
-            track.start = Vector2.from_xy_mm(payload.x1_mm, payload.y1_mm)
-            track.end = Vector2.from_xy_mm(payload.x2_mm, payload.y2_mm)
-            track.layer = resolve_layer(payload.layer)
-            track.width = mm_to_nm(payload.width_mm)
-            if payload.net_name:
-                track.net = _find_net(payload.net_name)
-            board.create_items([track])
+        track = Track()
+        track.start = Vector2.from_xy_mm(payload.x1_mm, payload.y1_mm)
+        track.end = Vector2.from_xy_mm(payload.x2_mm, payload.y2_mm)
+        track.layer = resolve_layer(payload.layer)
+        track.width = mm_to_nm(payload.width_mm)
+        if payload.net_name:
+            track.net = _find_net(payload.net_name)
+        execute_live_board_mutation(
+            "pcb_add_track",
+            lambda board: list(board.create_items([track])),
+            verifier=lambda board, created: _verify_created_track(board, created, track),
+        )
+        if _native_live_transaction_active():
+            return _staged_message("Track")
         return "Track added successfully."
 
     @mcp.tool()
@@ -2798,8 +2944,11 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
             if track_input.net:
                 track.net = _find_net(track_input.net)
             created.append(track)
-        with board_transaction() as board:
-            board.create_items(created)
+        execute_live_board_mutation(
+            "pcb_add_tracks_bulk",
+            lambda board: list(board.create_items(created)),
+            verifier=None,
+        )
         return f"Added {len(created)} tracks."
 
     @mcp.tool()
@@ -2841,8 +2990,13 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
             _configure_layer_via(via, from_layer=from_layer, to_layer=to_layer)
         if payload.net_name:
             via.net = _find_net(payload.net_name)
-        with board_transaction() as board:
-            board.create_items([via])
+        execute_live_board_mutation(
+            "pcb_add_via",
+            lambda board: list(board.create_items([via])),
+            verifier=lambda board, created: _verify_created_via(board, created, via),
+        )
+        if _native_live_transaction_active():
+            return _staged_message("Via")
         return "Via added successfully."
 
     @mcp.tool()
@@ -2880,8 +3034,11 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
         _configure_layer_via(via, from_layer=payload.from_layer, to_layer=payload.to_layer)
         if payload.net_name:
             via.net = _find_net(payload.net_name)
-        with board_transaction() as board:
-            board.create_items([via])
+        execute_live_board_mutation(
+            "pcb_add_blind_via",
+            lambda board: list(board.create_items([via])),
+            verifier=None,
+        )
         from_name = resolve_layer_name(payload.from_layer)
         to_name = resolve_layer_name(payload.to_layer)
         return f"Blind or buried via added successfully from {from_name} to {to_name}."
@@ -2921,8 +3078,11 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
         _configure_layer_via(via, from_layer=payload.from_layer, to_layer=payload.to_layer)
         if payload.net_name:
             via.net = _find_net(payload.net_name)
-        with board_transaction() as board:
-            board.create_items([via])
+        execute_live_board_mutation(
+            "pcb_add_microvia",
+            lambda board: list(board.create_items([via])),
+            verifier=None,
+        )
         from_name = resolve_layer_name(payload.from_layer)
         to_name = resolve_layer_name(payload.to_layer)
         return f"Microvia added successfully from {from_name} to {to_name}."
@@ -2950,8 +3110,11 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
         segment.start = Vector2.from_xy_mm(payload.x1_mm, payload.y1_mm)
         segment.end = Vector2.from_xy_mm(payload.x2_mm, payload.y2_mm)
         segment.attributes.stroke.width = mm_to_nm(payload.width_mm)
-        with board_transaction() as board:
-            board.create_items([segment])
+        execute_live_board_mutation(
+            "pcb_add_segment",
+            lambda board: list(board.create_items([segment])),
+            verifier=None,
+        )
         return "Graphic segment added successfully."
 
 
@@ -2979,8 +3142,11 @@ def _register_board_graphics_tools(mcp: FastMCP) -> None:
         circle.center = Vector2.from_xy_mm(payload.cx_mm, payload.cy_mm)
         circle.radius_point = Vector2.from_xy_mm(payload.cx_mm + payload.radius_mm, payload.cy_mm)
         circle.attributes.stroke.width = mm_to_nm(payload.width_mm)
-        with board_transaction() as board:
-            board.create_items([circle])
+        execute_live_board_mutation(
+            "pcb_add_circle",
+            lambda board: list(board.create_items([circle])),
+            verifier=None,
+        )
         return "Graphic circle added successfully."
 
     @mcp.tool()
@@ -3006,8 +3172,11 @@ def _register_board_graphics_tools(mcp: FastMCP) -> None:
         rectangle.top_left = Vector2.from_xy_mm(payload.x1_mm, payload.y1_mm)
         rectangle.bottom_right = Vector2.from_xy_mm(payload.x2_mm, payload.y2_mm)
         rectangle.attributes.stroke.width = mm_to_nm(payload.width_mm)
-        with board_transaction() as board:
-            board.create_items([rectangle])
+        execute_live_board_mutation(
+            "pcb_add_rectangle",
+            lambda board: list(board.create_items([rectangle])),
+            verifier=None,
+        )
         return "Graphic rectangle added successfully."
 
     @mcp.tool()
@@ -3032,8 +3201,11 @@ def _register_board_graphics_tools(mcp: FastMCP) -> None:
             payload.origin_y_mm + payload.height_mm,
         )
         rectangle.attributes.stroke.width = mm_to_nm(0.05)
-        with board_transaction() as board:
-            board.create_items([rectangle])
+        execute_live_board_mutation(
+            "pcb_set_board_outline",
+            lambda board: list(board.create_items([rectangle])),
+            verifier=None,
+        )
         return "Board outline added successfully."
 
     @mcp.tool()
@@ -3071,8 +3243,11 @@ def _register_board_graphics_tools(mcp: FastMCP) -> None:
             text_item.attributes.angle = payload.rotation_deg
         except Exception as exc:
             logger.debug("board_text_angle_not_supported", error=str(exc))
-        with board_transaction() as board:
-            board.create_items([text_item])
+        execute_live_board_mutation(
+            "pcb_add_text",
+            lambda board: list(board.create_items([text_item])),
+            verifier=None,
+        )
         return "Board text added successfully."
 
     @mcp.tool()
@@ -3168,14 +3343,15 @@ def _register_board_mutation_tools(mcp: FastMCP) -> None:
             kiid.value = item_id
             kiids.append(kiid)
         try:
-
-            def _delete_items() -> None:
-                with board_transaction() as board:
-                    board.remove_items_by_id(kiids)
-
-            _run_queued_ipc_mutation("pcb_delete_items", _delete_items)
+            execute_live_board_mutation(
+                "pcb_delete_items",
+                lambda board: (board.remove_items_by_id(kiids), tuple(kiids))[1],
+                verifier=_verify_deleted_items,
+            )
         except Exception as exc:
             return f"Failed to delete items: {exc}"
+        if _native_live_transaction_active():
+            return _staged_message(f"Deletion of {len(kiids)} item(s)")
         return f"Deleted {len(kiids)} item(s)."
 
     @mcp.tool()
@@ -3267,8 +3443,29 @@ def _register_board_mutation_tools(mcp: FastMCP) -> None:
 
         footprint.position = Vector2.from_xy_mm(x_mm, y_mm)
         rotation_attribute = apply_footprint_rotation(footprint, rotation_deg)
-        with board_transaction() as board:
-            board.update_items([cast(BoardItem, footprint)])
+        transaction_active = _native_live_transaction_active()
+        execute_live_board_mutation(
+            "pcb_move_footprint",
+            lambda board: list(board.update_items([cast(BoardItem, footprint)])),
+            verifier=(
+                (
+                    lambda board, updated: _verify_footprint_transform(
+                        board,
+                        updated,
+                        reference=reference,
+                        x_mm=x_mm,
+                        y_mm=y_mm,
+                        rotation_attribute=rotation_attribute,
+                        rotation_deg=rotation_deg,
+                    )
+                )
+                if transaction_active
+                else None
+            ),
+        )
+
+        if transaction_active:
+            return _staged_message(f"Footprint move for '{reference}'")
 
         refreshed = _find_footprint_by_reference(reference)
         if refreshed is None:
@@ -3292,9 +3489,20 @@ def _register_board_mutation_tools(mcp: FastMCP) -> None:
         footprint = _find_footprint_by_reference(reference)
         if footprint is None:
             return f"Footprint '{reference}' was not found on the active board."
-        footprint.layer = resolve_layer(layer)
-        with board_transaction() as board:
-            board.update_items([cast(BoardItem, footprint)])
+        expected_layer = resolve_layer(layer)
+        footprint.layer = expected_layer
+        execute_live_board_mutation(
+            "pcb_set_footprint_layer",
+            lambda board: list(board.update_items([cast(BoardItem, footprint)])),
+            verifier=lambda board, updated: _verify_footprint_layer(
+                board,
+                updated,
+                reference=reference,
+                expected_layer=expected_layer,
+            ),
+        )
+        if _native_live_transaction_active():
+            return _staged_message(f"Footprint layer update for '{reference}'")
         return f"Updated footprint '{reference}' to layer '{layer}'."
 
     @mcp.tool()
@@ -3993,9 +4201,12 @@ def _register_zone_authoring_tools(mcp: FastMCP) -> None:
             payload.thermal_bridge_width_mm
         )
 
-        with board_transaction() as board:
-            board.create_items([zone])
+        def _create_zone(board: Board) -> Sequence[object]:
+            created = list(board.create_items([zone]))
             board.refill_zones(block=True, max_poll_seconds=60.0)
+            return created
+
+        execute_live_board_mutation("pcb_add_zone", _create_zone, verifier=None)
 
         return (
             f"Added copper zone '{zone.name}' for net '{payload.net_name}' on {payload.layer}.\n"
@@ -4074,8 +4285,11 @@ def _register_zone_authoring_tools(mcp: FastMCP) -> None:
         zone.proto.rule_area_settings.keepout_copper = "no_copper" in payload.rules
         zone.proto.rule_area_settings.keepout_pads = "no_pads" in payload.rules
         zone.proto.rule_area_settings.keepout_footprints = "no_footprints" in payload.rules
-        with board_transaction() as current_board:
-            current_board.create_items([zone])
+        execute_live_board_mutation(
+            "pcb_set_keepout_zone",
+            lambda current_board: list(current_board.create_items([zone])),
+            verifier=None,
+        )
         return (
             f"Added keepout zone '{payload.name}' on {len(zone.layers)} copper layer(s) "
             f"with rules: {', '.join(payload.rules)}."
@@ -4434,9 +4648,12 @@ def _register_teardrop_tools(mcp: FastMCP) -> None:
         if not zones:
             return "No simple pad-to-track teardrop candidates were found on the active board."
 
-        with board_transaction() as current_board:
-            current_board.create_items(zones)
+        def _create_teardrops(current_board: Board) -> Sequence[object]:
+            created_items = list(current_board.create_items(zones))
             current_board.refill_zones(block=True, max_poll_seconds=60.0)
+            return created_items
+
+        execute_live_board_mutation("pcb_add_teardrops", _create_teardrops, verifier=None)
         return f"Added {len(zones)} teardrop helper zone(s) to the active board."
 
 
@@ -4806,11 +5023,7 @@ def register(mcp: FastMCP) -> None:
     pcb_transaction_lifecycle.register(
         mcp,
         pcb_transaction_lifecycle.PcbTransactionLifecycleDependencies(
-            service=PcbTransactionLifecycleService(
-                get_board=get_board,
-                run_mutation=_run_queued_ipc_mutation,
-                connection_errors=(KiCadConnectionError, OSError),
-            )
+            service=get_live_edit_service()
         ),
     )
 
@@ -4829,6 +5042,7 @@ def register(mcp: FastMCP) -> None:
         pcb_origin_management.PcbOriginDependencies(
             service=PcbOriginService(
                 get_board=get_board,
+                run_mutation=_run_queued_ipc_mutation,
                 vector_from_xy=Vector2.from_xy,
                 mm_to_nm=mm_to_nm,
                 coord_nm=_coord_nm,

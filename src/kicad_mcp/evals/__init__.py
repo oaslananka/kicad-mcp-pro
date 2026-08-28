@@ -19,6 +19,7 @@ from .corpus import (
     evaluate_project,
     load_corpus,
 )
+from .live_edit_evidence import mutation_evidence_from_live_edit
 from .live_runner import (
     AdapterObservation,
     CaseExecution,
@@ -147,6 +148,7 @@ __all__ = [
     "load_cases",
     "load_corpus",
     "load_thresholds",
+    "mutation_evidence_from_live_edit",
     "run_eval",
     "run_eval_repeated",
     "score_case",

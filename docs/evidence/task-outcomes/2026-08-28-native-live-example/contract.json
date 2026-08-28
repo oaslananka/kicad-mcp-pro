@@ -1,0 +1,35 @@
+{
+  "benchmark_id": "native-live-transaction-example",
+  "benchmark_version": "v1",
+  "evidence_sufficiency": {
+    "confidence_level": 0.95,
+    "interval_method": "wilson",
+    "minimum_drc_required_tasks": 2,
+    "minimum_manufacturing_release_tasks": 2,
+    "minimum_recovery_required_mutations": 2,
+    "minimum_valid_attempts": 2,
+    "minimum_valid_attempts_by_task_class": {
+      "pcb-edit": 2
+    }
+  },
+  "schema_version": "pcb-task-outcome.v1",
+  "tasks": [
+    {
+      "stage_requirements": {
+        "constraints": "not_applicable",
+        "drc": "required",
+        "erc": "not_applicable",
+        "manufacturing_generation": "not_applicable",
+        "manufacturing_reproducibility": "not_applicable",
+        "parse_reopen": "required",
+        "pcb": "required",
+        "requirements": "required",
+        "schematic": "not_applicable"
+      },
+      "task_class": "pcb-edit",
+      "task_id": "verified-track-via-edit",
+      "validation_exception_reason_codes": {},
+      "version": "v1"
+    }
+  ]
+}

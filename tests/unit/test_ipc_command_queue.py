@@ -227,27 +227,108 @@ def test_singleton_accessor_resets() -> None:
     assert get_command_queue() is not first
 
 
-def test_pcb_live_mutation_helper_routes_through_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pcb_live_mutation_helper_routes_through_native_live_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import kicad_mcp.tools.pcb as pcb_mod
 
-    calls: list[tuple[str, str]] = []
+    calls: list[tuple[str, object]] = []
 
-    class _FakeQueue:
-        def execute(
-            self,
-            operation: str,
-            command: Callable[[], str],
-            *,
-            correlation_id: str = "",
-            idempotency_key: str | None = None,
-        ) -> str:
-            del idempotency_key
-            calls.append((operation, correlation_id))
-            return command()
+    def execute_live_board_mutation(
+        operation: str,
+        command: Callable[[object], str],
+        *,
+        verifier: object,
+    ) -> str:
+        calls.append((operation, verifier))
+        return command(object())
 
-    monkeypatch.setattr(pcb_mod, "get_command_queue", lambda: _FakeQueue())
+    monkeypatch.setattr(pcb_mod, "execute_live_board_mutation", execute_live_board_mutation)
 
     result = pcb_mod._run_queued_ipc_mutation("pcb_save", lambda: "ok")
 
     assert result == "ok"
-    assert calls == [("pcb_save", "pcb_save")]
+    assert calls == [("pcb_save", None)]
+
+
+def test_mutation_timeout_after_possible_side_effect_is_never_replayed() -> None:
+    reconnects = {"n": 0}
+    calls = {"n": 0}
+
+    def reconnect() -> None:
+        reconnects["n"] += 1
+
+    queue = _queue(max_retries=5, reconnect=reconnect)
+
+    def command() -> str:
+        calls["n"] += 1
+        raise TimeoutError("response lost after mutation may have applied")
+
+    from kicad_mcp.ipc.command_queue import AmbiguousMutationError
+
+    with pytest.raises(AmbiguousMutationError, match="automatic retry is disabled"):
+        queue.execute_mutation("pcb_add_track", command, correlation_id="mut-1")
+
+    assert calls["n"] == 1
+    assert reconnects["n"] == 0
+    assert queue._slept == []  # type: ignore[attr-defined]
+    entry = queue.journal[-1]
+    assert entry.operation == "pcb_add_track"
+    assert entry.correlation_id == "mut-1"
+    assert entry.status == "ambiguous"
+    assert entry.attempts == 1
+    assert entry.error_class == "TimeoutError"
+
+
+def test_mutation_retryable_disconnect_is_never_replayed() -> None:
+    calls = {"n": 0}
+    queue = _queue(max_retries=5)
+
+    def command() -> str:
+        calls["n"] += 1
+        raise _RetryableError("connection lost")
+
+    from kicad_mcp.ipc.command_queue import AmbiguousMutationError
+
+    with pytest.raises(AmbiguousMutationError):
+        queue.execute_mutation("pcb_add_via", command)
+
+    assert calls["n"] == 1
+    assert queue._slept == []  # type: ignore[attr-defined]
+    assert queue.journal[-1].status == "ambiguous"
+    assert queue.journal[-1].attempts == 1
+    assert queue.journal[-1].error_code == "RETRY"
+
+
+def test_mutation_non_retryable_error_preserves_original_failure() -> None:
+    calls = {"n": 0}
+    queue = _queue(max_retries=5)
+
+    def command() -> str:
+        calls["n"] += 1
+        raise _FatalError("invalid request")
+
+    with pytest.raises(_FatalError, match="invalid request"):
+        queue.execute_mutation("pcb_add_track", command)
+
+    assert calls["n"] == 1
+    assert queue.journal[-1].status == "failed"
+    assert queue.journal[-1].attempts == 1
+    assert queue._slept == []  # type: ignore[attr-defined]
+
+
+def test_mutation_success_executes_once_and_journals_success() -> None:
+    calls = {"n": 0}
+    queue = _queue(max_retries=5)
+
+    def command() -> str:
+        calls["n"] += 1
+        return "created"
+
+    assert queue.execute_mutation("pcb_add_track", command, correlation_id="mut-ok") == "created"
+    assert calls["n"] == 1
+    entry = queue.journal[-1]
+    assert entry.status == "success"
+    assert entry.attempts == 1
+    assert entry.correlation_id == "mut-ok"
+    assert queue._slept == []  # type: ignore[attr-defined]

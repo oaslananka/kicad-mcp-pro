@@ -8,16 +8,17 @@ formal sign-off. Distributed PDN and thermal-network solvers are planned (P3-T2/
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Protocol, cast
 
+from kipy.board import Board
 from kipy.board_types import Net, Zone
 from kipy.geometry import PolyLineNode, Vector2
 from kipy.proto.board.board_types_pb2 import BoardLayer
 from mcp.server.fastmcp import FastMCP
 
 from ..config import get_config
-from ..connection import board_transaction, get_board
+from ..connection import get_board
 from ..models.common import _FootprintLike
 from ..models.power_integrity import (
     CopperWeightCheckInput,
@@ -31,6 +32,7 @@ from ..models.power_integrity import (
 from ..models.verdict import Verdict, VerdictReport
 from ..pcb.board_access import board_footprints, board_shapes, board_tracks, board_zones
 from ..pcb.geometry import point_xy_mm, track_segment_length_mm
+from ..pcb.live_edit_runtime import execute_live_board_mutation
 from ..utils.impedance import copper_thickness_mm, recommended_decoupling_distance_mm
 from ..utils.layers import resolve_layer
 from ..utils.pdn_mesh import (
@@ -530,9 +532,16 @@ def register(mcp: FastMCP) -> None:
         for x_mm, y_mm in points:
             outline.append(PolyLineNode.from_point(Vector2.from_xy_mm(x_mm, y_mm)))
 
-        with board_transaction() as board:
-            board.create_items([zone])
+        def _create_power_plane(board: Board) -> Sequence[object]:
+            created = list(board.create_items([zone]))
             board.refill_zones(block=True, max_poll_seconds=60.0)
+            return created
+
+        execute_live_board_mutation(
+            "pdn_generate_power_plane",
+            _create_power_plane,
+            verifier=None,
+        )
 
         return (
             f"Generated a copper plane for '{payload.net_name}' on {payload.layer} "

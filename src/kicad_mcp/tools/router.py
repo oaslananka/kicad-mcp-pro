@@ -238,6 +238,7 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "pcb_set_title_block_info",
             "pcb_import_board",
             "pcb_begin_commit",
+            "pcb_get_live_edit_state",
             "pcb_push_commit",
             "pcb_drop_commit",
             "pcb_revert",

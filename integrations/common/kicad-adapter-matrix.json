@@ -332,7 +332,7 @@
           "toolCount": 27
         },
         "pcb_write": {
-          "availableCount": 0,
+          "availableCount": 1,
           "blockedCount": 48,
           "canarySurfaces": [
             "write"
@@ -346,9 +346,10 @@
             "transactional-pcb-file"
           ],
           "selectedBackends": {
+            "local-engine": 1,
             "unavailable": 48
           },
-          "toolCount": 48
+          "toolCount": 49
         },
         "power_integrity": {
           "availableCount": 8,
@@ -656,7 +657,7 @@
           "toolCount": 27
         },
         "pcb_write": {
-          "availableCount": 48,
+          "availableCount": 49,
           "blockedCount": 0,
           "canarySurfaces": [
             "write"
@@ -670,9 +671,10 @@
             "transactional-pcb-file"
           ],
           "selectedBackends": {
-            "kicad-gui-ipc": 48
+            "kicad-gui-ipc": 48,
+            "local-engine": 1
           },
-          "toolCount": 48
+          "toolCount": 49
         },
         "power_integrity": {
           "availableCount": 8,
@@ -980,7 +982,7 @@
           "toolCount": 27
         },
         "pcb_write": {
-          "availableCount": 48,
+          "availableCount": 49,
           "blockedCount": 0,
           "canarySurfaces": [
             "write"
@@ -994,9 +996,10 @@
             "transactional-pcb-file"
           ],
           "selectedBackends": {
-            "kicad-11-headless-ipc": 48
+            "kicad-11-headless-ipc": 48,
+            "local-engine": 1
           },
-          "toolCount": 48
+          "toolCount": 49
         },
         "power_integrity": {
           "availableCount": 8,
@@ -1196,7 +1199,7 @@
     "previewBaseline": "11.x",
     "publicSupportClaim": "KiCad 11 remains preview until native canaries pass.",
     "stableBaseline": "10.0.x",
-    "toolCount": 386
+    "toolCount": 387
   },
   "tools": [
     {
@@ -5109,6 +5112,30 @@
       "runtime": "none",
       "tier": "read",
       "tool": "pcb_get_layers",
+      "writesFiles": false
+    },
+    {
+      "category": "pcb_write",
+      "routes": {
+        "degradedNoKiCad": {
+          "available": true,
+          "backend": "local-engine",
+          "mutationGuard": null
+        },
+        "kicad10Gui": {
+          "available": true,
+          "backend": "local-engine",
+          "mutationGuard": null
+        },
+        "kicad11Headless": {
+          "available": true,
+          "backend": "local-engine",
+          "mutationGuard": null
+        }
+      },
+      "runtime": "none",
+      "tier": "read",
+      "tool": "pcb_get_live_edit_state",
       "writesFiles": false
     },
     {
