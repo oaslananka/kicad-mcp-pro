@@ -398,20 +398,23 @@ def test_begin_rejects_missing_or_incomplete_board_identity() -> None:
         service.begin()
 
     incomplete = FakeBoard(project_path="")
+    incomplete_service = _service([incomplete])
     with pytest.raises(RuntimeError, match="identity is incomplete"):
-        _service([incomplete]).begin()
+        incomplete_service.begin()
 
 
 def test_begin_rejects_missing_or_invalid_verification_snapshot() -> None:
     board = FakeBoard()
     board.get_as_string = None  # type: ignore[method-assign]
+    service = _service([board])
     with pytest.raises(RuntimeError, match="cannot provide a verification snapshot"):
-        _service([board]).begin()
+        service.begin()
 
     invalid = FakeBoard()
     invalid.get_as_string = lambda: b"not-text"  # type: ignore[method-assign,return-value]
+    invalid_service = _service([invalid])
     with pytest.raises(RuntimeError, match="invalid verification snapshot"):
-        _service([invalid]).begin()
+        invalid_service.begin()
 
 
 def test_terminal_evidence_requires_identity_and_epoch_guard_allows_idle() -> None:
