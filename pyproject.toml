@@ -167,8 +167,8 @@ fail-under = 50.0
 verbose = 1
 
 [tool.coverage.run]
-source = ["src/kicad_mcp"]
-omit = ["tests/*"]
+source = ["src/kicad_mcp", "packages/kicad-plugin"]
+omit = ["tests/*", "packages/kicad-plugin/context.py"]
 
 [tool.coverage.report]
 fail_under = 83

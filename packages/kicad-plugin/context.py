@@ -264,7 +264,7 @@ class StudioContextClient:
                 "backend_unhealthy",
                 f"Backend health request failed with HTTP {exc.code}.",
             )
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except OSError:
             return CompanionHealthStatus(
                 "backend_unreachable",
                 "KiCad MCP Pro backend is not reachable on the configured loopback address.",
@@ -318,7 +318,21 @@ class StudioContextClient:
             raw = response.read()
             if isinstance(raw, bytes):
                 raw = raw.decode("utf-8")
-            return json.loads(raw) if raw else {}
+            payload = json.loads(raw) if raw else {}
+            result = payload.get("result") if isinstance(payload, dict) else None
+            if isinstance(result, dict) and result.get("isError") is True:
+                message = "MCP tool call failed."
+                content = result.get("content")
+                if isinstance(content, list):
+                    for item in content:
+                        if not isinstance(item, dict):
+                            continue
+                        text = item.get("text")
+                        if isinstance(text, str) and text.strip():
+                            message = text.strip()
+                            break
+                raise RuntimeError(message)
+            return payload
         finally:
             response.close()
 

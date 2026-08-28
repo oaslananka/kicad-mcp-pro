@@ -151,7 +151,7 @@ jobs:
       - name: Verify canonical public metadata is synchronized
         run: uv run --all-extras python scripts/sync_mcp_metadata.py --check
       - name: Validate deterministic KiCad PCM package
-        run: uv run --all-extras python scripts/build_kicad_pcm.py --output-dir "$RUNNER_TEMP/kicad-pcm" --verify
+        run: uv run --all-extras python scripts/build_kicad_pcm.py --output-dir "/tmp/kicad-pcm" --verify
 
   mcp-server:
     needs: [changes, release-metadata]

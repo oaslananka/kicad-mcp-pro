@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import tempfile
 import tomllib
 import zipfile
 from pathlib import Path
@@ -16,6 +17,8 @@ MINIMUM_KICAD_VERSION = "10.0"
 PLUGIN_RUNTIME = "swig"
 COMPATIBILITY_SCHEMA = "kicad-mcp-companion-compat.v1"
 EVIDENCE_SCHEMA = "kicad-pcm-release-evidence.v1"
+METADATA_MEMBER = "metadata.json"
+ICON_MEMBER = "resources/icon.png"
 _FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 _REGULAR_FILE_MODE = 0o100644
 
@@ -93,16 +96,16 @@ def _validate_icon(icon: bytes) -> None:
 def _package_members(root: Path, version: str) -> dict[str, bytes]:
     plugin_root = root / "packages" / "kicad-plugin"
     members = {
-        "metadata.json": (json.dumps(_metadata(root, version), indent=2) + "\n").encode(),
+        METADATA_MEMBER: (json.dumps(_metadata(root, version), indent=2) + "\n").encode(),
         "plugins/__init__.py": (plugin_root / "__init__.py").read_bytes(),
         "plugins/compatibility.json": (
             json.dumps(_compatibility(version), indent=2) + "\n"
         ).encode(),
         "plugins/context.py": (plugin_root / "context.py").read_bytes(),
         "plugins/kicad_mcp_companion.py": (plugin_root / "kicad_mcp_companion.py").read_bytes(),
-        "resources/icon.png": (root / "docs" / "assets" / "icon-64.png").read_bytes(),
+        ICON_MEMBER: (root / "docs" / "assets" / "icon-64.png").read_bytes(),
     }
-    _validate_icon(members["resources/icon.png"])
+    _validate_icon(members[ICON_MEMBER])
     return members
 
 
@@ -136,6 +139,12 @@ def _sha256(path: Path) -> str:
 def build_pcm(root: Path, output_dir: Path) -> BuildResult:
     """Build a deterministic PCM ZIP and local release evidence from repository source."""
     root = root.resolve()
+    output_dir = output_dir.resolve()
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    if not (output_dir.is_relative_to(root) or output_dir.is_relative_to(temp_root)):
+        raise ValueError(
+            f"PCM output directory must stay under approved output roots: {root} or {temp_root}"
+        )
     output_dir.mkdir(parents=True, exist_ok=True)
     version = _project_version(root)
     artifact = output_dir / f"kicad-mcp-pro-pcm-{version}.zip"
@@ -175,17 +184,17 @@ def verify_pcm(artifact: Path, checksums: Path) -> None:
         names = archive.namelist()
         expected_names = sorted(
             {
-                "metadata.json",
+                METADATA_MEMBER,
                 "plugins/__init__.py",
                 "plugins/compatibility.json",
                 "plugins/context.py",
                 "plugins/kicad_mcp_companion.py",
-                "resources/icon.png",
+                ICON_MEMBER,
             }
         )
         if names != expected_names:
             raise ValueError(f"Unexpected PCM archive members: {names!r}")
-        metadata = json.loads(archive.read("metadata.json"))
+        metadata = json.loads(archive.read(METADATA_MEMBER))
         if metadata.get("identifier") != PACKAGE_IDENTIFIER:
             raise ValueError("Unexpected PCM package identifier")
         versions = metadata.get("versions")

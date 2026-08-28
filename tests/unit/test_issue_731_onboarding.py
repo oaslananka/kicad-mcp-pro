@@ -140,6 +140,89 @@ def test_invalid_existing_json_fails_closed_without_modifying_file(
     assert list(tmp_path.glob("*.kicad-mcp.bak")) == []
 
 
+@pytest.mark.parametrize(
+    ("existing", "generated", "message"),
+    [
+        ("[]", '{"mcpServers": {"kicad": {}}}', "must be an object"),
+        ("{}", "{}", "missing object key"),
+        ('{"mcpServers": []}', '{"mcpServers": {"kicad": {}}}', "must be an object"),
+    ],
+)
+def test_json_merge_rejects_unsafe_shapes(existing: str, generated: str, message: str) -> None:
+    from kicad_mcp.setup import ConfigValidationError, _merge_json_config
+
+    with pytest.raises(ConfigValidationError, match=message):
+        _merge_json_config(existing, generated, "cursor")
+
+
+def test_codex_toml_merge_rejects_invalid_and_conflicting_input() -> None:
+    from kicad_mcp.setup import ConfigValidationError, _merge_codex_toml
+
+    generated = '[mcp_servers.kicad]\ncommand = "uvx"\nargs = []\n'
+    with pytest.raises(ConfigValidationError, match="Invalid TOML"):
+        _merge_codex_toml("[broken", generated)
+
+    with pytest.raises(ConfigValidationError, match="Merged TOML"):
+        _merge_codex_toml('mcp_servers = "occupied"\n', generated)
+
+
+def test_toml_array_header_is_not_treated_as_owned_table() -> None:
+    from kicad_mcp.setup import _toml_section_header
+
+    assert _toml_section_header("[[plugins]]") is None
+
+
+def test_merged_config_rejects_unsupported_writable_format() -> None:
+    from kicad_mcp.setup import ConfigValidationError, _merged_config
+
+    with pytest.raises(ConfigValidationError, match="Unsupported writable config format"):
+        _merged_config("", "", "cursor", "toml")
+
+
+def test_atomic_write_closes_descriptor_when_pre_write_setup_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    from kicad_mcp import setup as setup_module
+
+    path = tmp_path / "mcp.json"
+    original = '{"theme":"dark"}\n'
+    path.write_text(original, encoding="utf-8")
+    closed: list[int] = []
+    real_close = os.close
+
+    def track_close(fd: int) -> None:
+        closed.append(fd)
+        real_close(fd)
+
+    def fail_chmod(*_args: object, **_kwargs: object) -> None:
+        raise OSError("chmod failed")
+
+    monkeypatch.setattr(setup_module.os, "close", track_close)
+    monkeypatch.setattr(setup_module.os, "chmod", fail_chmod)
+
+    with pytest.raises(OSError, match="chmod failed"):
+        setup_module._atomic_write_text(path, '{"theme":"light"}\n')
+
+    assert closed
+    assert path.read_text(encoding="utf-8") == original
+    assert list(tmp_path.glob(".mcp.json.*.tmp")) == []
+
+
+def test_write_config_rejects_generated_config_that_fails_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "mcp.json"
+    monkeypatch.setattr("kicad_mcp.setup.resolve_path", lambda *_: path)
+
+    message, ok = write_config("cursor", '{"mcpServers": {}}', "project")
+
+    assert ok is False
+    assert "mcpServers.kicad" in message
+    assert path.exists() is False
+
+
 def test_claude_code_write_uses_reversible_file_transaction(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -10,6 +10,8 @@ import zipfile
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "build_kicad_pcm.py"
 EXPECTED_MEMBERS = {
@@ -25,7 +27,8 @@ EXPECTED_MEMBERS = {
 def _load_builder() -> ModuleType:
     assert SCRIPT.is_file(), "issue #731 requires scripts/build_kicad_pcm.py"
     spec = importlib.util.spec_from_file_location("build_kicad_pcm", SCRIPT)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -108,3 +111,25 @@ def test_pcm_metadata_base_is_versionless_and_release_owned() -> None:
     assert base["identifier"] == "com.github.oaslananka.kicad-mcp-pro"
     assert "versions" not in base
     assert base["resources"]["documentation"].startswith("https://oaslananka.github.io/")
+
+
+def test_companion_context_vendored_copy_matches_canonical_source() -> None:
+    canonical = ROOT / "src" / "kicad_mcp" / "companion" / "context.py"
+    vendored = ROOT / "packages" / "kicad-plugin" / "context.py"
+
+    assert vendored.read_bytes() == canonical.read_bytes()
+
+
+def test_pcm_builder_rejects_external_output_before_filesystem_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    builder = _load_builder()
+    external_output = ROOT.parent / "kicad-mcp-pro-unsafe-output"
+
+    def fail_if_mkdir_is_reached(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("output directory write was reached before path validation")
+
+    monkeypatch.setattr(Path, "mkdir", fail_if_mkdir_is_reached)
+
+    with pytest.raises(ValueError, match="approved output roots"):
+        builder.build_pcm(ROOT, external_output)

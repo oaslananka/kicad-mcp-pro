@@ -115,6 +115,52 @@ def test_client_push_posts_to_mcp_endpoint() -> None:
     assert closed == [True], "the HTTP response must be closed after reading"
 
 
+def test_client_push_raises_when_mcp_tool_result_is_error() -> None:
+    class _FakeResponse:
+        def read(self) -> bytes:
+            return json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": (
+                                    "MODE_FORBIDDEN: studio_push_context is disabled in read mode"
+                                ),
+                            }
+                        ],
+                        "isError": True,
+                    },
+                }
+            ).encode("utf-8")
+
+        def close(self) -> None:
+            pass
+
+    client = StudioContextClient(opener=lambda _request: _FakeResponse())
+
+    with pytest.raises(RuntimeError, match="MODE_FORBIDDEN"):
+        client.push({"file_type": "pcb", "active_file": "b.kicad_pcb"})
+
+
+def test_client_push_uses_generic_error_for_malformed_error_content() -> None:
+    class _FakeResponse:
+        def read(self) -> bytes:
+            return json.dumps({"result": {"content": ["unexpected"], "isError": True}}).encode(
+                "utf-8"
+            )
+
+        def close(self) -> None:
+            pass
+
+    client = StudioContextClient(opener=lambda _request: _FakeResponse())
+
+    with pytest.raises(RuntimeError, match="MCP tool call failed"):
+        client.push({"file_type": "pcb"})
+
+
 def test_client_render_and_highlight_helpers_call_expected_tools() -> None:
     bodies: list[dict[str, object]] = []
 
@@ -302,6 +348,113 @@ def test_load_compatibility_contract_fails_closed_for_missing_or_invalid_file(
         load_compatibility_contract(invalid)
 
 
+def test_backend_compatibility_rejects_invalid_contract_shape() -> None:
+    from kicad_mcp.companion.context import backend_version_is_compatible
+
+    assert backend_version_is_compatible("3.33.3", {"schema_version": "unsupported"}) is False
+    assert (
+        backend_version_is_compatible(
+            "3.33.3",
+            {
+                "schema_version": "kicad-mcp-companion-compat.v1",
+                "backend": "invalid",
+            },
+        )
+        is False
+    )
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        (
+            {
+                "schema_version": "kicad-mcp-companion-compat.v1",
+                "plugin_version": 333,
+                "backend": {"minimum": "3.33.0", "maximum_exclusive": "3.34.0"},
+                "kicad": {"minimum": "10.0", "runtime": "swig"},
+            },
+            "incomplete",
+        ),
+        (
+            {
+                "schema_version": "kicad-mcp-companion-compat.v1",
+                "plugin_version": "3.33.3",
+                "backend": {"minimum": "3.34.0", "maximum_exclusive": "3.34.0"},
+                "kicad": {"minimum": "10.0", "runtime": "swig"},
+            },
+            "backend range",
+        ),
+        (
+            {
+                "schema_version": "kicad-mcp-companion-compat.v1",
+                "plugin_version": "3.33.3",
+                "backend": {"minimum": "3.33.0", "maximum_exclusive": "3.34.0"},
+                "kicad": {"minimum": "10.0", "runtime": "python"},
+            },
+            "runtime",
+        ),
+    ],
+)
+def test_load_compatibility_contract_rejects_unsafe_contract_variants(
+    tmp_path: Path, payload: dict[str, object], message: str
+) -> None:
+    from kicad_mcp.companion.context import load_compatibility_contract
+
+    contract = tmp_path / "compatibility.json"
+    contract.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        load_compatibility_contract(contract)
+
+
+def test_load_compatibility_contract_accepts_reviewed_contract(tmp_path: Path) -> None:
+    from kicad_mcp.companion.context import load_compatibility_contract
+
+    contract = tmp_path / "compatibility.json"
+    contract.write_text(json.dumps(_compat_contract()), encoding="utf-8")
+
+    assert load_compatibility_contract(contract) == _compat_contract()
+
+
+def test_health_rejects_non_object_payload() -> None:
+    from kicad_mcp.companion.context import classify_backend_health
+
+    status = classify_backend_health("not-an-object", _compat_contract())
+
+    assert status.state == "backend_unhealthy"
+
+
+def test_health_http_failure_is_backend_unhealthy() -> None:
+    import urllib.error
+
+    from kicad_mcp.companion.context import StudioContextClient
+
+    def failed(request: urllib.request.Request) -> object:
+        raise urllib.error.HTTPError(request.full_url, 503, "Unavailable", {}, None)
+
+    status = StudioContextClient(opener=failed).health(_compat_contract())
+
+    assert status.state == "backend_unhealthy"
+    assert "503" in status.message
+
+
+def test_health_invalid_json_is_backend_unhealthy() -> None:
+    from kicad_mcp.companion.context import StudioContextClient
+
+    class _FakeResponse:
+        def read(self) -> bytes:
+            return b"{invalid-json"
+
+        def close(self) -> None:
+            pass
+
+    status = StudioContextClient(opener=lambda _request: _FakeResponse()).health(_compat_contract())
+
+    assert status.state == "backend_unhealthy"
+    assert "decoded" in status.message
+
+
 def test_action_plugin_does_not_push_context_when_backend_is_not_ready(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -351,7 +504,8 @@ def test_action_plugin_does_not_push_context_when_backend_is_not_ready(
         "kicad_mcp_companion_health_gate_test",
         plugin_dir / "kicad_mcp_companion.py",
     )
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "_load_context", lambda: fake_ctx)
@@ -361,7 +515,60 @@ def test_action_plugin_does_not_push_context_when_backend_is_not_ready(
     plugin.Run()
 
     assert pushes == []
-    assert messages and "incompatible" in messages[-1].lower()
+    assert messages
+    assert "incompatible" in messages[-1].lower()
+
+
+def test_action_plugin_surfaces_compatibility_contract_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib.util
+    import sys
+    import types
+    from pathlib import Path
+
+    plugin_dir = Path(__file__).resolve().parents[2] / "packages" / "kicad-plugin"
+    messages: list[str] = []
+
+    class _ActionPlugin:
+        pass
+
+    fake_ctx = types.SimpleNamespace(
+        BoardInfo=object,
+        StudioContextClient=object,
+        build_studio_context=lambda _info: {},
+        load_compatibility_contract=lambda: (_ for _ in ()).throw(
+            ValueError("compatibility contract is malformed")
+        ),
+    )
+    fake_wx = types.SimpleNamespace(
+        ICON_ERROR=1,
+        ICON_INFORMATION=2,
+        ICON_WARNING=4,
+        YES_NO=8,
+        YES=16,
+        MessageBox=lambda message, *_args: messages.append(str(message)),
+    )
+    monkeypatch.setitem(sys.modules, "pcbnew", types.SimpleNamespace(ActionPlugin=_ActionPlugin))
+    monkeypatch.setitem(sys.modules, "wx", fake_wx)
+
+    spec = importlib.util.spec_from_file_location(
+        "kicad_mcp_companion_compatibility_error_test",
+        plugin_dir / "kicad_mcp_companion.py",
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "_load_context", lambda: fake_ctx)
+
+    plugin = module.KiCadMcpCompanionPlugin()
+    monkeypatch.setattr(plugin, "_read_board_info", lambda _: "fixture-board")
+    plugin.Run()
+
+    assert messages
+    assert "compatibility" in messages[-1].lower()
+    assert "malformed" in messages[-1].lower()
 
 
 def test_action_plugin_pushes_only_after_ready_health(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -407,7 +614,8 @@ def test_action_plugin_pushes_only_after_ready_health(monkeypatch: pytest.Monkey
         "kicad_mcp_companion_ready_gate_test",
         plugin_dir / "kicad_mcp_companion.py",
     )
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "_load_context", lambda: fake_ctx)
