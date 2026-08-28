@@ -18,6 +18,9 @@ on:
       - "docs/faq.md"
       - "scripts/sync_mcp_metadata.py"
       - "scripts/check_release_preflight.py"
+      - "scripts/build_kicad_pcm.py"
+      - "packaging/kicad-pcm/**"
+      - "packages/kicad-plugin/**"
       - "docs/development/release-process.md"
       - "docs/security/release-integrity.md"
   release:

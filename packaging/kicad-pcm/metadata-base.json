@@ -1,0 +1,31 @@
+{
+  "$schema": "https://go.kicad.org/pcm/schemas/v2",
+  "name": "KiCad MCP Pro",
+  "description": "Connect KiCad to the canonical KiCad MCP Pro backend with local context and safe approvals.",
+  "description_full": "KiCad MCP Pro companion integration for the KiCad Plugin and Content Manager. The companion publishes the active board/project context to a separately installed, loopback-only KiCad MCP Pro backend and preserves the backend's existing authentication and write-approval boundaries. The backend remains available through uvx, PyPI, desktop, Docker, and other supported distribution paths.",
+  "identifier": "com.github.oaslananka.kicad-mcp-pro",
+  "type": "plugin",
+  "author": {
+    "name": "Osman Aslan",
+    "contact": {
+      "web": "https://github.com/oaslananka"
+    }
+  },
+  "maintainer": {
+    "name": "Osman Aslan",
+    "contact": {
+      "web": "https://github.com/oaslananka/kicad-mcp-pro"
+    }
+  },
+  "license": "MIT",
+  "resources": {
+    "homepage": "https://github.com/oaslananka/kicad-mcp-pro",
+    "documentation": "https://oaslananka.github.io/kicad-mcp-pro/",
+    "issues": "https://github.com/oaslananka/kicad-mcp-pro/issues"
+  },
+  "tags": [
+    "automation",
+    "mcp",
+    "pcb"
+  ]
+}

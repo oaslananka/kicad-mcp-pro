@@ -77,12 +77,28 @@ class KiCadMcpCompanionPlugin(pcbnew.ActionPlugin):
         base_url = os.environ.get("KICAD_MCP_URL", "http://127.0.0.1:3334")
         auth_token = os.environ.get("KICAD_MCP_AUTH_TOKEN", "")
         try:
+            compatibility = ctx.load_compatibility_contract()
             client = ctx.StudioContextClient(base_url, auth_token=auth_token)
+            health = client.health(compatibility)
+            if health.state != "ready":
+                wx.MessageBox(
+                    f"{health.message}\n\n"
+                    "Recovery: start or update the local kicad-mcp-pro backend, then retry.",
+                    "kicad-mcp companion",
+                    wx.ICON_ERROR,
+                )
+                return
             client.push(ctx.build_studio_context(info))
             wx.MessageBox(
                 f"Pushed context for {info.file_name or 'active board'} to {base_url}.",
                 "kicad-mcp companion",
                 wx.ICON_INFORMATION,
+            )
+        except ValueError as exc:
+            wx.MessageBox(
+                f"Companion setup/compatibility error:\n{exc}",
+                "kicad-mcp companion",
+                wx.ICON_ERROR,
             )
         except Exception as exc:  # noqa: BLE001 - network/server errors are user-facing
             wx.MessageBox(

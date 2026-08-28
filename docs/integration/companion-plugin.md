@@ -23,25 +23,107 @@ in the loop.
 
 ## Install
 
-1. Locate your KiCad plugins directory:
-   - **Windows:** `%APPDATA%\kicad\<version>\scripting\plugins`
-   - **macOS:** `~/Documents/KiCad/<version>/scripting/plugins`
-   - **Linux:** `~/.local/share/kicad/<version>/scripting/plugins`
-   (or open *Tools → External Plugins → Open Plugin Directory* in pcbnew).
-2. Copy or symlink `packages/kicad-plugin` into that directory as
-   `kicad_mcp_companion`. The plugin is **self-contained** — it ships a vendored
-   copy of `context.py`, so no `KICAD_MCP_HOME` and no system-wide install are
-   required.
-3. Optional environment overrides:
+The maintained packaging target is a KiCad Plugin and Content Manager (PCM) v2
+archive. The current companion is still a legacy `pcbnew.ActionPlugin`, so the
+package truthfully declares `runtime: `swig`` and a minimum KiCad version of
+10.0. It does **not** bundle or fork the MCP backend.
 
-   ```bash
-   export KICAD_MCP_URL=http://127.0.0.1:3334   # optional, this is the default
-   export KICAD_MCP_AUTH_TOKEN=...              # only if the server requires auth
-   # KICAD_MCP_HOME is only needed for a non-vendored dev checkout fallback.
-   ```
+### PCM candidate flow
 
-4. Restart pcbnew, then run *Tools → External Plugins → Refresh*. A
-   **kicad-mcp companion** toolbar button appears.
+Until the package is accepted into the official KiCad addon repository, use the
+versioned ZIP from a trusted project release or build the exact source revision:
+
+```bash
+uv run --all-extras python scripts/build_kicad_pcm.py \
+  --output-dir ./release-assets/kicad-pcm \
+  --verify
+```
+
+Then in KiCad open **Plugin and Content Manager**, choose **Install from File**,
+select `kicad-mcp-pro-pcm-<version>.zip`, restart KiCad, and confirm the
+**kicad-mcp companion** action is discovered. This local-file PCM path is the
+pre-submission validation path; it must not be described as an official PCM
+listing until the KiCad metadata repository merge request is accepted.
+
+The companion expects the canonical backend on loopback. A power-user/backend
+installation remains first-class:
+
+```bash
+uvx kicad-mcp-pro --transport streamable-http --port 3334 --mode write
+```
+
+The toolbar action checks `/api/health` before pushing context. User-facing
+readiness states are closed and fail-safe:
+
+- `ready` — backend is healthy and inside the package compatibility window;
+- `backend_unreachable` — start the local backend and retry;
+- `backend_unhealthy` — run `kicad-mcp-pro doctor` and resolve the reported health issue;
+- `backend_incompatible` — install the backend release compatible with the PCM package;
+- `authentication_required` — correct the local auth/proxy configuration;
+- `runtime_unavailable` — the required KiCad/runtime capability is unavailable.
+
+No context/tool call is attempted unless the state is `ready`. The package
+compatibility file is machine-readable and malformed or missing metadata fails
+closed.
+
+### Guided MCP client configuration
+
+PCM installation never edits another application's configuration. Preview the
+exact generated change first, then opt into a write explicitly:
+
+```bash
+kicad-mcp-pro setup claude-code --project-dir /path/to/project
+kicad-mcp-pro setup codex --project-dir /path/to/project --scope user
+kicad-mcp-pro setup cursor --project-dir /path/to/project
+
+# Only after reviewing the preview:
+kicad-mcp-pro setup cursor --project-dir /path/to/project --write
+```
+
+The write path merges only the KiCad MCP server entry, preserves unrelated
+settings/servers, validates the merged config, creates a timestamped backup, and
+uses an atomic replace. Existing invalid JSON/TOML fails before mutation. Inspect
+or restore backups with:
+
+```bash
+kicad-mcp-pro setup-backups cursor --scope project
+kicad-mcp-pro setup-restore cursor --scope project
+```
+
+Claude Code, Codex and Cursor use this same reversible transaction boundary. A
+conflicting owned `kicad` entry is changed only through the explicit `--write`
+path; preview mode remains side-effect-free.
+
+### Update, Uninstall, and Rollback
+
+**Update:** install a newer trusted PCM ZIP only after verifying its release
+checksum/provenance. Before official repository publication, treat update-by-file
+as a validation path rather than automatic update support.
+
+**Uninstall:** remove **KiCad MCP Pro** from KiCad's Plugin and Content Manager.
+Uninstalling the PCM package does not delete MCP client configuration or its
+backups; disconnect/restore client configuration separately when desired.
+
+**Rollback:** uninstall the current companion, reinstall the previously trusted
+versioned PCM ZIP with **Install from File**, restart KiCad, and confirm the
+backend compatibility status before resuming work.
+
+### Developer-only manual plugin copy
+
+Manual copying remains only a source-development fallback. Copy or symlink
+`packages/kicad-plugin` into the platform KiCad scripting plugin directory and
+refresh external plugins. Production/user onboarding should prefer PCM rather
+than manual plugin-directory manipulation.
+
+### Modern plugin API readiness
+
+The current PCM package is SWIG-based. It is **not** a modern KiCad IPC plugin.
+Migration to the modern KiCad plugin API must preserve current KiCad 10 behavior,
+move to the supported external-plugin/IPC contract, add the required `plugin.json`
+shape, and obtain real-KiCad compatibility evidence before changing the PCM
+`runtime` to `ipc` or claiming future-version support. See
+[ADR 0007](../adr/0007-kicad-adapter-selection-and-swig-retirement.md) for the
+existing SWIG-retirement boundary.
 
 ## Smoke test plan
 

@@ -61,6 +61,14 @@
         "id-token"
       ]
     },
+    "publish-kicad-pcm.yml": {
+      "publish": [
+        "artifact-metadata",
+        "attestations",
+        "contents",
+        "id-token"
+      ]
+    },
     "publish-mcp-container.yml": {
       "build": [
         "attestations",
