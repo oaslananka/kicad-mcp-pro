@@ -387,3 +387,47 @@ def test_board_disconnect_exhausted_raises_ipc_disconnected() -> None:
     with pytest.raises(IpcDisconnectedError) as exc_info:
         session.board()
     assert exc_info.value.code == "IPC_DISCONNECTED"
+
+
+def test_continuity_probe_without_cached_client_returns_false() -> None:
+    session = _make_session()
+
+    assert session._probe_cached_continuity() is False
+    assert session.continuity_generation == 0
+
+
+def test_continuity_probe_without_version_method_resets_session() -> None:
+    session = _make_session()
+    client = _FakeClient()
+    session._client = client
+
+    assert session._probe_cached_continuity() is False
+    assert client.closed is True
+    assert session.continuity_generation == 1
+
+
+def test_continuity_probe_defers_unknown_error_and_logs_it() -> None:
+    events: list[tuple[str, str]] = []
+
+    class Logger:
+        def debug(self, event: str, **kwargs: object) -> None:
+            events.append((event, str(kwargs.get("kind"))))
+
+        def warning(self, event: str, **kwargs: object) -> None:
+            del event, kwargs
+
+    class Client(_FakeClient):
+        def get_version(self) -> str:
+            raise RuntimeError("opaque provider diagnostic")
+
+    session = KiCadSession(
+        client_factory=Client,
+        config_factory=lambda: FakeConfig(),
+        logger=Logger(),
+        sleep=_dummy_sleep,
+    )
+    session._client = Client()
+
+    assert session._probe_cached_continuity() is True
+    assert events == [("kicad_continuity_probe_deferred", "other")]
+    assert session.continuity_generation == 0

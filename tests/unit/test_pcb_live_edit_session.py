@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from kicad_mcp.ipc.command_queue import AmbiguousMutationError
+from kicad_mcp.pcb.live_edit_evidence import LiveMutationReceipt
 from kicad_mcp.pcb.transaction_lifecycle import PcbTransactionLifecycleService
 
 
@@ -386,3 +387,192 @@ def test_ambiguous_drop_never_reports_success_and_requires_reconciliation() -> N
     assert service.last_evidence is not None
     assert service.last_evidence.outcome == "recovery_required"
     assert "transaction state is ambiguous after an ipc failure" in service.begin().casefold()
+
+
+def test_begin_rejects_missing_or_incomplete_board_identity() -> None:
+    board = FakeBoard()
+    service = _service([board])
+    board.get_project = None  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError, match="does not expose project identity"):
+        service.begin()
+
+    incomplete = FakeBoard(project_path="")
+    with pytest.raises(RuntimeError, match="identity is incomplete"):
+        _service([incomplete]).begin()
+
+
+def test_begin_rejects_missing_or_invalid_verification_snapshot() -> None:
+    board = FakeBoard()
+    board.get_as_string = None  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="cannot provide a verification snapshot"):
+        _service([board]).begin()
+
+    invalid = FakeBoard()
+    invalid.get_as_string = lambda: b"not-text"  # type: ignore[method-assign,return-value]
+    with pytest.raises(RuntimeError, match="invalid verification snapshot"):
+        _service([invalid]).begin()
+
+
+def test_terminal_evidence_requires_identity_and_epoch_guard_allows_idle() -> None:
+    service = _service([FakeBoard()])
+
+    service._assert_connection_epoch()
+    with pytest.raises(RuntimeError, match="without board identity"):
+        service._terminal_evidence("committed")
+
+
+def test_abort_drop_handles_unavailable_transaction_or_drop_capability() -> None:
+    board = FakeBoard()
+    service = _service([board])
+    assert service._drop_for_abort(board) is False
+
+    assert service.begin().startswith("Transaction group started")
+    board.drop_commit = None  # type: ignore[method-assign]
+    assert service._drop_for_abort(board) is False
+
+
+def test_abort_drop_marks_recovery_when_pre_state_cannot_be_restored() -> None:
+    board = FakeBoard()
+    service = _service([board])
+    assert service.begin().startswith("Transaction group started")
+    board.contents = "(kicad_pcb changed)"
+    board.drop_commit = lambda _commit: None  # type: ignore[method-assign]
+
+    assert service._drop_for_abort(board) is False
+    assert service.status_payload()["state"] == "recovery_required"
+    assert service.last_evidence is not None
+    assert service.last_evidence.outcome == "recovery_required"
+
+
+def test_begin_treats_none_commit_handle_as_unsupported() -> None:
+    board = FakeBoard()
+    board.begin_commit = lambda: None  # type: ignore[method-assign]
+    service = _service([board])
+
+    result = service.begin()
+
+    assert "not supported" in result
+    assert service.status_payload()["transaction_supported"] is False
+
+
+def test_recovery_required_blocks_push_and_revert() -> None:
+    service = _service([FakeBoard()])
+    service._recovery_required = True
+
+    assert "state is ambiguous" in service.push().casefold()
+    assert "state is ambiguous" in service.revert().casefold()
+
+
+def test_push_rejects_unsafe_receipt_before_publication() -> None:
+    board = FakeBoard()
+    service = _service([board])
+    assert service.begin().startswith("Transaction group started")
+    service._receipts.append(
+        LiveMutationReceipt(
+            mutation_id="live-mutation-1",
+            operation="pcb_add_track",
+            execution_state="failed",
+            recovery_required=True,
+            recovery_succeeded=None,
+            duplicate_application_detected=False,
+            state_divergence_detected=False,
+            corruption_detected=False,
+            final_state_verified=False,
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="unsafe state"):
+        service.push()
+    assert not any(call[0] == "push" for call in board.calls)
+
+
+def test_push_and_drop_report_missing_native_control_methods() -> None:
+    push_board = FakeBoard()
+    push_service = _service([push_board])
+    assert push_service.begin().startswith("Transaction group started")
+    push_board.push_commit = None  # type: ignore[method-assign]
+    assert push_service.push() == "No active transaction group to commit."
+
+    drop_board = FakeBoard()
+    drop_service = _service([drop_board])
+    assert drop_service.begin().startswith("Transaction group started")
+    drop_board.drop_commit = None  # type: ignore[method-assign]
+    assert drop_service.drop() == "No active transaction group to discard."
+
+
+def test_push_fails_closed_when_published_board_cannot_be_reread() -> None:
+    board = FakeBoard()
+    board_ref: list[object] = [board]
+
+    def get_board() -> object:
+        return board_ref[0]
+
+    def direct(_operation: str, command: Callable[[], object]) -> object:
+        return command()
+
+    service = PcbTransactionLifecycleService(
+        get_board=get_board,  # type: ignore[arg-type]
+        run_mutation=direct,
+        connection_errors=(OSError,),
+        get_connection_epoch=lambda: 0,
+    )
+    assert service.begin().startswith("Transaction group started")
+
+    def publish_then_lose_board(commit: object, message: str = "") -> None:
+        board.calls.append(("push", commit, message))
+        board_ref[0] = SimpleNamespace(name="unverified.kicad_pcb")
+
+    board.push_commit = publish_then_lose_board  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError, match="could not be re-read safely"):
+        service.push()
+    assert service.status_payload()["state"] == "recovery_required"
+
+
+def test_drop_rejects_missing_pre_state_digest() -> None:
+    board = FakeBoard()
+    service = _service([board])
+    assert service.begin().startswith("Transaction group started")
+    service._pre_state_digest = None
+
+    with pytest.raises(RuntimeError, match="pre-operation state is unavailable"):
+        service.drop()
+
+
+def test_failed_active_mutation_preserves_primary_error_when_abort_also_fails() -> None:
+    board = FakeBoard()
+
+    def runner(operation: str, command: Callable[[], object]) -> object:
+        if operation == "pcb_add_track":
+            raise ValueError("mutation failed")
+        if operation == "pcb_drop_commit":
+            raise OSError("drop transport failed")
+        return command()
+
+    service = _service([board], runner=runner)
+    assert service.begin().startswith("Transaction group started")
+
+    with pytest.raises(ValueError, match="mutation failed"):
+        service.execute_board_mutation(
+            "pcb_add_track",
+            lambda _board: "never-returned",
+            verifier=lambda _board, _result: True,
+            participates_in_live_session=True,
+        )
+
+    assert service.status_payload()["state"] == "recovery_required"
+    assert service.last_evidence is not None
+    assert service.last_evidence.outcome == "recovery_required"
+
+
+def test_standalone_verifier_exception_is_actionable() -> None:
+    service = _service([FakeBoard()])
+
+    with pytest.raises(RuntimeError, match="verification could not complete"):
+        service.execute_board_mutation(
+            "pcb_add_track",
+            lambda _board: "created",
+            verifier=lambda _board, _result: (_ for _ in ()).throw(ValueError("bad reread")),
+            participates_in_live_session=True,
+        )

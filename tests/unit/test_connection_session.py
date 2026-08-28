@@ -305,3 +305,17 @@ def test_kicad_session_board_requires_get_board(fake_cli: Path) -> None:
 
     with pytest.raises(KiCadBoardNotOpenError, match="does not expose get_board"):
         session.board()
+
+
+def test_connection_epoch_reports_absent_and_live_session_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation = connection._connection_generation
+    monkeypatch.setattr(connection, "_session", None)
+    assert connection.get_connection_epoch() == (generation, -1)
+
+    class FakeSession:
+        continuity_generation = 7
+
+    monkeypatch.setattr(connection, "_session", FakeSession())
+    assert connection.get_connection_epoch() == (generation, 7)

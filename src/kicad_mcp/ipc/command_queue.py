@@ -214,7 +214,7 @@ class KiCadCommandQueue:
             # Unreachable: the loop either returns or raises.
             raise last_exc  # pragma: no cover
 
-    def execute_mutation(
+    def execute_mutation[T](
         self,
         operation: str,
         command: Callable[[], T],

@@ -205,20 +205,21 @@ class PcbTransactionLifecycleService:
         with self._lock:
             identity = self._active_identity
             last = self._last_evidence
+            if identity is not None:
+                board_fingerprint = identity.fingerprint
+                board_name = identity.board_name
+            elif last is not None:
+                board_fingerprint = last.board_fingerprint
+                board_name = last.board_name
+            else:
+                board_fingerprint = ""
+                board_name = ""
             return {
                 "schema_version": "pcb-live-edit-state.v1",
                 "state": self._state_name(),
                 "transaction_supported": self._transaction_supported,
-                "board_fingerprint": (
-                    identity.fingerprint
-                    if identity is not None
-                    else (last.board_fingerprint if last is not None else "")
-                ),
-                "board_name": (
-                    identity.board_name
-                    if identity is not None
-                    else (last.board_name if last is not None else "")
-                ),
+                "board_fingerprint": board_fingerprint,
+                "board_name": board_name,
                 "mutation_count": len(self._receipts) if identity is not None else 0,
                 "verified_mutation_count": sum(
                     receipt.final_state_verified for receipt in self._receipts
