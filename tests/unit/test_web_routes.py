@@ -457,3 +457,35 @@ class TestRouteRegistration:
         response = client.get("/ui")
         assert response.status_code == 200
         assert "KiCad MCP Pro Dashboard" in response.text
+
+
+@pytest.mark.anyio
+async def test_api_health_reports_runtime_capability_without_sensitive_diagnostics(
+    mock_health_report: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Companion health can fail closed when KiCad IPC/runtime is unavailable."""
+    from types import SimpleNamespace
+
+    from kicad_mcp.web.routes import api_health
+
+    monkeypatch.setattr(
+        "kicad_mcp.web.routes.get_ipc_capability_state",
+        lambda: SimpleNamespace(
+            reachable=False,
+            live_pcb_context=False,
+            live_schematic_context=False,
+            headless_ipc_available=False,
+        ),
+    )
+
+    response = await api_health(MagicMock())
+    data = json.loads(response.body)
+
+    assert data["kicadRuntime"] == {
+        "available": False,
+        "ipcReachable": False,
+        "livePcbContext": False,
+        "liveSchematicContext": False,
+        "headless": False,
+    }
+    assert "diagnostics" not in data["kicadRuntime"]

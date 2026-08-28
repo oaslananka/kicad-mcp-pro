@@ -276,8 +276,9 @@ async def api_status(request: Request) -> JSONResponse:
 
 
 async def api_health(request: Request) -> JSONResponse:
-    """Return lightweight health check."""
+    """Return lightweight health and sanitized KiCad runtime capability state."""
     report = build_health_report()
+    ipc_state = get_ipc_capability_state()
     return JSONResponse(
         {
             "ok": report.ok,
@@ -287,6 +288,13 @@ async def api_health(request: Request) -> JSONResponse:
                 "contractVersion": DESKTOP_API_CONTRACT_VERSION,
                 "backendVersion": __version__,
                 "versionPolicy": DESKTOP_BACKEND_VERSION_POLICY,
+            },
+            "kicadRuntime": {
+                "available": ipc_state.reachable,
+                "ipcReachable": ipc_state.reachable,
+                "livePcbContext": ipc_state.live_pcb_context,
+                "liveSchematicContext": ipc_state.live_schematic_context,
+                "headless": ipc_state.headless_ipc_available,
             },
             "uptime": time.time() - get_start_time(),
         }
