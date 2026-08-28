@@ -12,7 +12,13 @@ from typing import Protocol
 from kipy.board import Board
 
 from ..ipc.command_queue import AmbiguousMutationError
-from .live_edit_evidence import LiveBoardIdentity, LiveEditEvidence, LiveMutationReceipt
+from .live_edit_evidence import (
+    LiveBoardIdentity,
+    LiveEditEvidence,
+    LiveEditOutcome,
+    LiveMutationReceipt,
+    MutationExecutionState,
+)
 
 
 class RunMutation(Protocol):
@@ -115,7 +121,7 @@ class PcbTransactionLifecycleService:
             )
         return current
 
-    def _terminal_evidence(self, outcome: str) -> LiveEditEvidence:
+    def _terminal_evidence(self, outcome: LiveEditOutcome) -> LiveEditEvidence:
         identity = self._active_identity
         if identity is None:
             raise RuntimeError("Native-live evidence cannot be finalized without board identity.")
@@ -123,7 +129,7 @@ class PcbTransactionLifecycleService:
             schema_version="pcb-live-edit-session.v1",
             board_fingerprint=identity.fingerprint,
             board_name=identity.board_name,
-            outcome=outcome,  # type: ignore[arg-type]
+            outcome=outcome,
             mutations=tuple(self._receipts),
         )
 
@@ -440,14 +446,14 @@ class PcbTransactionLifecycleService:
         board: Board,
         mutation_id: str,
         operation: str,
-        execution_state: str,
+        execution_state: MutationExecutionState,
     ) -> None:
         """Record a failed/interrupted mutation and attempt verified rollback."""
         self._receipts.append(
             LiveMutationReceipt(
                 mutation_id=mutation_id,
                 operation=operation,
-                execution_state=execution_state,  # type: ignore[arg-type]
+                execution_state=execution_state,
                 recovery_required=True,
                 recovery_succeeded=None,
                 duplicate_application_detected=False,
