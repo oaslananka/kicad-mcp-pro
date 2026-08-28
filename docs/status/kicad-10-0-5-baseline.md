@@ -45,3 +45,8 @@ Windows 11 workstation. The released 3.29.0 source passed all 31 stable canary
 entries, and the default KiCad IPC discovery connected to an active KiCad
 10.0.5 PCB Editor session with a live board open. See the sanitized
 [physical Windows evidence](../evidence/kicad-10-0-5/2026-07-27/amd2700x-windows.md).
+
+Native-live transaction verification was extended on 2026-08-28 with public MCP grouped
+commit/postcondition verification, native drop, real GUI Undo, 20-iteration soak, and
+restart/stale-session fail-closed coverage on the same physical host. See the sanitized
+[native-live transaction evidence](../evidence/kicad-10-0-5/2026-08-28/native-live-transactions-amd2700x.md).
