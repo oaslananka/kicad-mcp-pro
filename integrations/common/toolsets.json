@@ -77,7 +77,6 @@
         "pcb_delete_items",
         "pcb_delete_object",
         "pcb_drop_commit",
-        "pcb_get_live_edit_state",
         "pcb_get_tracks",
         "pcb_get_vias",
         "pcb_push_commit",

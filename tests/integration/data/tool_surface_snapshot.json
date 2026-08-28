@@ -3582,7 +3582,6 @@
     "open_world": false,
     "profiles": [
       "agent_full",
-      "build",
       "builder",
       "expert",
       "full",

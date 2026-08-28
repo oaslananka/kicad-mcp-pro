@@ -3443,21 +3443,28 @@ def _register_board_mutation_tools(mcp: FastMCP) -> None:
 
         footprint.position = Vector2.from_xy_mm(x_mm, y_mm)
         rotation_attribute = apply_footprint_rotation(footprint, rotation_deg)
+        transaction_active = _native_live_transaction_active()
         execute_live_board_mutation(
             "pcb_move_footprint",
             lambda board: list(board.update_items([cast(BoardItem, footprint)])),
-            verifier=lambda board, updated: _verify_footprint_transform(
-                board,
-                updated,
-                reference=reference,
-                x_mm=x_mm,
-                y_mm=y_mm,
-                rotation_attribute=rotation_attribute,
-                rotation_deg=rotation_deg,
+            verifier=(
+                (
+                    lambda board, updated: _verify_footprint_transform(
+                        board,
+                        updated,
+                        reference=reference,
+                        x_mm=x_mm,
+                        y_mm=y_mm,
+                        rotation_attribute=rotation_attribute,
+                        rotation_deg=rotation_deg,
+                    )
+                )
+                if transaction_active
+                else None
             ),
         )
 
-        if _native_live_transaction_active():
+        if transaction_active:
             return _staged_message(f"Footprint move for '{reference}'")
 
         refreshed = _find_footprint_by_reference(reference)

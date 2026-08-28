@@ -93,11 +93,11 @@
       ]
     },
     "expert": {
-      "callableTools": 386,
-      "catalogCharacters": 227947,
+      "callableTools": 387,
+      "catalogCharacters": 228163,
       "catalogReductionVsExpertPct": 0.0,
-      "declaredTools": 386,
-      "estimatedCatalogTokens": 56987,
+      "declaredTools": 387,
+      "estimatedCatalogTokens": 57041,
       "forbiddenToolExposures": 8,
       "goldenCases": 65,
       "goldenCasesCovered": 55,
@@ -275,6 +275,7 @@
         "pcb_get_groups",
         "pcb_get_impedance_for_trace",
         "pcb_get_layers",
+        "pcb_get_live_edit_state",
         "pcb_get_net_statistics",
         "pcb_get_nets",
         "pcb_get_origin",

@@ -664,7 +664,6 @@ _BUILD_TOOLS: tuple[str, ...] = (
     "pcb_get_tracks",
     "pcb_get_vias",
     "pcb_begin_commit",
-    "pcb_get_live_edit_state",
     "pcb_delete_items",
     "pcb_delete_object",
     "pcb_push_commit",
