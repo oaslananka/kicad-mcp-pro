@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import re
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol, cast
+from pathlib import Path
+from typing import Any, Literal, Protocol, cast
 
 # Mutating operations a companion plugin must guard behind a safe-apply dialog
 # before they touch the board.
@@ -34,6 +37,110 @@ SAFE_APPLY_ACTIONS = frozenset(
 def requires_confirmation(action: str) -> bool:
     """Return whether ``action`` must be confirmed before it mutates the board."""
     return action in SAFE_APPLY_ACTIONS
+
+
+CompanionHealthState = Literal[
+    "ready",
+    "backend_unreachable",
+    "backend_unhealthy",
+    "backend_incompatible",
+    "authentication_required",
+    "runtime_unavailable",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class CompanionHealthStatus:
+    """Closed, user-safe companion/backend readiness state."""
+
+    state: CompanionHealthState
+    message: str
+    backend_version: str = ""
+
+
+_SEMVER_TRIPLET = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+_COMPATIBILITY_SCHEMA = "kicad-mcp-companion-compat.v1"
+
+
+def _version_triplet(value: object) -> tuple[int, int, int] | None:
+    if not isinstance(value, str):
+        return None
+    match = _SEMVER_TRIPLET.fullmatch(value)
+    if match is None:
+        return None
+    return tuple(int(part) for part in match.groups())  # type: ignore[return-value]
+
+
+def backend_version_is_compatible(
+    backend_version: str,
+    compatibility: dict[str, object],
+) -> bool:
+    """Return whether a backend version satisfies the closed companion contract."""
+    if compatibility.get("schema_version") != _COMPATIBILITY_SCHEMA:
+        return False
+    backend = compatibility.get("backend")
+    if not isinstance(backend, dict):
+        return False
+    current = _version_triplet(backend_version)
+    minimum = _version_triplet(backend.get("minimum"))
+    maximum = _version_triplet(backend.get("maximum_exclusive"))
+    if current is None or minimum is None or maximum is None or minimum >= maximum:
+        return False
+    return minimum <= current < maximum
+
+
+def load_compatibility_contract(path: Path | None = None) -> dict[str, object]:
+    """Load and validate the packaged companion compatibility contract."""
+    source = path or Path(__file__).with_name("compatibility.json")
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Companion compatibility metadata is missing or invalid.") from exc
+    if not isinstance(payload, dict) or payload.get("schema_version") != _COMPATIBILITY_SCHEMA:
+        raise ValueError("Companion compatibility metadata uses an unsupported schema.")
+    plugin_version = _version_triplet(payload.get("plugin_version"))
+    backend = payload.get("backend")
+    kicad = payload.get("kicad")
+    if plugin_version is None or not isinstance(backend, dict) or not isinstance(kicad, dict):
+        raise ValueError("Companion compatibility metadata is incomplete.")
+    minimum = _version_triplet(backend.get("minimum"))
+    maximum = _version_triplet(backend.get("maximum_exclusive"))
+    if minimum is None or maximum is None or minimum >= maximum:
+        raise ValueError("Companion compatibility backend range is invalid.")
+    if kicad.get("runtime") not in {"swig", "ipc"}:
+        raise ValueError("Companion compatibility runtime is invalid.")
+    return cast(dict[str, object], payload)
+
+
+def classify_backend_health(
+    payload: object,
+    compatibility: dict[str, object],
+) -> CompanionHealthStatus:
+    """Classify one sanitized ``/api/health`` payload without side effects."""
+    if not isinstance(payload, dict):
+        return CompanionHealthStatus("backend_unhealthy", "Backend health response is invalid.")
+    backend_version = payload.get("version")
+    version_text = backend_version if isinstance(backend_version, str) else ""
+    if payload.get("ok") is not True:
+        return CompanionHealthStatus(
+            "backend_unhealthy",
+            "KiCad MCP Pro backend is not healthy; run kicad-mcp-pro doctor.",
+            version_text,
+        )
+    runtime = payload.get("kicadRuntime")
+    if isinstance(runtime, dict) and runtime.get("available") is False:
+        return CompanionHealthStatus(
+            "runtime_unavailable",
+            "Backend is healthy but the required KiCad runtime capability is unavailable.",
+            version_text,
+        )
+    if not backend_version_is_compatible(version_text, compatibility):
+        return CompanionHealthStatus(
+            "backend_incompatible",
+            "Backend version is incompatible with this KiCad companion release.",
+            version_text,
+        )
+    return CompanionHealthStatus("ready", "Backend is healthy and compatible.", version_text)
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +211,24 @@ def _validate_loopback_base_url(base_url: str) -> None:
         raise ValueError("KiCad companion can only connect to a loopback http(s) MCP endpoint.")
 
 
+def _mcp_tool_error_message(payload: object) -> str | None:
+    """Return a user-facing MCP tool error message, or ``None`` for success."""
+    if not isinstance(payload, dict):
+        return None
+    result = payload.get("result")
+    if not isinstance(result, dict) or result.get("isError") is not True:
+        return None
+    content = result.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            text = item.get("text")
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+    return "MCP tool call failed."
+
+
 class StudioContextClient:
     """Minimal JSON-RPC client that pushes context to a running kicad-mcp-pro server."""
 
@@ -117,7 +242,9 @@ class StudioContextClient:
         opener: Opener | None = None,
     ) -> None:
         _validate_loopback_base_url(base_url)
-        self._url = f"{base_url.rstrip('/')}/{mount_path.strip('/')}"
+        self._base_url = base_url.rstrip("/")
+        self._url = f"{self._base_url}/{mount_path.strip('/')}"
+        self._health_url = f"{self._base_url}/api/health"
         self._auth_token = auth_token
         self._timeout = timeout
         self._opener = opener or self._default_opener
@@ -131,6 +258,45 @@ class StudioContextClient:
                 timeout=self._timeout,
             ),
         )
+
+    def health(self, compatibility: dict[str, object]) -> CompanionHealthStatus:
+        """Read the loopback backend health endpoint and classify readiness."""
+        request = urllib.request.Request(  # noqa: S310 - validated loopback http(s) endpoint
+            self._health_url,
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        try:
+            response = self._opener(request)
+            try:
+                raw = response.read()
+            finally:
+                response.close()
+        except urllib.error.HTTPError as exc:
+            if exc.code in {401, 403}:
+                return CompanionHealthStatus(
+                    "authentication_required",
+                    "Backend health requires authentication or local access configuration.",
+                )
+            return CompanionHealthStatus(
+                "backend_unhealthy",
+                f"Backend health request failed with HTTP {exc.code}.",
+            )
+        except OSError:
+            return CompanionHealthStatus(
+                "backend_unreachable",
+                "KiCad MCP Pro backend is not reachable on the configured loopback address.",
+            )
+        try:
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8")
+            payload = json.loads(raw) if raw else None
+        except (UnicodeError, json.JSONDecodeError):
+            return CompanionHealthStatus(
+                "backend_unhealthy",
+                "Backend health response could not be decoded.",
+            )
+        return classify_backend_health(payload, compatibility)
 
     def build_tool_call_body(
         self,
@@ -170,7 +336,11 @@ class StudioContextClient:
             raw = response.read()
             if isinstance(raw, bytes):
                 raw = raw.decode("utf-8")
-            return json.loads(raw) if raw else {}
+            payload = json.loads(raw) if raw else {}
+            error_message = _mcp_tool_error_message(payload)
+            if error_message is not None:
+                raise RuntimeError(error_message)
+            return payload
         finally:
             response.close()
 

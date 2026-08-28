@@ -15,6 +15,8 @@ import json
 import os
 import shutil
 import sys
+import tempfile
+import tomllib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -568,6 +570,105 @@ WriteResult = tuple[str, bool]
 """``(path_or_message, success)``"""
 
 
+_JSON_CONFIG_ROOTS: dict[str, str] = {
+    "vscode": "servers",
+    "opencode": "mcp",
+}
+
+
+def _merge_json_config(existing: str, generated: str, agent_key: str) -> str:
+    """Merge only the generated MCP server entries into an existing JSON config."""
+    try:
+        current = json.loads(existing) if existing.strip() else {}
+        desired = json.loads(generated)
+    except json.JSONDecodeError as exc:
+        msg = f"Invalid JSON configuration: {exc}"
+        raise ConfigValidationError(msg) from exc
+    if not isinstance(current, dict) or not isinstance(desired, dict):
+        raise ConfigValidationError("JSON client configuration must be an object.")
+
+    root_key = _JSON_CONFIG_ROOTS.get(agent_key, "mcpServers")
+    desired_servers = desired.get(root_key)
+    if not isinstance(desired_servers, dict):
+        raise ConfigValidationError(f'Generated config is missing object key "{root_key}".')
+
+    merged = dict(current)
+    current_servers = merged.get(root_key, {})
+    if not isinstance(current_servers, dict):
+        raise ConfigValidationError(f'Existing key "{root_key}" must be an object.')
+    merged_servers = dict(current_servers)
+    merged_servers.update(desired_servers)
+    merged[root_key] = merged_servers
+    return json.dumps(merged, indent=2, ensure_ascii=False) + "\n"
+
+
+def _toml_section_header(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped.startswith("[") or not stripped.endswith("]"):
+        return None
+    if stripped.startswith("[["):
+        return None
+    return stripped[1:-1].strip()
+
+
+def _merge_codex_toml(existing: str, generated: str) -> str:
+    """Replace only the kicad MCP tables while preserving unrelated TOML text."""
+    try:
+        if existing.strip():
+            tomllib.loads(existing)
+        tomllib.loads(generated)
+    except tomllib.TOMLDecodeError as exc:
+        msg = f"Invalid TOML configuration: {exc}"
+        raise ConfigValidationError(msg) from exc
+
+    kept: list[str] = []
+    skipping_owned = False
+    for line in existing.splitlines(keepends=True):
+        header = _toml_section_header(line)
+        if header is not None:
+            skipping_owned = header == "mcp_servers.kicad" or header.startswith(
+                "mcp_servers.kicad."
+            )
+        if not skipping_owned:
+            kept.append(line)
+
+    prefix = "".join(kept).rstrip()
+    merged = f"{prefix}\n\n{generated.strip()}\n" if prefix else f"{generated.strip()}\n"
+    try:
+        tomllib.loads(merged)
+    except tomllib.TOMLDecodeError as exc:
+        msg = f"Merged TOML configuration is invalid: {exc}"
+        raise ConfigValidationError(msg) from exc
+    return merged
+
+
+def _merged_config(existing: str, generated: str, agent_key: str, fmt: ConfigFormat) -> str:
+    if fmt == "json":
+        return _merge_json_config(existing, generated, agent_key)
+    if agent_key == "codex" and fmt == "toml":
+        return _merge_codex_toml(existing, generated)
+    raise ConfigValidationError(f"Unsupported writable config format: {fmt}")
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    """Atomically replace one local config file using a same-directory temporary file."""
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temp_path = Path(temp_name)
+    try:
+        if path.exists():
+            os.chmod(temp_path, path.stat().st_mode)
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            fd = -1
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        temp_path.unlink(missing_ok=True)
+
+
 def write_config(
     agent_key: str,
     config_str: str,
@@ -575,7 +676,7 @@ def write_config(
     *,
     backup: bool = True,
 ) -> WriteResult:
-    """Write config to the appropriate path. Returns ``(path, success)``."""
+    """Merge and atomically write one client config. Returns ``(path, success)``."""
     info = AGENTS.get(agent_key)
     if info is None:
         return f"Unknown agent: {agent_key}", False
@@ -587,17 +688,17 @@ def write_config(
 
     try:
         path = resolve_path(agent_key, scope)
-    except ValueError as exc:
-        return str(exc), False
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    if backup:
-        bak = backup_config(path)
-        if bak:
-            pass  # backup was created
-
-    path.write_text(config_str, encoding="utf-8")
+        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+        merged = _merged_config(existing, config_str, agent_key, info.format)
+        issues = validate_config(merged, agent_key, info.format)
+        if issues:
+            raise ConfigValidationError("; ".join(issues))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if backup and path.exists():
+            backup_config(path)
+        _atomic_write_text(path, merged)
+    except (OSError, ConfigValidationError, UnicodeError) as exc:
+        return f"Config write failed: {exc}", False
     return str(path), True
 
 
@@ -818,10 +919,6 @@ def setup_agent(
 
     config_str, fmt = generate_config(agent, project, mode, transport=transport, url=url)
 
-    # Claude Code special: try the native CLI command first
-    if agent == "claude-code" and transport == "stdio":
-        return _try_claude_code_cli_install(config_str, project, mode)
-
     if write:
         if info.kind == "remote":
             return (
@@ -849,51 +946,6 @@ def setup_agent(
 
     # Preview mode: just print config
     return config_str
-
-
-def _try_claude_code_cli_install(config_str: str, project_dir: str, mode: str) -> str:
-    """Try to install via Claude Code CLI. Falls back to config snippet."""
-    claude_path = shutil.which("claude")
-    if claude_path is None:
-        return (
-            "Claude Code CLI not found. Config snippet below "
-            "(save as .mcp.json in your project root):\n" + config_str
-        )
-    try:
-        import subprocess
-
-        env = _env_for_mode(mode, project_dir)
-        env_args = []
-        for k, v in env.items():
-            env_args.extend(["--env", f"{k}={v}"])
-
-        result = subprocess.run(
-            [
-                claude_path,
-                "mcp",
-                "add",
-                "--transport",
-                "stdio",
-                "--scope",
-                "project",
-                "kicad",
-                "--",
-                "uvx",
-                "kicad-mcp-pro",
-            ]
-            + env_args,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode == 0:
-            return "✓ KiCad MCP installed for Claude Code (project scope).\nRun '/mcp' to verify."
-        return (
-            f"Claude Code CLI returned error:\n{result.stderr.strip()}\n\n"
-            f"Config snippet below:\n{config_str}"
-        )
-    except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as e:
-        return f"Failed to run claude CLI: {e}\n\nConfig snippet below:\n{config_str}"
 
 
 def _check_kicad_mcp_available() -> bool:

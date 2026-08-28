@@ -1,0 +1,132 @@
+name: Publish KiCad PCM
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing mcp-server release tag to backfill.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-kicad-pcm-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
+      ((github.event_name == 'release' && startsWith(github.event.release.tag_name, 'mcp-server-v')) ||
+       (github.event_name == 'workflow_dispatch' && startsWith(inputs.tag, 'mcp-server-v')))
+    runs-on: ubuntu-24.04
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_EVENT_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "release" ]]; then
+            release_tag="$RELEASE_EVENT_TAG"
+          else
+            release_tag="$DISPATCH_TAG"
+          fi
+          if [[ ! "$release_tag" =~ ^mcp-server-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unsupported KiCad PCM release tag: $release_tag" >&2
+            exit 1
+          fi
+          version="${release_tag#mcp-server-v}"
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          persist-credentials: false
+
+      - name: Verify release source and package version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          release_tag="$RELEASE_TAG"
+          source_commit="$(git rev-parse HEAD)"
+          tag_commit="$(git rev-list -n 1 "$release_tag")"
+          release_target="$(gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+          package_version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          test "$source_commit" = "$tag_commit"
+          test "$release_target" = "$source_commit"
+          test "$package_version" = "$VERSION"
+
+      - name: Build and verify deterministic KiCad PCM package
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 scripts/build_kicad_pcm.py \
+            --output-dir release-assets/kicad-pcm \
+            --verify
+          test -s "release-assets/kicad-pcm/kicad-mcp-pro-pcm-${VERSION}.zip"
+          (
+            cd release-assets/kicad-pcm
+            sha256sum --check kicad-mcp-pro-pcm-SHA256SUMS.txt
+          )
+
+      - name: Attest KiCad PCM package
+        id: attest-kicad-pcm
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-checksums: release-assets/kicad-pcm/kicad-mcp-pro-pcm-SHA256SUMS.txt
+
+      - name: Store KiCad PCM release evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kicad-pcm-release-evidence
+          path: release-assets/kicad-pcm
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attach KiCad PCM package and evidence to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          release_tag="$RELEASE_TAG"
+          gh release upload "$release_tag" release-assets/kicad-pcm/* --clobber
+
+      - name: Verify published PCM digest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          rm -rf published-kicad-pcm
+          mkdir -p published-kicad-pcm
+          gh release download "$release_tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir published-kicad-pcm \
+            --pattern "kicad-mcp-pro-pcm-${VERSION}.zip" \
+            --clobber
+          cp release-assets/kicad-pcm/kicad-mcp-pro-pcm-SHA256SUMS.txt published-kicad-pcm/
+          (cd published-kicad-pcm && sha256sum --check kicad-mcp-pro-pcm-SHA256SUMS.txt)

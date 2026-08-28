@@ -21,6 +21,7 @@ SUITES = {
         "-m",
         "not benchmark",
         "--cov=kicad_mcp",
+        "--cov=packages/kicad-plugin",
         "--cov-report=term-missing",
         "--cov-report=xml",
         "--cov-report=json",

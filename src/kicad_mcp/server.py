@@ -2727,7 +2727,9 @@ def init(
         "write", "--mode", help=option_help("Operating mode: readonly, write, manufacturing.")
     ),
     write_config: bool = typer.Option(
-        True, "--write/--print", help=option_help("Write config file directly (default: write).")
+        False,
+        "--write/--print",
+        help=option_help("Write config file directly; default is preview-only."),
     ),
 ) -> None:
     """One-shot setup: detect KiCad, configure an agent, and verify."""

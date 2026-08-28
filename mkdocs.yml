@@ -153,6 +153,7 @@ nav:
       - Package License Inventory: legal/dependency-license-awareness.md
       - Release Notes: release.md
       - July 2026 Release Readiness: release-readiness-2026-07-03.md
+      - Distribution and Onboarding Readiness: status/distribution-readiness.md
       - Demo Media: demo-media.md
   - Security and Privacy:
       - Privacy Policy: privacy.md
@@ -173,6 +174,7 @@ nav:
       - Anthropic Directory: submission/anthropic-directory.md
       - ChatGPT Apps: submission/chatgpt-apps.md
       - MCP Registry: submission/openai-mcp-registry.md
+      - KiCad PCM: submission/kicad-pcm.md
       - Reviewer Test Prompts: submission/reviewer-test-prompts.md
       - Safety and Permissions: submission/safety-and-permissions.md
   - Development:
