@@ -37,6 +37,17 @@ from .live_runner import (
     validate_sanitized_evidence,
     write_evidence,
 )
+from .reference_corpus import (
+    REFERENCE_AGENT_LOG_SCHEMA_VERSION,
+    REFERENCE_BOARD_SCHEMA_VERSION,
+    ReferenceAgentLogEvent,
+    ReferenceAttemptEntry,
+    ReferenceBoardManifest,
+    ReferenceCorpusError,
+    ValidatedReferenceBoardBundle,
+    compute_attempt_evidence_digest,
+    validate_reference_board_bundle,
+)
 from .task_outcome_reporting import (
     render_task_outcome_summary_json,
     render_task_outcome_summary_text,
@@ -88,6 +99,15 @@ from .tool_selection import (
 )
 
 __all__ = [
+    "REFERENCE_AGENT_LOG_SCHEMA_VERSION",
+    "REFERENCE_BOARD_SCHEMA_VERSION",
+    "ReferenceAgentLogEvent",
+    "ReferenceAttemptEntry",
+    "ReferenceBoardManifest",
+    "ReferenceCorpusError",
+    "ValidatedReferenceBoardBundle",
+    "compute_attempt_evidence_digest",
+    "validate_reference_board_bundle",
     "AttemptClassification",
     "FailureCategory",
     "InfrastructureInvalidEvidence",

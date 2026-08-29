@@ -31,7 +31,7 @@
 
 **Interfaces:**
 - Consumes: existing benchmark/attempt parsers, scorer, sanitization guard.
-- Produces: `ReferenceCorpusError`, manifest/log models, `ValidatedReferenceBoardBundle`, and `validate_reference_board_bundle(root: Path)`.
+- Produces: `ReferenceCorpusError`, manifest/log models, `ValidatedReferenceBoardBundle`, `compute_attempt_evidence_digest(attempt_dir: Path)`, and `validate_reference_board_bundle(root: Path)`.
 
 - [ ] **Step 1: Write RED tests** for traversal paths, duplicate entries, malformed JSONL, non-contiguous sequences, decreasing timestamps, nested details, and unsafe values.
 - [ ] **Step 2: Verify RED** with `.venv/bin/pytest tests/unit/test_reference_corpus.py -q`.
