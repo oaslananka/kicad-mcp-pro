@@ -532,7 +532,8 @@ def test_action_plugin_defers_backend_io_off_ui_thread(
     spec = importlib.util.spec_from_file_location(
         "kicad_mcp_companion_async_test", plugin_dir / "kicad_mcp_companion.py"
     )
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "_load_context", lambda: fake_ctx)
