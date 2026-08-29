@@ -74,6 +74,7 @@ Each non-empty `agent-log.jsonl` line is strict `pcb-reference-agent-log.v1` wit
 `src/kicad_mcp/evals/reference_corpus.py` owns the publication contract and exposes:
 
 ```python
+compute_reference_inputs_digest(root: Path) -> str
 compute_attempt_evidence_digest(attempt_dir: Path) -> str
 validate_reference_board_bundle(root: Path) -> ValidatedReferenceBoardBundle
 ```

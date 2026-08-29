@@ -46,6 +46,7 @@ from .reference_corpus import (
     ReferenceCorpusError,
     ValidatedReferenceBoardBundle,
     compute_attempt_evidence_digest,
+    compute_reference_inputs_digest,
     validate_reference_board_bundle,
 )
 from .task_outcome_reporting import (
@@ -107,6 +108,7 @@ __all__ = [
     "ReferenceCorpusError",
     "ValidatedReferenceBoardBundle",
     "compute_attempt_evidence_digest",
+    "compute_reference_inputs_digest",
     "validate_reference_board_bundle",
     "AttemptClassification",
     "FailureCategory",

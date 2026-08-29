@@ -63,6 +63,7 @@ class ReferenceBoardManifest(_ReferenceEvidenceModel):
     board_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
     benchmark_id: str = Field(min_length=1, max_length=128)
     benchmark_version: str = Field(min_length=1, max_length=128)
+    reference_inputs_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     attempts: tuple[ReferenceAttemptEntry, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -78,6 +79,7 @@ class ReferenceAgentLogEvent(_ReferenceEvidenceModel):
     """One sanitized ordered event in a publishable agent action log."""
 
     schema_version: Literal["pcb-reference-agent-log.v1"] = REFERENCE_AGENT_LOG_SCHEMA_VERSION
+    attempt_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
     sequence: int = Field(ge=1)
     timestamp: datetime
     event_type: Literal["agent", "tool_call", "tool_result", "workflow", "validation", "recovery"]
@@ -113,6 +115,20 @@ def _sha256_file(path: Path) -> str:
     except OSError as exc:
         raise ReferenceCorpusError("attempt evidence file must be readable") from exc
     return digest.hexdigest()
+
+
+def compute_reference_inputs_digest(root: Path) -> str:
+    """Return the deterministic digest for canonical reference-board inputs."""
+    input_files = ("specification.md", "original-prompt.md", "benchmark.json")
+    tree_digest = hashlib.sha256()
+    for name in input_files:
+        path = root / name
+        _require_regular_file(path, name)
+        tree_digest.update(name.encode("utf-8"))
+        tree_digest.update(b"\0")
+        tree_digest.update(_sha256_file(path).encode("ascii"))
+        tree_digest.update(b"\n")
+    return f"sha256:{tree_digest.hexdigest()}"
 
 
 def compute_attempt_evidence_digest(attempt_dir: Path) -> str:
@@ -162,7 +178,19 @@ def _require_regular_file(path: Path, label: str) -> None:
         raise ReferenceCorpusError(f"{label} is required")
 
 
-def _parse_agent_log(path: Path) -> tuple[ReferenceAgentLogEvent, ...]:
+def _require_sanitized_text_file(path: Path, label: str) -> None:
+    _require_regular_file(path, label)
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise ReferenceCorpusError(f"{label} must be readable UTF-8 text") from exc
+    try:
+        validate_sanitized_evidence(content)
+    except ValueError as exc:
+        raise ReferenceCorpusError(f"{label} contains unsafe evidence") from exc
+
+
+def _parse_agent_log(path: Path, expected_attempt_id: str) -> tuple[ReferenceAgentLogEvent, ...]:
     _require_regular_file(path, "agent log")
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -183,6 +211,8 @@ def _parse_agent_log(path: Path) -> tuple[ReferenceAgentLogEvent, ...]:
             raise ReferenceCorpusError(
                 "agent log contains invalid or unsafe event evidence"
             ) from exc
+        if event.attempt_id != expected_attempt_id:
+            raise ReferenceCorpusError("agent log attempt identity does not match attempt.json")
         if event.sequence != expected_sequence:
             raise ReferenceCorpusError("agent log sequence must be contiguous from 1")
         if previous_timestamp is not None and event.timestamp < previous_timestamp:
@@ -234,7 +264,7 @@ def _validate_success_artifacts(
         f"{kind.upper()}.txt" for kind in _required_validation_kinds(contract, record)
     )
     for name in required_files:
-        _require_regular_file(attempt_dir / name, name)
+        _require_sanitized_text_file(attempt_dir / name, name)
 
     gerbers = attempt_dir / "Gerbers"
     if gerbers.is_symlink():
@@ -266,12 +296,9 @@ def validate_reference_board_bundle(root: Path) -> ValidatedReferenceBoardBundle
         raise ReferenceCorpusError("reference-board bundle root must be a directory")
     root = root.resolve()
 
-    for name in (
-        "specification.md",
-        "original-prompt.md",
-        "benchmark.json",
-        "attempt-manifest.json",
-    ):
+    for name in ("specification.md", "original-prompt.md"):
+        _require_sanitized_text_file(root / name, name)
+    for name in ("benchmark.json", "attempt-manifest.json"):
         _require_regular_file(root / name, name)
 
     try:
@@ -292,6 +319,10 @@ def validate_reference_board_bundle(root: Path) -> ValidatedReferenceBoardBundle
     ):
         raise ReferenceCorpusError(
             "reference manifest benchmark identity does not match benchmark.json"
+        )
+    if compute_reference_inputs_digest(root) != manifest.reference_inputs_digest:
+        raise ReferenceCorpusError(
+            "reference input digest does not match specification, prompt, and benchmark"
         )
 
     attempts_dir = root / "attempts"
@@ -324,7 +355,7 @@ def validate_reference_board_bundle(root: Path) -> ValidatedReferenceBoardBundle
             contract.benchmark_version,
         ):
             raise ReferenceCorpusError("attempt benchmark identity does not match benchmark.json")
-        _parse_agent_log(attempt_dir / "agent-log.jsonl")
+        _parse_agent_log(attempt_dir / "agent-log.jsonl", record.attempt_id)
         _validate_required_validation_evidence(contract, record)
         _validate_success_artifacts(attempt_dir, contract, record)
         if compute_attempt_evidence_digest(attempt_dir) != manifest_entry.evidence_digest:

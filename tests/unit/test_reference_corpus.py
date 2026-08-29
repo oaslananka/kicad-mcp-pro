@@ -14,12 +14,15 @@ from pydantic import ValidationError
 import kicad_mcp.evals as evals
 
 
-def _manifest_payload(evidence_digest: str | None = None) -> dict[str, Any]:
+def _manifest_payload(
+    evidence_digest: str | None = None, reference_inputs_digest: str | None = None
+) -> dict[str, Any]:
     return {
         "schema_version": "pcb-reference-board.v1",
         "board_id": "stm32-usbc-reference",
         "benchmark_id": "reference-board-suite",
         "benchmark_version": "v1",
+        "reference_inputs_digest": reference_inputs_digest or "sha256:" + "1" * 64,
         "attempts": [
             {
                 "attempt_id": "attempt-001",
@@ -33,6 +36,7 @@ def _manifest_payload(evidence_digest: str | None = None) -> dict[str, Any]:
 def _event_payload() -> dict[str, Any]:
     return {
         "schema_version": "pcb-reference-agent-log.v1",
+        "attempt_id": "attempt-001",
         "sequence": 1,
         "timestamp": "2026-08-29T20:00:00+03:00",
         "event_type": "tool_call",
@@ -47,6 +51,7 @@ def test_eval_package_exposes_reference_corpus_contract() -> None:
     assert evals.ReferenceAgentLogEvent is not None
     assert evals.ReferenceCorpusError is not None
     assert evals.compute_attempt_evidence_digest is not None
+    assert evals.compute_reference_inputs_digest is not None
 
 
 def test_reference_attempt_entry_requires_sha256_evidence_digest() -> None:
@@ -96,6 +101,14 @@ def test_reference_manifest_rejects_duplicate_attempt_ids_and_directories() -> N
 
     with pytest.raises(ValidationError, match="unique"):
         evals.ReferenceBoardManifest.model_validate(payload)
+
+
+def test_reference_agent_log_event_requires_attempt_identity() -> None:
+    payload = _event_payload()
+    payload.pop("attempt_id")
+
+    with pytest.raises(ValidationError):
+        evals.ReferenceAgentLogEvent.model_validate(payload)
 
 
 def test_reference_agent_log_event_accepts_scalar_details() -> None:
@@ -261,12 +274,34 @@ def _write_bundle(tmp_path: Path, attempt_payload: dict[str, Any] | None = None)
     _write_agent_log(attempt_dir / "agent-log.jsonl")
     _write_success_artifacts(attempt_dir)
     evidence_digest = evals.compute_attempt_evidence_digest(attempt_dir)
-    manifest = evals.ReferenceBoardManifest.model_validate(_manifest_payload(evidence_digest))
+    reference_inputs_digest = evals.compute_reference_inputs_digest(root)
+    manifest = evals.ReferenceBoardManifest.model_validate(
+        _manifest_payload(evidence_digest, reference_inputs_digest)
+    )
     (root / "attempt-manifest.json").write_text(
         json.dumps(manifest.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return root
+
+
+def test_reference_bundle_rejects_unsafe_original_prompt_text(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path)
+    (root / "original-prompt.md").write_text(
+        "Open /home/private/reference.kicad_pcb before editing.\n", encoding="utf-8"
+    )
+
+    with pytest.raises(evals.ReferenceCorpusError, match="original-prompt.md.*unsafe"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_reference_bundle_rejects_unsafe_success_artifact_text(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path)
+    report = root / "attempts" / "attempt-001" / "manufacturing-report.md"
+    report.write_text("credential api_key=fixture-secret-value\n", encoding="utf-8")
+
+    with pytest.raises(evals.ReferenceCorpusError, match="manufacturing-report.md.*unsafe"):
+        evals.validate_reference_board_bundle(root)
 
 
 def test_reference_bundle_validates_complete_attempt_denominator(tmp_path: Path) -> None:
@@ -277,6 +312,16 @@ def test_reference_bundle_validates_complete_attempt_denominator(tmp_path: Path)
     assert result.manifest.board_id == "stm32-usbc-reference"
     assert result.summary.attempts_total == 1
     assert result.summary.successful_attempts == 1
+
+
+def test_reference_bundle_rejects_reference_input_digest_mismatch(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path)
+    (root / "specification.md").write_text(
+        "# Changed but still safe fixture specification\n", encoding="utf-8"
+    )
+
+    with pytest.raises(evals.ReferenceCorpusError, match="reference input digest"):
+        evals.validate_reference_board_bundle(root)
 
 
 def test_reference_bundle_rejects_attempt_content_digest_mismatch(tmp_path: Path) -> None:
@@ -373,6 +418,19 @@ def test_reference_bundle_rejects_unsafe_attempt_json_value(tmp_path: Path) -> N
     attempt_path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(evals.ReferenceCorpusError, match="attempt.json.*unsafe"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_reference_bundle_rejects_agent_log_attempt_identity_mismatch(
+    tmp_path: Path,
+) -> None:
+    root = _write_bundle(tmp_path)
+    log = root / "attempts" / "attempt-001" / "agent-log.jsonl"
+    payload = _event_payload()
+    payload["attempt_id"] = "attempt-002"
+    log.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+    with pytest.raises(evals.ReferenceCorpusError, match="attempt identity"):
         evals.validate_reference_board_bundle(root)
 
 

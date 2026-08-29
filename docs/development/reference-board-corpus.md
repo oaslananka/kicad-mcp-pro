@@ -36,8 +36,9 @@ create a second success/failure taxonomy or KPI schema.
 ## Complete attempt denominator
 
 `attempt-manifest.json` is the publication ledger for one board. Its
-`pcb-reference-board.v1` entries use canonical `attempts/<attempt-id>` directories and a
-`sha256:<64 lowercase hex>` evidence digest. The validator requires exact equality between
+`pcb-reference-board.v1` records a `reference_inputs_digest` for the specification, original
+prompt, and benchmark, plus canonical `attempts/<attempt-id>` directories and a
+`sha256:<64 lowercase hex>` evidence digest per attempt. The validator requires exact equality between
 manifest entries and direct attempt directories on disk. It then recomputes a deterministic
 digest over sorted POSIX relative paths and each file SHA-256. An undisclosed failed attempt
 or any post-manifest file addition, removal, or byte change therefore fails validation instead
@@ -66,13 +67,15 @@ publication cannot silently resolve to unrelated local state.
 ## Sanitized action history
 
 `agent-log.jsonl` is a reconstruction log, not a raw conversation transcript. Each line is a
-strict `pcb-reference-agent-log.v1` event with a contiguous sequence starting at 1, a
+strict `pcb-reference-agent-log.v1` event whose `attempt_id` must match `attempt.json`, with a
+contiguous sequence starting at 1, a
 timezone-aware nondecreasing timestamp, a bounded event name, event/status enums, and optional
 scalar-only details.
 
-Events pass the shared evaluation-evidence sanitization guard. Do not publish raw prompts,
-raw provider responses, environment dumps, credentials, secret-bearing strings, unrelated
-absolute user paths, or arbitrary nested provider/debug payloads.
+Events pass the shared evaluation-evidence sanitization guard. The specification, original
+prompt, and required successful text artifacts use the same secret/private-path guard. Do not
+publish raw provider responses, environment dumps, credentials, secret-bearing strings,
+unrelated absolute user paths, or arbitrary nested provider/debug payloads.
 
 ## Validate before publication
 
