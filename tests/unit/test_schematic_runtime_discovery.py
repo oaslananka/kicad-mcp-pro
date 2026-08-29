@@ -46,3 +46,15 @@ def test_file_backed_schematic_tools_remain_visible_when_editor_is_closed() -> N
         "variant_create",
     }.issubset(visible)
     assert "sch_reload" not in visible
+
+
+def test_non_ipc_tool_filter_does_not_probe_runtime(monkeypatch) -> None:
+    import kicad_mcp.server as server_module
+
+    def unexpected_probe() -> object:
+        raise AssertionError("non-IPC discovery must not probe KiCad runtime")
+
+    monkeypatch.setattr(server_module, "get_ipc_capability_state", unexpected_probe)
+    tools = [Tool(name="studio_push_context", inputSchema={})]
+
+    assert _filter_ipc_runtime_tools(tools) == tools

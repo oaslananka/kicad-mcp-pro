@@ -86,8 +86,8 @@ uses an atomic replace. Existing invalid JSON/TOML fails before mutation. Inspec
 or restore backups with:
 
 ```bash
-kicad-mcp-pro setup-backups cursor --scope project
-kicad-mcp-pro setup-restore cursor --scope project
+kicad-mcp-pro setup-backups cursor --scope project --project-dir /path/to/project
+kicad-mcp-pro setup-restore cursor --scope project --project-dir /path/to/project
 ```
 
 Claude Code, Codex and Cursor use this same reversible transaction boundary. A

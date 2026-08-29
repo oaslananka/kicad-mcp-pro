@@ -705,6 +705,8 @@ def _filter_ipc_runtime_tools(
     tools: list[mcp_types.Tool],
     state: KiCadIpcCapabilityState | None = None,
 ) -> list[mcp_types.Tool]:
+    if not any(_tool_requires_ipc(tool.name) for tool in tools):
+        return tools
     state = state or get_ipc_capability_state()
     return [tool for tool in tools if _ipc_runtime_allows_tool(tool.name, state)]
 
@@ -1970,6 +1972,9 @@ def build_server(profile: str | None = None, *, defer_registration: bool = False
         auth=auth,
         token_verifier=token_verifier,
     )
+    # The legacy mcp.server.fastmcp wrapper otherwise advertises the MCP SDK
+    # package version during initialize instead of this product's release version.
+    server._mcp_server.version = __version__
     server.operating_mode = operating_mode
     server.allow_experimental_tools = operating_mode is OperatingMode.EXPERIMENTAL
     server.allowed_tool_names = set(tools_for_profile(selected_profile))
@@ -2684,11 +2689,16 @@ def bridge(
 def setup_restore(
     agent: str = typer.Argument(..., help=option_help("Agent to restore config for.")),
     scope: str = typer.Option("project", "--scope", help=option_help("Config scope to restore.")),
+    project_dir: str | None = typer.Option(
+        None,
+        "--project-dir",
+        help=option_help("Project directory for project-scoped config."),
+    ),
 ) -> None:
     """Restore the most recent backup of an agent configuration."""
     from .setup import restore_config
 
-    result = restore_config(agent, scope)
+    result = restore_config(agent, scope, project_dir=project_dir)
     typer.echo(result)
 
 
@@ -2696,11 +2706,16 @@ def setup_restore(
 def setup_backups(
     agent: str = typer.Argument(..., help=option_help("Agent to list backups for.")),
     scope: str = typer.Option("project", "--scope", help=option_help("Config scope to list.")),
+    project_dir: str | None = typer.Option(
+        None,
+        "--project-dir",
+        help=option_help("Project directory for project-scoped config."),
+    ),
 ) -> None:
     """List available backups for an agent configuration."""
     from .setup import list_config_backups
 
-    result = list_config_backups(agent, scope)
+    result = list_config_backups(agent, scope, project_dir=project_dir)
     typer.echo(result)
 
 

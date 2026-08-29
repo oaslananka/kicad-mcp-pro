@@ -5,6 +5,7 @@ from pathlib import Path
 from starlette.testclient import TestClient
 from starlette.types import Receive, Scope, Send
 
+from kicad_mcp import __version__
 from kicad_mcp.compatibility import MCP_PROTOCOL_VERSION
 from kicad_mcp.config import get_config
 from kicad_mcp.server import _StreamableHttpContractMiddleware, build_server
@@ -68,6 +69,20 @@ def _assert_json_rpc_error(
     assert payload["id"] == request_id
     assert payload["error"]["code"] == code
     assert payload["error"]["message"] == message
+
+
+def test_initialize_advertises_product_version(sample_project: Path) -> None:
+    _ = sample_project
+    cfg = get_config()
+    cfg.transport = "streamable-http"
+    cfg.stateful_http = False
+    server = build_server("default")
+
+    with TestClient(server.streamable_http_app(), base_url="http://127.0.0.1:3334") as client:
+        initialized = client.post("/mcp", headers=_headers(), json=_initialize_request())
+
+    assert initialized.status_code == 200
+    assert initialized.json()["result"]["serverInfo"]["version"] == __version__
 
 
 def test_oaslana_71_chatgpt_connector_stateless_tools_list_does_not_require_session_header(

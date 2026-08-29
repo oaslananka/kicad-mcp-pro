@@ -200,7 +200,7 @@ def _claude_desktop_path() -> Path:
     return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
 
 
-def resolve_path(agent_key: str, scope: str) -> Path:
+def resolve_path(agent_key: str, scope: str, project_dir: str | Path | None = None) -> Path:
     """Resolve the config file path for an agent and scope.
 
     Respects platform (Windows/macOS/Linux) differences.
@@ -226,7 +226,10 @@ def resolve_path(agent_key: str, scope: str) -> Path:
     # On Windows, rewrite Unix-style paths
     if sys.platform == "win32":
         raw = raw.replace("~", os.environ.get("USERPROFILE", "~"))
-    return Path(raw).expanduser().resolve()
+    path = Path(raw).expanduser()
+    if scope == "project" and project_dir is not None and not path.is_absolute():
+        path = Path(project_dir).expanduser() / path
+    return path.resolve()
 
 
 def resolve_all_paths(agent_key: str) -> dict[Scope, Path]:
@@ -480,10 +483,16 @@ def backup_config(path: Path) -> Path | None:
     return bak
 
 
-def list_backups(agent_key: str, scope: str) -> list[Path]:
+def list_backups(
+    agent_key: str, scope: str, *, project_dir: str | Path | None = None
+) -> list[Path]:
     """List all backup files for a given agent config."""
     try:
-        path = resolve_path(agent_key, str(scope))
+        path = (
+            resolve_path(agent_key, str(scope), project_dir)
+            if project_dir is not None
+            else resolve_path(agent_key, str(scope))
+        )
     except ValueError:
         return []
     parent = path.parent
@@ -493,14 +502,18 @@ def list_backups(agent_key: str, scope: str) -> list[Path]:
     return sorted(parent.glob(pattern), reverse=True)
 
 
-def restore_backup(agent_key: str, scope: str) -> str:
+def restore_backup(agent_key: str, scope: str, *, project_dir: str | Path | None = None) -> str:
     """Restore the most recent backup for an agent config."""
-    backups = list_backups(agent_key, scope)
+    backups = list_backups(agent_key, scope, project_dir=project_dir)
     if not backups:
         return f"No backups found for {agent_key} ({scope})."
     latest = backups[0]
     try:
-        path = resolve_path(agent_key, scope)
+        path = (
+            resolve_path(agent_key, scope, project_dir)
+            if project_dir is not None
+            else resolve_path(agent_key, scope)
+        )
         shutil.copy2(latest, path)
         return f"Restored {path} from {latest}"
     except (OSError, ValueError) as exc:
@@ -675,6 +688,7 @@ def write_config(
     scope: str = "project",
     *,
     backup: bool = True,
+    project_dir: str | Path | None = None,
 ) -> WriteResult:
     """Merge and atomically write one client config. Returns ``(path, success)``."""
     info = AGENTS.get(agent_key)
@@ -687,7 +701,11 @@ def write_config(
         return f"Agent '{agent_key}' does not support scope '{scope}'. Valid: {valid}", False
 
     try:
-        path = resolve_path(agent_key, scope)
+        path = (
+            resolve_path(agent_key, scope, project_dir)
+            if project_dir is not None
+            else resolve_path(agent_key, scope)
+        )
         existing = path.read_text(encoding="utf-8") if path.exists() else ""
         merged = _merged_config(existing, config_str, agent_key, info.format)
         issues = validate_config(merged, agent_key, info.format)
@@ -932,7 +950,9 @@ def setup_agent(
                 f"Valid scopes: {valid}\n\nConfig snippet:\n{config_str}"
             )
 
-        path_str, ok = write_config(agent, config_str, scope)
+        path_str, ok = write_config(
+            agent, config_str, scope, project_dir=project if scope == "project" else None
+        )
         if ok:
             # Validate after writing
             issues = validate_config(config_str, agent, fmt)
@@ -973,18 +993,22 @@ def setup_wizard() -> str:
     return "\n".join(lines)
 
 
-def restore_config(agent: str, scope: str = "project") -> str:
+def restore_config(
+    agent: str, scope: str = "project", *, project_dir: str | Path | None = None
+) -> str:
     """Restore the most recent backup for an agent config."""
     if agent not in AGENTS:
         return f"Unknown agent: {agent}"
-    return restore_backup(agent, str(scope))
+    return restore_backup(agent, str(scope), project_dir=project_dir)
 
 
-def list_config_backups(agent: str, scope: str = "project") -> str:
+def list_config_backups(
+    agent: str, scope: str = "project", *, project_dir: str | Path | None = None
+) -> str:
     """List available backups for an agent config."""
     if agent not in AGENTS:
         return f"Unknown agent: {agent}"
-    backups = list_backups(agent, str(scope))
+    backups = list_backups(agent, str(scope), project_dir=project_dir)
     if not backups:
         return f"No backups found for {agent} ({scope})."
     lines = [f"Backups for {agent} ({scope}):"]
