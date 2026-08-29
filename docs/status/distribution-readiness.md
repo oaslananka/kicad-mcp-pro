@@ -11,7 +11,7 @@ A file existing in the repository is not enough to mark a surface verified.
 | MCPB | Existing release surface | `.github/workflows/publish-mcpb.yml`, `tests/unit/test_release_hardening.py` | Attested/versioned release asset contract. |
 | Docker / GHCR | Existing release surface | `.github/workflows/publish-mcp-container.yml`, container tests | No change from PCM work. |
 | Desktop | Existing release surface | GUI CI/release workflows and desktop/backend compatibility tests | Exact-release backend compatibility remains independent of PCM. |
-| **KiCad PCM** | **Physical Linux verified; cross-platform physical matrix pending** | [Linux physical evidence](../evidence/kicad-pcm/2026-08-29/linux-kicad-10.0.5.md), `tests/unit/test_kicad_pcm_packaging.py`, `tests/unit/test_companion_context.py`, `.github/workflows/publish-kicad-pcm.yml` | Linux install/restart/health/MCP/update/incompatible/uninstall/rollback is physically verified. Windows physical PCM flow pending; macOS physical host unavailable, so CI is not presented as physical evidence. |
+| **KiCad PCM** | **Physical Linux verified; cross-platform physical matrix pending** | [Linux physical evidence](../evidence/kicad-pcm/2026-08-29/linux-kicad-10.0.5.md), `tests/unit/test_kicad_pcm_packaging.py`, `tests/unit/test_companion_context.py`, `.github/workflows/publish-kicad-pcm.yml` | Linux install/restart/health/MCP/update/incompatible/uninstall/rollback is physically verified on two independent Linux hosts. Windows physical PCM flow pending; macOS physical host unavailable, so CI is not presented as physical evidence. |
 | Claude Code guided config | Transaction contract verified; physical flow pending | `tests/unit/test_issue_731_onboarding.py` | Preview is side-effect-free; explicit write is merge-safe/backed up/reversible. |
 | Codex guided config | Transaction contract verified; physical flow pending | `tests/unit/test_issue_731_onboarding.py` | Owned TOML sections are replaced without replacing unrelated text/tables. |
 | Cursor guided config | Transaction contract verified; physical flow pending | `tests/unit/test_issue_731_onboarding.py` | JSON server-map merge preserves unrelated configuration. |
@@ -21,9 +21,10 @@ A file existing in the repository is not enough to mark a surface verified.
 ## Promotion rule
 
 The PCM surface may be described as **physically verified on Linux** because the
-maintained real KiCad installation demonstrates the same versioned artifact through
-install, restart/discovery, backend health, MCP lifecycle/read-only smoke, compatible
-update, incompatible-version fail-closed behavior, uninstall, and rollback. Full
+maintained real KiCad installations on two independent Linux hosts demonstrate the same
+versioned artifact through install/update, restart/discovery, backend health, MCP
+lifecycle/read-only smoke, incompatible-version fail-closed behavior, uninstall, and
+rollback. Full
 cross-platform **Verified** status remains blocked until the maintained platform
 boundary is complete: Windows physical PCM flow pending; macOS physical host unavailable
 and therefore explicitly documented as CI-only rather than physical evidence.

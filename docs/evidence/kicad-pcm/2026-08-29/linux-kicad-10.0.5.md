@@ -58,6 +58,38 @@ verification, the pre-test KiCad configuration hashes were restored, the API was
 disabled again, the PCM package/resources and IPC socket were removed, and the
 temporary package copy was deleted.
 
+## Secondary physical Linux host
+
+A second authorized Linux desktop (`msi`) independently exercised the same merged
+revision and KiCad `10.0.5`. Its final PCM build reproduced the same
+`e3d1016a47bf8c1270c79a13cb07e1084dcf4e18b8a39d0637841778584d87bd`
+artifact hash and `9,511`-byte size. The host already had an older trusted
+`3.33.3` companion candidate installed, so this run exercised the real PCM update
+path rather than a clean first install.
+
+The final candidate replaced the installed companion through PCM and all installed
+plugin/resource hashes matched the final archive. After restart, the companion was
+discovered in PCB Editor. Backend-down guidance failed closed; with the exact merged
+backend, live health reported KiCad IPC and PCB context available. The companion
+returned from the KiCad UI thread in approximately `0.000133 s`, while
+`studio_push_context` completed in `2.483 ms` with HTTP 200. MCP initialize returned
+`serverInfo.version=3.33.3`; initialized, tools/list (`24` tools),
+`kicad://studio/context`, and read-only `kicad_get_version` all succeeded against the
+disposable fixture board. Forced backend incompatibility also failed closed, with an
+approximately `0.000068 s` UI-thread return.
+
+PCM uninstall was committed with **Apply Pending Changes**; plugin/resources were
+removed and a disposable unrelated client-config hash remained unchanged. Rollback
+then reinstalled the host's pre-test trusted PCM artifact with SHA-256
+`08b112d870f412a0e55c0f15f60264726e3cdd4ebc0e30768888d53a8b37a8c6`;
+its installed file hashes matched that archive and restart rediscovered the companion.
+Finally, the captured KiCad config and user-share trees were restored to their exact
+pre-test tree hashes. The user's active repository branch and dirty working tree were
+unchanged by the evidence run.
+
+This is a second independent Linux-host result. It strengthens Linux physical
+confidence but does not change the Windows/macOS platform boundary below.
+
 ## CI and quality evidence
 
 PR #811 was merged as `c25b852d90321754a95199645a450be98b126e76`.
