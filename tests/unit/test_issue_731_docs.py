@@ -23,11 +23,17 @@ def test_companion_docs_cover_pcm_lifecycle_health_and_uvx_fallback() -> None:
     assert "modern KiCad plugin API" in doc
 
 
-def test_distribution_readiness_keeps_pcm_pending_until_physical_evidence_exists() -> None:
+def test_distribution_readiness_records_linux_and_windows_pcm_evidence() -> None:
     doc = (ROOT / "docs" / "status" / "distribution-readiness.md").read_text(encoding="utf-8")
 
     assert "KiCad PCM" in doc
-    assert "Candidate — physical verification pending" in doc
+    assert "Physical Linux + Windows verified; macOS physical host pending" in doc
+    assert "../evidence/kicad-pcm/2026-08-29/linux-kicad-10.0.5.md" in doc
+    assert "../evidence/kicad-pcm/2026-08-29/windows-kicad-10.0.5.md" in doc
+    assert "two independent Linux hosts" in doc
+    assert "Windows physical PCM flow verified" in doc
+    assert "macOS physical host unavailable" in doc
+    assert "**KiCad PCM** | **Verified**" not in doc
     assert "Claude Code" in doc
     assert "Codex" in doc
     assert "Cursor" in doc
@@ -49,3 +55,14 @@ def test_pcm_submission_doc_is_explicitly_pre_submission() -> None:
     assert "install_size" in doc
     assert "packages/com.github.oaslananka.kicad-mcp-pro" in doc
     assert "Do not submit" in doc
+
+
+def test_linux_evidence_records_real_supported_client_connect() -> None:
+    doc = (
+        ROOT / "docs" / "evidence" / "kicad-pcm" / "2026-08-29" / "linux-kicad-10.0.5.md"
+    ).read_text(encoding="utf-8")
+
+    assert "Claude Code `2.1.238`" in doc
+    assert "Status: Connected" in doc
+    assert "temporary `HOME`" in doc
+    assert "user Claude configuration was not modified" in doc
