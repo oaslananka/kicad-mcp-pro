@@ -20,8 +20,11 @@ HTTP `POST` request to the configured endpoint. Every Streamable HTTP request
 must include `Accept: application/json, text/event-stream` and JSON requests
 must include `Content-Type: application/json`.
 
-After `initialize`, clients must include `MCP-Protocol-Version: 2025-11-25` on
-follow-up requests. Stateful deployments also return `MCP-Session-Id` from
+After `initialize`, clients must echo the negotiated protocol version in the
+`MCP-Protocol-Version` header on follow-up requests. The public stable baseline
+remains `2025-11-25`; the pinned MCP SDK also negotiates its supported earlier
+protocol versions for backward-compatible clients such as Codex. Stateful
+deployments also return `MCP-Session-Id` from
 `initialize`; clients must echo that value on `notifications/initialized`,
 `tools/list`, `tools/call`, and later requests. Missing stateful session IDs
 return HTTP 400 with a structured JSON-RPC error, and unknown session IDs return

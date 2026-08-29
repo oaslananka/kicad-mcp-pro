@@ -54,3 +54,11 @@ def test_candidate_protocol_operator_documentation_is_explicitly_release_gated()
 
     assert "MCP 2026 Stateless Compatibility Lane" in navigation
     assert "adr/0006-mcp-2026-stateless-compatibility-lane.md" in navigation
+
+
+def test_stable_streamable_http_docs_follow_negotiated_protocol_version() -> None:
+    transport = TRANSPORT.read_text(encoding="utf-8")
+
+    assert "negotiated protocol version" in transport
+    assert "Codex" in transport
+    assert "must include `MCP-Protocol-Version: 2025-11-25`" not in transport
