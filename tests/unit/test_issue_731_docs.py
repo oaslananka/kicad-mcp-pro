@@ -55,3 +55,14 @@ def test_pcm_submission_doc_is_explicitly_pre_submission() -> None:
     assert "install_size" in doc
     assert "packages/com.github.oaslananka.kicad-mcp-pro" in doc
     assert "Do not submit" in doc
+
+
+def test_linux_evidence_records_real_supported_client_connect() -> None:
+    doc = (
+        ROOT / "docs" / "evidence" / "kicad-pcm" / "2026-08-29" / "linux-kicad-10.0.5.md"
+    ).read_text(encoding="utf-8")
+
+    assert "Claude Code `2.1.238`" in doc
+    assert "Status: Connected" in doc
+    assert "temporary `HOME`" in doc
+    assert "user Claude configuration was not modified" in doc

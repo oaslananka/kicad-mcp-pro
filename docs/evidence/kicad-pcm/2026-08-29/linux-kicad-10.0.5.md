@@ -41,14 +41,21 @@ The following states were exercised against fixture-safe content:
 - rollback: a previously trusted PCM artifact was reinstalled, discovered after
   restart, and then removed as part of host cleanup.
 
-## Guided client transaction
+## Guided client transaction and real client connect
 
 A disposable Cursor project configuration was used to exercise the project-scoped
 onboarding transaction. Preview did not mutate the file; explicit write targeted
 the requested project, preserved unrelated keys/server entries, created a backup,
-and restore returned the original file hash. This evidence is deliberately scoped
-to the disposable Cursor flow and does not claim a physical Claude Code or Codex
-application session.
+and restore returned the original file hash.
+
+On the secondary Linux host, Claude Code `2.1.238` was exercised as a real supported
+MCP client while KiCad `10.0.5` and the loopback backend were live. The test used a
+temporary `HOME` and disposable project, added the `kicad` server with Claude's own
+`mcp add --scope local --transport http` command, then ran `claude mcp get kicad`.
+Claude reported `Status: Connected` for `http://127.0.0.1:3334/mcp`; the backend
+recorded the corresponding initialize/session traffic.
+The user Claude configuration was not modified. MCP initialize/list-tools and the read-only `kicad_get_version`
+tool call were independently verified in the physical KiCad lifecycle smoke above.
 
 ## Host restoration
 
