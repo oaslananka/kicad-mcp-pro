@@ -65,7 +65,7 @@ def test_pcm_submission_doc_is_explicitly_pre_submission() -> None:
     assert "download_sha256" in doc
     assert "download_size" in doc
     assert "install_size" in doc
-    assert "packages/com.github_oaslananka.kicad-mcp-pro" in doc
+    assert "packages/com.github.oaslananka.kicad-mcp-pro" in doc
     assert "Do not submit" in doc
 
 
