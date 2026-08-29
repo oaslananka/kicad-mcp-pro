@@ -48,6 +48,7 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.lowlevel.helper_types import ReadResourceContents
+from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 from mcp.types import (
     CancelTaskRequest,
     CancelTaskResult,
@@ -1268,12 +1269,12 @@ class _StreamableHttpContractMiddleware:
             return
 
         protocol_version = headers.get("mcp-protocol-version")
-        if protocol_version and protocol_version != MCP_PROTOCOL_VERSION:
+        if protocol_version and protocol_version not in SUPPORTED_PROTOCOL_VERSIONS:
             await _streamable_http_error_response(
                 code=-32002,
                 message=(
                     f"Unsupported MCP-Protocol-Version: {protocol_version}. "
-                    f"Expected {MCP_PROTOCOL_VERSION}."
+                    f"Supported versions: {', '.join(SUPPORTED_PROTOCOL_VERSIONS)}."
                 ),
                 rpc_id=rpc_id,
                 status_code=400,
