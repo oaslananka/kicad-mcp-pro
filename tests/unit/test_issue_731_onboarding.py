@@ -269,3 +269,40 @@ def test_atomic_replace_failure_keeps_original_and_cleans_temp(
     assert "replace failed" in message
     assert path.read_bytes() == original
     assert list(tmp_path.glob(".mcp.json.*.tmp")) == []
+
+
+def test_setup_agent_write_targets_explicit_project_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.setup import setup_agent
+
+    project = tmp_path / "project"
+    cwd = tmp_path / "cwd"
+    project.mkdir()
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+
+    result = setup_agent("cursor", project_dir=str(project), write=True, scope="project")
+
+    target = project / ".cursor" / "mcp.json"
+    assert "Config written" in result
+    assert target.exists()
+    assert not (cwd / ".cursor" / "mcp.json").exists()
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    assert payload["mcpServers"]["kicad"]["env"]["KICAD_MCP_PROJECT_DIR"] == str(project)
+
+
+def test_project_backup_restore_honors_explicit_project_dir(tmp_path: Path) -> None:
+    from kicad_mcp.setup import restore_config, setup_agent
+
+    project = tmp_path / "project"
+    target = project / ".cursor" / "mcp.json"
+    target.parent.mkdir(parents=True)
+    original = {"theme": "dark", "mcpServers": {"other": {"command": "safe"}}}
+    target.write_text(json.dumps(original, indent=2) + "\n", encoding="utf-8")
+
+    setup_agent("cursor", project_dir=str(project), write=True, scope="project")
+    restored = restore_config("cursor", "project", project_dir=str(project))
+
+    assert "Restored" in restored
+    assert json.loads(target.read_text(encoding="utf-8")) == original

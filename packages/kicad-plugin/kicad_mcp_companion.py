@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 from types import ModuleType
 
 import pcbnew  # type: ignore[import-not-found]  # provided by KiCad
@@ -76,36 +77,48 @@ class KiCadMcpCompanionPlugin(pcbnew.ActionPlugin):
         info = self._read_board_info(ctx.BoardInfo)
         base_url = os.environ.get("KICAD_MCP_URL", "http://127.0.0.1:3334")
         auth_token = os.environ.get("KICAD_MCP_AUTH_TOKEN", "")
+        threading.Thread(
+            target=self._run_backend_flow,
+            args=(ctx, info, base_url, auth_token, wx),
+            name="kicad-mcp-companion",
+            daemon=True,
+        ).start()
+
+    def _run_backend_flow(
+        self,
+        ctx: ModuleType,
+        info: object,
+        base_url: str,
+        auth_token: str,
+        wx: object,
+    ) -> None:
+        def show(message: str, icon: object) -> None:
+            wx.CallAfter(wx.MessageBox, message, "kicad-mcp companion", icon)
+
         try:
             compatibility = ctx.load_compatibility_contract()
             client = ctx.StudioContextClient(base_url, auth_token=auth_token)
             health = client.health(compatibility)
             if health.state != "ready":
-                wx.MessageBox(
+                show(
                     f"{health.message}\n\n"
                     "Recovery: start or update the local kicad-mcp-pro backend, then retry.",
-                    "kicad-mcp companion",
                     wx.ICON_ERROR,
                 )
                 return
             client.push(ctx.build_studio_context(info))
-            wx.MessageBox(
-                f"Pushed context for {info.file_name or 'active board'} to {base_url}.",
-                "kicad-mcp companion",
+            file_name = getattr(info, "file_name", "")
+            show(
+                f"Pushed context for {file_name or 'active board'} to {base_url}.",
                 wx.ICON_INFORMATION,
             )
         except ValueError as exc:
-            wx.MessageBox(
-                f"Companion setup/compatibility error:\n{exc}",
-                "kicad-mcp companion",
-                wx.ICON_ERROR,
-            )
+            show(f"Companion setup/compatibility error:\n{exc}", wx.ICON_ERROR)
         except Exception as exc:  # noqa: BLE001 - network/server errors are user-facing
-            wx.MessageBox(
+            show(
                 f"Could not reach kicad-mcp at {base_url}:\n{exc}\n\n"
                 "Start an HTTP-mode server, e.g.:\n"
                 "kicad-mcp-pro --transport streamable-http --port 3334 --mode write",
-                "kicad-mcp companion",
                 wx.ICON_ERROR,
             )
 

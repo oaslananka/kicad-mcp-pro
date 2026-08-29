@@ -341,6 +341,31 @@ class TestCliSetup:
         result = CliRunner().invoke(app, ["setup-backups", "claude-code"])
         assert result.exit_code == 0, result.output
 
+    def test_setup_backup_commands_forward_project_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        observed: list[tuple[str, str | None]] = []
+        monkeypatch.setattr(
+            "kicad_mcp.setup.restore_config",
+            lambda _agent, _scope, *, project_dir=None: (
+                observed.append(("restore", project_dir)) or "ok"
+            ),
+        )
+        monkeypatch.setattr(
+            "kicad_mcp.setup.list_config_backups",
+            lambda _agent, _scope, *, project_dir=None: (
+                observed.append(("backups", project_dir)) or "ok"
+            ),
+        )
+
+        project = str(tmp_path / "project")
+        restored = CliRunner().invoke(app, ["setup-restore", "cursor", "--project-dir", project])
+        listed = CliRunner().invoke(app, ["setup-backups", "cursor", "--project-dir", project])
+
+        assert restored.exit_code == 0, restored.output
+        assert listed.exit_code == 0, listed.output
+        assert observed == [("restore", project), ("backups", project)]
+
 
 # ---------------------------------------------------------------------------
 # Doctor integration

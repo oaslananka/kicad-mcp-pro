@@ -455,6 +455,99 @@ def test_health_invalid_json_is_backend_unhealthy() -> None:
     assert "decoded" in status.message
 
 
+def _run_companion_worker_inline(monkeypatch: pytest.MonkeyPatch, module: object) -> None:
+    class _ImmediateThread:
+        def __init__(
+            self,
+            *,
+            target: object,
+            args: tuple[object, ...] = (),
+            kwargs: dict[str, object] | None = None,
+            **_: object,
+        ) -> None:
+            self._target = target
+            self._args = args
+            self._kwargs = kwargs or {}
+
+        def start(self) -> None:
+            assert callable(self._target)
+            self._target(*self._args, **self._kwargs)
+
+    monkeypatch.setattr(
+        module,
+        "threading",
+        __import__("types").SimpleNamespace(Thread=_ImmediateThread),
+        raising=False,
+    )
+
+
+def test_action_plugin_defers_backend_io_off_ui_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib.util
+    import sys
+    import types
+    from pathlib import Path
+
+    plugin_dir = Path(__file__).resolve().parents[2] / "packages" / "kicad-plugin"
+    health_calls: list[bool] = []
+    scheduled: list[object] = []
+
+    class _ActionPlugin:
+        pass
+
+    class _Client:
+        def __init__(self, *_: object, **__: object) -> None:
+            pass
+
+        def health(self, _: dict[str, object]) -> object:
+            health_calls.append(True)
+            return types.SimpleNamespace(state="ready", message="ready")
+
+        def push(self, _payload: object) -> None:
+            pass
+
+    class _DeferredThread:
+        def __init__(self, *, target: object, **_: object) -> None:
+            scheduled.append(target)
+
+        def start(self) -> None:
+            pass
+
+    fake_ctx = types.SimpleNamespace(
+        BoardInfo=object,
+        StudioContextClient=_Client,
+        build_studio_context=lambda info: {"active_file": str(info)},
+        load_compatibility_contract=lambda: _compat_contract(),
+    )
+    fake_wx = types.SimpleNamespace(
+        ICON_ERROR=1,
+        ICON_INFORMATION=2,
+        MessageBox=lambda *_args: None,
+        CallAfter=lambda func, *args: func(*args),
+    )
+    monkeypatch.setitem(sys.modules, "pcbnew", types.SimpleNamespace(ActionPlugin=_ActionPlugin))
+    monkeypatch.setitem(sys.modules, "wx", fake_wx)
+
+    spec = importlib.util.spec_from_file_location(
+        "kicad_mcp_companion_async_test", plugin_dir / "kicad_mcp_companion.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "_load_context", lambda: fake_ctx)
+    monkeypatch.setattr(
+        module, "threading", types.SimpleNamespace(Thread=_DeferredThread), raising=False
+    )
+    plugin = module.KiCadMcpCompanionPlugin()
+    monkeypatch.setattr(plugin, "_read_board_info", lambda _: "fixture-board")
+
+    plugin.Run()
+
+    assert health_calls == []
+    assert len(scheduled) == 1
+
+
 def test_action_plugin_does_not_push_context_when_backend_is_not_ready(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -495,6 +588,7 @@ def test_action_plugin_does_not_push_context_when_backend_is_not_ready(
         ICON_WARNING=4,
         YES_NO=8,
         YES=16,
+        CallAfter=lambda func, *args: func(*args),
         MessageBox=lambda message, *_args: messages.append(str(message)),
     )
     monkeypatch.setitem(sys.modules, "pcbnew", types.SimpleNamespace(ActionPlugin=_ActionPlugin))
@@ -510,6 +604,7 @@ def test_action_plugin_does_not_push_context_when_backend_is_not_ready(
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "_load_context", lambda: fake_ctx)
 
+    _run_companion_worker_inline(monkeypatch, module)
     plugin = module.KiCadMcpCompanionPlugin()
     monkeypatch.setattr(plugin, "_read_board_info", lambda _: "fixture-board")
     plugin.Run()
@@ -547,6 +642,7 @@ def test_action_plugin_surfaces_compatibility_contract_error(
         ICON_WARNING=4,
         YES_NO=8,
         YES=16,
+        CallAfter=lambda func, *args: func(*args),
         MessageBox=lambda message, *_args: messages.append(str(message)),
     )
     monkeypatch.setitem(sys.modules, "pcbnew", types.SimpleNamespace(ActionPlugin=_ActionPlugin))
@@ -562,6 +658,7 @@ def test_action_plugin_surfaces_compatibility_contract_error(
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "_load_context", lambda: fake_ctx)
 
+    _run_companion_worker_inline(monkeypatch, module)
     plugin = module.KiCadMcpCompanionPlugin()
     monkeypatch.setattr(plugin, "_read_board_info", lambda _: "fixture-board")
     plugin.Run()
@@ -605,6 +702,7 @@ def test_action_plugin_pushes_only_after_ready_health(monkeypatch: pytest.Monkey
         ICON_WARNING=4,
         YES_NO=8,
         YES=16,
+        CallAfter=lambda func, *args: func(*args),
         MessageBox=lambda *_args: None,
     )
     monkeypatch.setitem(sys.modules, "pcbnew", types.SimpleNamespace(ActionPlugin=_ActionPlugin))
@@ -620,6 +718,7 @@ def test_action_plugin_pushes_only_after_ready_health(monkeypatch: pytest.Monkey
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "_load_context", lambda: fake_ctx)
 
+    _run_companion_worker_inline(monkeypatch, module)
     plugin = module.KiCadMcpCompanionPlugin()
     monkeypatch.setattr(plugin, "_read_board_info", lambda _: "fixture-board")
     plugin.Run()
