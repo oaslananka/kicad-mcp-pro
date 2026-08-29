@@ -11,10 +11,9 @@
 ## Reproducible package
 
 The PCM ZIP was built twice from the final source tree and the two archives were
-byte-for-byte identical. A later build from the merged revision on the authorized
-Windows test host produced the same SHA-256 and size. That Windows result proves
-cross-platform package reproducibility only; it is not recorded as a Windows
-physical PCM installation result.
+byte-for-byte identical. A later physical Windows run from the same merged revision
+reproduced the same SHA-256 and size and completed the PCM lifecycle; see
+[Windows physical evidence](windows-kicad-10.0.5.md).
 
 ## Physical KiCad lifecycle
 
@@ -104,8 +103,7 @@ Live Model Assurance, Release Please, and Dependency Graph.
 
 ## Remaining platform boundary
 
-This evidence promotes only the Linux physical PCM path. Windows physical PCM flow
-is still pending. The authorized Windows host reproduced the exact ZIP hash before
-its remote-control session became unavailable, but no installation claim is made.
+This file records the Linux physical PCM path. Windows physical PCM lifecycle is now
+separately verified in [Windows physical evidence](windows-kicad-10.0.5.md).
 A physical macOS host is not currently available in the authorized device set;
 macOS CI coverage is not treated as a substitute for a real PCM GUI lifecycle.
