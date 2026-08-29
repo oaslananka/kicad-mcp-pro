@@ -23,11 +23,16 @@ def test_companion_docs_cover_pcm_lifecycle_health_and_uvx_fallback() -> None:
     assert "modern KiCad plugin API" in doc
 
 
-def test_distribution_readiness_keeps_pcm_pending_until_physical_evidence_exists() -> None:
+def test_distribution_readiness_records_linux_pcm_evidence_without_cross_platform_overclaim(
+) -> None:
     doc = (ROOT / "docs" / "status" / "distribution-readiness.md").read_text(encoding="utf-8")
 
     assert "KiCad PCM" in doc
-    assert "Candidate — physical verification pending" in doc
+    assert "Physical Linux verified; cross-platform physical matrix pending" in doc
+    assert "../evidence/kicad-pcm/2026-08-29/linux-kicad-10.0.5.md" in doc
+    assert "Windows physical PCM flow pending" in doc
+    assert "macOS physical host unavailable" in doc
+    assert "**KiCad PCM** | **Verified**" not in doc
     assert "Claude Code" in doc
     assert "Codex" in doc
     assert "Cursor" in doc
