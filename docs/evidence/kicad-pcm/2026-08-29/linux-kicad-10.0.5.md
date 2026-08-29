@@ -57,6 +57,18 @@ recorded the corresponding initialize/session traffic.
 The user Claude configuration was not modified. MCP initialize/list-tools and the read-only `kicad_get_version`
 tool call were independently verified in the physical KiCad lifecycle smoke above.
 
+A later maintained-client compatibility follow-up exercised Codex CLI `0.150.1` against
+KiCad `10.0.5` and the same loopback Streamable HTTP product path. Codex negotiated MCP
+`2025-06-18`; the pinned MCP SDK accepted that version, while the repository middleware
+initially rejected the follow-up protocol header. PR #813 fixed that mismatch by honoring
+the SDK supported-version allow-list while keeping unknown versions fail-closed. The exact
+fix head `546227bcb13eb851913eaf6d6d8d95c9a5ae367c` then completed initialize HTTP `200`,
+initialized HTTP `202`, tools/list HTTP `200`, and a real Codex `mcp_tool_call` to the
+read-only `kicad_get_version` tool. The result reported server `3.33.3` and KiCad CLI/IPC
+`10.0.5`. That head was subsequently merged as `a197e7ff18a18c484531b9be8c4d02a3eb762ea7`.
+The disposable fixture hash was unchanged, the KiCad configuration/share trees were
+restored to their pre-test hashes, and test-owned services/files were removed.
+
 ## Host restoration
 
 The KiCad API setting was enabled only for the live IPC portion of the test. After

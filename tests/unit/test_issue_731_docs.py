@@ -44,6 +44,18 @@ def test_distribution_readiness_records_linux_and_windows_pcm_evidence() -> None
     assert "Not submitted" in doc
 
 
+def test_distribution_readiness_records_guided_client_evidence() -> None:
+    doc = (ROOT / "docs" / "status" / "distribution-readiness.md").read_text(encoding="utf-8")
+
+    assert "Claude Code guided config | Real client connect verified" in doc
+    assert "Codex guided config | Real client connect verified" in doc
+    assert "Cursor guided config | Physical guided transaction verified" in doc
+    legacy_status = "Transaction contract verified; physical flow pending"
+    assert f"Claude Code guided config | {legacy_status}" not in doc
+    assert f"Codex guided config | {legacy_status}" not in doc
+    assert f"Cursor guided config | {legacy_status}" not in doc
+
+
 def test_pcm_submission_doc_is_explicitly_pre_submission() -> None:
     doc = (ROOT / "docs" / "submission" / "kicad-pcm.md").read_text(encoding="utf-8")
 
@@ -66,3 +78,7 @@ def test_linux_evidence_records_real_supported_client_connect() -> None:
     assert "Status: Connected" in doc
     assert "temporary `HOME`" in doc
     assert "user Claude configuration was not modified" in doc
+    assert "Codex CLI `0.150.1`" in doc
+    assert "kicad_get_version" in doc
+    assert "Cursor project configuration" in doc
+    assert "restore returned the original file hash" in doc
