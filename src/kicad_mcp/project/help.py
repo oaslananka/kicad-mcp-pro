@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 _QUICK_START_LINES = (
@@ -22,7 +22,7 @@ class ProjectHelpService:
     """Render the startup quick-start guide from tool categories and profiles."""
 
     category_descriptions: Callable[[], Mapping[str, str]]
-    available_profiles: Callable[[], list[str]]
+    available_profiles: Callable[[], Sequence[str]]
 
     def help_text(self) -> str:
         lines = list(_QUICK_START_LINES)
