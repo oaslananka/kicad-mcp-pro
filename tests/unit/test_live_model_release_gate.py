@@ -18,19 +18,19 @@ THRESHOLDS = ROOT / "evals/tool_selection/thresholds.yaml"
 
 CONFIG_IDS = (
     "nvidia-nemotron-3-nano-30b-a3b",
-    "nvidia-minimax-m3",
+    "opencode-cli-deepseek-v4-flash-free",
     "opencode-cli-nemotron-3-ultra-free",
 )
 MODELS = (
     "nvidia/nemotron-3-nano-30b-a3b",
-    "minimaxai/minimax-m3",
+    "deepseek-v4-flash-free",
     "nemotron-3-ultra-free",
 )
-HOSTS = ("nvidia-nim", "nvidia-nim", "opencode-zen-cli")
-REQUEST_INTERVALS = (5.0, 5.0, 0.0)
+HOSTS = ("nvidia-nim", "opencode-zen-cli", "opencode-zen-cli")
+REQUEST_INTERVALS = (5.0, 0.0, 0.0)
 REQUIRED_ENVS = (
     ("NVIDIA_API_KEY",),
-    ("NVIDIA_API_KEY",),
+    ("OPENCODE_ZEN_API_KEY",),
     ("OPENCODE_ZEN_API_KEY",),
 )
 COMMANDS = (
@@ -44,13 +44,13 @@ COMMANDS = (
     ),
     (
         "python",
-        "scripts/nvidia_nim_eval_adapter.py",
+        "scripts/opencode_cli_eval_adapter.py",
         "--model",
         MODELS[1],
+        "--opencode-bin",
+        "opencode",
         "--timeout-seconds",
-        "90",
-        "--structured-output",
-        "none",
+        "65",
     ),
     (
         "python",
@@ -339,11 +339,18 @@ def test_committed_live_configurations_are_three_reviewed_blocking_records() -> 
 def test_committed_baseline_records_reviewed_required_configurations() -> None:
     baseline = yaml.safe_load((ROOT / "evals/live/baselines.yaml").read_text(encoding="utf-8"))
 
-    assert baseline["approved"] is True
-    assert baseline["approved_at"] == "2026-08-14"
+    # #711 dropped the rate-limited nvidia-minimax-m3 slot for a free OpenCode Zen
+    # model. The baseline is pending re-approval from a real gate run until a reviewed
+    # candidate exists for opencode-cli-deepseek-v4-flash-free.
+    assert baseline["approved"] is False
     assert baseline["required_configurations"] == list(CONFIG_IDS)
-    assert list(baseline["configurations"]) == list(CONFIG_IDS)
-    for config_id, model, host in zip(CONFIG_IDS, MODELS, HOSTS, strict=True):
+    assert "opencode-cli-deepseek-v4-flash-free" not in baseline["configurations"]
+    for config_id, model, host in zip(
+        ("nvidia-nemotron-3-nano-30b-a3b", "opencode-cli-nemotron-3-ultra-free"),
+        ("nvidia/nemotron-3-nano-30b-a3b", "nemotron-3-ultra-free"),
+        ("nvidia-nim", "opencode-zen-cli"),
+        strict=True,
+    ):
         configuration = baseline["configurations"][config_id]
         assert configuration["host"] == host
         assert configuration["model"] == model
@@ -400,10 +407,7 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     assert "fail-fast: false" in benchmark_block
     assert "needs: [smoke, benchmark]" in aggregate_block
     assert "if: ${{ always() && needs.smoke.result == 'success' }}" in aggregate_block
-    assert workflow.count("name: Cool down shared NVIDIA trial endpoint") == 2
-    assert workflow.count("if: matrix.configuration == 'nvidia-minimax-m3'") == 2
-    assert workflow.count('NVIDIA_SHARED_COOLDOWN_SECONDS: "420"') == 2
-    assert workflow.count('sleep "$NVIDIA_SHARED_COOLDOWN_SECONDS"') == 2
+    assert "name: Cool down shared NVIDIA trial endpoint" not in workflow
     assert "timeout-minutes: 50" in workflow
     assert "--case-tag live-smoke" in workflow
     assert "--repeats 1" in workflow
