@@ -479,6 +479,111 @@ def test_reference_bundle_rejects_agent_log_with_unsafe_value(tmp_path: Path) ->
         evals.validate_reference_board_bundle(root)
 
 
+def test_attempt_evidence_digest_rejects_non_directory_root(tmp_path: Path) -> None:
+    with pytest.raises(evals.ReferenceCorpusError, match="real directory"):
+        evals.compute_attempt_evidence_digest(tmp_path / "missing-attempt")
+
+
+def test_attempt_evidence_digest_rejects_symlinked_tree_entry(tmp_path: Path) -> None:
+    attempt_dir = tmp_path / "attempt"
+    attempt_dir.mkdir()
+    target = attempt_dir / "target.txt"
+    target.write_text("fixture\n", encoding="utf-8")
+    (attempt_dir / "alias.txt").symlink_to(target.name)
+
+    with pytest.raises(evals.ReferenceCorpusError, match="must not contain symlinks"):
+        evals.compute_attempt_evidence_digest(attempt_dir)
+
+
+def test_reference_bundle_rejects_non_object_manifest_json(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path)
+    (root / "attempt-manifest.json").write_text("[]\n", encoding="utf-8")
+
+    with pytest.raises(evals.ReferenceCorpusError, match="must contain one JSON object"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_reference_bundle_rejects_invalid_utf8_public_text(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path)
+    (root / "original-prompt.md").write_bytes(b"\xff\xfe\xfd")
+
+    with pytest.raises(evals.ReferenceCorpusError, match="readable UTF-8 text"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_reference_bundle_rejects_empty_agent_log(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path)
+    log = root / "attempts" / "attempt-001" / "agent-log.jsonl"
+    log.write_text("", encoding="utf-8")
+
+    with pytest.raises(evals.ReferenceCorpusError, match="at least one event"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_reference_bundle_rejects_blank_agent_log_event(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path)
+    log = root / "attempts" / "attempt-001" / "agent-log.jsonl"
+    log.write_text("\n", encoding="utf-8")
+
+    with pytest.raises(evals.ReferenceCorpusError, match="blank events"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_reference_bundle_rejects_missing_gerbers_directory(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path)
+    gerbers = root / "attempts" / "attempt-001" / "Gerbers"
+    for entry in gerbers.iterdir():
+        entry.unlink()
+    gerbers.rmdir()
+
+    with pytest.raises(evals.ReferenceCorpusError, match="Gerbers directory is required"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_reference_bundle_rejects_symlinked_gerbers_directory(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path)
+    attempt_dir = root / "attempts" / "attempt-001"
+    gerbers = attempt_dir / "Gerbers"
+    target = attempt_dir / "real-gerbers"
+    gerbers.rename(target)
+    gerbers.symlink_to(target.name, target_is_directory=True)
+
+    with pytest.raises(evals.ReferenceCorpusError, match="Gerbers must not be a symlink"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_reference_bundle_rejects_invalid_attempt_contract(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path)
+    attempt_path = root / "attempts" / "attempt-001" / "attempt.json"
+    payload = json.loads(attempt_path.read_text(encoding="utf-8"))
+    payload.pop("source_revision")
+    attempt_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(evals.ReferenceCorpusError, match="violates pcb-task-outcome.v1"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_reference_bundle_rejects_non_directory_root(tmp_path: Path) -> None:
+    with pytest.raises(evals.ReferenceCorpusError, match="must be a directory"):
+        evals.validate_reference_board_bundle(tmp_path / "missing-bundle")
+
+
+def test_reference_bundle_rejects_attempt_identity_mismatch(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path, _attempt_payload(attempt_id="attempt-002"))
+
+    with pytest.raises(evals.ReferenceCorpusError, match="attempt id does not match"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_reference_bundle_rejects_attempt_benchmark_identity_mismatch(tmp_path: Path) -> None:
+    payload = _attempt_payload()
+    payload["benchmark_version"] = "v2"
+    root = _write_bundle(tmp_path, payload)
+
+    with pytest.raises(evals.ReferenceCorpusError, match="attempt benchmark identity"):
+        evals.validate_reference_board_bundle(root)
+
+
 ROOT = Path(__file__).resolve().parents[2]
 VALIDATOR_SCRIPT = ROOT / "scripts" / "validate_reference_board_bundle.py"
 

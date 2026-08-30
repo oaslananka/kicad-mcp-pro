@@ -28,6 +28,14 @@ REFERENCE_BOARD_SCHEMA_VERSION: Literal["pcb-reference-board.v1"] = "pcb-referen
 REFERENCE_AGENT_LOG_SCHEMA_VERSION: Literal["pcb-reference-agent-log.v1"] = (
     "pcb-reference-agent-log.v1"
 )
+REFERENCE_IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+SPECIFICATION_FILE = "specification.md"
+ORIGINAL_PROMPT_FILE = "original-prompt.md"
+BENCHMARK_FILE = "benchmark.json"
+ATTEMPT_MANIFEST_FILE = "attempt-manifest.json"
+ATTEMPT_RECORD_FILE = "attempt.json"
+AGENT_LOG_FILE = "agent-log.jsonl"
+ATTEMPTS_DIRECTORY = "attempts"
 
 ScalarDetail = str | int | float | bool | None
 
@@ -45,7 +53,7 @@ class _ReferenceEvidenceModel(BaseModel):
 class ReferenceAttemptEntry(_ReferenceEvidenceModel):
     """One manifest entry mapping an attempt id to its canonical directory."""
 
-    attempt_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+    attempt_id: str = Field(pattern=REFERENCE_IDENTIFIER_PATTERN)
     directory: str = Field(min_length=1, max_length=512)
     evidence_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
@@ -60,7 +68,7 @@ class ReferenceBoardManifest(_ReferenceEvidenceModel):
     """Strict publication ledger for one maintained reference board."""
 
     schema_version: Literal["pcb-reference-board.v1"] = REFERENCE_BOARD_SCHEMA_VERSION
-    board_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+    board_id: str = Field(pattern=REFERENCE_IDENTIFIER_PATTERN)
     benchmark_id: str = Field(min_length=1, max_length=128)
     benchmark_version: str = Field(min_length=1, max_length=128)
     reference_inputs_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
@@ -79,7 +87,7 @@ class ReferenceAgentLogEvent(_ReferenceEvidenceModel):
     """One sanitized ordered event in a publishable agent action log."""
 
     schema_version: Literal["pcb-reference-agent-log.v1"] = REFERENCE_AGENT_LOG_SCHEMA_VERSION
-    attempt_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+    attempt_id: str = Field(pattern=REFERENCE_IDENTIFIER_PATTERN)
     sequence: int = Field(ge=1)
     timestamp: datetime
     event_type: Literal["agent", "tool_call", "tool_result", "workflow", "validation", "recovery"]
@@ -119,7 +127,7 @@ def _sha256_file(path: Path) -> str:
 
 def compute_reference_inputs_digest(root: Path) -> str:
     """Return the deterministic digest for canonical reference-board inputs."""
-    input_files = ("specification.md", "original-prompt.md", "benchmark.json")
+    input_files = (SPECIFICATION_FILE, ORIGINAL_PROMPT_FILE, BENCHMARK_FILE)
     tree_digest = hashlib.sha256()
     for name in input_files:
         path = root / name
@@ -207,7 +215,7 @@ def _parse_agent_log(path: Path, expected_attempt_id: str) -> tuple[ReferenceAge
         try:
             payload = json.loads(line)
             event = ReferenceAgentLogEvent.model_validate(payload)
-        except (json.JSONDecodeError, ValidationError, ValueError) as exc:
+        except ValueError as exc:
             raise ReferenceCorpusError(
                 "agent log contains invalid or unsafe event evidence"
             ) from exc
@@ -279,34 +287,37 @@ def _validate_success_artifacts(
 
 
 def _load_attempt(attempt_dir: Path) -> AttemptRecord:
-    attempt_path = attempt_dir / "attempt.json"
-    _require_regular_file(attempt_path, "attempt.json")
-    payload = _read_json_object(attempt_path, "attempt.json")
+    attempt_path = attempt_dir / ATTEMPT_RECORD_FILE
+    _require_regular_file(attempt_path, ATTEMPT_RECORD_FILE)
+    payload = _read_json_object(attempt_path, ATTEMPT_RECORD_FILE)
     try:
         return parse_attempt_record(payload)
     except ValidationError as exc:
         raise ReferenceCorpusError("attempt.json violates pcb-task-outcome.v1") from exc
 
 
-def validate_reference_board_bundle(root: Path) -> ValidatedReferenceBoardBundle:
-    """Validate one complete reference-board publication bundle fail closed."""
+def _resolve_bundle_root(root: Path) -> Path:
     if root.is_symlink():
         raise ReferenceCorpusError("reference-board bundle root must not be a symlink")
     if not root.is_dir():
         raise ReferenceCorpusError("reference-board bundle root must be a directory")
-    root = root.resolve()
+    return root.resolve()
 
-    for name in ("specification.md", "original-prompt.md"):
+
+def _load_reference_contracts(
+    root: Path,
+) -> tuple[ReferenceBoardManifest, BenchmarkContract]:
+    for name in (SPECIFICATION_FILE, ORIGINAL_PROMPT_FILE):
         _require_sanitized_text_file(root / name, name)
-    for name in ("benchmark.json", "attempt-manifest.json"):
+    for name in (BENCHMARK_FILE, ATTEMPT_MANIFEST_FILE):
         _require_regular_file(root / name, name)
 
     try:
         manifest = ReferenceBoardManifest.model_validate(
-            _read_json_object(root / "attempt-manifest.json", "attempt-manifest.json")
+            _read_json_object(root / ATTEMPT_MANIFEST_FILE, ATTEMPT_MANIFEST_FILE)
         )
         contract = parse_benchmark_contract(
-            _read_json_object(root / "benchmark.json", "benchmark.json")
+            _read_json_object(root / BENCHMARK_FILE, BENCHMARK_FILE)
         )
     except ValidationError as exc:
         raise ReferenceCorpusError(
@@ -324,12 +335,16 @@ def validate_reference_board_bundle(root: Path) -> ValidatedReferenceBoardBundle
         raise ReferenceCorpusError(
             "reference input digest does not match specification, prompt, and benchmark"
         )
+    return manifest, contract
 
-    attempts_dir = root / "attempts"
+
+def _validate_attempt_directory_index(root: Path, manifest: ReferenceBoardManifest) -> None:
+    attempts_dir = root / ATTEMPTS_DIRECTORY
     if attempts_dir.is_symlink():
         raise ReferenceCorpusError("attempts directory must not be a symlink")
     if not attempts_dir.is_dir():
         raise ReferenceCorpusError("attempts directory is required")
+
     actual_dirs: set[str] = set()
     for entry in attempts_dir.iterdir():
         if entry.is_symlink():
@@ -340,29 +355,46 @@ def validate_reference_board_bundle(root: Path) -> ValidatedReferenceBoardBundle
     if actual_dirs != manifest_dirs:
         raise ReferenceCorpusError("manifest attempt directories do not match filesystem attempts")
 
-    records: list[AttemptRecord] = []
-    for manifest_entry in manifest.attempts:
-        attempt_dir = root / manifest_entry.directory
-        if attempt_dir.is_symlink() or not attempt_dir.is_dir():
-            raise ReferenceCorpusError(
-                f"attempt directory {manifest_entry.directory} must be a real directory"
-            )
-        record = _load_attempt(attempt_dir)
-        if record.attempt_id != manifest_entry.attempt_id:
-            raise ReferenceCorpusError("attempt id does not match reference manifest")
-        if (record.benchmark_id, record.benchmark_version) != (
-            contract.benchmark_id,
-            contract.benchmark_version,
-        ):
-            raise ReferenceCorpusError("attempt benchmark identity does not match benchmark.json")
-        _parse_agent_log(attempt_dir / "agent-log.jsonl", record.attempt_id)
-        _validate_required_validation_evidence(contract, record)
-        _validate_success_artifacts(attempt_dir, contract, record)
-        if compute_attempt_evidence_digest(attempt_dir) != manifest_entry.evidence_digest:
-            raise ReferenceCorpusError(
-                f"attempt {manifest_entry.attempt_id} evidence digest does not match filesystem"
-            )
-        records.append(record)
+
+def _load_reference_attempt(
+    root: Path,
+    manifest_entry: ReferenceAttemptEntry,
+    contract: BenchmarkContract,
+) -> AttemptRecord:
+    attempt_dir = root / manifest_entry.directory
+    if attempt_dir.is_symlink() or not attempt_dir.is_dir():
+        raise ReferenceCorpusError(
+            f"attempt directory {manifest_entry.directory} must be a real directory"
+        )
+
+    record = _load_attempt(attempt_dir)
+    if record.attempt_id != manifest_entry.attempt_id:
+        raise ReferenceCorpusError("attempt id does not match reference manifest")
+    if (record.benchmark_id, record.benchmark_version) != (
+        contract.benchmark_id,
+        contract.benchmark_version,
+    ):
+        raise ReferenceCorpusError("attempt benchmark identity does not match benchmark.json")
+
+    _parse_agent_log(attempt_dir / AGENT_LOG_FILE, record.attempt_id)
+    _validate_required_validation_evidence(contract, record)
+    _validate_success_artifacts(attempt_dir, contract, record)
+    if compute_attempt_evidence_digest(attempt_dir) != manifest_entry.evidence_digest:
+        raise ReferenceCorpusError(
+            f"attempt {manifest_entry.attempt_id} evidence digest does not match filesystem"
+        )
+    return record
+
+
+def validate_reference_board_bundle(root: Path) -> ValidatedReferenceBoardBundle:
+    """Validate one complete reference-board publication bundle fail closed."""
+    root = _resolve_bundle_root(root)
+    manifest, contract = _load_reference_contracts(root)
+    _validate_attempt_directory_index(root, manifest)
+    records = [
+        _load_reference_attempt(root, manifest_entry, contract)
+        for manifest_entry in manifest.attempts
+    ]
 
     try:
         summary = aggregate_task_outcomes(contract, records)
