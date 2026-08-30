@@ -1387,12 +1387,12 @@ def test_development_bootstrap_workflow_proves_clean_host_and_kicad_canary() -> 
     assert has_sha_pinned_action(workflow, "actions/upload-artifact")
     assert "kicad-canary:" in workflow
     assert "ppa:kicad/kicad-10.0-releases" in workflow
-    assert 'test "$(kicad-cli version)" = "10.0.5"' in workflow
+    assert 'test "$(kicad-cli version)" = "10.0.6"' in workflow
     assert "scripts/kicad_canary.py run" in workflow
     kicad_job = workflow.split("  kicad-canary:", 1)[1]
     bootstrap_step = kicad_job.split("      - name: Bootstrap exact core toolchain", 1)[1]
     bootstrap_step = bootstrap_step.split("      - name: Run supported KiCad canary", 1)[0]
-    assert "mkdir -p artifacts/dev-bootstrap artifacts/kicad-10-0-5" in bootstrap_step
+    assert "mkdir -p artifacts/dev-bootstrap artifacts/kicad-10-0-6" in bootstrap_step
     clean_host = workflow.split("  clean-host:", 1)[1].split("  kicad-canary:", 1)[0]
     assert "sudo" not in clean_host
 
