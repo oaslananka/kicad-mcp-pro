@@ -1,5 +1,10 @@
 schema_version: 1
-approved: true
+# Pending re-approval: required_configurations changed (#711 dropped the rate-limited
+# NVIDIA trial MiniMax slot for a free OpenCode Zen model). approved stays false, and
+# the stale approved_at/source_revision/agent_contract_digest/evidence fields below are
+# unused while unapproved (see release_policy.py), until a real Live Model Release Gate
+# run produces a fresh reviewed baseline candidate for opencode-cli-deepseek-v4-flash-free.
+approved: false
 approved_at: '2026-08-14'
 source_revision: 68b6bd6985808323deb951bc0fe85175c2ed2e7f
 agent_contract_digest: d843962dceeea2163fca86d4d3b0f16688e916d58eceac9caabadd9ccbe2a0f3
@@ -9,7 +14,7 @@ evidence:
 minimum_repeats: 3
 required_configurations:
 - nvidia-nemotron-3-nano-30b-a3b
-- nvidia-minimax-m3
+- opencode-cli-deepseek-v4-flash-free
 - opencode-cli-nemotron-3-ultra-free
 configurations:
   nvidia-nemotron-3-nano-30b-a3b:
@@ -23,17 +28,6 @@ configurations:
       instability_rate: 0.0
       p95_latency_ms: 1717.516
       mean_tokens: 3094.0358974358974
-  nvidia-minimax-m3:
-    host: nvidia-nim
-    model: minimaxai/minimax-m3
-    token_metrics_required: true
-    metrics:
-      pass_rate: 1.0
-      mean_recall: 1.0
-      unnecessary_call_rate: 0.0
-      instability_rate: 0.0
-      p95_latency_ms: 71205.406
-      mean_tokens: 3063.851282051282
   opencode-cli-nemotron-3-ultra-free:
     host: opencode-zen-cli
     model: nemotron-3-ultra-free
