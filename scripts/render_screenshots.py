@@ -50,7 +50,7 @@ SLOTS = [
     {
         "filename": "03-vscode-pcb-inspection.png",
         "title": "PCB Inspection",
-        "subtitle": "pcb_get_board_state · readonly · KiCad 10.0.5 baseline",
+        "subtitle": "pcb_get_board_state · readonly · KiCad 10.0.6 baseline",
         "client": "VS Code MCP",
         "lines": [
             "Board summary: footprints, nets, tracks, zones, vias",

@@ -100,7 +100,7 @@ jobs:
           retention-days: 14
 
   kicad-canary:
-    name: Bootstrapped KiCad 10.0.5 canary
+    name: Bootstrapped KiCad 10.0.6 canary
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
@@ -110,7 +110,7 @@ jobs:
           set -euo pipefail
           clean_home="$RUNNER_TEMP/kicad-mcp-bootstrap-home"
           rm -rf "$clean_home"
-          mkdir -p "$clean_home/.cache" artifacts/dev-bootstrap artifacts/kicad-10-0-5
+          mkdir -p "$clean_home/.cache" artifacts/dev-bootstrap artifacts/kicad-10-0-6
           echo "HOME=$clean_home" >> "$GITHUB_ENV"
           echo "XDG_CACHE_HOME=$clean_home/.cache" >> "$GITHUB_ENV"
 
@@ -118,20 +118,20 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install KiCad 10.0.5 CLI
+      - name: Install KiCad 10.0.6 CLI
         shell: bash
         run: |
           set -euo pipefail
           sudo add-apt-repository -y ppa:kicad/kicad-10.0-releases
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends kicad
-          test "$(kicad-cli version)" = "10.0.5"
+          test "$(kicad-cli version)" = "10.0.6"
 
       - name: Bootstrap exact core toolchain
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts/dev-bootstrap artifacts/kicad-10-0-5
+          mkdir -p artifacts/dev-bootstrap artifacts/kicad-10-0-6
           ./scripts/bootstrap-dev.sh --core-only --json \
             > artifacts/dev-bootstrap/bootstrap-kicad.json
           python3 -m json.tool artifacts/dev-bootstrap/bootstrap-kicad.json >/dev/null
@@ -142,7 +142,7 @@ jobs:
           set -euo pipefail
           source .dev-env.sh
           python scripts/kicad_canary.py run \
-            --artifacts artifacts/kicad-10-0-5 \
+            --artifacts artifacts/kicad-10-0-6 \
             --kicad-range 10.0.x
           python scripts/dev_environment.py --doctor --json --ci \
             > artifacts/dev-bootstrap/doctor-kicad.json
@@ -155,6 +155,6 @@ jobs:
           name: development-bootstrap-kicad-canary
           path: |
             artifacts/dev-bootstrap
-            artifacts/kicad-10-0-5
+            artifacts/kicad-10-0-6
           if-no-files-found: error
           retention-days: 14
