@@ -198,6 +198,8 @@ jobs:
         if: env.skip_ci != 'true'
       - run: corepack pnpm run typecheck
         if: env.skip_ci != 'true'
+      - run: corepack pnpm run architecture:check
+        if: env.skip_ci != 'true'
       - run: corepack pnpm run test:unit
         if: env.skip_ci != 'true'
       - run: corepack pnpm run metadata:check

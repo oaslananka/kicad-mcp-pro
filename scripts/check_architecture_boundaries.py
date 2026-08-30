@@ -667,17 +667,46 @@ def _resolve_import(module_name: str, node: ast.ImportFrom) -> str:
     return f"{base}.{node.module}" if node.module else base
 
 
+def _is_type_checking_guard(node: ast.If) -> bool:
+    """Return True for ``if TYPE_CHECKING:`` / ``if typing.TYPE_CHECKING:``."""
+    test = node.test
+    if isinstance(test, ast.Name):
+        return test.id == "TYPE_CHECKING"
+    return isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+
+
+class _RuntimeImportCollector(ast.NodeVisitor):
+    """Collect imports reachable at runtime, skipping ``TYPE_CHECKING`` blocks.
+
+    A module guarded by ``from __future__ import annotations`` never
+    evaluates annotation-only imports at runtime, so a type-only import of an
+    otherwise-forbidden module (KiCad IPC bindings, FastMCP, etc.) does not
+    violate a pure module's "importable without that runtime" contract.
+    """
+
+    def __init__(self, module_name: str) -> None:
+        self.module_name = module_name
+        self.imports: set[str] = set()
+
+    def visit_If(self, node: ast.If) -> None:
+        if _is_type_checking_guard(node):
+            return
+        self.generic_visit(node)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        self.imports.update(alias.name for alias in node.names)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        resolved = _resolve_import(self.module_name, node)
+        if resolved:
+            self.imports.add(resolved)
+
+
 def _imports_for(module_name: str, path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    imports: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imports.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            resolved = _resolve_import(module_name, node)
-            if resolved:
-                imports.add(resolved)
-    return imports
+    collector = _RuntimeImportCollector(module_name)
+    collector.visit(tree)
+    return collector.imports
 
 
 def _function_span(path: Path, function_name: str) -> int | None:

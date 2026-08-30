@@ -7,9 +7,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Protocol
-
-from kipy.board import Board
+from typing import TYPE_CHECKING, Protocol
 
 from ..ipc.command_queue import AmbiguousMutationError
 from .live_edit_evidence import (
@@ -19,6 +17,13 @@ from .live_edit_evidence import (
     LiveMutationReceipt,
     MutationExecutionState,
 )
+
+if TYPE_CHECKING:
+    # Type-only: keep this module import-safe without the live KiCad IPC
+    # binding. `from __future__ import annotations` (above) means every
+    # annotation using `Board` is evaluated lazily as a string, so this
+    # never needs to resolve at runtime.
+    from kipy.board import Board
 
 
 class RunMutation(Protocol):
