@@ -42,7 +42,7 @@ jobs:
       matrix:
         configuration:
           - nvidia-nemotron-3-nano-30b-a3b
-          - nvidia-minimax-m3
+          - opencode-cli-deepseek-v4-flash-free
           - opencode-cli-nemotron-3-ultra-free
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -62,14 +62,6 @@ jobs:
           npm ci --prefix evals/live --ignore-scripts --no-audit --no-fund
           test "$(evals/live/node_modules/opencode-linux-x64/bin/opencode --version)" = "$OPENCODE_CLI_VERSION"
           echo "$GITHUB_WORKSPACE/evals/live/node_modules/opencode-linux-x64/bin" >> "$GITHUB_PATH"
-      - name: Cool down shared NVIDIA trial endpoint
-        if: matrix.configuration == 'nvidia-minimax-m3'
-        env:
-          NVIDIA_SHARED_COOLDOWN_SECONDS: "420"
-        run: |
-          set -euo pipefail
-          echo "Cooling down the shared NVIDIA trial endpoint before ${{ matrix.configuration }}."
-          sleep "$NVIDIA_SHARED_COOLDOWN_SECONDS"
       - name: Run bounded live smoke
         env:
           CONFIGURATION_ID: ${{ matrix.configuration }}
@@ -163,7 +155,7 @@ jobs:
       matrix:
         configuration:
           - nvidia-nemotron-3-nano-30b-a3b
-          - nvidia-minimax-m3
+          - opencode-cli-deepseek-v4-flash-free
           - opencode-cli-nemotron-3-ultra-free
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -183,14 +175,6 @@ jobs:
           npm ci --prefix evals/live --ignore-scripts --no-audit --no-fund
           test "$(evals/live/node_modules/opencode-linux-x64/bin/opencode --version)" = "$OPENCODE_CLI_VERSION"
           echo "$GITHUB_WORKSPACE/evals/live/node_modules/opencode-linux-x64/bin" >> "$GITHUB_PATH"
-      - name: Cool down shared NVIDIA trial endpoint
-        if: matrix.configuration == 'nvidia-minimax-m3'
-        env:
-          NVIDIA_SHARED_COOLDOWN_SECONDS: "420"
-        run: |
-          set -euo pipefail
-          echo "Cooling down the shared NVIDIA trial endpoint before ${{ matrix.configuration }}."
-          sleep "$NVIDIA_SHARED_COOLDOWN_SECONDS"
       - name: Run bounded live benchmark
         env:
           CONFIGURATION_ID: ${{ matrix.configuration }}

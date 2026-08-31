@@ -741,7 +741,7 @@ def register(mcp: FastMCP) -> None:
         """
         cfg = get_config()
         if format.strip().casefold() == "allegro":
-            return "blocked: KiCad CLI does not support allegro import in 10.0.5"
+            return "blocked: KiCad CLI does not support allegro import in 10.0.6"
 
         from .export_support import _run_cli_variants
 
@@ -792,7 +792,7 @@ def register(mcp: FastMCP) -> None:
     @headless_compatible
     def mfg_import_allegro(allegro_brd_path: str, output_dir: str = "") -> str:
         """Import an Allegro board into a KiCad project directory."""
-        return "blocked: KiCad CLI does not support allegro import in 10.0.5"
+        return "blocked: KiCad CLI does not support allegro import in 10.0.6"
 
     @mcp.tool()
     @headless_compatible

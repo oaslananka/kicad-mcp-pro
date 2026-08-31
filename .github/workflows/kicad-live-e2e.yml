@@ -15,7 +15,7 @@ on:
       - "integrations/common/kicad-adapter-matrix.json"
       - "compatibility.yaml"
       - "tests/fixtures/**"
-      - "docs/status/kicad-10-0-5-baseline.md"
+      - "docs/status/kicad-10-0-6-baseline.md"
       - "docs/compatibility/**"
       - ".github/workflows/kicad-live-e2e.yml"
   push:
@@ -30,7 +30,7 @@ on:
       - "integrations/common/kicad-adapter-matrix.json"
       - "compatibility.yaml"
       - "tests/fixtures/**"
-      - "docs/status/kicad-10-0-5-baseline.md"
+      - "docs/status/kicad-10-0-6-baseline.md"
       - "docs/compatibility/**"
       - ".github/workflows/kicad-live-e2e.yml"
 
@@ -42,8 +42,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  kicad-10-0-5-canary:
-    name: KiCad 10.0.5 canary
+  kicad-10-0-6-canary:
+    name: KiCad 10.0.6 canary
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
@@ -62,13 +62,8 @@ jobs:
           set -euo pipefail
           sudo add-apt-repository -y ppa:kicad/kicad-10.0-releases
           sudo apt-get update
-          # Pin to the reviewed 10.0.5 baseline explicitly: the PPA now serves a
-          # newer 10.0.x point release by default, and promoting this canary's
-          # baseline is a separate, evidence-gated decision (see
-          # docs/status/kicad-10-0-5-baseline.md), not something this install
-          # step should do implicitly by tracking "whatever is newest."
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends 'kicad=10.0.5*'
-          test "$(kicad-cli version)" = "10.0.5"
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends kicad
+          test "$(kicad-cli version)" = "10.0.6"
 
       - name: Install Python dependencies
         run: uv sync --all-extras --frozen
@@ -77,15 +72,15 @@ jobs:
         run: |
           set -euo pipefail
           uv run --all-extras python scripts/kicad_canary.py run \
-            --artifacts artifacts/kicad-10-0-5 \
+            --artifacts artifacts/kicad-10-0-6 \
             --kicad-range 10.0.x
 
-      - name: Upload KiCad 10.0.5 canary artifacts
+      - name: Upload KiCad 10.0.6 canary artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: kicad-10-0-5-canary
-          path: artifacts/kicad-10-0-5
+          name: kicad-10-0-6-canary
+          path: artifacts/kicad-10-0-6
           if-no-files-found: warn
           retention-days: 14
 
