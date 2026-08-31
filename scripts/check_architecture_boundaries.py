@@ -29,6 +29,7 @@ _PROJECT_CREATION_ADAPTER = "kicad_mcp.tools.project_creation"
 _PROJECT_DISCOVERY_ADAPTER = "kicad_mcp.tools.project_discovery"
 _PROJECT_EDIT_IMPACT_ADAPTER = "kicad_mcp.tools.project_edit_impact"
 _PROJECT_EDIT_REVALIDATION_ADAPTER = "kicad_mcp.tools.project_edit_revalidation"
+_PROJECT_HELP_ADAPTER = "kicad_mcp.tools.project_help"
 _PROJECT_NEXT_ACTION_ADAPTER = "kicad_mcp.tools.project_next_action"
 _PROJECT_REPORTING_ADAPTER = "kicad_mcp.tools.project_reporting"
 _PROJECT_RUNTIME_ADAPTER = "kicad_mcp.tools.project_runtime"
@@ -74,6 +75,7 @@ DOMAIN_MODULES = {
     "kicad_mcp.project.creation": SRC_ROOT / "kicad_mcp" / "project" / "creation.py",
     "kicad_mcp.project.discovery": SRC_ROOT / "kicad_mcp" / "project" / "discovery.py",
     "kicad_mcp.project.edit_impact": SRC_ROOT / "kicad_mcp" / "project" / "edit_impact.py",
+    "kicad_mcp.project.help": SRC_ROOT / "kicad_mcp" / "project" / "help.py",
     "kicad_mcp.project.next_action": SRC_ROOT / "kicad_mcp" / "project" / "next_action.py",
     "kicad_mcp.project.reporting": SRC_ROOT / "kicad_mcp" / "project" / "reporting.py",
     "kicad_mcp.project.runtime": SRC_ROOT / "kicad_mcp" / "project" / "runtime.py",
@@ -135,6 +137,7 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "project_edit_revalidation.py",
+    _PROJECT_HELP_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_help.py",
     _PROJECT_NEXT_ACTION_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_next_action.py",
     _PROJECT_REPORTING_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_reporting.py",
     _PROJECT_RUNTIME_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_runtime.py",
@@ -374,6 +377,7 @@ PURE_HELPERS = {
     "kicad_mcp.project.creation",
     "kicad_mcp.project.discovery",
     "kicad_mcp.project.edit_impact",
+    "kicad_mcp.project.help",
     "kicad_mcp.project.next_action",
     "kicad_mcp.project.reporting",
     "kicad_mcp.project.runtime",
@@ -455,6 +459,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     _PROJECT_DISCOVERY_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_EDIT_IMPACT_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_EDIT_REVALIDATION_ADAPTER: (_PROJECT_ROOT_MODULE,),
+    _PROJECT_HELP_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_NEXT_ACTION_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_REPORTING_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_RUNTIME_ADAPTER: (_PROJECT_ROOT_MODULE,),
@@ -516,6 +521,7 @@ REGISTER_LINE_LIMITS = {
     _PROJECT_DISCOVERY_ADAPTER: 55,
     _PROJECT_EDIT_IMPACT_ADAPTER: 55,
     _PROJECT_EDIT_REVALIDATION_ADAPTER: 55,
+    _PROJECT_HELP_ADAPTER: 55,
     _PROJECT_NEXT_ACTION_ADAPTER: 55,
     _PROJECT_REPORTING_ADAPTER: 55,
     _PROJECT_RUNTIME_ADAPTER: 55,

@@ -119,8 +119,8 @@ nav:
       - Variants: kicad10/variants.md
       - Time-Domain Tuning: kicad10/time-domain.md
       - Graphical DRC: kicad10/graphical-drc.md
-      - KiCad 10.0.5 Feature Parity: compatibility/kicad-10-0-5-feature-parity.md
-      - KiCad 10.0.5 Baseline: status/kicad-10-0-5-baseline.md
+      - KiCad 10.0.6 Feature Parity: compatibility/kicad-10-0-6-feature-parity.md
+      - KiCad 10.0.6 Baseline: status/kicad-10-0-6-baseline.md
       - KiCad 10 to 11 Migration: compatibility/kicad-10-to-11-migration.md
       - Generated Adapter Matrix: compatibility/kicad-adapter-matrix.generated.md
       - KiCad 10.0.4 Canary Report: development/kicad-10-0-4-canary-report.md

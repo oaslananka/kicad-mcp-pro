@@ -30,11 +30,11 @@ def test_adapter_matrix_drift_check_is_part_of_metadata_gate() -> None:
     assert "adapter-matrix:check" in package.split('"check:meta"', 1)[1]
 
 
-def test_stable_kicad_workflow_pins_10_0_5_canary() -> None:
+def test_stable_kicad_workflow_pins_10_0_6_canary() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert "kicad-10-0-5-canary:" in workflow
-    assert "KiCad 10.0.5 canary" in workflow
-    assert 'test "$(kicad-cli version)" = "10.0.5"' in workflow
-    assert "artifacts/kicad-10-0-5" in workflow
-    assert "kicad-10-0-4-canary:" not in workflow
+    assert "kicad-10-0-6-canary:" in workflow
+    assert "KiCad 10.0.6 canary" in workflow
+    assert 'test "$(kicad-cli version)" = "10.0.6"' in workflow
+    assert "artifacts/kicad-10-0-6" in workflow
+    assert "kicad-10-0-5-canary:" not in workflow
