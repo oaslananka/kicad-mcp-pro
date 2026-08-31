@@ -1,14 +1,21 @@
-"""Task manager for the experimental MCP Tasks extension draft surface.
+"""Task manager for the pre-final (2025-11-25-era) experimental MCP Tasks draft.
 
 The MCP Tasks protocol enables servers to expose long-running operations
 as trackable ``Task`` objects with status polling and cancellation.
 
 .. warning::
 
-    The task protocol surface is experimental/draft and may change
-    before reaching Final. This implementation is opt-in behind the
-    ``KICAD_MCP_ENABLE_TASKS`` flag and is **not** advertised via
-    ``supportedMcpProtocolVersions``.
+    The final MCP 2026-07-28 specification replaced this draft with the
+    wire-incompatible ``io.modelcontextprotocol/tasks`` extension: it drops
+    ``tasks/list``, adds ``tasks/update`` and ``subscriptions/listen``, uses
+    ``ttlMs``/``pollIntervalMs`` instead of ``ttl``/``pollInterval``, and
+    requires a ``resultType: "task"`` response from ``tools/call``. This
+    module still implements the superseded SDK ``experimental`` namespace
+    shape (see ``server.py``'s ``lowlevel.experimental.enable_tasks()``
+    wiring) and is not compatible with the final extension. It is opt-in
+    behind the ``KICAD_MCP_ENABLE_TASKS`` flag and is **not** advertised via
+    ``supportedMcpProtocolVersions``. See ADR-0006's gate-status table for
+    the full comparison.
 """
 
 from __future__ import annotations

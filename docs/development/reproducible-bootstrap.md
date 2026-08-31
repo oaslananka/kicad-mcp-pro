@@ -170,7 +170,7 @@ source .dev-env.sh
 pnpm run test:kicad-cli-contract
 ```
 
-The stable baseline remains KiCad 10.0.5 until the compatibility matrix is
+The stable baseline remains KiCad 10.0.6 until the compatibility matrix is
 updated in a reviewed change. A CLI-only host remains `headless-kicad`; start
 KiCad, enable IPC, and open a board to reach `gui-connected` mode.
 

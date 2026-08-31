@@ -188,7 +188,14 @@ async def test_manufacturing_import_support_and_import_cli(
         "mfg_import_allegro",
         {"allegro_brd_path": "legacy.brd", "output_dir": "imports/allegro"},
     )
-    assert "blocked: KiCad CLI does not support allegro import in 10.0.5" in imported
+    assert "blocked: KiCad CLI does not support allegro import in 10.0.6" in imported
+
+    board_import_blocked = await call_tool_text(
+        server,
+        "pcb_import_board",
+        {"input_file": "legacy.brd", "format": "allegro"},
+    )
+    assert "blocked: KiCad CLI does not support allegro import in 10.0.6" in board_import_blocked
 
     monkeypatch.setattr(
         "kicad_mcp.tools.export_support._run_cli_variants",
