@@ -52,6 +52,18 @@ The draft fixtures are pinned to modelcontextprotocol/modelcontextprotocol commi
 
 Changing public metadata is a separate reviewed release decision, not an automatic consequence of this ADR.
 
+### Gate status (reviewed 2026-08-30)
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| 1. The final MCP 2026-07-28 specification is published and the pinned fixtures are reconciled. | **Publication confirmed.** The Model Context Protocol project published `2026-07-28` as the final, authoritative successor to `2025-11-25` on 2026-07-28 ([spec announcement](https://blog.modelcontextprotocol.io/posts/2026-07-28/)). **Fixture reconciliation not yet verified**: the draft fixtures under `tests/contracts/mcp/2026-07-28/` are still pinned to the pre-final commit `73720340e7c42ddaf4b303b86e81663e9a2796d0` and have not been diffed against the final spec repository. | Not started |
+| 2. A stable MCP Python SDK supports the required transport and schema surface without the compatibility bridge. | **Available upstream, not adopted here.** MCP Python SDK v2 shipped stable alongside the final spec and natively implements the stateless `2026-07-28` core ([SDK announcement](https://blog.modelcontextprotocol.io/posts/sdk-betas-2026-07-28/)). This repository remains pinned to `mcp[cli]>=1.27.1,<2.0.0` (the v1.x maintenance line) — v2 is a breaking rewrite (new `Client`, renamed `MCPServer`, sessionless core) and has not been evaluated for migration. | Blocking |
+| 3. Supported host smoke tests pass for direct discovery, listing, calling, authorization, and error behavior. | Existing `tests/integration/test_mcp_2026_host_smoke.py` coverage predates the final spec text; not re-verified against it. | Not started |
+| 4. Tasks and Apps extension parity is implemented or explicitly excluded from advertised capabilities. | Both remain explicitly unadvertised by design (see Component state inventory). **Tasks compared against the final [`io.modelcontextprotocol/tasks` SEP](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/seps/2663-tasks-extension.md): not compatible, by spec design.** `execution/tasks.py` and its `server.py` wiring (`lowlevel.experimental.enable_tasks()`/`list_tasks()`/`get_task()`/`get_task_result()`/`cancel_task()`) implement the SDK v1 `experimental` namespace's `2025-11-25`-era draft Tasks shape. The final extension explicitly **removed** that draft (`tasks/list`, no `tasks/update`, ambiguous `ttl`/`pollInterval` units) and replaced it with a wire-incompatible design: `tasks/get` + `tasks/update` + `tasks/cancel` + `subscriptions/listen`/`notifications/tasks` (no `tasks/list`), `ttlMs`/`pollIntervalMs` fields, an `inputRequests`/`inputResponses` exchange for `input_required` status, a `resultType: "task"` (`CreateTaskResult = Result & Task`) discriminated-union response from `tools/call`, capability declared under `capabilities.extensions["io.modelcontextprotocol/tasks"]`, and `Mcp-Name: <taskId>` header routing on Streamable HTTP. Apps has not been evaluated (no repo implementation exists to compare). | Tasks: compared, incompatible, unimplemented. Apps: not started. |
+| 5. A tested rollback to the `2025-11-25` runtime and metadata contract is documented and verified. | Rollback procedure is documented above; last verified before the SDK v2 release, not re-verified since. | Stale |
+
+Gate 2 (the SDK v1→v2 migration) is the practical blocker: it is a breaking upgrade that needs its own evidence-gated migration plan, mirroring the `kicad11Readiness` pattern in `compatibility.yaml`, before gates 1 and 3–5 can be meaningfully re-verified against the final spec and a v2 runtime.
+
 ## Rollout
 
 1. Enable the lane only in an isolated canary deployment.
