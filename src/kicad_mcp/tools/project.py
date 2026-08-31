@@ -40,6 +40,7 @@ from ..project.context import ProjectContextService
 from ..project.creation import ProjectCreationService
 from ..project.discovery import ProjectDiscoveryService
 from ..project.edit_impact import ProjectEditImpactService
+from ..project.help import ProjectHelpService
 from ..project.next_action import GateOutcomeLike, ProjectNextActionService
 from ..project.reporting import (
     DesignReportPayload as DesignReportPayload,
@@ -70,6 +71,7 @@ from . import (
     project_discovery,
     project_edit_impact,
     project_edit_revalidation,
+    project_help,
     project_next_action,
     project_reporting,
     project_runtime,
@@ -89,6 +91,10 @@ from .export_support import _run_cli
 from .fixers import fixers_for_gate, sampling_prompt_for_gate
 from .metadata import headless_compatible
 from .router import TOOL_CATEGORIES, available_profiles
+
+_HELP_CATEGORY_DESCRIPTIONS: dict[str, str] = {
+    category: info["description"] for category, info in TOOL_CATEGORIES.items()
+}
 
 logger = structlog.get_logger(__name__)
 __all__ = [
@@ -1584,23 +1590,11 @@ def register(mcp: FastMCP) -> None:
         project_runtime.ProjectRuntimeDependencies(service=runtime_service),
     )
 
-    @mcp.tool()
-    @headless_compatible
-    def kicad_help() -> str:
-        """Show a concise startup guide and all tool categories."""
-        lines = [
-            "# KiCad MCP Pro Quick Start",
-            "",
-            "1. Call `kicad_get_version()` to verify the runtime.",
-            "2. Call `kicad_set_project()` or `kicad_create_new_project()`.",
-            "3. Inspect `kicad://project/info` and `kicad://board/summary`.",
-            "4. Call `kicad_list_tool_categories()` to discover the right tool family.",
-            "",
-            "Available categories:",
-        ]
-        for category, info in TOOL_CATEGORIES.items():
-            lines.append(f"- `{category}`: {info['description']}")
-        lines.append("")
-        lines.append("Profiles:")
-        lines.extend(f"- `{profile}`" for profile in available_profiles())
-        return "\n".join(lines)
+    help_service = ProjectHelpService(
+        category_descriptions=lambda: _HELP_CATEGORY_DESCRIPTIONS,
+        available_profiles=available_profiles,
+    )
+    project_help.register(
+        mcp,
+        project_help.ProjectHelpDependencies(service=help_service),
+    )
