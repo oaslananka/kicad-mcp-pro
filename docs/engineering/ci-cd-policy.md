@@ -82,7 +82,8 @@ a status on every PR:
 | 11 | `Required PR Gate` | `ci.yml` | `required-pr-gate` |
 | 12 | `SonarCloud Scan` | `sonarcloud.yml` | `sonarcloud` |
 | 13 | `dependency-review` | `dependency-review.yml` | `dependency-review` |
-| 14 | `Live Model Release Policy` | `live-model-assurance.yml` | `release-policy` |
+
+`Live Model Release Policy` is intentionally **not** a main-ruleset PR context. `live-model-assurance.yml` runs protected provider smoke after main pushes, while `release.yml` enforces deterministic live-model release readiness on release-please PRs and published releases. A missing, stale, or contract-mismatched approved baseline blocks that release boundary until the protected full gate promotes reviewed evidence.
 
 ### Step-Level No-Op Pattern
 
@@ -224,3 +225,14 @@ Path-aware gating can be fully reverted by:
 
 This restores the original behavior where all jobs run unconditionally on every
 PR. No branch protection changes are needed for rollback.
+
+## Repository settings drift audit
+
+`.github/workflows/repository-settings-audit.yml` runs daily and on manual dispatch from the
+default branch. It uses `RELEASE_PLEASE_TOKEN` as the GitHub API credential; that secret
+must grant repository `Administration: read`, and the audit fails closed if the token is missing
+or under-scoped. The workflow itself has `contents: read` permissions and is not exposed to pull
+requests. `scripts/check_github_repository_settings.py` compares live Actions
+permissions, selected-action allowlists, default workflow-token permissions, and the required
+reviewer rules on the `npm` and `mcp-registry` publish environments with
+`.github/actions-policy.json`. Any mismatch fails the audit instead of silently accepting drift.

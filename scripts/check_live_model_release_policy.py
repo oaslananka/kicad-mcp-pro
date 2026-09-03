@@ -28,6 +28,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
     parser.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE)
     parser.add_argument("--github-output", type=Path)
+    parser.add_argument(
+        "--require-ready",
+        action="store_true",
+        help="return non-zero when release readiness requires the protected full gate",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     push = subparsers.add_parser("push")
@@ -94,6 +99,13 @@ def main(argv: list[str] | None = None) -> int:
     print(json.dumps(decision.as_dict(), sort_keys=True, separators=(",", ":")))
     if args.github_output is not None:
         _write_outputs(args.github_output, decision)
+    if args.require_ready and decision.mode == "full":
+        print(
+            "live-model release readiness failed: protected full gate "
+            "and baseline promotion required",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 

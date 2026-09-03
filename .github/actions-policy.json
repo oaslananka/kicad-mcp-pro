@@ -148,5 +148,19 @@
   ],
   "allowed_transitive_action_repositories": [
     "aquasecurity/setup-trivy"
-  ]
+  ],
+  "protected_publish_environments": {
+    "npm": {
+      "required_reviewers": [
+        "oaslananka"
+      ],
+      "prevent_self_review": false
+    },
+    "mcp-registry": {
+      "required_reviewers": [
+        "oaslananka"
+      ],
+      "prevent_self_review": false
+    }
+  }
 }
