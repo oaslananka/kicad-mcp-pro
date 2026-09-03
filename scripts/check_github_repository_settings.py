@@ -10,11 +10,14 @@ import re
 import shutil
 import subprocess
 import sys
+from http.client import HTTPException, HTTPSConnection
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY = ROOT / ".github" / "actions-policy.json"
+_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
+_PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 
 def expected_selected_patterns(policy: dict[str, Any]) -> list[str]:
@@ -73,6 +76,54 @@ def validate_live_state(
     return errors
 
 
+def _required_reviewer_rule(live: dict[str, Any]) -> dict[str, Any]:
+    rules = live.get("protection_rules", [])
+    if not isinstance(rules, list):
+        return {}
+    return next(
+        (
+            rule
+            for rule in rules
+            if isinstance(rule, dict) and rule.get("type") == "required_reviewers"
+        ),
+        {},
+    )
+
+
+def _reviewer_logins(rule: dict[str, Any]) -> list[str]:
+    reviewers = rule.get("reviewers", [])
+    if not isinstance(reviewers, list):
+        return []
+    return sorted(
+        str(item["reviewer"]["login"])
+        for item in reviewers
+        if isinstance(item, dict)
+        and isinstance(item.get("reviewer"), dict)
+        and isinstance(item["reviewer"].get("login"), str)
+    )
+
+
+def _environment_requirement_errors(
+    name: str, requirement: dict[str, Any], live: dict[str, Any]
+) -> list[str]:
+    reviewer_rule = _required_reviewer_rule(live)
+    actual_reviewers = _reviewer_logins(reviewer_rule)
+    required_reviewers = sorted(str(item) for item in requirement.get("required_reviewers", []))
+    errors: list[str] = []
+    if actual_reviewers != required_reviewers:
+        errors.append(
+            f"{name}.required_reviewers drift: actual={actual_reviewers!r} "
+            f"expected={required_reviewers!r}"
+        )
+    actual_prevent = reviewer_rule.get("prevent_self_review") if reviewer_rule else None
+    expected_prevent = requirement.get("prevent_self_review")
+    if actual_prevent != expected_prevent:
+        errors.append(
+            f"{name}.prevent_self_review drift: actual={actual_prevent!r} "
+            f"expected={expected_prevent!r}"
+        )
+    return errors
+
 
 def validate_environment_protection(
     policy: dict[str, Any], environments: dict[str, dict[str, Any]]
@@ -86,37 +137,9 @@ def validate_environment_protection(
             errors.append("actions-policy.json: invalid protected publish environment entry")
             continue
         live = environments.get(name, {})
-        rules = live.get("protection_rules", []) if isinstance(live, dict) else []
-        reviewer_rule = next(
-            (
-                rule
-                for rule in rules
-                if isinstance(rule, dict) and rule.get("type") == "required_reviewers"
-            ),
-            {},
-        )
-        reviewers = reviewer_rule.get("reviewers", []) if isinstance(reviewer_rule, dict) else []
-        actual_reviewers = sorted(
-            str(item.get("reviewer", {}).get("login"))
-            for item in reviewers
-            if isinstance(item, dict) and isinstance(item.get("reviewer"), dict)
-        )
-        required_reviewers = sorted(
-            str(item) for item in requirement.get("required_reviewers", [])
-        )
-        if actual_reviewers != required_reviewers:
-            errors.append(
-                f"{name}.required_reviewers drift: actual={actual_reviewers!r} "
-                f"expected={required_reviewers!r}"
-            )
-        actual_prevent = reviewer_rule.get("prevent_self_review") if reviewer_rule else None
-        expected_prevent = requirement.get("prevent_self_review")
-        if actual_prevent != expected_prevent:
-            errors.append(
-                f"{name}.prevent_self_review drift: actual={actual_prevent!r} "
-                f"expected={expected_prevent!r}"
-            )
+        errors.extend(_environment_requirement_errors(name, requirement, live))
     return errors
+
 
 def _load_policy(path: Path) -> dict[str, Any]:
     resolved = path.expanduser().resolve(strict=True)
@@ -125,6 +148,19 @@ def _load_policy(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("GitHub Actions policy root must be an object")
     return payload
+
+
+def validate_repository_name(repository: str) -> str:
+    """Validate the canonical GitHub owner/repository identifier."""
+    if _REPOSITORY_RE.fullmatch(repository) is None:
+        raise ValueError("repository must be a safe owner/repository identifier")
+    return repository
+
+
+def _validated_path_segment(segment: str) -> str:
+    if _PATH_SEGMENT_RE.fullmatch(segment) is None:
+        raise ValueError(f"unsafe GitHub API path segment: {segment!r}")
+    return segment
 
 
 def _repository_from_origin() -> str:
@@ -147,24 +183,50 @@ def _repository_from_origin() -> str:
     return match.group("repo")
 
 
-def _gh_api(repository: str, suffix: str) -> dict[str, Any]:
-    endpoint = f"repos/{repository}/{suffix}"
+def _github_token() -> str:
+    token = os.environ.get("GH_TOKEN", "").strip()
+    if token:
+        return token
     gh = shutil.which("gh")
     if gh is None:
-        raise RuntimeError("gh executable is unavailable")
+        raise RuntimeError("gh executable is unavailable and GH_TOKEN is unset")
     completed = subprocess.run(
-        [gh, "api", endpoint],
+        [gh, "auth", "token"],
         cwd=ROOT,
         check=False,
         capture_output=True,
         text=True,
     )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
-        raise RuntimeError(f"gh api {endpoint} failed: {detail}")
-    payload = json.loads(completed.stdout)
+    token = completed.stdout.strip()
+    if completed.returncode != 0 or not token:
+        detail = completed.stderr.strip() or "gh auth token returned no credential"
+        raise RuntimeError(f"could not resolve GitHub API credential: {detail}")
+    return token
+
+
+def _github_api(repository: str, path_segments: tuple[str, ...], token: str) -> dict[str, Any]:
+    owner, name = validate_repository_name(repository).split("/", maxsplit=1)
+    segments = [owner, name, *(_validated_path_segment(item) for item in path_segments)]
+    path = "/repos/" + "/".join(segments)
+    connection = HTTPSConnection("api.github.com", timeout=30)
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "kicad-mcp-repository-settings-audit",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    try:
+        connection.request("GET", path, headers=headers)
+        response = connection.getresponse()
+        body = response.read()
+    finally:
+        connection.close()
+    if not 200 <= response.status < 300:
+        detail = body.decode("utf-8", errors="replace")[:500]
+        raise RuntimeError(f"GitHub API {path} failed with HTTP {response.status}: {detail}")
+    payload = json.loads(body.decode("utf-8"))
     if not isinstance(payload, dict):
-        raise RuntimeError(f"gh api {endpoint} returned a non-object payload")
+        raise RuntimeError(f"GitHub API {path} returned a non-object payload")
     return payload
 
 
@@ -176,20 +238,21 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         policy = _load_policy(args.policy)
-        repository = args.repository.strip() or _repository_from_origin()
-        actions = _gh_api(repository, "actions/permissions")
-        selected = _gh_api(repository, "actions/permissions/selected-actions")
-        workflow = _gh_api(repository, "actions/permissions/workflow")
+        repository = validate_repository_name(args.repository.strip() or _repository_from_origin())
+        token = _github_token()
+        actions = _github_api(repository, ("actions", "permissions"), token)
+        selected = _github_api(repository, ("actions", "permissions", "selected-actions"), token)
+        workflow = _github_api(repository, ("actions", "permissions", "workflow"), token)
         errors = validate_live_state(policy, actions, selected, workflow)
         expected_environments = policy.get("protected_publish_environments", {})
         if not isinstance(expected_environments, dict):
             raise ValueError("protected_publish_environments must be an object")
         live_environments = {
-            name: _gh_api(repository, f"environments/{name}")
+            name: _github_api(repository, ("environments", _validated_path_segment(name)), token)
             for name in expected_environments
         }
         errors.extend(validate_environment_protection(policy, live_environments))
-    except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, RuntimeError, HTTPException) as exc:
         print(f"GitHub repository settings check failed: {exc}", file=sys.stderr)
         return 2
 

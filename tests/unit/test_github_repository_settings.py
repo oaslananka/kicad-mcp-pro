@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.check_github_repository_settings import expected_selected_patterns, validate_live_state
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -102,3 +104,12 @@ def test_repository_settings_audit_restricts_secret_to_main_ref() -> None:
     )
 
     assert "github.ref == 'refs/heads/main'" in workflow
+
+
+def test_repository_name_validation_rejects_command_like_input() -> None:
+    from scripts.check_github_repository_settings import validate_repository_name
+
+    assert validate_repository_name("oaslananka/kicad-mcp-pro") == "oaslananka/kicad-mcp-pro"
+    for value in ("--help", "oaslananka/repo;echo", "oaslananka/repo/extra", "owner/../repo"):
+        with pytest.raises(ValueError, match="owner/repository"):
+            validate_repository_name(value)
