@@ -110,6 +110,12 @@ def test_repository_name_validation_rejects_command_like_input() -> None:
     from scripts.check_github_repository_settings import validate_repository_name
 
     assert validate_repository_name("oaslananka/kicad-mcp-pro") == "oaslananka/kicad-mcp-pro"
-    for value in ("--help", "oaslananka/repo;echo", "oaslananka/repo/extra", "owner/../repo"):
+    for value in (
+        "--help",
+        "oaslananka/repo;echo",
+        "oaslananka/repo/extra",
+        "owner/../repo",
+        "someone/other-repo",
+    ):
         with pytest.raises(ValueError, match="owner/repository"):
             validate_repository_name(value)

@@ -17,7 +17,14 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY = ROOT / ".github" / "actions-policy.json"
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
-_PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+_CANONICAL_REPOSITORY = "oaslananka/kicad-mcp-pro"
+_API_PATHS = {
+    "actions-permissions": "/repos/oaslananka/kicad-mcp-pro/actions/permissions",
+    "selected-actions": "/repos/oaslananka/kicad-mcp-pro/actions/permissions/selected-actions",
+    "workflow-permissions": "/repos/oaslananka/kicad-mcp-pro/actions/permissions/workflow",
+    "environment:npm": "/repos/oaslananka/kicad-mcp-pro/environments/npm",
+    "environment:mcp-registry": "/repos/oaslananka/kicad-mcp-pro/environments/mcp-registry",
+}
 
 
 def expected_selected_patterns(policy: dict[str, Any]) -> list[str]:
@@ -151,16 +158,10 @@ def _load_policy(path: Path) -> dict[str, Any]:
 
 
 def validate_repository_name(repository: str) -> str:
-    """Validate the canonical GitHub owner/repository identifier."""
-    if _REPOSITORY_RE.fullmatch(repository) is None:
-        raise ValueError("repository must be a safe owner/repository identifier")
+    """Validate the one reviewed repository this policy is allowed to audit."""
+    if _REPOSITORY_RE.fullmatch(repository) is None or repository != _CANONICAL_REPOSITORY:
+        raise ValueError("repository must be the canonical owner/repository identifier")
     return repository
-
-
-def _validated_path_segment(segment: str) -> str:
-    if _PATH_SEGMENT_RE.fullmatch(segment) is None:
-        raise ValueError(f"unsafe GitHub API path segment: {segment!r}")
-    return segment
 
 
 def _repository_from_origin() -> str:
@@ -204,10 +205,11 @@ def _github_token() -> str:
     return token
 
 
-def _github_api(repository: str, path_segments: tuple[str, ...], token: str) -> dict[str, Any]:
-    owner, name = validate_repository_name(repository).split("/", maxsplit=1)
-    segments = [owner, name, *(_validated_path_segment(item) for item in path_segments)]
-    path = "/repos/" + "/".join(segments)
+def _github_api(endpoint_name: str, token: str) -> dict[str, Any]:
+    try:
+        path = _API_PATHS[endpoint_name]
+    except KeyError as exc:
+        raise ValueError(f"unknown reviewed GitHub API endpoint: {endpoint_name!r}") from exc
     connection = HTTPSConnection("api.github.com", timeout=30)
     headers = {
         "Accept": "application/vnd.github+json",
@@ -240,16 +242,20 @@ def main(argv: list[str] | None = None) -> int:
         policy = _load_policy(args.policy)
         repository = validate_repository_name(args.repository.strip() or _repository_from_origin())
         token = _github_token()
-        actions = _github_api(repository, ("actions", "permissions"), token)
-        selected = _github_api(repository, ("actions", "permissions", "selected-actions"), token)
-        workflow = _github_api(repository, ("actions", "permissions", "workflow"), token)
+        actions = _github_api("actions-permissions", token)
+        selected = _github_api("selected-actions", token)
+        workflow = _github_api("workflow-permissions", token)
         errors = validate_live_state(policy, actions, selected, workflow)
         expected_environments = policy.get("protected_publish_environments", {})
         if not isinstance(expected_environments, dict):
             raise ValueError("protected_publish_environments must be an object")
+        if set(expected_environments) != {"npm", "mcp-registry"}:
+            raise ValueError(
+                "protected_publish_environments must match the reviewed environment set"
+            )
         live_environments = {
-            name: _github_api(repository, ("environments", _validated_path_segment(name)), token)
-            for name in expected_environments
+            "npm": _github_api("environment:npm", token),
+            "mcp-registry": _github_api("environment:mcp-registry", token),
         }
         errors.extend(validate_environment_protection(policy, live_environments))
     except (OSError, ValueError, RuntimeError, HTTPException) as exc:
