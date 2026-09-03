@@ -18,7 +18,7 @@ from .live_adapters import FailureDetail, FailureKind
 from .tool_selection import all_referenced_tools, load_cases
 
 NVIDIA_NIM_CHAT_COMPLETIONS_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-StructuredOutputMode = Literal["none", "guided_json", "json_schema"]
+StructuredOutputMode = Literal["none", "guided_json", "json_schema", "json_object"]
 ChatRequestProfile = Literal["default", "openai-gpt5"]
 
 
@@ -459,6 +459,8 @@ def build_chat_payload(
     schema = _classifier_schema([str(item["name"]) for item in catalog_values])
     if structured_output == "guided_json":
         payload["guided_json"] = schema
+    elif structured_output == "json_object":
+        payload["response_format"] = {"type": "json_object"}
     elif structured_output == "json_schema":
         payload["response_format"] = {
             "type": "json_schema",

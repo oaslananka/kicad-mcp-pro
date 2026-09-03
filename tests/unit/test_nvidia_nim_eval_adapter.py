@@ -460,11 +460,18 @@ def test_explicit_structured_output_modes_build_one_reviewable_payload() -> None
         catalog=({"name": "pcb_get_board_summary", "summary": "Summarize."},),
         structured_output="json_schema",
     )
+    json_object = build_chat_payload(
+        model="nvidia/nemotron-3.5-lightning-30b-a3b",
+        prompt="Inspect.",
+        catalog=({"name": "pcb_get_board_summary", "summary": "Summarize."},),
+        structured_output="json_object",
+    )
 
     assert guided["guided_json"]["additionalProperties"] is False
     assert "response_format" not in guided
     assert "guided_json" not in response_format
     assert response_format["response_format"]["type"] == "json_schema"
+    assert json_object["response_format"] == {"type": "json_object"}
     assert (
         response_format["response_format"]["json_schema"]["schema"]["additionalProperties"] is False
     )

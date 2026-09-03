@@ -40,7 +40,7 @@ COMMANDS = (
         "--model",
         MODELS[0],
         "--structured-output",
-        "none",
+        "json_object",
     ),
     (
         "python",
