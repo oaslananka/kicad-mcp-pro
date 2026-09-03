@@ -133,11 +133,11 @@ configurations:
       max_total_tokens: 3000000
       max_total_cost_micros: 1000000
 
-  - id: opencode-deepseek-v4-flash-free
+  - id: opencode-mimo-v2-5-free
     host: opencode-zen
-    model: deepseek-v4-flash-free
+    model: mimo-v2.5-free
     adapter: subprocess
-    command: [python, scripts/opencode_zen_eval_adapter.py, --model, deepseek-v4-flash-free, --structured-output, none]
+    command: [python, scripts/opencode_zen_eval_adapter.py, --model, mimo-v2.5-free, --structured-output, none]
     required_env: [OPENCODE_ZEN_API_KEY]
     limits: &opencode_free_limits
       timeout_seconds: 70
@@ -147,43 +147,19 @@ configurations:
       max_total_tokens: 3000000
       max_total_cost_micros: 0
 
-  - id: opencode-mimo-v2-5-free
-    host: opencode-zen
-    model: mimo-v2.5-free
-    adapter: subprocess
-    command: [python, scripts/opencode_zen_eval_adapter.py, --model, mimo-v2.5-free, --structured-output, none]
-    required_env: [OPENCODE_ZEN_API_KEY]
-    limits: *opencode_free_limits
-
-  - id: opencode-laguna-s-2-1-free
-    host: opencode-zen
-    model: laguna-s-2.1-free
-    adapter: subprocess
-    command: [python, scripts/opencode_zen_eval_adapter.py, --model, laguna-s-2.1-free, --structured-output, none]
-    required_env: [OPENCODE_ZEN_API_KEY]
-    limits: *opencode_free_limits
-
-  - id: opencode-ling-3-0-flash-free
-    host: opencode-zen
-    model: ling-3.0-flash-free
-    adapter: subprocess
-    command: [python, scripts/opencode_zen_eval_adapter.py, --model, ling-3.0-flash-free, --structured-output, none]
-    required_env: [OPENCODE_ZEN_API_KEY]
-    limits: *opencode_free_limits
-
-  - id: opencode-north-mini-code-free
-    host: opencode-zen
-    model: north-mini-code-free
-    adapter: subprocess
-    command: [python, scripts/opencode_zen_eval_adapter.py, --model, north-mini-code-free, --structured-output, none]
-    required_env: [OPENCODE_ZEN_API_KEY]
-    limits: *opencode_free_limits
-
   - id: opencode-nemotron-3-ultra-free
     host: opencode-zen
     model: nemotron-3-ultra-free
     adapter: subprocess
     command: [python, scripts/opencode_zen_eval_adapter.py, --model, nemotron-3-ultra-free, --structured-output, none]
+    required_env: [OPENCODE_ZEN_API_KEY]
+    limits: *opencode_free_limits
+
+  - id: opencode-cli-mimo-v2-5-free
+    host: opencode-zen-cli
+    model: mimo-v2.5-free
+    adapter: subprocess
+    command: [python, scripts/opencode_cli_eval_adapter.py, --model, mimo-v2.5-free, --opencode-bin, opencode, --timeout-seconds, "65"]
     required_env: [OPENCODE_ZEN_API_KEY]
     limits: *opencode_free_limits
 
@@ -208,11 +184,3 @@ configurations:
       max_total_tool_calls: 1000
       max_total_tokens: 3000000
       max_total_cost_micros: 0
-
-  - id: opencode-cli-deepseek-v4-flash-free
-    host: opencode-zen-cli
-    model: deepseek-v4-flash-free
-    adapter: subprocess
-    command: [python, scripts/opencode_cli_eval_adapter.py, --model, deepseek-v4-flash-free, --opencode-bin, opencode, --timeout-seconds, "65"]
-    required_env: [OPENCODE_ZEN_API_KEY]
-    limits: *opencode_free_limits

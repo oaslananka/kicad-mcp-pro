@@ -12,6 +12,6 @@ evidence: {}
 minimum_repeats: 3
 required_configurations:
 - nvidia-nemotron-3-5-lightning-30b-a3b
-- opencode-cli-deepseek-v4-flash-free
+- opencode-cli-mimo-v2-5-free
 - opencode-cli-nemotron-3-ultra-free
 configurations: {}

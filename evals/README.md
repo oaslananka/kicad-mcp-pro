@@ -290,13 +290,14 @@ also requires review of the protected run and provider billing. It cannot enter 
 blocking matrix until protected smoke and
 three independent full-corpus runs on one exact revision are complete and clean.
 
-Six OpenCode Zen free-model records are also versioned for manual experimental
-comparison: `deepseek-v4-flash-free`, `mimo-v2.5-free`, `laguna-s-2.1-free`,
-`ling-3.0-flash-free`, `north-mini-code-free`, and `nemotron-3-ultra-free`. They use
+Three reviewed OpenCode Zen free-model records are versioned for protected or manual
+comparison: `mimo-v2.5-free`, `nemotron-3-ultra-free`, and
+`nemotron-3.5-lightning-free`. They use
 the documented OpenAI-compatible Zen chat endpoint
 and require `OPENCODE_ZEN_API_KEY`, which must be synchronized from Doppler into the protected
-`live-model-evals` environment before a billed/live run. Free-model availability can change, so these records
-are intentionally excluded from the blocking release-gate matrix. `big-pickle` is not
+`live-model-evals` environment before a live run. The raw chat records remain nonblocking;
+the reviewed OpenCode CLI MiMo V2.5 and Nemotron 3 Ultra records are blocking release-gate configurations.
+Free-model availability can change, so provider availability is revalidated by protected smoke before full runs. `big-pickle` is not
 allowlisted because its underlying model identity is not stable enough for a versioned
 benchmark baseline.
 
