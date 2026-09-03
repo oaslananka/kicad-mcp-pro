@@ -14,11 +14,11 @@ configurations:
       max_total_tokens: 100000
       max_total_cost_micros: 0
 
-  - id: nvidia-nemotron-3-nano-30b-a3b
+  - id: nvidia-nemotron-3-5-lightning-30b-a3b
     host: nvidia-nim
-    model: nvidia/nemotron-3-nano-30b-a3b
+    model: nvidia/nemotron-3.5-lightning-30b-a3b
     adapter: subprocess
-    command: [python, scripts/nvidia_nim_eval_adapter.py, --model, nvidia/nemotron-3-nano-30b-a3b, --structured-output, none]
+    command: [python, scripts/nvidia_nim_eval_adapter.py, --model, nvidia/nemotron-3.5-lightning-30b-a3b, --structured-output, none]
     required_env: [NVIDIA_API_KEY]
     limits:
       timeout_seconds: 70

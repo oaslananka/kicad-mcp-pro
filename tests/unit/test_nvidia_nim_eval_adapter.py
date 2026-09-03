@@ -429,7 +429,7 @@ def test_hosted_nim_request_makes_one_http_call_without_structured_fields() -> N
         return httpx.Response(422, json={"error": "unsupported request field"})
 
     result = request_nvidia_nim(
-        model="nvidia/nemotron-3-nano-30b-a3b",
+        model="nvidia/nemotron-3.5-lightning-30b-a3b",
         prompt="Answer directly.",
         api_key="api-" + "value",
         catalog=(),
@@ -487,7 +487,7 @@ def test_hosted_model_profiles_disable_unneeded_reasoning() -> None:
         catalog=(),
     )
     nemotron = build_chat_payload(
-        model="nvidia/nemotron-3-nano-30b-a3b",
+        model="nvidia/nemotron-3.5-lightning-30b-a3b",
         prompt="Inspect.",
         catalog=(),
     )

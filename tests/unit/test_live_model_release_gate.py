@@ -17,12 +17,12 @@ CASES = ROOT / "evals/tool_selection/cases.yaml"
 THRESHOLDS = ROOT / "evals/tool_selection/thresholds.yaml"
 
 CONFIG_IDS = (
-    "nvidia-nemotron-3-nano-30b-a3b",
+    "nvidia-nemotron-3-5-lightning-30b-a3b",
     "opencode-cli-deepseek-v4-flash-free",
     "opencode-cli-nemotron-3-ultra-free",
 )
 MODELS = (
-    "nvidia/nemotron-3-nano-30b-a3b",
+    "nvidia/nemotron-3.5-lightning-30b-a3b",
     "deepseek-v4-flash-free",
     "nemotron-3-ultra-free",
 )
@@ -339,26 +339,16 @@ def test_committed_live_configurations_are_three_reviewed_blocking_records() -> 
 def test_committed_baseline_records_reviewed_required_configurations() -> None:
     baseline = yaml.safe_load((ROOT / "evals/live/baselines.yaml").read_text(encoding="utf-8"))
 
-    # #711 dropped the rate-limited nvidia-minimax-m3 slot for a free OpenCode Zen
-    # model. The baseline is pending re-approval from a real gate run until a reviewed
-    # candidate exists for opencode-cli-deepseek-v4-flash-free.
+    # Blocking-provider identities changed, so no stale model metrics may be
+    # presented as a baseline for the new configuration. A protected full gate
+    # must generate the next candidate.
     assert baseline["approved"] is False
     assert baseline["required_configurations"] == list(CONFIG_IDS)
-    assert "opencode-cli-deepseek-v4-flash-free" not in baseline["configurations"]
-    for config_id, model, host in zip(
-        ("nvidia-nemotron-3-nano-30b-a3b", "opencode-cli-nemotron-3-ultra-free"),
-        ("nvidia/nemotron-3-nano-30b-a3b", "nemotron-3-ultra-free"),
-        ("nvidia-nim", "opencode-zen-cli"),
-        strict=True,
-    ):
-        configuration = baseline["configurations"][config_id]
-        assert configuration["host"] == host
-        assert configuration["model"] == model
-        assert configuration["token_metrics_required"] is True
-        assert configuration["metrics"]["pass_rate"] == 1.0
-        assert configuration["metrics"]["mean_recall"] == 1.0
-        assert configuration["metrics"]["unnecessary_call_rate"] == 0.0
-        assert configuration["metrics"]["instability_rate"] == 0.0
+    assert baseline["configurations"] == {}
+    assert baseline["approved_at"] is None
+    assert baseline["source_revision"] is None
+    assert baseline["agent_contract_digest"] is None
+    assert baseline["evidence"] == {}
 
 
 def test_committed_live_smoke_subset_is_bounded_balanced_and_canonical() -> None:

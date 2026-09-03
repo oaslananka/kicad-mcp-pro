@@ -258,9 +258,10 @@ sanitized evidence artifact and explicit outcome.
 Live adapter configuration records are versioned in
 [`live/configurations.yaml`](live/configurations.yaml) and contain no credential
 values. In addition to the deterministic replay, the protected benchmark surface
-contains three reviewed cross-publisher NVIDIA NIM records:
+contains three configured cross-publisher NVIDIA NIM records. The blocking Lightning
+configuration remains pending re-approval until a protected full gate succeeds:
 
-- `nvidia/nemotron-3-nano-30b-a3b`;
+- `nvidia/nemotron-3.5-lightning-30b-a3b`;
 - `mistralai/mistral-medium-3.5-128b`;
 - `google/gemma-4-31b-it`.
 
