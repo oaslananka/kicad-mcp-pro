@@ -10,7 +10,7 @@ KiCad MCP Pro defaults to a bounded tool surface so general-purpose agents do no
 | `review` | `readonly` | 24 | Explicit read-only DRC, ERC, DFM, visual QA, and component-contract review |
 | `build` | `write` | 24 | Plan/apply/verify workflows plus bounded PCB inspect/remove/DRC operations |
 | `release` | `manufacturing` | 24 | Validation and human-gated manufacturing package generation |
-| `expert` | `experimental` | 377 | Complete catalog for trusted advanced clients |
+| `expert` | `experimental` | generated | Complete catalog for trusted advanced clients |
 
 `full` and `agent_full` remain available for backward compatibility. They expose the complete catalog and should not be the default for a general agent.
 

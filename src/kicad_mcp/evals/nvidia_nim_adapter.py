@@ -30,7 +30,7 @@ class _ModelOutputValidationError(ValueError):
         self.detail = detail
 
 
-_NEMOTRON_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
+_NEMOTRON_MODEL = "nvidia/nemotron-3.5-lightning-30b-a3b"
 _MISTRAL_MEDIUM_MODEL = "mistralai/mistral-medium-3.5-128b"
 _MINIMAX_MODEL = "minimaxai/minimax-m3"
 _MINIMAX_MODEL_ALIASES = frozenset({_MINIMAX_MODEL, "minimax-m3"})

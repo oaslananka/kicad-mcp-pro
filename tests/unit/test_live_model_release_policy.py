@@ -444,3 +444,38 @@ def test_committed_release_policy_covers_provider_adapter_implementations() -> N
     ]
 
     assert uncovered == []
+
+
+def test_release_policy_cli_can_fail_closed_for_release_readiness(tmp_path: Path) -> None:
+    from scripts import check_live_model_release_policy as cli
+
+    repo = _repository(tmp_path)
+    policy_path = _policy(tmp_path / "release-policy.yaml")
+    baseline_path = _baseline(tmp_path / "baseline-unapproved.yaml", approved=False)
+
+    exit_code = cli.main(
+        [
+            "--repo-root",
+            str(repo),
+            "--policy",
+            str(policy_path),
+            "--baseline",
+            str(baseline_path),
+            "--require-ready",
+            "release",
+            "--ref",
+            "HEAD",
+            "--today",
+            "2026-08-02",
+        ]
+    )
+
+    assert exit_code == 1
+
+
+def test_release_validation_enforces_live_model_readiness_at_release_boundary() -> None:
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    assert "Enforce live-model release readiness" in workflow
+    assert "check_live_model_release_policy.py --require-ready release" in workflow
+    assert "startsWith(github.head_ref, 'release-please--')" in workflow

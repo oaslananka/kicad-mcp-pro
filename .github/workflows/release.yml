@@ -18,6 +18,9 @@ on:
       - "docs/faq.md"
       - "scripts/sync_mcp_metadata.py"
       - "scripts/check_release_preflight.py"
+      - "scripts/check_live_model_release_policy.py"
+      - "evals/live/release-policy.yaml"
+      - "evals/live/baselines.yaml"
       - "scripts/build_kicad_pcm.py"
       - "packaging/kicad-pcm/**"
       - "packages/kicad-plugin/**"
@@ -49,6 +52,9 @@ jobs:
       - run: corepack enable
       - run: corepack pnpm install --frozen-lockfile
       - run: uv sync --all-extras --frozen
+      - name: Enforce live-model release readiness
+        if: github.event_name == 'release' || startsWith(github.head_ref, 'release-please--')
+        run: uv run --all-extras python scripts/check_live_model_release_policy.py --require-ready release --ref HEAD
       - run: corepack pnpm run metadata:check
       - run: corepack pnpm run release:check
       - run: corepack pnpm run package:check

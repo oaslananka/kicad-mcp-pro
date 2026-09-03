@@ -41,7 +41,7 @@ jobs:
       max-parallel: 1
       matrix:
         configuration:
-          - nvidia-nemotron-3-nano-30b-a3b
+          - nvidia-nemotron-3-5-lightning-30b-a3b
           - opencode-cli-deepseek-v4-flash-free
           - opencode-cli-nemotron-3-ultra-free
     steps:
@@ -154,7 +154,7 @@ jobs:
       max-parallel: 1
       matrix:
         configuration:
-          - nvidia-nemotron-3-nano-30b-a3b
+          - nvidia-nemotron-3-5-lightning-30b-a3b
           - opencode-cli-deepseek-v4-flash-free
           - opencode-cli-nemotron-3-ultra-free
     steps:

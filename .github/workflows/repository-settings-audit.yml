@@ -1,0 +1,31 @@
+name: Repository Settings Audit
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-settings-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Compare live repository settings with reviewed policy
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN"
+          python scripts/check_github_repository_settings.py --repository "$GITHUB_REPOSITORY"

@@ -1,41 +1,17 @@
 schema_version: 1
-# Pending re-approval: required_configurations changed (#711 dropped the rate-limited
-# NVIDIA trial MiniMax slot for a free OpenCode Zen model). approved stays false, and
-# the stale approved_at/source_revision/agent_contract_digest/evidence fields below are
-# unused while unapproved (see release_policy.py), until a real Live Model Release Gate
-# run produces a fresh reviewed baseline candidate for opencode-cli-deepseek-v4-flash-free.
+
+# Pending re-approval. The previous NVIDIA free endpoint was deprecated and the
+# blocking configuration now targets nvidia/nemotron-3.5-lightning-30b-a3b.
+# No configuration metrics are carried forward: only a successful protected
+# Live Model Release Gate may generate a new approved baseline candidate.
 approved: false
-approved_at: '2026-08-14'
-source_revision: 68b6bd6985808323deb951bc0fe85175c2ed2e7f
-agent_contract_digest: d843962dceeea2163fca86d4d3b0f16688e916d58eceac9caabadd9ccbe2a0f3
-evidence:
-  workflow_run_id: 30788805474
-  aggregate_sha256: 587603f5c191b46f3faf317ecc9947c07df47c52d566b40d33cbddcbbd9a59b4
+approved_at: null
+source_revision: null
+agent_contract_digest: null
+evidence: {}
 minimum_repeats: 3
 required_configurations:
-- nvidia-nemotron-3-nano-30b-a3b
+- nvidia-nemotron-3-5-lightning-30b-a3b
 - opencode-cli-deepseek-v4-flash-free
 - opencode-cli-nemotron-3-ultra-free
-configurations:
-  nvidia-nemotron-3-nano-30b-a3b:
-    host: nvidia-nim
-    model: nvidia/nemotron-3-nano-30b-a3b
-    token_metrics_required: true
-    metrics:
-      pass_rate: 1.0
-      mean_recall: 1.0
-      unnecessary_call_rate: 0.0
-      instability_rate: 0.0
-      p95_latency_ms: 1717.516
-      mean_tokens: 3094.0358974358974
-  opencode-cli-nemotron-3-ultra-free:
-    host: opencode-zen-cli
-    model: nemotron-3-ultra-free
-    token_metrics_required: true
-    metrics:
-      pass_rate: 1.0
-      mean_recall: 1.0
-      unnecessary_call_rate: 0.0
-      instability_rate: 0.0
-      p95_latency_ms: 48304.195
-      mean_tokens: 3190.0461538461536
+configurations: {}

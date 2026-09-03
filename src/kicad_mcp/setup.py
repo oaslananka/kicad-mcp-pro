@@ -896,6 +896,8 @@ def _run_smoke_test(agent_key: str) -> str:
                     [claude_path, "mcp", "list"],
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=15,
                 )
                 if "kicad" in result.stdout:

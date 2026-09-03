@@ -1419,3 +1419,15 @@ def test_reproducible_bootstrap_documentation_covers_setup_and_recovery() -> Non
     assert "./scripts/bootstrap-dev.sh" in readme
     assert "development/reproducible-bootstrap.md" in installation
     assert "development/reproducible-bootstrap.md" in mkdocs
+
+
+def test_mcp_registry_bootstrap_verifies_reviewed_checksum_before_extract() -> None:
+    workflow = _workflow("publish-mcp-registry.yml")
+    digest = "ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac"
+
+    assert f"MCP_PUBLISHER_LINUX_AMD64_SHA256: {digest}" in workflow
+    assert 'echo "${MCP_PUBLISHER_LINUX_AMD64_SHA256}  mcp-publisher.tar.gz"' in workflow
+    assert "sha256sum --check --strict" in workflow
+    assert workflow.index("sha256sum --check --strict") < workflow.index(
+        "tar -xzf mcp-publisher.tar.gz mcp-publisher"
+    )
