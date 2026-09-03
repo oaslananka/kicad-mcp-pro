@@ -23,7 +23,7 @@ def test_opencode_request_uses_fixed_endpoint_and_sanitizes_response() -> None:
         assert request.url == OPENCODE_ZEN_CHAT_COMPLETIONS_URL
         assert request.headers["Authorization"].startswith("Bearer ")
         payload = json.loads(request.content)
-        assert payload["model"] == "deepseek-v4-flash-free"
+        assert payload["model"] == "mimo-v2.5-free"
         return httpx.Response(
             200,
             json={
@@ -44,7 +44,7 @@ def test_opencode_request_uses_fixed_endpoint_and_sanitizes_response() -> None:
         )
 
     result = request_opencode_zen(
-        model="deepseek-v4-flash-free",
+        model="mimo-v2.5-free",
         prompt="Summarize the board.",
         api_key="test-" + "key",
         catalog=({"name": "pcb_get_board_summary", "summary": "Summarize."},),
@@ -61,11 +61,7 @@ def test_opencode_request_uses_fixed_endpoint_and_sanitizes_response() -> None:
 def test_opencode_free_model_allowlist_matches_reviewed_experimental_set() -> None:
     assert OPENCODE_ZEN_FREE_MODELS == frozenset(
         {
-            "deepseek-v4-flash-free",
             "mimo-v2.5-free",
-            "laguna-s-2.1-free",
-            "ling-3.0-flash-free",
-            "north-mini-code-free",
             "nemotron-3-ultra-free",
             "nemotron-3.5-lightning-free",
         }
@@ -124,7 +120,7 @@ def test_opencode_cli_fails_closed_without_key(
         __import__("io").StringIO('{"schema_version":1,"case_id":"x","prompt":"Inspect."}'),
     )
 
-    exit_code = opencode_cli.main(["--model", "deepseek-v4-flash-free"])
+    exit_code = opencode_cli.main(["--model", "mimo-v2.5-free"])
 
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 1

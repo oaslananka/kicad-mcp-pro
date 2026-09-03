@@ -18,12 +18,12 @@ THRESHOLDS = ROOT / "evals/tool_selection/thresholds.yaml"
 
 CONFIG_IDS = (
     "nvidia-nemotron-3-5-lightning-30b-a3b",
-    "opencode-cli-deepseek-v4-flash-free",
+    "opencode-cli-mimo-v2-5-free",
     "opencode-cli-nemotron-3-ultra-free",
 )
 MODELS = (
     "nvidia/nemotron-3.5-lightning-30b-a3b",
-    "deepseek-v4-flash-free",
+    "mimo-v2.5-free",
     "nemotron-3-ultra-free",
 )
 HOSTS = ("nvidia-nim", "opencode-zen-cli", "opencode-zen-cli")
