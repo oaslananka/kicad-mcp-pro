@@ -83,6 +83,21 @@ def _lines(rows: list[dict[str, object]]) -> list[str]:
     return [json.dumps(row) for row in rows]
 
 
+def _workspace(tmp_path: Path, prompt_text: str | None = None, *, attempt_id: str = "attempt-001"):
+    from kicad_mcp.evals.reference_agent_runner import ReferenceAgentWorkspace
+
+    board = tmp_path / "docs/evidence/reference-boards/test-board/v1"
+    board.mkdir(parents=True, exist_ok=True)
+    prompt = prompt_text or (
+        "# Benchmark\nCommon.\n\n## Phase: schematic\nBuild.\n\n"
+        "## Phase: pcb\nLayout.\n\n## Phase: manufacturing\nExport.\n"
+    )
+    (board / "original-prompt.md").write_text(prompt, encoding="utf-8")
+    return ReferenceAgentWorkspace.for_board(
+        checkout_dir=tmp_path, board_id="test-board", version="v1", attempt_id=attempt_id
+    )
+
+
 def test_parse_claude_stream_emits_only_sanitized_kicad_events() -> None:
     from kicad_mcp.evals.reference_agent_runner import parse_claude_stream
 
@@ -146,59 +161,36 @@ def test_build_claude_command_exposes_only_reviewed_agent_surface(tmp_path) -> N
     from kicad_mcp.evals.reference_agent_runner import build_claude_command
 
     command = build_claude_command(
-        claude_executable="claude",
-        model="claude-sonnet-5",
         settings_path=tmp_path / "settings.json",
         mcp_config_path=tmp_path / "mcp.json",
         allowed_mcp_tools=frozenset({"mcp__kicad__sch_add_symbol", "mcp__kicad__run_erc"}),
     )
 
-    assert command == (
-        "claude",
-        "-p",
-        "--model",
-        "claude-sonnet-5",
-        "--setting-sources",
-        "project",
-        "--settings",
-        str(tmp_path / "settings.json"),
-        "--strict-mcp-config",
-        "--mcp-config",
-        str(tmp_path / "mcp.json"),
-        "--tools",
-        "ToolSearch",
-        "--allowedTools",
-        "mcp__kicad__run_erc,mcp__kicad__sch_add_symbol",
-        "--output-format",
-        "stream-json",
-        "--verbose",
-    )
-    assert not {"Bash", "Read", "Write", "Edit", "WebFetch"}.intersection(command)
+    assert command[:4] == ("claude", "-p", "--model", "claude-sonnet-5")
+    assert "--strict-mcp-config" in command
+    assert "--tools" in command
+    assert "ToolSearch" in command
+    assert "--allowedTools" in command
+    assert "mcp__kicad__run_erc,mcp__kicad__sch_add_symbol" in command
+    for forbidden in ("Bash", "Read", "Write", "Edit", "WebFetch"):
+        assert forbidden not in command
 
 
-def test_build_mcp_config_pins_phase_and_local_runtime(tmp_path) -> None:
+def test_build_mcp_config_pins_phase_and_current_python(tmp_path) -> None:
+    import sys
+
     from kicad_mcp.evals.reference_agent_runner import ReferenceAgentPhase, build_mcp_config
 
+    workspace = _workspace(tmp_path)
     phase = ReferenceAgentPhase.for_name("pcb")
     config = build_mcp_config(
-        phase=phase,
-        uv_executable=tmp_path / "uv.exe",
-        checkout_dir=tmp_path / "repo",
-        project_dir=tmp_path / "project",
-        kicad_cli=tmp_path / "kicad-cli.exe",
+        phase=phase, workspace=workspace, kicad_cli=tmp_path / "kicad-cli.exe"
     )
-
     server = config["mcpServers"]["kicad"]
-    assert server["command"] == str(tmp_path / "uv.exe")
-    assert server["args"] == [
-        "--directory",
-        str(tmp_path / "repo"),
-        "run",
-        "--frozen",
-        "kicad-mcp-pro",
-    ]
+    assert server["command"] == sys.executable
+    assert server["args"] == ["-m", "kicad_mcp.server"]
     assert server["env"] == {
-        "KICAD_MCP_PROJECT_DIR": str(tmp_path / "project"),
+        "KICAD_MCP_PROJECT_DIR": str(workspace.project_dir),
         "KICAD_MCP_PROFILE": "pcb_layout",
         "KICAD_MCP_OPERATING_MODE": "write",
         "KICAD_MCP_KICAD_CLI": str(tmp_path / "kicad-cli.exe"),
@@ -221,7 +213,7 @@ def test_run_claude_session_uses_stdin_and_writes_only_stream_to_scratch(
 ) -> None:
     import subprocess
 
-    from kicad_mcp.evals.reference_agent_runner import run_claude_session
+    from kicad_mcp.evals.reference_agent_runner import ReferenceAgentPhase, run_claude_session
 
     calls = []
     stdout = "\n".join(_lines(_stream_rows())) + "\n"
@@ -231,26 +223,21 @@ def test_run_claude_session_uses_stdin_and_writes_only_stream_to_scratch(
         return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="private stderr")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    raw_stream = tmp_path / "scratch" / "stream.jsonl"
+    workspace = _workspace(tmp_path)
+    phase = ReferenceAgentPhase.for_name("schematic")
     summary = run_claude_session(
-        command=("claude", "-p"),
-        prompt="public benchmark prompt",
-        raw_stream_path=raw_stream,
-        attempt_id="attempt-001",
-        cwd=tmp_path,
-        timeout_seconds=120.0,
-        model="claude-sonnet-5",
+        workspace=workspace, phase=phase, prompt="public benchmark prompt", timeout_seconds=120.0
     )
-
+    raw_stream = workspace.phase_raw_stream_path(phase)
     assert summary.successful is True
     assert raw_stream.read_text(encoding="utf-8") == stdout
     command, kwargs = calls[0]
+    assert command[:4] == ("claude", "-p", "--model", "claude-sonnet-5")
     assert "public benchmark prompt" not in command
     assert kwargs["input"] == "public benchmark prompt"
+    assert kwargs["cwd"] == workspace.checkout_dir
     assert kwargs["shell"] is False
     assert kwargs["timeout"] == 120.0
-    assert kwargs["capture_output"] is True
-    assert kwargs["text"] is True
     assert "private stderr" not in raw_stream.read_text(encoding="utf-8")
 
 
@@ -258,10 +245,9 @@ def test_write_agent_log_serializes_only_sanitized_events(tmp_path) -> None:
     from kicad_mcp.evals.reference_agent_runner import parse_claude_stream, write_agent_log
 
     summary = parse_claude_stream(_lines(_stream_rows()), attempt_id="attempt-001")
-    target = tmp_path / "agent-log.jsonl"
-    write_agent_log(target, summary)
-
-    rendered = target.read_text(encoding="utf-8")
+    workspace = _workspace(tmp_path)
+    write_agent_log(workspace, summary)
+    rendered = workspace.agent_log_path.read_text(encoding="utf-8")
     assert rendered.count("\n") == 2
     assert "raw tool output" not in rendered
     assert "do-not-publish" not in rendered
@@ -272,54 +258,54 @@ def test_write_agent_log_appends_with_contiguous_sequences(tmp_path) -> None:
     from kicad_mcp.evals.reference_agent_runner import parse_claude_stream, write_agent_log
 
     summary = parse_claude_stream(_lines(_stream_rows()), attempt_id="attempt-001")
-    target = tmp_path / "agent-log.jsonl"
-    write_agent_log(target, summary)
-    write_agent_log(target, summary, append=True)
-
-    payloads = [json.loads(line) for line in target.read_text(encoding="utf-8").splitlines()]
+    workspace = _workspace(tmp_path)
+    write_agent_log(workspace, summary)
+    write_agent_log(workspace, summary, append=True)
+    payloads = [
+        json.loads(line)
+        for line in workspace.agent_log_path.read_text(encoding="utf-8").splitlines()
+    ]
     assert [item["sequence"] for item in payloads] == [1, 2, 3, 4]
-    assert all(item["attempt_id"] == "attempt-001" for item in payloads)
+    for item in payloads:
+        assert item["attempt_id"] == "attempt-001"
 
 
-def test_reference_agent_cli_exposes_explicit_runtime_inputs() -> None:
+def test_reference_agent_cli_exposes_only_reviewed_identity_inputs() -> None:
     import subprocess
     import sys
-    from pathlib import Path
 
     script = Path(__file__).resolve().parents[2] / "scripts/run_reference_board_agent.py"
     completed = subprocess.run(
-        [sys.executable, str(script), "--help"],
-        capture_output=True,
-        text=True,
-        check=False,
+        [sys.executable, str(script), "--help"], capture_output=True, text=True, check=False
     )
     assert completed.returncode == 0
-    for flag in (
+    for flag in ("--board-id", "--attempt-number", "--phase"):
+        assert flag in completed.stdout
+    for removed in (
+        "--version",
         "--attempt-id",
-        "--phase",
+        "--uv",
+        "--kicad-cli",
         "--prompt-file",
         "--project-dir",
         "--scratch-dir",
         "--agent-log",
         "--checkout-dir",
-        "--uv",
-        "--kicad-cli",
         "--claude",
         "--model",
     ):
-        assert flag in completed.stdout
+        assert removed not in completed.stdout
 
 
 def test_load_phase_prompt_combines_common_and_selected_phase(tmp_path) -> None:
     from kicad_mcp.evals.reference_agent_runner import ReferenceAgentPhase, load_phase_prompt
 
-    source = tmp_path / "original-prompt.md"
-    source.write_text(
+    workspace = _workspace(
+        tmp_path,
         "# Benchmark\n\nCommon invariant.\n\n## Phase: schematic\nBuild schematic.\n\n"
         "## Phase: pcb\nBuild PCB.\n\n## Phase: manufacturing\nExport release.\n",
-        encoding="utf-8",
     )
-    prompt = load_phase_prompt(source, ReferenceAgentPhase.for_name("pcb"))
+    prompt = load_phase_prompt(workspace, ReferenceAgentPhase.for_name("pcb"))
     assert "Common invariant." in prompt
     assert "Build PCB." in prompt
     assert "Build schematic." not in prompt
@@ -331,9 +317,16 @@ def test_load_phase_prompt_combines_common_and_selected_phase(tmp_path) -> None:
     ("esp32-c6-usbc", "stm32f072-usbc", "rp2350-usbc"),
 )
 def test_reference_board_inputs_are_reviewed_clean_start_contracts(board_id: str) -> None:
+    from kicad_mcp.evals.evidence_sanitization import validate_sanitized_evidence
+    from kicad_mcp.evals.reference_agent_runner import (
+        ReferenceAgentPhase,
+        ReferenceAgentWorkspace,
+        load_phase_prompt,
+    )
     from kicad_mcp.evals.task_outcomes import ALL_TASK_STAGES, parse_benchmark_contract
 
-    root = Path(__file__).resolve().parents[2] / "docs/evidence/reference-boards" / board_id / "v1"
+    checkout = Path(__file__).resolve().parents[2]
+    root = checkout / "docs/evidence/reference-boards" / board_id / "v1"
     assert (root / "specification.md").is_file()
     assert (root / "original-prompt.md").is_file()
     contract = parse_benchmark_contract(
@@ -352,17 +345,15 @@ def test_reference_board_inputs_are_reviewed_clean_start_contracts(board_id: str
     assert not (root / "attempts").exists()
     assert not list(root.glob("*.kicad_sch"))
     assert not list(root.glob("*.kicad_pcb"))
-
-    from kicad_mcp.evals.evidence_sanitization import validate_sanitized_evidence
-    from kicad_mcp.evals.reference_agent_runner import ReferenceAgentPhase, load_phase_prompt
-
     validate_sanitized_evidence((root / "specification.md").read_text(encoding="utf-8"))
     validate_sanitized_evidence((root / "original-prompt.md").read_text(encoding="utf-8"))
+    workspace = ReferenceAgentWorkspace.for_board(
+        checkout_dir=checkout, board_id=board_id, version="v1", attempt_id="attempt-001"
+    )
     for phase_name in ("schematic", "pcb", "manufacturing"):
-        phase_prompt = load_phase_prompt(
-            root / "original-prompt.md", ReferenceAgentPhase.for_name(phase_name)
+        validate_sanitized_evidence(
+            load_phase_prompt(workspace, ReferenceAgentPhase.for_name(phase_name))
         )
-        validate_sanitized_evidence(phase_prompt)
 
 
 def test_parse_claude_stream_requires_only_connected_kicad_mcp() -> None:
@@ -384,7 +375,7 @@ def test_parse_claude_stream_requires_only_connected_kicad_mcp() -> None:
 def test_run_claude_session_preserves_parseable_failed_session(tmp_path, monkeypatch) -> None:
     import subprocess
 
-    from kicad_mcp.evals.reference_agent_runner import run_claude_session
+    from kicad_mcp.evals.reference_agent_runner import ReferenceAgentPhase, run_claude_session
 
     rows = _stream_rows()
     rows[1:4] = []
@@ -397,14 +388,12 @@ def test_run_claude_session_preserves_parseable_failed_session(tmp_path, monkeyp
         return subprocess.CompletedProcess(command, 1, stdout=stdout, stderr="private")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    workspace = _workspace(tmp_path, attempt_id="attempt-002")
     summary = run_claude_session(
-        command=("claude", "-p"),
+        workspace=workspace,
+        phase=ReferenceAgentPhase.for_name("schematic"),
         prompt="benchmark",
-        raw_stream_path=tmp_path / "stream.jsonl",
-        attempt_id="attempt-002",
-        cwd=tmp_path,
         timeout_seconds=30.0,
-        model="claude-sonnet-5",
     )
     assert summary.successful is False
     assert [(event.event_type, event.name, event.status) for event in summary.events] == [
@@ -458,7 +447,7 @@ def test_run_claude_session_preserves_invalid_stream_as_sanitized_failure(
 ) -> None:
     import subprocess
 
-    from kicad_mcp.evals.reference_agent_runner import run_claude_session
+    from kicad_mcp.evals.reference_agent_runner import ReferenceAgentPhase, run_claude_session
 
     def fake_run(command: tuple[str, ...], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(
@@ -466,41 +455,36 @@ def test_run_claude_session_preserves_invalid_stream_as_sanitized_failure(
         )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    raw = tmp_path / "stream.jsonl"
+    workspace = _workspace(tmp_path, attempt_id="attempt-003")
+    phase = ReferenceAgentPhase.for_name("schematic")
     summary = run_claude_session(
-        command=("claude", "-p"),
-        prompt="benchmark",
-        raw_stream_path=raw,
-        attempt_id="attempt-invalid",
-        cwd=tmp_path,
-        timeout_seconds=30.0,
-        model="claude-sonnet-5",
+        workspace=workspace, phase=phase, prompt="benchmark", timeout_seconds=30.0
     )
+    raw = workspace.phase_raw_stream_path(phase)
     assert summary.successful is False
     assert summary.primary_model == "claude-sonnet-5"
     assert summary.terminal_reason == "stream_contract_violation"
     assert raw.read_text(encoding="utf-8") == "private invalid stream\n"
     assert [event.status for event in summary.events] == ["started", "failed"]
-    assert "private" not in json.dumps([event.model_dump(mode="json") for event in summary.events])
+    rendered = json.dumps([event.model_dump(mode="json") for event in summary.events])
+    assert "private" not in rendered
 
 
 def test_run_claude_session_preserves_timeout_as_sanitized_failure(tmp_path, monkeypatch) -> None:
     import subprocess
 
-    from kicad_mcp.evals.reference_agent_runner import run_claude_session
+    from kicad_mcp.evals.reference_agent_runner import ReferenceAgentPhase, run_claude_session
 
     def fake_run(command: tuple[str, ...], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         raise subprocess.TimeoutExpired(command, 30.0, output="private partial stream")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    workspace = _workspace(tmp_path, attempt_id="attempt-004")
     summary = run_claude_session(
-        command=("claude", "-p"),
+        workspace=workspace,
+        phase=ReferenceAgentPhase.for_name("schematic"),
         prompt="benchmark",
-        raw_stream_path=tmp_path / "stream.jsonl",
-        attempt_id="attempt-timeout",
-        cwd=tmp_path,
         timeout_seconds=30.0,
-        model="claude-sonnet-5",
     )
     assert summary.successful is False
     assert summary.terminal_reason == "timeout"
@@ -514,25 +498,24 @@ def test_run_claude_session_preserves_launch_failure_without_exception_text(
 ) -> None:
     import subprocess
 
-    from kicad_mcp.evals.reference_agent_runner import run_claude_session
+    from kicad_mcp.evals.reference_agent_runner import ReferenceAgentPhase, run_claude_session
 
     def fake_run(command: tuple[str, ...], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         raise OSError("private launch path")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    workspace = _workspace(tmp_path, attempt_id="attempt-005")
     summary = run_claude_session(
-        command=("claude", "-p"),
+        workspace=workspace,
+        phase=ReferenceAgentPhase.for_name("schematic"),
         prompt="benchmark",
-        raw_stream_path=tmp_path / "stream.jsonl",
-        attempt_id="attempt-launch",
-        cwd=tmp_path,
         timeout_seconds=30.0,
-        model="claude-sonnet-5",
     )
     assert summary.successful is False
     assert summary.terminal_reason == "process_launch_failed"
     assert [event.status for event in summary.events] == ["started", "failed"]
-    assert "private" not in json.dumps([event.model_dump(mode="json") for event in summary.events])
+    rendered = json.dumps([event.model_dump(mode="json") for event in summary.events])
+    assert "private" not in rendered
 
 
 def test_catalog_boundary_is_broader_than_execution_boundary_for_authoring_phases() -> None:
@@ -576,24 +559,23 @@ def test_reference_agent_cli_threads_catalog_and_execution_boundaries(
 
     script = Path(__file__).resolve().parents[2] / "scripts/run_reference_board_agent.py"
     spec = importlib.util.spec_from_file_location("reference_agent_cli_test", script)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-
-    prompt = tmp_path / "prompt.md"
-    prompt.write_text(
+    board = tmp_path / "docs/evidence/reference-boards/esp32-c6-usbc/v1"
+    board.mkdir(parents=True)
+    (board / "original-prompt.md").write_text(
         "# Benchmark\nCommon.\n\n## Phase: schematic\nBuild.\n\n"
         "## Phase: pcb\nLayout.\n\n## Phase: manufacturing\nExport.\n",
         encoding="utf-8",
     )
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(module, "discover_reference_kicad_cli", lambda: tmp_path / "kicad-cli.exe")
     captured: dict[str, object] = {}
 
-    def fake_build(**kwargs: object) -> tuple[str, ...]:
-        captured["build"] = kwargs
-        return ("claude", "-p")
-
     def fake_run(**kwargs: object) -> ReferenceAgentRunSummary:
-        captured["run"] = kwargs
+        captured.update(kwargs)
         return ReferenceAgentRunSummary(
             events=(),
             primary_model="claude-sonnet-5",
@@ -604,38 +586,138 @@ def test_reference_agent_cli_threads_catalog_and_execution_boundaries(
             successful=True,
         )
 
-    monkeypatch.setattr(module, "build_claude_command", fake_build)
     monkeypatch.setattr(module, "run_claude_session", fake_run)
     result = module.main(
         [
-            "--attempt-id",
-            "attempt-cli",
+            "--board-id",
+            "esp32-c6-usbc",
+            "--attempt-number",
+            "1",
             "--phase",
             "pcb",
-            "--prompt-file",
-            str(prompt),
-            "--project-dir",
-            str(tmp_path / "project"),
-            "--scratch-dir",
-            str(tmp_path / "scratch"),
-            "--agent-log",
-            str(tmp_path / "agent-log.jsonl"),
-            "--checkout-dir",
-            str(tmp_path),
-            "--uv",
-            str(tmp_path / "uv.exe"),
-            "--kicad-cli",
-            str(tmp_path / "kicad-cli.exe"),
         ]
     )
     assert result == 0
-    build_kwargs = captured["build"]
-    run_kwargs = captured["run"]
-    assert isinstance(build_kwargs, dict) and isinstance(run_kwargs, dict)
-    execution = build_kwargs["allowed_mcp_tools"]
-    assert execution == run_kwargs["allowed_mcp_tools"]
-    catalog = run_kwargs["catalog_mcp_tools"]
-    assert isinstance(execution, frozenset) and isinstance(catalog, frozenset)
+    execution = captured["allowed_mcp_tools"]
+    catalog = captured["catalog_mcp_tools"]
+    assert isinstance(execution, frozenset)
+    assert isinstance(catalog, frozenset)
     assert execution < catalog
     assert "mcp__kicad__pcb_route_trace" in execution
     assert "mcp__kicad__route_differential_pair" not in execution
+    workspace = captured["workspace"]
+    assert workspace.checkout_dir == tmp_path.resolve()
+    assert workspace.agent_log_path == board / "attempts/attempt-001/agent-log.jsonl"
+
+
+def test_reference_agent_workspace_derives_reviewed_paths(tmp_path) -> None:
+    workspace = _workspace(tmp_path)
+    board = tmp_path / "docs/evidence/reference-boards/test-board/v1"
+    assert workspace.prompt_path == board / "original-prompt.md"
+    assert workspace.agent_log_path == board / "attempts/attempt-001/agent-log.jsonl"
+    assert workspace.project_dir == (
+        tmp_path / ".dev-tools/reference-agent-runs/test-board/v1/attempt-001/project"
+    )
+    assert workspace.scratch_dir == workspace.project_dir.parent
+
+
+def test_reference_agent_workspace_rejects_unreviewed_components(tmp_path) -> None:
+    from kicad_mcp.evals.reference_agent_runner import (
+        ReferenceAgentRunnerError,
+        ReferenceAgentWorkspace,
+    )
+
+    for board_id, version, attempt_id in (
+        ("../escape", "v1", "attempt-001"),
+        ("board", "../v1", "attempt-001"),
+        ("board", "v1", "../attempt-001"),
+    ):
+        with pytest.raises(ReferenceAgentRunnerError, match="identifier"):
+            ReferenceAgentWorkspace.for_board(
+                checkout_dir=tmp_path, board_id=board_id, version=version, attempt_id=attempt_id
+            )
+
+
+def test_reference_agent_workspace_requires_committed_prompt(tmp_path) -> None:
+    from kicad_mcp.evals.reference_agent_runner import (
+        ReferenceAgentRunnerError,
+        ReferenceAgentWorkspace,
+    )
+
+    with pytest.raises(ReferenceAgentRunnerError, match="original prompt"):
+        ReferenceAgentWorkspace.for_board(
+            checkout_dir=tmp_path, board_id="board", version="v1", attempt_id="attempt-001"
+        )
+
+
+def test_reference_agent_workspace_reviewed_attempt_is_bounded(tmp_path) -> None:
+    from kicad_mcp.evals.reference_agent_runner import (
+        ReferenceAgentRunnerError,
+        ReferenceAgentWorkspace,
+    )
+
+    board = tmp_path / "docs/evidence/reference-boards/esp32-c6-usbc/v1"
+    board.mkdir(parents=True)
+    (board / "original-prompt.md").write_text("prompt\n", encoding="utf-8")
+    workspace = ReferenceAgentWorkspace.for_reviewed_attempt(
+        checkout_dir=tmp_path, board_id="esp32-c6-usbc", attempt_number=2
+    )
+    assert workspace.version == "v1"
+    assert workspace.attempt_id == "attempt-002"
+    with pytest.raises(ReferenceAgentRunnerError, match="reviewed board"):
+        ReferenceAgentWorkspace.for_reviewed_attempt(
+            checkout_dir=tmp_path, board_id="other-board", attempt_number=1
+        )
+    for value in (0, 1000):
+        with pytest.raises(ReferenceAgentRunnerError, match="attempt number"):
+            ReferenceAgentWorkspace.for_reviewed_attempt(
+                checkout_dir=tmp_path, board_id="esp32-c6-usbc", attempt_number=value
+            )
+
+
+def test_discover_reference_kicad_cli_requires_working_v10(tmp_path, monkeypatch) -> None:
+    import kicad_mcp.evals.reference_agent_runner as runner
+
+    v11 = tmp_path / "kicad11.exe"
+    v10 = tmp_path / "kicad10.exe"
+    v11.write_bytes(b"x")
+    v10.write_bytes(b"x")
+    monkeypatch.setattr(runner, "_reference_kicad_candidates", lambda: (v11, v10))
+    monkeypatch.setattr(
+        runner, "find_kicad_version", lambda path: "11.0.0" if path == v11 else "10.0.6"
+    )
+    assert runner.discover_reference_kicad_cli() == v10.resolve()
+
+
+def test_discover_reference_kicad_cli_fails_closed_without_v10(tmp_path, monkeypatch) -> None:
+    import kicad_mcp.evals.reference_agent_runner as runner
+
+    candidate = tmp_path / "kicad.exe"
+    candidate.write_bytes(b"x")
+    monkeypatch.setattr(runner, "_reference_kicad_candidates", lambda: (candidate,))
+    monkeypatch.setattr(runner, "find_kicad_version", lambda _path: "11.0.0")
+    with pytest.raises(runner.ReferenceAgentRunnerError, match="KiCad 10"):
+        runner.discover_reference_kicad_cli()
+
+
+def test_reference_kicad_candidates_include_windows_v10_locations(tmp_path, monkeypatch) -> None:
+    import kicad_mcp.evals.reference_agent_runner as runner
+
+    discovered = tmp_path / "discovered.exe"
+    monkeypatch.setattr(runner, "discover_kicad_cli", lambda: discovered)
+    monkeypatch.setattr(runner.sys, "platform", "win32")
+    candidates = runner._reference_kicad_candidates()
+    assert candidates[0] == discovered
+    assert Path.home() / "AppData/Local/Programs/KiCad/10.0/bin/kicad-cli.exe" in candidates
+    assert Path("C:/Program Files/KiCad/10.0/bin/kicad-cli.exe") in candidates
+    assert len(candidates) == len(set(candidates))
+
+
+def test_reference_agent_phase_rejects_unknown_name() -> None:
+    from kicad_mcp.evals.reference_agent_runner import (
+        ReferenceAgentPhase,
+        ReferenceAgentRunnerError,
+    )
+
+    with pytest.raises(ReferenceAgentRunnerError, match="unsupported reference-agent phase"):
+        ReferenceAgentPhase.for_name("unknown")

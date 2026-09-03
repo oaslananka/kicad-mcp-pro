@@ -54,7 +54,7 @@ Run the same pytest command; expected PASS.
 - Create: `scripts/run_reference_board_agent.py`
 
 **Interfaces:**
-- Produces: `ReferenceAgentPhase` and `build_claude_command(...)`.
+- Produces: `ReferenceAgentPhase`, `ReferenceAgentWorkspace`, benchmark-specific KiCad 10 discovery, and the canonical Claude command builder.
 - Phase contract: schematic=`schematic_authoring/write`, pcb=`pcb_layout/write`, manufacturing=`release/manufacturing`; execution ceilings are 35/38/24 tools.
 - [ ] **Step 1: Write failing command-builder tests**
 
@@ -66,7 +66,7 @@ Run the focused runner tests; expected missing phase/command builder failures.
 
 - [ ] **Step 3: Implement command/config builder and CLI**
 
-Generate an ephemeral MCP JSON that runs the reviewed checkout with pinned `uv`, explicit project directory, phase profile/mode, and explicit `KICAD_MCP_KICAD_CLI`. Execute Claude with `shell=False`, bounded timeout, captured UTF-8 stdout/stderr, and a caller-provided prompt file. Store raw stream only in a caller-provided scratch path outside the publication bundle.
+Generate an ephemeral MCP JSON that runs the reviewed checkout with the current Python interpreter (`python -m kicad_mcp.server`), a deterministic private project directory, phase profile/mode, and a fail-closed discovered KiCad 10 CLI. The CLI accepts only a reviewed board id, bounded attempt number, and phase; prompt/publication/scratch paths, Claude executable/model, and session timeout are canonical rather than caller-provided. Execute Claude with `shell=False`, captured UTF-8 stdout/stderr, and store raw stream only in the deterministic `.dev-tools/reference-agent-runs/...` scratch tree outside the publication bundle.
 
 - [ ] **Step 4: Run GREEN**
 

@@ -3,23 +3,146 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
+import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from ..discovery import discover_kicad_cli, find_kicad_version
 from ..operating_modes import is_tool_allowed_in_mode
 from ..tools.router import tools_for_profile
 from .reference_corpus import ReferenceAgentLogEvent
 
 _MCP_PREFIX = "mcp__kicad__"
+_CLAUDE_EXECUTABLE = "claude"
+_CLAUDE_MODEL = "claude-sonnet-5"
 _INTERNAL_TOOLS = frozenset({"ToolSearch"})
 
 
 class ReferenceAgentRunnerError(ValueError):
     """Raised when a benchmark agent stream violates the reviewed execution contract."""
+
+
+_IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+_ATTEMPT_IDENTIFIER = re.compile(r"^attempt-[0-9]{3,6}$")
+_VERSION_IDENTIFIER = re.compile(r"^v[1-9][0-9]*$")
+_REVIEWED_BOARD_ROOTS = {
+    "esp32-c6-usbc": Path("docs/evidence/reference-boards/esp32-c6-usbc/v1"),
+    "stm32f072-usbc": Path("docs/evidence/reference-boards/stm32f072-usbc/v1"),
+    "rp2350-usbc": Path("docs/evidence/reference-boards/rp2350-usbc/v1"),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceAgentWorkspace:
+    """Deterministic private/public paths for one reviewed board attempt."""
+
+    checkout_dir: Path
+    board_id: str
+    version: str
+    attempt_id: str
+    prompt_path: Path
+    agent_log_path: Path
+    scratch_dir: Path
+    project_dir: Path
+
+    @classmethod
+    def for_board(
+        cls, *, checkout_dir: Path, board_id: str, version: str, attempt_id: str
+    ) -> ReferenceAgentWorkspace:
+        if not _IDENTIFIER.fullmatch(board_id):
+            raise ReferenceAgentRunnerError("board identifier is invalid")
+        if not _VERSION_IDENTIFIER.fullmatch(version):
+            raise ReferenceAgentRunnerError("version identifier is invalid")
+        if not _ATTEMPT_IDENTIFIER.fullmatch(attempt_id):
+            raise ReferenceAgentRunnerError("attempt identifier is invalid")
+        root = checkout_dir.resolve()
+        board_root = root / "docs" / "evidence" / "reference-boards" / board_id / version
+        prompt = board_root / "original-prompt.md"
+        if not prompt.is_file() or prompt.is_symlink():
+            raise ReferenceAgentRunnerError("reviewed original prompt is missing")
+        scratch = root / ".dev-tools" / "reference-agent-runs" / board_id / version / attempt_id
+        return cls(
+            checkout_dir=root,
+            board_id=board_id,
+            version=version,
+            attempt_id=attempt_id,
+            prompt_path=prompt,
+            agent_log_path=board_root / "attempts" / attempt_id / "agent-log.jsonl",
+            scratch_dir=scratch,
+            project_dir=scratch / "project",
+        )
+
+    @classmethod
+    def for_reviewed_attempt(
+        cls, *, checkout_dir: Path, board_id: str, attempt_number: int
+    ) -> ReferenceAgentWorkspace:
+        try:
+            board_relative = _REVIEWED_BOARD_ROOTS[board_id]
+        except KeyError as exc:
+            raise ReferenceAgentRunnerError("board is not in reviewed board set") from exc
+        if not 1 <= attempt_number <= 999:
+            raise ReferenceAgentRunnerError("attempt number must be between 1 and 999")
+        root = checkout_dir.resolve()
+        board_root = root / board_relative
+        prompt = board_root / "original-prompt.md"
+        if not prompt.is_file() or prompt.is_symlink():
+            raise ReferenceAgentRunnerError("reviewed original prompt is missing")
+        canonical_board_id = board_relative.parent.name
+        attempt_id = f"attempt-{attempt_number:03d}"
+        scratch = root / ".dev-tools/reference-agent-runs" / canonical_board_id / "v1" / attempt_id
+        return cls(
+            checkout_dir=root,
+            board_id=canonical_board_id,
+            version="v1",
+            attempt_id=attempt_id,
+            prompt_path=prompt,
+            agent_log_path=board_root / "attempts" / attempt_id / "agent-log.jsonl",
+            scratch_dir=scratch,
+            project_dir=scratch / "project",
+        )
+
+    def phase_settings_path(self, phase: ReferenceAgentPhase) -> Path:
+        return self.scratch_dir / f"{phase.name}-settings.json"
+
+    def phase_mcp_config_path(self, phase: ReferenceAgentPhase) -> Path:
+        return self.scratch_dir / f"{phase.name}-mcp.json"
+
+    def phase_raw_stream_path(self, phase: ReferenceAgentPhase) -> Path:
+        return self.scratch_dir / f"{phase.name}-claude-stream.jsonl"
+
+
+def _reference_kicad_candidates() -> tuple[Path, ...]:
+    candidates: list[Path] = []
+    discovered = discover_kicad_cli()
+    candidates.append(discovered)
+    if sys.platform == "win32":
+        candidates.extend(
+            (
+                Path.home() / "AppData/Local/Programs/KiCad/10.0/bin/kicad-cli.exe",
+                Path("C:/Program Files/KiCad/10.0/bin/kicad-cli.exe"),
+            )
+        )
+    unique: list[Path] = []
+    for candidate in candidates:
+        if candidate not in unique:
+            unique.append(candidate)
+    return tuple(unique)
+
+
+def discover_reference_kicad_cli() -> Path:
+    """Return a working KiCad 10 CLI for reproducible reference-board runs."""
+    for candidate in _reference_kicad_candidates():
+        if not candidate.is_file():
+            continue
+        version = find_kicad_version(candidate)
+        if version is not None and version.lstrip("v").startswith("10."):
+            return candidate.resolve()
+    raise ReferenceAgentRunnerError("working KiCad 10 CLI was not found")
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,9 +374,9 @@ def _result_metadata(
     return auxiliary, provider, denial_count, terminal_reason, successful
 
 
-def load_phase_prompt(path: Path, phase: ReferenceAgentPhase) -> str:
+def load_phase_prompt(workspace: ReferenceAgentWorkspace, phase: ReferenceAgentPhase) -> str:
     """Select one reviewed phase prompt while preserving the common prompt preamble."""
-    text = path.read_text(encoding="utf-8")
+    text = workspace.prompt_path.read_text(encoding="utf-8")
     headings = tuple(f"## Phase: {name}" for name in ("schematic", "pcb", "manufacturing"))
     positions = {heading: text.find(heading) for heading in headings}
     if any(position < 0 for position in positions.values()):
@@ -279,9 +402,7 @@ def load_phase_prompt(path: Path, phase: ReferenceAgentPhase) -> str:
 def build_mcp_config(
     *,
     phase: ReferenceAgentPhase,
-    uv_executable: Path,
-    checkout_dir: Path,
-    project_dir: Path,
+    workspace: ReferenceAgentWorkspace,
     kicad_cli: Path,
 ) -> dict[str, Any]:
     """Build one strict stdio KiCad MCP configuration for a benchmark phase."""
@@ -289,10 +410,10 @@ def build_mcp_config(
         "mcpServers": {
             "kicad": {
                 "type": "stdio",
-                "command": str(uv_executable),
-                "args": ["--directory", str(checkout_dir), "run", "--frozen", "kicad-mcp-pro"],
+                "command": sys.executable,
+                "args": ["-m", "kicad_mcp.server"],
                 "env": {
-                    "KICAD_MCP_PROJECT_DIR": str(project_dir),
+                    "KICAD_MCP_PROJECT_DIR": str(workspace.project_dir),
                     "KICAD_MCP_PROFILE": phase.profile,
                     "KICAD_MCP_OPERATING_MODE": phase.mode,
                     "KICAD_MCP_KICAD_CLI": str(kicad_cli),
@@ -304,18 +425,16 @@ def build_mcp_config(
 
 def build_claude_command(
     *,
-    claude_executable: str,
-    model: str,
     settings_path: Path,
     mcp_config_path: Path,
     allowed_mcp_tools: frozenset[str],
 ) -> tuple[str, ...]:
-    """Build the isolated Claude Code command used by reference-board attempts."""
+    """Build the canonical isolated Claude Code command for reference-board attempts."""
     return (
-        claude_executable,
+        _CLAUDE_EXECUTABLE,
         "-p",
         "--model",
-        model,
+        _CLAUDE_MODEL,
         "--setting-sources",
         "project",
         "--settings",
@@ -333,14 +452,7 @@ def build_claude_command(
     )
 
 
-def parse_claude_stream(
-    lines: Iterable[str],
-    *,
-    attempt_id: str,
-    catalog_mcp_tools: frozenset[str] | None = None,
-    allowed_mcp_tools: frozenset[str] | None = None,
-) -> ReferenceAgentRunSummary:
-    """Convert one Claude stream-json session to sanitized reference evidence."""
+def _parse_stream_rows(lines: Iterable[str]) -> list[Mapping[str, Any]]:
     rows: list[Mapping[str, Any]] = []
     for line in lines:
         if not line.strip():
@@ -350,76 +462,135 @@ def parse_claude_stream(
         except json.JSONDecodeError as exc:
             raise ReferenceAgentRunnerError("agent stream contains invalid JSON") from exc
         rows.append(_as_mapping(value, label="agent stream record"))
+    return rows
 
-    init = next(
-        (row for row in rows if row.get("type") == "system" and row.get("subtype") == "init"),
-        None,
+
+def _required_stream_record(
+    rows: Iterable[Mapping[str, Any]], *, record_type: str, subtype: str | None = None
+) -> Mapping[str, Any]:
+    for row in rows:
+        if row.get("type") != record_type:
+            continue
+        if subtype is not None and row.get("subtype") != subtype:
+            continue
+        return row
+    label = f"{record_type}/{subtype}" if subtype is not None else record_type
+    raise ReferenceAgentRunnerError(f"agent stream is missing {label} metadata")
+
+
+def _tool_call_event(
+    row: Mapping[str, Any],
+    item: Mapping[str, Any],
+    *,
+    attempt_id: str,
+    sequence: int,
+    allowed_mcp_tools: frozenset[str] | None,
+) -> tuple[str, str | None, ReferenceAgentLogEvent | None]:
+    tool_id = item.get("id")
+    tool_name = item.get("name")
+    if not isinstance(tool_id, str) or not isinstance(tool_name, str):
+        raise ReferenceAgentRunnerError("agent tool call is missing identity")
+    if tool_name in _INTERNAL_TOOLS:
+        return tool_id, None, None
+    if not tool_name.startswith(_MCP_PREFIX):
+        raise ReferenceAgentRunnerError(f"agent executed unreviewed tool {tool_name!r}")
+    if allowed_mcp_tools is not None and tool_name not in allowed_mcp_tools:
+        raise ReferenceAgentRunnerError(
+            "agent executed tool outside reviewed phase execution surface"
+        )
+    normalized_name = tool_name.removeprefix(_MCP_PREFIX)
+    event = ReferenceAgentLogEvent(
+        attempt_id=attempt_id,
+        sequence=sequence,
+        timestamp=_timestamp(row.get("timestamp")),
+        event_type="tool_call",
+        name=normalized_name,
+        status="started",
     )
-    if init is None:
-        raise ReferenceAgentRunnerError("agent stream is missing init metadata")
-    init_boundary = catalog_mcp_tools if catalog_mcp_tools is not None else allowed_mcp_tools
-    primary_model = _validate_init(init, init_boundary)
+    return tool_id, normalized_name, event
 
+
+def _tool_result_event(
+    row: Mapping[str, Any],
+    item: Mapping[str, Any],
+    *,
+    attempt_id: str,
+    sequence: int,
+    tool_names: Mapping[str, str | None],
+) -> ReferenceAgentLogEvent | None:
+    tool_id = item.get("tool_use_id")
+    if not isinstance(tool_id, str) or tool_id not in tool_names:
+        raise ReferenceAgentRunnerError("agent tool result has unknown tool-use id")
+    result_name = tool_names[tool_id]
+    if result_name is None:
+        return None
+    status: Literal["failed", "completed"] = (
+        "failed" if item.get("is_error") is True else "completed"
+    )
+    return ReferenceAgentLogEvent(
+        attempt_id=attempt_id,
+        sequence=sequence,
+        timestamp=_timestamp(row.get("timestamp")),
+        event_type="tool_result",
+        name=result_name,
+        status=status,
+    )
+
+
+def _stream_tool_events(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    attempt_id: str,
+    allowed_mcp_tools: frozenset[str] | None,
+) -> tuple[ReferenceAgentLogEvent, ...]:
     tool_names: dict[str, str | None] = {}
     events: list[ReferenceAgentLogEvent] = []
-
     for row in rows:
         row_type = row.get("type")
         for item in _content_items(row):
-            item_type = item.get("type")
-            if row_type == "assistant" and item_type == "tool_use":
-                tool_id = item.get("id")
-                tool_name = item.get("name")
-                if not isinstance(tool_id, str) or not isinstance(tool_name, str):
-                    raise ReferenceAgentRunnerError("agent tool call is missing identity")
-                if tool_name in _INTERNAL_TOOLS:
-                    tool_names[tool_id] = None
-                    continue
-                if not tool_name.startswith(_MCP_PREFIX):
-                    raise ReferenceAgentRunnerError(f"agent executed unreviewed tool {tool_name!r}")
-                if allowed_mcp_tools is not None and tool_name not in allowed_mcp_tools:
-                    raise ReferenceAgentRunnerError(
-                        "agent executed tool outside reviewed phase execution surface"
-                    )
-                normalized_name = tool_name.removeprefix(_MCP_PREFIX)
-                tool_names[tool_id] = normalized_name
-                events.append(
-                    ReferenceAgentLogEvent(
-                        attempt_id=attempt_id,
-                        sequence=len(events) + 1,
-                        timestamp=_timestamp(row.get("timestamp")),
-                        event_type="tool_call",
-                        name=normalized_name,
-                        status="started",
-                    )
+            if row_type == "assistant" and item.get("type") == "tool_use":
+                tool_id, name, event = _tool_call_event(
+                    row,
+                    item,
+                    attempt_id=attempt_id,
+                    sequence=len(events) + 1,
+                    allowed_mcp_tools=allowed_mcp_tools,
                 )
-            elif row_type == "user" and item_type == "tool_result":
-                tool_id = item.get("tool_use_id")
-                if not isinstance(tool_id, str) or tool_id not in tool_names:
-                    raise ReferenceAgentRunnerError("agent tool result has unknown tool-use id")
-                result_name = tool_names[tool_id]
-                if result_name is None:
-                    continue
-                status = "failed" if item.get("is_error") is True else "completed"
-                events.append(
-                    ReferenceAgentLogEvent(
-                        attempt_id=attempt_id,
-                        sequence=len(events) + 1,
-                        timestamp=_timestamp(row.get("timestamp")),
-                        event_type="tool_result",
-                        name=result_name,
-                        status=status,
-                    )
+                tool_names[tool_id] = name
+                if event is not None:
+                    events.append(event)
+            elif row_type == "user" and item.get("type") == "tool_result":
+                event = _tool_result_event(
+                    row,
+                    item,
+                    attempt_id=attempt_id,
+                    sequence=len(events) + 1,
+                    tool_names=tool_names,
                 )
+                if event is not None:
+                    events.append(event)
+    return tuple(events)
 
-    result = next((row for row in reversed(rows) if row.get("type") == "result"), None)
-    if result is None:
-        raise ReferenceAgentRunnerError("agent stream is missing terminal result")
+
+def parse_claude_stream(
+    lines: Iterable[str],
+    *,
+    attempt_id: str,
+    catalog_mcp_tools: frozenset[str] | None = None,
+    allowed_mcp_tools: frozenset[str] | None = None,
+) -> ReferenceAgentRunSummary:
+    """Convert one Claude stream-json session to sanitized reference evidence."""
+    rows = _parse_stream_rows(lines)
+    init = _required_stream_record(rows, record_type="system", subtype="init")
+    init_boundary = catalog_mcp_tools if catalog_mcp_tools is not None else allowed_mcp_tools
+    primary_model = _validate_init(init, init_boundary)
+    events = _stream_tool_events(rows, attempt_id=attempt_id, allowed_mcp_tools=allowed_mcp_tools)
+    result = _required_stream_record(reversed(rows), record_type="result")
     auxiliary, provider, denials, terminal_reason, successful = _result_metadata(
         result, primary_model
     )
     return ReferenceAgentRunSummary(
-        events=tuple(events),
+        events=events,
         primary_model=primary_model,
         auxiliary_models=auxiliary,
         provider=provider,
@@ -429,8 +600,11 @@ def parse_claude_stream(
     )
 
 
-def write_agent_log(path: Path, summary: ReferenceAgentRunSummary, *, append: bool = False) -> None:
+def write_agent_log(
+    workspace: ReferenceAgentWorkspace, summary: ReferenceAgentRunSummary, *, append: bool = False
+) -> None:
     """Write sanitized publication events, optionally extending one attempt log."""
+    path = workspace.agent_log_path
     path.parent.mkdir(parents=True, exist_ok=True)
     existing: list[ReferenceAgentLogEvent] = []
     if append and path.exists():
@@ -494,23 +668,29 @@ def _failed_session_summary(
 
 def run_claude_session(
     *,
-    command: tuple[str, ...],
+    workspace: ReferenceAgentWorkspace,
+    phase: ReferenceAgentPhase,
     prompt: str,
-    raw_stream_path: Path,
-    attempt_id: str,
-    cwd: Path,
     timeout_seconds: float,
-    model: str,
     catalog_mcp_tools: frozenset[str] | None = None,
     allowed_mcp_tools: frozenset[str] | None = None,
 ) -> ReferenceAgentRunSummary:
-    """Run one isolated Claude session and retain raw stream only in scratch storage."""
+    """Run one isolated Claude session with only deterministic workspace paths."""
+    settings_path = workspace.phase_settings_path(phase)
+    mcp_config_path = workspace.phase_mcp_config_path(phase)
+    raw_stream_path = workspace.phase_raw_stream_path(phase)
+    execution_tools = allowed_mcp_tools or reviewed_mcp_tools(phase)
+    command = build_claude_command(
+        settings_path=settings_path,
+        mcp_config_path=mcp_config_path,
+        allowed_mcp_tools=execution_tools,
+    )
     started_at = datetime.now(UTC)
     try:
         completed = subprocess.run(
             command,
             input=prompt,
-            cwd=cwd,
+            cwd=workspace.checkout_dir,
             timeout=timeout_seconds,
             capture_output=True,
             text=True,
@@ -529,8 +709,8 @@ def run_claude_session(
         raw_stream_path.parent.mkdir(parents=True, exist_ok=True)
         raw_stream_path.write_text(output, encoding="utf-8")
         return _failed_session_summary(
-            attempt_id=attempt_id,
-            model=model,
+            attempt_id=workspace.attempt_id,
+            model=_CLAUDE_MODEL,
             started_at=started_at,
             ended_at=ended_at,
             terminal_reason="timeout",
@@ -541,8 +721,8 @@ def run_claude_session(
         raw_stream_path.parent.mkdir(parents=True, exist_ok=True)
         raw_stream_path.write_text("", encoding="utf-8")
         return _failed_session_summary(
-            attempt_id=attempt_id,
-            model=model,
+            attempt_id=workspace.attempt_id,
+            model=_CLAUDE_MODEL,
             started_at=started_at,
             ended_at=ended_at,
             terminal_reason="process_launch_failed",
@@ -555,14 +735,14 @@ def run_claude_session(
     try:
         parsed = parse_claude_stream(
             stdout.splitlines(),
-            attempt_id=attempt_id,
+            attempt_id=workspace.attempt_id,
             catalog_mcp_tools=catalog_mcp_tools,
-            allowed_mcp_tools=allowed_mcp_tools,
+            allowed_mcp_tools=execution_tools,
         )
     except ReferenceAgentRunnerError:
         return _failed_session_summary(
-            attempt_id=attempt_id,
-            model=model,
+            attempt_id=workspace.attempt_id,
+            model=_CLAUDE_MODEL,
             started_at=started_at,
             ended_at=ended_at,
             terminal_reason="stream_contract_violation",
@@ -572,7 +752,7 @@ def run_claude_session(
     successful = parsed.successful and completed.returncode == 0
     events = [
         ReferenceAgentLogEvent(
-            attempt_id=attempt_id,
+            attempt_id=workspace.attempt_id,
             sequence=1,
             timestamp=started_at,
             event_type="workflow",
@@ -586,7 +766,7 @@ def run_claude_session(
     )
     events.append(
         ReferenceAgentLogEvent(
-            attempt_id=attempt_id,
+            attempt_id=workspace.attempt_id,
             sequence=len(events) + 1,
             timestamp=ended_at,
             event_type="workflow",
