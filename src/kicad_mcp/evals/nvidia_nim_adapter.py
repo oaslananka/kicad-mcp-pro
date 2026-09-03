@@ -605,6 +605,19 @@ def _json_object(content: str) -> dict[str, Any]:
     return cast(dict[str, Any], value)
 
 
+def _json_parse_failure_detail(content: str, finish_reason: str) -> FailureDetail:
+    normalized = content.strip()
+    if finish_reason in {"length", "max_tokens"}:
+        return "json_parse_truncated"
+    if not normalized:
+        return "json_parse_empty"
+    if not normalized.startswith("{"):
+        return "json_parse_prefix"
+    if not normalized.endswith("}"):
+        return "json_parse_suffix"
+    return "json_parse_syntax"
+
+
 def _optional_usage(usage: object, key: str) -> int | None:
     if not isinstance(usage, dict):
         return None
@@ -704,15 +717,22 @@ def _parse_completion(
     if not isinstance(content, str):
         raise _ModelOutputValidationError("content_missing")
     usage = payload.get("usage")
-    return normalize_classifier_text(
-        content=content,
-        prompt=prompt,
-        catalog=catalog,
-        latency_ms=latency_ms,
-        input_tokens=_optional_usage(usage, "prompt_tokens"),
-        output_tokens=_optional_usage(usage, "completion_tokens"),
-        estimated_cost_micros=None,
-    )
+    finish_reason = choice.get("finish_reason")
+    try:
+        return normalize_classifier_text(
+            content=content,
+            prompt=prompt,
+            catalog=catalog,
+            latency_ms=latency_ms,
+            input_tokens=_optional_usage(usage, "prompt_tokens"),
+            output_tokens=_optional_usage(usage, "completion_tokens"),
+            estimated_cost_micros=None,
+        )
+    except _ModelOutputValidationError as exc:
+        if exc.detail == "json_parse" and isinstance(finish_reason, str):
+            detail = _json_parse_failure_detail(content, finish_reason)
+            raise _ModelOutputValidationError(detail) from exc
+        raise
 
 
 def _normalized_token_sequence(text: str) -> tuple[str, ...]:

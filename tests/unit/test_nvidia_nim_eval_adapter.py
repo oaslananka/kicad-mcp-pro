@@ -402,6 +402,42 @@ def test_nim_request_classifies_malformed_model_output_without_raw_content(
     assert content not in json.dumps(result)
 
 
+@pytest.mark.parametrize(
+    ("content", "finish_reason", "expected_detail"),
+    [
+        ("", "stop", "json_parse_empty"),
+        (
+            'private-prefix {"response_kind":"answer","called_tools":[]}',
+            "stop",
+            "json_parse_prefix",
+        ),
+        ('{"response_kind":"answer","called_tools":[]', "stop", "json_parse_suffix"),
+        ('{"response_kind":"answer","called_tools":[]', "length", "json_parse_truncated"),
+        ('{"response_kind":answer,"called_tools":[]}', "stop", "json_parse_syntax"),
+    ],
+)
+def test_nim_request_classifies_json_parse_framing_without_raw_content(
+    content: str, finish_reason: str, expected_detail: str
+) -> None:
+    result = request_nvidia_nim(
+        model="nvidia/test-model",
+        prompt="Inspect.",
+        api_key="test-key",
+        catalog=(),
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                json={
+                    "choices": [{"finish_reason": finish_reason, "message": {"content": content}}]
+                },
+            )
+        ),
+    )
+    assert result["failure_detail"] == expected_detail
+    if content:
+        assert content not in json.dumps(result)
+
+
 def test_nim_request_classifies_invalid_provider_json_without_raw_body() -> None:
     raw_body = "not-provider-json-that-must-not-escape"
     result = request_nvidia_nim(
