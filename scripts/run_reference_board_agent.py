@@ -74,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         attempt_id=args.attempt_id,
         cwd=args.checkout_dir,
         timeout_seconds=args.timeout_seconds,
+        model=args.model,
         allowed_mcp_tools=reviewed_mcp_tools(phase),
     )
     write_agent_log(args.agent_log, summary, append=args.append_agent_log)

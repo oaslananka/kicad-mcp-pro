@@ -350,6 +350,45 @@ def write_agent_log(path: Path, summary: ReferenceAgentRunSummary, *, append: bo
     path.write_text(payload, encoding="utf-8")
 
 
+def _failed_session_summary(
+    *,
+    attempt_id: str,
+    model: str,
+    started_at: datetime,
+    ended_at: datetime,
+    terminal_reason: str,
+    details: Mapping[str, bool | int | float | str] | None = None,
+) -> ReferenceAgentRunSummary:
+    events = (
+        ReferenceAgentLogEvent(
+            attempt_id=attempt_id,
+            sequence=1,
+            timestamp=started_at,
+            event_type="workflow",
+            name="claude_session",
+            status="started",
+        ),
+        ReferenceAgentLogEvent(
+            attempt_id=attempt_id,
+            sequence=2,
+            timestamp=ended_at,
+            event_type="workflow",
+            name="claude_session",
+            status="failed",
+            details=dict(details or {}),
+        ),
+    )
+    return ReferenceAgentRunSummary(
+        events=events,
+        primary_model=model,
+        auxiliary_models=(),
+        provider="unknown",
+        permission_denials=0,
+        terminal_reason=terminal_reason,
+        successful=False,
+    )
+
+
 def run_claude_session(
     *,
     command: tuple[str, ...],
@@ -358,30 +397,73 @@ def run_claude_session(
     attempt_id: str,
     cwd: Path,
     timeout_seconds: float,
+    model: str,
     allowed_mcp_tools: frozenset[str] | None = None,
 ) -> ReferenceAgentRunSummary:
     """Run one isolated Claude session and retain raw stream only in scratch storage."""
     started_at = datetime.now(UTC)
-    completed = subprocess.run(
-        command,
-        input=prompt,
-        cwd=cwd,
-        timeout=timeout_seconds,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        shell=False,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            input=prompt,
+            cwd=cwd,
+            timeout=timeout_seconds,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            shell=False,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        ended_at = datetime.now(UTC)
+        output = (
+            exc.stdout.decode("utf-8", errors="replace")
+            if isinstance(exc.stdout, bytes)
+            else (exc.stdout or "")
+        )
+        raw_stream_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_stream_path.write_text(output, encoding="utf-8")
+        return _failed_session_summary(
+            attempt_id=attempt_id,
+            model=model,
+            started_at=started_at,
+            ended_at=ended_at,
+            terminal_reason="timeout",
+            details={"timeout_seconds": timeout_seconds},
+        )
+    except OSError:
+        ended_at = datetime.now(UTC)
+        raw_stream_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_stream_path.write_text("", encoding="utf-8")
+        return _failed_session_summary(
+            attempt_id=attempt_id,
+            model=model,
+            started_at=started_at,
+            ended_at=ended_at,
+            terminal_reason="process_launch_failed",
+        )
+
     ended_at = datetime.now(UTC)
+    stdout = completed.stdout if isinstance(completed.stdout, str) else ""
     raw_stream_path.parent.mkdir(parents=True, exist_ok=True)
-    raw_stream_path.write_text(completed.stdout, encoding="utf-8")
-    parsed = parse_claude_stream(
-        completed.stdout.splitlines(),
-        attempt_id=attempt_id,
-        allowed_mcp_tools=allowed_mcp_tools,
-    )
+    raw_stream_path.write_text(stdout, encoding="utf-8")
+    try:
+        parsed = parse_claude_stream(
+            stdout.splitlines(),
+            attempt_id=attempt_id,
+            allowed_mcp_tools=allowed_mcp_tools,
+        )
+    except ReferenceAgentRunnerError:
+        return _failed_session_summary(
+            attempt_id=attempt_id,
+            model=model,
+            started_at=started_at,
+            ended_at=ended_at,
+            terminal_reason="stream_contract_violation",
+            details={"exit_code": completed.returncode},
+        )
+
     successful = parsed.successful and completed.returncode == 0
     events = [
         ReferenceAgentLogEvent(

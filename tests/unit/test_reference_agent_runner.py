@@ -238,6 +238,7 @@ def test_run_claude_session_uses_stdin_and_writes_only_stream_to_scratch(
         attempt_id="attempt-001",
         cwd=tmp_path,
         timeout_seconds=120.0,
+        model="claude-sonnet-5",
     )
 
     assert summary.successful is True
@@ -402,6 +403,7 @@ def test_run_claude_session_preserves_parseable_failed_session(tmp_path, monkeyp
         attempt_id="attempt-002",
         cwd=tmp_path,
         timeout_seconds=30.0,
+        model="claude-sonnet-5",
     )
     assert summary.successful is False
     assert [(event.event_type, event.name, event.status) for event in summary.events] == [
@@ -437,3 +439,85 @@ def test_parse_claude_stream_rejects_tool_outside_reviewed_phase_surface() -> No
             attempt_id="attempt-001",
             allowed_mcp_tools=allowed,
         )
+
+
+def test_run_claude_session_preserves_invalid_stream_as_sanitized_failure(
+    tmp_path, monkeypatch
+) -> None:
+    import subprocess
+
+    from kicad_mcp.evals.reference_agent_runner import run_claude_session
+
+    def fake_run(command: tuple[str, ...], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            command, 0, stdout="private invalid stream\n", stderr="private"
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    raw = tmp_path / "stream.jsonl"
+    summary = run_claude_session(
+        command=("claude", "-p"),
+        prompt="benchmark",
+        raw_stream_path=raw,
+        attempt_id="attempt-invalid",
+        cwd=tmp_path,
+        timeout_seconds=30.0,
+        model="claude-sonnet-5",
+    )
+    assert summary.successful is False
+    assert summary.primary_model == "claude-sonnet-5"
+    assert summary.terminal_reason == "stream_contract_violation"
+    assert raw.read_text(encoding="utf-8") == "private invalid stream\n"
+    assert [event.status for event in summary.events] == ["started", "failed"]
+    assert "private" not in json.dumps([event.model_dump(mode="json") for event in summary.events])
+
+
+def test_run_claude_session_preserves_timeout_as_sanitized_failure(tmp_path, monkeypatch) -> None:
+    import subprocess
+
+    from kicad_mcp.evals.reference_agent_runner import run_claude_session
+
+    def fake_run(command: tuple[str, ...], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(command, 30.0, output="private partial stream")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    summary = run_claude_session(
+        command=("claude", "-p"),
+        prompt="benchmark",
+        raw_stream_path=tmp_path / "stream.jsonl",
+        attempt_id="attempt-timeout",
+        cwd=tmp_path,
+        timeout_seconds=30.0,
+        model="claude-sonnet-5",
+    )
+    assert summary.successful is False
+    assert summary.terminal_reason == "timeout"
+    assert [event.status for event in summary.events] == ["started", "failed"]
+    rendered = json.dumps([event.model_dump(mode="json") for event in summary.events])
+    assert "private" not in rendered
+
+
+def test_run_claude_session_preserves_launch_failure_without_exception_text(
+    tmp_path, monkeypatch
+) -> None:
+    import subprocess
+
+    from kicad_mcp.evals.reference_agent_runner import run_claude_session
+
+    def fake_run(command: tuple[str, ...], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise OSError("private launch path")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    summary = run_claude_session(
+        command=("claude", "-p"),
+        prompt="benchmark",
+        raw_stream_path=tmp_path / "stream.jsonl",
+        attempt_id="attempt-launch",
+        cwd=tmp_path,
+        timeout_seconds=30.0,
+        model="claude-sonnet-5",
+    )
+    assert summary.successful is False
+    assert summary.terminal_reason == "process_launch_failed"
+    assert [event.status for event in summary.events] == ["started", "failed"]
+    assert "private" not in json.dumps([event.model_dump(mode="json") for event in summary.events])
