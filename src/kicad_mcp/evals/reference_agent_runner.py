@@ -27,14 +27,14 @@ class ReferenceAgentPhase:
     """Reviewed KiCad MCP profile/mode pair for one benchmark phase."""
 
     name: Literal["schematic", "pcb", "manufacturing"]
-    profile: Literal["build", "release"]
+    profile: Literal["schematic_authoring", "pcb_layout", "release"]
     mode: Literal["write", "manufacturing"]
 
     @classmethod
     def for_name(cls, name: str) -> ReferenceAgentPhase:
         phases = {
-            "schematic": cls("schematic", "build", "write"),
-            "pcb": cls("pcb", "build", "write"),
+            "schematic": cls("schematic", "schematic_authoring", "write"),
+            "pcb": cls("pcb", "pcb_layout", "write"),
             "manufacturing": cls("manufacturing", "release", "manufacturing"),
         }
         try:
@@ -43,13 +43,109 @@ class ReferenceAgentPhase:
             raise ReferenceAgentRunnerError(f"unsupported reference-agent phase: {name}") from exc
 
 
-def reviewed_mcp_tools(phase: ReferenceAgentPhase) -> frozenset[str]:
-    """Return the exact reviewed MCP tool ceiling for one benchmark phase."""
+_SCHEMATIC_EXECUTION_TOOLS = (
+    "kicad_create_new_project",
+    "kicad_set_project",
+    "kicad_get_project_info",
+    "kicad_get_server_info",
+    "kicad_get_version",
+    "project_set_design_intent",
+    "project_get_design_spec",
+    "lib_search_symbols",
+    "lib_get_symbol_info",
+    "lib_search_footprints",
+    "lib_get_footprint_info",
+    "lib_verify_component_contract",
+    "lib_assign_footprint",
+    "sch_add_symbol",
+    "sch_add_wire",
+    "sch_route_wire_between_pins",
+    "sch_add_label",
+    "sch_add_global_label",
+    "sch_add_power_symbol",
+    "sch_add_no_connect",
+    "sch_update_properties",
+    "sch_annotate",
+    "sch_auto_place_functional",
+    "sch_get_symbols",
+    "sch_get_connectivity_graph",
+    "sch_get_net_names",
+    "sch_check_power_flags",
+    "sch_visual_qa",
+    "run_erc",
+    "schematic_connectivity_gate",
+    "schematic_quality_gate",
+    "validate_design",
+    "project_quality_gate",
+    "vcs_commit_checkpoint",
+    "vcs_diff_with_checkpoint",
+)
+
+_PCB_EXECUTION_TOOLS = (
+    "kicad_set_project",
+    "kicad_get_project_info",
+    "kicad_get_server_info",
+    "pcb_sync_from_schematic",
+    "pcb_get_board_summary",
+    "pcb_get_footprints",
+    "pcb_get_nets",
+    "pcb_get_tracks",
+    "pcb_get_vias",
+    "pcb_get_ratsnest",
+    "pcb_get_design_rules",
+    "pcb_set_board_outline",
+    "pcb_set_design_rules",
+    "pcb_set_net_class",
+    "pcb_auto_place_by_schematic",
+    "pcb_place_component",
+    "pcb_move_component",
+    "pcb_add_track",
+    "pcb_route_trace",
+    "pcb_add_tracks_bulk",
+    "pcb_add_via",
+    "pcb_add_copper_zone",
+    "pcb_refill_zones",
+    "pcb_save",
+    "pcb_begin_commit",
+    "pcb_push_commit",
+    "pcb_drop_commit",
+    "pcb_revert",
+    "pcb_delete_items",
+    "run_drc",
+    "run_erc",
+    "get_unconnected_nets",
+    "validate_footprints_vs_schematic",
+    "pcb_quality_gate",
+    "pcb_placement_quality_gate",
+    "project_quality_gate",
+    "vcs_commit_checkpoint",
+    "vcs_diff_with_checkpoint",
+)
+
+
+def catalog_mcp_tools(phase: ReferenceAgentPhase) -> frozenset[str]:
+    """Return the profile/mode catalog boundary visible to the benchmark agent."""
     return frozenset(
         _MCP_PREFIX + tool
         for tool in tools_for_profile(phase.profile)
         if is_tool_allowed_in_mode(tool, phase.mode)
     )
+
+
+def reviewed_mcp_tools(phase: ReferenceAgentPhase) -> frozenset[str]:
+    """Return the exact reviewed execution ceiling for one benchmark phase."""
+    tools: tuple[str, ...]
+    if phase.name == "schematic":
+        tools = _SCHEMATIC_EXECUTION_TOOLS
+    elif phase.name == "pcb":
+        tools = _PCB_EXECUTION_TOOLS
+    else:
+        tools = tuple(tools_for_profile("release"))
+    reviewed = frozenset(_MCP_PREFIX + tool for tool in tools)
+    catalog = catalog_mcp_tools(phase)
+    if not reviewed <= catalog:
+        raise ReferenceAgentRunnerError("reviewed execution tools exceed phase catalog")
+    return reviewed
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,7 +189,7 @@ def _content_items(row: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
     return tuple(item for item in content if isinstance(item, Mapping))
 
 
-def _validate_init(row: Mapping[str, Any], allowed_mcp_tools: frozenset[str] | None = None) -> str:
+def _validate_init(row: Mapping[str, Any], catalog_mcp_tools: frozenset[str] | None = None) -> str:
     tools = row.get("tools")
     if not isinstance(tools, list) or not all(isinstance(item, str) for item in tools):
         raise ReferenceAgentRunnerError("agent tool inventory is missing")
@@ -103,11 +199,11 @@ def _validate_init(row: Mapping[str, Any], allowed_mcp_tools: frozenset[str] | N
         if item not in _INTERNAL_TOOLS
         and (
             not item.startswith(_MCP_PREFIX)
-            or (allowed_mcp_tools is not None and item not in allowed_mcp_tools)
+            or (catalog_mcp_tools is not None and item not in catalog_mcp_tools)
         )
     ]
     if unexpected:
-        suffix = " outside reviewed phase surface" if allowed_mcp_tools is not None else ""
+        suffix = " outside reviewed phase surface" if catalog_mcp_tools is not None else ""
         raise ReferenceAgentRunnerError(
             f"agent tool inventory contains unreviewed execution tools{suffix}"
         )
@@ -212,6 +308,7 @@ def build_claude_command(
     model: str,
     settings_path: Path,
     mcp_config_path: Path,
+    allowed_mcp_tools: frozenset[str],
 ) -> tuple[str, ...]:
     """Build the isolated Claude Code command used by reference-board attempts."""
     return (
@@ -229,7 +326,7 @@ def build_claude_command(
         "--tools",
         "ToolSearch",
         "--allowedTools",
-        "mcp__kicad__*",
+        ",".join(sorted(allowed_mcp_tools)),
         "--output-format",
         "stream-json",
         "--verbose",
@@ -240,6 +337,7 @@ def parse_claude_stream(
     lines: Iterable[str],
     *,
     attempt_id: str,
+    catalog_mcp_tools: frozenset[str] | None = None,
     allowed_mcp_tools: frozenset[str] | None = None,
 ) -> ReferenceAgentRunSummary:
     """Convert one Claude stream-json session to sanitized reference evidence."""
@@ -259,7 +357,8 @@ def parse_claude_stream(
     )
     if init is None:
         raise ReferenceAgentRunnerError("agent stream is missing init metadata")
-    primary_model = _validate_init(init, allowed_mcp_tools)
+    init_boundary = catalog_mcp_tools if catalog_mcp_tools is not None else allowed_mcp_tools
+    primary_model = _validate_init(init, init_boundary)
 
     tool_names: dict[str, str | None] = {}
     events: list[ReferenceAgentLogEvent] = []
@@ -278,6 +377,10 @@ def parse_claude_stream(
                     continue
                 if not tool_name.startswith(_MCP_PREFIX):
                     raise ReferenceAgentRunnerError(f"agent executed unreviewed tool {tool_name!r}")
+                if allowed_mcp_tools is not None and tool_name not in allowed_mcp_tools:
+                    raise ReferenceAgentRunnerError(
+                        "agent executed tool outside reviewed phase execution surface"
+                    )
                 normalized_name = tool_name.removeprefix(_MCP_PREFIX)
                 tool_names[tool_id] = normalized_name
                 events.append(
@@ -398,6 +501,7 @@ def run_claude_session(
     cwd: Path,
     timeout_seconds: float,
     model: str,
+    catalog_mcp_tools: frozenset[str] | None = None,
     allowed_mcp_tools: frozenset[str] | None = None,
 ) -> ReferenceAgentRunSummary:
     """Run one isolated Claude session and retain raw stream only in scratch storage."""
@@ -452,6 +556,7 @@ def run_claude_session(
         parsed = parse_claude_stream(
             stdout.splitlines(),
             attempt_id=attempt_id,
+            catalog_mcp_tools=catalog_mcp_tools,
             allowed_mcp_tools=allowed_mcp_tools,
         )
     except ReferenceAgentRunnerError:

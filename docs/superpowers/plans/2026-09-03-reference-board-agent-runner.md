@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Do not retain raw Claude prompts, reasoning, tool arguments, tool results, provider text, or credentials in publication evidence.
-- Only `ToolSearch` and `mcp__kicad__*` may be available to the benchmark agent.
+- Only `ToolSearch` and the selected KiCad MCP profile catalog may be visible; actual KiCad execution must stay inside the phase-specific exact allowlist.
 - Preserve `pcb-reference-board.v1`, `pcb-reference-agent-log.v1`, and `pcb-task-outcome.v1` as the canonical schemas.
 - Every real attempt after the harness lands must remain in the denominator, including provider and tool failures.
 - KiCad CLI is pinned by explicit path; PCB live-edit evidence requires verified KiCad 10 IPC.
@@ -55,10 +55,10 @@ Run the same pytest command; expected PASS.
 
 **Interfaces:**
 - Produces: `ReferenceAgentPhase` and `build_claude_command(...)`.
-- Phase contract: schematic=`build/write`, pcb=`build/write`, manufacturing=`release/manufacturing`.
+- Phase contract: schematic=`schematic_authoring/write`, pcb=`pcb_layout/write`, manufacturing=`release/manufacturing`; execution ceilings are 35/38/24 tools.
 - [ ] **Step 1: Write failing command-builder tests**
 
-Assert the command includes `-p`, `--setting-sources project`, explicit empty settings, `--strict-mcp-config`, one generated MCP config, `--tools ToolSearch`, `--allowedTools mcp__kicad__*`, `--output-format stream-json`, and `--verbose`. Assert no Bash/Read/Write/Edit/Web tools are named.
+Assert the command includes `-p`, `--setting-sources project`, explicit empty settings, `--strict-mcp-config`, one generated MCP config, `--tools ToolSearch`, a sorted exact `--allowedTools` phase list, `--output-format stream-json`, and `--verbose`. Assert no Bash/Read/Write/Edit/Web tools are named.
 
 - [ ] **Step 2: Run RED**
 

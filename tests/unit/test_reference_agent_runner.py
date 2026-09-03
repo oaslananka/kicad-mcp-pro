@@ -150,6 +150,7 @@ def test_build_claude_command_exposes_only_reviewed_agent_surface(tmp_path) -> N
         model="claude-sonnet-5",
         settings_path=tmp_path / "settings.json",
         mcp_config_path=tmp_path / "mcp.json",
+        allowed_mcp_tools=frozenset({"mcp__kicad__sch_add_symbol", "mcp__kicad__run_erc"}),
     )
 
     assert command == (
@@ -167,7 +168,7 @@ def test_build_claude_command_exposes_only_reviewed_agent_surface(tmp_path) -> N
         "--tools",
         "ToolSearch",
         "--allowedTools",
-        "mcp__kicad__*",
+        "mcp__kicad__run_erc,mcp__kicad__sch_add_symbol",
         "--output-format",
         "stream-json",
         "--verbose",
@@ -198,7 +199,7 @@ def test_build_mcp_config_pins_phase_and_local_runtime(tmp_path) -> None:
     ]
     assert server["env"] == {
         "KICAD_MCP_PROJECT_DIR": str(tmp_path / "project"),
-        "KICAD_MCP_PROFILE": "build",
+        "KICAD_MCP_PROFILE": "pcb_layout",
         "KICAD_MCP_OPERATING_MODE": "write",
         "KICAD_MCP_KICAD_CLI": str(tmp_path / "kicad-cli.exe"),
     }
@@ -207,9 +208,9 @@ def test_build_mcp_config_pins_phase_and_local_runtime(tmp_path) -> None:
 def test_reference_agent_phases_are_fixed() -> None:
     from kicad_mcp.evals.reference_agent_runner import ReferenceAgentPhase
 
-    assert ReferenceAgentPhase.for_name("schematic").profile == "build"
+    assert ReferenceAgentPhase.for_name("schematic").profile == "schematic_authoring"
     assert ReferenceAgentPhase.for_name("schematic").mode == "write"
-    assert ReferenceAgentPhase.for_name("pcb").profile == "build"
+    assert ReferenceAgentPhase.for_name("pcb").profile == "pcb_layout"
     assert ReferenceAgentPhase.for_name("pcb").mode == "write"
     assert ReferenceAgentPhase.for_name("manufacturing").profile == "release"
     assert ReferenceAgentPhase.for_name("manufacturing").mode == "manufacturing"
@@ -415,15 +416,26 @@ def test_run_claude_session_preserves_parseable_failed_session(tmp_path, monkeyp
 def test_reviewed_mcp_tools_follow_profile_and_mode_boundaries() -> None:
     from kicad_mcp.evals.reference_agent_runner import ReferenceAgentPhase, reviewed_mcp_tools
 
-    build = reviewed_mcp_tools(ReferenceAgentPhase.for_name("schematic"))
+    schematic = reviewed_mcp_tools(ReferenceAgentPhase.for_name("schematic"))
+    pcb = reviewed_mcp_tools(ReferenceAgentPhase.for_name("pcb"))
     release = reviewed_mcp_tools(ReferenceAgentPhase.for_name("manufacturing"))
 
-    assert len(build) == 24
-    assert "mcp__kicad__sch_apply_plan" in build
-    assert "mcp__kicad__export_manufacturing_package" not in build
+    assert len(schematic) == 35
+    assert {
+        "mcp__kicad__sch_add_symbol",
+        "mcp__kicad__lib_search_symbols",
+        "mcp__kicad__run_erc",
+    } <= schematic
+    assert "mcp__kicad__pcb_route_trace" not in schematic
+    assert len(pcb) == 38
+    assert {
+        "mcp__kicad__pcb_sync_from_schematic",
+        "mcp__kicad__pcb_route_trace",
+        "mcp__kicad__run_drc",
+    } <= pcb
+    assert "mcp__kicad__route_differential_pair" not in pcb
     assert len(release) == 24
     assert "mcp__kicad__export_manufacturing_package" in release
-    assert "mcp__kicad__sch_apply_plan" not in release
 
 
 def test_parse_claude_stream_rejects_tool_outside_reviewed_phase_surface() -> None:
@@ -521,3 +533,109 @@ def test_run_claude_session_preserves_launch_failure_without_exception_text(
     assert summary.terminal_reason == "process_launch_failed"
     assert [event.status for event in summary.events] == ["started", "failed"]
     assert "private" not in json.dumps([event.model_dump(mode="json") for event in summary.events])
+
+
+def test_catalog_boundary_is_broader_than_execution_boundary_for_authoring_phases() -> None:
+    from kicad_mcp.evals.reference_agent_runner import (
+        ReferenceAgentPhase,
+        catalog_mcp_tools,
+        reviewed_mcp_tools,
+    )
+
+    for phase_name in ("schematic", "pcb"):
+        phase = ReferenceAgentPhase.for_name(phase_name)
+        catalog = catalog_mcp_tools(phase)
+        execution = reviewed_mcp_tools(phase)
+        assert execution < catalog
+        assert execution
+
+
+def test_parse_claude_stream_allows_catalog_tool_but_rejects_unreviewed_execution() -> None:
+    from kicad_mcp.evals.reference_agent_runner import (
+        ReferenceAgentRunnerError,
+        parse_claude_stream,
+    )
+
+    catalog = frozenset({"mcp__kicad__kicad_get_server_info", "mcp__kicad__kicad_set_project"})
+    allowed = frozenset({"mcp__kicad__kicad_set_project"})
+    with pytest.raises(ReferenceAgentRunnerError, match="reviewed phase execution surface"):
+        parse_claude_stream(
+            _lines(_stream_rows()),
+            attempt_id="attempt-001",
+            catalog_mcp_tools=catalog,
+            allowed_mcp_tools=allowed,
+        )
+
+
+def test_reference_agent_cli_threads_catalog_and_execution_boundaries(
+    tmp_path, monkeypatch
+) -> None:
+    import importlib.util
+
+    from kicad_mcp.evals.reference_agent_runner import ReferenceAgentRunSummary
+
+    script = Path(__file__).resolve().parents[2] / "scripts/run_reference_board_agent.py"
+    spec = importlib.util.spec_from_file_location("reference_agent_cli_test", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text(
+        "# Benchmark\nCommon.\n\n## Phase: schematic\nBuild.\n\n"
+        "## Phase: pcb\nLayout.\n\n## Phase: manufacturing\nExport.\n",
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_build(**kwargs: object) -> tuple[str, ...]:
+        captured["build"] = kwargs
+        return ("claude", "-p")
+
+    def fake_run(**kwargs: object) -> ReferenceAgentRunSummary:
+        captured["run"] = kwargs
+        return ReferenceAgentRunSummary(
+            events=(),
+            primary_model="claude-sonnet-5",
+            auxiliary_models=(),
+            provider="firstParty",
+            permission_denials=0,
+            terminal_reason="completed",
+            successful=True,
+        )
+
+    monkeypatch.setattr(module, "build_claude_command", fake_build)
+    monkeypatch.setattr(module, "run_claude_session", fake_run)
+    result = module.main(
+        [
+            "--attempt-id",
+            "attempt-cli",
+            "--phase",
+            "pcb",
+            "--prompt-file",
+            str(prompt),
+            "--project-dir",
+            str(tmp_path / "project"),
+            "--scratch-dir",
+            str(tmp_path / "scratch"),
+            "--agent-log",
+            str(tmp_path / "agent-log.jsonl"),
+            "--checkout-dir",
+            str(tmp_path),
+            "--uv",
+            str(tmp_path / "uv.exe"),
+            "--kicad-cli",
+            str(tmp_path / "kicad-cli.exe"),
+        ]
+    )
+    assert result == 0
+    build_kwargs = captured["build"]
+    run_kwargs = captured["run"]
+    assert isinstance(build_kwargs, dict) and isinstance(run_kwargs, dict)
+    execution = build_kwargs["allowed_mcp_tools"]
+    assert execution == run_kwargs["allowed_mcp_tools"]
+    catalog = run_kwargs["catalog_mcp_tools"]
+    assert isinstance(execution, frozenset) and isinstance(catalog, frozenset)
+    assert execution < catalog
+    assert "mcp__kicad__pcb_route_trace" in execution
+    assert "mcp__kicad__route_differential_pair" not in execution

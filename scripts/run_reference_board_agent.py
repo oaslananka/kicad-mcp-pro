@@ -8,6 +8,7 @@ from kicad_mcp.evals.reference_agent_runner import (
     ReferenceAgentPhase,
     build_claude_command,
     build_mcp_config,
+    catalog_mcp_tools,
     load_phase_prompt,
     reviewed_mcp_tools,
     run_claude_session,
@@ -60,11 +61,14 @@ def main(argv: list[str] | None = None) -> int:
         kicad_cli=args.kicad_cli,
     )
     mcp_config_path.write_text(json.dumps(mcp_config, indent=2) + "\n", encoding="utf-8")
+    execution_tools = reviewed_mcp_tools(phase)
+    catalog_tools = catalog_mcp_tools(phase)
     command = build_claude_command(
         claude_executable=args.claude,
         model=args.model,
         settings_path=settings_path,
         mcp_config_path=mcp_config_path,
+        allowed_mcp_tools=execution_tools,
     )
     raw_stream_path = args.scratch_dir / f"{args.attempt_id}-{args.phase}-claude-stream.jsonl"
     summary = run_claude_session(
@@ -75,7 +79,8 @@ def main(argv: list[str] | None = None) -> int:
         cwd=args.checkout_dir,
         timeout_seconds=args.timeout_seconds,
         model=args.model,
-        allowed_mcp_tools=reviewed_mcp_tools(phase),
+        catalog_mcp_tools=catalog_tools,
+        allowed_mcp_tools=execution_tools,
     )
     write_agent_log(args.agent_log, summary, append=args.append_agent_log)
     print(

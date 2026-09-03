@@ -6,9 +6,9 @@ Issue #730 needs serious PCB attempts produced from written specifications with 
 
 ## Execution boundary
 
-The runner invokes Claude Code non-interactively with one explicit KiCad MCP configuration. It uses `--strict-mcp-config`, excludes user settings with `--setting-sources project`, supplies an empty explicit settings file, and exposes only `ToolSearch` plus `mcp__kicad__*` tools. Built-in shell, file-editing, web, and unrelated MCP tools are unavailable to the benchmark agent.
+The runner invokes Claude Code non-interactively with one explicit KiCad MCP configuration. It uses `--strict-mcp-config`, excludes user settings with `--setting-sources project`, supplies an empty explicit settings file, and exposes only `ToolSearch` plus the selected KiCad profile catalog. Built-in shell, file-editing, web, and unrelated MCP tools are unavailable; actual KiCad execution is additionally restricted to a phase-specific exact allowlist.
 
-The reviewed phase profiles are `build` + `write` for schematic and PCB phases, and `release` + `manufacturing` for manufacturing. Each phase points KiCad MCP at an attempt workspace and an explicit KiCad 10 CLI path. PCB-live operations require the reviewed GUI-connected IPC precondition rather than silently falling back to an unverified target.
+The reviewed phase profiles are `schematic_authoring` + `write`, `pcb_layout` + `write`, and `release` + `manufacturing`. Exact execution ceilings are 35, 38, and 24 KiCad tools respectively; experimental routing helpers are excluded. Each phase points KiCad MCP at an attempt workspace and an explicit KiCad 10 CLI path. PCB-live operations require the reviewed GUI-connected IPC precondition rather than silently falling back to an unverified target.
 
 ## Evidence boundary
 
