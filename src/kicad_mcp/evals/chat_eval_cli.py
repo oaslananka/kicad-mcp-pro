@@ -42,7 +42,7 @@ def _parser(
     parser.add_argument("--timeout-seconds", type=float, default=50)
     parser.add_argument(
         "--structured-output",
-        choices=("none", "guided_json", "json_schema"),
+        choices=("none", "guided_json", "json_schema", "json_object"),
         default=default_structured_output,
     )
     return parser
