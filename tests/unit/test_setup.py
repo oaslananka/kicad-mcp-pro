@@ -390,3 +390,26 @@ class TestDoctorAgentChecks:
             agent_checks = [n for n in check_names if n.startswith("agent_config_")]
             # Agent config checks should be present in doctor mode
             assert len(agent_checks) > 0, f"No agent_config checks found in: {check_names}"
+
+
+def test_claude_smoke_test_decodes_cli_output_as_utf8(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    import kicad_mcp.setup as setup_module
+
+    observed: dict[str, object] = {}
+    monkeypatch.setattr(setup_module.shutil, "which", lambda _: "claude")
+
+    def fake_run(args: object, **kwargs: object) -> object:
+        observed.update(kwargs)
+        return SimpleNamespace(stdout="kicad")
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    result = setup_module._run_smoke_test("claude-code")
+
+    assert observed["encoding"] == "utf-8"
+    assert observed["errors"] == "replace"
+    assert "shows kicad" in result
