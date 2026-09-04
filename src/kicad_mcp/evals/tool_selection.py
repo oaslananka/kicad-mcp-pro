@@ -25,6 +25,10 @@ from typing import Any, Literal, cast
 
 import yaml
 
+from ..path_safety import resolve_repo_or_temp
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
 EvalCategory = Literal[
     "inspection",
     "authoring",
@@ -252,7 +256,9 @@ def _parse_max_calls(raw: Mapping[str, Any], case_id: str, *, default: int | Non
 
 def load_cases(path: str | Path) -> list[EvalCase]:
     """Load and validate schema-v1 or schema-v2 eval cases from YAML."""
-    data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    data = yaml.safe_load(
+        resolve_repo_or_temp(path, repo_root=_REPO_ROOT).read_text(encoding="utf-8")
+    )
     if not isinstance(data, dict) or "cases" not in data:
         raise EvalDatasetError("Dataset must be a mapping with a top-level 'cases' list.")
 
@@ -613,7 +619,9 @@ def _optional_number(raw: Mapping[str, Any], key: str) -> float | None:
 
 def load_thresholds(path: str | Path) -> EvalThresholds:
     """Load the schema-versioned absolute thresholds and permitted variance."""
-    data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    data = yaml.safe_load(
+        resolve_repo_or_temp(path, repo_root=_REPO_ROOT).read_text(encoding="utf-8")
+    )
     if not isinstance(data, dict):
         raise EvalDatasetError("Threshold file must be a mapping.")
     schema_version = data.get("schema_version")

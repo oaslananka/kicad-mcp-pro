@@ -14,8 +14,11 @@ from typing import Any, Literal, cast
 
 import httpx
 
+from ..path_safety import resolve_repo_or_temp
 from .live_adapters import FailureDetail, FailureKind
 from .tool_selection import all_referenced_tools, load_cases
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 NVIDIA_NIM_CHAT_COMPLETIONS_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 StructuredOutputMode = Literal["none", "guided_json", "json_schema", "json_object"]
@@ -296,7 +299,11 @@ def load_eval_tool_catalog(
     """Build a deterministic catalog from all tools referenced by the corpus."""
     referenced = all_referenced_tools(load_cases(cases_path))
     catalog_rows: dict[str, tuple[str, bool]] = {}
-    for line in Path(tools_reference_path).read_text(encoding="utf-8").splitlines():
+    for line in (
+        resolve_repo_or_temp(tools_reference_path, repo_root=_REPO_ROOT)
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ):
         match = _TOOL_ROW.match(line)
         if match is not None:
             catalog_rows[match.group(1)] = (

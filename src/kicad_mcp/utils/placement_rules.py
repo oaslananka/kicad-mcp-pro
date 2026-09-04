@@ -35,7 +35,7 @@ _DECAP_VALUE_RE = re.compile(
     r"(?:100n|0\.1[uµ]|1[uµ]|10[uµ]|4[,.]7u|0\.01u|(?:10|22|47)nF|bypass|decoup)",
     re.IGNORECASE,
 )
-_CRYSTAL_VALUE_RE = re.compile(r"\d+\s*(?:MHz|kHz|mhz|khz)", re.IGNORECASE)
+_CRYSTAL_VALUE_RE = re.compile(r"\d+\s*[mk]hz", re.IGNORECASE)
 
 _SMPS_VALUE_RE = re.compile(
     r"(?:LM25\d\d|MP2\d{3}|XL\d{4}|TPS\d{4}|LT\d{4}|MAX\d{4}|"

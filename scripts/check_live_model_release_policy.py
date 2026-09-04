@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -16,6 +17,11 @@ from kicad_mcp.evals.release_policy import (
     evaluate_push_assurance,
     evaluate_release_readiness,
 )
+
+try:
+    from scripts.runtime_path_safety import approved_runtime_path
+except ModuleNotFoundError:  # Direct `python scripts/foo.py` execution.
+    from runtime_path_safety import approved_runtime_path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY = ROOT / "evals/live/release-policy.yaml"
@@ -49,6 +55,11 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _write_outputs(path: Path, decision: ReleasePolicyDecision) -> None:
+    trusted_outputs: tuple[Path, ...] = ()
+    configured_output = os.environ.get("GITHUB_OUTPUT")
+    if configured_output:
+        trusted_outputs = (Path(configured_output),)
+    path = approved_runtime_path(path, extra_roots=trusted_outputs)
     values = {
         "mode": decision.mode,
         "reason": decision.reason,

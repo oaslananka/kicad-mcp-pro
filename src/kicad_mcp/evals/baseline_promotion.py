@@ -10,8 +10,11 @@ from typing import Any, cast
 
 import yaml
 
+from ..path_safety import resolve_repo_or_temp
 from .live_runner import validate_sanitized_evidence
 from .release_policy import compute_agent_contract_digest, load_release_policy
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 _METRICS = (
     "pass_rate",
@@ -60,7 +63,7 @@ def generate_approved_baseline(
     if isinstance(workflow_run_id, bool) or workflow_run_id < 1:
         raise BaselinePromotionError("workflow_run_id must be positive.")
 
-    aggregate_path = Path(aggregate_report_path)
+    aggregate_path = resolve_repo_or_temp(aggregate_report_path, repo_root=_REPO_ROOT)
     try:
         report = _mapping(json.loads(aggregate_path.read_text(encoding="utf-8")), "Aggregate")
         validate_sanitized_evidence(report)
@@ -68,7 +71,11 @@ def generate_approved_baseline(
         raise BaselinePromotionError(f"Aggregate report is invalid: {type(exc).__name__}.") from exc
 
     template = _mapping(
-        yaml.safe_load(Path(baseline_template_path).read_text(encoding="utf-8")),
+        yaml.safe_load(
+            resolve_repo_or_temp(baseline_template_path, repo_root=_REPO_ROOT).read_text(
+                encoding="utf-8"
+            )
+        ),
         "Baseline template",
     )
     if template.get("schema_version") != 1:
@@ -174,7 +181,7 @@ def generate_approved_baseline(
 def write_approved_baseline(path: str | Path, baseline: dict[str, object]) -> Path:
     """Write the compact approved baseline in deterministic YAML form."""
     validate_sanitized_evidence(baseline)
-    output = Path(path)
+    output = resolve_repo_or_temp(path, repo_root=_REPO_ROOT)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         yaml.safe_dump(baseline, sort_keys=False, allow_unicode=True),

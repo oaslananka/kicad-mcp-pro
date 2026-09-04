@@ -8,6 +8,7 @@ import pytest
 
 from kicad_mcp.config import KiCadMCPConfig
 from kicad_mcp.errors import KiCadNotRunningError, UnsafePathError, error_payload
+from kicad_mcp.path_safety import resolve_repo_or_temp
 from kicad_mcp.utils.paths import relative_subpath, resolve_under
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -209,3 +210,20 @@ def test_error_payload_falls_back_to_exception_name() -> None:
     payload = error_payload(RuntimeError())
 
     assert payload["message"] == "RuntimeError"
+
+
+def test_resolve_repo_or_temp_allows_repo_and_temp_but_blocks_escape(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    inside_repo = repo_root / "artifact.json"
+    inside_repo.write_text("{}", encoding="utf-8")
+
+    assert resolve_repo_or_temp(inside_repo, repo_root=repo_root) == inside_repo.resolve()
+    assert (
+        resolve_repo_or_temp(tmp_path / "outside-temp.txt", repo_root=repo_root)
+        == (tmp_path / "outside-temp.txt").resolve()
+    )
+
+    escaped_path = Path.home() / ".ssh" / "id_rsa"
+    with pytest.raises(UnsafePathError):
+        resolve_repo_or_temp(escaped_path, repo_root=repo_root)

@@ -10,9 +10,12 @@ from typing import Any, cast
 
 import yaml
 
+from ..path_safety import resolve_repo_or_temp
 from .live_adapters import MODEL_OUTPUT_FAILURE_DETAILS
 from .live_runner import validate_sanitized_evidence
 from .tool_selection import evaluate_thresholds, load_cases, load_thresholds
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 _LOWER_IS_BETTER = frozenset(
     {"unnecessary_call_rate", "instability_rate", "p95_latency_ms", "mean_tokens"}
@@ -28,7 +31,12 @@ def _mapping(value: object, description: str) -> dict[str, Any]:
 
 
 def _load_baseline(path: str | Path) -> dict[str, Any]:
-    raw = _mapping(yaml.safe_load(Path(path).read_text(encoding="utf-8")), "Baseline file")
+    raw = _mapping(
+        yaml.safe_load(
+            resolve_repo_or_temp(path, repo_root=_REPO_ROOT).read_text(encoding="utf-8")
+        ),
+        "Baseline file",
+    )
     if raw.get("schema_version") != 1:
         raise ValueError("Baseline schema_version must be 1.")
     required = raw.get("required_configurations")
@@ -154,7 +162,7 @@ def evaluate_release_gate(
     evidence_by_id: dict[str, dict[str, Any]] = {}
 
     for raw_path in evidence_paths:
-        path = Path(raw_path)
+        path = resolve_repo_or_temp(raw_path, repo_root=_REPO_ROOT)
         try:
             evidence = _mapping(json.loads(path.read_text(encoding="utf-8")), "Evidence")
             validate_sanitized_evidence(evidence)
@@ -382,7 +390,7 @@ def evaluate_release_gate(
 def write_release_gate_report(path: str | Path, report: Mapping[str, Any]) -> Path:
     """Atomically write one sanitized aggregate gate report."""
     validate_sanitized_evidence(report)
-    output = Path(path)
+    output = resolve_repo_or_temp(path, repo_root=_REPO_ROOT)
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(f".{output.name}.tmp")
     temporary.write_text(
