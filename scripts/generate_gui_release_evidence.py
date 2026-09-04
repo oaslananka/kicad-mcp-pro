@@ -10,6 +10,11 @@ import uuid
 from pathlib import Path
 from typing import Any, cast
 
+try:
+    from scripts.runtime_path_safety import approved_runtime_path
+except ModuleNotFoundError:  # Direct `python scripts/foo.py` execution.
+    from runtime_path_safety import approved_runtime_path
+
 CHECKSUM_NAME = "kicad-mcp-pro-gui-SHA256SUMS.txt"
 SBOM_NAME = "kicad-mcp-pro-gui-sbom.cdx.json"
 EVIDENCE_NAME = "kicad-mcp-pro-gui-release-evidence.json"
@@ -22,6 +27,7 @@ PLATFORM_SIGNING: dict[str, dict[str, str]] = {
 
 
 def _sha256(path: Path) -> str:
+    path = approved_runtime_path(path)
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -41,6 +47,7 @@ def _platform_for(path: Path) -> str | None:
 
 
 def _installer_inventory(artifact_dir: Path) -> list[tuple[Path, str]]:
+    artifact_dir = approved_runtime_path(artifact_dir)
     files = sorted(
         (path for path in artifact_dir.iterdir() if path.is_file()),
         key=lambda item: item.name.lower(),
@@ -64,6 +71,7 @@ def _installer_inventory(artifact_dir: Path) -> list[tuple[Path, str]]:
 
 
 def _read_cargo_lock(cargo_lock: Path) -> dict[str, Any]:
+    cargo_lock = approved_runtime_path(cargo_lock)
     with cargo_lock.open("rb") as handle:
         return cast(dict[str, Any], tomllib.load(handle))
 
@@ -184,6 +192,9 @@ def generate(
     release_tag: str,
 ) -> None:
     """Generate checksums, Cargo SBOM, and machine-readable GUI release evidence."""
+    artifact_dir = approved_runtime_path(artifact_dir)
+    output_dir = approved_runtime_path(output_dir)
+    cargo_lock = approved_runtime_path(cargo_lock)
     inventory = _installer_inventory(artifact_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_checksums(inventory, output_dir)
@@ -215,6 +226,7 @@ def generate(
 
 
 def _read_json_object(path: Path) -> dict[str, Any]:
+    path = approved_runtime_path(path)
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise SystemExit(f"Expected JSON object: {path}")
@@ -238,6 +250,7 @@ def _artifact_digests(evidence: dict[str, Any]) -> dict[str, str]:
 
 
 def _read_checksums(path: Path) -> dict[str, str]:
+    path = approved_runtime_path(path)
     checksums: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -249,6 +262,8 @@ def _read_checksums(path: Path) -> dict[str, str]:
 
 def verify_local(artifact_dir: Path, evidence_dir: Path) -> None:
     """Verify generated GUI evidence still matches the local installer inventory."""
+    artifact_dir = approved_runtime_path(artifact_dir)
+    evidence_dir = approved_runtime_path(evidence_dir)
     evidence_path = evidence_dir / EVIDENCE_NAME
     evidence = _read_json_object(evidence_path)
     digests = _artifact_digests(evidence)
@@ -290,6 +305,8 @@ def verify_local(artifact_dir: Path, evidence_dir: Path) -> None:
 
 def verify_published(published_dir: Path, evidence_path: Path) -> None:
     """Verify the exact GitHub Release asset inventory and installer digests."""
+    published_dir = approved_runtime_path(published_dir)
+    evidence_path = approved_runtime_path(evidence_path)
     evidence = _read_json_object(evidence_path)
     digests = _artifact_digests(evidence)
     checksum_name = evidence.get("checksums")

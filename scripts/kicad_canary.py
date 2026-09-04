@@ -17,6 +17,11 @@ from typing import Any
 
 import yaml
 
+try:
+    from scripts.runtime_path_safety import approved_runtime_path
+except ModuleNotFoundError:  # Direct `python scripts/foo.py` execution.
+    from runtime_path_safety import approved_runtime_path
+
 MCP_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = MCP_ROOT
 FIXTURE_ROOT = REPO_ROOT / "packages" / "kicad-fixtures" / "fixtures"
@@ -744,6 +749,7 @@ def _resolve_cli() -> Path:
 
 
 def _write_text(path: Path, text: str) -> None:
+    path = approved_runtime_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 
@@ -908,6 +914,7 @@ def _assert_version_matches_range(version_result: dict[str, object], kicad_range
 
 def run_canary(artifacts: Path, kicad_range: str) -> int:
     """Run the KiCad CLI canary plan and write reports and logs to artifacts."""
+    artifacts = approved_runtime_path(artifacts)
     compatibility = _read_compatibility_matrix()
     artifacts.mkdir(parents=True, exist_ok=True)
     try:

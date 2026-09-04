@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path, PureWindowsPath
 
 from .errors import UnsafePathError
@@ -39,6 +40,22 @@ def resolve_under(root: Path, raw_path: str | Path, *, allow_absolute: bool = Tr
         resolved = (root / candidate).resolve()
     assert_within(root, resolved)
     return resolved
+
+
+def resolve_repo_or_temp(raw_path: str | Path, *, repo_root: Path) -> Path:
+    """Resolve a runtime path under the repository or system temp directory.
+
+    This boundary is intended for CLI/eval/release tooling that legitimately writes
+    repository artifacts and ephemeral test/runner files but must not access arbitrary
+    host filesystem locations supplied through agent-controlled arguments.
+    """
+    reject_foreign_windows_path(raw_path)
+    resolved = Path(raw_path).expanduser().resolve()
+    approved_roots = (repo_root.expanduser().resolve(), Path(tempfile.gettempdir()).resolve())
+    if any(resolved.is_relative_to(root) for root in approved_roots):
+        return resolved
+    roots = " or ".join(str(root) for root in approved_roots)
+    raise UnsafePathError(f"The requested path '{resolved}' is outside approved roots: {roots}.")
 
 
 def relative_subpath(raw_path: str | Path) -> Path:

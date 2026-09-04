@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..path_safety import resolve_repo_or_temp
 from .evidence_sanitization import EvidenceSanitizationError, validate_sanitized_evidence
 from .live_adapters import (
     AdapterObservation,
@@ -58,6 +59,9 @@ __all__ = [
     "validate_sanitized_evidence",
     "write_evidence",
 ]
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 @dataclass(frozen=True, slots=True)
@@ -412,7 +416,7 @@ def execute_evaluation(
 
 def write_evidence(path: str | Path, report: EvaluationReport) -> Path:
     """Atomically write a byte-reproducible sanitized JSON evidence artifact."""
-    output = Path(path)
+    output = resolve_repo_or_temp(path, repo_root=_REPO_ROOT)
     payload = report.as_dict()
     validate_sanitized_evidence(payload)
     rendered = json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n"

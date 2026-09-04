@@ -14,6 +14,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, cast
 
+try:
+    from scripts.runtime_path_safety import approved_runtime_path
+except ModuleNotFoundError:  # Direct `python scripts/foo.py` execution.
+    from runtime_path_safety import approved_runtime_path
+
 SURFACES = ("read", "write", "export")
 _KICAD_CLI_NAMES = frozenset(
     {"kicad-cli", "kicad-cli.exe", "kicad-nightly-cli", "kicad-nightly-cli.exe"}
@@ -218,6 +223,7 @@ def run_canary(
     unavailable_reason: str | None = None,
 ) -> int:
     """Run or report all three surfaces and optionally require native readiness."""
+    artifacts = approved_runtime_path(artifacts)
     artifacts.mkdir(parents=True, exist_ok=True)
     if kicad_cli is None or project_or_file is None:
         reason = unavailable_reason or "KiCad nightly CLI or fixture is unavailable."

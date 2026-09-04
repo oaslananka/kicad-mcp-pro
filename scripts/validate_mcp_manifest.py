@@ -14,6 +14,11 @@ from urllib.parse import unquote, urlparse
 
 import jsonschema
 
+try:
+    from scripts.runtime_path_safety import approved_runtime_path
+except ModuleNotFoundError:  # Direct `python scripts/foo.py` execution.
+    from runtime_path_safety import approved_runtime_path
+
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT
 DEFAULT_MANIFEST = ROOT / "server.json"
@@ -314,6 +319,7 @@ def _registry_metadata_errors(manifest: Mapping[str, Any]) -> list[str]:
 
 def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, Any]:
     """Load an MCP manifest from disk."""
+    path = approved_runtime_path(path)
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ManifestValidationError(["manifest root must be a JSON object."])

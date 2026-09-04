@@ -7,7 +7,10 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
 
+from ..path_safety import resolve_repo_or_temp
 from .live_runner import validate_sanitized_evidence
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _mapping(value: object, description: str) -> dict[str, Any]:
@@ -48,7 +51,7 @@ def evaluate_smoke_assurance(
     status_required = require_status or bool(status_paths)
 
     for raw_path in status_paths:
-        path = Path(raw_path)
+        path = resolve_repo_or_temp(raw_path, repo_root=_REPO_ROOT)
         try:
             status = _mapping(json.loads(path.read_text(encoding="utf-8")), "Smoke status")
             config_id = status.get("configuration_id")
@@ -77,7 +80,7 @@ def evaluate_smoke_assurance(
             )
 
     for raw_path in evidence_paths:
-        path = Path(raw_path)
+        path = resolve_repo_or_temp(raw_path, repo_root=_REPO_ROOT)
         try:
             evidence = _mapping(json.loads(path.read_text(encoding="utf-8")), "Smoke evidence")
             validate_sanitized_evidence(evidence)
@@ -280,7 +283,7 @@ def evaluate_smoke_assurance(
 def write_smoke_assurance_report(path: str | Path, report: Mapping[str, object]) -> Path:
     """Write one sanitized smoke-assurance report."""
     validate_sanitized_evidence(report)
-    output = Path(path)
+    output = resolve_repo_or_temp(path, repo_root=_REPO_ROOT)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n",

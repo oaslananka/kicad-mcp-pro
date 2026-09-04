@@ -17,6 +17,11 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, cast
 from urllib.parse import quote
 
+try:
+    from scripts.runtime_path_safety import approved_runtime_path
+except ModuleNotFoundError:  # Direct `python scripts/foo.py` execution.
+    from runtime_path_safety import approved_runtime_path
+
 PYPI_ENDPOINTS = {
     "pypi": "https://pypi.org/pypi/{name}/{version}/json",
     "testpypi": "https://test.pypi.org/pypi/{name}/{version}/json",
@@ -32,6 +37,7 @@ DEFAULT_PYPI_RETRY_DELAY = 10.0
 
 def _sha256(path: Path) -> str:
     """Return the SHA-256 digest for one artifact."""
+    path = approved_runtime_path(path)
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -41,6 +47,7 @@ def _sha256(path: Path) -> str:
 
 def _read_project(pyproject_path: Path) -> dict[str, Any]:
     """Load project metadata from pyproject.toml."""
+    pyproject_path = approved_runtime_path(pyproject_path)
     with pyproject_path.open("rb") as handle:
         project = tomllib.load(handle)["project"]
     return cast(dict[str, Any], project)
@@ -48,6 +55,7 @@ def _read_project(pyproject_path: Path) -> dict[str, Any]:
 
 def _artifact_paths(dist_dir: Path, project: dict[str, Any]) -> list[Path]:
     """Find the wheel and source distribution for the project version."""
+    dist_dir = approved_runtime_path(dist_dir)
     prefix = str(project["name"]).replace("-", "_")
     version = str(project["version"])
     artifacts = sorted(
@@ -129,6 +137,7 @@ def _release_artifact_filename(raw_filename: str) -> str:
 
 def _read_checksums(checksum_file: Path) -> dict[str, str]:
     """Read a SHA256SUMS file into a filename-to-digest mapping."""
+    checksum_file = approved_runtime_path(checksum_file)
     checksums: dict[str, str] = {}
     for line in checksum_file.read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -161,6 +170,9 @@ def _write_evidence(
 
 def generate(dist_dir: Path, output_dir: Path, pyproject_path: Path) -> None:
     """Generate checksums, SBOM, and evidence JSON."""
+    dist_dir = approved_runtime_path(dist_dir)
+    output_dir = approved_runtime_path(output_dir)
+    pyproject_path = approved_runtime_path(pyproject_path)
     project = _read_project(pyproject_path)
     artifacts = _artifact_paths(dist_dir, project)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -172,6 +184,8 @@ def generate(dist_dir: Path, output_dir: Path, pyproject_path: Path) -> None:
 
 def verify_local(checksum_file: Path, artifact_dir: Path) -> None:
     """Verify local artifacts against SHA256SUMS.txt."""
+    checksum_file = approved_runtime_path(checksum_file)
+    artifact_dir = approved_runtime_path(artifact_dir)
     failures = []
     for filename, expected in _read_checksums(checksum_file).items():
         artifact = artifact_dir / filename

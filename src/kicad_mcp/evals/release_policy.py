@@ -15,6 +15,10 @@ from typing import Any, Literal, cast
 
 import yaml
 
+from ..path_safety import resolve_repo_or_temp
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
 AssuranceMode = Literal["none", "smoke", "full"]
 
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
@@ -113,7 +117,12 @@ def _string_list(value: object, description: str) -> tuple[str, ...]:
 
 def load_release_policy(path: str | Path) -> ReleasePolicyConfig:
     """Load one strict versioned release-assurance policy."""
-    raw = _mapping(yaml.safe_load(Path(path).read_text(encoding="utf-8")), "Release policy")
+    raw = _mapping(
+        yaml.safe_load(
+            resolve_repo_or_temp(path, repo_root=_REPO_ROOT).read_text(encoding="utf-8")
+        ),
+        "Release policy",
+    )
     unknown = sorted(set(raw) - _POLICY_KEYS)
     if unknown:
         raise ReleasePolicyError(f"Release policy has unsupported fields: {unknown}.")
@@ -143,7 +152,12 @@ def load_release_policy(path: str | Path) -> ReleasePolicyConfig:
 
 
 def load_baseline_metadata(path: str | Path) -> BaselineMetadata:
-    raw = _mapping(yaml.safe_load(Path(path).read_text(encoding="utf-8")), "Baseline")
+    raw = _mapping(
+        yaml.safe_load(
+            resolve_repo_or_temp(path, repo_root=_REPO_ROOT).read_text(encoding="utf-8")
+        ),
+        "Baseline",
+    )
     unknown = sorted(set(raw) - _BASELINE_KEYS)
     if unknown:
         raise ReleasePolicyError(f"Baseline has unsupported fields: {unknown}.")
