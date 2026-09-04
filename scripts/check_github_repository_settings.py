@@ -66,11 +66,14 @@ def validate_live_state(
     }
 
     errors: list[str] = []
-    for scope, actual, expected in (
+    scopes = [
         ("actions", actions_permissions, expected_actions),
-        ("selected-actions", selected_actions, expected_selected),
         ("workflow", workflow_permissions, expected_workflow),
-    ):
+    ]
+    if actions_permissions.get("allowed_actions") == "selected":
+        scopes.insert(1, ("selected-actions", selected_actions, expected_selected))
+
+    for scope, actual, expected in scopes:
         for key, expected_value in expected.items():
             actual_value = actual.get(key)
             if key == "patterns_allowed":
@@ -243,7 +246,11 @@ def main(argv: list[str] | None = None) -> int:
         repository = validate_repository_name(args.repository.strip() or _repository_from_origin())
         token = _github_token()
         actions = _github_api("actions-permissions", token)
-        selected = _github_api("selected-actions", token)
+        selected = (
+            _github_api("selected-actions", token)
+            if actions.get("allowed_actions") == "selected"
+            else {}
+        )
         workflow = _github_api("workflow-permissions", token)
         errors = validate_live_state(policy, actions, selected, workflow)
         expected_environments = policy.get("protected_publish_environments", {})

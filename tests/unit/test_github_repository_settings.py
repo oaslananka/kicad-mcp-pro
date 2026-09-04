@@ -41,7 +41,6 @@ def test_expected_live_state_matches_hardened_policy() -> None:
 
 def test_live_state_reports_security_regressions() -> None:
     actions, selected, workflow = _expected_payloads()
-    actions["allowed_actions"] = "all"
     actions["sha_pinning_required"] = False
     workflow["default_workflow_permissions"] = "write"
     workflow["can_approve_pull_request_reviews"] = True
@@ -49,11 +48,19 @@ def test_live_state_reports_security_regressions() -> None:
 
     errors = validate_live_state(POLICY, actions, selected, workflow)
 
-    assert any("allowed_actions" in error for error in errors)
     assert any("sha_pinning_required" in error for error in errors)
     assert any("default_workflow_permissions" in error for error in errors)
     assert any("can_approve_pull_request_reviews" in error for error in errors)
     assert any("patterns_allowed" in error for error in errors)
+
+
+def test_live_state_skips_selected_details_when_actions_are_not_selected() -> None:
+    actions, selected, workflow = _expected_payloads()
+    actions["allowed_actions"] = "all"
+
+    errors = validate_live_state(POLICY, actions, {}, workflow)
+
+    assert errors == ["actions.allowed_actions drift: actual='all' expected='selected'"]
 
 
 def test_repository_settings_audit_workflow_is_default_branch_only_and_read_only() -> None:

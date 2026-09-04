@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import StrEnum
 
 
@@ -471,6 +471,27 @@ def _advisory_level_for_tool(category: str, tier: AccessTier) -> AdvisoryLevel:
     return AdvisoryLevel.NONE if tier is AccessTier.READ else AdvisoryLevel.ADVISORY
 
 
+def _with_profiles(record: CapabilityRecord, profiles: frozenset[str]) -> CapabilityRecord:
+    return CapabilityRecord(
+        name=record.name,
+        profiles=profiles,
+        tier=record.tier,
+        category=record.category,
+        runtime=record.runtime,
+        writes_files=record.writes_files,
+        writes_kicad_gui_state=record.writes_kicad_gui_state,
+        supports_dry_run=record.supports_dry_run,
+        supports_rollback=record.supports_rollback,
+        human_gate_required=record.human_gate_required,
+        requires_human_confirmation=record.requires_human_confirmation,
+        description=record.description,
+        verification_level=record.verification_level,
+        maturity=record.maturity,
+        advisory_level=record.advisory_level,
+        tested_kicad_versions=record.tested_kicad_versions,
+    )
+
+
 def _register_router_tools() -> None:
     from .tools.router import TOOL_CATEGORIES
 
@@ -479,7 +500,7 @@ def _register_router_tools() -> None:
             profiles = _profiles_for_tool(name, category)
             existing = _REGISTRY.get(name)
             if existing is not None:
-                register(replace(existing, profiles=existing.profiles | profiles))
+                register(_with_profiles(existing, existing.profiles | profiles))
                 continue
             tier = _tier_for_tool(name, category)
             runtime = _runtime_for_tool(name, category, tier)
