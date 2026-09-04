@@ -101,7 +101,7 @@ async def _sse_log_generator() -> AsyncGenerator[str]:
             except TimeoutError:
                 yield ": keepalive\n\n"
     except asyncio.CancelledError:
-        pass
+        raise
     finally:
         async with _log_subscribers_lock:
             if q in _log_subscribers:
