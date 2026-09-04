@@ -3,7 +3,7 @@
     {
       "attempt_id": "attempt-001",
       "directory": "attempts/attempt-001",
-      "evidence_digest": "sha256:1a8ae19632ad14dc541b9d8680c2b927b2e8e5a6d390346e412c4879007fd88b"
+      "evidence_digest": "sha256:bfb76303b2860ce27a06f6022e84cb17aab7233146d40cc85b4763c16ca523d9"
     }
   ],
   "benchmark_id": "stm32f072-usbc-reference-board",

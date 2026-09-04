@@ -249,6 +249,7 @@ def test_write_agent_log_serializes_only_sanitized_events(tmp_path) -> None:
     write_agent_log(workspace, summary)
     rendered = workspace.agent_log_path.read_text(encoding="utf-8")
     assert rendered.count("\n") == 2
+    assert b"\r\n" not in workspace.agent_log_path.read_bytes()
     assert "raw tool output" not in rendered
     assert "do-not-publish" not in rendered
     assert "kicad_get_server_info" in rendered
