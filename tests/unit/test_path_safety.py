@@ -224,5 +224,6 @@ def test_resolve_repo_or_temp_allows_repo_and_temp_but_blocks_escape(tmp_path: P
         == (tmp_path / "outside-temp.txt").resolve()
     )
 
+    escaped_path = Path.home() / ".ssh" / "id_rsa"
     with pytest.raises(UnsafePathError):
-        resolve_repo_or_temp(Path.home() / ".ssh" / "id_rsa", repo_root=repo_root)
+        resolve_repo_or_temp(escaped_path, repo_root=repo_root)
