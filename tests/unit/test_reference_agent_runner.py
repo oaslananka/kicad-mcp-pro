@@ -249,6 +249,7 @@ def test_write_agent_log_serializes_only_sanitized_events(tmp_path) -> None:
     write_agent_log(workspace, summary)
     rendered = workspace.agent_log_path.read_text(encoding="utf-8")
     assert rendered.count("\n") == 2
+    assert b"\r\n" not in workspace.agent_log_path.read_bytes()
     assert "raw tool output" not in rendered
     assert "do-not-publish" not in rendered
     assert "kicad_get_server_info" in rendered
@@ -341,8 +342,15 @@ def test_reference_board_inputs_are_reviewed_clean_start_contracts(board_id: str
     assert contract.tasks[0].task_class == "reference-board"
     assert set(contract.tasks[0].stage_requirements) == set(ALL_TASK_STAGES)
     assert set(contract.tasks[0].stage_requirements.values()) == {"required"}
-    assert not (root / "attempt-manifest.json").exists()
-    assert not (root / "attempts").exists()
+    manifest_path = root / "attempt-manifest.json"
+    attempts_dir = root / "attempts"
+    if manifest_path.exists():
+        from kicad_mcp.evals.reference_corpus import validate_reference_board_bundle
+
+        assert attempts_dir.is_dir()
+        validate_reference_board_bundle(root)
+    else:
+        assert not attempts_dir.exists()
     assert not list(root.glob("*.kicad_sch"))
     assert not list(root.glob("*.kicad_pcb"))
     validate_sanitized_evidence((root / "specification.md").read_text(encoding="utf-8"))

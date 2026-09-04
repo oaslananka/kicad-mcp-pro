@@ -624,7 +624,7 @@ def write_agent_log(
     )
     events = tuple(existing) + appended if append else appended
     payload = "".join(event.model_dump_json() + "\n" for event in events)
-    path.write_text(payload, encoding="utf-8")
+    path.write_text(payload, encoding="utf-8", newline="\n")
 
 
 def _failed_session_summary(
