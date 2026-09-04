@@ -50,23 +50,23 @@ def validate_live_state(
     if not isinstance(settings, dict):
         return ["actions-policy.json: repository_settings must be an object"]
 
-    expected_actions = {
+    expected_actions: dict[str, Any] = {
         "enabled": True,
         "allowed_actions": settings.get("allowed_actions"),
         "sha_pinning_required": settings.get("sha_pinning_required"),
     }
-    expected_selected = {
+    expected_selected: dict[str, Any] = {
         "github_owned_allowed": settings.get("github_owned_allowed"),
         "verified_allowed": settings.get("verified_allowed"),
         "patterns_allowed": expected_selected_patterns(policy),
     }
-    expected_workflow = {
+    expected_workflow: dict[str, Any] = {
         "default_workflow_permissions": settings.get("default_workflow_permissions"),
         "can_approve_pull_request_reviews": settings.get("can_approve_pull_request_reviews"),
     }
 
     errors: list[str] = []
-    scopes = [
+    scopes: list[tuple[str, dict[str, Any], dict[str, Any]]] = [
         ("actions", actions_permissions, expected_actions),
         ("workflow", workflow_permissions, expected_workflow),
     ]
@@ -84,6 +84,24 @@ def validate_live_state(
                     f"{scope}.{key} drift: actual={actual_value!r} expected={expected_value!r}"
                 )
     return errors
+
+
+def _workflow_command_escape(value: str) -> str:
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def emit_drift_errors(errors: list[str]) -> None:
+    """Print actionable drift and surface it as GitHub annotations in Actions."""
+    in_actions = os.environ.get("GITHUB_ACTIONS") == "true"
+    for error in errors:
+        print(f"- {error}", file=sys.stderr)
+        if in_actions:
+            detail = _workflow_command_escape(error)
+            print(
+                "::error file=.github/actions-policy.json,line=1,"
+                f"title=Repository settings drift::{detail}",
+                file=sys.stderr,
+            )
 
 
 def _required_reviewer_rule(live: dict[str, Any]) -> dict[str, Any]:
@@ -271,8 +289,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if errors:
         print(f"GitHub repository settings drift detected for {repository}:", file=sys.stderr)
-        for error in errors:
-            print(f"- {error}", file=sys.stderr)
+        emit_drift_errors(errors)
         return 1
 
     print(f"GitHub repository settings match policy for {repository}.")
