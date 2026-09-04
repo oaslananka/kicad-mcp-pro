@@ -217,7 +217,9 @@ def test_ci_fails_fast_on_public_metadata_drift_before_heavy_jobs() -> None:
     assert '[release-metadata]="${{ needs.release-metadata.result }}"' in required_gate_script
 
 
-def test_sonar_excludes_generated_package_test_output() -> None:
+def test_generated_package_test_output_is_not_repository_source() -> None:
     properties = _sonar_properties()
+    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
 
     assert "**/dist-test/**" in properties["sonar.exclusions"]
+    assert "packages/protocol-schemas/dist-test/" in gitignore
