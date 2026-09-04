@@ -12,6 +12,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .evidence_sanitization import validate_sanitized_evidence
+from .reference_board_quality import (
+    BoardQualityContract,
+    parse_quality_contract,
+    parse_quality_score,
+    score_reference_board_attempt,
+)
 from .task_outcome_scoring import (
     TaskOutcomeScoringError,
     TaskOutcomeSummary,
@@ -32,6 +38,8 @@ REFERENCE_IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
 SPECIFICATION_FILE = "specification.md"
 ORIGINAL_PROMPT_FILE = "original-prompt.md"
 BENCHMARK_FILE = "benchmark.json"
+QUALITY_GATES_FILE = "quality-gates.json"
+QUALITY_SCORE_FILE = "board-quality-score.json"
 ATTEMPT_MANIFEST_FILE = "attempt-manifest.json"
 ATTEMPT_RECORD_FILE = "attempt.json"
 AGENT_LOG_FILE = "agent-log.jsonl"
@@ -127,7 +135,7 @@ def _sha256_file(path: Path) -> str:
 
 def compute_reference_inputs_digest(root: Path) -> str:
     """Return the deterministic digest for canonical reference-board inputs."""
-    input_files = (SPECIFICATION_FILE, ORIGINAL_PROMPT_FILE, BENCHMARK_FILE)
+    input_files = (SPECIFICATION_FILE, ORIGINAL_PROMPT_FILE, BENCHMARK_FILE, QUALITY_GATES_FILE)
     tree_digest = hashlib.sha256()
     for name in input_files:
         path = root / name
@@ -306,10 +314,10 @@ def _resolve_bundle_root(root: Path) -> Path:
 
 def _load_reference_contracts(
     root: Path,
-) -> tuple[ReferenceBoardManifest, BenchmarkContract]:
+) -> tuple[ReferenceBoardManifest, BenchmarkContract, BoardQualityContract]:
     for name in (SPECIFICATION_FILE, ORIGINAL_PROMPT_FILE):
         _require_sanitized_text_file(root / name, name)
-    for name in (BENCHMARK_FILE, ATTEMPT_MANIFEST_FILE):
+    for name in (BENCHMARK_FILE, QUALITY_GATES_FILE, ATTEMPT_MANIFEST_FILE):
         _require_regular_file(root / name, name)
 
     try:
@@ -319,9 +327,12 @@ def _load_reference_contracts(
         contract = parse_benchmark_contract(
             _read_json_object(root / BENCHMARK_FILE, BENCHMARK_FILE)
         )
+        quality = parse_quality_contract(
+            _read_json_object(root / QUALITY_GATES_FILE, QUALITY_GATES_FILE)
+        )
     except ValidationError as exc:
         raise ReferenceCorpusError(
-            "reference-board manifest or benchmark contract is invalid"
+            "reference-board manifest, benchmark, or quality contract is invalid"
         ) from exc
 
     if (manifest.benchmark_id, manifest.benchmark_version) != (
@@ -331,11 +342,17 @@ def _load_reference_contracts(
         raise ReferenceCorpusError(
             "reference manifest benchmark identity does not match benchmark.json"
         )
+    if (quality.board_id, quality.benchmark_version) != (
+        manifest.board_id,
+        manifest.benchmark_version,
+    ):
+        raise ReferenceCorpusError("quality gate identity does not match reference manifest")
     if compute_reference_inputs_digest(root) != manifest.reference_inputs_digest:
         raise ReferenceCorpusError(
-            "reference input digest does not match specification, prompt, and benchmark"
+            "reference input digest does not match specification, prompt, "
+            "benchmark, and quality gates"
         )
-    return manifest, contract
+    return manifest, contract, quality
 
 
 def _validate_attempt_directory_index(root: Path, manifest: ReferenceBoardManifest) -> None:
@@ -356,10 +373,44 @@ def _validate_attempt_directory_index(root: Path, manifest: ReferenceBoardManife
         raise ReferenceCorpusError("manifest attempt directories do not match filesystem attempts")
 
 
+def _validate_success_quality_score(
+    root: Path,
+    attempt_dir: Path,
+    quality: BoardQualityContract,
+    record: AttemptRecord,
+) -> None:
+    if record.classification != "success":
+        return
+    score_path = attempt_dir / QUALITY_SCORE_FILE
+    _require_regular_file(score_path, QUALITY_SCORE_FILE)
+    try:
+        score = parse_quality_score(_read_json_object(score_path, QUALITY_SCORE_FILE))
+    except ValidationError as exc:
+        raise ReferenceCorpusError("board-quality-score.json is invalid") from exc
+
+    if (score.board_id, score.benchmark_version, score.attempt_id, score.source_revision) != (
+        quality.board_id,
+        quality.benchmark_version,
+        record.attempt_id,
+        record.source_revision,
+    ):
+        raise ReferenceCorpusError("quality score identity does not match attempt evidence")
+    expected_rules = [(rule.id, rule.type) for rule in quality.rules]
+    actual_rules = [(result.id, result.type) for result in score.results]
+    if actual_rules != expected_rules:
+        raise ReferenceCorpusError("quality score rule set does not match quality-gates.json")
+    if not score.overall_pass:
+        raise ReferenceCorpusError("quality score must pass for declared success")
+    recomputed = score_reference_board_attempt(root, record.attempt_id)
+    if score != recomputed:
+        raise ReferenceCorpusError("quality score does not match deterministic scorer output")
+
+
 def _load_reference_attempt(
     root: Path,
     manifest_entry: ReferenceAttemptEntry,
     contract: BenchmarkContract,
+    quality: BoardQualityContract,
 ) -> AttemptRecord:
     attempt_dir = root / manifest_entry.directory
     if attempt_dir.is_symlink() or not attempt_dir.is_dir():
@@ -379,6 +430,7 @@ def _load_reference_attempt(
     _parse_agent_log(attempt_dir / AGENT_LOG_FILE, record.attempt_id)
     _validate_required_validation_evidence(contract, record)
     _validate_success_artifacts(attempt_dir, contract, record)
+    _validate_success_quality_score(root, attempt_dir, quality, record)
     if compute_attempt_evidence_digest(attempt_dir) != manifest_entry.evidence_digest:
         raise ReferenceCorpusError(
             f"attempt {manifest_entry.attempt_id} evidence digest does not match filesystem"
@@ -389,10 +441,10 @@ def _load_reference_attempt(
 def validate_reference_board_bundle(root: Path) -> ValidatedReferenceBoardBundle:
     """Validate one complete reference-board publication bundle fail closed."""
     root = _resolve_bundle_root(root)
-    manifest, contract = _load_reference_contracts(root)
+    manifest, contract, quality = _load_reference_contracts(root)
     _validate_attempt_directory_index(root, manifest)
     records = [
-        _load_reference_attempt(root, manifest_entry, contract)
+        _load_reference_attempt(root, manifest_entry, contract, quality)
         for manifest_entry in manifest.attempts
     ]
 
