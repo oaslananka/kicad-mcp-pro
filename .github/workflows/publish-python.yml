@@ -34,6 +34,9 @@ jobs:
           enable-cache: false
           version-file: uv.toml
       - run: uv sync --all-extras --frozen
+      - name: Enforce live-model release readiness
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/mcp-server-v')
+        run: uv run --all-extras python scripts/check_live_model_release_policy.py --require-ready release --ref HEAD
       - run: uv build
       - run: uv run --all-extras python scripts/check_package_metadata.py
       - name: Verify release tag matches package version

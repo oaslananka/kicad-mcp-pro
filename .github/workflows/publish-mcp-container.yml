@@ -51,6 +51,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish == true)
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - name: Install release-readiness dependencies
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish == true)
+        run: uv sync --all-extras --frozen
+      - name: Enforce live-model release readiness
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish == true)
+        run: uv run --all-extras python scripts/check_live_model_release_policy.py --require-ready release --ref HEAD
+
       - name: Resolve image version
         id: version
         shell: bash

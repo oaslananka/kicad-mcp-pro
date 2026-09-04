@@ -39,6 +39,9 @@ def test_pcm_release_workflow_verifies_source_builds_attests_and_rechecks_publis
     assert 'gh release upload "$release_tag" release-assets/kicad-pcm/* --clobber' in workflow
     assert "Verify published PCM digest" in workflow
     assert 'gh release download "$release_tag"' in workflow
+    assert "for attempt in $(seq 1 6)" in workflow
+    assert 'if [ "$attempt" -eq 6 ]; then' in workflow
+    assert "sleep 5" in workflow
     assert "sha256sum --check kicad-mcp-pro-pcm-SHA256SUMS.txt" in workflow
 
 

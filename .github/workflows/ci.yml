@@ -528,9 +528,25 @@ jobs:
             --baseline ../.github/security/rustsec-baseline.json \
             --cargo-audit-version "$audit_version"
 
+  release-readiness:
+    name: Release Readiness
+    if: startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - name: Enforce live-model release readiness
+        run: uv run --all-extras python scripts/check_live_model_release_policy.py --require-ready release --ref HEAD
+
   required-pr-gate:
     name: Required PR Gate
-    needs: [changes, release-metadata, mcp-server, coverage, mcp-npm, chatgpt-app, protocol-schemas, mcp-2026-compat, workflow-policy, security]
+    needs: [changes, release-metadata, mcp-server, coverage, mcp-npm, chatgpt-app, protocol-schemas, mcp-2026-compat, workflow-policy, security, release-readiness]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -549,6 +565,7 @@ jobs:
             [mcp-2026-compat]="${{ needs.mcp-2026-compat.result }}"
             [workflow-policy]="${{ needs.workflow-policy.result }}"
             [security]="${{ needs.security.result }}"
+            [release-readiness]="${{ needs.release-readiness.result }}"
           )
           docs_only="${{ needs.changes.outputs.docs_only }}"
 
@@ -562,7 +579,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           failed=0
-          for job in changes release-metadata mcp-server coverage mcp-npm chatgpt-app protocol-schemas mcp-2026-compat workflow-policy security; do
+          for job in changes release-metadata mcp-server coverage mcp-npm chatgpt-app protocol-schemas mcp-2026-compat workflow-policy security release-readiness; do
             result="${results[$job]}"
             echo "| $job | $result |" >> "$GITHUB_STEP_SUMMARY"
             case "$result" in
