@@ -710,9 +710,7 @@ def test_reference_bundle_rejects_forged_passing_quality_report(tmp_path: Path) 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["reference_inputs_digest"] = evals.compute_reference_inputs_digest(root)
     attempt_dir = root / "attempts" / "attempt-001"
-    manifest["attempts"][0]["evidence_digest"] = evals.compute_attempt_evidence_digest(
-        attempt_dir
-    )
+    manifest["attempts"][0]["evidence_digest"] = evals.compute_attempt_evidence_digest(attempt_dir)
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     with pytest.raises(evals.ReferenceCorpusError, match="deterministic scorer"):
