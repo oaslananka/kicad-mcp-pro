@@ -7,7 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from scripts.check_github_repository_settings import expected_selected_patterns, validate_live_state
+from scripts.check_github_repository_settings import (
+    emit_drift_errors,
+    expected_selected_patterns,
+    validate_live_state,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = json.loads((ROOT / ".github/actions-policy.json").read_text(encoding="utf-8"))
@@ -61,6 +65,18 @@ def test_live_state_skips_selected_details_when_actions_are_not_selected() -> No
     errors = validate_live_state(POLICY, actions, {}, workflow)
 
     assert errors == ["actions.allowed_actions drift: actual='all' expected='selected'"]
+
+
+def test_emit_drift_errors_adds_github_annotations(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    emit_drift_errors(["actions.allowed_actions drift: actual='all' expected='selected'"])
+
+    captured = capsys.readouterr()
+    assert "- actions.allowed_actions drift" in captured.err
+    assert (
+        "::error file=.github/actions-policy.json,line=1,title=Repository settings drift::"
+        "actions.allowed_actions drift: actual='all' expected='selected'"
+    ) in captured.err
 
 
 def test_repository_settings_audit_workflow_is_default_branch_only_and_read_only() -> None:
