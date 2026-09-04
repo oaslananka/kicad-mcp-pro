@@ -5,6 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+import kicad_mcp.evals.smoke_assurance as smoke_assurance
+from kicad_mcp.errors import UnsafePathError
 from kicad_mcp.evals.smoke_assurance import evaluate_smoke_assurance
 
 CONFIGS = ("alpha", "beta", "gamma")
@@ -313,3 +317,23 @@ def test_smoke_assurance_blocks_missing_required_status(tmp_path: Path) -> None:
     assert report["passed"] is False
     assert report["classifications"]["integrity_failures"] == ["gamma: status missing"]
     assert report["classifications"]["infrastructure_failures"] == []
+
+
+def test_smoke_assurance_writer_revalidates_resolved_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unsafe_output = Path.home() / ".kicad-mcp-pro-unsafe-smoke-assurance.json"
+
+    monkeypatch.setattr(
+        smoke_assurance,
+        "resolve_repo_or_temp",
+        lambda *_args, **_kwargs: unsafe_output,
+    )
+
+    def _unexpected_write(*_args: object, **_kwargs: object) -> int:
+        pytest.fail("writer reached filesystem write before revalidating the resolved path")
+
+    monkeypatch.setattr(Path, "write_text", _unexpected_write)
+
+    with pytest.raises(UnsafePathError):
+        smoke_assurance.write_smoke_assurance_report("ignored.json", {"passed": True})

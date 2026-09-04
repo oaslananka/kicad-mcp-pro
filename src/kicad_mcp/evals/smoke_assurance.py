@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
 
+from ..errors import UnsafePathError
 from ..path_safety import resolve_repo_or_temp
 from .live_runner import validate_sanitized_evidence
 
@@ -283,7 +285,13 @@ def evaluate_smoke_assurance(
 def write_smoke_assurance_report(path: str | Path, report: Mapping[str, object]) -> Path:
     """Write one sanitized smoke-assurance report."""
     validate_sanitized_evidence(report)
-    output = resolve_repo_or_temp(path, repo_root=_REPO_ROOT)
+    output = resolve_repo_or_temp(path, repo_root=_REPO_ROOT).expanduser().resolve()
+    repo_root = _REPO_ROOT.expanduser().resolve()
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    if not (output.is_relative_to(repo_root) or output.is_relative_to(temp_root)):
+        raise UnsafePathError(
+            "Smoke assurance output must stay inside the repository or system temp."
+        )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
