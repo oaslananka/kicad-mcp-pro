@@ -9,6 +9,19 @@ from scripts.check_github_actions_policy import has_sha_pinned_action
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _sonar_properties() -> dict[str, list[str]]:
+    raw = (ROOT / "sonar-project.properties").read_text(encoding="utf-8")
+    logical = raw.replace("\\\n", "")
+    properties: dict[str, list[str]] = {}
+    for line in logical.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        properties[key] = [item.strip() for item in value.split(",") if item.strip()]
+    return properties
+
+
 def test_actionlint_is_a_locked_python_dev_tool() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     checker = (ROOT / "scripts" / "check_workflows.py").read_text(encoding="utf-8")
@@ -81,15 +94,7 @@ def test_direct_javascript_actions_use_node24_releases() -> None:
 
 
 def test_sonar_source_and_test_scopes_are_disjoint() -> None:
-    raw = (ROOT / "sonar-project.properties").read_text(encoding="utf-8")
-    logical = raw.replace("\\\n", "")
-    properties: dict[str, list[str]] = {}
-    for line in logical.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, value = stripped.split("=", 1)
-        properties[key] = [item.strip() for item in value.split(",") if item.strip()]
+    properties = _sonar_properties()
 
     exclusions = properties["sonar.exclusions"]
     assert "packages/protocol-schemas/test/**" in exclusions
@@ -99,15 +104,7 @@ def test_sonar_source_and_test_scopes_are_disjoint() -> None:
 
 
 def test_sonar_excludes_package_test_runners_from_coverage() -> None:
-    raw = (ROOT / "sonar-project.properties").read_text(encoding="utf-8")
-    logical = raw.replace("\\\n", "")
-    properties: dict[str, list[str]] = {}
-    for line in logical.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, value = stripped.split("=", 1)
-        properties[key] = [item.strip() for item in value.split(",") if item.strip()]
+    properties = _sonar_properties()
 
     exclusions = properties["sonar.coverage.exclusions"]
     assert "packages/kicad-fixtures/scripts/run-tests.cjs" in exclusions
@@ -218,3 +215,9 @@ def test_ci_fails_fast_on_public_metadata_drift_before_heavy_jobs() -> None:
     assert "release-metadata" in required_gate_needs
     required_gate_script = jobs["required-pr-gate"]["steps"][0]["run"]
     assert '[release-metadata]="${{ needs.release-metadata.result }}"' in required_gate_script
+
+
+def test_sonar_excludes_generated_package_test_output() -> None:
+    properties = _sonar_properties()
+
+    assert "**/dist-test/**" in properties["sonar.exclusions"]

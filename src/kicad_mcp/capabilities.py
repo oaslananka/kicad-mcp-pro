@@ -479,7 +479,10 @@ def _register_router_tools() -> None:
             profiles = _profiles_for_tool(name, category)
             existing = _REGISTRY.get(name)
             if existing is not None:
-                register(replace(existing, profiles=existing.profiles | profiles))
+                updated_record: CapabilityRecord = replace(
+                    existing, profiles=existing.profiles | profiles
+                )
+                register(updated_record)
                 continue
             tier = _tier_for_tool(name, category)
             runtime = _runtime_for_tool(name, category, tier)
