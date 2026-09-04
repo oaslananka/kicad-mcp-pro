@@ -259,13 +259,24 @@ def _write_success_artifacts(attempt_dir: Path) -> None:
 
 
 def _write_bundle(tmp_path: Path, attempt_payload: dict[str, Any] | None = None) -> Path:
-    root = tmp_path / "reference-board"
-    root.mkdir()
+    root = tmp_path / "stm32-usbc-reference" / "v1"
+    root.mkdir(parents=True)
     (root / "specification.md").write_text("# Fixture specification\n", encoding="utf-8")
     (root / "original-prompt.md").write_text("Create the fixture board.\n", encoding="utf-8")
     contract = evals.BenchmarkContract.model_validate(_benchmark_payload())
     (root / "benchmark.json").write_text(
         evals.render_benchmark_contract(contract), encoding="utf-8"
+    )
+    (root / "quality-gates.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "pcb-reference-board-quality.v1",
+                "board_id": "stm32-usbc-reference",
+                "benchmark_version": "v1",
+                "rules": [{"id": "bom", "type": "artifact", "path": "BOM.csv", "kind": "file"}],
+            }
+        ),
+        encoding="utf-8",
     )
     attempt_dir = root / "attempts" / "attempt-001"
     attempt_dir.mkdir(parents=True)
@@ -273,6 +284,16 @@ def _write_bundle(tmp_path: Path, attempt_payload: dict[str, Any] | None = None)
     (attempt_dir / "attempt.json").write_text(evals.render_attempt_record(record), encoding="utf-8")
     _write_agent_log(attempt_dir / "agent-log.jsonl")
     _write_success_artifacts(attempt_dir)
+    from kicad_mcp.evals.reference_board_quality import (
+        render_quality_score,
+        score_reference_board_attempt,
+    )
+
+    if record.attempt_id == attempt_dir.name:
+        quality_score = score_reference_board_attempt(root, record.attempt_id)
+        (attempt_dir / "board-quality-score.json").write_text(
+            render_quality_score(quality_score), encoding="utf-8"
+        )
     evidence_digest = evals.compute_attempt_evidence_digest(attempt_dir)
     reference_inputs_digest = evals.compute_reference_inputs_digest(root)
     manifest = evals.ReferenceBoardManifest.model_validate(
@@ -283,6 +304,14 @@ def _write_bundle(tmp_path: Path, attempt_payload: dict[str, Any] | None = None)
         encoding="utf-8",
     )
     return root
+
+
+def _refresh_attempt_evidence_digest(root: Path) -> None:
+    manifest_path = root / "attempt-manifest.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    attempt_dir = root / "attempts" / "attempt-001"
+    payload["attempts"][0]["evidence_digest"] = evals.compute_attempt_evidence_digest(attempt_dir)
+    manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def test_reference_bundle_rejects_unsafe_original_prompt_text(tmp_path: Path) -> None:
@@ -631,3 +660,58 @@ def test_reference_bundle_cli_fails_closed_without_dumping_agent_log(
     assert "reference corpus validation failed" in captured.err
     assert log_text not in captured.err
     assert captured.out == ""
+
+
+def test_reference_bundle_success_requires_quality_score(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path)
+    score = root / "attempts" / "attempt-001" / "board-quality-score.json"
+    score.unlink()
+    _refresh_attempt_evidence_digest(root)
+
+    with pytest.raises(evals.ReferenceCorpusError, match="board-quality-score.json"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_reference_bundle_success_requires_passing_quality_score(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path)
+    score = root / "attempts" / "attempt-001" / "board-quality-score.json"
+    payload = json.loads(score.read_text(encoding="utf-8"))
+    payload["passed_required_rule_count"] = 0
+    payload["quality_score_percent"] = 0.0
+    payload["overall_pass"] = False
+    payload["results"][0]["status"] = "fail"
+    payload["results"][0]["reason_code"] = "artifact_missing"
+    score.write_text(json.dumps(payload), encoding="utf-8")
+    _refresh_attempt_evidence_digest(root)
+
+    with pytest.raises(evals.ReferenceCorpusError, match="quality score.*pass"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_reference_bundle_quality_gate_contract_is_reference_input(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path)
+    quality_path = root / "quality-gates.json"
+    payload = json.loads(quality_path.read_text(encoding="utf-8"))
+    payload["rules"][0]["path"] = "manufacturing-report.md"
+    quality_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(evals.ReferenceCorpusError, match="reference input digest"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_reference_bundle_rejects_forged_passing_quality_report(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path)
+    quality_path = root / "quality-gates.json"
+    quality = json.loads(quality_path.read_text(encoding="utf-8"))
+    quality["rules"][0]["path"] = "missing-quality-proof.txt"
+    quality_path.write_text(json.dumps(quality), encoding="utf-8")
+
+    manifest_path = root / "attempt-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["reference_inputs_digest"] = evals.compute_reference_inputs_digest(root)
+    attempt_dir = root / "attempts" / "attempt-001"
+    manifest["attempts"][0]["evidence_digest"] = evals.compute_attempt_evidence_digest(attempt_dir)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(evals.ReferenceCorpusError, match="deterministic scorer"):
+        evals.validate_reference_board_bundle(root)
