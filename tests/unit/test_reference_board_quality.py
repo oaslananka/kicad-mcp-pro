@@ -393,3 +393,110 @@ def test_committed_reference_board_quality_contracts_are_valid(
     outline = next(rule for rule in contract.rules if isinstance(rule, BoardOutlineRule))
     assert (contract.board_id, contract.benchmark_version) == (board_id, "v1")
     assert (outline.max_width_mm, outline.max_height_mm) == (max_width, max_height)
+
+
+def test_quality_contract_validators_reject_invalid_models() -> None:
+    from kicad_mcp.evals.reference_board_quality import (
+        ArtifactRule,
+        BoardOutlineRule,
+        BoardQualityContract,
+        SchematicComponentRule,
+    )
+
+    with pytest.raises(ValidationError):
+        SchematicComponentRule(id="u1", type="schematic_component", reference="U1")
+    with pytest.raises(ValidationError):
+        BoardOutlineRule(id="width", type="board_outline", min_width_mm=2.0, max_width_mm=1.0)
+    with pytest.raises(ValidationError):
+        BoardOutlineRule(id="height", type="board_outline", min_height_mm=2.0, max_height_mm=1.0)
+    with pytest.raises(ValidationError):
+        ArtifactRule(id="escape", type="artifact", path="../proof.txt", kind="file")
+
+    rule = ArtifactRule(id="proof", type="artifact", path="proof.txt", kind="file")
+    with pytest.raises(ValidationError):
+        BoardQualityContract(board_id="board-a", benchmark_version="v1", rules=(rule, rule))
+
+
+def test_quality_score_validator_rejects_inconsistent_summary_fields() -> None:
+    from kicad_mcp.evals.reference_board_quality import BoardQualityScore
+
+    base = {
+        "board_id": "board-a",
+        "benchmark_version": "v1",
+        "attempt_id": "attempt-001",
+        "source_revision": "a" * 40,
+        "required_rule_count": 2,
+        "passed_required_rule_count": 1,
+        "quality_score_percent": 50.0,
+        "overall_pass": False,
+        "results": [
+            {"id": "a", "type": "artifact", "status": "pass", "reason_code": "matched"},
+            {
+                "id": "b",
+                "type": "artifact",
+                "status": "fail",
+                "reason_code": "artifact_missing",
+            },
+        ],
+    }
+    overrides = (
+        {"passed_required_rule_count": 3},
+        {"required_rule_count": 3},
+        {"passed_required_rule_count": 0},
+        {"quality_score_percent": 49.0},
+        {"overall_pass": True},
+    )
+    for update in overrides:
+        payload = dict(base)
+        payload.update(update)
+        with pytest.raises(ValidationError):
+            BoardQualityScore.model_validate(payload)
+
+
+def test_pcb_rules_fail_closed_on_missing_or_mismatched_evidence() -> None:
+    from kicad_mcp.evals.reference_board_quality import (
+        BoardOutlineRule,
+        PcbFootprintRule,
+        PcbNetRule,
+        evaluate_pcb_rule,
+    )
+
+    root = Path(__file__).parents[1] / "fixtures/benchmark_projects"
+    minimal = (root / "pass_minimal_mcu_board/demo.kicad_pcb").read_text(encoding="utf-8")
+    dirty = (root / "fail_dirty_transfer_wrong_pad_nets/demo.kicad_pcb").read_text(encoding="utf-8")
+    missing_footprint = evaluate_pcb_rule(
+        PcbFootprintRule(
+            id="missing", type="pcb_footprint", reference="Z99", allowed_footprints=("x",)
+        ),
+        minimal,
+    )
+    mismatched_footprint = evaluate_pcb_rule(
+        PcbFootprintRule(
+            id="mismatch", type="pcb_footprint", reference="U1", allowed_footprints=("x",)
+        ),
+        minimal,
+    )
+    missing_net = evaluate_pcb_rule(
+        PcbNetRule(id="missing-net", type="pcb_net", net_name="NO_SUCH_NET"), minimal
+    )
+    mismatched_net = evaluate_pcb_rule(
+        PcbNetRule(id="mismatch-net", type="pcb_net", net_name="VIN", required_references=("Z99",)),
+        dirty,
+    )
+    missing_outline = evaluate_pcb_rule(
+        BoardOutlineRule(id="outline", type="board_outline", max_width_mm=50.0),
+        "(kicad_pcb (version 20240108))",
+    )
+    assert (
+        missing_footprint.reason_code,
+        mismatched_footprint.reason_code,
+        missing_net.reason_code,
+        mismatched_net.reason_code,
+        missing_outline.reason_code,
+    ) == (
+        "footprint_missing",
+        "identity_mismatch",
+        "net_missing",
+        "net_membership_mismatch",
+        "outline_missing",
+    )
