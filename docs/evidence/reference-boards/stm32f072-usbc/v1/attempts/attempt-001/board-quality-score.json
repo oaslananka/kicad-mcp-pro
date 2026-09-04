@@ -1,0 +1,49 @@
+{
+  "attempt_id": "attempt-001",
+  "benchmark_version": "v1",
+  "board_id": "stm32f072-usbc",
+  "overall_pass": false,
+  "passed_required_rule_count": 0,
+  "quality_score_percent": 0.0,
+  "required_rule_count": 6,
+  "results": [
+    {
+      "id": "erc-consumed",
+      "reason_code": "validation_failed",
+      "status": "fail",
+      "type": "attempt_validation"
+    },
+    {
+      "id": "drc-consumed",
+      "reason_code": "validation_failed",
+      "status": "fail",
+      "type": "attempt_validation"
+    },
+    {
+      "id": "board-envelope",
+      "reason_code": "evidence_missing",
+      "status": "fail",
+      "type": "board_outline"
+    },
+    {
+      "id": "bom-present",
+      "reason_code": "artifact_missing",
+      "status": "fail",
+      "type": "artifact"
+    },
+    {
+      "id": "gerbers-present",
+      "reason_code": "artifact_missing",
+      "status": "fail",
+      "type": "artifact"
+    },
+    {
+      "id": "manufacturing-report-present",
+      "reason_code": "artifact_missing",
+      "status": "fail",
+      "type": "artifact"
+    }
+  ],
+  "schema_version": "pcb-reference-board-quality-score.v1",
+  "source_revision": "d38e1af764abf7cda2762e9994679edc1b4cccdc"
+}
