@@ -56,6 +56,13 @@ jobs:
         with:
           ref: ${{ steps.release.outputs.tag }}
           persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - name: Enforce live-model release readiness
+        run: uv run --all-extras python scripts/check_live_model_release_policy.py --require-ready release --ref HEAD
 
       - name: Verify release source and package version
         shell: bash
@@ -121,12 +128,21 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
         run: |
           set -euo pipefail
-          rm -rf published-kicad-pcm
-          mkdir -p published-kicad-pcm
-          gh release download "$release_tag" \
-            --repo "$GITHUB_REPOSITORY" \
-            --dir published-kicad-pcm \
-            --pattern "kicad-mcp-pro-pcm-${VERSION}.zip" \
-            --clobber
+          for attempt in $(seq 1 6); do
+            rm -rf published-kicad-pcm
+            mkdir -p published-kicad-pcm
+            if gh release download "$release_tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --dir published-kicad-pcm \
+              --pattern "kicad-mcp-pro-pcm-${VERSION}.zip" \
+              --clobber; then
+              break
+            fi
+            if [ "$attempt" -eq 6 ]; then
+              echo "Published PCM asset did not become downloadable after retries." >&2
+              exit 1
+            fi
+            sleep 5
+          done
           cp release-assets/kicad-pcm/kicad-mcp-pro-pcm-SHA256SUMS.txt published-kicad-pcm/
           (cd published-kicad-pcm && sha256sum --check kicad-mcp-pro-pcm-SHA256SUMS.txt)

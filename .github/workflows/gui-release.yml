@@ -19,8 +19,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release-readiness:
+    if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - name: Enforce live-model release readiness
+        run: uv run --all-extras python scripts/check_live_model_release_policy.py --require-ready release --ref HEAD
+
   tauri-build:
     if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
+    needs: release-readiness
     strategy:
       fail-fast: false
       matrix:

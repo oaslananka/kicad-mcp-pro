@@ -56,6 +56,13 @@ jobs:
         with:
           ref: ${{ steps.release.outputs.tag }}
           persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - name: Enforce live-model release readiness
+        run: uv run --all-extras python scripts/check_live_model_release_policy.py --require-ready release --ref HEAD
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:

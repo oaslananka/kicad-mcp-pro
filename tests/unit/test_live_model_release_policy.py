@@ -479,3 +479,17 @@ def test_release_validation_enforces_live_model_readiness_at_release_boundary() 
     assert "Enforce live-model release readiness" in workflow
     assert "check_live_model_release_policy.py --require-ready release" in workflow
     assert "startsWith(github.head_ref, 'release-please--')" in workflow
+
+
+def test_required_pr_gate_blocks_unready_release_please_prs() -> None:
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "release-readiness:" in workflow
+    assert "startsWith(github.head_ref, 'release-please--')" in workflow
+    assert "check_live_model_release_policy.py --require-ready release" in workflow
+    expected_needs = (
+        "needs: [changes, release-metadata, mcp-server, coverage, mcp-npm, chatgpt-app, "
+        "protocol-schemas, mcp-2026-compat, workflow-policy, security, release-readiness]"
+    )
+    assert expected_needs in workflow
+    assert '[release-readiness]="${{ needs.release-readiness.result }}"' in workflow

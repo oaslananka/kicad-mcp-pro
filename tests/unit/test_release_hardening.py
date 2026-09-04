@@ -1431,3 +1431,21 @@ def test_mcp_registry_bootstrap_verifies_reviewed_checksum_before_extract() -> N
     assert workflow.index("sha256sum --check --strict") < workflow.index(
         "tar -xzf mcp-publisher.tar.gz mcp-publisher"
     )
+
+
+def test_external_release_workflows_fail_closed_on_live_model_readiness() -> None:
+    workflows = [
+        "publish-python.yml",
+        "publish-npm.yml",
+        "publish-protocol-schemas.yml",
+        "publish-mcp-container.yml",
+        "publish-mcp-registry.yml",
+        "publish-mcpb.yml",
+        "publish-kicad-pcm.yml",
+        "gui-release.yml",
+    ]
+
+    for name in workflows:
+        workflow = _workflow(name)
+        assert "Enforce live-model release readiness" in workflow, name
+        assert "check_live_model_release_policy.py --require-ready release" in workflow, name
