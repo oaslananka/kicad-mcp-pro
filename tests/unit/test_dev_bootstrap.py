@@ -447,3 +447,32 @@ def test_existing_rust_toolchain_still_repairs_required_rustfmt(
     _install_rust(plan, "x86_64", {}, capture=True)
 
     assert [str(rustup), "component", "add", "rustfmt", "--toolchain", "1.97.1"] in commands
+
+
+def test_dev_doctor_text_renderer_handles_aggregate_tool_catalog(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        "scripts.dev_environment._doctor_payload",
+        lambda _plan: {
+            "ok": True,
+            "status": "degraded",
+            "tools": {
+                "capability_summary": {"tiers": {"read": 112}},
+                "categories": ["project", "pcb_read"],
+                "category_count": 2,
+                "tool_count": 382,
+            },
+            "developmentPolicy": {
+                "ready": False,
+                "blocking": [{"name": "bootstrap", "reason": "environment is not prepared"}],
+                "limitations": [],
+            },
+        },
+    )
+
+    result = main(["--doctor"])
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "Development doctor: degraded" in output
+    assert "- development ready: no" in output
+    assert "- tool count: 382" in output

@@ -749,6 +749,18 @@ def _render(payload: dict[str, Any], *, json_output: bool) -> None:
         for name, version in sorted(payload["versions"].items()):
             print(f"- {name}: {version}")
         return
+    if "developmentPolicy" in payload:
+        policy = payload.get("developmentPolicy") or {}
+        print(f"Development doctor: {payload.get('status', 'unknown')}")
+        print(f"- development ready: {'yes' if policy.get('ready') else 'no'}")
+        tools = payload.get("tools")
+        if isinstance(tools, dict) and isinstance(tools.get("tool_count"), int):
+            print(f"- tool count: {tools['tool_count']}")
+        for item in policy.get("blocking") or []:
+            print(f"- blocking: {item.get('name')}: {item.get('reason')}")
+        for item in policy.get("limitations") or []:
+            print(f"- limitation: {item.get('name')}: {item.get('reason')}")
+        return
     print("Development environment ready.")
     for name, details in sorted((payload.get("tools") or {}).items()):
         print(f"- {name}: {details.get('actual')}")
