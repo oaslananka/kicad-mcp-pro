@@ -248,20 +248,19 @@ def stable_sdk_request(payload: Mapping[str, Any]) -> dict[str, Any]:
 
     translated: dict[str, Any] = deepcopy(dict(payload))
     params_raw = translated.get("params")
-    if not isinstance(params_raw, dict):
-        return translated
-    params = cast(dict[str, Any], params_raw)
-    meta_raw = params.get("_meta")
-    if isinstance(meta_raw, dict):
-        meta = cast(dict[str, Any], meta_raw)
-        for key in (
-            "io.modelcontextprotocol/protocolVersion",
-            "io.modelcontextprotocol/clientCapabilities",
-            "io.modelcontextprotocol/clientInfo",
-        ):
-            meta.pop(key, None)
-        if not meta:
-            params.pop("_meta", None)
+    if isinstance(params_raw, dict):
+        params = cast(dict[str, Any], params_raw)
+        meta_raw = params.get("_meta")
+        if isinstance(meta_raw, dict):
+            meta = cast(dict[str, Any], meta_raw)
+            for key in (
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities",
+                "io.modelcontextprotocol/clientInfo",
+            ):
+                meta.pop(key, None)
+            if not meta:
+                params.pop("_meta", None)
     return translated
 
 
@@ -275,39 +274,38 @@ def decorate_candidate_response(
 
     decorated: dict[str, Any] = deepcopy(dict(payload))
     result_raw = decorated.get("result")
-    if not isinstance(result_raw, dict):
-        return decorated
-    result = cast(dict[str, Any], result_raw)
+    if isinstance(result_raw, dict):
+        result = cast(dict[str, Any], result_raw)
 
-    result.setdefault("resultType", "complete")
-    meta_raw = result.setdefault("_meta", {})
-    if isinstance(meta_raw, dict):
-        meta = cast(dict[str, Any], meta_raw)
-    else:
-        meta = {}
-        result["_meta"] = meta
-    meta["io.modelcontextprotocol/serverInfo"] = {
-        "name": SERVER_NAME,
-        "version": server_version,
-    }
+        result.setdefault("resultType", "complete")
+        meta_raw = result.setdefault("_meta", {})
+        if isinstance(meta_raw, dict):
+            meta = cast(dict[str, Any], meta_raw)
+        else:
+            meta = {}
+            result["_meta"] = meta
+        meta["io.modelcontextprotocol/serverInfo"] = {
+            "name": SERVER_NAME,
+            "version": server_version,
+        }
 
-    cache_policy = _CACHE_POLICY.get(method)
-    if cache_policy is not None:
-        ttl_ms, scope = cache_policy
-        result.setdefault("ttlMs", ttl_ms)
-        result.setdefault("cacheScope", scope)
+        cache_policy = _CACHE_POLICY.get(method)
+        if cache_policy is not None:
+            ttl_ms, scope = cache_policy
+            result.setdefault("ttlMs", ttl_ms)
+            result.setdefault("cacheScope", scope)
 
-    if method == "tools/list":
-        tools_raw = result.get("tools")
-        if isinstance(tools_raw, list):
-            tools: list[dict[str, Any]] = []
-            for item in tools_raw:
-                if not isinstance(item, dict):
-                    break
-                tools.append(cast(dict[str, Any], item))
-            else:
-                tools.sort(key=lambda tool: str(tool.get("name", "")))
-                result["tools"] = tools
+        if method == "tools/list":
+            tools_raw = result.get("tools")
+            if isinstance(tools_raw, list):
+                tools: list[dict[str, Any]] = []
+                for item in tools_raw:
+                    if not isinstance(item, dict):
+                        break
+                    tools.append(cast(dict[str, Any], item))
+                else:
+                    tools.sort(key=lambda tool: str(tool.get("name", "")))
+                    result["tools"] = tools
 
     return decorated
 
