@@ -1,6 +1,6 @@
 # KiCad 10.0.6 Baseline
 
-**Reviewed:** 2026-08-31
+**Reviewed:** 2026-09-04
 
 KiCad MCP Pro treats KiCad 10.0.6 as the current primary KiCad 10 stable
 baseline. The repository compatibility matrix records this in
@@ -29,9 +29,12 @@ with no code change required; a few are worth recording explicitly:
 - **CLI: "Used per-variant field values in multi-variant BOM export" (#24936).**
   Directly affects `export/bom.py`'s `--variant` handling behind
   `export_bom()`. Previously-incorrect multi-variant BOM field values are now
-  fixed upstream; no code change needed here, but the required canary's
-  variant-BOM coverage is the verification point for this fix on the actual
-  10.0.6 CLI.
+  fixed upstream. A 2026-09-04 probe against KiCad's upstream 10.0.6 QA
+  variant fixture confirmed `R1=10K_V1` for `Variant 1` and `R1=10K_V2` for
+  `Variant2` on the installed 10.0.6 CLI. The repository canary currently
+  checks generic BOM export but does not assert these variant-specific values;
+  dedicated hermetic semantic coverage is tracked in
+  [#843](https://github.com/oaslananka/kicad-mcp-pro/issues/843).
 - **PCB Editor: three Specctra DSN export fixes** (double-quoted field
   escaping #24946, duplicate/empty footprint references #24947, layer-name
   quoting #24948). Directly improves `route_export_dsn()`
@@ -39,13 +42,10 @@ with no code change required; a few are worth recording explicitly:
   change needed, this is a pure quality improvement inherited from the CLI.
 - **PCB Editor / 3D Viewer: IPC-2581 export fixes**, including a crash fix for
   boards with no outline and new "Report warnings on IPC-2581 export"
-  (#25149, several sub-fixes). Relevant to `export_ipc2581`. The crash fix is
-  a straightforward robustness win. The new warning-reporting behavior
-  surfaced a pre-existing gap: `export/pcb_manufacturing_outputs.py` only
-  reads `stderr` on a non-zero exit code, so any new warnings the CLI emits
-  on a *successful* export are currently discarded rather than shown to the
-  caller. Tracked as a follow-up, not fixed in this baseline-promotion
-  change to keep it focused.
+  (#25149, several sub-fixes). Relevant to `export_ipc2581`. The product now
+  preserves successful-export diagnostics from KiCad 10.0.6 and surfaces
+  them to the caller under a `Warnings:` section instead of silently
+  discarding `stderr`.
 - **PCB Editor: Gerber X3 DNP/BOM-exclude honoring (#25010)** and **drill
   report back-drilled hole counting + back-drill filename layer fix (#25021,
   #23452).** Improve `export_gerber()`/`export_drill()` output correctness

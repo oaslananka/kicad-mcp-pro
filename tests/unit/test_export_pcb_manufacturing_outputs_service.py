@@ -179,6 +179,26 @@ def test_ipc2581_preserves_capability_path_variant_and_cli_fallbacks(tmp_path: P
     assert result == f"IPC-2581 exported to {out_file}"
 
 
+def test_ipc2581_surfaces_success_stderr_warnings(tmp_path: Path) -> None:
+    service, _ = _service(
+        tmp_path,
+        cli_result=(0, "", "Board outline is invalid or missing.  Please run DRC.\n"),
+    )
+    out_file = tmp_path / "output" / "ipc2581" / "board.ipc2581"
+
+    assert service.export_ipc2581() == (
+        f"IPC-2581 exported to {out_file}\n"
+        "Warnings:\nBoard outline is invalid or missing.  Please run DRC."
+    )
+
+
+def test_odb_success_does_not_change_output_contract_for_stderr(tmp_path: Path) -> None:
+    service, _ = _service(tmp_path, cli_result=(0, "", "non-fatal diagnostic\n"))
+    out_file = tmp_path / "output" / "odb" / "board.odb"
+
+    assert service.export_odb() == f"ODB++ exported to {out_file}"
+
+
 def test_ipc2581_preserves_failure_text_and_ignores_stdout(tmp_path: Path) -> None:
     stderr_service, _ = _service(tmp_path, cli_result=(2, "stdout detail", "stderr detail"))
     assert stderr_service.export_ipc2581() == "IPC-2581 export failed: stderr detail"

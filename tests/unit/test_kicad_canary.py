@@ -426,3 +426,27 @@ def test_run_canary_writes_summary_when_version_range_fails(tmp_path: Path, monk
     assert exit_code == 1
     assert (artifacts / "summary.json").exists()
     assert (artifacts / "failing-fixtures.txt").read_text(encoding="utf-8") == ("compatibility\n")
+
+
+def test_package_kicad_canary_scripts_keep_artifacts_inside_repository() -> None:
+    root = Path(__file__).resolve().parents[2]
+    package = json.loads((root / "package.json").read_text(encoding="utf-8"))
+
+    for script_name in (
+        "test:kicad-cli-contract",
+        "test:kicad-cli-contract:nightly",
+        "test:kicad-cli-contract:future",
+    ):
+        command = package["scripts"][script_name]
+        assert "../../artifacts/" not in command
+        assert "--artifacts artifacts/kicad-cli-contract/" in command
+
+
+def test_public_compatibility_docs_use_current_compatibility_command() -> None:
+    root = Path(__file__).resolve().parents[2]
+    compatibility_docs = sorted((root / "docs" / "compatibility").glob("kicad-*.md"))
+    assert compatibility_docs
+
+    for path in compatibility_docs:
+        raw = path.read_text(encoding="utf-8")
+        assert "corepack pnpm run check:compatibility" not in raw, path

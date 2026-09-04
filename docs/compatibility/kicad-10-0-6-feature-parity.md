@@ -93,7 +93,7 @@ KiCad 11 readiness is represented separately from KiCad 10.0.6 parity:
 Linux and macOS:
 
 ```bash
-corepack pnpm run check:compatibility
+corepack pnpm run compat:check
 corepack pnpm run test:contract
 corepack pnpm run test:fixtures
 ```
@@ -101,7 +101,7 @@ corepack pnpm run test:fixtures
 Windows 11 PowerShell:
 
 ```powershell
-corepack pnpm run check:compatibility
+corepack pnpm run compat:check
 corepack pnpm run test:contract
 corepack pnpm run test:fixtures
 ```
@@ -112,7 +112,7 @@ matrix appears on this page.
 
 ## Source Verification
 
-Checked on 2026-08-31:
+Checked on 2026-09-04:
 
 - [KiCad 10.0.6 release notes](https://www.kicad.org/blog/2026/08/KiCad-10.0.6-Release/)
 - [KiCad 10.0.6 GitHub release tag](https://github.com/KiCad/kicad-source-mirror/releases/tag/10.0.6)

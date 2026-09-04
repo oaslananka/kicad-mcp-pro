@@ -1,5 +1,5 @@
 schemaVersion: 1
-updated: '2026-08-31'
+updated: '2026-09-04'
 source: https://github.com/oaslananka/kicad-mcp-pro
 kicad:
   primary: 10.0.x
@@ -92,7 +92,7 @@ kicad:
         cliFormat: solidworks
         evidence: KiCad 10 CLI import help advertises the format.
 kicad10FeatureParity:
-  reviewed: '2026-08-31'
+  reviewed: '2026-09-04'
   baseline: 10.0.6
   primaryIssue: https://github.com/oaslananka/kicad-mcp-pro/issues/427
   documentation: docs/compatibility/kicad-10-0-6-feature-parity.md

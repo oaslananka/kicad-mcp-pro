@@ -31,6 +31,7 @@ class _SingleFileSpec:
     default_name: str
     support_name: str
     extra_args: tuple[str, ...] = ()
+    report_success_stderr: bool = False
 
 
 _IPC2581 = _SingleFileSpec(
@@ -39,6 +40,7 @@ _IPC2581 = _SingleFileSpec(
     output_subdir="ipc2581",
     default_name="board.ipc2581",
     support_name="supports_ipc2581",
+    report_success_stderr=True,
 )
 _ODB = _SingleFileSpec(
     command="odb",
@@ -138,4 +140,8 @@ class ExportPcbManufacturingOutputsService:
         )
         if code != 0:
             return f"{spec.label} export failed: {stderr or 'unknown error'}"
-        return f"{spec.label} exported to {out_file}"
+        result = f"{spec.label} exported to {out_file}"
+        warning = stderr.strip()
+        if spec.report_success_stderr and warning:
+            return f"{result}\nWarnings:\n{warning}"
+        return result
