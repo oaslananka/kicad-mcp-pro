@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.2](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v1.4.1...protocol-schemas-v1.4.2) (2026-09-04)
+
+
+### Bug Fixes
+
+* remediate engineering audit findings ([#838](https://github.com/oaslananka/kicad-mcp-pro/issues/838)) ([16fa63b](https://github.com/oaslananka/kicad-mcp-pro/commit/16fa63bf703ff5239b43906142d3ac89b4fbfbc8))
+
 ## [1.4.1](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v1.4.0...protocol-schemas-v1.4.1) (2026-08-13)
 
 
