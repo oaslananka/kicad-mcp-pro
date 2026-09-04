@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
@@ -13,6 +12,7 @@ from ..path_safety import resolve_repo_or_temp
 from .live_runner import validate_sanitized_evidence
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
+_SMOKE_ASSURANCE_REPORT_RELATIVE = Path("artifacts/live-model-smoke-assurance/report.json")
 
 
 def _mapping(value: object, description: str) -> dict[str, Any]:
@@ -283,15 +283,15 @@ def evaluate_smoke_assurance(
 
 
 def write_smoke_assurance_report(path: str | Path, report: Mapping[str, object]) -> Path:
-    """Write one sanitized smoke-assurance report."""
+    """Write one sanitized smoke-assurance report to its fixed repository artifact path."""
     validate_sanitized_evidence(report)
-    output = resolve_repo_or_temp(path, repo_root=_REPO_ROOT).expanduser().resolve()
-    repo_root = _REPO_ROOT.expanduser().resolve()
-    temp_root = Path(tempfile.gettempdir()).resolve()
-    if not (output.is_relative_to(repo_root) or output.is_relative_to(temp_root)):
+    requested = Path(path)
+    if requested != _SMOKE_ASSURANCE_REPORT_RELATIVE:
         raise UnsafePathError(
-            "Smoke assurance output must stay inside the repository or system temp."
+            "Smoke assurance output must use the fixed repository artifact path "
+            f"'{_SMOKE_ASSURANCE_REPORT_RELATIVE.as_posix()}'."
         )
+    output = (_REPO_ROOT / _SMOKE_ASSURANCE_REPORT_RELATIVE).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n",

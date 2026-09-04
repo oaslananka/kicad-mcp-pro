@@ -319,21 +319,23 @@ def test_smoke_assurance_blocks_missing_required_status(tmp_path: Path) -> None:
     assert report["classifications"]["infrastructure_failures"] == []
 
 
-def test_smoke_assurance_writer_revalidates_resolved_output(
+def test_smoke_assurance_writer_rejects_non_allowlisted_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    unsafe_output = Path.home() / ".kicad-mcp-pro-unsafe-smoke-assurance.json"
+    monkeypatch.setattr(Path, "write_text", lambda *_args, **_kwargs: 0)
 
-    monkeypatch.setattr(
-        smoke_assurance,
-        "resolve_repo_or_temp",
-        lambda *_args, **_kwargs: unsafe_output,
+    with pytest.raises(UnsafePathError, match="fixed repository artifact path"):
+        smoke_assurance.write_smoke_assurance_report("ignored.json", {"passed": True})
+
+
+def test_smoke_assurance_writer_uses_fixed_repository_artifact_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(smoke_assurance, "_REPO_ROOT", tmp_path)
+
+    output = smoke_assurance.write_smoke_assurance_report(
+        "artifacts/live-model-smoke-assurance/report.json", {"passed": True}
     )
 
-    def _unexpected_write(*_args: object, **_kwargs: object) -> int:
-        pytest.fail("writer reached filesystem write before revalidating the resolved path")
-
-    monkeypatch.setattr(Path, "write_text", _unexpected_write)
-
-    with pytest.raises(UnsafePathError):
-        smoke_assurance.write_smoke_assurance_report("ignored.json", {"passed": True})
+    assert output == (tmp_path / "artifacts/live-model-smoke-assurance/report.json").resolve()
+    assert json.loads(output.read_text(encoding="utf-8")) == {"passed": True}
