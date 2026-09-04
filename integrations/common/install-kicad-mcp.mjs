@@ -8,7 +8,7 @@
  *   node install-kicad-mcp.mjs --scope user claude-code
  */
 
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from "fs";
 import { homedir, platform } from "os";
 import { join, resolve } from "path";
@@ -19,9 +19,21 @@ const INTEGRATIONS_DIR = new URL(".", import.meta.url).pathname;
 const AGENTS = {
   "claude-code": {
     install: (scope) =>
-      execSync(
-        `claude mcp add --transport stdio --scope ${scope} kicad -- uvx kicad-mcp-pro`,
-        { stdio: "inherit" }
+      execFileSync(
+        "claude",
+        [
+          "mcp",
+          "add",
+          "--transport",
+          "stdio",
+          "--scope",
+          scope,
+          "kicad",
+          "--",
+          "uvx",
+          "kicad-mcp-pro",
+        ],
+        { stdio: "inherit" },
       ),
     configPath: (scope) =>
       scope === "project"
@@ -76,10 +88,17 @@ async function prompt(question) {
 
 async function main() {
   const args = process.argv.slice(2);
-  const agentArg = args.find((a) => !a.startsWith("--"));
-  const scopeArg = args.includes("--scope")
-    ? args[args.indexOf("--scope") + 1]
-    : "project";
+  const scopeIndex = args.indexOf("--scope");
+  const scopeArg = scopeIndex >= 0 ? args[scopeIndex + 1] : "project";
+  const supportedScopes = new Set(["local", "project", "user"]);
+  if (!supportedScopes.has(scopeArg)) {
+    console.error(`Unsupported scope: ${scopeArg ?? "<missing>"}. Supported: local, project, user`);
+    process.exit(2);
+  }
+  const agentArg = args.find(
+    (arg, index) =>
+      !arg.startsWith("--") && (scopeIndex < 0 || index !== scopeIndex + 1),
+  );
 
   const agentName = agentArg || await prompt("Which agent? (claude-code, codex, gemini, opencode, cursor, vscode, claude-desktop, antigravity): ");
   const agent = AGENTS[agentName.trim().toLowerCase()];
@@ -117,7 +136,7 @@ async function main() {
 
   // Run doctor after install
   try {
-    const doctor = execSync(`kicad-mcp-pro doctor --json`, {
+    const doctor = execFileSync("kicad-mcp-pro", ["doctor", "--json"], {
       encoding: "utf-8",
       timeout: 15000,
     });
