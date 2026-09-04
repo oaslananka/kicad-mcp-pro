@@ -326,3 +326,16 @@ def test_smoke_assurance_writer_rejects_non_allowlisted_output(
 
     with pytest.raises(UnsafePathError, match="fixed repository artifact path"):
         smoke_assurance.write_smoke_assurance_report("ignored.json", {"passed": True})
+
+
+def test_smoke_assurance_writer_uses_fixed_repository_artifact_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(smoke_assurance, "_REPO_ROOT", tmp_path)
+
+    output = smoke_assurance.write_smoke_assurance_report(
+        "artifacts/live-model-smoke-assurance/report.json", {"passed": True}
+    )
+
+    assert output == (tmp_path / "artifacts/live-model-smoke-assurance/report.json").resolve()
+    assert json.loads(output.read_text(encoding="utf-8")) == {"passed": True}
