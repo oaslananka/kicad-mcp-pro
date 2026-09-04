@@ -735,23 +735,68 @@ def run_ci_quality_gates(plan: BootstrapPlan) -> list[dict[str, Any]]:
     return evidence
 
 
+def _render_error(payload: dict[str, Any]) -> bool:
+    if payload.get("ok") is not False:
+        return False
+    print(f"Development environment: {payload.get('status', 'error')}")
+    if payload.get("message"):
+        print(payload["message"])
+    return True
+
+
+def _render_plan(payload: dict[str, Any]) -> bool:
+    versions = payload.get("versions")
+    if "tools" in payload or not isinstance(versions, dict):
+        return False
+    print("Development bootstrap plan:")
+    for name, version in sorted(versions.items()):
+        print(f"- {name}: {version}")
+    return True
+
+
+def _render_policy_entries(policy: dict[str, Any], key: str, label: str) -> None:
+    entries = policy.get(key)
+    if not isinstance(entries, list):
+        return
+    for raw_item in entries:
+        if not isinstance(raw_item, dict):
+            continue
+        print(f"- {label}: {raw_item.get('name')}: {raw_item.get('reason')}")
+
+
+def _render_doctor(payload: dict[str, Any]) -> bool:
+    policy_raw = payload.get("developmentPolicy")
+    if not isinstance(policy_raw, dict):
+        return False
+    policy: dict[str, Any] = policy_raw
+    print(f"Development doctor: {payload.get('status', 'unknown')}")
+    print(f"- development ready: {'yes' if policy.get('ready') else 'no'}")
+    tools = payload.get("tools")
+    if isinstance(tools, dict) and isinstance(tools.get("tool_count"), int):
+        print(f"- tool count: {tools['tool_count']}")
+    _render_policy_entries(policy, "blocking", "blocking")
+    _render_policy_entries(policy, "limitations", "limitation")
+    return True
+
+
+def _render_ready(payload: dict[str, Any]) -> None:
+    print("Development environment ready.")
+    tools = payload.get("tools")
+    if not isinstance(tools, dict):
+        return
+    for name, raw_details in sorted(tools.items()):
+        details = raw_details if isinstance(raw_details, dict) else {}
+        print(f"- {name}: {details.get('actual')}")
+
+
 def _render(payload: dict[str, Any], *, json_output: bool) -> None:
     if json_output:
         print(json.dumps(payload, indent=2, sort_keys=True))
         return
-    if payload.get("ok") is False:
-        print(f"Development environment: {payload.get('status', 'error')}")
-        if payload.get("message"):
-            print(payload["message"])
-        return
-    if "versions" in payload and "tools" not in payload:
-        print("Development bootstrap plan:")
-        for name, version in sorted(payload["versions"].items()):
-            print(f"- {name}: {version}")
-        return
-    print("Development environment ready.")
-    for name, details in sorted((payload.get("tools") or {}).items()):
-        print(f"- {name}: {details.get('actual')}")
+    for renderer in (_render_error, _render_plan, _render_doctor):
+        if renderer(payload):
+            return
+    _render_ready(payload)
 
 
 def main(argv: list[str] | None = None) -> int:

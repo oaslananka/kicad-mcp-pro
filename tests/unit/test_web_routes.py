@@ -489,3 +489,20 @@ async def test_api_health_reports_runtime_capability_without_sensitive_diagnosti
         "headless": False,
     }
     assert "diagnostics" not in data["kicadRuntime"]
+
+
+@pytest.mark.anyio
+async def test_sse_generator_propagates_cancellation() -> None:
+    from kicad_mcp.web.routes import _log_subscribers, _sse_log_generator
+
+    _log_subscribers.clear()
+    gen = _sse_log_generator()
+    await gen.__anext__()
+    assert len(_log_subscribers) == 1
+
+    pending = asyncio.create_task(gen.__anext__())
+    await asyncio.sleep(0)
+    pending.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+    assert _log_subscribers == []

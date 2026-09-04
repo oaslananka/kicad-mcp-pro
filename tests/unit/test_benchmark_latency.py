@@ -125,3 +125,14 @@ async def test_tools_list_latency_against_shared_budget(
             encoding="utf-8",
         )
     assert p95_ms <= allowed_ms, f"tools/list p95 {p95_ms:.2f} ms > {allowed_ms:.2f} ms"
+
+
+def test_performance_catalog_contains_only_repository_backed_metrics() -> None:
+    catalog = json.loads(PERFORMANCE_CATALOG_PATH.read_text(encoding="utf-8"))
+    metrics = catalog["metrics"]
+
+    assert set(metrics) == {TOOLS_LIST_METRIC}
+    metric = metrics[TOOLS_LIST_METRIC]
+    assert metric["ciRequired"] is True
+    assert (PERFORMANCE_CATALOG_PATH.parents[1] / metric["source"]).is_file()
+    assert catalog["reference"]["methodology"] == "tests/unit/test_benchmark_latency.py"

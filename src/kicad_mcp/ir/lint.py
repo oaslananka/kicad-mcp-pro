@@ -132,7 +132,7 @@ def _lint_single_net_interfaces(ir: IRCircuit, findings: list[IRLintFinding]) ->
 def _lint_unknown_voltage_rails(ir: IRCircuit, findings: list[IRLintFinding]) -> None:
     """ir-004: Rails without a known voltage (still at default 0.0)."""
     for name, rail in ir.power_rails.items():
-        if rail.voltage == 0.0 and name.upper() not in ("GND", "AGND", "DGND", "VSS"):
+        if not rail.voltage and name.upper() not in ("GND", "AGND", "DGND", "VSS"):
             findings.append(
                 IRLintFinding(
                     rule_id="ir-004",

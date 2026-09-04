@@ -33,13 +33,6 @@ def field_solver_available() -> bool:
 
 def impedance_method() -> dict[str, Any]:
     """Describe the active impedance computation method, honestly."""
-    if field_solver_available():  # pragma: no cover - no solver integrated yet
-        return {
-            "method": "2D field solver",
-            "solver_grade": True,
-            "accuracy": "solver-grade",
-            **solver_verdict_metadata(solver_grade=True),
-        }
     return {
         "method": CLOSED_FORM_METHOD,
         "solver_grade": False,

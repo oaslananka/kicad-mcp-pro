@@ -69,3 +69,11 @@ Re-run this review and update the evidence file when any of the following occurs
 2. A new stable `tauri`/`wry` release changes the Linux GTK/glib dependency versions in `src-tauri/Cargo.lock`.
 3. `cargo audit` reports a new advisory in this set as `vulnerability`-kind rather than `warning`-kind.
 4. Scorecard alert #53 changes state (closed, reopened, or its aggregated advisory list changes).
+
+## 2026-09-04 remediation recheck
+
+The engineering-audit remediation re-ran `osv-scanner 2.4.0` from the repository root and reproduced the same 17 Rust advisories: 0 Critical, 0 High, 1 Medium (`RUSTSEC-2024-0429`, `glib 0.18.5`), and 16 Unknown/informational advisories. No advisory was removed by the current compatible dependency set.
+
+A fresh `cargo tree -i glib@0.18.5` under `src-tauri` still resolves the Linux chain through `gtk 0.18.2`, `webkit2gtk 2.0.2`, `wry 0.55.1`, and `tauri 2.11.5`, including the tray/runtime paths. `cargo update -p tauri --dry-run` reports `Locking 0 packages to latest compatible versions`, so there is no stable semver-compatible Tauri refresh available to this lockfile that removes the GTK3/glib family.
+
+Accordingly, the existing disposition is unchanged: do not force `glib >=0.20` into the GTK3 0.18 graph, do not suppress the advisories, and re-evaluate when upstream Tauri/Wry ships a supported GTK4/WebKit6 path or another compatible release changes this dependency family.

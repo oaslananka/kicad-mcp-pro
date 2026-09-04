@@ -260,6 +260,47 @@ def test_decorate_candidate_response_does_not_modify_errors() -> None:
     assert decorate_candidate_response("tools/call", response, server_version="3.28.0") == response
 
 
+def test_stable_sdk_request_ignores_non_mapping_params_and_meta() -> None:
+    with_list_params = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": []}
+    with_scalar_meta = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list",
+        "params": {"_meta": "opaque"},
+    }
+
+    assert stable_sdk_request(with_list_params) == with_list_params
+    assert stable_sdk_request(with_scalar_meta) == with_scalar_meta
+
+
+def test_decorate_candidate_response_repairs_scalar_meta_without_cache_policy() -> None:
+    response = {"jsonrpc": "2.0", "id": 2, "result": {"_meta": "opaque"}}
+
+    decorated = decorate_candidate_response(
+        "experimental/unknown", response, server_version="3.28.0"
+    )
+
+    assert decorated["result"]["_meta"]["io.modelcontextprotocol/serverInfo"] == {
+        "name": "kicad-mcp-pro",
+        "version": "3.28.0",
+    }
+    assert "ttlMs" not in decorated["result"]
+    assert "cacheScope" not in decorated["result"]
+
+
+def test_decorate_candidate_response_preserves_invalid_tools_payload_shapes() -> None:
+    non_list = {"jsonrpc": "2.0", "id": 2, "result": {"tools": {"name": "alpha"}}}
+    mixed_list = {"jsonrpc": "2.0", "id": 3, "result": {"tools": [{"name": "zeta"}, "bad"]}}
+
+    decorated_non_list = decorate_candidate_response(
+        "tools/list", non_list, server_version="3.28.0"
+    )
+    decorated_mixed = decorate_candidate_response("tools/list", mixed_list, server_version="3.28.0")
+
+    assert decorated_non_list["result"]["tools"] == {"name": "alpha"}
+    assert decorated_mixed["result"]["tools"] == [{"name": "zeta"}, "bad"]
+
+
 def test_jsonrpc_error_response_preserves_request_id_and_candidate_error_data() -> None:
     error = ProtocolValidationError(
         -32020,

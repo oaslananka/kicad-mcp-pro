@@ -303,3 +303,24 @@ def test_task_status_type_is_re_exported() -> None:
     from kicad_mcp.execution import TaskStatusType as Exported
 
     assert Exported is TaskStatusType
+
+
+async def test_task_runner_preserves_cancelled_state() -> None:
+    tm = TaskManager()
+    started = asyncio.Event()
+
+    async def work() -> None:
+        started.set()
+        await asyncio.sleep(10)
+
+    task = await tm.run_and_wait("cancel-propagation", work, ttl_s=60)
+    await started.wait()
+    record = await tm._get_record(task.taskId)
+    assert record is not None
+    runner = record._runner
+    assert runner is not None
+
+    await tm.cancel(task.taskId)
+    with pytest.raises(asyncio.CancelledError):
+        await runner
+    assert runner.cancelled()

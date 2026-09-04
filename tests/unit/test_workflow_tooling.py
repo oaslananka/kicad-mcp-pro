@@ -98,6 +98,22 @@ def test_sonar_source_and_test_scopes_are_disjoint() -> None:
     assert "sonar.test.exclusions" not in properties
 
 
+def test_sonar_excludes_package_test_runners_from_coverage() -> None:
+    raw = (ROOT / "sonar-project.properties").read_text(encoding="utf-8")
+    logical = raw.replace("\\\n", "")
+    properties: dict[str, list[str]] = {}
+    for line in logical.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        properties[key] = [item.strip() for item in value.split(",") if item.strip()]
+
+    exclusions = properties["sonar.coverage.exclusions"]
+    assert "packages/kicad-fixtures/scripts/run-tests.cjs" in exclusions
+    assert "packages/protocol-schemas/scripts/run-tests.cjs" in exclusions
+
+
 def test_sonar_s8541_exception_is_limited_to_github_workflows() -> None:
     raw = (ROOT / "sonar-project.properties").read_text(encoding="utf-8")
 
