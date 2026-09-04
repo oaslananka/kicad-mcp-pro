@@ -8,6 +8,7 @@ node_modules/
 
 # Build outputs
 dist/
+packages/protocol-schemas/dist-test/
 out/
 site/
 coverage/
