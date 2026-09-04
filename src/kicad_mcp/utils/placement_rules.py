@@ -32,8 +32,7 @@ _CRYSTAL_RE = re.compile(r"^(?:Y|X)\d", re.IGNORECASE)
 _INDUCTOR_RE = re.compile(r"^L\d", re.IGNORECASE)
 
 _DECAP_VALUE_RE = re.compile(
-    r"(?:100n|0\.1u|0\.1µ|100nF|100NF|1u|10u|4[,.]7u|0\.01u|10nF|22nF|47nF|"
-    r"1µ|10µ|0\.1µF|1µF|10µF|bypass|decoup|decouple)",
+    r"(?:100n|0\.1[uµ]|1[uµ]|10[uµ]|4[,.]7u|0\.01u|(?:10|22|47)nF|bypass|decoup)",
     re.IGNORECASE,
 )
 _CRYSTAL_VALUE_RE = re.compile(r"\d+\s*(?:MHz|kHz|mhz|khz)", re.IGNORECASE)

@@ -100,8 +100,6 @@ def _check_violation(actual: int, spec: ViolationSpec) -> bool:
             return actual > num
         if op == "<":
             return actual < num
-        if op == "==":
-            return actual == num
     return False
 
 
