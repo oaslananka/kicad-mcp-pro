@@ -93,7 +93,7 @@ KiCad 11 readiness is represented separately from KiCad 10.0.5 parity:
 Linux and macOS:
 
 ```bash
-corepack pnpm run check:compatibility
+corepack pnpm run compat:check
 corepack pnpm run test:contract
 corepack pnpm run test:fixtures
 ```
@@ -101,7 +101,7 @@ corepack pnpm run test:fixtures
 Windows 11 PowerShell:
 
 ```powershell
-corepack pnpm run check:compatibility
+corepack pnpm run compat:check
 corepack pnpm run test:contract
 corepack pnpm run test:fixtures
 ```

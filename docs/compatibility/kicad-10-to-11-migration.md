@@ -104,11 +104,11 @@ The repository gate checks that every listed tool exists in the generated MCP
 tool reference and that every evidence path exists:
 
 ```bash
-corepack pnpm run check:compatibility
+corepack pnpm run compat:check
 ```
 
 ```powershell
-corepack pnpm run check:compatibility
+corepack pnpm run compat:check
 ```
 
 ## Promotion Checklist
