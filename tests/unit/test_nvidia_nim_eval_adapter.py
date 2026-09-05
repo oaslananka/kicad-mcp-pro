@@ -62,6 +62,23 @@ cases:
     assert catalog[-1].summary == "Summarize the current board."
 
 
+def test_committed_drc_catalog_distinguishes_full_report_from_focused_followups() -> None:
+    root = Path(__file__).resolve().parents[2]
+    catalog = {
+        entry.name: entry.summary.lower()
+        for entry in load_eval_tool_catalog(
+            root / "evals/tool_selection/cases.yaml",
+            root / "docs/tools-reference.generated.md",
+        )
+    }
+
+    assert "full drc report" in catalog["run_drc"]
+    assert "unconnected" in catalog["run_drc"]
+    assert "courtyard" in catalog["run_drc"]
+    assert "focused follow-up" in catalog["get_unconnected_nets"]
+    assert "focused follow-up" in catalog["get_courtyard_violations"]
+
+
 def test_chat_payload_contains_strict_classifier_contract_without_case_expectations() -> None:
     payload = build_chat_payload(
         model="nvidia/test-model",
@@ -86,6 +103,7 @@ def test_chat_payload_contains_strict_classifier_contract_without_case_expectati
     assert "response_kind" in system
     assert "expected_tools" not in system
     assert "forbidden_tools" not in system
+    assert "smallest sufficient tool set" in system
 
 
 def test_nim_request_returns_only_normalized_observation_and_optional_usage() -> None:

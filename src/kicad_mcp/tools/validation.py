@@ -3539,7 +3539,7 @@ def _register_validation_gate_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     @headless_compatible
     def run_drc(save_report: bool = False) -> VerdictReport:
-        """Run PCB design rule checks."""
+        """Return full DRC report with PCB violations, unconnected items, and courtyard issues."""
         path, report, error = _run_drc_report("drc_report.json")
         return _drc_report_payload(path, report, error, save_report=save_report)
 
@@ -3783,7 +3783,7 @@ def _register_targeted_validation_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     @headless_compatible
     def get_unconnected_nets() -> str:
-        """Return only unconnected net issues from DRC."""
+        """Return only unconnected DRC issues for focused follow-up after run_drc."""
         _, report, error = _run_drc_report("unconnected.json")
         if report is None:
             return f"Unable to compute unconnected nets: {error or 'unknown error'}"
@@ -3796,7 +3796,7 @@ def _register_targeted_validation_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     @headless_compatible
     def get_courtyard_violations() -> str:
-        """Return only courtyard issues from DRC."""
+        """Return only courtyard DRC issues for focused follow-up after run_drc."""
         _, report, error = _run_drc_report("courtyard.json")
         if report is None:
             return f"Unable to compute courtyard issues: {error or 'unknown error'}"
