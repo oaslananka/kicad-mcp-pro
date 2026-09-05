@@ -124,6 +124,36 @@ jobs:
               raise SystemExit("aggregate per_case_failures are invalid")
           if per_case:
               print(f"::error title=per_case_failures::count={len(per_case)}")
+              diagnostic_keys = (
+                  "configuration_id",
+                  "case_id",
+                  "run_index",
+                  "failure_kind",
+                  "failure_detail",
+                  "categories",
+                  "called",
+                  "missing_expected",
+                  "unnecessary_called",
+                  "expected_behavior",
+                  "actual_behavior",
+              )
+              for item in per_case:
+                  if not isinstance(item, dict):
+                      raise SystemExit("aggregate per_case_failure is invalid")
+                  diagnostic = {
+                      key: item[key]
+                      for key in diagnostic_keys
+                      if key in item and item[key] not in (None, "", [])
+                  }
+                  message = escape(
+                      json.dumps(
+                          diagnostic,
+                          sort_keys=True,
+                          separators=(",", ":"),
+                          ensure_ascii=True,
+                      )
+                  )
+                  print(f"::error title=per_case_failure::{message}")
           PY
 
       - name: Run baseline candidate dry-run

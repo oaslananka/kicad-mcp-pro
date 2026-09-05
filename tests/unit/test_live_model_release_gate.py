@@ -509,6 +509,11 @@ def test_release_gate_diagnostic_replays_only_sanitized_source_run_artifact() ->
     assert "run-id: ${{ inputs.source_run_id }}" in workflow
     assert "live-model-release-gate-${{ inputs.source_run_id }}" in workflow
     assert "Summarize sanitized aggregate classifications" in workflow
+    assert "per_case_failures" in workflow
+    assert "per_case_failure" in workflow
+    assert '"configuration_id"' in workflow
+    assert '"case_id"' in workflow
+    assert '"failure_kind"' in workflow
     assert "Run baseline candidate dry-run" in workflow
     assert 'test "$CANDIDATE_EXIT_CODE" = "0"' in workflow
     assert "generate_live_model_baseline.py" in workflow
