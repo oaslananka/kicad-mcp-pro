@@ -1,0 +1,14 @@
+{
+  "attempts": [
+    {
+      "attempt_id": "attempt-001",
+      "directory": "attempts/attempt-001",
+      "evidence_digest": "sha256:bfb76303b2860ce27a06f6022e84cb17aab7233146d40cc85b4763c16ca523d9"
+    }
+  ],
+  "benchmark_id": "stm32f072-usbc-reference-board",
+  "benchmark_version": "v1",
+  "board_id": "stm32f072-usbc",
+  "reference_inputs_digest": "sha256:abf8c5da30fd7f5a63ec3fd6d7e134b2ca431aa29355800c128433a0af897154",
+  "schema_version": "pcb-reference-board.v1"
+}

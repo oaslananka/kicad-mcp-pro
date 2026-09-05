@@ -1,0 +1,3 @@
+[mcp_servers.kicad]
+url = "http://127.0.0.1:3334/mcp"
+tool_timeout_sec = 120

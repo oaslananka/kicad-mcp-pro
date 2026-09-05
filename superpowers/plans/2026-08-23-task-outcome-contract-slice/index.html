@@ -1,0 +1,6196 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://oaslananka.github.io/kicad-mcp-pro/superpowers/plans/2026-08-23-task-outcome-contract-slice/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Task Outcome Contract Slice Implementation Plan - KiCad MCP Pro</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../../assets/support-links.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#task-outcome-contract-slice-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="KiCad MCP Pro" class="md-header__button md-logo" aria-label="KiCad MCP Pro" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            KiCad MCP Pro
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Task Outcome Contract Slice Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="teal" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="teal" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/oaslananka/kicad-mcp-pro" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    oaslananka/kicad-mcp-pro
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="KiCad MCP Pro" class="md-nav__button md-logo" aria-label="KiCad MCP Pro" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    KiCad MCP Pro
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/oaslananka/kicad-mcp-pro" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    oaslananka/kicad-mcp-pro
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_1">
+        
+          
+          <label class="md-nav__link" for="__nav_2_1" id="__nav_2_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tutorials/getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started Tutorial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how-to/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How-to Guides
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../accessibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Accessibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internationalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internationalization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../client-configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Client Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference and Status
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference and Status
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diataxis Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tools-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tools-agent-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Tool Workflow Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tools-reference.generated/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Generated Tools Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../errors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Error Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_6">
+        
+          
+          <label class="md-nav__link" for="__nav_3_6" id="__nav_3_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MCP Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../mcp/api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../mcp/tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../mcp/transport/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transport
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../mcp/deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api-stability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Stability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../maintenance-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maintenance Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../status/capability-levels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capability Verification Levels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../status/runtime-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../status/runtime-policy-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime Policy Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../compatibility/capability-parity.generated/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capability Parity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../status/work-order-audit-2026-06-17/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work-Order Audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install, Packaging, and Distribution
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Install, Packaging, and Distribution
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../install/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../install/client-config-generator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Client Config Generator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../publishing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Publishing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../public-listing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Listings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integrations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Integrations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integration/kicad-studio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad Studio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integration/companion-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Companion Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integration/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integration/cursor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cursor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integration/claude-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_6">
+        
+          
+          <label class="md-nav__link" for="__nav_5_6" id="__nav_5_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Agent Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/toolsets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Toolsets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/antigravity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antigravity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/chatgpt-app/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ChatGPT App
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/claude-ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude AI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/claude-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/mcpb/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Bundle (.mcpb)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/cline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/codex/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Codex
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/continue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/cursor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cursor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/gemini-cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gemini CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/opencode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenCode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/vscode-copilot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VS Code Copilot
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/windsurf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windsurf
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../agents/zed/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zed
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad 10
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    KiCad 10
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../kicad10/variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../kicad10/time-domain/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Time-Domain Tuning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../kicad10/graphical-drc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Graphical DRC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../compatibility/kicad-10-0-6-feature-parity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad 10.0.6 Feature Parity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../status/kicad-10-0-6-baseline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad 10.0.6 Baseline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../compatibility/kicad-10-to-11-migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad 10 to 11 Migration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../compatibility/kicad-adapter-matrix.generated/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Generated Adapter Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/kicad-10-0-4-canary-report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad 10.0.4 Canary Report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/kicad-10-0-4-gap-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad 10.0.4 Gap Audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflows
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Workflows
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/first-pcb/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First PCB
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/read-only-agent-review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Read-only Agent Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/schematic-to-pcb/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Schematic to PCB
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/professional-circuit-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Professional Circuit Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/high-speed-review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    High-Speed Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/live-preview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Safe Live Preview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/manufacturing-export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manufacturing Export
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8">
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations and Release
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operations and Release
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../deployment/repository-topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository and CI/CD Topology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../autonomy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Autonomy Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../repository-operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../branch-protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Branch Protection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_5">
+        
+          
+          <label class="md-nav__link" for="__nav_8_5" id="__nav_8_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Automation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Automation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../automation/failure-classifier/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Failure Classifier
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../automation/review-thread-gate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Review Thread Gate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../deployment/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../deployment/http-mode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HTTP Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../openssf-best-practices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenSSF Best Practices
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../openssf-silver-evidence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenSSF Silver Evidence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../repo-maturity-report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Maturity Report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../openssf-evidence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenSSF Evidence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../openssf-gap-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenSSF Gap Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../openssf-proposal-links/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenSSF Proposal Links
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../legal/dependency-license-awareness/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Package License Inventory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../release/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../release-readiness-2026-07-03/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    July 2026 Release Readiness
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../status/distribution-readiness/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Distribution and Onboarding Readiness
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../demo-media/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Demo Media
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9">
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security and Privacy
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Security and Privacy
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Privacy Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../deployment/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../security/threat-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Threat Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../security/release-integrity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Integrity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../security/release-security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release and Supply-Chain Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../security/release-signing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Signing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../security/requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../security/sonar-vulnerability-disposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sonar Vulnerability Disposition
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../security/input-validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../security/assurance-case/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Assurance Case
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../security/scorecard-exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scorecard Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../security/rustsec-gtk3-unic-disposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RustSec GTK3/Unic Disposition
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../security/github-actions-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub Actions Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflow-security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflow Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10">
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Submission
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Submission
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../submission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../submission/anthropic-directory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Anthropic Directory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../submission/chatgpt-apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ChatGPT Apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../submission/openai-mcp-registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../submission/kicad-pcm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad PCM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../submission/reviewer-test-prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reviewer Test Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../submission/safety-and-permissions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Safety and Permissions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11">
+        
+          
+          <label class="md-nav__link" for="__nav_11" id="__nav_11_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Local Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/reproducible-bootstrap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reproducible Bootstrap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/coding-standards/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coding Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/testing-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/reference-board-corpus/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference-board Corpus
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/codecov/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Codecov and Test Analytics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/dependency-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dependency Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/commit-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commit Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/installation-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/dependency-audit-2026-06/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dependency Audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../explanation/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture Explanation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11_16">
+        
+          
+          <label class="md-nav__link" for="__nav_11_16" id="__nav_11_16_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture Decisions
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_11_16_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_16">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture Decisions
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../adr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../adr/0001-repository-topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Topology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../adr/0002-version-single-source/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Version Single Source
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../adr/0003-export-tool-naming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Export Tool Naming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../adr/0005-public-metadata-sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Metadata Sources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../adr/0006-mcp-2026-stateless-compatibility-lane/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP 2026 Stateless Compatibility Lane
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../adr/0007-kicad-adapter-selection-and-swig-retirement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad Adapter Selection and SWIG Retirement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/contributing-fixtures/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Regression Fixtures
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Production Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/roadmap-2026/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2026 Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../rfcs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RFCs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/v2-migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v2 Migration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#global-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global Constraints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Global Constraints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-1-extract-the-shared-evidence-sanitization-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1: Extract the shared evidence sanitization boundary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-2-define-strict-v1-benchmark-and-attempt-evidence-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2: Define strict v1 benchmark and attempt evidence models
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-3-add-deterministic-sanitized-parsing-and-rendering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3: Add deterministic sanitized parsing and rendering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-4-verify-the-contract-slice-as-a-production-quality-pr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4: Verify the contract slice as a production-quality PR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="task-outcome-contract-slice-implementation-plan">Task Outcome Contract Slice Implementation Plan<a class="headerlink" href="#task-outcome-contract-slice-implementation-plan" title="Permanent link">¶</a></h1>
+<blockquote>
+<p><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</p>
+</blockquote>
+<p><strong>Goal:</strong> Add the first independently testable #729 delivery slice: a strict, versioned, sanitized, deterministic task-outcome evidence contract that later scoring and real-board benchmark layers can consume.</p>
+<p><strong>Architecture:</strong> Keep task-outcome evidence separate from the existing live-model and golden-corpus result models. Reuse the repository's existing Pydantic v2 dependency for immutable/extra-forbidden evidence models, extract the existing sensitive-evidence validator into a shared eval utility without breaking its current public import path, and expose deterministic JSON rendering without adding a new filesystem write sink. Scoring, KPI aggregation, report rendering, corpus adapters, and #728/#730 physical evidence integration remain later slices.</p>
+<p><strong>Tech Stack:</strong> Python 3.13, Pydantic v2, pytest, Ruff, Mypy, existing <code>kicad_mcp.evals</code> package.</p>
+<p><strong>Spec:</strong> <code>docs/superpowers/specs/2026-08-21-task-outcome-kpi-design.md</code></p>
+<h2 id="global-constraints">Global Constraints<a class="headerlink" href="#global-constraints" title="Permanent link">¶</a></h2>
+<ul>
+<li>Schema identifier for this slice is exactly <code>pcb-task-outcome.v1</code>.</li>
+<li>No public MCP tool, REST/GraphQL, CLI, database, config/env, or event contract changes.</li>
+<li>No new dependency; use the already-declared Pydantic v2 dependency and standard library only.</li>
+<li>Task-outcome models remain FastMCP-independent and do not import server/tool modules.</li>
+<li>Unknown schema versions and unknown fields fail closed; evidence models use <code>ConfigDict(frozen=True, extra="forbid")</code>.</li>
+<li><code>provider_failure</code> remains a real valid attempt classification; only <code>infrastructure_invalid</code> is structurally distinguishable for later denominator exclusion.</li>
+<li>Evidence carries stable identifiers/digests and bounded structured facts, never prompts, credentials, raw provider payloads, unrelated board content, or absolute private paths.</li>
+<li>Existing <code>kicad_mcp.evals.live_runner.EvidenceSanitizationError</code> and <code>validate_sanitized_evidence</code> imports remain backward-compatible after sanitizer extraction.</li>
+<li>Serialization is deterministic: JSON mode, <code>exclude_none=True</code>, <code>sort_keys=True</code>, UTF-8-safe output, two-space indentation, one trailing newline.</li>
+<li>This slice does not calculate KPI rates, Wilson intervals, <code>met/not_met/insufficient_evidence</code>, or publish headline claims; those belong to the scoring slice.</li>
+</ul>
+<hr>
+<h3 id="task-1-extract-the-shared-evidence-sanitization-boundary">Task 1: Extract the shared evidence sanitization boundary<a class="headerlink" href="#task-1-extract-the-shared-evidence-sanitization-boundary" title="Permanent link">¶</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>src/kicad_mcp/evals/evidence_sanitization.py</code>
+- Modify: <code>src/kicad_mcp/evals/live_runner.py</code>
+- Test: <code>tests/unit/test_live_model_eval_runner.py</code></p>
+<p><strong>Interfaces:</strong>
+- Consumes: the current sensitive-key/value/path policy embedded in <code>live_runner.py</code>.
+- Produces: <code>EvidenceSanitizationError</code> and <code>validate_sanitized_evidence(value: object) -&gt; None</code> from <code>kicad_mcp.evals.evidence_sanitization</code> while preserving the same names from <code>kicad_mcp.evals.live_runner</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Write the failing shared-module regression test</strong></li>
+</ul>
+<p>Add a test that fails before the shared module exists without breaking test collection:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">test_evidence_sanitizer_has_shared_eval_module</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">importlib.util</span>
+
+    <span class="k">assert</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="s2">"kicad_mcp.evals.evidence_sanitization"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+</code></pre></div>
+
+<ul>
+<li>[ ] <strong>Step 2: Run the test to verify RED</strong></li>
+</ul>
+<p>Run:</p>
+<div class="codehilite"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--all-extras<span class="w"> </span>pytest<span class="w"> </span>tests/unit/test_live_model_eval_runner.py::test_evidence_sanitizer_has_shared_eval_module<span class="w"> </span>-q
+</code></pre></div>
+
+<p>Expected: FAIL because <code>find_spec(...)</code> returns <code>None</code>.</p>
+<ul>
+<li>[ ] <strong>Step 3: Move the existing sanitizer implementation without changing behavior</strong></li>
+</ul>
+<p>Create <code>evidence_sanitization.py</code> with the existing exception, allow/deny constants, regexes, and recursive validator. In <code>live_runner.py</code>, replace the local definitions with imports:</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">.evidence_sanitization</span><span class="w"> </span><span class="kn">import</span> <span class="n">EvidenceSanitizationError</span><span class="p">,</span> <span class="n">validate_sanitized_evidence</span>
+</code></pre></div>
+
+<p>Do not change the validator's forbidden key set, sensitive-value regex, private-path regex, recursion semantics, error text, or the existing <code>write_evidence()</code> call sequence.</p>
+<ul>
+<li>[ ] <strong>Step 4: Verify GREEN and backward compatibility</strong></li>
+</ul>
+<p>Run:</p>
+<div class="codehilite"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--all-extras<span class="w"> </span>pytest<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_live_model_eval_runner.py::test_evidence_sanitizer_has_shared_eval_module<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_live_model_eval_runner.py::test_evidence_validator_rejects_sensitive_shapes<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_live_model_eval_runner.py::test_evidence_validator_rejects_embedded_private_paths<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_live_model_eval_runner.py::test_evidence_is_sanitized_and_byte_reproducible<span class="w"> </span>-q
+</code></pre></div>
+
+<p>Expected: all selected tests PASS.</p>
+<ul>
+<li>[ ] <strong>Step 5: Commit the sanitizer extraction</strong></li>
+</ul>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>add<span class="w"> </span>src/kicad_mcp/evals/evidence_sanitization.py<span class="w"> </span>src/kicad_mcp/evals/live_runner.py<span class="w"> </span>tests/unit/test_live_model_eval_runner.py
+git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"refactor(eval): share evidence sanitization"</span>
+</code></pre></div>
+
+<hr>
+<h3 id="task-2-define-strict-v1-benchmark-and-attempt-evidence-models">Task 2: Define strict v1 benchmark and attempt evidence models<a class="headerlink" href="#task-2-define-strict-v1-benchmark-and-attempt-evidence-models" title="Permanent link">¶</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>src/kicad_mcp/evals/task_outcomes.py</code>
+- Create: <code>tests/unit/test_task_outcomes.py</code>
+- Modify: <code>src/kicad_mcp/evals/__init__.py</code></p>
+<p><strong>Interfaces:</strong>
+- Consumes: shared <code>validate_sanitized_evidence</code>; existing Pydantic v2 dependency.
+- Produces:
+  - <code>TASK_OUTCOME_SCHEMA_VERSION</code>
+  - <code>ALL_TASK_STAGES</code>
+  - <code>AttemptClassification</code>
+  - <code>FailureCategory</code>
+  - <code>EvidenceSufficiencyContract</code>
+  - <code>TaskContract</code>
+  - <code>BenchmarkContract</code>
+  - <code>TimingEvidence</code>
+  - <code>StageEvidence</code>
+  - <code>ValidationEvidence</code>
+  - <code>MutationEvidence</code>
+  - <code>ManufacturingEvidence</code>
+  - <code>InfrastructureInvalidEvidence</code>
+  - <code>AttemptRecord</code></p>
+<ul>
+<li>[ ] <strong>Step 1: Write RED tests for package-level contract availability</strong></li>
+</ul>
+<p>Start <code>tests/unit/test_task_outcomes.py</code> with:</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">ValidationError</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">kicad_mcp.evals</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">evals</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">valid_stage_requirements</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+    <span class="n">requirements</span> <span class="o">=</span> <span class="p">{</span><span class="n">stage</span><span class="p">:</span> <span class="s2">"not_applicable"</span> <span class="k">for</span> <span class="n">stage</span> <span class="ow">in</span> <span class="n">evals</span><span class="o">.</span><span class="n">ALL_TASK_STAGES</span><span class="p">}</span>
+    <span class="k">for</span> <span class="n">stage</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"requirements"</span><span class="p">,</span> <span class="s2">"pcb"</span><span class="p">,</span> <span class="s2">"drc"</span><span class="p">,</span> <span class="s2">"parse_reopen"</span><span class="p">):</span>
+        <span class="n">requirements</span><span class="p">[</span><span class="n">stage</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"required"</span>
+    <span class="k">return</span> <span class="n">requirements</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">valid_benchmark_payload</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"schema_version"</span><span class="p">:</span> <span class="s2">"pcb-task-outcome.v1"</span><span class="p">,</span>
+        <span class="s2">"benchmark_id"</span><span class="p">:</span> <span class="s2">"pcb-reference-suite"</span><span class="p">,</span>
+        <span class="s2">"benchmark_version"</span><span class="p">:</span> <span class="s2">"v1"</span><span class="p">,</span>
+        <span class="s2">"tasks"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s2">"task_id"</span><span class="p">:</span> <span class="s2">"route-usb-board"</span><span class="p">,</span>
+                <span class="s2">"task_class"</span><span class="p">:</span> <span class="s2">"pcb-edit"</span><span class="p">,</span>
+                <span class="s2">"version"</span><span class="p">:</span> <span class="s2">"v1"</span><span class="p">,</span>
+                <span class="s2">"stage_requirements"</span><span class="p">:</span> <span class="n">valid_stage_requirements</span><span class="p">(),</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s2">"evidence_sufficiency"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"minimum_valid_attempts"</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
+            <span class="s2">"minimum_valid_attempts_by_task_class"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"pcb-edit"</span><span class="p">:</span> <span class="mi">10</span><span class="p">},</span>
+            <span class="s2">"minimum_recovery_required_mutations"</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+            <span class="s2">"minimum_drc_required_tasks"</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+            <span class="s2">"minimum_manufacturing_release_tasks"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">"confidence_level"</span><span class="p">:</span> <span class="mf">0.95</span><span class="p">,</span>
+            <span class="s2">"interval_method"</span><span class="p">:</span> <span class="s2">"wilson"</span><span class="p">,</span>
+        <span class="p">},</span>
+    <span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">valid_attempt_payload</span><span class="p">(</span><span class="n">classification</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"success"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+    <span class="n">payload</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"schema_version"</span><span class="p">:</span> <span class="s2">"pcb-task-outcome.v1"</span><span class="p">,</span>
+        <span class="s2">"attempt_id"</span><span class="p">:</span> <span class="s2">"attempt-001"</span><span class="p">,</span>
+        <span class="s2">"task_id"</span><span class="p">:</span> <span class="s2">"route-usb-board"</span><span class="p">,</span>
+        <span class="s2">"task_class"</span><span class="p">:</span> <span class="s2">"pcb-edit"</span><span class="p">,</span>
+        <span class="s2">"task_contract_version"</span><span class="p">:</span> <span class="s2">"v1"</span><span class="p">,</span>
+        <span class="s2">"benchmark_id"</span><span class="p">:</span> <span class="s2">"pcb-reference-suite"</span><span class="p">,</span>
+        <span class="s2">"benchmark_version"</span><span class="p">:</span> <span class="s2">"v1"</span><span class="p">,</span>
+        <span class="s2">"source_revision"</span><span class="p">:</span> <span class="s2">"a"</span> <span class="o">*</span> <span class="mi">40</span><span class="p">,</span>
+        <span class="s2">"kicad_version"</span><span class="p">:</span> <span class="s2">"10.0.5"</span><span class="p">,</span>
+        <span class="s2">"toolchain_contract"</span><span class="p">:</span> <span class="s2">"toolchain-v1"</span><span class="p">,</span>
+        <span class="s2">"agent"</span><span class="p">:</span> <span class="s2">"fixture-agent"</span><span class="p">,</span>
+        <span class="s2">"model"</span><span class="p">:</span> <span class="s2">"fixture-model"</span><span class="p">,</span>
+        <span class="s2">"provider"</span><span class="p">:</span> <span class="s2">"fixture-provider"</span><span class="p">,</span>
+        <span class="s2">"mcp_profile"</span><span class="p">:</span> <span class="s2">"default"</span><span class="p">,</span>
+        <span class="s2">"operating_mode"</span><span class="p">:</span> <span class="s2">"write"</span><span class="p">,</span>
+        <span class="s2">"starting_state_digest"</span><span class="p">:</span> <span class="s2">"sha256:"</span> <span class="o">+</span> <span class="s2">"b"</span> <span class="o">*</span> <span class="mi">64</span><span class="p">,</span>
+        <span class="s2">"timing"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"started_at"</span><span class="p">:</span> <span class="s2">"2026-08-23T01:00:00+03:00"</span><span class="p">,</span>
+            <span class="s2">"ended_at"</span><span class="p">:</span> <span class="s2">"2026-08-23T01:01:00+03:00"</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="s2">"classification"</span><span class="p">:</span> <span class="n">classification</span><span class="p">,</span>
+        <span class="s2">"retry_count"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">"start_state"</span><span class="p">:</span> <span class="s2">"clean"</span><span class="p">,</span>
+        <span class="s2">"manual_repair"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="s2">"stages"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s2">"stage"</span><span class="p">:</span> <span class="s2">"requirements"</span><span class="p">,</span> <span class="s2">"outcome"</span><span class="p">:</span> <span class="s2">"passed"</span><span class="p">},</span>
+            <span class="p">{</span><span class="s2">"stage"</span><span class="p">:</span> <span class="s2">"pcb"</span><span class="p">,</span> <span class="s2">"outcome"</span><span class="p">:</span> <span class="s2">"passed"</span><span class="p">},</span>
+            <span class="p">{</span><span class="s2">"stage"</span><span class="p">:</span> <span class="s2">"drc"</span><span class="p">,</span> <span class="s2">"outcome"</span><span class="p">:</span> <span class="s2">"passed"</span><span class="p">},</span>
+            <span class="p">{</span><span class="s2">"stage"</span><span class="p">:</span> <span class="s2">"parse_reopen"</span><span class="p">,</span> <span class="s2">"outcome"</span><span class="p">:</span> <span class="s2">"passed"</span><span class="p">},</span>
+        <span class="p">],</span>
+        <span class="s2">"validations"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s2">"kind"</span><span class="p">:</span> <span class="s2">"drc"</span><span class="p">,</span>
+                <span class="s2">"required"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                <span class="s2">"execution_attempted"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                <span class="s2">"execution_completed"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                <span class="s2">"result_consumed"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                <span class="s2">"disposition"</span><span class="p">:</span> <span class="s2">"resolved"</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="s2">"mutations"</span><span class="p">:</span> <span class="p">[],</span>
+    <span class="p">}</span>
+    <span class="n">failure_categories</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"task_failure"</span><span class="p">:</span> <span class="s2">"design"</span><span class="p">,</span>
+        <span class="s2">"recovery_failure"</span><span class="p">:</span> <span class="s2">"recovery"</span><span class="p">,</span>
+        <span class="s2">"provider_failure"</span><span class="p">:</span> <span class="s2">"provider"</span><span class="p">,</span>
+        <span class="s2">"tool_failure"</span><span class="p">:</span> <span class="s2">"tool"</span><span class="p">,</span>
+        <span class="s2">"infrastructure_invalid"</span><span class="p">:</span> <span class="s2">"infrastructure"</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="n">classification</span> <span class="o">!=</span> <span class="s2">"success"</span><span class="p">:</span>
+        <span class="n">payload</span><span class="p">[</span><span class="s2">"failure_category"</span><span class="p">]</span> <span class="o">=</span> <span class="n">failure_categories</span><span class="p">[</span><span class="n">classification</span><span class="p">]</span>
+        <span class="n">payload</span><span class="p">[</span><span class="s2">"failure_reason_code"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"fixture_failure"</span>
+    <span class="k">return</span> <span class="n">payload</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_eval_package_exposes_task_outcome_v1_contract</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">assert</span> <span class="n">evals</span><span class="o">.</span><span class="n">TASK_OUTCOME_SCHEMA_VERSION</span> <span class="o">==</span> <span class="s2">"pcb-task-outcome.v1"</span>
+    <span class="k">assert</span> <span class="n">evals</span><span class="o">.</span><span class="n">AttemptRecord</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="k">assert</span> <span class="n">evals</span><span class="o">.</span><span class="n">BenchmarkContract</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+</code></pre></div>
+
+<ul>
+<li>[ ] <strong>Step 2: Verify RED</strong></li>
+</ul>
+<p>Run:</p>
+<div class="codehilite"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--all-extras<span class="w"> </span>pytest<span class="w"> </span>tests/unit/test_task_outcomes.py::test_eval_package_exposes_task_outcome_v1_contract<span class="w"> </span>-q
+</code></pre></div>
+
+<p>Expected: FAIL because the new exports do not exist.</p>
+<ul>
+<li>[ ] <strong>Step 3: Add the strict common model boundary and stable literals</strong></li>
+</ul>
+<p>In <code>task_outcomes.py</code>, define the shared immutable model config and stable type contracts:</p>
+<div class="codehilite"><pre><span></span><code><span class="n">TASK_OUTCOME_SCHEMA_VERSION</span> <span class="o">=</span> <span class="s2">"pcb-task-outcome.v1"</span>
+
+<span class="n">AttemptClassification</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span>
+    <span class="s2">"success"</span><span class="p">,</span>
+    <span class="s2">"task_failure"</span><span class="p">,</span>
+    <span class="s2">"recovery_failure"</span><span class="p">,</span>
+    <span class="s2">"provider_failure"</span><span class="p">,</span>
+    <span class="s2">"tool_failure"</span><span class="p">,</span>
+    <span class="s2">"infrastructure_invalid"</span><span class="p">,</span>
+<span class="p">]</span>
+<span class="n">FailureCategory</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span>
+    <span class="s2">"design"</span><span class="p">,</span>
+    <span class="s2">"recovery"</span><span class="p">,</span>
+    <span class="s2">"provider"</span><span class="p">,</span>
+    <span class="s2">"tool"</span><span class="p">,</span>
+    <span class="s2">"infrastructure"</span><span class="p">,</span>
+    <span class="s2">"unclassified_failure"</span><span class="p">,</span>
+<span class="p">]</span>
+<span class="n">TaskStage</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span>
+    <span class="s2">"requirements"</span><span class="p">,</span>
+    <span class="s2">"schematic"</span><span class="p">,</span>
+    <span class="s2">"erc"</span><span class="p">,</span>
+    <span class="s2">"pcb"</span><span class="p">,</span>
+    <span class="s2">"drc"</span><span class="p">,</span>
+    <span class="s2">"constraints"</span><span class="p">,</span>
+    <span class="s2">"manufacturing_generation"</span><span class="p">,</span>
+    <span class="s2">"manufacturing_reproducibility"</span><span class="p">,</span>
+    <span class="s2">"parse_reopen"</span><span class="p">,</span>
+<span class="p">]</span>
+<span class="n">StageRequirement</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"required"</span><span class="p">,</span> <span class="s2">"not_applicable"</span><span class="p">]</span>
+<span class="n">ValidationKind</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"erc"</span><span class="p">,</span> <span class="s2">"drc"</span><span class="p">]</span>
+<span class="n">StableReasonCode</span> <span class="o">=</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Field</span><span class="p">(</span><span class="n">pattern</span><span class="o">=</span><span class="sa">r</span><span class="s2">"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"</span><span class="p">)]</span>
+<span class="n">ArtifactDigest</span> <span class="o">=</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_length</span><span class="o">=</span><span class="mi">256</span><span class="p">)]</span>
+<span class="n">ALL_TASK_STAGES</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">TaskStage</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">"requirements"</span><span class="p">,</span>
+    <span class="s2">"schematic"</span><span class="p">,</span>
+    <span class="s2">"erc"</span><span class="p">,</span>
+    <span class="s2">"pcb"</span><span class="p">,</span>
+    <span class="s2">"drc"</span><span class="p">,</span>
+    <span class="s2">"constraints"</span><span class="p">,</span>
+    <span class="s2">"manufacturing_generation"</span><span class="p">,</span>
+    <span class="s2">"manufacturing_reproducibility"</span><span class="p">,</span>
+    <span class="s2">"parse_reopen"</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_EvidenceModel</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+    <span class="n">model_config</span> <span class="o">=</span> <span class="n">ConfigDict</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="s2">"forbid"</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Import <code>Annotated</code> alongside <code>Literal</code> from <code>typing</code>. Use bounded string fields (<code>min_length=1</code>) for IDs/versions, <code>Field(ge=0)</code> for counters, and the existing source-revision convention of a lowercase 40-character Git SHA.</p>
+<ul>
+<li>[ ] <strong>Step 4: Write RED tests for the benchmark contract</strong></li>
+</ul>
+<p>Add tests proving:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">test_benchmark_contract_requires_explicit_stage_requirement_for_every_stage</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">valid_benchmark_payload</span><span class="p">()</span>
+    <span class="n">payload</span><span class="p">[</span><span class="s2">"tasks"</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">"stage_requirements"</span><span class="p">]</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"drc"</span><span class="p">)</span>
+
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ValidationError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">"stage requirements"</span><span class="p">):</span>
+        <span class="n">evals</span><span class="o">.</span><span class="n">BenchmarkContract</span><span class="o">.</span><span class="n">model_validate</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_benchmark_contract_rejects_unknown_schema_version</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">valid_benchmark_payload</span><span class="p">()</span>
+    <span class="n">payload</span><span class="p">[</span><span class="s2">"schema_version"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"pcb-task-outcome.v2"</span>
+
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ValidationError</span><span class="p">):</span>
+        <span class="n">evals</span><span class="o">.</span><span class="n">BenchmarkContract</span><span class="o">.</span><span class="n">model_validate</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_benchmark_contract_rejects_unknown_fields</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">valid_benchmark_payload</span><span class="p">()</span>
+    <span class="n">payload</span><span class="p">[</span><span class="s2">"unexpected"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ValidationError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">"Extra inputs are not permitted"</span><span class="p">):</span>
+        <span class="n">evals</span><span class="o">.</span><span class="n">BenchmarkContract</span><span class="o">.</span><span class="n">model_validate</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+</code></pre></div>
+
+<ul>
+<li>[ ] <strong>Step 5: Implement benchmark and sufficiency models minimally</strong></li>
+</ul>
+<p>Implement:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">EvidenceSufficiencyContract</span><span class="p">(</span><span class="n">_EvidenceModel</span><span class="p">):</span>
+    <span class="n">minimum_valid_attempts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">minimum_valid_attempts_by_task_class</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="n">minimum_recovery_required_mutations</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">minimum_drc_required_tasks</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">minimum_manufacturing_release_tasks</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">confidence_level</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">ge</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">le</span><span class="o">=</span><span class="mf">0.95</span><span class="p">)</span>
+    <span class="n">interval_method</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"wilson"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"wilson"</span>
+
+    <span class="nd">@model_validator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">"after"</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_class_minima</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">EvidenceSufficiencyContract</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">value</span> <span class="o">&lt;</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">minimum_valid_attempts_by_task_class</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"per-task-class evidence minima must be at least 1"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">TaskContract</span><span class="p">(</span><span class="n">_EvidenceModel</span><span class="p">):</span>
+    <span class="n">task_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">task_class</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">version</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">stage_requirements</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">TaskStage</span><span class="p">,</span> <span class="n">StageRequirement</span><span class="p">]</span>
+    <span class="n">validation_exception_reason_codes</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">ValidationKind</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">StableReasonCode</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span>
+        <span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span>
+    <span class="p">)</span>
+
+    <span class="nd">@model_validator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">"after"</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_require_all_stage_declarations</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TaskContract</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stage_requirements</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">set</span><span class="p">(</span><span class="n">ALL_TASK_STAGES</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"task contract stage requirements must declare every v1 stage"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">kind</span><span class="p">,</span> <span class="n">reason_codes</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">validation_exception_reason_codes</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">stage_requirements</span><span class="p">[</span><span class="n">kind</span><span class="p">]</span> <span class="o">!=</span> <span class="s2">"required"</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">kind</span><span class="si">}</span><span class="s2"> validation exceptions require the validation stage to be required"</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">reason_codes</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">reason_codes</span><span class="p">)):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">kind</span><span class="si">}</span><span class="s2"> validation exception reason codes must be unique"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">BenchmarkContract</span><span class="p">(</span><span class="n">_EvidenceModel</span><span class="p">):</span>
+    <span class="n">schema_version</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"pcb-task-outcome.v1"</span><span class="p">]</span> <span class="o">=</span> <span class="n">TASK_OUTCOME_SCHEMA_VERSION</span>
+    <span class="n">benchmark_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">benchmark_version</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">tasks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">TaskContract</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">evidence_sufficiency</span><span class="p">:</span> <span class="n">EvidenceSufficiencyContract</span>
+
+    <span class="nd">@model_validator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">"after"</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_tasks</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BenchmarkContract</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">tasks</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"benchmark contract must define at least one task"</span><span class="p">)</span>
+        <span class="n">task_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">task</span><span class="o">.</span><span class="n">task_id</span> <span class="k">for</span> <span class="n">task</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">tasks</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">task_ids</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">task_ids</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"benchmark contract task ids must be unique"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+</code></pre></div>
+
+<p>Do not add KPI scoring or target-status logic yet.</p>
+<ul>
+<li>[ ] <strong>Step 6: Verify benchmark-model GREEN</strong></li>
+</ul>
+<p>Run:</p>
+<div class="codehilite"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--all-extras<span class="w"> </span>pytest<span class="w"> </span>tests/unit/test_task_outcomes.py<span class="w"> </span>-q
+</code></pre></div>
+
+<p>At this checkpoint, the package-export test and benchmark-contract tests must PASS; attempt-record tests added below may still be absent.</p>
+<ul>
+<li>[ ] <strong>Step 7: Write RED tests for attempt identity and classification invariants</strong></li>
+</ul>
+<p>Add tests covering a complete valid record plus these fail-closed cases:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">test_attempt_record_rejects_extra_fields</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">valid_attempt_payload</span><span class="p">()</span>
+    <span class="n">payload</span><span class="p">[</span><span class="s2">"raw_response"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"must never be accepted"</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ValidationError</span><span class="p">):</span>
+        <span class="n">evals</span><span class="o">.</span><span class="n">AttemptRecord</span><span class="o">.</span><span class="n">model_validate</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_success_attempt_rejects_failure_metadata</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">valid_attempt_payload</span><span class="p">()</span>
+    <span class="n">payload</span><span class="p">[</span><span class="s2">"failure_category"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"provider"</span>
+    <span class="n">payload</span><span class="p">[</span><span class="s2">"failure_reason_code"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"rate_limited"</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ValidationError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">"success"</span><span class="p">):</span>
+        <span class="n">evals</span><span class="o">.</span><span class="n">AttemptRecord</span><span class="o">.</span><span class="n">model_validate</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_provider_failure_requires_provider_category</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">valid_attempt_payload</span><span class="p">(</span><span class="n">classification</span><span class="o">=</span><span class="s2">"provider_failure"</span><span class="p">)</span>
+    <span class="n">payload</span><span class="p">[</span><span class="s2">"failure_category"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"tool"</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ValidationError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">"provider"</span><span class="p">):</span>
+        <span class="n">evals</span><span class="o">.</span><span class="n">AttemptRecord</span><span class="o">.</span><span class="n">model_validate</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_timing_rejects_naive_or_reverse_timestamps</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">valid_attempt_payload</span><span class="p">()</span>
+    <span class="n">payload</span><span class="p">[</span><span class="s2">"timing"</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"started_at"</span><span class="p">:</span> <span class="s2">"2026-08-23T01:00:00+03:00"</span><span class="p">,</span>
+        <span class="s2">"ended_at"</span><span class="p">:</span> <span class="s2">"2026-08-23T00:59:00+03:00"</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ValidationError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">"ended_at"</span><span class="p">):</span>
+        <span class="n">evals</span><span class="o">.</span><span class="n">AttemptRecord</span><span class="o">.</span><span class="n">model_validate</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_validation_evidence_rejects_consumed_without_completion</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">valid_attempt_payload</span><span class="p">()</span>
+    <span class="n">payload</span><span class="p">[</span><span class="s2">"validations"</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">"execution_completed"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ValidationError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">"consumed validation"</span><span class="p">):</span>
+        <span class="n">evals</span><span class="o">.</span><span class="n">AttemptRecord</span><span class="o">.</span><span class="n">model_validate</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_attempt_rejects_duplicate_stage_evidence</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">valid_attempt_payload</span><span class="p">()</span>
+    <span class="n">payload</span><span class="p">[</span><span class="s2">"stages"</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">"stage"</span><span class="p">:</span> <span class="s2">"drc"</span><span class="p">,</span> <span class="s2">"outcome"</span><span class="p">:</span> <span class="s2">"failed"</span><span class="p">})</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ValidationError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">"stages must be unique"</span><span class="p">):</span>
+        <span class="n">evals</span><span class="o">.</span><span class="n">AttemptRecord</span><span class="o">.</span><span class="n">model_validate</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+</code></pre></div>
+
+<ul>
+<li>[ ] <strong>Step 8: Implement the bounded attempt evidence models</strong></li>
+</ul>
+<p>Implement the following shapes without free-form metadata dictionaries:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">TimingEvidence</span><span class="p">(</span><span class="n">_EvidenceModel</span><span class="p">):</span>
+    <span class="n">started_at</span><span class="p">:</span> <span class="n">datetime</span>
+    <span class="n">ended_at</span><span class="p">:</span> <span class="n">datetime</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">StageEvidence</span><span class="p">(</span><span class="n">_EvidenceModel</span><span class="p">):</span>
+    <span class="n">stage</span><span class="p">:</span> <span class="n">TaskStage</span>
+    <span class="n">outcome</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"passed"</span><span class="p">,</span> <span class="s2">"failed"</span><span class="p">,</span> <span class="s2">"not_applicable"</span><span class="p">]</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">ValidationEvidence</span><span class="p">(</span><span class="n">_EvidenceModel</span><span class="p">):</span>
+    <span class="n">kind</span><span class="p">:</span> <span class="n">ValidationKind</span>
+    <span class="n">required</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">execution_attempted</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">execution_completed</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">result_consumed</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">disposition</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"resolved"</span><span class="p">,</span> <span class="s2">"accepted"</span><span class="p">,</span> <span class="s2">"blocking"</span><span class="p">,</span> <span class="s2">"exception"</span><span class="p">,</span> <span class="s2">"not_applicable"</span><span class="p">]</span>
+    <span class="n">exception_reason_code</span><span class="p">:</span> <span class="n">StableReasonCode</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MutationEvidence</span><span class="p">(</span><span class="n">_EvidenceModel</span><span class="p">):</span>
+    <span class="n">mutation_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">attempted</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="kc">True</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">execution_state</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"completed"</span><span class="p">,</span> <span class="s2">"interrupted"</span><span class="p">,</span> <span class="s2">"failed"</span><span class="p">]</span>
+    <span class="n">recovery_required</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">recovery_succeeded</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">duplicate_application_detected</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">state_divergence_detected</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">corruption_detected</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">final_state_verified</span><span class="p">:</span> <span class="nb">bool</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">ManufacturingEvidence</span><span class="p">(</span><span class="n">_EvidenceModel</span><span class="p">):</span>
+    <span class="n">required</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">generation_completed</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">regeneration_completed</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">comparison</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"byte_identical"</span><span class="p">,</span> <span class="s2">"normalized_equivalent"</span><span class="p">,</span> <span class="s2">"divergent"</span><span class="p">,</span> <span class="s2">"not_run"</span><span class="p">]</span>
+    <span class="n">artifact_manifest_digests</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">ArtifactDigest</span><span class="p">,</span> <span class="n">ArtifactDigest</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">normalization_rules_version</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">InfrastructureInvalidEvidence</span><span class="p">(</span><span class="n">_EvidenceModel</span><span class="p">):</span>
+    <span class="n">reason_code</span><span class="p">:</span> <span class="n">StableReasonCode</span>
+    <span class="n">reviewed</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="kc">True</span><span class="p">]</span>
+    <span class="n">task_execution_started</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="kc">False</span><span class="p">]</span>
+</code></pre></div>
+
+<p><code>AttemptRecord</code> must include the spec's pinned identity/accounting fields:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">AttemptRecord</span><span class="p">(</span><span class="n">_EvidenceModel</span><span class="p">):</span>
+    <span class="n">schema_version</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"pcb-task-outcome.v1"</span><span class="p">]</span> <span class="o">=</span> <span class="n">TASK_OUTCOME_SCHEMA_VERSION</span>
+    <span class="n">attempt_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">task_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">task_class</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">task_contract_version</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">benchmark_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">benchmark_version</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">source_revision</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">pattern</span><span class="o">=</span><span class="sa">r</span><span class="s2">"^[0-9a-f]</span><span class="si">{40}</span><span class="s2">$"</span><span class="p">)</span>
+    <span class="n">kicad_version</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">toolchain_contract</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">agent</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">provider</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">mcp_profile</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">operating_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">starting_state_digest</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">timing</span><span class="p">:</span> <span class="n">TimingEvidence</span>
+    <span class="n">classification</span><span class="p">:</span> <span class="n">AttemptClassification</span>
+    <span class="n">failure_category</span><span class="p">:</span> <span class="n">FailureCategory</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">failure_reason_code</span><span class="p">:</span> <span class="n">StableReasonCode</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">retry_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">start_state</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"clean"</span><span class="p">,</span> <span class="s2">"reviewed_recovered"</span><span class="p">]</span>
+    <span class="n">manual_repair</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">stages</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">StageEvidence</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">validations</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">ValidationEvidence</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="n">mutations</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">MutationEvidence</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="n">manufacturing</span><span class="p">:</span> <span class="n">ManufacturingEvidence</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">infrastructure_evidence</span><span class="p">:</span> <span class="n">InfrastructureInvalidEvidence</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</code></pre></div>
+
+<p>Use these explicit structural validators; do not convert invalid records into a different classification:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">TimingEvidence</span><span class="p">(</span><span class="n">_EvidenceModel</span><span class="p">):</span>
+    <span class="n">started_at</span><span class="p">:</span> <span class="n">datetime</span>
+    <span class="n">ended_at</span><span class="p">:</span> <span class="n">datetime</span>
+
+    <span class="nd">@model_validator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">"after"</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_timing</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TimingEvidence</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">started_at</span><span class="o">.</span><span class="n">utcoffset</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">ended_at</span><span class="o">.</span><span class="n">utcoffset</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"attempt timestamps must be timezone-aware"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ended_at</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">started_at</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"ended_at must not precede started_at"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+
+<span class="c1"># Add this method inside ValidationEvidence.</span>
+<span class="nd">@model_validator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">"after"</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_validate_execution_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ValidationEvidence</span><span class="p">:</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">execution_completed</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">execution_attempted</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"completed validation requires an attempted execution"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">result_consumed</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">execution_completed</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"consumed validation requires a completed execution"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">disposition</span> <span class="o">==</span> <span class="s2">"exception"</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">exception_reason_code</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"validation exception requires a reason code"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exception_reason_code</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">disposition</span> <span class="o">!=</span> <span class="s2">"exception"</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"validation exception reason requires exception disposition"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="bp">self</span>
+
+
+<span class="c1"># Add this method inside MutationEvidence.</span>
+<span class="nd">@model_validator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">"after"</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_validate_recovery_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MutationEvidence</span><span class="p">:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">recovery_required</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">recovery_succeeded</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"recovery result requires a recovery-required mutation"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="bp">self</span>
+
+
+<span class="c1"># Add this method inside ManufacturingEvidence.</span>
+<span class="nd">@model_validator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">"after"</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_validate_comparison_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ManufacturingEvidence</span><span class="p">:</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">comparison</span> <span class="o">!=</span> <span class="s2">"not_run"</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">generation_completed</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">regeneration_completed</span>
+    <span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"manufacturing comparison requires two completed generations"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">comparison</span> <span class="o">!=</span> <span class="s2">"not_run"</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">artifact_manifest_digests</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"manufacturing comparison requires both artifact-set manifest digests"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">comparison</span> <span class="o">==</span> <span class="s2">"not_run"</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">artifact_manifest_digests</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"artifact-set manifest digests require a manufacturing comparison"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">comparison</span> <span class="o">==</span> <span class="s2">"normalized_equivalent"</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">normalization_rules_version</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"normalized comparison requires a normalization rules version"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="bp">self</span>
+
+
+<span class="c1"># Add this method inside AttemptRecord.</span>
+<span class="nd">@model_validator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">"after"</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_validate_record</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AttemptRecord</span><span class="p">:</span>
+    <span class="n">stage_names</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span><span class="o">.</span><span class="n">stage</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">stages</span><span class="p">]</span>
+    <span class="n">validation_kinds</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span><span class="o">.</span><span class="n">kind</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">validations</span><span class="p">]</span>
+    <span class="n">mutation_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span><span class="o">.</span><span class="n">mutation_id</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">mutations</span><span class="p">]</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">stage_names</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">stage_names</span><span class="p">)):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"attempt stages must be unique"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">validation_kinds</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">validation_kinds</span><span class="p">)):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"attempt validation kinds must be unique"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">mutation_ids</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">mutation_ids</span><span class="p">)):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"attempt mutation ids must be unique"</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">classification</span> <span class="o">==</span> <span class="s2">"infrastructure_invalid"</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">infrastructure_evidence</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"infrastructure-invalid evidence must be reviewed and pre-task"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">failure_reason_code</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">infrastructure_evidence</span><span class="o">.</span><span class="n">reason_code</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">"infrastructure-invalid evidence reason must match failure reason code"</span>
+            <span class="p">)</span>
+    <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">infrastructure_evidence</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">"infrastructure-invalid evidence is only valid for infrastructure_invalid attempts"</span>
+        <span class="p">)</span>
+
+    <span class="n">allowed_categories</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"task_failure"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"design"</span><span class="p">,</span> <span class="s2">"unclassified_failure"</span><span class="p">},</span>
+        <span class="s2">"recovery_failure"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"recovery"</span><span class="p">},</span>
+        <span class="s2">"provider_failure"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"provider"</span><span class="p">},</span>
+        <span class="s2">"tool_failure"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"tool"</span><span class="p">},</span>
+        <span class="s2">"infrastructure_invalid"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"infrastructure"</span><span class="p">},</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">classification</span> <span class="o">==</span> <span class="s2">"success"</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">failure_category</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">failure_reason_code</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"success attempt cannot carry failure metadata"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">failure_category</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">allowed_categories</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">classification</span><span class="p">]:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">classification</span><span class="si">}</span><span class="s2"> has incompatible failure category "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">failure_category</span><span class="si">!r}</span><span class="s2">"</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">failure_reason_code</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"failed attempt requires a failure reason code"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="bp">self</span>
+</code></pre></div>
+
+<p>Keep <code>failure_reason_code</code> bounded to stable identifier syntax (letters/digits plus <code>._:-</code>), not free-form provider text. Insert each validator into the corresponding model defined in the preceding step; do not duplicate model classes.</p>
+<p>Reviewer hardening before publication must also preserve the approved design's accounting semantics:</p>
+<ul>
+<li>validation exception reason codes are predeclared by the task contract and only for required ERC/DRC stages;</li>
+<li>every mutation record explicitly states that the mutation was attempted plus <code>completed</code> / <code>interrupted</code> / <code>failed</code> execution state;</li>
+<li><code>recovery_succeeded</code> is absent unless the mutation contributes to the recovery-required denominator;</li>
+<li>recovered starts use the explicit <code>reviewed_recovered</code> value rather than an ambiguous <code>recovered</code> label;</li>
+<li><code>infrastructure_invalid</code> requires reviewed evidence proving task execution did not start and its stable reason must match the top-level failure reason;</li>
+<li>
+<p>a manufacturing comparison carries both independently generated artifact-set manifest digests.</p>
+</li>
+<li>
+<p>[ ] <strong>Step 9: Verify all model tests GREEN</strong></p>
+</li>
+</ul>
+<p>Run:</p>
+<div class="codehilite"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--all-extras<span class="w"> </span>pytest<span class="w"> </span>tests/unit/test_task_outcomes.py<span class="w"> </span>-q
+</code></pre></div>
+
+<p>Expected: all task-outcome model tests PASS.</p>
+<ul>
+<li>[ ] <strong>Step 10: Commit the v1 models</strong></li>
+</ul>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>add<span class="w"> </span>src/kicad_mcp/evals/task_outcomes.py<span class="w"> </span>src/kicad_mcp/evals/__init__.py<span class="w"> </span>tests/unit/test_task_outcomes.py
+git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"feat(eval): add task outcome evidence contract"</span>
+</code></pre></div>
+
+<hr>
+<h3 id="task-3-add-deterministic-sanitized-parsing-and-rendering">Task 3: Add deterministic sanitized parsing and rendering<a class="headerlink" href="#task-3-add-deterministic-sanitized-parsing-and-rendering" title="Permanent link">¶</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>src/kicad_mcp/evals/task_outcomes.py</code>
+- Modify: <code>src/kicad_mcp/evals/__init__.py</code>
+- Modify: <code>tests/unit/test_task_outcomes.py</code></p>
+<p><strong>Interfaces:</strong>
+- Consumes: <code>BenchmarkContract</code>, <code>AttemptRecord</code>, shared <code>validate_sanitized_evidence</code>.
+- Produces:
+  - <code>parse_benchmark_contract(payload: Mapping[str, object]) -&gt; BenchmarkContract</code>
+  - <code>parse_attempt_record(payload: Mapping[str, object]) -&gt; AttemptRecord</code>
+  - <code>render_benchmark_contract(contract: BenchmarkContract) -&gt; str</code>
+  - <code>render_attempt_record(record: AttemptRecord) -&gt; str</code></p>
+<ul>
+<li>[ ] <strong>Step 1: Write RED parser tests</strong></li>
+</ul>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">test_parse_attempt_record_accepts_complete_v1_mapping</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">record</span> <span class="o">=</span> <span class="n">evals</span><span class="o">.</span><span class="n">parse_attempt_record</span><span class="p">(</span><span class="n">valid_attempt_payload</span><span class="p">())</span>
+    <span class="k">assert</span> <span class="n">record</span><span class="o">.</span><span class="n">schema_version</span> <span class="o">==</span> <span class="s2">"pcb-task-outcome.v1"</span>
+    <span class="k">assert</span> <span class="n">record</span><span class="o">.</span><span class="n">classification</span> <span class="o">==</span> <span class="s2">"success"</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_parse_benchmark_contract_rejects_v2_mapping</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">valid_benchmark_payload</span><span class="p">()</span>
+    <span class="n">payload</span><span class="p">[</span><span class="s2">"schema_version"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"pcb-task-outcome.v2"</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ValidationError</span><span class="p">):</span>
+        <span class="n">evals</span><span class="o">.</span><span class="n">parse_benchmark_contract</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+</code></pre></div>
+
+<ul>
+<li>[ ] <strong>Step 2: Verify parser RED</strong></li>
+</ul>
+<p>Run:</p>
+<div class="codehilite"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--all-extras<span class="w"> </span>pytest<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_task_outcomes.py::test_parse_attempt_record_accepts_complete_v1_mapping<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_task_outcomes.py::test_parse_benchmark_contract_rejects_v2_mapping<span class="w"> </span>-q
+</code></pre></div>
+
+<p>Expected: FAIL because parse functions are missing.</p>
+<ul>
+<li>[ ] <strong>Step 3: Implement thin Pydantic parser functions</strong></li>
+</ul>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">parse_benchmark_contract</span><span class="p">(</span><span class="n">payload</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">BenchmarkContract</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">BenchmarkContract</span><span class="o">.</span><span class="n">model_validate</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">parse_attempt_record</span><span class="p">(</span><span class="n">payload</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">object</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">AttemptRecord</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">AttemptRecord</span><span class="o">.</span><span class="n">model_validate</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Do not catch and weaken <code>ValidationError</code>; callers need the original field-level failure evidence.</p>
+<ul>
+<li>[ ] <strong>Step 4: Write RED deterministic/sanitization tests</strong></li>
+</ul>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">test_attempt_render_is_byte_reproducible</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">record</span> <span class="o">=</span> <span class="n">evals</span><span class="o">.</span><span class="n">parse_attempt_record</span><span class="p">(</span><span class="n">valid_attempt_payload</span><span class="p">())</span>
+    <span class="n">first_render</span> <span class="o">=</span> <span class="n">evals</span><span class="o">.</span><span class="n">render_attempt_record</span><span class="p">(</span><span class="n">record</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">()</span>
+    <span class="n">second_render</span> <span class="o">=</span> <span class="n">evals</span><span class="o">.</span><span class="n">render_attempt_record</span><span class="p">(</span><span class="n">record</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">()</span>
+
+    <span class="k">assert</span> <span class="n">first_render</span> <span class="o">==</span> <span class="n">second_render</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_attempt_render_ends_with_one_newline_and_sorted_keys</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">rendered</span> <span class="o">=</span> <span class="n">evals</span><span class="o">.</span><span class="n">render_attempt_record</span><span class="p">(</span><span class="n">evals</span><span class="o">.</span><span class="n">parse_attempt_record</span><span class="p">(</span><span class="n">valid_attempt_payload</span><span class="p">()))</span>
+    <span class="k">assert</span> <span class="n">rendered</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="ow">not</span> <span class="n">rendered</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">"</span><span class="se">\n\n</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">rendered</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s1">'"agent"'</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">rendered</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s1">'"attempt_id"'</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_attempt_render_rejects_private_path_values</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">valid_attempt_payload</span><span class="p">()</span>
+    <span class="n">payload</span><span class="p">[</span><span class="s2">"agent"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"/home/private/agent-config"</span>
+    <span class="n">record</span> <span class="o">=</span> <span class="n">evals</span><span class="o">.</span><span class="n">parse_attempt_record</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">evals</span><span class="o">.</span><span class="n">EvidenceSanitizationError</span><span class="p">):</span>
+        <span class="n">evals</span><span class="o">.</span><span class="n">render_attempt_record</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+</code></pre></div>
+
+<ul>
+<li>[ ] <strong>Step 5: Verify renderer RED</strong></li>
+</ul>
+<p>Run:</p>
+<div class="codehilite"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--all-extras<span class="w"> </span>pytest<span class="w"> </span>tests/unit/test_task_outcomes.py<span class="w"> </span>-q
+</code></pre></div>
+
+<p>Expected: the new renderer tests FAIL because render functions are missing.</p>
+<ul>
+<li>[ ] <strong>Step 6: Implement one private deterministic renderer and two typed wrappers</strong></li>
+</ul>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">_render_evidence</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">BaseModel</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">model_dump</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">"json"</span><span class="p">,</span> <span class="n">exclude_none</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">validate_sanitized_evidence</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="o">+</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">render_benchmark_contract</span><span class="p">(</span><span class="n">contract</span><span class="p">:</span> <span class="n">BenchmarkContract</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">_render_evidence</span><span class="p">(</span><span class="n">contract</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">render_attempt_record</span><span class="p">(</span><span class="n">record</span><span class="p">:</span> <span class="n">AttemptRecord</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">_render_evidence</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Do not add a file writer in this slice; that would introduce a new path-write boundary without a current requirement.</p>
+<ul>
+<li>[ ] <strong>Step 7: Verify GREEN and shared-sanitizer regression</strong></li>
+</ul>
+<p>Run:</p>
+<div class="codehilite"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--all-extras<span class="w"> </span>pytest<span class="w"> </span>tests/unit/test_task_outcomes.py<span class="w"> </span>tests/unit/test_live_model_eval_runner.py<span class="w"> </span>-q
+</code></pre></div>
+
+<p>Expected: both the new contract suite and existing live-model runner suite PASS.</p>
+<ul>
+<li>[ ] <strong>Step 8: Commit parsing/rendering</strong></li>
+</ul>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>add<span class="w"> </span>src/kicad_mcp/evals/task_outcomes.py<span class="w"> </span>src/kicad_mcp/evals/__init__.py<span class="w"> </span>tests/unit/test_task_outcomes.py
+git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"feat(eval): render sanitized task outcome evidence"</span>
+</code></pre></div>
+
+<hr>
+<h3 id="task-4-verify-the-contract-slice-as-a-production-quality-pr">Task 4: Verify the contract slice as a production-quality PR<a class="headerlink" href="#task-4-verify-the-contract-slice-as-a-production-quality-pr" title="Permanent link">¶</a></h3>
+<p><strong>Files:</strong>
+- Review only: all files changed by Tasks 1-3 plus this implementation plan.
+- Modify only if a verification failure demonstrates a real issue in the slice.</p>
+<p><strong>Interfaces:</strong>
+- Consumes: all contract-slice code/tests.
+- Produces: verified branch ready for PR review; no claim about #729 headline KPI completion.</p>
+<ul>
+<li>[ ] <strong>Step 1: Run focused contract and regression tests</strong></li>
+</ul>
+<div class="codehilite"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--all-extras<span class="w"> </span>pytest<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_task_outcomes.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_live_model_eval_runner.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_corpus_eval.py<span class="w"> </span>-q
+</code></pre></div>
+
+<p>Expected: PASS with zero failures.</p>
+<ul>
+<li>[ ] <strong>Step 2: Run changed-surface format/lint/type checks</strong></li>
+</ul>
+<div class="codehilite"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--all-extras<span class="w"> </span>ruff<span class="w"> </span>format<span class="w"> </span>--check<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>src/kicad_mcp/evals/evidence_sanitization.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>src/kicad_mcp/evals/live_runner.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>src/kicad_mcp/evals/task_outcomes.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>src/kicad_mcp/evals/__init__.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_live_model_eval_runner.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_task_outcomes.py
+uv<span class="w"> </span>run<span class="w"> </span>--all-extras<span class="w"> </span>ruff<span class="w"> </span>check<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>src/kicad_mcp/evals/evidence_sanitization.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>src/kicad_mcp/evals/live_runner.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>src/kicad_mcp/evals/task_outcomes.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>src/kicad_mcp/evals/__init__.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_live_model_eval_runner.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_task_outcomes.py
+uv<span class="w"> </span>run<span class="w"> </span>--all-extras<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>mypy<span class="w"> </span>src/kicad_mcp/
+</code></pre></div>
+
+<p>Expected: PASS; Mypy reports zero issues.</p>
+<ul>
+<li>[ ] <strong>Step 3: Run repository contract/security/package gates used by this project</strong></li>
+</ul>
+<p>Run the existing repository scripts rather than inventing new gates:</p>
+<div class="codehilite"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--all-extras<span class="w"> </span>python<span class="w"> </span>scripts/check_release_preflight.py
+corepack<span class="w"> </span>pnpm<span class="w"> </span>run<span class="w"> </span>check:meta
+corepack<span class="w"> </span>pnpm<span class="w"> </span>run<span class="w"> </span>check:security
+corepack<span class="w"> </span>pnpm<span class="w"> </span>run<span class="w"> </span>check:build
+</code></pre></div>
+
+<ul>
+<li>[ ] <strong>Step 4: Run full Python verification</strong></li>
+</ul>
+<div class="codehilite"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--all-extras<span class="w"> </span>python<span class="w"> </span>scripts/run_pytest.py<span class="w"> </span>full
+</code></pre></div>
+
+<p>Expected: runner reports success and repository coverage remains at or above its configured threshold.</p>
+<ul>
+<li>[ ] <strong>Step 5: Review the final diff like a reviewer</strong></li>
+</ul>
+<div class="codehilite"><pre><span></span><code>git<span class="w"> </span>diff<span class="w"> </span>--check<span class="w"> </span>origin/main...HEAD
+git<span class="w"> </span>diff<span class="w"> </span>--stat<span class="w"> </span>origin/main...HEAD
+git<span class="w"> </span>diff<span class="w"> </span>--name-status<span class="w"> </span>origin/main...HEAD
+git<span class="w"> </span>diff<span class="w"> </span>origin/main...HEAD<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>src/kicad_mcp/evals/evidence_sanitization.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>src/kicad_mcp/evals/live_runner.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>src/kicad_mcp/evals/task_outcomes.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>src/kicad_mcp/evals/__init__.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_live_model_eval_runner.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>tests/unit/test_task_outcomes.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>docs/superpowers/plans/2026-08-23-task-outcome-contract-slice.md
+</code></pre></div>
+
+<p>Confirm: no debug code, no commented-out implementation, no generated/build artifacts, no secret material, no dependency change, no public MCP contract change, no unrelated formatting/refactor.</p>
+<ul>
+<li>[ ] <strong>Step 6: Publish as a focused #729 contract-slice PR</strong></li>
+</ul>
+<p>PR body must state explicitly that it implements only the versioned contract foundation. It must not claim the #729 KPI targets are met. Required remote gates include Required PR Gate, platform lanes, CodeQL, Semgrep, dependency/security checks, Sonar, and Codecov where applicable.</p>
+<ul>
+<li>[ ] <strong>Step 7: Post-merge verification</strong></li>
+</ul>
+<p>After merge, verify exact-main CI/security/Sonar on the merge SHA. Only then update #729 with the contract-slice evidence and proceed to a separate scoring-slice plan/PR.</p>
+
+
+
+
+
+
+
+  
+    
+  
+  
+    
+  
+
+
+  <aside class="md-source-file">
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Last update">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"></path></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="August 23, 2026 01:49:39 UTC">August 23, 2026</span>
+  </span>
+
+    
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Created">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"></path></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="August 23, 2026 01:49:39 UTC">August 23, 2026</span>
+  </span>
+
+    
+    
+    
+  </aside>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      © 2026 oaslananka · <a href="https://github.com/sponsors/oaslananka">Sponsor</a> · <a href="https://www.buymeacoffee.com/oaslananka">Buy me a coffee</a>
+
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.instant", "navigation.sections", "content.code.copy"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../../assets/support-links.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>
