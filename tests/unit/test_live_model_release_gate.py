@@ -511,6 +511,10 @@ def test_release_gate_diagnostic_replays_only_sanitized_source_run_artifact() ->
     assert "Summarize sanitized aggregate classifications" in workflow
     assert "per_case_failures" in workflow
     assert "per_case_failure" in workflow
+    assert "per_case_failures_json" in workflow
+    assert workflow.index("per_case_failures_json") < workflow.index(
+        "for diagnostic in diagnostics:"
+    )
     assert '"configuration_id"' in workflow
     assert '"case_id"' in workflow
     assert '"failure_kind"' in workflow
