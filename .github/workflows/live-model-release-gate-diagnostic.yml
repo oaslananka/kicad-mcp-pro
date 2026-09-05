@@ -1,0 +1,169 @@
+name: Live Model Release Gate Diagnostic
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Completed main-branch Live Model Release Gate run to diagnose.
+        type: string
+        required: true
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: live-model-release-gate-diagnostic-${{ inputs.source_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Validate protected source run
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REF_VALUE: ${{ github.ref }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_VALUE" = "refs/heads/main"
+          case "$SOURCE_RUN_ID" in
+            ''|*[!0-9]*) echo "source_run_id must be numeric" >&2; exit 2 ;;
+          esac
+          metadata="$RUNNER_TEMP/live-model-source-run.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" > "$metadata"
+          python - "$metadata" "$GITHUB_OUTPUT" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          run = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if run.get("status") != "completed":
+              raise SystemExit("source live-model release gate run is not completed")
+          if run.get("event") != "workflow_dispatch":
+              raise SystemExit("source run was not a protected workflow_dispatch")
+          if run.get("head_branch") != "main":
+              raise SystemExit("source run was not executed from main")
+          if run.get("path") != ".github/workflows/live-model-release-gate.yml":
+              raise SystemExit("source run is not the Live Model Release Gate workflow")
+          head_sha = run.get("head_sha")
+          if not isinstance(head_sha, str) or re.fullmatch(r"[0-9a-f]{40}", head_sha) is None:
+              raise SystemExit("source run head SHA is invalid")
+          with Path(sys.argv[2]).open("a", encoding="utf-8") as output:
+              output.write(f"head_sha={head_sha}\n")
+          PY
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: true
+          prune-cache: true
+          version-file: uv.toml
+
+      - run: uv sync --all-extras --frozen
+
+      - name: Download sanitized aggregate report
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: live-model-release-gate-${{ inputs.source_run_id }}
+          path: artifacts/live-model-gate-diagnostic/source
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source_run_id }}
+
+      - name: Summarize sanitized aggregate classifications
+        env:
+          SOURCE_HEAD_SHA: ${{ steps.source.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          uv run --all-extras python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from kicad_mcp.evals.live_runner import validate_sanitized_evidence
+
+          report_path = Path("artifacts/live-model-gate-diagnostic/source/report.json")
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          validate_sanitized_evidence(report)
+          source_revision = report.get("source_revision")
+          if source_revision != os.environ["SOURCE_HEAD_SHA"]:
+              raise SystemExit("aggregate source revision does not match source workflow run")
+          classifications = report.get("classifications")
+          if not isinstance(classifications, dict):
+              raise SystemExit("aggregate classifications are invalid")
+
+          def escape(value: str) -> str:
+              return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+          print(
+              "::notice title=Live model aggregate::"
+              f"passed={bool(report.get('passed'))} source_revision={source_revision}"
+          )
+          for category in (
+              "safety_failures",
+              "quality_failures",
+              "infrastructure_failures",
+              "telemetry_unavailable",
+          ):
+              values = classifications.get(category)
+              if not isinstance(values, list) or not all(isinstance(item, str) for item in values):
+                  raise SystemExit(f"aggregate {category} is invalid")
+              level = "warning" if category == "quality_failures" else "error"
+              for message in values:
+                  print(f"::{level} title={category}::{escape(message)}")
+          per_case = report.get("per_case_failures", [])
+          if not isinstance(per_case, list):
+              raise SystemExit("aggregate per_case_failures are invalid")
+          if per_case:
+              print(f"::error title=per_case_failures::count={len(per_case)}")
+          PY
+
+      - name: Run baseline candidate dry-run
+        id: candidate
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/live-model-gate-diagnostic/dry-run
+          set +e
+          uv run --all-extras python scripts/generate_live_model_baseline.py \
+            --aggregate-report artifacts/live-model-gate-diagnostic/source/report.json \
+            --workflow-run-id "$SOURCE_RUN_ID" \
+            --approved-at "$(date -u +%F)" \
+            --output artifacts/live-model-gate-diagnostic/dry-run/baselines.candidate.yaml \
+            >artifacts/live-model-gate-diagnostic/dry-run/stdout.log \
+            2>artifacts/live-model-gate-diagnostic/dry-run/stderr.log
+          exit_code=$?
+          set -e
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          python - "$exit_code" <<'PY'
+          import sys
+          from pathlib import Path
+
+          exit_code = int(sys.argv[1])
+          stderr_path = Path("artifacts/live-model-gate-diagnostic/dry-run/stderr.log")
+          stderr = stderr_path.read_text(encoding="utf-8").strip()
+          message = next((line for line in stderr.splitlines() if line.strip()), "no diagnostic message")
+          message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          if exit_code == 0:
+              print("::notice title=Baseline candidate dry-run::candidate generation succeeded")
+          else:
+              print(f"::error title=Baseline candidate dry-run::{message}")
+          PY
+          rm -f artifacts/live-model-gate-diagnostic/dry-run/baselines.candidate.yaml
+
+      - name: Enforce diagnostic result
+        if: always()
+        env:
+          CANDIDATE_EXIT_CODE: ${{ steps.candidate.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          test "$CANDIDATE_EXIT_CODE" = "0"

@@ -489,3 +489,33 @@ def test_gate_reports_incomplete_checkpoint_as_infrastructure_failure(
         item == f"{CONFIG_IDS[1]}: checkpoint incomplete"
         for item in report["classifications"]["infrastructure_failures"]
     )
+
+
+def test_release_gate_diagnostic_replays_only_sanitized_source_run_artifact() -> None:
+    workflow = (ROOT / ".github/workflows/live-model-release-gate-diagnostic.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "workflow_dispatch:" in workflow
+    assert "source_run_id:" in workflow
+    assert "permissions:\n  actions: read\n  contents: read" in workflow
+    assert 'test "$GITHUB_REF_VALUE" = "refs/heads/main"' in workflow
+    assert "actions/runs/$SOURCE_RUN_ID" in workflow
+    assert 'run.get("event") != "workflow_dispatch"' in workflow
+    assert 'run.get("head_branch") != "main"' in workflow
+    assert 'run.get("path") != ".github/workflows/live-model-release-gate.yml"' in workflow
+    assert "head_sha=" in workflow
+    assert "actions/download-artifact@" in workflow
+    assert "run-id: ${{ inputs.source_run_id }}" in workflow
+    assert "live-model-release-gate-${{ inputs.source_run_id }}" in workflow
+    assert "Summarize sanitized aggregate classifications" in workflow
+    assert "Run baseline candidate dry-run" in workflow
+    assert 'test "$CANDIDATE_EXIT_CODE" = "0"' in workflow
+    assert "generate_live_model_baseline.py" in workflow
+    assert '--workflow-run-id "$SOURCE_RUN_ID"' in workflow
+    assert "upload-artifact@" not in workflow
+    assert "run_live_model_eval.py" not in workflow
+    assert "NVIDIA_API_KEY" not in workflow
+    assert "OPENCODE_ZEN_API_KEY" not in workflow
+    assert "environment: live-model-evals" not in workflow
+    assert "secrets." not in workflow
