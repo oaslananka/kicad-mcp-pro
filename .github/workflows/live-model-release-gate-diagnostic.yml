@@ -137,14 +137,27 @@ jobs:
                   "expected_behavior",
                   "actual_behavior",
               )
+              diagnostics: list[dict[str, object]] = []
               for item in per_case:
                   if not isinstance(item, dict):
                       raise SystemExit("aggregate per_case_failure is invalid")
-                  diagnostic = {
-                      key: item[key]
-                      for key in diagnostic_keys
-                      if key in item and item[key] not in (None, "", [])
-                  }
+                  diagnostics.append(
+                      {
+                          key: item[key]
+                          for key in diagnostic_keys
+                          if key in item and item[key] not in (None, "", [])
+                      }
+                  )
+              packed = escape(
+                  json.dumps(
+                      diagnostics,
+                      sort_keys=True,
+                      separators=(",", ":"),
+                      ensure_ascii=True,
+                  )
+              )
+              print(f"::error title=per_case_failures_json::{packed}")
+              for diagnostic in diagnostics:
                   message = escape(
                       json.dumps(
                           diagnostic,
