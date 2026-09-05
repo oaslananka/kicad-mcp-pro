@@ -10,6 +10,14 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.34.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.34.0...mcp-server-v3.34.1) (2026-09-05)
+
+
+### Bug Fixes
+
+* enforce release readiness before publish ([#847](https://github.com/oaslananka/kicad-mcp-pro/issues/847)) ([7c9280a](https://github.com/oaslananka/kicad-mcp-pro/commit/7c9280a1920930f44e90b257eacb0e5c823b5f33))
+* prefer minimal live model tool selection ([#852](https://github.com/oaslananka/kicad-mcp-pro/issues/852)) ([1b4e77d](https://github.com/oaslananka/kicad-mcp-pro/commit/1b4e77d8e2b252be890e835357ff526a547d5fc5))
+
 ## [3.34.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.33.3...mcp-server-v3.34.0) (2026-09-04)
 
 
