@@ -29,6 +29,9 @@ _MANUFACTURING_APPROVAL_FILE = "reference-manufacturing-approval.json"
 _REFERENCE_DESIGN_SUFFIXES = frozenset({".kicad_pro", ".kicad_sch", ".kicad_pcb", ".kicad_dru"})
 _REFERENCE_RUNTIME_PATHS = ("src", "scripts", "pyproject.toml", "uv.lock")
 
+_SOURCE_REVISION_RESOLUTION_ERROR = "reference source revision could not be resolved"
+_INVALID_APPROVED_PROJECT_FILES_ERROR = "manufacturing approval approved project files are invalid"
+
 
 class ReferenceAgentRunnerError(ValueError):
     """Raised when a benchmark agent stream violates the reviewed execution contract."""
@@ -150,7 +153,7 @@ def discover_reference_source_revision(checkout_dir: Path) -> str:
     """Return the exact Git commit used by one reference-agent runtime."""
     git_executable = shutil.which("git")
     if git_executable is None:
-        raise ReferenceAgentRunnerError("reference source revision could not be resolved")
+        raise ReferenceAgentRunnerError(_SOURCE_REVISION_RESOLUTION_ERROR)
     try:
         completed = subprocess.run(
             [git_executable, "rev-parse", "HEAD"],
@@ -163,10 +166,10 @@ def discover_reference_source_revision(checkout_dir: Path) -> str:
             check=False,
         )
     except OSError as exc:
-        raise ReferenceAgentRunnerError("reference source revision could not be resolved") from exc
+        raise ReferenceAgentRunnerError(_SOURCE_REVISION_RESOLUTION_ERROR) from exc
     revision = completed.stdout.strip()
     if completed.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", revision):
-        raise ReferenceAgentRunnerError("reference source revision could not be resolved")
+        raise ReferenceAgentRunnerError(_SOURCE_REVISION_RESOLUTION_ERROR)
     status = subprocess.run(
         [
             git_executable,
@@ -429,23 +432,17 @@ def load_reference_manufacturing_approval(
     actual_files = _reference_project_files(workspace)
     raw_files = payload.get("approved_project_files")
     if not isinstance(raw_files, list):
-        raise ReferenceAgentRunnerError("manufacturing approval approved project files are invalid")
+        raise ReferenceAgentRunnerError(_INVALID_APPROVED_PROJECT_FILES_ERROR)
     approved_files: list[tuple[str, str]] = []
     for item in raw_files:
         if not isinstance(item, dict) or set(item) != {"path", "sha256"}:
-            raise ReferenceAgentRunnerError(
-                "manufacturing approval approved project files are invalid"
-            )
+            raise ReferenceAgentRunnerError(_INVALID_APPROVED_PROJECT_FILES_ERROR)
         relative = item.get("path")
         digest = item.get("sha256")
         if not isinstance(relative, str) or not isinstance(digest, str):
-            raise ReferenceAgentRunnerError(
-                "manufacturing approval approved project files are invalid"
-            )
+            raise ReferenceAgentRunnerError(_INVALID_APPROVED_PROJECT_FILES_ERROR)
         if not re.fullmatch(r"[0-9a-f]{64}", digest):
-            raise ReferenceAgentRunnerError(
-                "manufacturing approval approved project files are invalid"
-            )
+            raise ReferenceAgentRunnerError(_INVALID_APPROVED_PROJECT_FILES_ERROR)
         approved_files.append((relative, digest))
     if tuple(approved_files) != actual_files:
         raise ReferenceAgentRunnerError(
