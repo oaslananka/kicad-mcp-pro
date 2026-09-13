@@ -5,5 +5,4 @@
 )
 (rule "unicode-path-çöğü_courtyard"
   (constraint courtyard_clearance (min 0.25mm))
-  (condition "A.Footprint != '' && B.Footprint != ''")
 )

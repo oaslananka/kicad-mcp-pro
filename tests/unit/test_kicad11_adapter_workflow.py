@@ -38,3 +38,9 @@ def test_stable_kicad_workflow_pins_10_0_6_canary() -> None:
     assert 'test "$(kicad-cli version)" = "10.0.6"' in workflow
     assert "artifacts/kicad-10-0-6" in workflow
     assert "kicad-10-0-5-canary:" not in workflow
+
+
+def test_kicad_live_e2e_tracks_shared_fixture_corpus() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert workflow.count("packages/kicad-fixtures/fixtures/**") == 2

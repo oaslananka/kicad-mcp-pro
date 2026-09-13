@@ -53,26 +53,22 @@ Tests should use semantic fixture IDs from `manifest.json` or the TypeScript
 helpers exported from `src/index.ts`. Do not hard-code generated file lists in
 product tests.
 
-## Regeneration
+## Fixture maintenance
 
-Do not edit generated fixture files or golden outputs by hand. Update
-`scripts/generate-kicad-fixture-corpus.mjs`, then regenerate explicitly:
+Fixture source files and golden outputs are checked in and reviewed explicitly. The
+historical fixture generator and root `fixtures:kicad:generate` / `test:fixtures`
+scripts are not present in this migrated repository, so do not rely on those old
+commands when updating the corpus.
 
-```bash
-corepack pnpm run fixtures:kicad:generate
-```
-
-Validate integrity with:
+For KiCad canary fixture changes, run the focused contract tests:
 
 ```bash
-corepack pnpm run test:fixtures
+python scripts/run_uv.py run --all-extras python -m pytest tests/unit/test_kicad_canary.py -q
 ```
 
-The root repository check also runs this gate:
-
-```bash
-corepack pnpm run check
-```
+Then run the normal repository verification. Live KiCad compatibility evidence from
+the repository KiCad canary workflows is authoritative for stable and preview
+versions.
 
 ## Source Verification
 

@@ -428,6 +428,16 @@ def test_run_canary_writes_summary_when_version_range_fails(tmp_path: Path, monk
     assert (artifacts / "failing-fixtures.txt").read_text(encoding="utf-8") == ("compatibility\n")
 
 
+def test_shared_dru_fixtures_avoid_removed_kicad_10_99_footprint_property() -> None:
+    offenders = []
+    for path in sorted(kicad_canary.FIXTURE_ROOT.rglob("*.kicad_dru")):
+        raw = path.read_text(encoding="utf-8")
+        if "A.Footprint" in raw or "B.Footprint" in raw:
+            offenders.append(path.relative_to(kicad_canary.FIXTURE_ROOT).as_posix())
+
+    assert offenders == []
+
+
 def test_package_kicad_canary_scripts_keep_artifacts_inside_repository() -> None:
     root = Path(__file__).resolve().parents[2]
     package = json.loads((root / "package.json").read_text(encoding="utf-8"))
