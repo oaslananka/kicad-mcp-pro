@@ -16,6 +16,8 @@ from types import ModuleType
 
 import pcbnew  # type: ignore[import-not-found]  # provided by KiCad
 
+_COMPANION_TITLE = "kicad-mcp companion"
+
 
 def _ensure_companion_importable() -> None:
     """Add a kicad-mcp checkout to ``sys.path`` (dev fallback when not vendored)."""
@@ -54,7 +56,7 @@ class KiCadMcpCompanionPlugin(pcbnew.ActionPlugin):
     """Publish live KiCad context to kicad-mcp and gate mutating actions."""
 
     def defaults(self) -> None:
-        self.name = "kicad-mcp companion"
+        self.name = _COMPANION_TITLE
         self.category = "kicad-mcp"
         self.description = "Publish active board context to a running kicad-mcp-pro server."
         self.show_toolbar_button = True
@@ -69,7 +71,7 @@ class KiCadMcpCompanionPlugin(pcbnew.ActionPlugin):
                 "kicad-mcp companion helpers not found.\n"
                 "Reinstall the plugin (it should contain context.py), or set "
                 f"KICAD_MCP_HOME to a kicad-mcp checkout.\n\n{exc}",
-                "kicad-mcp companion",
+                _COMPANION_TITLE,
                 wx.ICON_ERROR,
             )
             return
@@ -93,7 +95,7 @@ class KiCadMcpCompanionPlugin(pcbnew.ActionPlugin):
         wx: object,
     ) -> None:
         def show(message: str, icon: object) -> None:
-            wx.CallAfter(wx.MessageBox, message, "kicad-mcp companion", icon)
+            wx.CallAfter(wx.MessageBox, message, _COMPANION_TITLE, icon)
 
         try:
             compatibility = ctx.load_compatibility_contract()
