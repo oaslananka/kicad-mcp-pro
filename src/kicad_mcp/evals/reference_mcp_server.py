@@ -144,37 +144,62 @@ def _manifest_digest(entries: list[dict[str, str | int]]) -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
+def _normalize_gbrjob_creation_date(data: bytes) -> bytes:
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return data
+    if not isinstance(payload, dict):
+        return data
+    header = payload.get("Header")
+    if not isinstance(header, dict):
+        return data
+    creation_date = header.get("CreationDate")
+    software = header.get("GenerationSoftware")
+    if not isinstance(creation_date, str) or not isinstance(software, dict):
+        return data
+    vendor = software.get("Vendor")
+    if not isinstance(vendor, str) or vendor.casefold() != "kicad":
+        return data
+    matches = tuple(_GBRJOB_CREATION_DATE_FIELD_RE.finditer(data))
+    if len(matches) != 1:
+        return data
+    match = matches[0]
+    return (
+        data[: match.start()]
+        + match.group(1)
+        + b"<normalized-kicad-creation-date>"
+        + match.group(2)
+        + data[match.end() :]
+    )
+
+
+def _line_ending(line: bytes) -> bytes:
+    if line.endswith(b"\r\n"):
+        return b"\r\n"
+    if line.endswith(b"\n"):
+        return b"\n"
+    return b""
+
+
+def _normalize_kicad_generated_line(
+    body: bytes, *, is_kicad_gerber: bool, is_kicad_drill: bool
+) -> bytes:
+    if is_kicad_gerber and _GERBER_CREATION_DATE_RE.fullmatch(body):
+        return b"%TF.CreationDate,<normalized>*%"
+    if is_kicad_gerber and _GERBER_CREATED_BY_RE.fullmatch(body):
+        return body.rsplit(b" date ", 1)[0] + b" date <normalized>*"
+    if is_kicad_drill and _DRILL_CREATED_BY_RE.fullmatch(body):
+        return body.rsplit(b" date ", 1)[0] + b" date <normalized>"
+    if is_kicad_drill and _DRILL_CREATION_DATE_RE.fullmatch(body):
+        return b"; #@! TF.CreationDate,<normalized>"
+    return body
+
+
 def _normalize_kicad_timestamp_bytes(relative: str, data: bytes) -> bytes:
     """Normalize only KiCad-generated timestamp metadata for comparison."""
-    suffix = Path(relative).suffix.casefold()
-    if suffix == ".gbrjob":
-        try:
-            payload = json.loads(data.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return data
-        if not isinstance(payload, dict):
-            return data
-        header = payload.get("Header")
-        if not isinstance(header, dict):
-            return data
-        creation_date = header.get("CreationDate")
-        software = header.get("GenerationSoftware")
-        if not isinstance(creation_date, str) or not isinstance(software, dict):
-            return data
-        vendor = software.get("Vendor")
-        if not isinstance(vendor, str) or vendor.casefold() != "kicad":
-            return data
-        matches = tuple(_GBRJOB_CREATION_DATE_FIELD_RE.finditer(data))
-        if len(matches) != 1:
-            return data
-        match = matches[0]
-        return (
-            data[: match.start()]
-            + match.group(1)
-            + b"<normalized-kicad-creation-date>"
-            + match.group(2)
-            + data[match.end() :]
-        )
+    if Path(relative).suffix.casefold() == ".gbrjob":
+        return _normalize_gbrjob_creation_date(data)
 
     is_kicad_gerber = b"%TF.GenerationSoftware,KiCad," in data
     is_kicad_drill = (
@@ -185,22 +210,16 @@ def _normalize_kicad_timestamp_bytes(relative: str, data: bytes) -> bytes:
     if not is_kicad_gerber and not is_kicad_drill:
         return data
 
-    lines = data.splitlines(keepends=True)
     normalized_lines: list[bytes] = []
-    for line in lines:
-        ending = b"\r\n" if line.endswith(b"\r\n") else (b"\n" if line.endswith(b"\n") else b"")
+    for line in data.splitlines(keepends=True):
+        ending = _line_ending(line)
         body = line[: -len(ending)] if ending else line
-        if is_kicad_gerber and _GERBER_CREATION_DATE_RE.fullmatch(body):
-            body = b"%TF.CreationDate,<normalized>*%"
-        elif is_kicad_gerber and _GERBER_CREATED_BY_RE.fullmatch(body):
-            prefix = body.rsplit(b" date ", 1)[0]
-            body = prefix + b" date <normalized>*"
-        elif is_kicad_drill and _DRILL_CREATED_BY_RE.fullmatch(body):
-            prefix = body.rsplit(b" date ", 1)[0]
-            body = prefix + b" date <normalized>"
-        elif is_kicad_drill and _DRILL_CREATION_DATE_RE.fullmatch(body):
-            body = b"; #@! TF.CreationDate,<normalized>"
-        normalized_lines.append(body + ending)
+        normalized_lines.append(
+            _normalize_kicad_generated_line(
+                body, is_kicad_gerber=is_kicad_gerber, is_kicad_drill=is_kicad_drill
+            )
+            + ending
+        )
     return b"".join(normalized_lines)
 
 
@@ -247,6 +266,30 @@ def _require_snapshot_export_success(label: str, result: str) -> None:
         raise ValueError(f"{label} export failed: {result}")
 
 
+def _remove_same_file_bom_aliases(canonical: Path, candidates: list[Path]) -> None:
+    for alias in candidates:
+        if alias == canonical:
+            continue
+        if not alias.samefile(canonical):
+            raise ValueError("reference manufacturing snapshot contains ambiguous BOM artifacts")
+        alias.unlink()
+
+
+def _rename_bom_case_safely(source: Path, canonical: Path) -> None:
+    temporary = canonical.parent / ".reference-bom-case-normalize.tmp"
+    if temporary.exists() or temporary.is_symlink():
+        raise ValueError(
+            "reference manufacturing snapshot contains reserved temporary BOM artifact"
+        )
+    source.replace(temporary)
+    try:
+        temporary.replace(canonical)
+    except OSError:
+        if temporary.exists() and not source.exists():
+            temporary.replace(source)
+        raise
+
+
 def _canonicalize_snapshot_bom(root: Path) -> Path:
     """Require one BOM artifact and normalize its on-disk spelling to ``BOM.csv``."""
     canonical_name = "BOM.csv"
@@ -261,31 +304,12 @@ def _canonicalize_snapshot_bom(root: Path) -> Path:
 
     exact = next((path for path in candidates if path.name == canonical_name), None)
     if exact is not None:
-        for alias in candidates:
-            if alias == exact:
-                continue
-            if not alias.samefile(exact):
-                raise ValueError(
-                    "reference manufacturing snapshot contains ambiguous BOM artifacts"
-                )
-            alias.unlink()
+        _remove_same_file_bom_aliases(exact, candidates)
         return exact
 
     if len(candidates) != 1:
         raise ValueError("reference manufacturing snapshot contains ambiguous BOM artifacts")
-    source = candidates[0]
-    temporary = root / ".reference-bom-case-normalize.tmp"
-    if temporary.exists() or temporary.is_symlink():
-        raise ValueError(
-            "reference manufacturing snapshot contains reserved temporary BOM artifact"
-        )
-    source.replace(temporary)
-    try:
-        temporary.replace(canonical)
-    except OSError:
-        if temporary.exists() and not source.exists():
-            temporary.replace(source)
-        raise
+    _rename_bom_case_safely(candidates[0], canonical)
     return canonical
 
 
