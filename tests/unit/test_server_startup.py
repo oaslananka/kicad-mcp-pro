@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 import threading
 from pathlib import Path
@@ -257,6 +258,48 @@ def test_lazy_registration_thread_does_not_capture_protocol_stdout(capsys) -> No
     assert "2026-lazy-thread-before-json" not in captured.out
     assert "2026-lazy-thread-before-json" in captured.err
     assert server._lazy_registration_complete is True
+
+
+def test_sync_tool_decorator_preserves_direct_python_call_semantics() -> None:
+    server = KiCadFastMCP(name="kicad-mcp-pro-test")
+
+    @server.tool(name="kicad_get_version")
+    def sync_tool() -> str:
+        return "10.0.6"
+
+    assert sync_tool() == "10.0.6"
+
+
+@pytest.mark.anyio
+async def test_sync_tool_execution_does_not_block_event_loop() -> None:
+    server = KiCadFastMCP(name="kicad-mcp-pro-test")
+    server._lazy_registration_complete = True
+    events: list[str] = []
+    release = threading.Event()
+
+    @server.tool(name="kicad_get_version")
+    def blocking_sync_tool() -> str:
+        events.append("tool-start")
+        assert release.wait(timeout=2)
+        events.append("tool-end")
+        return "10.0.6"
+
+    async def heartbeat() -> None:
+        await asyncio.sleep(0.02)
+        events.append("heartbeat")
+
+    timer = threading.Timer(0.2, release.set)
+    timer.start()
+    try:
+        await asyncio.gather(
+            server.call_tool("kicad_get_version", {}),
+            heartbeat(),
+        )
+    finally:
+        release.set()
+        timer.cancel()
+
+    assert events.index("tool-start") < events.index("heartbeat") < events.index("tool-end")
 
 
 async def test_ensure_registered_async_times_out_on_hung_registration() -> None:

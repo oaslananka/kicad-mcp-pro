@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import inspect
 import io
 import json
@@ -821,7 +822,17 @@ class KiCadFastMCP(FastMCP):
                         f"{published_description.rstrip()} This KiCad MCP Pro tool "
                         "supports production EDA automation workflows for MCP clients."
                     )
-            return super(KiCadFastMCP, self).tool(
+            registered_func = func
+            if not inspect.iscoroutinefunction(func):
+
+                @functools.wraps(func)
+                async def run_sync_tool_in_worker(*args: object, **kwargs: object) -> object:
+                    call = functools.partial(func, *args, **kwargs)
+                    return await anyio.to_thread.run_sync(call)
+
+                registered_func = run_sync_tool_in_worker
+
+            super(KiCadFastMCP, self).tool(
                 name=name,
                 title=title,
                 description=published_description,
@@ -829,7 +840,8 @@ class KiCadFastMCP(FastMCP):
                 icons=icons,
                 meta=meta,
                 structured_output=structured_output,
-            )(func)
+            )(registered_func)
+            return func
 
         return decorator
 
