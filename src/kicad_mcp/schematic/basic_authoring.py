@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from .references import power_reference_from_uuid
+
 
 class SchematicTarget(Protocol):
     """Minimal resolved-target surface used by basic authoring."""
@@ -444,7 +446,7 @@ class SchematicBasicAuthoringService:
             symbol_name=name,
             x_mm=x_mm,
             y_mm=y_mm,
-            reference=f"#PWR{self.new_uuid()[:4]}",
+            reference=power_reference_from_uuid(self.new_uuid()),
             value=name,
             footprint="",
             rotation=rotation,

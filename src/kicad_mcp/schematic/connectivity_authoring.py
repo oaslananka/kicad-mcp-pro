@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from ..models.schematic import RouteWireBetweenPinsInput
+from .references import power_reference_from_uuid
 
 
 class SchematicTargetLike(Protocol):
@@ -320,7 +321,7 @@ class SchematicConnectivityAuthoringService:
                         lib_id=f"power:{net}",
                         x=ex,
                         y=ey,
-                        reference=f"#PWR{self.new_uuid()[:4]}",
+                        reference=power_reference_from_uuid(self.new_uuid()),
                         value=net,
                         rotation=self.power_symbol_rotation_from_vector(ux, uy),
                         project_name=project_name,

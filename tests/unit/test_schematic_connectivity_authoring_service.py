@@ -356,6 +356,9 @@ def test_add_pin_labels_merges_stacked_power_pins_into_one_terminal(tmp_path: Pa
     # Exactly one wire stub and one power symbol are emitted.
     assert sum(name == "wire_block" for name, _ in harness.calls) == 1
     assert sum(name == "place_symbol_block" for name, _ in harness.calls) == 1
+    power_calls = [payload for name, payload in harness.calls if name == "place_symbol_block"]
+    assert power_calls[0]["reference"] == "#PWR43981"
+    assert str(power_calls[0]["reference"])[4:].isdigit()
     content = harness.writes[0][1]
     assert content.count("POWER(GND,17.08,20.0)") == 1
     assert content.count("WIRE(12.0,20.0->17.08,20.0)") == 1
