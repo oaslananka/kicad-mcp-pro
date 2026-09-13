@@ -5,5 +5,4 @@
 )
 (rule "kicad-10-0-3-regressions_courtyard"
   (constraint courtyard_clearance (min 0.25mm))
-  (condition "A.Footprint != '' && B.Footprint != ''")
 )
