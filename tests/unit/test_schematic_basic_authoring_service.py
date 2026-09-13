@@ -50,7 +50,7 @@ def _service(
 ]:
     tx = transaction or _TransactionRecorder()
     reloader = reload or _ReloadRecorder()
-    uuids = iter(uuid_values or ["root-uuid", "power-ref"])
+    uuids = iter(uuid_values or ["abcd1234", "beef5678"])
     symbol_calls = captured_symbol_blocks if captured_symbol_blocks is not None else []
 
     def place_symbol_block(
@@ -347,7 +347,8 @@ def test_add_power_symbol_preserves_generated_reference_and_placement_message() 
 
     assert result.endswith("\nPower symbol VCC placed at (10.16, 20.32)")
     assert reload.calls == 1
-    assert symbol_calls[0]["reference"] == "#PWRabcd"
+    assert symbol_calls[0]["reference"] == "#PWR43981"
+    assert str(symbol_calls[0]["reference"])[4:].isdigit()
     assert symbol_calls[0]["lib_id"] == "power:VCC"
     assert symbol_calls[0]["rotation"] == 180
 
