@@ -56,3 +56,12 @@ def test_gerber_timestamp_matching_avoids_backtracking_regex_constants() -> None
     risky_constants = {"_GERBER_CREATED_BY_RE", "_DRILL_CREATED_BY_RE"}
 
     assert risky_constants.isdisjoint(_module_assignment_names())
+
+
+def test_created_by_date_separator_is_defined_once() -> None:
+    tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
+    occurrences = sum(
+        isinstance(node, ast.Constant) and node.value == b" date " for node in ast.walk(tree)
+    )
+
+    assert occurrences == 1

@@ -35,6 +35,7 @@ REFERENCE_MANUFACTURING_NORMALIZATION_RULES_VERSION = "kicad-cli-timestamps-v1"
 _GERBER_CREATION_DATE_RE = re.compile(rb"^%TF\.CreationDate,[^\r\n]*\*%$")
 _GERBER_CREATED_BY_PREFIX = b"G04 Created by KiCad (PCBNEW "
 _DRILL_CREATED_BY_PREFIX = b"; DRILL file KiCad "
+_CREATED_BY_DATE_SEPARATOR = b" date "
 _DRILL_CREATION_DATE_RE = re.compile(rb"^; #@! TF\.CreationDate,[^\r\n]*$")
 _GBRJOB_CREATION_DATE_FIELD_RE = re.compile(rb"(\"CreationDate\"\s*:\s*\")[^\"\r\n]+(\")")
 
@@ -197,7 +198,7 @@ def _is_gerber_created_by_line(body: bytes) -> bool:
 def _is_drill_created_by_line(body: bytes) -> bool:
     if not _is_single_line(body) or not body.startswith(_DRILL_CREATED_BY_PREFIX):
         return False
-    return b" date " in body[len(_DRILL_CREATED_BY_PREFIX) :]
+    return _CREATED_BY_DATE_SEPARATOR in body[len(_DRILL_CREATED_BY_PREFIX) :]
 
 
 def _normalize_kicad_generated_line(
@@ -206,9 +207,9 @@ def _normalize_kicad_generated_line(
     if is_kicad_gerber and _GERBER_CREATION_DATE_RE.fullmatch(body):
         return b"%TF.CreationDate,<normalized>*%"
     if is_kicad_gerber and _is_gerber_created_by_line(body):
-        return body.rsplit(b" date ", 1)[0] + b" date <normalized>*"
+        return body.rsplit(_CREATED_BY_DATE_SEPARATOR, 1)[0] + b" date <normalized>*"
     if is_kicad_drill and _is_drill_created_by_line(body):
-        return body.rsplit(b" date ", 1)[0] + b" date <normalized>"
+        return body.rsplit(_CREATED_BY_DATE_SEPARATOR, 1)[0] + b" date <normalized>"
     if is_kicad_drill and _DRILL_CREATION_DATE_RE.fullmatch(body):
         return b"; #@! TF.CreationDate,<normalized>"
     return body
