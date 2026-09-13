@@ -9,8 +9,8 @@ repository-code: "https://github.com/oaslananka/kicad-mcp-pro"
 url: "https://oaslananka.github.io/kicad-mcp-pro"
 doi: "10.5281/zenodo.21283791"
 license: MIT
-version: "3.34.5" # x-release-please-version
-date-released: "2026-09-11" # x-release-please-date
+version: "3.34.6" # x-release-please-version
+date-released: "2026-09-13" # x-release-please-date
 abstract: >-
   KiCad MCP Pro is a Model Context Protocol server for automating KiCad
   schematic capture, PCB layout, ERC/DRC validation, DFM checks, and

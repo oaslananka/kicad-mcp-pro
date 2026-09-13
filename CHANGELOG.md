@@ -10,6 +10,14 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.34.6](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.34.5...mcp-server-v3.34.6) (2026-09-13)
+
+
+### Bug Fixes
+
+* **schematic:** generate validator-safe power references ([#890](https://github.com/oaslananka/kicad-mcp-pro/issues/890)) ([961dda3](https://github.com/oaslananka/kicad-mcp-pro/commit/961dda35f258ca0d9800254f17d85e9d18847b8c))
+* **server:** offload sync tools from event loop ([#891](https://github.com/oaslananka/kicad-mcp-pro/issues/891)) ([14fb9f0](https://github.com/oaslananka/kicad-mcp-pro/commit/14fb9f04718bbd9ae62f54b116e4556b9c9bbf5c))
+
 ## [3.34.5](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.34.4...mcp-server-v3.34.5) (2026-09-11)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.34.6](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v3.34.5...kicad-mcp-gui-v3.34.6) (2026-09-13)
+
+
+### Miscellaneous Chores
+
+* **kicad-mcp-gui:** Synchronize kicad-mcp-pro versions
+
 ## [3.34.5](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v3.34.4...kicad-mcp-gui-v3.34.5) (2026-09-11)
 
 
