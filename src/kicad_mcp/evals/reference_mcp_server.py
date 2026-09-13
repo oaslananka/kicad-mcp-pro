@@ -33,8 +33,8 @@ _REFERENCE_COMPARISON_FILE = "comparison.json"
 REFERENCE_MANUFACTURING_NORMALIZATION_RULES_VERSION = "kicad-cli-timestamps-v1"
 
 _GERBER_CREATION_DATE_RE = re.compile(rb"^%TF\.CreationDate,[^\r\n]*\*%$")
-_GERBER_CREATED_BY_RE = re.compile(rb"^G04 Created by KiCad \(PCBNEW [^\r\n]*\) date [^\r\n]*\*$")
-_DRILL_CREATED_BY_RE = re.compile(rb"^; DRILL file KiCad [^\r\n]* date [^\r\n]*$")
+_GERBER_CREATED_BY_PREFIX = b"G04 Created by KiCad (PCBNEW "
+_DRILL_CREATED_BY_PREFIX = b"; DRILL file KiCad "
 _DRILL_CREATION_DATE_RE = re.compile(rb"^; #@! TF\.CreationDate,[^\r\n]*$")
 _GBRJOB_CREATION_DATE_FIELD_RE = re.compile(rb"(\"CreationDate\"\s*:\s*\")[^\"\r\n]+(\")")
 
@@ -182,14 +182,32 @@ def _line_ending(line: bytes) -> bytes:
     return b""
 
 
+def _is_single_line(body: bytes) -> bool:
+    return b"\r" not in body and b"\n" not in body
+
+
+def _is_gerber_created_by_line(body: bytes) -> bool:
+    if not _is_single_line(body) or not body.startswith(_GERBER_CREATED_BY_PREFIX):
+        return False
+    if not body.endswith(b"*"):
+        return False
+    return b") date " in body[len(_GERBER_CREATED_BY_PREFIX) : -1]
+
+
+def _is_drill_created_by_line(body: bytes) -> bool:
+    if not _is_single_line(body) or not body.startswith(_DRILL_CREATED_BY_PREFIX):
+        return False
+    return b" date " in body[len(_DRILL_CREATED_BY_PREFIX) :]
+
+
 def _normalize_kicad_generated_line(
     body: bytes, *, is_kicad_gerber: bool, is_kicad_drill: bool
 ) -> bytes:
     if is_kicad_gerber and _GERBER_CREATION_DATE_RE.fullmatch(body):
         return b"%TF.CreationDate,<normalized>*%"
-    if is_kicad_gerber and _GERBER_CREATED_BY_RE.fullmatch(body):
+    if is_kicad_gerber and _is_gerber_created_by_line(body):
         return body.rsplit(b" date ", 1)[0] + b" date <normalized>*"
-    if is_kicad_drill and _DRILL_CREATED_BY_RE.fullmatch(body):
+    if is_kicad_drill and _is_drill_created_by_line(body):
         return body.rsplit(b" date ", 1)[0] + b" date <normalized>"
     if is_kicad_drill and _DRILL_CREATION_DATE_RE.fullmatch(body):
         return b"; #@! TF.CreationDate,<normalized>"

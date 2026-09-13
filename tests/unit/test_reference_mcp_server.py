@@ -663,3 +663,69 @@ def test_reference_snapshot_bom_case_rename_rolls_back_on_failure(
 
     assert source.read_text(encoding="utf-8") == "bom\n"
     assert not (root / ".reference-bom-case-normalize.tmp").exists()
+
+
+def test_reference_gerber_timestamp_line_matching_preserves_exact_semantics() -> None:
+    import kicad_mcp.evals.reference_mcp_server as reference_server
+
+    normalize = reference_server._normalize_kicad_generated_line
+    kwargs = {"is_kicad_gerber": True, "is_kicad_drill": False}
+
+    assert normalize(b"%TF.CreationDate,2026-09-13T19:00:00Z*%", **kwargs) == (
+        b"%TF.CreationDate,<normalized>*%"
+    )
+    assert (
+        normalize(b"G04 Created by KiCad (PCBNEW 10.0.6) date 2026-09-13 19:00:00*", **kwargs)
+        == b"G04 Created by KiCad (PCBNEW 10.0.6) date <normalized>*"
+    )
+    assert (
+        normalize(b"G04 Created by KiCad (PCBNEW 10.0.6) date alpha date beta*", **kwargs)
+        == b"G04 Created by KiCad (PCBNEW 10.0.6) date alpha date <normalized>*"
+    )
+
+
+def test_reference_gerber_timestamp_line_matching_rejects_near_misses() -> None:
+    import kicad_mcp.evals.reference_mcp_server as reference_server
+
+    normalize = reference_server._normalize_kicad_generated_line
+    kwargs = {"is_kicad_gerber": True, "is_kicad_drill": False}
+    near_misses = (
+        b"%TF.CreationDate,2026-09-13T19:00:00Z*X",
+        b"%TF.CreationDate,2026-09-13\nT19:00:00Z*%",
+        b"G04 Created by KiCad (PCBNEW 10.0.6) 2026-09-13 19:00:00*",
+        b"G04 Created by KiCad (PCBNEW 10.0.6) date 2026-09-13\r19:00:00*",
+        b"G04 Created by KiCad PCBNEW 10.0.6) date 2026-09-13 19:00:00*",
+        b"G04 Created by KiCad (PCBNEW 10.0.6) date 2026-09-13 19:00:00",
+    )
+
+    for body in near_misses:
+        assert normalize(body, **kwargs) == body
+
+
+def test_reference_drill_created_by_line_matching_preserves_exact_semantics() -> None:
+    import kicad_mcp.evals.reference_mcp_server as reference_server
+
+    normalize = reference_server._normalize_kicad_generated_line
+    kwargs = {"is_kicad_gerber": False, "is_kicad_drill": True}
+
+    assert normalize(b"; DRILL file KiCad 10.0.6 date 2026-09-13T19:00:00", **kwargs) == (
+        b"; DRILL file KiCad 10.0.6 date <normalized>"
+    )
+    assert normalize(b"; DRILL file KiCad 10.0.6 date alpha date beta", **kwargs) == (
+        b"; DRILL file KiCad 10.0.6 date alpha date <normalized>"
+    )
+
+
+def test_reference_drill_created_by_line_matching_rejects_near_misses() -> None:
+    import kicad_mcp.evals.reference_mcp_server as reference_server
+
+    normalize = reference_server._normalize_kicad_generated_line
+    kwargs = {"is_kicad_gerber": False, "is_kicad_drill": True}
+    near_misses = (
+        b"; DRILL file KiCad 10.0.6 2026-09-13T19:00:00",
+        b"; DRILL file KiCad 10.0.6 date 2026-09-13\nT19:00:00",
+        b"DRILL file KiCad 10.0.6 date 2026-09-13T19:00:00",
+    )
+
+    for body in near_misses:
+        assert normalize(body, **kwargs) == body
