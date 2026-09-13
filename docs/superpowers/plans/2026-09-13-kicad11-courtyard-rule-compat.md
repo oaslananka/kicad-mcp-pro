@@ -200,3 +200,24 @@ Do not merge if the preview lane fails for a new reason; diagnose it independent
 - [ ] **Step 6: Merge the fixture PR, then refresh release PR #892**
 
 After the fixture PR merges to `main`, ensure release PR #892 includes the updated base and reruns the live KiCad checks before merging/releasing v3.34.6.
+### Task 5: Ensure shared fixture changes trigger live KiCad CI
+
+**Files:**
+- Modify: `.github/workflows/kicad-live-e2e.yml`
+- Modify: `tests/unit/test_kicad11_adapter_workflow.py`
+
+**Interfaces:**
+- Consumes: the checked-in shared corpus at `packages/kicad-fixtures/fixtures/**`.
+- Produces: pull-request and main-push triggers for the live KiCad workflow when shared fixture inputs change.
+
+- [x] **Step 1: Add a failing workflow-contract test**
+
+Require `packages/kicad-fixtures/fixtures/**` to appear in both the pull-request and push path-filter lists. The test must fail on the pre-fix workflow with a count of 0.
+
+- [x] **Step 2: Add the shared corpus path to both filters**
+
+Keep the existing `tests/fixtures/**` filters and add `packages/kicad-fixtures/fixtures/**` alongside them.
+
+- [ ] **Step 3: Verify workflow syntax, policy, and the focused tests**
+
+Run the workflow contract tests, actionlint, repository workflow policy, and workflow security checks before publishing the updated PR head.

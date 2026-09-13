@@ -39,3 +39,6 @@ Do not change MCP product behavior, compatibility claims, feature gates, canary 
 - Repository lint/format/diff checks for changed files pass.
 - Pull-request CI passes the stable KiCad 10.0.6 canary.
 - Pull-request KiCad 11 preview smoke passes against the then-current nightly, or any new failure is independently diagnosed rather than suppressed.
+## CI trigger coverage discovered during implementation
+
+The live KiCad workflow originally watched `tests/fixtures/**` but not the actual shared corpus at `packages/kicad-fixtures/fixtures/**`. That meant a fixture-only compatibility repair could bypass the live KiCad pull-request canaries. The bounded fix therefore also adds the shared corpus path to both pull-request and main-push filters, protected by a workflow-contract regression test.
