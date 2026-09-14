@@ -62,3 +62,14 @@ def test_pcb_composition_root_no_longer_owns_board_inspection_tools() -> None:
             "pcb_get_footprints",
         }
     )
+
+
+def test_board_inspection_live_source_literal_is_defined_once() -> None:
+    source = boundaries.SRC_ROOT / "kicad_mcp" / "pcb" / "board_inspection.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+    literal = "- Source: live-gui"
+    occurrences = sum(
+        isinstance(node, ast.Constant) and node.value == literal for node in ast.walk(tree)
+    )
+
+    assert occurrences == 1
