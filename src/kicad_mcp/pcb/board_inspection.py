@@ -17,6 +17,8 @@ from .board_access import (
     board_zones,
 )
 
+_LIVE_GUI_SOURCE = "- Source: live-gui"
+
 
 class PaginateItems(Protocol):
     """Paginate an iterable while preserving total and page count."""
@@ -209,7 +211,7 @@ class PcbBoardInspectionService:
         text = "\n".join(
             [
                 "Board summary:",
-                "- Source: live-gui",
+                _LIVE_GUI_SOURCE,
                 f"- Tracks: {len(tracks)}",
                 f"- Vias: {len(vias)}",
                 f"- Footprints: {len(footprints)}",
@@ -273,7 +275,7 @@ class PcbBoardInspectionService:
 
         lines = [
             f"Tracks ({total} total):",
-            "- Source: live-gui",
+            _LIVE_GUI_SOURCE,
             f"- Page {page}/{page_count} | Showing {len(tracks)}",
         ]
         for index, raw_track in enumerate(tracks, start=1):
@@ -299,7 +301,7 @@ class PcbBoardInspectionService:
         if not vias:
             return self.with_pcb_diagnostics("No vias are present on the active board.")
 
-        lines = [f"Vias ({total} total):", "- Source: live-gui"]
+        lines = [f"Vias ({total} total):", _LIVE_GUI_SOURCE]
         for index, raw_via in enumerate(vias, start=1):
             via = cast(ViaLike, raw_via)
             lines.append(
@@ -352,7 +354,7 @@ class PcbBoardInspectionService:
 
         lines = [
             f"Footprints ({total} total):",
-            "- Source: live-gui",
+            _LIVE_GUI_SOURCE,
             f"- Page {page}/{page_count} | Showing {len(footprints)}",
         ]
         for raw_footprint in footprints:
