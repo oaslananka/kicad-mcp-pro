@@ -16,11 +16,11 @@
     "dotenv": "^17.4.2",
     "express": "4.22.2",
     "express-rate-limit": "^8.7.0",
-    "zod": "^4.5.4"
+    "zod": "^4.6.2"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.5.1",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   },
