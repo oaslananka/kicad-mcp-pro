@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.34.7](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.34.6...mcp-server-v3.34.7) (2026-09-15)
+
+
+### Documentation
+
+* record licensing transition review ([#903](https://github.com/oaslananka/kicad-mcp-pro/issues/903)) ([18c7def](https://github.com/oaslananka/kicad-mcp-pro/commit/18c7defe9a0828f6df4dbf03d3361b7ad7f395d7))
+
 ## [3.34.6](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.34.5...mcp-server-v3.34.6) (2026-09-13)
 
 
