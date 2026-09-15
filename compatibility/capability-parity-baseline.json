@@ -1,0 +1,14 @@
+{
+  "_comment": "Coverage floor for the parity regression gate (work order P5-T6). Raise it with: uv run python scripts/build_parity_matrix.py --update-baseline. CI fails if live coverage drops below these percentages — e.g. a KiCad update breaking a hook.",
+  "overall": 75.0,
+  "domains": {
+    "schematic_edit": 84.6,
+    "pcb_edit": 93.8,
+    "routing": 66.7,
+    "library": 57.1,
+    "analysis": 23.1,
+    "export": 100.0,
+    "project": 100.0,
+    "cosmetics": 85.7
+  }
+}

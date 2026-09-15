@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-09T20:48:51Z",
+  "repository": "oaslananka/kicad-mcp-pro",
+  "repositoryCommit": "7418fbfd6649d49764d8fd98362ff908b1f5a701",
+  "issue": "https://github.com/oaslananka/kicad-mcp-pro/issues/779",
+  "scorecardAlert": {
+    "id": 53,
+    "check": "Vulnerabilities",
+    "severity": "high",
+    "state": "open",
+    "lastQueriedAt": "2026-09-09T20:48:51Z",
+    "lastUpdatedAt": "2026-08-10T12:10:21Z",
+    "activeRustSecIds": [
+      "RUSTSEC-2024-0370",
+      "RUSTSEC-2024-0429",
+      "RUSTSEC-2025-0075",
+      "RUSTSEC-2025-0080",
+      "RUSTSEC-2025-0081",
+      "RUSTSEC-2025-0098",
+      "RUSTSEC-2025-0100"
+    ],
+    "activeRustSecCount": 7,
+    "note": "Fresh alert #53 message contains the same 7 active IDs as the pinned cargo-audit baseline; withdrawn GTK3 IDs are no longer in the alert message."
+  },
+  "cargoAudit": {
+    "version": "cargo-audit 0.22.2",
+    "command": "cargo audit --json --no-yanked",
+    "workingDirectory": "src-tauri",
+    "lockfileSha256": "2afcb41a15b0a0bbfc59a2070c181be89bdcf5abaf4578d4ab9857b2cf0d8415",
+    "exitCode": null,
+    "vulnerabilitiesCount": 0,
+    "warningsCount": 7,
+    "warningsByKind": {
+      "unmaintained": 6,
+      "unsound": 1
+    },
+    "findings": [
+      {
+        "advisory": "RUSTSEC-2024-0370",
+        "package": "proc-macro-error",
+        "version": "1.0.4",
+        "kind": "unmaintained"
+      },
+      {
+        "advisory": "RUSTSEC-2024-0429",
+        "package": "glib",
+        "version": "0.18.5",
+        "kind": "unsound"
+      },
+      {
+        "advisory": "RUSTSEC-2025-0075",
+        "package": "unic-char-range",
+        "version": "0.9.0",
+        "kind": "unmaintained"
+      },
+      {
+        "advisory": "RUSTSEC-2025-0080",
+        "package": "unic-common",
+        "version": "0.9.0",
+        "kind": "unmaintained"
+      },
+      {
+        "advisory": "RUSTSEC-2025-0081",
+        "package": "unic-char-property",
+        "version": "0.9.0",
+        "kind": "unmaintained"
+      },
+      {
+        "advisory": "RUSTSEC-2025-0098",
+        "package": "unic-ucd-version",
+        "version": "0.9.0",
+        "kind": "unmaintained"
+      },
+      {
+        "advisory": "RUSTSEC-2025-0100",
+        "package": "unic-ucd-ident",
+        "version": "0.9.0",
+        "kind": "unmaintained"
+      }
+    ],
+    "rawOutputSha256": null,
+    "ciRun": "https://github.com/oaslananka/kicad-mcp-pro/actions/runs/34402695443",
+    "ciResult": "security job SUCCESS; pinned cargo-audit 0.22.2 findings matched the reviewed 7-entry baseline exactly."
+  },
+  "reachabilityCheck": {
+    "command": "grep -RnE 'VariantStrIter|unic_char|unic::|unic_common|unic_ucd' src-tauri/src",
+    "result": "no matches",
+    "conclusion": "Application code in src-tauri/src does not call glib::VariantStrIter or any unic-* API directly. All 7 active findings are transitive-only; the withdrawn GTK3 advisory family remains relevant only as maintenance/migration context."
+  },
+  "reverseDependencyChains": {
+    "command": "cargo tree -i <package> --target all --edges normal",
+    "unicCharRange": [
+      "unic-char-range v0.9.0",
+      "unic-char-property v0.9.0",
+      "unic-ucd-ident v0.9.0",
+      "urlpattern v0.3.0",
+      "tauri-utils v2.9.3",
+      "tauri v2.11.5 / tauri-build v2.6.3",
+      "kicad-mcp-pro v3.34.2 (src-tauri)"
+    ],
+    "glib": [
+      "glib v0.18.5",
+      "gio v0.18.4 / gdk v0.18.2 / gtk v0.18.2 / webkit2gtk v2.0.2 / wry v0.55.1",
+      "tauri v2.11.5 (linux-only cfg)",
+      "kicad-mcp-pro v3.34.2 (src-tauri)"
+    ],
+    "procMacroError": [
+      "proc-macro-error v1.0.4",
+      "gtk3-macros v0.18.2 / gtk v0.18.2 (build-time proc-macro dependency)",
+      "tauri v2.11.5 (linux-only cfg)",
+      "kicad-mcp-pro v3.34.2 (src-tauri)"
+    ]
+  },
+  "platformGating": {
+    "cargoVersion": "cargo 1.97.1 (c980f4866 2026-06-30)",
+    "commands": {
+      "linux": "cargo tree -i glib@0.18.5 --target x86_64-unknown-linux-gnu --edges normal",
+      "macos": "cargo tree -i glib@0.18.5 --target aarch64-apple-darwin --edges normal",
+      "windows": "cargo tree -i glib@0.18.5 --target x86_64-pc-windows-msvc --edges normal",
+      "linuxProcMacro": "cargo tree -i proc-macro-error@1.0.4 --target x86_64-unknown-linux-gnu --edges normal",
+      "macosProcMacro": "cargo tree -i proc-macro-error@1.0.4 --target aarch64-apple-darwin --edges normal",
+      "windowsProcMacro": "cargo tree -i proc-macro-error@1.0.4 --target x86_64-pc-windows-msvc --edges normal"
+    },
+    "results": {
+      "linux": "glib 0.18.5 and proc-macro-error 1.0.4 both resolve through GTK/WebKitGTK/Tauri.",
+      "macos": "cargo tree reports nothing to print for both glib 0.18.5 and proc-macro-error 1.0.4.",
+      "windows": "cargo tree reports nothing to print for both glib 0.18.5 and proc-macro-error 1.0.4."
+    },
+    "conclusion": "The active glib/proc-macro-error chain is Linux-target-only in the resolved Tauri dependency graph; explicit macOS and Windows target resolution contains neither package."
+  },
+  "upstreamTracking": {
+    "tauriRuntimeWryGtk4Tracking": {
+      "url": "https://github.com/tauri-apps/tauri/issues/12561",
+      "title": "Upgrade `tauri-runtime-wry` to `gtk4-rs`",
+      "state": "open",
+      "lastCheckedAt": "2026-09-09T20:48:51Z"
+    },
+    "conclusion": "rust-unic removal has landed on Tauri dev through urlpattern 0.6 but is not in a stable tauri-utils release; GTK4/WebKit6 migration remains open and even Wry 0.57.0 still uses GTK3. No supported stable dependency update removes these advisories yet.",
+    "taoGtk4Port": {
+      "url": "https://github.com/tauri-apps/tao/pull/1104",
+      "title": "fix(linux): Port to gtk4-rs",
+      "state": "open",
+      "merged": false,
+      "lastCheckedAt": "2026-09-09T20:48:51Z",
+      "lastUpdatedUpstream": "2026-08-18T10:01:39Z"
+    },
+    "wryGtk4Port": {
+      "url": "https://github.com/tauri-apps/wry/pull/1530",
+      "title": "fix(linux): Port to webkitgtk6",
+      "state": "open",
+      "merged": false,
+      "lastCheckedAt": "2026-09-09T20:48:51Z",
+      "lastUpdatedUpstream": "2026-07-22T09:38:03Z"
+    },
+    "urlpattern06Removal": {
+      "url": "https://github.com/tauri-apps/tauri/commit/dd725f4b13c30a86b398ccc59eb498f151f461c5",
+      "title": "chore(deps): update rust crate urlpattern to 0.6 (#15660)",
+      "state": "merged-to-dev-unreleased",
+      "mergedAt": "2026-07-06T16:50:43Z",
+      "effect": "Tauri dev changes urlpattern 0.3 -> 0.6; upstream lockfile removes all five unic-* 0.9.0 crates.",
+      "stableRelease": "No tauri-utils-v2.9.4 or v2.10.0 tag exists as of 2026-09-09; latest stable tauri-utils remains 2.9.3."
+    },
+    "stableDependencyState": {
+      "tauri": "2.11.5",
+      "tauriUtils": "2.9.3",
+      "tauriRuntimeWry": "2.11.4",
+      "wryInLock": "0.55.1",
+      "latestWry": "0.57.0",
+      "latestWryStillUses": "gtk 0.18 / webkit2gtk 2.0.2",
+      "urlpatternInLock": "0.3.0"
+    }
+  },
+  "withdrawnGtk3RustSec": {
+    "ids": [
+      "RUSTSEC-2024-0411",
+      "RUSTSEC-2024-0412",
+      "RUSTSEC-2024-0413",
+      "RUSTSEC-2024-0414",
+      "RUSTSEC-2024-0415",
+      "RUSTSEC-2024-0416",
+      "RUSTSEC-2024-0417",
+      "RUSTSEC-2024-0418",
+      "RUSTSEC-2024-0419",
+      "RUSTSEC-2024-0420"
+    ],
+    "status": "withdrawn",
+    "checkedAt": "2026-09-09T20:48:51Z",
+    "note": "RustSec currently marks these ten gtk-rs GTK3 unmaintained advisories withdrawn. They are retained only as historical dependency-maintenance context, not counted as active cargo-audit or Scorecard findings."
+  }
+}
