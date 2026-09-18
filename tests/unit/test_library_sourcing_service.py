@@ -19,6 +19,7 @@ def _record(
     description: str = "5V regulator",
     lifecycle: str = "Active",
     rohs: str = "Yes",
+    currency: str = "",
 ) -> ComponentRecord:
     return ComponentRecord(
         source="jlcsearch",
@@ -32,6 +33,7 @@ def _record(
         is_preferred=False,
         lifecycle=lifecycle,
         rohs=rohs,
+        currency=currency,
     )
 
 
@@ -199,6 +201,26 @@ def test_bom_pricing_preserves_resolved_unresolved_rows_and_total() -> None:
         "- D1 | (unresolved) | LED (add LCSC field; value-only matching disabled) | "
         "qty 3 | stock n/a | unit (n/a) | ext (n/a)\n"
         "Estimated total: $0.300000"
+    )
+
+
+def test_bom_pricing_uses_part_currency_for_rows_and_total() -> None:
+    part = _record(code="C21", stock=10, price=6.85, currency="EUR")
+    grouped_rows: list[dict[str, Any]] = [
+        {"references": ["U1"], "lcsc": "C21", "value": "STM32F103C8T6"},
+    ]
+
+    def lookup(_client: FakeClient, *, lcsc_code: str, value: str) -> ComponentRecord | None:
+        return part
+
+    service = _service(FakeClient(), grouped_rows=grouped_rows, lookup_component=lookup)
+
+    result = service.get_bom_with_pricing(quantity=2)
+
+    assert result == (
+        "Live BOM with pricing from jlcsearch:\n"
+        "- U1 | C21 | MPN-C21 | qty 2 | stock 10 | unit 6.850000 EUR | ext 13.700000 EUR\n"
+        "Estimated total: 13.700000 EUR"
     )
 
 

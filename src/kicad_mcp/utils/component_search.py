@@ -40,6 +40,9 @@ class ComponentRecord:
     rohs: str = ""
     # Direct datasheet URL (populated when the provider reports it).
     datasheet_url: str = ""
+    # ISO 4217 code of ``price`` (e.g. "EUR"); empty when the provider does not
+    # report one. Providers quoting USD may leave it empty.
+    currency: str = ""
 
 
 class ComponentSearchClient(Protocol):
@@ -632,14 +635,82 @@ class DigiKeyClient:
 _mouser_limiter = RateLimiter(max_calls=5, period_seconds=1.0)
 
 
+_CURRENCY_SYMBOLS = {"$": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "₹": "INR"}
+_PRICE_NUMBER_RE = re.compile(r"\d[\d.,'\s\u00a0\u202f]*")
+
+
+def _parse_price_text(text: str) -> float | None:
+    """Parse a localized price string such as ``"$1,234.56"`` or ``"1.234,56 €"``.
+
+    Handles US (``1,234.56``) and European (``1.234,56``, ``1 234,56``) digit
+    grouping. When only one separator occurs once, it is the decimal mark unless
+    it is followed by exactly three digits and the currency position implies the
+    other convention (prefix symbol -> US grouping, suffix symbol -> EU grouping).
+    """
+    raw = text.strip()
+    match = _PRICE_NUMBER_RE.search(raw)
+    if match is None:
+        return None
+    number = re.sub(r"[\s\u00a0\u202f']", "", match.group()).rstrip(".,")
+    if not number:
+        return None
+    prefix_currency = bool(raw[: match.start()].strip())
+    suffix_currency = bool(raw[match.end() :].strip())
+    if "," in number and "." in number:
+        decimal = "," if number.rfind(",") > number.rfind(".") else "."
+    elif "," in number or "." in number:
+        sep = "," if "," in number else "."
+        integer, _, fraction = number.rpartition(sep)
+        if prefix_currency:
+            grouping_sep = ","
+        elif suffix_currency:
+            grouping_sep = "."
+        else:
+            grouping_sep = ""
+        looks_grouped = len(fraction) == 3 and integer.lstrip("0") != ""
+        if number.count(sep) > 1 or (sep == grouping_sep and looks_grouped):
+            decimal = "," if sep == "." else "."
+        else:
+            decimal = sep
+    else:
+        decimal = "."
+    group = "." if decimal == "," else ","
+    normalized = number.replace(group, "").replace(decimal, ".")
+    try:
+        return float(normalized)
+    except ValueError:
+        return None
+
+
+def _currency_from_price_text(text: str) -> str:
+    for symbol, code in _CURRENCY_SYMBOLS.items():
+        if symbol in text:
+            return code
+    match = re.search(r"\b[A-Z]{3}\b", text)
+    return match.group() if match else ""
+
+
+def format_price(value: float | None, currency: str = "", *, missing: str = "(n/a)") -> str:
+    """Format a unit price; USD (or an unknown currency) keeps the ``$`` prefix."""
+    if value is None:
+        return missing
+    if not currency or currency == "USD":
+        return f"${value:.6f}"
+    return f"{value:.6f} {currency}"
+
+
 def _parse_mouser_price(price_breaks: list[dict[str, Any]]) -> float | None:
     if not price_breaks:
         return None
-    raw = str(price_breaks[0].get("Price", "")).replace("$", "").replace(",", "").strip()
-    try:
-        return float(raw) if raw else None
-    except ValueError:
-        return None
+    return _parse_price_text(str(price_breaks[0].get("Price", "")))
+
+
+def _parse_mouser_currency(price_breaks: list[dict[str, Any]]) -> str:
+    if not price_breaks:
+        return ""
+    first = price_breaks[0]
+    currency = str(first.get("Currency", "")).strip().upper()
+    return currency or _currency_from_price_text(str(first.get("Price", "")))
 
 
 def _record_from_mouser(part: dict[str, Any]) -> ComponentRecord:
@@ -653,6 +724,7 @@ def _record_from_mouser(part: dict[str, Any]) -> ComponentRecord:
         description=str(part.get("Description", "")).strip() or manufacturer,
         stock=int(stock_digits or 0),
         price=_parse_mouser_price(part.get("PriceBreaks") or []),
+        currency=_parse_mouser_currency(part.get("PriceBreaks") or []),
         is_basic=False,
         is_preferred=False,
         lifecycle=str(part.get("LifecycleStatus", "")),

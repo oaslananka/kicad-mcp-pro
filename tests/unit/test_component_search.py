@@ -13,8 +13,12 @@ from kicad_mcp.utils.component_search import (
     MouserClient,
     NexarClient,
     RateLimiter,
+    _parse_mouser_currency,
+    _parse_mouser_price,
+    _parse_price_text,
     _plain_text_lines,
     _request_json,
+    format_price,
     normalize_lcsc_code,
 )
 
@@ -316,6 +320,86 @@ def test_mouser_search_parses_records_with_injected_transport() -> None:
     assert record.lifecycle == "Active"
     # The API key is sent as a query parameter, not a header.
     assert "apiKey=mk-123" in seen_urls[0]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # US formatting (Mouser accounts registered in the US).
+        ("$0.018", 0.018),
+        ("$6.85", 6.85),
+        ("$1,234.56", 1234.56),
+        ("$1,234", 1234.0),
+        ("$1,234,567.89", 1234567.89),
+        # EU formatting (e.g. Mouser accounts registered in Germany).
+        ("6,85 €", 6.85),
+        ("0,018 €", 0.018),
+        ("1.234,56 €", 1234.56),
+        ("1.234 €", 1234.0),
+        ("1 234,56 €", 1234.56),
+        ("1\u00a0234,56\u00a0€", 1234.56),
+        ("€6,85", 6.85),
+        # Other currencies and plain numbers.
+        ("£0.52", 0.52),
+        ("CHF 1'234.50", 1234.5),
+        ("0.5", 0.5),
+        ("0,5", 0.5),
+        ("12", 12.0),
+    ],
+)
+def test_parse_price_text_handles_us_and_eu_formats(text: str, expected: float) -> None:
+    assert _parse_price_text(text) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("text", ["", "   ", "n/a", "Quote", "€"])
+def test_parse_price_text_returns_none_for_non_prices(text: str) -> None:
+    assert _parse_price_text(text) is None
+
+
+def test_parse_mouser_price_and_currency_from_price_breaks() -> None:
+    eu = [
+        {"Quantity": 1, "Price": "6,85 €", "Currency": "EUR"},
+        {"Quantity": 10, "Price": "4,79 €"},
+    ]
+    assert _parse_mouser_price(eu) == pytest.approx(6.85)
+    assert _parse_mouser_currency(eu) == "EUR"
+    # Legacy payloads without a Currency field fall back to the symbol.
+    assert _parse_mouser_currency([{"Price": "$0.018"}]) == "USD"
+    assert _parse_mouser_currency([{"Price": "0,50 €"}]) == "EUR"
+    assert _parse_mouser_price([]) is None
+    assert _parse_mouser_currency([]) == ""
+
+
+def test_mouser_search_parses_eu_localized_price() -> None:
+    def transport(url: str, body: bytes, headers: dict[str, str]) -> dict[str, object]:
+        return {
+            "SearchResults": {
+                "Parts": [
+                    {
+                        "ManufacturerPartNumber": "STM32F103C8T6",
+                        "Manufacturer": "STMicroelectronics",
+                        "AvailabilityInStock": "4886",
+                        "PriceBreaks": [
+                            {"Quantity": 1, "Price": "6,85 €", "Currency": "EUR"},
+                            {"Quantity": 10, "Price": "4,79 €", "Currency": "EUR"},
+                        ],
+                    }
+                ]
+            }
+        }
+
+    record = MouserClient(api_key="mk-123", transport=transport).search("STM32F103C8T6")[0]
+
+    assert record.price == pytest.approx(6.85)
+    assert record.currency == "EUR"
+
+
+def test_format_price_keeps_dollar_prefix_for_usd_and_suffixes_other_currencies() -> None:
+    assert format_price(0.05) == "$0.050000"
+    assert format_price(0.05, "USD") == "$0.050000"
+    assert format_price(6.85, "EUR") == "6.850000 EUR"
+    assert format_price(None) == "(n/a)"
+    assert format_price(None, "EUR", missing="n/a") == "n/a"
 
 
 def test_mouser_api_error_surfaces() -> None:

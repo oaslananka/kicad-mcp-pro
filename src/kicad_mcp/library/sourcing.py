@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
 from ..models.verdict import Finding, Verdict, VerdictReport, stable_finding_id
-from ..utils.component_search import ComponentRecord, ComponentSearchClient, normalize_lcsc_code
+from ..utils.component_search import (
+    ComponentRecord,
+    ComponentSearchClient,
+    format_price,
+    normalize_lcsc_code,
+)
 from ..utils.derating import _worst, avl_check, derating_check
 
 _RECOMMENDATION_NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?(?:e[-+]?\d+)?")
@@ -264,6 +269,7 @@ def _sourcing_policy_report(
         "mpn": part.mpn,
         "stock": part.stock,
         "price": part.price,
+        "currency": part.currency,
         "lifecycle": part.lifecycle,
         "rohs": part.rohs,
     }
@@ -306,8 +312,8 @@ def _sourcing_policy_report(
     )
 
 
-def _format_optional_price(value: float | None) -> str:
-    return f"${value:.6f}" if value is not None else _NOT_AVAILABLE
+def _format_optional_price(value: float | None, currency: str = "") -> str:
+    return format_price(value, currency, missing=_NOT_AVAILABLE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -438,7 +444,7 @@ class LibrarySourcingService:
         if part is None:
             return f"No component details were found for '{lcsc_code_or_mpn}'."
 
-        price = _format_optional_price(part.price)
+        price = _format_optional_price(part.price, part.currency)
         lines = [
             f"Component details from {source}:",
             f"- LCSC: {part.lcsc_code}",
@@ -515,7 +521,7 @@ class LibrarySourcingService:
         row: dict[str, Any],
         *,
         quantity: int,
-    ) -> tuple[str, float]:
+    ) -> tuple[str, float, str]:
         references = cast(list[str], row["references"])
         part = self.lookup_component(
             client,
@@ -529,15 +535,15 @@ class LibrarySourcingService:
                 f"{row['value']} (add LCSC field; value-only matching disabled) | "
                 f"qty {total_quantity} | stock n/a | unit {_NOT_AVAILABLE} | ext {_NOT_AVAILABLE}"
             )
-            return line, 0.0
+            return line, 0.0, ""
 
         extended = part.price * total_quantity if part.price is not None else None
         line = (
             f"- {', '.join(references)} | {part.lcsc_code} | {part.mpn} | qty {total_quantity} | "
-            f"stock {part.stock:,} | unit {_format_optional_price(part.price)} | "
-            f"ext {_format_optional_price(extended)}"
+            f"stock {part.stock:,} | unit {_format_optional_price(part.price, part.currency)} | "
+            f"ext {_format_optional_price(extended, part.currency)}"
         )
-        return line, extended or 0.0
+        return line, extended or 0.0, part.currency
 
     def get_bom_with_pricing(self, quantity: int = 1, source: str = "jlcsearch") -> str:
         """Generate a live BOM summary with unit and extended pricing."""
@@ -554,12 +560,21 @@ class LibrarySourcingService:
 
         lines = [f"Live BOM with pricing from {source}:"]
         total_cost = 0.0
+        currencies: set[str] = set()
         for row in grouped_rows[: self.max_items_per_response()]:
-            line, extended = self._bom_row_line(client, row, quantity=quantity)
+            line, extended, currency = self._bom_row_line(client, row, quantity=quantity)
             lines.append(line)
             total_cost += extended
+            if extended:
+                currencies.add(currency or "USD")
         if total_cost > 0:
-            lines.append(f"Estimated total: ${total_cost:.6f}")
+            if len(currencies) > 1:
+                lines.append(
+                    f"Estimated total: {total_cost:.6f} "
+                    f"(mixed currencies {', '.join(sorted(currencies))}; not converted)"
+                )
+            else:
+                lines.append(f"Estimated total: {format_price(total_cost, currencies.pop())}")
         return "\n".join(lines)
 
     @staticmethod
@@ -577,7 +592,7 @@ class LibrarySourcingService:
                 continue
             lines.append(
                 f"- {mpn}: {part.lcsc_code} | {part.mpn} | "
-                f"stock {part.stock:,} | {_format_optional_price(part.price)}"
+                f"stock {part.stock:,} | {_format_optional_price(part.price, part.currency)}"
             )
         return "\n".join(lines)
 
@@ -602,7 +617,7 @@ class LibrarySourcingService:
                 continue
             lines.append(
                 f"- {row['reference']}: {part.lcsc_code} | {part.mpn} | "
-                f"stock {part.stock:,} | {_format_optional_price(part.price)}"
+                f"stock {part.stock:,} | {_format_optional_price(part.price, part.currency)}"
             )
         return "\n".join(lines)
 

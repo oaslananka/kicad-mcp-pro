@@ -35,6 +35,7 @@ from ..utils.component_search import (
     JLCSearchClient,
     MouserClient,
     NexarClient,
+    format_price,
     normalize_lcsc_code,
 )
 from ..utils.library_tables import parse_lib_table as _shared_parse_lib_table
@@ -284,7 +285,7 @@ def _format_component_lines(
     lines = [heading]
     for item in results[:limit]:
         stock = f"{item.stock:,}"
-        price = f"${item.price:.6f}" if item.price is not None else "(n/a)"
+        price = format_price(item.price, item.currency)
         basic = "basic" if item.is_basic else "extended"
         preferred = " preferred" if item.is_preferred else ""
         description = f" - {item.description}" if item.description else ""
