@@ -22,31 +22,48 @@ from kicad_mcp import __version__
 from kicad_mcp.discovery import discover_kicad_cli, find_kicad_version
 
 # ---------------------------------------------------------------------------
+# Named constants for transports and MCP client identifiers
+# ---------------------------------------------------------------------------
+
+TRANSPORT_STREAMABLE_HTTP = "streamable-http"
+TRANSPORT_STDIO = "stdio"
+DEFAULT_HTTP_PORT = 3334
+
+CLIENT_CLAUDE_DESKTOP = "claude-desktop"
+CLIENT_CURSOR = "cursor"
+CLIENT_VSCODE = "vscode"
+CLIENT_WINDSURF = "windsurf"
+CLIENT_ZED = "zed"
+
+CLIENT_NONE = "none"
+CLIENT_SKIPPED_DISPLAY = "(skipped)"
+
+# ---------------------------------------------------------------------------
 # Platform-aware MCP client config paths
 # ---------------------------------------------------------------------------
 
 MCP_CLIENT_CONFIGS: dict[str, dict[str, str]] = {
-    "claude-desktop": {
+    CLIENT_CLAUDE_DESKTOP: {
         "windows": "%APPDATA%\\Claude\\claude_desktop_config.json",
         "darwin": "~/Library/Application Support/Claude/claude_desktop_config.json",
         "linux": "~/.config/Claude/claude_desktop_config.json",
     },
-    "cursor": {
+    CLIENT_CURSOR: {
         "windows": "%APPDATA%\\Cursor\\User\\globalStorage\\cursor.mcp\\config.json",
         "darwin": "~/.cursor/mcp.json",
         "linux": "~/.cursor/mcp.json",
     },
-    "vscode": {
+    CLIENT_VSCODE: {
         "windows": "%APPDATA%\\Code\\User\\settings.json",
         "darwin": "~/Library/Application Support/Code/User/settings.json",
         "linux": "~/.config/Code/User/settings.json",
     },
-    "windsurf": {
+    CLIENT_WINDSURF: {
         "windows": "%APPDATA%\\Windsurf\\mcp_config.json",
         "darwin": "~/.codeium/windsurf/mcp_config.json",
         "linux": "~/.codeium/windsurf/mcp_config.json",
     },
-    "zed": {
+    CLIENT_ZED: {
         "windows": "~/.config/zed/settings.json",
         "darwin": "~/.config/zed/settings.json",
         "linux": "~/.config/zed/settings.json",
@@ -54,11 +71,11 @@ MCP_CLIENT_CONFIGS: dict[str, dict[str, str]] = {
 }
 
 CLIENT_DISPLAY_NAMES: dict[str, str] = {
-    "claude-desktop": "Claude Desktop",
-    "cursor": "Cursor",
-    "vscode": "VS Code",
-    "windsurf": "Windsurf",
-    "zed": "Zed",
+    CLIENT_CLAUDE_DESKTOP: "Claude Desktop",
+    CLIENT_CURSOR: "Cursor",
+    CLIENT_VSCODE: "VS Code",
+    CLIENT_WINDSURF: "Windsurf",
+    CLIENT_ZED: "Zed",
 }
 
 # ---------------------------------------------------------------------------
@@ -115,7 +132,7 @@ def _generate_mcp_config(
     version: str = __version__,
 ) -> dict[str, Any]:
     """Generate the ``mcpServers`` snippet for a client config file."""
-    if transport == "stdio":
+    if transport == TRANSPORT_STDIO:
         args: list[str] = [f"kicad-mcp-pro@{version}"]
     else:
         args = [f"kicad-mcp-pro@{version}", "--transport", transport]
@@ -166,28 +183,28 @@ def run_wizard(
 
     console.print(
         Panel.fit(
-            "[bold cyan]kicad-mcp-pro Kurulum Sihirbazi[/bold cyan]\nCikmak icin Ctrl+C",
+            "[bold cyan]kicad-mcp-pro Setup Wizard[/bold cyan]\nPress Ctrl+C to exit",
             border_style="cyan",
         )
     )
 
     # ── 1. KiCad tespit ──────────────────────────────────────────
-    console.print("\n[bold]1/4 — KiCad Yolu[/bold]")
+    console.print("\n[bold]1/4 — KiCad Path[/bold]")
     kicad_path = _detect_kicad_interactive(console, yes)
     if kicad_path is None:
-        console.print("  [red]KiCad yolu gerekli. Kurulum iptal edildi.[/red]")
+        console.print("  [red]KiCad path is required. Setup canceled.[/red]")
         raise typer.Exit(1)
 
     # ── 2. Transport modu ────────────────────────────────────────
-    console.print("\n[bold]2/4 — Transport Modu[/bold]")
+    console.print("\n[bold]2/4 — Transport Mode[/bold]")
     transport, port = _select_transport_interactive(console, yes)
 
     # ── 3. MCP istemci ───────────────────────────────────────────
-    console.print("\n[bold]3/4 — MCP Istemcisi[/bold]")
+    console.print("\n[bold]3/4 — MCP Client[/bold]")
     client, client_display = _select_client_interactive(console, yes)
 
     # ── 4. Config uret ve yaz ────────────────────────────────────
-    console.print("\n[bold]4/4 — Config Dosyasi[/bold]")
+    console.print("\n[bold]4/4 — Config File[/bold]")
     snippet = _generate_mcp_config(transport, port)
 
     json_syntax = Syntax(
@@ -198,16 +215,16 @@ def run_wizard(
     console.print(json_syntax)
 
     # Write to client config
-    if client and client != "none":
+    if client and client != CLIENT_NONE:
         if yes or typer.confirm(
-            f"\n  {client_display} config dosyasina otomatik yazilsin mi?",
+            f"\n  {client_display} config file automatically?",
             default=True,
         ):
             written = _write_mcp_config(client, snippet)
             if written:
-                console.print(f"  [green]Yazildi:[/green] {written}")
+                console.print(f"  [green]Written:[/green] {written}")
             else:
-                console.print("  [yellow]Config dosyasi bulunamadi, manuel kopyalayin.[/yellow]")
+                console.print("  [yellow]Config file not found, please copy manually.[/yellow]")
 
     # Write ~/.kicad-mcp/config.json
     kicad_config_path = _write_kicad_mcp_config(kicad_path, transport, port, output)
@@ -219,17 +236,19 @@ def run_wizard(
     table.add_column()
     table.add_row("KiCad:", str(kicad_path))
     table.add_row("Transport:", transport)
-    table.add_row("Port:", str(port) if transport != "stdio" else "(stdio)")
-    table.add_row("Client:", client_display if client and client != "none" else "(atlanildi)")
+    table.add_row("Port:", str(port) if transport != TRANSPORT_STDIO else "(stdio)")
+    table.add_row(
+        "Client:", client_display if client and client != CLIENT_NONE else CLIENT_SKIPPED_DISPLAY
+    )
     table.add_row("Config:", str(kicad_config_path))
 
     console.print()
     console.print(
         Panel.fit(
-            "[bold green]Kurulum tamamlandi![/bold green]\n\n"
-            "Baslatmak icin:\n"
+            "[bold green]Setup completed![/bold green]\n\n"
+            "To start:\n"
             f"  [cyan]kicad-mcp-pro serve --transport {transport}[/cyan]\n\n"
-            "Tray uygulamasi icin:\n"
+            "For tray app:\n"
             "  [cyan]kicad-mcp-pro tray[/cyan]",
             border_style="green",
         )
@@ -243,39 +262,41 @@ def _detect_kicad_interactive(console: Console, yes: bool) -> Path | None:
         cli_path = discover_kicad_cli()
         version = find_kicad_version(cli_path)
         if version:
-            console.print(f"  [green]Kicad {version} bulundu:[/green] {cli_path}")
+            console.print(f"  [green]Found KiCad {version}:[/green] {cli_path}")
             if not yes:
-                confirm = typer.confirm("  Bu yolu kullanayim mi?", default=True)
+                confirm = typer.confirm("  Use this path?", default=True)
                 if confirm:
                     return cli_path
     except Exception:
-        console.print("  [yellow]Kicad otomatik bulunamadi.[/yellow]")
+        console.print("  [yellow]KiCad not found automatically.[/yellow]")
 
     # Manual entry
     while True:
-        raw = typer.prompt("  Kicad yolunu girin (veya bos birakip iptal)", default="")
+        raw = typer.prompt("  Enter KiCad path (or leave blank to cancel)", default="")
         if not raw.strip():
             return None
         candidate = Path(os.path.expandvars(os.path.expanduser(raw.strip())))
         if candidate.exists():
             return candidate
-        console.print(f"  [red]Yol bulunamadi:[/red] {candidate}")
+        console.print(f"  [red]Path not found:[/red] {candidate}")
 
 
 def _select_transport_interactive(console: Console, yes: bool) -> tuple[str, int]:
     """Step 2: choose transport and port."""
     if yes:
-        return "streamable-http", 3334
+        return TRANSPORT_STREAMABLE_HTTP, DEFAULT_HTTP_PORT
 
-    console.print("  1) streamable-http (Onerilen) — Claude Desktop, Cursor, Windsurf")
-    console.print("  2) stdio — Sadece terminal tabanli istemciler")
+    console.print(
+        f"  1) {TRANSPORT_STREAMABLE_HTTP} (Recommended) — Claude Desktop, Cursor, Windsurf"
+    )
+    console.print(f"  2) {TRANSPORT_STDIO} — Terminal-based clients only")
 
-    choice = typer.prompt("  Secim", default="1")
-    transport = "streamable-http" if choice.strip() in ("1", "") else "stdio"
+    choice = typer.prompt("  Choice", default="1")
+    transport = TRANSPORT_STREAMABLE_HTTP if choice.strip() in ("1", "") else TRANSPORT_STDIO
 
-    port = 3334
-    if transport == "streamable-http":
-        port = typer.prompt("  Port", default=3334, type=int)
+    port = DEFAULT_HTTP_PORT
+    if transport == TRANSPORT_STREAMABLE_HTTP:
+        port = typer.prompt("  Port", default=DEFAULT_HTTP_PORT, type=int)
 
     return transport, port
 
@@ -294,18 +315,18 @@ def _select_client_interactive(
             path = _resolve_config_path(c)
             if path and path.exists():
                 return c, display_map.get(c, c)
-        return "claude-desktop", display_map.get("claude-desktop", "Claude Desktop")
+        return CLIENT_CLAUDE_DESKTOP, display_map.get(CLIENT_CLAUDE_DESKTOP, "Claude Desktop")
 
-    console.print("  Hangi uygulamayi kullaniyorsunuz?")
+    console.print("  Which client application are you using?")
     for i, c in enumerate(clients, 1):
         console.print(f"  {i}) {display_map.get(c, c)}")
-    console.print(f"  {len(clients) + 1}) (Atla — config uretmeden bitir)")
+    console.print(f"  {len(clients) + 1}) (Skip — finish without generating config)")
 
-    choice = typer.prompt("  Secim", default="1")
+    choice = typer.prompt("  Choice", default="1")
     choice = choice.strip()
 
     if choice == str(len(clients) + 1) or choice.lower() in ("skip", "none", ""):
-        return "none", "(atlanildi)"
+        return CLIENT_NONE, CLIENT_SKIPPED_DISPLAY
 
     try:
         idx = int(choice) - 1
@@ -324,5 +345,5 @@ def _select_client_interactive(
                 return c, d
 
     # Fallback
-    console.print("  [yellow]Gecersiz secim, varsayilan kullaniliyor.[/yellow]")
-    return "claude-desktop", display_map.get("claude-desktop", "Claude Desktop")
+    console.print("  [yellow]Invalid choice, using default.[/yellow]")
+    return CLIENT_CLAUDE_DESKTOP, display_map.get(CLIENT_CLAUDE_DESKTOP, "Claude Desktop")

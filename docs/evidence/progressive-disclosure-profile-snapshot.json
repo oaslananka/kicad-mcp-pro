@@ -94,10 +94,10 @@
     },
     "expert": {
       "callableTools": 387,
-      "catalogCharacters": 228020,
+      "catalogCharacters": 227516,
       "catalogReductionVsExpertPct": 0.0,
       "declaredTools": 387,
-      "estimatedCatalogTokens": 57005,
+      "estimatedCatalogTokens": 56879,
       "forbiddenToolExposures": 8,
       "goldenCases": 65,
       "goldenCasesCovered": 55,

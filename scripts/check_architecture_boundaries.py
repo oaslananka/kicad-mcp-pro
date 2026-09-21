@@ -26,6 +26,7 @@ _LIBRARY_COMPONENT_CONTRACT_ADAPTER = "kicad_mcp.tools.library_component_contrac
 _LIBRARY_ROOT_MODULE = "kicad_mcp.tools.library"
 _PROJECT_CONTEXT_ADAPTER = "kicad_mcp.tools.project_context"
 _PROJECT_CREATION_ADAPTER = "kicad_mcp.tools.project_creation"
+_PROJECT_DESIGN_SPEC_ADAPTER = "kicad_mcp.tools.project_design_spec"
 _PROJECT_DISCOVERY_ADAPTER = "kicad_mcp.tools.project_discovery"
 _PROJECT_EDIT_IMPACT_ADAPTER = "kicad_mcp.tools.project_edit_impact"
 _PROJECT_EDIT_REVALIDATION_ADAPTER = "kicad_mcp.tools.project_edit_revalidation"
@@ -73,6 +74,7 @@ DOMAIN_MODULES = {
     / "component_contract.py",
     "kicad_mcp.project.context": SRC_ROOT / "kicad_mcp" / "project" / "context.py",
     "kicad_mcp.project.creation": SRC_ROOT / "kicad_mcp" / "project" / "creation.py",
+    "kicad_mcp.project.design_spec": SRC_ROOT / "kicad_mcp" / "project" / "design_spec.py",
     "kicad_mcp.project.discovery": SRC_ROOT / "kicad_mcp" / "project" / "discovery.py",
     "kicad_mcp.project.edit_impact": SRC_ROOT / "kicad_mcp" / "project" / "edit_impact.py",
     "kicad_mcp.project.help": SRC_ROOT / "kicad_mcp" / "project" / "help.py",
@@ -131,6 +133,7 @@ DOMAIN_MODULES = {
     / "library_component_contract.py",
     _PROJECT_CONTEXT_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_context.py",
     _PROJECT_CREATION_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_creation.py",
+    _PROJECT_DESIGN_SPEC_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_design_spec.py",
     _PROJECT_DISCOVERY_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_discovery.py",
     _PROJECT_EDIT_IMPACT_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_edit_impact.py",
     _PROJECT_EDIT_REVALIDATION_ADAPTER: SRC_ROOT
@@ -375,6 +378,7 @@ PURE_HELPERS = {
     "kicad_mcp.library.component_contract",
     "kicad_mcp.project.context",
     "kicad_mcp.project.creation",
+    "kicad_mcp.project.design_spec",
     "kicad_mcp.project.discovery",
     "kicad_mcp.project.edit_impact",
     "kicad_mcp.project.help",
@@ -456,6 +460,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     _LIBRARY_SOURCING_ADAPTER: (_LIBRARY_ROOT_MODULE,),
     _PROJECT_CONTEXT_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_CREATION_ADAPTER: (_PROJECT_ROOT_MODULE,),
+    _PROJECT_DESIGN_SPEC_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_DISCOVERY_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_EDIT_IMPACT_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_EDIT_REVALIDATION_ADAPTER: (_PROJECT_ROOT_MODULE,),
@@ -518,6 +523,7 @@ REGISTER_LINE_LIMITS = {
     _LIBRARY_COMPONENT_CONTRACT_ADAPTER: 100,
     _PROJECT_CONTEXT_ADAPTER: 55,
     _PROJECT_CREATION_ADAPTER: 55,
+    _PROJECT_DESIGN_SPEC_ADAPTER: 120,
     _PROJECT_DISCOVERY_ADAPTER: 55,
     _PROJECT_EDIT_IMPACT_ADAPTER: 55,
     _PROJECT_EDIT_REVALIDATION_ADAPTER: 55,

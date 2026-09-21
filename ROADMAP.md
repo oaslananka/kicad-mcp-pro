@@ -80,7 +80,7 @@ version-agnostic so it does not drift.
 - Manufacturing, routing, library, schematic safety, SI/PI/EMC/thermal, and
   validation surfaces received incremental coverage and honesty gates.
 
-### ✅ 3.17.x – 3.30.1 (Delivered through 2026-08-05)
+### ✅ 3.17.x – 3.34.8 (Delivered through 2026-09-17)
 - The 3.30.0 release was published on 2026-08-04 across the
   [Python/server](https://github.com/oaslananka/kicad-mcp-pro/releases/tag/mcp-server-v3.30.0),
   [npm](https://github.com/oaslananka/kicad-mcp-pro/releases/tag/mcp-npm-v3.30.0), and
@@ -89,51 +89,42 @@ version-agnostic so it does not drift.
 - The 3.30.1 maintenance release followed on 2026-08-05 and includes the
   verified public-safe read-only ChatGPT Apps surface from
   [PR #569](https://github.com/oaslananka/kicad-mcp-pro/pull/569).
-- PR #569 materially advances M9, but it does not complete the remaining hosted
-  deployment, desktop provenance, or desktop/backend compatibility work tracked
-  by the open M9 issues.
+- Subsequent maintenance releases through v3.34.8 completed release-gate reliability (#711),
+  first-class KiCad PCM installation and guided MCP client onboarding (#731), OpenSSF Best Practices
+  badge submission (#580), and transactional native KiCad live editing (#728).
 
 ---
 
 ## Upcoming
 
 ### Release-gate reliability
-- #711 removes shared hosted/trial model capacity from the protected release-gate
-  critical path. The protected gate must remain fail-closed; retries, thresholds,
-  or approved baselines are not to be weakened as a substitute for reliable
-  production-capacity evidence.
-- Release promotion remains dependent on reproducible protected smoke and full
-  corpus evidence from the qualified blocking configurations.
+- #711 removed shared hosted/trial model capacity from the protected release-gate critical path.
+  The protected gate remains fail-closed; retries, thresholds, or approved baselines are not to be
+  weakened as a substitute for reliable production-capacity evidence.
+- Release promotion remains dependent on reproducible protected smoke and full corpus evidence from
+  the qualified blocking configurations.
 
 ### M9 — Apps UI, Hybrid Bridge & Distribution
 - The [M9 milestone](https://github.com/oaslananka/kicad-mcp-pro/milestone/9)
   remains open for objective distribution and trust-boundary evidence.
 - Reproducible Tauri builds (#571), updater trust-path cleanup (#572), the bridge
-  coroutine regression (#575), desktop/backend compatibility (#574), and desktop
-  installer integrity/provenance evidence (#573) are complete; PR #569 verified
-  the supported public-safe read-only ChatGPT Apps surface.
-- The open M9 set is #412 and #731. #412 tracks hosted deployment, Apps UI / hybrid
-  bridge, and directory-readiness evidence. #731 adds first-class KiCad PCM
-  installation plus explicit, reversible MCP-client onboarding.
-- The `kicad-mcp-gui-v3.32.0` release exercised the post-#586 GUI evidence workflow
-  successfully, including published-asset verification, which completed #573.
+  coroutine regression (#575), desktop/backend compatibility (#574), desktop
+  installer integrity/provenance evidence (#573), and PCM installation/onboarding (#731) are complete;
+  PR #569 verified the supported public-safe read-only ChatGPT Apps surface.
+- The open M9 issue is #412, tracking hosted deployment, Apps UI / hybrid bridge, and directory-readiness evidence.
 
 ### M10 — Agent Design OS & Workflow Surface
 - The [M10 milestone](https://github.com/oaslananka/kicad-mcp-pro/milestone/10)
   is the active agent-design, evaluation, governance, and maintainability backlog.
-- The dependency-update source-of-truth work (#576) and OpenSSF Signed-Releases
-  reconciliation (#578) are complete.
-- The open M10 set is #577, #580, #728, #729, and #730:
-  - #728 makes native KiCad live editing a first-class transactional subsystem,
-    including board identity, stale-state, recovery, idempotency, and corruption
-    evidence.
+- The dependency-update source-of-truth work (#576), OpenSSF Signed-Releases reconciliation (#578),
+  OpenSSF Best Practices badge submission (#580), and transactional live editing subsystem (#728) are complete.
+- The open M10 set is #577, #729, and #730:
   - #729 makes end-to-end PCB task success the primary product KPI with explicit
     denominators and failure taxonomy.
   - #730 publishes a reproducible real-board reference corpus with complete
     attempt history rather than success-only examples.
   - #577 continues incremental composition-root decomposition without changing
     public tool contracts.
-  - #580 completes and verifies the public OpenSSF Best Practices badge submission.
 - These issues describe work still in progress; their presence does not imply
   that the corresponding controls or future capabilities have shipped.
 
