@@ -275,6 +275,23 @@ def _matches_contract(path: str, policy: ReleasePolicyConfig) -> bool:
     return any(fnmatch.fnmatchcase(path, pattern) for pattern in policy.agent_contract_paths)
 
 
+_ACTION_PIN_RE = re.compile(rb"(uses:\s*\S+)@[0-9a-f]{40}\b")
+
+
+def _normalize_workflow_action_pins(path: str, content: bytes) -> bytes:
+    """Strip pinned action SHAs from workflow YAML before hashing.
+
+    Bumping a `uses: owner/action@<sha>` pin (dependency-bot CI maintenance)
+    does not change agent-facing tool/prompt/adapter behavior, so it should
+    not trip the live-model contract-change gate. Any other edit to these
+    files (job steps, thresholds, script invocations) still changes the
+    digest normally.
+    """
+    if not path.startswith(".github/workflows/"):
+        return content
+    return _ACTION_PIN_RE.sub(rb"\1", content)
+
+
 def compute_agent_contract_digest(
     repo_root: str | Path,
     policy: ReleasePolicyConfig,
@@ -291,6 +308,7 @@ def compute_agent_contract_digest(
     digest = hashlib.sha256()
     for path in paths:
         content = cast(bytes, _git(root, "show", f"{ref}:{path}", text=False))
+        content = _normalize_workflow_action_pins(path, content)
         encoded_path = path.encode("utf-8")
         digest.update(encoded_path)
         digest.update(b"\0")

@@ -2,7 +2,7 @@ schema_version: 1
 approved: true
 approved_at: '2026-09-09'
 source_revision: 4697253ec73bf8cea1de12196ad69ea206747b73
-agent_contract_digest: 0096468ceade4244817b9676cf0cbeb726bc5246448175dc9262f5b5cd04ab44
+agent_contract_digest: 55630c445c5804c111f8f56a984fe30ff01a233421086d96ac7a391e41e9a75a
 evidence:
   workflow_run_id: 34326073091
   aggregate_sha256: 944e31bef5e495fe77dd8968956a5dd8371bb66a0e06f8af4b4ccb9b6cb5ccd6

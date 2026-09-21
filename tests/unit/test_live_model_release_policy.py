@@ -784,3 +784,65 @@ def test_required_pr_gate_blocks_unready_release_please_prs() -> None:
     )
     assert expected_needs in workflow
     assert '[release-readiness]="${{ needs.release-readiness.result }}"' in workflow
+
+
+def _workflow_policy(path: Path) -> Path:
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 1,
+                "baseline_max_age_days": 30,
+                "release_pull_request_head": "release-please--branches--main",
+                "release_tag_pattern": "mcp-server-v*",
+                "minimum_smoke_configurations": 2,
+                "smoke_configurations": ["alpha", "beta"],
+                "agent_contract_paths": [".github/workflows/*.yml"],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_agent_contract_digest_ignores_workflow_action_pin_bumps(tmp_path: Path) -> None:
+    from kicad_mcp.evals.release_policy import compute_agent_contract_digest
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.name", "Policy Test")
+    _git(repo, "config", "user.email", "policy@example.invalid")
+    (repo / ".github/workflows").mkdir(parents=True)
+    workflow_path = repo / ".github/workflows/live-model-eval.yml"
+
+    workflow_path.write_text(
+        f"jobs:\n  eval:\n    steps:\n      - uses: astral-sh/setup-uv@{'a' * 40}\n",
+        encoding="utf-8",
+    )
+    _git(repo, "add", ".")
+    _git(repo, "commit", "--no-verify", "-m", "initial")
+    before = _git(repo, "rev-parse", "HEAD")
+
+    workflow_path.write_text(
+        f"jobs:\n  eval:\n    steps:\n      - uses: astral-sh/setup-uv@{'b' * 40}\n",
+        encoding="utf-8",
+    )
+    _git(repo, "add", ".")
+    _git(repo, "commit", "--no-verify", "-m", "pin bump")
+    after_pin_bump = _git(repo, "rev-parse", "HEAD")
+
+    policy = load_release_policy(_workflow_policy(tmp_path / "policy.yaml"))
+    digest_before = compute_agent_contract_digest(repo, policy, ref=before)
+    digest_after_pin_bump = compute_agent_contract_digest(repo, policy, ref=after_pin_bump)
+    assert digest_before == digest_after_pin_bump
+
+    workflow_path.write_text(
+        "jobs:\n  eval:\n    steps:\n      - run: echo changed\n",
+        encoding="utf-8",
+    )
+    _git(repo, "add", ".")
+    _git(repo, "commit", "--no-verify", "-m", "real contract change")
+    after_real_change = _git(repo, "rev-parse", "HEAD")
+    digest_after_real_change = compute_agent_contract_digest(repo, policy, ref=after_real_change)
+    assert digest_after_real_change != digest_after_pin_bump
