@@ -32,7 +32,6 @@ from ..project.design_spec import (
     ProjectSpecPayload,
     ProjectSpecValidationPayload,
     _infer_design_intent_from_board,
-    _normalize_design_intent as _normalize_design_intent,
     _render_design_intent,
     _render_project_spec_resolution,
     import_design_spec,
@@ -40,6 +39,12 @@ from ..project.design_spec import (
     resolve_design_intent,
     save_design_intent,
     validate_design_intent,
+)
+from ..project.design_spec import (
+    _normalize_design_intent as _normalize_design_intent,
+)
+from ..project.design_spec import (
+    _persist_project_spec as _persist_project_spec,
 )
 from ..project.discovery import ProjectDiscoveryService
 from ..project.edit_impact import ProjectEditImpactService

@@ -1116,9 +1116,7 @@ class ProjectDesignSpecService:
                 if rf_keepout_regions is None
                 else [RFKeepoutIntent.model_validate(r) for r in rf_keepout_regions]
             ),
-            manufacturer=(
-                existing.manufacturer if manufacturer is None else manufacturer.strip().lower()
-            ),
+            manufacturer=(existing.manufacturer if manufacturer is None else manufacturer.strip()),
             manufacturer_tier=(
                 existing.manufacturer_tier
                 if manufacturer_tier is None
