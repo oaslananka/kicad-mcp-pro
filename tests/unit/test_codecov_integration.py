@@ -7,7 +7,7 @@ from types import ModuleType
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-CODECOV_ACTION_SHA = "fb8b3582c8e4def4969c97caa2f19720cb33a72f"
+CODECOV_ACTION_SHA = "303a32d7a59b442fa8d48b6a1cc6825c09c847a5"
 
 
 def _load_run_pytest() -> ModuleType:
