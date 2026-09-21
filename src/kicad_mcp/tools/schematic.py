@@ -4451,6 +4451,22 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
         end = _point_key(wire["x2"], wire["y2"])
         union(start, end)
 
+    # A wire endpoint landing on another wire's interior (a T-intersection)
+    # is the same geometry KiCad auto-junctions into one net, but the pass
+    # above only merges each wire's own two endpoints. Union those crossing
+    # wires together too, or they stay as separate trees.
+    for wire in data["wires"]:
+        for endpoint in (
+            _point_key(wire["x1"], wire["y1"]),
+            _point_key(wire["x2"], wire["y2"]),
+        ):
+            for other in data["wires"]:
+                if other is wire:
+                    continue
+                if _point_on_segment(endpoint, other):
+                    anchor = _point_key(other["x1"], other["y1"])
+                    union(endpoint, anchor)
+
     def attach(point: tuple[float, float]) -> tuple[float, float]:
         key = _point_key(*point)
         if key in parent:

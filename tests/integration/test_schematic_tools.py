@@ -149,6 +149,38 @@ async def test_build_circuit_accepts_power_symbol_mm_aliases(sample_project, moc
 
 
 @pytest.mark.anyio
+async def test_connectivity_graph_unifies_wire_to_wire_t_intersections(
+    sample_project,
+    mock_kicad,
+) -> None:
+    """A wire endpoint landing on another wire's interior (T-intersection,
+    the same geometry KiCad auto-junctions) must join both wires into one
+    connectivity group, matching KiCad's own net compiler. Regression test
+    for #907."""
+    server = build_server("schematic")
+    await call_tool_text(
+        server,
+        "sch_build_circuit",
+        {
+            "symbols": [],
+            "wires": [
+                {"x1_mm": 40.0, "y1_mm": 50.0, "x2_mm": 70.0, "y2_mm": 50.0},
+                {"x1_mm": 55.0, "y1_mm": 50.0, "x2_mm": 55.0, "y2_mm": 70.0},
+            ],
+            "labels": [
+                {"name": "A", "x_mm": 40.0, "y_mm": 50.0},
+                {"name": "B", "x_mm": 55.0, "y_mm": 70.0},
+            ],
+        },
+    )
+
+    connectivity = await call_tool_text(server, "sch_get_connectivity_graph", {})
+
+    assert "Connectivity groups (1 total)" in connectivity
+    assert "Group 1: A, B" in connectivity
+
+
+@pytest.mark.anyio
 async def test_schematic_end_to_end_editing_and_analysis_tools(
     sample_project,
     mock_kicad,
