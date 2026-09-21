@@ -10,6 +10,19 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.34.7](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.34.6...mcp-server-v3.34.7) (2026-09-21)
+
+
+### Bug Fixes
+
+* **evals:** ignore cosmetic action-pin bumps in live-model contract digest ([#915](https://github.com/oaslananka/kicad-mcp-pro/issues/915)) ([9a2514c](https://github.com/oaslananka/kicad-mcp-pro/commit/9a2514c73c2993bde6dcec701ac55df1b1f10d68)), closes [#914](https://github.com/oaslananka/kicad-mcp-pro/issues/914)
+* **library:** parse localized Mouser prices and keep their currency ([#906](https://github.com/oaslananka/kicad-mcp-pro/issues/906)) ([cdbbc2e](https://github.com/oaslananka/kicad-mcp-pro/commit/cdbbc2e7e06dbf8443b8072943711947ce56a861))
+
+
+### Documentation
+
+* record licensing transition review ([#903](https://github.com/oaslananka/kicad-mcp-pro/issues/903)) ([18c7def](https://github.com/oaslananka/kicad-mcp-pro/commit/18c7defe9a0828f6df4dbf03d3361b7ad7f395d7))
+
 ## [3.34.6](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.34.5...mcp-server-v3.34.6) (2026-09-13)
 
 
