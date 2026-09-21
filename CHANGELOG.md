@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.34.8](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.34.7...mcp-server-v3.34.8) (2026-09-21)
+
+
+### Bug Fixes
+
+* **schematic:** union wire T-intersections in connectivity graph ([#916](https://github.com/oaslananka/kicad-mcp-pro/issues/916)) ([f8e32e9](https://github.com/oaslananka/kicad-mcp-pro/commit/f8e32e9c3c403384c76e10ff9c9ebb35539f080f)), closes [#907](https://github.com/oaslananka/kicad-mcp-pro/issues/907)
+
 ## [3.34.7](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.34.6...mcp-server-v3.34.7) (2026-09-21)
 
 

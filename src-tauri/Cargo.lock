@@ -1593,7 +1593,7 @@ dependencies = [
 
 [[package]]
 name = "kicad-mcp-pro"
-version = "3.34.7"
+version = "3.34.8"
 dependencies = [
  "serde",
  "serde_json",
