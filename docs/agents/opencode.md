@@ -113,8 +113,9 @@ example:
   zero-cost models enabled while disabling paid models, so this workflow does not
   require a provider API secret.
 
-The workflow receives `contents: write` and `issues: write` only in its `publish`
-job. The repair job is limited to `contents: read` and `pull-requests: read`.
+The workflow receives `contents: write` and `pull-requests: write` only in its
+`publish` job. The latter is used for PR conversation comments. The repair job is
+limited to `contents: read` and `pull-requests: read`.
 Those writes are recorded in `.github/actions-policy.json`, matching the
 repository's least-privilege workflow policy.
 
