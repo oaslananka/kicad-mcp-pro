@@ -202,3 +202,82 @@ def test_nets_uses_file_fallback_when_live_via_access_is_unavailable(
     monkeypatch.setattr("kicad_mcp.tools.net_analysis._get_pcb_file", lambda: pcb_file)
 
     assert _nets() == [{"code": 1, "name": "GND", "class_name": ""}]
+
+
+class _KipyStyleTrack:
+    """Track whose ``length`` is a method, as ``kipy.board_types.Track`` defines it.
+
+    Every other geometry accessor on that class (``start``, ``end``, ``width``)
+    is a ``@property``; ``length`` is not, so reading it without calling it
+    yields a bound method rather than a number.
+    """
+
+    def __init__(self, net_name: str, *, length_nm: float) -> None:
+        self.net = SimpleNamespace(name=net_name)
+        self._length_nm = length_nm
+
+    def length(self) -> float:
+        """Calculates track length in nanometers."""
+        return self._length_nm
+
+
+class _BoardWithCallableTrackLength:
+    def get_nets(self):  # type: ignore[no-untyped-def]
+        return [SimpleNamespace(name="GND", class_name="Default")]
+
+    def get_tracks(self):  # type: ignore[no-untyped-def]
+        return [_KipyStyleTrack("GND", length_nm=2_500_000)]
+
+    def get_vias(self):  # type: ignore[no-untyped-def]
+        return []
+
+    def get_pads(self):  # type: ignore[no-untyped-def]
+        return []
+
+    def get_footprints(self):  # type: ignore[no-untyped-def]
+        return []
+
+
+def test_collect_nets_from_board_calls_track_length_when_it_is_a_method(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A live kipy track exposes ``length()``; reading the attribute is not enough.
+
+    Regression test: dividing the bound method by 1_000_000 raised
+    ``TypeError: unsupported operand type(s) for /: 'method' and 'int'``, which
+    ``_nets`` does not catch, so both ``pcb_get_net_statistics`` and
+    ``pcb_net_inspector`` failed outright on any routed board read over IPC.
+    """
+    from kicad_mcp.tools.net_analysis import _collect_nets_from_board
+
+    monkeypatch.setattr(
+        "kicad_mcp.tools.net_analysis.get_board",
+        lambda: _BoardWithCallableTrackLength(),
+    )
+
+    nets = _collect_nets_from_board()
+
+    assert nets[0]["track_count"] == 1
+    assert nets[0]["total_track_length_mm"] == 2.5
+
+
+def test_track_length_nm_returns_none_when_length_call_raises() -> None:
+    """A track that cannot measure itself contributes no length, not a crash.
+
+    ``kipy`` can hand back a track whose geometry is not fully resolved; calling
+    ``length()`` on it raises rather than returning a number. That must be
+    treated the same as "no length available", never propagate to the caller.
+    """
+    from kicad_mcp.tools.net_analysis import _track_length_nm
+
+    class _UnmeasurableTrack:
+        def length(self) -> float:
+            raise RuntimeError("track geometry is not resolved")
+
+    assert _track_length_nm(_UnmeasurableTrack()) is None
+
+
+def test_track_length_nm_returns_none_for_non_numeric_length() -> None:
+    """A track with no usable ``length`` (missing, or neither callable nor numeric) yields None."""
+    from kicad_mcp.tools.net_analysis import _track_length_nm
+
+    assert _track_length_nm(SimpleNamespace()) is None
+    assert _track_length_nm(SimpleNamespace(length="unknown")) is None

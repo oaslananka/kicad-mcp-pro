@@ -15,8 +15,14 @@ def mm_to_nm(mm_value: float) -> int:
     return int(round(mm_value * 1_000_000))
 
 
-def nm_to_mm(nm_value: int) -> float:
-    """Convert nanometers to millimeters."""
+def nm_to_mm(nm_value: float) -> float:
+    """Convert nanometers to millimeters.
+
+    Accepts ``float`` as well as ``int`` because the KiCad IPC API reports some
+    derived lengths that way -- ``Track.length()`` and ``ArcTrack.length()``
+    both return ``float`` nanometers. Widening the parameter keeps every
+    existing ``Callable[[int], float]`` caller assignable.
+    """
     return nm_value / 1_000_000
 
 
