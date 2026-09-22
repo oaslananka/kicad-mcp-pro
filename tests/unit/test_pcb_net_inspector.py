@@ -257,3 +257,27 @@ def test_collect_nets_from_board_calls_track_length_when_it_is_a_method(monkeypa
 
     assert nets[0]["track_count"] == 1
     assert nets[0]["total_track_length_mm"] == 2.5
+
+
+def test_track_length_nm_returns_none_when_length_call_raises() -> None:
+    """A track that cannot measure itself contributes no length, not a crash.
+
+    ``kipy`` can hand back a track whose geometry is not fully resolved; calling
+    ``length()`` on it raises rather than returning a number. That must be
+    treated the same as "no length available", never propagate to the caller.
+    """
+    from kicad_mcp.tools.net_analysis import _track_length_nm
+
+    class _UnmeasurableTrack:
+        def length(self) -> float:
+            raise RuntimeError("track geometry is not resolved")
+
+    assert _track_length_nm(_UnmeasurableTrack()) is None
+
+
+def test_track_length_nm_returns_none_for_non_numeric_length() -> None:
+    """A track with no usable ``length`` (missing, or neither callable nor numeric) yields None."""
+    from kicad_mcp.tools.net_analysis import _track_length_nm
+
+    assert _track_length_nm(SimpleNamespace()) is None
+    assert _track_length_nm(SimpleNamespace(length="unknown")) is None
