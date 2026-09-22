@@ -13,22 +13,21 @@
       }
     }
   },
-  "tools": {
-    "kicad_*": false
+  "permission": {
+    "kicad_*": "deny",
+    "edit": "ask",
+    "bash": "ask"
   },
   "agent": {
     "pcb-review": {
       "description": "KiCad PCB review and manufacturing readiness agent",
-      "tools": {
-        "kicad_*": true,
-        "write": false,
+      "mode": "primary",
+      "permission": {
+        "kicad_*": "allow",
+        "edit": "deny",
         "bash": "ask"
       }
     }
-  },
-  "permission": {
-    "edit": "ask",
-    "bash": "ask"
   },
   "instructions": [
     "AGENTS.md",
