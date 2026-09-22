@@ -70,6 +70,11 @@ contracts unless the request explicitly changes them. Do not broaden scope,
 publish packages, create releases, commit, push, change Git configuration, inspect
 credential stores, inspect process environment variables, or access the network.
 
+When inspecting repository history, use only a single allowlisted Git command per
+shell call. Do not use shell pipelines or redirections. Do not invoke `git reflog`
+or `git stash`. Prefer bounded Git options such as `git log -30` instead of
+piping through `head`; use the built-in grep/glob tools for text filtering.
+
 Use repository-native validation. Prefer targeted checks while iterating, then run
 the narrowest sufficient quality gates for the final change. If a required check
 cannot run, state the exact reason in the final response instead of claiming it

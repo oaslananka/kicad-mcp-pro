@@ -26,7 +26,7 @@ def test_opencode_repair_workflow_is_hardened() -> None:
     repair = parsed["jobs"]["repair"]
     publish = parsed["jobs"]["publish"]
     assert repair["permissions"] == {"contents": "read", "pull-requests": "read"}
-    assert publish["permissions"] == {"contents": "write", "issues": "write"}
+    assert publish["permissions"] == {"contents": "write", "pull-requests": "write"}
     assert publish["needs"] == "repair"
     assert repair["runs-on"] == "ubuntu-24.04"
     assert publish["runs-on"] == "ubuntu-24.04"
@@ -91,6 +91,9 @@ def test_opencode_agent_denies_credential_and_publish_surfaces() -> None:
     assert '"git push*"' not in agent
     assert '"repo-repair": allow' in agent
     assert "Do not broaden scope" in agent
+    assert "Do not use shell pipelines or redirections" in agent
+    assert "git reflog" in agent
+    assert "git stash" in agent
 
     skill = (ROOT / ".opencode" / "skills" / "repo-repair" / "SKILL.md").read_text(encoding="utf-8")
     assert "name: repo-repair" in skill
@@ -101,7 +104,7 @@ def test_opencode_agent_denies_credential_and_publish_surfaces() -> None:
 def test_opencode_workflow_permissions_are_recorded_in_policy() -> None:
     policy = json.loads((ROOT / ".github" / "actions-policy.json").read_text(encoding="utf-8"))
     assert policy["workflow_write_permissions"]["opencode.yml"] == {
-        "publish": ["contents", "issues"]
+        "publish": ["contents", "pull-requests"]
     }
 
 
