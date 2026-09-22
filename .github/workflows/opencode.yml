@@ -1,0 +1,324 @@
+name: OpenCode PR Repair
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opencode-pr-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: >-
+      github.event.issue.pull_request != null &&
+      (github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'COLLABORATOR') &&
+      (github.event.comment.body == '/oc' ||
+       startsWith(github.event.comment.body, '/oc ') ||
+       github.event.comment.body == '/opencode' ||
+       startsWith(github.event.comment.body, '/opencode '))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      authorized: ${{ steps.pr.outputs.authorized }}
+      same_repo: ${{ steps.pr.outputs.same_repo }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      head_ref: ${{ steps.pr.outputs.head_ref }}
+      head_repo: ${{ steps.pr.outputs.head_repo }}
+      base_ref: ${{ steps.pr.outputs.base_ref }}
+    env:
+      OPENCODE_VERSION: "1.18.32"
+      OPENCODE_ASSET_SHA256: "3046e0404fdc60fb80307e7a47824ba07477364178a4d09baa8548496dd6d43b"
+      OPENCODE_MODEL: "opencode/nemotron-3.5-lightning-free"
+
+    steps:
+      - name: Authorize trigger and resolve pull request
+        id: pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_AUTHOR: ${{ github.actor }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+
+          permission="$(
+            gh api "repos/${GITHUB_REPOSITORY}/collaborators/${COMMENT_AUTHOR}/permission" \
+              --jq '.permission'
+          )"
+          case "$permission" in
+            admin|maintain|write) ;;
+            *)
+              echo "::error::${COMMENT_AUTHOR} does not have write permission on this repository."
+              exit 1
+              ;;
+          esac
+
+          pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          head_sha="$(jq -r '.head.sha' <<<"$pr_json")"
+          head_ref="$(jq -r '.head.ref' <<<"$pr_json")"
+          head_repo="$(jq -r '.head.repo.full_name' <<<"$pr_json")"
+          base_ref="$(jq -r '.base.ref' <<<"$pr_json")"
+
+          same_repo=false
+          if [[ "$head_repo" == "$GITHUB_REPOSITORY" ]]; then
+            same_repo=true
+          fi
+
+          {
+            printf 'authorized=true\n'
+            printf 'head_sha=%s\n' "$head_sha"
+            printf 'head_ref=%s\n' "$head_ref"
+            printf 'head_repo=%s\n' "$head_repo"
+            printf 'base_ref=%s\n' "$base_ref"
+            printf 'same_repo=%s\n' "$same_repo"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout trusted default branch
+        if: steps.pr.outputs.same_repo == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare trusted automation policy
+        if: steps.pr.outputs.same_repo == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          trusted="$RUNNER_TEMP/opencode-trusted"
+          rm -rf "$trusted"
+          mkdir -p "$trusted/agents" "$trusted/skills/repo-repair"
+
+          cp .opencode/agents/pr-repair.md "$trusted/agents/pr-repair.md"
+          cp .opencode/skills/repo-repair/SKILL.md "$trusted/skills/repo-repair/SKILL.md"
+          cp AGENTS.md "$trusted/AGENTS.md"
+          cp scripts/opencode_publish.py "$RUNNER_TEMP/opencode_publish.py"
+
+          TRUSTED_CONFIG_DIR="$trusted" python3 -I - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["TRUSTED_CONFIG_DIR"]).resolve()
+          config = {
+              "$schema": "https://opencode.ai/config.json",
+              "instructions": [str(root / "AGENTS.md")],
+          }
+          (root / "opencode.json").write_text(
+              json.dumps(config, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+          ./scripts/bootstrap-dev.sh --core-only --json \
+            > "$RUNNER_TEMP/opencode-bootstrap.json"
+
+      - name: Install pinned OpenCode CLI
+        if: steps.pr.outputs.same_repo == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          archive="$RUNNER_TEMP/opencode-linux-x64.tar.gz"
+          install_dir="$RUNNER_TEMP/opencode/bin"
+          rm -rf "$RUNNER_TEMP/opencode"
+          mkdir -p "$install_dir"
+
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-all-errors \
+            "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-x64.tar.gz" \
+            --output "$archive"
+
+          printf '%s  %s\n' "$OPENCODE_ASSET_SHA256" "$archive" | sha256sum --check -
+          tar -xzf "$archive" -C "$install_dir"
+          test -x "$install_dir/opencode"
+          "$install_dir/opencode" --version | grep -F "$OPENCODE_VERSION" >/dev/null
+
+      - name: Checkout pull request head
+        if: steps.pr.outputs.same_repo == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.pr.outputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          clean: false
+
+      - name: Prepare maintainer request
+        if: steps.pr.outputs.same_repo == 'true'
+        shell: bash
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          BASE_REF: ${{ steps.pr.outputs.base_ref }}
+        run: |
+          set -euo pipefail
+
+          python3 -I - <<'PY'
+          import os
+          from pathlib import Path
+
+          body = os.environ["COMMENT_BODY"].strip()
+          prompt = f"""You are repairing pull request #{os.environ["PR_NUMBER"]} in KiCad MCP Pro.
+
+          The trusted maintainer request is enclosed below. Load the `repo-repair`
+          skill before editing. Work only in this checkout, do not commit or push,
+          and use the repository's native validation gates.
+
+          Base branch: {os.environ["BASE_REF"]}
+
+          <maintainer_request>
+          {body}
+          </maintainer_request>
+          """
+          path = Path(os.environ["RUNNER_TEMP"]) / "opencode-prompt.md"
+          path.write_text(prompt, encoding="utf-8")
+          PY
+
+      - name: Run isolated OpenCode repair agent
+        if: steps.pr.outputs.same_repo == 'true'
+        shell: bash
+        env:
+          OPENCODE_CONFIG_DIR: ${{ runner.temp }}/opencode-trusted
+          OPENCODE_DISABLE_PROJECT_CONFIG: "1"
+          OPENCODE_DISABLE_AUTOUPDATE: "1"
+          OPENCODE_DISABLE_CLAUDE_CODE: "1"
+          OPENCODE_DISABLE_LSP_DOWNLOAD: "1"
+          OPENCODE_AUTO_SHARE: "false"
+        run: |
+          set -euo pipefail
+          source .dev-env.sh
+          export PATH="$RUNNER_TEMP/opencode/bin:$PATH"
+
+          opencode --pure run \
+            --agent pr-repair \
+            --model "$OPENCODE_MODEL" \
+            --format default \
+            < "$RUNNER_TEMP/opencode-prompt.md" \
+            | tee "$RUNNER_TEMP/opencode-output.txt"
+
+      - name: Prepare bounded repair bundle
+        if: steps.pr.outputs.same_repo == 'true'
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          python3 -I "$RUNNER_TEMP/opencode_publish.py" prepare \
+            "$RUNNER_TEMP/opencode-repair"
+
+      - name: Upload repair bundle
+        if: steps.pr.outputs.same_repo == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: opencode-repair-${{ github.run_id }}
+          path: ${{ runner.temp }}/opencode-repair
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Clean temporary OpenCode state
+        if: always()
+        shell: bash
+        run: |
+          rm -rf \
+            "$RUNNER_TEMP/opencode" \
+            "$RUNNER_TEMP/opencode-linux-x64.tar.gz" \
+            "$RUNNER_TEMP/opencode-trusted" \
+            "$RUNNER_TEMP/opencode_publish.py" \
+            "$RUNNER_TEMP/opencode-prompt.md" \
+            "$RUNNER_TEMP/opencode-output.txt" \
+            "$RUNNER_TEMP/opencode-bootstrap.json" \
+            "$RUNNER_TEMP/opencode-repair"
+
+  publish:
+    needs: repair
+    if: always() && needs.repair.outputs.authorized == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      issues: write
+
+    steps:
+      - name: Explain fork restriction
+        if: needs.repair.outputs.same_repo != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          body='OpenCode PR repair is restricted to same-repository pull requests so the repair agent never receives a credential that can write to an external fork.'
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            -f "body=${body}" >/dev/null
+
+      - name: Report repair failure
+        if: needs.repair.result != 'success' && needs.repair.outputs.same_repo == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          body="OpenCode PR repair did not complete successfully. Review the workflow log: ${WORKFLOW_RUN_URL}"
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            -f "body=${body}" >/dev/null
+
+      - name: Checkout trusted default branch
+        if: needs.repair.result == 'success' && needs.repair.outputs.same_repo == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Copy trusted publisher
+        if: needs.repair.result == 'success' && needs.repair.outputs.same_repo == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp scripts/opencode_publish.py "$RUNNER_TEMP/opencode_publish.py"
+
+
+      - name: Download repair bundle
+        if: needs.repair.result == 'success' && needs.repair.outputs.same_repo == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: opencode-repair-${{ github.run_id }}
+          path: ${{ runner.temp }}/opencode-repair
+
+      - name: Publish repaired bundle
+        if: needs.repair.result == 'success' && needs.repair.outputs.same_repo == 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          EXPECTED_HEAD_SHA: ${{ needs.repair.outputs.head_sha }}
+          HEAD_REF: ${{ needs.repair.outputs.head_ref }}
+          HEAD_REPO: ${{ needs.repair.outputs.head_repo }}
+          WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python3 -I "$RUNNER_TEMP/opencode_publish.py" publish \
+            "$RUNNER_TEMP/opencode-repair"
+
+      - name: Clean publisher state
+        if: always()
+        shell: bash
+        run: |
+          rm -rf \
+            "$RUNNER_TEMP/opencode_publish.py" \
+            "$RUNNER_TEMP/opencode-repair"

@@ -32,6 +32,27 @@ def _object_net_name(obj: object) -> str:
     return str(getattr(getattr(obj, "net", None), "name", "") or "")
 
 
+def _track_length_nm(track: object) -> float | None:
+    """Return a track's length in nanometers across both accessor shapes.
+
+    ``kipy.board_types.Track.length`` and ``ArcTrack.length`` are plain methods,
+    unlike the surrounding geometry accessors (``start``, ``end``, ``width``)
+    which are properties. Reading the attribute alone therefore yields a bound
+    method on a live IPC board, and dividing that by 1_000_000 raises
+    ``TypeError``. Older and file-backed variants expose a plain number, so
+    accept both rather than swapping one shape for the other.
+    """
+    length = getattr(track, "length", None)
+    if callable(length):
+        try:
+            length = length()
+        except Exception:  # noqa: BLE001 - a track that cannot measure itself has no length
+            return None
+    if isinstance(length, (int, float)) and not isinstance(length, bool):
+        return float(length)
+    return None
+
+
 def _mapped_board_pads(board: object) -> list[MappedPad]:
     footprints = board_footprints(board)
     try:
@@ -63,7 +84,7 @@ def _collect_nets_from_board() -> list[dict[str, Any]]:
         net_pads = [pad for pad in pads if _object_net_name(pad) == name]
         total_length_mm = 0.0
         for track in net_tracks:
-            length = getattr(track, "length", None)
+            length = _track_length_nm(track)
             if length is not None:
                 total_length_mm += nm_to_mm(length)
         result.append(
