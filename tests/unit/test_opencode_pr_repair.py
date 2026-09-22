@@ -57,9 +57,7 @@ def test_opencode_repair_workflow_is_hardened() -> None:
     )
 
     run_agent = next(
-        step
-        for step in repair["steps"]
-        if step["name"] == "Run isolated OpenCode repair agent"
+        step for step in repair["steps"] if step["name"] == "Run isolated OpenCode repair agent"
     )
     assert run_agent["env"]["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1"
     assert run_agent["env"]["OPENCODE_DISABLE_AUTOUPDATE"] == "1"
@@ -94,18 +92,14 @@ def test_opencode_agent_denies_credential_and_publish_surfaces() -> None:
     assert '"repo-repair": allow' in agent
     assert "Do not broaden scope" in agent
 
-    skill = (
-        ROOT / ".opencode" / "skills" / "repo-repair" / "SKILL.md"
-    ).read_text(encoding="utf-8")
+    skill = (ROOT / ".opencode" / "skills" / "repo-repair" / "SKILL.md").read_text(encoding="utf-8")
     assert "name: repo-repair" in skill
     assert "task workflows:policy" in skill
     assert "Do not commit or push" in skill
 
 
 def test_opencode_workflow_permissions_are_recorded_in_policy() -> None:
-    policy = json.loads(
-        (ROOT / ".github" / "actions-policy.json").read_text(encoding="utf-8")
-    )
+    policy = json.loads((ROOT / ".github" / "actions-policy.json").read_text(encoding="utf-8"))
     assert policy["workflow_write_permissions"]["opencode.yml"] == {
         "publish": ["contents", "issues"]
     }
