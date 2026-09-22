@@ -64,7 +64,7 @@
     "opencode.yml": {
       "publish": [
         "contents",
-        "issues"
+        "pull-requests"
       ]
     },
     "publish-kicad-pcm.yml": {
