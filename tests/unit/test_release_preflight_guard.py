@@ -394,7 +394,10 @@ def test_mergify_only_autoqueues_safe_grouped_dependabot_updates() -> None:
     assert "merge_protections_settings" not in config
     assert config["merge_queue"] == {"mode": "serial", "max_parallel_checks": 1}
 
-    assert len(config["queue_rules"]) == 1
+    assert [rule["name"] for rule in config["queue_rules"]] == [
+        "safe-dependencies",
+        "maintainer",
+    ]
     queue = config["queue_rules"][0]
     assert queue["name"] == "safe-dependencies"
     assert queue["batch_size"] == 1
@@ -450,34 +453,62 @@ def test_mergify_merge_conditions_mirror_repository_ruleset_required_checks() ->
 
     mergify = yaml.safe_load((ROOT / ".mergify.yml").read_text(encoding="utf-8"))
     queue = next(rule for rule in mergify["queue_rules"] if rule["name"] == "safe-dependencies")
-    explicit_check_conditions = {
-        condition.removeprefix("check-success = ")
-        for condition in queue["merge_conditions"]
-        if isinstance(condition, str) and condition.startswith("check-success = ")
-    }
-    sonar_condition = next(
-        (condition for condition in queue["merge_conditions"] if isinstance(condition, dict)),
-        None,
-    )
-    assert sonar_condition == {
-        "or": [
-            "check-success = SonarCloud Scan",
-            "check-skipped = SonarCloud Scan",
-            "check-neutral = SonarCloud Scan",
-        ]
-    }
-    explicit_check_conditions.add("SonarCloud Scan")
+    for name in ("safe-dependencies", "maintainer"):
+        queue = next(rule for rule in mergify["queue_rules"] if rule["name"] == name)
+        explicit_check_conditions = {
+            condition.removeprefix("check-success = ")
+            for condition in queue["merge_conditions"]
+            if isinstance(condition, str) and condition.startswith("check-success = ")
+        }
+        sonar_condition = next(
+            (condition for condition in queue["merge_conditions"] if isinstance(condition, dict)),
+            None,
+        )
+        assert sonar_condition == {
+            "or": [
+                "check-success = SonarCloud Scan",
+                "check-skipped = SonarCloud Scan",
+                "check-neutral = SonarCloud Scan",
+            ]
+        }
+        explicit_check_conditions.add("SonarCloud Scan")
 
-    assert explicit_check_conditions == required_contexts
+        assert explicit_check_conditions == required_contexts, name
 
 
 def test_mergify_uses_in_place_checks_with_strict_main_ruleset() -> None:
     config = yaml.safe_load((ROOT / ".mergify.yml").read_text(encoding="utf-8"))
-    queue = next(rule for rule in config["queue_rules"] if rule["name"] == "safe-dependencies")
 
     assert config["merge_queue"]["max_parallel_checks"] == 1
-    assert queue["batch_size"] == 1
-    assert queue["queue_conditions"] == queue["merge_conditions"]
+    for queue in config["queue_rules"]:
+        assert queue["batch_size"] == 1
+        assert queue["queue_conditions"] == queue["merge_conditions"]
+
+
+def test_mergify_maintainer_queue_is_command_only_and_write_restricted() -> None:
+    config = yaml.safe_load((ROOT / ".mergify.yml").read_text(encoding="utf-8"))
+    queue = next(rule for rule in config["queue_rules"] if rule["name"] == "maintainer")
+
+    assert queue["merge_method"] == "squash"
+    assert queue["branch_protection_injection_mode"] == "queue"
+    assert queue["max_checks_retries"] == 0
+    conditions = {
+        condition for condition in queue["queue_conditions"] if isinstance(condition, str)
+    }
+    assert {
+        "base = main",
+        "-draft",
+        "author != dependabot[bot]",
+        "#review-threads-unresolved = 0",
+    } <= conditions
+
+    # No pull_request_rule may queue into the maintainer rule automatically; a person with
+    # write access has to issue the queue command.
+    for rule in config["pull_request_rules"]:
+        assert rule["actions"].get("queue", {}).get("name") != "maintainer"
+    assert config["commands_restrictions"] == {
+        "queue": {"conditions": ["sender-permission >= write"]}
+    }
 
 
 def test_release_preflight_rejects_missing_tauri_lockfile(

@@ -53,6 +53,56 @@ queue_rules:
           - check-neutral = SonarCloud Scan
       - check-success = dependency-review
 
+  # Command-only queue for maintainer pull requests. No pull_request_rule targets it, so a
+  # person with write access (see commands_restrictions) must comment "@mergifyio queue".
+  - name: maintainer
+    batch_size: 1
+    merge_method: squash
+    branch_protection_injection_mode: queue
+    max_checks_retries: 0
+    merge_conditions:
+      - base = main
+      - -draft
+      - author != dependabot[bot]
+      - "#review-threads-unresolved = 0"
+      - check-success = mcp-server (ubuntu-24.04)
+      - check-success = mcp-server (windows-2025)
+      - check-success = mcp-server (macos-15)
+      - check-success = mcp-npm (ubuntu-24.04)
+      - check-success = mcp-npm (windows-2025)
+      - check-success = mcp-npm (macos-15)
+      - check-success = protocol-schemas
+      - check-success = scan
+      - check-success = analyze (python)
+      - check-success = analyze (javascript-typescript)
+      - check-success = Required PR Gate
+      - or:
+          - check-success = SonarCloud Scan
+          - check-skipped = SonarCloud Scan
+          - check-neutral = SonarCloud Scan
+      - check-success = dependency-review
+    queue_conditions:
+      - base = main
+      - -draft
+      - author != dependabot[bot]
+      - "#review-threads-unresolved = 0"
+      - check-success = mcp-server (ubuntu-24.04)
+      - check-success = mcp-server (windows-2025)
+      - check-success = mcp-server (macos-15)
+      - check-success = mcp-npm (ubuntu-24.04)
+      - check-success = mcp-npm (windows-2025)
+      - check-success = mcp-npm (macos-15)
+      - check-success = protocol-schemas
+      - check-success = scan
+      - check-success = analyze (python)
+      - check-success = analyze (javascript-typescript)
+      - check-success = Required PR Gate
+      - or:
+          - check-success = SonarCloud Scan
+          - check-skipped = SonarCloud Scan
+          - check-neutral = SonarCloud Scan
+      - check-success = dependency-review
+
 pull_request_rules:
   - name: Queue safe grouped Dependabot updates
     conditions:
@@ -64,3 +114,8 @@ pull_request_rules:
     actions:
       queue:
         name: safe-dependencies
+
+commands_restrictions:
+  queue:
+    conditions:
+      - sender-permission >= write

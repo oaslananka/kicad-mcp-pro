@@ -160,7 +160,9 @@ which keeps Mergify compatible with the strict up-to-date ruleset using in-place
 Repository tests require exact ruleset and queue/merge-condition parity, so Mergify does
 not rely on external ruleset-discovery APIs to decide that CI is complete. Human, release,
 security, major, and other ungrouped PRs are
-not auto-queued by repository policy.
+not auto-queued by repository policy. They may enter the command-only `maintainer` queue
+rule when a user with write access comments `@mergifyio queue`; that rule mirrors the same
+required contexts, requires resolved review threads, and has no automatic trigger.
 
 ### SonarQube Cloud scope
 

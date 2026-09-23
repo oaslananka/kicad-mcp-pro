@@ -103,15 +103,18 @@ Use the GitHub issue templates for bugs, feature requests, and documentation rep
 2. Add or update tests and documentation with the implementation.
 3. Use a Conventional Commit title such as `fix: handle missing KiCad CLI`.
 4. Confirm all required GitHub Actions checks pass.
-5. Merge it yourself — with GitHub's native "Merge when ready" / `gh pr merge --auto`, or a direct merge once checks pass.
+5. Merge it yourself — comment `@mergifyio queue`, use GitHub's native "Merge when ready" / `gh pr merge --auto`, or merge directly once checks pass.
 
-Mergify (`.mergify.yml`) only auto-merges grouped Dependabot minor/patch
-updates; its `queue_conditions` require `author = dependabot[bot]`. On every
-other pull request — including yours — Mergify still posts a "Merge Queue
-Status: Waiting for queue conditions" comment. That comment is expected
-noise: it previews what the dependabot-only queue rule would need, but the
-PR can never actually enter that queue, so the comment never resolves and
-does not block or drive your merge.
+Mergify (`.mergify.yml`) automatically queues only grouped Dependabot
+minor/patch updates (the `safe-dependencies` queue rule). Every other pull
+request can enter the `maintainer` queue rule, but only when someone with
+write access comments `@mergifyio queue`; no rule queues it automatically.
+Both queue rules require the same checks as the `main` ruleset, a non-draft
+pull request, and no unresolved review threads, and both squash-merge one
+pull request at a time. Until the command is issued, or while those
+conditions are still pending, Mergify's "Merge Queue Status: Waiting for
+queue conditions" comment is informational and does not block a direct
+merge.
 
 Report vulnerabilities privately through the process in
 [`SECURITY.md`](SECURITY.md).
