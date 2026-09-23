@@ -470,8 +470,10 @@ the protected dispatch permits at most three when explicitly requesting deeper e
 The NVIDIA benchmark is bounded at 75 minutes inside a 90-minute job envelope. OpenCode
 MiMo and OpenAI candidates remain versioned and can still be run through the
 manual/diagnostic live-eval path, but they do not block release readiness. The full job
-always emits a small status record and uploads only sanitized evidence. The aggregate job
-distinguishes:
+always emits a small status record and uploads only sanitized evidence. Baseline-relative
+provider telemetry such as p95 hosted-endpoint latency and mean token usage remains
+recorded for review, but does not by itself count as a behavioral-quality regression;
+configured absolute telemetry ceilings still fail closed. The aggregate job distinguishes:
 
 - destructive/safety failures;
 - tool-selection and baseline quality regressions;

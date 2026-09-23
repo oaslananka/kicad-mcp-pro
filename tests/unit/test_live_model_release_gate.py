@@ -40,6 +40,8 @@ COMMANDS = (
         "scripts/nvidia_nim_eval_adapter.py",
         "--model",
         MODELS[0],
+        "--timeout-seconds",
+        "65",
         "--structured-output",
         "json_object",
     ),
@@ -379,6 +381,106 @@ def test_gate_distinguishes_safety_quality_infrastructure_and_telemetry(tmp_path
     assert "prompt" not in json.dumps(report)
 
 
+def test_gate_records_provider_telemetry_drift_without_treating_it_as_behavior_regression(
+    tmp_path: Path,
+) -> None:
+    config_id = CONFIG_IDS[0]
+    baseline_path = _baseline(tmp_path / "baselines.yaml")
+    baseline = yaml.safe_load(baseline_path.read_text(encoding="utf-8"))
+    baseline["required_configurations"] = [config_id]
+    baseline["minimum_repeats"] = 2
+    baseline["configurations"] = {
+        config_id: {
+            "host": HOSTS[0],
+            "model": MODELS[0],
+            "token_metrics_required": True,
+            "metrics": {
+                "pass_rate": 1.0,
+                "mean_recall": 1.0,
+                "unnecessary_call_rate": 0.0,
+                "instability_rate": 0.0,
+                "p95_latency_ms": 1000.0,
+                "mean_tokens": 100.0,
+            },
+        }
+    }
+    baseline_path.write_text(yaml.safe_dump(baseline, sort_keys=False), encoding="utf-8")
+    evidence = _write_evidence(
+        tmp_path / "evidence",
+        [
+            _evidence(
+                config_id,
+                MODELS[0],
+                pass_rate=1.0,
+                mean_recall=1.0,
+                unnecessary_call_rate=0.0,
+                instability_rate=0.0,
+                p95_latency_ms=15_000.0,
+                mean_tokens=500.0,
+                repeats=2,
+            )
+        ],
+    )
+
+    report = evaluate_release_gate(
+        evidence,
+        baseline_path=baseline_path,
+        cases_path=CASES,
+        thresholds_path=THRESHOLDS,
+    )
+
+    assert report["passed"] is True
+    assert report["classifications"]["quality_failures"] == []
+    comparison = report["comparisons"][config_id]
+    assert comparison["p95_latency_ms"]["current"] == 15_000.0
+    assert comparison["mean_tokens"]["current"] == 500.0
+
+
+def test_gate_still_blocks_provider_telemetry_when_an_absolute_ceiling_is_configured(
+    tmp_path: Path,
+) -> None:
+    config_id = CONFIG_IDS[0]
+    baseline_path = _baseline(tmp_path / "baselines.yaml")
+    baseline = yaml.safe_load(baseline_path.read_text(encoding="utf-8"))
+    baseline["required_configurations"] = [config_id]
+    baseline["minimum_repeats"] = 2
+    baseline["configurations"] = {config_id: baseline["configurations"][config_id]}
+    baseline_path.write_text(yaml.safe_dump(baseline, sort_keys=False), encoding="utf-8")
+
+    thresholds_path = tmp_path / "thresholds.yaml"
+    thresholds = yaml.safe_load(THRESHOLDS.read_text(encoding="utf-8"))
+    thresholds["release_gate"]["max_p95_latency_ms"] = 5_000
+    thresholds_path.write_text(yaml.safe_dump(thresholds, sort_keys=False), encoding="utf-8")
+
+    evidence = _write_evidence(
+        tmp_path / "evidence",
+        [
+            _evidence(
+                config_id,
+                MODELS[0],
+                pass_rate=1.0,
+                mean_recall=1.0,
+                unnecessary_call_rate=0.0,
+                instability_rate=0.0,
+                p95_latency_ms=15_000.0,
+                repeats=2,
+            )
+        ],
+    )
+
+    report = evaluate_release_gate(
+        evidence,
+        baseline_path=baseline_path,
+        cases_path=CASES,
+        thresholds_path=thresholds_path,
+    )
+
+    assert report["passed"] is False
+    assert report["classifications"]["quality_failures"] == [
+        f"{config_id}: p95_latency_ms=15000.0 exceeds maximum 5000.0"
+    ]
+
+
 def test_gate_fails_closed_when_baselines_are_not_approved(tmp_path: Path) -> None:
     evidence = _write_evidence(
         tmp_path / "evidence",
@@ -450,6 +552,16 @@ def test_committed_baseline_records_reviewed_required_configurations() -> None:
     assert configuration["host"] == HOSTS[0]
     assert configuration["model"] == MODELS[0]
     assert configuration["token_metrics_required"] is True
+
+
+def test_nemotron_live_configuration_reserves_request_timeout_margin_and_one_extra_retry() -> None:
+    configuration = load_configurations(CONFIGURATIONS)[CONFIG_IDS[0]]
+
+    assert configuration.command == COMMANDS[0]
+    assert configuration.limits.timeout_seconds == 70
+    assert configuration.limits.max_retries == 3
+    assert configuration.limits.min_request_interval_seconds == 5.0
+    assert configuration.limits.max_total_cost_micros == 0
 
 
 def test_committed_live_smoke_subset_is_bounded_balanced_and_canonical() -> None:

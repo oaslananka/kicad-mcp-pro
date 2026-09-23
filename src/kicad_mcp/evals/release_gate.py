@@ -21,6 +21,7 @@ _LOWER_IS_BETTER = frozenset(
     {"unnecessary_call_rate", "instability_rate", "p95_latency_ms", "mean_tokens"}
 )
 _HIGHER_IS_BETTER = frozenset({"pass_rate", "mean_recall"})
+_PROVIDER_TELEMETRY_METRICS = frozenset({"p95_latency_ms", "mean_tokens"})
 _TELEMETRY_METRIC_PREFIXES = ("mean_tokens", "p95_" + "latency_ms")
 
 
@@ -339,6 +340,11 @@ def evaluate_release_gate(
                     else "quality_failures"
                 )
                 _append(classifications, category, f"{config_id}: {metric} unavailable")
+                continue
+            if metric in _PROVIDER_TELEMETRY_METRICS:
+                # Shared hosted-endpoint latency/token drift is recorded in comparisons but is
+                # not a behavioral-quality regression. Absolute telemetry ceilings, when
+                # configured in thresholds.yaml, are still enforced above by evaluate_thresholds.
                 continue
             if metric in _HIGHER_IS_BETTER and current_value < float(approved_value) - variance:
                 _append(classifications, "quality_failures", f"{config_id}: {metric} regressed")
