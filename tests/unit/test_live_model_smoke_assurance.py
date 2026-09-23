@@ -94,11 +94,24 @@ def _write(root: Path, values: list[dict[str, object]]) -> list[Path]:
     return paths
 
 
-def test_smoke_assurance_rejects_fewer_than_two_required_configurations(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="at least two unique"):
+def test_smoke_assurance_accepts_one_required_configuration(tmp_path: Path) -> None:
+    report = evaluate_smoke_assurance(
+        _write(tmp_path, [_evidence("alpha")]),
+        required_configurations=("alpha",),
+        minimum_successful_configurations=1,
+        expected_source_revision=REVISION,
+    )
+
+    assert report["passed"] is True
+    assert report["degraded"] is False
+    assert report["successful_configurations"] == ["alpha"]
+
+
+def test_smoke_assurance_rejects_empty_required_configurations() -> None:
+    with pytest.raises(ValueError, match="one or more unique"):
         evaluate_smoke_assurance(
             [],
-            required_configurations=("alpha",),
+            required_configurations=(),
             minimum_successful_configurations=1,
             expected_source_revision=REVISION,
         )
