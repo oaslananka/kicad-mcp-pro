@@ -28,13 +28,21 @@ _LIMIT_KEYS = frozenset(
         "timeout_seconds",
         "min_request_interval_seconds",
         "max_retries",
+        "deferred_retry_passes",
+        "deferred_retry_cooldown_seconds",
         "max_cases",
         "max_total_tool_calls",
         "max_total_tokens",
         "max_total_cost_micros",
     }
 )
-_REQUIRED_LIMIT_KEYS = _LIMIT_KEYS - {"min_request_interval_seconds"}
+_REQUIRED_LIMIT_KEYS = _LIMIT_KEYS - {
+    "min_request_interval_seconds",
+    "deferred_retry_passes",
+    "deferred_retry_cooldown_seconds",
+}
+_MAX_DEFERRED_RETRY_PASSES = 3
+_MAX_DEFERRED_RETRY_COOLDOWN_SECONDS = 600.0
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _COMMAND_SECRET = re.compile(
     r"(?i)(?:sk-[A-Za-z0-9_-]{8,}|"
@@ -57,6 +65,8 @@ class RunLimits:
     max_total_tokens: int
     max_total_cost_micros: int
     min_request_interval_seconds: float = 0.0
+    deferred_retry_passes: int = 0
+    deferred_retry_cooldown_seconds: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +158,30 @@ def _optional_nonnegative_number(
     return float(value)
 
 
+def _bounded_cooldown(raw: dict[str, Any], record_id: str) -> float:
+    cooldown = _optional_nonnegative_number(raw, "deferred_retry_cooldown_seconds", record_id)
+    if cooldown > _MAX_DEFERRED_RETRY_COOLDOWN_SECONDS:
+        raise EvalConfigurationError(
+            f"Configuration {record_id!r} limit 'deferred_retry_cooldown_seconds' must not "
+            f"exceed {_MAX_DEFERRED_RETRY_COOLDOWN_SECONDS:g}."
+        )
+    return cooldown
+
+
+def _optional_deferred_retry_passes(raw: dict[str, Any], record_id: str) -> int:
+    value = raw.get("deferred_retry_passes", 0)
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not 0 <= value <= _MAX_DEFERRED_RETRY_PASSES
+    ):
+        raise EvalConfigurationError(
+            f"Configuration {record_id!r} limit 'deferred_retry_passes' must be an integer "
+            f"from 0 to {_MAX_DEFERRED_RETRY_PASSES}."
+        )
+    return value
+
+
 def _parse_limits(value: object, record_id: str) -> RunLimits:
     raw = _mapping(value, f"Configuration {record_id!r} field limits")
     unknown = sorted(set(raw) - _LIMIT_KEYS)
@@ -170,6 +204,8 @@ def _parse_limits(value: object, record_id: str) -> RunLimits:
         min_request_interval_seconds=_optional_nonnegative_number(
             raw, "min_request_interval_seconds", record_id
         ),
+        deferred_retry_passes=_optional_deferred_retry_passes(raw, record_id),
+        deferred_retry_cooldown_seconds=_bounded_cooldown(raw, record_id),
     )
 
 
