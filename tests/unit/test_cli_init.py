@@ -163,3 +163,199 @@ class TestWriteKicadMcpConfig:
         result.unlink()
         # Clean up parent if empty
         result.parent.rmdir()
+
+
+# ---------------------------------------------------------------------------------------------
+# Interactive helper coverage
+# ---------------------------------------------------------------------------------------------
+
+
+def test_run_wizard_yes_mode_writes_selected_client_and_summary(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import kicad_mcp.cli_init as cli_init
+
+    kicad_path = Path("/usr/bin/kicad-cli")  # noqa: S108
+    client_path = tmp_path / "client.json"
+    output = tmp_path / "config.json"
+
+    monkeypatch.setattr(cli_init, "_detect_kicad_interactive", lambda console, yes: kicad_path)
+    monkeypatch.setattr(
+        cli_init,
+        "_select_transport_interactive",
+        lambda console, yes: (cli_init.TRANSPORT_STREAMABLE_HTTP, 4444),
+    )
+    monkeypatch.setattr(
+        cli_init,
+        "_select_client_interactive",
+        lambda console, yes: (cli_init.CLIENT_CURSOR, "Cursor"),
+    )
+    monkeypatch.setattr(cli_init, "_write_mcp_config", lambda client, snippet: client_path)
+
+    cli_init.run_wizard(yes=True, output=output)
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload == {
+        "kicad_path": str(kicad_path),
+        "transport": cli_init.TRANSPORT_STREAMABLE_HTTP,
+        "port": 4444,
+    }
+
+
+def test_detect_kicad_interactive_accepts_detected_path(monkeypatch) -> None:
+    from rich.console import Console
+
+    import kicad_mcp.cli_init as cli_init
+
+    expected = Path("/opt/kicad/bin/kicad-cli")  # noqa: S108
+    monkeypatch.setattr(cli_init, "discover_kicad_cli", lambda: expected)
+    monkeypatch.setattr(cli_init, "find_kicad_version", lambda path: "10.0.6")
+    monkeypatch.setattr(cli_init.typer, "confirm", lambda *args, **kwargs: True)
+
+    assert cli_init._detect_kicad_interactive(Console(), yes=False) == expected
+
+
+def test_detect_kicad_interactive_manual_retry(monkeypatch, tmp_path: Path) -> None:
+    from rich.console import Console
+
+    import kicad_mcp.cli_init as cli_init
+
+    responses = iter([str(tmp_path / "missing"), str(tmp_path)])
+    monkeypatch.setattr(
+        cli_init,
+        "discover_kicad_cli",
+        lambda: (_ for _ in ()).throw(RuntimeError("not found")),
+    )
+    monkeypatch.setattr(cli_init.typer, "prompt", lambda *args, **kwargs: next(responses))
+
+    assert cli_init._detect_kicad_interactive(Console(), yes=False) == tmp_path
+
+
+def test_detect_kicad_interactive_manual_cancel(monkeypatch) -> None:
+    from rich.console import Console
+
+    import kicad_mcp.cli_init as cli_init
+
+    monkeypatch.setattr(cli_init, "discover_kicad_cli", lambda: Path("/opt/kicad-cli"))
+    monkeypatch.setattr(cli_init, "find_kicad_version", lambda path: "10.0.6")
+    monkeypatch.setattr(cli_init.typer, "prompt", lambda *args, **kwargs: "")
+
+    assert cli_init._detect_kicad_interactive(Console(), yes=True) is None
+
+
+def test_select_transport_interactive_yes_mode() -> None:
+    from rich.console import Console
+
+    import kicad_mcp.cli_init as cli_init
+
+    assert cli_init._select_transport_interactive(Console(), yes=True) == (
+        cli_init.TRANSPORT_STREAMABLE_HTTP,
+        cli_init.DEFAULT_HTTP_PORT,
+    )
+
+
+def test_select_transport_interactive_http_custom_port(monkeypatch) -> None:
+    from rich.console import Console
+
+    import kicad_mcp.cli_init as cli_init
+
+    responses = iter(["1", 4567])
+    monkeypatch.setattr(cli_init.typer, "prompt", lambda *args, **kwargs: next(responses))
+
+    assert cli_init._select_transport_interactive(Console(), yes=False) == (
+        cli_init.TRANSPORT_STREAMABLE_HTTP,
+        4567,
+    )
+
+
+def test_select_transport_interactive_stdio(monkeypatch) -> None:
+    from rich.console import Console
+
+    import kicad_mcp.cli_init as cli_init
+
+    monkeypatch.setattr(cli_init.typer, "prompt", lambda *args, **kwargs: "2")
+
+    assert cli_init._select_transport_interactive(Console(), yes=False) == (
+        cli_init.TRANSPORT_STDIO,
+        cli_init.DEFAULT_HTTP_PORT,
+    )
+
+
+def test_select_client_interactive_yes_detects_existing_config(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    from rich.console import Console
+
+    import kicad_mcp.cli_init as cli_init
+
+    existing = tmp_path / "client.json"
+    existing.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(cli_init, "_resolve_config_path", lambda client: existing)
+
+    client, display = cli_init._select_client_interactive(Console(), yes=True)
+
+    assert client == next(iter(cli_init.MCP_CLIENT_CONFIGS))
+    assert display == dict(cli_init.CLIENT_DISPLAY_NAMES).get(client, client)
+
+
+def test_select_client_interactive_yes_falls_back_to_claude(monkeypatch) -> None:
+    from rich.console import Console
+
+    import kicad_mcp.cli_init as cli_init
+
+    monkeypatch.setattr(cli_init, "_resolve_config_path", lambda client: None)
+
+    client, display = cli_init._select_client_interactive(Console(), yes=True)
+
+    assert client == cli_init.CLIENT_CLAUDE_DESKTOP
+    assert display == dict(cli_init.CLIENT_DISPLAY_NAMES)[cli_init.CLIENT_CLAUDE_DESKTOP]
+
+
+def test_select_client_interactive_skip(monkeypatch) -> None:
+    from rich.console import Console
+
+    import kicad_mcp.cli_init as cli_init
+
+    choice = str(len(cli_init.MCP_CLIENT_CONFIGS) + 1)
+    monkeypatch.setattr(cli_init.typer, "prompt", lambda *args, **kwargs: choice)
+
+    assert cli_init._select_client_interactive(Console(), yes=False) == (
+        cli_init.CLIENT_NONE,
+        cli_init.CLIENT_SKIPPED_DISPLAY,
+    )
+
+
+def test_select_client_interactive_numeric_and_direct_name(monkeypatch) -> None:
+    from rich.console import Console
+
+    import kicad_mcp.cli_init as cli_init
+
+    clients = list(cli_init.MCP_CLIENT_CONFIGS)
+    responses = iter(["1", clients[-1]])
+    monkeypatch.setattr(cli_init.typer, "prompt", lambda *args, **kwargs: next(responses))
+
+    first, _ = cli_init._select_client_interactive(Console(), yes=False)
+    direct, _ = cli_init._select_client_interactive(Console(), yes=False)
+
+    assert first == clients[0]
+    assert direct == clients[-1]
+
+
+def test_select_client_interactive_display_name_and_invalid_fallback(monkeypatch) -> None:
+    from rich.console import Console
+
+    import kicad_mcp.cli_init as cli_init
+
+    display_map = dict(cli_init.CLIENT_DISPLAY_NAMES)
+    display = next(iter(display_map.values()))
+    responses = iter([display, "definitely-invalid"])
+    monkeypatch.setattr(cli_init.typer, "prompt", lambda *args, **kwargs: next(responses))
+
+    by_display, selected_display = cli_init._select_client_interactive(Console(), yes=False)
+    fallback, _ = cli_init._select_client_interactive(Console(), yes=False)
+
+    assert selected_display.lower() == display.lower()
+    assert by_display in cli_init.MCP_CLIENT_CONFIGS
+    assert fallback == cli_init.CLIENT_CLAUDE_DESKTOP
