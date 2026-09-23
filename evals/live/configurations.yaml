@@ -29,21 +29,6 @@ configurations:
       max_total_tokens: 3000000
       max_total_cost_micros: 0
 
-  - id: nvidia-gpt-oss-20b
-    host: nvidia-nim
-    model: openai/gpt-oss-20b
-    adapter: subprocess
-    command: [python, scripts/nvidia_nim_eval_adapter.py, --model, openai/gpt-oss-20b, --structured-output, json_object]
-    required_env: [NVIDIA_API_KEY]
-    limits:
-      timeout_seconds: 70
-      min_request_interval_seconds: 5
-      max_retries: 2
-      max_cases: 11
-      max_total_tool_calls: 40
-      max_total_tokens: 100000
-      max_total_cost_micros: 0
-
   - id: nvidia-mistral-medium-3-5-128b
     host: nvidia-nim
     model: mistralai/mistral-medium-3.5-128b

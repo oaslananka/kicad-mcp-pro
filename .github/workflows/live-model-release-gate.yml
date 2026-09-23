@@ -42,7 +42,6 @@ jobs:
       matrix:
         configuration:
           - nvidia-nemotron-3-5-lightning-30b-a3b
-          - opencode-cli-mimo-v2-5-free
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -52,25 +51,14 @@ jobs:
           enable-cache: false
           version-file: uv.toml
       - run: uv sync --all-extras --frozen
-      - name: Install pinned OpenCode CLI
-        if: startsWith(matrix.configuration, 'opencode-cli-')
-        env:
-          OPENCODE_CLI_VERSION: "1.18.10"
-        run: |
-          set -euo pipefail
-          npm ci --prefix evals/live --ignore-scripts --no-audit --no-fund
-          test "$(evals/live/node_modules/opencode-linux-x64/bin/opencode --version)" = "$OPENCODE_CLI_VERSION"
-          echo "$GITHUB_WORKSPACE/evals/live/node_modules/opencode-linux-x64/bin" >> "$GITHUB_PATH"
       - name: Run bounded live smoke
         env:
           CONFIGURATION_ID: ${{ matrix.configuration }}
           NVIDIA_API_KEY: ${{ startsWith(matrix.configuration, 'nvidia-') && secrets.NVIDIA_API_KEY || '' }}
-          OPENCODE_ZEN_API_KEY: ${{ startsWith(matrix.configuration, 'opencode-cli-') && secrets.OPENCODE_ZEN_API_KEY || '' }}
         run: |
           set -euo pipefail
           case "$CONFIGURATION_ID" in
             nvidia-*) test -n "$NVIDIA_API_KEY" ;;
-            opencode-cli-*) test -n "$OPENCODE_ZEN_API_KEY" ;;
             *) echo "Unsupported blocking configuration: $CONFIGURATION_ID" >&2; exit 2 ;;
           esac
           mkdir -p artifacts/live-model-smoke

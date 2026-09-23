@@ -2,10 +2,9 @@ schema_version: 1
 baseline_max_age_days: 30
 release_pull_request_head: release-please--branches--main
 release_tag_pattern: mcp-server-v*
-minimum_smoke_configurations: 2
+minimum_smoke_configurations: 1
 smoke_configurations:
   - nvidia-nemotron-3-5-lightning-30b-a3b
-  - opencode-cli-mimo-v2-5-free
 agent_contract_paths:
   - docs/tools-reference.generated.md
   - evals/tool_selection/**

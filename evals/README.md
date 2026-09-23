@@ -418,26 +418,26 @@ workflows. Release-policy code, smoke aggregation code, and the baseline file it
 are intentionally excluded so governance-only edits do not invalidate model behavior
 that has not changed.
 
-Routine smoke evaluates both required provider paths independently with a 14-minute
-provider-command bound inside a 17-minute per-configuration cleanup and artifact-upload
-envelope. With two required configurations and `minimum_smoke_configurations: 2`, both
-paths must complete cleanly; infrastructure degradation is still classified separately
-from model quality but does not count as a passing required configuration. Artifact-
-integrity failures, tool-selection quality failures, safety or forbidden calls, and
-call-limit violations always block. Provider availability is therefore not mislabeled
-as model quality, while safety remains fail-closed.
+Protected release smoke evaluates the single blocking NVIDIA Nemotron Lightning path
+with a bounded provider command and explicit cleanup/artifact-upload envelope. With
+`minimum_smoke_configurations: 1`, that live path must complete cleanly before the full
+benchmark begins. Infrastructure degradation is classified separately from model quality,
+but it does not count as a pass. Artifact-integrity failures, tool-selection quality
+failures, safety or forbidden calls, and call-limit violations always block. Cross-provider
+OpenCode/OpenAI runs remain manual/nonblocking diagnostics so third-party auth, quota, or
+trial-service incidents do not become release blockers unrelated to the product contract.
 
 The protected full-gate workflow remains mandatory when a release changes the agent
 contract and reusable approved evidence is unavailable—for example after a new model or
 host, prompt/matcher/safety change, tool catalog or schema change, adapter/retry/timeout
 change, or corpus or threshold change. Baseline expiry by itself does
 not block a release whose agent contract is unchanged from the previous published server
-release. Provider-diverse smoke and full-corpus baseline evidence are intentionally
-separate: both NVIDIA Nemotron Lightning and OpenCode MiMo must pass the bounded smoke
-corpus, while only NVIDIA Nemotron Lightning supplies the 65-case full benchmark used for
-baseline metrics. A compact approved baseline is generated only from a sanitized aggregate
-with complete NVIDIA evidence and no safety, quality, infrastructure, telemetry, or
-per-case failure:
+release. Blocking live smoke and full-corpus baseline evidence are intentionally aligned on
+NVIDIA Nemotron Lightning: one bounded smoke repetition fails fast before the same reviewed
+model supplies the 65-case full benchmark used for baseline metrics. Provider-diverse
+OpenCode/OpenAI diagnostics remain available outside the blocking release path. A compact
+approved baseline is generated only from a sanitized aggregate with complete NVIDIA
+evidence and no safety, quality, infrastructure, telemetry, or per-case failure:
 
 ```bash
 uv run --all-extras python scripts/generate_live_model_baseline.py \
@@ -452,27 +452,26 @@ run ID, aggregate artifact SHA-256, host/model identities, reviewed metrics, and
 approval date. The baseline change is reviewed and merged through a normal pull
 request; no workflow writes directly to the repository.
 
-`.github/workflows/live-model-release-gate.yml` runs one reviewed NVIDIA NIM smoke and
-one sandboxed OpenCode CLI smoke sequentially from protected `main`. The protected
-environment supplies `NVIDIA_API_KEY` or `OPENCODE_ZEN_API_KEY` only to the bounded step
-that validates the selected smoke configuration. Before any full-corpus work, both
-providers must pass one bounded `live-smoke` repetition selected from the same canonical
-corpus.
+`.github/workflows/live-model-release-gate.yml` runs one reviewed NVIDIA NIM smoke
+from protected `main`. The protected environment supplies `NVIDIA_API_KEY` only to the
+bounded step that validates that blocking smoke configuration. Before any full-corpus work,
+Nemotron Lightning must pass one bounded `live-smoke` repetition selected from the same
+canonical corpus.
 The 11-case smoke set covers read-only, explicitly authorized write, export, publish,
-human-gated, confirmation, and refusal behavior. Each smoke command is bounded at 15
+human-gated, confirmation, and refusal behavior. The smoke command is bounded at 15
 minutes inside an 18-minute job envelope, leaving cleanup time to upload sanitized
 checkpoint evidence and fail explicitly. A command timeout preserves the `running`
-checkpoint instead of rewriting insufficient evidence as a completed verdict. If either
-provider fails or times out, the full benchmark is skipped.
+checkpoint instead of rewriting insufficient evidence as a completed verdict. If the
+blocking smoke fails or times out, the full benchmark is skipped.
 
-Only after both smoke providers pass does the workflow run the NVIDIA Nemotron Lightning
+Only after the blocking smoke passes does the workflow run the NVIDIA Nemotron Lightning
 full corpus. The standard release evidence floor is two repetitions (130 observations);
 the protected dispatch permits at most three when explicitly requesting deeper evidence.
 The NVIDIA benchmark is bounded at 75 minutes inside a 90-minute job envelope. OpenCode
-MiMo remains versioned and can still be run through the manual/diagnostic live-eval path,
-but its hour-scale full benchmark no longer blocks releases after smoke passes. The full
-job always emits a small status record and uploads only sanitized evidence. The aggregate
-job distinguishes:
+MiMo and OpenAI candidates remain versioned and can still be run through the
+manual/diagnostic live-eval path, but they do not block release readiness. The full job
+always emits a small status record and uploads only sanitized evidence. The aggregate job
+distinguishes:
 
 - destructive/safety failures;
 - tool-selection and baseline quality regressions;

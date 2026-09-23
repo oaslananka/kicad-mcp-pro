@@ -478,11 +478,8 @@ def test_committed_release_policy_tracks_model_facing_inputs_only() -> None:
     assert policy.baseline_max_age_days == 30
     assert policy.release_pull_request_head == "release-please--branches--main"
     assert policy.release_tag_pattern == "mcp-server-v*"
-    assert policy.minimum_smoke_configurations == 2
-    assert policy.smoke_configurations == (
-        "nvidia-nemotron-3-5-lightning-30b-a3b",
-        "opencode-cli-mimo-v2-5-free",
-    )
+    assert policy.minimum_smoke_configurations == 1
+    assert policy.smoke_configurations == ("nvidia-nemotron-3-5-lightning-30b-a3b",)
     assert "docs/tools-reference.generated.md" in policy.agent_contract_paths
     assert "evals/tool_selection/**" in policy.agent_contract_paths
     assert "evals/live/configurations.yaml" in policy.agent_contract_paths

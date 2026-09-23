@@ -479,13 +479,13 @@ def test_committed_live_smoke_subset_is_bounded_balanced_and_canonical() -> None
     } <= ids
 
 
-def test_release_gate_workflow_smokes_two_providers_and_benchmarks_only_nvidia() -> None:
+def test_release_gate_workflow_smokes_and_benchmarks_only_nvidia() -> None:
     workflow = (ROOT / ".github/workflows/live-model-release-gate.yml").read_text(encoding="utf-8")
     smoke_block = workflow.split("  smoke:", 1)[1].split("  benchmark:", 1)[0]
     benchmark_block = workflow.split("  benchmark:", 1)[1].split("  aggregate:", 1)[0]
 
     assert smoke_block.count("nvidia-nemotron-3-5-lightning-30b-a3b") == 1
-    assert smoke_block.count("opencode-cli-mimo-v2-5-free") == 1
+    assert "opencode-cli-mimo-v2-5-free" not in smoke_block
     assert benchmark_block.count("nvidia-nemotron-3-5-lightning-30b-a3b") == 1
     assert "opencode-cli-mimo-v2-5-free" not in benchmark_block
     assert "opencode-cli-nemotron-3-ultra-free" not in workflow
@@ -532,8 +532,8 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
     assert 'test "$REPEATS" -le 3' in workflow
     assert 'test "$REPEATS" -ge 3' not in workflow
     assert 'test "$REPEATS" -le 5' not in workflow
-    for config_id in CONFIG_IDS[:2]:
-        assert config_id in workflow
+    assert CONFIG_IDS[0] in workflow
+    assert CONFIG_IDS[1] not in workflow
     assert CONFIG_IDS[2] not in workflow
     for nonblocking_id in (
         "nvidia-mistral-medium-3-5-128b",
@@ -545,6 +545,7 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
         "opencode-ling-3-0-flash-free",
         "opencode-north-mini-code-free",
         "opencode-nemotron-3-ultra-free",
+        "opencode-cli-mimo-v2-5-free",
     ):
         assert nonblocking_id not in workflow
     assert (
@@ -554,28 +555,12 @@ def test_release_gate_workflow_is_main_only_protected_and_sequential() -> None:
         )
         == 2
     )
-    assert (
-        workflow.count(
-            "OPENCODE_ZEN_API_KEY: ${{ startsWith(matrix.configuration, 'opencode-cli-') "
-            "&& secrets.OPENCODE_ZEN_API_KEY || '' }}"
-        )
-        == 1
-    )
     assert "NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}" not in workflow
-    assert "OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}" not in workflow
-    assert workflow.count("name: Install pinned OpenCode CLI") == 1
-    assert workflow.count('OPENCODE_CLI_VERSION: "1.18.10"') == 1
-    assert workflow.count("if: startsWith(matrix.configuration, 'opencode-cli-')") == 1
-    assert workflow.count("npm ci --prefix evals/live --ignore-scripts --no-audit --no-fund") == 1
-    assert (
-        workflow.count(
-            'test "$(evals/live/node_modules/opencode-linux-x64/bin/opencode --version)" '
-            '= "$OPENCODE_CLI_VERSION"'
-        )
-        == 1
-    )
+    assert "OPENCODE_ZEN_API_KEY" not in workflow
+    assert "name: Install pinned OpenCode CLI" not in workflow
+    assert "OPENCODE_CLI_VERSION" not in workflow
+    assert "npm ci --prefix evals/live --ignore-scripts --no-audit --no-fund" not in workflow
     assert workflow.count('nvidia-*) test -n "$NVIDIA_API_KEY" ;;') == 1
-    assert workflow.count('opencode-cli-*) test -n "$OPENCODE_ZEN_API_KEY" ;;') == 1
     assert workflow.count("Unsupported blocking configuration: $CONFIGURATION_ID") == 1
     assert 'test -n "$NVIDIA_API_KEY"' in benchmark_block
     assert "OPENCODE_ZEN_API_KEY" not in benchmark_block

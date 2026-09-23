@@ -106,21 +106,6 @@ def test_chat_payload_contains_strict_classifier_contract_without_case_expectati
     assert "smallest sufficient tool set" in system
 
 
-def test_gpt_oss_payload_bounds_reasoning_for_structured_smoke() -> None:
-    payload = build_chat_payload(
-        model="openai/gpt-oss-20b",
-        prompt="Summarize this PCB without changing it.",
-        catalog=({"name": "pcb_get_board_summary", "summary": "Summarize the board."},),
-        structured_output="json_object",
-    )
-
-    assert payload["model"] == "openai/gpt-oss-20b"
-    assert payload["reasoning_effort"] == "low"
-    assert payload["max_tokens"] == 512
-    assert payload["response_format"] == {"type": "json_object"}
-    assert payload["stream"] is False
-
-
 def test_nim_request_returns_only_normalized_observation_and_optional_usage() -> None:
     raw_provider_text = "provider-internal-analysis-that-must-not-escape"
 

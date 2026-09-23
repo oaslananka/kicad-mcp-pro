@@ -133,17 +133,20 @@ def test_sonar_skips_fork_pull_requests_before_secret_bearing_steps() -> None:
 
 
 def test_live_model_workflows_install_opencode_from_lockfile() -> None:
-    live_workflows = [
+    opencode_workflows = [
         ROOT / ".github" / "workflows" / "live-model-assurance.yml",
         ROOT / ".github" / "workflows" / "live-model-eval.yml",
-        ROOT / ".github" / "workflows" / "live-model-release-gate.yml",
     ]
+    release_gate = ROOT / ".github" / "workflows" / "live-model-release-gate.yml"
 
-    for path in live_workflows:
+    for path in opencode_workflows:
         raw = path.read_text(encoding="utf-8")
         assert "npm install --global" not in raw
         assert "npm ci --prefix evals/live --ignore-scripts --no-audit --no-fund" in raw
         assert "evals/live/node_modules/opencode-linux-x64/bin/opencode --version" in raw
+
+    assert "npm install --global" not in release_gate.read_text(encoding="utf-8")
+    assert "opencode-linux-x64" not in release_gate.read_text(encoding="utf-8")
 
     package = (ROOT / "evals" / "live" / "package.json").read_text(encoding="utf-8")
     lockfile = (ROOT / "evals" / "live" / "package-lock.json").read_text(encoding="utf-8")
@@ -156,7 +159,6 @@ def test_live_model_workflows_expose_locked_opencode_binary_on_path() -> None:
     live_workflows = [
         ROOT / ".github" / "workflows" / "live-model-assurance.yml",
         ROOT / ".github" / "workflows" / "live-model-eval.yml",
-        ROOT / ".github" / "workflows" / "live-model-release-gate.yml",
     ]
     expected = (
         'echo "$GITHUB_WORKSPACE/evals/live/node_modules/opencode-linux-x64/bin" >> "$GITHUB_PATH"'
