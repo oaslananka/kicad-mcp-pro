@@ -257,3 +257,13 @@ def test_read_design_spec_markdown_prefers_inline_and_requires_one_source() -> N
     )
     with pytest.raises(ValueError, match="Provide either markdown or path"):
         _read_design_spec_markdown(None, None)
+
+
+def test_parse_simple_yaml_skips_unexpected_deeper_mapping_rows() -> None:
+    assert _parse_simple_yaml(
+        """
+root:
+  child: 1
+    stray
+"""
+    ) == {"root": {"child": 1}}

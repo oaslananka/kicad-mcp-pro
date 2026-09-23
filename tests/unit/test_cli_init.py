@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from kicad_mcp.cli_init import (
     MCP_CLIENT_CONFIGS,
     _generate_mcp_config,
@@ -359,3 +361,43 @@ def test_select_client_interactive_display_name_and_invalid_fallback(monkeypatch
     assert selected_display.lower() == display.lower()
     assert by_display in cli_init.MCP_CLIENT_CONFIGS
     assert fallback == cli_init.CLIENT_CLAUDE_DESKTOP
+
+
+def test_run_wizard_exits_when_kicad_path_is_missing(monkeypatch, tmp_path: Path) -> None:
+    import kicad_mcp.cli_init as cli_init
+
+    monkeypatch.setattr(cli_init, "_detect_kicad_interactive", lambda console, yes: None)
+
+    with pytest.raises(cli_init.typer.Exit) as exc_info:
+        cli_init.run_wizard(yes=True, output=tmp_path / "config.json")
+
+    assert exc_info.value.exit_code == 1
+
+
+def test_run_wizard_warns_when_client_config_cannot_be_written(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import kicad_mcp.cli_init as cli_init
+
+    output = tmp_path / "config.json"
+    monkeypatch.setattr(
+        cli_init,
+        "_detect_kicad_interactive",
+        lambda console, yes: Path("/usr/bin/kicad-cli"),  # noqa: S108
+    )
+    monkeypatch.setattr(
+        cli_init,
+        "_select_transport_interactive",
+        lambda console, yes: (cli_init.TRANSPORT_STDIO, cli_init.DEFAULT_HTTP_PORT),
+    )
+    monkeypatch.setattr(
+        cli_init,
+        "_select_client_interactive",
+        lambda console, yes: (cli_init.CLIENT_CURSOR, "Cursor"),
+    )
+    monkeypatch.setattr(cli_init, "_write_mcp_config", lambda client, snippet: None)
+
+    cli_init.run_wizard(yes=True, output=output)
+
+    assert output.exists()
