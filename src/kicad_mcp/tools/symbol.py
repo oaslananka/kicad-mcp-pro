@@ -101,7 +101,7 @@ def register(mcp: FastMCP) -> None:
             else:
                 in_path = Path(input_file).expanduser().resolve()
         except Exception as exc:
-            return f"Unsafe input file path: {exc}"
+            raise ValueError(f"Unsafe input file path: {exc}") from exc
 
         if not in_path.exists():
             return f"Input symbol library file not found: {input_file}"
@@ -114,7 +114,7 @@ def register(mcp: FastMCP) -> None:
                 else:
                     out_dir = Path(output_dir).expanduser().resolve()
             except Exception as exc:
-                return f"Unsafe output directory: {exc}"
+                raise ValueError(f"Unsafe output directory: {exc}") from exc
 
         cmd = ["sym", "export", "svg"]
         cmd.extend(["--output", str(out_dir)])
@@ -175,7 +175,7 @@ def register(mcp: FastMCP) -> None:
             else:
                 in_path = Path(in_file).expanduser().resolve()
         except Exception as exc:
-            return f"Unsafe input file path: {exc}"
+            raise ValueError(f"Unsafe input file path: {exc}") from exc
 
         out_path = output_file.strip() if output_file else ""
         if out_path:
@@ -187,7 +187,7 @@ def register(mcp: FastMCP) -> None:
                 else:
                     out_path = str(Path(out_path).expanduser().resolve())
             except Exception as exc:
-                return f"Unsafe output path: {exc}"
+                raise ValueError(f"Unsafe output path: {exc}") from exc
         else:
             out_dir = _ensure_output_dir("upgraded")
             out_path = str(out_dir / f"upgraded_{in_path.name}")

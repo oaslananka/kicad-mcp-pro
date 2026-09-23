@@ -146,7 +146,7 @@ def register(mcp: FastMCP) -> None:
             else:
                 jobset_path = Path(jobset_file).expanduser().resolve()
         except Exception as exc:
-            return f"Unsafe jobset path: {exc}"
+            raise ValueError(f"Unsafe jobset path: {exc}") from exc
 
         if not jobset_path.exists():
             return f"Jobset file not found: {jobset_file}"
@@ -160,7 +160,7 @@ def register(mcp: FastMCP) -> None:
                     out_path = Path(output).expanduser().resolve()
                 out_args = ["--output", str(out_path)]
             except Exception as exc:
-                return f"Unsafe output path: {exc}"
+                raise ValueError(f"Unsafe output path: {exc}") from exc
 
         cmd = ["jobset", "run"]
         if stop_on_error:
@@ -195,7 +195,7 @@ def register(mcp: FastMCP) -> None:
             else:
                 jobset_path = Path(jobset_file).expanduser().resolve()
         except Exception as exc:
-            return f"Unsafe jobset path: {exc}"
+            raise ValueError(f"Unsafe jobset path: {exc}") from exc
 
         if not jobset_path.exists():
             return f"Jobset file not found: {jobset_file}"

@@ -753,7 +753,7 @@ def register(mcp: FastMCP) -> None:
             else:
                 in_path = Path(input_file).expanduser().resolve()
         except Exception as exc:
-            return f"Unsafe input file path: {exc}"
+            raise ValueError(f"Unsafe input file path: {exc}") from exc
 
         if not in_path.exists():
             return f"Input file was not found: {input_file}"
@@ -769,7 +769,7 @@ def register(mcp: FastMCP) -> None:
                     rep_path = Path(report_file).expanduser().resolve()
                 cmd.extend(["--report-file", str(rep_path)])
             except Exception as exc:
-                return f"Unsafe report file path: {exc}"
+                raise ValueError(f"Unsafe report file path: {exc}") from exc
 
         if output_file:
             try:
@@ -779,7 +779,7 @@ def register(mcp: FastMCP) -> None:
                     out_path = Path(output_file).expanduser().resolve()
                 cmd.extend(["--output", str(out_path)])
             except Exception as exc:
-                return f"Unsafe output file path: {exc}"
+                raise ValueError(f"Unsafe output file path: {exc}") from exc
 
         cmd.append(str(in_path))
 

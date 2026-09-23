@@ -58,7 +58,7 @@ def register(mcp: FastMCP) -> None:
             else:
                 in_path = Path(in_file).expanduser().resolve()
         except Exception as exc:
-            return f"Unsafe input path: {exc}"
+            raise ValueError(f"Unsafe input path: {exc}") from exc
 
         out_raw = output_file.strip() if output_file else ""
         if out_raw:
@@ -70,7 +70,7 @@ def register(mcp: FastMCP) -> None:
                 else:
                     out_path = str(Path(out_raw).expanduser().resolve())
             except Exception as exc:
-                return f"Unsafe output path: {exc}"
+                raise ValueError(f"Unsafe output path: {exc}") from exc
         else:
             out_path = str(in_path)
 
@@ -131,7 +131,7 @@ def register(mcp: FastMCP) -> None:
             else:
                 in_path = Path(in_file).expanduser().resolve()
         except Exception as exc:
-            return f"Unsafe input path: {exc}"
+            raise ValueError(f"Unsafe input path: {exc}") from exc
 
         out_raw = output_file.strip() if output_file else ""
         if out_raw:
@@ -143,7 +143,7 @@ def register(mcp: FastMCP) -> None:
                 else:
                     out_path = str(Path(out_raw).expanduser().resolve())
             except Exception as exc:
-                return f"Unsafe output path: {exc}"
+                raise ValueError(f"Unsafe output path: {exc}") from exc
         else:
             out_path = str(in_path)
 
