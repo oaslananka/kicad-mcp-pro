@@ -112,7 +112,18 @@ A configuration record declares all required limits. Missing required limits are
 rejected rather than replaced with permissive defaults. The optional non-negative
 `min_request_interval_seconds` field paces request start times without changing the
 payload; omitted values default to zero. The hosted NVIDIA records use five seconds to
-reduce burst pressure on trial endpoints:
+reduce burst pressure on trial endpoints.
+
+Two further optional limits spread the retry budget over time. After every planned
+observation has run once, `deferred_retry_passes` (0-3, default 0) revisits only
+observations that ended on a transient provider failure (`timeout`,
+`provider_rate_limit`, `provider_unavailable`, `model_output_invalid`), one attempt per
+observation per pass, after a `deferred_retry_cooldown_seconds` pause (0-600, default 0).
+A recovered observation is scored in its original repeat; one that still fails keeps its
+failure and its accumulated attempt count. Thresholds, planned observations, and the
+fail-closed aggregate gate are unchanged. The blocking NVIDIA record keeps a four-attempt
+budget per observation (`max_retries: 1` plus two deferred passes), so a provider brownout
+cannot exhaust every attempt at once:
 
 ```yaml
 schema_version: 1

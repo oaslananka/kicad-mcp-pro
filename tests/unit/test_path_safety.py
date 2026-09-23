@@ -37,6 +37,67 @@ def test_explicit_workspace_blocks_outside_absolute_path(tmp_path: Path, fake_cl
         cfg.resolve_within_project(outside)
 
 
+def test_rejected_project_outside_workspace_leaves_active_project_unchanged(
+    tmp_path: Path,
+    fake_cli: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    project = workspace / "project"
+    outside = tmp_path / "outside"
+    project.mkdir(parents=True)
+    outside.mkdir()
+    (outside / "evil.kicad_pcb").write_text("(kicad_pcb)", encoding="utf-8")
+    cfg = KiCadMCPConfig(kicad_cli=fake_cli, workspace_root=workspace, project_dir=project)
+    before = (
+        cfg.project_dir,
+        cfg.project_file,
+        cfg.pcb_file,
+        cfg.sch_file,
+        cfg.output_dir,
+        cfg.project_dir_is_explicit,
+    )
+
+    with pytest.raises(UnsafePathError):
+        cfg.apply_project(outside, pcb_file=outside / "evil.kicad_pcb", explicit=True)
+
+    after = (
+        cfg.project_dir,
+        cfg.project_file,
+        cfg.pcb_file,
+        cfg.sch_file,
+        cfg.output_dir,
+        cfg.project_dir_is_explicit,
+    )
+    assert after == before
+    assert cfg.project_root == project.resolve()
+    with pytest.raises(UnsafePathError):
+        cfg.resolve_within_project(outside / "evil.kicad_pcb")
+
+
+def test_rejected_output_dir_outside_workspace_leaves_active_project_unchanged(
+    tmp_path: Path,
+    fake_cli: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    project = workspace / "project"
+    other = workspace / "other"
+    project.mkdir(parents=True)
+    other.mkdir()
+    cfg = KiCadMCPConfig(kicad_cli=fake_cli, workspace_root=workspace, project_dir=project)
+    original_output = cfg.output_dir
+
+    with pytest.raises(UnsafePathError):
+        cfg.apply_project(other, output_dir=tmp_path / "escape")
+
+    assert cfg.project_dir == project.resolve()
+    assert cfg.output_dir == original_output
+
+    cfg.apply_project(other)
+
+    assert cfg.project_dir == other.resolve()
+    assert cfg.output_dir == other.resolve() / "output"
+
+
 def test_output_subdir_blocks_parent_traversal(sample_project: Path) -> None:
     cfg = KiCadMCPConfig(project_dir=sample_project)
 

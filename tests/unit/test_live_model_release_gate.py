@@ -554,14 +554,20 @@ def test_committed_baseline_records_reviewed_required_configurations() -> None:
     assert configuration["token_metrics_required"] is True
 
 
-def test_nemotron_live_configuration_reserves_request_timeout_margin_and_one_extra_retry() -> None:
+def test_nemotron_live_configuration_spreads_four_attempts_across_deferred_passes() -> None:
     configuration = load_configurations(CONFIGURATIONS)[CONFIG_IDS[0]]
+    limits = configuration.limits
 
     assert configuration.command == COMMANDS[0]
-    assert configuration.limits.timeout_seconds == 70
-    assert configuration.limits.max_retries == 3
-    assert configuration.limits.min_request_interval_seconds == 5.0
-    assert configuration.limits.max_total_cost_micros == 0
+    assert limits.timeout_seconds == 70
+    assert limits.min_request_interval_seconds == 5.0
+    assert limits.max_total_cost_micros == 0
+    # Same four-attempt budget per observation, but the last attempts run after a
+    # cool-down so one provider brownout cannot consume all of them.
+    assert limits.max_retries == 1
+    assert limits.deferred_retry_passes == 2
+    assert limits.deferred_retry_cooldown_seconds == 60.0
+    assert limits.max_retries + 1 + limits.deferred_retry_passes == 4
 
 
 def test_committed_live_smoke_subset_is_bounded_balanced_and_canonical() -> None:

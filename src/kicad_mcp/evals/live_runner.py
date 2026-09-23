@@ -309,104 +309,138 @@ def execute_evaluation(
             complete=complete,
         )
 
-    def record(execution: CaseExecution) -> None:
+    execution_cases: list[EvalCase] = []
+
+    def record(execution: CaseExecution, case: EvalCase) -> None:
         executions.append(execution)
+        execution_cases.append(case)
         if checkpoint is not None:
             checkpoint(report(complete=False))
+
+    def invoke(case: EvalCase, max_attempts: int) -> tuple[AdapterObservation | None, int]:
+        nonlocal last_request_started_at
+        attempts = 0
+        observation: AdapterObservation | None = None
+        while attempts < max_attempts:
+            attempts += 1
+            last_request_started_at = _wait_for_request_slot(
+                last_request_started_at,
+                configuration.limits.min_request_interval_seconds,
+            )
+            observation = adapter.invoke(case)
+            if observation.failure_kind in _RETRYABLE_FAILURES and attempts < max_attempts:
+                time.sleep(_retry_backoff_seconds(observation, attempts))
+                continue
+            break
+        return observation, attempts
+
+    def settle(
+        case: EvalCase,
+        run_index: int,
+        observation: AdapterObservation | None,
+        attempts: int,
+    ) -> CaseExecution:
+        nonlocal total_tool_calls, total_tokens, total_cost_micros
+        nonlocal token_observations, cost_observations, budget_exhausted
+        if observation is None:
+            return _execution_failure(case, run_index, attempts, "adapter_unavailable")
+        if observation.failure_kind is not None:
+            return _execution_failure(
+                case,
+                run_index,
+                attempts,
+                observation.failure_kind,
+                observation,
+            )
+        run = observation.run
+        if run is None:
+            return _execution_failure(case, run_index, attempts, "protocol_error", observation)
+
+        prospective_calls = total_tool_calls + len(run.called_tools)
+        prospective_tokens = total_tokens
+        prospective_cost = total_cost_micros
+        if run.total_tokens is not None:
+            prospective_tokens += run.total_tokens
+        if observation.estimated_cost_micros is not None:
+            prospective_cost += observation.estimated_cost_micros
+        total_tool_calls = prospective_calls
+        total_tokens = prospective_tokens
+        total_cost_micros = prospective_cost
+        token_budget_exceeded = (
+            run.total_tokens is not None
+            and prospective_tokens > configuration.limits.max_total_tokens
+        )
+        cost_budget_exceeded = (
+            observation.estimated_cost_micros is not None
+            and prospective_cost > configuration.limits.max_total_cost_micros
+        )
+        if (
+            prospective_calls > configuration.limits.max_total_tool_calls
+            or token_budget_exceeded
+            or cost_budget_exceeded
+        ):
+            budget_exhausted = True
+            return _execution_failure(case, run_index, attempts, "budget_exceeded", observation)
+
+        if run.total_tokens is not None:
+            token_observations += 1
+        if observation.estimated_cost_micros is not None:
+            cost_observations += 1
+        score = score_case(case, run, tool_tiers=tool_tiers)
+        score_runs[run_index].append(score)
+        return CaseExecution(
+            case_id=case.id,
+            run_index=run_index,
+            attempts=attempts,
+            observation=observation,
+            score=score,
+            failure_kind=None,
+            failure_detail=None,
+        )
 
     if checkpoint is not None:
         checkpoint(report(complete=False))
 
+    attempt_limit = configuration.limits.max_retries + 1
     for run_index in range(repeats):
         if run_index > 0:
             adapter.reset()
-        run_scores: list[CaseResult] = []
-        score_runs.append(run_scores)
+        score_runs.append([])
         for case in cases:
-            attempts = 0
-            observation: AdapterObservation | None = None
-            while attempts <= configuration.limits.max_retries:
-                attempts += 1
-                last_request_started_at = _wait_for_request_slot(
-                    last_request_started_at,
-                    configuration.limits.min_request_interval_seconds,
-                )
-                observation = adapter.invoke(case)
-                if (
-                    observation.failure_kind in _RETRYABLE_FAILURES
-                    and attempts <= configuration.limits.max_retries
-                ):
-                    time.sleep(_retry_backoff_seconds(observation, attempts))
-                    continue
+            observation, attempts = invoke(case, attempt_limit)
+            record(settle(case, run_index, observation, attempts), case)
+            if budget_exhausted:
                 break
-
-            if observation is None:
-                record(_execution_failure(case, run_index, attempts, "adapter_unavailable"))
-                continue
-            if observation.failure_kind is not None:
-                record(
-                    _execution_failure(
-                        case,
-                        run_index,
-                        attempts,
-                        observation.failure_kind,
-                        observation,
-                    )
-                )
-                continue
-            run = observation.run
-            if run is None:
-                record(_execution_failure(case, run_index, attempts, "protocol_error", observation))
-                continue
-
-            prospective_calls = total_tool_calls + len(run.called_tools)
-            prospective_tokens = total_tokens
-            prospective_cost = total_cost_micros
-            if run.total_tokens is not None:
-                prospective_tokens += run.total_tokens
-            if observation.estimated_cost_micros is not None:
-                prospective_cost += observation.estimated_cost_micros
-            total_tool_calls = prospective_calls
-            total_tokens = prospective_tokens
-            total_cost_micros = prospective_cost
-            token_budget_exceeded = (
-                run.total_tokens is not None
-                and prospective_tokens > configuration.limits.max_total_tokens
-            )
-            cost_budget_exceeded = (
-                observation.estimated_cost_micros is not None
-                and prospective_cost > configuration.limits.max_total_cost_micros
-            )
-            if (
-                prospective_calls > configuration.limits.max_total_tool_calls
-                or token_budget_exceeded
-                or cost_budget_exceeded
-            ):
-                record(
-                    _execution_failure(case, run_index, attempts, "budget_exceeded", observation)
-                )
-                budget_exhausted = True
-                break
-
-            if run.total_tokens is not None:
-                token_observations += 1
-            if observation.estimated_cost_micros is not None:
-                cost_observations += 1
-            score = score_case(case, run, tool_tiers=tool_tiers)
-            run_scores.append(score)
-            record(
-                CaseExecution(
-                    case_id=case.id,
-                    run_index=run_index,
-                    attempts=attempts,
-                    observation=observation,
-                    score=score,
-                    failure_kind=None,
-                    failure_detail=None,
-                )
-            )
         if budget_exhausted:
             break
+
+    # Hosted trial endpoints fail in bursts that outlast the inline backoff. Revisit only
+    # observations that ended on a transient provider failure, after a cool-down, so every
+    # planned observation still has to complete and be scored under unchanged thresholds.
+    for _deferred_pass in range(configuration.limits.deferred_retry_passes):
+        pending = [
+            index
+            for index, execution in enumerate(executions)
+            if execution.failure_kind in _RETRYABLE_FAILURES
+        ]
+        if budget_exhausted or not pending:
+            break
+        if configuration.limits.deferred_retry_cooldown_seconds > 0:
+            time.sleep(configuration.limits.deferred_retry_cooldown_seconds)
+        for index in pending:
+            previous = executions[index]
+            case = execution_cases[index]
+            observation, attempts = invoke(case, 1)
+            executions[index] = settle(
+                case,
+                previous.run_index,
+                observation,
+                previous.attempts + attempts,
+            )
+            if checkpoint is not None:
+                checkpoint(report(complete=False))
+            if budget_exhausted:
+                break
 
     final_report = report(complete=True)
     if checkpoint is not None:

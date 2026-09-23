@@ -92,6 +92,39 @@ configurations:
     assert alpha.limits.max_retries == 2
     assert alpha.limits.min_request_interval_seconds == 5.0
     assert replay.limits.min_request_interval_seconds == 0.0
+    assert alpha.limits.deferred_retry_passes == 0
+    assert alpha.limits.deferred_retry_cooldown_seconds == 0.0
+
+
+def test_load_configurations_accepts_bounded_deferred_retry_limits(tmp_path: Path) -> None:
+    config = tmp_path / "configurations.yaml"
+    config.write_text(
+        """\
+schema_version: 1
+configurations:
+  - id: host-alpha
+    host: alpha-cli
+    model: alpha-small
+    adapter: subprocess
+    command: [alpha-eval-adapter, --json]
+    required_env: [ALPHA_API_KEY]
+    limits:
+      timeout_seconds: 60
+      max_retries: 2
+      deferred_retry_passes: 2
+      deferred_retry_cooldown_seconds: 90
+      max_cases: 200
+      max_total_tool_calls: 300
+      max_total_tokens: 250000
+      max_total_cost_micros: 0
+""",
+        encoding="utf-8",
+    )
+
+    limits = load_configurations(config)["host-alpha"].limits
+
+    assert limits.deferred_retry_passes == 2
+    assert limits.deferred_retry_cooldown_seconds == 90.0
 
 
 @pytest.mark.parametrize(
@@ -178,6 +211,111 @@ configurations:
       max_total_cost_micros: 10000
 """,
             "min_request_interval_seconds",
+        ),
+        (
+            """\
+schema_version: 1
+configurations:
+  - id: unsafe
+    host: alpha
+    model: model
+    adapter: subprocess
+    command: [alpha-eval-adapter]
+    required_env: [ALPHA_API_KEY]
+    limits:
+      timeout_seconds: 60
+      deferred_retry_passes: 4
+      max_retries: 1
+      max_cases: 10
+      max_total_tool_calls: 20
+      max_total_tokens: 1000
+      max_total_cost_micros: 10000
+""",
+            "deferred_retry_passes",
+        ),
+        (
+            """\
+schema_version: 1
+configurations:
+  - id: unsafe
+    host: alpha
+    model: model
+    adapter: subprocess
+    command: [alpha-eval-adapter]
+    required_env: [ALPHA_API_KEY]
+    limits:
+      timeout_seconds: 60
+      deferred_retry_passes: -1
+      max_retries: 1
+      max_cases: 10
+      max_total_tool_calls: 20
+      max_total_tokens: 1000
+      max_total_cost_micros: 10000
+""",
+            "deferred_retry_passes",
+        ),
+        (
+            """\
+schema_version: 1
+configurations:
+  - id: unsafe
+    host: alpha
+    model: model
+    adapter: subprocess
+    command: [alpha-eval-adapter]
+    required_env: [ALPHA_API_KEY]
+    limits:
+      timeout_seconds: 60
+      deferred_retry_passes: true
+      max_retries: 1
+      max_cases: 10
+      max_total_tool_calls: 20
+      max_total_tokens: 1000
+      max_total_cost_micros: 10000
+""",
+            "deferred_retry_passes",
+        ),
+        (
+            """\
+schema_version: 1
+configurations:
+  - id: unsafe
+    host: alpha
+    model: model
+    adapter: subprocess
+    command: [alpha-eval-adapter]
+    required_env: [ALPHA_API_KEY]
+    limits:
+      timeout_seconds: 60
+      deferred_retry_cooldown_seconds: -5
+      max_retries: 1
+      max_cases: 10
+      max_total_tool_calls: 20
+      max_total_tokens: 1000
+      max_total_cost_micros: 10000
+""",
+            "deferred_retry_cooldown_seconds",
+        ),
+        (
+            """\
+schema_version: 1
+configurations:
+  - id: unsafe
+    host: alpha
+    model: model
+    adapter: subprocess
+    command: [alpha-eval-adapter]
+    required_env: [ALPHA_API_KEY]
+    limits:
+      timeout_seconds: 60
+      deferred_retry_cooldown_seconds: 601
+      max_retries: 1
+      max_cases: 10
+      max_total_tool_calls: 20
+      max_total_tokens: 1000
+      max_total_cost_micros: 10000
+""",
+            "deferred_retry_cooldown_seconds",
         ),
     ],
 )
@@ -916,6 +1054,217 @@ def test_runner_does_not_retry_provider_request_rejected(
     assert execution.attempts == 1
     assert execution.failure_kind == "provider_request_rejected"
     assert execution.score is None
+
+
+class _CaseFailureAdapter:
+    """Fail named cases for a fixed number of invocations, then succeed."""
+
+    def __init__(self, failures: dict[str, list[FailureKind]]) -> None:
+        self.failures = failures
+        self.invocations: list[str] = []
+
+    def reset(self) -> None:
+        return None
+
+    def invoke(self, case: EvalCase) -> AdapterObservation:
+        self.invocations.append(case.id)
+        pending = self.failures.get(case.id)
+        if pending:
+            return AdapterObservation(failure_kind=pending.pop(0))
+        return AdapterObservation.from_values(
+            called_tools=("pcb_get_board_summary",),
+            response_kind="tool_calls",
+            latency_ms=10,
+            input_tokens=20,
+            output_tokens=5,
+            estimated_cost_micros=None,
+        )
+
+
+def test_runner_recovers_transient_failure_in_deferred_retry_pass(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = tmp_path / "unused.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(
+        tmp_path,
+        trace,
+        max_retries=1,
+        deferred_retry_passes=2,
+        deferred_retry_cooldown_seconds=60,
+    )
+    waits: list[float] = []
+    monkeypatch.setattr(time, "sleep", waits.append)
+    adapter = _CaseFailureAdapter({"second": ["timeout", "timeout"]})
+
+    report = execute_evaluation(
+        [_case("first"), _case("second"), _case("third")],
+        configuration,
+        adapter,
+        repeats=1,
+        source_revision="a" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    assert adapter.invocations == ["first", "second", "second", "third", "second"]
+    assert waits == [1.0, 60.0]
+    assert [execution.case_id for execution in report.executions] == [
+        "first",
+        "second",
+        "third",
+    ]
+    recovered = report.executions[1]
+    assert recovered.failure_kind is None
+    assert recovered.attempts == 3
+    assert recovered.score is not None
+    assert report.summary["completed_observations"] == 3
+    assert report.summary["adapter_failures"] == 0
+    assert report.summary["pipeline_passed"] is True
+
+
+def test_runner_keeps_failure_when_deferred_retries_are_exhausted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = tmp_path / "unused.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(
+        tmp_path,
+        trace,
+        max_retries=0,
+        deferred_retry_passes=2,
+        deferred_retry_cooldown_seconds=45,
+    )
+    waits: list[float] = []
+    monkeypatch.setattr(time, "sleep", waits.append)
+    adapter = _CaseFailureAdapter({"board": ["timeout", "provider_unavailable", "timeout"]})
+
+    report = execute_evaluation(
+        [_case()],
+        configuration,
+        adapter,
+        repeats=1,
+        source_revision="a" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    execution = report.executions[0]
+    assert adapter.invocations == ["board", "board", "board"]
+    assert waits == [45.0, 45.0]
+    assert execution.failure_kind == "timeout"
+    assert execution.attempts == 3
+    assert report.summary["adapter_failures"] == 1
+    assert report.summary["completed_observations"] == 0
+    assert report.summary["pipeline_passed"] is False
+
+
+def test_runner_does_not_defer_non_transient_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = tmp_path / "unused.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(
+        tmp_path,
+        trace,
+        max_retries=0,
+        deferred_retry_passes=2,
+        deferred_retry_cooldown_seconds=30,
+    )
+    waits: list[float] = []
+    monkeypatch.setattr(time, "sleep", waits.append)
+    adapter = _CaseFailureAdapter({"board": ["provider_request_rejected"]})
+
+    report = execute_evaluation(
+        [_case()],
+        configuration,
+        adapter,
+        repeats=1,
+        source_revision="a" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    assert adapter.invocations == ["board"]
+    assert waits == []
+    assert report.executions[0].failure_kind == "provider_request_rejected"
+    assert report.summary["adapter_failures"] == 1
+
+
+def test_runner_scores_deferred_recovery_in_its_original_repeat(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = tmp_path / "unused.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(
+        tmp_path,
+        trace,
+        max_retries=0,
+        deferred_retry_passes=1,
+        deferred_retry_cooldown_seconds=0,
+    )
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    adapter = _CaseFailureAdapter({"board": ["timeout"]})
+
+    report = execute_evaluation(
+        [_case(), _case("second")],
+        configuration,
+        adapter,
+        repeats=2,
+        source_revision="a" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    assert [(item.case_id, item.run_index) for item in report.executions] == [
+        ("board", 0),
+        ("second", 0),
+        ("board", 1),
+        ("second", 1),
+    ]
+    assert report.executions[0].failure_kind is None
+    assert report.summary["runs"] == 2
+    assert report.summary["observations"] == 4
+    assert report.summary["instability_rate"] == 0.0
+    assert report.summary["pipeline_passed"] is True
+
+
+def test_runner_skips_deferred_retries_after_budget_exhaustion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = tmp_path / "unused.jsonl"
+    trace.write_text("", encoding="utf-8")
+    configuration = _replay_configuration(
+        tmp_path,
+        trace,
+        max_retries=0,
+        max_total_tool_calls=1,
+        deferred_retry_passes=2,
+        deferred_retry_cooldown_seconds=30,
+    )
+    waits: list[float] = []
+    monkeypatch.setattr(time, "sleep", waits.append)
+    adapter = _CaseFailureAdapter({"first": ["timeout"]})
+
+    report = execute_evaluation(
+        [_case("first"), _case("second"), _case("third")],
+        configuration,
+        adapter,
+        repeats=1,
+        source_revision="a" * 40,
+        thresholds=_thresholds(tmp_path),
+        tool_tiers={"pcb_get_board_summary": "read"},
+    )
+
+    assert adapter.invocations == ["first", "second", "third"]
+    assert waits == []
+    assert report.executions[0].failure_kind == "timeout"
+    assert report.executions[-1].failure_kind == "budget_exceeded"
 
 
 def test_runner_stops_on_budget_exhaustion_and_separates_missing_telemetry(tmp_path: Path) -> None:

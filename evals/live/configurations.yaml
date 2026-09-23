@@ -23,7 +23,9 @@ configurations:
     limits:
       timeout_seconds: 70
       min_request_interval_seconds: 5
-      max_retries: 3
+      max_retries: 1
+      deferred_retry_passes: 2
+      deferred_retry_cooldown_seconds: 60
       max_cases: 325
       max_total_tool_calls: 1000
       max_total_tokens: 3000000

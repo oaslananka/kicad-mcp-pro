@@ -608,15 +608,38 @@ class KiCadMCPConfig(BaseSettings):
         output_dir: Path | None = None,
         explicit: bool = True,
     ) -> None:
-        """Mutate the active project settings."""
-        self.project_dir = project_dir.resolve()
-        self.project_file = project_file.resolve() if project_file else None
-        self.pcb_file = pcb_file.resolve() if pcb_file else None
-        self.sch_file = sch_file.resolve() if sch_file else None
-        self.output_dir = output_dir.resolve() if output_dir else self.project_dir / "output"
-        self._validate_workspace_membership()
-        self._project_dir_explicit = explicit
-        self._refresh_paths()
+        """Mutate the active project settings, or leave them untouched if rejected."""
+        previous = (
+            self.project_dir,
+            self.project_file,
+            self.pcb_file,
+            self.sch_file,
+            self.output_dir,
+            self.symbol_library_dir,
+            self.footprint_library_dir,
+            self._project_dir_explicit,
+        )
+        try:
+            self.project_dir = project_dir.resolve()
+            self.project_file = project_file.resolve() if project_file else None
+            self.pcb_file = pcb_file.resolve() if pcb_file else None
+            self.sch_file = sch_file.resolve() if sch_file else None
+            self.output_dir = output_dir.resolve() if output_dir else self.project_dir / "output"
+            self._validate_workspace_membership()
+            self._project_dir_explicit = explicit
+            self._refresh_paths()
+        except BaseException:
+            (
+                self.project_dir,
+                self.project_file,
+                self.pcb_file,
+                self.sch_file,
+                self.output_dir,
+                self.symbol_library_dir,
+                self.footprint_library_dir,
+                self._project_dir_explicit,
+            ) = previous
+            raise
 
     @property
     def cors_origin_list(self) -> list[str]:
