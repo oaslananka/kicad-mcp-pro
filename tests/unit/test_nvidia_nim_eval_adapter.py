@@ -1555,6 +1555,56 @@ def test_output_postcondition_maps_check_to_unique_evaluation_tool() -> None:
     )
 
 
+def test_output_postcondition_replaces_noninspection_exports_for_readability_review() -> None:
+    root = Path(__file__).resolve().parents[2]
+    catalog = load_eval_tool_catalog(
+        root / "evals/tool_selection/cases.yaml",
+        root / "docs/tools-reference.generated.md",
+    )
+
+    result = _request_postcondition_result(
+        prompt=(
+            "Check the schematic for overlapping labels and readability problems "
+            "without fixing them."
+        ),
+        model_response="tool_calls",
+        selected_tools=("export_gerber", "export_bom"),
+        catalog=tuple(tool.as_dict() for tool in catalog),
+    )
+
+    _assert_decision(
+        result,
+        response_kind="tool_calls",
+        called_tools=["sch_visual_qa"],
+    )
+
+
+def test_output_postcondition_preserves_explicit_export_during_inspection() -> None:
+    result = _request_postcondition_result(
+        prompt="Check schematic readability and export a schematic PDF.",
+        model_response="tool_calls",
+        selected_tools=("export_sch_pdf",),
+        catalog=(
+            {
+                "name": "sch_visual_qa",
+                "summary": "Run headless visual/readability QA on the active schematic sheet(s).",
+                "data_loss_risk": False,
+            },
+            {
+                "name": "export_sch_pdf",
+                "summary": "Export the active schematic as PDF.",
+                "data_loss_risk": False,
+            },
+        ),
+    )
+
+    _assert_decision(
+        result,
+        response_kind="tool_calls",
+        called_tools=["export_sch_pdf"],
+    )
+
+
 def test_output_postcondition_selects_more_specific_read_only_inspection_tool() -> None:
     result = _request_postcondition_result(
         prompt="Show all unconnected PCB nets.",

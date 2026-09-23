@@ -228,7 +228,19 @@ _INSPECTION_PROMPT_TERMS = frozenset(
     {"inspect", "check", "checking", "checked", "evaluate", "review", "summary", "overview"}
 )
 _INSPECTION_TOOL_TERMS = frozenset(
-    {"inspect", "check", "evaluate", "show", "get", "list", "report", "validate", "quality", "gate"}
+    {
+        "inspect",
+        "check",
+        "evaluate",
+        "show",
+        "get",
+        "list",
+        "report",
+        "validate",
+        "quality",
+        "gate",
+        "qa",
+    }
 )
 _INSPECTION_OBJECT_TERMS = _DIRECT_OBJECT_TERMS | frozenset(
     {
@@ -245,6 +257,9 @@ _INSPECTION_OBJECT_TERMS = _DIRECT_OBJECT_TERMS | frozenset(
 )
 _READ_ONLY_SPECIFICITY_PROMPT_TERMS = _INSPECTION_PROMPT_TERMS | frozenset(
     {"show", "list", "get", "return", "report"}
+)
+_HIGH_SIGNAL_INSPECTION_TERMS = frozenset(
+    {"readability", "placement", "transfer", "parity", "unconnected", "quality", "health"}
 )
 _MUTATING_TOOL_TERMS = _DESTRUCTIVE_TERMS | frozenset(
     {"add", "create", "generate", "move", "set", "write", "save", "place", "sync", "apply"}
@@ -1026,14 +1041,39 @@ def _unique_inspection_tool_match(
         matched_objects = tool_tokens & prompt_objects
         if not matched_objects:
             continue
+        high_signal_score = len(matched_objects & _HIGH_SIGNAL_INSPECTION_TERMS)
         domain_score = len(matched_objects & _DIRECT_DOMAIN_TERMS)
-        semantic_score = len(matched_objects - _DIRECT_DOMAIN_TERMS)
-        scored.append((semantic_score * 100 + domain_score * 10, name))
+        semantic_score = len(matched_objects - _DIRECT_DOMAIN_TERMS - _HIGH_SIGNAL_INSPECTION_TERMS)
+        scored.append((high_signal_score * 1000 + semantic_score * 100 + domain_score * 10, name))
     if not scored:
         return None
     best_score = max(score for score, _name in scored)
     best = sorted(name for score, name in scored if score == best_score)
     return best[0] if len(best) == 1 else None
+
+
+def _selected_tools_are_read_only_inspection_tools(
+    observation: Mapping[str, object],
+    catalog: Sequence[Mapping[str, object]],
+) -> bool:
+    """Return whether every selected tool is a non-mutating inspection tool."""
+    if observation.get("response_kind") != "tool_calls":
+        return False
+    called = observation.get("called_tools")
+    if not isinstance(called, list | tuple) or not called:
+        return False
+    catalog_by_name = {str(item.get("name", "")): item for item in catalog}
+    for raw_name in called:
+        name = str(raw_name)
+        item = catalog_by_name.get(name)
+        if item is None:
+            return False
+        tool_tokens = _inspection_tokens(f"{name} {str(item.get('summary', ''))}")
+        if tool_tokens & _MUTATING_TOOL_TERMS:
+            return False
+        if not tool_tokens & _INSPECTION_TOOL_TERMS:
+            return False
+    return True
 
 
 def _unique_more_specific_read_only_inspection_match(
@@ -1193,9 +1233,25 @@ def _apply_policy_postconditions(
         if tool is not None:
             return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
 
-    tool = _unique_more_specific_read_only_inspection_match(
-        observation, prompt=prompt, catalog=catalog
+    prompt_inspection_tokens = _inspection_tokens(prompt)
+    positive_direct_intents = _positive_direct_intents(prompt)
+    pure_inspection_prompt = (
+        "inspect" in prompt_inspection_tokens
+        and bool(prompt_inspection_tokens & _HIGH_SIGNAL_INSPECTION_TERMS)
+        and not positive_direct_intents
     )
+    if pure_inspection_prompt and not _selected_tools_are_read_only_inspection_tools(
+        observation, catalog
+    ):
+        tool = _unique_inspection_tool_match(prompt=prompt, catalog=catalog)
+        if tool is not None:
+            return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
+
+    tool = None
+    if not positive_direct_intents & {"export", "generate"}:
+        tool = _unique_more_specific_read_only_inspection_match(
+            observation, prompt=prompt, catalog=catalog
+        )
     if tool is not None:
         return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
 
