@@ -458,6 +458,10 @@ def build_chat_payload(
     else:
         raise ValueError("Unsupported chat request profile.")
     if model == _NEMOTRON_MODEL:
+        # NVIDIA documents raising max_tokens when structured JSON finishes with
+        # finish_reason=length. Keep reasoning disabled so this budget is reserved
+        # for the compact classifier object rather than an internal reasoning trace.
+        payload["max_tokens"] = 512
         payload["chat_template_kwargs"] = {"enable_thinking": False}
     elif model == _MISTRAL_MEDIUM_MODEL:
         payload["reasoning_effort"] = "none"

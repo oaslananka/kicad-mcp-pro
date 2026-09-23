@@ -557,6 +557,7 @@ def test_hosted_model_profiles_disable_unneeded_reasoning() -> None:
     assert minimax["chat_template_kwargs"] == {"thinking_mode": "disabled"}
     assert gemma["chat_template_kwargs"] == {"enable_thinking": False}
     assert "reasoning_effort" not in nemotron
+    assert nemotron["max_tokens"] == 512
     assert nemotron["chat_template_kwargs"] == {"enable_thinking": False}
 
 
