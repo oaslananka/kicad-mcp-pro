@@ -48,6 +48,7 @@ _PROVIDER_REQUEST_FIELD_DETAILS: dict[str, FailureDetail] = {
     "stream": "request_stream",
 }
 _GEMMA_MODEL = "google/gemma-4-31b-it"
+_GPT_OSS_20B_MODEL = "openai/gpt-oss-20b"
 _RESPONSE_KINDS = frozenset({"tool_calls", "answer", "confirmation", "refusal"})
 _TOOL_ROW = re.compile(
     r"^\| `([^`]+)` \| [^|]* \| (?:yes|no) \| (yes|no) \|"
@@ -457,7 +458,10 @@ def build_chat_payload(
         }
     else:
         raise ValueError("Unsupported chat request profile.")
-    if model == _NEMOTRON_MODEL:
+    if model == _GPT_OSS_20B_MODEL:
+        payload["reasoning_effort"] = "low"
+        payload["max_tokens"] = 512
+    elif model == _NEMOTRON_MODEL:
         payload["chat_template_kwargs"] = {"enable_thinking": False}
     elif model == _MISTRAL_MEDIUM_MODEL:
         payload["reasoning_effort"] = "none"

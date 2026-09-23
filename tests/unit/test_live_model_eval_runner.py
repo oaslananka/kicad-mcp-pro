@@ -1090,6 +1090,7 @@ def test_committed_meta_llama_candidate_is_nonblocking_and_key_scoped() -> None:
 def test_committed_nvidia_replacement_candidates_are_nonblocking_and_key_scoped() -> None:
     configurations = load_configurations(COMMITTED_LIVE_CONFIG)
     expected = {
+        "nvidia-gpt-oss-20b": ("openai/gpt-oss-20b", None, 70.0),
         "nvidia-qwen3-next-80b-a3b-instruct": (
             "qwen/qwen3-next-80b-a3b-instruct",
             "65",
@@ -1103,17 +1104,23 @@ def test_committed_nvidia_replacement_candidates_are_nonblocking_and_key_scoped(
         assert configuration.host == "nvidia-nim"
         assert configuration.model == model
         assert configuration.required_env == ("NVIDIA_API_KEY",)
-        assert configuration.command == (
-            "python",
-            "scripts/nvidia_nim_eval_adapter.py",
-            "--model",
-            model,
-            "--timeout-seconds",
-            request_timeout,
-            "--structured-output",
-            "none",
+        command = ["python", "scripts/nvidia_nim_eval_adapter.py", "--model", model]
+        if request_timeout is not None:
+            command.extend(["--timeout-seconds", request_timeout])
+        command.extend(
+            [
+                "--structured-output",
+                "json_object" if configuration_id == "nvidia-gpt-oss-20b" else "none",
+            ]
         )
+        assert configuration.command == tuple(command)
         assert configuration.limits.timeout_seconds == subprocess_timeout
+
+    gpt_oss = configurations["nvidia-gpt-oss-20b"]
+    assert gpt_oss.limits.max_cases == 11
+    assert gpt_oss.limits.min_request_interval_seconds == 5.0
+    assert gpt_oss.limits.max_total_tokens == 100_000
+    assert gpt_oss.limits.max_total_cost_micros == 0
 
 
 def test_committed_opencode_cli_blocking_record_is_key_scoped() -> None:
