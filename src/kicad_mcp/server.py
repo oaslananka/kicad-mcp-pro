@@ -533,6 +533,8 @@ def _tool_failure_message(tool_name: str, result: object) -> str | None:
         or first_line.endswith(" failed.")
         or " is unavailable:" in first_line
         or first_line.startswith("invalid output path:")
+        or first_line.startswith("could not ")
+        or first_line.startswith("failed to ")
     ):
         return text
     return None

@@ -481,6 +481,88 @@ async def test_cli_nonzero_result_returns_structured_error(
     assert "Gerber export failed" in text
 
 
+def test_tool_failure_message_detects_could_not_and_failed_to_prefixes() -> None:
+    """The generic fallback used to miss two common failure phrasings.
+
+    Dozens of tool implementations report a failed operation as "Could not
+    <verb> ...: <reason>" or "Failed to <verb> ...: <reason>" (as opposed to
+    the "<subject> failed: <reason>" shape the heuristic already recognized).
+    Neither prefix matched, so those results were returned as ordinary
+    (non-error) CallToolResults.
+    """
+    from kicad_mcp.server import _tool_failure_message
+
+    assert (
+        _tool_failure_message("sch_instantiate_template", "Could not parse template 'x': bad")
+        == "Could not parse template 'x': bad"
+    )
+    assert (
+        _tool_failure_message("pcb_get_origin", "Failed to get origin: connection refused")
+        == "Failed to get origin: connection refused"
+    )
+    # Case-insensitive, and only the first line needs to match.
+    assert _tool_failure_message("t", "could not read the file: oops") is not None
+    assert _tool_failure_message("t", "Could not write the file: oops\nDetails: ...") is not None
+
+
+def test_tool_failure_message_does_not_flag_intentional_non_error_text() -> None:
+    """Messages that report a successful (or intentionally no-op) outcome
+    using similar vocabulary must not be reclassified as failures."""
+    from kicad_mcp.server import _tool_failure_message
+
+    assert (
+        _tool_failure_message("t", "Sheet is already 'A3' (420 x 297 mm). No change made.") is None
+    )
+    assert (
+        _tool_failure_message(
+            "t",
+            "Zone refill skipped — KiCad is not running. "
+            "Open the PCB in KiCad and run Edit > Fill All Zones (B) manually.",
+        )
+        is None
+    )
+    assert (
+        _tool_failure_message(
+            "t", "The schematic was updated. Reload it manually in KiCad if needed."
+        )
+        is None
+    )
+    assert _tool_failure_message("t", "No subcircuit templates are available.") is None
+    assert (
+        _tool_failure_message(
+            "t",
+            "auto-placement completed but live postcondition verification could not complete.",
+        )
+        is None
+    )
+
+
+@pytest.mark.anyio
+async def test_template_parse_failure_is_reported_as_tool_error(monkeypatch) -> None:
+    """sch_instantiate_template's ``except Exception`` branch returns
+    "Could not parse template ...: ..." without raising. Before widening the
+    server's generic failure heuristic, this reached the caller as an
+    ordinary (non-error) result."""
+    import yaml
+
+    def _raise_safe_load(_stream: object) -> object:
+        raise yaml.YAMLError("mapping values are not allowed here")
+
+    monkeypatch.setattr(yaml, "safe_load", _raise_safe_load)
+    get_config().operating_mode = "write"
+
+    server = build_server("full")
+    result = await server.call_tool(
+        "sch_instantiate_template", {"template_name": "CAN_transceiver"}
+    )
+
+    assert isinstance(result, CallToolResult)
+    assert result.isError is True
+    text = result.content[0].text
+    assert "Could not parse template 'CAN_transceiver'" in text
+    assert "Hint:" in text
+
+
 @pytest.mark.anyio
 async def test_export_gerber_sends_progress_notifications(
     sample_project: Path,
