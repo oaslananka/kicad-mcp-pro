@@ -10,6 +10,29 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.35.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.34.8...mcp-server-v3.35.0) (2026-09-24)
+
+
+### Features
+
+* add hardened OpenCode PR repair automation ([#921](https://github.com/oaslananka/kicad-mcp-pro/issues/921)) ([1d55c02](https://github.com/oaslananka/kicad-mcp-pro/commit/1d55c02e2f66c4a0bef7cd81aa7236427959500a))
+
+
+### Bug Fixes
+
+* defer transient live-model retries; keep active project on rejected apply_project ([#933](https://github.com/oaslananka/kicad-mcp-pro/issues/933)) ([79f07bf](https://github.com/oaslananka/kicad-mcp-pro/commit/79f07bfa0688f401c9e043d06e6fe672b184ba9f))
+* **evals:** allow policy-defined single smoke config ([#929](https://github.com/oaslananka/kicad-mcp-pro/issues/929)) ([94a98f3](https://github.com/oaslananka/kicad-mcp-pro/commit/94a98f383fbc6e4fb281297ed92560f05151b08e))
+* **evals:** guard read-only inspection selection ([#932](https://github.com/oaslananka/kicad-mcp-pro/issues/932)) ([0aad8e3](https://github.com/oaslananka/kicad-mcp-pro/commit/0aad8e32fad6721d499b25ca10065ed80d36da9c))
+* **evals:** prevent Nemotron JSON truncation ([#930](https://github.com/oaslananka/kicad-mcp-pro/issues/930)) ([10fc22d](https://github.com/oaslananka/kicad-mcp-pro/commit/10fc22dc6606fce96943e9b6c4df6d82224bed69))
+* **evals:** tolerate one retried-out live-model observation in the release gate ([#938](https://github.com/oaslananka/kicad-mcp-pro/issues/938)) ([8cd3f33](https://github.com/oaslananka/kicad-mcp-pro/commit/8cd3f333c680f2764eda853cc68001b3be2e6bc2))
+* **evals:** tolerate shared NIM telemetry jitter ([#931](https://github.com/oaslananka/kicad-mcp-pro/issues/931)) ([12ab803](https://github.com/oaslananka/kicad-mcp-pro/commit/12ab8031f7aac6938b207e0df6aa9d23a044c169))
+* harden OpenCode repair publishing permissions ([#923](https://github.com/oaslananka/kicad-mcp-pro/issues/923)) ([203c150](https://github.com/oaslananka/kicad-mcp-pro/commit/203c150254beb72a087f996cef4eac73728f5e70))
+* **net:** call Track.length() instead of dividing the bound method ([#919](https://github.com/oaslananka/kicad-mcp-pro/issues/919)) ([30d02c7](https://github.com/oaslananka/kicad-mcp-pro/commit/30d02c76b74b95ab83d588d43cbbf33630014e7f))
+* **release:** decouple optional live-model providers ([#928](https://github.com/oaslananka/kicad-mcp-pro/issues/928)) ([e6f9c68](https://github.com/oaslananka/kicad-mcp-pro/commit/e6f9c68d7d242a4b6ef923712da8fa1c19acc065))
+* **server:** detect "Could not ..." and "Failed to ..." tool failures ([#936](https://github.com/oaslananka/kicad-mcp-pro/issues/936)) ([2009860](https://github.com/oaslananka/kicad-mcp-pro/commit/2009860a07ebfadd4df6158335da4b941a5d10ac))
+* **tools:** raise on unsafe footprint path; widen tool-failure heuristic further ([#937](https://github.com/oaslananka/kicad-mcp-pro/issues/937)) ([eed5125](https://github.com/oaslananka/kicad-mcp-pro/commit/eed5125c5bca911ad8281941d584e636b699ebac))
+* **tools:** raise on unsafe path rejections instead of returning text ([#935](https://github.com/oaslananka/kicad-mcp-pro/issues/935)) ([3039075](https://github.com/oaslananka/kicad-mcp-pro/commit/303907528eaffe9c31987682197f7d5a94630420))
+
 ## [3.34.8](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.34.7...mcp-server-v3.34.8) (2026-09-21)
 
 
