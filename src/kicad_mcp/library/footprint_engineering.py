@@ -107,7 +107,7 @@ class LibraryFootprintEngineeringService:
         try:
             path = self.resolve_within_project(footprint_path)
         except Exception as exc:  # noqa: BLE001 - surface any path-safety rejection
-            return f"Invalid footprint path: {exc}"
+            raise ValueError(f"Invalid footprint path: {exc}") from exc
         if not path.exists():
             return f"Footprint file not found: {path}"
         text = path.read_text(encoding="utf-8", errors="ignore")
@@ -139,7 +139,7 @@ class LibraryFootprintEngineeringService:
         try:
             path = self.resolve_within_project(footprint_path)
         except Exception as exc:  # noqa: BLE001 - surface any path-safety rejection
-            return f"Invalid footprint path: {exc}"
+            raise ValueError(f"Invalid footprint path: {exc}") from exc
         if not path.exists():
             return f"Footprint file not found: {path}"
         text = path.read_text(encoding="utf-8", errors="ignore")

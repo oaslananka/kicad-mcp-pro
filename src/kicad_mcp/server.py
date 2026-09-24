@@ -535,6 +535,10 @@ def _tool_failure_message(tool_name: str, result: object) -> str | None:
         or first_line.startswith("invalid output path:")
         or first_line.startswith("could not ")
         or first_line.startswith("failed to ")
+        or first_line.startswith("template tools require ")
+        or first_line.startswith("kikit panelization timed out")
+        or first_line.startswith("manufacturing evidence")
+        or first_line.startswith("manufacturing reference approval")
     ):
         return text
     return None

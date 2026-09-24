@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 
 def _module() -> ModuleType:
     spec = importlib.util.find_spec("kicad_mcp.library.footprint_engineering")
@@ -81,12 +83,11 @@ def test_generate_footprint_rejects_invalid_density_before_writing(tmp_path: Pat
     assert not (tmp_path / "output").exists()
 
 
-def test_validate_footprint_preserves_path_safety_error(tmp_path: Path) -> None:
+def test_validate_footprint_raises_on_path_safety_error(tmp_path: Path) -> None:
     service, _ = _service(tmp_path, resolve_error=ValueError("outside project"))
 
-    result = service.validate_footprint_ipc7351("../unsafe.kicad_mod", "0805")
-
-    assert result == "Invalid footprint path: outside project"
+    with pytest.raises(ValueError, match="Invalid footprint path: outside project"):
+        service.validate_footprint_ipc7351("../unsafe.kicad_mod", "0805")
 
 
 def test_validate_footprint_reports_missing_file(tmp_path: Path) -> None:
@@ -138,12 +139,13 @@ def test_validate_footprint_reports_invalid_size_code(tmp_path: Path) -> None:
     assert result.startswith("Validation failed:")
 
 
-def test_certify_footprint_preserves_path_and_missing_file_errors(tmp_path: Path) -> None:
+def test_certify_footprint_raises_on_path_safety_error(tmp_path: Path) -> None:
     unsafe, _ = _service(tmp_path, resolve_error=ValueError("outside project"))
-    assert unsafe.certify_footprint("../unsafe.kicad_mod") == (
-        "Invalid footprint path: outside project"
-    )
+    with pytest.raises(ValueError, match="Invalid footprint path: outside project"):
+        unsafe.certify_footprint("../unsafe.kicad_mod")
 
+
+def test_certify_footprint_preserves_missing_file_error(tmp_path: Path) -> None:
     service, _ = _service(tmp_path)
     assert service.certify_footprint("missing.kicad_mod") == (
         f"Footprint file not found: {tmp_path / 'missing.kicad_mod'}"

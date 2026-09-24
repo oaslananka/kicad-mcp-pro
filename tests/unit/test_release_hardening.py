@@ -537,6 +537,46 @@ def test_tool_failure_message_does_not_flag_intentional_non_error_text() -> None
     )
 
 
+def test_tool_failure_message_detects_missing_dependency_and_manufacturing_evidence() -> None:
+    """A handful of genuine top-level tool failures used other unrecognized shapes:
+
+    a missing-dependency message with no "failed"/"could not" wording, a
+    subprocess-timeout message, and the ``export_manufacturing_package``
+    approval-evidence rejections (``_load_approval_evidence`` /
+    ``_verify_approved_project_files`` / ``_current_approved_project_files``).
+    None of these matched any existing prefix, so they reached the caller as
+    an ordinary (non-error) result.
+    """
+    from kicad_mcp.server import _tool_failure_message
+
+    assert (
+        _tool_failure_message(
+            "sch_list_subcircuit_templates",
+            "Template tools require PyYAML. Install it to inspect bundled templates.",
+        )
+        is not None
+    )
+    assert (
+        _tool_failure_message("pcb_panelize", "KiKit panelization timed out after 120 seconds.")
+        is not None
+    )
+    assert (
+        _tool_failure_message(
+            "export_manufacturing_package",
+            "Manufacturing evidence path is invalid: outside project\n"
+            "- Run project_signoff_report() before final release export.",
+        )
+        is not None
+    )
+    assert (
+        _tool_failure_message(
+            "export_manufacturing_package",
+            "Manufacturing reference approval requires bound project state evidence.",
+        )
+        is not None
+    )
+
+
 @pytest.mark.anyio
 async def test_template_parse_failure_is_reported_as_tool_error(monkeypatch) -> None:
     """sch_instantiate_template's ``except Exception`` branch returns
