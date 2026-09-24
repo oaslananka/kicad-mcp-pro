@@ -1,0 +1,89 @@
+.kmcp-support-links {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: 0.55rem;
+  white-space: nowrap;
+}
+
+.kmcp-support-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.32rem;
+  min-height: 1.85rem;
+  padding: 0.2rem 0.58rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.kmcp-support-link:hover {
+  transform: translateY(-1px);
+  text-decoration: none;
+  box-shadow: 0 0.2rem 0.65rem rgba(0, 0, 0, 0.18);
+}
+
+.kmcp-support-link:focus-visible {
+  outline: 0.15rem solid var(--md-accent-fg-color);
+  outline-offset: 0.12rem;
+}
+
+.kmcp-support-link svg {
+  width: 0.82rem;
+  height: 0.82rem;
+  fill: currentColor;
+  flex: none;
+}
+
+.kmcp-support-link--github {
+  color: #bf3989;
+  background: color-mix(in srgb, #bf3989 10%, transparent);
+  border-color: color-mix(in srgb, #bf3989 55%, transparent);
+}
+
+.kmcp-support-link--coffee {
+  color: #171717;
+  background: #ffdd00;
+  border-color: #e7c700;
+}
+
+[data-md-color-scheme="slate"] .kmcp-support-link--github {
+  color: #ff8ccf;
+  background: rgba(255, 140, 207, 0.1);
+  border-color: rgba(255, 140, 207, 0.45);
+}
+
+@media screen and (max-width: 76.234375em) {
+  .kmcp-support-link {
+    padding-inline: 0.42rem;
+  }
+
+  .kmcp-support-link span {
+    display: none;
+  }
+}
+
+@media screen and (max-width: 44.984375em) {
+  .kmcp-support-links {
+    gap: 0.28rem;
+    margin-left: 0.2rem;
+  }
+
+  .kmcp-support-link {
+    min-width: 1.75rem;
+    min-height: 1.75rem;
+    padding: 0.22rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kmcp-support-link {
+    transition: none;
+  }
+}
