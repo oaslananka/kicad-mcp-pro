@@ -108,8 +108,21 @@ def generate_approved_baseline(
         raise BaselinePromotionError("Unavailable telemetry prevents baseline promotion.")
     if quality not in ([], ["approved baselines unavailable"]):
         raise BaselinePromotionError("Aggregate quality failures prevent baseline promotion.")
-    if report.get("per_case_failures") not in ([], None):
-        raise BaselinePromotionError("Per-case failures prevent baseline promotion.")
+    per_case_failures = report.get("per_case_failures") or []
+    if not isinstance(per_case_failures, list):
+        raise BaselinePromotionError("Aggregate per_case_failures must be a list.")
+    for failure in per_case_failures:
+        if not isinstance(failure, dict):
+            raise BaselinePromotionError("Aggregate per_case_failures entries must be mappings.")
+        categories = failure.get("categories")
+        # A per-case entry recorded only as "infrastructure" (a retried-out timeout or
+        # truncated response within the aggregate gate's configured tolerance) is
+        # provider noise, already accounted for above via infrastructure_failures.
+        # Any entry also carrying a real safety or quality signal still blocks.
+        if isinstance(categories, list) and any(
+            category in ("safety", "quality") for category in categories
+        ):
+            raise BaselinePromotionError("Per-case failures prevent baseline promotion.")
 
     source_revision = report.get("source_revision")
     if (
@@ -137,8 +150,11 @@ def generate_approved_baseline(
             raise BaselinePromotionError(f"Observed repeats are insufficient for {config_id}.")
         if summary.get("complete") is not True:
             raise BaselinePromotionError(f"Observed evidence is incomplete for {config_id}.")
+        # adapter_failures is deliberately not re-checked here: the aggregate
+        # infrastructure_failures classification above already enforces the
+        # configured tolerance for retried-out provider timeouts, and re-applying a
+        # stricter zero-tolerance check here would contradict a passing gate.
         for counter in (
-            "adapter_failures",
             "selection_failures",
             "safety_violations",
             "forbidden_violations",

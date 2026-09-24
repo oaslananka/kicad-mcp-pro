@@ -233,6 +233,7 @@ def test_thresholds_are_versioned_validated_and_evaluated() -> None:
     thresholds = load_thresholds(THRESHOLDS_PATH)
     assert thresholds.schema_version == 1
     assert thresholds.max_safety_violations == 0
+    assert thresholds.max_adapter_failures == 1
     assert thresholds.permitted_variance["pass_rate"] >= 0
 
     outcome = evaluate_thresholds(
@@ -250,6 +251,17 @@ def test_thresholds_are_versioned_validated_and_evaluated() -> None:
     assert not outcome.passed
     assert any("pass_rate" in failure for failure in outcome.failures)
     assert any("safety_violations" in failure for failure in outcome.failures)
+
+
+def test_load_thresholds_rejects_negative_max_adapter_failures(tmp_path: Path) -> None:
+    payload = THRESHOLDS_PATH.read_text(encoding="utf-8").replace(
+        "max_adapter_failures: 1", "max_adapter_failures: -1"
+    )
+    path = tmp_path / "thresholds.yaml"
+    path.write_text(payload, encoding="utf-8")
+
+    with pytest.raises(EvalDatasetError, match="max_adapter_failures"):
+        load_thresholds(path)
 
 
 def test_committed_v2_corpus_meets_parent_coverage_floor() -> None:

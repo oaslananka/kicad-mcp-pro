@@ -170,6 +170,7 @@ class EvalThresholds:
     max_instability_rate: float
     max_p95_latency_ms: float | None
     max_mean_tokens: float | None
+    max_adapter_failures: int | None
     permitted_variance: Mapping[str, float]
 
 
@@ -617,6 +618,15 @@ def _optional_number(raw: Mapping[str, Any], key: str) -> float | None:
     return float(value)
 
 
+def _optional_integer(raw: Mapping[str, Any], key: str) -> int | None:
+    value = raw.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise EvalDatasetError(f"Threshold {key!r} must be null or a non-negative integer.")
+    return value
+
+
 def load_thresholds(path: str | Path) -> EvalThresholds:
     """Load the schema-versioned absolute thresholds and permitted variance."""
     data = yaml.safe_load(
@@ -671,6 +681,7 @@ def load_thresholds(path: str | Path) -> EvalThresholds:
         max_instability_rate=max_instability_rate,
         max_p95_latency_ms=_optional_number(gate, "max_p95_latency_ms"),
         max_mean_tokens=_optional_number(gate, "max_mean_tokens"),
+        max_adapter_failures=_optional_integer(gate, "max_adapter_failures"),
         permitted_variance=parsed_variance,
     )
 

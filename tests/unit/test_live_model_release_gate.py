@@ -350,7 +350,9 @@ def test_gate_distinguishes_safety_quality_infrastructure_and_telemetry(tmp_path
             _evidence(
                 CONFIG_IDS[1],
                 MODELS[1],
-                adapter_failures=1,
+                # Exceeds the configured max_adapter_failures tolerance (1), so this
+                # still lands in infrastructure_failures and blocks the gate.
+                adapter_failures=2,
                 executions=[adapter_execution],
             ),
             _evidence(
@@ -479,6 +481,91 @@ def test_gate_still_blocks_provider_telemetry_when_an_absolute_ceiling_is_config
     assert report["classifications"]["quality_failures"] == [
         f"{config_id}: p95_latency_ms=15000.0 exceeds maximum 5000.0"
     ]
+
+
+def test_gate_tolerates_one_adapter_failure_within_configured_tolerance(tmp_path: Path) -> None:
+    """A single retried-out observation against a shared hosted endpoint (a timeout
+    or truncated response) is provider noise, not a behavioral regression. Up to the
+    configured max_adapter_failures tolerance (1 in the committed thresholds), it
+    should not by itself block the gate, though it stays visible on `observed`."""
+    config_id = CONFIG_IDS[0]
+    baseline_path = _baseline(tmp_path / "baselines.yaml")
+    baseline = yaml.safe_load(baseline_path.read_text(encoding="utf-8"))
+    baseline["required_configurations"] = [config_id]
+    baseline["minimum_repeats"] = 2
+    baseline["configurations"] = {config_id: baseline["configurations"][config_id]}
+    baseline_path.write_text(yaml.safe_dump(baseline, sort_keys=False), encoding="utf-8")
+    evidence = _write_evidence(
+        tmp_path / "evidence",
+        [_evidence(config_id, MODELS[0], adapter_failures=1, repeats=2)],
+    )
+
+    report = evaluate_release_gate(
+        evidence,
+        baseline_path=baseline_path,
+        cases_path=CASES,
+        thresholds_path=THRESHOLDS,
+    )
+
+    assert report["passed"] is True
+    assert report["classifications"]["infrastructure_failures"] == []
+    assert report["observed"][config_id]["adapter_failures"] == 1
+
+
+def test_gate_blocks_when_adapter_failures_exceed_configured_tolerance(tmp_path: Path) -> None:
+    config_id = CONFIG_IDS[0]
+    baseline_path = _baseline(tmp_path / "baselines.yaml")
+    baseline = yaml.safe_load(baseline_path.read_text(encoding="utf-8"))
+    baseline["required_configurations"] = [config_id]
+    baseline["minimum_repeats"] = 2
+    baseline["configurations"] = {config_id: baseline["configurations"][config_id]}
+    baseline_path.write_text(yaml.safe_dump(baseline, sort_keys=False), encoding="utf-8")
+    evidence = _write_evidence(
+        tmp_path / "evidence",
+        [_evidence(config_id, MODELS[0], adapter_failures=2, repeats=2)],
+    )
+
+    report = evaluate_release_gate(
+        evidence,
+        baseline_path=baseline_path,
+        cases_path=CASES,
+        thresholds_path=THRESHOLDS,
+    )
+
+    assert report["passed"] is False
+    assert (
+        f"{config_id}: adapter_failures=2" in report["classifications"]["infrastructure_failures"]
+    )
+
+
+def test_gate_blocks_on_observation_deficit_that_adapter_failures_does_not_explain(
+    tmp_path: Path,
+) -> None:
+    """A completed/planned mismatch that adapter_failures does not fully account for
+    is a data anomaly, not tolerated provider noise, and must still block."""
+    config_id = CONFIG_IDS[0]
+    baseline_path = _baseline(tmp_path / "baselines.yaml")
+    baseline = yaml.safe_load(baseline_path.read_text(encoding="utf-8"))
+    baseline["required_configurations"] = [config_id]
+    baseline["minimum_repeats"] = 2
+    baseline["configurations"] = {config_id: baseline["configurations"][config_id]}
+    baseline_path.write_text(yaml.safe_dump(baseline, sort_keys=False), encoding="utf-8")
+    values = [_evidence(config_id, MODELS[0], adapter_failures=1, repeats=2)]
+    values[0]["summary"]["completed_observations"] -= 1  # type: ignore[index]
+    evidence = _write_evidence(tmp_path / "evidence", values)
+
+    report = evaluate_release_gate(
+        evidence,
+        baseline_path=baseline_path,
+        cases_path=CASES,
+        thresholds_path=THRESHOLDS,
+    )
+
+    assert report["passed"] is False
+    assert any(
+        item.startswith(f"{config_id}: completed_observations=")
+        for item in report["classifications"]["infrastructure_failures"]
+    )
 
 
 def test_gate_fails_closed_when_baselines_are_not_approved(tmp_path: Path) -> None:

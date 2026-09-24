@@ -314,6 +314,114 @@ def test_generate_approved_baseline_rejects_safety_quality_or_infrastructure_fai
         )
 
 
+def test_generate_approved_baseline_accepts_tolerated_infrastructure_only_per_case_failure(
+    tmp_path: Path,
+) -> None:
+    """A per-case entry categorized only "infrastructure" (a retried-out timeout
+    within the aggregate gate's configured tolerance) must not, by itself, prevent
+    promotion: the aggregate infrastructure_failures classification already decided
+    it was within tolerance."""
+    repo, revision = _repo(tmp_path)
+    policy = _policy(tmp_path / "policy.yaml")
+    template = _baseline(tmp_path / "baseline.yaml")
+    aggregate = _aggregate(tmp_path / "aggregate.json", revision)
+    payload = json.loads(aggregate.read_text(encoding="utf-8"))
+    payload["observed"]["alpha"]["adapter_failures"] = 1
+    payload["per_case_failures"] = [
+        {
+            "configuration_id": "alpha",
+            "case_id": "board_overview",
+            "run_index": 0,
+            "failure_kind": "timeout",
+            "categories": ["infrastructure"],
+        }
+    ]
+    aggregate.write_text(json.dumps(payload), encoding="utf-8")
+
+    baseline = generate_approved_baseline(
+        aggregate_report_path=aggregate,
+        baseline_template_path=template,
+        policy_path=policy,
+        repo_root=repo,
+        workflow_run_id=987654,
+        approved_at=date(2026, 8, 2),
+    )
+
+    assert baseline["approved"] is True
+
+
+def test_generate_approved_baseline_rejects_safety_or_quality_categorized_per_case_failure(
+    tmp_path: Path,
+) -> None:
+    repo, revision = _repo(tmp_path)
+    policy = _policy(tmp_path / "policy.yaml")
+    template = _baseline(tmp_path / "baseline.yaml")
+    aggregate = _aggregate(tmp_path / "aggregate.json", revision)
+    payload = json.loads(aggregate.read_text(encoding="utf-8"))
+    payload["per_case_failures"] = [
+        {
+            "configuration_id": "alpha",
+            "case_id": "board_overview",
+            "run_index": 0,
+            "failure_kind": None,
+            "categories": ["safety", "quality"],
+        }
+    ]
+    aggregate.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(BaselinePromotionError, match="Per-case failures"):
+        generate_approved_baseline(
+            aggregate_report_path=aggregate,
+            baseline_template_path=template,
+            policy_path=policy,
+            repo_root=repo,
+            workflow_run_id=987654,
+            approved_at=date(2026, 8, 2),
+        )
+
+
+def test_generate_approved_baseline_rejects_malformed_per_case_failures(tmp_path: Path) -> None:
+    repo, revision = _repo(tmp_path)
+    policy = _policy(tmp_path / "policy.yaml")
+    template = _baseline(tmp_path / "baseline.yaml")
+    aggregate = _aggregate(tmp_path / "aggregate.json", revision)
+    payload = json.loads(aggregate.read_text(encoding="utf-8"))
+    payload["per_case_failures"] = "not-a-list"
+    aggregate.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(BaselinePromotionError, match="per_case_failures must be a list"):
+        generate_approved_baseline(
+            aggregate_report_path=aggregate,
+            baseline_template_path=template,
+            policy_path=policy,
+            repo_root=repo,
+            workflow_run_id=987654,
+            approved_at=date(2026, 8, 2),
+        )
+
+
+def test_generate_approved_baseline_rejects_non_mapping_per_case_failure_entry(
+    tmp_path: Path,
+) -> None:
+    repo, revision = _repo(tmp_path)
+    policy = _policy(tmp_path / "policy.yaml")
+    template = _baseline(tmp_path / "baseline.yaml")
+    aggregate = _aggregate(tmp_path / "aggregate.json", revision)
+    payload = json.loads(aggregate.read_text(encoding="utf-8"))
+    payload["per_case_failures"] = ["not-a-mapping"]
+    aggregate.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(BaselinePromotionError, match="entries must be mappings"):
+        generate_approved_baseline(
+            aggregate_report_path=aggregate,
+            baseline_template_path=template,
+            policy_path=policy,
+            repo_root=repo,
+            workflow_run_id=987654,
+            approved_at=date(2026, 8, 2),
+        )
+
+
 def test_generate_approved_baseline_rejects_missing_or_mismatched_configuration(
     tmp_path: Path,
 ) -> None:

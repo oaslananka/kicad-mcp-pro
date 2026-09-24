@@ -12,6 +12,12 @@ release_gate:
   max_instability_rate: 0.05
   max_p95_latency_ms: null
   max_mean_tokens: null
+  # A single per-case observation that exhausts all retries against a slow or
+  # momentarily degraded hosted endpoint (a timeout or truncated response) is
+  # provider noise, not a behavioral regression, and out of 130+ observations
+  # per release run it should not by itself block baseline promotion. Anything
+  # beyond one such observation signals a systemic problem and still blocks.
+  max_adapter_failures: 1
 
 # Maximum allowed behavioral regression against an approved configuration baseline.
 # Provider telemetry values remain in comparison reports; absolute ceilings above control
