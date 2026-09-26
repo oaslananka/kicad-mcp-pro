@@ -291,6 +291,23 @@ jobs:
           flags: python-full
           name: python-full-tests
           verbose: true
+      - name: Upload Python coverage to Codacy
+        if: env.skip_ci != 'true' && !cancelled() && hashFiles('coverage.xml') != ''
+        continue-on-error: true
+        env:
+          CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          CODACY_REPORTER_VERSION: "14.1.3"
+        run: |
+          set -euo pipefail
+          if [[ -z "${CODACY_PROJECT_TOKEN:-}" ]]; then
+            echo "::warning::CODACY_PROJECT_TOKEN secret is not set — Codacy upload skipped."
+            exit 0
+          fi
+          curl --fail --silent --show-error --location \
+               --retry 3 --retry-all-errors --connect-timeout 10 \
+               https://coverage.codacy.com/get.sh \
+               --output "${RUNNER_TEMP}/codacy-get.sh"
+          bash "${RUNNER_TEMP}/codacy-get.sh" report -r coverage.xml
       - name: Propagate Python coverage or test failure
         if: >-
           env.skip_ci != 'true' &&
