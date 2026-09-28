@@ -7,9 +7,11 @@ updates:
       day: "monday"
       time: "04:00"
       timezone: "Europe/Istanbul"
+    cooldown:
+      default-days: 5
     labels:
       - "dependencies"
-    open-pull-requests-limit: 4
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore(deps)"
     groups:
@@ -30,11 +32,13 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "04:00"
+      time: "12:00"
       timezone: "Europe/Istanbul"
+    cooldown:
+      default-days: 5
     labels:
       - "dependencies"
-    open-pull-requests-limit: 4
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore(deps)"
     groups:
@@ -54,12 +58,14 @@ updates:
     directory: "/integrations/chatgpt-app/apps-sdk"
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "tuesday"
       time: "04:00"
       timezone: "Europe/Istanbul"
+    cooldown:
+      default-days: 5
     labels:
       - "dependencies"
-    open-pull-requests-limit: 4
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore(deps)"
     groups:
@@ -79,12 +85,14 @@ updates:
     directory: "/packages/kicad-fixtures"
     schedule:
       interval: "weekly"
-      day: "monday"
-      time: "04:00"
+      day: "tuesday"
+      time: "12:00"
       timezone: "Europe/Istanbul"
+    cooldown:
+      default-days: 5
     labels:
       - "dependencies"
-    open-pull-requests-limit: 4
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore(deps)"
     groups:
@@ -104,12 +112,14 @@ updates:
     directory: "/packages/mcp-npm"
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "wednesday"
       time: "04:00"
       timezone: "Europe/Istanbul"
+    cooldown:
+      default-days: 5
     labels:
       - "dependencies"
-    open-pull-requests-limit: 4
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore(deps)"
     groups:
@@ -129,13 +139,15 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "thursday"
       time: "04:00"
       timezone: "Europe/Istanbul"
+    cooldown:
+      default-days: 5
     labels:
       - "dependencies"
       - "ci"
-    open-pull-requests-limit: 4
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore(deps)"
     groups:
@@ -151,13 +163,15 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "friday"
       time: "04:00"
       timezone: "Europe/Istanbul"
+    cooldown:
+      default-days: 5
     labels:
       - "dependencies"
       - "ci"
-    open-pull-requests-limit: 4
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore(deps)"
     groups:
@@ -172,13 +186,15 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "monday"
-      time: "04:00"
+      day: "friday"
+      time: "12:00"
       timezone: "Europe/Istanbul"
+    cooldown:
+      default-days: 5
     labels:
       - "dependencies"
       - "ci"
-    open-pull-requests-limit: 4
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore(deps)"
     groups:
@@ -193,12 +209,14 @@ updates:
     directory: "/src-tauri"
     schedule:
       interval: "weekly"
-      day: "monday"
-      time: "04:00"
+      day: "wednesday"
+      time: "12:00"
       timezone: "Europe/Istanbul"
+    cooldown:
+      default-days: 5
     labels:
       - "dependencies"
-    open-pull-requests-limit: 4
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore(deps)"
     groups:

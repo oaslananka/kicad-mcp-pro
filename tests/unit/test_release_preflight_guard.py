@@ -326,6 +326,39 @@ def test_dependabot_covers_repository_dependency_ecosystems_and_lockfiles() -> N
         assert lockfile in policy
 
 
+def test_dependabot_staggers_version_updates_and_bounds_automation_backlog() -> None:
+    config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+    updates = config["updates"]
+
+    expected_windows = {
+        ("uv", "/"): ("monday", "04:00"),
+        ("npm", "/"): ("monday", "12:00"),
+        ("npm", "/integrations/chatgpt-app/apps-sdk"): ("tuesday", "04:00"),
+        ("npm", "/packages/kicad-fixtures"): ("tuesday", "12:00"),
+        ("npm", "/packages/mcp-npm"): ("wednesday", "04:00"),
+        ("cargo", "/src-tauri"): ("wednesday", "12:00"),
+        ("github-actions", "/"): ("thursday", "04:00"),
+        ("docker", "/"): ("friday", "04:00"),
+        ("docker-compose", "/"): ("friday", "12:00"),
+    }
+    actual_windows = {
+        (entry["package-ecosystem"], entry["directory"]): (
+            entry["schedule"]["day"],
+            entry["schedule"]["time"],
+        )
+        for entry in updates
+    }
+
+    assert actual_windows == expected_windows
+    assert len(set(actual_windows.values())) == len(actual_windows)
+
+    for entry in updates:
+        assert entry["schedule"]["interval"] == "weekly"
+        assert entry["schedule"]["timezone"] == "Europe/Istanbul"
+        assert entry["open-pull-requests-limit"] == 2
+        assert entry["cooldown"] == {"default-days": 5}
+
+
 def test_dependabot_npm_updates_respect_package_manager_boundaries() -> None:
     config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
     npm_updates = [entry for entry in config["updates"] if entry["package-ecosystem"] == "npm"]

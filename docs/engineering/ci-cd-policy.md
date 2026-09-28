@@ -1,7 +1,7 @@
 # CI/CD Policy — Path-Aware Risk-Based Gating
 
 > **Status**: Active
-> **Last updated**: 2026-07-08
+> **Last updated**: 2026-09-28
 
 ## Overview
 
@@ -152,6 +152,13 @@ minor/patch version updates are grouped per ecosystem and package-manager bounda
 major and runtime-sensitive updates remain individually reviewable and security updates
 use separate groups. npm/pnpm update entries stay single-directory so independent pnpm
 workspace and npm lockfile scopes are never combined into one Dependabot updater job.
+
+Routine version-update scans are staggered across Monday through Friday in the
+Europe/Istanbul maintenance window, with separate morning/noon slots where a day has two
+updaters. Each updater allows at most two open version-update pull requests and applies a
+five-day release cooldown. These backpressure controls do not delay or count Dependabot
+security-update pull requests.
+
 Required status checks and the active `main` ruleset remain authoritative; neither
 Dependabot nor Mergify bypasses them. Mergify may automatically queue only the explicitly
 allowlisted routine Dependabot groups, one PR at a time. Queue and merge conditions are
@@ -170,7 +177,7 @@ This project runs **CI-based analysis** via
 `.github/workflows/sonarcloud.yml`, which triggers on every push to `main`
 and on pull requests. The workflow installs dependencies, runs the full test
 suite with coverage, and invokes `SonarSource/sonarqube-scan-action` (pinned
-to v8.2.1). The scanner reads `sonar-project.properties` from the repository
+to v8.2.2). The scanner reads `sonar-project.properties` from the repository
 root — this is the CI-based configuration file (distinct from
 `.sonarcloud.properties`, which is used only by SonarCloud's Automatic
 Analysis mode and must not coexist with a CI workflow).
