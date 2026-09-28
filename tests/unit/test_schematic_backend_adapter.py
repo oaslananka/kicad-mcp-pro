@@ -141,14 +141,14 @@ def test_wire_normalizer_preserves_touching_collinear_segments() -> None:
         (76.2, 50.8, 86.36, 50.8),
         (86.36, 50.8, 160.02, 50.8),
     ]
-    source = "(kicad_sch\\n" + "\\n".join(
-        wire_block(*segment) for segment in segments
-    ) + "\\n\\t(sheet_instances)\\n)"
+    source = (
+        "(kicad_sch\\n"
+        + "\\n".join(wire_block(*segment) for segment in segments)
+        + "\\n\\t(sheet_instances)\\n)"
+    )
 
     normalized = _normalize_schematic_wire_connectivity(source)
     wires = _extract_wires(normalized)
 
     assert len(wires) == len(segments)
-    assert [
-        (wire["x1"], wire["y1"], wire["x2"], wire["y2"]) for wire in wires
-    ] == segments
+    assert [(wire["x1"], wire["y1"], wire["x2"], wire["y2"]) for wire in wires] == segments
