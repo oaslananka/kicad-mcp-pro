@@ -2415,19 +2415,34 @@ def _remove_wire_blocks(content: str) -> str:
 
 
 def _normalize_schematic_wire_connectivity(content: str) -> str:
+    """Normalize exact wire duplicates without merging KiCad-authored runs."""
     wires = _extract_wires(content)
     segments = _wire_segments_from_content(content)
-    deduped = _deduplicate_segments(segments)
+    deduped: list[tuple[float, float, float, float]] = []
+    seen: set[tuple[tuple[float, float], tuple[float, float]]] = set()
+    for segment in segments:
+        x1, y1, x2, y2 = segment
+        if abs(x1 - x2) <= SNAP_TOLERANCE_MM and abs(y1 - y2) <= SNAP_TOLERANCE_MM:
+            continue
+        key = _segment_key(segment)
+        if key in seen:
+            continue
+        seen.add(key)
+        (sx, sy), (ex, ey) = key
+        deduped.append((sx, sy, ex, ey))
     if not deduped:
         return content
-    uuid_map: dict[tuple[float, float, float, float], str] = {}
-    for w in wires:
-        key = (w["x1"], w["y1"], w["x2"], w["y2"])
-        if "uuid" in w:
-            uuid_map[key] = w["uuid"]
+
+    uuid_map: dict[tuple[tuple[float, float], tuple[float, float]], str] = {}
+    for wire in wires:
+        if "uuid" not in wire:
+            continue
+        segment = (wire["x1"], wire["y1"], wire["x2"], wire["y2"])
+        uuid_map[_segment_key(segment)] = wire["uuid"]
+
     updated = _remove_wire_blocks(content)
     for segment in deduped:
-        uid = uuid_map.get(segment)
+        uid = uuid_map.get(_segment_key(segment))
         updated = _append_before_sheet_instances(updated, wire_block(*segment, uuid_str=uid))
     return _insert_junctions_for_batch(updated, _detect_t_intersections(deduped))
 
