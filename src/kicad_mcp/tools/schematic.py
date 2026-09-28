@@ -2298,6 +2298,29 @@ def _parse_symbol_block(block: str) -> dict[str, Any] | None:
     }
 
 
+def _placed_symbol_key(symbol: dict[str, Any]) -> tuple[str, int, float, float]:
+    return (
+        str(symbol["reference"]),
+        int(symbol["unit"]),
+        round(float(symbol["x"]), 4),
+        round(float(symbol["y"]), 4),
+    )
+
+
+def _placed_symbol_mirrors(content: str) -> dict[tuple[str, int, float, float], str]:
+    """Return each placed symbol's ``(mirror x|y)`` axis; kicad-sch-api does not expose it."""
+    mirrors: dict[tuple[str, int, float, float], str] = {}
+    for match in re.finditer(r"\(symbol\s+\(lib_id\b", content):
+        block, _ = _extract_block(content, match.start())
+        if not block:
+            continue
+        parsed = _parse_symbol_block(block)
+        mirror = re.search(r"\(mirror\s+([xy])\)", block)
+        if parsed is not None and mirror is not None:
+            mirrors[_placed_symbol_key(parsed)] = mirror.group(1)
+    return mirrors
+
+
 def _symbol_property_values(block: str) -> dict[str, str]:
     """Return every ``(property "name" "value")`` pair declared on a symbol."""
     return {
@@ -2869,6 +2892,21 @@ def rotate_point(x: float, y: float, angle_deg: float) -> tuple[float, float]:
     return (round(x * cos_a - y * sin_a, 4), round(x * sin_a + y * cos_a, 4))
 
 
+def _place_pin(
+    px: float, py: float, sym_x: float, sym_y: float, rotation: int, mirror: str = ""
+) -> tuple[float, float]:
+    """Map a library pin coordinate to its schematic position, as KiCad does."""
+    # Library Y points up and schematic Y points down, so KiCad's
+    # counter-clockwise symbol rotation is -rotation after the Y flip.
+    rx, ry = rotate_point(px, -py, -rotation)
+    # KiCad applies (mirror x|y) after rotating, in schematic space.
+    if mirror == "x":
+        ry = -ry
+    elif mirror == "y":
+        rx = -rx
+    return (round(sym_x + rx, 4), round(sym_y + ry, 4))
+
+
 def load_lib_symbol(library: str, symbol_name: str) -> str | None:
     """Load a symbol definition from a KiCad symbol library.
 
@@ -3119,8 +3157,7 @@ def _pin_alias_positions(
     fuzzy: dict[str, tuple[float, float]] = {}
     fuzzy_conflicts: set[str] = set()
     for record in _extract_pin_records(block):
-        rx, ry = rotate_point(float(record["x"]), -float(record["y"]), rotation)
-        point = (round(sym_x + rx, 4), round(sym_y + ry, 4))
+        point = _place_pin(float(record["x"]), float(record["y"]), sym_x, sym_y, rotation)
         number = str(record["number"])
         name = str(record["name"])
         for identifier in (number, name, number.casefold(), name.casefold()):
@@ -3169,8 +3206,12 @@ def get_pin_positions(
     sym_y: float,
     rotation: int = 0,
     unit: int = 1,
+    mirror: str = "",
 ) -> dict[str, tuple[float, float]]:
-    """Calculate absolute pin tip positions for a symbol placement."""
+    """Calculate absolute pin tip positions for a symbol placement.
+
+    ``mirror`` is the placed symbol's ``(mirror x|y)`` axis, or ``""``.
+    """
     sym_file = _symbol_library_file(library)
     if sym_file is None:
         return {}
@@ -3187,8 +3228,7 @@ def get_pin_positions(
     for block in blocks:
         direct_pins = _extract_pin_definitions(_strip_child_symbol_blocks(block))
         for pin_number, (px, py) in direct_pins.items():
-            rx, ry = rotate_point(px, -py, rotation)
-            pins[pin_number] = (round(sym_x + rx, 4), round(sym_y + ry, 4))
+            pins[pin_number] = _place_pin(px, py, sym_x, sym_y, rotation, mirror)
 
         block_name = _symbol_block_name(block)
         if block_name is None:
@@ -3201,8 +3241,7 @@ def get_pin_positions(
                 continue
             for pin_number, (px, py) in _extract_pin_definitions(child_block).items():
                 # KiCad's pin (at x y angle) coordinate is the electrical connection point.
-                rx, ry = rotate_point(px, -py, rotation)
-                pins[pin_number] = (round(sym_x + rx, 4), round(sym_y + ry, 4))
+                pins[pin_number] = _place_pin(px, py, sym_x, sym_y, rotation, mirror)
     return pins
 
 
@@ -4428,9 +4467,11 @@ def _parse_no_connect_block(block: str) -> dict[str, Any] | None:
 def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
     data = parse_schematic_file(sch_file)
     try:
-        no_connect_points = _extract_no_connects(sch_file.read_text(encoding="utf-8"))
+        content = sch_file.read_text(encoding="utf-8")
     except OSError:
-        no_connect_points = set()
+        content = ""
+    no_connect_points = _extract_no_connects(content) if content else set()
+    symbol_mirrors = _placed_symbol_mirrors(content)
     parent: dict[tuple[float, float], tuple[float, float]] = {}
 
     def find(point: tuple[float, float]) -> tuple[float, float]:
@@ -4521,6 +4562,7 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
             float(symbol["y"]),
             int(symbol["rotation"]),
             int(symbol["unit"]),
+            mirror=symbol_mirrors.get(_placed_symbol_key(symbol), ""),
         )
         pin_meta = get_pin_metadata(library, symbol_name, int(symbol["unit"]))
         for pin_number, point in pin_positions.items():
