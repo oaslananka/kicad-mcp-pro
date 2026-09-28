@@ -111,9 +111,9 @@ async def test_full_plan_lifecycle(tmp_path: Path) -> None:
     assert '"VIN"' in after_apply and '"VOUT"' in after_apply and '"GND"' in after_apply
     assert Path(applied["checkpoint"]).is_dir()
 
-    # 4. Verify reports connectivity pass + an explicit ERC status.
+    # 4. Verify fails closed because the plan's components were never placed.
     verified = json.loads(await call_tool_text(server, "sch_verify_plan", {"plan_id": plan_id}))
-    assert verified["connectivity"] == "pass"
+    assert verified["connectivity"] == "fail"
     assert verified["missing_labels"] == []
     assert verified["erc"] in {"available", "unavailable"}
 
