@@ -31,7 +31,7 @@ If `uv run` exits before Python starts with a required-version mismatch, compare
 `uv --version` with `uv.toml`. Source checkouts pin the supported uv version so
 local and CI dependency resolution match. Run `kicad-mcp-pro doctor --json` for
 an explicit `uv_version` diagnostic, then switch to the repo-compatible version,
-for example `uv self update 0.11.31` when `uv.toml` requires `0.11.31`.
+for example `uv self update 0.12.19` when `uv.toml` requires `0.12.19`.
 
 ## CI Matrix
 

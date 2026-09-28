@@ -51,6 +51,61 @@ def test_parse_schematic_file_surfaces_root_uuid(tmp_path: Path) -> None:
     assert parse_schematic_file(sch_file)["uuid"] == "aa111111-2222-3333-4444-555555555555"
 
 
+def _placed_symbol(lib_id: str, reference: str, value: str, x: float) -> str:
+    return (
+        "\t(symbol\n"
+        f'\t\t(lib_id "{lib_id}")\n'
+        f"\t\t(at {x} 50.8 0)\n"
+        "\t\t(unit 1)\n"
+        f'\t\t(property "Reference" "{reference}" (at {x} 50.8 0))\n'
+        f'\t\t(property "Value" "{value}" (at {x} 50.8 0))\n'
+        "\t)\n"
+    )
+
+
+def test_parse_schematic_file_detects_power_symbols_by_lib_symbol_flag(tmp_path: Path) -> None:
+    """KiCad marks power symbols with ``(power)`` in lib_symbols, not by the
+    ``power:`` library name, so project-library rails must still name nets."""
+    sch_file = tmp_path / "demo.kicad_sch"
+    sch_file.write_text(
+        "(kicad_sch\n"
+        "\t(version 20250316)\n"
+        '\t(generator "eeschema")\n'
+        '\t(uuid "aa111111-2222-3333-4444-555555555555")\n'
+        '\t(paper "A4")\n'
+        "\t(lib_symbols\n"
+        '\t\t(symbol "ecc83-pp:GND"\n'
+        "\t\t\t(power)\n"
+        '\t\t\t(symbol "GND_1_1" (pin power_in line (at 0 0 270) (length 0)'
+        ' (name "GND") (number "1")))\n'
+        "\t\t)\n"
+        '\t\t(symbol "ecc83-pp:+5V"\n'
+        "\t\t\t(power global)\n"
+        "\t\t)\n"
+        '\t\t(symbol "ecc83-pp:R"\n'
+        '\t\t\t(symbol "R_1_1" (pin passive line (at 0 3.81 270) (length 1.27)'
+        ' (name "~") (number "1")))\n'
+        "\t\t)\n"
+        "\t)\n"
+        + _placed_symbol("ecc83-pp:GND", "#PWR01", "GND", 10.16)
+        + _placed_symbol("ecc83-pp:+5V", "#PWR02", "+5V", 20.32)
+        + _placed_symbol("ecc83-pp:R", "R1", "10k", 30.48)
+        # No lib_symbols entry: fall back to the power: library prefix.
+        + _placed_symbol("power:VCC", "#PWR03", "VCC", 40.64)
+        + ")\n",
+        encoding="utf-8",
+    )
+
+    parsed = parse_schematic_file(sch_file)
+
+    assert sorted(symbol["reference"] for symbol in parsed["power_symbols"]) == [
+        "#PWR01",
+        "#PWR02",
+        "#PWR03",
+    ]
+    assert [symbol["reference"] for symbol in parsed["symbols"]] == ["R1"]
+
+
 def test_schematic_capability_matrix_matches_reference_fixture() -> None:
     fixture_path = (
         Path(__file__).resolve().parents[1]
