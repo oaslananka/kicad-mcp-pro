@@ -1,11 +1,11 @@
 schema_version: 1
 approved: true
-approved_at: '2026-09-24'
-source_revision: 8cd3f333c680f2764eda853cc68001b3be2e6bc2
-agent_contract_digest: ca4a9ea862bb6f659a7baf61481fcf1008b1389b166d8aadc63e9b00097c55df
+approved_at: '2026-09-28'
+source_revision: f00e06525192303764ba7296fab40490383c98e8
+agent_contract_digest: 2f15a8a0d39d0e0f423195105e56bd242e82101027ab34a599a9c58a00126e18
 evidence:
-  workflow_run_id: 35993902113
-  aggregate_sha256: 63cbe820b5760467ea49d69b9c5373a9b7eb08ee773152e0b63a0e156aa0e361
+  workflow_run_id: 36457833537
+  aggregate_sha256: a7a563f18163ec4af93258f35f38038808ae2e06bb2fdbd26765ae346c00dee6
 minimum_repeats: 2
 required_configurations:
 - nvidia-nemotron-3-5-lightning-30b-a3b
@@ -19,5 +19,5 @@ configurations:
       mean_recall: 1.0
       unnecessary_call_rate: 0.0
       instability_rate: 0.0
-      p95_latency_ms: 38217.983
-      mean_tokens: 3101.992307692308
+      p95_latency_ms: 12106.136
+      mean_tokens: 3102.107692307692
