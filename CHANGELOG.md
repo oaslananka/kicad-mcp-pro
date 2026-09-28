@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.35.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.35.0...mcp-server-v3.35.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **deps:** stagger automated dependency updates ([#955](https://github.com/oaslananka/kicad-mcp-pro/issues/955)) ([62c05f2](https://github.com/oaslananka/kicad-mcp-pro/commit/62c05f2dfaa834145d66e93feba0410d99935abd))
+
 ## [3.35.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.34.8...mcp-server-v3.35.0) (2026-09-24)
 
 
