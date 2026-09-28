@@ -19,9 +19,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  classify:
+    runs-on: ubuntu-24.04
+    outputs:
+      release_metadata_only: ${{ steps.release-classifier.outputs.release_metadata_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect release metadata-only change set
+        id: release-classifier
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' ]]; then
+            base_sha="$(git rev-parse HEAD^1)"
+            head_sha="$(git rev-parse HEAD^2)"
+          else
+            base_sha="$BEFORE_SHA"
+            head_sha="$(git rev-parse HEAD)"
+            if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
+              base_sha="$(git rev-parse HEAD^)"
+            fi
+          fi
+          git diff --name-only "$base_sha" "$head_sha" > "${RUNNER_TEMP}/changed-paths.txt"
+          if python scripts/check_release_please_metadata_only.py \
+            --paths-file "${RUNNER_TEMP}/changed-paths.txt"; then
+            echo 'release_metadata_only=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'release_metadata_only=false' >> "$GITHUB_OUTPUT"
+          fi
+
   sonarcloud:
     name: SonarCloud Scan
+    needs: classify
     if: >
+      needs.classify.outputs.release_metadata_only != 'true' &&
       (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
       (github.event_name != 'pull_request' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&

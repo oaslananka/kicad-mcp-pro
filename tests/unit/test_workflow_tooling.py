@@ -9,6 +9,11 @@ from scripts.check_github_actions_policy import has_sha_pinned_action
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
+
+
 def _sonar_properties() -> dict[str, list[str]]:
     raw = (ROOT / "sonar-project.properties").read_text(encoding="utf-8")
     logical = raw.replace("\\\n", "")
@@ -132,6 +137,25 @@ def test_sonar_skips_fork_pull_requests_before_secret_bearing_steps() -> None:
     assert "github.event.pull_request.user.login != 'dependabot[bot]'" in condition
 
 
+def test_sonar_skips_release_metadata_only_change_sets() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "sonarcloud.yml").read_text(encoding="utf-8")
+    )
+
+    classify = workflow["jobs"]["classify"]
+    _require(
+        classify["outputs"]["release_metadata_only"]
+        == "${{ steps.release-classifier.outputs.release_metadata_only }}",
+        "Sonar classifier output contract changed",
+    )
+    sonar = workflow["jobs"]["sonarcloud"]
+    _require(sonar["needs"] == "classify", "Sonar must depend on release classifier")
+    _require(
+        "needs.classify.outputs.release_metadata_only != 'true'" in sonar["if"],
+        "Sonar must skip release metadata-only changes",
+    )
+
+
 def test_live_model_workflows_install_opencode_from_lockfile() -> None:
     opencode_workflows = [
         ROOT / ".github" / "workflows" / "live-model-assurance.yml",
@@ -173,7 +197,7 @@ def test_live_model_workflows_expose_locked_opencode_binary_on_path() -> None:
         assert raw.count(expected) == install_count
 
 
-def test_docs_only_skip_steps_use_bash_on_cross_platform_matrix_jobs() -> None:
+def test_path_aware_skip_steps_use_bash_on_cross_platform_matrix_jobs() -> None:
     workflow = yaml.safe_load(
         (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     )
@@ -181,7 +205,13 @@ def test_docs_only_skip_steps_use_bash_on_cross_platform_matrix_jobs() -> None:
     for job_name in ("mcp-server", "mcp-npm"):
         steps = workflow["jobs"][job_name]["steps"]
         skip_step = next(
-            step for step in steps if step.get("name") == "Skip heavy CI for docs-only PR"
+            step
+            for step in steps
+            if step.get("name")
+            in {
+                "Skip mcp-server when unaffected or redundant",
+                "Skip mcp-npm when unaffected or redundant",
+            }
         )
         assert skip_step["shell"] == "bash"
 
