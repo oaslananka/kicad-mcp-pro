@@ -16,6 +16,11 @@ def _read_json(path: str) -> dict[str, object]:
     return json.loads(_read(path))
 
 
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
+
+
 def test_protocol_schema_release_contract_matches_existing_release_history() -> None:
     package = _read_json("packages/protocol-schemas/package.json")
     manifest = _read_json(".release-please-manifest.json")
@@ -73,6 +78,26 @@ def test_python_token_fallback_is_manual_approved_and_tokenized() -> None:
     assert "id-token: write" not in workflow
 
 
+def test_manual_production_publish_requires_existing_release_tags() -> None:
+    npm_workflow = _read(".github/workflows/publish-npm.yml")
+    registry_workflow = _read(".github/workflows/publish-mcp-registry.yml")
+
+    for workflow, prefix in (
+        (npm_workflow, "mcp-npm-v"),
+        (registry_workflow, "mcp-server-v"),
+    ):
+        _require("release_tag:" in workflow, "test contract failed")
+        _require(f"startsWith(inputs.release_tag, '{prefix}')" in workflow, "test contract failed")
+        _require("Verify immutable release source" in workflow, "test contract failed")
+        _require('gh release view "$RELEASE_TAG"' in workflow, "test contract failed")
+        _require(
+            'tag_sha="$(git rev-list -n1 "refs/tags/${RELEASE_TAG}")"' in workflow,
+            "test contract failed",
+        )
+        _require('head_sha="$(git rev-parse HEAD)"' in workflow, "test contract failed")
+        _require('test "$tag_sha" = "$head_sha"' in workflow, "test contract failed")
+
+
 def test_publish_workflows_are_idempotent_for_existing_versions() -> None:
     python_workflow = _read(".github/workflows/publish-python.yml")
     npm_workflow = _read(".github/workflows/publish-npm.yml")
@@ -83,13 +108,28 @@ def test_publish_workflows_are_idempotent_for_existing_versions() -> None:
     assert "steps.check-published.outputs.already_published != 'true'" in npm_workflow
 
 
-def test_container_publish_resolves_version_for_release_and_manual_runs() -> None:
+def test_container_publish_uses_immutable_release_tag_for_production() -> None:
     workflow = _read(".github/workflows/publish-mcp-container.yml")
 
-    assert "Resolve image version" in workflow
-    assert "RELEASE_TAG: ${{ github.event.release.tag_name }}" in workflow
-    assert "type=raw,value=${{ steps.version.outputs.version }}" in workflow
-    assert "type=match,pattern=mcp-server-v(.*),group=1" not in workflow
-    assert "github.event_name == 'workflow_dispatch' && inputs.publish == true" in workflow
-    assert "KICAD_MCP_VERSION=${{ steps.version.outputs.version }}" in workflow
-    assert "VCS_REF=${{ github.sha }}" in workflow
+    _require("Resolve image version" in workflow, "test contract failed")
+    _require("Verify immutable release source" in workflow, "test contract failed")
+    _require("startsWith(inputs.release_tag, 'mcp-server-v')" in workflow, "test contract failed")
+    checkout_release_ref = (
+        "ref: ${{ github.event_name == 'release' && "
+        "github.event.release.tag_name || inputs.release_tag }}"
+    )
+    _require(checkout_release_ref in workflow, "test contract failed")
+    _require('gh release view "$RELEASE_TAG"' in workflow, "test contract failed")
+    _require(
+        "type=raw,value=${{ steps.source.outputs.version }}" in workflow, "test contract failed"
+    )
+    _require(
+        "KICAD_MCP_VERSION=${{ steps.source.outputs.version }}" in workflow, "test contract failed"
+    )
+    _require("VCS_REF=${{ steps.source.outputs.sha }}" in workflow, "test contract failed")
+    _require("environment: ghcr" in workflow, "test contract failed")
+    stable_latest_rule = (
+        "type=raw,value=latest,enable=${{ github.event_name == 'release' && "
+        "github.event.release.prerelease == false }}"
+    )
+    _require(stable_latest_rule in workflow, "test contract failed")

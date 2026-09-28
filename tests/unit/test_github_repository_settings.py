@@ -17,6 +17,11 @@ ROOT = Path(__file__).resolve().parents[2]
 POLICY = json.loads((ROOT / ".github/actions-policy.json").read_text(encoding="utf-8"))
 
 
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
+
+
 def _expected_payloads() -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
     actions = {
         "enabled": True,
@@ -107,12 +112,24 @@ def _protected_environment(name: str) -> dict[str, object]:
     }
 
 
+def test_repository_settings_audit_covers_all_protected_publish_environments() -> None:
+    source = (ROOT / "scripts" / "check_github_repository_settings.py").read_text(encoding="utf-8")
+
+    for environment in POLICY["protected_publish_environments"]:
+        _require(f'"environment:{environment}"' in source, "test contract failed")
+        _require(
+            f'"{environment}": _github_api("environment:{environment}", token)' in source,
+            "test contract failed",
+        )
+
+
 def test_publish_environment_protection_matches_policy_and_reports_drift() -> None:
     from scripts.check_github_repository_settings import validate_environment_protection
 
     environments = {
         "npm": _protected_environment("npm"),
         "mcp-registry": _protected_environment("mcp-registry"),
+        "ghcr": _protected_environment("ghcr"),
     }
     assert validate_environment_protection(POLICY, environments) == []
     environments["npm"] = {"name": "npm", "protection_rules": []}

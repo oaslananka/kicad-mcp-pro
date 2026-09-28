@@ -18,6 +18,11 @@ on:
         description: Validate and print the registry payload without publishing.
         type: boolean
         default: true
+      release_tag:
+        description: Existing published mcp-server release tag used when dry_run is false.
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -50,7 +55,8 @@ jobs:
     if: >-
       (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
       ((github.event_name == 'release' && startsWith(github.event.release.tag_name, 'mcp-server-v')) ||
-       (github.event_name == 'workflow_dispatch' && inputs.dry_run != true))
+       (github.event_name == 'workflow_dispatch' && inputs.dry_run != true &&
+        startsWith(inputs.release_tag, 'mcp-server-v')))
     runs-on: ubuntu-24.04
     environment: mcp-registry
     permissions:
@@ -61,6 +67,30 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
+      - name: Verify immutable release source
+        id: source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          case "$RELEASE_TAG" in
+            mcp-server-v*) ;;
+            *)
+              echo "Unexpected MCP server release tag: $RELEASE_TAG" >&2
+              exit 1
+              ;;
+          esac
+          tag_sha="$(git rev-list -n1 "refs/tags/${RELEASE_TAG}")"
+          head_sha="$(git rev-parse HEAD)"
+          test "$tag_sha" = "$head_sha"
+          gh release view "$RELEASE_TAG" --json isDraft,tagName --jq 'select(.isDraft == false) | .tagName' | grep -Fx "$RELEASE_TAG"
+          version="${RELEASE_TAG#mcp-server-v}"
+          project_version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          test "$version" = "$project_version"
+          echo "sha=$head_sha" >> "$GITHUB_OUTPUT"
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
           enable-cache: false

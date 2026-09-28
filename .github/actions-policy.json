@@ -76,7 +76,7 @@
       ]
     },
     "publish-mcp-container.yml": {
-      "build": [
+      "publish": [
         "attestations",
         "id-token",
         "packages"
@@ -163,6 +163,12 @@
       "prevent_self_review": false
     },
     "mcp-registry": {
+      "required_reviewers": [
+        "oaslananka"
+      ],
+      "prevent_self_review": false
+    },
+    "ghcr": {
       "required_reviewers": [
         "oaslananka"
       ],

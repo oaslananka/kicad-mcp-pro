@@ -24,6 +24,7 @@ _API_PATHS = {
     "workflow-permissions": "/repos/oaslananka/kicad-mcp-pro/actions/permissions/workflow",
     "environment:npm": "/repos/oaslananka/kicad-mcp-pro/environments/npm",
     "environment:mcp-registry": "/repos/oaslananka/kicad-mcp-pro/environments/mcp-registry",
+    "environment:ghcr": "/repos/oaslananka/kicad-mcp-pro/environments/ghcr",
 }
 
 
@@ -274,13 +275,14 @@ def main(argv: list[str] | None = None) -> int:
         expected_environments = policy.get("protected_publish_environments", {})
         if not isinstance(expected_environments, dict):
             raise ValueError("protected_publish_environments must be an object")
-        if set(expected_environments) != {"npm", "mcp-registry"}:
+        if set(expected_environments) != {"npm", "mcp-registry", "ghcr"}:
             raise ValueError(
                 "protected_publish_environments must match the reviewed environment set"
             )
         live_environments = {
             "npm": _github_api("environment:npm", token),
             "mcp-registry": _github_api("environment:mcp-registry", token),
+            "ghcr": _github_api("environment:ghcr", token),
         }
         errors.extend(validate_environment_protection(policy, live_environments))
     except (OSError, ValueError, RuntimeError, HTTPException) as exc:
