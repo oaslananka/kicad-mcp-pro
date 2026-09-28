@@ -322,6 +322,12 @@ def _symbol_property(block: str, name: str) -> str:
     return match.group(1).replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
 
 
+def _symbol_instance_references(block: str, fallback_reference: str) -> list[str]:
+    """Return every instantiated reference recorded in a placed symbol block."""
+    references = re.findall(r'\(reference\s+"([^"]+)"', block)
+    return references or [fallback_reference]
+
+
 def _schematic_component_rows() -> list[dict[str, str]]:
     _ = _active_schematic_file()
     rows_by_reference: dict[str, dict[str, str]] = {}
@@ -357,38 +363,51 @@ def _schematic_component_rows() -> list[dict[str, str]]:
             search_start = block_start + max(consumed, 1)
             if '(lib_id "' not in block:
                 continue
-            reference = _symbol_property(block, "Reference")
-            if not reference or reference.startswith("#") or reference not in rows_by_reference:
-                continue
-            lcsc_code = _symbol_property(block, "LCSC") or _symbol_property(block, "LCSC Part")
-            if lcsc_code:
-                rows_by_reference[reference]["lcsc"] = normalize_lcsc_code(lcsc_code)
 
+            reference = _symbol_property(block, "Reference")
+            if not reference or reference.startswith("#"):
+                continue
+            template = rows_by_reference.get(reference)
+            if template is None:
+                continue
+
+            instance_references = _symbol_instance_references(block, reference)
+            instance_rows: list[dict[str, str]] = []
+            for instance_reference in instance_references:
+                if instance_reference.startswith("#"):
+                    continue
+                row = rows_by_reference.setdefault(
+                    instance_reference,
+                    {**template, "reference": instance_reference},
+                )
+                instance_rows.append(row)
+
+            lcsc_code = _symbol_property(block, "LCSC") or _symbol_property(block, "LCSC Part")
             mpn = _symbol_property(block, "MPN") or _symbol_property(
                 block,
                 "Manufacturer Part Number",
             )
-            if mpn:
-                rows_by_reference[reference]["mpn"] = mpn
-
             manufacturer = _symbol_property(block, "Manufacturer") or _symbol_property(block, "MFR")
-            if manufacturer:
-                rows_by_reference[reference]["manufacturer"] = manufacturer
-
             dnp = _symbol_property(block, "DNP") or _symbol_property(block, "Do Not Populate")
             native_dnp = re.search(r"\(dnp\s+yes\)", block) is not None
             exclude_from_bom = _symbol_property(block, "Exclude from BOM")
             populate_value = _symbol_property(block, "Populate")
-            if populate_value:
-                rows_by_reference[reference]["populate"] = populate_value
-            elif native_dnp or dnp.lower() in {"1", "true", "yes", "y", "dnp"}:
-                rows_by_reference[reference]["populate"] = "DNP"
-            elif exclude_from_bom.lower() in {"1", "true", "yes", "y"}:
-                rows_by_reference[reference]["populate"] = "DNP"
-            else:
-                rows_by_reference[reference]["populate"] = (
-                    rows_by_reference[reference].get("populate", "Populate") or "Populate"
-                )
+
+            for row in instance_rows:
+                if lcsc_code:
+                    row["lcsc"] = normalize_lcsc_code(lcsc_code)
+                if mpn:
+                    row["mpn"] = mpn
+                if manufacturer:
+                    row["manufacturer"] = manufacturer
+                if populate_value:
+                    row["populate"] = populate_value
+                elif native_dnp or dnp.lower() in {"1", "true", "yes", "y", "dnp"}:
+                    row["populate"] = "DNP"
+                elif exclude_from_bom.lower() in {"1", "true", "yes", "y"}:
+                    row["populate"] = "DNP"
+                else:
+                    row["populate"] = row.get("populate", "Populate") or "Populate"
     return list(rows_by_reference.values())
 
 

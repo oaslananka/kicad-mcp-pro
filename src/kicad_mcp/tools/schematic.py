@@ -552,9 +552,15 @@ class _KicadSchApiBackend:
         try:
             symbols: list[dict[str, Any]] = []
             power_symbols: list[dict[str, Any]] = []
+            power_flags = cast(dict[str, bool], compatibility["lib_symbol_power_flags"])
             for component in cast(list[_PlacedComponentLike], list(schematic.components.all())):
                 parsed = _component_to_symbol_dict(component)
-                if parsed["lib_id"].startswith("power:"):
+                # Power symbols are identified by the (power) flag of their embedded
+                # definition; project libraries such as "ecc83-pp:GND" carry it too.
+                is_power = power_flags.get(parsed["lib_id"])
+                if is_power is None:
+                    is_power = parsed["lib_id"].startswith("power:")
+                if is_power:
                     power_symbols.append(parsed)
                 else:
                     symbols.append(parsed)
@@ -1863,7 +1869,26 @@ def _read_schematic_compatibility_data(sch_file: Path) -> dict[str, Any]:
         "wires": _extract_wires(content),
         "labels": _extract_labels(content),
         "buses": _extract_buses(content),
+        "lib_symbol_power_flags": _extract_lib_symbol_power_flags(content),
     }
+
+
+_LIB_SYMBOL_POWER_FLAG = re.compile(r"\(power(?:\s+\w+)?\)")
+_SEXPR_STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
+
+
+def _extract_lib_symbol_power_flags(content: str) -> dict[str, bool]:
+    """Map each embedded ``lib_symbols`` entry to whether it carries KiCad's
+    ``(power)`` / ``(power global)`` / ``(power local)`` flag."""
+    match = re.search(r"\(lib_symbols\b", content)
+    if match is None:
+        return {}
+    block, _ = _extract_block(content, match.start())
+    flags: dict[str, bool] = {}
+    for name, symbol_block in _extract_child_symbol_blocks(block):
+        own_tokens = _SEXPR_STRING.sub('""', _strip_child_symbol_blocks(symbol_block))
+        flags[name] = _LIB_SYMBOL_POWER_FLAG.search(own_tokens) is not None
+    return flags
 
 
 def parse_schematic_file(sch_file: Path) -> dict[str, Any]:
@@ -2298,6 +2323,29 @@ def _parse_symbol_block(block: str) -> dict[str, Any] | None:
     }
 
 
+def _placed_symbol_key(symbol: dict[str, Any]) -> tuple[str, int, float, float]:
+    return (
+        str(symbol["reference"]),
+        int(symbol["unit"]),
+        round(float(symbol["x"]), 4),
+        round(float(symbol["y"]), 4),
+    )
+
+
+def _placed_symbol_mirrors(content: str) -> dict[tuple[str, int, float, float], str]:
+    """Return each placed symbol's ``(mirror x|y)`` axis; kicad-sch-api does not expose it."""
+    mirrors: dict[tuple[str, int, float, float], str] = {}
+    for match in re.finditer(r"\(symbol\s+\(lib_id\b", content):
+        block, _ = _extract_block(content, match.start())
+        if not block:
+            continue
+        parsed = _parse_symbol_block(block)
+        mirror = re.search(r"\(mirror\s+([xy])\)", block)
+        if parsed is not None and mirror is not None:
+            mirrors[_placed_symbol_key(parsed)] = mirror.group(1)
+    return mirrors
+
+
 def _symbol_property_values(block: str) -> dict[str, str]:
     """Return every ``(property "name" "value")`` pair declared on a symbol."""
     return {
@@ -2415,19 +2463,34 @@ def _remove_wire_blocks(content: str) -> str:
 
 
 def _normalize_schematic_wire_connectivity(content: str) -> str:
+    """Normalize exact wire duplicates without merging KiCad-authored runs."""
     wires = _extract_wires(content)
     segments = _wire_segments_from_content(content)
-    deduped = _deduplicate_segments(segments)
+    deduped: list[tuple[float, float, float, float]] = []
+    seen: set[tuple[tuple[float, float], tuple[float, float]]] = set()
+    for segment in segments:
+        x1, y1, x2, y2 = segment
+        if abs(x1 - x2) <= SNAP_TOLERANCE_MM and abs(y1 - y2) <= SNAP_TOLERANCE_MM:
+            continue
+        key = _segment_key(segment)
+        if key in seen:
+            continue
+        seen.add(key)
+        (sx, sy), (ex, ey) = key
+        deduped.append((sx, sy, ex, ey))
     if not deduped:
         return content
-    uuid_map: dict[tuple[float, float, float, float], str] = {}
-    for w in wires:
-        key = (w["x1"], w["y1"], w["x2"], w["y2"])
-        if "uuid" in w:
-            uuid_map[key] = w["uuid"]
+
+    uuid_map: dict[tuple[tuple[float, float], tuple[float, float]], str] = {}
+    for wire in wires:
+        if "uuid" not in wire:
+            continue
+        segment = (wire["x1"], wire["y1"], wire["x2"], wire["y2"])
+        uuid_map[_segment_key(segment)] = wire["uuid"]
+
     updated = _remove_wire_blocks(content)
     for segment in deduped:
-        uid = uuid_map.get(segment)
+        uid = uuid_map.get(_segment_key(segment))
         updated = _append_before_sheet_instances(updated, wire_block(*segment, uuid_str=uid))
     return _insert_junctions_for_batch(updated, _detect_t_intersections(deduped))
 
@@ -2869,6 +2932,21 @@ def rotate_point(x: float, y: float, angle_deg: float) -> tuple[float, float]:
     return (round(x * cos_a - y * sin_a, 4), round(x * sin_a + y * cos_a, 4))
 
 
+def _place_pin(
+    px: float, py: float, sym_x: float, sym_y: float, rotation: int, mirror: str = ""
+) -> tuple[float, float]:
+    """Map a library pin coordinate to its schematic position, as KiCad does."""
+    # Library Y points up and schematic Y points down, so KiCad's
+    # counter-clockwise symbol rotation is -rotation after the Y flip.
+    rx, ry = rotate_point(px, -py, -rotation)
+    # KiCad applies (mirror x|y) after rotating, in schematic space.
+    if mirror == "x":
+        ry = -ry
+    elif mirror == "y":
+        rx = -rx
+    return (round(sym_x + rx, 4), round(sym_y + ry, 4))
+
+
 def load_lib_symbol(library: str, symbol_name: str) -> str | None:
     """Load a symbol definition from a KiCad symbol library.
 
@@ -3105,6 +3183,7 @@ def _pin_alias_positions(
     sym_x: float,
     sym_y: float,
     rotation: int,
+    mirror: str = "",
 ) -> dict[str, tuple[float, float]]:
     """Return ``{alias: position}`` for a symbol block's pins.
 
@@ -3119,8 +3198,14 @@ def _pin_alias_positions(
     fuzzy: dict[str, tuple[float, float]] = {}
     fuzzy_conflicts: set[str] = set()
     for record in _extract_pin_records(block):
-        rx, ry = rotate_point(float(record["x"]), -float(record["y"]), rotation)
-        point = (round(sym_x + rx, 4), round(sym_y + ry, 4))
+        point = _place_pin(
+            float(record["x"]),
+            float(record["y"]),
+            sym_x,
+            sym_y,
+            rotation,
+            mirror,
+        )
         number = str(record["number"])
         name = str(record["name"])
         for identifier in (number, name, number.casefold(), name.casefold()):
@@ -3169,8 +3254,12 @@ def get_pin_positions(
     sym_y: float,
     rotation: int = 0,
     unit: int = 1,
+    mirror: str = "",
 ) -> dict[str, tuple[float, float]]:
-    """Calculate absolute pin tip positions for a symbol placement."""
+    """Calculate absolute pin tip positions for a symbol placement.
+
+    ``mirror`` is the placed symbol's ``(mirror x|y)`` axis, or ``""``.
+    """
     sym_file = _symbol_library_file(library)
     if sym_file is None:
         return {}
@@ -3187,8 +3276,7 @@ def get_pin_positions(
     for block in blocks:
         direct_pins = _extract_pin_definitions(_strip_child_symbol_blocks(block))
         for pin_number, (px, py) in direct_pins.items():
-            rx, ry = rotate_point(px, -py, rotation)
-            pins[pin_number] = (round(sym_x + rx, 4), round(sym_y + ry, 4))
+            pins[pin_number] = _place_pin(px, py, sym_x, sym_y, rotation, mirror)
 
         block_name = _symbol_block_name(block)
         if block_name is None:
@@ -3201,8 +3289,7 @@ def get_pin_positions(
                 continue
             for pin_number, (px, py) in _extract_pin_definitions(child_block).items():
                 # KiCad's pin (at x y angle) coordinate is the electrical connection point.
-                rx, ry = rotate_point(px, -py, rotation)
-                pins[pin_number] = (round(sym_x + rx, 4), round(sym_y + ry, 4))
+                pins[pin_number] = _place_pin(px, py, sym_x, sym_y, rotation, mirror)
     return pins
 
 
@@ -3326,6 +3413,7 @@ def get_pin_alias_positions(
     sym_y: float,
     rotation: int = 0,
     unit: int = 1,
+    mirror: str = "",
 ) -> dict[str, tuple[float, float]]:
     """Return a lookup for pin numbers, names, and normalized aliases."""
     sym_file = _symbol_library_file(library)
@@ -3350,6 +3438,7 @@ def get_pin_alias_positions(
             sym_x,
             sym_y,
             rotation,
+            mirror,
         ).items():
             aliases.setdefault(alias, point)
 
@@ -3367,6 +3456,7 @@ def get_pin_alias_positions(
                 sym_x,
                 sym_y,
                 rotation,
+                mirror,
             ).items():
                 aliases.setdefault(alias, point)
 
@@ -4425,12 +4515,20 @@ def _parse_no_connect_block(block: str) -> dict[str, Any] | None:
     return {"x": float(match.group(1)), "y": float(match.group(2))}
 
 
+def _is_pwr_flag(power_symbol: dict[str, Any]) -> bool:
+    """PWR_FLAG's only pin is power_out: KiCad uses it for ERC and it names no net."""
+    symbol_name = str(power_symbol.get("lib_id", "")).rpartition(":")[2]
+    return "PWR_FLAG" in (symbol_name, str(power_symbol.get("value", "")))
+
+
 def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
     data = parse_schematic_file(sch_file)
     try:
-        no_connect_points = _extract_no_connects(sch_file.read_text(encoding="utf-8"))
+        content = sch_file.read_text(encoding="utf-8")
     except OSError:
-        no_connect_points = set()
+        content = ""
+    no_connect_points = _extract_no_connects(content) if content else set()
+    symbol_mirrors = _placed_symbol_mirrors(content)
     parent: dict[tuple[float, float], tuple[float, float]] = {}
 
     def find(point: tuple[float, float]) -> tuple[float, float]:
@@ -4510,7 +4608,8 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
     for power_symbol in data["power_symbols"]:
         group = ensure_group((float(power_symbol["x"]), float(power_symbol["y"])))
         group["points"].add(_point_key(power_symbol["x"], power_symbol["y"]))
-        group["power"].add(str(power_symbol["value"]))
+        if not _is_pwr_flag(power_symbol):
+            group["power"].add(str(power_symbol["value"]))
 
     for symbol in data["symbols"]:
         library, symbol_name = _split_lib_id(str(symbol["lib_id"]))
@@ -4521,6 +4620,7 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
             float(symbol["y"]),
             int(symbol["rotation"]),
             int(symbol["unit"]),
+            mirror=symbol_mirrors.get(_placed_symbol_key(symbol), ""),
         )
         pin_meta = get_pin_metadata(library, symbol_name, int(symbol["unit"]))
         for pin_number, point in pin_positions.items():
