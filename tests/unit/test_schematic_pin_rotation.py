@@ -96,6 +96,29 @@ def test_pin_positions_match_kicad_for_mirrored_symbols(
 
 
 @pytest.mark.usefixtures("device_library")
+@pytest.mark.parametrize(("symbol", "rotation", "mirror", "expected"), KICAD_MIRRORED_PIN_POSITIONS)
+def test_pin_alias_positions_match_kicad_for_mirrored_symbols(
+    symbol: str,
+    rotation: int,
+    mirror: str,
+    expected: dict[str, tuple[float, float]],
+) -> None:
+    aliases = schematic.get_pin_alias_positions(
+        "Device",
+        symbol,
+        100.0,
+        100.0,
+        rotation,
+        mirror=mirror,
+    )
+
+    assert {pin: aliases[pin] for pin in expected} == expected
+    if symbol == "LED":
+        assert aliases["K"] == expected["1"]
+        assert aliases["A"] == expected["2"]
+
+
+@pytest.mark.usefixtures("device_library")
 def test_connectivity_graph_reads_symbol_mirror(tmp_path: Path) -> None:
     sch_file = tmp_path / "mirrored.kicad_sch"
     sch_file.write_text(
