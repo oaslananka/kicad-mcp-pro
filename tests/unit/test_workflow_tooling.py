@@ -156,6 +156,28 @@ def test_sonar_skips_release_metadata_only_change_sets() -> None:
     )
 
 
+def test_gitleaks_binary_download_is_sha256_verified() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "gitleaks.yml").read_text(encoding="utf-8")
+
+    _require("GITLEAKS_VERSION: v8.30.1" in workflow, "Gitleaks version must stay pinned")
+    _require(
+        (
+            "GITLEAKS_LINUX_X64_SHA256: "
+            "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        )
+        in workflow,
+        "Gitleaks Linux x64 release checksum must be pinned",
+    )
+    _require(
+        "sha256sum --check --strict" in workflow,
+        "Gitleaks archive checksum must be verified before extraction",
+    )
+    _require(
+        "gitleaks_${GITLEAKS_VERSION#v}_linux_x64.tar.gz" in workflow,
+        "checksum must cover the downloaded Linux x64 archive",
+    )
+
+
 def test_live_model_workflows_install_opencode_from_lockfile() -> None:
     opencode_workflows = [
         ROOT / ".github" / "workflows" / "live-model-assurance.yml",
