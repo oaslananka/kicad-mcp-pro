@@ -3143,6 +3143,7 @@ def _pin_alias_positions(
     sym_x: float,
     sym_y: float,
     rotation: int,
+    mirror: str = "",
 ) -> dict[str, tuple[float, float]]:
     """Return ``{alias: position}`` for a symbol block's pins.
 
@@ -3157,7 +3158,14 @@ def _pin_alias_positions(
     fuzzy: dict[str, tuple[float, float]] = {}
     fuzzy_conflicts: set[str] = set()
     for record in _extract_pin_records(block):
-        point = _place_pin(float(record["x"]), float(record["y"]), sym_x, sym_y, rotation)
+        point = _place_pin(
+            float(record["x"]),
+            float(record["y"]),
+            sym_x,
+            sym_y,
+            rotation,
+            mirror,
+        )
         number = str(record["number"])
         name = str(record["name"])
         for identifier in (number, name, number.casefold(), name.casefold()):
@@ -3365,6 +3373,7 @@ def get_pin_alias_positions(
     sym_y: float,
     rotation: int = 0,
     unit: int = 1,
+    mirror: str = "",
 ) -> dict[str, tuple[float, float]]:
     """Return a lookup for pin numbers, names, and normalized aliases."""
     sym_file = _symbol_library_file(library)
@@ -3389,6 +3398,7 @@ def get_pin_alias_positions(
             sym_x,
             sym_y,
             rotation,
+            mirror,
         ).items():
             aliases.setdefault(alias, point)
 
@@ -3406,6 +3416,7 @@ def get_pin_alias_positions(
                 sym_x,
                 sym_y,
                 rotation,
+                mirror,
             ).items():
                 aliases.setdefault(alias, point)
 
