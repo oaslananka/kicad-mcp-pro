@@ -324,12 +324,8 @@ def _symbol_property(block: str, name: str) -> str:
 
 def _symbol_instance_references(block: str, fallback_reference: str) -> list[str]:
     """Return every instantiated reference recorded in a placed symbol block."""
-    references = [
-        match.group(1).replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
-        for match in re.finditer(r'\(reference\s+"((?:\\\\.|[^"\\\\])*)"', block)
-    ]
+    references = re.findall(r'\\(reference\\s+"([^"]+)"', block)
     return references or [fallback_reference]
-
 
 def _schematic_component_rows() -> list[dict[str, str]]:
     _ = _active_schematic_file()
