@@ -53,7 +53,7 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           persist-credentials: false
       - if: ${{ steps.release-pr-branch.outputs.branch != '' }}
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
           enable-cache: false
       - if: ${{ steps.release-pr-branch.outputs.branch != '' }}
