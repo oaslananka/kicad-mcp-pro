@@ -4591,6 +4591,11 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
     )
 
 
+def build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
+    """Return the normalized electrical connectivity groups for a schematic."""
+    return _build_connectivity_groups(sch_file)
+
+
 def _project_name() -> str:
     cfg = get_config()
     if cfg.project_file is not None:
