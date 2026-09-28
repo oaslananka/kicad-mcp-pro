@@ -174,11 +174,11 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     @headless_compatible
     def sch_verify_plan(plan_id: str) -> str:
-        """Verify an applied plan: confirm labels exist; report ERC availability.
+        """Verify an applied plan against the schematic; report ERC availability.
 
-        Connectivity verification (that every planned label is present in the
-        schematic) runs file-backed. Full ERC is declared explicitly as available or
-        unavailable rather than silently skipped — run ``run_erc()`` for the full gate.
+        Verification fails closed when planned labels or components are absent.
+        Full ERC is declared explicitly as available or unavailable rather than
+        silently skipped — run ``run_erc()`` for the full electrical gate.
         """
         stored = _load_stored(plan_id)
         if stored is None:
@@ -188,10 +188,23 @@ def register(mcp: FastMCP) -> None:
                 {"plan_id": plan_id, "status": stored.status, "note": "Plan is not applied yet."}
             )
 
+        from .schematic import parse_schematic_file
+
         active = _active_schematic()
         text = active.read_text(encoding="utf-8", errors="ignore")
-        missing = [label.text for label in stored.plan.labels if f'"{label.text}"' not in text]
-        connectivity = "pass" if not missing else "fail"
+        missing_labels = [
+            label.text for label in stored.plan.labels if f'"{label.text}"' not in text
+        ]
+        parsed = parse_schematic_file(active)
+        placed_references = {
+            str(symbol.get("reference", "")) for symbol in parsed.get("symbols", [])
+        }
+        missing_components = [
+            component.reference
+            for component in stored.plan.components
+            if component.reference not in placed_references
+        ]
+        connectivity = "pass" if not missing_labels and not missing_components else "fail"
 
         erc_available = shutil.which("kicad-cli") is not None
         erc_status = "available" if erc_available else "unavailable"
@@ -205,7 +218,8 @@ def register(mcp: FastMCP) -> None:
             {
                 "plan_id": plan_id,
                 "connectivity": connectivity,
-                "missing_labels": missing,
+                "missing_labels": missing_labels,
+                "missing_components": missing_components,
                 "erc": erc_status,
                 "erc_note": erc_note,
             },
