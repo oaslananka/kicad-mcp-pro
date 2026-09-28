@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 ARG KICAD_APPIMAGE_URL
-ARG UV_VERSION=0.11.31
+ARG UV_VERSION=0.12.19
 
 FROM ghcr.io/astral-sh/uv:${UV_VERSION}@sha256:ecd4de2f060c64bea0ff8ecb182ddf46ba3fcccdc8a60cfdbaf20d1a047d7437 AS uv-bin
 

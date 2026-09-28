@@ -168,8 +168,8 @@ def _fake_cli_run_factory(sample_project: Path):
             output_path.write_text("png", encoding="utf-8")
         elif "pos" in cmd or "positions" in cmd:
             assert output_path is not None
-            output_path.mkdir(parents=True, exist_ok=True)
-            (output_path / "demo-pos.csv").write_text("ref,x,y\nR1,1,2\n", encoding="utf-8")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text("ref,x,y\nR1,1,2\n", encoding="utf-8")
         elif "ipc2581" in cmd:
             assert output_path is not None
             output_path.parent.mkdir(parents=True, exist_ok=True)
