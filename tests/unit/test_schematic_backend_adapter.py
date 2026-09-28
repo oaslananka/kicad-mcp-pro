@@ -7,11 +7,14 @@ from kicad_mcp.tools.schematic import (
     SCHEMATIC_BACKEND_CAPABILITY_MATRIX,
     SCHEMATIC_PUBLIC_TOOL_NAMES,
     _extract_uuid,
+    _extract_wires,
+    _normalize_schematic_wire_connectivity,
     _reload_schematic,
     get_schematic_backend,
     parse_schematic_file,
     transactional_write,
     update_symbol_property,
+    wire_block,
 )
 
 _REALISTIC_SCH_HEADER = (
@@ -130,3 +133,22 @@ def test_transactional_helpers_delegate_to_active_backend(monkeypatch) -> None:
         "update_symbol_property",
         "reload_schematic",
     ]
+
+
+def test_wire_normalizer_preserves_touching_collinear_segments() -> None:
+    segments = [
+        (50.8, 50.8, 76.2, 50.8),
+        (76.2, 50.8, 86.36, 50.8),
+        (86.36, 50.8, 160.02, 50.8),
+    ]
+    source = "(kicad_sch\\n" + "\\n".join(
+        wire_block(*segment) for segment in segments
+    ) + "\\n\\t(sheet_instances)\\n)"
+
+    normalized = _normalize_schematic_wire_connectivity(source)
+    wires = _extract_wires(normalized)
+
+    assert len(wires) == len(segments)
+    assert [
+        (wire["x1"], wire["y1"], wire["x2"], wire["y2"]) for wire in wires
+    ] == segments
