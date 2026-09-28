@@ -10,6 +10,20 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.35.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.35.1...mcp-server-v3.35.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* **bom:** export reused hierarchical sheet instances ([#973](https://github.com/oaslananka/kicad-mcp-pro/issues/973)) ([f481e09](https://github.com/oaslananka/kicad-mcp-pro/commit/f481e096c25c0387606797de622fbd029b243fbe))
+* **discovery:** prefer board and schematic matching the project stem ([#969](https://github.com/oaslananka/kicad-mcp-pro/issues/969)) ([1f3c13c](https://github.com/oaslananka/kicad-mcp-pro/commit/1f3c13ccd12618481b555bffd921c520fdc60fdb)), closes [#961](https://github.com/oaslananka/kicad-mcp-pro/issues/961)
+* **export:** pass a file path to kicad-cli pos --output ([#966](https://github.com/oaslananka/kicad-mcp-pro/issues/966)) ([25da712](https://github.com/oaslananka/kicad-mcp-pro/commit/25da7127e2eec25747a4006748632c61cc1c6484)), closes [#957](https://github.com/oaslananka/kicad-mcp-pro/issues/957)
+* **schematic:** detect power symbols by their lib_symbols power flag ([#967](https://github.com/oaslananka/kicad-mcp-pro/issues/967)) ([1cc46c4](https://github.com/oaslananka/kicad-mcp-pro/commit/1cc46c40621ee7f8f83975f67c662bd5800d513a)), closes [#959](https://github.com/oaslananka/kicad-mcp-pro/issues/959)
+* **schematic:** fail closed on incomplete plan connectivity ([#974](https://github.com/oaslananka/kicad-mcp-pro/issues/974)) ([f00e065](https://github.com/oaslananka/kicad-mcp-pro/commit/f00e06525192303764ba7296fab40490383c98e8))
+* **schematic:** preserve KiCad-authored wire segmentation ([#972](https://github.com/oaslananka/kicad-mcp-pro/issues/972)) ([f25db86](https://github.com/oaslananka/kicad-mcp-pro/commit/f25db866f1223fe38fec86a63d955b455f82f0ad))
+* **schematic:** repair pin rotation PR validation ([#971](https://github.com/oaslananka/kicad-mcp-pro/issues/971)) ([1fb49df](https://github.com/oaslananka/kicad-mcp-pro/commit/1fb49dff9d47badf6194630de9411bf567b99a38))
+* **schematic:** stop PWR_FLAG from naming and merging nets ([#968](https://github.com/oaslananka/kicad-mcp-pro/issues/968)) ([ec19c71](https://github.com/oaslananka/kicad-mcp-pro/commit/ec19c7167a3d7a75aa2ab92c3ee7aae24c19d3d2)), closes [#960](https://github.com/oaslananka/kicad-mcp-pro/issues/960)
+
 ## [3.35.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.35.0...mcp-server-v3.35.1) (2026-09-28)
 
 
