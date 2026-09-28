@@ -20,8 +20,28 @@ GitHub Actions, Docker/Docker Compose, and the Tauri Cargo project. Renovate is 
 part of the active update path, so the repository does not keep a second bot
 configuration that could create duplicate update pull requests.
 
-Dependabot runs weekly on Monday using the repository's Europe/Istanbul maintenance
-window. Routine minor/patch version updates are grouped per ecosystem and package-manager
+Routine version-update checks stay weekly but are staggered across the
+Europe/Istanbul maintenance window so independent updater jobs do not create a burst of
+pull requests and full CI runs at the same time:
+
+| Updater | Scope | Weekly window |
+| --- | --- | --- |
+| uv | `/` | Monday 04:00 |
+| npm/pnpm | `/` | Monday 12:00 |
+| npm | `/integrations/chatgpt-app/apps-sdk` | Tuesday 04:00 |
+| npm/pnpm | `/packages/kicad-fixtures` | Tuesday 12:00 |
+| npm | `/packages/mcp-npm` | Wednesday 04:00 |
+| Cargo | `/src-tauri` | Wednesday 12:00 |
+| GitHub Actions | `/` | Thursday 04:00 |
+| Docker | `/` | Friday 04:00 |
+| Docker Compose | `/` | Friday 12:00 |
+
+Each updater limits its version-update backlog to two open pull requests and applies a
+five-day cooldown before newly released versions are eligible. GitHub's cooldown and
+open-pull-request limit apply to version updates, not Dependabot security updates, so
+vulnerability remediation is not delayed by this backpressure policy.
+
+Routine minor/patch version updates are grouped per ecosystem and package-manager
 boundary to reduce PR and CI churn; major updates remain individual pull requests. The
 npm/pnpm configuration uses separate single-directory entries for the root pnpm project,
 the ChatGPT Apps npm project, the fixture pnpm package, and the npm wrapper so Dependabot
