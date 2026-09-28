@@ -103,7 +103,7 @@ def test_pick_and_place_preserves_variant_fallbacks_and_sorted_files(tmp_path: P
                 "--format",
                 "ascii",
                 "--output",
-                str(out_dir),
+                str(out_dir / "board.pos"),
                 pcb,
             ],
             [
@@ -117,7 +117,7 @@ def test_pick_and_place_preserves_variant_fallbacks_and_sorted_files(tmp_path: P
                 "--input",
                 pcb,
                 "--output",
-                str(out_dir),
+                str(out_dir / "board.pos"),
             ],
         ]
     ]
@@ -125,6 +125,17 @@ def test_pick_and_place_preserves_variant_fallbacks_and_sorted_files(tmp_path: P
         ([out_dir / "a.csv", out_dir / "z.csv"], f"Pick and place data exported to {out_dir}:")
     ]
     assert result == f"formatted::Pick and place data exported to {out_dir}:::a.csv,z.csv"
+
+
+def test_pick_and_place_passes_a_file_path_to_output(tmp_path: Path) -> None:
+    service, calls = _service(tmp_path)
+
+    service.export_pick_and_place()
+
+    out_file = str(tmp_path / "output" / "pos" / "board-pos.csv")
+    [[primary, fallback]] = calls["cli"]
+    assert primary[primary.index("--output") + 1] == out_file
+    assert fallback[fallback.index("--output") + 1] == out_file
 
 
 def test_pick_and_place_preserves_failure_text_and_ignores_stdout(tmp_path: Path) -> None:

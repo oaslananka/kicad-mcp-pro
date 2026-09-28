@@ -50,6 +50,8 @@ _ODB = _SingleFileSpec(
     support_name="supports_odb_export",
     extra_args=("--compression",),
 )
+_POSITION_FILE_NAMES = {"csv": "board-pos.csv", "gerber": "board-pos.gbr"}
+_DEFAULT_POSITION_FILE_NAME = "board.pos"
 
 
 @dataclass(frozen=True)
@@ -72,6 +74,7 @@ class ExportPcbManufacturingOutputsService:
         pcb_file = self.get_pcb_file()
         position_command = self.get_capabilities().position_command
         out_dir = self.ensure_output_dir("pos")
+        out_file = out_dir / _POSITION_FILE_NAMES.get(format, _DEFAULT_POSITION_FILE_NAME)
         variant_args = self.active_variant_args(variant_name)
         code, _, stderr = self.run_cli_variants(
             [
@@ -83,7 +86,7 @@ class ExportPcbManufacturingOutputsService:
                     "--format",
                     format,
                     "--output",
-                    str(out_dir),
+                    str(out_file),
                     str(pcb_file),
                 ],
                 [
@@ -96,7 +99,7 @@ class ExportPcbManufacturingOutputsService:
                     "--input",
                     str(pcb_file),
                     "--output",
-                    str(out_dir),
+                    str(out_file),
                 ],
             ]
         )
