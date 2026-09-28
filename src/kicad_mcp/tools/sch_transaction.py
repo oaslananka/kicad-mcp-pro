@@ -66,6 +66,11 @@ def _active_schematic() -> Path:
     return files[0]
 
 
+def _label_identity(name: str, x: float, y: float) -> tuple[str, float, float]:
+    """Normalize one label instance to the same coordinate precision as connectivity groups."""
+    return (name, round(float(x), 4), round(float(y), 4))
+
+
 def register(mcp: FastMCP) -> None:
     """Register transactional schematic plan tools."""
 
@@ -193,9 +198,23 @@ def register(mcp: FastMCP) -> None:
 
         active = _active_schematic()
         parsed = parse_schematic_file(active)
-        placed_labels = {str(label.get("name", "")) for label in parsed.get("labels", [])}
+        placed_label_identities = {
+            _label_identity(
+                str(label.get("name", "")),
+                float(label.get("x", 0.0)),
+                float(label.get("y", 0.0)),
+            )
+            for label in parsed.get("labels", [])
+        }
+        missing_label_identities = {
+            _label_identity(label.text, label.x, label.y)
+            for label in stored.plan.labels
+            if _label_identity(label.text, label.x, label.y) not in placed_label_identities
+        }
         missing_labels = [
-            label.text for label in stored.plan.labels if label.text not in placed_labels
+            label.text
+            for label in stored.plan.labels
+            if _label_identity(label.text, label.x, label.y) in missing_label_identities
         ]
         placed_references = {
             str(symbol.get("reference", "")) for symbol in parsed.get("symbols", [])
@@ -215,10 +234,19 @@ def register(mcp: FastMCP) -> None:
                 connectivity_error = str(exc)
             else:
                 for label in stored.plan.labels:
-                    if label.text in missing_labels:
+                    label_identity = _label_identity(label.text, label.x, label.y)
+                    if label_identity in missing_label_identities:
                         continue
+                    planned_point = label_identity[1:]
                     matching_groups = [
-                        group for group in groups if label.text in group.get("names", [])
+                        group
+                        for group in groups
+                        if label.text in group.get("names", [])
+                        and planned_point
+                        in {
+                            (round(float(point[0]), 4), round(float(point[1]), 4))
+                            for point in group.get("points", [])
+                        }
                     ]
                     if not matching_groups or all(
                         not group.get("pins") and len(group.get("points", [])) == 1

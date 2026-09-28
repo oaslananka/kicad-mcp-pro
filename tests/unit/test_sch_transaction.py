@@ -23,6 +23,13 @@ MINIMAL_SCH = """(kicad_sch (version 20240101) (generator "test") (paper "A4")
 )
 """
 
+
+def _expect_equal(actual: object, expected: object) -> None:
+    """Fail explicitly so regression checks remain active under optimized Python."""
+    if actual != expected:
+        pytest.fail(f"expected {expected!r}, got {actual!r}")
+
+
 SUBCIRCUIT_SPEC = {
     "title": "RC output stage",
     "components": [
@@ -113,11 +120,11 @@ async def test_full_plan_lifecycle(tmp_path: Path) -> None:
 
     # 4. Verify fails closed because the plan's components were never placed.
     verified = json.loads(await call_tool_text(server, "sch_verify_plan", {"plan_id": plan_id}))
-    assert verified["connectivity"] == "fail"
+    _expect_equal(verified["connectivity"], "fail")
     assert verified["missing_labels"] == []
-    assert verified["missing_components"] == ["R1", "C1"]
-    assert verified["unconnected_labels"] == ["VIN", "VOUT", "GND"]
-    assert verified["connectivity_error"] is None
+    _expect_equal(verified["missing_components"], ["R1", "C1"])
+    _expect_equal(verified["unconnected_labels"], ["VIN", "VOUT", "GND"])
+    _expect_equal(verified["connectivity_error"], None)
     assert verified["erc"] in {"available", "unavailable"}
 
     # 5. Rollback restores the original schematic.
@@ -147,10 +154,10 @@ async def test_verify_plan_fails_for_present_but_unconnected_label(tmp_path: Pat
         await call_tool_text(server, "sch_verify_plan", {"plan_id": planned["plan_id"]})
     )
 
-    assert verified["missing_labels"] == []
-    assert verified["missing_components"] == []
-    assert verified["unconnected_labels"] == ["FLOATING"]
-    assert verified["connectivity"] == "fail"
+    _expect_equal(verified["missing_labels"], [])
+    _expect_equal(verified["missing_components"], [])
+    _expect_equal(verified["unconnected_labels"], ["FLOATING"])
+    _expect_equal(verified["connectivity"], "fail")
 
 
 @pytest.mark.anyio
@@ -182,9 +189,9 @@ async def test_verify_plan_accepts_present_label_with_connectivity(
         await call_tool_text(server, "sch_verify_plan", {"plan_id": planned["plan_id"]})
     )
 
-    assert verified["unconnected_labels"] == []
-    assert verified["connectivity_error"] is None
-    assert verified["connectivity"] == "pass"
+    _expect_equal(verified["unconnected_labels"], [])
+    _expect_equal(verified["connectivity_error"], None)
+    _expect_equal(verified["connectivity"], "pass")
 
 
 @pytest.mark.anyio
@@ -215,6 +222,56 @@ async def test_verify_plan_fails_closed_when_connectivity_analysis_errors(
         await call_tool_text(server, "sch_verify_plan", {"plan_id": planned["plan_id"]})
     )
 
-    assert verified["unconnected_labels"] == []
-    assert verified["connectivity_error"] == "synthetic connectivity failure"
-    assert verified["connectivity"] == "fail"
+    _expect_equal(verified["unconnected_labels"], [])
+    _expect_equal(verified["connectivity_error"], "synthetic connectivity failure")
+    _expect_equal(verified["connectivity"], "fail")
+
+
+@pytest.mark.anyio
+async def test_verify_plan_does_not_accept_same_label_at_wrong_position(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.server import create_server
+    from kicad_mcp.tools import schematic as schematic_mod
+    from tests.conftest import call_tool_text
+
+    (tmp_path / "test.kicad_pro").write_text("{}", encoding="utf-8")
+    (tmp_path / "test.kicad_pcb").write_text("", encoding="utf-8")
+    (tmp_path / "test.kicad_sch").write_text(MINIMAL_SCH, encoding="utf-8")
+
+    server = create_server()
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(tmp_path)})
+    spec = {"title": "positioned", "labels": [{"text": "NET1", "x": 50, "y": 40}]}
+    planned = json.loads(
+        await call_tool_text(server, "sch_plan_from_spec", {"spec_json": json.dumps(spec)})
+    )
+    await call_tool_text(server, "sch_apply_plan", {"plan_id": planned["plan_id"]})
+
+    monkeypatch.setattr(
+        schematic_mod,
+        "parse_schematic_file",
+        lambda _path: {
+            "labels": [{"name": "NET1", "x": 60.0, "y": 40.0}],
+            "symbols": [],
+        },
+    )
+    monkeypatch.setattr(
+        schematic_mod,
+        "build_connectivity_groups",
+        lambda _path: [
+            {
+                "names": ["NET1"],
+                "points": [(60.0, 40.0), (70.0, 40.0)],
+                "pins": [],
+            }
+        ],
+    )
+
+    verified = json.loads(
+        await call_tool_text(server, "sch_verify_plan", {"plan_id": planned["plan_id"]})
+    )
+
+    _expect_equal(verified["missing_labels"], ["NET1"])
+    _expect_equal(verified["unconnected_labels"], [])
+    _expect_equal(verified["connectivity_error"], None)
+    _expect_equal(verified["connectivity"], "fail")
