@@ -108,6 +108,43 @@ def test_publish_workflows_are_idempotent_for_existing_versions() -> None:
     assert "steps.check-published.outputs.already_published != 'true'" in npm_workflow
 
 
+def test_npm_publishers_use_oidc_without_long_lived_tokens() -> None:
+    for path in (".github/workflows/publish-npm.yml",):
+        workflow = _read(path)
+        _require("id-token: write" in workflow, f"{path} must request OIDC")
+        _require("npm publish" in workflow, f"{path} must publish through npm CLI")
+        _require("NPM_TOKEN" not in workflow, f"{path} must not use NPM_TOKEN")
+        _require("NODE_AUTH_TOKEN" not in workflow, f"{path} must not inject NODE_AUTH_TOKEN")
+        _require("environment: npm" in workflow, f"{path} must bind the npm environment")
+
+
+def test_release_automation_uses_short_lived_github_app_token() -> None:
+    release = _read(".github/workflows/release-please.yml")
+    audit = _read(".github/workflows/repository-settings-audit.yml")
+    action = "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1"
+
+    for workflow in (release, audit):
+        _require(action in workflow, "GitHub App token action must be SHA pinned")
+        _require(
+            "vars.OASLANANKA_OPS_APP_CLIENT_ID" in workflow,
+            "GitHub App client ID must come from a repository variable",
+        )
+        _require(
+            "secrets.OASLANANKA_OPS_APP_PRIVATE_KEY" in workflow,
+            "GitHub App private key must come from a repository secret",
+        )
+        _require("RELEASE_PLEASE_TOKEN" not in workflow, "long-lived release PAT must be removed")
+
+    _require(
+        "permission-contents: write" in release and "permission-pull-requests: write" in release,
+        "release installation token permissions must be explicit",
+    )
+    _require(
+        "permission-actions: read" in audit and "permission-administration: read" in audit,
+        "audit installation token permissions must be explicit",
+    )
+
+
 def test_container_publish_uses_immutable_release_tag_for_production() -> None:
     workflow = _read(".github/workflows/publish-mcp-container.yml")
 

@@ -125,12 +125,6 @@
         "id-token"
       ]
     },
-    "release-please.yml": {
-      "release": [
-        "contents",
-        "pull-requests"
-      ]
-    },
     "scorecard.yml": {
       "analysis": [
         "id-token",

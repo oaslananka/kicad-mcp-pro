@@ -94,7 +94,13 @@ def test_repository_settings_audit_workflow_is_default_branch_only_and_read_only
     assert "pull_request:" not in workflow
     assert "push:" not in workflow
     assert "permissions:\n  contents: read" in workflow
-    assert "secrets.RELEASE_PLEASE_TOKEN" in workflow
+    _require("secrets.RELEASE_PLEASE_TOKEN" not in workflow, "audit must not use release PAT")
+    _require("steps.audit-app-token.outputs.token" in workflow, "audit must use app token")
+    _require("permission-actions: read" in workflow, "audit token must request Actions read")
+    _require(
+        "permission-administration: read" in workflow,
+        "audit token must request Administration read",
+    )
     assert "check_github_repository_settings.py" in workflow
     assert "persist-credentials: false" in workflow
 
