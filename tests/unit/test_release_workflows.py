@@ -109,7 +109,10 @@ def test_publish_workflows_are_idempotent_for_existing_versions() -> None:
 
 
 def test_npm_publishers_use_oidc_without_long_lived_tokens() -> None:
-    for path in (".github/workflows/publish-npm.yml",):
+    for path in (
+        ".github/workflows/publish-npm.yml",
+        ".github/workflows/publish-protocol-schemas.yml",
+    ):
         workflow = _read(path)
         _require("id-token: write" in workflow, f"{path} must request OIDC")
         _require("npm publish" in workflow, f"{path} must publish through npm CLI")
