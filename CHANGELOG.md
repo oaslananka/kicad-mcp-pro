@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.35.3](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.35.2...mcp-server-v3.35.3) (2026-09-29)
+
+
+### Bug Fixes
+
+* **tests:** stop two unit tests from asserting the developer's machine ([#978](https://github.com/oaslananka/kicad-mcp-pro/issues/978)) ([90bf3a7](https://github.com/oaslananka/kicad-mcp-pro/commit/90bf3a741108735a256741a2f432083247aef547))
+
 ## [3.35.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.35.1...mcp-server-v3.35.2) (2026-09-28)
 
 
