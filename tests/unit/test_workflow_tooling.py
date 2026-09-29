@@ -156,6 +156,34 @@ def test_sonar_skips_release_metadata_only_change_sets() -> None:
     )
 
 
+def test_full_python_suite_setup_is_shared_without_cross_workflow_artifacts() -> None:
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    sonar = (ROOT / ".github" / "workflows" / "sonarcloud.yml").read_text(encoding="utf-8")
+    action = (ROOT / ".github" / "actions" / "python-full-suite" / "action.yml").read_text(
+        encoding="utf-8"
+    )
+
+    local_action = "uses: ./.github/actions/python-full-suite"
+    _require(local_action in ci, "CI coverage must use the shared full-suite action")
+    _require(local_action in sonar, "Sonar must use the shared full-suite action")
+    _require(
+        "astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7" in action,
+        "shared action must pin setup-uv",
+    )
+    _require(
+        "uv sync --all-extras --frozen" in action,
+        "shared action must sync the locked full environment",
+    )
+    _require(
+        "uv run python scripts/run_pytest.py" in action,
+        "shared action must own the full-suite command",
+    )
+    _require(
+        "cross-workflow artifact reuse" in sonar,
+        "Sonar must remain an independent full-suite execution",
+    )
+
+
 def test_gitleaks_binary_download_is_sha256_verified() -> None:
     workflow = (ROOT / ".github" / "workflows" / "gitleaks.yml").read_text(encoding="utf-8")
 

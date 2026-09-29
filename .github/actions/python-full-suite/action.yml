@@ -1,0 +1,34 @@
+name: Python full suite
+description: Set up uv, sync the locked environment, and run the full Python test suite.
+
+inputs:
+  junitxml:
+    description: Optional JUnit XML output path.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+      with:
+        enable-cache: true
+        prune-cache: true
+        version-file: uv.toml
+
+    - name: Install Python dependencies
+      shell: bash
+      run: uv sync --all-extras --frozen
+
+    - name: Run full Python suite
+      shell: bash
+      env:
+        JUNITXML: ${{ inputs.junitxml }}
+      run: |
+        set -euo pipefail
+        args=(full)
+        if [[ -n "$JUNITXML" ]]; then
+          args+=(--junitxml="$JUNITXML" -o junit_family=legacy)
+        fi
+        uv run python scripts/run_pytest.py "${args[@]}"

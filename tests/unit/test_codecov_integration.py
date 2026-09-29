@@ -10,6 +10,11 @@ ROOT = Path(__file__).resolve().parents[2]
 CODECOV_ACTION_SHA = "303a32d7a59b442fa8d48b6a1cc6825c09c847a5"
 
 
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
+
+
 def _load_run_pytest() -> ModuleType:
     spec = importlib.util.spec_from_file_location("run_pytest", ROOT / "scripts" / "run_pytest.py")
     assert spec is not None
@@ -54,7 +59,18 @@ def test_ci_uploads_coverage_and_failed_test_results_with_oidc() -> None:
     assert workflow.count("use_oidc: ${{ github.event_name != 'pull_request'") == 2
     assert "report_type: test_results" in workflow
     assert "continue-on-error: true" in workflow
-    assert "--junitxml=python.junit.xml" in workflow
+    action = (ROOT / ".github" / "actions" / "python-full-suite" / "action.yml").read_text(
+        encoding="utf-8"
+    )
+    _require("junitxml: python.junit.xml" in workflow, "CI must request JUnit output")
+    _require(
+        "JUNITXML: ${{ inputs.junitxml }}" in action,
+        "shared full-suite action must receive the JUnit path",
+    )
+    _require(
+        '--junitxml="$JUNITXML"' in action,
+        "shared full-suite action must forward the JUnit path to pytest",
+    )
     assert "--coverage-file coverage.json" in workflow
     assert "steps.python-tests.outcome == 'failure'" in workflow
     assert "needs.changes.outputs.python != 'true'" in workflow

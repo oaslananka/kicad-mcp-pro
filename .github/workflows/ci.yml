@@ -269,23 +269,13 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
-        if: env.skip_ci != 'true'
-        with:
-          enable-cache: true
-          prune-cache: true
-          version-file: uv.toml
-      - name: Install Python dependencies
-        if: env.skip_ci != 'true'
-        run: uv sync --all-extras --frozen
       - name: Run full Python suite with coverage and JUnit
         id: python-tests
         if: env.skip_ci != 'true'
         continue-on-error: true
-        run: >-
-          uv run python scripts/run_pytest.py full
-          --junitxml=python.junit.xml
-          -o junit_family=legacy
+        uses: ./.github/actions/python-full-suite
+        with:
+          junitxml: python.junit.xml
       - name: Enforce Python patch coverage
         id: patch-coverage
         if: >-
