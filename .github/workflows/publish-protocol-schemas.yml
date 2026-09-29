@@ -110,7 +110,6 @@ jobs:
         if: steps.check-published.outputs.already_published != 'true'
         run: npm publish "${NPM_TARBALL}" --access public --provenance --ignore-scripts
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TARBALL: ${{ steps.pack-evidence.outputs.tarball }}
       - name: Verify published tarball
         shell: bash
