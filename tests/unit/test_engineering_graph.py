@@ -34,6 +34,7 @@ from kicad_mcp.ir.engineering_graph import (
     engineering_graph_diff,
 )
 
+
 def _entity(
     graph: EngineeringGraph,
     kind: GraphEntityKind,
@@ -300,8 +301,7 @@ def test_required_provenance_kinds_remain_distinct_across_persistence() -> None:
     restored = EngineeringGraph.from_document(graph.to_document())
 
     assert {
-        entity.provenance.kind
-        for entity in restored.entities_of_kind(GraphEntityKind.COMPONENT)
+        entity.provenance.kind for entity in restored.entities_of_kind(GraphEntityKind.COMPONENT)
     } == set(required_kinds)
 
 
