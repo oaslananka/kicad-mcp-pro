@@ -15,7 +15,7 @@ from typing import Literal
 from pydantic import ValidationError
 
 from ..ir.engineering_graph import EngineeringGraph
-from .evidence_current_state import assess_evidence_current_state
+from .evidence_current_state import assess_evidence_current_state, graph_entity_hashes
 from .evidence_freshness import (
     EvidenceFreshnessState,
     EvidenceRecord,
@@ -135,17 +135,19 @@ def resolve_project_release_evidence(
             errors=(f"evidence_record_store_invalid: {exc}",),
         )
 
-    assessments = (
-        tuple(
+    if current_graph is not None:
+        dependency_ids = tuple(entry.entity_id for record in records for entry in record.inputs)
+        current_hashes, _missing = graph_entity_hashes(current_graph, dependency_ids)
+        assessments = tuple(
             assess_evidence_current_state(
                 record,
                 graph=current_graph,
                 current_source_sha256=current_source_sha256,
+                current_hashes=current_hashes,
             )
             for record in records
         )
-        if current_graph is not None
-        else unresolved_current_state_assessments(records)
-    )
+    else:
+        assessments = unresolved_current_state_assessments(records)
     gate = evaluate_release_evidence(contracts, records, assessments)
     return ProjectReleaseEvidenceResolution(adopted=True, gate=gate)
