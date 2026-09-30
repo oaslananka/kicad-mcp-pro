@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import Counter
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import Field
 
@@ -186,16 +186,12 @@ def adapt_explicit_design_spec_contracts(
             )
             continue
 
-        if value is None or binding.applicability is None:
-            raise RuntimeError("unresolved source value was not rejected")
-        if binding.contract_id is None or binding.requirement_id is None:
-            raise RuntimeError("unresolved contract identity was not rejected")
-        if binding.contract_version is None or binding.severity is None:
-            raise RuntimeError("unresolved version or severity was not rejected")
-        if binding.release_blocking is None:
-            raise RuntimeError("unresolved release policy was not rejected")
-
-        quantity = HardwareQuantity(value=value, unit=_SOURCE_UNIT[binding.source_field])
+        # The unresolved guard above rejects missing required fields. Casts below
+        # narrow the runtime-validated optional fields for strict static typing.
+        quantity = HardwareQuantity(
+            value=cast(Decimal, value),
+            unit=_SOURCE_UNIT[binding.source_field],
+        )
         try:
             quantity_range: QuantityRange | None = None
             nominal_tolerance: NominalTolerance | None = None
@@ -209,12 +205,12 @@ def adapt_explicit_design_spec_contracts(
                 )
             contract = HardwareIntentContract(
                 schema_version=1,
-                contract_id=binding.contract_id,
-                contract_version=binding.contract_version,
-                requirement_id=binding.requirement_id,
-                applicability=binding.applicability,
-                severity=binding.severity,
-                release_blocking=binding.release_blocking,
+                contract_id=cast(str, binding.contract_id),
+                contract_version=cast(int, binding.contract_version),
+                requirement_id=cast(str, binding.requirement_id),
+                applicability=cast(ContractScope, binding.applicability),
+                severity=cast(ContractSeverity, binding.severity),
+                release_blocking=cast(bool, binding.release_blocking),
                 verification=binding.verification,
                 waivers=binding.waivers,
                 quantity_range=quantity_range,
