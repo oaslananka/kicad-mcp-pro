@@ -96,6 +96,48 @@ def _bind(keywords: set[str], outcomes: list[GateOutcome]) -> list[GateOutcome]:
     return bound or list(outcomes)
 
 
+def _apply_release_evidence(
+    verdict: SignoffVerdict,
+    summary: str,
+    release_evidence: ProjectReleaseEvidenceResolution | None,
+) -> tuple[SignoffVerdict, str, dict[str, Any] | None]:
+    if release_evidence is None or not release_evidence.adopted:
+        return verdict, summary, None
+
+    contracts = (
+        [
+            {
+                "contract_id": result.contract_id,
+                "contract_version": result.contract_version,
+                "state": result.state.value,
+                "evidence_ids": list(result.evidence_ids),
+                "reason_codes": list(result.reason_codes),
+            }
+            for result in release_evidence.gate.contracts
+        ]
+        if release_evidence.gate is not None
+        else []
+    )
+    payload: dict[str, Any] = {
+        "approved": release_evidence.approved,
+        "errors": list(release_evidence.errors),
+        "contracts": contracts,
+    }
+
+    if not release_evidence.approved:
+        release_blocker = (
+            "Sign-off blocked: release-blocking HardwareIntentContract evidence "
+            "is missing, stale, invalidated, or unresolved."
+        )
+        combined_summary = release_blocker if verdict == "PASS" else f"{summary} {release_blocker}"
+        return "FAIL", combined_summary, payload
+
+    if release_evidence.gate is not None and release_evidence.gate.waived and verdict == "PASS":
+        return "WARN", "Sign-off requires explicit reviewed contract waiver evidence.", payload
+
+    return verdict, summary, payload
+
+
 def build_signoff_report(
     intent: dict[str, Any],
     outcomes: list[GateOutcome],
@@ -134,42 +176,11 @@ def build_signoff_report(
         verdict = "PASS"
         summary = f"All {len(specs)} declared requirement(s) bound to passing checks."
 
-    release_payload: dict[str, Any] | None = None
-    if release_evidence is not None and release_evidence.adopted:
-        contracts = (
-            [
-                {
-                    "contract_id": result.contract_id,
-                    "contract_version": result.contract_version,
-                    "state": result.state.value,
-                    "evidence_ids": list(result.evidence_ids),
-                    "reason_codes": list(result.reason_codes),
-                }
-                for result in release_evidence.gate.contracts
-            ]
-            if release_evidence.gate is not None
-            else []
-        )
-        release_payload = {
-            "approved": release_evidence.approved,
-            "errors": list(release_evidence.errors),
-            "contracts": contracts,
-        }
-        if not release_evidence.approved:
-            release_blocker = (
-                "Sign-off blocked: release-blocking HardwareIntentContract evidence "
-                "is missing, stale, invalidated, or unresolved."
-            )
-            if verdict == "PASS":
-                summary = release_blocker
-            else:
-                summary = f"{summary} {release_blocker}"
-            verdict = "FAIL"
-        elif (
-            release_evidence.gate is not None and release_evidence.gate.waived and verdict == "PASS"
-        ):
-            verdict = "WARN"
-            summary = "Sign-off requires explicit reviewed contract waiver evidence."
+    verdict, summary, release_payload = _apply_release_evidence(
+        verdict,
+        summary,
+        release_evidence,
+    )
 
     checks = [
         {"name": o.name, "status": o.status, "summary": o.summary, "evidence": list(o.details)}
