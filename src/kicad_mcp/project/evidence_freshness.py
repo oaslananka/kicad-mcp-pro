@@ -197,7 +197,11 @@ def _input_hash_reasons(
     unresolved: list[InvalidationReason] = []
     for entry in record.inputs:
         digest = current_hashes.get(entry.entity_id)
-        if digest is None or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(c not in "0123456789abcdef" for c in digest)
+        ):
             unresolved.append(
                 InvalidationReason(
                     code="current_input_hash_missing_or_invalid", entity_id=entry.entity_id
@@ -246,8 +250,8 @@ def assess_evidence_freshness(
             for edge in graph.edges
             if edge.source_id == evidence_id and edge.kind is GraphEdgeKind.DEPENDS_ON
         }
-        if not dependencies <= linked:
-            unresolved.append(InvalidationReason(code="dependency_link_missing"))
+        if linked != dependencies:
+            unresolved.append(InvalidationReason(code="dependency_manifest_link_mismatch"))
 
     changed, edge_endpoints = _known_mutations(before, after)
     implicated = _dependency_impact(before, after, changed)
