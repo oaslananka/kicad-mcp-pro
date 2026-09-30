@@ -413,10 +413,7 @@ def canonical_entity_id(project_key: str, kind: GraphEntityKind, stable_key: str
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    seed = (
-        "https://github.com/oaslananka/kicad-mcp-pro/"
-        f"engineering-graph/v1/{identity_tuple}"
-    )
+    seed = f"https://github.com/oaslananka/kicad-mcp-pro/engineering-graph/v1/{identity_tuple}"
     return f"eg:{kind.value}:{uuid5(NAMESPACE_URL, seed)}"
 
 
