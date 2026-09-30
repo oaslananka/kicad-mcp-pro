@@ -153,7 +153,6 @@ def test_u7_change_returns_requirement_contract_verification_and_evidence_impact
     assert u8.entity_id not in impacted
 
 
-
 def test_circuit_component_change_propagates_through_pins_to_connected_net() -> None:
     graph = graph_from_circuit(_sample_circuit())
     component = graph.entities_of_kind(GraphEntityKind.COMPONENT)[0]
