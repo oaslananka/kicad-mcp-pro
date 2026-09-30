@@ -66,20 +66,32 @@ def update_graph_from_circuit(
             )
 
     imported = _imported_provenance()
-    updated_entity_ids: set[str] = set()
+    updates: list[GraphEntity] = []
     for reference in changed_references:
-        entity = _component_entity(
+        before_entity = _component_entity(
             graph.project_key,
             reference,
-            after.components[reference],
+            before.components[reference],
             imported,
         )
-        if entity.entity_id not in graph.entities:
+        existing = graph.entities.get(before_entity.entity_id)
+        if existing != before_entity:
             raise ValueError(
-                f"component {reference!r} is missing from Engineering Graph; full rebuild required"
+                f"component {reference!r} does not match the declared before-state; "
+                "full Engineering Graph rebuild required"
             )
+        updates.append(
+            _component_entity(
+                graph.project_key,
+                reference,
+                after.components[reference],
+                imported,
+            )
+        )
+
+    updated_entity_ids = {entity.entity_id for entity in updates}
+    for entity in updates:
         graph.entities[entity.entity_id] = entity
-        updated_entity_ids.add(entity.entity_id)
 
     preserved_entity_ids = frozenset(set(graph.entities) - updated_entity_ids)
     return GraphIncrementalUpdateResult(
