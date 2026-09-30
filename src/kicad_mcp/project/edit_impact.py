@@ -16,6 +16,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from .evidence_edit_bridge import (
+    EvidenceImpactSnapshot,
+    compile_evidence_impact,
+    render_evidence_impact,
+)
+
 # Every gate category the project gate can produce. "Preserved" = ALL − affected.
 ALL_GATES: tuple[str, ...] = (
     "schematic",
@@ -170,6 +176,15 @@ class ProjectEditImpactService:
     format_gate: Callable[[Any], str]
     project_gate_categories: frozenset[str]
     inference_error_types: tuple[type[Exception], ...] = ()
+    evidence_snapshot: Callable[[], EvidenceImpactSnapshot] | None = None
+
+    def _evidence_summary(self) -> str:
+        if self.evidence_snapshot is None:
+            return (
+                "Evidence freshness: requires_recheck "
+                "(no authoritative graph/input hashes supplied; gate reuse is not evidence proof)."
+            )
+        return render_evidence_impact(compile_evidence_impact(self.evidence_snapshot()))
 
     def _resolve_baseline(self, baseline_spec_json: str) -> tuple[dict[str, Any] | None, str]:
         if not baseline_spec_json.strip():
@@ -200,7 +215,7 @@ class ProjectEditImpactService:
         baseline_value = cast(dict[str, Any], baseline)
         current_value = cast(dict[str, Any], current)
         changes = semantic_intent_diff(baseline_value, current_value)
-        return render_impact_report(impact_of_changes(changes))
+        return render_impact_report(impact_of_changes(changes)) + "\n\n" + self._evidence_summary()
 
     def revalidate(
         self,
@@ -227,6 +242,7 @@ class ProjectEditImpactService:
         lines = [f"Selective re-validation after edit: {report.summary}", ""]
         if not changes:
             lines.append("No gates were re-run; every previously-passing gate is preserved.")
+            lines.extend(("", self._evidence_summary()))
             return "\n".join(lines)
 
         if runnable:
@@ -249,4 +265,5 @@ class ProjectEditImpactService:
 
         lines.append("")
         lines.append(f"Preserved project gates (not re-run): {', '.join(preserved) or '(none)'}")
+        lines.extend(("", self._evidence_summary()))
         return "\n".join(lines)
