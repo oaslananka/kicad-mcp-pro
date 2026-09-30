@@ -22,6 +22,16 @@ The link_hardware_intent_contract(graph, contract, provenance=...) function requ
 
 Graph v1 has no region entity. A region selector is valid contract metadata but **cannot** be linked to Graph v1 without a real entity mapping; the function rejects it.
 
-## Still required before #941 closure
+## Conservative design-spec adapter
 
-A subsequent bounded tranche must implement an **explicit, reviewable adapter** from existing project design-spec fields. It must report unresolved/missing engineering facts rather than inventing severity, verification methods, evidence classes, IDs or approved waivers. Conversion fixtures and final full integration remain open. #942 evidence freshness and #943/#944 native canaries/persistent state are separate owners.
+The pure `adapt_explicit_design_spec_contracts(resolution, bindings)` adapter accepts a persisted `ProjectSpecResolution` and reviewer-authored `ContractConversionBinding` records. It reads **only** the `explicit` spec: the merged `resolved` view may contain inferred PCB heuristics and must not create authoritative requirements.
+
+V1 conversion supports explicit, named power-rail voltage/current maximum and unique interface impedance/skew maximum. The source scalar is converted into a typed exact-decimal quantity. No contract is created unless stable IDs, revision, explicit target applicability, severity, release-blocking policy and required verification/evidence are supplied. Nominal values additionally need an **authored** absolute or percentage tolerance: the existing legacy power-rail `tolerance_pct=5` default is **not** silently used. Maximum-only values produce an explicit upper-bound range, not an invented nominal.
+
+Missing or ambiguous data yields `ContractConversionResult.unresolved` records containing source references and machine-readable reason strings, rather than a silent guess. Repeated source names/kinds and duplicated contract IDs are refused. Reviewer-provided waiver metadata is revalidated for exact contract revision.
+
+This adapter is in-memory and does not mutate KiCad project files, automatically approve waivers, invent graph Requirement nodes, or silently promote inferred data. Conversion and graph linking are separate steps, so missing graph entities still fail closed.
+
+## Remaining before #941 closure
+
+Pass live repository format/type/architecture/unit/integration/security/coverage gates, confirm schema/fixture parity, review all PR threads and warnings, and ensure covered reference-board requirements are represented. Broader source fields, evidence freshness (#942), native canaries (#943), and persistent caches (#944) remain independent follow-ups.
