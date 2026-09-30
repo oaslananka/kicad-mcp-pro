@@ -205,6 +205,7 @@ def test_transitive_dependency_cycle_does_not_report_self() -> None:
     assert contract.entity_id in dependencies
     assert requirement.entity_id not in dependencies
 
+
 def test_graph_diff_preserves_identity_for_attribute_change() -> None:
     before = EngineeringGraph(project_key="demo")
     component = _entity(
