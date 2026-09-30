@@ -20,7 +20,7 @@ from kicad_mcp.project.hardware_intent_adapter import (
     ContractConversionBinding,
     adapt_explicit_design_spec_contracts,
 )
-from kicad_mcp.project.hardware_intent_contract import ContractVerification, HardwareIntentContract
+from kicad_mcp.project.hardware_intent_contract import HardwareIntentContract
 from kicad_mcp.project.hardware_intent_graph import link_hardware_intent_contract
 from kicad_mcp.tools.design_intent_state import ProjectDesignIntent, ProjectSpecResolution
 
@@ -30,9 +30,7 @@ def _explicit_spec() -> ProjectDesignIntent:
     return ProjectDesignIntent(
         required_sheets=["Power_USB_OR", "MCU_Service"],
         critical_nets=["USB_DP", "USB_DN"],
-        power_rails=[
-            PowerRailSpec(name="+3V3", voltage_v=3.3, current_max_a=1.0, source_ref="U3")
-        ],
+        power_rails=[PowerRailSpec(name="+3V3", voltage_v=3.3, current_max_a=1.0, source_ref="U3")],
         interfaces=[
             InterfaceSpec(
                 kind="usb2",
@@ -134,9 +132,7 @@ def test_missing_author_metadata_never_invents_release_policy_or_evidence() -> N
 
 def test_default_legacy_rail_tolerance_is_never_promoted() -> None:
     assert _explicit_spec().power_rails[0].tolerance_pct == 5.0
-    result = adapt_explicit_design_spec_contracts(
-        _resolution(), (_binding(relative_pct=None),)
-    )
+    result = adapt_explicit_design_spec_contracts(_resolution(), (_binding(relative_pct=None),))
     assert result.contracts == ()
     assert "nominal quantity needs exactly one reviewer-authored tolerance" in (
         result.unresolved[0].reasons
@@ -157,9 +153,7 @@ def test_inferred_design_spec_is_not_an_authoritative_contract_source() -> None:
     assert none.contracts == ()
     assert "source rail not found in explicit design intent" in none.unresolved[0].reasons
 
-    no_source = adapt_explicit_design_spec_contracts(
-        _resolution(source="none"), (_binding(),)
-    )
+    no_source = adapt_explicit_design_spec_contracts(_resolution(source="none"), (_binding(),))
     assert no_source.contracts == ()
     assert "no explicit persisted project design-spec source" in no_source.unresolved[0].reasons
 
@@ -175,11 +169,10 @@ def test_missing_or_duplicate_source_and_binding_ids_are_unresolved() -> None:
         }
     )
     a = adapt_explicit_design_spec_contracts(_resolution(), (missing,))
-    b = adapt_explicit_design_spec_contracts(
-        _resolution(explicit=ambiguous_intent), (_binding(),)
-    )
+    b = adapt_explicit_design_spec_contracts(_resolution(explicit=ambiguous_intent), (_binding(),))
     duplicate_ids = adapt_explicit_design_spec_contracts(
-        _resolution(), (_binding(), _binding(source_field="power_rail_current_max", relative_pct=None))
+        _resolution(),
+        (_binding(), _binding(source_field="power_rail_current_max", relative_pct=None)),
     )
     assert "source rail not found" in a.unresolved[0].reasons[0]
     assert "source rail name is ambiguous" in b.unresolved[0].reasons
@@ -195,12 +188,8 @@ def test_missing_interface_quantity_and_ambiguous_interface_kind_unresolved() ->
         applicability={"kind": "interface", "key": "USB"},
         relative_pct="5",
     )
-    incomplete = _explicit_spec().model_copy(
-        update={"interfaces": [InterfaceSpec(kind="usb2")]}
-    )
-    result = adapt_explicit_design_spec_contracts(
-        _resolution(explicit=incomplete), (source,)
-    )
+    incomplete = _explicit_spec().model_copy(update={"interfaces": [InterfaceSpec(kind="usb2")]})
+    result = adapt_explicit_design_spec_contracts(_resolution(explicit=incomplete), (source,))
     assert result.contracts == ()
     assert "selected interface quantity is unspecified" in result.unresolved[0].reasons
     ambiguous = _explicit_spec().model_copy(
@@ -211,9 +200,7 @@ def test_missing_interface_quantity_and_ambiguous_interface_kind_unresolved() ->
             ]
         }
     )
-    result = adapt_explicit_design_spec_contracts(
-        _resolution(explicit=ambiguous), (source,)
-    )
+    result = adapt_explicit_design_spec_contracts(_resolution(explicit=ambiguous), (source,))
     assert "source interface kind is ambiguous" in result.unresolved[0].reasons[0]
 
 
@@ -223,10 +210,7 @@ def test_binding_scope_and_wrong_tolerances_fail_closed() -> None:
     wrong_type = _binding(absolute_tolerance={"value": "1", "unit": "A"}, relative_pct=None)
     wrong_max = _binding(source_field="power_rail_current_max")
     bad_inputs = (wrong_scope, wrong_key, wrong_type, wrong_max)
-    results = [
-        adapt_explicit_design_spec_contracts(_resolution(), (item,))
-        for item in bad_inputs
-    ]
+    results = [adapt_explicit_design_spec_contracts(_resolution(), (item,)) for item in bad_inputs]
     assert all(result.contracts == () for result in results)
     assert "source requires rail applicability" in results[0].unresolved[0].reasons
     assert "rail applicability key must match" in results[1].unresolved[0].reasons[0]
@@ -236,14 +220,16 @@ def test_binding_scope_and_wrong_tolerances_fail_closed() -> None:
 
 def test_incompatible_waiver_contract_version_remains_unresolved() -> None:
     binding = _binding(
-        waivers=[{
-            "waiver_id": "WAIVER-1",
-            "contract_id": "INTENT-3V3",
-            "contract_version": 2,
-            "reason": "Pending lab test",
-            "approved_by": "lead",
-            "approval_evidence_ref": "artifact-123",
-        }]
+        waivers=[
+            {
+                "waiver_id": "WAIVER-1",
+                "contract_id": "INTENT-3V3",
+                "contract_version": 2,
+                "reason": "Pending lab test",
+                "approved_by": "lead",
+                "approval_evidence_ref": "artifact-123",
+            }
+        ]
     )
     result = adapt_explicit_design_spec_contracts(_resolution(), (binding,))
     assert result.contracts == ()
@@ -268,9 +254,7 @@ def test_authorized_conversion_produces_queryable_graph_links() -> None:
     contract_id = link_hardware_intent_contract(
         graph,
         result.contracts[0],
-        provenance=GraphProvenance(
-            GraphProvenanceKind.USER_APPROVED, source="fixture-review"
-        ),
+        provenance=GraphProvenance(GraphProvenanceKind.USER_APPROVED, source="fixture-review"),
     )
     rail_id = canonical_entity_id(graph.project_key, GraphEntityKind.POWER_RAIL, "+3V3")
     req_id = canonical_entity_id(graph.project_key, GraphEntityKind.REQUIREMENT, "REQ-3V3")
@@ -306,11 +290,7 @@ def test_all_supported_sources_are_typed_and_finite(source_field: str, unit: str
     assert not result.unresolved
     constraint = result.contracts[0].quantity_range or result.contracts[0].nominal_tolerance
     assert constraint is not None
-    quantity = (
-        constraint.maximum
-        if hasattr(constraint, "maximum")
-        else constraint.nominal
-    )
+    quantity = constraint.maximum if hasattr(constraint, "maximum") else constraint.nominal
     assert quantity is not None
     assert quantity.unit == unit
 
@@ -339,9 +319,7 @@ def test_absolute_tolerance_is_reviewer_authored() -> None:
 def test_invalid_source_quantity_is_rejected_without_contract() -> None:
     rail = _explicit_spec().power_rails[0].model_copy(update={"voltage_v": float("nan")})
     source = _explicit_spec().model_copy(update={"power_rails": [rail]})
-    result = adapt_explicit_design_spec_contracts(
-        _resolution(explicit=source), (_binding(),)
-    )
+    result = adapt_explicit_design_spec_contracts(_resolution(explicit=source), (_binding(),))
     assert result.contracts == ()
     assert "source quantity is not finite" in result.unresolved[0].reasons
 
@@ -369,12 +347,8 @@ def test_interface_scope_and_invalid_release_policy_return_unresolved() -> None:
         applicability={"kind": "rail", "key": "+3V3"},
     )
     bad_policy = _binding(severity="blocking", release_blocking=False)
-    scope_result = adapt_explicit_design_spec_contracts(
-        _resolution(), (bad_scope,)
-    )
-    policy_result = adapt_explicit_design_spec_contracts(
-        _resolution(), (bad_policy,)
-    )
+    scope_result = adapt_explicit_design_spec_contracts(_resolution(), (bad_scope,))
+    policy_result = adapt_explicit_design_spec_contracts(_resolution(), (bad_policy,))
     assert scope_result.contracts == ()
     assert "source requires interface applicability" in scope_result.unresolved[0].reasons
     assert policy_result.contracts == ()
