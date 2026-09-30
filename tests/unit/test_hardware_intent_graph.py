@@ -72,30 +72,28 @@ def test_requirement_contract_net_impact_chain_and_idempotency() -> None:
 
 def test_missing_requirement_or_target_and_region_fail_before_mutation() -> None:
     graph = _graph()
+    provenance = _provenance()
     before = graph.to_document()
+    missing_requirement = _record(requirement_id="REQ-UNKNOWN")
+    missing_target = _record(applicability={"kind": "component", "key": "U7"})
+    unsupported_region = _record(applicability={"kind": "region", "key": "rf-zone"})
+
     with pytest.raises(ValueError, match="referenced requirement"):
-        link_hardware_intent_contract(
-            graph, _record(requirement_id="REQ-UNKNOWN"), provenance=_provenance()
-        )
+        link_hardware_intent_contract(graph, missing_requirement, provenance=provenance)
     with pytest.raises(ValueError, match="applicability target"):
-        link_hardware_intent_contract(
-            graph,
-            _record(applicability={"kind": "component", "key": "U7"}),
-            provenance=_provenance(),
-        )
+        link_hardware_intent_contract(graph, missing_target, provenance=provenance)
     with pytest.raises(ValueError, match="region scope"):
-        link_hardware_intent_contract(
-            graph,
-            _record(applicability={"kind": "region", "key": "rf-zone"}),
-            provenance=_provenance(),
-        )
+        link_hardware_intent_contract(graph, unsupported_region, provenance=provenance)
     assert graph.to_document() == before
 
 
 def test_contract_revision_conflict_never_rebinds_silently() -> None:
     graph = _graph()
-    link_hardware_intent_contract(graph, _record(), provenance=_provenance())
+    provenance = _provenance()
+    initial = _record()
+    conflicting_revision = _record(contract_version=2)
+    link_hardware_intent_contract(graph, initial, provenance=provenance)
     before = graph.to_document()
     with pytest.raises(ValueError, match="conflicting entity"):
-        link_hardware_intent_contract(graph, _record(contract_version=2), provenance=_provenance())
+        link_hardware_intent_contract(graph, conflicting_revision, provenance=provenance)
     assert graph.to_document() == before
