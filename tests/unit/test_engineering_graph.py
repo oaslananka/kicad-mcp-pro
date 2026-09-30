@@ -247,17 +247,23 @@ def test_graph_diff_distinguishes_add_remove_from_identity_preserving_change() -
     assert any(change.subject_id == u7.entity_id for change in changes)
 
 
-def test_v1_draft_fixture_migrates_without_rewriting_canonical_ids() -> None:
+def test_v1_draft_fixture_rewrites_legacy_ids_to_canonical_identity() -> None:
     fixture = Path(__file__).parents[1] / "fixtures" / "engineering_graph" / "v1-draft.json"
     draft = json.loads(fixture.read_text(encoding="utf-8"))
     assert draft["schema_version"] == DRAFT_ENGINEERING_GRAPH_SCHEMA_VERSION
 
+    legacy_project_id = draft["nodes"][0]["id"]
+    legacy_component_id = draft["nodes"][1]["id"]
     project_id = canonical_entity_id("demo", GraphEntityKind.PROJECT, "project")
     component_id = canonical_entity_id("demo", GraphEntityKind.COMPONENT, "U7")
+    assert legacy_project_id != project_id
+    assert legacy_component_id != component_id
+
     graph = EngineeringGraph.from_document(draft)
     document = graph.to_document()
 
     assert document["schema_version"] == ENGINEERING_GRAPH_SCHEMA_VERSION
+    assert graph.entity(legacy_component_id) is None
     migrated_component = graph.entity(component_id)
     assert migrated_component is not None
     assert migrated_component.stable_key == "U7"

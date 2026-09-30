@@ -474,18 +474,36 @@ def migrate_graph_document(document: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(nodes, list) or not isinstance(links, list):
         raise ValueError("draft nodes and links must be lists")
 
+    project_key = payload.get("project_key")
+    legacy_id_map: dict[str, str] = {}
     entities: list[dict[str, Any]] = []
     for node in nodes:
         if not isinstance(node, Mapping):
             raise ValueError("draft node entries must be objects")
+        legacy_id = node.get("id")
+        entity_kind = node.get("type")
+        stable_key = node.get("stable_key", node.get("key"))
+        entity_id = legacy_id
+        if (
+            isinstance(project_key, str)
+            and isinstance(legacy_id, str)
+            and isinstance(entity_kind, str)
+            and isinstance(stable_key, str)
+        ):
+            entity_id = canonical_entity_id(
+                project_key,
+                GraphEntityKind(entity_kind),
+                stable_key,
+            )
+            legacy_id_map[legacy_id] = entity_id
         provenance = node.get("provenance", GraphProvenanceKind.IMPORTED.value)
         if isinstance(provenance, str):
             provenance = {"kind": provenance, "source": "v1-draft", "detail": ""}
         entities.append(
             {
-                "entity_id": node.get("id"),
-                "kind": node.get("type"),
-                "stable_key": node.get("stable_key", node.get("key")),
+                "entity_id": entity_id,
+                "kind": entity_kind,
+                "stable_key": stable_key,
                 "attributes": deepcopy(node.get("attributes", {})),
                 "provenance": deepcopy(provenance),
                 "native_links": deepcopy(node.get("native_links", [])),
@@ -496,10 +514,16 @@ def migrate_graph_document(document: Mapping[str, Any]) -> dict[str, Any]:
     for link in links:
         if not isinstance(link, Mapping):
             raise ValueError("draft link entries must be objects")
+        source_id = link.get("from")
+        target_id = link.get("to")
+        if isinstance(source_id, str):
+            source_id = legacy_id_map.get(source_id, source_id)
+        if isinstance(target_id, str):
+            target_id = legacy_id_map.get(target_id, target_id)
         edges.append(
             {
-                "source_id": link.get("from"),
-                "target_id": link.get("to"),
+                "source_id": source_id,
+                "target_id": target_id,
                 "kind": link.get("type"),
                 "role": link.get("role", ""),
             }

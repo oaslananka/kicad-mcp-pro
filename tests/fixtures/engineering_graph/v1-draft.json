@@ -3,14 +3,14 @@
   "project_key": "demo",
   "nodes": [
     {
-      "id": "eg:project:1eb34deb-6e70-5533-8715-e208dfc30433",
+      "id": "eg:project:d0054c93-d202-54d1-93bb-2658ed5940f2",
       "type": "project",
       "key": "project",
       "attributes": {"title": "demo"},
       "provenance": "imported"
     },
     {
-      "id": "eg:component:6e862bdf-4f00-50ee-a290-e6d8d92f4b2f",
+      "id": "eg:component:00cb31c1-a448-55c0-a11f-efda56f92ac7",
       "type": "component",
       "key": "U7",
       "attributes": {"value": "STM32G4"},
@@ -19,8 +19,8 @@
   ],
   "links": [
     {
-      "from": "eg:project:1eb34deb-6e70-5533-8715-e208dfc30433",
-      "to": "eg:component:6e862bdf-4f00-50ee-a290-e6d8d92f4b2f",
+      "from": "eg:project:d0054c93-d202-54d1-93bb-2658ed5940f2",
+      "to": "eg:component:00cb31c1-a448-55c0-a11f-efda56f92ac7",
       "type": "contains"
     }
   ]
