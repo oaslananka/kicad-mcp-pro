@@ -13,6 +13,7 @@ from kicad_mcp.tool_effect_manifest import (
     REVIEWED_TOOL_EFFECTS,
     SCHEMA_VERSION,
     SOURCE_REPOSITORY,
+    PathArgumentEffect,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,7 +25,7 @@ def _package_version() -> str:
     return str(data["project"]["version"])
 
 
-def _path_argument_payload(path_argument: object) -> dict[str, Any]:
+def _path_argument_payload(path_argument: PathArgumentEffect) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "argument": path_argument.argument,
         "effects": list(path_argument.effects),
