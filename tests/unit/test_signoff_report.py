@@ -129,6 +129,7 @@ def test_release_blocker_preserves_existing_gate_failure_summary() -> None:
     assert "backing gates are not passing" in report["summary"]
     assert "release-blocking HardwareIntentContract evidence" in report["summary"]
 
+
 def test_reviewed_waiver_downgrades_passing_signoff_to_warn() -> None:
     waived = ProjectReleaseEvidenceResolution(
         adopted=True,
