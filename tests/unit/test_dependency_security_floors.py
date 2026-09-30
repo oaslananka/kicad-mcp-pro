@@ -38,13 +38,12 @@ def test_cryptography_security_floor_is_patched() -> None:
     assert Version(locked) >= Version("50.0.0")
 
 
-
 def test_pyjwt_security_floor_is_patched() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     uv_lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
 
     dependencies = pyproject["project"]["dependencies"]
-    assert any("pyjwt>=2.14.0" in dependency.lower() for dependency in dependencies)
+    assert any("pyjwt>=2.14.0" in dependency.lower() for dependency in dependencies)  # nosec B101 - pytest assertion
 
     locked = next(
         package["version"]
@@ -68,9 +67,9 @@ def test_root_pnpm_lock_uses_patched_fast_uri() -> None:
     lock = (ROOT / "pnpm-lock.yaml").read_text(encoding="utf-8")
     versions = {Version(value) for value in re.findall(r"fast-uri@(\d+\.\d+\.\d+)", lock)}
 
-    assert workspace["overrides"]["fast-uri"] == "3.1.8"
+    assert workspace["overrides"]["fast-uri"] == "3.1.8"  # nosec B101 - pytest assertion
     assert versions
-    assert min(versions) >= Version("3.1.8")
+    assert min(versions) >= Version("3.1.8")  # nosec B101 - pytest assertion
 
 
 def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
@@ -79,7 +78,7 @@ def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
 
     assert package["overrides"]["@hono/node-server"] == "2.0.11"
     assert package["overrides"]["hono"] == "4.13.5"
-    assert package["overrides"]["fast-uri"] == "3.1.8"
+    assert package["overrides"]["fast-uri"] == "3.1.8"  # nosec B101 - pytest assertion
     assert package["overrides"]["qs"] == "6.16.0"
 
     patched = {
