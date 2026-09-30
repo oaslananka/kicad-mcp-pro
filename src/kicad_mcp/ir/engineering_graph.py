@@ -74,7 +74,7 @@ _REVERSE_IMPACT_KINDS = frozenset(
         GraphEdgeKind.REFERENCES,
     }
 )
-_FORWARD_IMPACT_KINDS = frozenset({GraphEdgeKind.PRODUCES})
+_FORWARD_IMPACT_KINDS = frozenset({GraphEdgeKind.CONTAINS, GraphEdgeKind.PRODUCES})
 _SYMMETRIC_IMPACT_KINDS = frozenset({GraphEdgeKind.CONNECTS_TO})
 _DEPENDENCY_QUERY_KINDS = frozenset(
     {
@@ -231,14 +231,23 @@ class EngineeringGraph:
     edges: set[GraphEdge] = field(default_factory=set)
 
     def __post_init__(self) -> None:
-        if not self.project_key.strip():
+        normalized_project_key = self.project_key.strip()
+        if not normalized_project_key:
             raise ValueError("project_key must be a non-empty string")
+        self.project_key = normalized_project_key
         if self.schema_version != ENGINEERING_GRAPH_SCHEMA_VERSION:
             raise ValueError(
                 f"unsupported Engineering Graph schema version: {self.schema_version!r}"
             )
 
     def add_entity(self, entity: GraphEntity) -> None:
+        if not entity.stable_key or entity.stable_key != entity.stable_key.strip():
+            raise ValueError("entity stable_key must be non-empty and normalized")
+        expected_id = canonical_entity_id(self.project_key, entity.kind, entity.stable_key)
+        if entity.entity_id != expected_id:
+            raise ValueError(
+                f"entity id {entity.entity_id!r} does not match canonical id {expected_id!r}"
+            )
         existing = self.entities.get(entity.entity_id)
         if existing is not None and existing != entity:
             raise ValueError(f"conflicting entity for canonical id {entity.entity_id}")
@@ -275,6 +284,7 @@ class EngineeringGraph:
                 for edge in self.edges
                 if edge.source_id == current and edge.kind in _DEPENDENCY_QUERY_KINDS
             }
+            direct.discard(entity_id)
             dependencies.update(direct)
             if transitive:
                 for dependency in sorted(direct):
@@ -395,6 +405,8 @@ def canonical_entity_id(project_key: str, kind: GraphEntityKind, stable_key: str
 
 def engineering_graph_diff(before: EngineeringGraph, after: EngineeringGraph) -> list[GraphDiff]:
     """Compare graph states by canonical identity and typed edges."""
+    if before.project_key != after.project_key:
+        raise ValueError("cannot diff Engineering Graph documents from different projects")
     changes: list[GraphDiff] = []
     before_ids = set(before.entities)
     after_ids = set(after.entities)
