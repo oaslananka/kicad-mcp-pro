@@ -16,7 +16,7 @@ def test_chatgpt_app_scopes_body_parser_security_override() -> None:
         "express@4.22.2": {"body-parser": "1.20.6"},
         "@hono/node-server": "2.0.11",
         "hono": "4.13.5",
-        "fast-uri": "3.1.6",
+        "fast-uri": "3.1.8",
         "qs": "6.16.0",
     }
     assert lock["packages"]["node_modules/body-parser"]["version"] == "1.20.6"
