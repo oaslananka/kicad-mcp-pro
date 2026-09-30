@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any, Literal, Self
+from typing import Any, Literal, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -122,8 +122,7 @@ class NominalTolerance(StrictContractModel):
         if self.absolute is not None:
             tolerance = self.absolute.normalized()[1]
         else:
-            assert self.relative_pct is not None
-            tolerance = abs(nominal) * self.relative_pct / Decimal(100)
+            tolerance = abs(nominal) * cast(Decimal, self.relative_pct) / Decimal(100)
         return unit, nominal - tolerance, nominal + tolerance
 
 
