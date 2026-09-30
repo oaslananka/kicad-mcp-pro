@@ -231,8 +231,13 @@ def assess_evidence_freshness(
 
     if not mutation_scope_known or not record.dependency_manifest_complete:
         unresolved.append(InvalidationReason(code="unknown_dependency_or_mutation_scope"))
-    if evidence_id not in before.entities or evidence_id not in after.entities:
-        unresolved.append(InvalidationReason(code="evidence_graph_record_missing"))
+    persisted_payload = record.model_dump(mode="json")
+    for graph in (before, after):
+        stored = graph.entity(evidence_id)
+        if stored is None:
+            unresolved.append(InvalidationReason(code="evidence_graph_record_missing"))
+        elif stored.attributes.get("record") != persisted_payload:
+            unresolved.append(InvalidationReason(code="evidence_record_payload_mismatch"))
     if not dependencies <= before.entities.keys() or not dependencies <= after.entities.keys():
         unresolved.append(InvalidationReason(code="unresolved_dependency_entity"))
     for graph in (before, after):
