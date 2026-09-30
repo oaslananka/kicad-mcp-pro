@@ -16,6 +16,7 @@ REVIEWED_SOURCE_SHA = "e460e28a4dd0f2c105a1d2db3e26eb731769c543"
 
 type OperationEffect = Literal["read", "write", "create", "delete"]
 type TransactionSupport = Literal["none", "internal_guarded", "external_lifecycle", "unknown"]
+type VerificationRequirement = Literal["source_review", "input_schema_match"]
 
 
 @dataclass(frozen=True)
@@ -38,7 +39,7 @@ class ReviewedToolEffect:
     supports_dry_run: bool
     supports_rollback: bool
     transaction_support: TransactionSupport
-    verification_requirements: tuple[str, ...]
+    verification_requirements: tuple[VerificationRequirement, ...]
     reviewed_source_paths: tuple[str, ...]
 
 
