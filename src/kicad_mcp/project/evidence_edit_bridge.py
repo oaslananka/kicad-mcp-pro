@@ -52,9 +52,7 @@ def compile_evidence_impact(snapshot: EvidenceImpactSnapshot) -> EvidenceImpactR
             before=snapshot.before,
             after=snapshot.after,
             current_hashes=snapshot.current_hashes,
-            mutation_scope_known=(
-                snapshot.mutation_scope_known and snapshot.hashes_authoritative
-            ),
+            mutation_scope_known=(snapshot.mutation_scope_known and snapshot.hashes_authoritative),
         )
         for record in sorted(snapshot.records, key=lambda item: item.evidence_id)
     )
@@ -75,7 +73,5 @@ def render_evidence_impact(report: EvidenceImpactReport) -> str:
         lines.append("- No authoritative evidence records; recheck required.")
     for assessment in report.assessments:
         codes = ",".join(reason.code for reason in assessment.reasons) or "exact_hashes_match"
-        lines.append(
-            f"- {assessment.evidence_id}: {assessment.state.value} ({codes})"
-        )
+        lines.append(f"- {assessment.evidence_id}: {assessment.state.value} ({codes})")
     return "\n".join(lines)
