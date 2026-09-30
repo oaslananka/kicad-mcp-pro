@@ -37,9 +37,7 @@ def graph_from_circuit(
         source="IRCircuit",
         detail="adapted from semantic circuit IR",
     )
-    project_id = canonical_entity_id(
-        resolved_project_key, GraphEntityKind.PROJECT, "project"
-    )
+    project_id = canonical_entity_id(resolved_project_key, GraphEntityKind.PROJECT, "project")
     native_links: tuple[NativeLink, ...] = ()
     if circuit.source_path or circuit.source_uuid:
         native_links = (
@@ -92,9 +90,7 @@ def graph_from_circuit(
         graph.add_edge(GraphEdge(project_id, component_id, GraphEdgeKind.CONTAINS))
         for pin in component.pins:
             pin_key = f"{reference}:{pin.number}"
-            pin_id = canonical_entity_id(
-                resolved_project_key, GraphEntityKind.PIN, pin_key
-            )
+            pin_id = canonical_entity_id(resolved_project_key, GraphEntityKind.PIN, pin_key)
             pin_ids[(reference, pin.number)] = pin_id
             graph.add_entity(
                 GraphEntity(
@@ -141,9 +137,7 @@ def graph_from_circuit(
                 graph.add_edge(GraphEdge(pin_id, net_id, GraphEdgeKind.CONNECTS_TO))
 
     for name, rail in sorted(circuit.power_rails.items()):
-        rail_id = canonical_entity_id(
-            resolved_project_key, GraphEntityKind.POWER_RAIL, name
-        )
+        rail_id = canonical_entity_id(resolved_project_key, GraphEntityKind.POWER_RAIL, name)
         graph.add_entity(
             GraphEntity(
                 rail_id,
@@ -162,14 +156,10 @@ def graph_from_circuit(
         for net_name in sorted(rail.net_names):
             net_id = net_ids.get(net_name)
             if net_id is not None:
-                graph.add_edge(
-                    GraphEdge(rail_id, net_id, GraphEdgeKind.REFERENCES, "rail_net")
-                )
+                graph.add_edge(GraphEdge(rail_id, net_id, GraphEdgeKind.REFERENCES, "rail_net"))
 
     for name, interface in sorted(circuit.interfaces.items()):
-        interface_id = canonical_entity_id(
-            resolved_project_key, GraphEntityKind.INTERFACE, name
-        )
+        interface_id = canonical_entity_id(resolved_project_key, GraphEntityKind.INTERFACE, name)
         graph.add_entity(
             GraphEntity(
                 interface_id,
@@ -208,9 +198,7 @@ def graph_from_circuit(
                 )
 
     for key, constraint in sorted(circuit.constraints.items()):
-        constraint_id = canonical_entity_id(
-            resolved_project_key, GraphEntityKind.CONSTRAINT, key
-        )
+        constraint_id = canonical_entity_id(resolved_project_key, GraphEntityKind.CONSTRAINT, key)
         graph.add_entity(
             GraphEntity(
                 constraint_id,
@@ -244,8 +232,6 @@ def _net_stable_key(net: IRNet) -> str:
     if not net.name.startswith("~"):
         return net.name
     if net.connections:
-        joined = "|".join(
-            f"{reference}.{pin}" for reference, pin in sorted(net.connections)
-        )
+        joined = "|".join(f"{reference}.{pin}" for reference, pin in sorted(net.connections))
         return f"connections:{joined}"
     return f"anonymous:{net.name}"
