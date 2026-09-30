@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 
@@ -261,3 +261,17 @@ def assess_evidence_freshness(
     if unresolved:
         return _result(record, EvidenceFreshnessState.REQUIRES_RECHECK, unresolved)
     return _result(record, EvidenceFreshnessState.STILL_VALID, [])
+
+
+EVIDENCE_FRESHNESS_SCHEMA_ID = (
+    "https://raw.githubusercontent.com/oaslananka/kicad-mcp-pro/main/"
+    "src/kicad_mcp/project/schemas/evidence-freshness-v1.schema.json"
+)
+
+
+def evidence_record_json_schema() -> dict[str, Any]:
+    """Deterministic v1 JSON Schema draft 2020-12 export."""
+    schema = EvidenceRecord.model_json_schema(mode="validation")
+    schema["$id"] = EVIDENCE_FRESHNESS_SCHEMA_ID
+    schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+    return schema
