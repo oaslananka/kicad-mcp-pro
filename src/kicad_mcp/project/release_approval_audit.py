@@ -353,8 +353,9 @@ def append_release_approval_event(
                 event_hash,
             ),
         )
+        event = _verify_connection(connection)[-1]
         connection.commit()
-        return _verify_connection(connection)[-1]
+        return event
     except Exception:
         connection.rollback()
         raise

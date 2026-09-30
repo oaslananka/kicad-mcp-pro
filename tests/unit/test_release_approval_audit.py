@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+import kicad_mcp.project.release_approval_audit as audit_module
 from kicad_mcp.project.evidence_freshness import EvidenceRecord
 from kicad_mcp.project.release_approval_audit import (
     ReleaseApprovalAuditDecision,
@@ -343,3 +344,26 @@ def test_rehashed_but_invalid_event_payload_is_detected(tmp_path: Path) -> None:
     _rewrite_event_with_valid_hash(path, recorded_at="not-a-date")
     with pytest.raises(ReleaseApprovalAuditIntegrityError, match="invalid audit event"):
         verify_release_approval_history(tmp_path)
+
+
+def test_failed_post_insert_verification_rolls_back_event(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_verify = audit_module._verify_connection
+    calls = 0
+
+    def fail_second_verification(
+        connection: sqlite3.Connection,
+    ) -> tuple[ReleaseApprovalAuditEvent, ...]:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise ReleaseApprovalAuditIntegrityError("forced post-insert verification failure")
+        return real_verify(connection)
+
+    monkeypatch.setattr(audit_module, "_verify_connection", fail_second_verification)
+    with pytest.raises(ReleaseApprovalAuditIntegrityError, match="forced post-insert"):
+        _append(tmp_path)
+
+    monkeypatch.setattr(audit_module, "_verify_connection", real_verify)
+    assert verify_release_approval_history(tmp_path) == ()
