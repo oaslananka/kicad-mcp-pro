@@ -48,7 +48,7 @@ _WITH_GLOBAL = _MINIMAL.replace(
 
 _GRAPH_ROUNDTRIP = _MINIMAL.replace(
     "\t(sheet_instances",
-    '\t(wire (pts (xy 30 30) (xy 40 30))'
+    "\t(wire (pts (xy 30 30) (xy 40 30))"
     ' (uuid "50000000-0000-0000-0000-000000000005"))\n\t(sheet_instances',
 )
 
