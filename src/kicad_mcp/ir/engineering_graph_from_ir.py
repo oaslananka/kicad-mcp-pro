@@ -50,7 +50,9 @@ def update_graph_from_circuit(
         or before.interfaces != after.interfaces
         or before.constraints != after.constraints
     ):
-        raise ValueError("non-component circuit state changed; full Engineering Graph rebuild required")
+        raise ValueError(
+            "non-component circuit state changed; full Engineering Graph rebuild required"
+        )
 
     changed_references = [
         reference
@@ -59,7 +61,9 @@ def update_graph_from_circuit(
     ]
     for reference in changed_references:
         if before.components[reference].pins != after.components[reference].pins:
-            raise ValueError("component pin structure changed; full Engineering Graph rebuild required")
+            raise ValueError(
+                "component pin structure changed; full Engineering Graph rebuild required"
+            )
 
     imported = _imported_provenance()
     updated_entity_ids: set[str] = set()
