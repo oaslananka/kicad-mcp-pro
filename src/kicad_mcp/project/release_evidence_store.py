@@ -12,8 +12,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from pydantic import ValidationError
-
 from ..ir.engineering_graph import EngineeringGraph
 from .evidence_current_state import assess_evidence_current_state, graph_entity_hashes
 from .evidence_freshness import (
@@ -115,7 +113,7 @@ def resolve_project_release_evidence(
 
     try:
         contracts = load_hardware_intent_contracts(project_dir)
-    except (OSError, json.JSONDecodeError, ValidationError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         return ProjectReleaseEvidenceResolution(
             adopted=True,
             errors=(f"hardware_intent_contract_store_invalid: {exc}",),
@@ -129,7 +127,7 @@ def resolve_project_release_evidence(
 
     try:
         records = load_evidence_records(project_dir)
-    except (OSError, json.JSONDecodeError, ValidationError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         return ProjectReleaseEvidenceResolution(
             adopted=True,
             errors=(f"evidence_record_store_invalid: {exc}",),
