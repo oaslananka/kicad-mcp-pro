@@ -15,6 +15,9 @@ from pathlib import Path
 import pytest
 
 from kicad_mcp.errors import SchematicWriteUnsafeError
+from kicad_mcp.ir import parse_schematic_to_ir
+from kicad_mcp.ir.engineering_graph import GraphEntityKind, engineering_graph_diff
+from kicad_mcp.ir.engineering_graph_from_ir import graph_from_circuit
 from kicad_mcp.utils.schematic_roundtrip import (
     dropped_nodes,
     fidelity_fingerprint,
@@ -43,6 +46,12 @@ _WITH_GLOBAL = _MINIMAL.replace(
     ' (uuid "20000000-0000-0000-0000-000000000002"))\n\t(no_connect',
 )
 
+_GRAPH_ROUNDTRIP = _MINIMAL.replace(
+    "\t(sheet_instances",
+    '\t(wire (pts (xy 30 30) (xy 40 30))'
+    ' (uuid "50000000-0000-0000-0000-000000000005"))\n\t(sheet_instances',
+)
+
 FIXTURES = Path(__file__).resolve().parents[2] / "packages" / "kicad-fixtures" / "fixtures"
 
 
@@ -69,6 +78,32 @@ def test_roundtrip_preserves_local_and_hierarchical_labels(tmp_path: Path) -> No
     assert after["counts"]["hierarchical_label"] == before["counts"]["hierarchical_label"]
     assert after["counts"]["no_connect"] == before["counts"]["no_connect"]
     assert after["uuids"] >= before["uuids"]
+
+
+def test_engineering_graph_ids_survive_real_noop_schematic_roundtrip(
+    tmp_path: Path,
+) -> None:
+    path = _write(tmp_path, _GRAPH_ROUNDTRIP)
+    before_ir = parse_schematic_to_ir(path, load_pin_metadata=False)
+    before_graph = graph_from_circuit(before_ir)
+    before_ids = {
+        (entity.kind, entity.stable_key): entity.entity_id
+        for entity in before_graph.entities.values()
+    }
+    assert before_graph.entities_of_kind(GraphEntityKind.NET)
+
+    with roundtrip_edit(path):
+        pass
+
+    after_ir = parse_schematic_to_ir(path, load_pin_metadata=False)
+    after_graph = graph_from_circuit(after_ir)
+    after_ids = {
+        (entity.kind, entity.stable_key): entity.entity_id
+        for entity in after_graph.entities.values()
+    }
+
+    assert after_ids == before_ids
+    assert engineering_graph_diff(before_graph, after_graph) == []
 
 
 def test_guard_refuses_to_drop_global_label_and_restores(tmp_path: Path) -> None:
