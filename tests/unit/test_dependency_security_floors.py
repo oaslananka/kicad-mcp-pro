@@ -38,6 +38,21 @@ def test_cryptography_security_floor_is_patched() -> None:
     assert Version(locked) >= Version("50.0.0")
 
 
+
+def test_pyjwt_security_floor_is_patched() -> None:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    uv_lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+
+    dependencies = pyproject["project"]["dependencies"]
+    assert any("pyjwt>=2.14.0" in dependency.lower() for dependency in dependencies)
+
+    locked = next(
+        package["version"]
+        for package in uv_lock["package"]
+        if package["name"].lower() == "pyjwt"
+    )
+    assert Version(locked) >= Version("2.14.0")
+
 def test_root_pnpm_lock_uses_current_js_yaml_security_floor() -> None:
     workspace = yaml.safe_load((ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8"))
     lock = (ROOT / "pnpm-lock.yaml").read_text(encoding="utf-8")

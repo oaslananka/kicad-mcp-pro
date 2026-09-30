@@ -47,22 +47,6 @@ ACKNOWLEDGED_ADVISORIES = (
             "https://pypi.org/project/Markdown/",
         ),
     ),
-    AcknowledgedAdvisory(
-        package="pyjwt",
-        version="2.12.1",
-        advisory_id="PYSEC-2025-183",
-        aliases=("CVE-2025-45768",),
-        rationale=(
-            "PyJWT 2.12.1 is the current PyPI release; NVD marks CVE-2025-45768 "
-            "as disputed by the supplier because key length is selected by the "
-            "application using the library."
-        ),
-        sources=(
-            "https://nvd.nist.gov/vuln/detail/CVE-2025-45768",
-            "https://osv.dev/vulnerability/CVE-2025-45768",
-            "https://pypi.org/project/PyJWT/",
-        ),
-    ),
 )
 
 
