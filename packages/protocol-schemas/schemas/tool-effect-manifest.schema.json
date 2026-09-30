@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oaslananka.github.io/kicad-mcp-pro/schemas/tool-effect-manifest.schema.json",
+  "title": "Reviewed MCP tool effect manifest",
+  "description": "Versioned source-reviewed argument and effect facts for external fail-closed policy consumers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "source", "tools"],
+  "properties": {
+    "schemaVersion": {
+      "$ref": "#/$defs/semver"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "version", "reviewed_source_sha"],
+      "properties": {
+        "repository": {
+          "const": "oaslananka/kicad-mcp-pro"
+        },
+        "version": {
+          "$ref": "#/$defs/semver"
+        },
+        "reviewed_source_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/tool"
+      },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "effect": {
+      "enum": ["read", "write", "create", "delete"]
+    },
+    "pathArgument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argument", "effects", "required"],
+      "properties": {
+        "argument": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/effect"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "default": {
+          "type": "string"
+        },
+        "base_argument": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "arguments",
+        "effects",
+        "path_arguments",
+        "destructive",
+        "idempotent",
+        "supports_dry_run",
+        "supports_rollback",
+        "transaction_support",
+        "verification_requirements",
+        "reviewed_source_paths"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "arguments": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "uniqueItems": true
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/effect"
+          },
+          "uniqueItems": true
+        },
+        "path_arguments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pathArgument"
+          }
+        },
+        "destructive": {
+          "type": "boolean"
+        },
+        "idempotent": {
+          "type": "boolean"
+        },
+        "supports_dry_run": {
+          "type": "boolean"
+        },
+        "supports_rollback": {
+          "type": "boolean"
+        },
+        "transaction_support": {
+          "enum": ["none", "internal_guarded", "external_lifecycle", "unknown"]
+        },
+        "verification_requirements": {
+          "type": "array",
+          "items": {
+            "enum": ["source_review", "input_schema_match"]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "reviewed_source_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "effects": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "path_arguments": {
+              "minItems": 1
+            }
+          }
+        }
+      ]
+    }
+  },
+  "x-kicad-studio-kit": {
+    "trackingIssue": "OASLANA-52",
+    "schemaVersion": "1.0.0"
+  },
+  "x-kicad-mcp": {
+    "trackingIssue": "OASLANA-52",
+    "schemaType": "protocol-contract"
+  }
+}

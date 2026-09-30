@@ -15,6 +15,7 @@ import {
   validateMcpToolDiscovery,
   validateNormalizedDiagnostic,
   validateToolCapabilityMetadata,
+  validateToolEffectManifest,
 } from "@oaslananka/kicad-protocol-schemas";
 
 test("exports every protocol schema definition and filesystem path", () => {
@@ -27,6 +28,7 @@ test("exports every protocol schema definition and filesystem path", () => {
     "mcp-tool-capability",
     "mcp-tool-discovery",
     "normalized-diagnostic",
+    "tool-effect-manifest",
   ]);
 
   for (const schemaName of PROTOCOL_SCHEMA_NAMES) {
@@ -123,6 +125,41 @@ test("validates shared protocol payload families", () => {
   });
   assert.equal(toolDiscovery.valid, true);
   assert.equal(toolDiscovery.data?.nextCursor, "next-page");
+
+  assert.equal(
+    validateToolEffectManifest({
+      schemaVersion: "1.0.0",
+      source: {
+        repository: "oaslananka/kicad-mcp-pro",
+        version: "3.35.2",
+        reviewed_source_sha: "e460e28a4dd0f2c105a1d2db3e26eb731769c543",
+      },
+      tools: [
+        {
+          name: "sch_get_symbols",
+          arguments: ["sheet", "sheet_file"],
+          effects: ["read"],
+          path_arguments: [
+            {
+              argument: "sheet_file",
+              effects: ["read"],
+              required: false,
+            },
+          ],
+          destructive: false,
+          idempotent: true,
+          supports_dry_run: false,
+          supports_rollback: false,
+          transaction_support: "none",
+          verification_requirements: ["source_review", "input_schema_match"],
+          reviewed_source_paths: [
+            "src/kicad_mcp/tools/schematic_inspection.py",
+          ],
+        },
+      ],
+    }).valid,
+    true,
+  );
 
   assert.equal(
     validateMcpToolDiscovery({

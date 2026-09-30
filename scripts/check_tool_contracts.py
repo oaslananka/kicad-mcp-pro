@@ -9,6 +9,8 @@ from typing import Any
 from kicad_mcp.capabilities import AccessTier, all_records, metadata_coverage
 from kicad_mcp.operating_modes import OperatingMode
 from kicad_mcp.server import build_server
+from kicad_mcp.tool_effect_manifest import REVIEWED_TOOL_EFFECTS
+from kicad_mcp.tools.metadata import is_tool_idempotent
 from kicad_mcp.tools.router import available_profiles
 
 
@@ -81,7 +83,8 @@ async def lint() -> list[str]:
                 errors.append(f"Read-only profile '{profile}' exposes mutating tool {tool_name}")
 
     schemas = await _tool_schemas()
-    for tool_name, schema in sorted((await _declared_tool_schemas()).items()):
+    declared_schemas = await _declared_tool_schemas()
+    for tool_name, schema in sorted(declared_schemas.items()):
         for path in _array_schema_paths_missing_items(schema):
             errors.append(
                 f"{tool_name} input schema array at {path} must declare items "
@@ -121,6 +124,32 @@ async def lint() -> list[str]:
             errors.append(
                 f"{name} declares human_gate_required=True but its tier is not HUMAN_ONLY."
             )
+    # Reviewed external-policy effect contracts must track the exact public
+    # MCP argument surface and the metadata facts they publish. A tool may
+    # exist without a reviewed effect contract; that remains fail-closed for
+    # external consumers rather than being inferred from its name.
+    for contract in REVIEWED_TOOL_EFFECTS:
+        schema = declared_schemas.get(contract.name)
+        if schema is None:
+            errors.append(f"Reviewed effect tool {contract.name} is not publicly declared.")
+            continue
+        properties = _schema_properties(schema)
+        if set(properties) != set(contract.arguments):
+            errors.append(
+                f"Reviewed effect contract arguments drifted for {contract.name}: "
+                f"manifest={sorted(contract.arguments)}, schema={sorted(properties)}"
+            )
+        record = records.get(contract.name)
+        if record is None:
+            errors.append(f"Reviewed effect tool {contract.name} has no capability metadata.")
+            continue
+        if record.supports_dry_run is not contract.supports_dry_run:
+            errors.append(f"Reviewed effect dry-run fact drifted for {contract.name}.")
+        if record.supports_rollback is not contract.supports_rollback:
+            errors.append(f"Reviewed effect rollback fact drifted for {contract.name}.")
+        if is_tool_idempotent(contract.name) is not contract.idempotent:
+            errors.append(f"Reviewed effect idempotency fact drifted for {contract.name}.")
+
     return errors
 
 

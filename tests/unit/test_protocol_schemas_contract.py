@@ -18,6 +18,7 @@ REQUIRED_SCHEMA_FILES = {
     "mcp-tool-capability.schema.json",
     "mcp-tool-discovery.schema.json",
     "normalized-diagnostic.schema.json",
+    "tool-effect-manifest.schema.json",
 }
 
 

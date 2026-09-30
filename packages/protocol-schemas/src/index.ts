@@ -14,6 +14,7 @@ export const PROTOCOL_SCHEMA_NAMES = [
   "mcp-tool-capability",
   "mcp-tool-discovery",
   "normalized-diagnostic",
+  "tool-effect-manifest",
 ] as const;
 
 export type ProtocolSchemaName = (typeof PROTOCOL_SCHEMA_NAMES)[number];
@@ -179,6 +180,35 @@ export interface McpToolCapabilityMetadata {
   annotations?: Record<string, unknown>;
 }
 
+export interface ToolEffectManifest {
+  schemaVersion: string;
+  source: {
+    repository: "oaslananka/kicad-mcp-pro";
+    version: string;
+    reviewed_source_sha: string;
+  };
+  tools: Array<{
+    name: string;
+    arguments: string[];
+    effects: Array<"read" | "write" | "create" | "delete">;
+    path_arguments: Array<{
+      argument: string;
+      effects: Array<"read" | "write" | "create" | "delete">;
+      required: boolean;
+      default?: string;
+      base_argument?: string;
+    }>;
+    destructive: boolean;
+    idempotent: boolean;
+    supports_dry_run: boolean;
+    supports_rollback: boolean;
+    transaction_support:
+      "none" | "internal_guarded" | "external_lifecycle" | "unknown";
+    verification_requirements: Array<"source_review" | "input_schema_match">;
+    reviewed_source_paths: string[];
+  }>;
+}
+
 export interface McpToolDiscoveryResponse {
   schemaVersion?: string;
   _meta?: Record<string, unknown>;
@@ -323,6 +353,7 @@ export const PROTOCOL_SCHEMA_DEFINITIONS: Readonly<
   "mcp-tool-capability": require("../schemas/mcp-tool-capability.schema.json"),
   "mcp-tool-discovery": require("../schemas/mcp-tool-discovery.schema.json"),
   "normalized-diagnostic": require("../schemas/normalized-diagnostic.schema.json"),
+  "tool-effect-manifest": require("../schemas/tool-effect-manifest.schema.json"),
 });
 
 export class ProtocolSchemaValidator {
@@ -419,6 +450,15 @@ export function validateToolCapabilityMetadata(
 ): ProtocolValidationResult<McpToolCapabilityMetadata> {
   return validateProtocolPayload<McpToolCapabilityMetadata>(
     "mcp-tool-capability",
+    payload,
+  );
+}
+
+export function validateToolEffectManifest(
+  payload: unknown,
+): ProtocolValidationResult<ToolEffectManifest> {
+  return validateProtocolPayload<ToolEffectManifest>(
+    "tool-effect-manifest",
     payload,
   );
 }
