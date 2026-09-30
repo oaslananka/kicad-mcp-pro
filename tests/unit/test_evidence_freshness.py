@@ -301,3 +301,20 @@ def test_missing_explicit_contract_digest_binding_rejected() -> None:
     graph = _copy(before)
     with pytest.raises(ValueError, match="explicitly hashed"):
         attach_evidence_record(graph, copied, provenance=provenance)
+
+
+def test_tampered_or_narrowed_record_cannot_report_still_valid() -> None:
+    graph, record, hashes, _ = _fixture()
+    modified = record.model_copy(update={"inputs": record.inputs[:-1]})
+    report = _assess(modified, graph, _copy(graph), hashes)
+    assert report.state is EvidenceFreshnessState.REQUIRES_RECHECK
+    assert "evidence_record_payload_mismatch" in [reason.code for reason in report.reasons]
+
+
+def test_repeated_identical_record_attachment_is_idempotent() -> None:
+    graph, record, _, _ = _fixture()
+    before = graph.to_document()
+    assert attach_evidence_record(graph, record, provenance=_provenance()) == evidence_graph_id(
+        record
+    )
+    assert graph.to_document() == before
