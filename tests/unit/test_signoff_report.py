@@ -128,3 +128,28 @@ def test_release_blocker_preserves_existing_gate_failure_summary() -> None:
     assert report["verdict"] == "FAIL"
     assert "backing gates are not passing" in report["summary"]
     assert "release-blocking HardwareIntentContract evidence" in report["summary"]
+
+def test_reviewed_waiver_downgrades_passing_signoff_to_warn() -> None:
+    waived = ProjectReleaseEvidenceResolution(
+        adopted=True,
+        gate=ReleaseEvidenceGateResult(
+            approved=True,
+            contracts=(
+                ContractReleaseEvidenceResult(
+                    contract_id="INTENT-USB-SI",
+                    contract_version=1,
+                    state=ContractReleaseEvidenceState.WAIVED,
+                    evidence_ids=("WAIVER-EVID-1",),
+                    reason_codes=("explicit_reviewed_waiver",),
+                ),
+            ),
+        ),
+    )
+
+    report = build_signoff_report(_INTENT, _passing_gates(), _PROVENANCE, waived)
+
+    assert report["verdict"] == "WARN"
+    assert report["release_evidence"]["approved"] is True
+    assert report["release_evidence"]["contracts"][0]["state"] == "waived"
+    assert "explicit reviewed contract waiver" in report["summary"]
+
