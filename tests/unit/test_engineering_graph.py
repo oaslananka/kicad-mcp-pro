@@ -139,6 +139,32 @@ def test_incremental_component_update_preserves_unrelated_graph_subtree() -> Non
     assert engineering_graph_diff(graph, clean_rebuild) == []
 
 
+def test_incremental_update_preconditions_fail_without_partial_mutation() -> None:
+    before = _sample_circuit()
+    before.components["U8"] = IRComponent(
+        "U8",
+        "Device:R",
+        "10k",
+        "Resistor_SMD:R_0603_1608Metric",
+    )
+    after = _sample_circuit()
+    after.components["U7"] = replace(after.components["U7"], value="STM32H5")
+    after.components["U8"] = replace(before.components["U8"], value="22k")
+
+    graph = graph_from_circuit(before)
+    u7_id = canonical_entity_id(graph.project_key, GraphEntityKind.COMPONENT, "U7")
+    u8_id = canonical_entity_id(graph.project_key, GraphEntityKind.COMPONENT, "U8")
+    u7_before = graph.entity(u7_id)
+    u8_before = graph.entity(u8_id)
+    assert u8_before is not None
+    graph.entities[u8_id] = replace(u8_before, attributes={"value": "stale"})
+
+    with pytest.raises(ValueError, match="does not match the declared before-state"):
+        update_graph_from_circuit(graph, before, after)
+
+    assert graph.entity(u7_id) is u7_before
+
+
 def test_incremental_update_rejects_structural_changes_instead_of_rebuilding() -> None:
     before = _sample_circuit()
     after = _sample_circuit()
