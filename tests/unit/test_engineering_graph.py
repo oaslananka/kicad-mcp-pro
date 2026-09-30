@@ -139,18 +139,10 @@ def test_u7_change_returns_requirement_contract_verification_and_evidence_impact
     evidence = _entity(graph, GraphEntityKind.EVIDENCE_ARTIFACT, "usb-drc.json")
 
     graph.add_edge(GraphEdge(requirement.entity_id, u7.entity_id, GraphEdgeKind.APPLIES_TO))
-    graph.add_edge(
-        GraphEdge(contract.entity_id, requirement.entity_id, GraphEdgeKind.DEPENDS_ON)
-    )
-    graph.add_edge(
-        GraphEdge(verification.entity_id, contract.entity_id, GraphEdgeKind.DEPENDS_ON)
-    )
-    graph.add_edge(
-        GraphEdge(verification.entity_id, u7.entity_id, GraphEdgeKind.VERIFIES)
-    )
-    graph.add_edge(
-        GraphEdge(verification.entity_id, evidence.entity_id, GraphEdgeKind.PRODUCES)
-    )
+    graph.add_edge(GraphEdge(contract.entity_id, requirement.entity_id, GraphEdgeKind.DEPENDS_ON))
+    graph.add_edge(GraphEdge(verification.entity_id, contract.entity_id, GraphEdgeKind.DEPENDS_ON))
+    graph.add_edge(GraphEdge(verification.entity_id, u7.entity_id, GraphEdgeKind.VERIFIES))
+    graph.add_edge(GraphEdge(verification.entity_id, evidence.entity_id, GraphEdgeKind.PRODUCES))
 
     impacted = graph.impacted_by({u7.entity_id})
 
@@ -241,6 +233,5 @@ def test_engineering_graph_modules_stay_outside_runtime_and_tool_layers() -> Non
         path = boundaries.DOMAIN_MODULES[module_name]
         imports = boundaries._imports_for(module_name, path)
         assert not any(
-            imported.startswith(boundaries.FORBIDDEN_PURE_IMPORT_PREFIXES)
-            for imported in imports
+            imported.startswith(boundaries.FORBIDDEN_PURE_IMPORT_PREFIXES) for imported in imports
         )
