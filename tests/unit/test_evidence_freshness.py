@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -22,6 +24,7 @@ from kicad_mcp.project.evidence_freshness import (
     assess_evidence_freshness,
     attach_evidence_record,
     evidence_graph_id,
+    evidence_record_json_schema,
 )
 
 PROJECT = "usb-layout-fixture"
@@ -318,3 +321,13 @@ def test_repeated_identical_record_attachment_is_idempotent() -> None:
         record
     )
     assert graph.to_document() == before
+
+
+def test_versioned_evidence_schema_fixture_is_exact_and_reproducible() -> None:
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "src/kicad_mcp/project/schemas/evidence-freshness-v1.schema.json"
+    )
+    fixture = json.loads(path.read_text(encoding="utf-8"))
+    assert fixture == evidence_record_json_schema()
+    assert fixture["properties"]["schema_version"]["const"] == 1
