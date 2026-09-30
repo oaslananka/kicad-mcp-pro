@@ -136,8 +136,9 @@ def test_incremental_component_update_preserves_unrelated_graph_subtree() -> Non
     assert u8_id in result.preserved_entity_ids
     assert u8_pin_ids <= result.preserved_entity_ids
     assert graph.entity(u8_id) is u8_before
-    assert graph.entity(u7_id) is not None
-    assert graph.entity(u7_id).attributes["value"] == "STM32H5"
+    updated_u7 = graph.entity(u7_id)
+    assert updated_u7 is not None
+    assert updated_u7.attributes["value"] == "STM32H5"
     assert engineering_graph_diff(graph, clean_rebuild) == []
 
 
