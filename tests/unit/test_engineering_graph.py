@@ -166,6 +166,13 @@ def test_circuit_component_change_propagates_through_pins_to_connected_net() -> 
     assert net_id in impacted
 
 
+def test_canonical_ids_disambiguate_project_and_stable_key_boundaries() -> None:
+    first = canonical_entity_id("a/component/b", GraphEntityKind.COMPONENT, "c")
+    second = canonical_entity_id("a", GraphEntityKind.COMPONENT, "b/component/c")
+
+    assert first != second
+
+
 def test_graph_rejects_noncanonical_persisted_entity_id() -> None:
     graph = EngineeringGraph(project_key="demo")
     invalid = GraphEntity(

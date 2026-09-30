@@ -9,6 +9,7 @@ This module is intentionally independent of FastMCP and KiCad runtime adapters.
 
 from __future__ import annotations
 
+import json
 from collections import deque
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
@@ -396,9 +397,14 @@ def canonical_entity_id(project_key: str, kind: GraphEntityKind, stable_key: str
     normalized_key = stable_key.strip()
     if not normalized_project or not normalized_key:
         raise ValueError("project_key and stable_key must be non-empty")
+    identity_tuple = json.dumps(
+        [normalized_project, kind.value, normalized_key],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
     seed = (
         "https://github.com/oaslananka/kicad-mcp-pro/"
-        f"engineering-graph/v1/{normalized_project}/{kind.value}/{normalized_key}"
+        f"engineering-graph/v1/{identity_tuple}"
     )
     return f"eg:{kind.value}:{uuid5(NAMESPACE_URL, seed)}"
 
