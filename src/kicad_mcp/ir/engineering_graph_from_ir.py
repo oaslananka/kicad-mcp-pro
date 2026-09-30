@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from .circuit_ir import IRCircuit, IRNet
+from .circuit_ir import IRCircuit, IRNet, IRPin
 from .engineering_graph import (
     EngineeringGraph,
     GraphEdge,
@@ -138,7 +138,15 @@ def _add_components(
             )
         )
         graph.add_edge(GraphEdge(project_id, component_id, GraphEdgeKind.CONTAINS))
-        _add_component_pins(graph, project_key, component_id, reference, component.pins, imported, pin_ids)
+        _add_component_pins(
+            graph,
+            project_key,
+            component_id,
+            reference,
+            component.pins,
+            imported,
+            pin_ids,
+        )
     return component_ids, pin_ids
 
 
@@ -147,7 +155,7 @@ def _add_component_pins(
     project_key: str,
     component_id: str,
     reference: str,
-    pins: tuple,
+    pins: tuple[IRPin, ...],
     imported: GraphProvenance,
     pin_ids: dict[tuple[str, str], str],
 ) -> None:
