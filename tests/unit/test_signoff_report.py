@@ -103,3 +103,28 @@ def test_legacy_signoff_shape_unchanged_without_adopted_contracts() -> None:
     report = build_signoff_report(_INTENT, _passing_gates(), _PROVENANCE)
     assert report["verdict"] == "PASS"
     assert "release_evidence" not in report
+
+
+def test_release_blocker_preserves_existing_gate_failure_summary() -> None:
+    gates = _passing_gates()
+    gates[1] = GateOutcome(name="PCB", status="FAIL", summary="DRC violations")
+    blocked = ProjectReleaseEvidenceResolution(
+        adopted=True,
+        gate=ReleaseEvidenceGateResult(
+            approved=False,
+            contracts=(
+                ContractReleaseEvidenceResult(
+                    contract_id="INTENT-USB-SI",
+                    contract_version=1,
+                    state=ContractReleaseEvidenceState.BLOCKED,
+                    reason_codes=("required_evidence_requires_recheck",),
+                ),
+            ),
+        ),
+    )
+
+    report = build_signoff_report(_INTENT, gates, _PROVENANCE, blocked)
+
+    assert report["verdict"] == "FAIL"
+    assert "backing gates are not passing" in report["summary"]
+    assert "release-blocking HardwareIntentContract evidence" in report["summary"]
