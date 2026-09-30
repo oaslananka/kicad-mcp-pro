@@ -21,6 +21,7 @@ from .hardware_intent_contract import (
     HardwareIntentContract,
     HardwareQuantity,
     NominalTolerance,
+    Unit,
     QuantityRange,
     StrictContractModel,
 )
@@ -66,7 +67,7 @@ class ContractConversionResult(StrictContractModel):
     unresolved: tuple[ContractConversionUnresolved, ...] = ()
 
 
-_SOURCE_UNIT: dict[DesignSpecSourceField, str] = {
+_SOURCE_UNIT: dict[DesignSpecSourceField, Unit] = {
     "power_rail_voltage": "V",
     "power_rail_current_max": "A",
     "interface_impedance": "ohm",
@@ -144,7 +145,7 @@ def adapt_explicit_design_spec_contracts(
                 reasons.append(f"missing reviewer-authored {field_name}")
         if binding.severity is not ContractSeverity.INFORMATIONAL and not binding.verification:
             reasons.append("missing reviewer-authored verification/evidence")
-        if counts[binding.contract_id] > 1:
+        if binding.contract_id is not None and counts[binding.contract_id] > 1:
             reasons.append("duplicate contract ID in conversion bindings")
         if resolution.source not in {"project_spec", "legacy_design_intent"}:
             reasons.append("no explicit persisted project design-spec source")
@@ -196,17 +197,16 @@ def adapt_explicit_design_spec_contracts(
 
         quantity = HardwareQuantity(value=value, unit=_SOURCE_UNIT[binding.source_field])
         try:
-            constraint: dict[str, object]
+            quantity_range: QuantityRange | None = None
+            nominal_tolerance: NominalTolerance | None = None
             if maximum_source:
-                constraint = {"quantity_range": QuantityRange(maximum=quantity)}
+                quantity_range = QuantityRange(maximum=quantity)
             else:
-                constraint = {
-                    "nominal_tolerance": NominalTolerance(
-                        nominal=quantity,
-                        absolute=binding.absolute_tolerance,
-                        relative_pct=binding.relative_pct,
-                    )
-                }
+                nominal_tolerance = NominalTolerance(
+                    nominal=quantity,
+                    absolute=binding.absolute_tolerance,
+                    relative_pct=binding.relative_pct,
+                )
             contract = HardwareIntentContract(
                 schema_version=1,
                 contract_id=binding.contract_id,
@@ -217,7 +217,8 @@ def adapt_explicit_design_spec_contracts(
                 release_blocking=binding.release_blocking,
                 verification=binding.verification,
                 waivers=binding.waivers,
-                **constraint,
+                quantity_range=quantity_range,
+                nominal_tolerance=nominal_tolerance,
             )
         except (ValidationError, ValueError) as exc:
             unresolved.append(
