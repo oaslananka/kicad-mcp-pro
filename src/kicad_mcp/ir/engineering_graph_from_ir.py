@@ -132,9 +132,9 @@ def graph_from_circuit(
         )
         graph.add_edge(GraphEdge(project_id, net_id, GraphEdgeKind.CONTAINS))
         for connection in sorted(net.connections):
-            pin_id = pin_ids.get(connection)
-            if pin_id is not None:
-                graph.add_edge(GraphEdge(pin_id, net_id, GraphEdgeKind.CONNECTS_TO))
+            connected_pin_id = pin_ids.get(connection)
+            if connected_pin_id is not None:
+                graph.add_edge(GraphEdge(connected_pin_id, net_id, GraphEdgeKind.CONNECTS_TO))
 
     for name, rail in sorted(circuit.power_rails.items()):
         rail_id = canonical_entity_id(resolved_project_key, GraphEntityKind.POWER_RAIL, name)
@@ -154,9 +154,11 @@ def graph_from_circuit(
         )
         graph.add_edge(GraphEdge(project_id, rail_id, GraphEdgeKind.CONTAINS))
         for net_name in sorted(rail.net_names):
-            net_id = net_ids.get(net_name)
-            if net_id is not None:
-                graph.add_edge(GraphEdge(rail_id, net_id, GraphEdgeKind.REFERENCES, "rail_net"))
+            referenced_net_id = net_ids.get(net_name)
+            if referenced_net_id is not None:
+                graph.add_edge(
+                    GraphEdge(rail_id, referenced_net_id, GraphEdgeKind.REFERENCES, "rail_net")
+                )
 
     for name, interface in sorted(circuit.interfaces.items()):
         interface_id = canonical_entity_id(resolved_project_key, GraphEntityKind.INTERFACE, name)
@@ -175,23 +177,23 @@ def graph_from_circuit(
         )
         graph.add_edge(GraphEdge(project_id, interface_id, GraphEdgeKind.CONTAINS))
         for role, net_name in sorted(interface.net_roles.items()):
-            net_id = net_ids.get(net_name)
-            if net_id is not None:
+            role_net_id = net_ids.get(net_name)
+            if role_net_id is not None:
                 graph.add_edge(
                     GraphEdge(
                         interface_id,
-                        net_id,
+                        role_net_id,
                         GraphEdgeKind.REFERENCES,
                         f"net_role:{role}",
                     )
                 )
         for reference in sorted(interface.refs):
-            component_id = component_ids.get(reference)
-            if component_id is not None:
+            participant_component_id = component_ids.get(reference)
+            if participant_component_id is not None:
                 graph.add_edge(
                     GraphEdge(
                         interface_id,
-                        component_id,
+                        participant_component_id,
                         GraphEdgeKind.REFERENCES,
                         "participant",
                     )
@@ -214,12 +216,12 @@ def graph_from_circuit(
         )
         graph.add_edge(GraphEdge(project_id, constraint_id, GraphEdgeKind.CONTAINS))
         for net_name in sorted(constraint.net_names):
-            net_id = net_ids.get(net_name)
-            if net_id is not None:
+            constraint_net_id = net_ids.get(net_name)
+            if constraint_net_id is not None:
                 graph.add_edge(
                     GraphEdge(
                         constraint_id,
-                        net_id,
+                        constraint_net_id,
                         GraphEdgeKind.APPLIES_TO,
                         "constraint_target",
                     )
