@@ -25,6 +25,10 @@ from ..models.component_contracts import find_component_contract
 from ..models.verdict import Finding, SuggestedFix, Verdict, VerdictReport, stable_finding_id
 from ..path_safety import resolve_under
 from ..pcb.board_access import BoardAccessError, board_footprints
+from ..project.release_evidence_store import (
+    ProjectReleaseEvidenceResolution,
+    resolve_project_release_evidence,
+)
 from ..utils.dru import (
     SExprNode,
     delete_rule,
@@ -2708,6 +2712,30 @@ def _export_release_readiness_report(
     return str(target)
 
 
+def _release_evidence_for_active_project() -> ProjectReleaseEvidenceResolution:
+    cfg = get_config()
+    if cfg.project_dir is None:
+        return ProjectReleaseEvidenceResolution(adopted=False)
+    return resolve_project_release_evidence(cfg.project_dir)
+
+
+def _release_evidence_risks(
+    resolution: ProjectReleaseEvidenceResolution,
+) -> list[str]:
+    if not resolution.adopted:
+        return []
+    risks = list(resolution.errors)
+    if resolution.gate is None:
+        if not risks:
+            risks.append("release contract evidence gate could not be evaluated")
+        return risks
+    for result in resolution.gate.blocking:
+        identity = f"{result.contract_id}@{result.contract_version}"
+        reasons = ", ".join(result.reason_codes) or "unresolved"
+        risks.append(f"{identity}: {reasons}")
+    return risks
+
+
 def _build_project_release_readiness_payload(
     *,
     manufacturer: str | None = None,
@@ -2738,6 +2766,7 @@ def _build_project_release_readiness_payload(
     artifacts = _release_artifact_evidence()
     manifest = _release_manifest_evidence(artifacts.path)
     waivers = _release_waiver_evidence()
+    release_evidence = _release_evidence_for_active_project()
 
     required_failures: list[str] = []
     if project_gate.status != "PASS":
@@ -2760,6 +2789,9 @@ def _build_project_release_readiness_payload(
         required_failures.append("release manifest missing")
     if not waivers.available:
         required_failures.append("waiver evidence unreadable")
+    release_evidence_risks = _release_evidence_risks(release_evidence)
+    if release_evidence.adopted and not release_evidence.approved:
+        required_failures.append("release-blocking contract evidence is stale or unresolved")
 
     waiver_count = int(waivers.metadata.get("count", 0))
     open_risks = [
@@ -2793,10 +2825,20 @@ def _build_project_release_readiness_payload(
         open_risks.append(manifest.summary)
     if waiver_count:
         open_risks.append(f"{waiver_count} DRC exclusion(s) remain active and need review.")
+    open_risks.extend(release_evidence_risks)
+    if release_evidence.gate is not None and release_evidence.gate.waived:
+        open_risks.append(
+            f"{len(release_evidence.gate.waived)} release-blocking contract waiver(s) "
+            "require explicit review."
+        )
 
     if required_failures:
         verdict: Verdict = "FAIL"
-    elif waiver_count or bom.dnp_refs:
+    elif (
+        waiver_count
+        or bom.dnp_refs
+        or (release_evidence.gate is not None and release_evidence.gate.waived)
+    ):
         verdict = "WARN"
     else:
         verdict = _gate_status_verdict(project_gate.status)
@@ -2834,8 +2876,14 @@ def _build_project_release_readiness_payload(
         + " Archive BOM, pick-and-place, and manufacturing release artifacts.",
         ("[x]" if manifest.available else "[ ]")
         + " Generate and archive the release manifest package.",
-        "[ ] Record final human approval in the external release workflow.",
     ]
+    if release_evidence.adopted:
+        approval_checklist.append(
+            ("[x]" if release_evidence.approved else "[ ]")
+            + " Confirm release-blocking HardwareIntentContract evidence is fresh "
+            "or explicitly waived."
+        )
+    approval_checklist.append("[ ] Record final human approval in the external release workflow.")
     advisory_notes = [
         "This bundle aggregates evidence for release review; it does not grant Formal sign-off.",
         "Advisory estimators and heuristics remain evidence only and must not be "
@@ -3729,10 +3777,12 @@ def _register_validation_gate_tools(mcp: FastMCP) -> None:
 
         outcomes = _evaluate_project_gate(manufacturer=manufacturer or None, tier=tier or None)
         intent = load_design_intent()
+        release_evidence = _release_evidence_for_active_project()
         report = build_signoff_report(
             intent.model_dump(),
             outcomes,
             _signoff_provenance(intent),
+            release_evidence if release_evidence.adopted else None,
         )
         return render_signoff_report(report)
 
