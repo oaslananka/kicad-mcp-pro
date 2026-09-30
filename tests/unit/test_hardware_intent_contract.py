@@ -45,8 +45,12 @@ def test_json_schema_version_and_roundtrip_are_stable() -> None:
     assert schema["$id"].endswith("hardware-intent-contract-v1.schema.json")
     assert schema["properties"]["schema_version"]["const"] == 1
     required = {
-        "contract_id", "contract_version", "requirement_id",
-        "applicability", "severity", "release_blocking",
+        "contract_id",
+        "contract_version",
+        "requirement_id",
+        "applicability",
+        "severity",
+        "release_blocking",
     }
     assert required <= set(schema["required"])
 
@@ -54,11 +58,10 @@ def test_json_schema_version_and_roundtrip_are_stable() -> None:
 def test_equivalent_units_normalize_exactly() -> None:
     millivolts = HardwareQuantity(value=Decimal("3300"), unit="mV")
     assert millivolts.normalized() == ("V", Decimal("3.300"))
-    assert HardwareQuantity(value=Decimal("3.3"), unit="V").normalized() == (
-        "V", Decimal("3.3")
-    )
+    assert HardwareQuantity(value=Decimal("3.3"), unit="V").normalized() == ("V", Decimal("3.3"))
     assert HardwareQuantity(value=Decimal("1.5"), unit="ns").normalized() == (
-        "ps", Decimal("1500.0")
+        "ps",
+        Decimal("1500.0"),
     )
     assert HardwareQuantity(value=Decimal("90"), unit="ohm").dimension == "resistance"
 
@@ -91,9 +94,7 @@ def test_tolerances_are_explicit_and_dimensionally_valid() -> None:
         absolute={"value": "100", "unit": "mV"},
     )
     assert tolerance.bounds() == ("V", Decimal("3.200"), Decimal("3.400"))
-    relative = NominalTolerance(
-        nominal={"value": "-3.3", "unit": "V"}, relative_pct="10"
-    )
+    relative = NominalTolerance(nominal={"value": "-3.3", "unit": "V"}, relative_pct="10")
     assert relative.bounds() == ("V", Decimal("-3.63"), Decimal("-2.97"))
     with pytest.raises(ValidationError, match="exactly one"):
         NominalTolerance(nominal={"value": "3.3", "unit": "V"})
@@ -114,15 +115,11 @@ def test_incomplete_or_ambiguous_claims_fail_closed() -> None:
         _contract(unverified_value="90 ohm")
     with pytest.raises(ValidationError, match="informational"):
         _contract(severity="informational", release_blocking=True, verification=[])
-    informational = _contract(
-        severity="informational", release_blocking=False, verification=[]
-    )
+    informational = _contract(severity="informational", release_blocking=False, verification=[])
     assert informational.verification == ()
     with pytest.raises(ValidationError):
         _contract(
-            nominal_tolerance={
-                "nominal": {"value": "3.3", "unit": "V"}, "relative_pct": "nan"
-            }
+            nominal_tolerance={"nominal": {"value": "3.3", "unit": "V"}, "relative_pct": "nan"}
         )
 
 
@@ -161,17 +158,13 @@ def test_unsupported_units_and_duplicate_evidence_fail_closed() -> None:
     with pytest.raises(ValidationError, match="unit"):
         HardwareQuantity.model_validate({"value": "3.3", "unit": "furlong"})
     with pytest.raises(ValidationError, match="duplicate evidence"):
-        _contract(
-            verification=[{"method_ref": "drc", "evidence_classes": ["drc", "drc"]}]
-        )
+        _contract(verification=[{"method_ref": "drc", "evidence_classes": ["drc", "drc"]}])
     with pytest.raises(ValidationError, match="blocking severity"):
         _contract(release_blocking=False)
     with pytest.raises(ValidationError, match="either a quantity range"):
         _contract(
             quantity_range={"minimum": {"value": "3", "unit": "V"}},
-            nominal_tolerance={
-                "nominal": {"value": "3.3", "unit": "V"}, "relative_pct": "5"
-            },
+            nominal_tolerance={"nominal": {"value": "3.3", "unit": "V"}, "relative_pct": "5"},
         )
     with pytest.raises(ValidationError, match="at least 1 character"):
         _contract(applicability={"kind": "net", "key": " "})
