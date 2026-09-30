@@ -177,10 +177,21 @@ installed.
 - [`src/kicad_mcp/utils/`](src/kicad_mcp/utils) — `impedance.py`, `placement.py`,
   `sexpr.py`, `freerouting.py`, `footprint_gen.py`, …
 - [`src/kicad_mcp/models/`](src/kicad_mcp/models) — Pydantic payload/verdict models.
+- [`src/kicad_mcp/ir/`](src/kicad_mcp/ir) — semantic `IRCircuit` plus the
+  versioned Engineering Graph identity/provenance/dependency layer. Canonical graph
+  IDs are semantic identities; native KiCad UUIDs are optional links, not the sole
+  identity authority.
 - [`src/kicad_mcp/dfm_profiles/`](src/kicad_mcp/dfm_profiles),
   [`src/kicad_mcp/templates/`](src/kicad_mcp/templates) — bundled data.
 
 ## Cross-cutting contracts
+
+- **Engineering Graph v1** — `src/kicad_mcp/ir/engineering_graph.py` defines
+  schema versioning, canonical identities, provenance, typed dependency edges,
+  impact queries, migration, and semantic graph diffing. The
+  `engineering_graph_from_ir.py` adapter evolves the existing `IRCircuit`
+  foundation rather than replacing it. Project identity fails closed when neither
+  a source UUID nor an explicit stable project key is available.
 
 - **Errors** — [`src/kicad_mcp/errors.py`](src/kicad_mcp/errors.py) defines the typed
   exception hierarchy and `ErrorPayload {code, message, hint, retryable}`. Every error

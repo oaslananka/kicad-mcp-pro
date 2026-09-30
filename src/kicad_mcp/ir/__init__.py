@@ -28,6 +28,23 @@ from .circuit_ir import (
     PinRole,
 )
 from .diff import IRDiff, IRDiffKind, circuit_diff, render_diff, render_diff_summary
+from .engineering_graph import (
+    ENGINEERING_GRAPH_SCHEMA_VERSION,
+    EngineeringGraph,
+    GraphDiff,
+    GraphDiffKind,
+    GraphEdge,
+    GraphEdgeKind,
+    GraphEntity,
+    GraphEntityKind,
+    GraphProvenance,
+    GraphProvenanceKind,
+    NativeLink,
+    canonical_entity_id,
+    engineering_graph_diff,
+    migrate_graph_document,
+)
+from .engineering_graph_from_ir import graph_from_circuit
 from .from_kicad import parse_schematic as parse_schematic_to_ir
 from .lint import IRLintFinding, IRLintSeverity, lint_circuit
 
@@ -41,6 +58,22 @@ __all__ = [
     "IRPowerRail",
     "PinElectricalType",
     "PinRole",
+    # engineering graph
+    "ENGINEERING_GRAPH_SCHEMA_VERSION",
+    "EngineeringGraph",
+    "GraphDiff",
+    "GraphDiffKind",
+    "GraphEdge",
+    "GraphEdgeKind",
+    "GraphEntity",
+    "GraphEntityKind",
+    "GraphProvenance",
+    "GraphProvenanceKind",
+    "NativeLink",
+    "canonical_entity_id",
+    "engineering_graph_diff",
+    "migrate_graph_document",
+    "graph_from_circuit",
     # from_kicad
     "parse_schematic_to_ir",
     # diff

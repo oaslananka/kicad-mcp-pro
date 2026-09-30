@@ -39,6 +39,11 @@ _PROJECT_WORKFLOW_ADAPTER = "kicad_mcp.tools.project_workflow"
 _PROJECT_ROOT_MODULE = "kicad_mcp.tools.project"
 
 DOMAIN_MODULES = {
+    "kicad_mcp.ir.engineering_graph": SRC_ROOT / "kicad_mcp" / "ir" / "engineering_graph.py",
+    "kicad_mcp.ir.engineering_graph_from_ir": SRC_ROOT
+    / "kicad_mcp"
+    / "ir"
+    / "engineering_graph_from_ir.py",
     "kicad_mcp.tools.pcb": SRC_ROOT / "kicad_mcp" / "tools" / "pcb.py",
     "kicad_mcp.export.board_stats": SRC_ROOT / "kicad_mcp" / "export" / "board_stats.py",
     "kicad_mcp.export.bom": SRC_ROOT / "kicad_mcp" / "export" / "bom.py",
@@ -355,6 +360,8 @@ DOMAIN_MODULES = {
 }
 
 PURE_HELPERS = {
+    "kicad_mcp.ir.engineering_graph",
+    "kicad_mcp.ir.engineering_graph_from_ir",
     "kicad_mcp.validation.drc_runner",
     "kicad_mcp.export.board_stats",
     "kicad_mcp.export.bom",

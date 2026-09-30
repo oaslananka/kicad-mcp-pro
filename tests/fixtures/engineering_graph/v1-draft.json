@@ -1,0 +1,27 @@
+{
+  "schema_version": "1-draft",
+  "project_key": "demo",
+  "nodes": [
+    {
+      "id": "eg:project:d0054c93-d202-54d1-93bb-2658ed5940f2",
+      "type": "project",
+      "key": "project",
+      "attributes": {"title": "demo"},
+      "provenance": "imported"
+    },
+    {
+      "id": "eg:component:00cb31c1-a448-55c0-a11f-efda56f92ac7",
+      "type": "component",
+      "key": "U7",
+      "attributes": {"value": "STM32G4"},
+      "provenance": "imported"
+    }
+  ],
+  "links": [
+    {
+      "from": "eg:project:d0054c93-d202-54d1-93bb-2658ed5940f2",
+      "to": "eg:component:00cb31c1-a448-55c0-a11f-efda56f92ac7",
+      "type": "contains"
+    }
+  ]
+}

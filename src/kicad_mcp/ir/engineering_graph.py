@@ -1,0 +1,494 @@
+"""Versioned Engineering Graph v1 core.
+
+The graph adds durable semantic identity, provenance, typed dependency edges,
+impact queries, deterministic persistence, migration, and semantic diffing on
+top of the existing EDA intermediate representation.
+
+This module is intentionally independent of FastMCP and KiCad runtime adapters.
+"""
+
+from __future__ import annotations
+
+from collections import deque
+from copy import deepcopy
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Iterable, Mapping
+from uuid import NAMESPACE_URL, uuid5
+
+ENGINEERING_GRAPH_SCHEMA_VERSION = 1
+DRAFT_ENGINEERING_GRAPH_SCHEMA_VERSION = "1-draft"
+
+
+class GraphEntityKind(str, Enum):
+    """Entity kinds represented by Engineering Graph v1."""
+
+    PROJECT = "project"
+    COMPONENT = "component"
+    PIN = "pin"
+    NET = "net"
+    POWER_RAIL = "power_rail"
+    INTERFACE = "interface"
+    CONSTRAINT = "constraint"
+    REQUIREMENT = "requirement"
+    INTENT_CONTRACT = "intent_contract"
+    COMPONENT_CONTRACT = "component_contract"
+    FIRMWARE_MAPPING = "firmware_mapping"
+    VERIFICATION_RUN = "verification_run"
+    EVIDENCE_ARTIFACT = "evidence_artifact"
+    APPROVAL = "approval"
+    WAIVER = "waiver"
+    CHANGE = "change"
+
+
+class GraphProvenanceKind(str, Enum):
+    """Origin classification for graph facts."""
+
+    IMPORTED = "imported"
+    INFERRED = "inferred"
+    USER_AUTHORED = "user_authored"
+    USER_APPROVED = "user_approved"
+    TOOL_GENERATED = "tool_generated"
+
+
+class GraphEdgeKind(str, Enum):
+    """Typed relationships between Engineering Graph entities."""
+
+    CONTAINS = "contains"
+    CONNECTS_TO = "connects_to"
+    APPLIES_TO = "applies_to"
+    DEPENDS_ON = "depends_on"
+    DERIVED_FROM = "derived_from"
+    VERIFIES = "verifies"
+    PRODUCES = "produces"
+    REFERENCES = "references"
+
+
+_REVERSE_IMPACT_KINDS = frozenset(
+    {
+        GraphEdgeKind.APPLIES_TO,
+        GraphEdgeKind.DEPENDS_ON,
+        GraphEdgeKind.DERIVED_FROM,
+        GraphEdgeKind.VERIFIES,
+        GraphEdgeKind.REFERENCES,
+    }
+)
+_FORWARD_IMPACT_KINDS = frozenset({GraphEdgeKind.PRODUCES})
+_SYMMETRIC_IMPACT_KINDS = frozenset({GraphEdgeKind.CONNECTS_TO})
+_DEPENDENCY_QUERY_KINDS = frozenset(
+    {
+        GraphEdgeKind.APPLIES_TO,
+        GraphEdgeKind.DEPENDS_ON,
+        GraphEdgeKind.DERIVED_FROM,
+        GraphEdgeKind.VERIFIES,
+        GraphEdgeKind.REFERENCES,
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class GraphProvenance:
+    """Provenance for an entity or persisted graph fact."""
+
+    kind: GraphProvenanceKind
+    source: str = ""
+    detail: str = ""
+
+    def to_dict(self) -> dict[str, str]:
+        return {"kind": self.kind.value, "source": self.source, "detail": self.detail}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> GraphProvenance:
+        kind = data.get("kind")
+        source = data.get("source", "")
+        detail = data.get("detail", "")
+        if not isinstance(kind, str):
+            raise ValueError("provenance.kind must be a string")
+        if not isinstance(source, str) or not isinstance(detail, str):
+            raise ValueError("provenance source/detail must be strings")
+        return cls(GraphProvenanceKind(kind), source, detail)
+
+
+@dataclass(frozen=True, slots=True)
+class NativeLink:
+    """Link to a native EDA/runtime object without using it as graph identity."""
+
+    system: str
+    kind: str
+    key: str
+    uuid: str | None = None
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {"system": self.system, "kind": self.kind, "key": self.key, "uuid": self.uuid}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> NativeLink:
+        system = data.get("system")
+        kind = data.get("kind")
+        key = data.get("key")
+        uuid = data.get("uuid")
+        if not isinstance(system, str) or not isinstance(kind, str) or not isinstance(key, str):
+            raise ValueError("native link system/kind/key must be strings")
+        if uuid is not None and not isinstance(uuid, str):
+            raise ValueError("native link uuid must be a string or null")
+        return cls(system=system, kind=kind, key=key, uuid=uuid)
+
+
+@dataclass(frozen=True, slots=True)
+class GraphEntity:
+    """A durable semantic entity with canonical identity and provenance."""
+
+    entity_id: str
+    kind: GraphEntityKind
+    stable_key: str
+    attributes: dict[str, Any] = field(default_factory=dict)
+    provenance: GraphProvenance = field(
+        default_factory=lambda: GraphProvenance(GraphProvenanceKind.TOOL_GENERATED)
+    )
+    native_links: tuple[NativeLink, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "entity_id": self.entity_id,
+            "kind": self.kind.value,
+            "stable_key": self.stable_key,
+            "attributes": deepcopy(self.attributes),
+            "provenance": self.provenance.to_dict(),
+            "native_links": [link.to_dict() for link in self.native_links],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> GraphEntity:
+        entity_id = data.get("entity_id")
+        kind = data.get("kind")
+        stable_key = data.get("stable_key")
+        attributes = data.get("attributes", {})
+        provenance = data.get("provenance", {"kind": GraphProvenanceKind.IMPORTED.value})
+        native_links = data.get("native_links", [])
+        if not isinstance(entity_id, str) or not isinstance(kind, str):
+            raise ValueError("entity_id and kind must be strings")
+        if not isinstance(stable_key, str):
+            raise ValueError("stable_key must be a string")
+        if not isinstance(attributes, dict):
+            raise ValueError("entity attributes must be an object")
+        if not isinstance(provenance, Mapping):
+            raise ValueError("entity provenance must be an object")
+        if not isinstance(native_links, list):
+            raise ValueError("entity native_links must be a list")
+        parsed_links: list[NativeLink] = []
+        for item in native_links:
+            if not isinstance(item, Mapping):
+                raise ValueError("native link entries must be objects")
+            parsed_links.append(NativeLink.from_dict(item))
+        return cls(
+            entity_id=entity_id,
+            kind=GraphEntityKind(kind),
+            stable_key=stable_key,
+            attributes=deepcopy(attributes),
+            provenance=GraphProvenance.from_dict(provenance),
+            native_links=tuple(parsed_links),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class GraphEdge:
+    """A typed directed relationship between two graph entities."""
+
+    source_id: str
+    target_id: str
+    kind: GraphEdgeKind
+    role: str = ""
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "source_id": self.source_id,
+            "target_id": self.target_id,
+            "kind": self.kind.value,
+            "role": self.role,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> GraphEdge:
+        source_id = data.get("source_id")
+        target_id = data.get("target_id")
+        kind = data.get("kind")
+        role = data.get("role", "")
+        if not isinstance(source_id, str) or not isinstance(target_id, str):
+            raise ValueError("edge source_id and target_id must be strings")
+        if not isinstance(kind, str) or not isinstance(role, str):
+            raise ValueError("edge kind and role must be strings")
+        return cls(source_id, target_id, GraphEdgeKind(kind), role)
+
+
+@dataclass(slots=True)
+class EngineeringGraph:
+    """Mutable graph container with deterministic persistence and impact queries."""
+
+    project_key: str
+    schema_version: int = ENGINEERING_GRAPH_SCHEMA_VERSION
+    entities: dict[str, GraphEntity] = field(default_factory=dict)
+    edges: set[GraphEdge] = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        if not self.project_key.strip():
+            raise ValueError("project_key must be a non-empty string")
+        if self.schema_version != ENGINEERING_GRAPH_SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported Engineering Graph schema version: {self.schema_version!r}"
+            )
+
+    def add_entity(self, entity: GraphEntity) -> None:
+        existing = self.entities.get(entity.entity_id)
+        if existing is not None and existing != entity:
+            raise ValueError(f"conflicting entity for canonical id {entity.entity_id}")
+        self.entities[entity.entity_id] = entity
+
+    def add_edge(self, edge: GraphEdge) -> None:
+        missing = {edge.source_id, edge.target_id} - self.entities.keys()
+        if missing:
+            raise ValueError(
+                "edge references unknown entity id(s): " + ", ".join(sorted(missing))
+            )
+        self.edges.add(edge)
+
+    def entity(self, entity_id: str) -> GraphEntity | None:
+        return self.entities.get(entity_id)
+
+    def entities_of_kind(self, kind: GraphEntityKind) -> tuple[GraphEntity, ...]:
+        return tuple(
+            sorted(
+                (entity for entity in self.entities.values() if entity.kind == kind),
+                key=lambda entity: (entity.stable_key, entity.entity_id),
+            )
+        )
+
+    def dependencies_of(self, entity_id: str, *, transitive: bool = False) -> set[str]:
+        """Return entities this entity depends on through dependency-like edges."""
+        if entity_id not in self.entities:
+            raise KeyError(entity_id)
+        dependencies: set[str] = set()
+        queue: deque[str] = deque([entity_id])
+        visited = {entity_id}
+        while queue:
+            current = queue.popleft()
+            direct = {
+                edge.target_id
+                for edge in self.edges
+                if edge.source_id == current and edge.kind in _DEPENDENCY_QUERY_KINDS
+            }
+            dependencies.update(direct)
+            if transitive:
+                for dependency in sorted(direct):
+                    if dependency not in visited:
+                        visited.add(dependency)
+                        queue.append(dependency)
+        return dependencies
+
+    def impacted_by(self, changed_ids: Iterable[str]) -> set[str]:
+        """Return transitive semantic dependents of changed entities."""
+        changed = set(changed_ids)
+        missing = changed - self.entities.keys()
+        if missing:
+            raise KeyError("unknown changed entity id(s): " + ", ".join(sorted(missing)))
+
+        impacted: set[str] = set()
+        visited = set(changed)
+        queue: deque[str] = deque(sorted(changed))
+        while queue:
+            current = queue.popleft()
+            neighbors: set[str] = set()
+            for edge in self.edges:
+                if edge.kind in _REVERSE_IMPACT_KINDS and edge.target_id == current:
+                    neighbors.add(edge.source_id)
+                if edge.kind in _FORWARD_IMPACT_KINDS and edge.source_id == current:
+                    neighbors.add(edge.target_id)
+                if edge.kind in _SYMMETRIC_IMPACT_KINDS:
+                    if edge.source_id == current:
+                        neighbors.add(edge.target_id)
+                    elif edge.target_id == current:
+                        neighbors.add(edge.source_id)
+            for neighbor in sorted(neighbors):
+                if neighbor in visited:
+                    continue
+                visited.add(neighbor)
+                impacted.add(neighbor)
+                queue.append(neighbor)
+        return impacted
+
+    def to_document(self) -> dict[str, Any]:
+        """Return a deterministic JSON-compatible document."""
+        entities = [
+            entity.to_dict()
+            for entity in sorted(
+                self.entities.values(),
+                key=lambda entity: (entity.kind.value, entity.stable_key, entity.entity_id),
+            )
+        ]
+        edges = [
+            edge.to_dict()
+            for edge in sorted(
+                self.edges,
+                key=lambda edge: (edge.kind.value, edge.source_id, edge.target_id, edge.role),
+            )
+        ]
+        return {
+            "schema_version": self.schema_version,
+            "project_key": self.project_key,
+            "entities": entities,
+            "edges": edges,
+        }
+
+    @classmethod
+    def from_document(cls, document: Mapping[str, Any]) -> EngineeringGraph:
+        """Load schema v1 or a supported draft document."""
+        migrated = migrate_graph_document(document)
+        project_key = migrated.get("project_key")
+        entities = migrated.get("entities")
+        edges = migrated.get("edges")
+        if not isinstance(project_key, str) or not project_key.strip():
+            raise ValueError("project_key must be a non-empty string")
+        if not isinstance(entities, list) or not isinstance(edges, list):
+            raise ValueError("entities and edges must be lists")
+        graph = cls(project_key=project_key)
+        for item in entities:
+            if not isinstance(item, Mapping):
+                raise ValueError("entity entries must be objects")
+            graph.add_entity(GraphEntity.from_dict(item))
+        for item in edges:
+            if not isinstance(item, Mapping):
+                raise ValueError("edge entries must be objects")
+            graph.add_edge(GraphEdge.from_dict(item))
+        return graph
+
+
+class GraphDiffKind(str, Enum):
+    """Kinds of Engineering Graph semantic changes."""
+
+    ENTITY_ADDED = "entity_added"
+    ENTITY_REMOVED = "entity_removed"
+    ENTITY_CHANGED = "entity_changed"
+    EDGE_ADDED = "edge_added"
+    EDGE_REMOVED = "edge_removed"
+
+
+@dataclass(frozen=True, slots=True)
+class GraphDiff:
+    """A semantic graph difference that preserves canonical identity."""
+
+    kind: GraphDiffKind
+    subject_id: str
+    before: GraphEntity | GraphEdge | None = None
+    after: GraphEntity | GraphEdge | None = None
+
+
+def canonical_entity_id(project_key: str, kind: GraphEntityKind, stable_key: str) -> str:
+    """Return a deterministic ID independent of native KiCad object UUIDs."""
+    normalized_project = project_key.strip()
+    normalized_key = stable_key.strip()
+    if not normalized_project or not normalized_key:
+        raise ValueError("project_key and stable_key must be non-empty")
+    seed = (
+        "https://github.com/oaslananka/kicad-mcp-pro/"
+        f"engineering-graph/v1/{normalized_project}/{kind.value}/{normalized_key}"
+    )
+    return f"eg:{kind.value}:{uuid5(NAMESPACE_URL, seed)}"
+
+
+def engineering_graph_diff(before: EngineeringGraph, after: EngineeringGraph) -> list[GraphDiff]:
+    """Compare graph states by canonical identity and typed edges."""
+    changes: list[GraphDiff] = []
+    before_ids = set(before.entities)
+    after_ids = set(after.entities)
+
+    for entity_id in sorted(after_ids - before_ids):
+        changes.append(
+            GraphDiff(GraphDiffKind.ENTITY_ADDED, entity_id, after=after.entities[entity_id])
+        )
+    for entity_id in sorted(before_ids - after_ids):
+        changes.append(
+            GraphDiff(GraphDiffKind.ENTITY_REMOVED, entity_id, before=before.entities[entity_id])
+        )
+    for entity_id in sorted(before_ids & after_ids):
+        before_entity = before.entities[entity_id]
+        after_entity = after.entities[entity_id]
+        if before_entity != after_entity:
+            changes.append(
+                GraphDiff(
+                    GraphDiffKind.ENTITY_CHANGED,
+                    entity_id,
+                    before=before_entity,
+                    after=after_entity,
+                )
+            )
+
+    def edge_key(edge: GraphEdge) -> tuple[str, str, str, str]:
+        return (edge.kind.value, edge.source_id, edge.target_id, edge.role)
+
+    for edge in sorted(after.edges - before.edges, key=edge_key):
+        changes.append(
+            GraphDiff(
+                GraphDiffKind.EDGE_ADDED,
+                f"{edge.source_id}->{edge.target_id}",
+                after=edge,
+            )
+        )
+    for edge in sorted(before.edges - after.edges, key=edge_key):
+        changes.append(
+            GraphDiff(
+                GraphDiffKind.EDGE_REMOVED,
+                f"{edge.source_id}->{edge.target_id}",
+                before=edge,
+            )
+        )
+    return changes
+
+
+def migrate_graph_document(document: Mapping[str, Any]) -> dict[str, Any]:
+    """Migrate a supported persisted graph document to schema v1."""
+    payload = deepcopy(dict(document))
+    version = payload.get("schema_version")
+    if version == ENGINEERING_GRAPH_SCHEMA_VERSION:
+        return payload
+    if version != DRAFT_ENGINEERING_GRAPH_SCHEMA_VERSION:
+        raise ValueError(f"unsupported Engineering Graph schema version: {version!r}")
+
+    nodes = payload.pop("nodes", [])
+    links = payload.pop("links", [])
+    if not isinstance(nodes, list) or not isinstance(links, list):
+        raise ValueError("draft nodes and links must be lists")
+
+    entities: list[dict[str, Any]] = []
+    for node in nodes:
+        if not isinstance(node, Mapping):
+            raise ValueError("draft node entries must be objects")
+        provenance = node.get("provenance", GraphProvenanceKind.IMPORTED.value)
+        if isinstance(provenance, str):
+            provenance = {"kind": provenance, "source": "v1-draft", "detail": ""}
+        entities.append(
+            {
+                "entity_id": node.get("id"),
+                "kind": node.get("type"),
+                "stable_key": node.get("stable_key", node.get("key")),
+                "attributes": deepcopy(node.get("attributes", {})),
+                "provenance": deepcopy(provenance),
+                "native_links": deepcopy(node.get("native_links", [])),
+            }
+        )
+
+    edges: list[dict[str, Any]] = []
+    for link in links:
+        if not isinstance(link, Mapping):
+            raise ValueError("draft link entries must be objects")
+        edges.append(
+            {
+                "source_id": link.get("from"),
+                "target_id": link.get("to"),
+                "kind": link.get("type"),
+                "role": link.get("role", ""),
+            }
+        )
+
+    payload["schema_version"] = ENGINEERING_GRAPH_SCHEMA_VERSION
+    payload["entities"] = entities
+    payload["edges"] = edges
+    return payload
