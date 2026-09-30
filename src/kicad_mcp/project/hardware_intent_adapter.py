@@ -242,7 +242,5 @@ def adapt_explicit_design_spec_contracts(
         try:
             contracts.append(_contract_from_binding(binding, cast(Decimal, value)))
         except ValueError as exc:
-            unresolved.append(
-                _unresolved_binding(binding, [f"contract validation failed: {exc}"])
-            )
+            unresolved.append(_unresolved_binding(binding, [f"contract validation failed: {exc}"]))
     return ContractConversionResult(contracts=tuple(contracts), unresolved=tuple(unresolved))
