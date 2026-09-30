@@ -6,6 +6,14 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import kicad_mcp.project.release_evidence_store as store_module
+from kicad_mcp.ir.engineering_graph import (
+    EngineeringGraph,
+    GraphEntity,
+    GraphEntityKind,
+    canonical_entity_id,
+)
+from kicad_mcp.project.evidence_current_state import canonical_graph_entity_sha256
 from kicad_mcp.project.release_evidence_store import (
     EVIDENCE_RECORD_STORE_FILENAME,
     HARDWARE_INTENT_STORE_FILENAME,
@@ -32,10 +40,10 @@ def _contract(*, release_blocking: bool = True) -> dict[str, object]:
     }
 
 
-def _evidence() -> dict[str, object]:
+def _evidence(evidence_id: str = "EVID-USB-1") -> dict[str, object]:
     return {
         "schema_version": 1,
-        "evidence_id": "EVID-USB-1",
+        "evidence_id": evidence_id,
         "kind": "evidence_artifact",
         "project_key": "fixture",
         "source_revision": "rev-1",
@@ -49,6 +57,23 @@ def _evidence() -> dict[str, object]:
         "contract_version": 1,
         "provenance_source": "native-fixture",
     }
+
+
+def _graph(*, revision: int | None = None) -> tuple[EngineeringGraph, str]:
+    graph = EngineeringGraph(project_key="fixture")
+    entity_id = canonical_entity_id("fixture", GraphEntityKind.NET, "USB_DP")
+    attributes: dict[str, object] = {"name": "USB_DP"}
+    if revision is not None:
+        attributes["revision"] = revision
+    graph.add_entity(
+        GraphEntity(
+            entity_id=entity_id,
+            kind=GraphEntityKind.NET,
+            stable_key="USB_DP",
+            attributes=attributes,
+        )
+    )
+    return graph, entity_id
 
 
 def _write(project: Path, name: str, payload: object) -> None:
@@ -154,24 +179,7 @@ def test_direct_contract_loader_returns_empty_when_sidecar_is_absent(tmp_path: P
 
 
 def test_trusted_current_graph_can_establish_exact_freshness(tmp_path: Path) -> None:
-    from kicad_mcp.ir.engineering_graph import (
-        EngineeringGraph,
-        GraphEntity,
-        GraphEntityKind,
-        canonical_entity_id,
-    )
-    from kicad_mcp.project.evidence_current_state import canonical_graph_entity_sha256
-
-    graph = EngineeringGraph(project_key="fixture")
-    entity_id = canonical_entity_id("fixture", GraphEntityKind.NET, "USB_DP")
-    graph.add_entity(
-        GraphEntity(
-            entity_id=entity_id,
-            kind=GraphEntityKind.NET,
-            stable_key="USB_DP",
-            attributes={"name": "USB_DP"},
-        )
-    )
+    graph, entity_id = _graph()
     evidence = _evidence()
     evidence["inputs"] = [
         {
@@ -201,23 +209,8 @@ def test_trusted_current_graph_can_establish_exact_freshness(tmp_path: Path) -> 
 
 
 def test_trusted_current_graph_change_invalidates_release_proof(tmp_path: Path) -> None:
-    from kicad_mcp.ir.engineering_graph import (
-        EngineeringGraph,
-        GraphEntity,
-        GraphEntityKind,
-        canonical_entity_id,
-    )
-    from kicad_mcp.project.evidence_current_state import canonical_graph_entity_sha256
-
-    graph = EngineeringGraph(project_key="fixture")
-    entity_id = canonical_entity_id("fixture", GraphEntityKind.NET, "USB_DP")
-    original = GraphEntity(
-        entity_id=entity_id,
-        kind=GraphEntityKind.NET,
-        stable_key="USB_DP",
-        attributes={"name": "USB_DP", "revision": 1},
-    )
-    graph.add_entity(original)
+    graph, entity_id = _graph(revision=1)
+    original = graph.entities[entity_id]
     evidence = _evidence()
     evidence["inputs"] = [
         {"entity_id": entity_id, "sha256": canonical_graph_entity_sha256(original)}
@@ -247,3 +240,40 @@ def test_trusted_current_graph_change_invalidates_release_proof(tmp_path: Path) 
     assert not resolved.approved
     assert resolved.gate is not None
     assert "required_evidence_invalidated" in resolved.gate.blocking[0].reason_codes
+
+
+def test_shared_dependency_hashes_are_precomputed_once(tmp_path: Path, monkeypatch) -> None:
+    graph, entity_id = _graph()
+    digest = canonical_graph_entity_sha256(graph.entities[entity_id])
+    first = _evidence("EVID-USB-1")
+    second_record = _evidence("EVID-USB-2")
+    first["inputs"] = [{"entity_id": entity_id, "sha256": digest}]
+    second_record["inputs"] = [{"entity_id": entity_id, "sha256": digest}]
+    _write(
+        tmp_path,
+        HARDWARE_INTENT_STORE_FILENAME,
+        {"schema_version": 1, "contracts": [_contract()]},
+    )
+    _write(
+        tmp_path,
+        EVIDENCE_RECORD_STORE_FILENAME,
+        {"schema_version": 1, "records": [first, second_record]},
+    )
+
+    calls = 0
+    original = store_module.graph_entity_hashes
+
+    def counted(current_graph: EngineeringGraph, entity_ids: tuple[str, ...]):
+        nonlocal calls
+        calls += 1
+        return original(current_graph, entity_ids)
+
+    monkeypatch.setattr(store_module, "graph_entity_hashes", counted)
+    resolved = resolve_project_release_evidence(
+        tmp_path,
+        current_graph=graph,
+        current_source_sha256=H,
+    )
+
+    assert resolved.approved
+    assert calls == 1
