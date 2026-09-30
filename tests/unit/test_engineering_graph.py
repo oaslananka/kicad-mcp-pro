@@ -165,6 +165,39 @@ def test_incremental_update_preconditions_fail_without_partial_mutation() -> Non
     assert graph.entity(u7_id) is u7_before
 
 
+def test_incremental_update_rejects_project_metadata_change() -> None:
+    before = _sample_circuit()
+    after = _sample_circuit()
+    after.title = "renamed"
+    graph = graph_from_circuit(before)
+
+    with pytest.raises(ValueError, match="project metadata changed"):
+        update_graph_from_circuit(graph, before, after)
+
+
+def test_incremental_update_rejects_net_state_change() -> None:
+    before = _sample_circuit()
+    after = _sample_circuit()
+    after.nets["USB_DP"] = replace(after.nets["USB_DP"], net_class="USB")
+    graph = graph_from_circuit(before)
+
+    with pytest.raises(ValueError, match="non-component circuit state changed"):
+        update_graph_from_circuit(graph, before, after)
+
+
+def test_incremental_update_rejects_component_pin_structure_change() -> None:
+    before = _sample_circuit()
+    after = _sample_circuit()
+    after.components["U7"] = replace(
+        after.components["U7"],
+        pins=(*after.components["U7"].pins, IRPin("3", "USB_DN")),
+    )
+    graph = graph_from_circuit(before)
+
+    with pytest.raises(ValueError, match="component pin structure changed"):
+        update_graph_from_circuit(graph, before, after)
+
+
 def test_incremental_update_rejects_structural_changes_instead_of_rebuilding() -> None:
     before = _sample_circuit()
     after = _sample_circuit()
