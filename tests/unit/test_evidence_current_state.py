@@ -112,8 +112,7 @@ def test_missing_dependency_requires_recheck() -> None:
     result = assess_evidence_current_state(record, graph=graph, current_source_sha256=SOURCE)
     assert result.state is EvidenceFreshnessState.REQUIRES_RECHECK
     codes = [reason.code for reason in result.reasons]
-    assert "unresolved_dependency_entity" in codes
-    assert "current_input_hash_missing_or_invalid" in codes
+    assert codes == ["unresolved_dependency_entity"]
 
 
 def test_unknown_source_or_project_identity_requires_recheck() -> None:
@@ -147,3 +146,35 @@ def test_incomplete_manifest_or_invalid_supplied_hash_requires_recheck() -> None
     codes = [reason.code for reason in result.reasons]
     assert "unknown_dependency_or_mutation_scope" in codes
     assert "current_input_hash_missing_or_invalid" in codes
+
+
+def test_canonical_hash_preserves_semantic_attribute_list_order() -> None:
+    graph, entity_id = _graph()
+    first = graph.entities[entity_id]
+    reordered = GraphEntity(
+        entity_id=first.entity_id,
+        kind=first.kind,
+        stable_key=first.stable_key,
+        attributes={"name": "USB_DP", "connections": [["U2", "2"], ["U1", "1"]]},
+        provenance=first.provenance,
+        native_links=first.native_links,
+    )
+    ordered = GraphEntity(
+        entity_id=first.entity_id,
+        kind=first.kind,
+        stable_key=first.stable_key,
+        attributes={"name": "USB_DP", "connections": [["U1", "1"], ["U2", "2"]]},
+        provenance=first.provenance,
+        native_links=first.native_links,
+    )
+    assert canonical_graph_entity_sha256(ordered) != canonical_graph_entity_sha256(reordered)
+
+
+def test_canonical_hash_tolerates_none_native_links_payload(monkeypatch) -> None:
+    graph, entity_id = _graph()
+    entity = graph.entities[entity_id]
+    payload = entity.to_dict()
+    payload["native_links"] = None
+    monkeypatch.setattr(GraphEntity, "to_dict", lambda _self: payload)
+    digest = canonical_graph_entity_sha256(entity)
+    assert len(digest) == 64
