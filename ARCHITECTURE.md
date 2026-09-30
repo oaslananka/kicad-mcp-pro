@@ -191,7 +191,12 @@ installed.
   impact queries, migration, and semantic graph diffing. The
   `engineering_graph_from_ir.py` adapter evolves the existing `IRCircuit`
   foundation rather than replacing it. Project identity fails closed when neither
-  a source UUID nor an explicit stable project key is available.
+  a source UUID nor an explicit stable project key is available. Bounded
+  `update_graph_from_circuit()` refreshes supported identity-preserving component
+  attribute edits in place and reports updated/preserved entity IDs plus deterministic
+  work units; structural or cross-domain IR changes fail closed to an explicit full
+  rebuild. Persistent project caching/change journals remain #944 scope, while
+  generalized native-engine differential canaries remain #943 scope.
 
 - **Errors** — [`src/kicad_mcp/errors.py`](src/kicad_mcp/errors.py) defines the typed
   exception hierarchy and `ErrorPayload {code, message, hint, retryable}`. Every error
