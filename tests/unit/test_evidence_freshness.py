@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -64,12 +64,9 @@ def _fixture() -> tuple[EngineeringGraph, EvidenceRecord, dict[str, str], dict[s
         source_sha256=D,
         producer="kicad-cli-drc",
         producer_version="10.0.3",
-        captured_at=datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc),
+        captured_at=datetime(2026, 9, 30, 12, 0, tzinfo=UTC),
         dependency_manifest_complete=True,
-        inputs=[
-            {"entity_id": key, "sha256": value}
-            for key, value in sorted(all_hashes.items())
-        ],
+        inputs=[{"entity_id": key, "sha256": value} for key, value in sorted(all_hashes.items())],
         contract_id="INTENT-USB-SI",
         contract_version=1,
         provenance_source="native-drc-fixture-17",
@@ -184,7 +181,8 @@ def test_missing_graph_record_or_dependency_mapping_requires_recheck() -> None:
     before, record, hashes, ids = _fixture()
     unlinked = _copy(before)
     unlinked.edges = {
-        edge for edge in unlinked.edges
+        edge
+        for edge in unlinked.edges
         if not (edge.kind is GraphEdgeKind.DEPENDS_ON and edge.target_id == ids["usb"])
     }
     assert _assess(record, unlinked, _copy(unlinked), hashes).state is (
@@ -202,8 +200,9 @@ def test_conflicting_evidence_record_rejected_without_graph_mutation() -> None:
     graph, record, _, _ = _fixture()
     initial = graph.to_document()
     different = record.model_copy(update={"source_sha256": E})
+    provenance = _provenance()
     with pytest.raises(ValueError, match="conflicting entity"):
-        attach_evidence_record(graph, different, provenance=_provenance())
+        attach_evidence_record(graph, different, provenance=provenance)
     assert graph.to_document() == initial
 
 
@@ -214,18 +213,24 @@ def test_missing_dependency_rejected_atomically() -> None:
         update={"evidence_id": "EVID-USB-Z1", "contract_id": None, "contract_version": None}
     )
     absent = canonical_entity_id(PROJECT, GraphEntityKind.NET, "NOT_A_NET")
-    inputs = tuple(sorted(
-        [*more.inputs, {"entity_id": absent, "sha256": E}],
-        key=lambda item: item.entity_id if hasattr(item, "entity_id") else item["entity_id"],
-    ))
+    inputs = tuple(
+        sorted(
+            [*more.inputs, {"entity_id": absent, "sha256": E}],
+            key=lambda item: item.entity_id if hasattr(item, "entity_id") else item["entity_id"],
+        )
+    )
     # Revalidate after the intentional type-preserving edit to the record.
     updated = EvidenceRecord.model_validate(
-        {**more.model_dump(), "inputs": [
-            item.model_dump() if hasattr(item, "model_dump") else item for item in inputs
-        ]}
+        {
+            **more.model_dump(),
+            "inputs": [
+                item.model_dump() if hasattr(item, "model_dump") else item for item in inputs
+            ],
+        }
     )
+    provenance = _provenance()
     with pytest.raises(ValueError, match="missing evidence dependencies"):
-        attach_evidence_record(graph, updated, provenance=_provenance())
+        attach_evidence_record(graph, updated, provenance=provenance)
     assert graph.to_document() == before
     assert ids["usb"] in graph.entities
 
@@ -233,17 +238,20 @@ def test_missing_dependency_rejected_atomically() -> None:
 def test_explicit_revision_binding_for_approval_and_waiver() -> None:
     graph, base, _, _ = _fixture()
     for kind in ("approval", "waiver"):
-        entry = base.model_copy(
-            update={"evidence_id": f"{kind.upper()}-1", "kind": kind}
+        verified = EvidenceRecord.model_validate(
+            {**base.model_dump(), "evidence_id": f"{kind.upper()}-1", "kind": kind}
         )
-        # model_copy bypasses validation; authoritative read always validates.
-        verified = EvidenceRecord.model_validate(entry.model_dump())
         assert verified.contract_id == "INTENT-USB-SI"
         assert verified.contract_version == 1
         attach_evidence_record(graph, verified, provenance=_provenance())
         assert evidence_graph_id(verified) in graph.entities
 
-    no_contract = {**base.model_dump(), "kind": "approval", "contract_id": None, "contract_version": None}
+    no_contract = {
+        **base.model_dump(),
+        "kind": "approval",
+        "contract_id": None,
+        "contract_version": None,
+    }
     with pytest.raises(ValidationError, match="exact contract revision"):
         EvidenceRecord.model_validate(no_contract)
 
@@ -273,8 +281,9 @@ def test_timestamp_digest_identity_and_input_contract_validation() -> None:
 def test_project_mismatch_requires_recheck_and_attach_rejects() -> None:
     graph, record, hashes, _ = _fixture()
     other = EngineeringGraph(project_key="different")
+    provenance = _provenance()
     with pytest.raises(ValueError, match="project identity mismatch"):
-        attach_evidence_record(other, record, provenance=_provenance())
+        attach_evidence_record(other, record, provenance=provenance)
     report = _assess(record, graph, other, hashes)
     assert report.state is EvidenceFreshnessState.REQUIRES_RECHECK
 
@@ -288,5 +297,7 @@ def test_missing_explicit_contract_digest_binding_rejected() -> None:
     ]
     payload["inputs"] = sorted(payload["inputs"], key=lambda entry: entry["entity_id"])
     copied = EvidenceRecord.model_validate(payload)
+    provenance = _provenance()
+    graph = _copy(before)
     with pytest.raises(ValueError, match="explicitly hashed"):
-        attach_evidence_record(_copy(before), copied, provenance=_provenance())
+        attach_evidence_record(graph, copied, provenance=provenance)
