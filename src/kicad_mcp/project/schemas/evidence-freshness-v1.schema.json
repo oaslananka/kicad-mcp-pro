@@ -1,0 +1,155 @@
+{
+  "$defs": {
+    "EvidenceInputDigest": {
+      "additionalProperties": false,
+      "description": "Hash of one explicitly declared, relevant authoritative graph input.",
+      "properties": {
+        "entity_id": {
+          "maxLength": 180,
+          "minLength": 1,
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "entity_id",
+        "sha256"
+      ],
+      "title": "EvidenceInputDigest",
+      "type": "object"
+    },
+    "EvidenceRecordKind": {
+      "enum": [
+        "evidence_artifact",
+        "verification_run",
+        "measurement",
+        "approval",
+        "waiver"
+      ],
+      "title": "EvidenceRecordKind",
+      "type": "string"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/oaslananka/kicad-mcp-pro/main/src/kicad_mcp/project/schemas/evidence-freshness-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Versioned immutable evidence envelope; no synthetic verification claims.",
+  "properties": {
+    "captured_at": {
+      "format": "date-time",
+      "title": "Captured At",
+      "type": "string"
+    },
+    "contract_id": {
+      "anyOf": [
+        {
+          "maxLength": 120,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contract Id"
+    },
+    "contract_version": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contract Version"
+    },
+    "dependency_manifest_complete": {
+      "title": "Dependency Manifest Complete",
+      "type": "boolean"
+    },
+    "evidence_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]*$",
+      "title": "Evidence Id",
+      "type": "string"
+    },
+    "inputs": {
+      "items": {
+        "$ref": "#/$defs/EvidenceInputDigest"
+      },
+      "minItems": 1,
+      "title": "Inputs",
+      "type": "array"
+    },
+    "kind": {
+      "$ref": "#/$defs/EvidenceRecordKind"
+    },
+    "producer": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Producer",
+      "type": "string"
+    },
+    "producer_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Producer Version",
+      "type": "string"
+    },
+    "project_key": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Project Key",
+      "type": "string"
+    },
+    "provenance_source": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Provenance Source",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source_revision": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Source Revision",
+      "type": "string"
+    },
+    "source_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "evidence_id",
+    "kind",
+    "project_key",
+    "source_revision",
+    "source_sha256",
+    "producer",
+    "producer_version",
+    "captured_at",
+    "dependency_manifest_complete",
+    "inputs",
+    "provenance_source"
+  ],
+  "title": "EvidenceRecord",
+  "type": "object"
+}
