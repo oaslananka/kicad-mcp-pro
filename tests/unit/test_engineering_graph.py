@@ -15,6 +15,7 @@ from kicad_mcp.ir import (
     IRInterface,
     IRNet,
     IRPin,
+    IRPowerRail,
 )
 from kicad_mcp.ir.engineering_graph import (
     DRAFT_ENGINEERING_GRAPH_SCHEMA_VERSION,
@@ -263,6 +264,37 @@ def test_document_round_trip_is_deterministic() -> None:
     restored = EngineeringGraph.from_document(document)
 
     assert restored.to_document() == document
+
+
+def test_power_rail_references_existing_net_and_ignores_unknown_net() -> None:
+    circuit = _sample_circuit()
+    circuit.power_rails["3V3"] = IRPowerRail(
+        name="3V3",
+        voltage=3.3,
+        net_names=frozenset({"USB_DP", "MISSING_NET"}),
+        source_ref="U7",
+        source_pin="1",
+    )
+
+    graph = graph_from_circuit(circuit)
+
+    rail = graph.entities_of_kind(GraphEntityKind.POWER_RAIL)[0]
+    net = graph.entities_of_kind(GraphEntityKind.NET)[0]
+    assert rail.attributes["voltage"] == 3.3
+    assert rail.attributes["source_ref"] == "U7"
+    assert GraphEdge(rail.entity_id, net.entity_id, GraphEdgeKind.REFERENCES, "rail_net") in graph.edges
+
+
+def test_anonymous_net_identity_prefers_connectivity_then_falls_back_to_name() -> None:
+    circuit = _sample_circuit()
+    circuit.nets["~N1"] = IRNet("~N1", connections=frozenset({("U7", "1")}))
+    circuit.nets["~N2"] = IRNet("~N2")
+
+    graph = graph_from_circuit(circuit)
+    stable_keys = {entity.stable_key for entity in graph.entities_of_kind(GraphEntityKind.NET)}
+
+    assert "connections:U7.1" in stable_keys
+    assert "anonymous:~N2" in stable_keys
 
 
 def test_architecture_checker_tracks_engineering_graph_modules() -> None:
