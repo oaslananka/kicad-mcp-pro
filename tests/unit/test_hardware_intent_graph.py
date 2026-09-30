@@ -97,7 +97,5 @@ def test_contract_revision_conflict_never_rebinds_silently() -> None:
     link_hardware_intent_contract(graph, _record(), provenance=_provenance())
     before = graph.to_document()
     with pytest.raises(ValueError, match="conflicting entity"):
-        link_hardware_intent_contract(
-            graph, _record(contract_version=2), provenance=_provenance()
-        )
+        link_hardware_intent_contract(graph, _record(contract_version=2), provenance=_provenance())
     assert graph.to_document() == before
