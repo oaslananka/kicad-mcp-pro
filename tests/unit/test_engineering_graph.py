@@ -282,7 +282,8 @@ def test_power_rail_references_existing_net_and_ignores_unknown_net() -> None:
     net = graph.entities_of_kind(GraphEntityKind.NET)[0]
     assert rail.attributes["voltage"] == 3.3
     assert rail.attributes["source_ref"] == "U7"
-    assert GraphEdge(rail.entity_id, net.entity_id, GraphEdgeKind.REFERENCES, "rail_net") in graph.edges
+    rail_edge = GraphEdge(rail.entity_id, net.entity_id, GraphEdgeKind.REFERENCES, "rail_net")
+    assert rail_edge in graph.edges
 
 
 def test_anonymous_net_identity_prefers_connectivity_then_falls_back_to_name() -> None:
