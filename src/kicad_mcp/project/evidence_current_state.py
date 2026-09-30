@@ -20,8 +20,11 @@ _SHA256_HEX = frozenset("0123456789abcdef")
 def canonical_graph_entity_sha256(entity: GraphEntity) -> str:
     """Hash one canonical GraphEntity document deterministically."""
     payload = entity.to_dict()
+    # Attribute list order is preserved intentionally: some GraphEntity attributes
+    # encode semantic sequence. Builders must canonicalize unordered collections
+    # before entity construction; only native_links are explicitly order-insensitive.
     payload["native_links"] = sorted(
-        payload["native_links"],
+        payload.get("native_links") or [],
         key=lambda item: (
             str(item.get("system", "")),
             str(item.get("kind", "")),
@@ -82,17 +85,23 @@ def assess_evidence_current_state(
 
     resolved_hashes: Mapping[str, str]
     if current_hashes is None:
-        resolved_hashes, missing = graph_entity_hashes(
+        resolved_hashes, missing_tuple = graph_entity_hashes(
             graph, tuple(entry.entity_id for entry in record.inputs)
         )
-        unresolved.extend(
-            InvalidationReason(code="unresolved_dependency_entity", entity_id=entity_id)
-            for entity_id in missing
-        )
+        missing = set(missing_tuple)
     else:
         resolved_hashes = current_hashes
+        missing = {
+            entry.entity_id for entry in record.inputs if graph.entity(entry.entity_id) is None
+        }
+    unresolved.extend(
+        InvalidationReason(code="unresolved_dependency_entity", entity_id=entity_id)
+        for entity_id in sorted(missing)
+    )
 
     for entry in record.inputs:
+        if entry.entity_id in missing:
+            continue
         digest = resolved_hashes.get(entry.entity_id)
         if not _valid_sha256(digest):
             unresolved.append(
