@@ -478,8 +478,12 @@ def _canonicalize_draft_entity_id(
     stable_key: object,
     legacy_id_map: dict[str, str],
 ) -> object:
-    values = (project_key, legacy_id, entity_kind, stable_key)
-    if not all(isinstance(value, str) for value in values):
+    if not (
+        isinstance(project_key, str)
+        and isinstance(legacy_id, str)
+        and isinstance(entity_kind, str)
+        and isinstance(stable_key, str)
+    ):
         return legacy_id
     canonical_id = canonical_entity_id(
         project_key,
