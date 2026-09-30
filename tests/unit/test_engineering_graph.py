@@ -208,6 +208,64 @@ def test_adapter_requires_explicit_project_identity_without_source_uuid() -> Non
     assert graph.project_key == "fixture-project"
 
 
+def test_requirement_net_interface_verification_evidence_chain_is_queryable() -> None:
+    graph = EngineeringGraph(project_key="demo-project")
+    component = _entity(graph, GraphEntityKind.COMPONENT, "U7")
+    net = _entity(graph, GraphEntityKind.NET, "USB_DP")
+    interface = _entity(graph, GraphEntityKind.INTERFACE, "USB")
+    requirement = _entity(graph, GraphEntityKind.REQUIREMENT, "REQ-USB-001")
+    verification = _entity(graph, GraphEntityKind.VERIFICATION_RUN, "verify-usb-001")
+    evidence = _entity(graph, GraphEntityKind.EVIDENCE_ARTIFACT, "usb-drc.json")
+
+    graph.add_edge(GraphEdge(requirement.entity_id, component.entity_id, GraphEdgeKind.APPLIES_TO))
+    graph.add_edge(GraphEdge(requirement.entity_id, net.entity_id, GraphEdgeKind.APPLIES_TO))
+    graph.add_edge(GraphEdge(requirement.entity_id, interface.entity_id, GraphEdgeKind.APPLIES_TO))
+    graph.add_edge(GraphEdge(verification.entity_id, requirement.entity_id, GraphEdgeKind.DEPENDS_ON))
+    graph.add_edge(GraphEdge(verification.entity_id, evidence.entity_id, GraphEdgeKind.PRODUCES))
+
+    assert graph.dependencies_of(requirement.entity_id) == {
+        component.entity_id,
+        interface.entity_id,
+        net.entity_id,
+    }
+    assert {
+        requirement.entity_id,
+        verification.entity_id,
+        evidence.entity_id,
+    } <= graph.impacted_by({net.entity_id})
+
+
+def test_required_provenance_kinds_remain_distinct_across_persistence() -> None:
+    graph = EngineeringGraph(project_key="demo-project")
+    required_kinds = (
+        GraphProvenanceKind.IMPORTED,
+        GraphProvenanceKind.INFERRED,
+        GraphProvenanceKind.USER_APPROVED,
+        GraphProvenanceKind.TOOL_GENERATED,
+    )
+    for provenance_kind in required_kinds:
+        stable_key = f"provenance:{provenance_kind.value}"
+        graph.add_entity(
+            GraphEntity(
+                entity_id=canonical_entity_id(
+                    graph.project_key,
+                    GraphEntityKind.COMPONENT,
+                    stable_key,
+                ),
+                kind=GraphEntityKind.COMPONENT,
+                stable_key=stable_key,
+                provenance=GraphProvenance(provenance_kind, source="acceptance-test"),
+            )
+        )
+
+    restored = EngineeringGraph.from_document(graph.to_document())
+
+    assert {
+        entity.provenance.kind
+        for entity in restored.entities_of_kind(GraphEntityKind.COMPONENT)
+    } == set(required_kinds)
+
+
 def test_u7_change_returns_requirement_contract_verification_and_evidence_impacts() -> None:
     graph = EngineeringGraph(project_key="demo-project")
     u7 = _entity(graph, GraphEntityKind.COMPONENT, "U7")
