@@ -10,17 +10,18 @@ This module is intentionally independent of FastMCP and KiCad runtime adapters.
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Iterable, Mapping
+from enum import StrEnum
+from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 ENGINEERING_GRAPH_SCHEMA_VERSION = 1
 DRAFT_ENGINEERING_GRAPH_SCHEMA_VERSION = "1-draft"
 
 
-class GraphEntityKind(str, Enum):
+class GraphEntityKind(StrEnum):
     """Entity kinds represented by Engineering Graph v1."""
 
     PROJECT = "project"
@@ -41,7 +42,7 @@ class GraphEntityKind(str, Enum):
     CHANGE = "change"
 
 
-class GraphProvenanceKind(str, Enum):
+class GraphProvenanceKind(StrEnum):
     """Origin classification for graph facts."""
 
     IMPORTED = "imported"
@@ -51,7 +52,7 @@ class GraphProvenanceKind(str, Enum):
     TOOL_GENERATED = "tool_generated"
 
 
-class GraphEdgeKind(str, Enum):
+class GraphEdgeKind(StrEnum):
     """Typed relationships between Engineering Graph entities."""
 
     CONTAINS = "contains"
@@ -359,7 +360,7 @@ class EngineeringGraph:
         return graph
 
 
-class GraphDiffKind(str, Enum):
+class GraphDiffKind(StrEnum):
     """Kinds of Engineering Graph semantic changes."""
 
     ENTITY_ADDED = "entity_added"

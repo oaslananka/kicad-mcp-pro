@@ -51,7 +51,7 @@ def _entity(
     return entity
 
 
-def _sample_circuit(*, source_path: str = "/tmp/board/main.kicad_sch") -> IRCircuit:
+def _sample_circuit(*, source_path: str = "fixtures/board/main.kicad_sch") -> IRCircuit:
     circuit = IRCircuit(
         source_path=source_path,
         source_uuid="10000000-0000-0000-0000-100000000001",
@@ -83,8 +83,8 @@ def _sample_circuit(*, source_path: str = "/tmp/board/main.kicad_sch") -> IRCirc
 
 
 def test_graph_ids_survive_equivalent_ir_rebuild_and_path_change() -> None:
-    first = graph_from_circuit(_sample_circuit(source_path="/a/main.kicad_sch"))
-    second = graph_from_circuit(_sample_circuit(source_path="/b/main.kicad_sch"))
+    first = graph_from_circuit(_sample_circuit(source_path="fixtures/a/main.kicad_sch"))
+    second = graph_from_circuit(_sample_circuit(source_path="fixtures/b/main.kicad_sch"))
 
     first_ids = {
         (entity.kind, entity.stable_key): entity.entity_id
