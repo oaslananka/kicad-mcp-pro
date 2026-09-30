@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from kicad_mcp.ir.engineering_graph import (
     EngineeringGraph,
+    GraphEdge,
     GraphEdgeKind,
     GraphEntity,
     GraphEntityKind,
@@ -331,3 +332,19 @@ def test_versioned_evidence_schema_fixture_is_exact_and_reproducible() -> None:
     fixture = json.loads(path.read_text(encoding="utf-8"))
     assert fixture == evidence_record_json_schema()
     assert fixture["properties"]["schema_version"]["const"] == 1
+
+
+def test_undeclared_extra_graph_dependency_cannot_produce_still_valid() -> None:
+    before, record, hashes, ids = _fixture()
+    before.add_edge(GraphEdge(evidence_graph_id(record), ids["u8"], GraphEdgeKind.DEPENDS_ON))
+    report = _assess(record, before, _copy(before), hashes)
+    assert report.state is EvidenceFreshnessState.REQUIRES_RECHECK
+    assert "dependency_manifest_link_mismatch" in [reason.code for reason in report.reasons]
+
+
+def test_runtime_invalid_digest_type_requires_recheck_instead_of_crashing() -> None:
+    before, record, hashes, ids = _fixture()
+    malformed = {**hashes, ids["usb"]: 5}
+    report = _assess(record, before, _copy(before), malformed)
+    assert report.state is EvidenceFreshnessState.REQUIRES_RECHECK
+    assert "current_input_hash_missing_or_invalid" in [reason.code for reason in report.reasons]
