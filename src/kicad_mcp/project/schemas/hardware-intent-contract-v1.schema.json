@@ -1,0 +1,344 @@
+{
+  "$defs": {
+    "ContractScope": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "project",
+            "component",
+            "net",
+            "interface",
+            "rail",
+            "region",
+            "artifact"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "key"
+      ],
+      "title": "ContractScope",
+      "type": "object"
+    },
+    "ContractSeverity": {
+      "enum": [
+        "informational",
+        "warning",
+        "error",
+        "blocking"
+      ],
+      "title": "ContractSeverity",
+      "type": "string"
+    },
+    "ContractVerification": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_classes": {
+          "items": {
+            "enum": [
+              "erc",
+              "drc",
+              "simulation",
+              "measurement",
+              "inspection",
+              "design_review",
+              "manufacturing"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Classes",
+          "type": "array"
+        },
+        "method_ref": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]*$",
+          "title": "Method Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "method_ref",
+        "evidence_classes"
+      ],
+      "title": "ContractVerification",
+      "type": "object"
+    },
+    "ContractWaiver": {
+      "additionalProperties": false,
+      "properties": {
+        "approval_evidence_ref": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Approval Evidence Ref",
+          "type": "string"
+        },
+        "approved_by": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Approved By",
+          "type": "string"
+        },
+        "contract_id": {
+          "maxLength": 120,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]*$",
+          "title": "Contract Id",
+          "type": "string"
+        },
+        "contract_version": {
+          "minimum": 1,
+          "title": "Contract Version",
+          "type": "integer"
+        },
+        "reason": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "waiver_id": {
+          "maxLength": 120,
+          "minLength": 3,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]*$",
+          "title": "Waiver Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "waiver_id",
+        "contract_id",
+        "contract_version",
+        "reason",
+        "approved_by",
+        "approval_evidence_ref"
+      ],
+      "title": "ContractWaiver",
+      "type": "object"
+    },
+    "HardwareQuantity": {
+      "additionalProperties": false,
+      "description": "Exact decimal quantity; normalized values are paired with canonical units.",
+      "properties": {
+        "unit": {
+          "enum": [
+            "V",
+            "mV",
+            "A",
+            "mA",
+            "ohm",
+            "kohm",
+            "mm",
+            "um",
+            "ps",
+            "ns",
+            "Hz",
+            "kHz",
+            "MHz"
+          ],
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value",
+        "unit"
+      ],
+      "title": "HardwareQuantity",
+      "type": "object"
+    },
+    "NominalTolerance": {
+      "additionalProperties": false,
+      "description": "Exactly one absolute or percent tolerance about an explicit nominal value.",
+      "properties": {
+        "absolute": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HardwareQuantity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "nominal": {
+          "$ref": "#/$defs/HardwareQuantity"
+        },
+        "relative_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Relative Pct"
+        }
+      },
+      "required": [
+        "nominal"
+      ],
+      "title": "NominalTolerance",
+      "type": "object"
+    },
+    "QuantityRange": {
+      "additionalProperties": false,
+      "description": "Inclusive bounds by default; equality requires inclusive endpoints.",
+      "properties": {
+        "maximum": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HardwareQuantity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "maximum_inclusive": {
+          "default": true,
+          "title": "Maximum Inclusive",
+          "type": "boolean"
+        },
+        "minimum": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HardwareQuantity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "minimum_inclusive": {
+          "default": true,
+          "title": "Minimum Inclusive",
+          "type": "boolean"
+        }
+      },
+      "title": "QuantityRange",
+      "type": "object"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/oaslananka/kicad-mcp-pro/main/src/kicad_mcp/project/schemas/hardware-intent-contract-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Versioned authoritative requirement; all engineering claims explicit.",
+  "properties": {
+    "applicability": {
+      "$ref": "#/$defs/ContractScope"
+    },
+    "contract_id": {
+      "maxLength": 120,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]*$",
+      "title": "Contract Id",
+      "type": "string"
+    },
+    "contract_version": {
+      "minimum": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "nominal_tolerance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NominalTolerance"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "quantity_range": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/QuantityRange"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "release_blocking": {
+      "title": "Release Blocking",
+      "type": "boolean"
+    },
+    "requirement_id": {
+      "maxLength": 120,
+      "minLength": 3,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]*$",
+      "title": "Requirement Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "severity": {
+      "$ref": "#/$defs/ContractSeverity"
+    },
+    "verification": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ContractVerification"
+      },
+      "title": "Verification",
+      "type": "array"
+    },
+    "waivers": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ContractWaiver"
+      },
+      "title": "Waivers",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "contract_id",
+    "contract_version",
+    "requirement_id",
+    "applicability",
+    "severity",
+    "release_blocking"
+  ],
+  "title": "HardwareIntentContract",
+  "type": "object"
+}
