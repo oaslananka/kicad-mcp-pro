@@ -36,9 +36,7 @@ _UNIT_FACTORS: dict[str, tuple[str, str, Decimal]] = {
     "kHz": ("frequency", "Hz", Decimal(1000)),
     "MHz": ("frequency", "Hz", Decimal(1000000)),
 }
-Unit = Literal[
-    "V", "mV", "A", "mA", "ohm", "kohm", "mm", "um", "ps", "ns", "Hz", "kHz", "MHz"
-]
+Unit = Literal["V", "mV", "A", "mA", "ohm", "kohm", "mm", "um", "ps", "ns", "Hz", "kHz", "MHz"]
 ScopeKind = Literal["project", "component", "net", "interface", "rail", "region", "artifact"]
 EvidenceClass = Literal[
     "erc", "drc", "simulation", "measurement", "inspection", "design_review", "manufacturing"
@@ -189,7 +187,8 @@ class HardwareIntentContract(StrictContractModel):
         waiver_ids: set[str] = set()
         for waiver in self.waivers:
             if (waiver.contract_id, waiver.contract_version) != (
-                self.contract_id, self.contract_version
+                self.contract_id,
+                self.contract_version,
             ):
                 raise ValueError("waiver must bind the exact contract ID and version")
             if waiver.waiver_id in waiver_ids:
