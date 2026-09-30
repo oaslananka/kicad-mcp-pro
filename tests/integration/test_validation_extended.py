@@ -851,3 +851,124 @@ async def test_project_release_readiness_exports_markdown_when_evidence_is_compl
     exported = (output_dir / "release_readiness.md").read_text(encoding="utf-8")
     assert "Project release readiness: WARN" in exported
     assert "Formal sign-off" in exported
+
+
+def _write_release_blocking_contract_store(project: Path) -> None:
+    root = project / ".kicad-mcp"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "hardware_intent_contracts-v1.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "contracts": [
+                    {
+                        "schema_version": 1,
+                        "contract_id": "INTENT-USB-SI",
+                        "contract_version": 1,
+                        "requirement_id": "REQ-USB-SI",
+                        "applicability": {"kind": "net", "key": "USB_DP"},
+                        "severity": "blocking",
+                        "release_blocking": True,
+                        "verification": [
+                            {"method_ref": "native-check", "evidence_classes": ["drc"]}
+                        ],
+                        "quantity_range": {"maximum": {"value": "90", "unit": "ohm"}},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.anyio
+async def test_project_signoff_blocks_adopted_contract_without_fresh_evidence(
+    sample_project: Path,
+    monkeypatch,
+) -> None:
+    from kicad_mcp.tools.design_intent_state import ProjectDesignIntent
+
+    _write_release_blocking_contract_store(sample_project)
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._evaluate_project_gate",
+        lambda manufacturer=None, tier=None: [
+            GateOutcome(name="PCB", status="PASS", summary="DRC clean")
+        ],
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.project.load_design_intent",
+        lambda: ProjectDesignIntent(critical_nets=["USB_DP"]),
+    )
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    result = await call_tool_text(server, "project_signoff_report", {})
+
+    assert "Manufacturing sign-off: FAIL" in result
+    assert "Release contract evidence:" in result
+    assert "INTENT-USB-SI@1" in result
+    assert "required_evidence_missing" in result
+
+
+@pytest.mark.anyio
+async def test_project_release_readiness_blocks_adopted_contract_without_fresh_evidence(
+    sample_project: Path,
+    monkeypatch,
+) -> None:
+    output_dir = sample_project / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "bom.csv").write_text("ref,mpn\nR1,RC0603FR-0710KL\n", encoding="utf-8")
+    (output_dir / "board-pos.csv").write_text("ref,x,y,rot\nR1,0,0,0\n", encoding="utf-8")
+    (output_dir / "fabrication.pdf").write_text("placeholder", encoding="utf-8")
+    (output_dir / "manifest.json").write_text(
+        json.dumps({"content_hash": "abc123", "files": [{"filename": "bom.csv"}]}),
+        encoding="utf-8",
+    )
+    (output_dir / "MANIFEST.txt").write_text("manifest", encoding="utf-8")
+    _write_release_blocking_contract_store(sample_project)
+
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._run_drc_report",
+        lambda report_name: _clean_drc_report(output_dir / report_name),
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._run_erc_report",
+        lambda report_name: _clean_erc_report(output_dir / report_name),
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._evaluate_project_gate",
+        lambda manufacturer=None, tier=None: [
+            GateOutcome(
+                name="Manufacturing",
+                status="PASS",
+                summary="DFM checks passed.",
+                details=["Profile: JLCPCB / standard"],
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.library._schematic_component_rows",
+        lambda: [
+            {
+                "reference": "R1",
+                "value": "10k",
+                "footprint": "Resistor_SMD:R_0603_1608Metric",
+                "lib_id": "Device:R",
+                "lcsc": "C25804",
+                "mpn": "RC0603FR-0710KL",
+                "manufacturer": "Yageo",
+                "populate": "Populate",
+            }
+        ],
+    )
+
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    result = await call_tool_payload(server, "project_release_readiness", {})
+
+    assert result["verdict"] == "FAIL"
+    assert any("required_evidence_missing" in risk for risk in result["open_risks"])
+    assert any(
+        "HardwareIntentContract evidence is fresh" in item and item.startswith("[ ]")
+        for item in result["approval_checklist"]
+    )
