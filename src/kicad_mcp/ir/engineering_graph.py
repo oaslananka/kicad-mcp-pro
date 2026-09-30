@@ -246,9 +246,7 @@ class EngineeringGraph:
     def add_edge(self, edge: GraphEdge) -> None:
         missing = {edge.source_id, edge.target_id} - self.entities.keys()
         if missing:
-            raise ValueError(
-                "edge references unknown entity id(s): " + ", ".join(sorted(missing))
-            )
+            raise ValueError("edge references unknown entity id(s): " + ", ".join(sorted(missing)))
         self.edges.add(edge)
 
     def entity(self, entity_id: str) -> GraphEntity | None:
