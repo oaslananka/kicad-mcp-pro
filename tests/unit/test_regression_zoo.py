@@ -16,11 +16,18 @@ from __future__ import annotations
 import json
 import time
 import tracemalloc
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
 import yaml
 
+from kicad_mcp.ir import IRCircuit, IRComponent
+from kicad_mcp.ir.engineering_graph import engineering_graph_diff
+from kicad_mcp.ir.engineering_graph_from_ir import (
+    graph_from_circuit,
+    update_graph_from_circuit,
+)
 from kicad_mcp.models import visual_qa
 from kicad_mcp.models.contract_verifier import parse_footprint, parse_symbol_pins
 from tests.synthetic import (
@@ -88,6 +95,36 @@ def test_manifest_fixture_dirs_exist() -> None:
         entry["id"] for entry in manifest["fixtures"] if not (FIXTURES_ROOT / entry["dir"]).is_dir()
     ]
     assert missing == [], f"Manifest references missing fixture dirs: {missing}"
+
+
+@pytest.mark.benchmark
+def test_engineering_graph_incremental_component_update_is_bounded() -> None:
+    before = IRCircuit(title="engineering-graph-benchmark")
+    for index in range(500):
+        reference = f"R{index + 1}"
+        before.components[reference] = IRComponent(
+            reference,
+            "Device:R",
+            "10k",
+            "Resistor_SMD:R_0603_1608Metric",
+        )
+    after = deepcopy(before)
+    after.components["R250"] = IRComponent(
+        "R250",
+        "Device:R",
+        "22k",
+        "Resistor_SMD:R_0603_1608Metric",
+    )
+
+    graph = graph_from_circuit(before, project_key="engineering-graph-benchmark")
+    entity_count = len(graph.entities)
+    result = update_graph_from_circuit(graph, before, after)
+    clean_rebuild = graph_from_circuit(after, project_key="engineering-graph-benchmark")
+
+    assert result.work_units == 1
+    assert len(result.updated_entity_ids) == 1
+    assert len(result.preserved_entity_ids) == entity_count - 1
+    assert engineering_graph_diff(graph, clean_rebuild) == []
 
 
 @pytest.mark.benchmark
