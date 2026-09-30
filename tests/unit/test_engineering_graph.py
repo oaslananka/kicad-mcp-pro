@@ -220,7 +220,13 @@ def test_requirement_net_interface_verification_evidence_chain_is_queryable() ->
     graph.add_edge(GraphEdge(requirement.entity_id, component.entity_id, GraphEdgeKind.APPLIES_TO))
     graph.add_edge(GraphEdge(requirement.entity_id, net.entity_id, GraphEdgeKind.APPLIES_TO))
     graph.add_edge(GraphEdge(requirement.entity_id, interface.entity_id, GraphEdgeKind.APPLIES_TO))
-    graph.add_edge(GraphEdge(verification.entity_id, requirement.entity_id, GraphEdgeKind.DEPENDS_ON))
+    graph.add_edge(
+        GraphEdge(
+            verification.entity_id,
+            requirement.entity_id,
+            GraphEdgeKind.DEPENDS_ON,
+        )
+    )
     graph.add_edge(GraphEdge(verification.entity_id, evidence.entity_id, GraphEdgeKind.PRODUCES))
 
     assert graph.dependencies_of(requirement.entity_id) == {
