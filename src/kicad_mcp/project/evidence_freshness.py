@@ -7,9 +7,10 @@ always produce requires_recheck; native KiCad remains the authority.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Literal, Mapping
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
@@ -65,9 +66,7 @@ class EvidenceRecord(StrictContractModel):
     captured_at: datetime
     dependency_manifest_complete: bool
     inputs: tuple[EvidenceInputDigest, ...] = Field(min_length=1)
-    contract_id: str | None = Field(
-        default=None, min_length=3, max_length=120, pattern=_ID_PATTERN
-    )
+    contract_id: str | None = Field(default=None, min_length=3, max_length=120, pattern=_ID_PATTERN)
     contract_version: int | None = Field(default=None, ge=1)
     provenance_source: str = Field(min_length=1, max_length=256)
 
@@ -157,9 +156,7 @@ def _result(
     state: EvidenceFreshnessState,
     reasons: list[InvalidationReason],
 ) -> FreshnessAssessment:
-    return FreshnessAssessment(
-        evidence_id=record.evidence_id, state=state, reasons=tuple(reasons)
-    )
+    return FreshnessAssessment(evidence_id=record.evidence_id, state=state, reasons=tuple(reasons))
 
 
 def _known_mutations(
@@ -200,9 +197,7 @@ def _input_hash_reasons(
     unresolved: list[InvalidationReason] = []
     for entry in record.inputs:
         digest = current_hashes.get(entry.entity_id)
-        if digest is None or len(digest) != 64 or any(
-            c not in "0123456789abcdef" for c in digest
-        ):
+        if digest is None or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
             unresolved.append(
                 InvalidationReason(
                     code="current_input_hash_missing_or_invalid", entity_id=entry.entity_id
@@ -226,7 +221,8 @@ def assess_evidence_freshness(
     """Classify exact graph+hash evidence; uncertainty never yields PASS."""
     if record.project_key != before.project_key or before.project_key != after.project_key:
         return _result(
-            record, EvidenceFreshnessState.REQUIRES_RECHECK,
+            record,
+            EvidenceFreshnessState.REQUIRES_RECHECK,
             [InvalidationReason(code="project_identity_mismatch")],
         )
     evidence_id = evidence_graph_id(record)
