@@ -79,6 +79,7 @@ def _explicit_source_value(
     explicit: ProjectDesignIntent, binding: ContractConversionBinding
 ) -> tuple[Decimal | None, str | None]:
     """Resolve a named source or report missing/ambiguous provenance."""
+    scalar: float | None
     if binding.source_field.startswith("power_rail_"):
         matched_rails = [rail for rail in explicit.power_rails if rail.name == binding.source_key]
         if not matched_rails:
