@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from kicad_mcp.project.release_evidence_policy import (
+    ContractReleaseEvidenceResult,
+    ContractReleaseEvidenceState,
+    ReleaseEvidenceGateResult,
+)
+from kicad_mcp.project.release_evidence_store import ProjectReleaseEvidenceResolution
 from kicad_mcp.tools.gates import GateOutcome
 from kicad_mcp.tools.signoff import build_signoff_report, render_signoff_report
 
@@ -70,3 +76,30 @@ def test_render_signoff_is_human_readable() -> None:
     assert "Manufacturing sign-off: PASS" in text
     assert "Provenance:" in text
     assert "content hash:" in text
+
+
+def test_release_blocking_evidence_forces_signoff_fail() -> None:
+    blocked = ProjectReleaseEvidenceResolution(
+        adopted=True,
+        gate=ReleaseEvidenceGateResult(
+            approved=False,
+            contracts=(
+                ContractReleaseEvidenceResult(
+                    contract_id="INTENT-USB-SI",
+                    contract_version=1,
+                    state=ContractReleaseEvidenceState.BLOCKED,
+                    reason_codes=("required_evidence_requires_recheck",),
+                ),
+            ),
+        ),
+    )
+    report = build_signoff_report(_INTENT, _passing_gates(), _PROVENANCE, blocked)
+    assert report["verdict"] == "FAIL"
+    assert report["release_evidence"]["approved"] is False
+    assert "release-blocking" in report["summary"]
+
+
+def test_legacy_signoff_shape_unchanged_without_adopted_contracts() -> None:
+    report = build_signoff_report(_INTENT, _passing_gates(), _PROVENANCE)
+    assert report["verdict"] == "PASS"
+    assert "release_evidence" not in report
