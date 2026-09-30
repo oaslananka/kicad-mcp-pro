@@ -12,6 +12,7 @@ directly with `jsonschema`.
 
 - MCP tool discovery payloads returned by `tools/list`.
 - Tool capability metadata advertised by `kicad-mcp-pro`.
+- Reviewed tool-effect manifests for external fail-closed policy consumers.
 - Extension-to-MCP active context payloads.
 - Normalized DRC/ERC diagnostic records.
 - BOM and netlist summary payloads.

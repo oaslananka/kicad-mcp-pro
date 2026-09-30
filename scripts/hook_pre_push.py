@@ -144,6 +144,10 @@ def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
             "src/kicad_mcp/tools",
             "src/kicad_mcp/server.py",
             "src/kicad_mcp/tool_registry.py",
+            "src/kicad_mcp/tool_effect_manifest.py",
+            "contracts/tool-effect-manifest.json",
+            "packages/protocol-schemas/schemas/tool-effect-manifest.schema.json",
+            "scripts/build_tool_effect_manifest.py",
             "scripts/check_tool_contracts.py",
             "scripts/generate_tools_reference.py",
         )
@@ -151,6 +155,10 @@ def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
     if tool_surface_changed:
         checks.extend(
             [
+                Check(
+                    "tool-effect-manifest",
+                    [sys.executable, "scripts/build_tool_effect_manifest.py", "--check"],
+                ),
                 Check(
                     "tool-contracts",
                     [sys.executable, "scripts/check_tool_contracts.py"],
