@@ -31,7 +31,10 @@ from kicad_mcp.ir.engineering_graph import (
     canonical_entity_id,
     engineering_graph_diff,
 )
-from kicad_mcp.ir.engineering_graph_from_ir import graph_from_circuit
+from kicad_mcp.ir.engineering_graph_from_ir import (
+    graph_from_circuit,
+    update_graph_from_circuit,
+)
 
 
 def _entity(
@@ -100,6 +103,57 @@ def test_graph_ids_survive_equivalent_ir_rebuild_and_path_change() -> None:
 
     assert first_ids == second_ids
     assert first.entities_of_kind(GraphEntityKind.COMPONENT)[0].stable_key == "U7"
+
+
+def test_incremental_component_update_preserves_unrelated_graph_subtree() -> None:
+    before = _sample_circuit()
+    before.components["U8"] = IRComponent(
+        "U8",
+        "Device:R",
+        "10k",
+        "Resistor_SMD:R_0603_1608Metric",
+        pins=(IRPin("1", "1"), IRPin("2", "2")),
+    )
+    after = _sample_circuit()
+    after.components["U8"] = before.components["U8"]
+    after.components["U7"] = replace(after.components["U7"], value="STM32H5")
+
+    graph = graph_from_circuit(before)
+    u7_id = canonical_entity_id(graph.project_key, GraphEntityKind.COMPONENT, "U7")
+    u8_id = canonical_entity_id(graph.project_key, GraphEntityKind.COMPONENT, "U8")
+    u8_before = graph.entity(u8_id)
+    u8_pin_ids = {
+        entity.entity_id
+        for entity in graph.entities_of_kind(GraphEntityKind.PIN)
+        if entity.stable_key.startswith("U8:")
+    }
+
+    result = update_graph_from_circuit(graph, before, after)
+    clean_rebuild = graph_from_circuit(after)
+
+    assert result.updated_entity_ids == frozenset({u7_id})
+    assert result.work_units == 1
+    assert u8_id in result.preserved_entity_ids
+    assert u8_pin_ids <= result.preserved_entity_ids
+    assert graph.entity(u8_id) is u8_before
+    assert graph.entity(u7_id) is not None
+    assert graph.entity(u7_id).attributes["value"] == "STM32H5"
+    assert engineering_graph_diff(graph, clean_rebuild) == []
+
+
+def test_incremental_update_rejects_structural_changes_instead_of_rebuilding() -> None:
+    before = _sample_circuit()
+    after = _sample_circuit()
+    after.components["U8"] = IRComponent(
+        "U8",
+        "Device:R",
+        "10k",
+        "Resistor_SMD:R_0603_1608Metric",
+    )
+    graph = graph_from_circuit(before)
+
+    with pytest.raises(ValueError, match="full Engineering Graph rebuild required"):
+        update_graph_from_circuit(graph, before, after)
 
 
 def test_graph_from_circuit_preserves_semantic_entities_and_native_links() -> None:
