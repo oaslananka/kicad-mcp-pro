@@ -32,22 +32,65 @@ def graph_from_circuit(
         )
 
     graph = EngineeringGraph(project_key=resolved_project_key)
-    imported = GraphProvenance(
+    imported = _imported_provenance()
+    project_id = _add_project_entity(graph, circuit, resolved_project_key, imported)
+    component_ids, pin_ids = _add_components(
+        graph,
+        circuit,
+        resolved_project_key,
+        project_id,
+        imported,
+    )
+    net_ids = _add_nets(
+        graph,
+        circuit,
+        resolved_project_key,
+        project_id,
+        imported,
+        pin_ids,
+    )
+    _add_power_rails(graph, circuit, resolved_project_key, project_id, imported, net_ids)
+    _add_interfaces(
+        graph,
+        circuit,
+        resolved_project_key,
+        project_id,
+        imported,
+        net_ids,
+        component_ids,
+    )
+    _add_constraints(graph, circuit, resolved_project_key, project_id, imported, net_ids)
+    return graph
+
+
+def _imported_provenance() -> GraphProvenance:
+    return GraphProvenance(
         GraphProvenanceKind.IMPORTED,
         source="IRCircuit",
         detail="adapted from semantic circuit IR",
     )
-    project_id = canonical_entity_id(resolved_project_key, GraphEntityKind.PROJECT, "project")
-    native_links: tuple[NativeLink, ...] = ()
-    if circuit.source_path or circuit.source_uuid:
-        native_links = (
-            NativeLink(
-                system="kicad",
-                kind="schematic",
-                key=circuit.source_path or circuit.title,
-                uuid=circuit.source_uuid,
-            ),
-        )
+
+
+def _project_native_links(circuit: IRCircuit) -> tuple[NativeLink, ...]:
+    if not (circuit.source_path or circuit.source_uuid):
+        return ()
+    return (
+        NativeLink(
+            system="kicad",
+            kind="schematic",
+            key=circuit.source_path or circuit.title,
+            uuid=circuit.source_uuid,
+        ),
+    )
+
+
+def _add_project_entity(
+    graph: EngineeringGraph,
+    circuit: IRCircuit,
+    project_key: str,
+    imported: GraphProvenance,
+) -> str:
+    project_id = canonical_entity_id(project_key, GraphEntityKind.PROJECT, "project")
     graph.add_entity(
         GraphEntity(
             entity_id=project_id,
@@ -60,16 +103,23 @@ def graph_from_circuit(
                 "sheet_hierarchy": list(circuit.sheet_hierarchy),
             },
             provenance=imported,
-            native_links=native_links,
+            native_links=_project_native_links(circuit),
         )
     )
+    return project_id
 
+
+def _add_components(
+    graph: EngineeringGraph,
+    circuit: IRCircuit,
+    project_key: str,
+    project_id: str,
+    imported: GraphProvenance,
+) -> tuple[dict[str, str], dict[tuple[str, str], str]]:
     component_ids: dict[str, str] = {}
     pin_ids: dict[tuple[str, str], str] = {}
     for reference, component in sorted(circuit.components.items()):
-        component_id = canonical_entity_id(
-            resolved_project_key, GraphEntityKind.COMPONENT, reference
-        )
+        component_id = canonical_entity_id(project_key, GraphEntityKind.COMPONENT, reference)
         component_ids[reference] = component_id
         graph.add_entity(
             GraphEntity(
@@ -88,31 +138,53 @@ def graph_from_circuit(
             )
         )
         graph.add_edge(GraphEdge(project_id, component_id, GraphEdgeKind.CONTAINS))
-        for pin in component.pins:
-            pin_key = f"{reference}:{pin.number}"
-            pin_id = canonical_entity_id(resolved_project_key, GraphEntityKind.PIN, pin_key)
-            pin_ids[(reference, pin.number)] = pin_id
-            graph.add_entity(
-                GraphEntity(
-                    pin_id,
-                    GraphEntityKind.PIN,
-                    pin_key,
-                    {
-                        "number": pin.number,
-                        "name": pin.name,
-                        "electrical_type": pin.electrical_type.value,
-                        "role": pin.role.value,
-                    },
-                    imported,
-                    (NativeLink("kicad", "symbol_pin", pin_key),),
-                )
-            )
-            graph.add_edge(GraphEdge(component_id, pin_id, GraphEdgeKind.CONTAINS))
+        _add_component_pins(graph, project_key, component_id, reference, component.pins, imported, pin_ids)
+    return component_ids, pin_ids
 
+
+def _add_component_pins(
+    graph: EngineeringGraph,
+    project_key: str,
+    component_id: str,
+    reference: str,
+    pins: tuple,
+    imported: GraphProvenance,
+    pin_ids: dict[tuple[str, str], str],
+) -> None:
+    for pin in pins:
+        pin_key = f"{reference}:{pin.number}"
+        pin_id = canonical_entity_id(project_key, GraphEntityKind.PIN, pin_key)
+        pin_ids[(reference, pin.number)] = pin_id
+        graph.add_entity(
+            GraphEntity(
+                pin_id,
+                GraphEntityKind.PIN,
+                pin_key,
+                {
+                    "number": pin.number,
+                    "name": pin.name,
+                    "electrical_type": pin.electrical_type.value,
+                    "role": pin.role.value,
+                },
+                imported,
+                (NativeLink("kicad", "symbol_pin", pin_key),),
+            )
+        )
+        graph.add_edge(GraphEdge(component_id, pin_id, GraphEdgeKind.CONTAINS))
+
+
+def _add_nets(
+    graph: EngineeringGraph,
+    circuit: IRCircuit,
+    project_key: str,
+    project_id: str,
+    imported: GraphProvenance,
+    pin_ids: dict[tuple[str, str], str],
+) -> dict[str, str]:
     net_ids: dict[str, str] = {}
     for name, net in sorted(circuit.nets.items()):
         net_key = _net_stable_key(net)
-        net_id = canonical_entity_id(resolved_project_key, GraphEntityKind.NET, net_key)
+        net_id = canonical_entity_id(project_key, GraphEntityKind.NET, net_key)
         net_ids[name] = net_id
         graph.add_entity(
             GraphEntity(
@@ -131,13 +203,32 @@ def graph_from_circuit(
             )
         )
         graph.add_edge(GraphEdge(project_id, net_id, GraphEdgeKind.CONTAINS))
-        for connection in sorted(net.connections):
-            connected_pin_id = pin_ids.get(connection)
-            if connected_pin_id is not None:
-                graph.add_edge(GraphEdge(connected_pin_id, net_id, GraphEdgeKind.CONNECTS_TO))
+        _connect_net_pins(graph, net_id, net.connections, pin_ids)
+    return net_ids
 
+
+def _connect_net_pins(
+    graph: EngineeringGraph,
+    net_id: str,
+    connections: frozenset[tuple[str, str]],
+    pin_ids: dict[tuple[str, str], str],
+) -> None:
+    for connection in sorted(connections):
+        connected_pin_id = pin_ids.get(connection)
+        if connected_pin_id is not None:
+            graph.add_edge(GraphEdge(connected_pin_id, net_id, GraphEdgeKind.CONNECTS_TO))
+
+
+def _add_power_rails(
+    graph: EngineeringGraph,
+    circuit: IRCircuit,
+    project_key: str,
+    project_id: str,
+    imported: GraphProvenance,
+    net_ids: dict[str, str],
+) -> None:
     for name, rail in sorted(circuit.power_rails.items()):
-        rail_id = canonical_entity_id(resolved_project_key, GraphEntityKind.POWER_RAIL, name)
+        rail_id = canonical_entity_id(project_key, GraphEntityKind.POWER_RAIL, name)
         graph.add_entity(
             GraphEntity(
                 rail_id,
@@ -153,15 +244,20 @@ def graph_from_circuit(
             )
         )
         graph.add_edge(GraphEdge(project_id, rail_id, GraphEdgeKind.CONTAINS))
-        for net_name in sorted(rail.net_names):
-            referenced_net_id = net_ids.get(net_name)
-            if referenced_net_id is not None:
-                graph.add_edge(
-                    GraphEdge(rail_id, referenced_net_id, GraphEdgeKind.REFERENCES, "rail_net")
-                )
+        _add_reference_edges(graph, rail_id, rail.net_names, net_ids, "rail_net")
 
+
+def _add_interfaces(
+    graph: EngineeringGraph,
+    circuit: IRCircuit,
+    project_key: str,
+    project_id: str,
+    imported: GraphProvenance,
+    net_ids: dict[str, str],
+    component_ids: dict[str, str],
+) -> None:
     for name, interface in sorted(circuit.interfaces.items()):
-        interface_id = canonical_entity_id(resolved_project_key, GraphEntityKind.INTERFACE, name)
+        interface_id = canonical_entity_id(project_key, GraphEntityKind.INTERFACE, name)
         graph.add_entity(
             GraphEntity(
                 interface_id,
@@ -176,31 +272,58 @@ def graph_from_circuit(
             )
         )
         graph.add_edge(GraphEdge(project_id, interface_id, GraphEdgeKind.CONTAINS))
-        for role, net_name in sorted(interface.net_roles.items()):
-            role_net_id = net_ids.get(net_name)
-            if role_net_id is not None:
-                graph.add_edge(
-                    GraphEdge(
-                        interface_id,
-                        role_net_id,
-                        GraphEdgeKind.REFERENCES,
-                        f"net_role:{role}",
-                    )
-                )
-        for reference in sorted(interface.refs):
-            participant_component_id = component_ids.get(reference)
-            if participant_component_id is not None:
-                graph.add_edge(
-                    GraphEdge(
-                        interface_id,
-                        participant_component_id,
-                        GraphEdgeKind.REFERENCES,
-                        "participant",
-                    )
-                )
+        _add_interface_net_edges(graph, interface_id, interface.net_roles, net_ids)
+        _add_interface_component_edges(graph, interface_id, interface.refs, component_ids)
 
+
+def _add_interface_net_edges(
+    graph: EngineeringGraph,
+    interface_id: str,
+    net_roles: dict[str, str],
+    net_ids: dict[str, str],
+) -> None:
+    for role, net_name in sorted(net_roles.items()):
+        role_net_id = net_ids.get(net_name)
+        if role_net_id is not None:
+            graph.add_edge(
+                GraphEdge(
+                    interface_id,
+                    role_net_id,
+                    GraphEdgeKind.REFERENCES,
+                    f"net_role:{role}",
+                )
+            )
+
+
+def _add_interface_component_edges(
+    graph: EngineeringGraph,
+    interface_id: str,
+    references: tuple[str, ...],
+    component_ids: dict[str, str],
+) -> None:
+    for reference in sorted(references):
+        participant_component_id = component_ids.get(reference)
+        if participant_component_id is not None:
+            graph.add_edge(
+                GraphEdge(
+                    interface_id,
+                    participant_component_id,
+                    GraphEdgeKind.REFERENCES,
+                    "participant",
+                )
+            )
+
+
+def _add_constraints(
+    graph: EngineeringGraph,
+    circuit: IRCircuit,
+    project_key: str,
+    project_id: str,
+    imported: GraphProvenance,
+    net_ids: dict[str, str],
+) -> None:
     for key, constraint in sorted(circuit.constraints.items()):
-        constraint_id = canonical_entity_id(resolved_project_key, GraphEntityKind.CONSTRAINT, key)
+        constraint_id = canonical_entity_id(project_key, GraphEntityKind.CONSTRAINT, key)
         graph.add_entity(
             GraphEntity(
                 constraint_id,
@@ -226,7 +349,19 @@ def graph_from_circuit(
                         "constraint_target",
                     )
                 )
-    return graph
+
+
+def _add_reference_edges(
+    graph: EngineeringGraph,
+    source_id: str,
+    names: frozenset[str],
+    target_ids: dict[str, str],
+    role: str,
+) -> None:
+    for name in sorted(names):
+        target_id = target_ids.get(name)
+        if target_id is not None:
+            graph.add_edge(GraphEdge(source_id, target_id, GraphEdgeKind.REFERENCES, role))
 
 
 def _net_stable_key(net: IRNet) -> str:

@@ -88,6 +88,28 @@ _DEPENDENCY_QUERY_KINDS = frozenset(
 )
 
 
+def _impact_neighbor(edge: GraphEdge, current_id: str) -> str | None:
+    if edge.kind in _REVERSE_IMPACT_KINDS and edge.target_id == current_id:
+        return edge.source_id
+    if edge.kind in _FORWARD_IMPACT_KINDS and edge.source_id == current_id:
+        return edge.target_id
+    if edge.kind in _SYMMETRIC_IMPACT_KINDS:
+        if edge.source_id == current_id:
+            return edge.target_id
+        if edge.target_id == current_id:
+            return edge.source_id
+    return None
+
+
+def _impact_neighbors(edges: Iterable[GraphEdge], current_id: str) -> set[str]:
+    neighbors: set[str] = set()
+    for edge in edges:
+        neighbor = _impact_neighbor(edge, current_id)
+        if neighbor is not None:
+            neighbors.add(neighbor)
+    return neighbors
+
+
 @dataclass(frozen=True, slots=True)
 class GraphProvenance:
     """Provenance for an entity or persisted graph fact."""
@@ -306,18 +328,7 @@ class EngineeringGraph:
         queue: deque[str] = deque(sorted(changed))
         while queue:
             current = queue.popleft()
-            neighbors: set[str] = set()
-            for edge in self.edges:
-                if edge.kind in _REVERSE_IMPACT_KINDS and edge.target_id == current:
-                    neighbors.add(edge.source_id)
-                if edge.kind in _FORWARD_IMPACT_KINDS and edge.source_id == current:
-                    neighbors.add(edge.target_id)
-                if edge.kind in _SYMMETRIC_IMPACT_KINDS:
-                    if edge.source_id == current:
-                        neighbors.add(edge.target_id)
-                    elif edge.target_id == current:
-                        neighbors.add(edge.source_id)
-            for neighbor in sorted(neighbors):
+            for neighbor in sorted(_impact_neighbors(self.edges, current)):
                 if neighbor in visited:
                     continue
                 visited.add(neighbor)
