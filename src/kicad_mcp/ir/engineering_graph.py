@@ -569,4 +569,3 @@ def migrate_graph_document(document: Mapping[str, Any]) -> dict[str, Any]:
     ]
     payload["edges"] = [_migrate_draft_edge(link, legacy_id_map) for link in links]
     return payload
-
