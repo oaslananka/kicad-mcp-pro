@@ -320,3 +320,68 @@ def test_unknown_source_field_and_missing_ids_rejected() -> None:
         _binding(source_field="ambient_temperature")
     with pytest.raises(ValidationError):
         _binding(contract_id="???")
+
+
+def test_absolute_tolerance_is_reviewer_authored() -> None:
+    result = adapt_explicit_design_spec_contracts(
+        _resolution(),
+        (_binding(relative_pct=None, absolute_tolerance={"value": "100", "unit": "mV"}),),
+    )
+    assert result.unresolved == ()
+    assert result.contracts[0].nominal_tolerance is not None
+    assert result.contracts[0].nominal_tolerance.bounds() == (
+        "V",
+        Decimal("3.200"),
+        Decimal("3.400"),
+    )
+
+
+def test_invalid_source_quantity_is_rejected_without_contract() -> None:
+    rail = _explicit_spec().power_rails[0].model_copy(update={"voltage_v": float("nan")})
+    source = _explicit_spec().model_copy(update={"power_rails": [rail]})
+    result = adapt_explicit_design_spec_contracts(
+        _resolution(explicit=source), (_binding(),)
+    )
+    assert result.contracts == ()
+    assert "source quantity is not finite" in result.unresolved[0].reasons
+
+
+def test_informational_contract_and_legacy_explicit_source() -> None:
+    result = adapt_explicit_design_spec_contracts(
+        _resolution(source="legacy_design_intent"),
+        (
+            _binding(
+                severity="informational",
+                release_blocking=False,
+                verification=[],
+            ),
+        ),
+    )
+    assert not result.unresolved
+    assert result.contracts[0].verification == ()
+    assert not result.contracts[0].release_blocking
+
+
+def test_interface_scope_and_invalid_release_policy_return_unresolved() -> None:
+    bad_scope = _binding(
+        source_field="interface_impedance",
+        source_key="usb2",
+        applicability={"kind": "rail", "key": "+3V3"},
+    )
+    bad_policy = _binding(severity="blocking", release_blocking=False)
+    scope_result = adapt_explicit_design_spec_contracts(
+        _resolution(), (bad_scope,)
+    )
+    policy_result = adapt_explicit_design_spec_contracts(
+        _resolution(), (bad_policy,)
+    )
+    assert scope_result.contracts == ()
+    assert "source requires interface applicability" in scope_result.unresolved[0].reasons
+    assert policy_result.contracts == ()
+    assert "contract validation failed" in policy_result.unresolved[0].reasons[0]
+
+
+def test_empty_conversion_batch_has_no_side_effects() -> None:
+    result = adapt_explicit_design_spec_contracts(_resolution(), ())
+    assert result.contracts == ()
+    assert result.unresolved == ()
