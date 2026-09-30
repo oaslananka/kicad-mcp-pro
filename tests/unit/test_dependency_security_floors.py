@@ -38,6 +38,20 @@ def test_cryptography_security_floor_is_patched() -> None:
     assert Version(locked) >= Version("50.0.0")
 
 
+def test_pyjwt_security_floor_is_patched() -> None:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    uv_lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+
+    dependencies = pyproject["project"]["dependencies"]
+    has_pyjwt_floor = any("pyjwt>=2.14.0" in dependency.lower() for dependency in dependencies)
+    assert has_pyjwt_floor  # nosec B101
+
+    locked = next(
+        package["version"] for package in uv_lock["package"] if package["name"].lower() == "pyjwt"
+    )
+    assert Version(locked) >= Version("2.14.0")  # nosec B101
+
+
 def test_root_pnpm_lock_uses_current_js_yaml_security_floor() -> None:
     workspace = yaml.safe_load((ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8"))
     lock = (ROOT / "pnpm-lock.yaml").read_text(encoding="utf-8")
@@ -53,9 +67,9 @@ def test_root_pnpm_lock_uses_patched_fast_uri() -> None:
     lock = (ROOT / "pnpm-lock.yaml").read_text(encoding="utf-8")
     versions = {Version(value) for value in re.findall(r"fast-uri@(\d+\.\d+\.\d+)", lock)}
 
-    assert workspace["overrides"]["fast-uri"] == "3.1.6"
+    assert workspace["overrides"]["fast-uri"] == "3.1.8"  # nosec B101
     assert versions
-    assert min(versions) >= Version("3.1.6")
+    assert min(versions) >= Version("3.1.8")  # nosec B101
 
 
 def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
@@ -64,13 +78,13 @@ def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
 
     assert package["overrides"]["@hono/node-server"] == "2.0.11"
     assert package["overrides"]["hono"] == "4.13.5"
-    assert package["overrides"]["fast-uri"] == "3.1.6"
+    assert package["overrides"]["fast-uri"] == "3.1.8"  # nosec B101
     assert package["overrides"]["qs"] == "6.16.0"
 
     patched = {
         "node_modules/@hono/node-server": "2.0.5",
         "node_modules/hono": "4.13.5",
-        "node_modules/fast-uri": "3.1.6",
+        "node_modules/fast-uri": "3.1.8",
         "node_modules/qs": "6.16.0",
         "node_modules/ip-address": "10.4.0",
     }
