@@ -66,8 +66,14 @@ def _append(project_dir: Path, record: EvidenceRecord | None = None):
 
 
 def _drop_guard(path: Path, trigger: str) -> None:
+    if trigger == "release_approval_events_no_update":
+        statement = "DROP TRIGGER release_approval_events_no_update"
+    elif trigger == "release_approval_events_no_delete":
+        statement = "DROP TRIGGER release_approval_events_no_delete"
+    else:
+        raise ValueError(f"unsupported audit trigger: {trigger}")
     with closing(sqlite3.connect(path)) as connection:
-        connection.execute(f"DROP TRIGGER {trigger}")
+        connection.execute(statement)
         connection.commit()
 
 
