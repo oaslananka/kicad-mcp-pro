@@ -21,9 +21,9 @@ from .hardware_intent_contract import (
     HardwareIntentContract,
     HardwareQuantity,
     NominalTolerance,
-    Unit,
     QuantityRange,
     StrictContractModel,
+    Unit,
 )
 
 DesignSpecSourceField = Literal[
@@ -87,12 +87,12 @@ def _explicit_source_value(
             return None, "source rail name is ambiguous"
         rail = matched_rails[0]
         scalar = (
-            rail.voltage_v
-            if binding.source_field == "power_rail_voltage"
-            else rail.current_max_a
+            rail.voltage_v if binding.source_field == "power_rail_voltage" else rail.current_max_a
         )
     else:
-        matched_ifaces = [iface for iface in explicit.interfaces if iface.kind == binding.source_key]
+        matched_ifaces = [
+            iface for iface in explicit.interfaces if iface.kind == binding.source_key
+        ]
         if not matched_ifaces:
             return None, "source interface not found in explicit design intent"
         if len(matched_ifaces) != 1:
@@ -126,11 +126,7 @@ def adapt_explicit_design_spec_contracts(
     """
     contracts: list[HardwareIntentContract] = []
     unresolved: list[ContractConversionUnresolved] = []
-    counts = Counter(
-        binding.contract_id
-        for binding in bindings
-        if binding.contract_id is not None
-    )
+    counts = Counter(binding.contract_id for binding in bindings if binding.contract_id is not None)
     for binding in bindings:
         reasons: list[str] = []
         for field_name in (
