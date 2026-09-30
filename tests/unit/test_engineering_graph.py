@@ -16,6 +16,8 @@ from kicad_mcp.ir import (
     IRNet,
     IRPin,
     IRPowerRail,
+    graph_from_circuit,
+    update_graph_from_circuit,
 )
 from kicad_mcp.ir.engineering_graph import (
     DRAFT_ENGINEERING_GRAPH_SCHEMA_VERSION,
@@ -31,11 +33,6 @@ from kicad_mcp.ir.engineering_graph import (
     canonical_entity_id,
     engineering_graph_diff,
 )
-from kicad_mcp.ir.engineering_graph_from_ir import (
-    graph_from_circuit,
-    update_graph_from_circuit,
-)
-
 
 def _entity(
     graph: EngineeringGraph,
