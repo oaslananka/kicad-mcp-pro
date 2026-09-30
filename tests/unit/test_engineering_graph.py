@@ -153,6 +153,59 @@ def test_u7_change_returns_requirement_contract_verification_and_evidence_impact
     assert u8.entity_id not in impacted
 
 
+
+def test_circuit_component_change_propagates_through_pins_to_connected_net() -> None:
+    graph = graph_from_circuit(_sample_circuit())
+    component = graph.entities_of_kind(GraphEntityKind.COMPONENT)[0]
+    pin_ids = {entity.entity_id for entity in graph.entities_of_kind(GraphEntityKind.PIN)}
+    net_id = graph.entities_of_kind(GraphEntityKind.NET)[0].entity_id
+
+    impacted = graph.impacted_by({component.entity_id})
+
+    assert pin_ids <= impacted
+    assert net_id in impacted
+
+
+def test_graph_rejects_noncanonical_persisted_entity_id() -> None:
+    graph = EngineeringGraph(project_key="demo")
+    invalid = GraphEntity(
+        entity_id="eg:component:not-canonical",
+        kind=GraphEntityKind.COMPONENT,
+        stable_key="U7",
+    )
+
+    with pytest.raises(ValueError, match="does not match canonical id"):
+        graph.add_entity(invalid)
+
+
+def test_graph_normalizes_project_key_before_canonical_identity() -> None:
+    graph = EngineeringGraph(project_key="  demo  ")
+    component = _entity(graph, GraphEntityKind.COMPONENT, "U7")
+
+    assert graph.project_key == "demo"
+    assert component.entity_id == canonical_entity_id("demo", GraphEntityKind.COMPONENT, "U7")
+
+
+def test_graph_diff_rejects_different_project_identities() -> None:
+    before = EngineeringGraph(project_key="project-a")
+    after = EngineeringGraph(project_key="project-b")
+
+    with pytest.raises(ValueError, match="different projects"):
+        engineering_graph_diff(before, after)
+
+
+def test_transitive_dependency_cycle_does_not_report_self() -> None:
+    graph = EngineeringGraph(project_key="demo")
+    requirement = _entity(graph, GraphEntityKind.REQUIREMENT, "REQ-1")
+    contract = _entity(graph, GraphEntityKind.INTENT_CONTRACT, "INTENT-1")
+    graph.add_edge(GraphEdge(requirement.entity_id, contract.entity_id, GraphEdgeKind.DEPENDS_ON))
+    graph.add_edge(GraphEdge(contract.entity_id, requirement.entity_id, GraphEdgeKind.DEPENDS_ON))
+
+    dependencies = graph.dependencies_of(requirement.entity_id, transitive=True)
+
+    assert contract.entity_id in dependencies
+    assert requirement.entity_id not in dependencies
+
 def test_graph_diff_preserves_identity_for_attribute_change() -> None:
     before = EngineeringGraph(project_key="demo")
     component = _entity(
