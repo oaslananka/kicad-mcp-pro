@@ -50,7 +50,8 @@ def test_pyjwt_security_floor_is_patched() -> None:
         for package in uv_lock["package"]
         if package["name"].lower() == "pyjwt"
     )
-    assert Version(locked) >= Version("2.14.0")
+    assert Version(locked) >= Version("2.14.0")  # nosec B101
+
 
 def test_root_pnpm_lock_uses_current_js_yaml_security_floor() -> None:
     workspace = yaml.safe_load((ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8"))
