@@ -1,6 +1,6 @@
 # Release-blocking evidence policy — bounded #942 tranche
 
-This tranche is a **pure-domain release policy**, not the final MCP/tool integration.
+This document defines the release-evidence policy and its append-only approval/waiver audit boundary. Runtime signoff and release-readiness integration is provided by the merged #1007 path; the audit store records decision history without becoming an identity provider or native-evidence authority.
 
 ## Contract
 
@@ -25,21 +25,38 @@ Non-release-blocking contracts are intentionally excluded from this hard release
 - A standalone approval record cannot silently act as engineering proof.
 - A stale waiver cannot override stale engineering evidence.
 - A fresh engineering proof wins directly; a waiver is only consulted if no fresh proof exists.
-- This policy does **not** authenticate human identity or establish append-only waiver history; those remain separate #942 acceptance work.
+- This policy does **not** authenticate human identity. Append-only approval/waiver history is handled by the separate `release_approval_audit` store described below.
 - This policy does **not** read KiCad files or produce native hashes. It consumes already-verified EvidenceRecord/FreshnessAssessment inputs.
+
+## Append-only approval and waiver history
+
+`src/kicad_mcp/project/release_approval_audit.py` records human approval and waiver decisions in `.kicad-mcp/release_approval_history-v1.db` without modifying historical rows.
+
+The audit store:
+
+- accepts only exact-contract-revision `approval` or `waiver` `EvidenceRecord` values;
+- embeds the canonical immutable evidence snapshot and its SHA-256 digest in every event;
+- records UTC decision time plus explicit actor, scope, and rationale metadata;
+- links events with a SHA-256 predecessor chain and verifies the complete chain before reads or appends;
+- installs SQLite triggers that reject `UPDATE` and `DELETE` against historical events; and
+- retains old evidence snapshots even after newer decisions are appended, so stale evidence remains auditable rather than being rewritten.
+
+This is an audit trail, not an identity provider. Actor metadata is recorded as supplied and does not itself prove authentication. The release policy still independently requires fresh exact-revision evidence before a release can pass or be treated as explicitly waived.
 
 ## Local validation
 
-On an isolated Ubuntu checkout based on `main ccc9539f`:
+On an isolated Ubuntu checkout based on `main bb3f546e`:
 
-- 11/11 policy tests passed.
-- release_evidence_policy.py: **100% statement + branch coverage**.
-- full `src/` + `tests/` Ruff lint and format check passed.
-- strict mypy for the project passed (321 source modules).
-- architecture boundary check passed.
+- 21/21 append-only audit tests passed;
+- the audit module has **100% statement + branch coverage**;
+- 52 related audit/release-evidence/store/signoff tests passed;
+- Ruff and strict mypy passed for the new audit module and tests; and
+- the repository architecture boundary check passed.
 
 ## Remaining before #942 acceptance
 
-The existing `project_release_readiness` and `project_signoff_report` paths in `src/kicad_mcp/tools/validation.py` still need to **consume this policy result** at the actual verdict seam. A later bounded tranche must also provide trusted native/source hash resolution, append-only auditable approval/waiver history and maintained zero stale-evidence escape fixtures.
+Runtime signoff and release-readiness consume the fail-closed evidence policy via merged #1007. Criterion 7 adds append-only approval/waiver audit history without changing that policy decision path.
+
+The remaining #942 work is maintained zero stale-evidence escape regression evidence plus final epic-wide quality-gate reconciliation. Trusted native/source hash resolution remains a separate capability boundary and must not be fabricated by the audit store.
 
 No automatic issue closure.
