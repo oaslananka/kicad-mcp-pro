@@ -147,8 +147,9 @@ def test_append_waiver_links_hash_chain(tmp_path: Path) -> None:
 
 
 def test_non_approval_evidence_is_rejected(tmp_path: Path) -> None:
+    record = _record(kind="evidence_artifact")
     with pytest.raises(ValueError, match="only approval or waiver"):
-        _append(tmp_path, _record(kind="evidence_artifact"))
+        _append(tmp_path, record)
 
 
 def test_actor_scope_and_rationale_are_required(tmp_path: Path) -> None:
@@ -166,14 +167,16 @@ def test_actor_scope_and_rationale_are_required(tmp_path: Path) -> None:
 
 def test_recorded_at_requires_explicit_utc(tmp_path: Path) -> None:
     non_utc = timezone(timedelta(hours=3))
+    record = _record()
+    recorded_at = datetime(2026, 9, 30, 23, 0, tzinfo=non_utc)
     with pytest.raises(ValueError, match="explicit UTC"):
         append_release_approval_event(
             tmp_path,
-            evidence_record=_record(),
+            evidence_record=record,
             actor="hardware-lead",
             scope="release:hardware",
             rationale="Reviewed",
-            recorded_at=datetime(2026, 9, 30, 23, 0, tzinfo=non_utc),
+            recorded_at=recorded_at,
         )
 
 
@@ -266,8 +269,9 @@ def test_append_refuses_to_extend_tampered_history(tmp_path: Path) -> None:
     path = release_approval_audit_path(tmp_path)
     _drop_guard(path, "release_approval_events_no_update")
     _mutate(path, "UPDATE release_approval_events SET scope = 'tampered' WHERE sequence = 1")
+    waiver = _record("WAIVER-1", kind="waiver")
     with pytest.raises(ReleaseApprovalAuditIntegrityError):
-        _append(tmp_path, _record("WAIVER-1", kind="waiver"))
+        _append(tmp_path, waiver)
 
 
 def test_missing_history_is_empty(tmp_path: Path) -> None:

@@ -175,7 +175,7 @@ def _event_from_row(row: sqlite3.Row, expected_previous: str | None) -> ReleaseA
     try:
         evidence_payload = json.loads(evidence_json)
         record = EvidenceRecord.model_validate(evidence_payload)
-    except (json.JSONDecodeError, ValueError) as exc:
+    except ValueError as exc:
         raise ReleaseApprovalAuditIntegrityError(
             f"invalid embedded evidence at sequence {sequence}: {exc}"
         ) from exc
