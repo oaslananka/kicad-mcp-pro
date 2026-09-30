@@ -10,7 +10,7 @@ from collections import Counter
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import Field, ValidationError
+from pydantic import Field
 
 from ..tools.design_intent_state import ProjectDesignIntent, ProjectSpecResolution
 from .hardware_intent_contract import (
@@ -80,24 +80,24 @@ def _explicit_source_value(
 ) -> tuple[Decimal | None, str | None]:
     """Resolve a named source or report missing/ambiguous provenance."""
     if binding.source_field.startswith("power_rail_"):
-        matched = [rail for rail in explicit.power_rails if rail.name == binding.source_key]
-        if not matched:
+        matched_rails = [rail for rail in explicit.power_rails if rail.name == binding.source_key]
+        if not matched_rails:
             return None, "source rail not found in explicit design intent"
-        if len(matched) != 1:
+        if len(matched_rails) != 1:
             return None, "source rail name is ambiguous"
-        rail = matched[0]
+        rail = matched_rails[0]
         scalar = (
             rail.voltage_v
             if binding.source_field == "power_rail_voltage"
             else rail.current_max_a
         )
     else:
-        matched = [iface for iface in explicit.interfaces if iface.kind == binding.source_key]
-        if not matched:
+        matched_ifaces = [iface for iface in explicit.interfaces if iface.kind == binding.source_key]
+        if not matched_ifaces:
             return None, "source interface not found in explicit design intent"
-        if len(matched) != 1:
+        if len(matched_ifaces) != 1:
             return None, "source interface kind is ambiguous; use a unique explicit source"
-        iface = matched[0]
+        iface = matched_ifaces[0]
         scalar = (
             iface.impedance_target_ohm
             if binding.source_field == "interface_impedance"
@@ -220,7 +220,7 @@ def adapt_explicit_design_spec_contracts(
                 quantity_range=quantity_range,
                 nominal_tolerance=nominal_tolerance,
             )
-        except (ValidationError, ValueError) as exc:
+        except ValueError as exc:
             unresolved.append(
                 ContractConversionUnresolved(
                     source_field=binding.source_field,
