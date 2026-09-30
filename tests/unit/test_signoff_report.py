@@ -152,4 +152,3 @@ def test_reviewed_waiver_downgrades_passing_signoff_to_warn() -> None:
     assert report["release_evidence"]["approved"] is True
     assert report["release_evidence"]["contracts"][0]["state"] == "waived"
     assert "explicit reviewed contract waiver" in report["summary"]
-
