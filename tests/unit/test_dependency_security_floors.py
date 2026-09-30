@@ -47,9 +47,7 @@ def test_pyjwt_security_floor_is_patched() -> None:
     assert has_pyjwt_floor  # nosec B101
 
     locked = next(
-        package["version"]
-        for package in uv_lock["package"]
-        if package["name"].lower() == "pyjwt"
+        package["version"] for package in uv_lock["package"] if package["name"].lower() == "pyjwt"
     )
     assert Version(locked) >= Version("2.14.0")  # nosec B101
 
