@@ -201,14 +201,23 @@ def test_multiple_contracts_fail_if_any_release_blocker_is_unproven() -> None:
 
 
 def test_duplicate_record_assessment_and_contract_revisions_fail_closed() -> None:
+    contract = _contract()
     rec = _record()
     assessment = _assessment()
+    contracts = (contract,)
+    duplicate_records = (rec, rec)
+    assessments = (assessment,)
     with pytest.raises(ValueError, match="duplicate evidence ID"):
-        evaluate_release_evidence((_contract(),), (rec, rec), (assessment,))
+        evaluate_release_evidence(contracts, duplicate_records, assessments)
+
+    records = (rec,)
+    duplicate_assessments = (assessment, assessment)
     with pytest.raises(ValueError, match="duplicate freshness assessment"):
-        evaluate_release_evidence((_contract(),), (rec,), (assessment, assessment))
+        evaluate_release_evidence(contracts, records, duplicate_assessments)
+
+    duplicate_contracts = (contract, contract)
     with pytest.raises(ValueError, match="duplicate contract revision"):
-        evaluate_release_evidence((_contract(), _contract()), (rec,), (assessment,))
+        evaluate_release_evidence(duplicate_contracts, records, assessments)
 
 
 def test_non_waiver_record_cannot_satisfy_waiver_reference() -> None:
