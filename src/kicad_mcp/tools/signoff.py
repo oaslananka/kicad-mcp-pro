@@ -156,11 +156,15 @@ def build_signoff_report(
             "contracts": contracts,
         }
         if not release_evidence.approved:
-            verdict = "FAIL"
-            summary = (
+            release_blocker = (
                 "Sign-off blocked: release-blocking HardwareIntentContract evidence "
                 "is missing, stale, invalidated, or unresolved."
             )
+            if verdict == "PASS":
+                summary = release_blocker
+            else:
+                summary = f"{summary} {release_blocker}"
+            verdict = "FAIL"
         elif (
             release_evidence.gate is not None and release_evidence.gate.waived and verdict == "PASS"
         ):
