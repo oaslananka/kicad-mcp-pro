@@ -46,9 +46,7 @@ def link_hardware_intent_contract(
     requirement_id = canonical_entity_id(
         graph.project_key, GraphEntityKind.REQUIREMENT, contract.requirement_id
     )
-    target_id = canonical_entity_id(
-        graph.project_key, target_kind, contract.applicability.key
-    )
+    target_id = canonical_entity_id(graph.project_key, target_kind, contract.applicability.key)
     if graph.entity(requirement_id) is None:
         raise ValueError("referenced requirement must already exist in Engineering Graph")
     if graph.entity(target_id) is None:
