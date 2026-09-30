@@ -214,6 +214,36 @@ def _input_hash_reasons(
     return definite, unresolved
 
 
+def _graph_manifest_reasons(
+    record: EvidenceRecord,
+    *,
+    before: EngineeringGraph,
+    after: EngineeringGraph,
+    evidence_id: str,
+    dependencies: set[str],
+) -> list[InvalidationReason]:
+    """Check immutable record and complete, exact graph dependency links."""
+    unresolved: list[InvalidationReason] = []
+    persisted_payload = record.model_dump(mode="json")
+    for graph in (before, after):
+        stored = graph.entity(evidence_id)
+        if stored is None:
+            unresolved.append(InvalidationReason(code="evidence_graph_record_missing"))
+        elif stored.attributes.get("record") != persisted_payload:
+            unresolved.append(InvalidationReason(code="evidence_record_payload_mismatch"))
+    if not dependencies <= before.entities.keys() or not dependencies <= after.entities.keys():
+        unresolved.append(InvalidationReason(code="unresolved_dependency_entity"))
+    for graph in (before, after):
+        linked = {
+            edge.target_id
+            for edge in graph.edges
+            if edge.source_id == evidence_id and edge.kind is GraphEdgeKind.DEPENDS_ON
+        }
+        if linked != dependencies:
+            unresolved.append(InvalidationReason(code="dependency_manifest_link_mismatch"))
+    return unresolved
+
+
 def assess_evidence_freshness(
     record: EvidenceRecord,
     *,
@@ -235,23 +265,15 @@ def assess_evidence_freshness(
 
     if not mutation_scope_known or not record.dependency_manifest_complete:
         unresolved.append(InvalidationReason(code="unknown_dependency_or_mutation_scope"))
-    persisted_payload = record.model_dump(mode="json")
-    for graph in (before, after):
-        stored = graph.entity(evidence_id)
-        if stored is None:
-            unresolved.append(InvalidationReason(code="evidence_graph_record_missing"))
-        elif stored.attributes.get("record") != persisted_payload:
-            unresolved.append(InvalidationReason(code="evidence_record_payload_mismatch"))
-    if not dependencies <= before.entities.keys() or not dependencies <= after.entities.keys():
-        unresolved.append(InvalidationReason(code="unresolved_dependency_entity"))
-    for graph in (before, after):
-        linked = {
-            edge.target_id
-            for edge in graph.edges
-            if edge.source_id == evidence_id and edge.kind is GraphEdgeKind.DEPENDS_ON
-        }
-        if linked != dependencies:
-            unresolved.append(InvalidationReason(code="dependency_manifest_link_mismatch"))
+    unresolved.extend(
+        _graph_manifest_reasons(
+            record,
+            before=before,
+            after=after,
+            evidence_id=evidence_id,
+            dependencies=dependencies,
+        )
+    )
 
     changed, edge_endpoints = _known_mutations(before, after)
     implicated = _dependency_impact(before, after, changed)
