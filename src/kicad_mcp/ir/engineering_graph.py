@@ -471,6 +471,81 @@ def engineering_graph_diff(before: EngineeringGraph, after: EngineeringGraph) ->
     return changes
 
 
+def _canonicalize_draft_entity_id(
+    project_key: object,
+    legacy_id: object,
+    entity_kind: object,
+    stable_key: object,
+    legacy_id_map: dict[str, str],
+) -> object:
+    values = (project_key, legacy_id, entity_kind, stable_key)
+    if not all(isinstance(value, str) for value in values):
+        return legacy_id
+    canonical_id = canonical_entity_id(
+        project_key,
+        GraphEntityKind(entity_kind),
+        stable_key,
+    )
+    legacy_id_map[legacy_id] = canonical_id
+    return canonical_id
+
+
+def _migrate_draft_provenance(provenance: object) -> object:
+    if isinstance(provenance, str):
+        return {"kind": provenance, "source": "v1-draft", "detail": ""}
+    return deepcopy(provenance)
+
+
+def _migrate_draft_entity(
+    node: object,
+    project_key: object,
+    legacy_id_map: dict[str, str],
+) -> dict[str, Any]:
+    if not isinstance(node, Mapping):
+        raise ValueError("draft node entries must be objects")
+    legacy_id = node.get("id")
+    entity_kind = node.get("type")
+    stable_key = node.get("stable_key", node.get("key"))
+    entity_id = _canonicalize_draft_entity_id(
+        project_key,
+        legacy_id,
+        entity_kind,
+        stable_key,
+        legacy_id_map,
+    )
+    provenance = _migrate_draft_provenance(
+        node.get("provenance", GraphProvenanceKind.IMPORTED.value)
+    )
+    return {
+        "entity_id": entity_id,
+        "kind": entity_kind,
+        "stable_key": stable_key,
+        "attributes": deepcopy(node.get("attributes", {})),
+        "provenance": provenance,
+        "native_links": deepcopy(node.get("native_links", [])),
+    }
+
+
+def _rewrite_draft_entity_id(value: object, legacy_id_map: Mapping[str, str]) -> object:
+    if isinstance(value, str):
+        return legacy_id_map.get(value, value)
+    return value
+
+
+def _migrate_draft_edge(
+    link: object,
+    legacy_id_map: Mapping[str, str],
+) -> dict[str, Any]:
+    if not isinstance(link, Mapping):
+        raise ValueError("draft link entries must be objects")
+    return {
+        "source_id": _rewrite_draft_entity_id(link.get("from"), legacy_id_map),
+        "target_id": _rewrite_draft_entity_id(link.get("to"), legacy_id_map),
+        "kind": link.get("type"),
+        "role": link.get("role", ""),
+    }
+
+
 def migrate_graph_document(document: Mapping[str, Any]) -> dict[str, Any]:
     """Migrate a supported persisted graph document to schema v1."""
     payload = deepcopy(dict(document))
@@ -487,60 +562,10 @@ def migrate_graph_document(document: Mapping[str, Any]) -> dict[str, Any]:
 
     project_key = payload.get("project_key")
     legacy_id_map: dict[str, str] = {}
-    entities: list[dict[str, Any]] = []
-    for node in nodes:
-        if not isinstance(node, Mapping):
-            raise ValueError("draft node entries must be objects")
-        legacy_id = node.get("id")
-        entity_kind = node.get("type")
-        stable_key = node.get("stable_key", node.get("key"))
-        entity_id = legacy_id
-        if (
-            isinstance(project_key, str)
-            and isinstance(legacy_id, str)
-            and isinstance(entity_kind, str)
-            and isinstance(stable_key, str)
-        ):
-            entity_id = canonical_entity_id(
-                project_key,
-                GraphEntityKind(entity_kind),
-                stable_key,
-            )
-            legacy_id_map[legacy_id] = entity_id
-        provenance = node.get("provenance", GraphProvenanceKind.IMPORTED.value)
-        if isinstance(provenance, str):
-            provenance = {"kind": provenance, "source": "v1-draft", "detail": ""}
-        entities.append(
-            {
-                "entity_id": entity_id,
-                "kind": entity_kind,
-                "stable_key": stable_key,
-                "attributes": deepcopy(node.get("attributes", {})),
-                "provenance": deepcopy(provenance),
-                "native_links": deepcopy(node.get("native_links", [])),
-            }
-        )
-
-    edges: list[dict[str, Any]] = []
-    for link in links:
-        if not isinstance(link, Mapping):
-            raise ValueError("draft link entries must be objects")
-        source_id = link.get("from")
-        target_id = link.get("to")
-        if isinstance(source_id, str):
-            source_id = legacy_id_map.get(source_id, source_id)
-        if isinstance(target_id, str):
-            target_id = legacy_id_map.get(target_id, target_id)
-        edges.append(
-            {
-                "source_id": source_id,
-                "target_id": target_id,
-                "kind": link.get("type"),
-                "role": link.get("role", ""),
-            }
-        )
-
     payload["schema_version"] = ENGINEERING_GRAPH_SCHEMA_VERSION
-    payload["entities"] = entities
-    payload["edges"] = edges
+    payload["entities"] = [
+        _migrate_draft_entity(node, project_key, legacy_id_map) for node in nodes
+    ]
+    payload["edges"] = [_migrate_draft_edge(link, legacy_id_map) for link in links]
     return payload
+
