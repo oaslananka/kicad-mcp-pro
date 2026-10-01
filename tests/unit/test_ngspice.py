@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 
 import pytest
 
 from kicad_mcp.utils.ngspice import (
     NgspiceRunner,
+    SimulationKind,
     _as_complex_list,
     _as_real_list,
     _parse_wrdata_table,
@@ -210,6 +211,61 @@ def test_ngspice_runner_cli_fallback_parses_transient_output(
     assert result.x_values == [0.0, 1e-3]
     assert result.traces[0].name == "out"
     assert result.traces[0].values == [0.0, 4.5]
+
+
+@pytest.mark.parametrize(
+    ("analysis", "kwargs"),
+    [
+        ("operating-point", {}),
+        (
+            "ac",
+            {
+                "points_per_decade": 10,
+                "start_freq_hz": 1.0,
+                "stop_freq_hz": 1_000.0,
+            },
+        ),
+        (
+            "transient",
+            {
+                "stop_time_s": 1e-3,
+                "step_time_s": 1e-6,
+            },
+        ),
+        (
+            "dc",
+            {
+                "source_ref": "V1",
+                "start_v": 0.0,
+                "stop_v": 5.0,
+                "step_v": 1.0,
+            },
+        ),
+    ],
+)
+def test_ngspice_cli_deck_quotes_windows_output_paths_for_control_commands(
+    tmp_path: Path,
+    analysis: SimulationKind,
+    kwargs: dict[str, float | int | str],
+) -> None:
+    runner = NgspiceRunner(ngspice_cli=tmp_path / "ngspice")
+    data = PureWindowsPath(r"C:\work dir\prj1\output\simulation\result.data")
+    raw = PureWindowsPath(r"C:\work dir\prj1\output\simulation\result.raw")
+
+    deck = runner._build_cli_deck(  # noqa: SLF001
+        analysis,
+        "* deck\n.end\n",
+        data,
+        raw,
+        ["out"],
+        **kwargs,
+    )
+
+    assert "write 'C:/work dir/prj1/output/simulation/result.raw' all" in deck
+    assert "wrdata 'C:/work dir/prj1/output/simulation/result.data'" in deck
+    assert 'write "' not in deck
+    assert 'wrdata "' not in deck
+    assert r"C:\work dir" not in deck
 
 
 def test_ngspice_runner_cli_builds_and_parses_all_analysis_modes(tmp_path: Path) -> None:

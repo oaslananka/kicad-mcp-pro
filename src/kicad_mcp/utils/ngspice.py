@@ -7,7 +7,7 @@ import math
 import shutil
 import subprocess
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePath
 from types import ModuleType
 from typing import Any, Literal, Protocol, cast
 
@@ -528,8 +528,8 @@ class NgspiceRunner:
         self,
         analysis: SimulationKind,
         base_netlist: str,
-        data_path: Path,
-        raw_path: Path,
+        data_path: PurePath,
+        raw_path: PurePath,
         probe_nets: list[str],
         **kwargs: float | int | str,
     ) -> str:
@@ -562,7 +562,11 @@ class NgspiceRunner:
         else:
             raise ValueError(f"Unsupported simulation analysis '{analysis}'.")
 
-        wrdata_line = f'wrdata "{data_path}" {" ".join(header_exprs)}'
+        # ngspice control strings treat backslashes as escapes and preserve double quotes in
+        # output filenames. POSIX separators plus single quotes are portable and keep spaces intact.
+        data_path_text = data_path.as_posix()
+        raw_path_text = raw_path.as_posix()
+        wrdata_line = f"wrdata '{data_path_text}' {' '.join(header_exprs)}"
         stripped = _strip_spice_end(base_netlist)
         return (
             f"{stripped}\n"
@@ -572,7 +576,7 @@ class NgspiceRunner:
             "set wr_vecnames\n"
             "option numdgt=7\n"
             f"{analysis_cmd}\n"
-            f'write "{raw_path}" all\n'
+            f"write '{raw_path_text}' all\n"
             f"{wrdata_line}\n"
             "quit\n"
             ".endc\n"
