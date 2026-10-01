@@ -8,11 +8,18 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+import kicad_mcp.evals.stale_evidence_escape as escape_module
 from kicad_mcp.evals.stale_evidence_escape import (
     StaleEvidenceEscapeCorpus,
     build_stale_evidence_escape_report,
+    evaluate_stale_evidence_escape_case,
     load_stale_evidence_escape_corpus,
     render_stale_evidence_escape_report_json,
+)
+from kicad_mcp.project.release_evidence_policy import (
+    ContractReleaseEvidenceResult,
+    ContractReleaseEvidenceState,
+    ReleaseEvidenceGateResult,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,7 +33,8 @@ def _corpus() -> StaleEvidenceEscapeCorpus:
 
 def test_committed_corpus_has_zero_stale_evidence_escape_rate() -> None:
     report = build_stale_evidence_escape_report(_corpus())
-    assert report.stale_cases >= 8
+    assert report.stale_cases == 10
+    assert report.total_cases == 12
     assert report.escape_count == 0
     assert report.escape_rate == 0.0
     assert report.target_escape_rate == 0.0
@@ -41,9 +49,11 @@ def test_committed_corpus_covers_positive_and_fail_closed_controls() -> None:
         "unrelated_component_edit",
         "usb_entity_edit",
         "stackup_entity_edit",
+        "contract_entity_edit",
         "usb_hash_change",
         "unknown_mutation_scope",
         "missing_stackup_hash",
+        "missing_freshness_assessment",
         "dependency_edge_removed",
         "tampered_evidence_record",
         "fresh_reviewed_waiver",
@@ -80,3 +90,43 @@ def test_corpus_requires_must_block_to_match_blocked_state() -> None:
     payload["cases"][1]["must_block"] = False
     with pytest.raises(ValidationError, match="must_block must match"):
         StaleEvidenceEscapeCorpus.model_validate(payload)
+
+
+def _unsafe_approved_gate(*_args: object, **_kwargs: object) -> ReleaseEvidenceGateResult:
+    return ReleaseEvidenceGateResult(
+        approved=True,
+        contracts=(
+            ContractReleaseEvidenceResult(
+                contract_id="INTENT-USB-SI",
+                contract_version=1,
+                state=ContractReleaseEvidenceState.SATISFIED,
+                evidence_ids=("EVID-USB-Z0",),
+            ),
+        ),
+    )
+
+
+def test_escape_metric_detects_unsafe_approval_of_invalidated_proof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = next(case for case in _corpus().cases if case.case_id == "usb-geometry-edit-blocks")
+    monkeypatch.setattr(escape_module, "evaluate_release_evidence", _unsafe_approved_gate)
+    result = evaluate_stale_evidence_escape_case(case)
+    assert result.primary_freshness.value == "invalidated"
+    assert result.release_approved
+    assert result.escaped
+    assert not result.passed
+
+
+def test_escape_metric_detects_unsafe_approval_without_freshness_assessment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = next(
+        case for case in _corpus().cases if case.case_id == "missing-freshness-assessment-blocks"
+    )
+    monkeypatch.setattr(escape_module, "evaluate_release_evidence", _unsafe_approved_gate)
+    result = evaluate_stale_evidence_escape_case(case)
+    assert result.primary_freshness.value == "still_valid"
+    assert result.release_approved
+    assert result.escaped
+    assert not result.passed

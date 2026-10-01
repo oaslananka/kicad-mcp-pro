@@ -42,6 +42,20 @@
       "waiver_freshness": null
     },
     {
+      "case_id": "contract-edit-blocks",
+      "escaped": false,
+      "must_block": true,
+      "passed": true,
+      "primary_freshness": "invalidated",
+      "reason_codes": [
+        "required_evidence_invalidated"
+      ],
+      "release_approved": false,
+      "release_state": "blocked",
+      "scenario": "contract_entity_edit",
+      "waiver_freshness": null
+    },
+    {
       "case_id": "exact-usb-hash-change-blocks",
       "escaped": false,
       "must_block": true,
@@ -81,6 +95,20 @@
       "release_approved": false,
       "release_state": "blocked",
       "scenario": "missing_stackup_hash",
+      "waiver_freshness": null
+    },
+    {
+      "case_id": "missing-freshness-assessment-blocks",
+      "escaped": false,
+      "must_block": true,
+      "passed": true,
+      "primary_freshness": "still_valid",
+      "reason_codes": [
+        "required_evidence_requires_recheck"
+      ],
+      "release_approved": false,
+      "release_state": "blocked",
+      "scenario": "missing_freshness_assessment",
       "waiver_freshness": null
     },
     {
@@ -141,12 +169,12 @@
       "waiver_freshness": "requires_recheck"
     }
   ],
-  "corpus_sha256": "530fe3f236d9b193aac6d6eb123b680b285d3d9ebd249183f4cf27fb894c8883",
+  "corpus_sha256": "befc4409dc503a3a36747d9281f4cf15b3f5bac66e491030e35092932c09c7d2",
   "escape_count": 0,
   "escape_rate": 0.0,
   "schema_version": 1,
-  "stale_cases": 8,
+  "stale_cases": 10,
   "target_escape_rate": 0.0,
   "target_met": true,
-  "total_cases": 10
+  "total_cases": 12
 }

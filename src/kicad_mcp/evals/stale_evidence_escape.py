@@ -46,9 +46,11 @@ class StaleEvidenceScenario(StrEnum):
     UNRELATED_COMPONENT_EDIT = "unrelated_component_edit"
     USB_ENTITY_EDIT = "usb_entity_edit"
     STACKUP_ENTITY_EDIT = "stackup_entity_edit"
+    CONTRACT_ENTITY_EDIT = "contract_entity_edit"
     USB_HASH_CHANGE = "usb_hash_change"
     UNKNOWN_MUTATION_SCOPE = "unknown_mutation_scope"
     MISSING_STACKUP_HASH = "missing_stackup_hash"
+    MISSING_FRESHNESS_ASSESSMENT = "missing_freshness_assessment"
     DEPENDENCY_EDGE_REMOVED = "dependency_edge_removed"
     TAMPERED_EVIDENCE_RECORD = "tampered_evidence_record"
     FRESH_REVIEWED_WAIVER = "fresh_reviewed_waiver"
@@ -289,6 +291,8 @@ def _scenario_state(
         after = _mutate_entity(before, ids["usb"])
     elif case.scenario is StaleEvidenceScenario.STACKUP_ENTITY_EDIT:
         after = _mutate_entity(before, ids["stackup"])
+    elif case.scenario is StaleEvidenceScenario.CONTRACT_ENTITY_EDIT:
+        after = _mutate_entity(before, ids["contract"])
     elif case.scenario is StaleEvidenceScenario.USB_HASH_CHANGE:
         hashes[ids["usb"]] = _E
     elif case.scenario is StaleEvidenceScenario.UNKNOWN_MUTATION_SCOPE:
@@ -342,7 +346,12 @@ def evaluate_stale_evidence_escape_case(
     }
     proof = records[0]
     waiver = records[1] if len(records) > 1 else None
-    gate = evaluate_release_evidence((contract,), records, assessments)
+    gate_assessments = assessments
+    if case.scenario is StaleEvidenceScenario.MISSING_FRESHNESS_ASSESSMENT:
+        gate_assessments = tuple(
+            assessment for assessment in assessments if assessment.evidence_id != proof.evidence_id
+        )
+    gate = evaluate_release_evidence((contract,), records, gate_assessments)
     release = gate.contracts[0]
     reason_codes = tuple(release.reason_codes)
     primary_freshness = assessment_map[proof.evidence_id].state

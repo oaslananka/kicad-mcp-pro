@@ -47,14 +47,16 @@ The unit test suite also regenerates the report in memory and requires exact equ
 
 ## Current v1 coverage
 
-The v1 corpus includes:
+The v1 corpus includes 12 cases, including 10 must-block stale or unresolved release-proof cases:
 
 - unrelated component edit (positive control);
 - relevant USB geometry change;
 - stackup change;
+- release-blocking contract entity change;
 - exact input-hash mismatch;
 - unknown mutation scope;
 - missing current input hash;
+- missing freshness assessment at the release gate;
 - dependency-edge deletion;
 - tampered persisted evidence payload;
 - fresh explicit reviewed waiver (positive exception); and
