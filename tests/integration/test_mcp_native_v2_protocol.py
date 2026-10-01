@@ -116,9 +116,7 @@ async def test_sdk_v2_native_discovery_preserves_bearer_authorization(sample_pro
             ):
                 await session.discover()
 
-        async with httpx2.AsyncClient(
-            headers={"Authorization": f"Bearer {token}"}
-        ) as http_client:
+        async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {token}"}) as http_client:
             async with (
                 streamable_http_client(
                     f"{base_url}/mcp",
