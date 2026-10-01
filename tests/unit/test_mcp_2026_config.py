@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_ROOT = ROOT / "tests" / "contracts" / "mcp" / "2026-07-28"
 
 
-def test_candidate_contract_fixtures_pin_the_release_candidate_source() -> None:
+def test_candidate_contract_fixtures_pin_the_final_release_source() -> None:
     provenance = json.loads((CONTRACT_ROOT / "provenance.json").read_text(encoding="utf-8"))
     discover_request = json.loads(
         (CONTRACT_ROOT / "server-discover.request.json").read_text(encoding="utf-8")
@@ -30,10 +30,33 @@ def test_candidate_contract_fixtures_pin_the_release_candidate_source() -> None:
 
     assert provenance == {
         "source": "https://github.com/modelcontextprotocol/modelcontextprotocol",
-        "commit": "73720340e7c42ddaf4b303b86e81663e9a2796d0",
+        "commit": "5f5440bb26a62e2cf3440b92da5a667efa03b267",
+        "releaseTag": "2026-07-28",
         "protocolVersion": "2026-07-28",
-        "capturedAt": "2026-07-22",
-        "status": "release-candidate-draft",
+        "capturedAt": "2026-10-01",
+        "status": "final",
+        "sources": {
+            "server-discover.request.json": {
+                "path": "docs/specification/2026-07-28/server/discover.mdx",
+                "blob": "f6fc1acf974819d99338d2be25ad953fcb9e57a6",
+            },
+            "server-discover.response.json": {
+                "path": "docs/specification/2026-07-28/server/discover.mdx",
+                "blob": "f6fc1acf974819d99338d2be25ad953fcb9e57a6",
+            },
+            "tools-list.request.json": {
+                "path": "docs/specification/2026-07-28/server/tools.mdx",
+                "blob": "449020f54a6582122607b4869129bec5f1035f37",
+            },
+            "tools-list.response.json": {
+                "path": "docs/specification/2026-07-28/server/tools.mdx",
+                "blob": "449020f54a6582122607b4869129bec5f1035f37",
+            },
+            "schema": {
+                "path": "schema/2026-07-28/schema.ts",
+                "blob": "9b55feeb412bc3ae877f2eac10b5c01ba29a2eed",
+            },
+        },
     }
     for request in (discover_request, tools_request):
         meta = request["params"]["_meta"]
