@@ -84,6 +84,13 @@ def test_corpus_rejects_duplicate_case_ids() -> None:
         StaleEvidenceEscapeCorpus.model_validate(payload)
 
 
+def test_corpus_requires_at_least_one_must_block_case() -> None:
+    payload = _corpus().model_dump(mode="json")
+    payload["cases"] = [case for case in payload["cases"] if not case["must_block"]]
+    with pytest.raises(ValidationError, match="corpus requires at least one must-block case"):
+        StaleEvidenceEscapeCorpus.model_validate(payload)
+
+
 def test_corpus_rejects_waiver_expectation_shape_mismatch() -> None:
     payload = _corpus().model_dump(mode="json")
     payload["cases"][0]["expected_waiver_freshness"] = "still_valid"
