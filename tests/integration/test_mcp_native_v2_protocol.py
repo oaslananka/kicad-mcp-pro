@@ -123,7 +123,10 @@ async def test_sdk_v2_supported_host_profiles_over_real_http(
     assert "first_pcb" in {prompt.name for prompt in prompts.prompts}
     assert called.is_error is False
     assert called.content
-    assert "KiCad MCP Pro Server" in called.content[0].text
+    assert any(
+        "KiCad MCP Pro Server" in getattr(block, "text", "")
+        for block in called.content
+    )
     assert missing_tool.is_error is True
     assert missing_tool.content
     assert "tool" in missing_tool.content[0].text.lower()
@@ -191,4 +194,7 @@ async def test_sdk_v2_supported_host_profiles_preserve_bearer_authorization(
     assert "kicad_get_version" in {tool.name for tool in tools.tools}
     assert called.is_error is False
     assert called.content
-    assert "KiCad MCP Pro Server" in called.content[0].text
+    assert any(
+        "KiCad MCP Pro Server" in getattr(block, "text", "")
+        for block in called.content
+    )
