@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "target_escape_rate": 0.0,
+  "cases": [
+    {
+      "case_id": "unrelated-u8-edit-keeps-proof-valid",
+      "scenario": "unrelated_component_edit",
+      "must_block": false,
+      "expected_primary_freshness": "still_valid",
+      "expected_release_state": "satisfied",
+      "expected_reason_codes": []
+    },
+    {
+      "case_id": "usb-geometry-edit-blocks",
+      "scenario": "usb_entity_edit",
+      "must_block": true,
+      "expected_primary_freshness": "invalidated",
+      "expected_release_state": "blocked",
+      "expected_reason_codes": ["required_evidence_invalidated"]
+    },
+    {
+      "case_id": "stackup-edit-blocks",
+      "scenario": "stackup_entity_edit",
+      "must_block": true,
+      "expected_primary_freshness": "invalidated",
+      "expected_release_state": "blocked",
+      "expected_reason_codes": ["required_evidence_invalidated"]
+    },
+    {
+      "case_id": "exact-usb-hash-change-blocks",
+      "scenario": "usb_hash_change",
+      "must_block": true,
+      "expected_primary_freshness": "invalidated",
+      "expected_release_state": "blocked",
+      "expected_reason_codes": ["required_evidence_invalidated"]
+    },
+    {
+      "case_id": "unknown-mutation-scope-blocks",
+      "scenario": "unknown_mutation_scope",
+      "must_block": true,
+      "expected_primary_freshness": "requires_recheck",
+      "expected_release_state": "blocked",
+      "expected_reason_codes": ["required_evidence_requires_recheck"]
+    },
+    {
+      "case_id": "missing-current-stackup-hash-blocks",
+      "scenario": "missing_stackup_hash",
+      "must_block": true,
+      "expected_primary_freshness": "requires_recheck",
+      "expected_release_state": "blocked",
+      "expected_reason_codes": ["required_evidence_requires_recheck"]
+    },
+    {
+      "case_id": "dependency-edge-deletion-blocks",
+      "scenario": "dependency_edge_removed",
+      "must_block": true,
+      "expected_primary_freshness": "invalidated",
+      "expected_release_state": "blocked",
+      "expected_reason_codes": ["required_evidence_invalidated"]
+    },
+    {
+      "case_id": "tampered-persisted-evidence-record-blocks",
+      "scenario": "tampered_evidence_record",
+      "must_block": true,
+      "expected_primary_freshness": "requires_recheck",
+      "expected_release_state": "blocked",
+      "expected_reason_codes": ["required_evidence_requires_recheck"]
+    },
+    {
+      "case_id": "fresh-reviewed-waiver-is-explicit-exception",
+      "scenario": "fresh_reviewed_waiver",
+      "must_block": false,
+      "expected_primary_freshness": "invalidated",
+      "expected_waiver_freshness": "still_valid",
+      "expected_release_state": "waived",
+      "expected_reason_codes": ["explicit_reviewed_waiver"]
+    },
+    {
+      "case_id": "stale-reviewed-waiver-does-not-escape",
+      "scenario": "stale_reviewed_waiver",
+      "must_block": true,
+      "expected_primary_freshness": "invalidated",
+      "expected_waiver_freshness": "requires_recheck",
+      "expected_release_state": "blocked",
+      "expected_reason_codes": [
+        "required_evidence_invalidated",
+        "waiver_approval_evidence_missing_or_stale"
+      ]
+    }
+  ]
+}

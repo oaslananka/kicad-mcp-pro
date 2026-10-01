@@ -18,11 +18,12 @@ This first tranche is a pure Python project-domain model; it is **not** a releas
 
 Seeded fixtures cover USB impedance proof preserved after unrelated U8 component edit, invalidated on stackup or affected USB net geometry edits, invalidated on hash mismatch or dependency-link deletion, and requiring recheck on ambiguity/missing/tampered records. This core requires the caller to supply **authoritative current hashes and a truthful complete dependency declaration**; it does not independently verify KiCad's native oracle or authenticate approvals.
 
-## Explicit remaining #942 work
+## Current #942 completion path
 
-1. Adapt current `ProjectEditImpactService` / `project_assess_edit_impact` / `project_revalidate_after_edit` to consume this one dependency model without breaking existing text/protocol contracts.
-2. Gate project release readiness/signoff against release-blocking contract proof: stale or unresolved evidence cannot lead to approved, except through a separately reviewed waiver policy.
-3. Introduce append-only approval/waiver event provenance with authoritative approval identity, version linkage, and replay/audit checks.
-4. Create maintained reference-board mutation golden fixtures and machine-readable stale-evidence escape regression report (required target **0**). Validate final CI, quality/security, package and platform gates before closing #942.
+The selective-revalidation bridge, runtime release gate, and append-only approval/waiver audit history are now implemented in the shared evidence model. Criterion 8 is maintained by the deterministic corpus and report documented in [stale-evidence-escape-regression.md](stale-evidence-escape-regression.md).
+
+The corpus executes the production `assess_evidence_freshness()` → `evaluate_release_evidence()` chain against reference-board mutations and uncertainty cases. Its release-gate target is **0 stale-evidence escapes**, with a committed machine-readable report whose regeneration is enforced by unit tests.
+
+After this tranche, #942 has only final epic-wide unit/type/architecture/package/required-CI reconciliation remaining before closure.
 
 Keep #943 native-engine differential canaries, #944 large-project persistent graph cache/journal and #924 SDK-v2 runtime migration as separate changes.

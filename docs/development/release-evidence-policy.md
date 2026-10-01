@@ -55,8 +55,8 @@ On an isolated Ubuntu checkout based on `main bb3f546e`:
 
 ## Remaining before #942 acceptance
 
-Runtime signoff and release-readiness consume the fail-closed evidence policy via merged #1007. Criterion 7 adds append-only approval/waiver audit history without changing that policy decision path.
+Runtime signoff and release-readiness consume the fail-closed evidence policy via merged #1007, and append-only approval/waiver history is implemented by the release-approval audit store. The maintained criterion-8 regression corpus is documented in [stale-evidence-escape-regression.md](stale-evidence-escape-regression.md) and requires a release-gate stale-evidence escape rate of **0**.
 
-The remaining #942 work is maintained zero stale-evidence escape regression evidence plus final epic-wide quality-gate reconciliation. Trusted native/source hash resolution remains a separate capability boundary and must not be fabricated by the audit store.
+After this tranche, the remaining #942 work is final epic-wide quality-gate reconciliation. Trusted native/source hash resolution remains a separate capability boundary and must not be fabricated by the audit store or regression corpus.
 
 No automatic issue closure.
