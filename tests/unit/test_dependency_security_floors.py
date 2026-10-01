@@ -52,6 +52,20 @@ def test_pyjwt_security_floor_is_patched() -> None:
     assert Version(locked) >= Version("2.14.0")  # nosec B101
 
 
+def test_urllib3_security_floor_is_patched() -> None:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    uv_lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+
+    dependencies = pyproject["project"]["dependencies"]
+    has_urllib3_floor = any("urllib3>=2.8.0" in dependency.lower() for dependency in dependencies)
+    assert has_urllib3_floor  # nosec B101
+
+    locked = next(
+        package["version"] for package in uv_lock["package"] if package["name"].lower() == "urllib3"
+    )
+    assert Version(locked) >= Version("2.8.0")  # nosec B101
+
+
 def test_root_pnpm_lock_uses_current_js_yaml_security_floor() -> None:
     workspace = yaml.safe_load((ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8"))
     lock = (ROOT / "pnpm-lock.yaml").read_text(encoding="utf-8")
