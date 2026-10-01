@@ -93,24 +93,22 @@ async def test_sdk_v2_native_stateless_surface_over_real_http(sample_project: Pa
         async with httpx2.AsyncClient(
             event_hooks={"request": [capture_request], "response": [capture_response]}
         ) as http_client:
-            async with (
-                streamable_http_client(
-                    f"{base_url}/mcp",
-                    http_client=http_client,
-                ) as (read_stream, write_stream),
-                ClientSession(
+            async with streamable_http_client(
+                f"{base_url}/mcp",
+                http_client=http_client,
+            ) as (read_stream, write_stream):
+                async with ClientSession(
                     read_stream,
                     write_stream,
                     client_info=Implementation(name="kicad-native-v2-contract", version="1.0.0"),
-                ) as session,
-            ):
-                discovered = await session.discover()
-                tools = await session.list_tools()
-                resources = await session.list_resources()
-                prompts = await session.list_prompts()
-                missing_tool = await session.call_tool("__native_v2_missing_tool__", {})
-                with pytest.raises(MCPError) as missing_resource:
-                    await session.read_resource("kicad://native-v2/missing-resource")
+                ) as session:
+                    discovered = await session.discover()
+                    tools = await session.list_tools()
+                    resources = await session.list_resources()
+                    prompts = await session.list_prompts()
+                    missing_tool = await session.call_tool("__native_v2_missing_tool__", {})
+                    with pytest.raises(MCPError) as missing_resource:
+                        await session.read_resource("kicad://native-v2/missing-resource")
 
     assert CANDIDATE_PROTOCOL_VERSION in discovered.supported_versions
     assert "kicad_get_version" in {tool.name for tool in tools.tools}
@@ -132,22 +130,21 @@ async def test_sdk_v2_native_discovery_preserves_bearer_authorization(sample_pro
 
     with _running_http_server(server.streamable_http_app()) as base_url:
         with pytest.raises(MCPError):
-            async with (
-                streamable_http_client(f"{base_url}/mcp") as (read_stream, write_stream),
-                ClientSession(read_stream, write_stream) as session,
+            async with streamable_http_client(f"{base_url}/mcp") as (
+                read_stream,
+                write_stream,
             ):
-                await session.discover()
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.discover()
 
         async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {token}"}) as http_client:
-            async with (
-                streamable_http_client(
-                    f"{base_url}/mcp",
-                    http_client=http_client,
-                ) as (read_stream, write_stream),
-                ClientSession(read_stream, write_stream) as session,
-            ):
-                discovered = await session.discover()
-                tools = await session.list_tools()
+            async with streamable_http_client(
+                f"{base_url}/mcp",
+                http_client=http_client,
+            ) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    discovered = await session.discover()
+                    tools = await session.list_tools()
 
     assert CANDIDATE_PROTOCOL_VERSION in discovered.supported_versions
     assert "kicad_get_version" in {tool.name for tool in tools.tools}
