@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mcp.types.version import SUPPORTED_PROTOCOL_VERSIONS
+import pytest
+from mcp.types.version import HANDSHAKE_PROTOCOL_VERSIONS, SUPPORTED_PROTOCOL_VERSIONS
 from starlette.testclient import TestClient
 from starlette.types import Receive, Scope, Send
 
@@ -417,6 +418,62 @@ def test_contract_middleware_bounds_remembered_streamable_http_sessions() -> Non
     assert middleware._has_session("session-0") is False
     assert middleware._has_session("session-256") is True
     assert len(middleware._session_ids) == 256
+
+
+@pytest.mark.parametrize("protocol_version", HANDSHAKE_PROTOCOL_VERSIONS)
+def test_streamable_http_accepts_all_sdk_v2_handshake_protocol_versions(
+    sample_project: Path,
+    protocol_version: str,
+) -> None:
+    _ = sample_project
+    cfg = get_config()
+    cfg.transport = "streamable-http"
+    cfg.stateful_http = False
+    server = build_server("minimal")
+    transport_headers = {
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+    }
+    initialize_request = {
+        "jsonrpc": "2.0",
+        "id": 100,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": protocol_version,
+            "capabilities": {},
+            "clientInfo": {"name": "legacy-protocol-contract", "version": "1.0.0"},
+        },
+    }
+    negotiated_headers = {
+        **transport_headers,
+        "MCP-Protocol-Version": protocol_version,
+    }
+
+    with TestClient(server.streamable_http_app(), base_url="http://127.0.0.1:3334") as client:
+        initialized = client.post("/mcp", headers=transport_headers, json=initialize_request)
+        notification = client.post(
+            "/mcp",
+            headers=negotiated_headers,
+            json=_initialized_notification(),
+        )
+        listed = client.post(
+            "/mcp",
+            headers=negotiated_headers,
+            json=_tools_list_request(request_id=101),
+        )
+        called = client.post(
+            "/mcp",
+            headers=negotiated_headers,
+            json=_tool_call_request(request_id=102),
+        )
+
+    assert initialized.status_code == 200
+    assert initialized.json()["result"]["protocolVersion"] == protocol_version
+    assert notification.status_code == 202
+    assert listed.status_code == 200
+    assert "kicad_get_version" in {tool["name"] for tool in listed.json()["result"]["tools"]}
+    assert called.status_code == 200
+    assert called.json()["result"]["content"][0]["type"] == "text"
 
 
 def test_streamable_http_accepts_codex_negotiated_2025_06_18_protocol(
