@@ -171,7 +171,17 @@ def _rows(connection: sqlite3.Connection) -> list[sqlite3.Row]:
 def _event_from_row(row: sqlite3.Row, expected_previous: str | None) -> ReleaseApprovalAuditEvent:
     sequence = int(row["sequence"])
     decision = ReleaseApprovalAuditDecision(str(row["decision"]))
+    project_key = str(row["project_key"])
+    contract_id = str(row["contract_id"])
+    contract_version = int(row["contract_version"])
+    evidence_id = str(row["evidence_id"])
     evidence_json = str(row["evidence_record_json"])
+    actor = str(row["actor"])
+    scope = str(row["scope"])
+    rationale = str(row["rationale"])
+    recorded_text = str(row["recorded_at"])
+    previous = row["previous_event_sha256"]
+    stored_event_sha256 = str(row["event_sha256"])
     try:
         evidence_payload = json.loads(evidence_json)
         record = EvidenceRecord.model_validate(evidence_payload)
@@ -196,17 +206,11 @@ def _event_from_row(row: sqlite3.Row, expected_previous: str | None) -> ReleaseA
         record.contract_version,
         record.evidence_id,
     )
-    row_binding = (
-        row["project_key"],
-        row["contract_id"],
-        row["contract_version"],
-        row["evidence_id"],
-    )
+    row_binding = (project_key, contract_id, contract_version, evidence_id)
     if record_binding != row_binding:
         raise ReleaseApprovalAuditIntegrityError(
             f"evidence binding mismatch at sequence {sequence}"
         )
-    previous = row["previous_event_sha256"]
     if previous != expected_previous:
         raise ReleaseApprovalAuditIntegrityError(
             f"event chain predecessor mismatch at sequence {sequence}"
@@ -215,36 +219,36 @@ def _event_from_row(row: sqlite3.Row, expected_previous: str | None) -> ReleaseA
     payload = _event_hash_payload(
         sequence=sequence,
         decision=decision,
-        project_key=str(row["project_key"]),
-        contract_id=str(row["contract_id"]),
-        contract_version=int(row["contract_version"]),
-        evidence_id=str(row["evidence_id"]),
+        project_key=project_key,
+        contract_id=contract_id,
+        contract_version=contract_version,
+        evidence_id=evidence_id,
         evidence_sha256=digest,
         evidence_record_json=evidence_json,
-        actor=str(row["actor"]),
-        scope=str(row["scope"]),
-        rationale=str(row["rationale"]),
-        recorded_at=str(row["recorded_at"]),
+        actor=actor,
+        scope=scope,
+        rationale=rationale,
+        recorded_at=recorded_text,
         previous_event_sha256=previous,
     )
     event_hash = _event_sha256(**payload)
-    if event_hash != row["event_sha256"]:
+    if event_hash != stored_event_sha256:
         raise ReleaseApprovalAuditIntegrityError(f"event hash mismatch at sequence {sequence}")
     try:
-        recorded_at = datetime.fromisoformat(str(row["recorded_at"]).replace("Z", "+00:00"))
+        recorded_at = datetime.fromisoformat(recorded_text.replace("Z", "+00:00"))
         return ReleaseApprovalAuditEvent(
             schema_version=1,
             sequence=sequence,
             decision=decision,
-            project_key=str(row["project_key"]),
-            contract_id=str(row["contract_id"]),
-            contract_version=int(row["contract_version"]),
-            evidence_id=str(row["evidence_id"]),
+            project_key=project_key,
+            contract_id=contract_id,
+            contract_version=contract_version,
+            evidence_id=evidence_id,
             evidence_sha256=digest,
             evidence_record=record,
-            actor=str(row["actor"]),
-            scope=str(row["scope"]),
-            rationale=str(row["rationale"]),
+            actor=actor,
+            scope=scope,
+            rationale=rationale,
             recorded_at=recorded_at,
             previous_event_sha256=previous,
             event_sha256=event_hash,
@@ -353,7 +357,14 @@ def append_release_approval_event(
                 event_hash,
             ),
         )
-        event = _verify_connection(connection)[-1]
+        inserted_row = cast(
+            sqlite3.Row,
+            connection.execute(
+                "SELECT * FROM release_approval_events WHERE sequence = ?",
+                (sequence,),
+            ).fetchone(),
+        )
+        event = _event_from_row(inserted_row, previous_hash)
         connection.commit()
         return event
     except Exception:
