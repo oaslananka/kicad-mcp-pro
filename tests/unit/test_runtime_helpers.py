@@ -56,6 +56,33 @@ def test_main_callback_runs_streamable_http(sample_project: Path, monkeypatch) -
     )
 
 
+def test_main_callback_runs_legacy_sse(sample_project: Path, monkeypatch) -> None:
+    fake_server = MagicMock()
+    monkeypatch.setenv("KICAD_MCP_LEGACY_SSE", "true")
+    monkeypatch.setattr(
+        "kicad_mcp.server.build_server",
+        lambda profile, *, defer_registration=False: fake_server,
+    )
+    monkeypatch.setattr("kicad_mcp.server.setup_logging", lambda *args: None)
+
+    main_callback(
+        transport="sse",
+        host="127.0.0.1",
+        port=4555,
+        project_dir=str(sample_project),
+        log_level="INFO",
+        log_format="console",
+        profile="minimal",
+        experimental=False,
+    )
+
+    fake_server.run.assert_called_once_with(
+        transport="sse",
+        host="127.0.0.1",
+        port=4555,
+    )
+
+
 def test_main_callback_runs_stdio(sample_project: Path, monkeypatch) -> None:
     fake_server = MagicMock()
     monkeypatch.setattr(

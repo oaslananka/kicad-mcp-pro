@@ -3,6 +3,8 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+import pytest
+from mcp.server.mcpserver import MCPServer
 from packaging.requirements import Requirement
 from packaging.version import Version
 
@@ -49,3 +51,20 @@ def test_custom_runtime_requirement_metadata_moves_to_meta(sample_project: Path)
 
     headless_tool = tools["pcb_get_board_summary"]
     assert not (headless_tool.meta or {}).get("requiresKiCadRunning", False)
+
+
+@pytest.mark.anyio
+async def test_sdk_v2_mcpserver_keeps_high_level_tool_surface() -> None:
+    server = MCPServer("surface-contract")
+
+    @server.tool(structured_output=True)
+    def echo(value: str) -> dict[str, str]:
+        return {"value": value}
+
+    tools = await server.list_tools()
+    assert [tool.name for tool in tools] == ["echo"]
+    assert tools[0].output_schema is not None
+
+    result = await server.call_tool("echo", {"value": "ok"})
+    assert result.is_error is False
+    assert result.structured_content == {"value": "ok"}

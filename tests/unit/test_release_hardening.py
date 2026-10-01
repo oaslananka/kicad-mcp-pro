@@ -19,6 +19,7 @@ from kicad_mcp.discovery import CliCapabilities
 from kicad_mcp.server import (
     CLI_FAILURE_TOOL_NAMES,
     HEAVY_TOOL_NAMES,
+    _clean_tool_error,
     _is_origin_allowed,
     build_server,
 )
@@ -235,6 +236,21 @@ def test_cli_failure_tools_are_structured_error_candidates() -> None:
     assert "route_export_dsn" not in CLI_FAILURE_TOOL_NAMES
     assert "route_autoroute_freerouting" not in CLI_FAILURE_TOOL_NAMES
     assert "route_import_ses" not in CLI_FAILURE_TOOL_NAMES
+
+
+def test_clean_tool_error_preserves_actionable_sdk_v2_message() -> None:
+    wrapped = RuntimeError("Error executing tool pcb_route: route failed")
+    assert _clean_tool_error(wrapped) == "route failed"
+
+
+def test_clean_tool_error_unwraps_sdk_v2_hidden_cause() -> None:
+    try:
+        try:
+            raise ValueError("invalid footprint")
+        except ValueError as exc:
+            raise RuntimeError("Error executing tool pcb_place") from exc
+    except RuntimeError as wrapped:
+        assert _clean_tool_error(wrapped) == "invalid footprint"
 
 
 def test_audit_log_records_keys_without_sensitive_values(monkeypatch) -> None:
