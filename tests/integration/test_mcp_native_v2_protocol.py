@@ -78,29 +78,51 @@ def _configure_native_v2_server(sample_project: Path, *, auth_token: str | None 
 @pytest.mark.asyncio
 async def test_sdk_v2_native_stateless_surface_over_real_http(sample_project: Path) -> None:
     server = _configure_native_v2_server(sample_project)
+    request_session_ids: list[str] = []
+    response_session_ids: list[str] = []
+
+    async def capture_request(request: httpx2.Request) -> None:
+        if session_id := request.headers.get("mcp-session-id"):
+            request_session_ids.append(session_id)
+
+    async def capture_response(response: httpx2.Response) -> None:
+        if session_id := response.headers.get("mcp-session-id"):
+            response_session_ids.append(session_id)
 
     with _running_http_server(server.streamable_http_app()) as base_url:
-        async with (
-            streamable_http_client(f"{base_url}/mcp") as (read_stream, write_stream),
-            ClientSession(
-                read_stream,
-                write_stream,
-                client_info=Implementation(name="kicad-native-v2-contract", version="1.0.0"),
-            ) as session,
-        ):
-            discovered = await session.discover()
-            tools = await session.list_tools()
-            resources = await session.list_resources()
-            prompts = await session.list_prompts()
-            missing = await session.call_tool("__native_v2_missing_tool__", {})
+        async with httpx2.AsyncClient(
+            event_hooks={"request": [capture_request], "response": [capture_response]}
+        ) as http_client:
+            async with (
+                streamable_http_client(
+                    f"{base_url}/mcp",
+                    http_client=http_client,
+                ) as (read_stream, write_stream),
+                ClientSession(
+                    read_stream,
+                    write_stream,
+                    client_info=Implementation(name="kicad-native-v2-contract", version="1.0.0"),
+                ) as session,
+            ):
+                discovered = await session.discover()
+                tools = await session.list_tools()
+                resources = await session.list_resources()
+                prompts = await session.list_prompts()
+                missing_tool = await session.call_tool("__native_v2_missing_tool__", {})
+                with pytest.raises(MCPError) as missing_resource:
+                    await session.read_resource("kicad://native-v2/missing-resource")
 
     assert CANDIDATE_PROTOCOL_VERSION in discovered.supported_versions
     assert "kicad_get_version" in {tool.name for tool in tools.tools}
     assert "kicad://board/summary" in {str(resource.uri) for resource in resources.resources}
     assert "first_pcb" in {prompt.name for prompt in prompts.prompts}
-    assert missing.is_error is True
-    assert missing.content
-    assert "tool" in missing.content[0].text.lower()
+    assert missing_tool.is_error is True
+    assert missing_tool.content
+    assert "tool" in missing_tool.content[0].text.lower()
+    assert missing_resource.value.code == -32602
+    assert "Unknown resource" in missing_resource.value.message
+    assert request_session_ids == []
+    assert response_session_ids == []
 
 
 @pytest.mark.asyncio
