@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any, cast
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..connection import KiCadConnectionError, get_board
 from ..pcb.board_access import (

@@ -4,7 +4,7 @@ import importlib
 import importlib.util
 from types import ModuleType
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from kicad_mcp.models.verdict import VerdictReport
 from kicad_mcp.tools.metadata import get_tool_metadata

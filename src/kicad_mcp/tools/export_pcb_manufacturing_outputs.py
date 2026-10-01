@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..export.pcb_manufacturing_outputs import ExportPcbManufacturingOutputsService
 from .metadata import headless_compatible

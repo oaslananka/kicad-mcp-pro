@@ -124,7 +124,7 @@ def test_candidate_protocol_lane_accepts_http_alias(fake_cli: Path) -> None:
         ),
         (
             {"transport": "streamable-http", "enable_tasks": True},
-            "does not support the legacy Tasks implementation",
+            "Legacy MCP Tasks are unavailable on MCP Python SDK v2",
         ),
     ],
 )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from .metadata import get_tool_metadata
 

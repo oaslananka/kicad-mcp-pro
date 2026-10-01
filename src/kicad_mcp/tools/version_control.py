@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
 from .gates import _combined_status

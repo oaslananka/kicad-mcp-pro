@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..schematic.lifecycle_authoring import SchematicLifecycleAuthoringService
 from .metadata import headless_compatible, requires_kicad_running

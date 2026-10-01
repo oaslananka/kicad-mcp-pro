@@ -5,7 +5,7 @@ import importlib.util
 from types import ModuleType
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from kicad_mcp.project.design_spec import (
     ProjectImportDesignSpecPayload,

@@ -163,8 +163,8 @@ async def test_readonly_mode_rejects_write_tool_execution(monkeypatch) -> None:
     result = await server.call_tool("pcb_add_track", {})
 
     assert called is False
-    assert result.isError is True
-    assert result.structuredContent is None
+    assert result.is_error is True
+    assert result.structured_content is None
     assert len(result.content) == 1
     text = result.content[0].text
     assert "MODE_FORBIDDEN" in text

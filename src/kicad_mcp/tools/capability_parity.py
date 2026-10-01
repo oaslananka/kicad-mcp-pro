@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..capabilities import metadata_coverage
 from ..parity import coverage_summary, find_capabilities, get_matrix, opportunities

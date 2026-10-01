@@ -6,7 +6,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Protocol
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 from mcp.types import ImageContent, TextContent
 
 from kicad_mcp.tools.metadata import get_tool_metadata
@@ -192,7 +192,7 @@ def test_registration_preserves_text_result_notice_and_delegation() -> None:
 
     text = next(item for item in result.content if isinstance(item, TextContent))
     assert text.text == "notice::raw render"
-    assert result.structuredContent is None
+    assert result.structured_content is None
     assert len(service.calls) == 1
     assert vars(service.calls[0]) == {
         "output_file": "custom.png",
@@ -245,11 +245,11 @@ def test_registration_preserves_image_result_metadata_and_text(tmp_path: Path) -
         "height": 600,
         "preset": "photo",
     }
-    assert result.structuredContent == metadata
+    assert result.structured_content == metadata
     text = next(item for item in result.content if isinstance(item, TextContent))
     assert text.text.startswith("notice::Rendered board image exported to render.png\n{")
     image = next(item for item in result.content if isinstance(item, ImageContent))
-    assert image.mimeType == "image/png"
+    assert image.mime_type == "image/png"
     assert image.data
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.tools.base import Tool
+from mcp.server.mcpserver import MCPServer as FastMCP
+from mcp.server.mcpserver.tools.base import Tool
 
 from kicad_mcp.project.reporting import DesignReportPayload
 from kicad_mcp.tools.metadata import get_tool_metadata

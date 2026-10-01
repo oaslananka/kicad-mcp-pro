@@ -34,7 +34,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..models import visual_qa
 from ..utils.sexpr import _extract_block

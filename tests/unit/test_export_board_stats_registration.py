@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from kicad_mcp.tools.export_board_stats import ExportBoardStatsDependencies, register
 from kicad_mcp.tools.metadata import get_tool_metadata

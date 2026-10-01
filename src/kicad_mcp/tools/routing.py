@@ -9,7 +9,8 @@ from typing import Any, cast
 
 from kipy.board_types import Net, Track
 from kipy.geometry import Vector2
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
 from ..connection import get_board
@@ -241,7 +242,7 @@ def _delay_to_length_mm(delay_ps: float, propagation_speed_factor: float) -> flo
 
 
 async def _report_progress(
-    ctx: Context[Any, Any, Any] | None,
+    ctx: Context[Any, Any] | None,
     progress: float,
     total: float,
     message: str,
@@ -512,7 +513,7 @@ def register(mcp: FastMCP) -> None:
         use_docker: bool = True,
         freerouting_jar_path: str | None = None,
         drc_report_path: str = "output/routing/freerouting.drc.json",
-        ctx: Context[Any, Any, Any] | None = None,
+        ctx: Context[Any, Any] | None = None,
     ) -> ToolResult:
         """Run FreeRouting after placement, then surface the KiCad import step.
 
@@ -715,26 +716,6 @@ def register(mcp: FastMCP) -> None:
             )
             fallback.human_gate_required = True
             return fallback
-
-        # Check if the experimental MCP Tasks extension is active
-        task_mgr = getattr(ctx.fastmcp, "_task_manager", None) if ctx is not None else None
-        if task_mgr is not None:
-            task = await task_mgr.run_and_wait(
-                description="FreeRouting autoroute",
-                coro_factory=_run,
-                ttl_s=7200,
-            )
-            return ToolResult.success(
-                "route_autoroute_freerouting",
-                changed=False,
-                state_delta=StateDelta(
-                    summary=(
-                        "FreeRouting autoroute started as a background task.\n"
-                        f"Task ID: {task.taskId}\n"
-                        "Use tasks/get to poll for completion and tasks/cancel to abort."
-                    ),
-                ),
-            )
 
         return await _run()
 

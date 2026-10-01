@@ -58,7 +58,7 @@ def test_every_tool_has_valid_input_schema() -> None:
     assert tools, "no tools registered"
 
     for tool in tools:
-        schema = tool.inputSchema
+        schema = tool.input_schema
         assert isinstance(schema, dict), (
             f"{tool.name}: inputSchema must be dict, got {type(schema)}"
         )
@@ -92,7 +92,9 @@ def test_every_array_schema_declares_items_for_host_compatibility() -> None:
     violations: list[str] = []
 
     for name, tool in sorted(_declared_tools().items()):
-        violations.extend(f"{name}:{path}" for path in _array_paths_missing_items(tool.inputSchema))
+        violations.extend(
+            f"{name}:{path}" for path in _array_paths_missing_items(tool.input_schema)
+        )
 
     assert not violations, "array schemas missing items: " + ", ".join(violations)
 
@@ -106,7 +108,7 @@ def test_sch_create_sheet_sheet_pins_is_a_host_compatible_array() -> None:
     exactly how the defect reached this branch.
     """
     tool = _declared_tools()["sch_create_sheet"]
-    schema = tool.inputSchema["properties"]["sheet_pins"]
+    schema = tool.input_schema["properties"]["sheet_pins"]
     pair_schema = schema["anyOf"][0]["items"]
 
     assert pair_schema["type"] == "array"
@@ -122,7 +124,7 @@ def test_every_tool_input_schema_root_is_object() -> None:
     tools = server.list_tools_sync()
 
     for tool in tools:
-        schema = tool.inputSchema
+        schema = tool.input_schema
         assert schema.get("type") == "object", (
             f"{tool.name}: inputSchema.type must be 'object', got {schema.get('type')!r}"
         )
@@ -156,7 +158,7 @@ def test_tool_property_names_are_snake_case() -> None:
     tools = server.list_tools_sync()
 
     for tool in tools:
-        props = tool.inputSchema.get("properties", {})
+        props = tool.input_schema.get("properties", {})
         for prop_name in props:
             assert "_" in prop_name or prop_name.islower(), (
                 f"{tool.name}.{prop_name}: property name should use snake_case"
@@ -169,7 +171,7 @@ def test_tool_required_properties_are_in_properties() -> None:
     tools = server.list_tools_sync()
 
     for tool in tools:
-        schema = tool.inputSchema
+        schema = tool.input_schema
         required = schema.get("required", [])
         props = schema.get("properties", {})
         for field_name in required:
@@ -189,10 +191,10 @@ def test_tool_no_additional_properties_for_nonempty_schemas() -> None:
 
     missing: list[str] = []
     for tool in tools:
-        props = tool.inputSchema.get("properties", {})
+        props = tool.input_schema.get("properties", {})
         if not props:
             continue
-        if "additionalProperties" not in tool.inputSchema:
+        if "additionalProperties" not in tool.input_schema:
             missing.append(tool.name)
 
     # This is a soft contract — tools may legitimately allow additional properties.
@@ -222,8 +224,8 @@ def test_every_tool_has_read_only_or_destructive_hint() -> None:
     incomplete: list[str] = []
     for tool in tools:
         annotations = infer_tool_annotations(tool.name)
-        has_read = annotations.readOnlyHint
-        has_destructive = annotations.destructiveHint
+        has_read = annotations.read_only_hint
+        has_destructive = annotations.destructive_hint
         if has_read is None and has_destructive is None:
             cap = get_capability_record(tool.name)
             tier = cap.tier.value if cap else "unknown"
@@ -253,14 +255,14 @@ def test_read_only_tools_have_read_only_hint() -> None:
         if cap is None or cap.tier.value not in {"read", "export"}:
             continue
         annotations = infer_tool_annotations(tool.name)
-        if annotations.readOnlyHint is not True:
+        if annotations.read_only_hint is not True:
             missing.append(f"{tool.name} (tier={cap.tier.value})")
 
     assert isinstance(missing, list)  # placeholder
 
 
 def test_idempotent_hint_matches_is_tool_idempotent() -> None:
-    """Annotations.idempotentHint must be consistent with is_tool_idempotent()."""
+    """Annotations.idempotent_hint must be consistent with is_tool_idempotent()."""
     from kicad_mcp.tools.metadata import infer_tool_annotations, is_tool_idempotent
 
     server = build_server("agent_full")
@@ -269,8 +271,8 @@ def test_idempotent_hint_matches_is_tool_idempotent() -> None:
     for tool in tools:
         annotations = infer_tool_annotations(tool.name)
         expected = is_tool_idempotent(tool.name)
-        assert annotations.idempotentHint is expected, (
-            f"{tool.name}: idempotentHint={annotations.idempotentHint} "
+        assert annotations.idempotent_hint is expected, (
+            f"{tool.name}: idempotentHint={annotations.idempotent_hint} "
             f"but is_tool_idempotent()={expected}"
         )
 
@@ -295,7 +297,7 @@ def test_destructive_writes_have_destructive_hint() -> None:
         # Some write tools like export are not destructive (they don't modify the project)
         if "export" in normalized or "list" in normalized or "get" in normalized:
             continue
-        if annotations.destructiveHint is not True:
+        if annotations.destructive_hint is not True:
             # Not all write tools are destructive — this is informational
             # and we only check that the hint is not incorrectly set
             pass  # soft contract
@@ -312,9 +314,9 @@ def test_tool_output_schema_is_valid_when_present() -> None:
     tools = server.list_tools_sync()
 
     for tool in tools:
-        if tool.outputSchema is None:
+        if tool.output_schema is None:
             continue
-        schema = tool.outputSchema
+        schema = tool.output_schema
         assert isinstance(schema, dict), f"{tool.name}: outputSchema must be dict"
         Draft202012Validator.check_schema(schema)
 
@@ -337,7 +339,7 @@ def test_tools_list_response_validates_against_discovery_schema() -> None:
             {
                 "name": t.name,
                 "description": t.description,
-                "inputSchema": t.inputSchema,
+                "inputSchema": t.input_schema,
                 "annotations": t.annotations.model_dump(exclude_none=True)
                 if t.annotations
                 else None,
@@ -383,7 +385,7 @@ def test_tool_annotations_have_idempotent_hint() -> None:
     for tool in tools:
         ann = tool.annotations
         assert ann is not None, f"{tool.name}: annotations required"
-        assert ann.idempotentHint is not None, f"{tool.name}: idempotentHint required"
+        assert ann.idempotent_hint is not None, f"{tool.name}: idempotentHint required"
 
 
 # ---------------------------------------------------------------------------

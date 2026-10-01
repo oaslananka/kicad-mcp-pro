@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import structlog
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from .. import __version__
 from ..config import get_config

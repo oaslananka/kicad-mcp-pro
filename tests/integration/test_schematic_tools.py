@@ -2368,7 +2368,7 @@ async def test_schematic_render_png_reports_empty_and_renders_populated_sheet(
     assert Path(payload["png_path"]).name == "agent-check.png"
     assert Path(payload["png_path"]).exists()
     image = next(item for item in content if isinstance(item, ImageContent))
-    assert image.mimeType == "image/png"
+    assert image.mime_type == "image/png"
     assert image.data
 
     diff_content = await call_tool_content(
@@ -2389,7 +2389,7 @@ async def test_schematic_render_png_reports_empty_and_renders_populated_sheet(
         for item in diff_payload["changed_objects"]
     )
     diff_image = next(item for item in diff_content if isinstance(item, ImageContent))
-    assert diff_image.mimeType == "image/png"
+    assert diff_image.mime_type == "image/png"
     assert diff_image.data
 
 
@@ -2464,7 +2464,7 @@ async def test_schematic_live_preview_debounces_and_renders_changed_sheet(
     assert Path(payload["render"]["png_path"]).name == "live-preview-test.png"
     assert Path(payload["render"]["png_path"]).exists()
     image = next(item for item in content if isinstance(item, ImageContent))
-    assert image.mimeType == "image/png"
+    assert image.mime_type == "image/png"
 
     unchanged = await call_tool_text(
         server,
@@ -2551,7 +2551,7 @@ async def test_schematic_live_preview_renders_changed_child_sheet(
     assert payload["render"]["sheet_path"] == str(child_file)
     assert Path(payload["render"]["png_path"]).name == "live-child-preview.png"
     image = next(item for item in content if isinstance(item, ImageContent))
-    assert image.mimeType == "image/png"
+    assert image.mime_type == "image/png"
 
 
 @pytest.mark.anyio

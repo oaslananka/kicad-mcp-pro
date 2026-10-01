@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from kicad_mcp.tools.project_discovery import ProjectDiscoveryDependencies, register
 

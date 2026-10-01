@@ -18,7 +18,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any, Literal, Protocol, TextIO, TypedDict, cast
 
 import structlog
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
 from ..connection import KiCadConnectionError, get_kicad

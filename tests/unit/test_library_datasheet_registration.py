@@ -4,7 +4,7 @@ import importlib
 import importlib.util
 from types import ModuleType
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from kicad_mcp.tools.metadata import get_tool_metadata, infer_tool_annotations
 
@@ -46,8 +46,8 @@ def test_registration_preserves_exact_contract_and_delegation() -> None:
     metadata = get_tool_metadata("lib_get_datasheet_url")
     assert metadata is not None
     annotations = infer_tool_annotations("lib_get_datasheet_url")
-    assert annotations.readOnlyHint is True
-    assert annotations.idempotentHint is True
+    assert annotations.read_only_hint is True
+    assert annotations.idempotent_hint is True
     assert metadata.headless_compatible is True
     assert metadata.requires_kicad_running is False
     assert tool.fn("Device", "R") == "https://example.com/x.pdf"

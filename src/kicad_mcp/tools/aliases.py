@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import structlog
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 logger = structlog.get_logger(__name__)
 

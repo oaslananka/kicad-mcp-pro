@@ -7,7 +7,7 @@ import threading
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
 from ..discovery import auto_set_project_from_file

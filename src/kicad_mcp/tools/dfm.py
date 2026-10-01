@@ -11,7 +11,7 @@ from typing import Any, Protocol, cast
 import structlog
 from kipy.board_types import Track, Via
 from kipy.proto.board.board_types_pb2 import BoardLayer
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
 from ..connection import KiCadConnectionError, get_board

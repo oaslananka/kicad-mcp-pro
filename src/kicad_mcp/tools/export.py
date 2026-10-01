@@ -8,7 +8,8 @@ import time as _time
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
 from ..discovery import get_cli_capabilities
@@ -173,7 +174,7 @@ def _active_variant_args(variant_name: str | None = None) -> list[str]:
 
 
 async def _report_progress(
-    ctx: Context[Any, Any, Any] | None,
+    ctx: Context[Any, Any] | None,
     progress: float,
     total: float,
     message: str,

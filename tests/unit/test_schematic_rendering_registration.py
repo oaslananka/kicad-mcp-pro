@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 from mcp.types import ImageContent, TextContent
 
 from kicad_mcp.schematic.rendering import SchematicRenderingResponse
@@ -233,7 +233,7 @@ def test_registration_delegates_exact_arguments_and_text_response() -> None:
     text = result.content[0]
     assert isinstance(text, TextContent)
     assert text.text == "live"
-    assert result.structuredContent is None
+    assert result.structured_content is None
 
 
 def test_registration_converts_image_response(tmp_path: Path) -> None:
@@ -261,7 +261,7 @@ def test_registration_converts_image_response(tmp_path: Path) -> None:
             },
         )
     ]
-    assert result.structuredContent == {"status": "ok", "png_path": str(image)}
+    assert result.structured_content == {"status": "ok", "png_path": str(image)}
     assert any(isinstance(item, TextContent) for item in result.content)
     assert any(isinstance(item, ImageContent) for item in result.content)
 

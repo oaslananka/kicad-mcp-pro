@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Annotated, Protocol, cast
 
 from kipy.proto.board.board_types_pb2 import ViaType
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 from pydantic import Field
 
 from ..config import get_config

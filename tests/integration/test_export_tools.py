@@ -283,7 +283,7 @@ async def test_export_step_and_render_keep_relative_names_under_output_dir(
     assert "XAO model exported" in xao
     assert "Rendered board image exported" in render
     image = next(item for item in render_content if isinstance(item, ImageContent))
-    assert image.mimeType == "image/png"
+    assert image.mime_type == "image/png"
     assert image.data
     assert str(sample_project / "output" / "3d" / "board.step") in commands[0]
     assert "stpz" in commands[1]

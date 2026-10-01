@@ -437,8 +437,8 @@ async def test_tool_exception_returns_structured_error() -> None:
     result = await server.call_tool("export_gerber", {})
 
     assert isinstance(result, CallToolResult)
-    assert result.isError is True
-    assert result.structuredContent is None
+    assert result.is_error is True
+    assert result.structured_content is None
     assert len(result.content) == 1
     text = result.content[0].text
     assert "CONFIGURATION_ERROR" in text
@@ -473,8 +473,8 @@ async def test_cli_nonzero_result_returns_structured_error(
     result = await server.call_tool("export_gerber", {})
 
     assert isinstance(result, CallToolResult)
-    assert result.isError is True
-    assert result.structuredContent is None
+    assert result.is_error is True
+    assert result.structured_content is None
     assert len(result.content) == 1
     text = result.content[0].text
     assert "CLI_COMMAND_FAILED" in text
@@ -597,7 +597,7 @@ async def test_template_parse_failure_is_reported_as_tool_error(monkeypatch) -> 
     )
 
     assert isinstance(result, CallToolResult)
-    assert result.isError is True
+    assert result.is_error is True
     text = result.content[0].text
     assert "Could not parse template 'CAN_transceiver'" in text
     assert "Hint:" in text
@@ -668,8 +668,8 @@ async def test_manufacturing_gate_block_returns_structured_validation_error(
     result = await server.call_tool("export_manufacturing_package", {})
 
     assert isinstance(result, CallToolResult)
-    assert result.isError is True
-    assert result.structuredContent is None
+    assert result.is_error is True
+    assert result.structured_content is None
     assert len(result.content) == 1
     text = result.content[0].text
     assert "VALIDATION_FAILED" in text
@@ -1221,8 +1221,8 @@ def test_structured_error_code_unavailable() -> None:
     from kicad_mcp.server import _structured_tool_error_from_message
 
     result = _structured_tool_error_from_message("kicad-cli is missing")
-    assert result.isError is True
-    assert result.structuredContent is None
+    assert result.is_error is True
+    assert result.structured_content is None
     assert len(result.content) == 1
     text = result.content[0].text
     assert "CLI_UNAVAILABLE" in text

@@ -16,7 +16,7 @@ from kicad_mcp.tools.router import available_profiles
 
 async def _tool_schemas() -> dict[str, dict[str, Any]]:
     server = build_server("full")
-    return {tool.name: dict(tool.inputSchema or {}) for tool in await server.list_tools()}
+    return {tool.name: dict(tool.input_schema or {}) for tool in await server.list_tools()}
 
 
 async def _declared_tool_schemas() -> dict[str, dict[str, Any]]:
@@ -36,7 +36,7 @@ async def _declared_tool_schemas() -> dict[str, dict[str, Any]]:
         server.allow_experimental_tools = True
         server.filter_runtime_tools = False
         for tool in await server.list_tools():
-            schemas.setdefault(tool.name, dict(tool.inputSchema or {}))
+            schemas.setdefault(tool.name, dict(tool.input_schema or {}))
     return schemas
 
 

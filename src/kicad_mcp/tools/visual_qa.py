@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..models import visual_qa
 from .metadata import headless_compatible

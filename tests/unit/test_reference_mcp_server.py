@@ -60,7 +60,7 @@ async def test_execution_allowlist_rejects_hidden_direct_tool_call() -> None:
     result = await server.call_tool("hidden_tool", {})
 
     assert hidden_called is False
-    assert result.isError is True
+    assert result.is_error is True
     assert "execution surface" in result.content[0].text
 
 

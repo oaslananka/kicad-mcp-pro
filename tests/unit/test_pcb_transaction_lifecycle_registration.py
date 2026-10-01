@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from kicad_mcp.tools.metadata import get_tool_metadata, infer_tool_annotations
 from kicad_mcp.tools.pcb_transaction_lifecycle import (
@@ -94,6 +94,6 @@ def test_registration_preserves_descriptions_metadata_and_forwarding() -> None:
     payload = json.loads(state_tool.fn())
     assert payload == FakeTransactionLifecycleService().status_payload()
     annotations = infer_tool_annotations("pcb_get_live_edit_state")
-    assert annotations.readOnlyHint is True
-    assert annotations.idempotentHint is True
+    assert annotations.read_only_hint is True
+    assert annotations.idempotent_hint is True
     assert getattr(annotations, "requiresKiCadRunning", None) is not True

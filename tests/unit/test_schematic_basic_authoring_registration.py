@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 from pydantic import ValidationError
 
 from kicad_mcp.schematic.basic_authoring import LabelBatchEntry

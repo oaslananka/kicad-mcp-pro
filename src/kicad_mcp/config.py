@@ -398,6 +398,11 @@ class KiCadMCPConfig(BaseSettings):
 
     def _validate_protocol_lane(self) -> None:
         """Reject incompatible runtime modes for non-default protocol lanes."""
+        if self.enable_tasks:
+            raise ValueError(
+                "Legacy MCP Tasks are unavailable on MCP Python SDK v2; "
+                "the final io.modelcontextprotocol/tasks extension is not implemented."
+            )
         if self.protocol_lane == "stable":
             return
         if self.transport != "streamable-http":
@@ -406,10 +411,6 @@ class KiCadMCPConfig(BaseSettings):
             raise ValueError("MCP protocol lane 2026-07-28-rc requires stateful_http=false")
         if self.legacy_sse:
             raise ValueError("MCP protocol lane 2026-07-28-rc does not support legacy_sse")
-        if self.enable_tasks:
-            raise ValueError(
-                "MCP protocol lane 2026-07-28-rc does not support the legacy Tasks implementation"
-            )
 
     def _validate_http_transport_security(self) -> None:
         """Fail closed before exposing HTTP transports on non-loopback interfaces."""

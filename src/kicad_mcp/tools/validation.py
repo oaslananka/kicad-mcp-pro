@@ -13,7 +13,7 @@ from html import escape
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 from pydantic import BaseModel, Field
 
 from .. import __version__

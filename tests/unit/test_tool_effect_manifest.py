@@ -28,7 +28,7 @@ def _declared_input_schemas() -> dict[str, dict[str, object]]:
         server.allow_experimental_tools = True
         server.filter_runtime_tools = False
         for tool in server.list_tools_sync():
-            schemas.setdefault(tool.name, dict(tool.inputSchema or {}))
+            schemas.setdefault(tool.name, dict(tool.input_schema or {}))
     return schemas
 
 

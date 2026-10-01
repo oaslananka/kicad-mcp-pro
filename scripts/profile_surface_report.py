@@ -43,7 +43,7 @@ def _catalog(profile: str, mode: str) -> list[dict[str, Any]]:
             {
                 "name": tool.name,
                 "description": tool.description or "",
-                "inputSchema": tool.inputSchema or {},
+                "inputSchema": tool.input_schema or {},
             }
             for tool in sorted(tools, key=lambda item: item.name)
         ]

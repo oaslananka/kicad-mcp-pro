@@ -8,7 +8,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..export.manufacturing_package import ExportManufacturingPackageService
 from .metadata import headless_compatible
@@ -19,7 +20,7 @@ class ExportManufacturingPackageDependencies:
     """Manufacturing package service and MCP progress bridge."""
 
     service: ExportManufacturingPackageService
-    report_progress: Callable[[Context[Any, Any, Any] | None, float, float, str], Awaitable[None]]
+    report_progress: Callable[[Context[Any, Any] | None, float, float, str], Awaitable[None]]
 
 
 def register(mcp: FastMCP, dependencies: ExportManufacturingPackageDependencies) -> None:
@@ -32,7 +33,7 @@ def register(mcp: FastMCP, dependencies: ExportManufacturingPackageDependencies)
     async def export_manufacturing_package(
         variant: str = "",
         approval_evidence_path: str = "",
-        ctx: Context[Any, Any, Any] | None = None,
+        ctx: Context[Any, Any] | None = None,
     ) -> str:
         """Generate the gated manufacturing release package."""
         from .validation import _evaluate_project_gate, _render_project_gate_report

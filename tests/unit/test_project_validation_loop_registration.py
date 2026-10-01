@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from kicad_mcp.project.validation_loops import AutoFixAction, AutoFixLoopPayload, GateOutcomeLike
 from kicad_mcp.tools.metadata import get_tool_metadata

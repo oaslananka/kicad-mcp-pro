@@ -7,7 +7,8 @@ import math
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
 from ..models.simulation import (
@@ -41,7 +42,7 @@ _ALLOWED_DIRECTIVE_PREFIXES = (
 
 
 async def _report_progress(
-    ctx: Context[Any, Any, Any] | None,
+    ctx: Context[Any, Any] | None,
     progress: float,
     total: float,
     message: str,
@@ -332,7 +333,7 @@ def register(mcp: FastMCP) -> None:
         step_time_s: float,
         probe_nets: list[str] | None = None,
         netlist_path: str = "",
-        ctx: Context[Any, Any, Any] | None = None,
+        ctx: Context[Any, Any] | None = None,
     ) -> str:
         """Run a transient time-domain simulation."""
         payload = TransientAnalysisInput(

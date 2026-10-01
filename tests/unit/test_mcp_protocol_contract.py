@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
+from mcp.types.version import SUPPORTED_PROTOCOL_VERSIONS
 from starlette.testclient import TestClient
 from starlette.types import Receive, Scope, Send
 

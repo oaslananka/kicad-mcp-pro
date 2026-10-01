@@ -163,7 +163,6 @@ def infer_tool_annotations(
     explicit: ToolAnnotations | dict[str, object] | None = None,
 ) -> ToolAnnotations:
     """Infer MCP 2026-style annotations from existing tool metadata and naming."""
-    metadata = get_tool_metadata(tool_name) or ToolMetadata()
     normalized = tool_name.casefold()
 
     is_read_only = _is_read_only_name(normalized)
@@ -209,8 +208,6 @@ def infer_tool_annotations(
     annotations["idempotentHint"] = is_tool_idempotent(tool_name)
     if is_write:
         annotations["destructiveHint"] = True
-    if metadata.requires_kicad_running:
-        annotations["requiresKiCadRunning"] = True
     if any(
         token in normalized
         for token in (

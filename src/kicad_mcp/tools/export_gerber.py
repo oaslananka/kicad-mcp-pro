@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 import anyio
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from .metadata import headless_compatible
 
@@ -25,7 +26,7 @@ class GerberService(Protocol):
     ) -> str: ...
 
 
-type ReportProgress = Callable[[Context[Any, Any, Any] | None, float, float, str], Awaitable[None]]
+type ReportProgress = Callable[[Context[Any, Any] | None, float, float, str], Awaitable[None]]
 
 
 @dataclass(frozen=True)
@@ -48,7 +49,7 @@ def register(mcp: FastMCP, dependencies: ExportGerberDependencies) -> None:
     async def export_gerber(
         output_subdir: str = "gerber",
         layers: list[str] | None = None,
-        ctx: Context[Any, Any, Any] | None = None,
+        ctx: Context[Any, Any] | None = None,
     ) -> str:
         """Export Gerber manufacturing files."""
         await report_progress(ctx, 5, 100, "Starting Gerber export...")

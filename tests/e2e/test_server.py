@@ -12,7 +12,7 @@ async def test_server_registers_tools_resources_and_prompts(sample_project, mock
     resource_uris = {str(resource.uri) for resource in await server.list_resources()}
     prompt_names = {prompt.name for prompt in await server.list_prompts()}
     resource_templates = {
-        template.uriTemplate for template in await server.list_resource_templates()
+        template.uri_template for template in await server.list_resource_templates()
     }
 
     assert "kicad_get_version" in tool_names

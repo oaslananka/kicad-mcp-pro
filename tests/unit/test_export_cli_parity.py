@@ -38,7 +38,7 @@ def test_export_pick_and_place_args(fmt: str) -> None:
     server = create_server()
     for tool in server.list_tools():
         if tool.name == "export_pick_and_place":
-            props = tool.inputSchema.get("properties", {})
+            props = tool.input_schema.get("properties", {})
             assert "variant" in props
             break
     else:

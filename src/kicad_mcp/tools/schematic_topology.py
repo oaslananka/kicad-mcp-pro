@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..models.schematic import GetSheetInfoInput, ListSheetPinsInput, TraceNetInput
 from ..schematic.topology import SchematicTopologyService

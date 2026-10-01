@@ -9,7 +9,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..project.validation_loops import AutoFixLoopPayload, GateOutcomeLike
 from .metadata import headless_compatible
@@ -58,7 +59,7 @@ def resolve_fixer_callable(import_str: str) -> Callable[[], object] | None:
 
 
 async def _sample_guidance(
-    ctx: Context[Any, Any, Any] | None,
+    ctx: Context[Any, Any] | None,
     outcome: GateOutcomeLike,
     prompt_builder: SamplingPromptBuilder,
 ) -> str:
@@ -88,7 +89,7 @@ async def _sample_guidance(
 
 
 async def _report_progress(
-    ctx: Context[Any, Any, Any] | None,
+    ctx: Context[Any, Any] | None,
     current: float,
     total: float,
     message: str,
@@ -110,7 +111,7 @@ def register(mcp: FastMCP, dependencies: ProjectValidationLoopDependencies) -> N
     @headless_compatible
     async def project_auto_fix_loop(
         max_iterations: int = 5,
-        ctx: Context[Any, Any, Any] | None = None,
+        ctx: Context[Any, Any] | None = None,
     ) -> AutoFixLoopPayload:
         """Run the project quality gate and automatically apply server-side fixes.
 

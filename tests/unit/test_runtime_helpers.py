@@ -46,7 +46,14 @@ def test_main_callback_runs_streamable_http(sample_project: Path, monkeypatch) -
         experimental=True,
     )
 
-    fake_server.run.assert_called_once_with(transport="streamable-http", mount_path="/mcp")
+    fake_server.run.assert_called_once_with(
+        transport="streamable-http",
+        host="127.0.0.1",
+        port=4444,
+        streamable_http_path="/mcp",
+        json_response=True,
+        stateless_http=True,
+    )
 
 
 def test_main_callback_runs_stdio(sample_project: Path, monkeypatch) -> None:
@@ -116,7 +123,14 @@ def test_main_callback_preserves_env_when_cli_options_missing(
     assert os.environ["KICAD_MCP_PROFILE"] == "pcb_only"
     assert os.environ["KICAD_MCP_ENABLE_EXPERIMENTAL_TOOLS"] == "true"
     assert profiles == ["pcb_only"]
-    fake_server.run.assert_called_once_with(transport="streamable-http", mount_path="/mcp")
+    fake_server.run.assert_called_once_with(
+        transport="streamable-http",
+        host=DOCKER_BIND_HOST,
+        port=4444,
+        streamable_http_path="/mcp",
+        json_response=True,
+        stateless_http=True,
+    )
 
 
 def test_main_callback_explicit_cli_options_override_env(

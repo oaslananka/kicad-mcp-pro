@@ -8,7 +8,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 from mcp.types import CallToolResult
 
 from ..export.pcb_3d_render import ExportPcb3dRenderService, Pcb3dRenderOptions

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 from pydantic import ValidationError
 
 from kicad_mcp.tools.schematic_destructive_edit import (

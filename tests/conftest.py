@@ -42,7 +42,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def tool_text(result: object) -> str:
     """Extract text from a FastMCP tool result."""
-    if hasattr(result, "isError") and hasattr(result, "content"):
+    if hasattr(result, "content") and (hasattr(result, "is_error") or hasattr(result, "isError")):
         return tool_text(result.content)
     if isinstance(result, tuple) and len(result) == 2:
         content, structured = result
@@ -73,6 +73,11 @@ async def call_tool_text(server: object, name: str, arguments: dict[str, object]
 async def call_tool_payload(server: object, name: str, arguments: dict[str, object]) -> object:
     """Call a FastMCP tool and extract structured payloads when available."""
     result = await server.call_tool(name, arguments)
+    structured = getattr(result, "structured_content", None)
+    if isinstance(structured, dict):
+        if "result" in structured:
+            return structured["result"]
+        return structured
     if isinstance(result, tuple) and len(result) == 2:
         _, structured = result
         if isinstance(structured, dict) and "result" in structured:

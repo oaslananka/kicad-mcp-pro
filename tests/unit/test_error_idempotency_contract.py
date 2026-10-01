@@ -93,6 +93,6 @@ def test_every_registered_tool_has_idempotency_annotation() -> None:
     server.ensure_registered()
     for tool in server._tool_manager.list_tools():
         annotations = infer_tool_annotations(tool.name)
-        assert annotations.idempotentHint is not None, (
+        assert annotations.idempotent_hint is not None, (
             f"{tool.name} lacks an idempotency annotation"
         )

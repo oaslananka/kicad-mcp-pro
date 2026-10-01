@@ -15,7 +15,7 @@ from kipy.board import Board
 from kipy.board_types import Net, Zone
 from kipy.geometry import PolyLineNode, Vector2
 from kipy.proto.board.board_types_pb2 import BoardLayer
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
 from ..connection import get_board

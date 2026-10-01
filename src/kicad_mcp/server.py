@@ -17,9 +17,8 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator
-from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TextIO, cast
+from typing import Any, Literal, TextIO, cast
 from urllib.parse import urlparse, urlunsplit
 
 import anyio
@@ -44,24 +43,19 @@ try:
 except ImportError:
     HAS_WATCHFILES = False
 from mcp import types as mcp_types
-from mcp.server.auth.provider import AccessToken
+from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
+from mcp.server.mcpserver import Context
+from mcp.server.mcpserver import MCPServer as FastMCP
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.streamable_http import EventStore
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import (
-    CancelTaskRequest,
-    CancelTaskResult,
-    GetTaskPayloadRequest,
-    GetTaskPayloadResult,
-    GetTaskRequest,
-    GetTaskResult,
     Icon,
-    ListTasksRequest,
-    ListTasksResult,
     ToolAnnotations,
 )
+from mcp.types.version import SUPPORTED_PROTOCOL_VERSIONS
 from pydantic import AnyUrl
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -91,7 +85,6 @@ from .errors import (
     KiCadNotRunningError,
     ToolRegistrationTimeoutError,
 )
-from .execution.tasks import TaskManager
 from .i18n import SERVER_DESCRIPTION, localize, option_help
 from .ipc.capabilities import KiCadIpcCapabilityState, get_ipc_capability_state
 from .operating_modes import (
@@ -350,8 +343,15 @@ def _label_value(value: str) -> str:
 def _clean_tool_error(exc: BaseException) -> str:
     message = str(exc)
     prefix = "Error executing tool "
-    if message.startswith(prefix) and ": " in message:
-        return message.split(": ", 1)[1]
+    if message.startswith(prefix):
+        if ": " in message:
+            return message.split(": ", 1)[1]
+        # MCP SDK v2 intentionally hides unexpected tool exceptions behind a
+        # generic wrapper. KiCad MCP Pro's existing public contract surfaced
+        # the original tool message through its structured error envelope, so
+        # retain that behavior while still applying our error-code/hint policy.
+        if exc.__cause__ is not None:
+            return _clean_tool_error(exc.__cause__)
     return message
 
 
@@ -546,12 +546,12 @@ def _tool_failure_message(tool_name: str, result: object) -> str | None:
 
 def _status_from_result(result: object) -> tuple[str, str | None]:
     if isinstance(result, mcp_types.CallToolResult):
-        if result.isError:
-            structured = result.structuredContent or {}
+        if result.is_error:
+            structured = result.structured_content or {}
             return "error", str(structured.get("error_code", "TOOL_ERROR"))
         # ToolResult-returning tools embed ok=False inside structuredContent.result
         # rather than setting isError; surface those as errors for metrics/audit.
-        structured = result.structuredContent or {}
+        structured = result.structured_content or {}
         inner = structured.get("result")
         if isinstance(inner, dict) and not inner.get("ok", True):
             return "error", "TOOL_RESULT_FAILURE"
@@ -720,7 +720,64 @@ def _filter_ipc_runtime_tools(
 
 
 class KiCadFastMCP(FastMCP):
-    """FastMCP extension that auto-infers tool annotations and adds CORS support."""
+    """MCPServer extension that preserves KiCad MCP Pro transport defaults and hooks."""
+
+    def __init__(
+        self,
+        name: str | None = None,
+        *,
+        instructions: str | None = None,
+        website_url: str | None = None,
+        version: str = "",
+        auth: AuthSettings | None = None,
+        token_verifier: TokenVerifier | None = None,
+        log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO",
+        host: str = "127.0.0.1",
+        port: int = 8000,
+        streamable_http_path: str = "/mcp",
+        mount_path: str | None = None,
+        sse_path: str = "/sse",
+        message_path: str = "/messages/",
+        json_response: bool = False,
+        stateless_http: bool = False,
+    ) -> None:
+        if mount_path is not None:
+            streamable_http_path = mount_path
+        super().__init__(
+            name=name,
+            instructions=instructions,
+            website_url=website_url,
+            version=version,
+            auth=auth,
+            token_verifier=token_verifier,
+            log_level=log_level,
+        )
+        self._transport_host = host
+        self._transport_port = port
+        self._streamable_http_path = streamable_http_path
+        self._sse_path = sse_path
+        self._message_path = message_path
+        self._json_response = json_response
+        self._stateless_http = stateless_http
+        # Preserve the v1 settings attributes for repository-local callers/tests
+        # while the v2 SDK itself keeps transport settings on app/run methods.
+        transport_settings = {
+            "host": host,
+            "port": port,
+            "streamable_http_path": streamable_http_path,
+            "mount_path": streamable_http_path,
+            "sse_path": sse_path,
+            "message_path": message_path,
+            "json_response": json_response,
+            "stateless_http": stateless_http,
+        }
+        for key, value in transport_settings.items():
+            object.__setattr__(self.settings, key, value)
+
+    @property
+    def _mcp_server(self) -> object:
+        """Compatibility alias for the SDK v1 low-level server attribute."""
+        return self._lowlevel_server
 
     allow_experimental_tools: bool = False
     allowed_tool_names: set[str] | None = None
@@ -740,7 +797,6 @@ class KiCadFastMCP(FastMCP):
     _telemetry_kicad_version: str | None = None
     _ipc_capability_state: KiCadIpcCapabilityState | None = None
     _ipc_capability_checked_at: float = 0.0
-    _task_manager: TaskManager | None = None
 
     def set_lazy_registration(self, register: Callable[[], None]) -> None:
         """Defer heavy tool/resource registration until after stdio initialize can bind."""
@@ -806,7 +862,7 @@ class KiCadFastMCP(FastMCP):
                 "background — retry shortly."
             ) from exc
 
-    def tool(
+    def tool(  # type: ignore[override]
         self,
         name: str | None = None,
         title: str | None = None,
@@ -838,13 +894,21 @@ class KiCadFastMCP(FastMCP):
 
                 registered_func = run_sync_tool_in_worker
 
+            published_meta = dict(meta or {})
+            tool_metadata = get_tool_metadata(name or func.__name__)
+            if tool_metadata and tool_metadata.requires_kicad_running:
+                # MCP SDK v2 intentionally drops unknown protocol-model fields.
+                # Preserve the repository's custom runtime requirement metadata in
+                # the spec-supported _meta envelope instead of ToolAnnotations.
+                published_meta.setdefault("requiresKiCadRunning", True)
+
             super(KiCadFastMCP, self).tool(
                 name=name,
                 title=title,
                 description=published_description,
                 annotations=merged or None,
                 icons=icons,
-                meta=meta,
+                meta=published_meta or None,
                 structured_output=structured_output,
             )(registered_func)
             return func
@@ -903,43 +967,130 @@ class KiCadFastMCP(FastMCP):
 
     async def run_streamable_http_async(
         self,
+        *,
+        host: str | None = None,
+        port: int | None = None,
+        streamable_http_path: str | None = None,
+        json_response: bool | None = None,
+        stateless_http: bool | None = None,
+        event_store: EventStore | None = None,
+        retry_interval: int | None = None,
+        max_request_body_size: int = 4_194_304,
+        session_idle_timeout: float | None = 1800,
+        max_sessions: int | None = 10_000,
+        transport_security: TransportSecuritySettings | None = None,
     ) -> None:
         """Run Streamable HTTP with optional direct TLS termination."""
         import uvicorn
 
         cfg = get_config()
+        resolved_host = self._transport_host if host is None else host
+        resolved_port = self._transport_port if port is None else port
+        resolved_path = (
+            self._streamable_http_path if streamable_http_path is None else streamable_http_path
+        )
+        resolved_json = self._json_response if json_response is None else json_response
+        resolved_stateless = self._stateless_http if stateless_http is None else stateless_http
         uvicorn_config = uvicorn.Config(
-            self.streamable_http_app(),
-            host=self.settings.host,
-            port=self.settings.port,
+            self.streamable_http_app(
+                streamable_http_path=resolved_path,
+                json_response=resolved_json,
+                stateless_http=resolved_stateless,
+                event_store=event_store,
+                retry_interval=retry_interval,
+                max_request_body_size=max_request_body_size,
+                session_idle_timeout=session_idle_timeout,
+                max_sessions=max_sessions,
+                transport_security=transport_security,
+                host=resolved_host,
+            ),
+            host=resolved_host,
+            port=resolved_port,
             log_level=self.settings.log_level.lower(),
             ssl_certfile=str(cfg.tls_cert_file) if cfg.direct_tls_enabled else None,
             ssl_keyfile=str(cfg.tls_key_file) if cfg.direct_tls_enabled else None,
         )
         await uvicorn.Server(uvicorn_config).serve()
 
-    async def run_sse_async(self, mount_path: str | None = None) -> None:
+    async def run_sse_async(
+        self,
+        *,
+        host: str | None = None,
+        port: int | None = None,
+        sse_path: str | None = None,
+        message_path: str | None = None,
+        max_request_body_size: int = 4_194_304,
+        transport_security: TransportSecuritySettings | None = None,
+    ) -> None:
         """Run legacy SSE with the same TLS policy as Streamable HTTP."""
         import uvicorn
 
         cfg = get_config()
+        resolved_host = self._transport_host if host is None else host
+        resolved_port = self._transport_port if port is None else port
+        resolved_sse_path = self._sse_path if sse_path is None else sse_path
+        resolved_message_path = self._message_path if message_path is None else message_path
         uvicorn_config = uvicorn.Config(
-            self.sse_app(mount_path),
-            host=self.settings.host,
-            port=self.settings.port,
+            super().sse_app(
+                sse_path=resolved_sse_path,
+                message_path=resolved_message_path,
+                max_request_body_size=max_request_body_size,
+                transport_security=transport_security,
+                host=resolved_host,
+            ),
+            host=resolved_host,
+            port=resolved_port,
             log_level=self.settings.log_level.lower(),
             ssl_certfile=str(cfg.tls_cert_file) if cfg.direct_tls_enabled else None,
             ssl_keyfile=str(cfg.tls_key_file) if cfg.direct_tls_enabled else None,
         )
         await uvicorn.Server(uvicorn_config).serve()
 
-    def streamable_http_app(self) -> Starlette:
-        app = super().streamable_http_app()
+    def streamable_http_app(
+        self,
+        *,
+        streamable_http_path: str | None = None,
+        json_response: bool | None = None,
+        stateless_http: bool | None = None,
+        event_store: EventStore | None = None,
+        retry_interval: int | None = None,
+        max_request_body_size: int = 4_194_304,
+        session_idle_timeout: float | None = 1800,
+        max_sessions: int | None = 10_000,
+        transport_security: TransportSecuritySettings | None = None,
+        host: str | None = None,
+    ) -> Starlette:
+        resolved_host = self._transport_host if host is None else host
+        resolved_path = (
+            self._streamable_http_path if streamable_http_path is None else streamable_http_path
+        )
+        resolved_json = self._json_response if json_response is None else json_response
+        resolved_stateless = self._stateless_http if stateless_http is None else stateless_http
+        app = super().streamable_http_app(
+            streamable_http_path=resolved_path,
+            json_response=resolved_json,
+            stateless_http=resolved_stateless,
+            event_store=event_store,
+            retry_interval=retry_interval,
+            max_request_body_size=max_request_body_size,
+            session_idle_timeout=session_idle_timeout,
+            max_sessions=max_sessions,
+            transport_security=transport_security,
+            host=resolved_host,
+        )
         cfg = get_config()
         app.add_middleware(_DashboardAuthMiddleware)
         app.add_middleware(_StreamableHttpContractMiddleware)
         if cfg.legacy_sse:
-            sse_routes = self.sse_app().routes
+            sse_routes = (
+                super()
+                .sse_app(
+                    sse_path=self._sse_path,
+                    message_path=self._message_path,
+                    host=self._transport_host,
+                )
+                .routes
+            )
             existing_paths = {getattr(route, "path", None) for route in app.routes}
             for route in sse_routes:
                 route_path = getattr(route, "path", None)
@@ -980,10 +1131,14 @@ class KiCadFastMCP(FastMCP):
         await self._ensure_registered_async()
         return await super().list_resource_templates()
 
-    async def read_resource(self, uri: AnyUrl | str) -> Iterable[ReadResourceContents]:
+    async def read_resource(
+        self,
+        uri: AnyUrl | str,
+        context: Context[Any, Any] | None = None,
+    ) -> Iterable[ReadResourceContents] | mcp_types.InputRequiredResult:
         """Materialize resources before reading them when startup was deferred."""
         await self._ensure_registered_async()
-        return await super().read_resource(uri)
+        return await super().read_resource(uri, context)
 
     async def list_prompts(self) -> list[mcp_types.Prompt]:
         """Materialize prompts before discovery when stdio startup was deferred."""
@@ -994,10 +1149,11 @@ class KiCadFastMCP(FastMCP):
         self,
         name: str,
         arguments: dict[str, Any] | None = None,
-    ) -> mcp_types.GetPromptResult:
+        context: Context[Any, Any] | None = None,
+    ) -> mcp_types.GetPromptResult | mcp_types.InputRequiredResult:
         """Materialize prompts before rendering them when startup was deferred."""
         await self._ensure_registered_async()
-        return await super().get_prompt(name, arguments)
+        return await super().get_prompt(name, arguments, context)
 
     def _telemetry_tool_catalog_hash(self) -> str:
         if self._telemetry_catalog_hash is not None:
@@ -1026,6 +1182,7 @@ class KiCadFastMCP(FastMCP):
         self,
         name: str,
         arguments: dict[str, Any],
+        context: Context[Any, Any] | None = None,
     ) -> object:
         """Call a tool with metrics, audit logging, rate limits, and structured errors."""
         started = time.perf_counter()
@@ -1057,10 +1214,10 @@ class KiCadFastMCP(FastMCP):
                     logger.warning("tool_denied_by_mode", tool=name, mode=mode.value)
                     return result
                 if limiter is None:
-                    result = await super().call_tool(name, arguments)
+                    result = await super().call_tool(name, arguments, context)
                 else:
                     async with limiter:
-                        result = await super().call_tool(name, arguments)
+                        result = await super().call_tool(name, arguments, context)
                 failure_message = _tool_failure_message(name, result)
                 if failure_message is not None:
                     result = _structured_tool_error_from_message(failure_message, tool_name=name)
@@ -1981,6 +2138,7 @@ def build_server(profile: str | None = None, *, defer_registration: bool = False
             issuer_url=base_url,
             resource_server_url=base_url,
             required_scopes=["mcp"],
+            validate_token_resource=False,
         )
 
     server = KiCadFastMCP(
@@ -2000,69 +2158,14 @@ def build_server(profile: str | None = None, *, defer_registration: bool = False
         stateless_http=not cfg.stateful_http,
         auth=auth,
         token_verifier=token_verifier,
+        version=__version__,
     )
-    # The legacy mcp.server.fastmcp wrapper otherwise advertises the MCP SDK
-    # package version during initialize instead of this product's release version.
-    server._mcp_server.version = __version__
     server.operating_mode = operating_mode
     server.allow_experimental_tools = operating_mode is OperatingMode.EXPERIMENTAL
     server.allowed_tool_names = set(tools_for_profile(selected_profile))
 
-    # ------------------------------------------------------------------
-    # Experimental MCP Tasks extension for draft/future MCP protocol work
-    # ------------------------------------------------------------------
-    if cfg.enable_tasks:
-        task_mgr = TaskManager()
-        server._task_manager = task_mgr
-        lowlevel = server._mcp_server
-        lowlevel.experimental.enable_tasks()
-
-        @lowlevel.experimental.list_tasks()
-        async def _handle_list_tasks(request: ListTasksRequest) -> ListTasksResult:
-            tasks = await task_mgr.list_tasks()
-            return ListTasksResult(tasks=tasks)
-
-        @lowlevel.experimental.get_task()
-        async def _handle_get_task(request: GetTaskRequest) -> GetTaskResult:
-            result = await task_mgr.get(request.params.taskId)
-            if result is None:
-                return GetTaskResult(
-                    taskId=request.params.taskId,
-                    status="working",
-                    statusMessage="Task not found.",
-                    createdAt=datetime.now(UTC),
-                    lastUpdatedAt=datetime.now(UTC),
-                    ttl=3600,
-                    pollInterval=2,
-                )
-            return result
-
-        @lowlevel.experimental.get_task_result()
-        async def _handle_get_task_result(
-            request: GetTaskPayloadRequest,
-        ) -> GetTaskPayloadResult:
-            text = await task_mgr.get_result_text(request.params.taskId)
-            if text is not None:
-                return GetTaskPayloadResult(meta={"text": text})
-            return GetTaskPayloadResult(meta={"text": "No result available."})
-
-        @lowlevel.experimental.cancel_task()
-        async def _handle_cancel_task(request: CancelTaskRequest) -> CancelTaskResult:
-            result = await task_mgr.cancel(request.params.taskId)
-            if result is None:
-                return CancelTaskResult(
-                    taskId=request.params.taskId,
-                    status="working",
-                    statusMessage="Task not found.",
-                    createdAt=datetime.now(UTC),
-                    lastUpdatedAt=datetime.now(UTC),
-                    ttl=3600,
-                    pollInterval=2,
-                )
-            return result
-
-        logger.info("mcp_tasks_extension_enabled")
-    # ------------------------------------------------------------------
+    # MCP SDK v2 removed the legacy experimental Tasks runtime. Configuration
+    # rejects that superseded draft fail-closed; no task handlers are registered.
 
     @server.custom_route("/.well-known/mcp-server", methods=["GET"], include_in_schema=False)
     async def _well_known_mcp(_request: Request) -> JSONResponse:
@@ -2361,10 +2464,21 @@ def _run_server_from_options(
         sys.stdout = sys.stderr
 
     if selected_transport == "sse":
-        server.run(transport="sse", mount_path=cfg.mount_path)
+        server.run(
+            transport="sse",
+            host=cfg.host,
+            port=cfg.port,
+        )
         return
 
-    server.run(transport="streamable-http", mount_path=cfg.mount_path)
+    server.run(
+        transport="streamable-http",
+        host=cfg.host,
+        port=cfg.port,
+        streamable_http_path=cfg.mount_path,
+        json_response=True,
+        stateless_http=not cfg.stateful_http,
+    )
 
 
 @app.callback(invoke_without_command=True)

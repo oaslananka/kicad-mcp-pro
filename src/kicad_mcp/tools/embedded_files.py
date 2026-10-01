@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
 from ..path_safety import assert_within, resolve_under
