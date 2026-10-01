@@ -128,14 +128,35 @@ async def test_sdk_v2_native_discovery_preserves_bearer_authorization(sample_pro
     token = secrets.token_urlsafe(32)
     server = _configure_native_v2_server(sample_project, auth_token=token)
 
+    discover_headers = {
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+        "MCP-Protocol-Version": CANDIDATE_PROTOCOL_VERSION,
+        "Mcp-Method": "server/discover",
+    }
+    discover_request = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "server/discover",
+        "params": {
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": CANDIDATE_PROTOCOL_VERSION,
+                "io.modelcontextprotocol/clientInfo": {
+                    "name": "kicad-native-v2-auth-contract",
+                    "version": "1.0.0",
+                },
+                "io.modelcontextprotocol/clientCapabilities": {},
+            }
+        },
+    }
+
     with _running_http_server(server.streamable_http_app()) as base_url:
-        with pytest.raises(MCPError):
-            async with streamable_http_client(f"{base_url}/mcp") as (
-                read_stream,
-                write_stream,
-            ):
-                async with ClientSession(read_stream, write_stream) as session:
-                    await session.discover()
+        async with httpx2.AsyncClient(base_url=base_url) as unauthenticated_client:
+            unauthenticated = await unauthenticated_client.post(
+                "/mcp",
+                headers=discover_headers,
+                json=discover_request,
+            )
 
         async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {token}"}) as http_client:
             async with streamable_http_client(
@@ -146,5 +167,6 @@ async def test_sdk_v2_native_discovery_preserves_bearer_authorization(sample_pro
                     discovered = await session.discover()
                     tools = await session.list_tools()
 
+    assert unauthenticated.status_code == 401
     assert CANDIDATE_PROTOCOL_VERSION in discovered.supported_versions
     assert "kicad_get_version" in {tool.name for tool in tools.tools}
