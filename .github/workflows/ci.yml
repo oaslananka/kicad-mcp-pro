@@ -391,6 +391,10 @@ jobs:
         if: env.skip_ci != 'true'
         run: uv run pytest tests/integration/test_mcp_2026_host_smoke.py -q
 
+      - name: Run native SDK v2 protocol evidence
+        if: env.skip_ci != 'true'
+        run: uv run pytest tests/integration/test_mcp_native_v2_protocol.py -q
+
   mcp-npm:
     needs: [changes, release-metadata]
     if: >-
