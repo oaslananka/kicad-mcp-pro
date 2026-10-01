@@ -353,21 +353,36 @@ def test_rehashed_but_invalid_event_payload_is_detected(tmp_path: Path) -> None:
 def test_failed_post_insert_verification_rolls_back_event(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    real_from_row = audit_module._event_from_row
+
+    def fail_inserted_row_verification(
+        row: sqlite3.Row,
+        expected_previous: str | None,
+    ) -> ReleaseApprovalAuditEvent:
+        raise ReleaseApprovalAuditIntegrityError("forced post-insert verification failure")
+
+    monkeypatch.setattr(audit_module, "_event_from_row", fail_inserted_row_verification)
+    with pytest.raises(ReleaseApprovalAuditIntegrityError, match="forced post-insert"):
+        _append(tmp_path)
+
+    monkeypatch.setattr(audit_module, "_event_from_row", real_from_row)
+    assert verify_release_approval_history(tmp_path) == ()
+
+
+def test_append_verifies_existing_history_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _append(tmp_path)
     real_verify = audit_module._verify_connection
     calls = 0
 
-    def fail_second_verification(
+    def count_verification(
         connection: sqlite3.Connection,
     ) -> tuple[ReleaseApprovalAuditEvent, ...]:
         nonlocal calls
         calls += 1
-        if calls == 2:
-            raise ReleaseApprovalAuditIntegrityError("forced post-insert verification failure")
         return real_verify(connection)
 
-    monkeypatch.setattr(audit_module, "_verify_connection", fail_second_verification)
-    with pytest.raises(ReleaseApprovalAuditIntegrityError, match="forced post-insert"):
-        _append(tmp_path)
-
-    monkeypatch.setattr(audit_module, "_verify_connection", real_verify)
-    assert verify_release_approval_history(tmp_path) == ()
+    monkeypatch.setattr(audit_module, "_verify_connection", count_verification)
+    _append(tmp_path, _record("WAIVER-1", kind="waiver"))
+    assert calls == 1
