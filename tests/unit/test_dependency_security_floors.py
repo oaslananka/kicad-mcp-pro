@@ -43,13 +43,13 @@ def test_pyjwt_security_floor_is_patched() -> None:
     uv_lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
 
     dependencies = pyproject["project"]["dependencies"]
-    has_pyjwt_floor = any("pyjwt>=2.14.0" in dependency.lower() for dependency in dependencies)
+    has_pyjwt_floor = any("pyjwt>=2.15.0" in dependency.lower() for dependency in dependencies)
     assert has_pyjwt_floor  # nosec B101
 
     locked = next(
         package["version"] for package in uv_lock["package"] if package["name"].lower() == "pyjwt"
     )
-    assert Version(locked) >= Version("2.14.0")  # nosec B101
+    assert Version(locked) >= Version("2.15.0")  # nosec B101
 
 
 def test_urllib3_security_floor_is_patched() -> None:
