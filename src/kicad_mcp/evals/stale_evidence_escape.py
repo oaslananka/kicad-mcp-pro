@@ -34,6 +34,10 @@ from ..project.release_evidence_policy import (
 )
 
 STALE_EVIDENCE_ESCAPE_SCHEMA_VERSION = 1
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+STALE_EVIDENCE_ESCAPE_CORPUS_PATH = (
+    _REPOSITORY_ROOT / "evals/evidence_freshness/stale_escape_cases.json"
+)
 _REFERENCE_PROJECT = "usb-layout-fixture"
 _A = "a" * 64
 _B = "b" * 64
@@ -124,8 +128,11 @@ def _canonical_json(payload: object) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def load_stale_evidence_escape_corpus(path: Path) -> StaleEvidenceEscapeCorpus:
-    return StaleEvidenceEscapeCorpus.model_validate_json(path.read_text(encoding="utf-8"))
+def load_stale_evidence_escape_corpus() -> StaleEvidenceEscapeCorpus:
+    """Load the single maintained repository corpus from its fixed path."""
+    return StaleEvidenceEscapeCorpus.model_validate_json(
+        STALE_EVIDENCE_ESCAPE_CORPUS_PATH.read_text(encoding="utf-8")
+    )
 
 
 def stale_evidence_escape_corpus_sha256(corpus: StaleEvidenceEscapeCorpus) -> str:

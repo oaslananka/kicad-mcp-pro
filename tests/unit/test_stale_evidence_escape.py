@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 import kicad_mcp.evals.stale_evidence_escape as escape_module
 from kicad_mcp.evals.stale_evidence_escape import (
+    STALE_EVIDENCE_ESCAPE_CORPUS_PATH,
     StaleEvidenceEscapeCorpus,
     build_stale_evidence_escape_report,
     evaluate_stale_evidence_escape_case,
@@ -28,7 +29,12 @@ REPORT_PATH = ROOT / "docs/evidence/stale-evidence-escape-report.json"
 
 
 def _corpus() -> StaleEvidenceEscapeCorpus:
-    return load_stale_evidence_escape_corpus(CORPUS_PATH)
+    return load_stale_evidence_escape_corpus()
+
+
+def test_loader_is_pinned_to_committed_corpus() -> None:
+    assert STALE_EVIDENCE_ESCAPE_CORPUS_PATH == CORPUS_PATH
+    assert STALE_EVIDENCE_ESCAPE_CORPUS_PATH.is_file()
 
 
 def test_committed_corpus_has_zero_stale_evidence_escape_rate() -> None:

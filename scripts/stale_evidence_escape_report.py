@@ -7,29 +7,29 @@ import argparse
 from pathlib import Path
 
 from kicad_mcp.evals.stale_evidence_escape import (
+    STALE_EVIDENCE_ESCAPE_CORPUS_PATH,
     build_stale_evidence_escape_report,
     load_stale_evidence_escape_corpus,
     render_stale_evidence_escape_report_json,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CORPUS = ROOT / "evals/evidence_freshness/stale_escape_cases.json"
 DEFAULT_REPORT = ROOT / "docs/evidence/stale-evidence-escape-report.json"
 
 
 def main() -> int:
+    if not STALE_EVIDENCE_ESCAPE_CORPUS_PATH.is_file():
+        raise SystemExit("maintained stale-evidence corpus is missing")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
-    parser.add_argument("--output", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
 
-    corpus = load_stale_evidence_escape_corpus(args.corpus)
+    corpus = load_stale_evidence_escape_corpus()
     report = build_stale_evidence_escape_report(corpus)
     rendered = render_stale_evidence_escape_report_json(report)
 
     if args.check:
-        if not args.output.is_file() or args.output.read_text(encoding="utf-8") != rendered:
+        if not DEFAULT_REPORT.is_file() or DEFAULT_REPORT.read_text(encoding="utf-8") != rendered:
             raise SystemExit("stale-evidence escape report is stale; regenerate it")
         if not report.target_met or not report.all_expectations_met:
             raise SystemExit("stale-evidence escape target or golden expectations failed")
@@ -40,9 +40,9 @@ def main() -> int:
         )
         return 0
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(rendered, encoding="utf-8")
-    print(args.output)
+    DEFAULT_REPORT.parent.mkdir(parents=True, exist_ok=True)
+    DEFAULT_REPORT.write_text(rendered, encoding="utf-8")
+    print(DEFAULT_REPORT)
     return 0
 
 

@@ -45,6 +45,8 @@ uv run python scripts/stale_evidence_escape_report.py --check
 
 The unit test suite also regenerates the report in memory and requires exact equality with the committed JSON, so corpus/report drift fails CI.
 
+The checker intentionally does **not** accept arbitrary corpus or output paths. Both maintained artifact paths are fixed by the repository so agent/LLM-supplied CLI arguments cannot redirect reads or writes outside the criterion-8 corpus/report boundary.
+
 ## Current v1 coverage
 
 The v1 corpus includes 12 cases, including 10 must-block stale or unresolved release-proof cases:
