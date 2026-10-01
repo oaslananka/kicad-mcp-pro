@@ -4,9 +4,11 @@ import secrets
 from pathlib import Path
 from typing import Any
 
+import pytest
 from starlette.testclient import TestClient
 
-from kicad_mcp.config import get_config
+from kicad_mcp.compatibility import MCP_PROTOCOL_VERSION
+from kicad_mcp.config import get_config, reset_config
 from kicad_mcp.protocol_compat import CANDIDATE_PROTOCOL_VERSION
 from kicad_mcp.server import build_server
 
@@ -201,3 +203,71 @@ def test_candidate_preserves_authentication_failure_before_protocol_diagnostics(
     assert unauthenticated.status_code == 401
     assert authenticated.status_code == 400
     assert authenticated.json()["error"]["code"] == -32021
+
+
+def test_candidate_lane_rollback_restores_native_stable_runtime_and_metadata(
+    sample_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = sample_project
+    monkeypatch.setenv("KICAD_MCP_TRANSPORT", "streamable-http")
+    monkeypatch.setenv("KICAD_MCP_PROTOCOL_LANE", "2026-07-28-rc")
+    monkeypatch.setenv("KICAD_MCP_STATEFUL_HTTP", "0")
+    reset_config()
+
+    candidate_config = get_config()
+    assert candidate_config.protocol_lane == "2026-07-28-rc"
+    candidate_server = build_server("minimal")
+
+    with TestClient(
+        candidate_server.streamable_http_app(),
+        base_url="http://127.0.0.1:3334",
+    ) as client:
+        candidate_initialize = client.post(
+            "/mcp",
+            headers=_headers("initialize"),
+            json=_request("initialize", request_id=20, client_name="rollback-contract"),
+        )
+
+    assert candidate_initialize.status_code == 400
+    assert candidate_initialize.json()["error"]["code"] == -32601
+
+    monkeypatch.delenv("KICAD_MCP_PROTOCOL_LANE")
+    reset_config()
+
+    stable_config = get_config()
+    assert stable_config.protocol_lane == "stable"
+    stable_server = build_server("minimal")
+    initialize_request = {
+        "jsonrpc": "2.0",
+        "id": 21,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": "rollback-contract", "version": "1.0.0"},
+        },
+    }
+    stable_headers = {
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+    }
+
+    with TestClient(
+        stable_server.streamable_http_app(),
+        base_url="http://127.0.0.1:3334",
+    ) as client:
+        initialized = client.post("/mcp", headers=stable_headers, json=initialize_request)
+        metadata = client.get("/.well-known/mcp-server")
+        discovered = client.post(
+            "/mcp",
+            headers=_headers("server/discover"),
+            json=_request("server/discover", request_id=22, client_name="rollback-contract"),
+        )
+
+    assert initialized.status_code == 200
+    assert initialized.json()["result"]["protocolVersion"] == MCP_PROTOCOL_VERSION
+    assert metadata.status_code == 200
+    assert metadata.json()["protocolVersion"] == MCP_PROTOCOL_VERSION
+    assert discovered.status_code == 200
+    assert CANDIDATE_PROTOCOL_VERSION in discovered.json()["result"]["supportedVersions"]

@@ -91,4 +91,6 @@ unset KICAD_MCP_PROTOCOL_LANE
 # Restart the server, then use the normal MCP 2025-11-25 initialize flow.
 ```
 
+After restart, the native SDK-v2 stable path negotiates `2025-11-25` through `initialize`, and public metadata remains `2025-11-25`. Native SDK v2 can still answer `server/discover`; that does not mean the temporary RC compatibility lane is active.
+
 The compatibility lane and migration decision are recorded in [ADR-0006](../adr/0006-mcp-2026-stateless-compatibility-lane.md).

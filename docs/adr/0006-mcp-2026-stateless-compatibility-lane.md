@@ -52,7 +52,7 @@ The compatibility fixtures are pinned to the final `2026-07-28` release of model
 
 Changing public metadata is a separate reviewed release decision, not an automatic consequence of this ADR.
 
-### Gate status (reviewed 2026-10-01)
+### Gate status (reviewed 2026-10-02)
 
 | Gate | Status | Evidence |
 | --- | --- | --- |
@@ -60,9 +60,9 @@ Changing public metadata is a separate reviewed release decision, not an automat
 | 2. A stable MCP Python SDK supports the required transport and schema surface without the compatibility bridge. | **Complete for the SDK/runtime migration.** The repository now adopts the stable v2 line with `mcp[cli]>=2.2.0,<3.0.0` and a locked `mcp==2.2.0` / `mcp-types==2.2.0` pair. The server runs on v2 `MCPServer`, uses the v2 transport lifecycle, and preserves the production `2025-11-25` metadata contract while later gates are evaluated. SDK v2 intentionally drops unknown protocol-model fields; the repository custom `requiresKiCadRunning` tool hint is therefore preserved in the spec-supported tool `_meta` envelope instead of as a non-standard `ToolAnnotations` field. | Complete |
 | 3. Supported host smoke tests pass for direct discovery, listing, calling, authorization, and error behavior. | Existing `tests/integration/test_mcp_2026_host_smoke.py` coverage predates the final spec text; not re-verified against it. | Not started |
 | 4. Tasks and Apps extension parity is implemented or explicitly excluded from advertised capabilities. | Both remain explicitly unadvertised by design (see Component state inventory). **Tasks compared against the final [`io.modelcontextprotocol/tasks` SEP](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/seps/2663-tasks-extension.md): not compatible, by spec design.** The SDK-v1 experimental draft implementation and server wiring have been removed during the v2 migration. `enable_tasks=true` now fails closed, so the superseded draft cannot be exposed accidentally. The final extension remains a separate implementation item; Apps has not been evaluated. | Tasks: explicitly excluded/fail-closed. Apps: not started. |
-| 5. A tested rollback to the `2025-11-25` runtime and metadata contract is documented and verified. | Rollback procedure is documented above; last verified before the SDK v2 release, not re-verified since. | Stale |
+| 5. A tested rollback to the `2025-11-25` runtime and metadata contract is documented and verified. | **Complete for the post-SDK-v2 runtime.** `test_candidate_lane_rollback_restores_native_stable_runtime_and_metadata` explicitly enables the temporary RC lane, verifies that it rejects legacy `initialize`, unsets `KICAD_MCP_PROTOCOL_LANE`, resets configuration to model a restart, and then verifies the native stable path negotiates `2025-11-25` through `initialize` while `/.well-known/mcp-server` continues to advertise `2025-11-25`. The same contract records the post-v2 semantic change: native SDK v2 may continue to answer `server/discover` after rollback because discovery is no longer unique to the temporary bridge. | Complete |
 
-Gate 2 is now unblocked by the SDK v2 migration. Gates 3–5 still require fresh supported-host smoke evidence, an explicit extension-capability decision, and a re-verified rollback before any public `2026-07-28` metadata change is considered.
+Gate 2 and the post-v2 rollback gate are complete. Supported-host smoke evidence and the explicit extension-capability decision remain release gates before any public `2026-07-28` metadata change is considered.
 
 ## Rollout
 
@@ -74,7 +74,7 @@ Gate 2 is now unblocked by the SDK v2 migration. Gates 3–5 still require fresh
 
 ## Rollback
 
-Unset `KICAD_MCP_PROTOCOL_LANE`, restart the server, and verify `server/discover` is no longer accepted while the normal `initialize` flow negotiates `2025-11-25`. No data migration is required because the candidate bridge persists no protocol session or client metadata.
+Unset `KICAD_MCP_PROTOCOL_LANE` and restart the server. Verify that the runtime returns to the native SDK-v2 stable path: the normal `initialize` flow negotiates `2025-11-25`, and public discovery metadata continues to advertise `2025-11-25`. Native SDK v2 may continue to answer `server/discover` after rollback; that method is now part of the SDK's native modern-protocol surface and is no longer evidence that the temporary RC bridge is active. No data migration is required because the candidate bridge persists no protocol session or client metadata.
 
 ## Consequences
 

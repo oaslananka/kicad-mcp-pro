@@ -36,6 +36,9 @@ def test_candidate_protocol_operator_documentation_is_explicitly_release_gated()
     assert "server/discover" in transport
     assert "Mcp-Session-Id" in transport
     assert "unset KICAD_MCP_PROTOCOL_LANE" in transport
+    assert "public metadata remains `2025-11-25`" in transport
+    assert "Native SDK v2 can still answer `server/discover`" in transport
+    assert "Native SDK v2 may continue to answer `server/discover`" in adr
 
     assert "Current public contract" in api_reference
     assert "`2025-11-25`" in api_reference
