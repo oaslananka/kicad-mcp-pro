@@ -486,4 +486,3 @@ def test_streamable_http_accepts_supported_legacy_handshake_protocols(
     assert "kicad_get_version" in tool_names
     assert called.status_code == 200
     assert called.json()["result"]["content"][0]["type"] == "text"
-
