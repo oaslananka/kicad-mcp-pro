@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mcp.types.version import SUPPORTED_PROTOCOL_VERSIONS
+import pytest
+from mcp.types.version import HANDSHAKE_PROTOCOL_VERSIONS, SUPPORTED_PROTOCOL_VERSIONS
 from starlette.testclient import TestClient
 from starlette.types import Receive, Scope, Send
 
@@ -10,6 +11,10 @@ from kicad_mcp import __version__
 from kicad_mcp.compatibility import MCP_PROTOCOL_VERSION
 from kicad_mcp.config import get_config
 from kicad_mcp.server import _StreamableHttpContractMiddleware, build_server
+
+LEGACY_HANDSHAKE_PROTOCOL_VERSIONS = tuple(
+    version for version in HANDSHAKE_PROTOCOL_VERSIONS if version != MCP_PROTOCOL_VERSION
+)
 
 HTTP_HEADERS = {
     "Accept": "application/json, text/event-stream",
@@ -419,15 +424,20 @@ def test_contract_middleware_bounds_remembered_streamable_http_sessions() -> Non
     assert len(middleware._session_ids) == 256
 
 
-def test_streamable_http_accepts_codex_negotiated_2025_06_18_protocol(
+@pytest.mark.parametrize(
+    "protocol_version",
+    LEGACY_HANDSHAKE_PROTOCOL_VERSIONS,
+    ids=LEGACY_HANDSHAKE_PROTOCOL_VERSIONS,
+)
+def test_streamable_http_accepts_supported_legacy_handshake_protocols(
     sample_project: Path,
+    protocol_version: str,
 ) -> None:
     _ = sample_project
     cfg = get_config()
     cfg.transport = "streamable-http"
     cfg.stateful_http = False
     server = build_server("minimal")
-    protocol_version = "2025-06-18"
     transport_headers = {
         "Accept": "application/json, text/event-stream",
         "Content-Type": "application/json",
@@ -438,8 +448,11 @@ def test_streamable_http_accepts_codex_negotiated_2025_06_18_protocol(
         "method": "initialize",
         "params": {
             "protocolVersion": protocol_version,
-            "capabilities": {"elicitation": {"form": {}, "url": {}}},
-            "clientInfo": {"name": "codex-mcp-client", "version": "0.150.1"},
+            "capabilities": {},
+            "clientInfo": {
+                "name": "legacy-mcp-compat-client",
+                "version": "1.0.0",
+            },
         },
     }
     negotiated_headers = {
@@ -459,6 +472,11 @@ def test_streamable_http_accepts_codex_negotiated_2025_06_18_protocol(
             headers=negotiated_headers,
             json=_tools_list_request(request_id=1),
         )
+        called = client.post(
+            "/mcp",
+            headers=negotiated_headers,
+            json=_tool_call_request(request_id=2),
+        )
 
     assert initialized.status_code == 200
     assert initialized.json()["result"]["protocolVersion"] == protocol_version
@@ -466,3 +484,6 @@ def test_streamable_http_accepts_codex_negotiated_2025_06_18_protocol(
     assert listed.status_code == 200
     tool_names = {tool["name"] for tool in listed.json()["result"]["tools"]}
     assert "kicad_get_version" in tool_names
+    assert called.status_code == 200
+    assert called.json()["result"]["content"][0]["type"] == "text"
+
