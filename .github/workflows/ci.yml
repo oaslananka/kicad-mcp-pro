@@ -400,6 +400,7 @@ jobs:
         run: >-
           uv run pytest
           tests/unit/test_mcp_protocol_contract.py::test_streamable_http_accepts_supported_legacy_handshake_protocols
+          tests/unit/test_mcp_protocol_contract.py::test_oaslana_71_legacy_sse_routes_are_opt_in
           -q
 
   mcp-npm:
