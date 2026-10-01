@@ -35,7 +35,7 @@ The compatibility fixtures are pinned to the final `2026-07-28` release of model
 | Streamable HTTP | Optional process-local session tracking after initialize | Candidate requests are independent, include protocol/client metadata on every call, and never create a session |
 | Tasks | Legacy experimental SDK Tasks handlers | Disabled and not advertised; the redesigned Tasks extension requires separate implementation |
 | Apps | Host-specific Apps/UI integrations can depend on negotiated host behavior | Not advertised as a candidate extension until supported-host contract tests pass |
-| Authorization | Bearer [REDACTED] is enforced by the MCPServer auth layer | Authentication remains before protocol diagnostics; candidate metadata never bypasses authorization |
+| Authorization | Bearer authentication is enforced by the MCPServer auth layer | Authentication remains before protocol diagnostics; candidate metadata never bypasses authorization |
 | Caching | Clients receive no explicit MCP cache policy | Candidate list/read results receive bounded `ttlMs` and private `cacheScope` where visibility or content is authorization-dependent |
 | Telemetry and benchmarks | Request telemetry can associate lifecycle/session fields | Candidate telemetry records protocol method without persisting client metadata or session state; benchmark fixtures remain sanitized |
 | Registry metadata | `server.json` advertises stable protocol support | Registry metadata remains `2025-11-25` until the release gates below pass |
