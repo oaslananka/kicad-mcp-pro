@@ -45,7 +45,7 @@ except ImportError:
 from mcp import types as mcp_types
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.caching import CacheHint
+from mcp.server.caching import CacheHint, CacheableMethod
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver import MCPServer as FastMCP
@@ -299,7 +299,7 @@ CLI_FAILURE_TOOL_NAMES: frozenset[str] = frozenset(
 _TOOL_LIMITERS: dict[str, anyio.CapacityLimiter] = {}
 _TOOL_LIMITERS_LOCK = threading.Lock()
 IPC_CAPABILITY_CACHE_TTL_SEC = 1.0
-NATIVE_MCP_CACHE_HINTS = {
+NATIVE_MCP_CACHE_HINTS: dict[CacheableMethod, CacheHint] = {
     "server/discover": CacheHint(ttl_ms=3_600_000, scope="private"),
     "tools/list": CacheHint(ttl_ms=300_000, scope="private"),
     "prompts/list": CacheHint(ttl_ms=300_000, scope="private"),
