@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       # Use a short-lived GitHub App installation token so release PR creation and the
-      # metadata-sync push trigger the normal CI graph without a long-lived maintainer PAT.
+      # release-artifact sync push trigger the normal CI graph without a long-lived maintainer PAT.
       - name: Mint release automation token
         id: release-app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
@@ -35,11 +35,10 @@ jobs:
           manifest-file: .release-please-manifest.json
           token: ${{ steps.release-app-token.outputs.token }}
 
-      # release-please bumps the bare version fields, but server.json / mcp.json embed
-      # the version inside the OCI image identifier (ghcr.io/...:X.Y.Z), which its JSON
-      # updater cannot bump (it replaces whole values, not substrings). Regenerate the
-      # canonical public metadata from the bumped pyproject and push it onto the release
-      # PR branch so the metadata-sync gate passes.
+      # release-please bumps package versions, while several tracked generated artifacts
+      # derive values from the bumped pyproject and cannot be maintained safely by its
+      # field updaters alone. Regenerate every canonical release-derived artifact through
+      # one entry point, then push any drift onto the release PR branch before CI evaluates it.
       - name: Detect release PR branch
         id: release-pr-branch
         env:
@@ -60,18 +59,18 @@ jobs:
         with:
           enable-cache: false
       - if: ${{ steps.release-pr-branch.outputs.branch != '' }}
-        name: Sync canonical public metadata onto the release PR
+        name: Sync canonical release artifacts onto the release PR
         env:
           RELEASE_PR_BRANCH: ${{ steps.release-pr-branch.outputs.branch }}
           GH_TOKEN: ${{ steps.release-app-token.outputs.token }}
         run: |
-          uv run --all-extras python scripts/sync_mcp_metadata.py --write
+          uv run --all-extras python scripts/sync_release_artifacts.py --write
           if [ -n "$(git status --porcelain)" ]; then
             app_slug="${{ steps.release-app-token.outputs.app-slug }}"
             app_user_id="$(gh api "/users/${app_slug}[bot]" --jq .id)"
             git config user.name "${app_slug}[bot]"
             git config user.email "${app_user_id}+${app_slug}[bot]@users.noreply.github.com"
-            git commit -am "chore: sync canonical public metadata"
+            git commit -am "chore: sync canonical release artifacts"
             gh auth setup-git
             git push origin "HEAD:${RELEASE_PR_BRANCH}"
           fi
