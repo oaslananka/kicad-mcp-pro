@@ -51,7 +51,7 @@ def test_candidate_protocol_operator_documentation_is_explicitly_release_gated()
     for gate in (
         "final MCP 2026-07-28 specification",
         "stable MCP Python SDK",
-        "supported host smoke tests",
+        "Supported host smoke tests",
         "Tasks and Apps extension parity",
         "tested rollback",
     ):
