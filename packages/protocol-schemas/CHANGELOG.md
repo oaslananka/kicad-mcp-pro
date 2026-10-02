@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v1.5.0...protocol-schemas-v1.6.0) (2026-10-02)
+
+
+### Features
+
+* **mcp:** promote public protocol contract ([#1039](https://github.com/oaslananka/kicad-mcp-pro/issues/1039)) ([a1fdaad](https://github.com/oaslananka/kicad-mcp-pro/commit/a1fdaadf481a63c33371e8002f78b35ce166d12f))
+
 ## [1.5.0](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v1.4.2...protocol-schemas-v1.5.0) (2026-10-02)
 
 

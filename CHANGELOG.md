@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.37.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.36.0...mcp-server-v3.37.0) (2026-10-02)
+
+
+### Features
+
+* **mcp:** promote public protocol contract ([#1039](https://github.com/oaslananka/kicad-mcp-pro/issues/1039)) ([a1fdaad](https://github.com/oaslananka/kicad-mcp-pro/commit/a1fdaadf481a63c33371e8002f78b35ce166d12f))
+
 ## [3.36.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.35.2...mcp-server-v3.36.0) (2026-10-02)
 
 
