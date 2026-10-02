@@ -23,7 +23,7 @@ The candidate lane:
 - serves `server/discover` directly,
 - adapts supported requests to the installed stable SDK internally,
 - adds candidate `resultType`, server metadata, and cache metadata to successful responses,
-- advertises no Tasks or Apps extension until those contracts are implemented,
+- advertises no Tasks or Apps extension; unsupported extension registration fails closed until separately implemented and reviewed,
 - does not change `server.json` or the stable dependency range.
 
 The compatibility fixtures are pinned to the final `2026-07-28` release of modelcontextprotocol/modelcontextprotocol at commit `5f5440bb26a62e2cf3440b92da5a667efa03b267`. `tests/contracts/mcp/2026-07-28/provenance.json` also records the reviewed source-document and schema blob identities.
@@ -34,7 +34,7 @@ The compatibility fixtures are pinned to the final `2026-07-28` release of model
 | --- | --- | --- |
 | Streamable HTTP | Optional process-local session tracking after initialize | Candidate requests are independent, include protocol/client metadata on every call, and never create a session |
 | Tasks | Legacy experimental SDK Tasks handlers | Disabled and not advertised; the redesigned Tasks extension requires separate implementation |
-| Apps | Host-specific Apps/UI integrations can depend on negotiated host behavior | Not advertised as a candidate extension until supported-host contract tests pass |
+| Apps | Stable SDK v2.2.0 includes the opt-in `io.modelcontextprotocol/ui` Apps extension | Explicitly excluded and unadvertised: KiCad MCP Pro registers no `ui://` resources or UI-bound tools and rejects protocol-extension registration at server construction |
 | Authorization | Bearer authentication is enforced by the MCPServer auth layer | Authentication remains before protocol diagnostics; candidate metadata never bypasses authorization |
 | Caching | Clients receive no explicit MCP cache policy | Candidate list/read results receive bounded `ttlMs` and private `cacheScope` where visibility or content is authorization-dependent |
 | Telemetry and benchmarks | Request telemetry can associate lifecycle/session fields | Candidate telemetry records protocol method without persisting client metadata or session state; benchmark fixtures remain sanitized |
@@ -59,10 +59,10 @@ Changing public metadata is a separate reviewed release decision, not an automat
 | 1. The final MCP 2026-07-28 specification is published and the pinned fixtures are reconciled. | **Complete.** The Model Context Protocol project published `2026-07-28` as the final, authoritative successor to `2025-11-25` on 2026-07-28 ([spec announcement](https://blog.modelcontextprotocol.io/posts/2026-07-28/)). The contract fixtures under `tests/contracts/mcp/2026-07-28/` were reconciled against the immutable final release commit `5f5440bb26a62e2cf3440b92da5a667efa03b267`; `provenance.json` now pins that commit plus the reviewed `server/discover`, `tools/list`, and schema blob identities. The representative envelopes remain valid against the final source: per-request protocol/capability metadata, `server/discover` result metadata, `resultType`, and cache fields match the final contract. | Complete |
 | 2. A stable MCP Python SDK supports the required transport and schema surface without the compatibility bridge. | **Complete; bridge removed.** The repository uses stable MCP Python SDK v2 (`mcp>=2.2.0,<3.0.0`). Final `2026-07-28` discovery, validation, stateless HTTP, result shaping, and server metadata now flow directly through SDK v2. The repository preserves its reviewed cache TTL/scope policy through SDK-native `cache_hints` and preserves alphabetical `tools/list` ordering in the opt-in modern lane. The former request/response translation module and interception path are removed. | Complete |
 | 3. Supported host smoke tests pass for direct discovery, listing, calling, authorization, and error behavior. | **Complete.** PR #1032 (`test(mcp): refresh final-runtime host smoke`) merged native SDK-v2 real-HTTP request-profile smoke coverage for ChatGPT Connector and VS Code MCP. The tests cover direct discovery, listing, representative tool calls, bearer authorization, structured error behavior, and stateless no-session traffic. This is wire/request-profile evidence, not certification of external host binaries. | Complete |
-| 4. Tasks and Apps extension parity is implemented or explicitly excluded from advertised capabilities. | Both remain explicitly unadvertised by design (see Component state inventory). **Tasks compared against the final [`io.modelcontextprotocol/tasks` SEP](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/seps/2663-tasks-extension.md): not compatible, by spec design.** The SDK-v1 experimental draft implementation and server wiring have been removed during the v2 migration. `enable_tasks=true` now fails closed, so the superseded draft cannot be exposed accidentally. The final extension remains a separate implementation item; Apps has not been evaluated. | Tasks: explicitly excluded/fail-closed. Apps: not started. |
+| 4. Tasks and Apps extension parity is implemented or explicitly excluded from advertised capabilities. | **Complete.** Tasks remain explicitly excluded/fail-closed: the SDK-v1 draft implementation is removed and `enable_tasks=true` is rejected. Apps was evaluated against pinned MCP Python SDK v2.2.0 (`9972c21aa42054fb1450c5fc614761ed11847ec6`), whose built-in `Apps` extension advertises `io.modelcontextprotocol/ui` only when passed through `MCPServer(extensions=[...])`. KiCad MCP Pro has no `ui://` resources or UI-bound tools, so advertising Apps would overstate runtime support. `KiCadFastMCP` now rejects any protocol-extension registration and constructs the SDK server with an empty extension set; `server/discover` contract tests continue to require no `extensions` capability. | Tasks: explicitly excluded/fail-closed. Apps: explicitly excluded/fail-closed. |
 | 5. A tested rollback to the `2025-11-25` runtime and metadata contract is documented and verified. | **Complete for the post-SDK-v2 runtime.** `test_candidate_lane_rollback_restores_native_stable_runtime_and_metadata` explicitly enables the temporary RC lane, verifies that it rejects legacy `initialize`, unsets `KICAD_MCP_PROTOCOL_LANE`, resets configuration to model a restart, and then verifies the native stable path negotiates `2025-11-25` through `initialize` while `/.well-known/mcp-server` continues to advertise `2025-11-25`. The same contract records the post-v2 semantic change: native SDK v2 may continue to answer `server/discover` after rollback because discovery is no longer unique to the temporary bridge. | Complete |
 
-Gates 1–3 and the post-v2 rollback gate are complete. The explicit Tasks/Apps extension-capability decision remains the final ADR gate before any separate public `2026-07-28` metadata change is considered.
+All five release decision gates are complete. This satisfies the technical compatibility prerequisites only; public `2026-07-28` metadata remains a separate reviewed release decision and is not authorized automatically.
 
 ## Compatibility-bridge disposition (2026-10-02)
 
@@ -76,6 +76,14 @@ Native SDK v2 is now authoritative for final MCP `2026-07-28` request validation
 The final SDK does not turn an obsolete incoming `Mcp-Session-Id` header into session state in stateless mode, but it also does not reproduce the bridge's custom rejection response. That bridge-specific diagnostic is intentionally retired in favor of SDK-native final-protocol behavior. Authentication still precedes protocol diagnostics, and no session identifier is emitted.
 
 Public registry/server metadata remains `2025-11-25`; bridge removal is not public protocol promotion.
+
+## Extension-capability disposition (2026-10-02)
+
+Tasks and Apps are both explicitly excluded from advertised capabilities for the current KiCad MCP Pro runtime. Tasks retain the existing fail-closed configuration guard. Apps was evaluated against MCP Python SDK v2.2.0, which ships `mcp.server.apps.Apps` as an opt-in extension with identifier `io.modelcontextprotocol/ui`. No `ui://` resources or UI-bound tools are registered in this repository, so there is no truthful Apps capability to advertise.
+
+`KiCadFastMCP` therefore rejects non-empty protocol-extension registration at construction and passes an explicit empty extension set to the SDK. This converts accidental absence into a repository-owned fail-closed invariant. The modern discovery contract also asserts that `capabilities.extensions` is absent. Adding Tasks, Apps, or another MCP extension later requires a separate implementation tranche with runtime behavior, host negotiation evidence, and reviewed capability advertisement.
+
+Gate 4 disposition: Tasks: explicitly excluded/fail-closed. Apps: explicitly excluded/fail-closed.
 
 ## Rollout
 

@@ -76,7 +76,7 @@ uv run --all-extras kicad-mcp-pro
 
 The native SDK validates the final `MCP-Protocol-Version: 2026-07-28`, `Mcp-Method`, `Mcp-Name`, and required per-request `_meta` envelope. KiCad MCP Pro no longer rewrites requests into the stable handshake protocol or decorates responses through a compatibility bridge.
 
-Call `server/discover` directly; `initialize` and `notifications/initialized` are not part of the final 2026 protocol. The lane is stateless: it neither requires nor emits `Mcp-Session-Id`, and an obsolete incoming session header does not establish server-side session state. Tasks and Apps extensions remain unadvertised.
+Call `server/discover` directly; `initialize` and `notifications/initialized` are not part of the final 2026 protocol. The lane is stateless: it neither requires nor emits `Mcp-Session-Id`, and an obsolete incoming session header does not establish server-side session state. Tasks and Apps are explicitly unsupported and unadvertised; server construction fails closed if a protocol extension is registered.
 
 Reviewed repository cache policy is preserved through SDK-native cache hints: list methods use `300000` ms private caching, resource reads use `60000` ms private caching, and `server/discover` uses `3600000` ms private caching. `tools/list` remains alphabetically ordered in this canary lane.
 
