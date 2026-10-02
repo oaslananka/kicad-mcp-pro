@@ -29,7 +29,7 @@ def test_candidate_protocol_operator_documentation_is_explicitly_release_gated()
         assert component in adr
 
     assert "KICAD_MCP_PROTOCOL_LANE=2026-07-28-rc" in transport
-    assert "release-candidate compatibility lane" in transport
+    assert "native SDK v2 canary" in transport
     assert "not a general-availability protocol advertisement" in transport
     assert "Mcp-Method" in transport
     assert "Mcp-Name" in transport
@@ -39,10 +39,12 @@ def test_candidate_protocol_operator_documentation_is_explicitly_release_gated()
     assert "public metadata remains `2025-11-25`" in transport
     assert "Native SDK v2 can still answer `server/discover`" in transport
     assert "Native SDK v2 may continue to answer `server/discover`" in adr
+    assert "temporary request/response translation bridge has been removed" in transport
+    assert "temporary translation bridge has been removed" in api_reference
 
     assert "Current public contract" in api_reference
     assert "`2025-11-25`" in api_reference
-    assert "Candidate compatibility lane" in api_reference
+    assert "Native 2026 canary lane" in api_reference
     assert "`2026-07-28`" in api_reference
     assert "server.json remains on `2025-11-25`" in api_reference
 
