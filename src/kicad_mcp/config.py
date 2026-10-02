@@ -80,7 +80,9 @@ class KiCadMCPConfig(BaseSettings):
     transport: Literal["stdio", "http", "sse", "streamable-http"] = Field(default="stdio")
     protocol_lane: Literal["stable", "2026-07-28-rc"] = Field(
         default="stable",
-        description="MCP protocol canary selector. Public protocol metadata is release-gated separately.",
+        description=(
+            "MCP protocol canary selector. Public protocol metadata is release-gated separately."
+        ),
     )
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=3334)
