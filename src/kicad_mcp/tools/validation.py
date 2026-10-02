@@ -2468,7 +2468,7 @@ def _release_bom_readiness() -> BomReadinessPayload:
 
 
 def _release_artifact_evidence() -> ReadinessEvidencePayload:
-    from .manufacturing import _find_release_files
+    from ..manufacturing.release_evidence import find_release_files
 
     cfg = get_config()
     if cfg.project_dir is None:
@@ -2482,7 +2482,7 @@ def _release_artifact_evidence() -> ReadinessEvidencePayload:
             metadata={"missing_categories": ["bom", "pick_and_place", "manufacturing"]},
         )
 
-    release_files = _find_release_files(output_dir)
+    release_files = find_release_files(output_dir)
     bom_paths: list[str] = []
     pick_and_place_paths: list[str] = []
     manufacturing_paths: list[str] = []

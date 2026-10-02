@@ -22,6 +22,7 @@ from mcp.server.mcpserver import MCPServer as FastMCP
 from .. import __version__
 from ..config import get_config
 from ..discovery import get_cli_capabilities
+from ..manufacturing.release_evidence import find_release_files, sha256_file
 from .metadata import headless_compatible
 
 logger = structlog.get_logger(__name__)
@@ -64,28 +65,8 @@ def _find_rotation_offset(
     return best[1] if best else None
 
 
-def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    try:
-        with path.open("rb") as fh:
-            for chunk in iter(lambda: fh.read(65536), b""):
-                h.update(chunk)
-    except OSError:
-        return "unavailable"
-    return h.hexdigest()
-
-
 def _kikit_available() -> bool:
     return shutil.which("kikit") is not None
-
-
-def _find_release_files(output_dir: Path) -> list[Path]:
-    """Return all manufacturing release files in the output directory."""
-    patterns = ["*.gbr", "*.drl", "*.csv", "*.ipc", "*.step", "*.xml", "*.pdf"]
-    files: list[Path] = []
-    for pattern in patterns:
-        files.extend(output_dir.glob(pattern))
-    return sorted(set(files))
 
 
 def register(mcp: FastMCP) -> None:
@@ -436,7 +417,7 @@ def register(mcp: FastMCP) -> None:
             )
 
         # Gather all files
-        release_files = _find_release_files(out_dir)
+        release_files = find_release_files(out_dir)
         if not release_files:
             return (
                 "No release files found in output directory.\n"
@@ -448,7 +429,7 @@ def register(mcp: FastMCP) -> None:
             (
                 {
                     "filename": f.name,
-                    "sha256": _sha256_file(f),
+                    "sha256": sha256_file(f),
                     "size_bytes": str(f.stat().st_size),
                 }
                 for f in release_files
@@ -465,7 +446,7 @@ def register(mcp: FastMCP) -> None:
         # content_hash stays stable across runs for identical inputs).
         caps = get_cli_capabilities(cfg.kicad_cli)
         source_hashes = {
-            label: _sha256_file(path)
+            label: sha256_file(path)
             for label, path in (
                 ("project", cfg.project_file),
                 ("pcb", cfg.pcb_file),
@@ -660,303 +641,6 @@ def register(mcp: FastMCP) -> None:
 
     manufacturing_imports.register(mcp)
 
-    @mcp.tool()
-    @headless_compatible
-    def mfg_create_release_evidence(
-        output_path: str = "",
-        product_domain: str = "selv",
-        voltage_v: float = 0.0,
-        waive_missing_artifacts: bool = False,
-        dry_run: bool = False,
-    ) -> str:
-        """Generate a machine-readable manufacturing release evidence bundle.
+    from . import manufacturing_release_evidence
 
-        Runs compliance gates, checks required artifacts, and produces a
-        signed evidence JSON with a ``release_approved`` / ``release_blocked`` verdict.
-
-        Gates evaluated:
-        - **Artifact coverage**: Gerber, drill, BOM, and pick-and-place files must exist
-          in the output directory.
-        - **DRC gate**: PCB design rule violations must be zero.
-        - **ERC gate**: Schematic electrical rule violations must be zero.
-        - **HV safety gate**: If ``voltage_v`` > 60 V or ``product_domain`` is
-          ``hazardous_mains``, a ``*.kicad_dru`` file with HV creepage rules must exist.
-
-        Args:
-            output_path: Output directory for the evidence bundle (default: project output/).
-            product_domain: ``"selv"`` (Safety Extra-Low Voltage, ≤ 60 V DC) or
-                ``"hazardous_mains"`` (> 60 V DC, requires HV safety gate).
-            voltage_v: Working voltage in volts; used to auto-select safety domain.
-            waive_missing_artifacts: If True, missing artifact types do not block release.
-            dry_run: Evaluate gates without writing the evidence file.
-
-        Returns:
-            JSON with ``verdict``, ``gates``, ``blocking_reasons``, and ``evidence_path``.
-        """
-        cfg = get_config()
-        out_dir = cfg.output_dir or (cfg.project_dir / "output")  # type: ignore[operator]
-
-        # Determine effective safety domain
-        is_hv = product_domain == "hazardous_mains" or voltage_v > 60.0
-        effective_domain = "hazardous_mains" if is_hv else "selv"
-
-        gates: list[dict[str, Any]] = []
-        blocking: list[str] = []
-
-        # --- Gate 1: Required artifact coverage ---
-        artifact_patterns: dict[str, str] = {
-            "gerber": "*.gbr",
-            "drill": "*.drl",
-            "bom": "*.csv",
-            "pick_and_place": "*.csv",
-        }
-        missing_artifacts: list[str] = []
-        found_artifacts: list[str] = []
-        if out_dir.exists():
-            for artifact_type, pattern in artifact_patterns.items():
-                matches = list(out_dir.glob(pattern))
-                if matches:
-                    found_artifacts.append(artifact_type)
-                else:
-                    missing_artifacts.append(artifact_type)
-        else:
-            missing_artifacts = list(artifact_patterns.keys())
-
-        artifact_passed = not missing_artifacts or waive_missing_artifacts
-        gates.append(
-            {
-                "gate": "artifact_coverage",
-                "passed": artifact_passed,
-                "found": found_artifacts,
-                "missing": missing_artifacts,
-                "waived": waive_missing_artifacts and bool(missing_artifacts),
-            }
-        )
-        if not artifact_passed:
-            blocking.append(
-                f"Missing required artifacts: {', '.join(missing_artifacts)}. "
-                "Run export_manufacturing_package() first."
-            )
-
-        # --- Gate 2: DRC gate ---
-        drc_passed: bool = False
-        drc_violations: int = -1
-        drc_unconnected: int = -1
-        drc_error: str | None = None
-        try:
-            import os as _os
-            import tempfile
-
-            from .export_support import _run_cli
-
-            cfg2 = get_config()
-            if cfg2.pcb_file and cfg2.pcb_file.exists():
-                with tempfile.NamedTemporaryFile(
-                    suffix=".json", delete=False, dir=cfg2.pcb_file.parent
-                ) as tmp:
-                    tmp_path = tmp.name
-                try:
-                    code, stdout, stderr = _run_cli(
-                        "pcb",
-                        "drc",
-                        "--output",
-                        tmp_path,
-                        "--format",
-                        "json",
-                        "--schematic-parity",
-                        str(cfg2.pcb_file),
-                    )
-                    if code == 0 and _os.path.exists(tmp_path):
-                        report = json.loads(Path(tmp_path).read_text(encoding="utf-8"))
-                        violations = report.get("violations", [])
-                        unconnected = report.get("unconnected_items", [])
-                        drc_violations = len(violations) if isinstance(violations, list) else 0
-                        drc_unconnected = len(unconnected) if isinstance(unconnected, list) else 0
-                        drc_passed = drc_violations == 0 and drc_unconnected == 0
-                    else:
-                        drc_error = stderr or stdout or f"DRC exited with code {code}"
-                finally:
-                    try:
-                        _os.unlink(tmp_path)
-                    except OSError:
-                        pass
-            else:
-                drc_error = "No PCB file configured."
-        except Exception as exc:
-            drc_error = str(exc)
-
-        gates.append(
-            {
-                "gate": "drc",
-                "passed": drc_passed,
-                "violations": drc_violations,
-                "unconnected_items": drc_unconnected,
-                "error": drc_error,
-            }
-        )
-        if not drc_passed:
-            if drc_error:
-                blocking.append(f"DRC could not run: {drc_error}")
-            else:
-                blocking.append(
-                    f"DRC failed: {drc_violations} violation(s),"
-                    f" {drc_unconnected} unconnected item(s)."
-                )
-
-        # --- Gate 3: ERC gate ---
-        erc_passed: bool = False
-        erc_violations: int = -1
-        erc_error: str | None = None
-        try:
-            import os as _os2
-            import tempfile as _tf2
-
-            from .export_support import _run_cli as _run_cli2
-
-            cfg3 = get_config()
-            if cfg3.sch_file and cfg3.sch_file.exists():
-                with _tf2.NamedTemporaryFile(
-                    suffix=".json", delete=False, dir=cfg3.sch_file.parent
-                ) as tmp2:
-                    tmp2_path = tmp2.name
-                try:
-                    code2, stdout2, stderr2 = _run_cli2(
-                        "sch",
-                        "erc",
-                        "--output",
-                        tmp2_path,
-                        "--format",
-                        "json",
-                        str(cfg3.sch_file),
-                    )
-                    if code2 == 0 and _os2.path.exists(tmp2_path):
-                        report2 = json.loads(Path(tmp2_path).read_text(encoding="utf-8"))
-                        violations2 = report2.get("violations", [])
-                        erc_violations = len(violations2) if isinstance(violations2, list) else 0
-                        erc_passed = erc_violations == 0
-                    else:
-                        erc_error = stderr2 or stdout2 or f"ERC exited with code {code2}"
-                finally:
-                    try:
-                        _os2.unlink(tmp2_path)
-                    except OSError:
-                        pass
-            else:
-                erc_error = "No schematic file configured."
-        except Exception as exc:
-            erc_error = str(exc)
-
-        gates.append(
-            {
-                "gate": "erc",
-                "passed": erc_passed,
-                "violations": erc_violations,
-                "error": erc_error,
-            }
-        )
-        if not erc_passed:
-            if erc_error:
-                blocking.append(f"ERC could not run: {erc_error}")
-            else:
-                blocking.append(f"ERC failed: {erc_violations} violation(s).")
-
-        # --- Gate 4: HV safety gate ---
-        hv_gate_applicable = is_hv
-        hv_gate_passed = True
-        hv_gate_detail: str = "Not applicable (SELV domain)."
-        if hv_gate_applicable:
-            cfg4 = get_config()
-            project_dir = cfg4.project_dir
-            dru_files = list(project_dir.glob("*.kicad_dru")) if project_dir else []
-            hv_dru = None
-            for dru in dru_files:
-                text = dru.read_text(encoding="utf-8", errors="ignore")
-                if "creepage" in text.lower() or "clearance" in text.lower():
-                    hv_dru = dru
-                    break
-            if hv_dru:
-                hv_gate_passed = True
-                hv_gate_detail = f"HV design rules found in {hv_dru.name}."
-            else:
-                hv_gate_passed = False
-                hv_gate_detail = (
-                    f"No .kicad_dru with creepage/clearance rules found for "
-                    f"{voltage_v:.0f} V {effective_domain} design. "
-                    "Run generate_board_constraints() to create HV safety rules."
-                )
-        gates.append(
-            {
-                "gate": "hv_safety",
-                "applicable": hv_gate_applicable,
-                "passed": hv_gate_passed,
-                "detail": hv_gate_detail,
-                "voltage_v": voltage_v,
-                "domain": effective_domain,
-            }
-        )
-        if hv_gate_applicable and not hv_gate_passed:
-            blocking.append(hv_gate_detail)
-
-        # --- Build verdict ---
-        verdict = "release_approved" if not blocking else "release_blocked"
-
-        # --- Collect all release files + compute stable hashes ---
-        release_files = _find_release_files(out_dir) if out_dir.exists() else []
-        file_hashes: list[dict[str, str]] = sorted(
-            (
-                {
-                    "filename": f.name,
-                    "sha256": _sha256_file(f),
-                    "size_bytes": str(f.stat().st_size),
-                }
-                for f in release_files
-            ),
-            key=lambda e: e["filename"],
-        )
-
-        # Provenance
-        caps = get_cli_capabilities(cfg.kicad_cli)
-        source_hashes = {
-            label: _sha256_file(path)
-            for label, path in (
-                ("project", cfg.project_file),
-                ("pcb", cfg.pcb_file),
-                ("schematic", cfg.sch_file),
-            )
-            if path is not None and path.exists()
-        }
-        provenance: dict[str, Any] = {
-            "kicad_mcp_version": __version__,
-            "kicad_cli": str(cfg.kicad_cli),
-            "kicad_cli_version": caps.version,
-            "product_domain": effective_domain,
-            "voltage_v": voltage_v,
-            "source_hashes": source_hashes,
-        }
-
-        content_basis = json.dumps(
-            {"files": file_hashes, "provenance": provenance, "gates": gates},
-            sort_keys=True,
-        )
-        content_hash = hashlib.sha256(content_basis.encode()).hexdigest()
-
-        evidence: dict[str, Any] = {
-            "verdict": verdict,
-            "generated_utc": datetime.now(UTC).isoformat(),
-            "content_hash": content_hash,
-            "product_domain": effective_domain,
-            "voltage_v": voltage_v,
-            "gates": gates,
-            "blocking_reasons": blocking,
-            "provenance": provenance,
-            "file_count": len(release_files),
-            "files": file_hashes,
-        }
-
-        if dry_run:
-            return json.dumps({**evidence, "dry_run": True, "evidence_path": None}, indent=2)
-
-        out_dir.mkdir(parents=True, exist_ok=True)
-        evidence_path = out_dir / "release_evidence.json"
-        evidence_path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
-        return json.dumps({**evidence, "evidence_path": str(evidence_path)}, indent=2)
+    manufacturing_release_evidence.register(mcp)
