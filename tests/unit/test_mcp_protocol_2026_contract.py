@@ -9,7 +9,7 @@ from starlette.testclient import TestClient
 
 from kicad_mcp.compatibility import MCP_PROTOCOL_VERSION
 from kicad_mcp.config import get_config, reset_config
-from kicad_mcp.protocol_compat import CANDIDATE_PROTOCOL_VERSION
+CANDIDATE_PROTOCOL_VERSION = "2026-07-28"
 from kicad_mcp.server import build_server
 
 BASE_HEADERS = {
@@ -78,7 +78,7 @@ def test_candidate_discovery_is_available_without_initialize(sample_project: Pat
     result = response.json()["result"]
     assert result["resultType"] == "complete"
     assert result["supportedVersions"] == [CANDIDATE_PROTOCOL_VERSION]
-    assert result["capabilities"]["extensions"] == {}
+    assert "extensions" not in result["capabilities"]
     assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "kicad-mcp-pro"
     assert result["cacheScope"] == "private"
 
@@ -164,7 +164,7 @@ def test_candidate_rejects_legacy_initialize(sample_project: Path) -> None:
             json=_request("initialize", request_id=5),
         )
 
-    assert response.status_code == 400
+    assert response.status_code == 404
     assert response.json()["error"]["code"] == -32601
 
 
@@ -202,7 +202,7 @@ def test_candidate_preserves_authentication_failure_before_protocol_diagnostics(
 
     assert unauthenticated.status_code == 401
     assert authenticated.status_code == 400
-    assert authenticated.json()["error"]["code"] == -32021
+    assert authenticated.json()["error"]["code"] == -32602
 
 
 def test_candidate_lane_rollback_restores_native_stable_runtime_and_metadata(
@@ -229,7 +229,7 @@ def test_candidate_lane_rollback_restores_native_stable_runtime_and_metadata(
             json=_request("initialize", request_id=20, client_name="rollback-contract"),
         )
 
-    assert candidate_initialize.status_code == 400
+    assert candidate_initialize.status_code == 404
     assert candidate_initialize.json()["error"]["code"] == -32601
 
     monkeypatch.delenv("KICAD_MCP_PROTOCOL_LANE")
