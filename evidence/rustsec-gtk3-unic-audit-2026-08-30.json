@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-30T00:00:00Z",
+  "repository": "oaslananka/kicad-mcp-pro",
+  "repositoryCommit": "449f27b0b40b03cebe7ef1cb84ab195dae5a4d9e",
+  "issue": "https://github.com/oaslananka/kicad-mcp-pro/issues/779",
+  "scorecardAlert": {
+    "id": 53,
+    "check": "Vulnerabilities",
+    "severity": "high"
+  },
+  "cargoAudit": {
+    "version": "cargo-audit-audit 0.22.2",
+    "command": "cargo audit --file Cargo.lock --json",
+    "workingDirectory": "src-tauri",
+    "lockfileSha256": "2cee389a2afc504b191750698542d8857a600d9d3f9127209393d3dfd21295a6",
+    "exitCode": 0,
+    "vulnerabilitiesCount": 0,
+    "warningsCount": 17,
+    "warningsByKind": {
+      "unmaintained": 16,
+      "unsound": 1
+    },
+    "findings": [
+      { "advisory": "RUSTSEC-2024-0411", "package": "gdkwayland-sys", "version": "0.18.2", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2024-0412", "package": "gdk", "version": "0.18.2", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2024-0413", "package": "atk", "version": "0.18.2", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2024-0414", "package": "gdkx11-sys", "version": "0.18.2", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2024-0415", "package": "gtk", "version": "0.18.2", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2024-0416", "package": "atk-sys", "version": "0.18.2", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2024-0417", "package": "gdkx11", "version": "0.18.2", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2024-0418", "package": "gdk-sys", "version": "0.18.2", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2024-0419", "package": "gtk3-macros", "version": "0.18.2", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2024-0420", "package": "gtk-sys", "version": "0.18.2", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2024-0429", "package": "glib", "version": "0.18.5", "kind": "unsound", "note": "Patched line per RustSec advisory is >=0.20.0; the vulnerable symbol is glib::VariantStrIter." },
+      { "advisory": "RUSTSEC-2024-0370", "package": "proc-macro-error", "version": "1.0.4", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2025-0075", "package": "unic-char-range", "version": "0.9.0", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2025-0080", "package": "unic-common", "version": "0.9.0", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2025-0081", "package": "unic-char-property", "version": "0.9.0", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2025-0098", "package": "unic-ucd-version", "version": "0.9.0", "kind": "unmaintained" },
+      { "advisory": "RUSTSEC-2025-0100", "package": "unic-ucd-ident", "version": "0.9.0", "kind": "unmaintained" }
+    ],
+    "rawOutputSha256": null
+  },
+  "reachabilityCheck": {
+    "command": "grep -RnE 'VariantStrIter|unic_char|unic::|unic_common|unic_ucd' src-tauri/src",
+    "result": "no matches",
+    "conclusion": "Application code in src-tauri/src does not call the unsound glib::VariantStrIter symbol or any unic-* API directly. All 17 findings are transitive-only."
+  },
+  "reverseDependencyChains": {
+    "command": "cargo tree -i <package> --target all --edges normal",
+    "unicCharRange": [
+      "unic-char-range v0.9.0",
+      "unic-char-property v0.9.0",
+      "unic-ucd-ident v0.9.0",
+      "urlpattern v0.3.0",
+      "tauri-utils v2.9.3",
+      "tauri v2.11.5 / tauri-build v2.6.3",
+      "kicad-mcp-pro v3.33.3 (src-tauri)"
+    ],
+    "glib": [
+      "glib v0.18.5",
+      "gio v0.18.4 / gdk v0.18.2 / gtk v0.18.2 / webkit2gtk v2.0.2 / wry v0.55.1",
+      "tauri v2.11.5 (linux-only cfg)",
+      "kicad-mcp-pro v3.33.3 (src-tauri)"
+    ],
+    "procMacroError": [
+      "proc-macro-error v1.0.4",
+      "gtk3-macros v0.18.2 / gtk v0.18.2 (build-time proc-macro dependency)",
+      "tauri v2.11.5 (linux-only cfg)",
+      "kicad-mcp-pro v3.33.3 (src-tauri)"
+    ]
+  },
+  "platformGating": {
+    "conclusion": "gtk/glib/webkit2gtk/wry/proc-macro-error chain resolves only under cfg(target_os = \"linux\") in tauri/wry; not present in the macOS (WKWebView) or Windows (WebView2) dependency graph.",
+    "evidence": "cargo tree -i glib (default target) printed no matches; cargo tree -i glib --target all resolved the chain, confirming the dependency is target-gated."
+  },
+  "upstreamTracking": {
+    "wryGtk4Port": {
+      "url": "https://github.com/tauri-apps/tao/pull/1104",
+      "title": "fix(linux): Port to gtk4-rs",
+      "state": "open",
+      "merged": false,
+      "lastCheckedAt": "2026-08-30T00:00:00Z",
+      "lastUpdatedUpstream": "2026-08-18T10:01:39Z"
+    },
+    "tauriRuntimeWryGtk4Tracking": {
+      "url": "https://github.com/tauri-apps/tauri/issues/12561",
+      "title": "Upgrade `tauri-runtime-wry` to `gtk4-rs`",
+      "state": "open",
+      "lastCheckedAt": "2026-08-30T00:00:00Z"
+    },
+    "conclusion": "Upstream GTK3-to-GTK4/webkit6/soup3 migration is active but unmerged as of this review. No compatible stable Tauri/wry release removes the GTK3 dependency chain yet."
+  }
+}

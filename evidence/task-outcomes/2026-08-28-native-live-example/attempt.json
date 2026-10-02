@@ -1,0 +1,77 @@
+{
+  "agent": "native-live-example-agent",
+  "attempt_id": "native-live-example-attempt-001",
+  "benchmark_id": "native-live-transaction-example",
+  "benchmark_version": "v1",
+  "classification": "success",
+  "kicad_version": "10.0.5",
+  "manual_repair": false,
+  "mcp_profile": "pcb",
+  "model": "fixture-model-v1",
+  "mutations": [
+    {
+      "attempted": true,
+      "corruption_detected": false,
+      "duplicate_application_detected": false,
+      "execution_state": "completed",
+      "final_state_verified": true,
+      "mutation_id": "live-mutation-1",
+      "recovery_required": false,
+      "state_divergence_detected": false
+    },
+    {
+      "attempted": true,
+      "corruption_detected": false,
+      "duplicate_application_detected": false,
+      "execution_state": "interrupted",
+      "final_state_verified": true,
+      "mutation_id": "live-mutation-2",
+      "recovery_required": true,
+      "recovery_succeeded": true,
+      "state_divergence_detected": false
+    }
+  ],
+  "operating_mode": "write",
+  "provider": "fixture-provider",
+  "retry_count": 0,
+  "schema_version": "pcb-task-outcome.v1",
+  "source_revision": "434d49327a6e488880eb2cdf05d58a65628083c7",
+  "stages": [
+    {
+      "outcome": "passed",
+      "stage": "requirements"
+    },
+    {
+      "outcome": "passed",
+      "stage": "pcb"
+    },
+    {
+      "outcome": "passed",
+      "stage": "drc"
+    },
+    {
+      "outcome": "passed",
+      "stage": "parse_reopen"
+    }
+  ],
+  "start_state": "clean",
+  "starting_state_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "task_class": "pcb-edit",
+  "task_contract_version": "v1",
+  "task_id": "verified-track-via-edit",
+  "timing": {
+    "ended_at": "2026-08-28T00:01:00+03:00",
+    "started_at": "2026-08-28T00:00:00+03:00"
+  },
+  "toolchain_contract": "kicad-python-0.7.1-native-live-v1",
+  "validations": [
+    {
+      "disposition": "resolved",
+      "execution_attempted": true,
+      "execution_completed": true,
+      "kind": "drc",
+      "required": true,
+      "result_consumed": true
+    }
+  ]
+}

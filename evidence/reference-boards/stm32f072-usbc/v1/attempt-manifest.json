@@ -1,0 +1,24 @@
+{
+  "attempts": [
+    {
+      "attempt_id": "attempt-001",
+      "directory": "attempts/attempt-001",
+      "evidence_digest": "sha256:bfb76303b2860ce27a06f6022e84cb17aab7233146d40cc85b4763c16ca523d9"
+    },
+    {
+      "attempt_id": "attempt-002",
+      "directory": "attempts/attempt-002",
+      "evidence_digest": "sha256:b737356ba06d17396acfb5c46341aa51d4803ac7b017f65b651acdceb916905e"
+    },
+    {
+      "attempt_id": "attempt-003",
+      "directory": "attempts/attempt-003",
+      "evidence_digest": "sha256:550897792dec23352775d078e2c86024afeb1751d47e0571b6c7c56585cc9e3e"
+    }
+  ],
+  "benchmark_id": "stm32f072-usbc-reference-board",
+  "benchmark_version": "v1",
+  "board_id": "stm32f072-usbc",
+  "reference_inputs_digest": "sha256:abf8c5da30fd7f5a63ec3fd6d7e134b2ca431aa29355800c128433a0af897154",
+  "schema_version": "pcb-reference-board.v1"
+}

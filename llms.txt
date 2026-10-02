@@ -1,0 +1,37 @@
+# KiCad MCP Pro
+
+> AI-ready Model Context Protocol server for KiCad EDA workflows. It lets MCP-capable agents inspect, automate, validate, and review KiCad schematic, PCB, ERC, DRC, DFM, BOM, and manufacturing export workflows.
+
+## Canonical links
+
+- GitHub: https://github.com/oaslananka/kicad-mcp-pro
+- Documentation: https://oaslananka.github.io/kicad-mcp-pro/
+- PyPI: https://pypi.org/project/kicad-mcp-pro/
+- npm: https://www.npmjs.com/package/kicad-mcp-pro
+- MCP Registry name: io.github.oaslananka/kicad-mcp-pro
+
+## Core docs
+
+- Installation: https://oaslananka.github.io/kicad-mcp-pro/installation/
+- Client configuration: https://oaslananka.github.io/kicad-mcp-pro/client-configuration/
+- Tool reference: https://oaslananka.github.io/kicad-mcp-pro/tools-reference/
+- AI agent setup: https://oaslananka.github.io/kicad-mcp-pro/agents/
+- API stability: https://oaslananka.github.io/kicad-mcp-pro/api-stability/
+- Security and privacy: https://oaslananka.github.io/kicad-mcp-pro/security/threat-model/
+- Safe live-preview workflow: https://oaslananka.github.io/kicad-mcp-pro/workflows/live-preview/
+
+## Scope and safety
+
+KiCad MCP Pro is a professional first-pass design and review assistant. It does not replace human engineering sign-off, fabrication review, or formal safety validation. Agents should use structured tool output, rendered evidence, ERC/DRC/DFM checks, and human review before release or manufacturing decisions.
+
+## Recommended first agent workflow
+
+1. Inspect the current KiCad project and schematic hierarchy.
+2. Summarize ERC/DRC-relevant issues without modifying files.
+3. Render a schematic preview and inspect visual evidence.
+4. Plan changes before using write tools.
+5. Re-run preview, ERC/DRC, DFM, and export checks after modifications.
+
+## Keywords
+
+KiCad MCP, KiCad automation, AI PCB design, EDA automation, Model Context Protocol, Claude MCP, Cursor MCP, GitHub Copilot MCP, schematic automation, PCB automation, ERC, DRC, DFM, BOM, manufacturing export, live preview, visual evidence, MCP server, Python, PyPI, npm.

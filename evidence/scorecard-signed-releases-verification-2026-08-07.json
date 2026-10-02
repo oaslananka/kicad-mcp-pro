@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-07T19:51:18Z",
+  "repository": "oaslananka/kicad-mcp-pro",
+  "repositoryCommit": "26681ed7e487cad4907128490f32f53b8cffd7e3",
+  "scorecard": {
+    "version": "v5.0.0",
+    "commit": "ea7e27ed41b76ab879c862fa0ca4cc9c61764ee4",
+    "actionCommit": "62b2cac7ed8198b15735ed49ab1e5cf35480ba46",
+    "actionImage": "gcr.io/openssf/scorecard-action:v2.4.0",
+    "actionImageDigest": "sha256:f0644df4f88751878e134d868aa64ffe7adec415974b1151c6ebf4ac8a0c259f",
+    "workflowRun": "https://github.com/oaslananka/kicad-mcp-pro/actions/runs/31211543537",
+    "workflowRunStatus": "success",
+    "standaloneBinary": {
+      "asset": "scorecard_5.0.0_linux_amd64.tar.gz",
+      "sha256": "c2c66209330afe53d2e5457f4834d73cae480ffad76cfedde8186c3862205962",
+      "checksumVerification": "passed"
+    },
+    "reproduction": {
+      "check": "Signed-Releases",
+      "score": 0,
+      "reason": "Project has not signed or included provenance with any releases.",
+      "commandMode": "standalone-check-with-details-and-json",
+      "result": "reproduced",
+      "debugFindings": [
+        "release artifact mcp-server-v3.30.1 not signed",
+        "release artifact mcp-npm-v3.30.1 not signed",
+        "release artifact kicad-mcp-gui-v3.30.1 not signed",
+        "release artifact mcp-server-v3.30.0 not signed",
+        "release artifact mcp-npm-v3.30.0 not signed",
+        "release artifact mcp-server-v3.30.1 does not have provenance",
+        "release artifact mcp-npm-v3.30.1 does not have provenance",
+        "release artifact kicad-mcp-gui-v3.30.1 does not have provenance",
+        "release artifact mcp-server-v3.30.0 does not have provenance",
+        "release artifact mcp-npm-v3.30.0 does not have provenance"
+      ]
+    },
+    "evaluatedReleases": [
+      {
+        "tag": "mcp-server-v3.30.1",
+        "releaseId": 365235552
+      },
+      {
+        "tag": "mcp-npm-v3.30.1",
+        "releaseId": 365235553
+      },
+      {
+        "tag": "kicad-mcp-gui-v3.30.1",
+        "releaseId": 365235555
+      },
+      {
+        "tag": "mcp-server-v3.30.0",
+        "releaseId": 365208176
+      },
+      {
+        "tag": "mcp-npm-v3.30.0",
+        "releaseId": 365208177
+      }
+    ]
+  },
+  "detector": {
+    "releaseLookback": 5,
+    "recognizedSignatureSuffixes": [
+      ".asc",
+      ".minisig",
+      ".sig",
+      ".sign",
+      ".sigstore"
+    ],
+    "recognizedProvenanceSuffixes": [
+      ".intoto.jsonl"
+    ],
+    "verifiedPackageProvenanceProbePresent": true,
+    "verifiedPackageProvenanceProbeWiredToSignedReleases": false,
+    "sources": [
+      "https://github.com/ossf/scorecard/blob/ea7e27ed41b76ab879c862fa0ca4cc9c61764ee4/probes/releasesAreSigned/impl.go",
+      "https://github.com/ossf/scorecard/blob/ea7e27ed41b76ab879c862fa0ca4cc9c61764ee4/probes/releasesHaveProvenance/impl.go",
+      "https://github.com/ossf/scorecard/blob/ea7e27ed41b76ab879c862fa0ca4cc9c61764ee4/probes/releasesHaveVerifiedProvenance/impl.go",
+      "https://github.com/ossf/scorecard/blob/ea7e27ed41b76ab879c862fa0ca4cc9c61764ee4/probes/entries.go",
+      "https://github.com/ossf/scorecard/blob/ea7e27ed41b76ab879c862fa0ca4cc9c61764ee4/checks/evaluation/signed_releases.go"
+    ],
+    "classification": "detector-visibility-limitation-with-artifact-specific-gaps"
+  },
+  "artifactClasses": {
+    "python": {
+      "releaseTag": "mcp-server-v3.30.1",
+      "sourceCommit": "4065213c12bb453b1b7f8ed81569d8396a18b023",
+      "releaseChecksums": "verified",
+      "pypiPep740Provenance": "cryptographically-verified",
+      "pypiPublisher": {
+        "repository": "oaslananka/kicad-mcp-pro",
+        "workflow": "publish-python.yml",
+        "environment": "pypi"
+      },
+      "githubArtifactAttestation": "not-found-for-wheel-and-sdist",
+      "classification": "registry-provenance-verified-with-historical-github-attestation-gap"
+    },
+    "mcpb": {
+      "releaseTag": "mcp-server-v3.30.1",
+      "sourceCommit": "4065213c12bb453b1b7f8ed81569d8396a18b023",
+      "artifact": "kicad-mcp-pro-3.30.1.mcpb",
+      "sha256": "86767a9ed392ea801c34a29a355c14777eda4a39d3ecc763c0801e529c3f6468",
+      "githubArtifactAttestation": "verified",
+      "predicateType": "https://slsa.dev/provenance/v1",
+      "workflow": ".github/workflows/publish-mcpb.yml",
+      "workflowRun": "https://github.com/oaslananka/kicad-mcp-pro/actions/runs/30966042308/attempts/1",
+      "rekorTransparencyLog": "verified",
+      "classification": "verified-provenance-not-visible-to-scorecard-v5.0.0"
+    },
+    "npm": {
+      "releaseTag": "mcp-npm-v3.30.1",
+      "sourceCommit": "4065213c12bb453b1b7f8ed81569d8396a18b023",
+      "package": "kicad-mcp-pro",
+      "version": "3.30.1",
+      "releaseChecksums": "verified",
+      "sha256": "993be869f557f2e51812aad192aeb07ba6f51df04ceae2b981023b37ead9fd96",
+      "registrySignature": "verified-by-npm-audit-signatures",
+      "registryAttestation": "verified-by-npm-audit-signatures",
+      "registryProvenancePredicateType": "https://slsa.dev/provenance/v1",
+      "githubArtifactAttestation": "not-found-for-release-tarball",
+      "classification": "registry-provenance-verified-with-historical-github-attestation-gap"
+    },
+    "protocolSchemas": {
+      "releaseTag": "protocol-schemas-v1.4.0",
+      "sourceCommit": "6d1242efbf484dce26675412bf283c009564e557",
+      "package": "@oaslananka/kicad-protocol-schemas",
+      "version": "1.4.0",
+      "inScorecardLastFive": false,
+      "releaseChecksums": "verified",
+      "registrySignature": "verified-by-npm-audit-signatures",
+      "registryAttestation": "verified-by-npm-audit-signatures",
+      "registryProvenancePredicateType": "https://slsa.dev/provenance/v1",
+      "githubArtifactAttestation": "not-found-for-release-tarball",
+      "classification": "registry-provenance-verified-outside-scorecard-sample"
+    },
+    "container": {
+      "image": "ghcr.io/oaslananka/kicad-mcp-pro:3.30.1",
+      "digest": "sha256:b0769a5f5b03639866f2a22875be997fce2a9100e9fc1f433aa8c2ab4f155070",
+      "sourceTag": "mcp-server-v3.30.1",
+      "sourceCommit": "4065213c12bb453b1b7f8ed81569d8396a18b023",
+      "buildkitAttestationManifests": "present-for-amd64-and-arm64",
+      "cosignSignature": "verified",
+      "cosignIdentity": "https://github.com/oaslananka/kicad-mcp-pro/.github/workflows/publish-mcp-container.yml@refs/tags/mcp-server-v3.30.1",
+      "cosignOidcIssuer": "https://token.actions.githubusercontent.com",
+      "cosign": {
+        "version": "v3.0.6",
+        "commit": "f1ad3ee952313be5d74a49d67ba0aa8d0d5e351f",
+        "binarySha256": "c956e5dfcac53d52bcf058360d579472f0c1d2d9b69f55209e256fe7783f4c74",
+        "checksumVerification": "passed"
+      },
+      "classification": "verified-registry-signature-and-provenance-outside-github-release-asset-detector"
+    },
+    "gui": {
+      "releaseTag": "kicad-mcp-gui-v3.30.1",
+      "sourceCommit": "4065213c12bb453b1b7f8ed81569d8396a18b023",
+      "releaseAssets": "installers-only-no-checksum-sbom-or-provenance-assets",
+      "trackingIssue": "https://github.com/oaslananka/kicad-mcp-pro/issues/573",
+      "implementationPullRequest": "https://github.com/oaslananka/kicad-mcp-pro/pull/586",
+      "releaseEvidenceStatus": "pending-a-post-586-gui-release-candidate-or-release",
+      "classification": "real-gap-tracked-by-desktop-integrity-work"
+    }
+  },
+  "decision": {
+    "exceptionType": "detector-visibility-limitation-with-artifact-specific-follow-up",
+    "noLongLivedSigningCredentialIntroduced": true,
+    "rationale": "Do not add a long-lived signing credential or duplicate ecosystem-native provenance solely to satisfy Scorecard v5.0.0 release-asset suffix heuristics.",
+    "reevaluateWhen": [
+      "the pinned Scorecard Action or Scorecard CLI is upgraded from v5.0.0",
+      "Signed-Releases begins consuming verified GitHub or package-registry provenance directly",
+      "a post-PR-586 GUI release candidate or release publishes desktop integrity evidence for issue #573",
+      "release workflow evidence formats or artifact classes materially change"
+    ]
+  }
+}
