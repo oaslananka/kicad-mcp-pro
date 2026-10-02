@@ -75,4 +75,4 @@ The supported and advertised public MCP contract is `2025-11-25`. `server.json`,
 
 An opt-in Streamable HTTP canary uses the stable MCP Python SDK v2 native final `2026-07-28` protocol path. It covers per-request protocol/client metadata, `Mcp-Method`, `Mcp-Name`, direct `server/discover`, stateless tool/prompt/resource requests, SDK-native negotiation errors, `resultType`, and reviewed cache metadata without a request/response translation bridge.
 
-The lane does not advertise Tasks or Apps extensions. `server.json` remains on `2025-11-25` until the remaining explicit extension-capability decision and separate public-promotion review in [ADR-0006](../adr/0006-mcp-2026-stateless-compatibility-lane.md) are complete.
+The lane explicitly excludes Tasks and Apps extensions from advertised capabilities. Unsupported extension registration fails closed at server construction, and the discovery contract contains no `extensions` capability. `server.json` remains on `2025-11-25`; any public `2026-07-28` promotion is a separate reviewed release decision under [ADR-0006](../adr/0006-mcp-2026-stateless-compatibility-lane.md).
