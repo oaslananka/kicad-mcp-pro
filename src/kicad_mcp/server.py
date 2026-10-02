@@ -16,7 +16,7 @@ import sys
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal, TextIO, cast
 from urllib.parse import urlparse, urlunsplit
@@ -46,6 +46,7 @@ from mcp import types as mcp_types
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.caching import CacheableMethod, CacheHint
+from mcp.server.extension import Extension
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver import MCPServer as FastMCP
@@ -742,7 +743,14 @@ class KiCadFastMCP(FastMCP):
         json_response: bool = False,
         stateless_http: bool = False,
         cache_hints: Mapping[CacheableMethod, CacheHint] | None = None,
+        extensions: Sequence[Extension] | None = None,
     ) -> None:
+        if extensions:
+            identifiers = ", ".join(str(extension.identifier) for extension in extensions)
+            raise ValueError(
+                "MCP protocol extensions are not enabled in KiCad MCP Pro; "
+                f"unsupported extension(s): {identifiers}"
+            )
         if mount_path is not None:
             streamable_http_path = mount_path
         super().__init__(
@@ -754,6 +762,7 @@ class KiCadFastMCP(FastMCP):
             token_verifier=token_verifier,
             log_level=log_level,
             cache_hints=cache_hints,
+            extensions=(),
         )
         self._transport_host = host
         self._transport_port = port
