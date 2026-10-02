@@ -32,8 +32,8 @@ class FakeService:
         self.calls.append((name, args, kwargs))
         return f"result::{name}"
 
-    def check_import_support(self, format: str) -> str:
-        return self._call("check", format)
+    def check_import_support(self, import_format: str) -> str:
+        return self._call("check", import_format)
 
     def import_board(self, **kwargs: object) -> str:
         return self._call("board", **kwargs)

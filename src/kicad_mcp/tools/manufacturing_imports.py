@@ -51,12 +51,15 @@ def register(
     """Register manufacturing board-import tools."""
     service = (dependencies or _default_dependencies()).service
 
+    # `format` is part of the committed public MCP schema; renaming it is breaking.
+    # pylint: disable=redefined-builtin
     @mcp.tool()
     @headless_compatible
     def mfg_check_import_support(format: str) -> str:
         """Report whether the detected KiCad CLI advertises a given board-import format."""
         return service.check_import_support(format)
 
+    # `format` is part of the committed public MCP schema; renaming it is breaking.
     @mcp.tool()
     @headless_compatible
     def pcb_import_board(
@@ -88,6 +91,8 @@ def register(
             report_format=report_format,
             report_file=report_file,
         )
+
+    # pylint: enable=redefined-builtin
 
     @mcp.tool()
     @headless_compatible
