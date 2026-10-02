@@ -61,9 +61,9 @@ uv run --project packages/mcp-server --all-extras kicad-mcp-pro --transport stdi
 Protocol and capability expectations are generated in [MCP API reference](api-reference.md). Runtime
 support boundaries are tracked in the [runtime matrix](../status/runtime-policy-matrix.md).
 
-## MCP 2026 release-candidate compatibility lane
+## MCP 2026 native-v2 canary lane
 
-> **Experimental:** This is a release-candidate compatibility lane for controlled canary testing. It is not a general-availability protocol advertisement, and public registry metadata remains on MCP `2025-11-25`.
+> **Experimental:** This is an opt-in native SDK v2 canary for controlled final-protocol testing. It is not a general-availability protocol advertisement, and public registry metadata remains on MCP `2025-11-25`.
 
 Start an isolated stateless Streamable HTTP canary with:
 
@@ -74,15 +74,15 @@ export KICAD_MCP_STATEFUL_HTTP=0
 uv run --all-extras kicad-mcp-pro
 ```
 
-The candidate lane requires `MCP-Protocol-Version: 2026-07-28` and `Mcp-Method` on every JSON-RPC POST. `tools/call`, `prompts/get`, and `resources/read` also require `Mcp-Name` matching `params.name` or `params.uri`. Every request must include these values in `params._meta`:
+The environment value keeps its historical `2026-07-28-rc` spelling so existing canary deployments remain reversible, but the temporary request/response translation bridge has been removed. Requests are handled directly by MCP Python SDK v2 using the final `2026-07-28` protocol.
 
-- `io.modelcontextprotocol/protocolVersion`
-- `io.modelcontextprotocol/clientCapabilities`
-- `io.modelcontextprotocol/clientInfo` is recommended for diagnostics but is not persisted
+Each final-protocol request requires `MCP-Protocol-Version: 2026-07-28` and `Mcp-Method`. `tools/call`, `prompts/get`, and `resources/read` also use `Mcp-Name` according to the final SDK contract. Every request carries the required protocol and client-capability values in `params._meta`; `io.modelcontextprotocol/clientInfo` remains useful for diagnostics and is not persisted.
 
-Call `server/discover` directly; do not send `initialize` or `notifications/initialized`. The lane is stateless and rejects `Mcp-Session-Id`. Tasks and Apps extensions are intentionally not advertised.
+The lane is stateless. KiCad MCP Pro continues to reject `Mcp-Session-Id` in this canary as a fail-closed transport guard. `server/discover`, list/call, resource/prompt operations, final-protocol validation, `resultType`, and server metadata are all produced by the native SDK v2 path.
 
-Authentication is unchanged. When bearer authentication is configured, an unauthenticated request receives the existing authorization response before any protocol-specific diagnostic. Tool and resource visibility therefore remains scoped to the authenticated deployment, selected profile, operating mode, and live KiCad capabilities.
+KiCad MCP Pro preserves the reviewed cache policy through SDK v2 cache hints: `server/discover` is private for 3,600,000 ms; list methods are private for 300,000 ms; and `resources/read` is private for 60,000 ms. `tools/list` remains alphabetically ordered as an explicit repository contract.
+
+Tasks and Apps extensions are not advertised. Authentication is unchanged: when bearer authentication is configured, authorization runs before protocol diagnostics.
 
 To roll back:
 
@@ -91,6 +91,6 @@ unset KICAD_MCP_PROTOCOL_LANE
 # Restart the server, then use the normal MCP 2025-11-25 initialize flow.
 ```
 
-After restart, the native SDK-v2 stable path negotiates `2025-11-25` through `initialize`, and public metadata remains `2025-11-25`. Native SDK v2 can still answer `server/discover`; that does not mean the temporary RC compatibility lane is active.
+After restart, the native SDK-v2 stable path negotiates `2025-11-25` through `initialize`, and public metadata remains `2025-11-25`. Native SDK v2 can still answer `server/discover`; that does not mean the canary selector is active.
 
-The compatibility lane and migration decision are recorded in [ADR-0006](../adr/0006-mcp-2026-stateless-compatibility-lane.md).
+The migration and release decision are recorded in [ADR-0006](../adr/0006-mcp-2026-stateless-compatibility-lane.md).
