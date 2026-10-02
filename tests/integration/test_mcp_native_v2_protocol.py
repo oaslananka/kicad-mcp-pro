@@ -16,7 +16,7 @@ from mcp.client.streamable_http import streamable_http_client
 from starlette.types import ASGIApp
 
 from kicad_mcp.config import get_config
-from kicad_mcp.protocol_compat import CANDIDATE_PROTOCOL_VERSION
+CANDIDATE_PROTOCOL_VERSION = "2026-07-28"
 from kicad_mcp.server import build_server
 
 SUPPORTED_HOST_PROFILES = ("chatgpt-connector", "vscode-mcp")
