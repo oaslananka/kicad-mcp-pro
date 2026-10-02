@@ -61,7 +61,7 @@ def test_board_import_preserves_cli_contract_and_path_safety(tmp_path: Path) -> 
     result = service.import_board(
         input_file="legacy.brd",
         output_file="imports/board.kicad_pcb",
-        format="pads",
+        import_format="pads",
         report_format="json",
         report_file="imports/report.json",
     )
@@ -114,3 +114,24 @@ def test_legacy_import_wrappers_preserve_block_and_result_wording(tmp_path: Path
     assert "pads import failed: unsupported" in service.import_pads("legacy.brd")
     assert "geda import failed: unsupported" in service.import_geda("legacy.brd")
     assert "specctra import failed: unsupported" in service.import_specctra("legacy.brd")
+
+
+def test_legacy_import_wrappers_preserve_success_wording(tmp_path: Path) -> None:
+    module = _service_module()
+    source = tmp_path / "legacy.brd"
+    source.write_text("legacy", encoding="utf-8")
+
+    service = module.ManufacturingImportService(
+        resolve_path=lambda path_text: (tmp_path / path_text).resolve(),
+        run_cli_variants=lambda _variants: (0, "imported", ""),
+        get_cli_capabilities=lambda: SimpleNamespace(
+            supports_allegro_import=False,
+            supports_pads_import=True,
+            supports_geda_import=True,
+            version="10.0.6",
+        ),
+    )
+
+    assert "pads import completed" in service.import_pads("legacy.brd")
+    assert "geda import completed" in service.import_geda("legacy.brd")
+    assert "specctra import completed" in service.import_specctra("legacy.brd")

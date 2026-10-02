@@ -35,14 +35,14 @@ class ManufacturingImportService:
     run_cli_variants: CliRunner
     get_cli_capabilities: CapabilitiesProvider
 
-    def check_import_support(self, format: str) -> str:
+    def check_import_support(self, import_format: str) -> str:
         caps = self.get_cli_capabilities()
         lookup = {
             "allegro": caps.supports_allegro_import,
             "pads": caps.supports_pads_import,
             "geda": caps.supports_geda_import,
         }
-        key = format.strip().casefold()
+        key = import_format.strip().casefold()
         if key not in lookup:
             return "Supported import formats: allegro, pads, geda."
         version = caps.version or "unknown"
@@ -57,11 +57,11 @@ class ManufacturingImportService:
         *,
         input_file: str,
         output_file: str = "",
-        format: str = "auto",
+        import_format: str = "auto",
         report_format: str = "none",
         report_file: str = "",
     ) -> str:
-        if format.strip().casefold() == "allegro":
+        if import_format.strip().casefold() == "allegro":
             return "blocked: KiCad CLI does not support allegro import in 10.0.6"
 
         try:
@@ -72,7 +72,7 @@ class ManufacturingImportService:
         if not in_path.exists():
             return f"Input file was not found: {input_file}"
 
-        cmd = ["pcb", "import", "--format", format, "--report-format", report_format]
+        cmd = ["pcb", "import", "--format", import_format, "--report-format", report_format]
         if report_file:
             try:
                 rep_path = self.resolve_path(report_file)
@@ -101,7 +101,7 @@ class ManufacturingImportService:
         result = self.import_board(
             input_file=pads_pcb_path,
             output_file=output_dir,
-            format="pads",
+            import_format="pads",
         )
         if "Board import failed" in result:
             return result.replace("Board import failed", "pads import failed")
@@ -111,7 +111,7 @@ class ManufacturingImportService:
         result = self.import_board(
             input_file=geda_pcb_path,
             output_file=output_dir,
-            format="geda",
+            import_format="geda",
         )
         if "Board import failed" in result:
             return result.replace("Board import failed", "geda import failed")
@@ -121,7 +121,7 @@ class ManufacturingImportService:
         result = self.import_board(
             input_file=specctra_ses_path,
             output_file=output_dir,
-            format="specctra",
+            import_format="specctra",
         )
         if "Board import failed" in result:
             return result.replace("Board import failed", "specctra import failed")

@@ -84,7 +84,7 @@ def register(
         return service.import_board(
             input_file=input_file,
             output_file=output_file,
-            format=format,
+            import_format=format,
             report_format=report_format,
             report_file=report_file,
         )

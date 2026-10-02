@@ -92,10 +92,22 @@ def test_registration_delegates_board_and_legacy_import_arguments() -> None:
             {
                 "input_file": "legacy.brd",
                 "output_file": "board.kicad_pcb",
-                "format": "pads",
+                "import_format": "pads",
                 "report_format": "json",
                 "report_file": "report.json",
             },
         ),
         ("pads", ("legacy.brd", "imports"), {}),
     ]
+
+
+def test_default_path_resolution_without_project_dir_uses_resolved_input(
+    monkeypatch, tmp_path
+) -> None:
+    adapter = _adapter()
+    target = tmp_path / "legacy.brd"
+    target.write_text("legacy", encoding="utf-8")
+
+    monkeypatch.setattr(adapter, "get_config", lambda: type("Cfg", (), {"project_dir": None})())
+
+    assert adapter._resolve_path(str(target)) == target.resolve()
