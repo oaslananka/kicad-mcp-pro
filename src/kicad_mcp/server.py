@@ -1554,21 +1554,6 @@ async def _buffer_request_body(receive: Receive) -> tuple[bytes, Receive]:
     return b"".join(chunks), replay_receive
 
 
-def _json_rpc_payload(body: bytes) -> dict[str, Any] | None:
-    try:
-        payload = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return None
-    return payload if isinstance(payload, dict) else None
-
-
-def _json_rpc_id(payload: dict[str, Any]) -> str | int | None:
-    request_id = payload.get("id")
-    if isinstance(request_id, bool):
-        return None
-    return request_id if isinstance(request_id, (str, int)) else None
-
-
 def _scope_headers(scope: Scope) -> dict[str, str]:
     headers: dict[str, str] = {}
     for key, value in scope.get("headers", []):
