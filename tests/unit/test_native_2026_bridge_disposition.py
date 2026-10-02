@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from mcp.server.apps import Apps
 from mcp.server.caching import CacheHint
 from starlette.testclient import TestClient
 
 from kicad_mcp.config import get_config
-from kicad_mcp.server import build_server
+from kicad_mcp.server import KiCadFastMCP, build_server
 
 MODERN_VERSION = "2026-07-28"
 BASE_HEADERS = {
@@ -99,3 +101,8 @@ def test_native_cache_hints_preserve_reviewed_repository_policy(sample_project: 
         "resources/templates/list": CacheHint(ttl_ms=300_000, scope="private"),
         "resources/read": CacheHint(ttl_ms=60_000, scope="private"),
     }
+
+
+def test_repository_fails_closed_when_protocol_extension_is_registered() -> None:
+    with pytest.raises(ValueError, match="MCP protocol extensions are not enabled"):
+        KiCadFastMCP(name="extension-policy-test", extensions=[Apps()])
