@@ -244,7 +244,9 @@ def test_pcb_import_board_rejects_unsafe_input_path(monkeypatch, tmp_path: Path)
     project_dir = tmp_path / "project"
     project_dir.mkdir()
     tools = _register(manufacturing)
-    monkeypatch.setattr(manufacturing, "get_config", lambda: _config(project_dir))
+    monkeypatch.setattr(
+        "kicad_mcp.tools.manufacturing_imports.get_config", lambda: _config(project_dir)
+    )
 
     with pytest.raises(ValueError, match="Unsafe input file path"):
         tools["pcb_import_board"](input_file="../outside.brd")
@@ -256,7 +258,9 @@ def test_pcb_import_board_rejects_unsafe_report_file_path(monkeypatch, tmp_path:
     board_file = project_dir / "board.brd"
     board_file.write_text("board", encoding="utf-8")
     tools = _register(manufacturing)
-    monkeypatch.setattr(manufacturing, "get_config", lambda: _config(project_dir))
+    monkeypatch.setattr(
+        "kicad_mcp.tools.manufacturing_imports.get_config", lambda: _config(project_dir)
+    )
 
     with pytest.raises(ValueError, match="Unsafe report file path"):
         tools["pcb_import_board"](
@@ -272,7 +276,9 @@ def test_pcb_import_board_rejects_unsafe_output_file_path(monkeypatch, tmp_path:
     board_file = project_dir / "board.brd"
     board_file.write_text("board", encoding="utf-8")
     tools = _register(manufacturing)
-    monkeypatch.setattr(manufacturing, "get_config", lambda: _config(project_dir))
+    monkeypatch.setattr(
+        "kicad_mcp.tools.manufacturing_imports.get_config", lambda: _config(project_dir)
+    )
 
     with pytest.raises(ValueError, match="Unsafe output file path"):
         tools["pcb_import_board"](

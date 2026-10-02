@@ -167,7 +167,9 @@ async def test_manufacturing_import_support_and_import_cli(
         supports_geda_import=True,
         version="10.0.1",
     )
-    monkeypatch.setattr("kicad_mcp.tools.manufacturing.get_cli_capabilities", lambda _cli: caps)
+    monkeypatch.setattr(
+        "kicad_mcp.tools.manufacturing_imports.get_cli_capabilities", lambda _cli: caps
+    )
     supported = await call_tool_text(server, "mfg_check_import_support", {"format": "allegro"})
     unknown = await call_tool_text(server, "mfg_check_import_support", {"format": "eagle"})
 

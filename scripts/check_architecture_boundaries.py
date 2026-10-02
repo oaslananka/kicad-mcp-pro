@@ -37,6 +37,7 @@ _PROJECT_RUNTIME_ADAPTER = "kicad_mcp.tools.project_runtime"
 _PROJECT_VALIDATION_LOOPS_ADAPTER = "kicad_mcp.tools.project_validation_loops"
 _PROJECT_WORKFLOW_ADAPTER = "kicad_mcp.tools.project_workflow"
 _PROJECT_ROOT_MODULE = "kicad_mcp.tools.project"
+_MANUFACTURING_IMPORT_ADAPTER = "kicad_mcp.tools.manufacturing_imports"
 
 DOMAIN_MODULES = {
     "kicad_mcp.ir.engineering_graph": SRC_ROOT / "kicad_mcp" / "ir" / "engineering_graph.py",
@@ -66,6 +67,7 @@ DOMAIN_MODULES = {
     "kicad_mcp.export.sch_pdf": SRC_ROOT / "kicad_mcp" / "export" / "sch_pdf.py",
     "kicad_mcp.export.sch_python_bom": SRC_ROOT / "kicad_mcp" / "export" / "sch_python_bom.py",
     "kicad_mcp.export.sch_vector": SRC_ROOT / "kicad_mcp" / "export" / "sch_vector.py",
+    "kicad_mcp.manufacturing.imports": SRC_ROOT / "kicad_mcp" / "manufacturing" / "imports.py",
     "kicad_mcp.library.catalog": SRC_ROOT / "kicad_mcp" / "library" / "catalog.py",
     "kicad_mcp.library.local_authoring": SRC_ROOT / "kicad_mcp" / "library" / "local_authoring.py",
     "kicad_mcp.library.footprint_engineering": SRC_ROOT
@@ -136,6 +138,7 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "library_component_contract.py",
+    _MANUFACTURING_IMPORT_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "manufacturing_imports.py",
     _PROJECT_CONTEXT_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_context.py",
     _PROJECT_CREATION_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_creation.py",
     _PROJECT_DESIGN_SPEC_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_design_spec.py",
@@ -360,6 +363,7 @@ DOMAIN_MODULES = {
 }
 
 PURE_HELPERS = {
+    "kicad_mcp.manufacturing.imports",
     "kicad_mcp.ir.engineering_graph",
     "kicad_mcp.ir.engineering_graph_from_ir",
     "kicad_mcp.validation.drc_runner",
@@ -445,6 +449,7 @@ FORBIDDEN_PURE_IMPORT_PREFIXES = (
 )
 
 ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
+    _MANUFACTURING_IMPORT_ADAPTER: ("kicad_mcp.tools.manufacturing",),
     "kicad_mcp.tools.validation_policy_state": ("kicad_mcp.tools.validation",),
     "kicad_mcp.tools.export_bom": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_board_stats": ("kicad_mcp.tools.export",),
@@ -528,6 +533,7 @@ REGISTER_LINE_LIMITS = {
     _LIBRARY_FOOTPRINT_ENGINEERING_ADAPTER: 150,
     _LIBRARY_SOURCING_ADAPTER: 180,
     _LIBRARY_COMPONENT_CONTRACT_ADAPTER: 100,
+    _MANUFACTURING_IMPORT_ADAPTER: 150,
     _PROJECT_CONTEXT_ADAPTER: 55,
     _PROJECT_CREATION_ADAPTER: 55,
     _PROJECT_DESIGN_SPEC_ADAPTER: 120,
