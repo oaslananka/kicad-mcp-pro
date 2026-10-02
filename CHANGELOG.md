@@ -10,6 +10,51 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [3.36.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.35.2...mcp-server-v3.36.0) (2026-10-02)
+
+
+### Features
+
+* **contracts:** publish reviewed tool effect manifest ([#1014](https://github.com/oaslananka/kicad-mcp-pro/issues/1014)) ([e5065df](https://github.com/oaslananka/kicad-mcp-pro/commit/e5065df453a57367cf1ea83437717967d36de77c))
+* **evidence:** add append-only release approval audit history ([#1017](https://github.com/oaslananka/kicad-mcp-pro/issues/1017)) ([dd8d24e](https://github.com/oaslananka/kicad-mcp-pro/commit/dd8d24e2c62944aa20dd29e0673c17f93fb6cc0f))
+* **evidence:** add fail-closed release evidence policy ([#1006](https://github.com/oaslananka/kicad-mcp-pro/issues/1006)) ([e460e28](https://github.com/oaslananka/kicad-mcp-pro/commit/e460e28a4dd0f2c105a1d2db3e26eb731769c543))
+* **evidence:** bridge freshness into edit-impact service ([#1004](https://github.com/oaslananka/kicad-mcp-pro/issues/1004)) ([8ea72be](https://github.com/oaslananka/kicad-mcp-pro/commit/8ea72bef5d39da67bf6c8e5c22a3cce9100c8750))
+* **evidence:** deterministic evidence freshness v1 core ([#1002](https://github.com/oaslananka/kicad-mcp-pro/issues/1002)) ([ccc9539](https://github.com/oaslananka/kicad-mcp-pro/commit/ccc9539f71a742473260853a9aa59bfd3a053a7d))
+* **evidence:** hard-gate runtime release decisions on stale proof ([#1007](https://github.com/oaslananka/kicad-mcp-pro/issues/1007)) ([7dff3f5](https://github.com/oaslananka/kicad-mcp-pro/commit/7dff3f578901d1c9542145d6c58a5144cc63db80))
+* **intent:** HardwareIntentContract v1 with conservative design-spec adapter ([#1001](https://github.com/oaslananka/kicad-mcp-pro/issues/1001)) ([cc61a6f](https://github.com/oaslananka/kicad-mcp-pro/commit/cc61a6f3e2eae038d44dc3828347b52079b5088f))
+* **ir:** add Engineering Graph v1 core ([#996](https://github.com/oaslananka/kicad-mcp-pro/issues/996)) ([dcbac0f](https://github.com/oaslananka/kicad-mcp-pro/commit/dcbac0fc43057914492482be48148bf30f02e093))
+* **ir:** prove Engineering Graph round-trip and bounded incremental updates ([#1000](https://github.com/oaslananka/kicad-mcp-pro/issues/1000)) ([abf8ac2](https://github.com/oaslananka/kicad-mcp-pro/commit/abf8ac20ca3ce5a2b1364d897e0fbb440300f00d))
+* **mcp:** migrate server to SDK v2 ([#1026](https://github.com/oaslananka/kicad-mcp-pro/issues/1026)) ([3ce3998](https://github.com/oaslananka/kicad-mcp-pro/commit/3ce39986dccd48beb36503f7f0b9664645c9f91d))
+* **schematic:** route around drawn module boundaries and pin geometry ([81b61e5](https://github.com/oaslananka/kicad-mcp-pro/commit/81b61e5f55c6a45ff873e7f87c48c2410f31922a))
+
+
+### Bug Fixes
+
+* **deps:** remediate fast-uri and PyJWT security floors ([#997](https://github.com/oaslananka/kicad-mcp-pro/issues/997)) ([df6ff2b](https://github.com/oaslananka/kicad-mcp-pro/commit/df6ff2b72cc32e929b8542fcfa9527e73498d0d4))
+* **release:** regenerate version-derived artifacts ([#1034](https://github.com/oaslananka/kicad-mcp-pro/issues/1034)) ([b7d6a87](https://github.com/oaslananka/kicad-mcp-pro/commit/b7d6a8700e8c041275c1f007bfee4cc1bda51ea5))
+* **router:** enforce strict obstacle keepouts on all direct routes and enable hop-overs ([8ed649f](https://github.com/oaslananka/kicad-mcp-pro/commit/8ed649f3410545b12f8fb8287b07fbe7e486bf50))
+* **router:** increase max_steps budget to support full-sheet A3 routing channels ([04b6b19](https://github.com/oaslananka/kicad-mcp-pro/commit/04b6b190121bf2d60d837b5d9aac08e159fc9fed))
+* **router:** keep bundle-aware A* cost model consistent ([7a4e0d8](https://github.com/oaslananka/kicad-mcp-pro/commit/7a4e0d83ea9f198cc938864e7280ad642f3ff34e))
+* **schematic:** align primitive bounds rotation with KiCad pin placement convention ([da6475a](https://github.com/oaslananka/kicad-mcp-pro/commit/da6475aab33d9060da6066d16b4523f203776ae1))
+* **schematic:** drop a junction when the last wire ends up leaving it ([e4b6acb](https://github.com/oaslananka/kicad-mcp-pro/commit/e4b6acb91bcefcd1ab5693a33c7dd984ca4edf10))
+* **schematic:** harden escape-and-route integration ([#1015](https://github.com/oaslananka/kicad-mcp-pro/issues/1015)) ([bb3f546](https://github.com/oaslananka/kicad-mcp-pro/commit/bb3f546e16a9810ba66e9294e9517c495ec5f41d))
+* **schematic:** implement escape-and-route wiring with primitive-accurate bounding boxes ([800e8f4](https://github.com/oaslananka/kicad-mcp-pro/commit/800e8f4c1f2a8eed0c26c67081283f73a0d41853))
+* **schematic:** include arc extrema in routing bounds ([67d4829](https://github.com/oaslananka/kicad-mcp-pro/commit/67d482956364ace9d22927eb0b0b6b194938dd6d))
+* **schematic:** keep routed wires clear of other nets ([c45a3ac](https://github.com/oaslananka/kicad-mcp-pro/commit/c45a3ac167dc3196e3bce6a72906c5ebd39dd3e5))
+* **schematic:** keep two-terminal pin labels horizontal ([#1028](https://github.com/oaslananka/kicad-mcp-pro/issues/1028)) ([ae79e29](https://github.com/oaslananka/kicad-mcp-pro/commit/ae79e2967136d8375a146ea7e6eb940a6884ed05))
+* **schematic:** preserve sexpr regex semantics ([1a8d13e](https://github.com/oaslananka/kicad-mcp-pro/commit/1a8d13e6d980f46e391b3d5cb1eb009fb5e3715c))
+* **schematic:** snap the escape stub onto the router's grid ([ee257e0](https://github.com/oaslananka/kicad-mcp-pro/commit/ee257e01bddc2a187fc96f705ece8dec6a9f18d3))
+* **security:** raise urllib3 floor to 2.8.0 ([#1020](https://github.com/oaslananka/kicad-mcp-pro/issues/1020)) ([efa66f2](https://github.com/oaslananka/kicad-mcp-pro/commit/efa66f2c770db3c5111205364260b6521bb48784))
+* **security:** update GitPython security floor ([#1023](https://github.com/oaslananka/kicad-mcp-pro/issues/1023)) ([2efa902](https://github.com/oaslananka/kicad-mcp-pro/commit/2efa902423df5cfdc72209d801ec9651488b0539))
+* **security:** update PyJWT security floor ([#1022](https://github.com/oaslananka/kicad-mcp-pro/issues/1022)) ([9a5bc50](https://github.com/oaslananka/kicad-mcp-pro/commit/9a5bc508a077ea4b505d355cbb42cd20be12bfe9))
+* **simulation:** make ngspice output paths portable ([#1024](https://github.com/oaslananka/kicad-mcp-pro/issues/1024)) ([cdbd3d7](https://github.com/oaslananka/kicad-mcp-pro/commit/cdbd3d747b826c6f6a2b55078615add207ba64a3))
+* **tests:** stop two unit tests from asserting the developer's machine ([#978](https://github.com/oaslananka/kicad-mcp-pro/issues/978)) ([90bf3a7](https://github.com/oaslananka/kicad-mcp-pro/commit/90bf3a741108735a256741a2f432083247aef547))
+
+
+### Performance Improvements
+
+* **evidence:** avoid redundant audit chain rescan ([#1018](https://github.com/oaslananka/kicad-mcp-pro/issues/1018)) ([210e10a](https://github.com/oaslananka/kicad-mcp-pro/commit/210e10a054eb41b45ab1236bb1c302988f6c0f81))
+
 ## [3.35.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.35.1...mcp-server-v3.35.2) (2026-09-28)
 
 

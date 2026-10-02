@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v1.4.2...protocol-schemas-v1.5.0) (2026-10-02)
+
+
+### Features
+
+* **contracts:** publish reviewed tool effect manifest ([#1014](https://github.com/oaslananka/kicad-mcp-pro/issues/1014)) ([e5065df](https://github.com/oaslananka/kicad-mcp-pro/commit/e5065df453a57367cf1ea83437717967d36de77c))
+
 ## [1.4.2](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v1.4.1...protocol-schemas-v1.4.2) (2026-09-04)
 
 
