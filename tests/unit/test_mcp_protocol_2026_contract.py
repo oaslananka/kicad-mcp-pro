@@ -9,7 +9,6 @@ from starlette.testclient import TestClient
 
 from kicad_mcp.compatibility import MCP_PROTOCOL_VERSION
 from kicad_mcp.config import get_config, reset_config
-
 from kicad_mcp.server import build_server
 
 CANDIDATE_PROTOCOL_VERSION = "2026-07-28"
