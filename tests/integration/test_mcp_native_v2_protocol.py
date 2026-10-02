@@ -17,8 +17,9 @@ from starlette.types import ASGIApp
 
 from kicad_mcp.config import get_config
 
-CANDIDATE_PROTOCOL_VERSION = "2026-07-28"
 from kicad_mcp.server import build_server
+
+CANDIDATE_PROTOCOL_VERSION = "2026-07-28"
 
 SUPPORTED_HOST_PROFILES = ("chatgpt-connector", "vscode-mcp")
 
