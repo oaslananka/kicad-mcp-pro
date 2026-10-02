@@ -42,6 +42,9 @@ def test_candidate_protocol_operator_documentation_is_explicitly_release_gated()
     assert "public metadata remains `2025-11-25`" in transport
     assert "Native SDK v2 can still answer `server/discover`" in transport
     assert "Native SDK v2 may continue to answer `server/discover`" in adr
+    assert "Apps: explicitly excluded/fail-closed" in adr
+    assert "No `ui://` resources or UI-bound tools are registered" in adr
+    assert "All five release decision gates are complete" in adr
 
     assert "Current public contract" in api_reference
     assert "`2025-11-25`" in api_reference
