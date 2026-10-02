@@ -384,7 +384,7 @@ jobs:
         if: env.skip_ci != 'true'
         run: >-
           uv run pytest tests/unit/test_mcp_2026_config.py
-          tests/unit/test_protocol_compat.py
+          tests/unit/test_native_2026_bridge_disposition.py
           tests/unit/test_mcp_protocol_2026_contract.py -q
 
       - name: Run supported-host MCP 2026 smoke cases

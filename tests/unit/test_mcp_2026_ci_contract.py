@@ -16,7 +16,7 @@ def test_candidate_protocol_contract_runs_in_an_independent_required_ci_job() ->
     assert "uv sync --all-extras --frozen" in workflow
     assert (
         "uv run pytest tests/unit/test_mcp_2026_config.py "
-        "tests/unit/test_protocol_compat.py "
+        "tests/unit/test_native_2026_bridge_disposition.py "
         "tests/unit/test_mcp_protocol_2026_contract.py -q"
     ) in " ".join(workflow.split())
     assert "Run supported-host MCP 2026 smoke cases" in workflow

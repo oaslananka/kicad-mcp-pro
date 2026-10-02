@@ -61,9 +61,9 @@ uv run --project packages/mcp-server --all-extras kicad-mcp-pro --transport stdi
 Protocol and capability expectations are generated in [MCP API reference](api-reference.md). Runtime
 support boundaries are tracked in the [runtime matrix](../status/runtime-policy-matrix.md).
 
-## MCP 2026 release-candidate compatibility lane
+## MCP 2026 native SDK canary lane
 
-> **Experimental:** This is a release-candidate compatibility lane for controlled canary testing. It is not a general-availability protocol advertisement, and public registry metadata remains on MCP `2025-11-25`.
+> **Experimental:** The historical selector `2026-07-28-rc` now routes directly through the stable MCP Python SDK v2 final `2026-07-28` protocol implementation. It is not a general-availability protocol advertisement, and public registry metadata remains on MCP `2025-11-25`.
 
 Start an isolated stateless Streamable HTTP canary with:
 
@@ -74,15 +74,13 @@ export KICAD_MCP_STATEFUL_HTTP=0
 uv run --all-extras kicad-mcp-pro
 ```
 
-The candidate lane requires `MCP-Protocol-Version: 2026-07-28` and `Mcp-Method` on every JSON-RPC POST. `tools/call`, `prompts/get`, and `resources/read` also require `Mcp-Name` matching `params.name` or `params.uri`. Every request must include these values in `params._meta`:
+The native SDK validates the final `MCP-Protocol-Version: 2026-07-28`, `Mcp-Method`, `Mcp-Name`, and required per-request `_meta` envelope. KiCad MCP Pro no longer rewrites requests into the stable handshake protocol or decorates responses through a compatibility bridge.
 
-- `io.modelcontextprotocol/protocolVersion`
-- `io.modelcontextprotocol/clientCapabilities`
-- `io.modelcontextprotocol/clientInfo` is recommended for diagnostics but is not persisted
+Call `server/discover` directly; `initialize` and `notifications/initialized` are not part of the final 2026 protocol. The lane is stateless: it neither requires nor emits `Mcp-Session-Id`, and an obsolete incoming session header does not establish server-side session state. Tasks and Apps extensions remain unadvertised.
 
-Call `server/discover` directly; do not send `initialize` or `notifications/initialized`. The lane is stateless and rejects `Mcp-Session-Id`. Tasks and Apps extensions are intentionally not advertised.
+Reviewed repository cache policy is preserved through SDK-native cache hints: list methods use `300000` ms private caching, resource reads use `60000` ms private caching, and `server/discover` uses `3600000` ms private caching. `tools/list` remains alphabetically ordered in this canary lane.
 
-Authentication is unchanged. When bearer authentication is configured, an unauthenticated request receives the existing authorization response before any protocol-specific diagnostic. Tool and resource visibility therefore remains scoped to the authenticated deployment, selected profile, operating mode, and live KiCad capabilities.
+Authentication is unchanged. When bearer [REDACTED] is configured, an unauthenticated request receives the existing authorization response before any protocol-specific diagnostic. Tool and resource visibility therefore remains scoped to the authenticated deployment, selected profile, operating mode, and live KiCad capabilities.
 
 To roll back:
 
@@ -91,6 +89,6 @@ unset KICAD_MCP_PROTOCOL_LANE
 # Restart the server, then use the normal MCP 2025-11-25 initialize flow.
 ```
 
-After restart, the native SDK-v2 stable path negotiates `2025-11-25` through `initialize`, and public metadata remains `2025-11-25`. Native SDK v2 can still answer `server/discover`; that does not mean the temporary RC compatibility lane is active.
+After restart, the native SDK-v2 stable path negotiates `2025-11-25` through `initialize`, and public metadata remains `2025-11-25`. Native SDK v2 can still answer `server/discover`; that does not mean the opt-in modern-protocol canary is active.
 
-The compatibility lane and migration decision are recorded in [ADR-0006](../adr/0006-mcp-2026-stateless-compatibility-lane.md).
+The native canary and migration decision are recorded in [ADR-0006](../adr/0006-mcp-2026-stateless-compatibility-lane.md).

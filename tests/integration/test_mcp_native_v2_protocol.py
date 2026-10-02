@@ -13,11 +13,13 @@ import pytest
 import uvicorn
 from mcp import ClientSession, Implementation, MCPError
 from mcp.client.streamable_http import streamable_http_client
+from mcp.types.version import LATEST_MODERN_VERSION
 from starlette.types import ASGIApp
 
 from kicad_mcp.config import get_config
-from kicad_mcp.protocol_compat import CANDIDATE_PROTOCOL_VERSION
 from kicad_mcp.server import build_server
+
+CANDIDATE_PROTOCOL_VERSION = LATEST_MODERN_VERSION
 
 SUPPORTED_HOST_PROFILES = ("chatgpt-connector", "vscode-mcp")
 

@@ -5,12 +5,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from mcp.types.version import LATEST_MODERN_VERSION
 from starlette.testclient import TestClient
 
 from kicad_mcp.compatibility import MCP_PROTOCOL_VERSION
 from kicad_mcp.config import get_config, reset_config
-from kicad_mcp.protocol_compat import CANDIDATE_PROTOCOL_VERSION
 from kicad_mcp.server import build_server
+
+CANDIDATE_PROTOCOL_VERSION = LATEST_MODERN_VERSION
 
 BASE_HEADERS = {
     "Accept": "application/json, text/event-stream",
@@ -78,7 +80,7 @@ def test_candidate_discovery_is_available_without_initialize(sample_project: Pat
     result = response.json()["result"]
     assert result["resultType"] == "complete"
     assert result["supportedVersions"] == [CANDIDATE_PROTOCOL_VERSION]
-    assert result["capabilities"]["extensions"] == {}
+    assert "extensions" not in result["capabilities"]
     assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "kicad-mcp-pro"
     assert result["cacheScope"] == "private"
 
@@ -141,7 +143,9 @@ def test_candidate_tool_call_is_direct_and_has_server_metadata(sample_project: P
     assert "KiCad MCP Pro Server" in result["content"][0]["text"]
 
 
-def test_candidate_rejects_legacy_session_header(sample_project: Path) -> None:
+def test_candidate_ignores_legacy_session_header_without_creating_session(
+    sample_project: Path,
+) -> None:
     server = _candidate_server(sample_project)
     headers = _headers("tools/list")
     headers["Mcp-Session-Id"] = "legacy-session"
@@ -149,9 +153,8 @@ def test_candidate_rejects_legacy_session_header(sample_project: Path) -> None:
     with TestClient(server.streamable_http_app(), base_url="http://127.0.0.1:3334") as client:
         response = client.post("/mcp", headers=headers, json=_request("tools/list", request_id=4))
 
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == -32020
-    assert "Mcp-Session-Id" in response.json()["error"]["message"]
+    assert response.status_code == 200
+    assert "mcp-session-id" not in response.headers
 
 
 def test_candidate_rejects_legacy_initialize(sample_project: Path) -> None:
@@ -164,7 +167,7 @@ def test_candidate_rejects_legacy_initialize(sample_project: Path) -> None:
             json=_request("initialize", request_id=5),
         )
 
-    assert response.status_code == 400
+    assert response.status_code == 404
     assert response.json()["error"]["code"] == -32601
 
 
@@ -202,7 +205,7 @@ def test_candidate_preserves_authentication_failure_before_protocol_diagnostics(
 
     assert unauthenticated.status_code == 401
     assert authenticated.status_code == 400
-    assert authenticated.json()["error"]["code"] == -32021
+    assert authenticated.json()["error"]["code"] == -32602
 
 
 def test_candidate_lane_rollback_restores_native_stable_runtime_and_metadata(
@@ -229,7 +232,7 @@ def test_candidate_lane_rollback_restores_native_stable_runtime_and_metadata(
             json=_request("initialize", request_id=20, client_name="rollback-contract"),
         )
 
-    assert candidate_initialize.status_code == 400
+    assert candidate_initialize.status_code == 404
     assert candidate_initialize.json()["error"]["code"] == -32601
 
     monkeypatch.delenv("KICAD_MCP_PROTOCOL_LANE")
