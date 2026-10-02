@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
@@ -133,3 +134,56 @@ def test_release_evidence_service_writes_evidence_and_release_hashes(tmp_path: P
         "demo-pos.csv",
         "demo.drl",
     ]
+
+
+def test_release_evidence_service_reports_drc_and_erc_cli_failures(tmp_path: Path) -> None:
+    module = _module()
+    context = _context(tmp_path)
+
+    def failing_runner(*args: str) -> tuple[int, str, str]:
+        if args[:2] == ("pcb", "drc"):
+            return 2, "", "drc failed"
+        if args[:2] == ("sch", "erc"):
+            return 3, "erc failed", ""
+        raise AssertionError(args)
+
+    service = module.ReleaseEvidenceService(run_cli=failing_runner)
+    payload = json.loads(
+        service.create_evidence(
+            context=context,
+            waive_missing_artifacts=True,
+            dry_run=True,
+        )
+    )
+
+    drc = next(gate for gate in payload["gates"] if gate["gate"] == "drc")
+    erc = next(gate for gate in payload["gates"] if gate["gate"] == "erc")
+    assert drc["passed"] is False
+    assert drc["error"] == "drc failed"
+    assert erc["passed"] is False
+    assert erc["error"] == "erc failed"
+    assert "DRC could not run: drc failed" in payload["blocking_reasons"]
+    assert "ERC could not run: erc failed" in payload["blocking_reasons"]
+
+
+def test_release_evidence_service_reports_missing_pcb_and_schematic(tmp_path: Path) -> None:
+    module = _module()
+    context = replace(_context(tmp_path), pcb_file=None, sch_file=None)
+
+    def unexpected_runner(*_args: str) -> tuple[int, str, str]:
+        raise AssertionError("CLI must not run without configured source files")
+
+    service = module.ReleaseEvidenceService(run_cli=unexpected_runner)
+    payload = json.loads(
+        service.create_evidence(
+            context=context,
+            waive_missing_artifacts=True,
+            dry_run=True,
+        )
+    )
+
+    drc = next(gate for gate in payload["gates"] if gate["gate"] == "drc")
+    erc = next(gate for gate in payload["gates"] if gate["gate"] == "erc")
+    assert drc["error"] == "No PCB file configured."
+    assert erc["error"] == "No schematic file configured."
+    assert payload["verdict"] == "release_blocked"

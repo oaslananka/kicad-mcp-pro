@@ -69,7 +69,10 @@ DOMAIN_MODULES = {
     "kicad_mcp.export.sch_python_bom": SRC_ROOT / "kicad_mcp" / "export" / "sch_python_bom.py",
     "kicad_mcp.export.sch_vector": SRC_ROOT / "kicad_mcp" / "export" / "sch_vector.py",
     "kicad_mcp.manufacturing.imports": SRC_ROOT / "kicad_mcp" / "manufacturing" / "imports.py",
-    "kicad_mcp.manufacturing.release_evidence": SRC_ROOT / "kicad_mcp" / "manufacturing" / "release_evidence.py",
+    "kicad_mcp.manufacturing.release_evidence": SRC_ROOT
+    / "kicad_mcp"
+    / "manufacturing"
+    / "release_evidence.py",
     "kicad_mcp.library.catalog": SRC_ROOT / "kicad_mcp" / "library" / "catalog.py",
     "kicad_mcp.library.local_authoring": SRC_ROOT / "kicad_mcp" / "library" / "local_authoring.py",
     "kicad_mcp.library.footprint_engineering": SRC_ROOT
@@ -141,7 +144,10 @@ DOMAIN_MODULES = {
     / "tools"
     / "library_component_contract.py",
     _MANUFACTURING_IMPORT_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "manufacturing_imports.py",
-    _MANUFACTURING_RELEASE_EVIDENCE_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "manufacturing_release_evidence.py",
+    _MANUFACTURING_RELEASE_EVIDENCE_ADAPTER: SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "manufacturing_release_evidence.py",
     _PROJECT_CONTEXT_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_context.py",
     _PROJECT_CREATION_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_creation.py",
     _PROJECT_DESIGN_SPEC_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_design_spec.py",
