@@ -71,8 +71,8 @@ Derived from `packages/protocol-schemas/schemas/kicad-mcp-server-info.schema.jso
 
 The supported and advertised public MCP contract is `2025-11-25`. `server.json`, generated server information, stable client examples, and the production MCP Python SDK remain aligned to that version.
 
-### Candidate compatibility lane
+### Native 2026 canary lane
 
-An opt-in Streamable HTTP compatibility lane validates a constrained subset of `2026-07-28` for canary testing. It covers per-request protocol/client metadata, `Mcp-Method`, `Mcp-Name`, mandatory `server/discover`, stateless tool/prompt/resource requests, structured negotiation errors, `resultType`, and cache metadata.
+The opt-in Streamable HTTP canary uses MCP Python SDK v2 directly for the final `2026-07-28` wire contract; the temporary translation bridge has been removed. The repository adds only reviewed policy around the native path: stateless session-header rejection, bounded private cache hints, and alphabetical `tools/list` ordering.
 
-The lane does not advertise the redesigned Tasks extension, Apps extensions, subscriptions, or other draft-only capabilities that are not implemented by the stable runtime. server.json remains on `2025-11-25` until every release gate in [ADR-0006](../adr/0006-mcp-2026-stateless-compatibility-lane.md) passes.
+Tasks and Apps extensions remain unadvertised. `server.json` remains on `2025-11-25` until every release gate in [ADR-0006](../adr/0006-mcp-2026-stateless-compatibility-lane.md) passes and a separate public-metadata change is reviewed.
