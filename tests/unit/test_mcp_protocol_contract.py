@@ -8,14 +8,14 @@ from starlette.testclient import TestClient
 from starlette.types import Receive, Scope, Send
 
 from kicad_mcp import __version__
-from kicad_mcp.compatibility import MCP_PROTOCOL_VERSION
+from kicad_mcp.compatibility import MCP_LEGACY_PROTOCOL_VERSION
 from kicad_mcp.config import get_config
 from kicad_mcp.server import _StreamableHttpContractMiddleware, build_server
 
 HTTP_HEADERS = {
     "Accept": "application/json, text/event-stream",
     "Content-Type": "application/json",
-    "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+    "MCP-Protocol-Version": MCP_LEGACY_PROTOCOL_VERSION,
 }
 
 
@@ -32,7 +32,7 @@ def _initialize_request() -> dict[str, object]:
         "id": 1,
         "method": "initialize",
         "params": {
-            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "protocolVersion": MCP_LEGACY_PROTOCOL_VERSION,
             "capabilities": {},
             "clientInfo": {"name": "mcp-contract-test", "version": "1.0.0"},
         },
@@ -123,7 +123,7 @@ def test_oaslana_71_custom_mount_path_routes_only_configured_mcp_endpoint(
 
     assert default_path.status_code == 404
     assert custom_path.status_code == 200
-    assert custom_path.json()["result"]["protocolVersion"] == MCP_PROTOCOL_VERSION
+    assert custom_path.json()["result"]["protocolVersion"] == MCP_LEGACY_PROTOCOL_VERSION
 
 
 def test_oaslana_71_legacy_sse_routes_are_opt_in(sample_project: Path) -> None:
@@ -163,7 +163,7 @@ def test_oaslana_71_stateful_initialized_tools_list_and_tool_call_order(
         called = client.post("/mcp", headers=session_headers, json=_tool_call_request())
 
     assert initialized.status_code == 200
-    assert initialized.json()["result"]["protocolVersion"] == MCP_PROTOCOL_VERSION
+    assert initialized.json()["result"]["protocolVersion"] == MCP_LEGACY_PROTOCOL_VERSION
     assert ready.status_code == 202
     assert ready.text == ""
     assert listed.status_code == 200
@@ -202,7 +202,7 @@ def test_oaslana_71_vscode_and_generic_clients_share_the_same_http_contract(
             listed = client.post("/mcp", headers=_headers(), json=_tools_list_request(index + 10))
 
             assert initialized.status_code == 200
-            assert initialized.json()["result"]["protocolVersion"] == MCP_PROTOCOL_VERSION
+            assert initialized.json()["result"]["protocolVersion"] == MCP_LEGACY_PROTOCOL_VERSION
             assert ready.status_code == 202
             assert listed.status_code == 200
 
@@ -345,7 +345,7 @@ def test_streamable_http_requires_json_and_sse_accept_header(sample_project: Pat
             headers={
                 "Accept": "application/json",
                 "Content-Type": "application/json",
-                "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+                "MCP-Protocol-Version": MCP_LEGACY_PROTOCOL_VERSION,
             },
             json=_initialize_request(),
         )
@@ -371,7 +371,7 @@ def test_streamable_http_requires_json_content_type(sample_project: Path) -> Non
             headers={
                 "Accept": "application/json, text/event-stream",
                 "Content-Type": "text/plain",
-                "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+                "MCP-Protocol-Version": MCP_LEGACY_PROTOCOL_VERSION,
             },
             json=_initialize_request(),
         )
@@ -398,7 +398,7 @@ def test_streamable_http_accepts_split_accept_headers(sample_project: Path) -> N
                 ("Accept", "application/json"),
                 ("Accept", "text/event-stream"),
                 ("Content-Type", "application/json"),
-                ("MCP-Protocol-Version", MCP_PROTOCOL_VERSION),
+                ("MCP-Protocol-Version", MCP_LEGACY_PROTOCOL_VERSION),
             ],
             json=_initialize_request(),
         )

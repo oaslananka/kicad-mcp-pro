@@ -29,8 +29,8 @@ def test_candidate_protocol_operator_documentation_is_explicitly_release_gated()
         assert component in adr
 
     assert "KICAD_MCP_PROTOCOL_LANE=2026-07-28-rc" in transport
-    assert "native SDK canary lane" in transport
-    assert "not a general-availability protocol advertisement" in transport
+    assert "strict stateless conformance lane" in transport
+    assert "primary public contract is MCP `2026-07-28`" in transport
     assert "Mcp-Method" in transport
     assert "Mcp-Name" in transport
     assert "server/discover" in transport
@@ -39,18 +39,21 @@ def test_candidate_protocol_operator_documentation_is_explicitly_release_gated()
     assert "Compatibility-bridge disposition (2026-10-02)" in adr
     assert "bridge removed" in adr
     assert "unset KICAD_MCP_PROTOCOL_LANE" in transport
-    assert "public metadata remains `2025-11-25`" in transport
-    assert "Native SDK v2 can still answer `server/discover`" in transport
+    assert "public discovery metadata remains primarily `2026-07-28`" in transport
+    assert "Native SDK v2 also answers `server/discover` directly" in transport
     assert "Native SDK v2 may continue to answer `server/discover`" in adr
     assert "Apps: explicitly excluded/fail-closed" in adr
     assert "No `ui://` resources or UI-bound tools are registered" in adr
     assert "All five release decision gates are complete" in adr
+    assert "## Public protocol promotion (2026-10-02)" in adr
+    assert "MCP_LEGACY_PROTOCOL_VERSION" in adr
 
     assert "Current public contract" in api_reference
-    assert "`2025-11-25`" in api_reference
-    assert "Native MCP 2026 canary lane" in api_reference
     assert "`2026-07-28`" in api_reference
-    assert "`server.json` remains on `2025-11-25`" in api_reference
+    assert "`2025-11-25`" in api_reference
+    assert "Native MCP 2026 strict conformance lane" in api_reference
+    assert "`2026-07-28`" in api_reference
+    assert "Public metadata now advertises `2026-07-28` as primary" in api_reference
 
     for gate in (
         "final MCP 2026-07-28 specification",

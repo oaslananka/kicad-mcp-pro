@@ -137,6 +137,7 @@ def test_registry_metadata_uses_compatibility_protocol_contract() -> None:
     metadata = module._project_metadata()
     matrix = module._compatibility_metadata()
     matrix["mcp"]["protocolVersion"] = "2099-01-01"
+    matrix["mcp"]["supportedProtocolVersions"] = ["2099-01-01"]
 
     registry = module._registry_metadata(metadata, matrix)
     registry_meta = registry["_meta"]["io.github.oaslananka/kicad-mcp-pro"]

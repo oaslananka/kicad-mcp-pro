@@ -28,7 +28,7 @@ from typing import Any
 import structlog
 import typer
 
-from .compatibility import MCP_PROTOCOL_VERSION
+from .compatibility import MCP_LEGACY_PROTOCOL_VERSION
 
 logger = structlog.get_logger(__name__)
 
@@ -431,7 +431,7 @@ async def _proxy_to_local(
     headers = {
         "Accept": "application/json, text/event-stream",
         "Content-Type": "application/json",
-        "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+        "MCP-Protocol-Version": MCP_LEGACY_PROTOCOL_VERSION,
     }
     auth_token = os.environ.get("KICAD_MCP_AUTH_TOKEN")
     if auth_token:

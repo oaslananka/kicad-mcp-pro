@@ -223,7 +223,7 @@ test("validates shared protocol payload families", () => {
       server: "kicad-mcp-pro",
       version: "3.5.2",
       status: "ok",
-      mcpProtocolVersion: "2025-11-25",
+      mcpProtocolVersion: "2026-07-28",
       toolSchemaVersion: "1.0.0",
       transport: {
         type: "streamable-http",
@@ -268,7 +268,7 @@ function serverInfoFixture() {
       tr: "PCB ve sematik is akislari icin KiCad MCP Pro sunucusu.",
     },
     version: "3.5.2",
-    mcpProtocolVersion: "2025-11-25",
+    mcpProtocolVersion: "2026-07-28",
     toolSchemaVersion: "1.0.0",
     compatibilityRange: {
       kicadStudio: {

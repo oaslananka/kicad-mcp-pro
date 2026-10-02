@@ -183,6 +183,7 @@
         "KiCad CLI 10.0.x available on PATH for file-backed DRC, ERC, and export tools. KiCad 8.x is deprecated and limited to file-level read and migration workflows."
       ],
       "supportedMcpProtocolVersions": [
+        "2026-07-28",
         "2025-11-25"
       ],
       "maintainer": {
@@ -195,7 +196,7 @@
       "releaseNotes": "https://github.com/oaslananka/kicad-mcp-pro/blob/main/CHANGELOG.md",
       "serverInfo": {
         "schemaVersion": "1.3.0",
-        "mcpProtocolVersion": "2025-11-25",
+        "mcpProtocolVersion": "2026-07-28",
         "toolSchemaVersion": "1.0.0",
         "capabilities": [
           "fileBackedDrc",

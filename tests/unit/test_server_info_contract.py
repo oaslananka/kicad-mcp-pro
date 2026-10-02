@@ -61,7 +61,7 @@ def test_server_info_contract_matches_protocol_schema(monkeypatch, sample_projec
         "en": "KiCad MCP Pro server for PCB and schematic workflows.",
         "tr": "PCB ve şematik iş akışları için KiCad MCP Pro sunucusu.",
     }
-    assert payload["mcpProtocolVersion"] == "2025-11-25"
+    assert payload["mcpProtocolVersion"] == "2026-07-28"
     assert payload["toolSchemaVersion"] == "1.0.0"
     assert payload["compatibilityRange"] == {
         "kicadStudio": {

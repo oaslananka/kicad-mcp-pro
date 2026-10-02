@@ -16,14 +16,14 @@ from pathlib import Path
 
 from starlette.testclient import TestClient
 
-from kicad_mcp.compatibility import MCP_PROTOCOL_VERSION
+from kicad_mcp.compatibility import MCP_LEGACY_PROTOCOL_VERSION
 from kicad_mcp.config import get_config
 from kicad_mcp.server import build_server
 
 HTTP_HEADERS = {
     "Accept": "application/json, text/event-stream",
     "Content-Type": "application/json",
-    "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+    "MCP-Protocol-Version": MCP_LEGACY_PROTOCOL_VERSION,
 }
 
 
@@ -40,7 +40,7 @@ def _initialize_request() -> dict[str, object]:
         "id": 1,
         "method": "initialize",
         "params": {
-            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "protocolVersion": MCP_LEGACY_PROTOCOL_VERSION,
             "capabilities": {},
             "clientInfo": {"name": "mcp-contract-test", "version": "1.0.0"},
         },

@@ -343,6 +343,12 @@ def _remotes_metadata() -> list[dict[str, Any]]:
 def _registry_metadata(metadata: dict[str, Any], compatibility: dict[str, Any]) -> dict[str, Any]:
     repository_url = metadata["repository_url"]
     mcp_protocol_version = str(compatibility["mcp"]["protocolVersion"])
+    supported_protocol_versions = [
+        str(version)
+        for version in compatibility["mcp"].get(
+            "supportedProtocolVersions", [mcp_protocol_version]
+        )
+    ]
     changelog_url = f"{repository_url}/blob/main/CHANGELOG.md"
     tools_reference_url = f"{repository_url}/blob/main/docs/tools-reference.generated.md"
     return {
@@ -401,7 +407,7 @@ def _registry_metadata(metadata: dict[str, Any], compatibility: dict[str, Any]) 
                     "reference": tools_reference_url,
                 },
                 "prerequisites": [_registry_prerequisite(compatibility)],
-                "supportedMcpProtocolVersions": [mcp_protocol_version],
+                "supportedMcpProtocolVersions": supported_protocol_versions,
                 "maintainer": {
                     "name": "Osman Aslan",
                     "url": "https://github.com/oaslananka",

@@ -75,7 +75,7 @@ Native SDK v2 is now authoritative for final MCP `2026-07-28` request validation
 
 The final SDK does not turn an obsolete incoming `Mcp-Session-Id` header into session state in stateless mode, but it also does not reproduce the bridge's custom rejection response. That bridge-specific diagnostic is intentionally retired in favor of SDK-native final-protocol behavior. Authentication still precedes protocol diagnostics, and no session identifier is emitted.
 
-Public registry/server metadata remains `2025-11-25`; bridge removal is not public protocol promotion.
+At bridge-removal time, public registry/server metadata remained `2025-11-25`; bridge removal itself was not public protocol promotion.
 
 ## Extension-capability disposition (2026-10-02)
 
@@ -85,13 +85,25 @@ Tasks and Apps are both explicitly excluded from advertised capabilities for the
 
 Gate 4 disposition: Tasks: explicitly excluded/fail-closed. Apps: explicitly excluded/fail-closed.
 
+## Public protocol promotion (2026-10-02)
+
+After all five release decision gates were complete, the public canonical MCP contract was promoted to final `2026-07-28` in a separate release change. The promotion deliberately separates the public canonical version from legacy initialize-based compatibility:
+
+- `MCP_PROTOCOL_VERSION` and `compatibility.yaml.mcp.protocolVersion` identify the public canonical `2026-07-28` contract;
+- `MCP_LEGACY_PROTOCOL_VERSION` remains `2025-11-25` for backward-compatible initialize/session clients and internal compatibility paths;
+- `compatibility.yaml.mcp.supportedProtocolVersions` and generated `server.json` advertise `2026-07-28` first and retain `2025-11-25`;
+- the local bridge deliberately uses the legacy wire version until it is separately migrated to final-protocol request envelopes;
+- the historical `KICAD_MCP_PROTOCOL_LANE=2026-07-28-rc` selector remains as a strict stateless conformance mode rather than a prerequisite for final-protocol support.
+
+This promotion does not enable Tasks or Apps. Both remain explicitly excluded and fail closed.
+
 ## Rollout
 
 1. Enable the lane only in an isolated canary deployment.
 2. Run the independent MCP 2026 contract job and representative host smoke tests.
 3. Compare authorization failures, tool visibility, latency, and response size with the stable lane.
 4. Expand canary traffic only after no destructive-call or data-isolation regression is observed.
-5. Keep stable clients and production registry traffic on `2025-11-25` throughout the evaluation.
+5. Keep existing clients on `2025-11-25` throughout the evaluation; promote public metadata only in a separate reviewed change after all gates pass.
 
 ## Rollback
 
@@ -99,7 +111,7 @@ Unset `KICAD_MCP_PROTOCOL_LANE` and restart the server. Verify that the runtime 
 
 ## Consequences
 
-The repository retains deterministic canary evidence for the final protocol without a custom translation layer. Stable SDK v2 is the protocol authority; repository-owned behavior is limited to explicit cache policy, tool ordering, authentication, visibility, and transport-security controls. The opt-in canary must not be described as general availability while public metadata remains `2025-11-25`.
+The repository retains deterministic conformance evidence for the final protocol without a custom translation layer. Stable SDK v2 is the protocol authority; repository-owned behavior is limited to explicit cache policy, tool ordering, authentication, visibility, extension exclusion, and transport-security controls.
 
 ## Verification
 
@@ -107,4 +119,4 @@ The repository retains deterministic canary evidence for the final protocol with
 - `uv run pytest tests/unit/test_mcp_protocol_contract.py tests/unit/test_mcp_manifest.py -q`
 - `uv run pytest tests/integration/test_mcp_2026_host_smoke.py -q` runs loopback HTTP request-profile smoke cases for ChatGPT Connector and VS Code MCP clients. These cases verify wire behavior but do not claim certification of external host binaries.
 - The CI job named `MCP 2026 Compatibility` passes independently.
-- `server.json` continues to advertise only `2025-11-25`.
+- `server.json` advertises `2026-07-28` as primary and retains `2025-11-25` in the supported-version list.

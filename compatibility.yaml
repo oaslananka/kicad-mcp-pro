@@ -641,8 +641,10 @@ runtimePolicy:
     loweringRequiresChangelogs:
       - CHANGELOG.md
 mcp:
-  protocolVersion: '2025-11-25'
-  nextProtocolVersion: '2026-07-28'
+  protocolVersion: '2026-07-28'
+  supportedProtocolVersions:
+    - '2026-07-28'
+    - '2025-11-25'
   toolSchema: '1.0'
   registrySchema: '2025-12-11'
 products:

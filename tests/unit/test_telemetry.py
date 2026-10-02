@@ -13,7 +13,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from starlette.testclient import TestClient
 
-from kicad_mcp.compatibility import MCP_PROTOCOL_VERSION
+from kicad_mcp.compatibility import MCP_LEGACY_PROTOCOL_VERSION
 from kicad_mcp.config import KiCadMCPConfig, get_config
 from kicad_mcp.server import _apply_cli_env, build_server
 from kicad_mcp.tools import board_file, export_support
@@ -237,7 +237,7 @@ def test_streamable_http_session_metric_tracks_active_sessions(
                 "id": 1,
                 "method": "initialize",
                 "params": {
-                    "protocolVersion": MCP_PROTOCOL_VERSION,
+                    "protocolVersion": MCP_LEGACY_PROTOCOL_VERSION,
                     "capabilities": {},
                     "clientInfo": {"name": "telemetry-test", "version": "1.0.0"},
                 },

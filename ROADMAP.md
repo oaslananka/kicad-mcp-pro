@@ -25,7 +25,7 @@ version-agnostic so it does not drift.
 - Deprecated KiCad lines: `8.x`.
 - Dropped KiCad lines: `9.x`.
 - Preview KiCad lines: `11.x`.
-- MCP protocol contract: `2025-11-25`.
+- MCP protocol contract: `2026-07-28`.
 <!-- public-metadata:runtime-policy:end -->
 
 ---
@@ -47,7 +47,7 @@ version-agnostic so it does not drift.
 - Multi-arch container publishing (GHCR).
 - OpenTelemetry observability and structured logging lifecycle.
 - Operating modes: readonly / write / manufacturing / experimental.
-- MCP protocol 2025-11-25 compliance.
+- MCP 2026-07-28 public contract with 2025-11-25 backward negotiation.
 - Doctor diagnostics and redacted support bundles.
 
 ### ✅ 3.6 (Delivered — 2026-05-27)

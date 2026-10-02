@@ -13,7 +13,7 @@ import yaml
 from mcp.types import CallToolResult
 from starlette.testclient import TestClient
 
-from kicad_mcp.compatibility import MCP_PROTOCOL_VERSION
+from kicad_mcp.compatibility import MCP_LEGACY_PROTOCOL_VERSION
 from kicad_mcp.config import KiCadMCPConfig, get_config, reset_config
 from kicad_mcp.discovery import CliCapabilities
 from kicad_mcp.server import (
@@ -41,7 +41,7 @@ def _initialize_request() -> dict[str, object]:
         "id": 1,
         "method": "initialize",
         "params": {
-            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "protocolVersion": MCP_LEGACY_PROTOCOL_VERSION,
             "capabilities": {},
             "clientInfo": {"name": "compat-test", "version": "1.0.0"},
         },
@@ -77,7 +77,7 @@ def test_stateless_streamable_http_allows_tools_list_without_session_header(
         initialized = client.post("/mcp", headers=HTTP_HEADERS, json=_initialize_request())
         listed = client.post(
             "/mcp",
-            headers={**HTTP_HEADERS, "MCP-Protocol-Version": MCP_PROTOCOL_VERSION},
+            headers={**HTTP_HEADERS, "MCP-Protocol-Version": MCP_LEGACY_PROTOCOL_VERSION},
             json=_tools_list_request(),
         )
 
@@ -101,14 +101,14 @@ def test_stateful_streamable_http_requires_session_header_after_initialize(
         session_id = initialized.headers.get("mcp-session-id")
         missing_session = client.post(
             "/mcp",
-            headers={**HTTP_HEADERS, "MCP-Protocol-Version": MCP_PROTOCOL_VERSION},
+            headers={**HTTP_HEADERS, "MCP-Protocol-Version": MCP_LEGACY_PROTOCOL_VERSION},
             json=_tools_list_request(),
         )
         accepted_notification = client.post(
             "/mcp",
             headers={
                 **HTTP_HEADERS,
-                "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+                "MCP-Protocol-Version": MCP_LEGACY_PROTOCOL_VERSION,
                 "Mcp-Session-Id": str(session_id),
             },
             json={"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
@@ -117,7 +117,7 @@ def test_stateful_streamable_http_requires_session_header_after_initialize(
             "/mcp",
             headers={
                 **HTTP_HEADERS,
-                "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+                "MCP-Protocol-Version": MCP_LEGACY_PROTOCOL_VERSION,
                 "Mcp-Session-Id": str(session_id),
             },
             json=_tools_list_request(3),

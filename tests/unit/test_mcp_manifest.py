@@ -79,7 +79,7 @@ def test_checked_mcp_manifest_has_public_registry_listing_metadata() -> None:
         "KiCad CLI 10.0.x available on PATH for file-backed DRC, ERC, and export tools. "
         "KiCad 8.x is deprecated and limited to file-level read and migration workflows."
     ]
-    assert registry_meta["supportedMcpProtocolVersions"] == ["2025-11-25"]
+    assert registry_meta["supportedMcpProtocolVersions"] == ["2026-07-28", "2025-11-25"]
     assert registry_meta["license"] == "MIT"
     assert registry_meta["canonicalRepository"] == ("https://github.com/oaslananka/kicad-mcp-pro")
     assert registry_meta["changelog"] == (
@@ -92,7 +92,7 @@ def test_checked_mcp_manifest_has_public_registry_listing_metadata() -> None:
     }
     assert registry_meta["serverInfo"] == {
         "schemaVersion": "1.3.0",
-        "mcpProtocolVersion": "2025-11-25",
+        "mcpProtocolVersion": "2026-07-28",
         "toolSchemaVersion": "1.0.0",
         "capabilities": [
             "fileBackedDrc",
@@ -282,11 +282,11 @@ def test_validator_rejects_malformed_oci_identifier(identifier: str) -> None:
     ) in errors
 
 
-def test_candidate_protocol_is_not_advertised_before_release_gates_pass() -> None:
+def test_public_protocol_advertises_final_2026_with_legacy_compatibility() -> None:
     module = _load_validator()
     manifest = module.validate_manifest_file(ROOT / "server.json")
     registry_meta = manifest["_meta"][REGISTRY_META_KEY]
 
-    assert registry_meta["supportedMcpProtocolVersions"] == ["2025-11-25"]
-    assert "2026-07-28" not in registry_meta["supportedMcpProtocolVersions"]
-    assert registry_meta["serverInfo"]["mcpProtocolVersion"] == "2025-11-25"
+    assert registry_meta["supportedMcpProtocolVersions"] == ["2026-07-28", "2025-11-25"]
+    assert registry_meta["supportedMcpProtocolVersions"][0] == "2026-07-28"
+    assert registry_meta["serverInfo"]["mcpProtocolVersion"] == "2026-07-28"

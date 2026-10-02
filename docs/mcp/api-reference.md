@@ -7,7 +7,7 @@ Derived from `packages/protocol-schemas/schemas/kicad-mcp-server-info.schema.jso
 
 | Surface | Value |
 | --- | --- |
-| MCP protocol version | `2025-11-25` |
+| MCP protocol version | `2026-07-28` |
 | Tool schema version | `1.0` |
 | Server-info schema version | `1.3.0` |
 | Registry schema version | `2025-12-11` |
@@ -69,10 +69,10 @@ Derived from `packages/protocol-schemas/schemas/kicad-mcp-server-info.schema.jso
 
 ### Current public contract
 
-The supported and advertised public MCP contract is `2025-11-25`. `server.json`, generated server information, stable client examples, and the production MCP Python SDK remain aligned to that version.
+The primary supported and advertised public MCP contract is `2026-07-28`. `server.json` and generated server information advertise that version first while retaining `2025-11-25` for backward-compatible initialize-based clients.
 
-### Native MCP 2026 canary lane
+### Native MCP 2026 strict conformance lane
 
-An opt-in Streamable HTTP canary uses the stable MCP Python SDK v2 native final `2026-07-28` protocol path. It covers per-request protocol/client metadata, `Mcp-Method`, `Mcp-Name`, direct `server/discover`, stateless tool/prompt/resource requests, SDK-native negotiation errors, `resultType`, and reviewed cache metadata without a request/response translation bridge.
+The historical `2026-07-28-rc` selector remains available as a strict stateless conformance mode on top of the same native SDK v2 final `2026-07-28` path. It covers per-request protocol/client metadata, `Mcp-Method`, `Mcp-Name`, direct `server/discover`, stateless tool/prompt/resource requests, SDK-native negotiation errors, `resultType`, and reviewed cache metadata without a request/response translation bridge.
 
-The lane explicitly excludes Tasks and Apps extensions from advertised capabilities. Unsupported extension registration fails closed at server construction, and the discovery contract contains no `extensions` capability. `server.json` remains on `2025-11-25`; any public `2026-07-28` promotion is a separate reviewed release decision under [ADR-0006](../adr/0006-mcp-2026-stateless-compatibility-lane.md).
+Tasks and Apps remain explicitly excluded from advertised capabilities. Unsupported extension registration fails closed at server construction, and the discovery contract contains no `extensions` capability. Public metadata now advertises `2026-07-28` as primary and `2025-11-25` as the backward-compatible legacy protocol under [ADR-0006](../adr/0006-mcp-2026-stateless-compatibility-lane.md).

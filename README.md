@@ -146,16 +146,17 @@ KiCad MCP Pro supports `stdio` and Streamable HTTP. Streamable HTTP is served at
 uvx kicad-mcp-pro --transport streamable-http --host 127.0.0.1 --port 3334
 ```
 
-Streamable HTTP clients must send:
+Streamable HTTP clients must send `Accept: application/json, text/event-stream` and
+`Content-Type: application/json`. The primary public MCP contract is
+`2026-07-28`: modern clients send `MCP-Protocol-Version: 2026-07-28`, the
+method/name transport headers required by the final protocol, and the per-request
+client metadata envelope.
 
-- `Accept: application/json, text/event-stream`
-- `Content-Type: application/json`
-- `MCP-Protocol-Version: 2025-11-25` after initialization
-- `MCP-Session-Id` on follow-up requests when `KICAD_MCP_STATEFUL_HTTP=1`
-
-By default Streamable HTTP is stateless, so ChatGPT-style connectors can
-initialize and call `tools/list` without a session-header injection proxy. Set
-`KICAD_MCP_STATEFUL_HTTP=1` to require session IDs after `initialize`.
+Backward-compatible `2025-11-25` clients remain supported through the SDK's
+legacy `initialize` negotiation. Those clients echo the negotiated protocol
+version on follow-up requests and, when `KICAD_MCP_STATEFUL_HTTP=1`, also echo
+`MCP-Session-Id`. Final `2026-07-28` traffic is stateless and does not create MCP
+sessions.
 
 The deprecated HTTP+SSE fallback routes are disabled by default. Set
 `KICAD_MCP_LEGACY_SSE=1` only for older clients that cannot use Streamable HTTP.

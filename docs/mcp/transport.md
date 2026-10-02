@@ -20,15 +20,17 @@ HTTP `POST` request to the configured endpoint. Every Streamable HTTP request
 must include `Accept: application/json, text/event-stream` and JSON requests
 must include `Content-Type: application/json`.
 
-After `initialize`, clients must echo the negotiated protocol version in the
-`MCP-Protocol-Version` header on follow-up requests. The public stable baseline
-remains `2025-11-25`; the pinned MCP SDK also negotiates its supported earlier
-protocol versions for backward-compatible clients such as Codex. Stateful
-deployments also return `MCP-Session-Id` from
-`initialize`; clients must echo that value on `notifications/initialized`,
-`tools/list`, `tools/call`, and later requests. Missing stateful session IDs
-return HTTP 400 with a structured JSON-RPC error, and unknown session IDs return
-HTTP 404 with a structured JSON-RPC error.
+The primary public contract is MCP `2026-07-28`. Final-protocol clients send
+`MCP-Protocol-Version: 2026-07-28`, `Mcp-Method`, `Mcp-Name` when applicable,
+and the required per-request client metadata; they do not use `initialize` or MCP
+session IDs.
+
+Backward-compatible `2025-11-25` clients such as existing Codex integrations remain supported. After legacy
+`initialize`, those clients echo the negotiated protocol version on follow-up
+requests. Stateful legacy deployments also return `MCP-Session-Id`; clients
+must echo it on `notifications/initialized`, `tools/list`, `tools/call`, and
+later requests. Missing stateful session IDs return HTTP 400 with a structured
+JSON-RPC error, and unknown session IDs return HTTP 404.
 
 The default local mode is stateless Streamable HTTP. This allows ChatGPT-style
 connectors to initialize, send `notifications/initialized`, list tools, and call
@@ -61,9 +63,9 @@ uv run --project packages/mcp-server --all-extras kicad-mcp-pro --transport stdi
 Protocol and capability expectations are generated in [MCP API reference](api-reference.md). Runtime
 support boundaries are tracked in the [runtime matrix](../status/runtime-policy-matrix.md).
 
-## MCP 2026 native SDK canary lane
+## MCP 2026 strict stateless conformance lane
 
-> **Experimental:** The historical selector `2026-07-28-rc` now routes directly through the stable MCP Python SDK v2 final `2026-07-28` protocol implementation. It is not a general-availability protocol advertisement, and public registry metadata remains on MCP `2025-11-25`.
+> **Conformance mode:** The historical selector `2026-07-28-rc` is retained as a strict stateless validation mode for the now-public MCP `2026-07-28` contract. Normal SDK-v2 Streamable HTTP runtime also supports the final protocol; this selector mainly locks the stricter cache/order and transport invariants used by CI.
 
 Start an isolated stateless Streamable HTTP canary with:
 
@@ -89,6 +91,6 @@ unset KICAD_MCP_PROTOCOL_LANE
 # Restart the server, then use the normal MCP 2025-11-25 initialize flow.
 ```
 
-After restart, the native SDK-v2 stable path negotiates `2025-11-25` through `initialize`, and public metadata remains `2025-11-25`. Native SDK v2 can still answer `server/discover`; that does not mean the opt-in modern-protocol canary is active.
+After restart, the normal SDK-v2 path continues to accept legacy `2025-11-25` through `initialize` while public discovery metadata remains primarily `2026-07-28`. Native SDK v2 also answers `server/discover` directly for final-protocol clients.
 
-The native canary and migration decision are recorded in [ADR-0006](../adr/0006-mcp-2026-stateless-compatibility-lane.md).
+The protocol promotion, legacy compatibility, and strict conformance selector are recorded in [ADR-0006](../adr/0006-mcp-2026-stateless-compatibility-lane.md).
