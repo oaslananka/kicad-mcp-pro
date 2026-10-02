@@ -45,7 +45,7 @@ except ImportError:
 from mcp import types as mcp_types
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.caching import CacheHint, CacheableMethod
+from mcp.server.caching import CacheableMethod, CacheHint
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver import MCPServer as FastMCP
