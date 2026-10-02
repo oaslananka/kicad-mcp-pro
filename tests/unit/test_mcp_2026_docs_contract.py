@@ -46,7 +46,7 @@ def test_candidate_protocol_operator_documentation_is_explicitly_release_gated()
     assert "`2025-11-25`" in api_reference
     assert "Native 2026 canary lane" in api_reference
     assert "`2026-07-28`" in api_reference
-    assert "server.json remains on `2025-11-25`" in api_reference
+    assert "`server.json` remains on `2025-11-25`" in api_reference
 
     for gate in (
         "final MCP 2026-07-28 specification",
