@@ -40,6 +40,7 @@ _PROJECT_ROOT_MODULE = "kicad_mcp.tools.project"
 _MANUFACTURING_ROOT_MODULE = "kicad_mcp.tools.manufacturing"
 _MANUFACTURING_IMPORT_ADAPTER = "kicad_mcp.tools.manufacturing_imports"
 _MANUFACTURING_RELEASE_EVIDENCE_ADAPTER = "kicad_mcp.tools.manufacturing_release_evidence"
+_MANUFACTURING_RELEASE_MANIFEST_ADAPTER = "kicad_mcp.tools.manufacturing_release_manifest"
 _MANUFACTURING_TEST_PLAN_ADAPTER = "kicad_mcp.tools.manufacturing_test_plan"
 
 DOMAIN_MODULES = {
@@ -75,6 +76,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "manufacturing"
     / "release_evidence.py",
+    "kicad_mcp.manufacturing.release_manifest": SRC_ROOT
+    / "kicad_mcp"
+    / "manufacturing"
+    / "release_manifest.py",
     "kicad_mcp.manufacturing.test_plan": SRC_ROOT / "kicad_mcp" / "manufacturing" / "test_plan.py",
     "kicad_mcp.library.catalog": SRC_ROOT / "kicad_mcp" / "library" / "catalog.py",
     "kicad_mcp.library.local_authoring": SRC_ROOT / "kicad_mcp" / "library" / "local_authoring.py",
@@ -151,6 +156,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "manufacturing_release_evidence.py",
+    _MANUFACTURING_RELEASE_MANIFEST_ADAPTER: SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "manufacturing_release_manifest.py",
     _MANUFACTURING_TEST_PLAN_ADAPTER: SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -381,6 +390,7 @@ DOMAIN_MODULES = {
 PURE_HELPERS = {
     "kicad_mcp.manufacturing.imports",
     "kicad_mcp.manufacturing.release_evidence",
+    "kicad_mcp.manufacturing.release_manifest",
     "kicad_mcp.manufacturing.test_plan",
     "kicad_mcp.ir.engineering_graph",
     "kicad_mcp.ir.engineering_graph_from_ir",
@@ -468,6 +478,7 @@ FORBIDDEN_PURE_IMPORT_PREFIXES = (
 
 ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     _MANUFACTURING_RELEASE_EVIDENCE_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
+    _MANUFACTURING_RELEASE_MANIFEST_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
     _MANUFACTURING_TEST_PLAN_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
     _MANUFACTURING_IMPORT_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
     "kicad_mcp.tools.validation_policy_state": ("kicad_mcp.tools.validation",),
@@ -555,6 +566,7 @@ REGISTER_LINE_LIMITS = {
     _LIBRARY_COMPONENT_CONTRACT_ADAPTER: 100,
     _MANUFACTURING_IMPORT_ADAPTER: 150,
     _MANUFACTURING_RELEASE_EVIDENCE_ADAPTER: 90,
+    _MANUFACTURING_RELEASE_MANIFEST_ADAPTER: 75,
     _MANUFACTURING_TEST_PLAN_ADAPTER: 80,
     _PROJECT_CONTEXT_ADAPTER: 55,
     _PROJECT_CREATION_ADAPTER: 55,

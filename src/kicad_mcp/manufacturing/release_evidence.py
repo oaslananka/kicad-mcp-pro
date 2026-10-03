@@ -50,6 +50,30 @@ def find_release_files(output_dir: Path) -> list[Path]:
     return sorted(set(files))
 
 
+def build_release_file_hashes(release_files: list[Path]) -> list[dict[str, str]]:
+    """Return deterministic filename/hash/size records for release files."""
+    return sorted(
+        (
+            {
+                "filename": path.name,
+                "sha256": sha256_file(path),
+                "size_bytes": str(path.stat().st_size),
+            }
+            for path in release_files
+        ),
+        key=lambda entry: entry["filename"],
+    )
+
+
+def build_source_hashes(
+    sources: list[tuple[str, Path | None]],
+) -> dict[str, str]:
+    """Hash configured source files while skipping absent paths."""
+    return {
+        label: sha256_file(path) for label, path in sources if path is not None and path.exists()
+    }
+
+
 def _now_utc() -> datetime:
     return datetime.now(UTC)
 
@@ -262,26 +286,14 @@ class ReleaseEvidenceService:
 
         verdict = "release_approved" if not blocking else "release_blocked"
         release_files = find_release_files(out_dir) if out_dir.exists() else []
-        file_hashes: list[dict[str, str]] = sorted(
-            (
-                {
-                    "filename": path.name,
-                    "sha256": sha256_file(path),
-                    "size_bytes": str(path.stat().st_size),
-                }
-                for path in release_files
-            ),
-            key=lambda entry: entry["filename"],
-        )
-        source_hashes = {
-            label: sha256_file(path)
-            for label, path in (
+        file_hashes = build_release_file_hashes(release_files)
+        source_hashes = build_source_hashes(
+            [
                 ("project", context.project_file),
                 ("pcb", context.pcb_file),
                 ("schematic", context.sch_file),
-            )
-            if path is not None and path.exists()
-        }
+            ]
+        )
         provenance: dict[str, Any] = {
             "kicad_mcp_version": context.kicad_mcp_version,
             "kicad_cli": str(context.kicad_cli),
