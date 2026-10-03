@@ -18,11 +18,15 @@ async def test_manufacturing_panelize_error_paths(
     server = build_server("manufacturing")
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
 
-    monkeypatch.setattr("kicad_mcp.tools.manufacturing.shutil.which", lambda _name: None)
+    monkeypatch.setattr(
+        "kicad_mcp.tools.manufacturing_panelization.shutil.which", lambda _name: None
+    )
     missing = await call_tool_text(server, "mfg_panelize", {})
     assert "KiKit is not installed" in missing
 
-    monkeypatch.setattr("kicad_mcp.tools.manufacturing.shutil.which", lambda _name: "kikit")
+    monkeypatch.setattr(
+        "kicad_mcp.tools.manufacturing_panelization.shutil.which", lambda _name: "kikit"
+    )
     invalid_layout = await call_tool_text(server, "mfg_panelize", {"layout": "radial"})
     invalid_size = await call_tool_text(server, "mfg_panelize", {"rows": 0, "cols": 2})
 
@@ -37,7 +41,9 @@ async def test_manufacturing_panelize_success_and_process_failures(
 ) -> None:
     server = build_server("manufacturing")
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
-    monkeypatch.setattr("kicad_mcp.tools.manufacturing.shutil.which", lambda _name: "kikit")
+    monkeypatch.setattr(
+        "kicad_mcp.tools.manufacturing_panelization.shutil.which", lambda _name: "kikit"
+    )
 
     commands: list[list[str]] = []
 
@@ -45,7 +51,7 @@ async def test_manufacturing_panelize_success_and_process_failures(
         commands.append(cmd)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("kicad_mcp.tools.manufacturing.subprocess.run", ok_run)
+    monkeypatch.setattr("kicad_mcp.tools.manufacturing_panelization.subprocess.run", ok_run)
     dry_run = await call_tool_text(server, "mfg_panelize", {"layout": "grid"})
     grid = await call_tool_text(
         server,
@@ -72,7 +78,7 @@ async def test_manufacturing_panelize_success_and_process_failures(
     assert any("vcuts" in " ".join(cmd) for cmd in commands)
 
     monkeypatch.setattr(
-        "kicad_mcp.tools.manufacturing.subprocess.run",
+        "kicad_mcp.tools.manufacturing_panelization.subprocess.run",
         lambda *_args, **_kwargs: SimpleNamespace(returncode=2, stdout="", stderr="bad panel"),
     )
     failed = await call_tool_text(
@@ -86,7 +92,7 @@ async def test_manufacturing_panelize_success_and_process_failures(
     def timeout_run(*_args: object, **_kwargs: object) -> SimpleNamespace:
         raise subprocess.TimeoutExpired(cmd="kikit", timeout=120)
 
-    monkeypatch.setattr("kicad_mcp.tools.manufacturing.subprocess.run", timeout_run)
+    monkeypatch.setattr("kicad_mcp.tools.manufacturing_panelization.subprocess.run", timeout_run)
     timed_out = await call_tool_text(
         server,
         "mfg_panelize",

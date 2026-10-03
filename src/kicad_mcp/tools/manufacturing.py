@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -65,163 +63,12 @@ def _find_rotation_offset(
     return best[1] if best else None
 
 
-def _kikit_available() -> bool:
-    return shutil.which("kikit") is not None
-
-
 def register(mcp: FastMCP) -> None:
     """Register manufacturing tools."""
 
-    @mcp.tool()
-    @headless_compatible
-    def mfg_panelize(
-        layout: str = "grid",
-        rows: int = 2,
-        cols: int = 2,
-        spacing_mm: float = 2.0,
-        frame_width_mm: float = 5.0,
-        output_path: str = "",
-        dry_run: bool = True,
-        confirm: bool = False,
-    ) -> str:
-        """Panelize the active PCB using KiKit.
+    from . import manufacturing_panelization
 
-        Creates a panel of multiple boards for efficient PCB fabrication.
-        Requires ``kikit`` to be installed (``pip install kikit``).
-
-        Args:
-            layout: Panel layout type: ``"grid"`` (rectangular array),
-                ``"mousebites"`` (tab+mousebite breakaway), or ``"vcut"`` (V-cut scoring).
-            rows: Number of board rows in the panel.
-            cols: Number of board columns in the panel.
-            spacing_mm: Gap between boards in mm.
-            frame_width_mm: Panel frame/rail width in mm.
-            output_path: Optional output file path (relative to output_dir).
-                Defaults to ``panel/<boardname>_panel_<rows>x<cols>.kicad_pcb``.
-            dry_run: If True, return the planned command and output path without writing files.
-            confirm: Must be True when ``dry_run`` is False to run KiKit.
-
-        Returns:
-            Confirmation with the panel file path, or an error message.
-        """
-        if not _kikit_available():
-            return (
-                "KiKit is not installed. "
-                "Install it with: pip install kikit\n"
-                "KiKit documentation: https://github.com/yaqwsx/KiKit"
-            )
-
-        cfg = get_config()
-        if cfg.pcb_file is None or not cfg.pcb_file.exists():
-            return "No PCB file is configured. Call kicad_set_project() first."
-
-        layout_lower = layout.lower()
-        if layout_lower not in ("grid", "mousebites", "vcut"):
-            return f"Invalid layout '{layout}'. Choose from: grid, mousebites, vcut."
-
-        if rows < 1 or cols < 1:
-            return "rows and cols must both be >= 1."
-
-        out_dir = cfg.ensure_output_dir("panel")
-
-        board_stem = cfg.pcb_file.stem
-        if output_path:
-            panel_file = cfg.resolve_within_project(output_path)
-        else:
-            panel_file = out_dir / f"{board_stem}_panel_{rows}x{cols}.kicad_pcb"
-
-        # Build KiKit command
-        if layout_lower == "grid":
-            cmd = [
-                "kikit",
-                "panelize",
-                "--layout",
-                f"grid; rows: {rows}; cols: {cols}; space: {spacing_mm}mm",
-                "--tabs",
-                "fixed; width: 3mm; count: 1",
-                "--cuts",
-                "mousebites; drill: 0.5mm; spacing: 0.8mm",
-                "--framing",
-                f"railstb; width: {frame_width_mm}mm",
-                "--post",
-                "millRoundedCorner",
-                str(cfg.pcb_file),
-                str(panel_file),
-            ]
-        elif layout_lower == "mousebites":
-            cmd = [
-                "kikit",
-                "panelize",
-                "--layout",
-                f"grid; rows: {rows}; cols: {cols}; space: {spacing_mm}mm",
-                "--tabs",
-                "fixed; width: 3mm; count: 2",
-                "--cuts",
-                "mousebites; drill: 0.5mm; spacing: 0.8mm; offset: 0.25mm",
-                "--framing",
-                f"railstb; width: {frame_width_mm}mm",
-                str(cfg.pcb_file),
-                str(panel_file),
-            ]
-        else:  # vcut
-            cmd = [
-                "kikit",
-                "panelize",
-                "--layout",
-                f"grid; rows: {rows}; cols: {cols}; space: 0mm",
-                "--tabs",
-                "full",
-                "--cuts",
-                "vcuts; clearance: 0.5mm",
-                "--framing",
-                f"railstb; width: {frame_width_mm}mm",
-                str(cfg.pcb_file),
-                str(panel_file),
-            ]
-
-        if dry_run:
-            return (
-                "Dry run: panelization was not executed.\n"
-                f"- Output: {panel_file}\n"
-                f"- Layout: {layout_lower} {rows}x{cols}, spacing={spacing_mm}mm, "
-                f"frame={frame_width_mm}mm\n"
-                f"- Command: {' '.join(cmd)}\n"
-                "Set dry_run=false and confirm=true to create the panel file."
-            )
-        if not confirm:
-            return (
-                "Panelization requires explicit confirmation because it writes a PCB file.\n"
-                f"- Intended output: {panel_file}\n"
-                "Rerun with dry_run=false and confirm=true."
-            )
-        if panel_file.exists():
-            return (
-                "Refusing to overwrite an existing panel file without choosing a new output_path.\n"
-                f"- Existing file: {panel_file}"
-            )
-
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                errors="replace",
-                timeout=120,
-            )
-        except subprocess.TimeoutExpired:
-            return "KiKit panelization timed out after 120 seconds."
-        except (OSError, FileNotFoundError) as exc:
-            return f"Failed to run KiKit: {exc}"
-
-        if result.returncode != 0:
-            stderr = (result.stderr or "").strip()[:500]
-            return f"KiKit panelization failed (exit {result.returncode}):\n{stderr}"
-
-        return (
-            f"Panel created: {panel_file}\n"
-            f"Layout: {layout} {rows}x{cols}, spacing={spacing_mm}mm, frame={frame_width_mm}mm\n"
-            f"Open the panel file in KiCad to verify before submitting to fabricator."
-        )
+    manufacturing_panelization.register(mcp)
 
     from . import manufacturing_test_plan
 

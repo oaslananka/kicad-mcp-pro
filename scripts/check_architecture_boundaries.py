@@ -39,6 +39,7 @@ _PROJECT_WORKFLOW_ADAPTER = "kicad_mcp.tools.project_workflow"
 _PROJECT_ROOT_MODULE = "kicad_mcp.tools.project"
 _MANUFACTURING_ROOT_MODULE = "kicad_mcp.tools.manufacturing"
 _MANUFACTURING_IMPORT_ADAPTER = "kicad_mcp.tools.manufacturing_imports"
+_MANUFACTURING_PANELIZATION_ADAPTER = "kicad_mcp.tools.manufacturing_panelization"
 _MANUFACTURING_RELEASE_EVIDENCE_ADAPTER = "kicad_mcp.tools.manufacturing_release_evidence"
 _MANUFACTURING_TEST_PLAN_ADAPTER = "kicad_mcp.tools.manufacturing_test_plan"
 
@@ -70,7 +71,12 @@ DOMAIN_MODULES = {
     "kicad_mcp.export.sch_pdf": SRC_ROOT / "kicad_mcp" / "export" / "sch_pdf.py",
     "kicad_mcp.export.sch_python_bom": SRC_ROOT / "kicad_mcp" / "export" / "sch_python_bom.py",
     "kicad_mcp.export.sch_vector": SRC_ROOT / "kicad_mcp" / "export" / "sch_vector.py",
+    _MANUFACTURING_ROOT_MODULE: SRC_ROOT / "kicad_mcp" / "tools" / "manufacturing.py",
     "kicad_mcp.manufacturing.imports": SRC_ROOT / "kicad_mcp" / "manufacturing" / "imports.py",
+    "kicad_mcp.manufacturing.panelization": SRC_ROOT
+    / "kicad_mcp"
+    / "manufacturing"
+    / "panelization.py",
     "kicad_mcp.manufacturing.release_evidence": SRC_ROOT
     / "kicad_mcp"
     / "manufacturing"
@@ -147,6 +153,10 @@ DOMAIN_MODULES = {
     / "tools"
     / "library_component_contract.py",
     _MANUFACTURING_IMPORT_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "manufacturing_imports.py",
+    _MANUFACTURING_PANELIZATION_ADAPTER: SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "manufacturing_panelization.py",
     _MANUFACTURING_RELEASE_EVIDENCE_ADAPTER: SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -380,6 +390,7 @@ DOMAIN_MODULES = {
 
 PURE_HELPERS = {
     "kicad_mcp.manufacturing.imports",
+    "kicad_mcp.manufacturing.panelization",
     "kicad_mcp.manufacturing.release_evidence",
     "kicad_mcp.manufacturing.test_plan",
     "kicad_mcp.ir.engineering_graph",
@@ -470,6 +481,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     _MANUFACTURING_RELEASE_EVIDENCE_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
     _MANUFACTURING_TEST_PLAN_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
     _MANUFACTURING_IMPORT_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
+    _MANUFACTURING_PANELIZATION_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
     "kicad_mcp.tools.validation_policy_state": ("kicad_mcp.tools.validation",),
     "kicad_mcp.tools.export_bom": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_board_stats": ("kicad_mcp.tools.export",),
@@ -554,6 +566,8 @@ REGISTER_LINE_LIMITS = {
     _LIBRARY_SOURCING_ADAPTER: 180,
     _LIBRARY_COMPONENT_CONTRACT_ADAPTER: 100,
     _MANUFACTURING_IMPORT_ADAPTER: 150,
+    _MANUFACTURING_PANELIZATION_ADAPTER: 95,
+    _MANUFACTURING_ROOT_MODULE: 270,
     _MANUFACTURING_RELEASE_EVIDENCE_ADAPTER: 90,
     _MANUFACTURING_TEST_PLAN_ADAPTER: 80,
     _PROJECT_CONTEXT_ADAPTER: 55,
