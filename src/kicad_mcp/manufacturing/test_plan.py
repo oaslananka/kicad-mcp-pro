@@ -163,15 +163,17 @@ def _append_interface_section(lines: list[str], interfaces: Sequence[InterfaceLi
 
 
 def _append_visual_inspection_section(lines: list[str]) -> None:
-    lines += [
-        "",
-        "## 4. Visual Inspection",
-        "",
-        "- [ ] Verify all connectors seated correctly.",
-        "- [ ] Inspect for solder bridges on fine-pitch components.",
-        "- [ ] Verify correct component orientation (polarised capacitors, diodes, ICs).",
-        "- [ ] Check mechanical mounting and keep-out clearances.",
-    ]
+    lines.extend(
+        [
+            "",
+            "## 4. Visual Inspection",
+            "",
+            "- [ ] Verify all connectors seated correctly.",
+            "- [ ] Inspect for solder bridges on fine-pitch components.",
+            "- [ ] Verify correct component orientation (polarised capacitors, diodes, ICs).",
+            "- [ ] Check mechanical mounting and keep-out clearances.",
+        ]
+    )
 
 
 def _append_compliance_section(lines: list[str], compliance: Sequence[ComplianceLike]) -> None:
