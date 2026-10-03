@@ -37,6 +37,7 @@ _PROJECT_RUNTIME_ADAPTER = "kicad_mcp.tools.project_runtime"
 _PROJECT_VALIDATION_LOOPS_ADAPTER = "kicad_mcp.tools.project_validation_loops"
 _PROJECT_WORKFLOW_ADAPTER = "kicad_mcp.tools.project_workflow"
 _PROJECT_ROOT_MODULE = "kicad_mcp.tools.project"
+_MANUFACTURING_ROOT_MODULE = "kicad_mcp.tools.manufacturing"
 _MANUFACTURING_IMPORT_ADAPTER = "kicad_mcp.tools.manufacturing_imports"
 _MANUFACTURING_RELEASE_EVIDENCE_ADAPTER = "kicad_mcp.tools.manufacturing_release_evidence"
 _MANUFACTURING_TEST_PLAN_ADAPTER = "kicad_mcp.tools.manufacturing_test_plan"
@@ -466,9 +467,9 @@ FORBIDDEN_PURE_IMPORT_PREFIXES = (
 )
 
 ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
-    _MANUFACTURING_RELEASE_EVIDENCE_ADAPTER: ("kicad_mcp.tools.manufacturing",),
-    _MANUFACTURING_TEST_PLAN_ADAPTER: ("kicad_mcp.tools.manufacturing",),
-    _MANUFACTURING_IMPORT_ADAPTER: ("kicad_mcp.tools.manufacturing",),
+    _MANUFACTURING_RELEASE_EVIDENCE_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
+    _MANUFACTURING_TEST_PLAN_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
+    _MANUFACTURING_IMPORT_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
     "kicad_mcp.tools.validation_policy_state": ("kicad_mcp.tools.validation",),
     "kicad_mcp.tools.export_bom": ("kicad_mcp.tools.export",),
     "kicad_mcp.tools.export_board_stats": ("kicad_mcp.tools.export",),
