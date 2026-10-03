@@ -5,6 +5,12 @@ import importlib.util
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import TYPE_CHECKING
+
+import pytest
+
+if TYPE_CHECKING:
+    from kicad_mcp.manufacturing.test_plan import ManufacturingTestPlanService
 
 
 def _service_module() -> ModuleType:
@@ -30,15 +36,16 @@ def _intent() -> SimpleNamespace:
     )
 
 
-def test_render_preserves_design_intent_sections_and_deterministic_timestamp(
-    tmp_path: Path,
-) -> None:
+@pytest.fixture
+def service(tmp_path: Path) -> ManufacturingTestPlanService:
     module = _service_module()
-    service = module.ManufacturingTestPlanService(
+    return module.ManufacturingTestPlanService(
         resolve_output_path=lambda path: (tmp_path / path).resolve(),
         now=lambda: datetime(2026, 10, 3, 0, 0, tzinfo=UTC),
     )
 
+
+def test_render_preserves_design_intent_sections_and_deterministic_timestamp(service) -> None:  # type: ignore[no-untyped-def]
     text = service.create(_intent())
 
     assert "Generated: 2026-10-03 00:00 UTC" in text
@@ -49,12 +56,7 @@ def test_render_preserves_design_intent_sections_and_deterministic_timestamp(
     assert "Note: pre-scan" in text
 
 
-def test_render_preserves_empty_intent_fallbacks(tmp_path: Path) -> None:
-    module = _service_module()
-    service = module.ManufacturingTestPlanService(
-        resolve_output_path=lambda path: (tmp_path / path).resolve(),
-        now=lambda: datetime(2026, 10, 3, 0, 0, tzinfo=UTC),
-    )
+def test_render_preserves_empty_intent_fallbacks(service) -> None:  # type: ignore[no-untyped-def]
     intent = SimpleNamespace(power_rails=[], critical_nets=[], interfaces=[], compliance=[])
 
     text = service.create(intent)
@@ -65,12 +67,7 @@ def test_render_preserves_empty_intent_fallbacks(tmp_path: Path) -> None:
     assert "## 5. Compliance Pre-Checks" not in text
 
 
-def test_output_path_write_and_overwrite_policy_are_preserved(tmp_path: Path) -> None:
-    module = _service_module()
-    service = module.ManufacturingTestPlanService(
-        resolve_output_path=lambda path: (tmp_path / path).resolve(),
-        now=lambda: datetime(2026, 10, 3, 0, 0, tzinfo=UTC),
-    )
+def test_output_path_write_and_overwrite_policy_are_preserved(service, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     intent = SimpleNamespace(power_rails=[], critical_nets=[], interfaces=[], compliance=[])
 
     first = service.create(intent, output_path="bringup/test_plan.md")

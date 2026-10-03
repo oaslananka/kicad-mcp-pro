@@ -150,7 +150,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "manufacturing_release_evidence.py",
-    _MANUFACTURING_TEST_PLAN_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "manufacturing_test_plan.py",
+    _MANUFACTURING_TEST_PLAN_ADAPTER: SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "manufacturing_test_plan.py",
     _PROJECT_CONTEXT_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_context.py",
     _PROJECT_CREATION_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_creation.py",
     _PROJECT_DESIGN_SPEC_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_design_spec.py",

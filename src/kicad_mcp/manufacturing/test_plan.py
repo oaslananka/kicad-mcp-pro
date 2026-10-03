@@ -117,53 +117,53 @@ class ManufacturingTestPlanService:
             lines.append("- [ ] (No critical nets defined in design intent.)")
 
         lines += ["", "## 3. Interface Link-Up Tests", ""]
+        interface_checks: dict[str, list[str]] = {
+            "usb2": [
+                "Connect USB analyzer or host device.",
+                "Verify USB enumeration (lsusb or device manager).",
+                "Run USB compliance test tool if available.",
+            ],
+            "usb3": [
+                "Connect USB 3.x SuperSpeed host.",
+                "Verify SuperSpeed enumeration and link training.",
+                "Measure eye diagram at connector.",
+            ],
+            "ethernet_1000": [
+                "Connect Ethernet cable to link partner.",
+                "Verify 1000BASE-T auto-negotiation (link LED).",
+                "Run iperf3 bidirectional throughput test.",
+            ],
+            "pcie_g3": [
+                "Install into PCIe x1/x4/x16 slot.",
+                "Verify PCIe link training (lspci -vvv).",
+                "Check link width and speed negotiation.",
+            ],
+            "can": [
+                "Connect to CAN bus with 120ohm termination.",
+                "Send/receive test frames with CAN analyzer.",
+                "Verify no error frames at operational baud rate.",
+            ],
+            "i2c": [
+                "Scan I2C bus — verify device ACKs (i2cdetect -y 1).",
+                "Read/write device registers to confirm communication.",
+            ],
+            "uart": [
+                "Connect UART terminal (115200 8N1).",
+                "Verify TX loopback and receive data.",
+            ],
+            "swd": [
+                "Connect debug probe (J-Link / ST-Link / DAPLink).",
+                "Verify MCU detected and halts cleanly.",
+                "Flash test firmware and verify execution.",
+            ],
+        }
         if intent.interfaces:
             for iface in intent.interfaces:
                 kind = iface.kind
                 refs_str = ", ".join(iface.refs[:5]) if iface.refs else "(see schematic)"
                 lines.append(f"### {kind.upper()} ({refs_str})")
-                interface_checks: dict[str, list[str]] = {
-                    "usb2": [
-                        "Connect USB analyzer or host device.",
-                        "Verify USB enumeration (lsusb or device manager).",
-                        "Run USB compliance test tool if available.",
-                    ],
-                    "usb3": [
-                        "Connect USB 3.x SuperSpeed host.",
-                        "Verify SuperSpeed enumeration and link training.",
-                        "Measure eye diagram at connector.",
-                    ],
-                    "ethernet_1000": [
-                        "Connect Ethernet cable to link partner.",
-                        "Verify 1000BASE-T auto-negotiation (link LED).",
-                        "Run iperf3 bidirectional throughput test.",
-                    ],
-                    "pcie_g3": [
-                        "Install into PCIe x1/x4/x16 slot.",
-                        "Verify PCIe link training (lspci -vvv).",
-                        "Check link width and speed negotiation.",
-                    ],
-                    "can": [
-                        "Connect to CAN bus with 120ohm termination.",
-                        "Send/receive test frames with CAN analyzer.",
-                        "Verify no error frames at operational baud rate.",
-                    ],
-                    "i2c": [
-                        "Scan I2C bus — verify device ACKs (i2cdetect -y 1).",
-                        "Read/write device registers to confirm communication.",
-                    ],
-                    "uart": [
-                        "Connect UART terminal (115200 8N1).",
-                        "Verify TX loopback and receive data.",
-                    ],
-                    "swd": [
-                        "Connect debug probe (J-Link / ST-Link / DAPLink).",
-                        "Verify MCU detected and halts cleanly.",
-                        "Flash test firmware and verify execution.",
-                    ],
-                }
                 checks = interface_checks.get(
-                    kind,
+                    kind.lower(),
                     [f"Verify {kind} communication with appropriate test equipment."],
                 )
                 for check in checks:
