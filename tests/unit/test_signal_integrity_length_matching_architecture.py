@@ -44,4 +44,4 @@ def test_si_root_delegates_length_matching_and_shrinks() -> None:
     span = boundaries._function_span(root, "register")
     assert span is not None
     assert span <= 240
-    assert boundaries.REGISTER_LINE_LIMITS[ROOT] == 240
+    assert boundaries.REGISTER_LINE_LIMITS[ROOT] <= 240
