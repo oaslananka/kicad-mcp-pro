@@ -80,10 +80,12 @@ def test_python_token_fallback_is_manual_approved_and_tokenized() -> None:
 
 def test_manual_production_publish_requires_existing_release_tags() -> None:
     npm_workflow = _read(".github/workflows/publish-npm.yml")
+    protocol_workflow = _read(".github/workflows/publish-protocol-schemas.yml")
     registry_workflow = _read(".github/workflows/publish-mcp-registry.yml")
 
     for workflow, prefix in (
         (npm_workflow, "mcp-npm-v"),
+        (protocol_workflow, "protocol-schemas-v"),
         (registry_workflow, "mcp-server-v"),
     ):
         _require("release_tag:" in workflow, "test contract failed")
@@ -96,6 +98,23 @@ def test_manual_production_publish_requires_existing_release_tags() -> None:
         )
         _require('head_sha="$(git rev-parse HEAD)"' in workflow, "test contract failed")
         _require('test "$tag_sha" = "$head_sha"' in workflow, "test contract failed")
+
+
+def test_protocol_schema_manual_backfill_is_version_bound_to_release_tag() -> None:
+    workflow = _read(".github/workflows/publish-protocol-schemas.yml")
+
+    assert "Existing published protocol-schemas release tag to republish/backfill." in workflow
+    assert (
+        "ref: ${{ github.event_name == 'release' && "
+        "github.event.release.tag_name || inputs.release_tag }}"
+    ) in workflow
+    assert 'version="${RELEASE_TAG#protocol-schemas-v}"' in workflow
+    assert "packages/protocol-schemas/package.json" in workflow
+    assert 'test "$version" = "$package_version"' in workflow
+    attach_step = workflow.split("      - name: Attach evidence to GitHub Release", 1)[1].split(
+        "      - name: Verify checksums before publish", 1
+    )[0]
+    assert "if: github.event_name == 'release'" not in attach_step
 
 
 def test_publish_workflows_are_idempotent_for_existing_versions() -> None:

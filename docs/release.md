@@ -35,7 +35,9 @@ The publish workflows keep release evidence product-scoped:
   publishes signed multi-arch GHCR images with BuildKit SBOM/provenance for
   `mcp-server-v*` GitHub Releases.
 - `publish-protocol-schemas.yml` publishes `@oaslananka/kicad-protocol-schemas`
-  for `protocol-schemas-v*` GitHub Releases.
+  only from an existing published `protocol-schemas-v*` GitHub Release tag. Manual
+  backfill requires that exact release tag and re-verifies tag, checkout, and package
+  version identity before publication.
 
 Release dry-runs also validate `compatibility.yaml` through the MCP server release preflight. Update [docs/status/runtime-policy-matrix.md](status/runtime-policy-matrix.md) and release notes whenever KiCad, VS Code, MCP, Node, pnpm, Python, or tool-schema support changes.
 
