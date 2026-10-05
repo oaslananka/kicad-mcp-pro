@@ -52,12 +52,18 @@ async def test_diff_pair_skew_verdicts(
 @pytest.mark.anyio
 @pytest.mark.parametrize(("spread_mm", "expected"), [(1.0, "PASS"), (3.0, "WARN"), (5.0, "FAIL")])
 async def test_length_matching_verdicts(
-    si_server: object, monkeypatch: pytest.MonkeyPatch, spread_mm: float, expected: str
+    monkeypatch: pytest.MonkeyPatch, spread_mm: float, expected: str
 ) -> None:
     # tolerance 2 mm -> FAIL threshold 4 mm. spread 1=PASS, 3=WARN, 5=FAIL.
-    monkeypatch.setattr(si, "_track_lengths_by_net", lambda: {"A": 10.0, "B": 10.0 + spread_mm})
+    monkeypatch.setenv("KICAD_MCP_OPERATING_MODE", "experimental")
+    monkeypatch.setattr(
+        "kicad_mcp.tools.signal_integrity_length_matching._track_lengths_by_net",
+        lambda: {"A": 10.0, "B": 10.0 + spread_mm},
+    )
+    reset_config()
+    server = build_server("agent_full")
     out = await call_tool_text(
-        si_server,
+        server,
         "si_validate_length_matching",
         {"net_groups": [["A", "B"]], "tolerance_mm": 2.0},
     )
