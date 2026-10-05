@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import importlib
 import inspect
+from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from kicad_mcp.models.signal_integrity import DifferentialPairSkewInput
@@ -94,3 +96,44 @@ def test_registration_preserves_signature_docstring_and_delegation() -> None:
     assert width_provider is track_width
     assert height_provider is dielectric_height
     assert resolver is budget_resolver
+
+
+def test_resolve_skew_budget_prefers_matching_interface(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = importlib.import_module("kicad_mcp.tools.signal_integrity_differential_pair_skew")
+    resolution = SimpleNamespace(
+        resolved=SimpleNamespace(
+            interfaces=[
+                SimpleNamespace(diff_skew_max_ps=12.0, net_prefix="PCIE_"),
+                SimpleNamespace(diff_skew_max_ps=8.0, net_prefix="USB_"),
+                SimpleNamespace(diff_skew_max_ps=None, net_prefix=""),
+            ]
+        )
+    )
+    monkeypatch.setattr(adapter, "resolve_design_intent", lambda: resolution)
+
+    assert adapter._resolve_skew_budget_ps("USB_DP", "USB_DN") == (
+        8.0,
+        "design-intent interface budget 8.0 ps",
+    )
+
+
+def test_resolve_skew_budget_uses_tightest_declared_when_prefix_does_not_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = importlib.import_module("kicad_mcp.tools.signal_integrity_differential_pair_skew")
+    resolution = SimpleNamespace(
+        resolved=SimpleNamespace(
+            interfaces=[
+                SimpleNamespace(diff_skew_max_ps=12.0, net_prefix="PCIE_"),
+                SimpleNamespace(diff_skew_max_ps=7.0, net_prefix=""),
+            ]
+        )
+    )
+    monkeypatch.setattr(adapter, "resolve_design_intent", lambda: resolution)
+
+    assert adapter._resolve_skew_budget_ps("USB_DP", "USB_DN") == (
+        7.0,
+        "tightest design-intent budget 7.0 ps (no net-prefix match)",
+    )
