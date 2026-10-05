@@ -369,7 +369,9 @@ async def test_si_bind_interfaces_to_net_classes_applied(sample_project, monkeyp
         written.append((net_class, clearance_mm, track_width_mm, diff_gap_mm))
         return str(sample_project / "demo.kicad_dru")
 
-    monkeypatch.setattr("kicad_mcp.tools.signal_integrity._write_nc_rule", fake_write_rule)
+    monkeypatch.setattr(
+        "kicad_mcp.tools.signal_integrity_net_class_binding._write_nc_rule", fake_write_rule
+    )
     server = build_server("full")
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
 
