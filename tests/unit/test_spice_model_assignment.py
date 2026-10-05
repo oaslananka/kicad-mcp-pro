@@ -14,42 +14,21 @@ from tests.conftest import call_tool_text
 
 
 @pytest.mark.anyio
-async def test_list_spice_libraries_default(tmp_path: Path, monkeypatch) -> None:
+async def test_list_spice_libraries_default(tmp_path: Path) -> None:
     # Create a minimal project so tools requiring a project can run
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / "demo.kicad_pro").write_text("{}", encoding="utf-8")
+    (proj / "demo.kicad_pro").write_text(
+        '{"libraries":[{"name":"Default","type":"Spice","uri":"models/default.lib"}]}',
+        encoding="utf-8",
+    )
     (proj / "demo.kicad_pcb").write_text("", encoding="utf-8")
     (proj / "demo.kicad_sch").write_text("", encoding="utf-8")
-
-    cfg_path = tmp_path / "sim" / "spice"
-    cfg_path.mkdir(parents=True, exist_ok=True)
-    (cfg_path / "default.lib").write_text("* default lib", encoding="utf-8")
-    from kicad_mcp import config
-
-    monkeypatch.setattr(
-        config,
-        "get_config",
-        lambda: config.KiCadMCPConfig._make(
-            project_dir=tmp_path,
-            output_dir=None,
-            spice_model_dir=cfg_path,
-            kicad_cli="kicad-cli",
-            project_file=None,
-            sch_file=None,
-            footprint_library_dir=None,
-            symbol_library_dir=None,
-            max_text_response_chars=100000,
-            profile="full",
-            auth_token=None,
-            studio_watch_dir=None,
-            http_transport=None,
-        ),
-    )
     server = create_server()
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(proj)})
     result = await call_tool_text(server, "sim_list_spice_libraries", {})
-    assert "default.lib" in result or "libraries" in result.lower()
+    assert "SPICE libraries (1):" in result
+    assert "Default: models/default.lib" in result
 
 
 @pytest.mark.anyio

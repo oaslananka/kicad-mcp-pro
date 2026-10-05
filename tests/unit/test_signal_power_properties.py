@@ -5,10 +5,10 @@ import math
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from kicad_mcp.power_integrity.voltage_drop import track_resistance_ohm
 from kicad_mcp.tools.power_integrity import (
     _ipc_current_capacity_a,
     _required_width_mm,
-    _track_resistance_ohm,
 )
 from kicad_mcp.utils.impedance import (
     solve_width_for_impedance,
@@ -32,8 +32,8 @@ def test_pdn_trace_resistance_increases_with_length(
 ) -> None:
     shorter, longer = sorted((length_a_mm, length_b_mm))
 
-    short_resistance = _track_resistance_ohm(width_mm, shorter, copper_oz)
-    long_resistance = _track_resistance_ohm(width_mm, longer, copper_oz)
+    short_resistance = track_resistance_ohm(width_mm, shorter, copper_oz)
+    long_resistance = track_resistance_ohm(width_mm, longer, copper_oz)
 
     assert long_resistance >= short_resistance
 
