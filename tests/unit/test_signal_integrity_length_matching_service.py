@@ -33,7 +33,4 @@ def test_validate_preserves_empty_and_missing_group_reporting() -> None:
     )
     assert "- Group 1: skipped empty group" in result
     assert "- Group 2: missing routed tracks for MISSING" in result
-    assert (
-        "- Group 3 (PASS): shortest A=10.000 mm, longest B=10.500 mm, spread=0.500 mm"
-        in result
-    )
+    assert "- Group 3 (PASS): shortest A=10.000 mm, longest B=10.500 mm, spread=0.500 mm" in result
