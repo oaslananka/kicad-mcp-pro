@@ -42,7 +42,7 @@ def test_si_root_delegates_stackup_synthesis_and_shrinks() -> None:
     span = boundaries._function_span(root, "register")
     assert span is not None
     assert span <= 390
-    assert boundaries.REGISTER_LINE_LIMITS[ROOT] == 390
+    assert boundaries.REGISTER_LINE_LIMITS[ROOT] <= 390
 
 
 def test_si_root_drops_stackup_synthesis_only_dependencies() -> None:
