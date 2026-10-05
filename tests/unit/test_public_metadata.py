@@ -62,8 +62,22 @@ def test_upcoming_roadmap_does_not_list_published_versions() -> None:
         Version(match) for match in re.findall(r"^###\s+(\d+\.\d+(?:\.\d+)?)\b", upcoming, re.M)
     ]
 
-    assert versions
     assert all(version > current for version in versions)
+
+
+def test_roadmap_validator_accepts_version_neutral_future_major() -> None:
+    module = _load_metadata_sync_module()
+    roadmap = """# Roadmap
+
+## Upcoming
+
+### Next major (Target: TBD — RFC required)
+- future breaking changes stay version-neutral until an RFC selects the major.
+
+## Ownership
+"""
+
+    assert module._roadmap_version_errors(roadmap, "4.0.0") == []
 
 
 def test_roadmap_validator_rejects_published_version_in_upcoming_section() -> None:
