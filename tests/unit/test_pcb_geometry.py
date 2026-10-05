@@ -97,9 +97,21 @@ def test_track_segment_length_matches_legacy_analysis_and_routing_tolerance() ->
 
 
 def test_analysis_modules_import_the_same_canonical_length_function() -> None:
-    from kicad_mcp.tools import emc_compliance, power_integrity, routing, signal_integrity
+    from kicad_mcp.tools import (
+        emc_compliance,
+        power_integrity,
+        routing,
+        signal_integrity_differential_pair_skew,
+        signal_integrity_length_matching,
+    )
 
-    for module in (emc_compliance, power_integrity, routing, signal_integrity):
+    for module in (
+        emc_compliance,
+        power_integrity,
+        routing,
+        signal_integrity_differential_pair_skew,
+        signal_integrity_length_matching,
+    ):
         assert module.track_segment_length_mm is track_segment_length_mm
 
 
