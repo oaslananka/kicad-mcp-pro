@@ -37,33 +37,49 @@ def test_actionlint_is_a_locked_python_dev_tool() -> None:
     assert "kicadstudio" not in checker
 
 
-def test_pre_commit_uses_one_targeted_pre_push_gate() -> None:
-    config = yaml.safe_load((ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
-    local = next(repo for repo in config["repos"] if repo["repo"] == "local")
-    hooks = {hook["id"]: hook for hook in local["hooks"]}
+def test_lefthook_is_pinned_and_lifecycle_is_explicitly_allowed() -> None:
+    package = __import__("json").loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    workspace = yaml.safe_load((ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8"))
 
-    assert set(hooks) == {"targeted-pre-push"}
-    targeted = hooks["targeted-pre-push"]
-    assert targeted["stages"] == ["pre-push"]
-    assert targeted["always_run"] is True
-    assert targeted["pass_filenames"] is False
-    assert targeted["language"] == "python"
-    assert targeted["entry"] == (
-        "python scripts/run_uv.py run --all-extras python scripts/hook_pre_push.py"
+    assert package["devDependencies"]["lefthook"] == "2.1.14"
+    assert package["scripts"]["hooks:install"] == "python scripts/install_git_hooks.py"
+    assert package["scripts"]["hooks:pre-commit"] == "lefthook run pre-commit"
+    assert package["scripts"]["hooks:pre-push"] == "lefthook run pre-push"
+    assert workspace["allowBuilds"] == {"lefthook": True}
+
+
+def test_lefthook_owns_fast_pre_commit_and_targeted_pre_push() -> None:
+    config = yaml.safe_load((ROOT / "lefthook.yml").read_text(encoding="utf-8"))
+
+    assert config["lefthook"] == "node_modules/.bin/lefthook"
+    assert set(config) >= {"lefthook", "pre-commit", "pre-push"}
+
+    pre_commit = config["pre-commit"]["commands"]
+    assert set(pre_commit) == {"fast"}
+    assert pre_commit["fast"]["run"] == (
+        "python3 scripts/run_uv.py tool run pre-commit run "
+        "--hook-stage pre-commit --files {staged_files}"
     )
 
-    config_text = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
-    assert "scripts/run_pytest.py unit" not in config_text
-    assert "cargo check" not in config_text
-    assert "workflow_security.py" not in config_text
+    pre_push = config["pre-push"]["commands"]
+    assert set(pre_push) == {"targeted"}
+    assert pre_push["targeted"]["run"] == (
+        "python3 scripts/run_uv.py run --all-extras python "
+        "scripts/hook_pre_push.py --base origin/main"
+    )
 
 
-def test_standard_hooks_run_only_at_pre_commit() -> None:
+def test_pre_commit_catalog_contains_fast_checks_only() -> None:
     config = yaml.safe_load((ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
 
+    hook_ids = {hook["id"] for repo in config["repos"] for hook in repo["hooks"]}
+    assert "gitleaks" in hook_ids
+    assert "ruff-format" in hook_ids
+    assert "ruff" in hook_ids
+    assert "mixed-line-ending" in hook_ids
+
     for repo in config["repos"]:
-        if repo["repo"] == "local":
-            continue
+        assert repo["repo"] != "local"
         for hook in repo["hooks"]:
             assert hook["stages"] == ["pre-commit"]
 

@@ -1,0 +1,25 @@
+{
+  "name": "release-tags",
+  "target": "tag",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/tags/protocol-schemas-v*",
+        "refs/tags/mcp-server-v*",
+        "refs/tags/mcp-npm-v*",
+        "refs/tags/kicad-mcp-gui-v*"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "update"
+    }
+  ],
+  "bypass_actors": []
+}

@@ -84,6 +84,17 @@ def test_emit_drift_errors_adds_github_annotations(monkeypatch, capsys) -> None:
     ) in captured.err
 
 
+def test_emit_ruleset_drift_points_to_ruleset_policy(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    emit_drift_errors(["ruleset.release-tags missing from live repository"])
+
+    captured = capsys.readouterr()
+    assert (
+        "::error file=.github/rulesets/release-tags.json,line=1,"
+        "title=Repository settings drift::ruleset.release-tags missing from live repository"
+    ) in captured.err
+
+
 def test_repository_settings_audit_workflow_is_default_branch_only_and_read_only() -> None:
     workflow = (ROOT / ".github/workflows/repository-settings-audit.yml").read_text(
         encoding="utf-8"
@@ -165,3 +176,63 @@ def test_repository_name_validation_rejects_command_like_input() -> None:
     ):
         with pytest.raises(ValueError, match="owner/repository"):
             validate_repository_name(value)
+
+
+def test_ruleset_desired_state_matches_live_shape_and_reports_drift() -> None:
+    from scripts.check_github_repository_settings import (
+        load_ruleset_policies,
+        validate_ruleset_state,
+    )
+
+    expected = load_ruleset_policies()
+    live = {
+        name: {
+            **payload,
+            "id": index,
+            "source": "oaslananka/kicad-mcp-pro",
+            "source_type": "Repository",
+            "current_user_can_bypass": "never",
+        }
+        for index, (name, payload) in enumerate(expected.items(), start=1)
+    }
+
+    assert validate_ruleset_state(expected, live) == []
+
+    live["main-standard"] = json.loads(json.dumps(live["main-standard"]))
+    pull_request_rule = next(
+        rule for rule in live["main-standard"]["rules"] if rule["type"] == "pull_request"
+    )
+    pull_request_rule["parameters"]["allowed_merge_methods"] = ["merge", "squash"]
+
+    errors = validate_ruleset_state(expected, live)
+    assert any("ruleset.main-standard drift" in error for error in errors)
+
+
+def test_ruleset_desired_state_requires_main_and_release_tag_policies() -> None:
+    from scripts.check_github_repository_settings import load_ruleset_policies
+
+    policies = load_ruleset_policies()
+
+    assert set(policies) == {"main-standard", "release-tags"}
+    assert policies["main-standard"]["conditions"]["ref_name"]["include"] == ["~DEFAULT_BRANCH"]
+    assert policies["release-tags"]["rules"] == [{"type": "deletion"}, {"type": "update"}]
+
+
+def test_ruleset_validation_reports_missing_live_ruleset() -> None:
+    from scripts.check_github_repository_settings import (
+        load_ruleset_policies,
+        validate_ruleset_state,
+    )
+
+    expected = load_ruleset_policies()
+    errors = validate_ruleset_state(expected, {"main-standard": expected["main-standard"]})
+
+    assert errors == ["ruleset.release-tags missing from live repository"]
+
+
+def test_repository_settings_audit_queries_live_rulesets() -> None:
+    source = (ROOT / "scripts" / "check_github_repository_settings.py").read_text(encoding="utf-8")
+
+    assert '"/repos/oaslananka/kicad-mcp-pro/rulesets"' in source
+    assert "_github_rulesets(token)" in source
+    assert "validate_ruleset_state(expected_rulesets, live_rulesets)" in source

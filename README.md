@@ -273,7 +273,7 @@ task format      # Auto-format the codebase
 task typecheck   # Run strict static type checking
 task build       # Build release artifacts
 task ci          # Run the local equivalent of the full CI pipeline
-task hooks       # Install local git hooks
+task hooks       # Install repository-pinned Lefthook git hooks
 ```
 
 All changes must pass `task verify` before opening a pull request.

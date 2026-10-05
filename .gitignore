@@ -69,3 +69,4 @@ src-tauri/gen/
 .dev-tools/
 .dev-cache/
 .dev-env.sh
+lefthook-local.yml

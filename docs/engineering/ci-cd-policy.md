@@ -64,7 +64,7 @@ delta.
 
 ## Required Status Checks
 
-The following checks are required by the `main` branch ruleset and must report
+The following checks are required by the `main-standard` branch ruleset and must report
 a status on every PR:
 
 | # | Check Name | Source Workflow | Source Job |
@@ -108,7 +108,7 @@ It exists to let branch protection eventually depend on **one** check instead
 of pinning every individual matrix context, so job renames or new matrix
 entries don't require a ruleset edit.
 
-`Required PR Gate` is active in ruleset `20631071`. The existing operating-
+`Required PR Gate` is active in the `main-standard` ruleset. The existing operating-
 system matrix, protocol schema, secret scan, CodeQL, and dependency-review
 contexts remain required alongside it. New internal jobs such as `coverage`
 become merge-blocking by joining the aggregate gate; they should not be added
@@ -159,7 +159,7 @@ updaters. Each updater allows at most two open version-update pull requests and 
 five-day release cooldown. These backpressure controls do not delay or count Dependabot
 security-update pull requests.
 
-Required status checks and the active `main` ruleset remain authoritative; neither
+Required status checks and the active `main-standard` ruleset remain authoritative; neither
 Dependabot nor Mergify bypasses them. Mergify may automatically queue only the explicitly
 allowlisted routine Dependabot groups, one PR at a time. Queue and merge conditions are
 identical and explicitly mirror the required contexts declared in `.github/rulesets/main.json`,

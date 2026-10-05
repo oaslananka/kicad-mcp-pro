@@ -16,8 +16,13 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY = ROOT / ".github" / "actions-policy.json"
+DEFAULT_RULESET_POLICIES = {
+    "main-standard": ROOT / ".github" / "rulesets" / "main.json",
+    "release-tags": ROOT / ".github" / "rulesets" / "release-tags.json",
+}
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
 _CANONICAL_REPOSITORY = "oaslananka/kicad-mcp-pro"
+_RULESETS_PATH = "/repos/oaslananka/kicad-mcp-pro/rulesets"
 _API_PATHS = {
     "actions-permissions": "/repos/oaslananka/kicad-mcp-pro/actions/permissions",
     "selected-actions": "/repos/oaslananka/kicad-mcp-pro/actions/permissions/selected-actions",
@@ -98,9 +103,13 @@ def emit_drift_errors(errors: list[str]) -> None:
         print(f"- {error}", file=sys.stderr)
         if in_actions:
             detail = _workflow_command_escape(error)
+            annotation_file = ".github/actions-policy.json"
+            if error.startswith("ruleset.main-standard"):
+                annotation_file = ".github/rulesets/main.json"
+            elif error.startswith("ruleset.release-tags"):
+                annotation_file = ".github/rulesets/release-tags.json"
             print(
-                "::error file=.github/actions-policy.json,line=1,"
-                f"title=Repository settings drift::{detail}",
+                f"::error file={annotation_file},line=1,title=Repository settings drift::{detail}",
                 file=sys.stderr,
             )
 
@@ -179,6 +188,53 @@ def _load_policy(path: Path) -> dict[str, Any]:
     return payload
 
 
+def load_ruleset_policies() -> dict[str, dict[str, Any]]:
+    """Load the reviewed repository ruleset desired state."""
+    policies: dict[str, dict[str, Any]] = {}
+    for expected_name, path in DEFAULT_RULESET_POLICIES.items():
+        payload = _load_policy(path)
+        actual_name = payload.get("name")
+        if actual_name != expected_name:
+            raise ValueError(
+                f"{path.relative_to(ROOT)}: ruleset name {actual_name!r} "
+                f"does not match expected {expected_name!r}"
+            )
+        policies[expected_name] = payload
+    return policies
+
+
+def _normalized_ruleset(payload: dict[str, Any]) -> dict[str, Any]:
+    """Drop GitHub read-only fields and keep only repository-owned desired state."""
+    return {
+        "name": payload.get("name"),
+        "target": payload.get("target"),
+        "enforcement": payload.get("enforcement"),
+        "conditions": payload.get("conditions"),
+        "rules": payload.get("rules"),
+        "bypass_actors": payload.get("bypass_actors", []),
+    }
+
+
+def validate_ruleset_state(
+    expected_rulesets: dict[str, dict[str, Any]],
+    live_rulesets: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Return drift between reviewed desired-state rulesets and live GitHub details."""
+    errors: list[str] = []
+    for name, expected in expected_rulesets.items():
+        live = live_rulesets.get(name)
+        if live is None:
+            errors.append(f"ruleset.{name} missing from live repository")
+            continue
+        expected_state = _normalized_ruleset(expected)
+        live_state = _normalized_ruleset(live)
+        if live_state != expected_state:
+            errors.append(
+                f"ruleset.{name} drift: actual={live_state!r} expected={expected_state!r}"
+            )
+    return errors
+
+
 def validate_repository_name(repository: str) -> str:
     """Validate the one reviewed repository this policy is allowed to audit."""
     if _REPOSITORY_RE.fullmatch(repository) is None or repository != _CANONICAL_REPOSITORY:
@@ -227,11 +283,13 @@ def _github_token() -> str:
     return token
 
 
-def _github_api(endpoint_name: str, token: str) -> dict[str, Any]:
-    try:
-        path = _API_PATHS[endpoint_name]
-    except KeyError as exc:
-        raise ValueError(f"unknown reviewed GitHub API endpoint: {endpoint_name!r}") from exc
+def _github_api_payload(path: str, token: str) -> object:
+    allowed_dynamic = path == _RULESETS_PATH or re.fullmatch(
+        r"/repos/oaslananka/kicad-mcp-pro/rulesets/[0-9]+", path
+    )
+    if path not in _API_PATHS.values() and not allowed_dynamic:
+        raise ValueError(f"unreviewed GitHub API path: {path!r}")
+
     connection = HTTPSConnection("api.github.com", timeout=30)
     headers = {
         "Accept": "application/vnd.github+json",
@@ -248,10 +306,40 @@ def _github_api(endpoint_name: str, token: str) -> dict[str, Any]:
     if not 200 <= response.status < 300:
         detail = body.decode("utf-8", errors="replace")[:500]
         raise RuntimeError(f"GitHub API {path} failed with HTTP {response.status}: {detail}")
-    payload = json.loads(body.decode("utf-8"))
+    return json.loads(body.decode("utf-8"))
+
+
+def _github_api(endpoint_name: str, token: str) -> dict[str, Any]:
+    try:
+        path = _API_PATHS[endpoint_name]
+    except KeyError as exc:
+        raise ValueError(f"unknown reviewed GitHub API endpoint: {endpoint_name!r}") from exc
+    payload = _github_api_payload(path, token)
     if not isinstance(payload, dict):
         raise RuntimeError(f"GitHub API {path} returned a non-object payload")
     return payload
+
+
+def _github_rulesets(token: str) -> dict[str, dict[str, Any]]:
+    summaries = _github_api_payload(_RULESETS_PATH, token)
+    if not isinstance(summaries, list):
+        raise RuntimeError("GitHub rulesets endpoint returned a non-list payload")
+
+    live: dict[str, dict[str, Any]] = {}
+    for summary in summaries:
+        if not isinstance(summary, dict):
+            continue
+        name = summary.get("name")
+        ruleset_id = summary.get("id")
+        if name not in DEFAULT_RULESET_POLICIES or not isinstance(ruleset_id, int):
+            continue
+        if name in live:
+            raise RuntimeError(f"duplicate live repository ruleset named {name!r}")
+        detail = _github_api_payload(f"{_RULESETS_PATH}/{ruleset_id}", token)
+        if not isinstance(detail, dict):
+            raise RuntimeError(f"GitHub ruleset {name!r} returned a non-object payload")
+        live[name] = detail
+    return live
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -285,6 +373,10 @@ def main(argv: list[str] | None = None) -> int:
             "ghcr": _github_api("environment:ghcr", token),
         }
         errors.extend(validate_environment_protection(policy, live_environments))
+
+        expected_rulesets = load_ruleset_policies()
+        live_rulesets = _github_rulesets(token)
+        errors.extend(validate_ruleset_state(expected_rulesets, live_rulesets))
     except (OSError, ValueError, RuntimeError, HTTPException) as exc:
         print(f"GitHub repository settings check failed: {exc}", file=sys.stderr)
         return 2

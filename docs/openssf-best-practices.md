@@ -26,8 +26,8 @@ The project has achieved the Silver badge and maintains a Silver evidence map. S
 | Dependency and container scanning | Met | [`scripts/audit_dependencies.py`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/scripts/audit_dependencies.py), Trivy workflow steps, Gitleaks workflow |
 | Release process | Met | [`docs/release-process.md`](release-process.md), release-please workflow, publish workflows |
 | Release integrity | Met | [`docs/security/release-integrity.md`](security/release-integrity.md), SBOM/checksum/attestation release steps |
-| Branch protection policy as code | Met | [`.github/rulesets/main.json`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/.github/rulesets/main.json), [`docs/branch-protection.md`](branch-protection.md), Scorecard exceptions in [`docs/security/scorecard-exceptions.md`](security/scorecard-exceptions.md) |
-| Branch protection active in GitHub | Met | Repository ruleset `main` is active on `refs/heads/main`; verify with `gh api /repos/oaslananka/kicad-mcp-pro/rulesets` |
+| Branch/tag protection policy as code | Met | [`.github/rulesets/main.json`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/.github/rulesets/main.json), [`.github/rulesets/release-tags.json`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/.github/rulesets/release-tags.json), [`docs/branch-protection.md`](branch-protection.md) |
+| Branch protection active in GitHub | Met | Repository ruleset `main-standard` is active on `~DEFAULT_BRANCH`; verify with `gh api /repos/oaslananka/kicad-mcp-pro/rulesets` |
 | OpenSSF Silver evidence | Met | [`docs/openssf-silver-evidence.md`](openssf-silver-evidence.md), Silver badge for project `13377` |
 | HTTPS project URLs | Met | GitHub repository, documentation site, package URLs, and badges use HTTPS |
 | English documentation and reports | Met | Repository documentation, issue templates, security policy, and support documents are written in English |
@@ -60,7 +60,7 @@ Recommended evidence URLs:
 Before a release or OpenSSF resubmission:
 
 1. Run `corepack pnpm run check:ci` or the documented full CI equivalent.
-2. Confirm `gh api /repos/oaslananka/kicad-mcp-pro/rulesets` shows an active `main` ruleset.
+2. Confirm `gh api /repos/oaslananka/kicad-mcp-pro/rulesets` shows active `main-standard` and `release-tags` rulesets.
 3. Confirm private vulnerability reporting is enabled in repository settings.
 4. Confirm issue templates and discussion links render in GitHub.
 5. Confirm release artifacts include checksums, SBOMs, and attestations when the workflow supports them.

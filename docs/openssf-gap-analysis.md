@@ -14,7 +14,7 @@ This file records gaps that prevent a stronger OpenSSF Gold / foundation-grade c
 | --- | --- | --- | --- |
 | Single active maintainer | Partial | Bus factor is 1. Gold/foundation-grade needs continuity beyond one person. | Recruit and onboard at least one trusted co-maintainer. |
 | No independent human PR review evidence | Missing | Recent sampled merged PRs had zero recorded reviews. Bot checks do not replace human review. | Require one human approval once there is a second maintainer. |
-| Branch protection classic API mismatch | Passed | GitHub ruleset `main` is active; the classic endpoint is not the source of truth. | Keep the ruleset enabled and re-check after CI job name changes. |
+| Branch protection classic API mismatch | Passed | GitHub ruleset `main-standard` is active; repository rulesets are the source of truth for the documented governance policy. | Keep the ruleset enabled and re-check after CI job name changes. |
 | Private reporting setting | Passed | GitHub private reporting was enabled during this hardening pass. | Re-check before each security policy update. |
 | Secret scanning and push protection | Passed | Repository settings report both controls enabled. | Keep enabled. |
 | SLSA level not formally defined | Partial | Attestations exist, but formal SLSA claim requires scoped evidence. | Define per-artifact SLSA target before claiming. |

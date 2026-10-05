@@ -51,7 +51,7 @@ Gold / foundation-grade is not a current target for this solo-maintainer reposit
 
 | Check area | Status | Evidence / notes |
 | --- | --- | --- |
-| Branch protection / rulesets | Passed | GitHub ruleset `main` is active for branch protection; classic branch protection is not used. |
+| Branch protection / rulesets | Passed | GitHub ruleset `main-standard` is active for default-branch protection; the repository ruleset is the documented governance source of truth. |
 | Code review | Partial / Not applicable for solo maintainer | PR template and checks exist. Independent human review is optional until another trusted maintainer exists. |
 | Maintained | Passed | Recent pushes and PR activity. |
 | Security policy | Passed | `SECURITY.md`. |
