@@ -1,22 +1,68 @@
-# Branch Protection
+# Branch and Release-Tag Protection
 
-Rulesets are stored as code in `.github/rulesets/main.json`. The canonical repository currently has an active repository ruleset named `main` targeting `refs/heads/main`.
+GitHub repository rulesets are stored as reviewed desired state under `.github/rulesets/`:
 
-Create in the canonical repository:
+- `.github/rulesets/main.json` — active branch ruleset `main-standard`, targeting `~DEFAULT_BRANCH`.
+- `.github/rulesets/release-tags.json` — active tag ruleset `release-tags`, protecting the published product tag families.
 
-```bash
-gh api -X POST /repos/oaslananka/kicad-mcp-pro/rulesets --input .github/rulesets/main.json
-```
+The repository settings audit compares both files with the live GitHub ruleset details. The files are intended to describe the live policy, not a weaker bootstrap approximation.
 
-If the ruleset already exists, use the ruleset id:
+## Default branch ruleset
 
-```bash
+`main-standard` requires:
+
+- pull requests for changes to the default branch;
+- branch deletion protection;
+- non-fast-forward / force-push protection;
+- linear history;
+- zero mandatory human approvals while the project remains single-maintainer;
+- resolved review threads;
+- the extra approval safeguard for unattributed changes;
+- squash as the only allowed merge method;
+- strict required status checks listed in `.github/rulesets/main.json`.
+
+The repository owner has a `pull_request`-mode bypass actor entry. This does not grant an unrestricted always-bypass path: changes still use the pull-request boundary.
+
+`Live Model Release Policy` is intentionally not a default-branch required context. Provider smoke evidence is enforced at the release boundary. `SonarCloud Scan` remains required for the default-branch gate.
+
+## Release-tag ruleset
+
+`release-tags` blocks deletion and update of the real published tag families:
+
+- `protocol-schemas-v*`
+- `mcp-server-v*`
+- `mcp-npm-v*`
+- `kicad-mcp-gui-v*`
+
+Tag creation remains available to the verified release workflows; existing published tags are immutable.
+
+## Applying reviewed desired state
+
+Discover the live rule IDs before updating an existing ruleset:
+
+~~~bash
 gh api /repos/oaslananka/kicad-mcp-pro/rulesets
-gh api -X PUT /repos/oaslananka/kicad-mcp-pro/rulesets/<id> --input .github/rulesets/main.json
-```
+~~~
 
-The current single-maintainer policy requires pull requests, linear history, non-fast-forward protection, resolved review threads, and the required CI/security contexts listed in `.github/rulesets/main.json`. `Live Model Release Policy` is the stable risk-based release-assurance context; provider smoke matrix jobs are intentionally not required directly. `SonarCloud Scan` is also required so same-repository PRs cannot merge before analysis completes. The Sonar job uses a job-level condition for Dependabot and fork PRs; GitHub treats a conditionally skipped job as a successful required-check conclusion, and Mergify mirrors that with success/skipped/neutral alternatives.
+Create a missing ruleset only after confirming that an equivalent live ruleset does not already exist:
 
-Enable required approvals, code-owner review, and verified commit-signing enforcement after adding a second trusted maintainer and configuring signing for all release actors.
+~~~bash
+gh api -X POST /repos/oaslananka/kicad-mcp-pro/rulesets \
+  --input .github/rulesets/main.json
 
-When a required workflow job name changes, update the root branch-protection document and `.github/rulesets/main.json` together before applying the ruleset.
+gh api -X POST /repos/oaslananka/kicad-mcp-pro/rulesets \
+  --input .github/rulesets/release-tags.json
+~~~
+
+For an existing ruleset, use its verified ID:
+
+~~~bash
+gh api -X PUT /repos/oaslananka/kicad-mcp-pro/rulesets/<id> \
+  --input .github/rulesets/main.json
+~~~
+
+Use the matching desired-state file for the target ruleset. Do not apply a file blindly when the live repository has a stronger intentional policy; reconcile the difference first.
+
+When a required workflow job name changes, update the workflow, `.github/rulesets/main.json`, Mergify conditions, tests, and this documentation as one policy change before modifying the live ruleset.
+
+Enable required human approvals, code-owner review, or additional signing/review controls only when the maintainer model and release actors can satisfy them reliably.
