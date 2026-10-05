@@ -175,6 +175,7 @@ async def test_signal_integrity_surface(sample_project, mock_board) -> None:
 async def test_signal_integrity_stackup_synthesis_and_net_class_binding(
     sample_project,
     monkeypatch: pytest.MonkeyPatch,
+) -> None:
     written: list[tuple[str, float, float, float | None]] = []
 
     def fake_write_rule(
