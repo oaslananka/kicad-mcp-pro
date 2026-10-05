@@ -20,6 +20,29 @@ def test_via_stub_service_reports_no_matching_vias() -> None:
     assert result == "No vias matched the supplied positions on the active board."
 
 
+def test_via_stub_service_warns_when_response_limit_omits_vias() -> None:
+    payload = ViaStubInput(via_positions=[], frequency_ghz=5.0, er=4.0)
+    observation = ViaStubObservation(
+        net_name="GND",
+        x_mm=5.0,
+        y_mm=5.0,
+        via_type_name="VT_THROUGH",
+        drill_mm=0.3,
+        stub_mm=1.6,
+    )
+
+    result = SignalIntegrityViaStubService().analyze(
+        payload=payload,
+        board_thickness_mm=1.6,
+        observations=[observation],
+        critical_frequencies_mhz=[],
+        omitted_observations=2,
+    )
+
+    assert "WARNING: response limit omitted 2 additional vias" in result
+    assert "those vias were not checked." in result
+
+
 def test_via_stub_service_preserves_report_and_critical_frequency_note() -> None:
     payload = ViaStubInput(via_positions=[], frequency_ghz=5.0, er=4.0)
     observations = [

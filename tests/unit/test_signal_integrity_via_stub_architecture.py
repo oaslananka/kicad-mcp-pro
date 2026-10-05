@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-import ast
-
 from scripts import check_architecture_boundaries as boundaries
+from tests.signal_integrity_architecture import (
+    assert_adapter_boundary,
+    assert_service_adapter_tracked,
+    root_register_contract,
+)
 
 SERVICE = "kicad_mcp.signal_integrity.via_stub"
 ADAPTER = "kicad_mcp.tools.signal_integrity_via_stub"
@@ -10,44 +13,25 @@ ROOT = "kicad_mcp.tools.signal_integrity"
 
 
 def test_architecture_checker_tracks_via_stub_service_and_adapter() -> None:
-    assert SERVICE in boundaries.DOMAIN_MODULES
-    assert SERVICE in boundaries.PURE_HELPERS
-    assert ADAPTER in boundaries.DOMAIN_MODULES
-    assert ROOT in boundaries.DOMAIN_MODULES
+    assert_service_adapter_tracked(SERVICE, ADAPTER, ROOT)
 
 
 def test_via_stub_adapter_stays_thin_and_away_from_root() -> None:
-    adapter = boundaries.DOMAIN_MODULES[ADAPTER]
-    assert ROOT not in boundaries._imports_for(ADAPTER, adapter)
-    assert boundaries.ADAPTER_FORBIDDEN_IMPORT_PREFIXES[ADAPTER] == (ROOT,)
-    span = boundaries._function_span(adapter, "register")
-    assert span is not None
-    assert span <= 45
-    assert boundaries.REGISTER_LINE_LIMITS[ADAPTER] == 45
+    assert_adapter_boundary(ADAPTER, ROOT, line_limit=45)
 
 
 def test_si_root_delegates_via_stub_and_has_no_nested_tools() -> None:
-    root = boundaries.DOMAIN_MODULES[ROOT]
-    tree = ast.parse(root.read_text(encoding="utf-8"), filename=str(root))
-    register_node = next(
-        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "register"
-    )
-    nested = [
-        node.name
-        for node in register_node.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    ]
-    source = root.read_text(encoding="utf-8")
+    source, nested, span = root_register_contract(ROOT)
 
     assert nested == []
-    assert "si_check_via_stub" not in source
-    assert "ViaStubInput" not in source
-    assert "ViaType" not in source
-    assert "board_vias" not in source
-    assert "via_stub_resonance_ghz" not in source
+    for forbidden in (
+        "si_check_via_stub",
+        "ViaStubInput",
+        "ViaType",
+        "board_vias",
+        "via_stub_resonance_ghz",
+    ):
+        assert forbidden not in source
     assert "signal_integrity_via_stub.register(mcp)" in source
-
-    span = boundaries._function_span(root, "register")
-    assert span is not None
     assert span <= 60
     assert boundaries.REGISTER_LINE_LIMITS[ROOT] <= 60

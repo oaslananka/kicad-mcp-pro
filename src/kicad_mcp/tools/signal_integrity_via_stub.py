@@ -111,6 +111,26 @@ def _default_dependencies() -> SignalIntegrityViaStubDependencies:
     return SignalIntegrityViaStubDependencies(service=SignalIntegrityViaStubService())
 
 
+def _analyze_vias(
+    payload: ViaStubInput,
+    deps: SignalIntegrityViaStubDependencies,
+) -> str:
+    vias = _selected_vias(payload.via_positions)
+    if not vias:
+        return "No vias matched the supplied positions on the active board."
+
+    limit = _response_limit()
+    visible_vias = vias[:limit]
+    observations = [_via_observation(via) for via in visible_vias]
+    return deps.service.analyze(
+        payload=payload,
+        board_thickness_mm=_board_thickness_mm(),
+        observations=observations,
+        critical_frequencies_mhz=_critical_frequencies_mhz(),
+        omitted_observations=max(0, len(vias) - len(visible_vias)),
+    )
+
+
 def register(
     mcp: FastMCP,
     dependencies: SignalIntegrityViaStubDependencies | None = None,
@@ -133,21 +153,4 @@ def register(
             frequency_ghz=frequency_ghz,
             er=er,
         )
-        vias = _selected_vias(payload.via_positions)
-        if not vias:
-            return deps.service.analyze(
-                payload=payload,
-                board_thickness_mm=0.0,
-                observations=[],
-                critical_frequencies_mhz=[],
-            )
-
-        board_thickness_mm = _board_thickness_mm()
-        critical_frequencies_mhz = _critical_frequencies_mhz()
-        observations = [_via_observation(via) for via in vias[: _response_limit()]]
-        return deps.service.analyze(
-            payload=payload,
-            board_thickness_mm=board_thickness_mm,
-            observations=observations,
-            critical_frequencies_mhz=critical_frequencies_mhz,
-        )
+        return _analyze_vias(payload, deps)

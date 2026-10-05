@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from mcp.server.mcpserver import MCPServer as FastMCP
 
-from ..pcb.geometry import point_xy_mm as point_xy_mm
+from ..pcb.geometry import point_xy_mm
+
+__all__ = ["point_xy_mm", "register"]
 
 
 def register(mcp: FastMCP) -> None:

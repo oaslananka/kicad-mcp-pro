@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from ..models.signal_integrity import ViaStubInput
 from ..utils.impedance import via_stub_resonance_ghz, via_stub_risk_level
 
+_RESONANCE_MATCH_TOLERANCE = 0.10
+
 
 @dataclass(frozen=True)
 class ViaStubObservation:
@@ -29,6 +31,7 @@ class SignalIntegrityViaStubService:
         board_thickness_mm: float,
         observations: list[ViaStubObservation],
         critical_frequencies_mhz: list[float],
+        omitted_observations: int = 0,
     ) -> str:
         if not observations:
             return "No vias matched the supplied positions on the active board."
@@ -49,7 +52,7 @@ class SignalIntegrityViaStubService:
             critical_matches = [
                 frequency
                 for frequency in critical_frequencies_mhz
-                if abs(resonance_mhz - frequency) <= frequency * 0.10
+                if abs(resonance_mhz - frequency) <= frequency * _RESONANCE_MATCH_TOLERANCE
             ]
             critical_note = (
                 " | CRITICAL resonance near "
@@ -63,5 +66,11 @@ class SignalIntegrityViaStubService:
                 f"drill={observation.drill_mm:.3f} mm | stub={observation.stub_mm:.3f} mm | "
                 f"quarter-wave resonance={resonance_ghz:.2f} GHz | risk={risk}"
                 f"{critical_note}"
+            )
+        if omitted_observations:
+            suffix = "via" if omitted_observations == 1 else "vias"
+            lines.append(
+                f"- WARNING: response limit omitted {omitted_observations} additional {suffix}; "
+                "those vias were not checked."
             )
         return "\n".join(lines)
