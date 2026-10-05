@@ -18,16 +18,12 @@ class FakeService:
         er: float,
         copper_oz: float,
     ) -> str:
-        self.calls.append(
-            (layer_count, target_impedance_ohm, manufacturer, er, copper_oz)
-        )
+        self.calls.append((layer_count, target_impedance_ohm, manufacturer, er, copper_oz))
         return "stackup-result"
 
 
 def test_registration_preserves_signature_docstring_order_and_delegation() -> None:
-    adapter = importlib.import_module(
-        "kicad_mcp.tools.signal_integrity_stackup_generation"
-    )
+    adapter = importlib.import_module("kicad_mcp.tools.signal_integrity_stackup_generation")
     server = FastMCP("si-stackup-generation-registration")
     service = FakeService()
 
