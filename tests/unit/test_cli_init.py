@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from kicad_mcp.cli_init import (
+    CLIENT_ZED,
     MCP_CLIENT_CONFIGS,
     _generate_mcp_config,
     _resolve_config_path,
@@ -32,6 +33,12 @@ class TestMcpClientConfigs:
             for platform_key, path in paths.items():
                 assert isinstance(path, str), f"{client}/{platform_key} not a string"
                 assert path.strip(), f"{client}/{platform_key} is empty"
+
+    def test_zed_uses_platform_appropriate_config_paths(self) -> None:
+        paths = MCP_CLIENT_CONFIGS[CLIENT_ZED]
+        assert paths["windows"] == r"%APPDATA%\Zed\settings.json"
+        assert paths["darwin"] == "~/.config/zed/settings.json"
+        assert paths["linux"] == "~/.config/zed/settings.json"
 
 
 # ---------------------------------------------------------------------------

@@ -91,13 +91,13 @@ def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
     lock = json.loads((APP / "package-lock.json").read_text(encoding="utf-8"))
 
     assert package["overrides"]["@hono/node-server"] == "2.0.11"
-    assert package["overrides"]["hono"] == "4.13.5"
+    assert package["overrides"]["hono"] == "4.13.7"
     assert package["overrides"]["fast-uri"] == "3.1.8"  # nosec B101
     assert package["overrides"]["qs"] == "6.16.0"
 
     patched = {
         "node_modules/@hono/node-server": "2.0.5",
-        "node_modules/hono": "4.13.5",
+        "node_modules/hono": "4.13.7",
         "node_modules/fast-uri": "3.1.8",
         "node_modules/qs": "6.16.0",
         "node_modules/ip-address": "10.4.0",

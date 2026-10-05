@@ -49,7 +49,7 @@ def test_registration_preserves_signature_metadata_and_delegation() -> None:
         "(net_or_group: 'str', target_delay_ps: 'float', "
         "tolerance_ps: 'float' = 10.0, layer: 'str | None' = None) -> 'str'"
     )
-    assert "Create a KiCad 10-inspired time-domain tuning rule" in (tool.fn.__doc__ or "")
+    assert "one concrete net; wildcards are rejected" in (tool.fn.__doc__ or "")
     metadata = get_tool_metadata("route_tune_time_domain")
     assert metadata is not None
     assert metadata.headless_compatible is True

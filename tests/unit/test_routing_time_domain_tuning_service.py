@@ -54,22 +54,22 @@ def _service(
 def test_fallback_tuning_preserves_rule_and_response(tmp_path: Path) -> None:
     service, track_calls, write_calls = _service(tmp_path, current_length=12.5)
 
-    result = service.tune("DATA*", 250.0, 15.0)
+    result = service.tune("DATA0", 250.0, 15.0)
 
     target_mm = delay_to_length_mm(250.0, 0.5)
     tolerance_mm = delay_to_length_mm(15.0, 0.5)
     expected_rule = build_time_domain_rule(
-        "DATA*",
+        "DATA0",
         250.0,
         15.0,
         target_mm,
         tolerance_mm,
     )
-    assert track_calls == ["DATA*"]
+    assert track_calls == ["DATA0"]
     assert write_calls == [expected_rule]
     assert result == "\n".join(
         [
-            "Time-domain tuning rule 'Time-domain tune DATA*' written to demo.kicad_dru.",
+            "Time-domain tuning rule 'Time-domain tune DATA0' written to demo.kicad_dru.",
             "Target delay: 250.000 ps",
             "Tolerance: 15.000 ps",
             "Current measured length: 12.500 mm",
@@ -78,7 +78,41 @@ def test_fallback_tuning_preserves_rule_and_response(tmp_path: Path) -> None:
             f"Fallback target length: {target_mm:.3f} mm",
         ]
     )
-    assert "A.NetName =~ 'DATA.*'" in write_calls[0][1]
+    assert "A.NetName == 'DATA0'" in write_calls[0][1]
+
+
+def test_wildcard_tuning_is_rejected_before_measurement_or_write(tmp_path: Path) -> None:
+    service, track_calls, write_calls = _service(tmp_path)
+
+    result = service.tune("DATA*", 250.0, 15.0)
+
+    assert result == (
+        "Wildcard/group time-domain tuning is not supported because KiCad length "
+        "constraints apply per net. Specify a single concrete net name."
+    )
+    assert track_calls == []
+    assert write_calls == []
+
+
+def test_rule_builder_rejects_wildcard_conditions() -> None:
+    for pattern in ("DATA*", "DATA?"):
+        with pytest.raises(ValueError, match="constraints apply per net"):
+            build_time_domain_rule(pattern, 250.0, 15.0, 37.0, 2.0)
+
+
+def test_question_mark_wildcard_is_rejected_before_measurement_or_write(
+    tmp_path: Path,
+) -> None:
+    service, track_calls, write_calls = _service(tmp_path)
+
+    result = service.tune("DATA?", 250.0, 15.0)
+
+    assert result == (
+        "Wildcard/group time-domain tuning is not supported because KiCad length "
+        "constraints apply per net. Specify a single concrete net name."
+    )
+    assert track_calls == []
+    assert write_calls == []
 
 
 def test_layer_profile_uses_stackup_and_reports_effective_er(tmp_path: Path) -> None:

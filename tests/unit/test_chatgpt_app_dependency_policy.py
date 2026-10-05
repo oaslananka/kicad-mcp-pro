@@ -15,7 +15,7 @@ def test_chatgpt_app_scopes_body_parser_security_override() -> None:
     assert package["overrides"] == {
         "express@4.22.2": {"body-parser": "1.20.6"},
         "@hono/node-server": "2.0.11",
-        "hono": "4.13.5",
+        "hono": "4.13.7",
         "fast-uri": "3.1.8",
         "qs": "6.16.0",
     }

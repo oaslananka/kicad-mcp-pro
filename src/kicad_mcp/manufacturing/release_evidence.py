@@ -5,12 +5,15 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from ..path_safety import resolve_under
 
 CliRunner = Callable[..., tuple[int, str, str]]
 
@@ -43,26 +46,102 @@ def sha256_file(path: Path) -> str:
 
 def find_release_files(output_dir: Path) -> list[Path]:
     """Return manufacturing release files using the repository's reviewed patterns."""
-    patterns = ["*.gbr", "*.drl", "*.csv", "*.ipc", "*.step", "*.xml", "*.pdf"]
+    patterns = [
+        "**/*.gbr",
+        "**/*.drl",
+        "**/*.csv",
+        "**/*.ipc",
+        "**/*.pos",
+        "**/*.step",
+        "**/*.xml",
+        "**/*.pdf",
+    ]
     files: list[Path] = []
     for pattern in patterns:
         files.extend(output_dir.glob(pattern))
     return sorted(set(files))
 
 
-def build_release_file_hashes(release_files: list[Path]) -> list[dict[str, str]]:
-    """Return deterministic filename/hash/size records for release files."""
-    return sorted(
-        (
-            {
-                "filename": path.name,
-                "sha256": sha256_file(path),
-                "size_bytes": str(path.stat().st_size),
-            }
-            for path in release_files
-        ),
-        key=lambda entry: entry["filename"],
+def _name_has_token(path: Path, *tokens: str) -> bool:
+    name = path.name.casefold()
+    return any(re.search(rf"(^|[-_.]){re.escape(token)}($|[-_.])", name) for token in tokens)
+
+
+def _is_pick_and_place(path: Path) -> bool:
+    suffix = path.suffix.casefold()
+    parent = path.parent.name.casefold()
+    if suffix == ".pos":
+        return True
+    if parent == "pos" and suffix in {".csv", ".gbr"}:
+        return True
+    return suffix in {".csv", ".gbr"} and _name_has_token(
+        path, "pos", "cpl", "pick", "placement", "position"
     )
+
+
+def _is_bom(path: Path) -> bool:
+    return path.suffix.casefold() in {".csv", ".xml"} and _name_has_token(path, "bom")
+
+
+def artifact_coverage(
+    output_dir: Path,
+    files: list[Path] | None = None,
+) -> dict[str, list[Path]]:
+    """Classify required manufacturing artifacts using disjoint reviewed filename rules."""
+    files = (
+        files
+        if files is not None
+        else (find_release_files(output_dir) if output_dir.exists() else [])
+    )
+    pick_and_place = [path for path in files if _is_pick_and_place(path)]
+    pick_and_place_set = set(pick_and_place)
+    return {
+        "gerber": [
+            path
+            for path in files
+            if path.suffix.casefold() == ".gbr" and path not in pick_and_place_set
+        ],
+        "drill": [path for path in files if path.suffix.casefold() == ".drl"],
+        "bom": [path for path in files if _is_bom(path)],
+        "pick_and_place": pick_and_place,
+    }
+
+
+def build_release_file_hashes(
+    release_files: list[Path],
+    *,
+    relative_to: Path | None = None,
+) -> list[dict[str, str]]:
+    """Return deterministic path/hash/size records for release files."""
+    records: list[dict[str, str]] = []
+    for path in release_files:
+        try:
+            size_bytes = str(path.stat().st_size)
+        except OSError:
+            size_bytes = "unavailable"
+        if relative_to is None:
+            filename = path.name
+        else:
+            try:
+                filename = path.relative_to(relative_to).as_posix()
+            except ValueError:
+                filename = path.name
+        records.append(
+            {
+                "filename": filename,
+                "sha256": sha256_file(path),
+                "size_bytes": size_bytes,
+            }
+        )
+    return sorted(records, key=lambda entry: entry["filename"])
+
+
+def _evidence_output_dir(context: ReleaseEvidenceContext, output_path: str) -> Path:
+    if not output_path:
+        return context.output_dir
+    if context.project_dir is None:
+        raise ValueError("A project directory is required when output_path is provided.")
+    return resolve_under(context.project_dir, output_path)
 
 
 def build_source_hashes(
@@ -95,13 +174,9 @@ class ReleaseEvidenceService:
         waive_missing_artifacts: bool = False,
         dry_run: bool = False,
     ) -> str:
-        """Evaluate release gates and optionally write ``release_evidence.json``.
-
-        ``output_path`` is intentionally retained but ignored to preserve the existing
-        public MCP behavior during this structural extraction.
-        """
-        _ = output_path
-        out_dir = context.output_dir
+        """Evaluate release gates and optionally write ``release_evidence.json``."""
+        artifact_dir = context.output_dir
+        evidence_dir = _evidence_output_dir(context, output_path)
 
         is_hv = product_domain == "hazardous_mains" or voltage_v > 60.0
         effective_domain = "hazardous_mains" if is_hv else "selv"
@@ -109,23 +184,10 @@ class ReleaseEvidenceService:
         gates: list[dict[str, Any]] = []
         blocking: list[str] = []
 
-        artifact_patterns: dict[str, str] = {
-            "gerber": "*.gbr",
-            "drill": "*.drl",
-            "bom": "*.csv",
-            "pick_and_place": "*.csv",
-        }
-        missing_artifacts: list[str] = []
-        found_artifacts: list[str] = []
-        if out_dir.exists():
-            for artifact_type, pattern in artifact_patterns.items():
-                matches = list(out_dir.glob(pattern))
-                if matches:
-                    found_artifacts.append(artifact_type)
-                else:
-                    missing_artifacts.append(artifact_type)
-        else:
-            missing_artifacts = list(artifact_patterns.keys())
+        release_files = find_release_files(artifact_dir) if artifact_dir.exists() else []
+        coverage = artifact_coverage(artifact_dir, files=release_files)
+        found_artifacts = [name for name, matches in coverage.items() if matches]
+        missing_artifacts = [name for name, matches in coverage.items() if not matches]
 
         artifact_passed = not missing_artifacts or waive_missing_artifacts
         gates.append(
@@ -285,8 +347,7 @@ class ReleaseEvidenceService:
             blocking.append(hv_gate_detail)
 
         verdict = "release_approved" if not blocking else "release_blocked"
-        release_files = find_release_files(out_dir) if out_dir.exists() else []
-        file_hashes = build_release_file_hashes(release_files)
+        file_hashes = build_release_file_hashes(release_files, relative_to=artifact_dir)
         source_hashes = build_source_hashes(
             [
                 ("project", context.project_file),
@@ -322,7 +383,7 @@ class ReleaseEvidenceService:
         if dry_run:
             return json.dumps({**evidence, "dry_run": True, "evidence_path": None}, indent=2)
 
-        out_dir.mkdir(parents=True, exist_ok=True)
-        evidence_path = out_dir / "release_evidence.json"
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        evidence_path = evidence_dir / "release_evidence.json"
         evidence_path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
         return json.dumps({**evidence, "evidence_path": str(evidence_path)}, indent=2)

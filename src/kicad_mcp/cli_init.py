@@ -38,6 +38,10 @@ CLIENT_ZED = "zed"
 CLIENT_NONE = "none"
 CLIENT_SKIPPED_DISPLAY = "(skipped)"
 
+_ZED_UNIX_CONFIG_PATH = "~/.config/zed/settings.json"
+_ZED_WINDOWS_CONFIG_PATH = r"%APPDATA%\Zed\settings.json"
+_CLAUDE_DESKTOP_DISPLAY_NAME = "Claude Desktop"
+
 # ---------------------------------------------------------------------------
 # Platform-aware MCP client config paths
 # ---------------------------------------------------------------------------
@@ -64,14 +68,14 @@ MCP_CLIENT_CONFIGS: dict[str, dict[str, str]] = {
         "linux": "~/.codeium/windsurf/mcp_config.json",
     },
     CLIENT_ZED: {
-        "windows": "~/.config/zed/settings.json",
-        "darwin": "~/.config/zed/settings.json",
-        "linux": "~/.config/zed/settings.json",
+        "windows": _ZED_WINDOWS_CONFIG_PATH,
+        "darwin": _ZED_UNIX_CONFIG_PATH,
+        "linux": _ZED_UNIX_CONFIG_PATH,
     },
 }
 
 CLIENT_DISPLAY_NAMES: dict[str, str] = {
-    CLIENT_CLAUDE_DESKTOP: "Claude Desktop",
+    CLIENT_CLAUDE_DESKTOP: _CLAUDE_DESKTOP_DISPLAY_NAME,
     CLIENT_CURSOR: "Cursor",
     CLIENT_VSCODE: "VS Code",
     CLIENT_WINDSURF: "Windsurf",
@@ -315,7 +319,9 @@ def _select_client_interactive(
             path = _resolve_config_path(c)
             if path and path.exists():
                 return c, display_map.get(c, c)
-        return CLIENT_CLAUDE_DESKTOP, display_map.get(CLIENT_CLAUDE_DESKTOP, "Claude Desktop")
+        return CLIENT_CLAUDE_DESKTOP, display_map.get(
+            CLIENT_CLAUDE_DESKTOP, _CLAUDE_DESKTOP_DISPLAY_NAME
+        )
 
     console.print("  Which client application are you using?")
     for i, c in enumerate(clients, 1):
@@ -346,4 +352,6 @@ def _select_client_interactive(
 
     # Fallback
     console.print("  [yellow]Invalid choice, using default.[/yellow]")
-    return CLIENT_CLAUDE_DESKTOP, display_map.get(CLIENT_CLAUDE_DESKTOP, "Claude Desktop")
+    return CLIENT_CLAUDE_DESKTOP, display_map.get(
+        CLIENT_CLAUDE_DESKTOP, _CLAUDE_DESKTOP_DISPLAY_NAME
+    )
