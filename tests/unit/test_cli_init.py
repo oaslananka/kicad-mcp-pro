@@ -33,6 +33,9 @@ class TestMcpClientConfigs:
                 assert isinstance(path, str), f"{client}/{platform_key} not a string"
                 assert path.strip(), f"{client}/{platform_key} is empty"
 
+    def test_zed_uses_one_cross_platform_config_path(self) -> None:
+        assert set(MCP_CLIENT_CONFIGS["zed"].values()) == {"~/.config/zed/settings.json"}
+
 
 # ---------------------------------------------------------------------------
 # _resolve_config_path
