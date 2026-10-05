@@ -52,11 +52,7 @@ class SignalIntegrityDifferentialPairSkewService:
             )
 
         height_mm = dielectric_height_provider()
-        width_mm = (
-            track_width_provider(payload.net_p)
-            or track_width_provider(payload.net_n)
-            or 0.2
-        )
+        width_mm = track_width_provider(payload.net_p) or track_width_provider(payload.net_n) or 0.2
         _, effective_er = trace_impedance(
             width_mm,
             height_mm,
@@ -94,8 +90,7 @@ class SignalIntegrityDifferentialPairSkewService:
         return VerdictReport.from_text_verdict(
             text="\n".join(lines),
             summary=(
-                f"Differential-pair skew is {skew_ps:.3f} ps against "
-                f"{budget_ps:.1f} ps budget."
+                f"Differential-pair skew is {skew_ps:.3f} ps against {budget_ps:.1f} ps budget."
             ),
             verdict=verdict,
             source="si_check_differential_pair_skew",
