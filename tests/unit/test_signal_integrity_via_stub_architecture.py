@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from scripts import check_architecture_boundaries as boundaries
-from tests.signal_integrity_architecture import (
+from tests.test_signal_integrity_architecture_helpers import (
     assert_adapter_boundary,
     assert_service_adapter_tracked,
     root_register_contract,
