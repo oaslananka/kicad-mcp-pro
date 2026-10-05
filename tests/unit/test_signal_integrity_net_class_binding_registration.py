@@ -4,6 +4,7 @@ import importlib
 import inspect
 from collections.abc import Callable
 
+import pytest
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 
@@ -52,3 +53,29 @@ def test_registration_preserves_signature_docstring_and_delegation() -> None:
     interfaces = [{"kind": "usb3", "differential": True}]
     assert tool.fn(interfaces, False) == "binding-result"
     assert service.calls == [(interfaces, False, writer)]
+
+
+def test_write_nc_rule_preserves_routing_rule_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = importlib.import_module("kicad_mcp.tools.signal_integrity_net_class_binding")
+    writes: list[tuple[str, str]] = []
+
+    def fake_write_rule(name: str, body: str) -> str:
+        writes.append((name, body))
+        return "project.kicad_dru"
+
+    monkeypatch.setattr("kicad_mcp.tools.routing._write_rule", fake_write_rule)
+
+    result = adapter._write_nc_rule("USB3", 0.12, 0.18, 0.15)
+
+    assert result == "project.kicad_dru"
+    assert len(writes) == 1
+    name, body = writes[0]
+    assert name == "Net class USB3"
+    assert "(condition \"A.NetClass == 'USB3'\")" in body
+    assert "(constraint track_width " in body
+    assert "(constraint clearance " in body
+    assert "(constraint via_diameter " in body
+    assert "(constraint via_drill " in body
+    assert "(constraint diff_pair_gap " in body
