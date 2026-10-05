@@ -32,6 +32,7 @@ from ..verdicts import three_level_verdict, warn_max_from
 _ViaPosition = Annotated[list[float], Field(min_length=2, max_length=2)]
 _DEFAULT_BOARD_THICKNESS_MM = 1.6
 
+
 class _ViaLike(Protocol):
     position: object
     drill_diameter: int
