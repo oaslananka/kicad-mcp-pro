@@ -82,12 +82,8 @@ async def test_decoupling_placement_verdicts(
     si_server: object, monkeypatch: pytest.MonkeyPatch, distance_mm: float, expected: str
 ) -> None:
     # recommended 2 mm -> FAIL threshold 4 mm. distance 1=PASS, 3=WARN, 5=FAIL.
-    monkeypatch.setattr(
-        decoupling_adapter, "recommended_decoupling_distance_mm", lambda _f: 2.0
-    )
-    monkeypatch.setattr(
-        decoupling_adapter, "_find_power_anchor", lambda _ic, _pin: (0.0, 0.0)
-    )
+    monkeypatch.setattr(decoupling_adapter, "recommended_decoupling_distance_mm", lambda _f: 2.0)
+    monkeypatch.setattr(decoupling_adapter, "_find_power_anchor", lambda _ic, _pin: (0.0, 0.0))
     monkeypatch.setattr(
         decoupling_adapter,
         "_nearest_capacitors",

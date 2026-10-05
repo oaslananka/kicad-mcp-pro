@@ -23,9 +23,7 @@ class FakeService:
         recommended_mm: float,
         capacitors: list[tuple[str, float, str]],
     ) -> str:
-        self.calls.append(
-            (payload, source_x_mm, source_y_mm, recommended_mm, capacitors)
-        )
+        self.calls.append((payload, source_x_mm, source_y_mm, recommended_mm, capacitors))
         return "decoupling-result"
 
 
@@ -113,10 +111,14 @@ def test_find_power_anchor_prefers_pad_then_falls_back_to_footprint(
     )
     pad = SimpleNamespace(parent=footprint, number="7", position="pad-position")
     monkeypatch.setattr(adapter, "get_board", lambda: board)
-    monkeypatch.setattr(adapter, "point_xy_mm", lambda pos: {
-        "pad-position": (1.0, 2.0),
-        "footprint-position": (3.0, 4.0),
-    }[pos])
+    monkeypatch.setattr(
+        adapter,
+        "point_xy_mm",
+        lambda pos: {
+            "pad-position": (1.0, 2.0),
+            "footprint-position": (3.0, 4.0),
+        }[pos],
+    )
     monkeypatch.setattr(adapter, "board_pads", lambda _board: [pad])
     monkeypatch.setattr(adapter, "board_footprints", lambda _board: [footprint])
 
