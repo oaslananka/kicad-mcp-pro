@@ -136,7 +136,7 @@ version-agnostic so it does not drift.
 - **Capability parity gaps:** close bitmap/board-art import and define the
   solver-grade analysis contract.
 
-### 4.0 (Target: TBD — RFC required)
+### 5.0 (Target: TBD — RFC required)
 - Remove APIs that have completed their documented deprecation window.
 - Revisit profile names and tool grouping through the RFC process.
 - Keep KiCad 10.x as the sole stable primary path until KiCad 11 has enough
