@@ -6,6 +6,7 @@ from typing import Any, cast
 
 from mcp.server.mcpserver import MCPServer as FastMCP
 
+from kicad_mcp.models.signal_integrity import DifferentialPairSkewInput
 from kicad_mcp.models.verdict import VerdictReport
 
 
@@ -44,9 +45,15 @@ def test_registration_preserves_signature_docstring_and_delegation() -> None:
     adapter = importlib.import_module("kicad_mcp.tools.signal_integrity_differential_pair_skew")
     server = FastMCP("si-differential-pair-skew-registration")
     service = FakeService()
-    track_width = lambda _net: 0.2
-    dielectric_height = lambda: 0.18
-    budget_resolver = lambda _p, _n: (10.0, "fixture budget")
+
+    def track_width(_net: str) -> float:
+        return 0.2
+
+    def dielectric_height() -> float:
+        return 0.18
+
+    def budget_resolver(_p: str, _n: str) -> tuple[float, str]:
+        return 10.0, "fixture budget"
 
     adapter.register(
         server,
@@ -77,10 +84,11 @@ def test_registration_preserves_signature_docstring_and_delegation() -> None:
     assert result.text == "skew-result"
     assert len(service.calls) == 1
     payload, lengths, budget, width_provider, height_provider, resolver = service.calls[0]
-    assert getattr(payload, "net_p") == "P"
-    assert getattr(payload, "net_n") == "N"
-    assert getattr(payload, "er") == 4.0
-    assert getattr(payload, "trace_type") == "microstrip"
+    assert isinstance(payload, DifferentialPairSkewInput)
+    assert payload.net_p == "P"
+    assert payload.net_n == "N"
+    assert payload.er == 4.0
+    assert payload.trace_type == "microstrip"
     assert lengths == {"P": 10.0, "N": 10.5}
     assert budget == 12.0
     assert width_provider is track_width
