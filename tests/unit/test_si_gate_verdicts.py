@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import pytest
 
+import kicad_mcp.signal_integrity.differential_pair_skew as skew_service
 import kicad_mcp.tools.signal_integrity as si
+import kicad_mcp.tools.signal_integrity_differential_pair_skew as skew_adapter
 from kicad_mcp.config import reset_config
 from kicad_mcp.server import build_server
 from kicad_mcp.verdicts import three_level_verdict
@@ -37,10 +39,14 @@ async def test_diff_pair_skew_verdicts(
 ) -> None:
     # delay 5 ps/mm, explicit budget 10 ps -> FAIL threshold 20 ps.
     # skew 1mm=5ps PASS, 3mm=15ps WARN, 5mm=25ps FAIL.
-    monkeypatch.setattr(si, "_track_lengths_by_net", lambda: {"P": 100.0, "N": 100.0 + skew_mm})
-    monkeypatch.setattr(si, "_track_width_mm", lambda _net: 0.2)
-    monkeypatch.setattr(si, "_outer_dielectric_height_mm", lambda: 0.18)
-    monkeypatch.setattr(si, "propagation_delay_ps_per_mm", lambda _er: 5.0)
+    monkeypatch.setattr(
+        skew_adapter,
+        "_track_lengths_by_net",
+        lambda: {"P": 100.0, "N": 100.0 + skew_mm},
+    )
+    monkeypatch.setattr(skew_adapter, "_track_width_mm", lambda _net: 0.2)
+    monkeypatch.setattr(skew_adapter, "_outer_dielectric_height_mm", lambda: 0.18)
+    monkeypatch.setattr(skew_service, "propagation_delay_ps_per_mm", lambda _er: 5.0)
     out = await call_tool_text(
         si_server,
         "si_check_differential_pair_skew",
