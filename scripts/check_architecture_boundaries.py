@@ -64,9 +64,7 @@ _SIGNAL_INTEGRITY_DIELECTRIC_MATERIALS_ADAPTER = (
 _SIGNAL_INTEGRITY_SOLVER_CAPABILITIES_ADAPTER = (
     "kicad_mcp.tools.signal_integrity_solver_capabilities"
 )
-_SIGNAL_INTEGRITY_STACKUP_GENERATION_ADAPTER = (
-    "kicad_mcp.tools.signal_integrity_stackup_generation"
-)
+_SIGNAL_INTEGRITY_STACKUP_GENERATION_ADAPTER = "kicad_mcp.tools.signal_integrity_stackup_generation"
 
 DOMAIN_MODULES = {
     "kicad_mcp.ir.engineering_graph": SRC_ROOT / "kicad_mcp" / "ir" / "engineering_graph.py",
