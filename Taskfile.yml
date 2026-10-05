@@ -18,10 +18,9 @@ tasks:
       - uv sync --all-extras --frozen
 
   hooks:
-    desc: Install local git hooks
+    desc: Install repository-pinned Lefthook git hooks
     cmds:
-      - python3 scripts/run_uv.py tool run pre-commit install --install-hooks
-      - python3 scripts/run_uv.py tool run pre-commit install --hook-type pre-push
+      - python3 scripts/install_git_hooks.py
 
   format:
     desc: Auto-format the codebase

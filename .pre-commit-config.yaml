@@ -37,13 +37,3 @@ repos:
       - id: gitleaks
         args: [--config=.gitleaks.toml]
         stages: [pre-commit]
-
-  - repo: local
-    hooks:
-      - id: targeted-pre-push
-        name: Targeted pre-push checks
-        entry: python scripts/run_uv.py run --all-extras python scripts/hook_pre_push.py
-        language: python
-        stages: [pre-push]
-        always_run: true
-        pass_filenames: false

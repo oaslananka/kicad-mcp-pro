@@ -68,19 +68,21 @@
     "check:build": "corepack pnpm run build && corepack pnpm run package:check",
     "check:workflows": "corepack pnpm run workflows:lint && corepack pnpm run workflows:security",
     "check:ci": "corepack pnpm run check",
-    "hooks:pre-commit": "python scripts/run_uv.py run --all-extras python scripts/hook_pre_commit.py",
-    "hooks:pre-push": "python scripts/run_uv.py run --all-extras python scripts/hook_pre_push.py",
+    "hooks:pre-commit": "lefthook run pre-commit",
+    "hooks:pre-push": "lefthook run pre-push",
     "hooks:security": "corepack pnpm run security",
     "compat:check": "uv run --all-extras python scripts/check_no_pcbnew.py && uv run --all-extras python scripts/build_adapter_matrix.py --check && uv run --all-extras python scripts/check_compatibility_matrix.py && uv run --all-extras python scripts/runtime_policy.py check",
     "release:dry-run": "corepack pnpm run metadata:check && corepack pnpm run release:check",
     "profiles:build": "uv run --all-extras python scripts/profile_surface_report.py",
     "profiles:check": "uv run --all-extras python scripts/profile_surface_report.py --check",
     "adapter-matrix:build": "uv run --all-extras python scripts/build_adapter_matrix.py",
-    "adapter-matrix:check": "uv run --all-extras python scripts/build_adapter_matrix.py --check"
+    "adapter-matrix:check": "uv run --all-extras python scripts/build_adapter_matrix.py --check",
+    "hooks:install": "python scripts/install_git_hooks.py"
   },
   "devDependencies": {
     "@commitlint/cli": "21.2.3",
-    "@commitlint/config-conventional": "21.2.3"
+    "@commitlint/config-conventional": "21.2.3",
+    "lefthook": "2.1.14"
   },
   "engines": {
     "node": ">=24.11.0 <25",
