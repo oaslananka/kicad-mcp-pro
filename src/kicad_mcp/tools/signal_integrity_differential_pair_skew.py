@@ -12,6 +12,7 @@ from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..connection import get_board
 from ..models.signal_integrity import DifferentialPairSkewInput
+from ..models.verdict import VerdictReport
 from ..pcb.board_access import board_tracks
 from ..pcb.geometry import track_segment_length_mm
 from ..signal_integrity.differential_pair_skew import (
@@ -143,7 +144,7 @@ def register(
         er: float = 4.2,
         trace_type: str = "microstrip",
         skew_budget_ps: float = 0.0,
-    ):
+    ) -> VerdictReport:
         """Estimate differential-pair length skew and delay mismatch from board tracks.
 
         Returns a PASS/WARN/FAIL verdict. The skew budget comes from ``skew_budget_ps``
