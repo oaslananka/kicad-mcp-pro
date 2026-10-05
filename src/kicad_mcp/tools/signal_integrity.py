@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from mcp.server.mcpserver import MCPServer as FastMCP
 
+from ..pcb.geometry import point_xy_mm
+
 
 def register(mcp: FastMCP) -> None:
     """Register signal-integrity tools."""
