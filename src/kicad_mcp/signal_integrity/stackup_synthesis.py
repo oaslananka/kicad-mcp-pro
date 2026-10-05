@@ -204,5 +204,3 @@ class SignalIntegrityStackupSynthesisService:
             f"Material note: {mat_desc}",
         ]
         return "\n".join(lines)
-
-
