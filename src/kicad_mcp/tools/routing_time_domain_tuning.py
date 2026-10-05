@@ -54,7 +54,7 @@ def register(
         tolerance_ps: float = 10.0,
         layer: str | None = None,
     ) -> str:
-        """Create a KiCad 10-inspired time-domain tuning rule with a length fallback."""
+        """Create a time-domain tuning rule for one concrete net; wildcards are rejected."""
         return deps.service.tune(
             net_or_group,
             target_delay_ps,

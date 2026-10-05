@@ -20,6 +20,11 @@ PatternTrackLengthProvider = Callable[[str], float]
 StackupContextProvider = Callable[[str], tuple[TraceType, float, float, float]]
 RuleWriter = Callable[[str, str], Path]
 
+_WILDCARD_UNSUPPORTED = (
+    "Wildcard/group time-domain tuning is not supported because KiCad length "
+    "constraints apply per net. Call route_tune_time_domain once per concrete net name."
+)
+
 
 def _mm(value: float) -> str:
     return f"{value:.4f}mm"
@@ -31,12 +36,9 @@ def delay_to_length_mm(delay_ps: float, propagation_speed_factor: float) -> floa
 
 
 def net_pattern_condition(net_pattern: str) -> str:
-    """Render the legacy KiCad rule condition for a net or wildcard group."""
+    """Render a KiCad rule condition for one concrete net."""
     if "*" in net_pattern:
-        import re
-
-        regex = re.escape(net_pattern).replace(r"\*", ".*")
-        return f"A.NetName =~ '{regex}'"
+        raise ValueError(_WILDCARD_UNSUPPORTED)
     return f"A.NetName == '{net_pattern}'"
 
 
@@ -80,6 +82,9 @@ class RoutingTimeDomainTuningService:
         tolerance_ps: float = 10.0,
         layer: str | None = None,
     ) -> str:
+        if "*" in net_or_group:
+            return _WILDCARD_UNSUPPORTED
+
         profiles = load_tuning_profiles(self.get_project_dir())
         propagation_speed_factor = 0.5
         profile_impedance_ohm = 50.0

@@ -167,10 +167,15 @@ async def test_routing_rule_tools_write_state_and_dru_files(
         "route_apply_tuning_profile",
         {"net_pattern": "DATA*", "profile_name": "slow"},
     )
-    time_domain = await call_tool_text(
+    wildcard_time_domain = await call_tool_text(
         server,
         "route_tune_time_domain",
         {"net_or_group": "DATA*", "target_delay_ps": 250.0, "tolerance_ps": 15.0},
+    )
+    time_domain = await call_tool_text(
+        server,
+        "route_tune_time_domain",
+        {"net_or_group": "DATA0", "target_delay_ps": 250.0, "tolerance_ps": 15.0},
     )
 
     dru_text = (sample_project / "demo.kicad_dru").read_text(encoding="utf-8")
@@ -183,8 +188,10 @@ async def test_routing_rule_tools_write_state_and_dru_files(
     assert '"fast"' in profiles
     assert "assigned to 'DATA*'" in assigned
     assert "was not found" in missing_profile
+    assert "constraints apply per net" in wildcard_time_domain
     assert "Time-domain tuning rule" in time_domain
-    assert "A.NetName =~ 'DATA.*'" in dru_text
+    assert "A.NetName == 'DATA0'" in dru_text
+    assert "A.NetName =~ 'DATA.*'" not in dru_text
 
 
 @pytest.mark.anyio
