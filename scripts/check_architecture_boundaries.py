@@ -65,18 +65,10 @@ _SIGNAL_INTEGRITY_SOLVER_CAPABILITIES_ADAPTER = (
     "kicad_mcp.tools.signal_integrity_solver_capabilities"
 )
 _SIGNAL_INTEGRITY_STACKUP_GENERATION_ADAPTER = "kicad_mcp.tools.signal_integrity_stackup_generation"
-_SIGNAL_INTEGRITY_HIGH_SPEED_CHANNEL_ADAPTER = (
-    "kicad_mcp.tools.signal_integrity_high_speed_channel"
-)
-_SIGNAL_INTEGRITY_STACKUP_SYNTHESIS_ADAPTER = (
-    "kicad_mcp.tools.signal_integrity_stackup_synthesis"
-)
-_SIGNAL_INTEGRITY_NET_CLASS_BINDING_ADAPTER = (
-    "kicad_mcp.tools.signal_integrity_net_class_binding"
-)
-_SIGNAL_INTEGRITY_LENGTH_MATCHING_ADAPTER = (
-    "kicad_mcp.tools.signal_integrity_length_matching"
-)
+_SIGNAL_INTEGRITY_HIGH_SPEED_CHANNEL_ADAPTER = "kicad_mcp.tools.signal_integrity_high_speed_channel"
+_SIGNAL_INTEGRITY_STACKUP_SYNTHESIS_ADAPTER = "kicad_mcp.tools.signal_integrity_stackup_synthesis"
+_SIGNAL_INTEGRITY_NET_CLASS_BINDING_ADAPTER = "kicad_mcp.tools.signal_integrity_net_class_binding"
+_SIGNAL_INTEGRITY_LENGTH_MATCHING_ADAPTER = "kicad_mcp.tools.signal_integrity_length_matching"
 _SIGNAL_INTEGRITY_DIFFERENTIAL_PAIR_SKEW_ADAPTER = (
     "kicad_mcp.tools.signal_integrity_differential_pair_skew"
 )
