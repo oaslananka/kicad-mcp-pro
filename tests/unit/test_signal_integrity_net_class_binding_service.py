@@ -46,7 +46,7 @@ def test_bind_apply_preserves_writer_calls_and_error_reporting() -> None:
         calls.append((name, clearance, width, gap))
         if name == "PCIE_G4":
             raise RuntimeError("fixture failure")
-        return "/tmp/project.kicad_dru"
+        return "project.kicad_dru"
 
     result = SignalIntegrityNetClassBindingService().bind(
         interfaces=[
@@ -61,7 +61,7 @@ def test_bind_apply_preserves_writer_calls_and_error_reporting() -> None:
         ("USB2", 0.15, 0.2, 0.2),
         ("PCIE_G4", 0.08, 0.12, 0.1),
     ]
-    assert "**Applied** 1 net class rule(s) to `/tmp/project.kicad_dru`:" in result
+    assert "**Applied** 1 net class rule(s) to `project.kicad_dru`:" in result
     assert "  - USB2" in result
     assert "**Errors** (1):" in result
     assert "  - PCIE_G4: fixture failure" in result
