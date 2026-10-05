@@ -10,6 +10,34 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.0.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.37.0...mcp-server-v4.0.0) (2026-10-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **protocol-schemas:** tool-effect-manifest now requires schema major 2 and the protocol-schemas package must release on the 2.x line.
+
+### Features
+
+* **contracts:** emit argument shape facts ([ce71693](https://github.com/oaslananka/kicad-mcp-pro/commit/ce716931c13fdc27411b9c035e9759b86439451b))
+* **contracts:** expose reviewed argument breadth facts ([28e6112](https://github.com/oaslananka/kicad-mcp-pro/commit/28e6112eff4f8e1f1c4fda73beb252207f48e76d))
+* **contracts:** model reviewed argument shape facts ([659f299](https://github.com/oaslananka/kicad-mcp-pro/commit/659f29979770a0883a7d5e81d00535dde447756b))
+* **protocol-schemas:** document tool-effect manifest v2 ([9ab85d5](https://github.com/oaslananka/kicad-mcp-pro/commit/9ab85d57f7f968281843eab98f17310c404eaa2d))
+* **schemas:** define tool effect manifest v2 argument shapes ([a743c5d](https://github.com/oaslananka/kicad-mcp-pro/commit/a743c5d554fc153f84f6bd783fae8f52654b7025))
+* **schemas:** type argument shape facts ([1d14bd9](https://github.com/oaslananka/kicad-mcp-pro/commit/1d14bd91ad5deabb94f0535f455a90525685b325))
+
+
+### Bug Fixes
+
+* **manufacturing:** harden panelization runner analysis ([170c757](https://github.com/oaslananka/kicad-mcp-pro/commit/170c7571bf36f0b32d2cfc57724fc53228d5228a))
+* **manufacturing:** restore real newlines in CPL test ([904d273](https://github.com/oaslananka/kicad-mcp-pro/commit/904d2732c96a50b2bde8b1884e2bc83d84ce67f9))
+* **protocol-schemas:** prioritize unsupported major errors ([f23ca72](https://github.com/oaslananka/kicad-mcp-pro/commit/f23ca72241668f5c99e69d14c183838786aa64cf))
+
+
+### Documentation
+
+* add hierarchical agent instructions ([#1071](https://github.com/oaslananka/kicad-mcp-pro/issues/1071)) ([b64b960](https://github.com/oaslananka/kicad-mcp-pro/commit/b64b96067e11e02a2a43fe6e88c5569394ba2558))
+
 ## [3.37.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.36.0...mcp-server-v3.37.0) (2026-10-02)
 
 

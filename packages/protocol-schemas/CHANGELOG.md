@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.0.0](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v1.6.0...protocol-schemas-v2.0.0) (2026-10-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **protocol-schemas:** tool-effect-manifest now requires schema major 2 and the protocol-schemas package must release on the 2.x line.
+
+### Features
+
+* **contracts:** expose reviewed argument breadth facts ([28e6112](https://github.com/oaslananka/kicad-mcp-pro/commit/28e6112eff4f8e1f1c4fda73beb252207f48e76d))
+* **protocol-schemas:** document tool-effect manifest v2 ([9ab85d5](https://github.com/oaslananka/kicad-mcp-pro/commit/9ab85d57f7f968281843eab98f17310c404eaa2d))
+* **schemas:** define tool effect manifest v2 argument shapes ([a743c5d](https://github.com/oaslananka/kicad-mcp-pro/commit/a743c5d554fc153f84f6bd783fae8f52654b7025))
+* **schemas:** type argument shape facts ([1d14bd9](https://github.com/oaslananka/kicad-mcp-pro/commit/1d14bd91ad5deabb94f0535f455a90525685b325))
+
+
+### Bug Fixes
+
+* **protocol-schemas:** prioritize unsupported major errors ([f23ca72](https://github.com/oaslananka/kicad-mcp-pro/commit/f23ca72241668f5c99e69d14c183838786aa64cf))
+
 ## [1.6.0](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v1.5.0...protocol-schemas-v1.6.0) (2026-10-02)
 
 
