@@ -112,7 +112,4 @@ class SignalIntegrityNetClassBindingService:
                 lines.append(f"\n**Errors** ({len(errors)}):")
                 for error in errors:
                     lines.append(f"  - {error}")
-            if not written and not errors:
-                lines.append("No net class rules were written (empty plan).")
-
         return "\n".join(lines)
