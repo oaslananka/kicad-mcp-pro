@@ -64,6 +64,7 @@ _SIGNAL_INTEGRITY_DIELECTRIC_MATERIALS_ADAPTER = (
 _SIGNAL_INTEGRITY_SOLVER_CAPABILITIES_ADAPTER = (
     "kicad_mcp.tools.signal_integrity_solver_capabilities"
 )
+_SIGNAL_INTEGRITY_STACKUP_GENERATION_ADAPTER = "kicad_mcp.tools.signal_integrity_stackup_generation"
 
 DOMAIN_MODULES = {
     "kicad_mcp.ir.engineering_graph": SRC_ROOT / "kicad_mcp" / "ir" / "engineering_graph.py",
@@ -271,6 +272,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "signal_integrity"
     / "solver_capabilities.py",
+    "kicad_mcp.signal_integrity.stackup_generation": SRC_ROOT
+    / "kicad_mcp"
+    / "signal_integrity"
+    / "stackup_generation.py",
     _SIGNAL_INTEGRITY_IMPEDANCE_ADAPTER: SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -283,6 +288,10 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "signal_integrity_solver_capabilities.py",
+    _SIGNAL_INTEGRITY_STACKUP_GENERATION_ADAPTER: SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "signal_integrity_stackup_generation.py",
     _PROJECT_CONTEXT_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_context.py",
     _PROJECT_CREATION_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_creation.py",
     _PROJECT_DESIGN_SPEC_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_design_spec.py",
@@ -510,6 +519,7 @@ PURE_HELPERS = {
     "kicad_mcp.signal_integrity.impedance",
     "kicad_mcp.signal_integrity.dielectric_materials",
     "kicad_mcp.signal_integrity.solver_capabilities",
+    "kicad_mcp.signal_integrity.stackup_generation",
     "kicad_mcp.routing.tuning_profiles",
     "kicad_mcp.routing.specctra_staging",
     "kicad_mcp.routing.net_class_rules",
@@ -614,6 +624,7 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     _SIGNAL_INTEGRITY_IMPEDANCE_ADAPTER: (_SIGNAL_INTEGRITY_ROOT_MODULE,),
     _SIGNAL_INTEGRITY_DIELECTRIC_MATERIALS_ADAPTER: (_SIGNAL_INTEGRITY_ROOT_MODULE,),
     _SIGNAL_INTEGRITY_SOLVER_CAPABILITIES_ADAPTER: (_SIGNAL_INTEGRITY_ROOT_MODULE,),
+    _SIGNAL_INTEGRITY_STACKUP_GENERATION_ADAPTER: (_SIGNAL_INTEGRITY_ROOT_MODULE,),
     _ROUTING_TUNING_PROFILES_ADAPTER: (_ROUTING_ROOT_MODULE,),
     _ROUTING_SPECCTRA_STAGING_ADAPTER: (_ROUTING_ROOT_MODULE,),
     _ROUTING_NET_CLASS_RULES_ADAPTER: (_ROUTING_ROOT_MODULE,),
@@ -732,10 +743,11 @@ REGISTER_LINE_LIMITS = {
     _ROUTING_MANUAL_TRACKS_ADAPTER: 120,
     _ROUTING_SES_APPLY_ADAPTER: 75,
     _ROUTING_AUTOROUTER_ADAPTER: 105,
-    _SIGNAL_INTEGRITY_ROOT_MODULE: 690,
+    _SIGNAL_INTEGRITY_ROOT_MODULE: 620,
     _SIGNAL_INTEGRITY_IMPEDANCE_ADAPTER: 90,
     _SIGNAL_INTEGRITY_DIELECTRIC_MATERIALS_ADAPTER: 60,
     _SIGNAL_INTEGRITY_SOLVER_CAPABILITIES_ADAPTER: 55,
+    _SIGNAL_INTEGRITY_STACKUP_GENERATION_ADAPTER: 75,
     _PROJECT_CONTEXT_ADAPTER: 55,
     _PROJECT_CREATION_ADAPTER: 55,
     _PROJECT_DESIGN_SPEC_ADAPTER: 120,
