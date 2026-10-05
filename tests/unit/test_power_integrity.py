@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from kicad_mcp.tools.power_integrity import (
-    _ipc_current_capacity_a,
-    _required_width_mm,
-    _track_resistance_ohm,
-)
+from kicad_mcp.power_integrity.voltage_drop import track_resistance_ohm
+from kicad_mcp.tools.power_integrity import _ipc_current_capacity_a, _required_width_mm
 from kicad_mcp.utils.pdn_mesh import PdnLoad, PdnMesh
 
 
 def test_track_resistance_and_drop_are_reasonable() -> None:
-    resistance_ohm = _track_resistance_ohm(0.5, 100.0, 1.0)
+    resistance_ohm = track_resistance_ohm(0.5, 100.0, 1.0)
 
     assert 0.09 <= resistance_ohm <= 0.11
 

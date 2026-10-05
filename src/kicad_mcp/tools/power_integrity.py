@@ -27,7 +27,6 @@ from ..models.power_integrity import (
     ThermalPlaneSpreadInput,
     ThermalPourInput,
     ThermalViaInput,
-    VoltageDropInput,
 )
 from ..models.verdict import Verdict, VerdictReport
 from ..pcb.board_access import board_footprints, board_shapes, board_tracks, board_zones
@@ -35,15 +34,9 @@ from ..pcb.geometry import point_xy_mm, track_segment_length_mm
 from ..pcb.live_edit_runtime import execute_live_board_mutation
 from ..utils.impedance import copper_thickness_mm, recommended_decoupling_distance_mm
 from ..utils.layers import resolve_layer
-from ..utils.pdn_mesh import (
-    PdnDecouplingCap,
-    PdnLoad,
-    PdnMesh,
-    ipc2221_temperature_rise_c,
-)
+from ..utils.pdn_mesh import PdnDecouplingCap, PdnLoad, PdnMesh
 from ..utils.solver_seams import (
     format_solver_verdict,
-    ir_drop_method,
     pdn_mesh_method,
     thermal_fd_method,
     thermal_method,
@@ -52,8 +45,6 @@ from ..utils.thermal_solver import ThermalPlaneSpec, solve_plane_temperature
 from ..utils.units import mm_to_mil, mm_to_nm, nm_to_mm
 from ..verdicts import three_level_verdict, warn_max_from
 
-_COPPER_RESISTIVITY_OHM_M = 1.724e-8
-_TEMPERATURE_COEFFICIENT = 0.0039
 _DEFAULT_BOARD_THICKNESS_MM = 1.6
 
 
@@ -138,20 +129,6 @@ def _nearest_capacitors(reference: str) -> list[tuple[str, float, str]]:
     return sorted(matches, key=lambda item: item[1])
 
 
-def _track_resistance_ohm(
-    trace_width_mm: float,
-    trace_length_mm: float,
-    copper_oz: float,
-    ambient_temp_c: float = 25.0,
-) -> float:
-    thickness_m = copper_thickness_mm(copper_oz) / 1_000.0
-    width_m = trace_width_mm / 1_000.0
-    length_m = trace_length_mm / 1_000.0
-    area_m2 = width_m * thickness_m
-    base_resistance = _COPPER_RESISTIVITY_OHM_M * length_m / area_m2
-    return base_resistance * (1.0 + (_TEMPERATURE_COEFFICIENT * max(ambient_temp_c - 20.0, 0.0)))
-
-
 def _ipc_current_capacity_a(
     width_mm: float,
     copper_thickness_mm_value: float,
@@ -220,67 +197,9 @@ def _zone_already_exists(net_name: str, layer: BoardLayer.ValueType) -> bool:
 def register(mcp: FastMCP) -> None:
     """Register power-integrity and thermal tools."""
 
-    @mcp.tool()
-    def pdn_calculate_voltage_drop(
-        current_a: float,
-        trace_width_mm: float,
-        trace_length_mm: float,
-        copper_oz: float = 1.0,
-        max_temp_rise_c: float = 10.0,
-        internal_layer: bool = False,
-    ) -> str:
-        """Estimate DC voltage drop, trace resistance, and IPC-2221 current-density fusing.
+    from . import power_integrity_voltage_drop
 
-        ``max_temp_rise_c`` is the temperature-rise budget; the verdict is PASS within it,
-        WARN up to 2x, FAIL beyond. Set ``internal_layer=True`` for a buried trace (lower
-        ampacity).
-        """
-        payload = VoltageDropInput(
-            current_a=current_a,
-            trace_width_mm=trace_width_mm,
-            trace_length_mm=trace_length_mm,
-            copper_oz=copper_oz,
-        )
-        resistance_ohm = _track_resistance_ohm(
-            payload.trace_width_mm,
-            payload.trace_length_mm,
-            payload.copper_oz,
-        )
-        drop_v = payload.current_a * resistance_ohm
-        current_density_a_per_mm2 = payload.current_a / (
-            payload.trace_width_mm * copper_thickness_mm(payload.copper_oz)
-        )
-        # IPC-2221 self-heating / fusing temperature rise for this current density.
-        temp_rise_c = ipc2221_temperature_rise_c(
-            payload.current_a,
-            payload.trace_width_mm,
-            payload.copper_oz,
-            internal=internal_layer,
-        )
-        fail_temp_c = warn_max_from(max_temp_rise_c)
-        fusing_verdict = three_level_verdict(
-            temp_rise_c, pass_max=max_temp_rise_c, warn_max=fail_temp_c
-        )
-        lines = [
-            "PDN voltage-drop estimate:",
-            f"- Current: {payload.current_a:.3f} A",
-            f"- Trace width: {payload.trace_width_mm:.3f} mm",
-            f"- Trace length: {payload.trace_length_mm:.3f} mm",
-            f"- Copper: {payload.copper_oz:.2f} oz "
-            f"({'internal' if internal_layer else 'external'} layer)",
-            f"- Estimated resistance: {resistance_ohm:.5f} ohm",
-            f"- Estimated voltage drop: {drop_v * 1_000.0:.2f} mV",
-            f"- Estimated current density: {current_density_a_per_mm2:.2f} A/mm^2",
-            f"- IPC-2221 temperature rise: {temp_rise_c:.1f} C ({fusing_verdict}; "
-            f"PASS <= {max_temp_rise_c:.1f} C, WARN <= {fail_temp_c:.1f} C, "
-            f"FAIL > {fail_temp_c:.1f} C)",
-        ]
-        method = ir_drop_method()
-        lines.append(f"- Method: {method['method']} — {method['accuracy']}")
-        lines.append(f"- {format_solver_verdict(method)}")
-        if not method["solver_grade"]:
-            lines.append(f"- Note: {method['note']}")
-        return "\n".join(lines)
+    power_integrity_voltage_drop.register(mcp)
 
     @mcp.tool()
     def check_power_integrity(
