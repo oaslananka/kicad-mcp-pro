@@ -15,6 +15,12 @@ def _mm(value: float) -> str:
     return f"{value:.4f}mm"
 
 
+def _expression_string(value: str) -> str:
+    """Quote a string for KiCad's rule-expression language."""
+    escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+    return f"'{escaped}'"
+
+
 def build_net_class_rule(
     net_class: str,
     width_mm: float,
@@ -36,10 +42,11 @@ def build_net_class_rule(
         f"(opt {_mm(via_drill_mm)}) (max {_mm(via_drill_mm)}))"
     )
     name = f"Net class {net_class}"
+    condition = f"A.NetClass == {_expression_string(net_class)}"
     body = "\n".join(
         [
             f"(rule {_sexpr_string(name)}",
-            f"  (condition \"A.NetClass == '{net_class}'\")",
+            f"  (condition {_sexpr_string(condition)})",
             track_width_constraint,
             f"  (constraint clearance (min {_mm(clearance_mm)}))",
             via_diameter_constraint,
