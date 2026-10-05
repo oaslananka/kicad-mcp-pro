@@ -46,7 +46,7 @@ def test_registration_preserves_release_evidence_tool_contract() -> None:
     assert metadata.requires_kicad_running is False
 
     result = tools[0].fn(
-        output_path="ignored-for-compat",
+        output_path="release/evidence",
         product_domain="hazardous_mains",
         voltage_v=230.0,
         waive_missing_artifacts=True,
@@ -57,7 +57,7 @@ def test_registration_preserves_release_evidence_tool_contract() -> None:
     assert service.calls == [
         {
             "context": context,
-            "output_path": "ignored-for-compat",
+            "output_path": "release/evidence",
             "product_domain": "hazardous_mains",
             "voltage_v": 230.0,
             "waive_missing_artifacts": True,

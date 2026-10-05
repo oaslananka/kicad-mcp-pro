@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 
 def _module() -> ModuleType:
     spec = importlib.util.find_spec("kicad_mcp.manufacturing.release_evidence")
@@ -134,6 +136,113 @@ def test_release_evidence_service_writes_evidence_and_release_hashes(tmp_path: P
         "demo-pos.csv",
         "demo.drl",
     ]
+
+
+def test_release_evidence_service_honors_safe_output_path(tmp_path: Path) -> None:
+    module = _module()
+    context = _context(tmp_path)
+    service = module.ReleaseEvidenceService(run_cli=_successful_runner)
+
+    payload = json.loads(
+        service.create_evidence(
+            context=context,
+            output_path="release/evidence",
+            dry_run=False,
+        )
+    )
+
+    expected = context.project_dir / "release" / "evidence" / "release_evidence.json"
+    assert Path(payload["evidence_path"]) == expected
+    assert expected.exists()
+    artifact_gate = next(gate for gate in payload["gates"] if gate["gate"] == "artifact_coverage")
+    assert artifact_gate["passed"] is True
+    assert artifact_gate["missing"] == []
+
+
+def test_release_evidence_service_rejects_output_path_traversal(tmp_path: Path) -> None:
+    module = _module()
+    context = _context(tmp_path)
+    service = module.ReleaseEvidenceService(run_cli=_successful_runner)
+
+    with pytest.raises(ValueError, match="escapes"):
+        service.create_evidence(
+            context=context,
+            output_path="../outside",
+            dry_run=True,
+        )
+
+
+def test_generic_csv_does_not_satisfy_bom_or_pick_and_place(tmp_path: Path) -> None:
+    module = _module()
+    context = _context(tmp_path)
+    (context.output_dir / "demo-bom.csv").unlink()
+    (context.output_dir / "demo-pos.csv").unlink()
+    (context.output_dir / "assembly.csv").write_text("generic\n", encoding="utf-8")
+    service = module.ReleaseEvidenceService(run_cli=_successful_runner)
+
+    payload = json.loads(service.create_evidence(context=context, dry_run=True))
+    artifact_gate = next(gate for gate in payload["gates"] if gate["gate"] == "artifact_coverage")
+
+    assert artifact_gate["found"] == ["gerber", "drill"]
+    assert artifact_gate["missing"] == ["bom", "pick_and_place"]
+    assert artifact_gate["passed"] is False
+
+
+def test_position_gerber_does_not_satisfy_board_gerber_coverage(tmp_path: Path) -> None:
+    module = _module()
+    context = _context(tmp_path)
+    (context.output_dir / "demo-F_Cu.gbr").unlink()
+    (context.output_dir / "demo-pos.csv").unlink()
+    position_dir = context.output_dir / "pos"
+    position_dir.mkdir()
+    (position_dir / "board-pos.gbr").write_text("placement\n", encoding="utf-8")
+    service = module.ReleaseEvidenceService(run_cli=_successful_runner)
+
+    payload = json.loads(service.create_evidence(context=context, dry_run=True))
+    artifact_gate = next(gate for gate in payload["gates"] if gate["gate"] == "artifact_coverage")
+
+    assert "pick_and_place" in artifact_gate["found"]
+    assert "gerber" in artifact_gate["missing"]
+    assert artifact_gate["passed"] is False
+
+
+def test_release_file_hashes_tolerate_disappearing_file(tmp_path: Path) -> None:
+    module = _module()
+    artifact = tmp_path / "vanished.csv"
+    artifact.write_text("temporary\n", encoding="utf-8")
+    artifact.unlink()
+
+    records = module.build_release_file_hashes([artifact])
+
+    assert records == [
+        {
+            "filename": "vanished.csv",
+            "sha256": "unavailable",
+            "size_bytes": "unavailable",
+        }
+    ]
+
+
+def test_artifact_coverage_recognizes_nested_export_layout(tmp_path: Path) -> None:
+    module = _module()
+    output = tmp_path / "output"
+    gerber = output / "gerber"
+    position = output / "pos"
+    gerber.mkdir(parents=True)
+    position.mkdir()
+    (gerber / "demo-F_Cu.gbr").write_text("gerber\n", encoding="utf-8")
+    (gerber / "demo.drl").write_text("drill\n", encoding="utf-8")
+    (output / "bom.csv").write_text("bom\n", encoding="utf-8")
+    (position / "board-pos.csv").write_text("placement\n", encoding="utf-8")
+
+    coverage = module.artifact_coverage(output)
+
+    assert {name: [path.name for path in paths] for name, paths in coverage.items()} == {
+        "gerber": ["demo-F_Cu.gbr"],
+        "drill": ["demo.drl"],
+        "bom": ["bom.csv"],
+        "pick_and_place": ["board-pos.csv"],
+    }
 
 
 def test_release_evidence_service_reports_drc_and_erc_cli_failures(tmp_path: Path) -> None:
