@@ -18,100 +18,25 @@ from pydantic import Field
 from ..config import get_config
 from ..connection import get_board
 from ..models.common import _FootprintLike, _PadLike
-from ..models.signal_integrity import (
-    DecouplingPlacementInput,
-    DifferentialPairSkewInput,
-    ViaStubInput,
-)
-from ..models.verdict import VerdictReport
-from ..pcb.board_access import board_footprints, board_pads, board_tracks, board_vias
-from ..pcb.geometry import point_xy_mm, track_segment_length_mm
+from ..models.signal_integrity import DecouplingPlacementInput, ViaStubInput
+from ..pcb.board_access import board_footprints, board_pads, board_vias
+from ..pcb.geometry import point_xy_mm
 from ..utils.impedance import (
-    propagation_delay_ps_per_mm,
     recommended_decoupling_distance_mm,
-    trace_impedance,
     via_stub_resonance_ghz,
     via_stub_risk_level,
 )
 from ..utils.units import nm_to_mm
 from ..verdicts import three_level_verdict, warn_max_from
-from .design_intent_state import resolve_design_intent
 
 _ViaPosition = Annotated[list[float], Field(min_length=2, max_length=2)]
-_DEFAULT_OUTER_DIELECTRIC_MM = 0.18
 _DEFAULT_BOARD_THICKNESS_MM = 1.6
-
-# Conservative default differential-pair skew budget (ps) used only when neither an
-# explicit budget nor a design-intent interface budget is available. Formerly an
-# inline hardcoded ``10.0`` in the gate (work order K2).
-_DEFAULT_DIFF_SKEW_BUDGET_PS = 10.0
-
-
-def _resolve_skew_budget_ps(net_p: str, net_n: str) -> tuple[float, str]:
-    """Return ``(budget_ps, source_note)`` for a differential pair.
-
-    Prefers a design-intent interface ``diff_skew_max_ps`` whose ``net_prefix`` matches
-    one of the nets; falls back to the tightest declared interface budget, then to a
-    conservative default with an explicit "intent missing" note so a missing spec is
-    never silently treated as a pass.
-    """
-    resolution = resolve_design_intent()
-    interfaces = getattr(resolution.resolved, "interfaces", []) or []
-    matched: list[float] = []
-    declared: list[float] = []
-    for iface in interfaces:
-        budget = getattr(iface, "diff_skew_max_ps", None)
-        if not budget or budget <= 0:
-            continue
-        declared.append(budget)
-        prefix = (getattr(iface, "net_prefix", "") or "").strip()
-        if prefix and (net_p.startswith(prefix) or net_n.startswith(prefix)):
-            matched.append(budget)
-    if matched:
-        value = min(matched)
-        return value, f"design-intent interface budget {value:.1f} ps"
-    if declared:
-        value = min(declared)
-        return value, f"tightest design-intent budget {value:.1f} ps (no net-prefix match)"
-    return _DEFAULT_DIFF_SKEW_BUDGET_PS, (
-        f"conservative default {_DEFAULT_DIFF_SKEW_BUDGET_PS:.1f} ps — no design intent; "
-        "set diff_skew_max_ps via project_set_design_intent"
-    )
-
-
-class _TrackLike(Protocol):
-    start: object
-    end: object
-    width: int
-    net: object
-
 
 class _ViaLike(Protocol):
     position: object
     drill_diameter: int
     net: object
     type: int
-
-
-def _track_lengths_by_net() -> dict[str, float]:
-    lengths: dict[str, float] = {}
-    for track in cast(list[_TrackLike], board_tracks(get_board())):
-        net_name = str(getattr(getattr(track, "net", None), "name", "") or "")
-        if not net_name:
-            continue
-        lengths[net_name] = lengths.get(net_name, 0.0) + track_segment_length_mm(track)
-    return lengths
-
-
-def _track_width_mm(net_name: str) -> float | None:
-    widths: list[float] = []
-    for track in cast(list[_TrackLike], board_tracks(get_board())):
-        track_net = str(getattr(getattr(track, "net", None), "name", "") or "")
-        if track_net == net_name:
-            widths.append(nm_to_mm(int(getattr(track, "width", 0))))
-    if not widths:
-        return None
-    return sum(widths) / len(widths)
 
 
 def _stackup_layers() -> list[object]:
@@ -125,20 +50,6 @@ def _is_copper_layer(layer: object) -> bool:
         return True
     layer_name = str(getattr(layer, "layer", ""))
     return "Cu" in layer_name
-
-
-def _outer_dielectric_height_mm() -> float:
-    layers = _stackup_layers()
-    seen_outer_copper = False
-    for layer in layers:
-        if _is_copper_layer(layer) and not seen_outer_copper:
-            seen_outer_copper = True
-            continue
-        if seen_outer_copper and not _is_copper_layer(layer):
-            thickness_nm = int(getattr(layer, "thickness", 0))
-            if thickness_nm > 0:
-                return nm_to_mm(thickness_nm)
-    return _DEFAULT_OUTER_DIELECTRIC_MM
 
 
 def _board_thickness_mm() -> float:
@@ -233,101 +144,9 @@ def register(mcp: FastMCP) -> None:
 
     signal_integrity_impedance.register(mcp)
 
-    @mcp.tool()
-    def si_check_differential_pair_skew(
-        net_p: str,
-        net_n: str,
-        er: float = 4.2,
-        trace_type: str = "microstrip",
-        skew_budget_ps: float = 0.0,
-    ) -> VerdictReport:
-        """Estimate differential-pair length skew and delay mismatch from board tracks.
+    from . import signal_integrity_differential_pair_skew
 
-        Returns a PASS/WARN/FAIL verdict. The skew budget comes from ``skew_budget_ps``
-        if > 0, otherwise from the matching design-intent interface, otherwise a
-        conservative default. PASS within budget, WARN up to 2x budget, FAIL beyond.
-        """
-        payload = DifferentialPairSkewInput(net_p=net_p, net_n=net_n, er=er, trace_type=trace_type)
-        lengths = _track_lengths_by_net()
-        if payload.net_p not in lengths or payload.net_n not in lengths:
-            message = (
-                "Could not compute differential-pair skew because one or both nets "
-                "have no routed track segments on the active board."
-            )
-            return VerdictReport.from_text_verdict(
-                text=message,
-                summary=message,
-                verdict="WARN",
-                source="si_check_differential_pair_skew",
-                evidence=[
-                    {"net_p": payload.net_p, "net_n": payload.net_n, "routed_lengths": lengths}
-                ],
-                remediation=(
-                    "Route both differential-pair nets, then rerun "
-                    "si_check_differential_pair_skew()."
-                ),
-                failure_mode="configuration",
-                metadata={"domain": "signal_integrity"},
-            )
-
-        height_mm = _outer_dielectric_height_mm()
-        width_mm = _track_width_mm(payload.net_p) or _track_width_mm(payload.net_n) or 0.2
-        _, effective_er = trace_impedance(
-            width_mm,
-            height_mm,
-            payload.er,
-            trace_type=payload.trace_type,
-            spacing_mm=0.2,
-        )
-        delay_ps_per_mm = propagation_delay_ps_per_mm(effective_er)
-        length_p = lengths[payload.net_p]
-        length_n = lengths[payload.net_n]
-        skew_mm = abs(length_p - length_n)
-        skew_ps = skew_mm * delay_ps_per_mm
-
-        if skew_budget_ps > 0:
-            budget_ps, budget_source = skew_budget_ps, f"explicit budget {skew_budget_ps:.1f} ps"
-        else:
-            budget_ps, budget_source = _resolve_skew_budget_ps(payload.net_p, payload.net_n)
-        fail_ps = warn_max_from(budget_ps)
-        verdict = three_level_verdict(skew_ps, pass_max=budget_ps, warn_max=fail_ps)
-
-        lines = [
-            f"Differential-pair skew analysis ({verdict}):",
-            f"- Net P: {payload.net_p} length={length_p:.3f} mm",
-            f"- Net N: {payload.net_n} length={length_n:.3f} mm",
-            f"- Skew: {skew_mm:.3f} mm",
-            f"- Estimated delay mismatch: {skew_ps:.3f} ps",
-            f"- Effective permittivity used: {effective_er:.3f}",
-            f"- Assumed outer dielectric height: {height_mm:.3f} mm",
-            f"- Skew budget: {budget_ps:.1f} ps (source: {budget_source})",
-            f"- Thresholds: PASS <= {budget_ps:.1f} ps, WARN <= {fail_ps:.1f} ps, "
-            f"FAIL > {fail_ps:.1f} ps.",
-        ]
-        return VerdictReport.from_text_verdict(
-            text="\n".join(lines),
-            summary=(
-                f"Differential-pair skew is {skew_ps:.3f} ps against {budget_ps:.1f} ps budget."
-            ),
-            verdict=verdict,
-            source="si_check_differential_pair_skew",
-            evidence=[
-                {
-                    "net_p": payload.net_p,
-                    "net_n": payload.net_n,
-                    "length_p_mm": length_p,
-                    "length_n_mm": length_n,
-                    "skew_mm": skew_mm,
-                    "skew_ps": skew_ps,
-                    "budget_ps": budget_ps,
-                    "budget_source": budget_source,
-                }
-            ],
-            remediation="Tune pair lengths/routing, then rerun si_check_differential_pair_skew()."
-            if verdict != "PASS"
-            else "",
-            metadata={"domain": "signal_integrity"},
-        )
+    signal_integrity_differential_pair_skew.register(mcp)
 
     from . import signal_integrity_length_matching
 
