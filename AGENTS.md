@@ -2,6 +2,20 @@
 
 Use this file as a router, not as a duplicate engineering manual. Follow the canonical sources below and keep changes evidence-driven.
 
+## Scope and precedence
+- This file applies repository-wide.
+- Nested `AGENTS.md` files add or narrow instructions for their subtree; the closest applicable file wins.
+- Nested instructions must not weaken repository security, architecture, compatibility, evidence, release, or human-approval constraints unless the underlying policy is intentionally changed in the same work.
+- Executable repository policy and tests remain authoritative if prose drifts.
+
+Nested operational boundaries:
+- `src/kicad_mcp/AGENTS.md` — server architecture, KiCad adapter seam, path/subprocess safety, typed errors, and real-state rules.
+- `src/kicad_mcp/tools/AGENTS.md` — public MCP tools, profiles, operating modes, annotations, generated contracts, and manufacturing gates.
+- `.github/AGENTS.md` — CI, required checks, workflow security, release, provenance, and publishing.
+- `integrations/AGENTS.md` — agent-runtime config templates, installers, permission defaults, and integration drift.
+- `src-tauri/AGENTS.md` — Rust/Tauri desktop lifecycle, backend compatibility, loopback boundary, and packaging.
+- `packages/AGENTS.md` — npm wrapper, protocol schemas, fixtures, and KiCad companion package boundaries.
+
 ## Start here
 - Architecture and dependency direction: `ARCHITECTURE.md`
 - Contribution and review contract: `CONTRIBUTING.md`
@@ -15,7 +29,7 @@ Use this file as a router, not as a duplicate engineering manual. Follow the can
 ## Working rules
 1. Inspect the relevant architecture/service/adapter boundary before editing.
 2. Prefer existing domain services and adapter seams; do not bypass them with ad-hoc KiCad file rewriting.
-3. Add or change tests before production behaviour changes, then run the smallest relevant suite and the repository gates.
+3. Add or change tests before production behaviour changes, then run the smallest relevant suite and repository gates.
 4. Treat generated files as outputs. Use their documented generator/check command instead of hand-editing them.
 5. Preserve explicit GitHub Actions permissions, SHA-pinned Actions, path guards, and human-only manufacturing controls.
 6. Do not claim native KiCad, manufacturing, or live-model success without the repository's required evidence.
@@ -24,6 +38,3 @@ Use this file as a router, not as a duplicate engineering manual. Follow the can
 Use `task verify` for the normal local quality gate and `task ci` for the local CI equivalent when the pinned toolchain is available. For change-scoped validation, `scripts/hook_pre_push.py` maps touched files to the required checks.
 
 For agent/profile changes also run `pnpm run profiles:check`, `pnpm run toolsets:check`, and `pnpm run tool-contracts:check`. For workflow changes run `pnpm run workflows:policy`, `pnpm run workflows:lint`, and `pnpm run workflows:security`.
-
-## Scope-specific instructions
-More specific `AGENTS.md` files may exist under integrations. When working in such a subtree, follow the nearest file in addition to this root router. Repository-level security, architecture, and release constraints still apply.

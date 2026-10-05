@@ -1,33 +1,38 @@
-# KiCad MCP — OpenCode Usage Guide
+# OpenCode Integration Maintainer Instructions
 
-When a task involves KiCad, PCB design, schematic review, ERC/DRC, manufacturing
-export, BOM, routing, DFM, or KiCad project files, use the configured `kicad` MCP
-server.
+These instructions apply to `integrations/opencode/**` and supplement `integrations/AGENTS.md` and the repository root instructions.
 
-## Default policy
+This file is for repository maintenance. User-facing OpenCode setup and usage belong in `integrations/opencode/README.md`, `docs/agents/opencode.md`, and `docs/agent-runtime-config.md`.
 
-1. Inspect the current project state before proposing or making edits.
-2. Prefer read-only MCP operations unless the user explicitly requests a change.
-3. Run `project_quality_gate` before describing a design as release-ready.
-4. Never execute destructive or irreversible tools without explicit user intent.
-5. After edits, run the applicable ERC/DRC and validation gates and report the
-   changed files and remaining violations.
+## Configuration contract
 
-## OpenCode permissions
+OpenCode uses its own `mcp` configuration schema. Preserve local versus remote server semantics and keep the installer-facing `integrations/opencode/opencode.example.json` aligned with the documented project-level OpenCode example where they describe the same server behavior.
 
-OpenCode permission keys match tool names and support wildcards. For example,
-`"kicad_*": "ask"` gates every tool exposed by the `kicad` MCP server. Per-agent
-permission rules override the global policy, so a dedicated review agent can allow
-KiCad reads while keeping `edit` denied and `bash` gated.
+- New OpenCode permission configuration uses `permission`; do not reintroduce the deprecated legacy `tools` boolean model.
+- Preserve wildcard behavior such as `kicad_*` when documenting or testing MCP tool permissions.
+- Keep conservative/read-only defaults for general review.
+- Do not embed literal remote bearer tokens; use environment references or the supported OpenCode secret mechanism.
+- A runtime permission rule does not replace KiCad MCP Pro's profile, operating-mode, confirmation, manufacturing, or server-side security controls.
 
-The legacy `tools` boolean configuration is deprecated; use `permission` for new
-configurations.
+## Experimental plugin
 
-## Quick start
+`plugins/kicad-mcp-plugin/` is optional and experimental.
+
+- Do not make the plugin required for normal MCP discovery or configuration.
+- Plugin review/doctor helpers should remain bounded to their documented role.
+- Any plugin path that can invoke KiCad capabilities must preserve the server's read/write/destructive/manufacturing semantics rather than creating a parallel bypass.
+
+## Validation
+
+For OpenCode integration changes:
 
 ```bash
-uvx kicad-mcp-pro
+python integrations/common/validate-mcp-config.py
+task pre-push
 ```
 
-Once `opencode.json` contains the MCP entry, OpenCode discovers the KiCad tools
-from the server automatically.
+Also update the OpenCode README/docs when user-visible configuration or permission syntax changes. Validate with an actual OpenCode runtime when claiming runtime-specific behavior; static JSON validation alone does not prove client compatibility.
+
+## Definition of done
+
+An OpenCode integration change is complete only when installer input, examples, docs, permission semantics, optional plugin behavior, and server safety expectations agree.
