@@ -41,9 +41,7 @@ class FakeService:
 
 
 def test_registration_preserves_signature_docstring_and_delegation() -> None:
-    adapter = importlib.import_module(
-        "kicad_mcp.tools.signal_integrity_differential_pair_skew"
-    )
+    adapter = importlib.import_module("kicad_mcp.tools.signal_integrity_differential_pair_skew")
     server = FastMCP("si-differential-pair-skew-registration")
     service = FakeService()
     track_width = lambda _net: 0.2
