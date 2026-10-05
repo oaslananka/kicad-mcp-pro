@@ -38,7 +38,8 @@ CLIENT_ZED = "zed"
 CLIENT_NONE = "none"
 CLIENT_SKIPPED_DISPLAY = "(skipped)"
 
-_ZED_CONFIG_PATH = "~/.config/zed/settings.json"
+_ZED_UNIX_CONFIG_PATH = "~/.config/zed/settings.json"
+_ZED_WINDOWS_CONFIG_PATH = r"%APPDATA%\Zed\settings.json"
 _CLAUDE_DESKTOP_DISPLAY_NAME = "Claude Desktop"
 
 # ---------------------------------------------------------------------------
@@ -67,9 +68,9 @@ MCP_CLIENT_CONFIGS: dict[str, dict[str, str]] = {
         "linux": "~/.codeium/windsurf/mcp_config.json",
     },
     CLIENT_ZED: {
-        "windows": _ZED_CONFIG_PATH,
-        "darwin": _ZED_CONFIG_PATH,
-        "linux": _ZED_CONFIG_PATH,
+        "windows": _ZED_WINDOWS_CONFIG_PATH,
+        "darwin": _ZED_UNIX_CONFIG_PATH,
+        "linux": _ZED_UNIX_CONFIG_PATH,
     },
 }
 
