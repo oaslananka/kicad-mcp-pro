@@ -4,7 +4,6 @@ import ast
 
 from scripts import check_architecture_boundaries as boundaries
 
-
 SERVICE = "kicad_mcp.signal_integrity.stackup_synthesis"
 ADAPTER = "kicad_mcp.tools.signal_integrity_stackup_synthesis"
 ROOT = "kicad_mcp.tools.signal_integrity"
