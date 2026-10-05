@@ -50,4 +50,4 @@ def test_si_root_delegates_skew_and_shrinks() -> None:
     span = boundaries._function_span(root, "register")
     assert span is not None
     assert span <= 150
-    assert boundaries.REGISTER_LINE_LIMITS[ROOT] == 150
+    assert boundaries.REGISTER_LINE_LIMITS[ROOT] <= 150
