@@ -24,8 +24,7 @@ def test_generate_preserves_jlcpcb_four_layer_output_contract() -> None:
     assert "- 1. F.Cu | signal | Copper | 0.035 mm" in result
     assert "- 7. B.Cu | signal | Copper | 0.035 mm" in result
     assert result.endswith(
-        "- Review with your fabricator's published stackup table "
-        "before freezing impedance rules."
+        "- Review with your fabricator's published stackup table before freezing impedance rules."
     )
 
 
