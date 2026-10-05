@@ -8,10 +8,7 @@ from scripts import check_architecture_boundaries as boundaries
 def test_architecture_checker_tracks_si_stackup_generation_service_and_adapter() -> None:
     assert "kicad_mcp.signal_integrity.stackup_generation" in boundaries.DOMAIN_MODULES
     assert "kicad_mcp.signal_integrity.stackup_generation" in boundaries.PURE_HELPERS
-    assert (
-        "kicad_mcp.tools.signal_integrity_stackup_generation"
-        in boundaries.DOMAIN_MODULES
-    )
+    assert "kicad_mcp.tools.signal_integrity_stackup_generation" in boundaries.DOMAIN_MODULES
     assert "kicad_mcp.tools.signal_integrity" in boundaries.DOMAIN_MODULES
 
 
