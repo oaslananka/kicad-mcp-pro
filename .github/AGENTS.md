@@ -14,6 +14,7 @@ Read first:
 - `docs/development/release-process.md`
 - `.github/actions-policy.json`
 - `.github/rulesets/main.json`
+- `.github/rulesets/release-tags.json`
 
 ## Required-check integrity
 

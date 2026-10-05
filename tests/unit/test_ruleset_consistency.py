@@ -1,11 +1,4 @@
-"""Branch-protection ruleset must reference real CI check names (work order P5-T4).
-
-A required status check whose context never matches a produced GitHub check-run
-name silently blocks every PR to ``main`` (or is quietly ignored). This guards
-``.github/rulesets/main.json`` against drifting from the workflow job names — the
-exact failure that left ``mcp-server (windows-2025-vs2026)`` required after the CI
-matrix moved to ``windows-2025``.
-"""
+"""Repository ruleset desired state must match real CI and fleet governance policy."""
 
 from __future__ import annotations
 
@@ -18,10 +11,23 @@ from typing import Any
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-RULESET = ROOT / ".github" / "rulesets" / "main.json"
+MAIN_RULESET = ROOT / ".github" / "rulesets" / "main.json"
+RELEASE_TAG_RULESET = ROOT / ".github" / "rulesets" / "release-tags.json"
 WORKFLOWS = ROOT / ".github" / "workflows"
 
 _MATRIX_REF = re.compile(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}")
+_EXPECTED_RELEASE_TAGS = [
+    "refs/tags/protocol-schemas-v*",
+    "refs/tags/mcp-server-v*",
+    "refs/tags/mcp-npm-v*",
+    "refs/tags/kicad-mcp-gui-v*",
+]
+
+
+def _load(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    return payload
 
 
 def _matrix_combinations(strategy: dict[str, Any]) -> list[dict[str, Any]]:
@@ -64,13 +70,59 @@ def produced_check_names() -> set[str]:
     return names
 
 
+def _rule(ruleset: dict[str, Any], rule_type: str) -> dict[str, Any]:
+    return next(rule for rule in ruleset["rules"] if rule.get("type") == rule_type)
+
+
 def required_contexts() -> list[str]:
-    ruleset = json.loads(RULESET.read_text(encoding="utf-8"))
-    for rule in ruleset.get("rules", []):
-        if rule.get("type") == "required_status_checks":
-            checks = rule["parameters"]["required_status_checks"]
-            return [check["context"] for check in checks]
-    return []
+    ruleset = _load(MAIN_RULESET)
+    checks = _rule(ruleset, "required_status_checks")["parameters"]["required_status_checks"]
+    return [check["context"] for check in checks]
+
+
+def test_main_ruleset_matches_canonical_fleet_governance_shape() -> None:
+    ruleset = _load(MAIN_RULESET)
+
+    assert ruleset["name"] == "main-standard"
+    assert ruleset["target"] == "branch"
+    assert ruleset["enforcement"] == "active"
+    assert ruleset["conditions"] == {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}}
+
+    assert [rule["type"] for rule in ruleset["rules"]] == [
+        "deletion",
+        "non_fast_forward",
+        "required_linear_history",
+        "pull_request",
+        "required_status_checks",
+    ]
+
+    pull_request = _rule(ruleset, "pull_request")["parameters"]
+    assert pull_request == {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": False,
+        "required_reviewers": [],
+        "require_code_owner_review": False,
+        "require_last_push_approval": False,
+        "required_review_thread_resolution": True,
+        "require_extra_approval_for_unattributed_changes": True,
+        "allowed_merge_methods": ["squash"],
+    }
+
+    assert ruleset["bypass_actors"] == [
+        {
+            "actor_id": 285490571,
+            "actor_type": "User",
+            "bypass_mode": "pull_request",
+        }
+    ]
+
+
+def test_required_status_check_policy_is_strict_and_creation_safe() -> None:
+    parameters = _rule(_load(MAIN_RULESET), "required_status_checks")["parameters"]
+
+    assert parameters["strict_required_status_checks_policy"] is True
+    assert parameters["do_not_enforce_on_create"] is False
+    assert parameters["required_status_checks"]
 
 
 def test_ruleset_contexts_are_real_check_names() -> None:
@@ -94,12 +146,12 @@ def test_ruleset_requires_sonarcloud_scan() -> None:
     assert "SonarCloud Scan" in required_contexts()
 
 
-def test_ruleset_preserves_extra_approval_for_unattributed_changes() -> None:
-    ruleset = json.loads(RULESET.read_text(encoding="utf-8"))
-    pull_request_rule = next(
-        rule for rule in ruleset["rules"] if rule.get("type") == "pull_request"
-    )
-    assert (
-        pull_request_rule["parameters"].get("require_extra_approval_for_unattributed_changes")
-        is True
-    )
+def test_release_tag_ruleset_matches_published_product_families() -> None:
+    ruleset = _load(RELEASE_TAG_RULESET)
+
+    assert ruleset["name"] == "release-tags"
+    assert ruleset["target"] == "tag"
+    assert ruleset["enforcement"] == "active"
+    assert ruleset["conditions"] == {"ref_name": {"include": _EXPECTED_RELEASE_TAGS, "exclude": []}}
+    assert [rule["type"] for rule in ruleset["rules"]] == ["deletion", "update"]
+    assert ruleset["bypass_actors"] == []
