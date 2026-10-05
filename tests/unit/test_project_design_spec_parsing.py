@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 
 from kicad_mcp.project.design_spec import (
+    ProjectDesignIntent,
+    ProjectSpecResolution,
     _extract_structured_spec_block,
     _import_spec_extra_fields,
     _import_spec_missing_fields,
@@ -11,6 +13,8 @@ from kicad_mcp.project.design_spec import (
     _parse_import_scalar,
     _parse_simple_yaml,
     _read_design_spec_markdown,
+    _render_design_intent,
+    _render_project_spec_resolution,
     _sanitize_import_placeholders,
     _select_design_intent_payload,
     _strip_yaml_comment,
@@ -44,6 +48,17 @@ from kicad_mcp.project.design_spec import (
 )
 def test_parse_import_scalar_variants(raw: str, expected: object) -> None:
     assert _parse_import_scalar(raw) == expected
+
+
+def test_empty_design_spec_rendering_preserves_none_display_contract() -> None:
+    rendered = _render_design_intent(ProjectDesignIntent())
+    resolution = _render_project_spec_resolution(ProjectSpecResolution())
+
+    assert "- Connector refs: (none)" in rendered
+    assert "- Manufacturer: (none)" in rendered
+    assert "- Thermal hotspots: (none)" in rendered
+    assert "- Explicit source: (none)" in resolution
+    assert "- Explicit path: (none)" in resolution
 
 
 def test_strip_yaml_comment_respects_quoted_hashes_and_escapes() -> None:

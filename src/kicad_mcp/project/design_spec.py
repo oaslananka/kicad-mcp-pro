@@ -40,6 +40,7 @@ PROJECT_SPEC_DIRNAME = ".kicad-mcp"
 PROJECT_SPEC_FILENAME = "project_spec.json"
 LEGACY_DESIGN_INTENT_FILENAME = "design_intent.json"
 DEFAULT_INFERRED_DECOUPLING_DISTANCE_MM = 6.0
+_NONE_DISPLAY = "(none)"
 _REPORTED_LEGACY_INTENT_PATHS: set[Path] = set()
 
 
@@ -663,53 +664,54 @@ def _render_design_intent(intent: ProjectDesignIntent) -> str:
     lines = ["Project design spec:"]
     lines.append(
         "- Connector refs: "
-        + (", ".join(intent.connector_refs) if intent.connector_refs else "(none)")
+        + (", ".join(intent.connector_refs) if intent.connector_refs else _NONE_DISPLAY)
     )
     lines.append(
         "- Critical nets: "
-        + (", ".join(intent.critical_nets) if intent.critical_nets else "(none)")
+        + (", ".join(intent.critical_nets) if intent.critical_nets else _NONE_DISPLAY)
     )
     lines.append(
         "- Power-tree refs: "
-        + (", ".join(intent.power_tree_refs) if intent.power_tree_refs else "(none)")
+        + (", ".join(intent.power_tree_refs) if intent.power_tree_refs else _NONE_DISPLAY)
     )
     lines.append(
-        "- Analog refs: " + (", ".join(intent.analog_refs) if intent.analog_refs else "(none)")
+        "- Analog refs: " + (", ".join(intent.analog_refs) if intent.analog_refs else _NONE_DISPLAY)
     )
     lines.append(
-        "- Digital refs: " + (", ".join(intent.digital_refs) if intent.digital_refs else "(none)")
+        "- Digital refs: "
+        + (", ".join(intent.digital_refs) if intent.digital_refs else _NONE_DISPLAY)
     )
     lines.append(
         "- Sensor cluster refs: "
-        + (", ".join(intent.sensor_cluster_refs) if intent.sensor_cluster_refs else "(none)")
+        + (", ".join(intent.sensor_cluster_refs) if intent.sensor_cluster_refs else _NONE_DISPLAY)
     )
     lines.append(
         "- Required sheets: "
-        + (", ".join(intent.required_sheets) if intent.required_sheets else "(none)")
+        + (", ".join(intent.required_sheets) if intent.required_sheets else _NONE_DISPLAY)
     )
     lines.append(
         "- Optional sheets: "
-        + (", ".join(intent.optional_sheets) if intent.optional_sheets else "(none)")
+        + (", ".join(intent.optional_sheets) if intent.optional_sheets else _NONE_DISPLAY)
     )
     lines.append(
         "- Manufacturer: "
         + (
             f"{intent.manufacturer} / {intent.manufacturer_tier}"
             if intent.manufacturer or intent.manufacturer_tier
-            else "(none)"
+            else _NONE_DISPLAY
         )
     )
     lines.append(f"- Functional spacing: {intent.functional_spacing_mm:.2f} mm")
     lines.append(
         "- Thermal hotspots: "
-        + (", ".join(intent.thermal_hotspots) if intent.thermal_hotspots else "(none)")
+        + (", ".join(intent.thermal_hotspots) if intent.thermal_hotspots else _NONE_DISPLAY)
     )
     lines.append(
         "- Critical frequencies: "
         + (
             ", ".join(f"{frequency:.2f} MHz" for frequency in intent.critical_frequencies_mhz)
             if intent.critical_frequencies_mhz
-            else "(none)"
+            else _NONE_DISPLAY
         )
     )
     lines.append(f"- Decoupling pairs: {len(intent.decoupling_pairs)}")
@@ -1017,11 +1019,11 @@ def _render_project_spec_resolution(resolution: ProjectSpecResolution) -> str:
     source_label = {
         "project_spec": ".kicad-mcp/project_spec.json",
         "legacy_design_intent": "legacy output/design_intent.json",
-        "none": "(none)",
+        "none": _NONE_DISPLAY,
     }[resolution.source]
     lines = ["Project design spec resolution:"]
     lines.append(f"- Explicit source: {source_label}")
-    lines.append(f"- Explicit path: {resolution.path or '(none)'}")
+    lines.append(f"- Explicit path: {resolution.path or _NONE_DISPLAY}")
     if resolution.source == "none":
         lines.append(
             "- Warning: No design intent set. Call project_set_design_intent() "
@@ -1259,7 +1261,7 @@ class ProjectDesignSpecService:
             fab = f"{manufacturer}_{tier}"
         notes = [
             "- Critical nets: "
-            + (", ".join(intent.critical_nets) if intent.critical_nets else "(none)"),
+            + (", ".join(intent.critical_nets) if intent.critical_nets else _NONE_DISPLAY),
             "- Power rails: "
             + (
                 ", ".join(
@@ -1267,7 +1269,7 @@ class ProjectDesignSpecService:
                     for rail in intent.power_rails
                 )
                 if intent.power_rails
-                else "(none)"
+                else _NONE_DISPLAY
             ),
             "- Interfaces: "
             + (
@@ -1281,10 +1283,10 @@ class ProjectDesignSpecService:
                     for iface in intent.interfaces
                 )
                 if intent.interfaces
-                else "(none)"
+                else _NONE_DISPLAY
             ),
             "- Thermal hotspots: "
-            + (", ".join(intent.thermal_hotspots) if intent.thermal_hotspots else "(none)"),
+            + (", ".join(intent.thermal_hotspots) if intent.thermal_hotspots else _NONE_DISPLAY),
         ]
         return str(
             render_professional_circuit_design_prompt(
