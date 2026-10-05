@@ -175,7 +175,20 @@ async def test_signal_integrity_surface(sample_project, mock_board) -> None:
 async def test_signal_integrity_stackup_synthesis_and_net_class_binding(
     sample_project,
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    written: list[tuple[str, float, float, float | None]] = []
+
+    def fake_write_rule(
+        net_class: str,
+        clearance_mm: float,
+        track_width_mm: float,
+        diff_gap_mm: float | None,
+    ) -> str:
+        written.append((net_class, clearance_mm, track_width_mm, diff_gap_mm))
+        return str(sample_project / "demo.kicad_dru")
+
+    monkeypatch.setattr(
+        "kicad_mcp.tools.signal_integrity_net_class_binding._write_nc_rule", fake_write_rule
+    )
     server = build_server("full")
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
     interfaces = [
@@ -206,18 +219,6 @@ async def test_signal_integrity_stackup_synthesis_and_net_class_binding(
         {"interfaces": interfaces, "dry_run": True},
     )
 
-    written: list[tuple[str, float, float, float | None]] = []
-
-    def fake_write_rule(
-        net_class: str,
-        clearance_mm: float,
-        track_width_mm: float,
-        diff_gap_mm: float | None,
-    ) -> str:
-        written.append((net_class, clearance_mm, track_width_mm, diff_gap_mm))
-        return str(sample_project / "demo.kicad_dru")
-
-    monkeypatch.setattr("kicad_mcp.tools.signal_integrity._write_nc_rule", fake_write_rule)
     applied = await call_tool_text(
         server,
         "si_bind_interfaces_to_net_classes",
