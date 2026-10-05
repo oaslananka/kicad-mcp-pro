@@ -15,6 +15,16 @@ def test_track_resistance_and_drop_are_reasonable() -> None:
     assert 0.09 <= resistance_ohm <= 0.11
 
 
+def test_track_resistance_applies_temperature_coefficient_below_20c() -> None:
+    resistance_20c = track_resistance_ohm(0.5, 100.0, 1.0, ambient_temp_c=20.0)
+    resistance_0c = track_resistance_ohm(0.5, 100.0, 1.0, ambient_temp_c=0.0)
+
+    assert resistance_0c < resistance_20c
+    assert resistance_0c == pytest.approx(
+        resistance_20c * (1.0 - (0.0039 * 20.0)),
+    )
+
+
 def test_voltage_drop_service_preserves_response_contract() -> None:
     result = PowerIntegrityVoltageDropService().calculate_voltage_drop(
         current_a=1.0,

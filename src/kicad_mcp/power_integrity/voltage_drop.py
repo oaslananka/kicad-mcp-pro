@@ -26,7 +26,7 @@ def track_resistance_ohm(
     length_m = trace_length_mm / 1_000.0
     area_m2 = width_m * thickness_m
     base_resistance = _COPPER_RESISTIVITY_OHM_M * length_m / area_m2
-    return base_resistance * (1.0 + (_TEMPERATURE_COEFFICIENT * max(ambient_temp_c - 20.0, 0.0)))
+    return base_resistance * (1.0 + (_TEMPERATURE_COEFFICIENT * (ambient_temp_c - 20.0)))
 
 
 @dataclass(frozen=True)
