@@ -37,7 +37,6 @@ from ..utils.channel import (
 )
 from ..utils.impedance import (
     DIELECTRIC_LIBRARY,
-    differential_impedance,
     get_dielectric,
     propagation_delay_ps_per_mm,
     recommend_dielectric_for_frequency,
