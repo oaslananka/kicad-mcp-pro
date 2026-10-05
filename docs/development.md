@@ -2,7 +2,8 @@
 
 ## One-Time Setup
 
-Prepare the repository-scoped toolchain, then install both hooks:
+Prepare the repository-scoped toolchain, then install the repository-pinned
+Lefthook hooks:
 
 ```bash
 ./scripts/bootstrap-dev.sh
@@ -10,7 +11,15 @@ source .dev-env.sh
 task hooks
 ```
 
-The hook launcher reads the committed `UV_VERSION` and refuses a mismatched
+Lefthook is the Git-hook owner for both `pre-commit` and `pre-push`. The FAST
+pre-commit catalog remains in `.pre-commit-config.yaml` so its pinned hygiene,
+Ruff, and Gitleaks checks keep their existing cross-platform behavior; Lefthook
+invokes that catalog rather than letting `pre-commit` install Git hooks itself.
+The MEDIUM pre-push path runs `scripts/hook_pre_push.py` directly against the
+feature-branch delta from `origin/main`, so rebases and force-pushes validate the
+PR patch rather than the old remote branch head.
+
+The uv launcher reads the committed `UV_VERSION` and refuses a mismatched
 global uv. It uses `.dev-tools/uv/<version>/bin/uv`, so other repositories may
 use different uv versions without conflict.
 
@@ -36,7 +45,7 @@ task ci
 
 ## Before Push
 
-The pre-push hook runs change-scoped checks only:
+The Lefthook pre-push hook runs change-scoped checks only:
 
 ```bash
 task pre-push
@@ -74,5 +83,5 @@ act -W .github/workflows/ci.yml --container-architecture linux/amd64
 ## Troubleshooting
 
 - `task: command not found`: install Task from the official installation page.
-- Hook setup fails: run `task hooks`.
+- Hook setup fails: run `task hooks`. The installer preserves any global `core.hooksPath` by using a repository-local `.git/hooks` override on normal clones; linked worktrees with a custom hooks path fail closed instead of rewriting shared Git configuration.
 - CI and local results differ: check that environment variables are consistent between local and CI.

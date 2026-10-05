@@ -46,10 +46,14 @@ failure is propagated after reporting. See
 
 ## Local hook scope
 
-Commit-time hooks stay fast and deterministic: file hygiene, syntax validation,
-Ruff formatting/linting, and secret scanning only. The pre-push hook computes the
-actual commit range and selects scoped mypy, matching unit tests, architecture,
-tool-contract, workflow, web, Cargo, metadata, or compatibility checks.
+Lefthook owns local Git-hook installation. Commit-time hooks stay fast and
+deterministic: Lefthook delegates staged files to the pinned
+`.pre-commit-config.yaml` FAST catalog for file hygiene, syntax validation,
+Ruff formatting/linting, and Gitleaks secret scanning only. The Lefthook
+pre-push hook evaluates `merge-base(origin/main, HEAD)..HEAD` through
+`scripts/hook_pre_push.py`, which keeps the selected checks stable across normal
+pushes, rebases, and force-pushes. It selects scoped mypy, matching unit tests,
+architecture, tool-contract, workflow, web, Cargo, metadata, or compatibility checks.
 
 The repository-wide unit suite, full-project type checking, coverage, integration,
 E2E, package/docs builds, release checks, container scans, and CodeQL remain in CI

@@ -1,0 +1,11 @@
+lefthook: node_modules/.bin/lefthook
+
+pre-commit:
+  commands:
+    fast:
+      run: python3 scripts/run_uv.py tool run pre-commit run --hook-stage pre-commit --files {staged_files}
+
+pre-push:
+  commands:
+    targeted:
+      run: python3 scripts/run_uv.py run --all-extras python scripts/hook_pre_push.py --base origin/main
