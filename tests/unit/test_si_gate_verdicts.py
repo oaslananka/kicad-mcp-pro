@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 import kicad_mcp.signal_integrity.differential_pair_skew as skew_service
-import kicad_mcp.tools.signal_integrity as si
+import kicad_mcp.tools.signal_integrity_decoupling_placement as decoupling_adapter
 import kicad_mcp.tools.signal_integrity_differential_pair_skew as skew_adapter
 from kicad_mcp.config import reset_config
 from kicad_mcp.server import build_server
@@ -82,10 +82,16 @@ async def test_decoupling_placement_verdicts(
     si_server: object, monkeypatch: pytest.MonkeyPatch, distance_mm: float, expected: str
 ) -> None:
     # recommended 2 mm -> FAIL threshold 4 mm. distance 1=PASS, 3=WARN, 5=FAIL.
-    monkeypatch.setattr(si, "recommended_decoupling_distance_mm", lambda _f: 2.0)
-    monkeypatch.setattr(si, "_find_power_anchor", lambda _ic, _pin: (0.0, 0.0))
     monkeypatch.setattr(
-        si, "_nearest_capacitors", lambda _ic, _x, _y: [("C1", distance_mm, "100nF")]
+        decoupling_adapter, "recommended_decoupling_distance_mm", lambda _f: 2.0
+    )
+    monkeypatch.setattr(
+        decoupling_adapter, "_find_power_anchor", lambda _ic, _pin: (0.0, 0.0)
+    )
+    monkeypatch.setattr(
+        decoupling_adapter,
+        "_nearest_capacitors",
+        lambda _ic, _x, _y: [("C1", distance_mm, "100nF")],
     )
     out = await call_tool_text(
         si_server,
