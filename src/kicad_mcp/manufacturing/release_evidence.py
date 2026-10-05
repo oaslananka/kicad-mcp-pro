@@ -83,9 +83,16 @@ def _is_bom(path: Path) -> bool:
     return path.suffix.casefold() in {".csv", ".xml"} and _name_has_token(path, "bom")
 
 
-def artifact_coverage(output_dir: Path) -> dict[str, list[Path]]:
+def artifact_coverage(
+    output_dir: Path,
+    files: list[Path] | None = None,
+) -> dict[str, list[Path]]:
     """Classify required manufacturing artifacts using disjoint reviewed filename rules."""
-    files = find_release_files(output_dir) if output_dir.exists() else []
+    files = (
+        files
+        if files is not None
+        else (find_release_files(output_dir) if output_dir.exists() else [])
+    )
     pick_and_place = [path for path in files if _is_pick_and_place(path)]
     pick_and_place_set = set(pick_and_place)
     return {
@@ -100,17 +107,28 @@ def artifact_coverage(output_dir: Path) -> dict[str, list[Path]]:
     }
 
 
-def build_release_file_hashes(release_files: list[Path]) -> list[dict[str, str]]:
-    """Return deterministic filename/hash/size records for release files."""
+def build_release_file_hashes(
+    release_files: list[Path],
+    *,
+    relative_to: Path | None = None,
+) -> list[dict[str, str]]:
+    """Return deterministic path/hash/size records for release files."""
     records: list[dict[str, str]] = []
     for path in release_files:
         try:
             size_bytes = str(path.stat().st_size)
         except OSError:
             size_bytes = "unavailable"
+        if relative_to is None:
+            filename = path.name
+        else:
+            try:
+                filename = path.relative_to(relative_to).as_posix()
+            except ValueError:
+                filename = path.name
         records.append(
             {
-                "filename": path.name,
+                "filename": filename,
                 "sha256": sha256_file(path),
                 "size_bytes": size_bytes,
             }
@@ -166,7 +184,8 @@ class ReleaseEvidenceService:
         gates: list[dict[str, Any]] = []
         blocking: list[str] = []
 
-        coverage = artifact_coverage(artifact_dir)
+        release_files = find_release_files(artifact_dir) if artifact_dir.exists() else []
+        coverage = artifact_coverage(artifact_dir, files=release_files)
         found_artifacts = [name for name, matches in coverage.items() if matches]
         missing_artifacts = [name for name, matches in coverage.items() if not matches]
 
@@ -328,8 +347,7 @@ class ReleaseEvidenceService:
             blocking.append(hv_gate_detail)
 
         verdict = "release_approved" if not blocking else "release_blocked"
-        release_files = find_release_files(artifact_dir) if artifact_dir.exists() else []
-        file_hashes = build_release_file_hashes(release_files)
+        file_hashes = build_release_file_hashes(release_files, relative_to=artifact_dir)
         source_hashes = build_source_hashes(
             [
                 ("project", context.project_file),

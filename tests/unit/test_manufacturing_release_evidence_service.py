@@ -47,6 +47,16 @@ def _context(tmp_path: Path):  # type: ignore[no-untyped-def]
     )
 
 
+def _gate(payload: dict[str, object], name: str) -> dict[str, object]:
+    gates = payload["gates"]
+    assert isinstance(gates, list)
+    return next(gate for gate in gates if isinstance(gate, dict) and gate.get("gate") == name)
+
+
+def _successful_service(module: ModuleType):  # type: ignore[no-untyped-def]
+    return module.ReleaseEvidenceService(run_cli=_successful_runner)
+
+
 def _successful_runner(*args: str) -> tuple[int, str, str]:
     output = Path(args[args.index("--output") + 1])
     if args[:2] == ("pcb", "drc"):
@@ -99,7 +109,7 @@ def test_release_evidence_service_approves_complete_selv_dry_run(tmp_path: Path)
 def test_release_evidence_service_blocks_hv_without_dru(tmp_path: Path) -> None:
     module = _module()
     context = _context(tmp_path)
-    service = module.ReleaseEvidenceService(run_cli=_successful_runner)
+    service = _successful_service(module)
 
     payload = json.loads(
         service.create_evidence(
@@ -110,7 +120,7 @@ def test_release_evidence_service_blocks_hv_without_dru(tmp_path: Path) -> None:
         )
     )
 
-    hv_gate = next(gate for gate in payload["gates"] if gate["gate"] == "hv_safety")
+    hv_gate = _gate(payload, "hv_safety")
     assert hv_gate["applicable"] is True
     assert hv_gate["passed"] is False
     assert payload["verdict"] == "release_blocked"
@@ -120,7 +130,7 @@ def test_release_evidence_service_blocks_hv_without_dru(tmp_path: Path) -> None:
 def test_release_evidence_service_writes_evidence_and_release_hashes(tmp_path: Path) -> None:
     module = _module()
     context = _context(tmp_path)
-    service = module.ReleaseEvidenceService(run_cli=_successful_runner)
+    service = _successful_service(module)
 
     payload = json.loads(service.create_evidence(context=context, dry_run=False))
 
@@ -141,7 +151,7 @@ def test_release_evidence_service_writes_evidence_and_release_hashes(tmp_path: P
 def test_release_evidence_service_honors_safe_output_path(tmp_path: Path) -> None:
     module = _module()
     context = _context(tmp_path)
-    service = module.ReleaseEvidenceService(run_cli=_successful_runner)
+    service = _successful_service(module)
 
     payload = json.loads(
         service.create_evidence(
@@ -154,7 +164,7 @@ def test_release_evidence_service_honors_safe_output_path(tmp_path: Path) -> Non
     expected = context.project_dir / "release" / "evidence" / "release_evidence.json"
     assert Path(payload["evidence_path"]) == expected
     assert expected.exists()
-    artifact_gate = next(gate for gate in payload["gates"] if gate["gate"] == "artifact_coverage")
+    artifact_gate = _gate(payload, "artifact_coverage")
     assert artifact_gate["passed"] is True
     assert artifact_gate["missing"] == []
 
@@ -162,7 +172,7 @@ def test_release_evidence_service_honors_safe_output_path(tmp_path: Path) -> Non
 def test_release_evidence_service_rejects_output_path_traversal(tmp_path: Path) -> None:
     module = _module()
     context = _context(tmp_path)
-    service = module.ReleaseEvidenceService(run_cli=_successful_runner)
+    service = _successful_service(module)
 
     with pytest.raises(ValueError, match="escapes"):
         service.create_evidence(
@@ -178,10 +188,10 @@ def test_generic_csv_does_not_satisfy_bom_or_pick_and_place(tmp_path: Path) -> N
     (context.output_dir / "demo-bom.csv").unlink()
     (context.output_dir / "demo-pos.csv").unlink()
     (context.output_dir / "assembly.csv").write_text("generic\n", encoding="utf-8")
-    service = module.ReleaseEvidenceService(run_cli=_successful_runner)
+    service = _successful_service(module)
 
     payload = json.loads(service.create_evidence(context=context, dry_run=True))
-    artifact_gate = next(gate for gate in payload["gates"] if gate["gate"] == "artifact_coverage")
+    artifact_gate = _gate(payload, "artifact_coverage")
 
     assert artifact_gate["found"] == ["gerber", "drill"]
     assert artifact_gate["missing"] == ["bom", "pick_and_place"]
@@ -196,14 +206,35 @@ def test_position_gerber_does_not_satisfy_board_gerber_coverage(tmp_path: Path) 
     position_dir = context.output_dir / "pos"
     position_dir.mkdir()
     (position_dir / "board-pos.gbr").write_text("placement\n", encoding="utf-8")
-    service = module.ReleaseEvidenceService(run_cli=_successful_runner)
+    service = _successful_service(module)
 
     payload = json.loads(service.create_evidence(context=context, dry_run=True))
-    artifact_gate = next(gate for gate in payload["gates"] if gate["gate"] == "artifact_coverage")
+    artifact_gate = _gate(payload, "artifact_coverage")
 
     assert "pick_and_place" in artifact_gate["found"]
     assert "gerber" in artifact_gate["missing"]
     assert artifact_gate["passed"] is False
+
+
+def test_release_file_hashes_use_relative_paths_for_duplicate_names(tmp_path: Path) -> None:
+    module = _module()
+    output = tmp_path / "output"
+    first = output / "gerber" / "board.gbr"
+    second = output / "archive" / "board.gbr"
+    first.parent.mkdir(parents=True)
+    second.parent.mkdir(parents=True)
+    first.write_text("first\n", encoding="utf-8")
+    second.write_text("second\n", encoding="utf-8")
+
+    records = module.build_release_file_hashes(
+        [first, second],
+        relative_to=output,
+    )
+
+    assert [entry["filename"] for entry in records] == [
+        "archive/board.gbr",
+        "gerber/board.gbr",
+    ]
 
 
 def test_release_file_hashes_tolerate_disappearing_file(tmp_path: Path) -> None:
@@ -265,8 +296,8 @@ def test_release_evidence_service_reports_drc_and_erc_cli_failures(tmp_path: Pat
         )
     )
 
-    drc = next(gate for gate in payload["gates"] if gate["gate"] == "drc")
-    erc = next(gate for gate in payload["gates"] if gate["gate"] == "erc")
+    drc = _gate(payload, "drc")
+    erc = _gate(payload, "erc")
     assert drc["passed"] is False
     assert drc["error"] == "drc failed"
     assert erc["passed"] is False
@@ -291,8 +322,8 @@ def test_release_evidence_service_reports_missing_pcb_and_schematic(tmp_path: Pa
         )
     )
 
-    drc = next(gate for gate in payload["gates"] if gate["gate"] == "drc")
-    erc = next(gate for gate in payload["gates"] if gate["gate"] == "erc")
+    drc = _gate(payload, "drc")
+    erc = _gate(payload, "erc")
     assert drc["error"] == "No PCB file configured."
     assert erc["error"] == "No schematic file configured."
     assert payload["verdict"] == "release_blocked"
