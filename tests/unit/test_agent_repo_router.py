@@ -34,7 +34,7 @@ NESTED_AGENT_CONTRACTS = {
         "docs/agent-runtime-config.md",
         "validate-mcp-config.py",
         "least-privileged",
-        "operating mode",
+        "operating-mode",
     ),
     "src-tauri/AGENTS.md": (
         "desktop API contract",
