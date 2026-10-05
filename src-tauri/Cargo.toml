@@ -4,7 +4,7 @@ version = "4.0.0"
 description = "KiCad MCP Pro — Desktop EDA automation with AI agent integration"
 authors = ["KiCad MCP Team"]
 edition = "2021"
-rust-version = "1.78"
+rust-version = "1.90"
 
 [lib]
 name = "kicad_mcp_pro_lib"

@@ -1,96 +1,64 @@
 # RustSec GTK3 / rust-unic Advisory Disposition
 
-This page records the reproducible advisory inventory behind [#779](https://github.com/oaslananka/kicad-mcp-pro/issues/779) and OpenSSF Scorecard code-scanning alert #53 (`VulnerabilitiesID`, severity `error`), the reachability evidence for each advisory family, and the accepted-risk decision for the desktop (`src-tauri`) Cargo dependency tree.
+This page records the reviewed RustSec dependency state tracked by [#779](https://github.com/oaslananka/kicad-mcp-pro/issues/779).
 
-## Reproduction
+## Current state — 2026-10-05
 
-```bash
-cd src-tauri
-cargo audit --file Cargo.lock --json
-```
+Stable Tauri now provides a supported remediation for the rust-unic advisory family. From `main@0d73e7afcbb9e4cc98817ef44f7fc8fb8e8771de`, the repository's pinned Rust 1.97.1 toolchain resolves:
 
-- Tool: `cargo-audit 0.22.2` (pinned by CI)
-- Lockfile: `src-tauri/Cargo.lock`, SHA-256 `2afcb41a15b0a0bbfc59a2070c181be89bdcf5abaf4578d4ab9857b2cf0d8415`
-- Repository commit: `7418fbfd6649d49764d8fd98362ff908b1f5a701`
-- CI evidence: run `34402695443`, `security` job SUCCESS
-- Result: `vulnerabilities.count = 0`, `warnings = 7` (6 `unmaintained`, 1 `unsound`)
+- `tauri 2.12.0`
+- `tauri-build 2.7.1`
+- `tauri-runtime 2.12.1`
+- `tauri-runtime-wry 2.12.1`
+- `tauri-utils 2.10.1`
+- `wry 0.57.0`
+- `urlpattern 0.6.0`
 
-cargo-audit's current advisory database classifies all 7 active findings as warning-kind (`unmaintained` or `unsound`), not vulnerability-kind. The ten former GTK3 unmaintained advisories `RUSTSEC-2024-0411`..`0420` are withdrawn and are no longer emitted by the current audit. `src-tauri/.cargo/audit.toml` still surfaces both warning kinds; no advisory-specific ignore or suppression was added.
+The generated lockfile removes all five `unic-* 0.9.0` packages without advisory suppression.
 
-Full machine-readable evidence, including current findings, reverse-dependency chains, Scorecard alert state, and upstream tracking, is recorded in:
+Pinned `cargo-audit 0.22.2` against that lockfile reports **0 vulnerabilities** and exactly **2 warning-kind findings**:
 
-- `docs/evidence/rustsec-gtk3-unic-audit-2026-09-09.json`
+- `RUSTSEC-2024-0370` — `proc-macro-error 1.0.4`, unmaintained;
+- `RUSTSEC-2024-0429` — `glib 0.18.5`, unsound.
 
-The earlier 2026-08-30/2026-09-04 17-finding snapshots are retained below as historical evidence, not current audit output.
+Machine-readable resolver, MSRV, audit, hash, reachability, and platform evidence is in `docs/evidence/rustsec-gtk3-unic-audit-2026-10-05.json`.
 
-## Advisory families
+## Remediated advisory family
 
-| Family | Advisories | Kind | Root package | Reachable from app code? |
-| --- | --- | --- | --- | --- |
-| GTK3 / gtk-rs bindings | `RUSTSEC-2024-0411`..`0420` (10 historical advisories) | **withdrawn by RustSec** | `gtk 0.18.2` and its `-sys`/companion crates | No — transitive only |
-| glib soundness | `RUSTSEC-2024-0429` | **unsound** | `glib 0.18.5` | No — transitive only |
-| proc-macro-error | `RUSTSEC-2024-0370` | unmaintained | `proc-macro-error 1.0.4` | No — build-time transitive only |
-| rust-unic | `RUSTSEC-2025-0075`, `0080`, `0081`, `0098`, `0100` | unmaintained | `unic-* 0.9.0` | No — transitive only |
+The stable Tauri 2.12 / tauri-utils 2.10.1 / urlpattern 0.6.0 graph removes:
 
-## Reachability and exploitability evidence
+- `RUSTSEC-2025-0075`
+- `RUSTSEC-2025-0080`
+- `RUSTSEC-2025-0081`
+- `RUSTSEC-2025-0098`
+- `RUSTSEC-2025-0100`
 
-`grep -RnE 'VariantStrIter|unic_char|unic::|unic_common|unic_ucd' src-tauri/src` returns no matches. Application code in `src-tauri/src` never calls `glib::VariantStrIter` (the unsound symbol behind `RUSTSEC-2024-0429`) or any `unic-*` API directly. The current reproducible finding set is 7 active advisories, all transitive. The ten GTK3 IDs `RUSTSEC-2024-0411`..`0420` are now withdrawn by RustSec and are retained below only as dependency-maintenance context:
+These findings are removed from the reviewed baseline rather than ignored.
 
-- **rust-unic family**: `unic-char-range <- unic-char-property <- unic-ucd-ident <- urlpattern <- tauri-utils <- tauri`/`tauri-build <- kicad-mcp-pro`. `urlpattern` is Tauri's own URL-pattern matcher; the repository never depends on `urlpattern` or `unic-*` directly.
-- **GTK3 / glib family**: `gtk`/`glib`/`webkit2gtk`/`wry <- tauri` (also reachable via the tray/`libappindicator` path). Explicit target resolution with `cargo 1.97.1` confirms the platform boundary: `cargo tree -i glib@0.18.5 --target x86_64-unknown-linux-gnu --edges normal` resolves the GTK/WebKitGTK/Tauri chain, while the same command with `--target aarch64-apple-darwin` and `--target x86_64-pc-windows-msvc` reports `nothing to print`.
-- **proc-macro-error**: the same explicit-target check resolves `proc-macro-error 1.0.4` only for `x86_64-unknown-linux-gnu`; macOS and Windows target triples report nothing to print. On Linux it is reached through the GTK/glib proc-macro stack.
+## Remaining upstream risk
 
-No advisory in this set has a known proof-of-concept or CVE tied to reachable application behavior. The `unsound` classification on `glib 0.18.5` describes a soundness hazard in an API this codebase does not call.
+The two remaining findings resolve through the Linux GTK3/WebKitGTK dependency chain. Explicit target-scoped `cargo tree` checks show `glib 0.18.5` and `proc-macro-error 1.0.4` on `x86_64-unknown-linux-gnu`, while both are absent for `aarch64-apple-darwin` and `x86_64-pc-windows-msvc`.
 
-## Upstream tracking
+Application source searches under `src-tauri/src` find no direct `VariantStrIter` or rust-unic API use. The remaining two warnings are retained as reviewed, transitive upstream risk and must not be suppressed. Revisit them when stable Tauri/Wry removes the GTK3 0.18 chain or application reachability changes.
 
-Upstream Tauri cannot remove the GTK3 chain today: Tauri's current development manifest still resolves Linux `gtk = 0.18` / `webkit2gtk = 2`, and this repository is already on the current stable `tauri 2.11.5`. The relevant upstream migration work, checked live on 2026-08-30:
+## MSRV and release-tool parity
 
-| Tracking item | State | Notes |
-| --- | --- | --- |
-| [`tauri-apps/tauri#12561`](https://github.com/tauri-apps/tauri/issues/12561) — Upgrade `tauri-runtime-wry` to `gtk4-rs` | Open | Tracking issue for the runtime-side migration. |
-| [`tauri-apps/tao#1104`](https://github.com/tauri-apps/tao/pull/1104) — Port to gtk4-rs | Open, not merged | Active as of 2026-08-18; ports `tao` (Tauri's windowing crate) from GTK3/webkit2gtk to GTK4/webkit6/soup3, which is the precondition for `wry`/`tauri` to drop the GTK3 chain. |
+`tauri 2.12.0`, `tauri-utils 2.10.1`, and `tauri-cli 2.12.0` each declare Rust 1.90 as their minimum supported Rust version. The repository toolchain remains Rust 1.97.1, while the desktop crate's declared `rust-version` is updated from 1.78 to 1.90.
 
-There is no compatible stable Tauri/wry release yet that removes any advisory in this set. A normal patch/minor dependency refresh cannot close this out; it is gated on the linked upstream PR/issue merging and a subsequent Tauri release adopting it.
+The reviewed Tauri CLI pin remains synchronized between `scripts/dev-toolchain.env` and `.github/workflows/gui-release.yml`. Release jobs continue to install the exact reviewed CLI version with `--locked`.
 
-## OpenSSF Scorecard alert #53
+## Required verification
 
-Read live again on 2026-09-09: alert #53 remains `state: open` on `refs/heads/main`, but its message now contains **7 active RustSec IDs**, exactly matching the reviewed cargo-audit baseline: `RUSTSEC-2024-0370`, `RUSTSEC-2024-0429`, and the five `RUSTSEC-2025-*` rust-unic advisories. The ten GTK3 IDs `RUSTSEC-2024-0411`..`0420` are no longer present because RustSec marks them withdrawn. The alert therefore reflects the remaining active findings rather than the historical 17-item inventory.
+This remediation does not weaken any gate. Required validation includes:
 
-## Risk decision
+- locked Cargo metadata/check/test and GUI build/package lanes;
+- Linux, macOS, and Windows desktop coverage as configured by repository workflows;
+- pinned RustSec baseline validation;
+- Dependency Review, CodeQL, Gitleaks, Semgrep, Sonar, and workflow policy;
+- the aggregate Required PR Gate.
 
-- Do not suppress or dismiss Scorecard alert #53 to improve the score; it remains open and accurately reflects unresolved upstream advisories.
-- Do not add per-advisory `cargo audit` ignores. The existing `informational_warnings = ["unmaintained", "unsound"]` setting in `src-tauri/.cargo/audit.toml` is a kind-level (not advisory-level) classification that predates this review; this document supplies the per-advisory reachability evidence the issue requires without narrowing CI enforcement further.
-- Do not perform a GTK4 migration in this repository ahead of upstream Tauri/wry support landing; doing so would mean depending on unreleased/unpinned upstream crates.
-- Accept the current active advisory risk as **low**: all 7 active findings are transitive-only and the application does not call the affected `glib::VariantStrIter` or `unic-*` APIs directly. The Linux GTK3 stack remains a maintenance migration concern even though its ten former RustSec unmaintained advisories are now withdrawn.
+After merge, re-query OpenSSF Scorecard alert #53 against default-branch evidence. Do not dismiss or suppress the alert merely to improve its score. Keep #779 open while the two GTK/glib-chain findings remain unresolved.
 
-## Revisit triggers
+## Historical evidence
 
-Re-run this review and update the evidence file when any of the following occurs:
-
-1. `tauri-apps/tao#1104` merges, or `tauri-apps/tauri#12561` closes.
-2. A new stable `tauri`/`wry` release changes the Linux GTK/glib dependency versions in `src-tauri/Cargo.lock`.
-3. `cargo audit` reports a new advisory in this set as `vulnerability`-kind rather than `warning`-kind.
-4. Scorecard alert #53 changes state (closed, reopened, or its aggregated advisory list changes).
-
-## 2026-09-04 remediation recheck
-
-At that time, the engineering-audit remediation re-ran `osv-scanner 2.4.0` from the repository root and reproduced 17 Rust advisories: 0 Critical, 0 High, 1 Medium (`RUSTSEC-2024-0429`, `glib 0.18.5`), and 16 Unknown/informational advisories. No advisory was removed by the current compatible dependency set.
-
-A fresh `cargo tree -i glib@0.18.5` under `src-tauri` still resolves the Linux chain through `gtk 0.18.2`, `webkit2gtk 2.0.2`, `wry 0.55.1`, and `tauri 2.11.5`, including the tray/runtime paths. `cargo update -p tauri --dry-run` reports `Locking 0 packages to latest compatible versions`, so there is no stable semver-compatible Tauri refresh available to this lockfile that removes the GTK3/glib family.
-
-That 2026-09-04 result is historical evidence. The 2026-09-09 recheck below reflects RustSec withdrawals and the newer upstream `urlpattern 0.6` development path. Do not force `glib >=0.20` into the GTK3 0.18 graph or suppress remaining active advisories.
-
-## 2026-09-09 upstream recheck
-
-Fresh upstream inspection changes one tracking detail but does not yet permit a supported dependency remediation:
-
-- Tauri commit `dd725f4b13c30a86b398ccc59eb498f151f461c5` (2026-07-06) updates `tauri-utils` from `urlpattern 0.3` to `0.6`. Its upstream lockfile diff removes all five `unic-* 0.9.0` crates, so the rust-unic advisory family now has a concrete upstream removal path.
-- That change is still unreleased: `tauri-utils-v2.9.3` remains the latest stable tag, while `tauri-utils-v2.9.4` and `tauri-utils-v2.10.0` do not exist as of this review. This repository therefore cannot consume the removal without switching to unreleased Tauri code.
-- Stable Tauri remains `2.11.5`. Tauri `dev` still declares Linux `gtk = 0.18` and `webkit2gtk = 2`; `tauri-apps/tao#1104` and `tauri-apps/wry#1530` remain open.
-- Wry `0.57.0` was released on 2026-09-08, but its Linux manifest still uses `gtk 0.18` and `webkit2gtk 2.0.2`. Updating Wry alone therefore would not remove the GTK3/glib advisory family, and Tauri `2.11.5`'s runtime constraint remains on Wry `0.55.x`.
-- Scorecard code-scanning alert #53 remains open on `main`. Direct application reachability is unchanged: `VariantStrIter` and `unic-*` API searches in `src-tauri/src` still return no matches.
-
-The bounded decision remains: do not suppress the advisories, do not patch stable Tauri to unreleased git dependencies, and do not force a repository-local GTK4 migration. Revisit rust-unic immediately when a stable `tauri-utils` release includes `urlpattern >=0.6`; revisit GTK/glib when Tauri ships the GTK4/WebKit6 migration in a supported stable release.
-
-Current machine-readable evidence is `docs/evidence/rustsec-gtk3-unic-audit-2026-09-09.json`.
+The pre-remediation seven-warning inventory and original bounded disposition remain preserved in Git history and `docs/evidence/rustsec-gtk3-unic-audit-2026-09-09.json`.

@@ -80,7 +80,7 @@ jobs:
         run: cargo metadata --locked --format-version 1 --no-deps
 
       - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "2.11.4" --locked
+        run: cargo install tauri-cli --version "2.12.0" --locked
 
       - name: Build Tauri installer
         working-directory: src-tauri

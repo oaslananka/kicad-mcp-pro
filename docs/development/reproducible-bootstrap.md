@@ -34,7 +34,7 @@ The first command installs the exact versions committed in
 - rustup 1.29.0
 - Rust, Cargo, and rustfmt 1.97.1
 
-The same contract records Tauri CLI 2.11.4 for GUI release jobs. The bootstrap
+The same contract records Tauri CLI 2.12.0 for GUI release jobs. The bootstrap
 does not install that CLI globally; release automation installs the reviewed
 version with Cargo and verifies the committed `src-tauri/Cargo.lock` before
 building installers.

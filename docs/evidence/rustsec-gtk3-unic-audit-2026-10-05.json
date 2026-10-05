@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "evidenceDate": "2026-10-05",
+  "repository": "oaslananka/kicad-mcp-pro",
+  "sourceMainCommit": "0d73e7afcbb9e4cc98817ef44f7fc8fb8e8771de",
+  "issue": "https://github.com/oaslananka/kicad-mcp-pro/issues/779",
+  "resolver": {
+    "rustToolchain": "1.97.1",
+    "command": "cargo update -p tauri --precise 2.12.0",
+    "previousLockfileSha256": "5fbc303c43e9536df196ab165729adb321262c8d3dc902aacf04739779b0d796",
+    "candidateLockfileSha256": "01b1d9a5be0efa9c4172af1189a5649c70f71e2f30c38cc790913dddaa333007",
+    "resolved": {
+      "tauri": "2.12.0",
+      "tauriBuild": "2.7.1",
+      "tauriRuntime": "2.12.1",
+      "tauriRuntimeWry": "2.12.1",
+      "tauriUtils": "2.10.1",
+      "wry": "0.57.0",
+      "urlpattern": "0.6.0"
+    },
+    "removedPackages": [
+      "unic-char-property 0.9.0",
+      "unic-char-range 0.9.0",
+      "unic-common 0.9.0",
+      "unic-ucd-ident 0.9.0",
+      "unic-ucd-version 0.9.0"
+    ]
+  },
+  "minimumRust": {
+    "tauri": "1.90",
+    "tauriUtils": "1.90",
+    "tauriCli": "1.90",
+    "repositoryToolchain": "1.97.1",
+    "previousManifest": "1.78",
+    "updatedManifest": "1.90"
+  },
+  "cargoAudit": {
+    "version": "cargo-audit 0.22.2",
+    "command": "cargo audit --json --no-yanked",
+    "exitCode": 0,
+    "vulnerabilitiesCount": 0,
+    "warningsCount": 2,
+    "findings": [
+      {
+        "advisory": "RUSTSEC-2024-0370",
+        "package": "proc-macro-error",
+        "version": "1.0.4",
+        "category": "unmaintained"
+      },
+      {
+        "advisory": "RUSTSEC-2024-0429",
+        "package": "glib",
+        "version": "0.18.5",
+        "category": "unsound"
+      }
+    ]
+  },
+  "applicationReachability": {
+    "command": "grep -RnE 'VariantStrIter|unic_char|unic::|unic_common|unic_ucd' src-tauri/src",
+    "matches": [],
+    "conclusion": "No direct application-code use of the reviewed advisory APIs or removed rust-unic packages."
+  },
+  "platformResolution": {
+    "linux": {
+      "target": "x86_64-unknown-linux-gnu",
+      "glib0185": "present",
+      "procMacroError104": "present"
+    },
+    "macos": {
+      "target": "aarch64-apple-darwin",
+      "glib0185": "absent",
+      "procMacroError104": "absent"
+    },
+    "windows": {
+      "target": "x86_64-pc-windows-msvc",
+      "glib0185": "absent",
+      "procMacroError104": "absent"
+    }
+  },
+  "policy": {
+    "rustsecBaselineAfterRemediation": [
+      "RUSTSEC-2024-0370",
+      "RUSTSEC-2024-0429"
+    ],
+    "requiredFollowUp": "Re-query OpenSSF Scorecard alert #53 after merge; do not suppress or dismiss findings merely to improve the score."
+  }
+}

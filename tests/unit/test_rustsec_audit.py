@@ -195,11 +195,6 @@ def test_repository_baseline_tracks_exact_scorecard_rustsec_inventory() -> None:
     expected_ids = {
         "RUSTSEC-2024-0370",
         "RUSTSEC-2024-0429",
-        "RUSTSEC-2025-0075",
-        "RUSTSEC-2025-0080",
-        "RUSTSEC-2025-0081",
-        "RUSTSEC-2025-0098",
-        "RUSTSEC-2025-0100",
     }
     advisories = baseline["advisories"]
     assert baseline["cargo_audit_version"] == "0.22.2"
