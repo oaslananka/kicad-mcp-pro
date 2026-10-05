@@ -88,15 +88,31 @@ def test_wildcard_tuning_is_rejected_before_measurement_or_write(tmp_path: Path)
 
     assert result == (
         "Wildcard/group time-domain tuning is not supported because KiCad length "
-        "constraints apply per net. Call route_tune_time_domain once per concrete net name."
+        "constraints apply per net. Specify a single concrete net name."
     )
     assert track_calls == []
     assert write_calls == []
 
 
 def test_rule_builder_rejects_wildcard_conditions() -> None:
-    with pytest.raises(ValueError, match="constraints apply per net"):
-        build_time_domain_rule("DATA*", 250.0, 15.0, 37.0, 2.0)
+    for pattern in ("DATA*", "DATA?"):
+        with pytest.raises(ValueError, match="constraints apply per net"):
+            build_time_domain_rule(pattern, 250.0, 15.0, 37.0, 2.0)
+
+
+def test_question_mark_wildcard_is_rejected_before_measurement_or_write(
+    tmp_path: Path,
+) -> None:
+    service, track_calls, write_calls = _service(tmp_path)
+
+    result = service.tune("DATA?", 250.0, 15.0)
+
+    assert result == (
+        "Wildcard/group time-domain tuning is not supported because KiCad length "
+        "constraints apply per net. Specify a single concrete net name."
+    )
+    assert track_calls == []
+    assert write_calls == []
 
 
 def test_layer_profile_uses_stackup_and_reports_effective_er(tmp_path: Path) -> None:

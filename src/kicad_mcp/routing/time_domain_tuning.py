@@ -22,7 +22,7 @@ RuleWriter = Callable[[str, str], Path]
 
 _WILDCARD_UNSUPPORTED = (
     "Wildcard/group time-domain tuning is not supported because KiCad length "
-    "constraints apply per net. Call route_tune_time_domain once per concrete net name."
+    "constraints apply per net. Specify a single concrete net name."
 )
 
 
@@ -37,7 +37,7 @@ def delay_to_length_mm(delay_ps: float, propagation_speed_factor: float) -> floa
 
 def net_pattern_condition(net_pattern: str) -> str:
     """Render a KiCad rule condition for one concrete net."""
-    if "*" in net_pattern:
+    if any(char in net_pattern for char in "*?"):
         raise ValueError(_WILDCARD_UNSUPPORTED)
     return f"A.NetName == '{net_pattern}'"
 
@@ -82,7 +82,7 @@ class RoutingTimeDomainTuningService:
         tolerance_ps: float = 10.0,
         layer: str | None = None,
     ) -> str:
-        if "*" in net_or_group:
+        if any(char in net_or_group for char in "*?"):
             return _WILDCARD_UNSUPPORTED
 
         profiles = load_tuning_profiles(self.get_project_dir())
