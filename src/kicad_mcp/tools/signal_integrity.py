@@ -17,17 +17,14 @@ from pydantic import Field
 
 from ..config import get_config
 from ..connection import get_board
-from ..models.common import _FootprintLike, _PadLike
-from ..models.signal_integrity import DecouplingPlacementInput, ViaStubInput
-from ..pcb.board_access import board_footprints, board_pads, board_vias
+from ..models.signal_integrity import ViaStubInput
+from ..pcb.board_access import board_vias
 from ..pcb.geometry import point_xy_mm
 from ..utils.impedance import (
-    recommended_decoupling_distance_mm,
     via_stub_resonance_ghz,
     via_stub_risk_level,
 )
 from ..utils.units import nm_to_mm
-from ..verdicts import three_level_verdict, warn_max_from
 
 _ViaPosition = Annotated[list[float], Field(min_length=2, max_length=2)]
 _DEFAULT_BOARD_THICKNESS_MM = 1.6
@@ -60,48 +57,6 @@ def _board_thickness_mm() -> float:
     if thickness_nm <= 0:
         return _DEFAULT_BOARD_THICKNESS_MM
     return nm_to_mm(thickness_nm)
-
-
-def _footprint_reference(footprint: _FootprintLike) -> str:
-    return str(footprint.reference_field.text.value)
-
-
-def _footprint_value(footprint: _FootprintLike) -> str:
-    return str(footprint.value_field.text.value)
-
-
-def _find_footprint(reference: str) -> _FootprintLike | None:
-    for footprint in cast(list[_FootprintLike], board_footprints(get_board())):
-        if _footprint_reference(footprint) == reference:
-            return footprint
-    return None
-
-
-def _find_power_anchor(ic_ref: str, power_pin: str) -> tuple[float, float]:
-    for pad in cast(list[_PadLike], board_pads(get_board())):
-        if _footprint_reference(pad.parent) == ic_ref and str(pad.number) == power_pin:
-            return point_xy_mm(pad.position)
-
-    footprint = _find_footprint(ic_ref)
-    if footprint is None:
-        raise ValueError(f"Footprint '{ic_ref}' was not found on the active board.")
-    return point_xy_mm(footprint.position)
-
-
-def _nearest_capacitors(
-    source_ref: str,
-    source_x_mm: float,
-    source_y_mm: float,
-) -> list[tuple[str, float, str]]:
-    matches: list[tuple[str, float, str]] = []
-    for footprint in cast(list[_FootprintLike], board_footprints(get_board())):
-        reference = _footprint_reference(footprint)
-        if reference == source_ref or not reference.upper().startswith("C"):
-            continue
-        x_mm, y_mm = point_xy_mm(footprint.position)
-        distance_mm = math.hypot(source_x_mm - x_mm, source_y_mm - y_mm)
-        matches.append((reference, distance_mm, _footprint_value(footprint)))
-    return sorted(matches, key=lambda item: item[1])
 
 
 def _via_position_mm(via: _ViaLike) -> tuple[float, float]:
@@ -220,51 +175,9 @@ def register(mcp: FastMCP) -> None:
             )
         return "\n".join(lines)
 
-    @mcp.tool()
-    def si_calculate_decoupling_placement(
-        ic_ref: str,
-        power_pin: str,
-        target_freq_mhz: float,
-    ) -> str:
-        """Estimate decoupling placement quality around an IC power pin."""
-        payload = DecouplingPlacementInput(
-            ic_ref=ic_ref,
-            power_pin=power_pin,
-            target_freq_mhz=target_freq_mhz,
-        )
-        source_x_mm, source_y_mm = _find_power_anchor(payload.ic_ref, payload.power_pin)
-        recommended_mm = recommended_decoupling_distance_mm(payload.target_freq_mhz)
-        caps = _nearest_capacitors(payload.ic_ref, source_x_mm, source_y_mm)
+    from . import signal_integrity_decoupling_placement
 
-        lines = [
-            "Decoupling placement heuristic:",
-            f"- IC reference: {payload.ic_ref}",
-            f"- Power pin: {payload.power_pin}",
-            f"- Anchor position: ({source_x_mm:.3f}, {source_y_mm:.3f}) mm",
-            f"- Target frequency: {payload.target_freq_mhz:.3f} MHz",
-            f"- Recommended maximum capacitor distance: {recommended_mm:.3f} mm",
-        ]
-        if not caps:
-            lines.append("- No capacitor footprints were found on the active board.")
-            lines.append("- Add a local decoupler as close as possible to the selected power pin.")
-            return "\n".join(lines)
-
-        best_ref, best_distance_mm, best_value = caps[0]
-        fail_mm = warn_max_from(recommended_mm)
-        verdict = three_level_verdict(best_distance_mm, pass_max=recommended_mm, warn_max=fail_mm)
-        lines.append(
-            f"- Nearest decoupler: {best_ref} ({best_value or 'value unknown'}) "
-            f"at {best_distance_mm:.3f} mm ({verdict}; PASS <= {recommended_mm:.3f} mm, "
-            f"WARN <= {fail_mm:.3f} mm, FAIL > {fail_mm:.3f} mm)"
-        )
-        lines.append("Nearest capacitors:")
-        for reference, distance_mm, value in caps[: min(len(caps), 5)]:
-            lines.append(f"- {reference}: {distance_mm:.3f} mm ({value or 'value unknown'})")
-        lines.append(
-            "- This is a placement heuristic; verify the actual current loop "
-            "and return path in layout review."
-        )
-        return "\n".join(lines)
+    signal_integrity_decoupling_placement.register(mcp)
 
     from . import signal_integrity_dielectric_materials
 
