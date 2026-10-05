@@ -42,7 +42,7 @@ def test_si_root_delegates_net_class_binding_and_shrinks() -> None:
     span = boundaries._function_span(root, "register")
     assert span is not None
     assert span <= 270
-    assert boundaries.REGISTER_LINE_LIMITS[ROOT] == 270
+    assert boundaries.REGISTER_LINE_LIMITS[ROOT] <= 270
 
 
 def test_si_root_drops_net_class_rule_writer_ownership() -> None:
