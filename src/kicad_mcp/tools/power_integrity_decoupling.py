@@ -20,7 +20,7 @@ from ..pcb.geometry import point_xy_mm
 from ..power_integrity.decoupling import CapacitorCandidate, PowerIntegrityDecouplingService
 from ..utils.impedance import recommended_decoupling_distance_mm
 
-CapacitorProvider = Callable[[str], list[CapacitorCandidate]]
+FootprintsProvider = Callable[[], list[_FootprintLike]]
 RecommendedDistanceProvider = Callable[[float], float]
 MaxItemsProvider = Callable[[], int]
 
@@ -33,8 +33,10 @@ def _footprint_value(footprint: _FootprintLike) -> str:
     return str(footprint.value_field.text.value)
 
 
-def _nearest_capacitors(reference: str) -> list[CapacitorCandidate]:
-    footprints = cast(list[_FootprintLike], board_footprints(get_board()))
+def _nearest_capacitors(
+    reference: str,
+    footprints: list[_FootprintLike],
+) -> list[CapacitorCandidate]:
     anchor = next(
         (footprint for footprint in footprints if _footprint_reference(footprint) == reference),
         None,
@@ -62,7 +64,7 @@ def _nearest_capacitors(reference: str) -> list[CapacitorCandidate]:
 @dataclass(frozen=True)
 class PowerIntegrityDecouplingDependencies:
     service: PowerIntegrityDecouplingService
-    capacitor_provider: CapacitorProvider
+    footprints_provider: FootprintsProvider
     recommended_distance_provider: RecommendedDistanceProvider
     max_items_provider: MaxItemsProvider
 
@@ -70,7 +72,7 @@ class PowerIntegrityDecouplingDependencies:
 def _default_dependencies() -> PowerIntegrityDecouplingDependencies:
     return PowerIntegrityDecouplingDependencies(
         service=PowerIntegrityDecouplingService(),
-        capacitor_provider=lambda reference: _nearest_capacitors(reference),
+        footprints_provider=lambda: cast(list[_FootprintLike], board_footprints(get_board())),
         recommended_distance_provider=lambda frequency_mhz: recommended_decoupling_distance_mm(
             frequency_mhz
         ),
@@ -101,7 +103,10 @@ def register(
         )
         references = payload.ic_refs[: deps.max_items_provider()]
         recommendation_mm = deps.recommended_distance_provider(200.0)
-        nearby_by_ref = {reference: deps.capacitor_provider(reference) for reference in references}
+        footprints = deps.footprints_provider()
+        nearby_by_ref = {
+            reference: _nearest_capacitors(reference, footprints) for reference in references
+        }
         return deps.service.recommend(
             payload=payload,
             references=references,

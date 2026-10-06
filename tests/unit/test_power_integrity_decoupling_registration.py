@@ -26,15 +26,23 @@ class FakeService:
         return "decoupling-result"
 
 
-def test_registration_preserves_signature_docstring_and_delegation() -> None:
+def test_registration_preserves_signature_docstring_and_delegation(monkeypatch) -> None:
     adapter = importlib.import_module("kicad_mcp.tools.power_integrity_decoupling")
     server = FastMCP("pi-decoupling-registration")
     service = FakeService()
     calls: list[tuple[object, ...]] = []
 
-    def capacitors(reference: str) -> list[tuple[str, float, str]]:
-        calls.append(("capacitors", reference))
+    snapshot = [object()]
+
+    def footprints() -> list[object]:
+        calls.append(("footprints",))
+        return snapshot
+
+    def nearest(reference: str, footprint_snapshot: list[object]) -> list[tuple[str, float, str]]:
+        calls.append(("nearest", reference, footprint_snapshot is snapshot))
         return [(f"C-{reference}", 1.0, "100n")]
+
+    monkeypatch.setattr(adapter, "_nearest_capacitors", nearest)
 
     def recommended(freq_mhz: float) -> float:
         calls.append(("recommended", freq_mhz))
@@ -42,13 +50,13 @@ def test_registration_preserves_signature_docstring_and_delegation() -> None:
 
     def max_items() -> int:
         calls.append(("max_items",))
-        return 1
+        return 2
 
     adapter.register(
         server,
         adapter.PowerIntegrityDecouplingDependencies(
             service=cast(Any, service),
-            capacitor_provider=capacitors,
+            footprints_provider=cast(Any, footprints),
             recommended_distance_provider=recommended,
             max_items_provider=max_items,
         ),
@@ -68,7 +76,9 @@ def test_registration_preserves_signature_docstring_and_delegation() -> None:
     assert calls == [
         ("max_items",),
         ("recommended", 200.0),
-        ("capacitors", "U1"),
+        ("footprints",),
+        ("nearest", "U1", True),
+        ("nearest", "U2", True),
     ]
     assert len(service.calls) == 1
     payload, references, recommendation_mm, nearby_by_ref = service.calls[0]
@@ -77,27 +87,38 @@ def test_registration_preserves_signature_docstring_and_delegation() -> None:
     assert payload.vcc_net == "3V3"
     assert payload.supply_voltage_v == 3.3
     assert payload.target_ripple_mv == 20.0
-    assert references == ["U1"]
+    assert references == ["U1", "U2"]
     assert recommendation_mm == 2.5
-    assert nearby_by_ref == {"U1": [("C-U1", 1.0, "100n")]}
+    assert nearby_by_ref == {
+        "U1": [("C-U1", 1.0, "100n")],
+        "U2": [("C-U2", 1.0, "100n")],
+    }
 
 
 def test_default_dependencies_resolve_helpers_and_config_late(monkeypatch) -> None:
     adapter = importlib.import_module("kicad_mcp.tools.power_integrity_decoupling")
     deps = adapter._default_dependencies()
+    board = object()
+    footprints = [object()]
+    calls: list[tuple[object, ...]] = []
 
-    monkeypatch.setattr(adapter, "_nearest_capacitors", lambda ref: [(f"C-{ref}", 0.5, "1u")])
+    monkeypatch.setattr(adapter, "get_board", lambda: calls.append(("board",)) or board)
+    monkeypatch.setattr(
+        adapter,
+        "board_footprints",
+        lambda value: calls.append(("footprints", value is board)) or footprints,
+    )
     monkeypatch.setattr(adapter, "recommended_decoupling_distance_mm", lambda freq: freq / 100.0)
     monkeypatch.setattr(adapter, "get_config", lambda: SimpleNamespace(max_items_per_response=7))
 
-    assert deps.capacitor_provider("U1") == [("C-U1", 0.5, "1u")]
+    assert deps.footprints_provider() == footprints
+    assert calls == [("board",), ("footprints", True)]
     assert deps.recommended_distance_provider(200.0) == 2.0
     assert deps.max_items_provider() == 7
 
 
 def test_nearest_capacitors_filters_and_sorts(monkeypatch) -> None:
     adapter = importlib.import_module("kicad_mcp.tools.power_integrity_decoupling")
-    board = object()
 
     def footprint(reference: str, value: str, position: str) -> SimpleNamespace:
         return SimpleNamespace(
@@ -113,12 +134,10 @@ def test_nearest_capacitors_filters_and_sorts(monkeypatch) -> None:
         footprint("C1", "100n", "c1"),
     ]
     coords = {"u": (0.0, 0.0), "r": (0.5, 0.0), "c2": (2.0, 0.0), "c1": (1.0, 0.0)}
-    monkeypatch.setattr(adapter, "get_board", lambda: board)
-    monkeypatch.setattr(adapter, "board_footprints", lambda _board: footprints)
     monkeypatch.setattr(adapter, "point_xy_mm", lambda pos: coords[pos])
 
-    assert adapter._nearest_capacitors("U1") == [
+    assert adapter._nearest_capacitors("U1", cast(Any, footprints)) == [
         ("C1", 1.0, "100n"),
         ("C2", 2.0, "1u"),
     ]
-    assert adapter._nearest_capacitors("U404") == []
+    assert adapter._nearest_capacitors("U404", cast(Any, footprints)) == []
