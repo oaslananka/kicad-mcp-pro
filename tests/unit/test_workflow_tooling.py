@@ -283,6 +283,23 @@ def test_live_model_workflows_expose_locked_opencode_binary_on_path() -> None:
         assert raw.count(expected) == install_count
 
 
+def test_root_tooling_changes_trigger_python_contract_suite() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    changes = workflow["jobs"]["changes"]
+    path_filter = next(step for step in changes["steps"] if step.get("id") == "filter")
+    filters = path_filter["with"]["filters"]
+
+    for path in (
+        "package.json",
+        "pnpm-workspace.yaml",
+        "lefthook.yml",
+        ".pre-commit-config.yaml",
+    ):
+        assert f"- '{path}'" in filters
+
+
 def test_path_aware_skip_steps_use_bash_on_cross_platform_matrix_jobs() -> None:
     workflow = yaml.safe_load(
         (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")

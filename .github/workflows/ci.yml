@@ -42,6 +42,10 @@ jobs:
             python:
               - 'src/**'
               - 'tests/**'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - 'lefthook.yml'
+              - '.pre-commit-config.yaml'
               - 'pyproject.toml'
               - 'uv.lock'
               - 'uv.toml'
