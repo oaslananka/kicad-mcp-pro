@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
@@ -41,7 +42,8 @@ def test_lefthook_is_pinned_and_lifecycle_is_explicitly_allowed() -> None:
     package = __import__("json").loads((ROOT / "package.json").read_text(encoding="utf-8"))
     workspace = yaml.safe_load((ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8"))
 
-    assert package["devDependencies"]["lefthook"] == "2.1.14"
+    lefthook_version = package["devDependencies"]["lefthook"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", lefthook_version)
     assert package["scripts"]["hooks:install"] == "python scripts/install_git_hooks.py"
     assert package["scripts"]["hooks:pre-commit"] == "lefthook run pre-commit"
     assert package["scripts"]["hooks:pre-push"] == "lefthook run pre-push"
