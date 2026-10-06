@@ -23,7 +23,8 @@ def _has_sha_pinned_action(workflow_text: str, action_path: str) -> bool:
 
 def _has_digest_pinned_image(config_text: str, image: str) -> bool:
     pattern = re.compile(
-        rf"(?m)^\s*(?:image:\s*)?{re.escape(image)}:[^@\s]+@sha256:[0-9a-fA-F]{{64}}(?:\s+#.*)?\s*$"
+        rf"(?m)^\s*(?:image:\s*)?[\"']?{re.escape(image)}:[^@\s\"']+"
+        rf"@sha256:[0-9a-fA-F]{{64}}[\"']?(?:\s+#.*)?\s*$"
     )
     return pattern.search(config_text) is not None
 

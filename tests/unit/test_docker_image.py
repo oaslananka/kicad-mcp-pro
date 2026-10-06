@@ -34,12 +34,20 @@ def test_docker_metadata_freerouting_pin_accepts_version_rotation() -> None:
         f"image: ghcr.io/freerouting/freerouting:2.5.0@sha256:{digest}",
         "ghcr.io/freerouting/freerouting",
     )
+    assert check_docker_metadata._has_digest_pinned_image(
+        f"image: \"ghcr.io/freerouting/freerouting:2.5.0@sha256:{digest}\"",
+        "ghcr.io/freerouting/freerouting",
+    )
     assert not check_docker_metadata._has_digest_pinned_image(
         "image: ghcr.io/freerouting/freerouting:latest",
         "ghcr.io/freerouting/freerouting",
     )
     assert not check_docker_metadata._has_digest_pinned_image(
         "image: ghcr.io/freerouting/freerouting:2.5.0",
+        "ghcr.io/freerouting/freerouting",
+    )
+    assert not check_docker_metadata._has_digest_pinned_image(
+        f"image: ghcr.io/freerouting/freerouting@sha256:{digest}",
         "ghcr.io/freerouting/freerouting",
     )
 
