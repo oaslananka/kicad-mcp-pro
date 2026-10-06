@@ -151,22 +151,13 @@
   ],
   "protected_publish_environments": {
     "npm": {
-      "required_reviewers": [
-        "oaslananka"
-      ],
-      "prevent_self_review": false
+      "required_reviewers": []
     },
     "mcp-registry": {
-      "required_reviewers": [
-        "oaslananka"
-      ],
-      "prevent_self_review": false
+      "required_reviewers": []
     },
     "ghcr": {
-      "required_reviewers": [
-        "oaslananka"
-      ],
-      "prevent_self_review": false
+      "required_reviewers": []
     }
   }
 }

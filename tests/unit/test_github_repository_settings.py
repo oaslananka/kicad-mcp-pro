@@ -116,17 +116,8 @@ def test_repository_settings_audit_workflow_is_default_branch_only_and_read_only
     assert "persist-credentials: false" in workflow
 
 
-def _protected_environment(name: str) -> dict[str, object]:
-    return {
-        "name": name,
-        "protection_rules": [
-            {
-                "type": "required_reviewers",
-                "prevent_self_review": False,
-                "reviewers": [{"type": "User", "reviewer": {"login": "oaslananka"}}],
-            }
-        ],
-    }
+def _publish_environment(name: str) -> dict[str, object]:
+    return {"name": name, "protection_rules": []}
 
 
 def test_repository_settings_audit_covers_all_protected_publish_environments() -> None:
@@ -144,12 +135,21 @@ def test_publish_environment_protection_matches_policy_and_reports_drift() -> No
     from scripts.check_github_repository_settings import validate_environment_protection
 
     environments = {
-        "npm": _protected_environment("npm"),
-        "mcp-registry": _protected_environment("mcp-registry"),
-        "ghcr": _protected_environment("ghcr"),
+        "npm": _publish_environment("npm"),
+        "mcp-registry": _publish_environment("mcp-registry"),
+        "ghcr": _publish_environment("ghcr"),
     }
     assert validate_environment_protection(POLICY, environments) == []
-    environments["npm"] = {"name": "npm", "protection_rules": []}
+    environments["npm"] = {
+        "name": "npm",
+        "protection_rules": [
+            {
+                "type": "required_reviewers",
+                "prevent_self_review": False,
+                "reviewers": [{"type": "User", "reviewer": {"login": "oaslananka"}}],
+            }
+        ],
+    }
 
     errors = validate_environment_protection(POLICY, environments)
     assert any("npm.required_reviewers" in error for error in errors)
