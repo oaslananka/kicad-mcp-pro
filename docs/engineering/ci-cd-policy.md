@@ -205,8 +205,11 @@ All publish workflows enforce strict safety:
 - **Trigger**: Only `release` (published) or `workflow_dispatch` with explicit
   inputs.
 - **PR context**: Dry-run only (build without push, validate without publish).
-- **Environment protection**: `pypi`, `testpypi`, `npm`, `mcp-registry`
-  environments with approval rules.
+- **Environment protection**: publish jobs remain bound to their configured
+  GitHub environments (`pypi`, `testpypi`, `npm`, `mcp-registry`, and
+  `ghcr` as applicable). The repository-settings audit expects zero required
+  reviewers on `npm`, `mcp-registry`, and `ghcr`; adding a reviewer there is
+  policy drift unless the publish policy is intentionally changed.
 - **Supply chain**: OIDC trusted publishing, attestation, SBOM generation,
   SHA256 checksum verification, cosign signing.
 - **Idempotency**: All publish jobs check if the version is already published
@@ -252,6 +255,8 @@ default branch. It uses `RELEASE_PLEASE_TOKEN` as the GitHub API credential; tha
 must grant repository `Administration: read`, and the audit fails closed if the token is missing
 or under-scoped. The workflow itself has `contents: read` permissions and is not exposed to pull
 requests. `scripts/check_github_repository_settings.py` compares live Actions
-permissions, selected-action allowlists, default workflow-token permissions, and the required
-reviewer rules on the `npm` and `mcp-registry` publish environments with
-`.github/actions-policy.json`. Any mismatch fails the audit instead of silently accepting drift.
+permissions, selected-action allowlists, default workflow-token permissions, and the exact
+required-reviewer expectations for the `npm`, `mcp-registry`, and `ghcr` publish
+environments with `.github/actions-policy.json`. Under the current policy those three
+environments have no required reviewers. Any mismatch fails the audit instead of silently
+accepting drift.
