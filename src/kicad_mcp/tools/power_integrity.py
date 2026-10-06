@@ -7,7 +7,6 @@ formal sign-off. Distributed PDN and thermal-network solvers are planned (P3-T2/
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable, Sequence
 from typing import Protocol, cast
 
@@ -17,11 +16,9 @@ from kipy.geometry import PolyLineNode, Vector2
 from kipy.proto.board.board_types_pb2 import BoardLayer
 from mcp.server.mcpserver import MCPServer as FastMCP
 
-from ..config import get_config
 from ..connection import get_board
 from ..models.common import _FootprintLike
-from ..models.power_integrity import PowerPlaneInput, ThermalPourInput
-from ..models.verdict import Verdict, VerdictReport
+from ..models.power_integrity import PowerPlaneInput
 from ..pcb.board_access import board_footprints, board_shapes, board_zones
 from ..pcb.geometry import point_xy_mm
 from ..pcb.live_edit_runtime import execute_live_board_mutation
@@ -90,6 +87,7 @@ def register(mcp: FastMCP) -> None:
         power_integrity_decoupling,
         power_integrity_pdn_mesh,
         power_integrity_thermal_plane,
+        power_integrity_thermal_pour,
         power_integrity_thermal_via,
         power_integrity_voltage_drop,
     )
@@ -155,74 +153,6 @@ def register(mcp: FastMCP) -> None:
 
     power_integrity_thermal_via.register(mcp)
 
-    @mcp.tool()
-    def thermal_check_copper_pour(
-        net_name: str,
-        expected_power_w: float,
-        preferred_layer: str = "auto",
-    ) -> VerdictReport:
-        """Check whether the board already has copper pour support for the net."""
-        payload = ThermalPourInput(
-            net_name=net_name,
-            expected_power_w=expected_power_w,
-            preferred_layer=preferred_layer,
-        )
-        zones = [
-            zone
-            for zone in cast(list[_ZoneLike], board_zones(get_board()))
-            if str(getattr(getattr(zone, "net", None), "name", "") or "") == payload.net_name
-        ]
-        if not zones:
-            message = (
-                f"No copper pours were found for net '{payload.net_name}'. "
-                "Add a pour or plane for thermal spreading before release."
-            )
-            return VerdictReport.from_text_verdict(
-                text=message,
-                summary=message,
-                verdict="WARN",
-                source="thermal_check_copper_pour",
-                evidence=[{"net_name": payload.net_name, "matching_pours": 0}],
-                remediation=(
-                    "Add a copper pour or plane for thermal spreading, then rerun "
-                    "thermal_check_copper_pour()."
-                ),
-                failure_mode="configuration",
-                metadata={"domain": "thermal"},
-            )
-
-        verdict: Verdict = (
-            "PASS" if len(zones) >= max(1, math.ceil(payload.expected_power_w)) else "WARN"
-        )
-        lines = [
-            f"Thermal copper-pour review for {payload.net_name} ({verdict}):",
-            f"- Expected dissipation: {payload.expected_power_w:.3f} W",
-            f"- Matching pours / planes: {len(zones)}",
-        ]
-        for zone in zones[: get_config().max_items_per_response]:
-            zone_layers = ",".join(BoardLayer.Name(layer) for layer in getattr(zone, "layers", []))
-            lines.append(f"- {zone.name or '(unnamed)'} on {zone_layers or '(unknown layers)'}")
-        if verdict == "WARN":
-            lines.append("- Consider a wider pour, more copper area, and stitched thermal vias.")
-        return VerdictReport.from_text_verdict(
-            text="\n".join(lines),
-            summary=f"Thermal copper support has {len(zones)} matching pour(s)/plane(s).",
-            verdict=verdict,
-            source="thermal_check_copper_pour",
-            evidence=[
-                {
-                    "net_name": payload.net_name,
-                    "expected_power_w": payload.expected_power_w,
-                    "matching_pours": len(zones),
-                }
-            ],
-            remediation=(
-                "Increase thermal copper area and stitching, then rerun "
-                "thermal_check_copper_pour()."
-            )
-            if verdict != "PASS"
-            else "",
-            metadata={"domain": "thermal"},
-        )
+    power_integrity_thermal_pour.register(mcp)
 
     power_integrity_thermal_plane.register(mcp)
