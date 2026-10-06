@@ -22,6 +22,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      python-major:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "major"
       python-security:
         applies-to: "security-updates"
         patterns:
@@ -49,6 +55,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      npm-root-major:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "major"
       npm-root-security:
         applies-to: "security-updates"
         patterns:
@@ -76,6 +88,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      npm-chatgpt-app-major:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "major"
       npm-chatgpt-app-security:
         applies-to: "security-updates"
         patterns:
@@ -103,6 +121,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      npm-fixtures-major:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "major"
       npm-fixtures-security:
         applies-to: "security-updates"
         patterns:
@@ -130,6 +154,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      npm-wrapper-major:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "major"
       npm-wrapper-security:
         applies-to: "security-updates"
         patterns:
@@ -158,6 +188,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      actions-major:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "major"
 
   - package-ecosystem: "docker"
     directory: "/"
@@ -181,6 +217,13 @@ updates:
           - "*"
         update-types:
           - "patch"
+      containers-manual:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "major"
 
   - package-ecosystem: "docker-compose"
     directory: "/"
@@ -204,6 +247,13 @@ updates:
           - "*"
         update-types:
           - "patch"
+      compose-manual:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "major"
 
   - package-ecosystem: "cargo"
     directory: "/src-tauri"
@@ -227,6 +277,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      cargo-major:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "major"
       cargo-security:
         applies-to: "security-updates"
         patterns:

@@ -364,6 +364,48 @@ def test_dependabot_npm_updates_respect_package_manager_boundaries() -> None:
     npm_updates = [entry for entry in config["updates"] if entry["package-ecosystem"] == "npm"]
 
     expected_directories = {
+        "/": ("npm-root-minor-patch", "npm-root-major", "npm-root-security"),
+        "/integrations/chatgpt-app/apps-sdk": (
+            "npm-chatgpt-app-minor-patch",
+            "npm-chatgpt-app-major",
+            "npm-chatgpt-app-security",
+        ),
+        "/packages/kicad-fixtures": (
+            "npm-fixtures-minor-patch",
+            "npm-fixtures-major",
+            "npm-fixtures-security",
+        ),
+        "/packages/mcp-npm": (
+            "npm-wrapper-minor-patch",
+            "npm-wrapper-major",
+            "npm-wrapper-security",
+        ),
+    }
+    assert {entry.get("directory") for entry in npm_updates} == set(expected_directories)
+    assert all("directories" not in entry for entry in npm_updates)
+
+    for entry in npm_updates:
+        directory = entry["directory"]
+        routine_name, major_name, security_name = expected_directories[directory]
+
+        routine_group = entry["groups"][routine_name]
+        assert routine_group["applies-to"] == "version-updates"
+        assert routine_group["patterns"] == ["*"]
+        assert set(routine_group["update-types"]) == {"minor", "patch"}
+
+        major_group = entry["groups"][major_name]
+        assert major_group["applies-to"] == "version-updates"
+        assert major_group["patterns"] == ["*"]
+        assert major_group["update-types"] == ["major"]
+
+        security_group = entry["groups"][security_name]
+        assert security_group["applies-to"] == "security-updates"
+        assert security_group["patterns"] == ["*"]
+
+    config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+    npm_updates = [entry for entry in config["updates"] if entry["package-ecosystem"] == "npm"]
+
+    expected_directories = {
         "/": ("npm-root-minor-patch", "npm-root-security"),
         "/integrations/chatgpt-app/apps-sdk": (
             "npm-chatgpt-app-minor-patch",
@@ -389,7 +431,51 @@ def test_dependabot_npm_updates_respect_package_manager_boundaries() -> None:
         assert security_group["patterns"] == ["*"]
 
 
-def test_dependabot_groups_routine_updates_without_grouping_major_versions() -> None:
+def test_dependabot_groups_routine_and_major_updates_separately() -> None:
+    config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+    updates = {
+        entry["package-ecosystem"]: entry
+        for entry in config["updates"]
+        if entry["package-ecosystem"] != "npm"
+    }
+
+    expected_groups = {
+        "uv": (
+            ("python-minor-patch", {"minor", "patch"}),
+            ("python-major", {"major"}),
+        ),
+        "github-actions": (
+            ("actions-minor-patch", {"minor", "patch"}),
+            ("actions-major", {"major"}),
+        ),
+        "docker": (
+            ("containers-patch", {"patch"}),
+            ("containers-manual", {"minor", "major"}),
+        ),
+        "docker-compose": (
+            ("compose-patch", {"patch"}),
+            ("compose-manual", {"minor", "major"}),
+        ),
+        "cargo": (
+            ("cargo-minor-patch", {"minor", "patch"}),
+            ("cargo-major", {"major"}),
+        ),
+    }
+    for ecosystem, groups in expected_groups.items():
+        for group_name, update_types in groups:
+            group = updates[ecosystem]["groups"][group_name]
+            assert group["applies-to"] == "version-updates"
+            assert group["patterns"] == ["*"]
+            assert set(group["update-types"]) == update_types
+
+    for ecosystem, group_name in {
+        "uv": "python-security",
+        "cargo": "cargo-security",
+    }.items():
+        group = updates[ecosystem]["groups"][group_name]
+        assert group["applies-to"] == "security-updates"
+        assert group["patterns"] == ["*"]
+
     config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
     updates = {
         entry["package-ecosystem"]: entry
@@ -432,7 +518,6 @@ def test_mergify_only_autoqueues_safe_grouped_dependabot_updates() -> None:
         "maintainer",
     ]
     queue = config["queue_rules"][0]
-    assert queue["name"] == "safe-dependencies"
     assert queue["batch_size"] == 1
     assert queue["merge_method"] == "squash"
     assert queue["branch_protection_injection_mode"] == "queue"
@@ -443,11 +528,12 @@ def test_mergify_only_autoqueues_safe_grouped_dependabot_updates() -> None:
         "author = dependabot[bot]",
         "-draft",
         "dependabot-update-type != version-update:semver-major",
+        "#review-threads-unresolved = 0",
     }
-    queue_string_conditions = {
+    queue_strings = {
         condition for condition in queue["queue_conditions"] if isinstance(condition, str)
     }
-    assert required_conditions <= queue_string_conditions
+    assert required_conditions <= queue_strings
 
     assert len(config["pull_request_rules"]) == 1
     rule = config["pull_request_rules"][0]
@@ -459,19 +545,39 @@ def test_mergify_only_autoqueues_safe_grouped_dependabot_updates() -> None:
     ]
     assert len(head_conditions) == 1
     head_condition = head_conditions[0]
-    for group_name in (
+
+    auto_groups = (
         "python-minor-patch",
+        "python-security",
         "npm-root-minor-patch",
+        "npm-root-security",
         "npm-chatgpt-app-minor-patch",
+        "npm-chatgpt-app-security",
         "npm-fixtures-minor-patch",
+        "npm-fixtures-security",
         "npm-wrapper-minor-patch",
+        "npm-wrapper-security",
         "actions-minor-patch",
         "containers-patch",
         "compose-patch",
         "cargo-minor-patch",
-    ):
+        "cargo-security",
+    )
+    for group_name in auto_groups:
         assert group_name in head_condition
-    assert "security" not in head_condition
+
+    for manual_group in (
+        "python-major",
+        "npm-root-major",
+        "npm-chatgpt-app-major",
+        "npm-fixtures-major",
+        "npm-wrapper-major",
+        "actions-major",
+        "containers-manual",
+        "compose-manual",
+        "cargo-major",
+    ):
+        assert manual_group not in head_condition
 
 
 def test_mergify_merge_conditions_mirror_repository_ruleset_required_checks() -> None:
@@ -485,7 +591,6 @@ def test_mergify_merge_conditions_mirror_repository_ruleset_required_checks() ->
     assert required_contexts
 
     mergify = yaml.safe_load((ROOT / ".mergify.yml").read_text(encoding="utf-8"))
-    queue = next(rule for rule in mergify["queue_rules"] if rule["name"] == "safe-dependencies")
     for name in ("safe-dependencies", "maintainer"):
         queue = next(rule for rule in mergify["queue_rules"] if rule["name"] == name)
         explicit_check_conditions = {
@@ -493,20 +598,8 @@ def test_mergify_merge_conditions_mirror_repository_ruleset_required_checks() ->
             for condition in queue["merge_conditions"]
             if isinstance(condition, str) and condition.startswith("check-success = ")
         }
-        sonar_condition = next(
-            (condition for condition in queue["merge_conditions"] if isinstance(condition, dict)),
-            None,
-        )
-        assert sonar_condition == {
-            "or": [
-                "check-success = SonarCloud Scan",
-                "check-skipped = SonarCloud Scan",
-                "check-neutral = SonarCloud Scan",
-            ]
-        }
-        explicit_check_conditions.add("SonarCloud Scan")
-
         assert explicit_check_conditions == required_contexts, name
+        assert not any(isinstance(condition, dict) for condition in queue["merge_conditions"]), name
 
 
 def test_mergify_uses_in_place_checks_with_strict_main_ruleset() -> None:

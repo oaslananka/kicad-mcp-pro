@@ -145,12 +145,27 @@ def test_sonar_skips_fork_pull_requests_before_secret_bearing_steps() -> None:
     path = ROOT / ".github" / "workflows" / "sonarcloud.yml"
     raw = path.read_text(encoding="utf-8")
     workflow = yaml.safe_load(raw)
-    condition = workflow["jobs"]["sonarcloud"]["if"]
 
     assert "pull_request_target" not in raw
-    assert "github.event_name != 'pull_request'" in condition
-    assert "github.event.pull_request.head.repo.full_name == github.repository" in condition
-    assert "github.event.pull_request.user.login != 'dependabot[bot]'" in condition
+    classify = workflow["jobs"]["classify"]
+    assert "sonar-mode.outputs.run_analysis" in classify["outputs"]["run_analysis"]
+    assert "sonar-mode.outputs.no_op_reason" in classify["outputs"]["no_op_reason"]
+
+    mode_step = next(step for step in classify["steps"] if step.get("id") == "sonar-mode")
+    mode_script = mode_step["run"]
+    assert "PR_HEAD_REPO" in mode_script
+    assert "PR_AUTHOR" in mode_script
+    assert "dependabot[bot]" in mode_script
+    assert "run_analysis=false" in mode_script
+
+    sonar = workflow["jobs"]["sonarcloud"]
+    assert "needs.classify.result == 'success'" in sonar["if"]
+    steps = {step["name"]: step for step in sonar["steps"] if "name" in step}
+    assert steps["Record intentional Sonar no-op"]["if"] == (
+        "needs.classify.outputs.run_analysis != 'true'"
+    )
+    for step_name in ("Checkout code", "Run tests with coverage", "SonarCloud Scan"):
+        assert steps[step_name]["if"] == "needs.classify.outputs.run_analysis == 'true'"
 
 
 def test_sonar_skips_release_metadata_only_change_sets() -> None:
@@ -159,17 +174,20 @@ def test_sonar_skips_release_metadata_only_change_sets() -> None:
     )
 
     classify = workflow["jobs"]["classify"]
-    _require(
-        classify["outputs"]["release_metadata_only"]
-        == "${{ steps.release-classifier.outputs.release_metadata_only }}",
-        "Sonar classifier output contract changed",
+    assert (
+        "release-classifier.outputs.release_metadata_only"
+        in classify["outputs"]["release_metadata_only"]
     )
+    assert "sonar-mode.outputs.run_analysis" in classify["outputs"]["run_analysis"]
+
+    mode_step = next(step for step in classify["steps"] if step.get("id") == "sonar-mode")
+    assert "RELEASE_METADATA_ONLY" in mode_step["env"]
+    assert "release-metadata-only change set" in mode_step["run"]
+
     sonar = workflow["jobs"]["sonarcloud"]
-    _require(sonar["needs"] == "classify", "Sonar must depend on release classifier")
-    _require(
-        "needs.classify.outputs.release_metadata_only != 'true'" in sonar["if"],
-        "Sonar must skip release metadata-only changes",
-    )
+    assert sonar["needs"] == "classify"
+    assert "always()" in sonar["if"]
+    assert "needs.classify.result == 'success'" in sonar["if"]
 
 
 def test_full_python_suite_setup_is_shared_without_cross_workflow_artifacts() -> None:
