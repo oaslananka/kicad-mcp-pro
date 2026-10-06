@@ -402,34 +402,6 @@ def test_dependabot_npm_updates_respect_package_manager_boundaries() -> None:
         assert security_group["applies-to"] == "security-updates"
         assert security_group["patterns"] == ["*"]
 
-    config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
-    npm_updates = [entry for entry in config["updates"] if entry["package-ecosystem"] == "npm"]
-
-    expected_directories = {
-        "/": ("npm-root-minor-patch", "npm-root-security"),
-        "/integrations/chatgpt-app/apps-sdk": (
-            "npm-chatgpt-app-minor-patch",
-            "npm-chatgpt-app-security",
-        ),
-        "/packages/kicad-fixtures": ("npm-fixtures-minor-patch", "npm-fixtures-security"),
-        "/packages/mcp-npm": ("npm-wrapper-minor-patch", "npm-wrapper-security"),
-    }
-    assert {entry.get("directory") for entry in npm_updates} == set(expected_directories)
-    assert all("directories" not in entry for entry in npm_updates)
-
-    for entry in npm_updates:
-        directory = entry["directory"]
-        version_group_name, security_group_name = expected_directories[directory]
-        version_group = entry["groups"][version_group_name]
-        assert version_group["applies-to"] == "version-updates"
-        assert version_group["patterns"] == ["*"]
-        assert set(version_group["update-types"]) == {"minor", "patch"}
-        assert "major" not in version_group["update-types"]
-
-        security_group = entry["groups"][security_group_name]
-        assert security_group["applies-to"] == "security-updates"
-        assert security_group["patterns"] == ["*"]
-
 
 def test_dependabot_groups_routine_and_major_updates_separately() -> None:
     config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
@@ -467,35 +439,6 @@ def test_dependabot_groups_routine_and_major_updates_separately() -> None:
             assert group["applies-to"] == "version-updates"
             assert group["patterns"] == ["*"]
             assert set(group["update-types"]) == update_types
-
-    for ecosystem, group_name in {
-        "uv": "python-security",
-        "cargo": "cargo-security",
-    }.items():
-        group = updates[ecosystem]["groups"][group_name]
-        assert group["applies-to"] == "security-updates"
-        assert group["patterns"] == ["*"]
-
-    config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
-    updates = {
-        entry["package-ecosystem"]: entry
-        for entry in config["updates"]
-        if entry["package-ecosystem"] != "npm"
-    }
-
-    expected_version_groups = {
-        "uv": ("python-minor-patch", {"minor", "patch"}),
-        "github-actions": ("actions-minor-patch", {"minor", "patch"}),
-        "docker": ("containers-patch", {"patch"}),
-        "docker-compose": ("compose-patch", {"patch"}),
-        "cargo": ("cargo-minor-patch", {"minor", "patch"}),
-    }
-    for ecosystem, (group_name, update_types) in expected_version_groups.items():
-        group = updates[ecosystem]["groups"][group_name]
-        assert group["applies-to"] == "version-updates"
-        assert group["patterns"] == ["*"]
-        assert set(group["update-types"]) == update_types
-        assert "major" not in group["update-types"]
 
     for ecosystem, group_name in {
         "uv": "python-security",

@@ -47,7 +47,7 @@ are grouped separately to avoid one-PR-per-package bursts but remain manual revi
 npm/pnpm configuration uses separate single-directory entries for the root pnpm project,
 the ChatGPT Apps npm project, the fixture pnpm package, and the npm wrapper so Dependabot
 does not mix independent lockfile/workspace scopes in one update job. Docker version
-automation is more conservative: only patch updates are grouped, leaving runtime-sensitive
+automation is more conservative: only patch updates are eligible for automation; runtime-sensitive
 image minor/major changes are grouped separately for explicit maintainer review. Security
 updates use separate groups and are never mixed with routine version-update groups.
 Because GitHub does not apply `open-pull-requests-limit` to security updates, these
@@ -55,7 +55,7 @@ security groups are the repository's primary control against security-update PR 
 
 Dependabot pull requests are ordinary protected pull requests: required CI and the
 `main` ruleset still apply, and no dependency bot is allowed to bypass those gates.
-Mergify provides a serial, one-PR-it-a-time queue for routine grouped minor/patch updates
+Mergify provides a serial, one-PR-at-a-time queue for routine grouped minor/patch updates
 and grouped non-major security updates. The queue explicitly mirrors every required
 status-check context from `.github/rulesets/main.json`, requires zero unresolved review
 threads, and requires each named check to report literal success. The Sonar workflow
