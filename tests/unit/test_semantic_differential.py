@@ -233,6 +233,52 @@ def test_result_schema_rejects_inconsistent_semantic_evidence() -> None:
         DifferentialResult.model_validate(payload)
 
 
+def test_result_schema_rejects_remaining_invalid_flag_and_hash_states() -> None:
+    payload = _classify(
+        custom_result_hash=CUSTOM_HASH,
+        native_pass=False,
+        custom_pass=True,
+    ).model_dump(mode="json")
+    payload["false_fail"] = True
+    with pytest.raises(ValidationError, match="cannot both be true"):
+        DifferentialResult.model_validate(payload)
+
+    payload = _classify().model_dump(mode="json")
+    payload["native_result_hash"] = None
+    with pytest.raises(ValidationError, match="requires native and custom result hashes"):
+        DifferentialResult.model_validate(payload)
+
+
+def test_report_validator_rejects_non_partitioning_constructed_statuses() -> None:
+    invalid_result = DifferentialResult.model_construct(
+        source_sha=SOURCE_SHA,
+        lane="stable",
+        kicad_version="10.0.6",
+        fixture_id="constructed-invalid",
+        fixture_hash=FIXTURE_HASH,
+        operation="connectivity.net-compilation",
+        authority="fixture",
+        comparison_method="fixture",
+        status="not-a-real-status",
+    )
+    report = evals.DifferentialReport.model_construct(
+        source_sha=SOURCE_SHA,
+        lane="stable",
+        kicad_version="10.0.6",
+        results_total=1,
+        match_count=0,
+        divergence_count=0,
+        unavailable_authority_count=0,
+        infrastructure_invalid_count=0,
+        false_pass_count=0,
+        false_fail_count=0,
+        results=(invalid_result,),
+    )
+
+    with pytest.raises(ValueError, match="status counts must partition"):
+        report._validate_counts()
+
+
 def test_classifier_rejects_inconsistent_authority_inputs() -> None:
     with pytest.raises(ValueError, match="Unavailable native authority"):
         _classify(authority_available=False, reason="Unavailable")
