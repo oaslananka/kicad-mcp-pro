@@ -24,7 +24,6 @@ from ..models.power_integrity import (
     CopperWeightCheckInput,
     PowerPlaneInput,
     ThermalPourInput,
-    ThermalViaInput,
 )
 from ..models.verdict import Verdict, VerdictReport
 from ..pcb.board_access import board_footprints, board_shapes, board_tracks, board_zones
@@ -32,10 +31,7 @@ from ..pcb.geometry import point_xy_mm, track_segment_length_mm
 from ..pcb.live_edit_runtime import execute_live_board_mutation
 from ..utils.impedance import copper_thickness_mm
 from ..utils.layers import resolve_layer
-from ..utils.solver_seams import format_solver_verdict, thermal_method
 from ..utils.units import mm_to_mil, mm_to_nm, nm_to_mm
-
-_DEFAULT_BOARD_THICKNESS_MM = 1.6
 
 
 class _TrackLike(Protocol):
@@ -65,14 +61,6 @@ def _matching_tracks(net_name: str) -> list[_TrackLike]:
         if track_net == net_name:
             matches.append(track)
     return matches
-
-
-def _board_thickness_mm() -> float:
-    stackup = get_board().get_stackup()
-    total_nm = sum(int(getattr(layer, "thickness", 0)) for layer in getattr(stackup, "layers", []))
-    if total_nm <= 0:
-        return _DEFAULT_BOARD_THICKNESS_MM
-    return nm_to_mm(total_nm)
 
 
 def _layer_copper_thickness_mm(layer_value: BoardLayer.ValueType) -> float:
@@ -157,6 +145,7 @@ def register(mcp: FastMCP) -> None:
         power_integrity_decoupling,
         power_integrity_pdn_mesh,
         power_integrity_thermal_plane,
+        power_integrity_thermal_via,
         power_integrity_voltage_drop,
     )
 
@@ -303,80 +292,7 @@ def register(mcp: FastMCP) -> None:
             f"with {payload.clearance_mm:.3f} mm clearance."
         )
 
-    @mcp.tool()
-    def thermal_calculate_via_count(
-        power_w: float | None = None,
-        package_power_w: float | None = None,
-        ambient_c: float = 25.0,
-        max_junction_c: float = 125.0,
-        theta_ja_deg_c_w: float = 40.0,
-        via_diameter_mm: float = 0.3,
-        thermal_resistance_target: float = 5.0,
-    ) -> str:
-        """Estimate thermal via count from package heat and board thermal resistance."""
-        payload = ThermalViaInput(
-            power_w=power_w,
-            package_power_w=package_power_w,
-            ambient_c=ambient_c,
-            max_junction_c=max_junction_c,
-            theta_ja_deg_c_w=theta_ja_deg_c_w,
-            via_diameter_mm=via_diameter_mm,
-            thermal_resistance_target=thermal_resistance_target,
-        )
-        effective_power_w = payload.package_power_w or payload.power_w
-        if effective_power_w is None:
-            raise ValueError(
-                "Thermal via power is missing. Provide either 'package_power_w' for the "
-                "package thermal-envelope workflow or legacy 'power_w'."
-            )
-        if payload.max_junction_c <= payload.ambient_c:
-            raise ValueError("max_junction_c must be greater than ambient_c.")
-
-        allowed_total_theta = (payload.max_junction_c - payload.ambient_c) / effective_power_w
-        if payload.package_power_w is not None and payload.theta_ja_deg_c_w > allowed_total_theta:
-            # Parallel thermal paths: 1/R_allowed = 1/R_package + 1/R_vias.
-            required_via_network_theta = 1.0 / (
-                (1.0 / allowed_total_theta) - (1.0 / payload.theta_ja_deg_c_w)
-            )
-        else:
-            required_via_network_theta = min(
-                payload.thermal_resistance_target,
-                allowed_total_theta,
-            )
-
-        # Rule of thumb used by many thermal-via calculators: one 0.3 mm plated via in
-        # 1 oz copper contributes roughly 100 C/W. Scale conservatively by via diameter
-        # and board thickness so larger/shorter barrels lower resistance.
-        single_via_theta = (
-            100.0
-            * (0.3 / payload.via_diameter_mm)
-            * (_board_thickness_mm() / _DEFAULT_BOARD_THICKNESS_MM)
-        )
-        via_count = max(1, math.ceil(single_via_theta / required_via_network_theta))
-        delta_temp_c = effective_power_w * required_via_network_theta
-
-        lines = [
-            "Thermal via estimate:",
-            f"- Power to spread: {effective_power_w:.3f} W",
-            (
-                f"- Ambient / max junction: {payload.ambient_c:.1f} C / "
-                f"{payload.max_junction_c:.1f} C"
-            ),
-            f"- Package theta JA: {payload.theta_ja_deg_c_w:.2f} C/W",
-            f"- Via diameter: {payload.via_diameter_mm:.3f} mm",
-            f"- Board thickness used: {_board_thickness_mm():.3f} mm",
-            "- Single-via rule of thumb: 0.3 mm, 1 oz copper is approximately 100 C/W",
-            f"- Single-via thermal resistance estimate: {single_via_theta:.2f} C/W",
-            f"- Required via-network resistance: {required_via_network_theta:.2f} C/W",
-            f"- Required via count: {via_count}",
-            f"- Target temperature rise at the interface: {delta_temp_c:.2f} C",
-        ]
-        method = thermal_method()
-        lines.append(f"- Method: {method['method']} — {method['accuracy']}")
-        lines.append(f"- {format_solver_verdict(method)}")
-        if not method["solver_grade"]:
-            lines.append(f"- Note: {method['note']}")
-        return "\n".join(lines)
+    power_integrity_thermal_via.register(mcp)
 
     @mcp.tool()
     def thermal_check_copper_pour(
