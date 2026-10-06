@@ -38,7 +38,13 @@ class PowerIntegrityThermalPourService:
                 summary=message,
                 verdict="WARN",
                 source="thermal_check_copper_pour",
-                evidence=[{"net_name": payload.net_name, "matching_pours": 0}],
+                evidence=[
+                    {
+                        "net_name": payload.net_name,
+                        "expected_power_w": payload.expected_power_w,
+                        "matching_pours": 0,
+                    }
+                ],
                 remediation=(
                     "Add a copper pour or plane for thermal spreading, then rerun "
                     "thermal_check_copper_pour()."

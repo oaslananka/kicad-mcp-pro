@@ -17,7 +17,7 @@ def test_service_preserves_no_pours_warning() -> None:
         "Add a pour or plane for thermal spreading before release."
     )
     assert report.failure_mode == "configuration"
-    assert report.evidence == [{"net_name": "3V3", "matching_pours": 0}]
+    assert report.evidence == [{"net_name": "3V3", "expected_power_w": 2.0, "matching_pours": 0}]
 
 
 def test_service_preserves_threshold_layer_rendering_and_truncation() -> None:
