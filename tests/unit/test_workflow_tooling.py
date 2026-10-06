@@ -307,12 +307,18 @@ def test_root_tooling_changes_trigger_repository_contract_suite() -> None:
     assert expected_inputs <= set(filters["repo_tooling"])
     assert changes["outputs"]["repo_tooling"] == "${{ steps.filter.outputs.repo_tooling }}"
 
-    skip_step = next(
+    server_skip = next(
         step
         for step in workflow["jobs"]["mcp-server"]["steps"]
         if step.get("name") == "Skip mcp-server when unaffected or redundant"
     )
-    assert "needs.changes.outputs.repo_tooling != 'true'" in skip_step["if"]
+    coverage_skip = next(
+        step
+        for step in workflow["jobs"]["coverage"]["steps"]
+        if step.get("name") == "Skip full coverage when Python is unaffected"
+    )
+    for skip_step in (server_skip, coverage_skip):
+        assert "needs.changes.outputs.repo_tooling != 'true'" in skip_step["if"]
 
 
 def test_path_aware_skip_steps_use_bash_on_cross_platform_matrix_jobs() -> None:

@@ -60,7 +60,7 @@ Repository-tooling contracts are an explicit exception to the generic NPM no-op 
 Changes to root hook/tooling and repository-policy inputs such as `package.json`,
 `pnpm-workspace.yaml`, `lefthook.yml`, `.pre-commit-config.yaml`, `Taskfile.yml`,
 `.mergify.yml`, Dependabot/ruleset configuration, `sonar-project.properties`, or
-`AGENTS.md` force the `mcp-server` OS matrix to run its real unit/tooling-contract suite.
+`AGENTS.md` force the `mcp-server` OS matrix and full Python coverage lane to run their real unit/tooling-contract suite.
 This prevents a required check from reporting a no-op success when Python tests consume a
 non-Python repository contract.
 
