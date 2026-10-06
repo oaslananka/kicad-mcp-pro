@@ -294,6 +294,8 @@ def test_root_tooling_changes_trigger_repository_contract_suite() -> None:
     expected_inputs = {
         "package.json",
         "pnpm-workspace.yaml",
+        "Dockerfile",
+        "docker-compose.yml",
         "lefthook.yml",
         ".pre-commit-config.yaml",
         "Taskfile.yml",
