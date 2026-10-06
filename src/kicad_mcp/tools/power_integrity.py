@@ -22,7 +22,6 @@ from ..connection import get_board
 from ..models.common import _FootprintLike
 from ..models.power_integrity import (
     CopperWeightCheckInput,
-    DecouplingRecommendationInput,
     PowerPlaneInput,
     ThermalPlaneSpreadInput,
     ThermalPourInput,
@@ -32,7 +31,7 @@ from ..models.verdict import Verdict, VerdictReport
 from ..pcb.board_access import board_footprints, board_shapes, board_tracks, board_zones
 from ..pcb.geometry import point_xy_mm, track_segment_length_mm
 from ..pcb.live_edit_runtime import execute_live_board_mutation
-from ..utils.impedance import copper_thickness_mm, recommended_decoupling_distance_mm
+from ..utils.impedance import copper_thickness_mm
 from ..utils.layers import resolve_layer
 from ..utils.pdn_mesh import PdnDecouplingCap, PdnLoad, PdnMesh
 from ..utils.solver_seams import (
@@ -93,40 +92,6 @@ def _layer_copper_thickness_mm(layer_value: BoardLayer.ValueType) -> float:
             if thickness_nm > 0:
                 return nm_to_mm(thickness_nm)
     return copper_thickness_mm(1.0)
-
-
-def _footprint_reference(footprint: _FootprintLike) -> str:
-    return str(footprint.reference_field.text.value)
-
-
-def _footprint_value(footprint: _FootprintLike) -> str:
-    return str(footprint.value_field.text.value)
-
-
-def _nearest_capacitors(reference: str) -> list[tuple[str, float, str]]:
-    footprints = cast(list[_FootprintLike], board_footprints(get_board()))
-    anchor = next(
-        (footprint for footprint in footprints if _footprint_reference(footprint) == reference),
-        None,
-    )
-    if anchor is None:
-        return []
-
-    source_x_mm, source_y_mm = point_xy_mm(anchor.position)
-    matches: list[tuple[str, float, str]] = []
-    for footprint in footprints:
-        candidate_ref = _footprint_reference(footprint)
-        if candidate_ref == reference or not candidate_ref.upper().startswith("C"):
-            continue
-        x_mm, y_mm = point_xy_mm(footprint.position)
-        matches.append(
-            (
-                candidate_ref,
-                math.hypot(source_x_mm - x_mm, source_y_mm - y_mm),
-                _footprint_value(footprint),
-            )
-        )
-    return sorted(matches, key=lambda item: item[1])
 
 
 def _ipc_current_capacity_a(
@@ -197,7 +162,7 @@ def _zone_already_exists(net_name: str, layer: BoardLayer.ValueType) -> bool:
 def register(mcp: FastMCP) -> None:
     """Register power-integrity and thermal tools."""
 
-    from . import power_integrity_voltage_drop
+    from . import power_integrity_decoupling, power_integrity_voltage_drop
 
     power_integrity_voltage_drop.register(mcp)
 
@@ -290,45 +255,7 @@ def register(mcp: FastMCP) -> None:
             metadata={"domain": "power_integrity"},
         )
 
-    @mcp.tool()
-    def pdn_recommend_decoupling_caps(
-        ic_refs: list[str],
-        vcc_net: str,
-        supply_voltage_v: float,
-        target_ripple_mv: float = 20.0,
-    ) -> str:
-        """Recommend local and bulk decoupling from a simple PDN heuristic."""
-        payload = DecouplingRecommendationInput(
-            ic_refs=ic_refs,
-            vcc_net=vcc_net,
-            supply_voltage_v=supply_voltage_v,
-            target_ripple_mv=target_ripple_mv,
-        )
-        scale = max(0.5, min(5.0, 20.0 / payload.target_ripple_mv))
-        bulk_uf = max(4.7, round(4.7 * len(payload.ic_refs) * scale, 1))
-
-        lines = [
-            f"Decoupling recommendation for {payload.vcc_net}:",
-            f"- Supply voltage: {payload.supply_voltage_v:.3f} V",
-            f"- Target ripple: {payload.target_ripple_mv:.2f} mV",
-            "- Baseline local decoupler per IC: 100 nF X7R placed at the power pin",
-            f"- Shared bulk recommendation near rail entry: {bulk_uf:.1f} uF low-ESR",
-        ]
-        for reference in payload.ic_refs[: get_config().max_items_per_response]:
-            nearby = _nearest_capacitors(reference)
-            recommendation_mm = recommended_decoupling_distance_mm(200.0)
-            if nearby:
-                best_ref, best_distance_mm, best_value = nearby[0]
-                verdict = "OK" if best_distance_mm <= recommendation_mm else "MOVE CLOSER"
-                lines.append(
-                    f"- {reference}: nearest capacitor is {best_ref} ({best_value or 'unknown'}) "
-                    f"at {best_distance_mm:.3f} mm [{verdict}]"
-                )
-            else:
-                lines.append(
-                    f"- {reference}: add one 100 nF local cap within {recommendation_mm:.2f} mm"
-                )
-        return "\n".join(lines)
+    power_integrity_decoupling.register(mcp)
 
     @mcp.tool()
     def pdn_check_copper_weight(
