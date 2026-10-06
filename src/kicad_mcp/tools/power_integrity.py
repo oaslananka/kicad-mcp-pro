@@ -20,26 +20,13 @@ from mcp.server.mcpserver import MCPServer as FastMCP
 from ..config import get_config
 from ..connection import get_board
 from ..models.common import _FootprintLike
-from ..models.power_integrity import (
-    CopperWeightCheckInput,
-    PowerPlaneInput,
-    ThermalPourInput,
-)
+from ..models.power_integrity import PowerPlaneInput, ThermalPourInput
 from ..models.verdict import Verdict, VerdictReport
-from ..pcb.board_access import board_footprints, board_shapes, board_tracks, board_zones
-from ..pcb.geometry import point_xy_mm, track_segment_length_mm
+from ..pcb.board_access import board_footprints, board_shapes, board_zones
+from ..pcb.geometry import point_xy_mm
 from ..pcb.live_edit_runtime import execute_live_board_mutation
-from ..utils.impedance import copper_thickness_mm
 from ..utils.layers import resolve_layer
-from ..utils.units import mm_to_mil, mm_to_nm, nm_to_mm
-
-
-class _TrackLike(Protocol):
-    start: object
-    end: object
-    width: int
-    layer: BoardLayer.ValueType
-    net: object
+from ..utils.units import mm_to_nm
 
 
 class _ZoneLike(Protocol):
@@ -52,49 +39,6 @@ def _net(name: str) -> Net:
     net = Net()
     net.name = name
     return net
-
-
-def _matching_tracks(net_name: str) -> list[_TrackLike]:
-    matches: list[_TrackLike] = []
-    for track in cast(list[_TrackLike], board_tracks(get_board())):
-        track_net = str(getattr(getattr(track, "net", None), "name", "") or "")
-        if track_net == net_name:
-            matches.append(track)
-    return matches
-
-
-def _layer_copper_thickness_mm(layer_value: BoardLayer.ValueType) -> float:
-    stackup = get_board().get_stackup()
-    for layer in getattr(stackup, "layers", []):
-        if getattr(layer, "layer", None) == layer_value:
-            thickness_nm = int(getattr(layer, "thickness", 0))
-            if thickness_nm > 0:
-                return nm_to_mm(thickness_nm)
-    return copper_thickness_mm(1.0)
-
-
-def _ipc_current_capacity_a(
-    width_mm: float,
-    copper_thickness_mm_value: float,
-    *,
-    external: bool,
-    max_temp_rise_c: float,
-) -> float:
-    area_mil_sq = mm_to_mil(width_mm) * mm_to_mil(copper_thickness_mm_value)
-    k = 0.048 if external else 0.024
-    return float(k * (max_temp_rise_c**0.44) * (area_mil_sq**0.725))
-
-
-def _required_width_mm(
-    expected_current_a: float,
-    copper_thickness_mm_value: float,
-    *,
-    external: bool,
-    max_temp_rise_c: float,
-) -> float:
-    k = 0.048 if external else 0.024
-    area_mil_sq = (expected_current_a / (k * (max_temp_rise_c**0.44))) ** (1.0 / 0.725)
-    return float(area_mil_sq / mm_to_mil(copper_thickness_mm_value) * 0.0254)
 
 
 def _edge_cuts_bounds() -> tuple[float, float, float, float] | None:
@@ -142,6 +86,7 @@ def register(mcp: FastMCP) -> None:
     """Register power-integrity and thermal tools."""
 
     from . import (
+        power_integrity_copper_weight,
         power_integrity_decoupling,
         power_integrity_pdn_mesh,
         power_integrity_thermal_plane,
@@ -155,91 +100,7 @@ def register(mcp: FastMCP) -> None:
 
     power_integrity_decoupling.register(mcp)
 
-    @mcp.tool()
-    def pdn_check_copper_weight(
-        net_name: str,
-        expected_current_a: float,
-        ambient_temp_c: float = 25.0,
-        max_temp_rise_c: float = 10.0,
-    ) -> VerdictReport:
-        """Check whether the routed copper for a net looks sufficient for the load current."""
-        payload = CopperWeightCheckInput(
-            net_name=net_name,
-            expected_current_a=expected_current_a,
-            ambient_temp_c=ambient_temp_c,
-            max_temp_rise_c=max_temp_rise_c,
-        )
-        tracks = _matching_tracks(payload.net_name)
-        if not tracks:
-            message = f"No routed tracks were found for net '{payload.net_name}'."
-            return VerdictReport.from_text_verdict(
-                text=message,
-                summary=message,
-                verdict="WARN",
-                source="pdn_check_copper_weight",
-                evidence=[{"net_name": payload.net_name, "track_count": 0}],
-                remediation="Route copper for this net, then rerun pdn_check_copper_weight().",
-                failure_mode="configuration",
-                metadata={"domain": "power_integrity"},
-            )
-
-        min_width_mm = min(nm_to_mm(int(track.width)) for track in tracks)
-        avg_width_mm = sum(nm_to_mm(int(track.width)) for track in tracks) / len(tracks)
-        longest_track = max(tracks, key=track_segment_length_mm)
-        copper_thickness = _layer_copper_thickness_mm(longest_track.layer)
-        external = longest_track.layer in {BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu}
-        capacity_a = _ipc_current_capacity_a(
-            min_width_mm,
-            copper_thickness,
-            external=external,
-            max_temp_rise_c=payload.max_temp_rise_c,
-        )
-        required_width_mm = _required_width_mm(
-            payload.expected_current_a,
-            copper_thickness,
-            external=external,
-            max_temp_rise_c=payload.max_temp_rise_c,
-        )
-        verdict: Verdict = "PASS" if capacity_a >= payload.expected_current_a else "WARN"
-
-        lines = [
-            f"Copper weight check for {payload.net_name} ({verdict}):",
-            f"- Routed track count: {len(tracks)}",
-            f"- Minimum width: {min_width_mm:.3f} mm",
-            f"- Average width: {avg_width_mm:.3f} mm",
-            f"- Copper thickness: {copper_thickness:.4f} mm",
-            f"- Assumed temperature rise limit: {payload.max_temp_rise_c:.1f} C",
-            f"- Estimated conservative current capacity: {capacity_a:.3f} A",
-            f"- Expected current: {payload.expected_current_a:.3f} A",
-            f"- Recommended minimum width: {required_width_mm:.3f} mm",
-            "- Uses a conservative IPC-style current-carrying estimate for quick review.",
-        ]
-        return VerdictReport.from_text_verdict(
-            text="\n".join(lines),
-            summary=(
-                f"Copper capacity is {capacity_a:.3f} A for "
-                f"{payload.expected_current_a:.3f} A expected."
-            ),
-            verdict=verdict,
-            source="pdn_check_copper_weight",
-            evidence=[
-                {
-                    "net_name": payload.net_name,
-                    "track_count": len(tracks),
-                    "min_width_mm": min_width_mm,
-                    "capacity_a": capacity_a,
-                    "expected_current_a": payload.expected_current_a,
-                    "required_width_mm": required_width_mm,
-                }
-            ],
-            remediation=(
-                "Increase copper width/weight or reduce current, then rerun "
-                "pdn_check_copper_weight()."
-            )
-            if verdict != "PASS"
-            else "",
-            metadata={"domain": "power_integrity"},
-        )
+    power_integrity_copper_weight.register(mcp)
 
     @mcp.tool()
     def pdn_generate_power_plane(net_name: str, layer: str, clearance_mm: float = 0.5) -> str:

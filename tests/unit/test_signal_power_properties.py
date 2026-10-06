@@ -5,11 +5,11 @@ import math
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from kicad_mcp.power_integrity.voltage_drop import track_resistance_ohm
-from kicad_mcp.tools.power_integrity import (
-    _ipc_current_capacity_a,
-    _required_width_mm,
+from kicad_mcp.power_integrity.copper_weight import (
+    ipc_current_capacity_a,
+    required_width_mm,
 )
+from kicad_mcp.power_integrity.voltage_drop import track_resistance_ohm
 from kicad_mcp.utils.impedance import (
     solve_width_for_impedance,
     trace_impedance,
@@ -66,14 +66,14 @@ def test_pdn_required_width_meets_current_capacity(
     max_temp_rise_c: float,
     external: bool,
 ) -> None:
-    width_mm = _required_width_mm(
+    width_mm = required_width_mm(
         expected_current_a,
         copper_thickness_mm,
         external=external,
         max_temp_rise_c=max_temp_rise_c,
     )
 
-    capacity_a = _ipc_current_capacity_a(
+    capacity_a = ipc_current_capacity_a(
         width_mm,
         copper_thickness_mm,
         external=external,

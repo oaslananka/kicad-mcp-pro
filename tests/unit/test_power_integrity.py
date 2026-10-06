@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from kicad_mcp.power_integrity.copper_weight import ipc_current_capacity_a, required_width_mm
 from kicad_mcp.power_integrity.voltage_drop import track_resistance_ohm
-from kicad_mcp.tools.power_integrity import _ipc_current_capacity_a, _required_width_mm
 from kicad_mcp.utils.pdn_mesh import PdnLoad, PdnMesh
 
 
@@ -12,13 +12,13 @@ def test_track_resistance_and_drop_are_reasonable() -> None:
 
 
 def test_ipc_current_capacity_helper_and_required_width_are_consistent() -> None:
-    capacity_a = _ipc_current_capacity_a(
+    capacity_a = ipc_current_capacity_a(
         0.5,
         0.035,
         external=True,
         max_temp_rise_c=10.0,
     )
-    required_width_mm = _required_width_mm(
+    required_width = required_width_mm(
         1.0,
         0.035,
         external=True,
@@ -26,7 +26,7 @@ def test_ipc_current_capacity_helper_and_required_width_are_consistent() -> None
     )
 
     assert 0.8 <= capacity_a <= 1.6
-    assert 0.2 <= required_width_mm <= 0.7
+    assert 0.2 <= required_width <= 0.7
 
 
 def test_pdn_mesh_reports_voltage_drop_and_violations() -> None:
