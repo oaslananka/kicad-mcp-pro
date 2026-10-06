@@ -67,6 +67,7 @@ def test_reviewed_mutation_modules_do_not_use_legacy_board_transaction() -> None
         "src/kicad_mcp/tools/pcb.py",
         "src/kicad_mcp/tools/routing.py",
         "src/kicad_mcp/tools/power_integrity.py",
+        "src/kicad_mcp/tools/power_integrity_power_plane.py",
     ):
         path = Path(relative)
         assert _calls_named(path, "board_transaction") == [], relative

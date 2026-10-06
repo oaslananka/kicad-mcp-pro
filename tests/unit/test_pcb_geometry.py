@@ -116,9 +116,13 @@ def test_analysis_modules_import_the_same_canonical_length_function() -> None:
 
 
 def test_analysis_modules_import_the_same_canonical_point_function() -> None:
-    from kicad_mcp.tools import emc_compliance, power_integrity, signal_integrity
+    from kicad_mcp.tools import (
+        emc_compliance,
+        power_integrity_power_plane,
+        signal_integrity,
+    )
 
-    for module in (emc_compliance, power_integrity, signal_integrity):
+    for module in (emc_compliance, power_integrity_power_plane, signal_integrity):
         assert module.point_xy_mm is point_xy_mm
 
 
@@ -128,7 +132,7 @@ def test_analysis_modules_do_not_bypass_canonical_point_conversion() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     modules = (
         "src/kicad_mcp/tools/emc_compliance.py",
-        "src/kicad_mcp/tools/power_integrity.py",
+        "src/kicad_mcp/tools/power_integrity_power_plane.py",
         "src/kicad_mcp/tools/routing.py",
         "src/kicad_mcp/tools/signal_integrity.py",
     )
@@ -145,7 +149,7 @@ def test_analysis_modules_do_not_redefine_footprint_position_conversion() -> Non
     repo_root = Path(__file__).resolve().parents[2]
     modules = (
         "src/kicad_mcp/tools/emc_compliance.py",
-        "src/kicad_mcp/tools/power_integrity.py",
+        "src/kicad_mcp/tools/power_integrity_power_plane.py",
         "src/kicad_mcp/tools/signal_integrity.py",
     )
 
@@ -166,7 +170,7 @@ def test_analysis_modules_do_not_redefine_track_segment_length() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     modules = (
         "src/kicad_mcp/tools/emc_compliance.py",
-        "src/kicad_mcp/tools/power_integrity.py",
+        "src/kicad_mcp/tools/power_integrity_copper_weight.py",
         "src/kicad_mcp/tools/routing.py",
         "src/kicad_mcp/tools/signal_integrity.py",
     )
