@@ -1,7 +1,7 @@
 # CI/CD Policy — Path-Aware Risk-Based Gating
 
 > **Status**: Active
-> **Last updated**: 2026-09-28
+> **Last updated**: 2026-10-06
 
 ## Overview
 
@@ -26,6 +26,7 @@ categories.
 |----------|--------------|
 | **docs** | `docs/**`, `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `CODE_OF_CONDUCT.md`, `GOVERNANCE.md`, `MAINTAINERS.md`, `ROADMAP.md`, `SECURITY.md`, `SUPPORT.md`, `ARCHITECTURE.md`, `CITATION.cff`, `LICENSE`, `mkdocs.yml`, `assets/**` |
 | **python** | `src/**`, `tests/**`, `pyproject.toml`, `uv.lock`, `uv.toml`, `scripts/**`, `conftest.py`, `pyrightconfig.json`, `.python-version`, `performance/**`, `evals/**` |
+| **repo_tooling** | `package.json`, `pnpm-workspace.yaml`, `Dockerfile`, `docker-compose.yml`, `lefthook.yml`, `.pre-commit-config.yaml`, `Taskfile.yml`, `.mergify.yml`, `.github/dependabot.yml`, `.github/rulesets/**`, `sonar-project.properties`, `AGENTS.md`, `**/AGENTS.md` |
 | **npm** | `packages/**`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.node-version`, `.npmrc`, `commitlint.config.cjs`, `.commitlintrc.json` |
 | **schemas** | `packages/protocol-schemas/**` |
 | **workflows** | `.github/workflows/**`, `.github/actions/**` |
@@ -58,9 +59,10 @@ This ensures the required status check is never left pending.
 
 Repository-tooling contracts are an explicit exception to the generic NPM no-op row above.
 Changes to root hook/tooling and repository-policy inputs such as `package.json`,
-`pnpm-workspace.yaml`, `lefthook.yml`, `.pre-commit-config.yaml`, `Taskfile.yml`,
-`.mergify.yml`, Dependabot/ruleset configuration, `sonar-project.properties`, or
-`AGENTS.md` force the `mcp-server` OS matrix and full Python coverage lane to run their real unit/tooling-contract suite.
+`pnpm-workspace.yaml`, `Dockerfile`, `docker-compose.yml`, `lefthook.yml`,
+`.pre-commit-config.yaml`, `Taskfile.yml`, `.mergify.yml`, Dependabot/ruleset
+configuration, `sonar-project.properties`, or `AGENTS.md` force the `mcp-server`
+OS matrix and full Python coverage lane to run their real unit/tooling-contract suite.
 This prevents a required check from reporting a no-op success when Python tests consume a
 non-Python repository contract.
 
