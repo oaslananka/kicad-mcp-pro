@@ -56,6 +56,14 @@ would incorrectly no-op on a real dependency/Dockerfile change.
 **no-op** means the job runs and reports success, but skips expensive steps.
 This ensures the required status check is never left pending.
 
+Repository-tooling contracts are an explicit exception to the generic NPM no-op row above.
+Changes to root hook/tooling and repository-policy inputs such as `package.json`,
+`pnpm-workspace.yaml`, `lefthook.yml`, `.pre-commit-config.yaml`, `Taskfile.yml`,
+`.mergify.yml`, Dependabot/ruleset configuration, `sonar-project.properties`, or
+`AGENTS.md` force the `mcp-server` OS matrix and full Python coverage lane to run their real unit/tooling-contract suite.
+This prevents a required check from reporting a no-op success when Python tests consume a
+non-Python repository contract.
+
 Dependency Review runs on every pull request to `main` and is a required
 status check. It must not be path-filtered at the workflow trigger because a
 missing required context would leave an otherwise valid pull request blocked.
@@ -186,7 +194,7 @@ Analysis mode and must not coexist with a CI workflow).
 test code. This only affects path classification — it does not exclude any
 file from analysis, and it does not change rule severities or Quality
 Profiles (those require SonarQube Cloud UI/admin access, not a repo file).
-SonarCloud Scan is a required status check for trusted same-repository PRs. Dependabot and fork PRs keep the job-level secret-isolation guard; GitHub treats that conditional skip as a successful required-check conclusion, and Mergify mirrors success/skipped/neutral outcomes.
+SonarCloud Scan is a required status check. Trusted same-repository PRs run the real analysis; Dependabot, fork, and release-metadata-only PRs take an explicit successful no-op path that does not expose `SONAR_TOKEN`. Mergify requires literal `check-success` for this context rather than accepting skipped/neutral conclusions.
 
 ## Publish Workflows
 

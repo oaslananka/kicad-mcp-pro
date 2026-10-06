@@ -82,11 +82,11 @@
   "devDependencies": {
     "@commitlint/cli": "21.2.3",
     "@commitlint/config-conventional": "21.2.3",
-    "lefthook": "2.1.14"
+    "lefthook": "2.1.15"
   },
   "engines": {
     "node": ">=24.11.0 <25",
     "pnpm": ">=11.0.0 <12"
   },
-  "version": "4.0.0"
+  "version": "4.0.1"
 }

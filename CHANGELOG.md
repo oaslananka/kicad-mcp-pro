@@ -10,6 +10,19 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.0.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.0.0...mcp-server-v4.0.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **ci:** gate repository tooling contracts ([#1107](https://github.com/oaslananka/kicad-mcp-pro/issues/1107)) ([6791971](https://github.com/oaslananka/kicad-mcp-pro/commit/6791971a64296493fb0907eb898e446c2b9a4d70))
+* **ci:** restore post-merge test contracts ([#1093](https://github.com/oaslananka/kicad-mcp-pro/issues/1093)) ([4aefe1a](https://github.com/oaslananka/kicad-mcp-pro/commit/4aefe1aa1387a58d0fff34a354a1de83f52021c3))
+* **deps:** update multidict to 6.9.1 ([#1105](https://github.com/oaslananka/kicad-mcp-pro/issues/1105)) ([3178f15](https://github.com/oaslananka/kicad-mcp-pro/commit/3178f1590fe17d783a181c2b1d5c94e39fb5a904))
+* **manufacturing:** harden release-evidence semantics ([#1091](https://github.com/oaslananka/kicad-mcp-pro/issues/1091)) ([9354b0e](https://github.com/oaslananka/kicad-mcp-pro/commit/9354b0eecc25a100623863168fc5738f00d7ac5d))
+* **release:** bind protocol schema publish to release tag ([#1083](https://github.com/oaslananka/kicad-mcp-pro/issues/1083)) ([b0186cf](https://github.com/oaslananka/kicad-mcp-pro/commit/b0186cfbf0453af48ad95b48dfa3806ecfb76ceb))
+* **routing:** escape net-class rule expressions ([#1089](https://github.com/oaslananka/kicad-mcp-pro/issues/1089)) ([af66e4f](https://github.com/oaslananka/kicad-mcp-pro/commit/af66e4f8cc7b2d9c8b1840ed00da6df5c1533ad0))
+* **routing:** reject wildcard time-domain groups ([#1090](https://github.com/oaslananka/kicad-mcp-pro/issues/1090)) ([82050e0](https://github.com/oaslananka/kicad-mcp-pro/commit/82050e0961b2868c34f9d251ac33096e7870b93e))
+
 ## [4.0.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v3.37.0...mcp-server-v4.0.0) (2026-10-05)
 
 
