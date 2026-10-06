@@ -49,6 +49,17 @@ from .reference_corpus import (
     compute_reference_inputs_digest,
     validate_reference_board_bundle,
 )
+from .semantic_differential import (
+    DIFFERENTIAL_REPORT_SCHEMA_VERSION,
+    DIFFERENTIAL_RESULT_SCHEMA_VERSION,
+    DifferentialLane,
+    DifferentialReport,
+    DifferentialResult,
+    DifferentialStatus,
+    aggregate_differential_results,
+    classify_differential_result,
+    render_differential_report_json,
+)
 from .task_outcome_reporting import (
     render_task_outcome_summary_json,
     render_task_outcome_summary_text,
@@ -100,6 +111,15 @@ from .tool_selection import (
 )
 
 __all__ = [
+    "DIFFERENTIAL_REPORT_SCHEMA_VERSION",
+    "DIFFERENTIAL_RESULT_SCHEMA_VERSION",
+    "DifferentialLane",
+    "DifferentialReport",
+    "DifferentialResult",
+    "DifferentialStatus",
+    "aggregate_differential_results",
+    "classify_differential_result",
+    "render_differential_report_json",
     "REFERENCE_AGENT_LOG_SCHEMA_VERSION",
     "REFERENCE_BOARD_SCHEMA_VERSION",
     "ReferenceAgentLogEvent",
