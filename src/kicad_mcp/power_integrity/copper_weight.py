@@ -69,19 +69,26 @@ class PowerIntegrityCopperWeightService:
 
         min_width_mm = min(track.width_mm for track in tracks)
         avg_width_mm = sum(track.width_mm for track in tracks) / len(tracks)
-        longest_track = max(tracks, key=lambda track: track.length_mm)
-        copper_thickness = longest_track.copper_thickness_mm
-        capacity_a = ipc_current_capacity_a(
-            min_width_mm,
-            copper_thickness,
-            external=longest_track.external,
-            max_temp_rise_c=payload.max_temp_rise_c,
-        )
-        width_required_mm = required_width_mm(
-            payload.expected_current_a,
-            copper_thickness,
-            external=longest_track.external,
-            max_temp_rise_c=payload.max_temp_rise_c,
+        capacities = [
+            ipc_current_capacity_a(
+                track.width_mm,
+                track.copper_thickness_mm,
+                external=track.external,
+                max_temp_rise_c=payload.max_temp_rise_c,
+            )
+            for track in tracks
+        ]
+        bottleneck_index = min(range(len(tracks)), key=capacities.__getitem__)
+        bottleneck = tracks[bottleneck_index]
+        capacity_a = capacities[bottleneck_index]
+        width_required_mm = max(
+            required_width_mm(
+                payload.expected_current_a,
+                track.copper_thickness_mm,
+                external=track.external,
+                max_temp_rise_c=payload.max_temp_rise_c,
+            )
+            for track in tracks
         )
         verdict: Verdict = "PASS" if capacity_a >= payload.expected_current_a else "WARN"
 
@@ -90,7 +97,9 @@ class PowerIntegrityCopperWeightService:
             f"- Routed track count: {len(tracks)}",
             f"- Minimum width: {min_width_mm:.3f} mm",
             f"- Average width: {avg_width_mm:.3f} mm",
-            f"- Copper thickness: {copper_thickness:.4f} mm",
+            f"- Bottleneck width: {bottleneck.width_mm:.3f} mm",
+            f"- Bottleneck copper thickness: {bottleneck.copper_thickness_mm:.4f} mm",
+            f"- Bottleneck layer class: {'external' if bottleneck.external else 'internal'}",
             f"- Assumed temperature rise limit: {payload.max_temp_rise_c:.1f} C",
             f"- Estimated conservative current capacity: {capacity_a:.3f} A",
             f"- Expected current: {payload.expected_current_a:.3f} A",
@@ -110,6 +119,9 @@ class PowerIntegrityCopperWeightService:
                     "net_name": payload.net_name,
                     "track_count": len(tracks),
                     "min_width_mm": min_width_mm,
+                    "bottleneck_width_mm": bottleneck.width_mm,
+                    "bottleneck_copper_thickness_mm": bottleneck.copper_thickness_mm,
+                    "bottleneck_external": bottleneck.external,
                     "capacity_a": capacity_a,
                     "expected_current_a": payload.expected_current_a,
                     "required_width_mm": width_required_mm,
