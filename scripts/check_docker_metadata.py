@@ -80,8 +80,10 @@ def main() -> int:
             errors.append(f"{path} must install runtime dependencies with hash enforcement")
 
     dockerfile = dockerfiles["Dockerfile"]
-    if "python:3.13.12-alpine3.22@sha256:" not in dockerfile:
-        errors.append("Dockerfile must use the Trivy-clean pinned Python Alpine base")
+    if "python:3.14.5-alpine3.22@sha256:" not in dockerfile:
+        errors.append("Dockerfile must use the pinned Python 3.14.5 Alpine base")
+    if "python:3.14.7-slim@sha256:" not in dockerfile:
+        errors.append("Dockerfile must use the pinned Python 3.14.7 slim base for KiCad 10 stages")
     if (
         "ENV PYTHONDONTWRITEBYTECODE=1" not in dockerfile
         or "KICAD_MCP_HOST=0.0.0.0" not in dockerfile
