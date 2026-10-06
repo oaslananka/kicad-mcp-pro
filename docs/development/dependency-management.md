@@ -41,27 +41,34 @@ five-day cooldown before newly released versions are eligible. GitHub's cooldown
 open-pull-request limit apply to version updates, not Dependabot security updates, so
 vulnerability remediation is not delayed by this backpressure policy.
 
-Routine minor/patch version updates are grouped per ecosystem and package-manager
-boundary to reduce PR and CI churn; major updates remain individual pull requests. The
+Routine version updates are grouped per ecosystem and package-manager boundary to
+reduce PR and CI churn. Minor/patch groups are eligible for automation; major updates
+are grouped separately to avoid one-PR-per-package bursts but remain manual review. The
 npm/pnpm configuration uses separate single-directory entries for the root pnpm project,
 the ChatGPT Apps npm project, the fixture pnpm package, and the npm wrapper so Dependabot
 does not mix independent lockfile/workspace scopes in one update job. Docker version
-automation is more conservative: only patch updates are grouped, leaving runtime-sensitive
-image minor/major changes for explicit maintainer review. Security updates use separate
-groups and are never mixed with routine version-update groups.
+automation is more conservative: only patch updates are eligible for automation; runtime-sensitive
+image minor/major changes are grouped separately for explicit maintainer review. Security
+updates use separate groups and are never mixed with routine version-update groups.
+Because GitHub does not apply `open-pull-requests-limit` to security updates, these
+security groups are the repository's primary control against security-update PR fan-out.
 
 Dependabot pull requests are ordinary protected pull requests: required CI and the
 `main` ruleset still apply, and no dependency bot is allowed to bypass those gates.
-Mergify provides a serial, one-PR-at-a-time queue for the routine grouped version
-updates only. The queue explicitly mirrors every required status-check context from
-`.github/rulesets/main.json`. Eligibility and required-check conditions are identical at
+Mergify provides a serial, one-PR-at-a-time queue for routine grouped minor/patch updates
+and grouped non-major security updates. The queue explicitly mirrors every required
+status-check context from `.github/rulesets/main.json`, requires zero unresolved review
+threads, and requires each named check to report literal success. The Sonar workflow
+returns an explicit successful no-op for Dependabot, fork, and release-metadata-only pull
+requests while keeping checkout, coverage, and `SONAR_TOKEN` behind the trusted-analysis
+condition. Eligibility and required-check conditions are identical at
 queue and merge time so strict up-to-date rulesets use Mergify's in-place check model
 instead of a second draft-PR CI phase. Automatic GitHub ruleset discovery is
 defense-in-depth rather than the enforcement source. Repository regression tests prevent
 ruleset/check or queue/merge-condition drift. The queue uses squash merges and does not
 retry failed checks automatically.
-Human-authored, release, security, major, and otherwise ungrouped dependency pull
-requests remain a maintainer decision.
+Human-authored, release, major-version, runtime-sensitive, and otherwise non-routine
+dependency pull requests remain a maintainer decision.
 
 ## Lockfile maintenance
 
@@ -79,12 +86,12 @@ installs and therefore rejects stale or unexpectedly regenerated lockfiles.
 
 ## Update process
 
-1. Dependabot opens either a routine ecosystem group or an individual higher-risk dependency pull request from the default branch.
+1. Dependabot opens a grouped routine update, grouped major/manual update, or grouped security update from the default branch.
 2. Review the dependency source, package name, version change, release notes, and license impact.
 3. Run the required CI, security checks, tests, and relevant package builds.
 4. Confirm the matching lockfile changed only as expected.
-5. Routine grouped minor/patch version updates may enter the Mergify queue automatically; the GitHub ruleset and required checks remain mandatory.
-6. Security, major, runtime-sensitive, release, human-authored, and ungrouped updates require an explicit maintainer merge decision.
+5. Grouped minor/patch version updates and grouped non-major security updates may enter the Mergify queue only after every required check reports literal success and all review threads are resolved.
+6. Major/manual, runtime-sensitive, release, human-authored, and otherwise non-routine updates require an explicit maintainer merge decision.
 
 ## Vulnerability monitoring
 

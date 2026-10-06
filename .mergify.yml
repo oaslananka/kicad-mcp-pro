@@ -13,7 +13,8 @@ queue_rules:
       - author = dependabot[bot]
       - -draft
       - dependabot-update-type != version-update:semver-major
-      - head ~= ^dependabot/.*/(python-minor-patch|npm-root-minor-patch|npm-chatgpt-app-minor-patch|npm-fixtures-minor-patch|npm-wrapper-minor-patch|actions-minor-patch|containers-patch|compose-patch|cargo-minor-patch)(?:-|$)
+      - "#review-threads-unresolved = 0"
+      - head ~= ^dependabot/.*/(python-minor-patch|python-security|npm-root-minor-patch|npm-root-security|npm-chatgpt-app-minor-patch|npm-chatgpt-app-security|npm-fixtures-minor-patch|npm-fixtures-security|npm-wrapper-minor-patch|npm-wrapper-security|actions-minor-patch|containers-patch|compose-patch|cargo-minor-patch|cargo-security)(?:-|$)
       - check-success = mcp-server (ubuntu-24.04)
       - check-success = mcp-server (windows-2025)
       - check-success = mcp-server (macos-15)
@@ -25,17 +26,15 @@ queue_rules:
       - check-success = analyze (python)
       - check-success = analyze (javascript-typescript)
       - check-success = Required PR Gate
-      - or:
-          - check-success = SonarCloud Scan
-          - check-skipped = SonarCloud Scan
-          - check-neutral = SonarCloud Scan
+      - check-success = SonarCloud Scan
       - check-success = dependency-review
     queue_conditions:
       - base = main
       - author = dependabot[bot]
       - -draft
       - dependabot-update-type != version-update:semver-major
-      - head ~= ^dependabot/.*/(python-minor-patch|npm-root-minor-patch|npm-chatgpt-app-minor-patch|npm-fixtures-minor-patch|npm-wrapper-minor-patch|actions-minor-patch|containers-patch|compose-patch|cargo-minor-patch)(?:-|$)
+      - "#review-threads-unresolved = 0"
+      - head ~= ^dependabot/.*/(python-minor-patch|python-security|npm-root-minor-patch|npm-root-security|npm-chatgpt-app-minor-patch|npm-chatgpt-app-security|npm-fixtures-minor-patch|npm-fixtures-security|npm-wrapper-minor-patch|npm-wrapper-security|actions-minor-patch|containers-patch|compose-patch|cargo-minor-patch|cargo-security)(?:-|$)
       - check-success = mcp-server (ubuntu-24.04)
       - check-success = mcp-server (windows-2025)
       - check-success = mcp-server (macos-15)
@@ -47,10 +46,7 @@ queue_rules:
       - check-success = analyze (python)
       - check-success = analyze (javascript-typescript)
       - check-success = Required PR Gate
-      - or:
-          - check-success = SonarCloud Scan
-          - check-skipped = SonarCloud Scan
-          - check-neutral = SonarCloud Scan
+      - check-success = SonarCloud Scan
       - check-success = dependency-review
 
   # Command-only queue for maintainer pull requests. No pull_request_rule targets it, so a
@@ -76,10 +72,7 @@ queue_rules:
       - check-success = analyze (python)
       - check-success = analyze (javascript-typescript)
       - check-success = Required PR Gate
-      - or:
-          - check-success = SonarCloud Scan
-          - check-skipped = SonarCloud Scan
-          - check-neutral = SonarCloud Scan
+      - check-success = SonarCloud Scan
       - check-success = dependency-review
     queue_conditions:
       - base = main
@@ -97,10 +90,7 @@ queue_rules:
       - check-success = analyze (python)
       - check-success = analyze (javascript-typescript)
       - check-success = Required PR Gate
-      - or:
-          - check-success = SonarCloud Scan
-          - check-skipped = SonarCloud Scan
-          - check-neutral = SonarCloud Scan
+      - check-success = SonarCloud Scan
       - check-success = dependency-review
 
 pull_request_rules:
@@ -110,7 +100,8 @@ pull_request_rules:
       - author = dependabot[bot]
       - -draft
       - dependabot-update-type != version-update:semver-major
-      - head ~= ^dependabot/.*/(python-minor-patch|npm-root-minor-patch|npm-chatgpt-app-minor-patch|npm-fixtures-minor-patch|npm-wrapper-minor-patch|actions-minor-patch|containers-patch|compose-patch|cargo-minor-patch)(?:-|$)
+      - "#review-threads-unresolved = 0"
+      - head ~= ^dependabot/.*/(python-minor-patch|python-security|npm-root-minor-patch|npm-root-security|npm-chatgpt-app-minor-patch|npm-chatgpt-app-security|npm-fixtures-minor-patch|npm-fixtures-security|npm-wrapper-minor-patch|npm-wrapper-security|actions-minor-patch|containers-patch|compose-patch|cargo-minor-patch|cargo-security)(?:-|$)
     actions:
       queue:
         name: safe-dependencies

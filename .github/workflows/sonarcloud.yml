@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       release_metadata_only: ${{ steps.release-classifier.outputs.release_metadata_only }}
+      run_analysis: ${{ steps.sonar-mode.outputs.run_analysis }}
+      no_op_reason: ${{ steps.sonar-mode.outputs.no_op_reason }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -53,19 +55,53 @@ jobs:
             echo 'release_metadata_only=false' >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Determine Sonar execution mode
+        id: sonar-mode
+        shell: bash
+        env:
+          RELEASE_METADATA_ONLY: ${{ steps.release-classifier.outputs.release_metadata_only }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          run_analysis=true
+          no_op_reason=''
+          if [[ "$RELEASE_METADATA_ONLY" == 'true' ]]; then
+            run_analysis=false
+            no_op_reason='release-metadata-only change set'
+          elif [[ "$EVENT_NAME" == 'pull_request' && "$PR_HEAD_REPO" != "$REPOSITORY" ]]; then
+            run_analysis=false
+            no_op_reason='fork pull request'
+          elif [[ "$EVENT_NAME" == 'pull_request' && "$PR_AUTHOR" == 'dependabot[bot]' ]]; then
+            run_analysis=false
+            no_op_reason='Dependabot pull request cannot receive SONAR_TOKEN'
+          fi
+          echo "run_analysis=$run_analysis" >> "$GITHUB_OUTPUT"
+          echo "no_op_reason=$no_op_reason" >> "$GITHUB_OUTPUT"
+
   sonarcloud:
     name: SonarCloud Scan
     needs: classify
     if: >
-      needs.classify.outputs.release_metadata_only != 'true' &&
-      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
-      (github.event_name != 'pull_request' ||
-       (github.event.pull_request.head.repo.full_name == github.repository &&
-        github.event.pull_request.user.login != 'dependabot[bot]'))
+      always() &&
+      needs.classify.result == 'success' &&
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
+      - name: Record intentional Sonar no-op
+        if: needs.classify.outputs.run_analysis != 'true'
+        shell: bash
+        env:
+          NO_OP_REASON: ${{ needs.classify.outputs.no_op_reason }}
+        run: |
+          set -euo pipefail
+          echo "SonarCloud analysis intentionally not run: ${NO_OP_REASON:-not applicable}"
+
       - name: Checkout code
+        if: needs.classify.outputs.run_analysis == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0  # full history for accurate blame / new-code detection
@@ -74,9 +110,11 @@ jobs:
       # Keep an independent full-suite coverage run: cross-workflow artifact reuse must
       # preserve exact-SHA integrity and the existing PR/fork trust boundary.
       - name: Run tests with coverage
+        if: needs.classify.outputs.run_analysis == 'true'
         uses: ./.github/actions/python-full-suite
 
       - name: SonarCloud Scan
+        if: needs.classify.outputs.run_analysis == 'true'
         uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
