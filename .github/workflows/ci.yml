@@ -55,6 +55,8 @@ jobs:
             repo_tooling:
               - 'package.json'
               - 'pnpm-workspace.yaml'
+              - 'Dockerfile'
+              - 'docker-compose.yml'
               - 'lefthook.yml'
               - '.pre-commit-config.yaml'
               - 'Taskfile.yml'
