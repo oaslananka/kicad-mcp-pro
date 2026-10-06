@@ -186,3 +186,72 @@ def test_eval_package_exports_differential_reporting_surface() -> None:
     assert evals.classify_differential_result is classify_differential_result
     assert evals.aggregate_differential_results is aggregate_differential_results
     assert evals.render_differential_report_json is render_differential_report_json
+
+
+def test_result_schema_rejects_inconsistent_semantic_evidence() -> None:
+    payload = _classify(custom_result_hash=CUSTOM_HASH).model_dump(mode="json")
+    payload["custom_result_hash"] = payload["native_result_hash"]
+    with pytest.raises(ValidationError, match="divergence requires different"):
+        DifferentialResult.model_validate(payload)
+
+    payload = _classify(
+        authority_available=False,
+        native_result_hash=None,
+        native_pass=None,
+        reason="Native authority unavailable.",
+    ).model_dump(mode="json")
+    payload["reason"] = None
+    with pytest.raises(ValidationError, match="requires a reason"):
+        DifferentialResult.model_validate(payload)
+
+    payload["reason"] = "Native authority unavailable."
+    payload["native_result_hash"] = NATIVE_HASH
+    with pytest.raises(ValidationError, match="cannot carry native authority evidence"):
+        DifferentialResult.model_validate(payload)
+
+    payload = _classify(
+        custom_result_hash=CUSTOM_HASH,
+        native_pass=False,
+        custom_pass=True,
+    ).model_dump(mode="json")
+    payload["false_pass"] = False
+    with pytest.raises(ValidationError, match="false_pass must reflect"):
+        DifferentialResult.model_validate(payload)
+
+    payload = _classify(
+        custom_result_hash=CUSTOM_HASH,
+        native_pass=True,
+        custom_pass=False,
+    ).model_dump(mode="json")
+    payload["false_fail"] = False
+    with pytest.raises(ValidationError, match="false_fail must reflect"):
+        DifferentialResult.model_validate(payload)
+
+    payload = _classify().model_dump(mode="json")
+    payload["custom_pass"] = False
+    with pytest.raises(ValidationError, match="match cannot carry conflicting"):
+        DifferentialResult.model_validate(payload)
+
+
+def test_classifier_rejects_inconsistent_authority_inputs() -> None:
+    with pytest.raises(ValueError, match="Unavailable native authority"):
+        _classify(authority_available=False, reason="Unavailable")
+
+    with pytest.raises(ValueError, match="hashes are required"):
+        _classify(native_result_hash=None)
+
+
+def test_aggregate_and_report_schema_reject_inconsistent_counts() -> None:
+    with pytest.raises(ValueError, match="At least one differential result"):
+        aggregate_differential_results([])
+
+    report_payload = aggregate_differential_results([_classify()]).model_dump(mode="json")
+    report_payload["results_total"] = 2
+    with pytest.raises(ValidationError, match="results_total"):
+        evals.DifferentialReport.model_validate(report_payload)
+
+    report_payload = aggregate_differential_results([_classify()]).model_dump(mode="json")
+    report_payload["match_count"] = 0
+    report_payload["divergence_count"] = 1
+    with pytest.raises(ValidationError, match="match_count does not match"):
+        evals.DifferentialReport.model_validate(report_payload)
