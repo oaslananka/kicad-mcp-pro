@@ -283,21 +283,36 @@ def test_live_model_workflows_expose_locked_opencode_binary_on_path() -> None:
         assert raw.count(expected) == install_count
 
 
-def test_root_tooling_changes_trigger_python_contract_suite() -> None:
+def test_root_tooling_changes_trigger_repository_contract_suite() -> None:
     workflow = yaml.safe_load(
         (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     )
     changes = workflow["jobs"]["changes"]
     path_filter = next(step for step in changes["steps"] if step.get("id") == "filter")
-    filters = path_filter["with"]["filters"]
+    filters = yaml.safe_load(path_filter["with"]["filters"])
 
-    for path in (
+    expected_inputs = {
         "package.json",
         "pnpm-workspace.yaml",
         "lefthook.yml",
         ".pre-commit-config.yaml",
-    ):
-        assert f"- '{path}'" in filters
+        "Taskfile.yml",
+        ".mergify.yml",
+        ".github/dependabot.yml",
+        ".github/rulesets/**",
+        "sonar-project.properties",
+        "AGENTS.md",
+        "**/AGENTS.md",
+    }
+    assert expected_inputs <= set(filters["repo_tooling"])
+    assert changes["outputs"]["repo_tooling"] == "${{ steps.filter.outputs.repo_tooling }}"
+
+    skip_step = next(
+        step
+        for step in workflow["jobs"]["mcp-server"]["steps"]
+        if step.get("name") == "Skip mcp-server when unaffected or redundant"
+    )
+    assert "needs.changes.outputs.repo_tooling != 'true'" in skip_step["if"]
 
 
 def test_path_aware_skip_steps_use_bash_on_cross_platform_matrix_jobs() -> None:
