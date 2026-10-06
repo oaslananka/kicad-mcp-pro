@@ -13,7 +13,10 @@ No long-lived release token is required.
 2. Merge the release-please PR.
 3. Confirm `.github/workflows/release-please.yml` created the release tag and
    GitHub Release from release-please outputs.
-4. Approve the protected `release` environment gate for the publish job.
+4. Confirm publish jobs use their configured protected environments without an
+   unexpected manual reviewer prompt. Routine software publishing does not
+   require a deployment-reviewer click under the current repository policy;
+   environment-scoped OIDC and the remaining release controls stay in force.
 5. Confirm PyPI publish, SBOM, checksums, Sigstore signing artifacts,
    and GitHub attestations.
 6. Confirm docs deploy to the canonical repository `gh-pages` branch and

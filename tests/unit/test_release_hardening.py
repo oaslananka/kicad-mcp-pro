@@ -23,6 +23,7 @@ from kicad_mcp.server import (
     _is_origin_allowed,
     build_server,
 )
+from scripts.check_docker_metadata import _has_digest_pinned_image
 from scripts.check_github_actions_policy import has_sha_pinned_action
 from tests.conftest import call_tool_text
 
@@ -937,7 +938,7 @@ def test_docker_metadata_contains_mcp_oci_label_and_release_image_contract() -> 
     assert "adduser -S -G kicadmcp" in dockerfile
     assert "ARG DEBIAN_FRONTEND=noninteractive" in dockerfile
     assert "KICAD_MCP_HOST=127.0.0.1" in dockerfile
-    assert "ghcr.io/freerouting/freerouting:2.1.0@sha256:" in compose
+    assert _has_digest_pinned_image(compose, "ghcr.io/freerouting/freerouting")
     assert ":latest" not in compose
     assert "type=raw,value=latest" not in registry_workflow
     assert "ghcr.io/oaslananka/kicad-mcp-pro/kicad-mcp-pro" not in docker_install

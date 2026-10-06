@@ -23,6 +23,35 @@ def test_docker_metadata_action_pin_contract_accepts_sha_rotation() -> None:
     assert not check_docker_metadata._has_sha_pinned_action(workflow, "docker/setup-buildx-action")
 
 
+def test_docker_metadata_freerouting_pin_accepts_version_rotation() -> None:
+    digest = "a" * 64
+
+    assert check_docker_metadata._has_digest_pinned_image(
+        f"image: ghcr.io/freerouting/freerouting:2.1.0@sha256:{digest}",
+        "ghcr.io/freerouting/freerouting",
+    )
+    assert check_docker_metadata._has_digest_pinned_image(
+        f"image: ghcr.io/freerouting/freerouting:2.5.0@sha256:{digest}",
+        "ghcr.io/freerouting/freerouting",
+    )
+    assert check_docker_metadata._has_digest_pinned_image(
+        f'image: "ghcr.io/freerouting/freerouting:2.5.0@sha256:{digest}"',
+        "ghcr.io/freerouting/freerouting",
+    )
+    assert not check_docker_metadata._has_digest_pinned_image(
+        "image: ghcr.io/freerouting/freerouting:latest",
+        "ghcr.io/freerouting/freerouting",
+    )
+    assert not check_docker_metadata._has_digest_pinned_image(
+        "image: ghcr.io/freerouting/freerouting:2.5.0",
+        "ghcr.io/freerouting/freerouting",
+    )
+    assert not check_docker_metadata._has_digest_pinned_image(
+        f"image: ghcr.io/freerouting/freerouting@sha256:{digest}",
+        "ghcr.io/freerouting/freerouting",
+    )
+
+
 def _docker() -> str:
     if platform.system() == "Windows":
         pytest.skip("Docker image smoke test is covered on Linux runners")

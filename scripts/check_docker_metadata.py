@@ -21,6 +21,14 @@ def _has_sha_pinned_action(workflow_text: str, action_path: str) -> bool:
     return pattern.search(workflow_text) is not None
 
 
+def _has_digest_pinned_image(config_text: str, image: str) -> bool:
+    pattern = re.compile(
+        rf"(?m)^\s*(?:image:\s*)?[\"']?{re.escape(image)}:[^@\s\"']+"
+        rf"@sha256:[0-9a-fA-F]{{64}}[\"']?(?:\s+#.*)?\s*$"
+    )
+    return pattern.search(config_text) is not None
+
+
 def _read(path: str) -> str:
     return (PACKAGE_ROOT / path).read_text(encoding="utf-8")
 
@@ -94,7 +102,7 @@ def main() -> int:
         errors.append("docker-compose.yml must declare the loopback-proxy HTTP boundary")
     if "KICAD_MCP_PUBLIC_BASE_URL: http://127.0.0.1:3334" not in compose:
         errors.append("docker-compose.yml must declare its loopback public HTTP origin")
-    if "ghcr.io/freerouting/freerouting:2.1.0@sha256:" not in compose:
+    if not _has_digest_pinned_image(compose, "ghcr.io/freerouting/freerouting"):
         errors.append("docker-compose.yml must pin the freerouting image by digest")
 
     docker_workflow = _read_repo(".github/workflows/publish-mcp-registry.yml")

@@ -1,7 +1,7 @@
 # CI/CD Policy — Path-Aware Risk-Based Gating
 
 > **Status**: Active
-> **Last updated**: 2026-09-28
+> **Last updated**: 2026-10-06
 
 ## Overview
 
@@ -26,6 +26,7 @@ categories.
 |----------|--------------|
 | **docs** | `docs/**`, `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `CODE_OF_CONDUCT.md`, `GOVERNANCE.md`, `MAINTAINERS.md`, `ROADMAP.md`, `SECURITY.md`, `SUPPORT.md`, `ARCHITECTURE.md`, `CITATION.cff`, `LICENSE`, `mkdocs.yml`, `assets/**` |
 | **python** | `src/**`, `tests/**`, `pyproject.toml`, `uv.lock`, `uv.toml`, `scripts/**`, `conftest.py`, `pyrightconfig.json`, `.python-version`, `performance/**`, `evals/**` |
+| **repo_tooling** | `package.json`, `pnpm-workspace.yaml`, `Dockerfile`, `docker-compose.yml`, `lefthook.yml`, `.pre-commit-config.yaml`, `Taskfile.yml`, `.mergify.yml`, `.github/dependabot.yml`, `.github/rulesets/**`, `sonar-project.properties`, `AGENTS.md`, `**/AGENTS.md` |
 | **npm** | `packages/**`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.node-version`, `.npmrc`, `commitlint.config.cjs`, `.commitlintrc.json` |
 | **schemas** | `packages/protocol-schemas/**` |
 | **workflows** | `.github/workflows/**`, `.github/actions/**` |
@@ -55,6 +56,15 @@ would incorrectly no-op on a real dependency/Dockerfile change.
 
 **no-op** means the job runs and reports success, but skips expensive steps.
 This ensures the required status check is never left pending.
+
+Repository-tooling contracts are an explicit exception to the generic NPM no-op row above.
+Changes to root hook/tooling and repository-policy inputs such as `package.json`,
+`pnpm-workspace.yaml`, `Dockerfile`, `docker-compose.yml`, `lefthook.yml`,
+`.pre-commit-config.yaml`, `Taskfile.yml`, `.mergify.yml`, Dependabot/ruleset
+configuration, `sonar-project.properties`, or `AGENTS.md` force the `mcp-server`
+OS matrix and full Python coverage lane to run their real unit/tooling-contract suite.
+This prevents a required check from reporting a no-op success when Python tests consume a
+non-Python repository contract.
 
 Dependency Review runs on every pull request to `main` and is a required
 status check. It must not be path-filtered at the workflow trigger because a
@@ -186,7 +196,7 @@ Analysis mode and must not coexist with a CI workflow).
 test code. This only affects path classification — it does not exclude any
 file from analysis, and it does not change rule severities or Quality
 Profiles (those require SonarQube Cloud UI/admin access, not a repo file).
-SonarCloud Scan is a required status check for trusted same-repository PRs. Dependabot and fork PRs keep the job-level secret-isolation guard; GitHub treats that conditional skip as a successful required-check conclusion, and Mergify mirrors success/skipped/neutral outcomes.
+SonarCloud Scan is a required status check. Trusted same-repository PRs run the real analysis; Dependabot, fork, and release-metadata-only PRs take an explicit successful no-op path that does not expose `SONAR_TOKEN`. Mergify requires literal `check-success` for this context rather than accepting skipped/neutral conclusions.
 
 ## Publish Workflows
 
@@ -195,8 +205,11 @@ All publish workflows enforce strict safety:
 - **Trigger**: Only `release` (published) or `workflow_dispatch` with explicit
   inputs.
 - **PR context**: Dry-run only (build without push, validate without publish).
-- **Environment protection**: `pypi`, `testpypi`, `npm`, `mcp-registry`
-  environments with approval rules.
+- **Environment protection**: publish jobs remain bound to their configured
+  GitHub environments (`pypi`, `testpypi`, `npm`, `mcp-registry`, and
+  `ghcr` as applicable). The repository-settings audit expects zero required
+  reviewers on `npm`, `mcp-registry`, and `ghcr`; adding a reviewer there is
+  policy drift unless the publish policy is intentionally changed.
 - **Supply chain**: OIDC trusted publishing, attestation, SBOM generation,
   SHA256 checksum verification, cosign signing.
 - **Idempotency**: All publish jobs check if the version is already published
@@ -242,6 +255,8 @@ default branch. It uses `RELEASE_PLEASE_TOKEN` as the GitHub API credential; tha
 must grant repository `Administration: read`, and the audit fails closed if the token is missing
 or under-scoped. The workflow itself has `contents: read` permissions and is not exposed to pull
 requests. `scripts/check_github_repository_settings.py` compares live Actions
-permissions, selected-action allowlists, default workflow-token permissions, and the required
-reviewer rules on the `npm` and `mcp-registry` publish environments with
-`.github/actions-policy.json`. Any mismatch fails the audit instead of silently accepting drift.
+permissions, selected-action allowlists, default workflow-token permissions, and the exact
+required-reviewer expectations for the `npm`, `mcp-registry`, and `ghcr` publish
+environments with `.github/actions-policy.json`. Under the current policy those three
+environments have no required reviewers. Any mismatch fails the audit instead of silently
+accepting drift.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
@@ -41,7 +42,8 @@ def test_lefthook_is_pinned_and_lifecycle_is_explicitly_allowed() -> None:
     package = __import__("json").loads((ROOT / "package.json").read_text(encoding="utf-8"))
     workspace = yaml.safe_load((ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8"))
 
-    assert package["devDependencies"]["lefthook"] == "2.1.14"
+    lefthook_version = package["devDependencies"]["lefthook"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", lefthook_version)
     assert package["scripts"]["hooks:install"] == "python scripts/install_git_hooks.py"
     assert package["scripts"]["hooks:pre-commit"] == "lefthook run pre-commit"
     assert package["scripts"]["hooks:pre-push"] == "lefthook run pre-push"
@@ -279,6 +281,46 @@ def test_live_model_workflows_expose_locked_opencode_binary_on_path() -> None:
         )
         assert install_count > 0
         assert raw.count(expected) == install_count
+
+
+def test_root_tooling_changes_trigger_repository_contract_suite() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    changes = workflow["jobs"]["changes"]
+    path_filter = next(step for step in changes["steps"] if step.get("id") == "filter")
+    filters = yaml.safe_load(path_filter["with"]["filters"])
+
+    expected_inputs = {
+        "package.json",
+        "pnpm-workspace.yaml",
+        "Dockerfile",
+        "docker-compose.yml",
+        "lefthook.yml",
+        ".pre-commit-config.yaml",
+        "Taskfile.yml",
+        ".mergify.yml",
+        ".github/dependabot.yml",
+        ".github/rulesets/**",
+        "sonar-project.properties",
+        "AGENTS.md",
+        "**/AGENTS.md",
+    }
+    assert expected_inputs <= set(filters["repo_tooling"])
+    assert changes["outputs"]["repo_tooling"] == "${{ steps.filter.outputs.repo_tooling }}"
+
+    server_skip = next(
+        step
+        for step in workflow["jobs"]["mcp-server"]["steps"]
+        if step.get("name") == "Skip mcp-server when unaffected or redundant"
+    )
+    coverage_skip = next(
+        step
+        for step in workflow["jobs"]["coverage"]["steps"]
+        if step.get("name") == "Skip full coverage when Python is unaffected"
+    )
+    for skip_step in (server_skip, coverage_skip):
+        assert "needs.changes.outputs.repo_tooling != 'true'" in skip_step["if"]
 
 
 def test_path_aware_skip_steps_use_bash_on_cross_platform_matrix_jobs() -> None:

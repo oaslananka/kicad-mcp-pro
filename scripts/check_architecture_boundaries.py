@@ -58,6 +58,10 @@ _ROUTING_SES_APPLY_ADAPTER = "kicad_mcp.tools.routing_ses_apply"
 _ROUTING_AUTOROUTER_ADAPTER = "kicad_mcp.tools.routing_autorouter"
 _POWER_INTEGRITY_ROOT_MODULE = "kicad_mcp.tools.power_integrity"
 _POWER_INTEGRITY_VOLTAGE_DROP_ADAPTER = "kicad_mcp.tools.power_integrity_voltage_drop"
+_POWER_INTEGRITY_DECOUPLING_ADAPTER = "kicad_mcp.tools.power_integrity_decoupling"
+_POWER_INTEGRITY_THERMAL_PLANE_ADAPTER = "kicad_mcp.tools.power_integrity_thermal_plane"
+_POWER_INTEGRITY_PDN_MESH_ADAPTER = "kicad_mcp.tools.power_integrity_pdn_mesh"
+_POWER_INTEGRITY_THERMAL_VIA_ADAPTER = "kicad_mcp.tools.power_integrity_thermal_via"
 _SIGNAL_INTEGRITY_ROOT_MODULE = "kicad_mcp.tools.signal_integrity"
 _SIGNAL_INTEGRITY_IMPEDANCE_ADAPTER = "kicad_mcp.tools.signal_integrity_impedance"
 _SIGNAL_INTEGRITY_DIELECTRIC_MATERIALS_ADAPTER = (
@@ -281,6 +285,38 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "power_integrity_voltage_drop.py",
+    "kicad_mcp.power_integrity.decoupling": SRC_ROOT
+    / "kicad_mcp"
+    / "power_integrity"
+    / "decoupling.py",
+    _POWER_INTEGRITY_DECOUPLING_ADAPTER: SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "power_integrity_decoupling.py",
+    "kicad_mcp.power_integrity.thermal_plane_spreading": SRC_ROOT
+    / "kicad_mcp"
+    / "power_integrity"
+    / "thermal_plane_spreading.py",
+    _POWER_INTEGRITY_THERMAL_PLANE_ADAPTER: SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "power_integrity_thermal_plane.py",
+    "kicad_mcp.power_integrity.pdn_mesh_check": SRC_ROOT
+    / "kicad_mcp"
+    / "power_integrity"
+    / "pdn_mesh_check.py",
+    _POWER_INTEGRITY_PDN_MESH_ADAPTER: SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "power_integrity_pdn_mesh.py",
+    "kicad_mcp.power_integrity.thermal_via": SRC_ROOT
+    / "kicad_mcp"
+    / "power_integrity"
+    / "thermal_via.py",
+    _POWER_INTEGRITY_THERMAL_VIA_ADAPTER: SRC_ROOT
+    / "kicad_mcp"
+    / "tools"
+    / "power_integrity_thermal_via.py",
     _SIGNAL_INTEGRITY_ROOT_MODULE: SRC_ROOT / "kicad_mcp" / "tools" / "signal_integrity.py",
     "kicad_mcp.signal_integrity.impedance": SRC_ROOT
     / "kicad_mcp"
@@ -595,6 +631,10 @@ DOMAIN_MODULES = {
 
 PURE_HELPERS = {
     "kicad_mcp.power_integrity.voltage_drop",
+    "kicad_mcp.power_integrity.decoupling",
+    "kicad_mcp.power_integrity.thermal_plane_spreading",
+    "kicad_mcp.power_integrity.pdn_mesh_check",
+    "kicad_mcp.power_integrity.thermal_via",
     "kicad_mcp.signal_integrity.impedance",
     "kicad_mcp.signal_integrity.dielectric_materials",
     "kicad_mcp.signal_integrity.solver_capabilities",
@@ -708,6 +748,10 @@ FORBIDDEN_PURE_IMPORT_PREFIXES = (
 
 ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     _POWER_INTEGRITY_VOLTAGE_DROP_ADAPTER: (_POWER_INTEGRITY_ROOT_MODULE,),
+    _POWER_INTEGRITY_DECOUPLING_ADAPTER: (_POWER_INTEGRITY_ROOT_MODULE,),
+    _POWER_INTEGRITY_THERMAL_PLANE_ADAPTER: (_POWER_INTEGRITY_ROOT_MODULE,),
+    _POWER_INTEGRITY_PDN_MESH_ADAPTER: (_POWER_INTEGRITY_ROOT_MODULE,),
+    _POWER_INTEGRITY_THERMAL_VIA_ADAPTER: (_POWER_INTEGRITY_ROOT_MODULE,),
     _SIGNAL_INTEGRITY_IMPEDANCE_ADAPTER: (_SIGNAL_INTEGRITY_ROOT_MODULE,),
     _SIGNAL_INTEGRITY_DIELECTRIC_MATERIALS_ADAPTER: (_SIGNAL_INTEGRITY_ROOT_MODULE,),
     _SIGNAL_INTEGRITY_SOLVER_CAPABILITIES_ADAPTER: (_SIGNAL_INTEGRITY_ROOT_MODULE,),
@@ -837,8 +881,12 @@ REGISTER_LINE_LIMITS = {
     _ROUTING_MANUAL_TRACKS_ADAPTER: 120,
     _ROUTING_SES_APPLY_ADAPTER: 75,
     _ROUTING_AUTOROUTER_ADAPTER: 105,
-    _POWER_INTEGRITY_ROOT_MODULE: 510,
+    _POWER_INTEGRITY_ROOT_MODULE: 230,
     _POWER_INTEGRITY_VOLTAGE_DROP_ADAPTER: 50,
+    _POWER_INTEGRITY_DECOUPLING_ADAPTER: 45,
+    _POWER_INTEGRITY_THERMAL_PLANE_ADAPTER: 50,
+    _POWER_INTEGRITY_PDN_MESH_ADAPTER: 55,
+    _POWER_INTEGRITY_THERMAL_VIA_ADAPTER: 50,
     _SIGNAL_INTEGRITY_ROOT_MODULE: 60,
     _SIGNAL_INTEGRITY_IMPEDANCE_ADAPTER: 90,
     _SIGNAL_INTEGRITY_DIELECTRIC_MATERIALS_ADAPTER: 60,
