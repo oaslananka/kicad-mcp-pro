@@ -44,3 +44,16 @@ def test_kicad_live_e2e_tracks_shared_fixture_corpus() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
     assert workflow.count("packages/kicad-fixtures/fixtures/**") == 2
+
+
+def test_kicad_live_e2e_tracks_semantic_differential_inputs() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    for protected_path in (
+        "src/kicad_mcp/evals/semantic_differential.py",
+        "src/kicad_mcp/evals/connectivity_differential.py",
+        "src/kicad_mcp/tools/schematic.py",
+        "src/kicad_mcp/tools/schematic_transfer.py",
+        "examples/gallery/esp32-c3-wroom-02-breakout/**",
+    ):
+        assert workflow.count(protected_path) == 2

@@ -10,6 +10,15 @@ Hosts the tool-selection, live-runner, and golden-corpus evals:
   and (when KiCad is available) runs quality gates against answer keys.
 """
 
+from .connectivity_differential import (
+    ConnectivitySignature,
+    Pin,
+    PinGroup,
+    build_connectivity_differential_result,
+    connectivity_signature_hash,
+    normalize_custom_connectivity_groups,
+    normalize_native_net_map,
+)
 from .corpus import (
     CorpusEvalResult,
     CorpusEvalSummary,
@@ -111,6 +120,13 @@ from .tool_selection import (
 )
 
 __all__ = [
+    "ConnectivitySignature",
+    "Pin",
+    "PinGroup",
+    "build_connectivity_differential_result",
+    "connectivity_signature_hash",
+    "normalize_custom_connectivity_groups",
+    "normalize_native_net_map",
     "DIFFERENTIAL_REPORT_SCHEMA_VERSION",
     "DIFFERENTIAL_RESULT_SCHEMA_VERSION",
     "DifferentialLane",

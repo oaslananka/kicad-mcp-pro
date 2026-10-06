@@ -8,6 +8,11 @@ on:
     paths:
       - "scripts/kicad_canary.py"
       - "scripts/kicad11_headless_canary.py"
+      - "src/kicad_mcp/evals/semantic_differential.py"
+      - "src/kicad_mcp/evals/connectivity_differential.py"
+      - "src/kicad_mcp/tools/schematic.py"
+      - "src/kicad_mcp/tools/schematic_transfer.py"
+      - "examples/gallery/esp32-c3-wroom-02-breakout/**"
       - "scripts/build_adapter_matrix.py"
       - "src/kicad_mcp/adapter_matrix.py"
       - "src/kicad_mcp/ipc/**"
@@ -24,6 +29,11 @@ on:
     paths:
       - "scripts/kicad_canary.py"
       - "scripts/kicad11_headless_canary.py"
+      - "src/kicad_mcp/evals/semantic_differential.py"
+      - "src/kicad_mcp/evals/connectivity_differential.py"
+      - "src/kicad_mcp/tools/schematic.py"
+      - "src/kicad_mcp/tools/schematic_transfer.py"
+      - "examples/gallery/esp32-c3-wroom-02-breakout/**"
       - "scripts/build_adapter_matrix.py"
       - "src/kicad_mcp/adapter_matrix.py"
       - "src/kicad_mcp/ipc/**"

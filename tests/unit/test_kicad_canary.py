@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 from scripts import kicad_canary
 from scripts.kicad_canary import CanaryStep, build_canary_matrix, supports_feature_gate
@@ -238,6 +241,29 @@ def test_command_plan_covers_oaslana_38_export_surface(tmp_path: Path) -> None:
     assert str(tmp_path / "workspace" / "clean-led-kicad10") in " ".join(steps["clean-erc"].args)
 
 
+def test_connectivity_differential_command_plan_is_stable_lane_only(tmp_path: Path) -> None:
+    stable = {
+        step.name: step
+        for step in kicad_canary._command_plan(tmp_path, _compatibility_matrix(), "10.0.x")
+    }
+    preview = {
+        step.name: step
+        for step in kicad_canary._command_plan(tmp_path, _compatibility_matrix(), "11.0.x")
+    }
+
+    stable_step = stable["differential-connectivity-netlist"]
+    assert stable_step.fixture == kicad_canary.CONNECTIVITY_DIFFERENTIAL_FIXTURE_ID
+    assert stable_step.skip_reason is None
+    assert stable_step.outputs == (tmp_path / "differential" / "connectivity-native.net",)
+    assert str(tmp_path / "workspace" / kicad_canary.CONNECTIVITY_DIFFERENTIAL_FIXTURE_ID) in (
+        " ".join(stable_step.args)
+    )
+    assert str(kicad_canary.CONNECTIVITY_DIFFERENTIAL_FIXTURE_DIR) not in " ".join(stable_step.args)
+    assert preview["differential-connectivity-netlist"].skip_reason == (
+        "connectivity differential is currently enabled on the stable KiCad 10 lane"
+    )
+
+
 def test_unsupported_feature_steps_are_structured_skips(tmp_path: Path) -> None:
     steps = {
         step.name: step
@@ -460,3 +486,140 @@ def test_public_compatibility_docs_use_current_compatibility_command() -> None:
     for path in compatibility_docs:
         raw = path.read_text(encoding="utf-8")
         assert "corepack pnpm run check:compatibility" not in raw, path
+
+
+def test_connectivity_differential_writes_stable_machine_report(
+    tmp_path: Path, monkeypatch
+) -> None:
+    fixture = tmp_path / "fixture.kicad_sch"
+    fixture.write_text("(kicad_sch)", encoding="utf-8")
+    native = tmp_path / "native.net"
+    native.write_text(
+        '(export (nets (net (code "1") (name "N1") '
+        '(node (ref "U1") (pin "1")) (node (ref "R1") (pin "2")))))\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
+    monkeypatch.setattr(
+        kicad_canary,
+        "_connectivity_groups",
+        lambda _path: [
+            {
+                "names": ["N1"],
+                "pins": [
+                    {"reference": "R1", "pin": "2"},
+                    {"reference": "U1", "pin": "1"},
+                ],
+            }
+        ],
+    )
+
+    result = kicad_canary._write_connectivity_differential_report(
+        artifacts=tmp_path / "artifacts",
+        kicad_range="10.0.x",
+        kicad_version="10.0.6",
+        native_netlist=native,
+        fixture=fixture,
+    )
+
+    assert result is not None
+    assert result.status == "match"
+    payload = json.loads(
+        (tmp_path / "artifacts" / "differential" / "summary.json").read_text(encoding="utf-8")
+    )
+    assert payload["lane"] == "stable"
+    assert payload["results_total"] == 1
+    assert payload["match_count"] == 1
+    assert payload["results"][0]["fixture_hash"].startswith("sha256:")
+    assert payload["results"][0]["comparison_method"] == "pin-membership-sha256.v1"
+
+
+def test_connectivity_differential_is_not_claimed_for_non_stable_lane(
+    tmp_path: Path, monkeypatch
+) -> None:
+    fixture = tmp_path / "fixture.kicad_sch"
+    fixture.write_text("(kicad_sch)", encoding="utf-8")
+    assert (
+        kicad_canary._write_connectivity_differential_report(
+            artifacts=tmp_path / "artifacts",
+            kicad_range="11.x",
+            kicad_version="11.0.0",
+            native_netlist=tmp_path / "missing.net",
+            fixture=fixture,
+        )
+        is None
+    )
+    assert not (tmp_path / "artifacts" / "differential" / "summary.json").exists()
+
+
+def test_differential_source_sha_rejects_dirty_source_tree(monkeypatch) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def run(args: list[str], **kwargs: object):
+        calls.append(tuple(args))
+        if args[:2] == ["git", "status"]:
+            return subprocess.CompletedProcess(
+                args, 0, stdout=" M scripts/kicad_canary.py\n", stderr=""
+            )
+        return subprocess.CompletedProcess(args, 0, stdout="a" * 40 + "\n", stderr="")
+
+    monkeypatch.setattr(kicad_canary.subprocess, "run", run)
+
+    with pytest.raises(RuntimeError, match="clean source tree"):
+        kicad_canary._source_sha()
+    assert calls == [("git", "status", "--porcelain", "--untracked-files=no")]
+
+
+def test_connectivity_differential_parser_failure_is_infrastructure_invalid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = tmp_path / "fixture.kicad_sch"
+    fixture.write_text("(kicad_sch)", encoding="utf-8")
+    native = tmp_path / "native.net"
+    native.write_text("not-a-netlist\n", encoding="utf-8")
+    monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
+    monkeypatch.setattr(
+        kicad_canary,
+        "_native_net_map",
+        lambda _path: (_ for _ in ()).throw(ValueError("native parse failed")),
+    )
+
+    result = kicad_canary._write_connectivity_differential_report(
+        artifacts=tmp_path / "artifacts",
+        kicad_range="10.0.x",
+        kicad_version="10.0.6",
+        native_netlist=native,
+        fixture=fixture,
+    )
+
+    assert result is not None
+    assert result.status == "infrastructure-invalid"
+    assert result.reason == "Connectivity differential infrastructure failed (ValueError)."
+    payload = json.loads(
+        (tmp_path / "artifacts" / "differential" / "summary.json").read_text(encoding="utf-8")
+    )
+    assert payload["match_count"] == 0
+    assert payload["infrastructure_invalid_count"] == 1
+
+
+def test_connectivity_differential_workspace_copies_gallery_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "gallery"
+    source.mkdir()
+    (source / "demo.kicad_sch").write_text("(kicad_sch)\n", encoding="utf-8")
+    (source / "demo.kicad_pro").write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(kicad_canary, "CONNECTIVITY_DIFFERENTIAL_FIXTURE_DIR", source)
+    monkeypatch.setattr(kicad_canary, "CONNECTIVITY_DIFFERENTIAL_FIXTURE_NAME", "demo.kicad_sch")
+
+    fixture = kicad_canary._prepare_connectivity_differential_workspace(tmp_path / "artifacts")
+
+    assert fixture == (
+        tmp_path
+        / "artifacts"
+        / "workspace"
+        / kicad_canary.CONNECTIVITY_DIFFERENTIAL_FIXTURE_ID
+        / "demo.kicad_sch"
+    )
+    assert fixture.read_text(encoding="utf-8") == "(kicad_sch)\n"
+    assert (fixture.parent / "demo.kicad_pro").is_file()
