@@ -431,6 +431,36 @@ def test_version_range_rejects_wrong_minor_for_minor_pinned_range(tmp_path: Path
     assert "10.0.x" in error
 
 
+def test_run_canary_clears_stale_manufacturing_outputs_before_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cli = Path(sys.executable)
+    script = tmp_path / "version_kicad_cli.py"
+    script.write_text("print('KiCad 10.0.6')\n", encoding="utf-8")
+    artifacts = tmp_path / "artifacts"
+    manufacturing = artifacts / "manufacturing"
+    manufacturing.mkdir(parents=True)
+    (manufacturing / "stale.gbr").write_text("stale", encoding="utf-8")
+    reports = artifacts / "reports"
+    reports.mkdir()
+    (reports / "keep.txt").write_text("keep", encoding="utf-8")
+
+    monkeypatch.setattr(kicad_canary, "_resolve_cli", lambda: cli)
+    monkeypatch.setattr(kicad_canary, "_read_compatibility_matrix", _compatibility_matrix)
+
+    def command_plan(
+        _artifacts: Path, _compatibility: dict[str, object], _kicad_range: str
+    ) -> list[CanaryStep]:
+        assert not manufacturing.exists()
+        return [CanaryStep(name="version", fixture="compatibility", args=(str(script),))]
+
+    monkeypatch.setattr(kicad_canary, "_command_plan", command_plan)
+
+    assert kicad_canary.run_canary(artifacts, "10.0.x") == 0
+    assert not manufacturing.exists()
+    assert (reports / "keep.txt").read_text(encoding="utf-8") == "keep"
+
+
 def test_run_canary_writes_summary_when_version_range_fails(tmp_path: Path, monkeypatch) -> None:
     cli = Path(sys.executable)
     script = tmp_path / "version_kicad_cli.py"

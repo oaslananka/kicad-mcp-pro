@@ -816,6 +816,13 @@ def _write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _reset_manufacturing_outputs(artifacts: Path) -> None:
+    """Remove prior canary-owned manufacturing outputs before native export authority runs."""
+    manufacturing = approved_runtime_path(artifacts / "manufacturing")
+    if manufacturing.exists():
+        shutil.rmtree(manufacturing)
+
+
 def _subprocess_output_text(value: object) -> str:
     if value is None:
         return ""
@@ -1298,6 +1305,7 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
+    _reset_manufacturing_outputs(artifacts)
     steps = _command_plan(artifacts, compatibility, kicad_range)
     results = [_run_step(cli, step, artifacts) for step in steps]
     version = next(result for result in results if result["name"] == "version")
