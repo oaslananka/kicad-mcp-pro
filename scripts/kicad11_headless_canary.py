@@ -19,6 +19,7 @@ try:
 except ModuleNotFoundError:  # Direct `python scripts/foo.py` execution.
     from runtime_path_safety import approved_runtime_path
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 SURFACES = ("read", "write", "export")
 _KICAD_CLI_NAMES = frozenset(
     {"kicad-cli", "kicad-cli.exe", "kicad-nightly-cli", "kicad-nightly-cli.exe"}
@@ -34,6 +35,14 @@ class SurfaceReport:
     reason: str
     evidence: list[str]
     backend: str
+
+
+@dataclass(frozen=True, slots=True)
+class LiveIdentityProbe:
+    native_project_path: str
+    native_board_name: str
+    custom_board_name: str
+    custom_fingerprint: str
 
 
 def _validated_kicad_cli(path: Path) -> Path:
@@ -108,14 +117,19 @@ def _headless_read_write(
     cli: Path,
     project_or_file: Path,
     version: str | None,
-) -> tuple[SurfaceReport, SurfaceReport]:
+) -> tuple[SurfaceReport, SurfaceReport, LiveIdentityProbe | None, str | None]:
     evidence: list[str] = []
     try:
         from kipy import KiCad
     except ImportError as exc:
         reason = f"kicad-python is unavailable: {exc}"
         blocked = SurfaceReport("read", "blocked", version, reason, evidence, "unavailable")
-        return blocked, SurfaceReport("write", "blocked", version, reason, evidence, "unavailable")
+        return (
+            blocked,
+            SurfaceReport("write", "blocked", version, reason, evidence, "unavailable"),
+            None,
+            reason,
+        )
 
     parameters = inspect.signature(KiCad.__init__).parameters
     required = {"headless", "kicad_cli_path", "file_path"}
@@ -125,7 +139,12 @@ def _headless_read_write(
             missing
         )
         blocked = SurfaceReport("read", "blocked", version, reason, evidence, "unavailable")
-        return blocked, SurfaceReport("write", "blocked", version, reason, evidence, "unavailable")
+        return (
+            blocked,
+            SurfaceReport("write", "blocked", version, reason, evidence, "unavailable"),
+            None,
+            reason,
+        )
 
     client: Any | None = None
     try:
@@ -140,6 +159,24 @@ def _headless_read_write(
         connected_version = str(active_client.get_version())
         board = active_client.get_board()
         evidence.extend([f"connected-version={connected_version}", "board-open=true"])
+        identity_probe: LiveIdentityProbe | None = None
+        identity_error: str | None = None
+        try:
+            from kicad_mcp.pcb.transaction_lifecycle import live_board_identity
+
+            project = board.get_project()
+            native_project_path = str(getattr(project, "path", "")).strip()
+            native_board_name = str(getattr(board, "name", "")).strip()
+            custom_identity = live_board_identity(board)
+            identity_probe = LiveIdentityProbe(
+                native_project_path=native_project_path,
+                native_board_name=native_board_name,
+                custom_board_name=custom_identity.board_name,
+                custom_fingerprint=custom_identity.fingerprint,
+            )
+        except Exception as exc:
+            identity_error = f"Live object identity probe failed: {type(exc).__name__}: {exc}"
+
         read = SurfaceReport(
             "read",
             "passed",
@@ -170,16 +207,111 @@ def _headless_read_write(
                 list(evidence),
                 "unavailable",
             )
-        return read, write
+        return read, write, identity_probe, identity_error
     except Exception as exc:
         reason = f"Headless IPC probe failed: {type(exc).__name__}: {exc}"
         blocked = SurfaceReport("read", "blocked", version, reason, evidence, "unavailable")
-        return blocked, SurfaceReport("write", "blocked", version, reason, evidence, "unavailable")
+        return (
+            blocked,
+            SurfaceReport("write", "blocked", version, reason, evidence, "unavailable"),
+            None,
+            reason,
+        )
     finally:
         if client is not None:
             close = getattr(client, "close", None)
             if callable(close):
                 close()
+
+
+def _source_sha() -> str:
+    result = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    source_sha = result.stdout.strip().lower()
+    if result.returncode != 0 or re.fullmatch(r"[0-9a-f]{40,64}", source_sha) is None:
+        raise RuntimeError("Could not resolve exact source SHA for live identity differential")
+    return source_sha
+
+
+def _write_live_identity_differential(
+    *,
+    artifacts: Path,
+    project_or_file: Path,
+    kicad_version: str,
+    probe: LiveIdentityProbe | None,
+    authority_available: bool = True,
+    infrastructure_valid: bool = True,
+    reason: str | None = None,
+) -> object:
+    from kicad_mcp.evals.live_object_identity_differential import (
+        LIVE_OBJECT_IDENTITY_OPERATION,
+        classify_live_object_identity_differential,
+        hash_live_identity_fixture,
+    )
+    from kicad_mcp.evals.semantic_differential import (
+        DifferentialReport,
+        aggregate_differential_results,
+        render_differential_report_json,
+    )
+    from kicad_mcp.pcb.live_edit_evidence import LiveBoardIdentity
+
+    custom_identity = (
+        LiveBoardIdentity(
+            board_name=probe.custom_board_name,
+            internal_key="redacted",
+            fingerprint=probe.custom_fingerprint,
+        )
+        if probe is not None
+        else None
+    )
+    result = classify_live_object_identity_differential(
+        source_sha=_source_sha(),
+        lane="preview",
+        kicad_version=kicad_version,
+        fixture_id=project_or_file.stem,
+        fixture_hash=hash_live_identity_fixture(project_or_file),
+        native_project_path=probe.native_project_path if probe is not None else None,
+        native_board_name=probe.native_board_name if probe is not None else None,
+        custom_identity=custom_identity,
+        authority_available=authority_available,
+        infrastructure_valid=infrastructure_valid,
+        reason=reason,
+    )
+
+    differential = artifacts / "differential"
+    differential.mkdir(parents=True, exist_ok=True)
+    result_path = differential / "live-object-identity.json"
+    result_path.write_text(
+        json.dumps(result.model_dump(mode="json", exclude_none=True), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    summary_path = differential / "summary.json"
+    existing = []
+    if summary_path.is_file():
+        report = DifferentialReport.model_validate(
+            json.loads(summary_path.read_text(encoding="utf-8"))
+        )
+        existing = [
+            item
+            for item in report.results
+            if not (
+                item.operation == LIVE_OBJECT_IDENTITY_OPERATION
+                and item.fixture_id == result.fixture_id
+            )
+        ]
+    summary = aggregate_differential_results([*existing, result])
+    summary_path.write_text(
+        render_differential_report_json(summary),
+        encoding="utf-8",
+        newline="\n",
+    )
+    return result
 
 
 def _export_report(
@@ -264,9 +396,18 @@ def run_canary(
             version=version,
         )
         _write_report(artifacts, export)
+        if version is not None:
+            _write_live_identity_differential(
+                artifacts=artifacts,
+                project_or_file=project_or_file,
+                kicad_version=version,
+                probe=None,
+                authority_available=False,
+                reason=reason,
+            )
         return 1 if require_ready else 0
 
-    read, write = _headless_read_write(
+    read, write, identity_probe, identity_error = _headless_read_write(
         cli=kicad_cli,
         project_or_file=project_or_file,
         version=version,
@@ -295,7 +436,17 @@ def run_canary(
     )
     for report in (read, write, export):
         _write_report(artifacts, report)
-    ready = all(report.status == "passed" for report in (read, write, export))
+    identity_result = _write_live_identity_differential(
+        artifacts=artifacts,
+        project_or_file=project_or_file,
+        kicad_version=version or "unknown",
+        probe=identity_probe,
+        infrastructure_valid=identity_error is None and identity_probe is not None,
+        reason=identity_error,
+    )
+    ready = all(report.status == "passed" for report in (read, write, export)) and (
+        getattr(identity_result, "status", None) == "match"
+    )
     return 0 if ready or not require_ready else 1
 
 

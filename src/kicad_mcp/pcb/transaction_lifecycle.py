@@ -54,6 +54,28 @@ _AMBIGUOUS_TRANSACTION_MESSAGE = (
 )
 
 
+def live_board_identity(board: Board) -> LiveBoardIdentity:
+    """Return MCP Pro's path-free identity mapping for one native KiCad board handle."""
+    get_project = getattr(board, "get_project", None)
+    if not callable(get_project):
+        raise RuntimeError("Active KiCad board does not expose project identity.")
+    project = get_project()
+    project_path = str(getattr(project, "path", "")).strip()
+    board_name = str(getattr(board, "name", "")).strip()
+    if not project_path or not board_name:
+        raise RuntimeError(
+            "Active KiCad board identity is incomplete; live editing is unavailable."
+        )
+    normalized_path = str(Path(project_path).expanduser().resolve(strict=False))
+    internal_key = f"{normalized_path}\0{board_name}"
+    fingerprint = hashlib.sha256(internal_key.encode("utf-8")).hexdigest()
+    return LiveBoardIdentity(
+        board_name=board_name,
+        internal_key=internal_key,
+        fingerprint=fingerprint,
+    )
+
+
 @dataclass
 class PcbTransactionLifecycleService:
     """Own one board-bound native-live transaction and its verification evidence."""
@@ -77,24 +99,7 @@ class PcbTransactionLifecycleService:
 
     @staticmethod
     def _identity_for(board: Board) -> LiveBoardIdentity:
-        get_project = getattr(board, "get_project", None)
-        if not callable(get_project):
-            raise RuntimeError("Active KiCad board does not expose project identity.")
-        project = get_project()
-        project_path = str(getattr(project, "path", "")).strip()
-        board_name = str(getattr(board, "name", "")).strip()
-        if not project_path or not board_name:
-            raise RuntimeError(
-                "Active KiCad board identity is incomplete; live editing is unavailable."
-            )
-        normalized_path = str(Path(project_path).expanduser().resolve(strict=False))
-        internal_key = f"{normalized_path}\0{board_name}"
-        fingerprint = hashlib.sha256(internal_key.encode("utf-8")).hexdigest()
-        return LiveBoardIdentity(
-            board_name=board_name,
-            internal_key=internal_key,
-            fingerprint=fingerprint,
-        )
+        return live_board_identity(board)
 
     @staticmethod
     def _state_digest(board: Board) -> str:

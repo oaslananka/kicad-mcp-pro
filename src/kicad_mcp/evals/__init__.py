@@ -52,6 +52,14 @@ from .geometry_differential import (
     normalize_native_board_stats,
 )
 from .live_edit_evidence import mutation_evidence_from_live_edit
+from .live_object_identity_differential import (
+    LIVE_OBJECT_IDENTITY_AUTHORITY,
+    LIVE_OBJECT_IDENTITY_COMPARISON_METHOD,
+    LIVE_OBJECT_IDENTITY_OPERATION,
+    classify_live_object_identity_differential,
+    hash_live_identity_fixture,
+    native_live_object_identity_hash,
+)
 from .live_runner import (
     AdapterObservation,
     CaseExecution,
@@ -167,6 +175,12 @@ __all__ = [
     "geometry_signature_hash",
     "normalize_custom_outline_bounds",
     "normalize_native_board_stats",
+    "LIVE_OBJECT_IDENTITY_AUTHORITY",
+    "LIVE_OBJECT_IDENTITY_COMPARISON_METHOD",
+    "LIVE_OBJECT_IDENTITY_OPERATION",
+    "classify_live_object_identity_differential",
+    "hash_live_identity_fixture",
+    "native_live_object_identity_hash",
     "DIFFERENTIAL_REPORT_SCHEMA_VERSION",
     "DIFFERENTIAL_RESULT_SCHEMA_VERSION",
     "DifferentialLane",

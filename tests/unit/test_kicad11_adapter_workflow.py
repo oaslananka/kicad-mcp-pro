@@ -57,6 +57,8 @@ def test_kicad_live_e2e_tracks_semantic_differential_inputs() -> None:
         "src/kicad_mcp/evals/geometry_differential.py",
         "src/kicad_mcp/evals/drc_differential.py",
         "src/kicad_mcp/evals/export_inventory_differential.py",
+        "src/kicad_mcp/evals/live_object_identity_differential.py",
+        "src/kicad_mcp/pcb/transaction_lifecycle.py",
         "src/kicad_mcp/export/inventory.py",
         "src/kicad_mcp/export/gerber.py",
         "src/kicad_mcp/export/drill.py",
