@@ -720,12 +720,14 @@ def test_geometry_differential_matches_native_board_stats(tmp_path: Path, monkey
         artifacts=artifacts,
         kicad_range="10.0.x",
         kicad_version="10.0.6",
+        fixture_id="geometry-fixture",
         native_stats=artifacts / "reports" / "board-stats.txt",
         fixture=fixture,
     )
 
     assert result is not None
     assert result.status == "match"
+    assert result.fixture_id == "geometry-fixture"
     assert result.operation == "geometry.board-outline-size"
     assert result.authority == "kicad-cli:pcb-export-stats"
 
@@ -741,6 +743,7 @@ def test_geometry_differential_missing_native_artifact_is_unavailable_authority(
         artifacts=artifacts,
         kicad_range="10.0.x",
         kicad_version="10.0.6",
+        fixture_id="geometry-fixture",
         native_stats=artifacts / "reports" / "board-stats.txt",
         fixture=fixture,
     )
@@ -761,6 +764,7 @@ def test_geometry_differential_failed_native_step_is_unavailable_even_with_artif
         artifacts=artifacts,
         kicad_range="10.0.x",
         kicad_version="10.0.6",
+        fixture_id="geometry-fixture",
         native_stats=artifacts / "reports" / "board-stats.txt",
         fixture=fixture,
         native_authority_available=False,
@@ -787,11 +791,13 @@ def test_geometry_differential_parser_failure_is_infrastructure_invalid(
         artifacts=artifacts,
         kicad_range="10.0.x",
         kicad_version="10.0.6",
+        fixture_id="geometry-fixture",
         native_stats=artifacts / "reports" / "board-stats.txt",
         fixture=fixture,
     )
 
     assert result is not None
     assert result.status == "infrastructure-invalid"
+    assert result.fixture_id == "geometry-fixture"
     assert result.native_result_hash is None
     assert result.custom_result_hash is None
