@@ -1528,6 +1528,13 @@ def test_development_bootstrap_workflow_proves_clean_host_and_kicad_canary() -> 
     assert has_sha_pinned_action(workflow, "actions/upload-artifact")
     assert "kicad-canary:" in workflow
     assert "ppa:kicad/kicad-10.0-releases" in workflow
+    kicad_install_step = workflow.split("      - name: Install KiCad 10.0.6 CLI", 1)[1]
+    kicad_install_step = kicad_install_step.split(
+        "      - name: Bootstrap exact core toolchain", 1
+    )[0]
+    assert "apt-get install -y --no-install-recommends" in kicad_install_step
+    assert "kicad-symbols" in kicad_install_step
+    assert "test -f /usr/share/kicad/symbols/Device.kicad_sym" in kicad_install_step
     assert 'test "$(kicad-cli version)" = "10.0.6"' in workflow
     assert "scripts/kicad_canary.py run" in workflow
     kicad_job = workflow.split("  kicad-canary:", 1)[1]
