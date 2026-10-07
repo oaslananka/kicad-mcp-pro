@@ -70,6 +70,27 @@ def test_ruff_only_mode_runs_only_shared_ruff_checks(monkeypatch: MonkeyPatch) -
     assert executed == ["ruff-format", "ruff-lint"]
 
 
+def test_ruff_only_mode_propagates_first_ruff_failure(monkeypatch: MonkeyPatch) -> None:
+    plan = [
+        Check("ruff-format", ["ruff", "format"]),
+        Check("ruff-lint", ["ruff", "check"]),
+        Check("targeted-tests", ["pytest"]),
+    ]
+    executed: list[str] = []
+
+    monkeypatch.setattr(hook_pre_push, "changed_files", lambda base: ["scripts/demo.py"])
+    monkeypatch.setattr(hook_pre_push, "build_plan", lambda changed: plan)
+
+    def fail_format(check: Check) -> int:
+        executed.append(check.name)
+        return 1 if check.name == "ruff-format" else 0
+
+    monkeypatch.setattr(hook_pre_push, "_run", fail_format)
+
+    assert hook_pre_push.main(["--base", "a" * 40, "--ruff-only"]) == 1
+    assert executed == ["ruff-format"]
+
+
 def test_workflow_change_only_adds_workflow_checks(tmp_path: Path) -> None:
     workflow = tmp_path / ".github" / "workflows" / "ci.yml"
     workflow.parent.mkdir(parents=True)
