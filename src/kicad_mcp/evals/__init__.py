@@ -28,6 +28,13 @@ from .corpus import (
     evaluate_project,
     load_corpus,
 )
+from .drc_differential import (
+    DRC_AUTHORITY,
+    DRC_COMPARISON_METHOD,
+    DRC_OPERATION,
+    compare_drc_report_file,
+    hash_fixture_tree,
+)
 from .geometry_differential import (
     GEOMETRY_AUTHORITY,
     GEOMETRY_COMPARISON_METHOD,
@@ -137,6 +144,11 @@ __all__ = [
     "connectivity_signature_hash",
     "normalize_custom_connectivity_groups",
     "normalize_native_net_map",
+    "DRC_AUTHORITY",
+    "DRC_COMPARISON_METHOD",
+    "DRC_OPERATION",
+    "compare_drc_report_file",
+    "hash_fixture_tree",
     "GEOMETRY_AUTHORITY",
     "GEOMETRY_COMPARISON_METHOD",
     "GEOMETRY_OPERATION",

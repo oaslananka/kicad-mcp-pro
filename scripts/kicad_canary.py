@@ -23,8 +23,10 @@ from kicad_mcp.evals.connectivity_differential import (
     connectivity_signature_hash,
     normalize_custom_connectivity_groups,
 )
+from kicad_mcp.evals.drc_differential import compare_drc_report_file
 from kicad_mcp.evals.geometry_differential import classify_geometry_differential
 from kicad_mcp.evals.semantic_differential import (
+    DifferentialLane,
     DifferentialResult,
     aggregate_differential_results,
     classify_differential_result,
@@ -1088,6 +1090,55 @@ def _write_connectivity_differential_report(
     return result
 
 
+def _differential_lane_for_range(kicad_range: str) -> DifferentialLane | None:
+    if kicad_range == "10.0.x":
+        return "stable"
+    if kicad_range.startswith("10.99.") or kicad_range.startswith("11."):
+        return "preview"
+    return None
+
+
+def _write_drc_differential_results(
+    *,
+    artifacts: Path,
+    kicad_range: str,
+    kicad_version: str,
+    native_steps: list[dict[str, object]],
+) -> list[DifferentialResult]:
+    lane = _differential_lane_for_range(kicad_range)
+    if lane is None:
+        return []
+
+    source_sha = _source_sha()
+    report_paths = {
+        "clean-drc": artifacts / "reports" / "clean-drc.json",
+        "dirty-drc": artifacts / "reports" / "dirty-drc.json",
+    }
+    records: list[DifferentialResult] = []
+    for step in native_steps:
+        name = str(step.get("name", ""))
+        report_path = report_paths.get(name)
+        if report_path is None:
+            continue
+        fixture_id = str(step.get("fixture", ""))
+        if not fixture_id:
+            continue
+        records.append(
+            compare_drc_report_file(
+                report_path=report_path,
+                fixture_path=FIXTURE_ROOT / fixture_id,
+                source_sha=source_sha,
+                lane=lane,
+                kicad_version=kicad_version,
+                fixture_id=fixture_id,
+                native_authority_available=(
+                    bool(step.get("ok")) and not bool(step.get("skipped"))
+                ),
+            )
+        )
+    return records
+
+
 def _write_geometry_differential_result(
     *,
     artifacts: Path,
@@ -1259,6 +1310,19 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
         )
         if geometry_result is not None:
             differential_results.append(geometry_result)
+
+    drc_steps = [
+        result for result in results if result.get("name") in {"clean-drc", "dirty-drc"}
+    ]
+    if kicad_version is not None and version_error is None and drc_steps:
+        differential_results.extend(
+            _write_drc_differential_results(
+                artifacts=artifacts,
+                kicad_range=kicad_range,
+                kicad_version=kicad_version,
+                native_steps=drc_steps,
+            )
+        )
 
     if differential_results:
         _write_differential_summary(artifacts, differential_results)

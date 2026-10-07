@@ -16,6 +16,14 @@ COURTYARD_VIOLATION_TYPES: frozenset[str] = frozenset(
 )
 
 
+def normalize_report_severity(severity: object) -> str:
+    """Normalize KiCad DRC/ERC severity values to the public finding contract."""
+    normalized = str(severity or "error").casefold()
+    if normalized in {"warning", "warn", "marginal"}:
+        return "warning"
+    return "error"
+
+
 def report_entries(report: Report, key: str) -> list[ReportEntry]:
     """Return dictionary entries from one report list, ignoring malformed values."""
     raw = report.get(key)

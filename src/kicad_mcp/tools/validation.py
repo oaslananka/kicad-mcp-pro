@@ -39,7 +39,11 @@ from ..utils.dru import (
     upsert_rule,
 )
 from ..validation import drc_runner
-from ..validation.drc_report import courtyard_violations, report_entries
+from ..validation.drc_report import (
+    courtyard_violations,
+    normalize_report_severity,
+    report_entries,
+)
 from ..validation.policy_state import ValidationPolicyStateService
 from . import validation_policy_state
 from .export_support import _ensure_output_dir, _get_pcb_file, _get_sch_file, _run_cli_variants
@@ -272,13 +276,6 @@ def _format_violations(title: str, entries: list[dict[str, object]]) -> str:
     return "\n".join(lines)
 
 
-def _normalize_report_severity(severity: object) -> str:
-    normalized = str(severity or "error").casefold()
-    if normalized in {"warning", "warn", "marginal"}:
-        return "warning"
-    return "error"
-
-
 def _entry_location(entry: dict[str, object], fallback: str) -> str:
     for key in ("uuid", "location", "sheet", "path", "item", "ref", "reference"):
         value = entry.get(key)
@@ -296,7 +293,7 @@ def _report_entry_finding(
 ) -> Finding:
     issue_type = str(entry.get("type") or source)
     description = str(entry.get("description") or entry.get("message") or issue_type)
-    severity = _normalize_report_severity(entry.get("severity", default_severity))
+    severity = normalize_report_severity(entry.get("severity", default_severity))
     location = _entry_location(entry, source)
 
     metadata: dict[str, object] = {}

@@ -801,3 +801,100 @@ def test_geometry_differential_parser_failure_is_infrastructure_invalid(
     assert result.fixture_id == "geometry-fixture"
     assert result.native_result_hash is None
     assert result.custom_result_hash is None
+
+
+def _write_drc_differential_inputs(tmp_path: Path) -> tuple[Path, Path]:
+    artifacts = tmp_path / "artifacts"
+    fixture_root = tmp_path / "fixtures"
+    for fixture, payload in (
+        ("clean-led-kicad10", {"violations": [], "unconnected_items": []}),
+        (
+            "drc-courtyard-error",
+            {
+                "violations": [{"type": "clearance", "severity": "warning"}],
+                "unconnected_items": [{"type": "unconnected_items", "severity": "error"}],
+            },
+        ),
+    ):
+        fixture_dir = fixture_root / fixture
+        fixture_dir.mkdir(parents=True)
+        (fixture_dir / f"{fixture}.kicad_pcb").write_text(
+            f"(kicad_pcb {fixture})\n", encoding="utf-8"
+        )
+        report = (
+            artifacts
+            / "reports"
+            / ("clean-drc.json" if fixture == "clean-led-kicad10" else "dirty-drc.json")
+        )
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(json.dumps(payload), encoding="utf-8")
+    return artifacts, fixture_root
+
+
+def test_drc_differentials_emit_two_match_records_with_lane_attribution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifacts, fixture_root = _write_drc_differential_inputs(tmp_path)
+    monkeypatch.setattr(kicad_canary, "FIXTURE_ROOT", fixture_root)
+    monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
+
+    records = kicad_canary._write_drc_differential_results(
+        artifacts=artifacts,
+        kicad_range="10.0.x",
+        kicad_version="10.0.6",
+        native_steps=[
+            {"name": "clean-drc", "fixture": "clean-led-kicad10", "ok": True},
+            {"name": "dirty-drc", "fixture": "drc-courtyard-error", "ok": True},
+        ],
+    )
+
+    assert [record.status for record in records] == ["match", "match"]
+    assert [record.lane for record in records] == ["stable", "stable"]
+    assert all(record.operation == "drc.findings-and-severities" for record in records)
+    assert records[0].native_pass is True
+    assert records[0].custom_pass is True
+    assert records[1].native_pass is False
+    assert records[1].custom_pass is False
+
+
+def test_drc_differential_preview_lane_is_separately_attributed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifacts, fixture_root = _write_drc_differential_inputs(tmp_path)
+    monkeypatch.setattr(kicad_canary, "FIXTURE_ROOT", fixture_root)
+    monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
+
+    records = kicad_canary._write_drc_differential_results(
+        artifacts=artifacts,
+        kicad_range="11.0.x",
+        kicad_version="11.0.0",
+        native_steps=[
+            {"name": "clean-drc", "fixture": "clean-led-kicad10", "ok": True},
+        ],
+    )
+
+    assert len(records) == 1
+    assert records[0].status == "match"
+    assert records[0].lane == "preview"
+
+
+def test_drc_differential_failed_native_step_is_unavailable_even_with_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifacts, fixture_root = _write_drc_differential_inputs(tmp_path)
+    monkeypatch.setattr(kicad_canary, "FIXTURE_ROOT", fixture_root)
+    monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
+
+    records = kicad_canary._write_drc_differential_results(
+        artifacts=artifacts,
+        kicad_range="10.0.x",
+        kicad_version="10.0.6",
+        native_steps=[
+            {"name": "clean-drc", "fixture": "clean-led-kicad10", "ok": False},
+        ],
+    )
+
+    assert len(records) == 1
+    assert records[0].status == "unavailable-authority"
+    assert records[0].native_result_hash is None
+    assert records[0].native_pass is None
