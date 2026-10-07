@@ -945,24 +945,12 @@ def test_export_inventory_differential_matches_stable_native_outputs(
     assert result.operation == "export.manufacturing-inventory"
 
 
-def test_export_inventory_differential_preview_lane_is_separately_attributed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    artifacts, fixture = _write_export_inventory_inputs(tmp_path)
-    monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
+def test_export_inventory_differential_follows_native_export_feature_gate() -> None:
+    compatibility = _compatibility_matrix()
 
-    result = kicad_canary._write_export_inventory_differential_result(
-        artifacts=artifacts,
-        kicad_range="11.0.x",
-        kicad_version="11.0.0",
-        fixture_id="clean-led-kicad10",
-        fixture=fixture,
-        native_steps=_manufacturing_steps(),
-    )
-
-    assert result is not None
-    assert result.status == "match"
-    assert result.lane == "preview"
+    assert kicad_canary._export_inventory_differential_enabled(compatibility, "10.0.x")
+    assert not kicad_canary._export_inventory_differential_enabled(compatibility, "11.0.x")
+    assert not kicad_canary._export_inventory_differential_enabled(compatibility, "9.x")
 
 
 def test_export_inventory_failed_native_step_is_unavailable_authority(

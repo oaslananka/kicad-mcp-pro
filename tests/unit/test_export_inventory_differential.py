@@ -105,7 +105,59 @@ def test_missing_expected_output_is_infrastructure_invalid(tmp_path: Path) -> No
     assert "IPC-2581" in result.reason
 
 
-def test_legacy_exact_gbr_duplicate_in_custom_inventory_is_visible(tmp_path: Path) -> None:
+def test_empty_native_export_directory_is_infrastructure_invalid(tmp_path: Path) -> None:
+    gerber_dir, drill_dir, ipc2581 = _outputs(tmp_path)
+    for path in gerber_dir.iterdir():
+        path.unlink()
+
+    result = classify_export_inventory_differential(
+        source_sha=SOURCE_SHA,
+        lane="stable",
+        kicad_version="10.0.6",
+        fixture_id="clean-led-kicad10",
+        fixture_hash=FIXTURE_HASH,
+        gerber_dir=gerber_dir,
+        drill_dir=drill_dir,
+        ipc2581_path=ipc2581,
+    )
+
+    assert result.status == "infrastructure-invalid"
+    assert result.native_result_hash is None
+    assert result.custom_result_hash is None
+    assert result.reason is not None
+    assert "Gerber export produced no files" in result.reason
+
+
+def test_missing_native_export_directory_is_infrastructure_invalid(tmp_path: Path) -> None:
+    gerber_dir, drill_dir, ipc2581 = _outputs(tmp_path)
+    for directory, expected in (
+        (gerber_dir, "Gerber output directory"),
+        (drill_dir, "drill output directory"),
+    ):
+        for child in directory.iterdir():
+            child.unlink()
+        directory.rmdir()
+        result = classify_export_inventory_differential(
+            source_sha=SOURCE_SHA,
+            lane="stable",
+            kicad_version="10.0.6",
+            fixture_id="clean-led-kicad10",
+            fixture_hash=FIXTURE_HASH,
+            gerber_dir=gerber_dir,
+            drill_dir=drill_dir,
+            ipc2581_path=ipc2581,
+        )
+        assert result.status == "infrastructure-invalid"
+        assert result.reason is not None
+        assert expected in result.reason
+        directory.mkdir()
+        if directory == gerber_dir:
+            (gerber_dir / "demo-F_Cu.gtl").write_text("gerber", encoding="utf-8")
+        else:
+            (drill_dir / "demo.drl").write_text("drill", encoding="utf-8")
+
+
+def test_exact_gbr_file_matches_native_inventory_once(tmp_path: Path) -> None:
     gerber_dir, drill_dir, ipc2581 = _outputs(tmp_path)
     (gerber_dir / "legacy.gbr").write_text("legacy", encoding="utf-8")
 
@@ -120,4 +172,4 @@ def test_legacy_exact_gbr_duplicate_in_custom_inventory_is_visible(tmp_path: Pat
         ipc2581_path=ipc2581,
     )
 
-    assert result.status == "divergence"
+    assert result.status == "match"

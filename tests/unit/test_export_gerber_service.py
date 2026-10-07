@@ -137,11 +137,10 @@ def test_export_preserves_cli_fallbacks_layers_variant_and_file_order(tmp_path: 
             ],
         ]
     ]
-    # Preserve the legacy glob behavior: *.gbr is also included by *.g*.
     assert formatter.calls == [
-        ([out / "a.gbr", out / "a.gbr", out / "b.gko"], f"Gerber export completed in {out}:")
+        ([out / "a.gbr", out / "b.gko"], f"Gerber export completed in {out}:")
     ]
-    assert result == f"formatted::Gerber export completed in {out}:::a.gbr,a.gbr,b.gko"
+    assert result == f"formatted::Gerber export completed in {out}:::a.gbr,b.gko"
 
 
 def test_export_appends_capability_command_only_when_distinct(tmp_path: Path) -> None:

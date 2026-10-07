@@ -1133,12 +1133,20 @@ def _write_drc_differential_results(
                 lane=lane,
                 kicad_version=kicad_version,
                 fixture_id=fixture_id,
-                native_authority_available=(
-                    bool(step.get("ok")) and not bool(step.get("skipped"))
-                ),
+                native_authority_available=(bool(step.get("ok")) and not bool(step.get("skipped"))),
             )
         )
     return records
+
+
+def _export_inventory_differential_enabled(
+    compatibility: dict[str, Any],
+    kicad_range: str,
+) -> bool:
+    """Return whether this lane has both differential attribution and native export authority."""
+    return _differential_lane_for_range(kicad_range) is not None and supports_feature_gate(
+        compatibility, "manufacturingExports", kicad_range
+    )
 
 
 def _write_export_inventory_differential_result(
@@ -1157,9 +1165,7 @@ def _write_export_inventory_differential_result(
     required_steps = {"gerbers", "drill", "ipc2581"}
     by_name = {str(step.get("name", "")): step for step in native_steps}
     authority_available = all(
-        name in by_name
-        and bool(by_name[name].get("ok"))
-        and not bool(by_name[name].get("skipped"))
+        name in by_name and bool(by_name[name].get("ok")) and not bool(by_name[name].get("skipped"))
         for name in required_steps
     )
     return classify_export_inventory_differential(
@@ -1347,9 +1353,7 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
         if geometry_result is not None:
             differential_results.append(geometry_result)
 
-    drc_steps = [
-        result for result in results if result.get("name") in {"clean-drc", "dirty-drc"}
-    ]
+    drc_steps = [result for result in results if result.get("name") in {"clean-drc", "dirty-drc"}]
     if kicad_version is not None and version_error is None and drc_steps:
         differential_results.extend(
             _write_drc_differential_results(
@@ -1361,11 +1365,14 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
         )
 
     manufacturing_steps = [
-        result
-        for result in results
-        if result.get("name") in {"gerbers", "drill", "ipc2581"}
+        result for result in results if result.get("name") in {"gerbers", "drill", "ipc2581"}
     ]
-    if kicad_version is not None and version_error is None and manufacturing_steps:
+    if (
+        kicad_version is not None
+        and version_error is None
+        and manufacturing_steps
+        and _export_inventory_differential_enabled(compatibility, kicad_range)
+    ):
         export_inventory_result = _write_export_inventory_differential_result(
             artifacts=artifacts,
             kicad_range=kicad_range,

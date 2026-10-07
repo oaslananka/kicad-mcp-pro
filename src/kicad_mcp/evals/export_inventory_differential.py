@@ -48,9 +48,16 @@ def _native_inventory(
     if not ipc2581_path.is_file():
         raise ValueError("Native KiCad IPC-2581 output is unavailable.")
 
+    gerber_files = [path for path in sorted(gerber_dir.iterdir()) if path.is_file()]
+    drill_files = [path for path in sorted(drill_dir.iterdir()) if path.is_file()]
+    if not gerber_files:
+        raise ValueError("Native KiCad Gerber export produced no files.")
+    if not drill_files:
+        raise ValueError("Native KiCad drill export produced no files.")
+
     records: list[InventoryEntry] = []
-    records.extend(("gerber", path.name) for path in sorted(gerber_dir.iterdir()) if path.is_file())
-    records.extend(("drill", path.name) for path in sorted(drill_dir.iterdir()) if path.is_file())
+    records.extend(("gerber", path.name) for path in gerber_files)
+    records.extend(("drill", path.name) for path in drill_files)
     records.append(("ipc2581", ipc2581_path.name))
     return tuple(sorted(records))
 
