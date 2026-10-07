@@ -231,13 +231,19 @@ jobs:
       - name: Enforce changed Python Ruff scope
         if: env.skip_ci != 'true'
         env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
-            BASE_SHA="$(git rev-parse HEAD^)"
+          # pull_request checks out GitHub's synthetic merge commit; HEAD^1 is its base parent.
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' ]]; then
+            base_sha="$(git rev-parse HEAD^1)"
+          else
+            base_sha="$BEFORE_SHA"
+            if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
+              base_sha="$(git rev-parse HEAD^)"
+            fi
           fi
-          uv run --all-extras python scripts/hook_pre_push.py --base "$BASE_SHA" --ruff-only
+          uv run --all-extras python scripts/hook_pre_push.py --base "$base_sha" --ruff-only
 
   mcp-server:
     needs: [changes, release-metadata]

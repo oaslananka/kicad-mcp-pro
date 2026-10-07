@@ -121,7 +121,8 @@ def test_ci_reuses_pre_push_selector_for_changed_python_ruff_scope() -> None:
     ruff_step = next(
         step for step in job["steps"] if step.get("name") == "Enforce changed Python Ruff scope"
     )
-    assert 'scripts/hook_pre_push.py --base "$BASE_SHA" --ruff-only' in ruff_step["run"]
+    assert 'base_sha="$(git rev-parse HEAD^1)"' in ruff_step["run"]
+    assert 'scripts/hook_pre_push.py --base "$base_sha" --ruff-only' in ruff_step["run"]
 
     required_gate = workflow["jobs"]["required-pr-gate"]
     assert "python-changed-quality" in required_gate["needs"]
