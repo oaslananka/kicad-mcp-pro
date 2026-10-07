@@ -28,6 +28,16 @@ from .corpus import (
     evaluate_project,
     load_corpus,
 )
+from .geometry_differential import (
+    GEOMETRY_AUTHORITY,
+    GEOMETRY_COMPARISON_METHOD,
+    GEOMETRY_OPERATION,
+    GeometrySignature,
+    classify_geometry_differential,
+    geometry_signature_hash,
+    normalize_custom_outline_bounds,
+    normalize_native_board_stats,
+)
 from .live_edit_evidence import mutation_evidence_from_live_edit
 from .live_runner import (
     AdapterObservation,
@@ -127,6 +137,14 @@ __all__ = [
     "connectivity_signature_hash",
     "normalize_custom_connectivity_groups",
     "normalize_native_net_map",
+    "GEOMETRY_AUTHORITY",
+    "GEOMETRY_COMPARISON_METHOD",
+    "GEOMETRY_OPERATION",
+    "GeometrySignature",
+    "classify_geometry_differential",
+    "geometry_signature_hash",
+    "normalize_custom_outline_bounds",
+    "normalize_native_board_stats",
     "DIFFERENTIAL_REPORT_SCHEMA_VERSION",
     "DIFFERENTIAL_RESULT_SCHEMA_VERSION",
     "DifferentialLane",

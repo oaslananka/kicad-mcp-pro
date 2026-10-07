@@ -23,6 +23,7 @@ from kicad_mcp.evals.connectivity_differential import (
     connectivity_signature_hash,
     normalize_custom_connectivity_groups,
 )
+from kicad_mcp.evals.geometry_differential import classify_geometry_differential
 from kicad_mcp.evals.semantic_differential import (
     DifferentialResult,
     aggregate_differential_results,
@@ -980,6 +981,12 @@ def _connectivity_groups(path: Path) -> list[dict[str, Any]]:
     return build_connectivity_groups(path)
 
 
+def _custom_board_outline_bounds(path: Path) -> tuple[float, float, float, float] | None:
+    from kicad_mcp.tools.board_file import _edge_cuts_bounds
+
+    return _edge_cuts_bounds(path.read_text(encoding="utf-8", errors="strict"))
+
+
 def _result_log_text(result: dict[str, object]) -> str:
     paths = (Path(str(result["stdout"])), Path(str(result["stderr"])))
     return "\n".join(
@@ -991,6 +998,17 @@ def _kicad_version_from_result(version_result: dict[str, object]) -> str | None:
     output = _result_log_text(version_result)
     match = re.search(r"\b(?P<version>\d+\.\d+(?:\.\d+)?)\b", output)
     return match.group("version") if match is not None else None
+
+
+def _write_differential_summary(
+    artifacts: Path, results: list[DifferentialResult]
+) -> None:
+    if not results:
+        return
+    report = aggregate_differential_results(results)
+    _write_text(
+        artifacts / "differential" / "summary.json", render_differential_report_json(report)
+    )
 
 
 def _write_connectivity_differential_report(
@@ -1068,11 +1086,63 @@ def _write_connectivity_differential_report(
             infrastructure_valid=False,
             reason=f"Connectivity differential infrastructure failed ({type(exc).__name__}).",
         )
-    report = aggregate_differential_results([result])
-    _write_text(
-        artifacts / "differential" / "summary.json", render_differential_report_json(report)
-    )
+    _write_differential_summary(artifacts, [result])
     return result
+
+
+def _write_geometry_differential_result(
+    *,
+    artifacts: Path,
+    kicad_range: str,
+    kicad_version: str,
+    native_stats: Path,
+    fixture: Path,
+    native_authority_available: bool = True,
+) -> DifferentialResult | None:
+    if kicad_range != "10.0.x":
+        return None
+
+    fixture_hash = _fixture_hash(fixture)
+    source_sha = _source_sha()
+    try:
+        custom_bounds = _custom_board_outline_bounds(fixture)
+        if (
+            not native_authority_available
+            or not native_stats.is_file()
+            or native_stats.stat().st_size == 0
+        ):
+            return classify_geometry_differential(
+                source_sha=source_sha,
+                lane="stable",
+                kicad_version=kicad_version,
+                fixture_id="clean-led-kicad10",
+                fixture_hash=fixture_hash,
+                native_stats_text=None,
+                custom_outline_bounds=custom_bounds,
+                authority_available=False,
+                reason="Native KiCad board statistics authority artifact is unavailable.",
+            )
+        return classify_geometry_differential(
+            source_sha=source_sha,
+            lane="stable",
+            kicad_version=kicad_version,
+            fixture_id="clean-led-kicad10",
+            fixture_hash=fixture_hash,
+            native_stats_text=native_stats.read_text(encoding="utf-8", errors="strict"),
+            custom_outline_bounds=custom_bounds,
+        )
+    except (OSError, UnicodeError, ValueError, RuntimeError, TypeError) as exc:
+        return classify_geometry_differential(
+            source_sha=source_sha,
+            lane="stable",
+            kicad_version=kicad_version,
+            fixture_id="clean-led-kicad10",
+            fixture_hash=fixture_hash,
+            native_stats_text=None,
+            custom_outline_bounds=None,
+            infrastructure_valid=False,
+            reason=f"Geometry differential infrastructure failed ({type(exc).__name__}).",
+        )
 
 
 def _version_range_error(version_result: dict[str, object], kicad_range: str) -> str | None:
@@ -1146,7 +1216,7 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
         version["ok"] = False
         version["error"] = version_error
 
-    differential_result: DifferentialResult | None = None
+    differential_results: list[DifferentialResult] = []
     kicad_version = _kicad_version_from_result(version)
     connectivity_step = next(
         (result for result in results if result.get("name") == "differential-connectivity-netlist"),
@@ -1157,7 +1227,7 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
         and connectivity_step is not None
         and not bool(connectivity_step.get("skipped"))
     ):
-        differential_result = _write_connectivity_differential_report(
+        connectivity_result = _write_connectivity_differential_report(
             artifacts=artifacts,
             kicad_range=kicad_range,
             kicad_version=kicad_version,
@@ -1169,10 +1239,32 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
                 / CONNECTIVITY_DIFFERENTIAL_FIXTURE_NAME
             ),
         )
+        if connectivity_result is not None:
+            differential_results.append(connectivity_result)
+
+    board_stats_step = next(
+        (result for result in results if result.get("name") == "board-stats"),
+        None,
+    )
+    if kicad_version is not None and board_stats_step is not None:
+        geometry_result = _write_geometry_differential_result(
+            artifacts=artifacts,
+            kicad_range=kicad_range,
+            kicad_version=kicad_version,
+            native_stats=artifacts / "reports" / "board-stats.txt",
+            fixture=_fixture_file(artifacts / "workspace", "clean-led-kicad10", ".kicad_pcb"),
+            native_authority_available=bool(board_stats_step.get("ok")),
+        )
+        if geometry_result is not None:
+            differential_results.append(geometry_result)
+
+    if differential_results:
+        _write_differential_summary(artifacts, differential_results)
 
     failing_fixture_set = {str(result["fixture"]) for result in results if not bool(result["ok"])}
-    if differential_result is not None and differential_result.status != "match":
-        failing_fixture_set.add(differential_result.fixture_id)
+    failing_fixture_set.update(
+        result.fixture_id for result in differential_results if result.status != "match"
+    )
     failing_fixtures = sorted(failing_fixture_set)
     summary = {
         "kicadRange": kicad_range,
@@ -1185,9 +1277,12 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
         "results": results,
         "failingFixtures": failing_fixtures,
     }
-    if differential_result is not None:
+    if differential_results:
         summary["differentialReport"] = "differential/summary.json"
-        summary["differentialStatus"] = differential_result.status
+        summary["differentialStatus"] = next(
+            (result.status for result in differential_results if result.status != "match"),
+            "match",
+        )
     _write_text(artifacts / "summary.json", json.dumps(summary, indent=2, sort_keys=True) + "\n")
     _write_text(artifacts / "failing-fixtures.txt", "\n".join(failing_fixtures) + "\n")
 

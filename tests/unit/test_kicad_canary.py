@@ -673,3 +673,119 @@ def test_connectivity_differential_workspace_copies_gallery_project(
     )
     assert fixture.read_text(encoding="utf-8") == "(kicad_sch)\n"
     assert (fixture.parent / "demo.kicad_pro").is_file()
+
+
+def _write_geometry_differential_inputs(tmp_path: Path) -> tuple[Path, Path]:
+    artifacts = tmp_path / "artifacts"
+    fixture = artifacts / "workspace" / "clean-led-kicad10" / "demo.kicad_pcb"
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text(
+        "(kicad_pcb\n"
+        "  (gr_line (start 10 20) (end 110 20) "
+        '(stroke (width 0.05) (type default)) (layer "Edge.Cuts"))\n'
+        "  (gr_line (start 110 20) (end 110 80) "
+        '(stroke (width 0.05) (type default)) (layer "Edge.Cuts"))\n'
+        "  (gr_line (start 110 80) (end 10 80) "
+        '(stroke (width 0.05) (type default)) (layer "Edge.Cuts"))\n'
+        "  (gr_line (start 10 80) (end 10 20) "
+        '(stroke (width 0.05) (type default)) (layer "Edge.Cuts"))\n'
+        ")\n",
+        encoding="utf-8",
+    )
+    native = artifacts / "reports" / "board-stats.txt"
+    native.parent.mkdir(parents=True)
+    native.write_text(
+        "PCB statistics report\n"
+        "=====================\n"
+        "Board\n-----\n"
+        "- Width: 100.0000 mm\n"
+        "- Height: 60.0000 mm\n"
+        "- Area: 6000.00 mm²\n",
+        encoding="utf-8",
+    )
+    return artifacts, fixture
+
+
+def test_geometry_differential_matches_native_board_stats(tmp_path: Path, monkeypatch) -> None:
+    artifacts, fixture = _write_geometry_differential_inputs(tmp_path)
+    monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
+
+    result = kicad_canary._write_geometry_differential_result(
+        artifacts=artifacts,
+        kicad_range="10.0.x",
+        kicad_version="10.0.6",
+        native_stats=artifacts / "reports" / "board-stats.txt",
+        fixture=fixture,
+    )
+
+    assert result is not None
+    assert result.status == "match"
+    assert result.operation == "geometry.board-outline-size"
+    assert result.authority == "kicad-cli:pcb-export-stats"
+
+
+def test_geometry_differential_missing_native_artifact_is_unavailable_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifacts, fixture = _write_geometry_differential_inputs(tmp_path)
+    (artifacts / "reports" / "board-stats.txt").unlink()
+    monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
+
+    result = kicad_canary._write_geometry_differential_result(
+        artifacts=artifacts,
+        kicad_range="10.0.x",
+        kicad_version="10.0.6",
+        native_stats=artifacts / "reports" / "board-stats.txt",
+        fixture=fixture,
+    )
+
+    assert result is not None
+    assert result.status == "unavailable-authority"
+    assert result.native_result_hash is None
+    assert result.custom_result_hash is not None
+
+
+def test_geometry_differential_failed_native_step_is_unavailable_even_with_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifacts, fixture = _write_geometry_differential_inputs(tmp_path)
+    monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
+
+    result = kicad_canary._write_geometry_differential_result(
+        artifacts=artifacts,
+        kicad_range="10.0.x",
+        kicad_version="10.0.6",
+        native_stats=artifacts / "reports" / "board-stats.txt",
+        fixture=fixture,
+        native_authority_available=False,
+    )
+
+    assert result is not None
+    assert result.status == "unavailable-authority"
+    assert result.native_result_hash is None
+    assert result.custom_result_hash is not None
+
+
+def test_geometry_differential_parser_failure_is_infrastructure_invalid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifacts, fixture = _write_geometry_differential_inputs(tmp_path)
+    monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
+    monkeypatch.setattr(
+        kicad_canary,
+        "_custom_board_outline_bounds",
+        lambda _path: (_ for _ in ()).throw(ValueError("parse failed")),
+    )
+
+    result = kicad_canary._write_geometry_differential_result(
+        artifacts=artifacts,
+        kicad_range="10.0.x",
+        kicad_version="10.0.6",
+        native_stats=artifacts / "reports" / "board-stats.txt",
+        fixture=fixture,
+    )
+
+    assert result is not None
+    assert result.status == "infrastructure-invalid"
+    assert result.native_result_hash is None
+    assert result.custom_result_hash is None
