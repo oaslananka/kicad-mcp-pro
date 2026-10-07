@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import kicad_mcp.evals.geometry_differential as geometry
 from kicad_mcp.evals.geometry_differential import (
     GEOMETRY_AUTHORITY,
     GEOMETRY_COMPARISON_METHOD,
@@ -112,4 +113,40 @@ def test_geometry_normalizers_reject_missing_ambiguous_or_invalid_facts() -> Non
             fixture_hash=FIXTURE_HASH,
             native_stats_text=NATIVE_STATS,
             custom_outline_bounds=None,
+        )
+
+
+def test_geometry_normalization_rejects_non_numeric_and_sub_precision_dimensions() -> None:
+    class FloatableButNotDecimal:
+        def __float__(self) -> float:
+            return 1.0
+
+        def __str__(self) -> str:
+            return "not-a-decimal"
+
+    with pytest.raises(ValueError, match="finite numeric millimetre values"):
+        geometry._canonical_mm(object())
+
+    with pytest.raises(ValueError, match="finite numeric millimetre values"):
+        geometry._canonical_mm(FloatableButNotDecimal())
+
+    with pytest.raises(ValueError, match="positive width and height"):
+        geometry._canonical_mm(0.00001)
+
+
+def test_geometry_normalizer_rejects_missing_outline_bounds() -> None:
+    with pytest.raises(ValueError, match="did not produce board outline bounds"):
+        normalize_custom_outline_bounds(None)
+
+
+def test_geometry_classifier_requires_native_stats_when_authority_is_available() -> None:
+    with pytest.raises(ValueError, match="Native KiCad board statistics are required"):
+        classify_geometry_differential(
+            source_sha=SOURCE_SHA,
+            lane="stable",
+            kicad_version="10.0.6",
+            fixture_id="clean-led-kicad10",
+            fixture_hash=FIXTURE_HASH,
+            native_stats_text=None,
+            custom_outline_bounds=(0.0, 0.0, 100.0, 60.0),
         )
