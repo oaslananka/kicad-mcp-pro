@@ -40,6 +40,36 @@ def test_python_change_gets_scoped_quality_and_matching_tests(tmp_path: Path) ->
     assert not any("run_pytest.py" in " ".join(command) for command in commands)
 
 
+def test_script_change_gets_shared_ruff_quality_checks(tmp_path: Path) -> None:
+    script = tmp_path / "scripts" / "quality_target.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("VALUE = 1\n", encoding="utf-8")
+
+    plan = build_plan(["scripts/quality_target.py"], root=tmp_path)
+
+    assert _names(plan) == ["ruff-format", "ruff-lint"]
+
+
+def test_ruff_only_mode_runs_only_shared_ruff_checks(monkeypatch: MonkeyPatch) -> None:
+    plan = [
+        Check("ruff-format", ["ruff", "format"]),
+        Check("ruff-lint", ["ruff", "check"]),
+        Check("targeted-tests", ["pytest"]),
+    ]
+    executed: list[str] = []
+
+    monkeypatch.setattr(hook_pre_push, "changed_files", lambda base: ["scripts/demo.py"])
+    monkeypatch.setattr(hook_pre_push, "build_plan", lambda changed: plan)
+    monkeypatch.setattr(
+        hook_pre_push,
+        "_run",
+        lambda check: executed.append(check.name) or 0,
+    )
+
+    assert hook_pre_push.main(["--base", "a" * 40, "--ruff-only"]) == 0
+    assert executed == ["ruff-format", "ruff-lint"]
+
+
 def test_workflow_change_only_adds_workflow_checks(tmp_path: Path) -> None:
     workflow = tmp_path / ".github" / "workflows" / "ci.yml"
     workflow.parent.mkdir(parents=True)

@@ -100,10 +100,34 @@ def test_workflow_policy_runs_actionlint_and_zizmor_in_required_gate() -> None:
     assert "scripts/check_workflows.py --actionlint" in workflow
     assert "scripts/workflow_security.py --min-severity high" in workflow
     assert (
-        "needs: [changes, release-metadata, mcp-server, coverage, mcp-npm, chatgpt-app, "
-        "protocol-schemas, mcp-2026-compat, workflow-policy, security, release-readiness]"
-        in workflow
+        "needs: [changes, release-metadata, python-changed-quality, mcp-server, coverage, "
+        "mcp-npm, chatgpt-app, protocol-schemas, mcp-2026-compat, workflow-policy, "
+        "security, release-readiness]" in workflow
     )
+
+
+def test_ci_reuses_pre_push_selector_for_changed_python_ruff_scope() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+
+    job = workflow["jobs"]["python-changed-quality"]
+    assert job["runs-on"] == "ubuntu-24.04"
+    checkout = next(
+        step for step in job["steps"] if str(step.get("uses", "")).startswith("actions/checkout@")
+    )
+    assert checkout["with"]["fetch-depth"] == 0
+
+    ruff_step = next(
+        step for step in job["steps"] if step.get("name") == "Enforce changed Python Ruff scope"
+    )
+    assert 'scripts/hook_pre_push.py --base "$BASE_SHA" --ruff-only' in ruff_step["run"]
+
+    required_gate = workflow["jobs"]["required-pr-gate"]
+    assert "python-changed-quality" in required_gate["needs"]
+    gate_script = required_gate["steps"][0]["run"]
+    assert '[python-changed-quality]="${{ needs.python-changed-quality.result }}"' in gate_script
+    assert "for job in changes release-metadata python-changed-quality mcp-server" in gate_script
 
 
 def test_direct_javascript_actions_use_node24_releases() -> None:

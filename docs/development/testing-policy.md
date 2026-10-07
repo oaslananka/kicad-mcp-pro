@@ -55,6 +55,13 @@ pre-push hook evaluates `merge-base(origin/main, HEAD)..HEAD` through
 pushes, rebases, and force-pushes. It selects scoped mypy, matching unit tests,
 architecture, tool-contract, workflow, web, Cargo, metadata, or compatibility checks.
 
+The remote CI `Python changed-file quality` job reuses the same `hook_pre_push.py`
+selector in `--ruff-only` mode against the pull-request or push diff. This keeps
+Ruff format/lint coverage for maintained `src/`, `tests/`, and `scripts/` Python
+files aligned without requiring legacy unrelated scripts to be globally Ruff-clean.
+The job is internal to `Required PR Gate`; it is not a separate branch-protection
+context.
+
 The repository-wide unit suite, full-project type checking, coverage, integration,
 E2E, package/docs builds, release checks, container scans, and CodeQL remain in CI
 or explicit manual commands such as `task ci`.
