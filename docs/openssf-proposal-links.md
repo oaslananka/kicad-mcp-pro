@@ -4,7 +4,7 @@ Use this file when completing or updating OpenSSF Best Practices BadgeApp answer
 
 ## BadgeApp
 
-- Project: <https://www.bestpractices.dev/projects/13377>
+- Project: <https://www.bestpractices.dev/projects/12686>
 - Criteria: <https://www.bestpractices.dev/en/criteria>
 - Silver evidence: `docs/openssf-silver-evidence.md`
 - Consolidated evidence: `docs/openssf-evidence.md`

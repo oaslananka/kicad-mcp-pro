@@ -10,7 +10,8 @@ This file consolidates evidence for OpenSSF Best Practices and Scorecard-style r
 | Documentation | <https://oaslananka.github.io/kicad-mcp-pro/> |
 | License | `LICENSE` (MIT) |
 | Package metadata | `pyproject.toml`, `package.json`, `server.json` |
-| OpenSSF BadgeApp project | <https://www.bestpractices.dev/projects/13377> |
+| OpenSSF BadgeApp project | <https://www.bestpractices.dev/projects/12686> |
+| OpenSSF Badge status | Passing, 100% (achieved 2026-10-08) |
 
 ## Passing / Silver evidence map
 

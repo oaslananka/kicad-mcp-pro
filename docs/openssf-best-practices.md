@@ -4,7 +4,7 @@ This page maps the repository evidence used for the OpenSSF Best Practices check
 
 ## Current target
 
-The project has achieved the Silver badge and maintains a Silver evidence map. Silver evidence is tracked in [`openssf-silver-evidence.md`](openssf-silver-evidence.md). Baseline Level 1 is a separate OSPS series and is intentionally handled in a separate pass.
+The canonical BadgeApp record is project `12686`. It achieved the OpenSSF Best Practices **Passing** badge at 100% on 2026-10-08. Silver is not currently claimed for the canonical record. [`openssf-silver-evidence.md`](openssf-silver-evidence.md) is a preparatory evidence map for a future Silver submission. Baseline Level 1 is a separate OSPS series and is intentionally handled in a separate pass.
 
 ## Evidence map
 
@@ -28,7 +28,7 @@ The project has achieved the Silver badge and maintains a Silver evidence map. S
 | Release integrity | Met | [`docs/security/release-integrity.md`](security/release-integrity.md), SBOM/checksum/attestation release steps |
 | Branch/tag protection policy as code | Met | [`.github/rulesets/main.json`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/.github/rulesets/main.json), [`.github/rulesets/release-tags.json`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/.github/rulesets/release-tags.json), [`docs/branch-protection.md`](branch-protection.md) |
 | Branch protection active in GitHub | Met | Repository ruleset `main-standard` is active on `~DEFAULT_BRANCH`; verify with `gh api /repos/oaslananka/kicad-mcp-pro/rulesets` |
-| OpenSSF Silver evidence | Met | [`docs/openssf-silver-evidence.md`](openssf-silver-evidence.md), Silver badge for project `13377` |
+| OpenSSF Passing badge | Met | Canonical project `12686` reports Passing at 100%; [`docs/openssf-silver-evidence.md`](openssf-silver-evidence.md) remains preparatory for a future Silver submission |
 | HTTPS project URLs | Met | GitHub repository, documentation site, package URLs, and badges use HTTPS |
 | English documentation and reports | Met | Repository documentation, issue templates, security policy, and support documents are written in English |
 

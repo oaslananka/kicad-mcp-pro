@@ -20,11 +20,11 @@
     "Keep CODEOWNERS available; enforce code-owner review only when maintainer coverage exists."
   ],
   "project": {
-    "badgeAppProjectId": 13377,
+    "badgeAppProjectId": 12686,
     "currentTarget": "Professional OSS / Mature OSS",
     "goldClaimed": false,
     "name": "KiCad MCP Pro",
-    "openssfTarget": "Maintain Passing/Silver evidence; Gold intentionally not targeted for solo-maintainer mode",
+    "openssfTarget": "Maintain Passing on canonical project 12686; pursue Silver only after canonical Silver criteria are satisfied",
     "repository": "https://github.com/oaslananka/kicad-mcp-pro"
   },
   "schemaVersion": 1,
