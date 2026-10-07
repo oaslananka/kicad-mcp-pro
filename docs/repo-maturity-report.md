@@ -40,7 +40,7 @@ Gold / foundation-grade is not a current target for this solo-maintainer reposit
 
 | Area | Status | Evidence / notes |
 | --- | --- | --- |
-| Passing readiness | In progress | Canonical BadgeApp project `12686` has Basics 13/13; remaining Passing sections are still being completed. |
+| Passing readiness | Passed | Canonical BadgeApp project `12686` achieved Passing at 100% on 2026-10-08. |
 | Silver readiness | Not yet claimed | `docs/openssf-silver-evidence.md` is preparatory; Silver must not be claimed until canonical project `12686` reaches it. |
 | Gold feasibility | Not applicable | Gold is intentionally not targeted for the current solo-maintainer model. |
 | `.bestpractices.json` | Passed | Added in this PR. |
