@@ -42,6 +42,7 @@ def normalize_custom_connectivity_groups(
 ) -> ConnectivitySignature:
     """Normalize MCP Pro connectivity groups to the same pin-membership representation."""
     normalized: set[PinGroup] = set()
+    seen_pins: set[Pin] = set()
     for group in groups:
         raw_pins = group.get("pins", [])
         if not isinstance(raw_pins, list | tuple):
@@ -52,6 +53,13 @@ def normalize_custom_connectivity_groups(
                 raise ValueError("Custom connectivity pins must be mappings")
             pins.add(_pin(raw_pin.get("reference", ""), raw_pin.get("pin", "")))
         if pins:
+            overlap = seen_pins.intersection(pins)
+            if overlap:
+                duplicate = sorted(overlap)[0]
+                raise ValueError(
+                    f"Pin {duplicate[0]}:{duplicate[1]} appears in multiple connectivity groups"
+                )
+            seen_pins.update(pins)
             normalized.add(tuple(sorted(pins)))
     return tuple(sorted(normalized))
 

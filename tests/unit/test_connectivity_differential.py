@@ -131,6 +131,38 @@ def test_connectivity_result_rejects_vacuous_equivalence() -> None:
     assert empty_custom.native_result_hash != empty_custom.custom_result_hash
 
 
+def test_custom_connectivity_rejects_duplicate_pin_membership() -> None:
+    groups = [
+        {
+            "pins": [
+                {"reference": "U1", "pin": "1"},
+                {"reference": "R1", "pin": "2"},
+            ]
+        },
+        {
+            "pins": [
+                {"reference": "U1", "pin": "1"},
+                {"reference": "C1", "pin": "1"},
+            ]
+        },
+    ]
+
+    with pytest.raises(ValueError, match="U1:1 appears in multiple connectivity groups"):
+        normalize_custom_connectivity_groups(groups)
+
+
+def test_custom_connectivity_rejects_repeated_equivalent_group() -> None:
+    group = {
+        "pins": [
+            {"reference": "U1", "pin": "1"},
+            {"reference": "R1", "pin": "2"},
+        ]
+    }
+
+    with pytest.raises(ValueError, match="appears in multiple connectivity groups"):
+        normalize_custom_connectivity_groups([group, group])
+
+
 def test_connectivity_normalization_rejects_malformed_identities() -> None:
     with pytest.raises(ValueError, match="non-empty net identity"):
         normalize_native_net_map({("U1", "1"): ""})
