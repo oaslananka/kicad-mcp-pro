@@ -50,7 +50,7 @@ def test_script_change_gets_shared_ruff_quality_checks(tmp_path: Path) -> None:
     assert _names(plan) == ["ruff-format", "ruff-lint"]
 
 
-def test_ruff_only_mode_runs_only_shared_ruff_checks(monkeypatch: MonkeyPatch) -> None:
+def _setup_ruff_only_mode(monkeypatch: MonkeyPatch) -> list[str]:
     plan = [
         Check("ruff-format", ["ruff", "format"]),
         Check("ruff-lint", ["ruff", "check"]),
@@ -60,6 +60,11 @@ def test_ruff_only_mode_runs_only_shared_ruff_checks(monkeypatch: MonkeyPatch) -
 
     monkeypatch.setattr(hook_pre_push, "changed_files", lambda base: ["scripts/demo.py"])
     monkeypatch.setattr(hook_pre_push, "build_plan", lambda changed: plan)
+    return executed
+
+
+def test_ruff_only_mode_runs_only_shared_ruff_checks(monkeypatch: MonkeyPatch) -> None:
+    executed = _setup_ruff_only_mode(monkeypatch)
     monkeypatch.setattr(
         hook_pre_push,
         "_run",
@@ -71,15 +76,7 @@ def test_ruff_only_mode_runs_only_shared_ruff_checks(monkeypatch: MonkeyPatch) -
 
 
 def test_ruff_only_mode_propagates_first_ruff_failure(monkeypatch: MonkeyPatch) -> None:
-    plan = [
-        Check("ruff-format", ["ruff", "format"]),
-        Check("ruff-lint", ["ruff", "check"]),
-        Check("targeted-tests", ["pytest"]),
-    ]
-    executed: list[str] = []
-
-    monkeypatch.setattr(hook_pre_push, "changed_files", lambda base: ["scripts/demo.py"])
-    monkeypatch.setattr(hook_pre_push, "build_plan", lambda changed: plan)
+    executed = _setup_ruff_only_mode(monkeypatch)
 
     def fail_format(check: Check) -> int:
         executed.append(check.name)
