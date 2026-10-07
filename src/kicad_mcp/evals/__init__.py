@@ -89,6 +89,15 @@ from .reference_corpus import (
     compute_reference_inputs_digest,
     validate_reference_board_bundle,
 )
+from .roundtrip_differential import (
+    ROUNDTRIP_AUTHORITY,
+    ROUNDTRIP_COMPARISON_METHOD,
+    ROUNDTRIP_OPERATION,
+    RoundTripSnapshot,
+    classify_roundtrip_differential,
+    hash_roundtrip_fixture,
+    roundtrip_snapshot_hash,
+)
 from .semantic_differential import (
     DIFFERENTIAL_REPORT_SCHEMA_VERSION,
     DIFFERENTIAL_RESULT_SCHEMA_VERSION,
@@ -181,6 +190,13 @@ __all__ = [
     "classify_live_object_identity_differential",
     "hash_live_identity_fixture",
     "native_live_object_identity_hash",
+    "ROUNDTRIP_AUTHORITY",
+    "ROUNDTRIP_COMPARISON_METHOD",
+    "ROUNDTRIP_OPERATION",
+    "RoundTripSnapshot",
+    "classify_roundtrip_differential",
+    "hash_roundtrip_fixture",
+    "roundtrip_snapshot_hash",
     "DIFFERENTIAL_REPORT_SCHEMA_VERSION",
     "DIFFERENTIAL_RESULT_SCHEMA_VERSION",
     "DifferentialLane",

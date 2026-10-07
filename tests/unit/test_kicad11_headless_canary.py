@@ -37,6 +37,7 @@ def _install_fake_kipy(monkeypatch) -> None:
     class FakeBoard:
         def __init__(self, file_path: str) -> None:
             self.name = Path(file_path).name
+            self._file_path = file_path
             self._project_path = str(Path(file_path).with_suffix(".kicad_pro"))
 
         def get_project(self) -> object:
@@ -47,6 +48,32 @@ def _install_fake_kipy(monkeypatch) -> None:
 
         def drop_commit(self) -> None:
             return None
+
+        def save_as(
+            self,
+            filename: str,
+            overwrite: bool = False,
+            include_project: bool = True,
+        ) -> None:
+            _ = (overwrite, include_project)
+            Path(filename).write_text(
+                Path(self._file_path).read_text(encoding="utf-8"), encoding="utf-8"
+            )
+
+        def get_footprints(self) -> list[object]:
+            return []
+
+        def get_tracks(self) -> list[object]:
+            return []
+
+        def get_vias(self) -> list[object]:
+            return []
+
+        def get_zones(self) -> list[object]:
+            return []
+
+        def get_nets(self) -> list[object]:
+            return []
 
     class FakeKiCad:
         def __init__(
@@ -104,6 +131,8 @@ def test_canary_reports_read_write_and_export_separately(
         assert payload["surface"] == surface
         assert payload["status"] == "passed"
         assert payload["kicadVersion"] == "11.0.0"
+
+    assert (artifacts / "differential" / "native-roundtrip-demo.kicad_pcb").is_file()
 
 
 def test_canary_writes_blocked_reports_when_nightly_is_unavailable(tmp_path: Path) -> None:
@@ -176,6 +205,74 @@ def test_canary_rejects_non_kicad_input_before_runner(monkeypatch, tmp_path: Pat
     assert calls == []
 
 
+def test_custom_roundtrip_snapshot_fails_closed_on_invalid_utf8(tmp_path: Path) -> None:
+    board = tmp_path / "malformed.kicad_pcb"
+    board.write_bytes(b"(kicad_pcb)\xff")
+
+    with pytest.raises(UnicodeDecodeError):
+        kicad11_headless_canary._custom_roundtrip_snapshot(board)
+
+
+def test_headless_roundtrip_probe_closes_clients_when_reopen_fails(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    closed: list[str] = []
+
+    class FakeBoard:
+        def __init__(self, file_path: str) -> None:
+            self._file_path = file_path
+
+        def save_as(
+            self,
+            filename: str,
+            overwrite: bool = False,
+            include_project: bool = True,
+        ) -> None:
+            _ = (overwrite, include_project)
+            Path(filename).write_text("(kicad_pcb)\n", encoding="utf-8")
+
+    class FakeKiCad:
+        def __init__(
+            self,
+            *,
+            headless: bool,
+            timeout_ms: int,
+            kicad_cli_path: str,
+            file_path: str,
+        ) -> None:
+            assert headless is True
+            assert timeout_ms > 0
+            assert kicad_cli_path
+            self._file_path = file_path
+
+        def get_board(self) -> FakeBoard:
+            if Path(self._file_path).name.startswith("native-roundtrip-"):
+                raise RuntimeError("reopen failed")
+            return FakeBoard(self._file_path)
+
+        def close(self) -> None:
+            closed.append(Path(self._file_path).name)
+
+    module = ModuleType("kipy")
+    module.KiCad = FakeKiCad  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "kipy", module)
+
+    board = tmp_path / "demo.kicad_pcb"
+    board.write_text("(kicad_pcb)\n", encoding="utf-8")
+    artifacts = tmp_path / "artifacts"
+
+    probe, reason = kicad11_headless_canary._headless_roundtrip_probe(
+        cli=tmp_path / "kicad-cli",
+        project_or_file=board,
+        artifacts=artifacts,
+    )
+
+    assert probe is None
+    assert reason == "Native round-trip probe failed: RuntimeError: reopen failed"
+    assert closed == ["demo.kicad_pcb", "native-roundtrip-demo.kicad_pcb"]
+
+
 def test_canary_appends_live_object_identity_to_preview_differential_report(
     monkeypatch,
     tmp_path: Path,
@@ -206,9 +303,15 @@ def test_canary_appends_live_object_identity_to_preview_differential_report(
     assert identity["status"] == "match"
     assert identity["lane"] == "preview"
     assert identity["operation"] == "live-object.board-identity"
-    assert summary["results_total"] == 1
-    assert summary["match_count"] == 1
-    assert summary["results"][0] == identity
+    assert summary["results_total"] == 2
+    assert summary["match_count"] == 2
+    assert identity in summary["results"]
+    roundtrip = json.loads(
+        (artifacts / "differential" / "roundtrip-reopen.json").read_text(encoding="utf-8")
+    )
+    assert roundtrip["status"] == "match"
+    assert roundtrip["operation"] == "file-roundtrip.board-save-reopen"
+    assert roundtrip in summary["results"]
     assert str(tmp_path) not in json.dumps(identity)
 
 
@@ -257,6 +360,13 @@ def test_canary_marks_live_identity_unavailable_when_headless_authority_is_absen
     assert identity.get("native_result_hash") is None
     assert identity.get("custom_result_hash") is None
     assert "KiCad 11+ headless IPC is not ready" in identity["reason"]
+    roundtrip = json.loads(
+        (artifacts / "differential" / "roundtrip-reopen.json").read_text(encoding="utf-8")
+    )
+    assert roundtrip["status"] == "unavailable-authority"
+    assert roundtrip["lane"] == "preview"
+    assert roundtrip.get("native_result_hash") is None
+    assert "KiCad 11+ headless IPC is not ready" in roundtrip["reason"]
 
 
 def test_canary_appends_live_identity_to_existing_preview_differential_summary(
@@ -309,9 +419,10 @@ def test_canary_appends_live_identity_to_existing_preview_differential_summary(
     )
 
     summary = json.loads((differential / "summary.json").read_text(encoding="utf-8"))
-    assert summary["results_total"] == 2
-    assert summary["match_count"] == 2
+    assert summary["results_total"] == 3
+    assert summary["match_count"] == 3
     assert [record["operation"] for record in summary["results"]] == [
         "drc.findings-and-severities",
         "live-object.board-identity",
+        "file-roundtrip.board-save-reopen",
     ]

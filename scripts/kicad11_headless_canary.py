@@ -8,11 +8,17 @@ import inspect
 import json
 import os
 import re
+import shutil
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from kicad_mcp.evals.roundtrip_differential import RoundTripSnapshot
+    from kicad_mcp.evals.semantic_differential import DifferentialResult
 
 try:
     from scripts.runtime_path_safety import approved_runtime_path
@@ -43,6 +49,12 @@ class LiveIdentityProbe:
     native_board_name: str
     custom_board_name: str
     custom_fingerprint: str
+
+
+@dataclass(frozen=True, slots=True)
+class RoundTripProbe:
+    native_snapshot: RoundTripSnapshot
+    custom_snapshot: RoundTripSnapshot
 
 
 def _validated_kicad_cli(path: Path) -> Path:
@@ -224,9 +236,118 @@ def _headless_read_write(
                 close()
 
 
+def _native_roundtrip_snapshot(board: object) -> RoundTripSnapshot:
+    from kicad_mcp.evals.roundtrip_differential import RoundTripSnapshot
+
+    typed_board = cast(Any, board)
+    footprints = list(typed_board.get_footprints())
+    tracks = list(typed_board.get_tracks())
+    vias = list(typed_board.get_vias())
+    zones = list(typed_board.get_zones())
+    nets = list(typed_board.get_nets())
+    net_names = tuple(name for net in nets if (name := str(getattr(net, "name", "")).strip()))
+    return RoundTripSnapshot(
+        footprint_count=len(footprints),
+        track_count=len(tracks),
+        via_count=len(vias),
+        zone_count=len(zones),
+        net_names=net_names,
+    )
+
+
+def _custom_roundtrip_snapshot(board_file: Path) -> RoundTripSnapshot:
+    from kicad_mcp.evals.roundtrip_differential import RoundTripSnapshot
+    from kicad_mcp.tools.board_file import _normalize_board_content, _parse_board_footprint_blocks
+    from kicad_mcp.tools.pcb import (
+        _board_file_nets,
+        _board_file_segments,
+        _board_file_vias,
+        _board_file_zones,
+    )
+
+    content = _normalize_board_content(board_file.read_text(encoding="utf-8"))
+    return RoundTripSnapshot(
+        footprint_count=len(_parse_board_footprint_blocks(content)),
+        track_count=len(_board_file_segments(content)),
+        via_count=len(_board_file_vias(content)),
+        zone_count=len(_board_file_zones(content)),
+        net_names=tuple(_board_file_nets(content).values()),
+    )
+
+
+@contextmanager
+def _headless_client(
+    *,
+    constructor: Callable[..., Any],
+    cli: Path,
+    file_path: Path,
+) -> Iterator[Any]:
+    client = constructor(
+        headless=True,
+        timeout_ms=10_000,
+        kicad_cli_path=str(cli),
+        file_path=str(file_path),
+    )
+    try:
+        yield client
+    finally:
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
+
+
+def _headless_roundtrip_probe(
+    *,
+    cli: Path,
+    project_or_file: Path,
+    artifacts: Path,
+) -> tuple[RoundTripProbe | None, str | None]:
+    try:
+        from kipy import KiCad
+    except ImportError as exc:
+        return None, f"kicad-python is unavailable: {exc}"
+
+    output = artifacts / "differential" / f"native-roundtrip-{project_or_file.stem}.kicad_pcb"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.unlink(missing_ok=True)
+    try:
+        constructor = cast(Callable[..., Any], KiCad)
+        with _headless_client(
+            constructor=constructor,
+            cli=cli,
+            file_path=project_or_file,
+        ) as source_client:
+            source_board = source_client.get_board()
+            save_as = getattr(source_board, "save_as", None)
+            if not callable(save_as):
+                raise RuntimeError("headless board API does not expose save_as")
+            save_as(str(output), overwrite=True, include_project=False)
+            if not output.is_file():
+                raise RuntimeError("native save_as did not produce a board file")
+
+        with _headless_client(
+            constructor=constructor,
+            cli=cli,
+            file_path=output,
+        ) as reopen_client:
+            reopened_board = reopen_client.get_board()
+            native_snapshot = _native_roundtrip_snapshot(reopened_board)
+
+        custom_snapshot = _custom_roundtrip_snapshot(output)
+        return RoundTripProbe(
+            native_snapshot=native_snapshot,
+            custom_snapshot=custom_snapshot,
+        ), None
+    except Exception as exc:
+        return None, f"Native round-trip probe failed: {type(exc).__name__}: {exc}"
+
+
 def _source_sha() -> str:
+    git = shutil.which("git")
+    if git is None:
+        raise RuntimeError("Could not resolve git executable for live identity differential")
     result = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+        [git, "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
         text=True,
         capture_output=True,
         check=False,
@@ -235,6 +356,47 @@ def _source_sha() -> str:
     if result.returncode != 0 or re.fullmatch(r"[0-9a-f]{40,64}", source_sha) is None:
         raise RuntimeError("Could not resolve exact source SHA for live identity differential")
     return source_sha
+
+
+def _persist_differential_result(
+    *,
+    artifacts: Path,
+    result: DifferentialResult,
+    operation: str,
+    filename: str,
+) -> None:
+    from kicad_mcp.evals.semantic_differential import (
+        DifferentialReport,
+        aggregate_differential_results,
+        render_differential_report_json,
+    )
+
+    differential = artifacts / "differential"
+    differential.mkdir(parents=True, exist_ok=True)
+    (differential / filename).write_text(
+        json.dumps(result.model_dump(mode="json", exclude_none=True), indent=2, sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    summary_path = differential / "summary.json"
+    existing = []
+    if summary_path.is_file():
+        report = DifferentialReport.model_validate(
+            json.loads(summary_path.read_text(encoding="utf-8"))
+        )
+        existing = [
+            item
+            for item in report.results
+            if not (item.operation == operation and item.fixture_id == result.fixture_id)
+        ]
+    summary = aggregate_differential_results([*existing, result])
+    summary_path.write_text(
+        render_differential_report_json(summary),
+        encoding="utf-8",
+        newline="\n",
+    )
 
 
 def _write_live_identity_differential(
@@ -251,11 +413,6 @@ def _write_live_identity_differential(
         LIVE_OBJECT_IDENTITY_OPERATION,
         classify_live_object_identity_differential,
         hash_live_identity_fixture,
-    )
-    from kicad_mcp.evals.semantic_differential import (
-        DifferentialReport,
-        aggregate_differential_results,
-        render_differential_report_json,
     )
     from kicad_mcp.pcb.live_edit_evidence import LiveBoardIdentity
 
@@ -282,34 +439,49 @@ def _write_live_identity_differential(
         reason=reason,
     )
 
-    differential = artifacts / "differential"
-    differential.mkdir(parents=True, exist_ok=True)
-    result_path = differential / "live-object-identity.json"
-    result_path.write_text(
-        json.dumps(result.model_dump(mode="json", exclude_none=True), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-        newline="\n",
+    _persist_differential_result(
+        artifacts=artifacts,
+        result=result,
+        operation=LIVE_OBJECT_IDENTITY_OPERATION,
+        filename="live-object-identity.json",
+    )
+    return result
+
+
+def _write_roundtrip_differential(
+    *,
+    artifacts: Path,
+    project_or_file: Path,
+    kicad_version: str,
+    probe: RoundTripProbe | None,
+    authority_available: bool = True,
+    infrastructure_valid: bool = True,
+    reason: str | None = None,
+) -> object:
+    from kicad_mcp.evals.roundtrip_differential import (
+        ROUNDTRIP_OPERATION,
+        classify_roundtrip_differential,
+        hash_roundtrip_fixture,
     )
 
-    summary_path = differential / "summary.json"
-    existing = []
-    if summary_path.is_file():
-        report = DifferentialReport.model_validate(
-            json.loads(summary_path.read_text(encoding="utf-8"))
-        )
-        existing = [
-            item
-            for item in report.results
-            if not (
-                item.operation == LIVE_OBJECT_IDENTITY_OPERATION
-                and item.fixture_id == result.fixture_id
-            )
-        ]
-    summary = aggregate_differential_results([*existing, result])
-    summary_path.write_text(
-        render_differential_report_json(summary),
-        encoding="utf-8",
-        newline="\n",
+    result = classify_roundtrip_differential(
+        source_sha=_source_sha(),
+        lane="preview",
+        kicad_version=kicad_version,
+        fixture_id=project_or_file.stem,
+        fixture_hash=hash_roundtrip_fixture(project_or_file),
+        native_snapshot=probe.native_snapshot if probe is not None else None,
+        custom_snapshot=probe.custom_snapshot if probe is not None else None,
+        authority_available=authority_available,
+        infrastructure_valid=infrastructure_valid,
+        reason=reason,
+    )
+
+    _persist_differential_result(
+        artifacts=artifacts,
+        result=result,
+        operation=ROUNDTRIP_OPERATION,
+        filename="roundtrip-reopen.json",
     )
     return result
 
@@ -405,6 +577,14 @@ def run_canary(
                 authority_available=False,
                 reason=reason,
             )
+            _write_roundtrip_differential(
+                artifacts=artifacts,
+                project_or_file=project_or_file,
+                kicad_version=version,
+                probe=None,
+                authority_available=False,
+                reason=reason,
+            )
         return 1 if require_ready else 0
 
     read, write, identity_probe, identity_error = _headless_read_write(
@@ -444,8 +624,23 @@ def run_canary(
         infrastructure_valid=identity_error is None and identity_probe is not None,
         reason=identity_error,
     )
-    ready = all(report.status == "passed" for report in (read, write, export)) and (
-        getattr(identity_result, "status", None) == "match"
+    roundtrip_probe, roundtrip_error = _headless_roundtrip_probe(
+        cli=kicad_cli,
+        project_or_file=project_or_file,
+        artifacts=artifacts,
+    )
+    roundtrip_result = _write_roundtrip_differential(
+        artifacts=artifacts,
+        project_or_file=project_or_file,
+        kicad_version=version or "unknown",
+        probe=roundtrip_probe,
+        infrastructure_valid=roundtrip_error is None and roundtrip_probe is not None,
+        reason=roundtrip_error,
+    )
+    ready = (
+        all(report.status == "passed" for report in (read, write, export))
+        and getattr(identity_result, "status", None) == "match"
+        and getattr(roundtrip_result, "status", None) == "match"
     )
     return 0 if ready or not require_ready else 1
 
