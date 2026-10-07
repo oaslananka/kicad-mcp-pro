@@ -776,8 +776,9 @@ def test_required_pr_gate_blocks_unready_release_please_prs() -> None:
     assert "startsWith(github.head_ref, 'release-please--')" in workflow
     assert "check_live_model_release_policy.py --require-ready release" in workflow
     expected_needs = (
-        "needs: [changes, release-metadata, mcp-server, coverage, mcp-npm, chatgpt-app, "
-        "protocol-schemas, mcp-2026-compat, workflow-policy, security, release-readiness]"
+        "needs: [changes, release-metadata, python-changed-quality, mcp-server, coverage, "
+        "mcp-npm, chatgpt-app, protocol-schemas, mcp-2026-compat, workflow-policy, "
+        "security, release-readiness]"
     )
     assert expected_needs in workflow
     assert '[release-readiness]="${{ needs.release-readiness.result }}"' in workflow
