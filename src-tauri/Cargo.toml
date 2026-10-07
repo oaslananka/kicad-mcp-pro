@@ -1,6 +1,6 @@
 [package]
 name = "kicad-mcp-pro"
-version = "4.0.1"
+version = "4.0.2"
 description = "KiCad MCP Pro — Desktop EDA automation with AI agent integration"
 authors = ["KiCad MCP Team"]
 edition = "2021"
