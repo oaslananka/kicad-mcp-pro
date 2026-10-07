@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from kicad_mcp.evals.connectivity_differential import (
     build_connectivity_differential_result,
     connectivity_signature_hash,
@@ -113,8 +115,6 @@ def test_connectivity_result_rejects_vacuous_equivalence() -> None:
         "fixture_id": "gallery-esp32-c3-wroom-02-breakout",
         "fixture_hash": FIXTURE_HASH,
     }
-    import pytest
-
     with pytest.raises(ValueError, match="Native connectivity authority produced an empty"):
         build_connectivity_differential_result(
             **common,
@@ -122,9 +122,25 @@ def test_connectivity_result_rejects_vacuous_equivalence() -> None:
             custom_groups=[{"pins": [{"reference": "U1", "pin": "1"}]}],
         )
 
-    with pytest.raises(ValueError, match="Custom connectivity parser produced an empty"):
-        build_connectivity_differential_result(
-            **common,
-            native_net_map={("U1", "1"): "N1"},
-            custom_groups=[],
-        )
+    empty_custom = build_connectivity_differential_result(
+        **common,
+        native_net_map={("U1", "1"): "N1"},
+        custom_groups=[],
+    )
+    assert empty_custom.status == "divergence"
+    assert empty_custom.native_result_hash != empty_custom.custom_result_hash
+
+
+def test_connectivity_normalization_rejects_malformed_identities() -> None:
+    with pytest.raises(ValueError, match="non-empty net identity"):
+        normalize_native_net_map({("U1", "1"): ""})
+
+    for malformed_pin in (
+        {"reference": "", "pin": "1"},
+        {"reference": "U1", "pin": ""},
+    ):
+        with pytest.raises(ValueError, match="non-empty reference and pin"):
+            normalize_custom_connectivity_groups([{"pins": [malformed_pin]}])
+
+    with pytest.raises(ValueError, match="non-empty reference and pin"):
+        normalize_native_net_map({("", "1"): "N1"})

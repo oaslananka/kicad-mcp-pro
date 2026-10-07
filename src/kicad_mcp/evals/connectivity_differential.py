@@ -78,8 +78,6 @@ def build_connectivity_differential_result(
     custom_signature = normalize_custom_connectivity_groups(custom_groups)
     if not native_signature:
         raise ValueError("Native connectivity authority produced an empty signature")
-    if not custom_signature:
-        raise ValueError("Custom connectivity parser produced an empty signature")
     return classify_differential_result(
         source_sha=source_sha,
         lane=lane,

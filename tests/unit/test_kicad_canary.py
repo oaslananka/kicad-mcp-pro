@@ -563,11 +563,61 @@ def test_differential_source_sha_rejects_dirty_source_tree(monkeypatch) -> None:
             )
         return subprocess.CompletedProcess(args, 0, stdout="a" * 40 + "\n", stderr="")
 
+    monkeypatch.setattr(
+        kicad_canary.shutil, "which", lambda name: "/usr/bin/git" if name == "git" else None
+    )
     monkeypatch.setattr(kicad_canary.subprocess, "run", run)
 
     with pytest.raises(RuntimeError, match="clean source tree"):
         kicad_canary._source_sha()
-    assert calls == [("git", "status", "--porcelain", "--untracked-files=no")]
+    assert calls == [("/usr/bin/git", "status", "--porcelain", "--untracked-files=no")]
+
+
+def test_differential_source_sha_fails_closed_without_git(monkeypatch) -> None:
+    monkeypatch.setattr(kicad_canary.shutil, "which", lambda _name: None)
+
+    with pytest.raises(RuntimeError, match="git executable is unavailable"):
+        kicad_canary._source_sha()
+
+
+def test_connectivity_differential_missing_native_artifact_is_unavailable_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = tmp_path / "fixture.kicad_sch"
+    fixture.write_text("(kicad_sch)", encoding="utf-8")
+    monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
+    monkeypatch.setattr(
+        kicad_canary,
+        "_connectivity_groups",
+        lambda _path: [
+            {
+                "names": ["N1"],
+                "pins": [
+                    {"reference": "R1", "pin": "2"},
+                    {"reference": "U1", "pin": "1"},
+                ],
+            }
+        ],
+    )
+
+    result = kicad_canary._write_connectivity_differential_report(
+        artifacts=tmp_path / "artifacts",
+        kicad_range="10.0.x",
+        kicad_version="10.0.6",
+        native_netlist=tmp_path / "missing.net",
+        fixture=fixture,
+    )
+
+    assert result is not None
+    assert result.status == "unavailable-authority"
+    assert result.native_result_hash is None
+    assert result.custom_result_hash is not None
+    assert result.reason == "Native KiCad connectivity authority artifact is unavailable."
+    payload = json.loads(
+        (tmp_path / "artifacts" / "differential" / "summary.json").read_text(encoding="utf-8")
+    )
+    assert payload["unavailable_authority_count"] == 1
+    assert payload["infrastructure_invalid_count"] == 0
 
 
 def test_connectivity_differential_parser_failure_is_infrastructure_invalid(

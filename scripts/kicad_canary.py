@@ -18,7 +18,11 @@ from typing import Any
 
 import yaml
 
-from kicad_mcp.evals.connectivity_differential import build_connectivity_differential_result
+from kicad_mcp.evals.connectivity_differential import (
+    build_connectivity_differential_result,
+    connectivity_signature_hash,
+    normalize_custom_connectivity_groups,
+)
 from kicad_mcp.evals.semantic_differential import (
     DifferentialResult,
     aggregate_differential_results,
@@ -308,6 +312,7 @@ def _command_plan(
     manufacturing = artifacts / "manufacturing"
     graphics = artifacts / "graphics"
     differential = artifacts / "differential"
+    differential.mkdir(parents=True, exist_ok=True)
     readonly_output = artifacts / "readonly-project"
     manufacturing_skip = _feature_skip_reason(compatibility, "manufacturingExports", kicad_range)
     kicad10_export_skip = _feature_skip_reason(
@@ -931,8 +936,11 @@ def _run_step(cli: Path, step: CanaryStep, artifacts: Path) -> dict[str, object]
 
 
 def _source_sha() -> str:
+    git = shutil.which("git")
+    if git is None:
+        raise RuntimeError("git executable is unavailable for differential canary evidence")
     status = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=no"],
+        [git, "status", "--porcelain", "--untracked-files=no"],
         cwd=REPO_ROOT,
         text=True,
         capture_output=True,
@@ -943,7 +951,7 @@ def _source_sha() -> str:
         raise RuntimeError("Differential canary evidence requires a clean source tree")
 
     result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
+        [git, "rev-parse", "HEAD"],
         cwd=REPO_ROOT,
         text=True,
         capture_output=True,
@@ -972,14 +980,15 @@ def _connectivity_groups(path: Path) -> list[dict[str, Any]]:
     return build_connectivity_groups(path)
 
 
-def _kicad_version_from_result(version_result: dict[str, object]) -> str | None:
-    stdout_path = Path(str(version_result["stdout"]))
-    stderr_path = Path(str(version_result["stderr"]))
-    output = "\n".join(
-        path.read_text(encoding="utf-8", errors="ignore")
-        for path in (stdout_path, stderr_path)
-        if path.exists()
+def _result_log_text(result: dict[str, object]) -> str:
+    paths = (Path(str(result["stdout"])), Path(str(result["stderr"])))
+    return "\n".join(
+        path.read_text(encoding="utf-8", errors="ignore") for path in paths if path.exists()
     )
+
+
+def _kicad_version_from_result(version_result: dict[str, object]) -> str | None:
+    output = _result_log_text(version_result)
     match = re.search(r"\b(?P<version>\d+\.\d+(?:\.\d+)?)\b", output)
     return match.group("version") if match is not None else None
 
@@ -998,15 +1007,52 @@ def _write_connectivity_differential_report(
     fixture_hash = _fixture_hash(fixture)
     source_sha = _source_sha()
     try:
-        result = build_connectivity_differential_result(
-            source_sha=source_sha,
-            lane="stable",
-            kicad_version=kicad_version,
-            fixture_id=CONNECTIVITY_DIFFERENTIAL_FIXTURE_ID,
-            fixture_hash=fixture_hash,
-            native_net_map=_native_net_map(native_netlist),
-            custom_groups=_connectivity_groups(fixture),
+        custom_groups = _connectivity_groups(fixture)
+        custom_hash = connectivity_signature_hash(
+            normalize_custom_connectivity_groups(custom_groups)
         )
+        if not native_netlist.is_file() or native_netlist.stat().st_size == 0:
+            result = classify_differential_result(
+                source_sha=source_sha,
+                lane="stable",
+                kicad_version=kicad_version,
+                fixture_id=CONNECTIVITY_DIFFERENTIAL_FIXTURE_ID,
+                fixture_hash=fixture_hash,
+                operation="connectivity.net-compilation",
+                authority="kicad-cli:sch-export-netlist-kicadsexpr",
+                comparison_method="pin-membership-sha256.v1",
+                native_result_hash=None,
+                custom_result_hash=custom_hash,
+                authority_available=False,
+                reason="Native KiCad connectivity authority artifact is unavailable.",
+            )
+        else:
+            native_net_map = _native_net_map(native_netlist)
+            if not native_net_map:
+                result = classify_differential_result(
+                    source_sha=source_sha,
+                    lane="stable",
+                    kicad_version=kicad_version,
+                    fixture_id=CONNECTIVITY_DIFFERENTIAL_FIXTURE_ID,
+                    fixture_hash=fixture_hash,
+                    operation="connectivity.net-compilation",
+                    authority="kicad-cli:sch-export-netlist-kicadsexpr",
+                    comparison_method="pin-membership-sha256.v1",
+                    native_result_hash=None,
+                    custom_result_hash=custom_hash,
+                    authority_available=False,
+                    reason="Native KiCad connectivity authority returned no compiled nets.",
+                )
+            else:
+                result = build_connectivity_differential_result(
+                    source_sha=source_sha,
+                    lane="stable",
+                    kicad_version=kicad_version,
+                    fixture_id=CONNECTIVITY_DIFFERENTIAL_FIXTURE_ID,
+                    fixture_hash=fixture_hash,
+                    native_net_map=native_net_map,
+                    custom_groups=custom_groups,
+                )
     except (OSError, ValueError, RuntimeError, TypeError) as exc:
         result = classify_differential_result(
             source_sha=source_sha,
@@ -1030,13 +1076,7 @@ def _write_connectivity_differential_report(
 
 
 def _version_range_error(version_result: dict[str, object], kicad_range: str) -> str | None:
-    stdout_path = Path(str(version_result["stdout"]))
-    stderr_path = Path(str(version_result["stderr"]))
-    output = "\n".join(
-        path.read_text(encoding="utf-8", errors="ignore")
-        for path in (stdout_path, stderr_path)
-        if path.exists()
-    )
+    output = _result_log_text(version_result)
     match = re.search(r"\b(?P<major>\d+)\.(?P<minor>\d+)(?:\.\d+)?\b", output)
     if match is None:
         return f"Could not read KiCad version from canary logs for {kicad_range}"
