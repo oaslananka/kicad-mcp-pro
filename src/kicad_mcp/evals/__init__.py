@@ -35,6 +35,12 @@ from .drc_differential import (
     compare_drc_report_file,
     hash_fixture_tree,
 )
+from .export_inventory_differential import (
+    EXPORT_INVENTORY_AUTHORITY,
+    EXPORT_INVENTORY_COMPARISON_METHOD,
+    EXPORT_INVENTORY_OPERATION,
+    classify_export_inventory_differential,
+)
 from .geometry_differential import (
     GEOMETRY_AUTHORITY,
     GEOMETRY_COMPARISON_METHOD,
@@ -149,6 +155,10 @@ __all__ = [
     "DRC_OPERATION",
     "compare_drc_report_file",
     "hash_fixture_tree",
+    "EXPORT_INVENTORY_AUTHORITY",
+    "EXPORT_INVENTORY_COMPARISON_METHOD",
+    "EXPORT_INVENTORY_OPERATION",
+    "classify_export_inventory_differential",
     "GEOMETRY_AUTHORITY",
     "GEOMETRY_COMPARISON_METHOD",
     "GEOMETRY_OPERATION",

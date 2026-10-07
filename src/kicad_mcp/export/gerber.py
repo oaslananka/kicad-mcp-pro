@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..models.export import ExportGerberInput
+from .inventory import discover_gerber_output_files
 
 type GetPcbFile = Callable[[], Path]
 type EnsureOutputDir = Callable[[str | None], Path]
@@ -83,5 +84,5 @@ class ExportGerberService:
         if code != 0:
             return f"Gerber export failed: {stderr or 'unknown error'}"
 
-        files = sorted(out_dir.glob("*.gbr")) + sorted(out_dir.glob("*.g*"))
+        files = discover_gerber_output_files(out_dir)
         return self.format_file_list(files, f"Gerber export completed in {out_dir}:")

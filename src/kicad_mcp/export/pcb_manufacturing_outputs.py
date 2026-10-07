@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from .inventory import IPC2581_DEFAULT_NAME
+
 
 class PcbManufacturingCapabilities(Protocol):
     @property
@@ -38,7 +40,7 @@ _IPC2581 = _SingleFileSpec(
     command="ipc2581",
     label="IPC-2581",
     output_subdir="ipc2581",
-    default_name="board.ipc2581",
+    default_name=IPC2581_DEFAULT_NAME,
     support_name="supports_ipc2581",
     report_success_stderr=True,
 )

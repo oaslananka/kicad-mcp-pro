@@ -6,6 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .inventory import discover_drill_output_files
+
 type GetPcbFile = Callable[[], Path]
 type EnsureOutputDir = Callable[[str | None], Path]
 type GetDrillCommand = Callable[[], str]
@@ -59,5 +61,5 @@ class ExportDrillService:
         )
         if code != 0:
             return f"Drill export failed: {stderr or 'unknown error'}"
-        files = sorted(out_dir.glob("*.drl")) + sorted(out_dir.glob("*.xnc"))
+        files = discover_drill_output_files(out_dir)
         return self.format_file_list(files, f"Drill export completed in {out_dir}:")

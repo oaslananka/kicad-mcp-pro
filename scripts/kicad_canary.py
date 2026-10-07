@@ -24,6 +24,7 @@ from kicad_mcp.evals.connectivity_differential import (
     normalize_custom_connectivity_groups,
 )
 from kicad_mcp.evals.drc_differential import compare_drc_report_file
+from kicad_mcp.evals.export_inventory_differential import classify_export_inventory_differential
 from kicad_mcp.evals.geometry_differential import classify_geometry_differential
 from kicad_mcp.evals.semantic_differential import (
     DifferentialLane,
@@ -52,6 +53,7 @@ CONNECTIVITY_DIFFERENTIAL_FIXTURE_DIR = (
 CONNECTIVITY_DIFFERENTIAL_FIXTURE_NAME = "esp32-c3-wroom-02-breakout.kicad_sch"
 CONNECTIVITY_DIFFERENTIAL_FIXTURE_ID = "gallery-esp32-c3-wroom-02-breakout"
 GEOMETRY_DIFFERENTIAL_FIXTURE_ID = "clean-led-kicad10"
+EXPORT_INVENTORY_DIFFERENTIAL_FIXTURE_ID = "clean-led-kicad10"
 
 INSTALLERS = {
     "10.0.x": {
@@ -1139,6 +1141,40 @@ def _write_drc_differential_results(
     return records
 
 
+def _write_export_inventory_differential_result(
+    *,
+    artifacts: Path,
+    kicad_range: str,
+    kicad_version: str,
+    fixture_id: str,
+    fixture: Path,
+    native_steps: list[dict[str, object]],
+) -> DifferentialResult | None:
+    lane = _differential_lane_for_range(kicad_range)
+    if lane is None:
+        return None
+
+    required_steps = {"gerbers", "drill", "ipc2581"}
+    by_name = {str(step.get("name", "")): step for step in native_steps}
+    authority_available = all(
+        name in by_name
+        and bool(by_name[name].get("ok"))
+        and not bool(by_name[name].get("skipped"))
+        for name in required_steps
+    )
+    return classify_export_inventory_differential(
+        source_sha=_source_sha(),
+        lane=lane,
+        kicad_version=kicad_version,
+        fixture_id=fixture_id,
+        fixture_hash=_fixture_hash(fixture),
+        gerber_dir=artifacts / "manufacturing" / "gerbers",
+        drill_dir=artifacts / "manufacturing" / "drill",
+        ipc2581_path=artifacts / "manufacturing" / "board.ipc2581",
+        authority_available=authority_available,
+    )
+
+
 def _write_geometry_differential_result(
     *,
     artifacts: Path,
@@ -1323,6 +1359,25 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
                 native_steps=drc_steps,
             )
         )
+
+    manufacturing_steps = [
+        result
+        for result in results
+        if result.get("name") in {"gerbers", "drill", "ipc2581"}
+    ]
+    if kicad_version is not None and version_error is None and manufacturing_steps:
+        export_inventory_result = _write_export_inventory_differential_result(
+            artifacts=artifacts,
+            kicad_range=kicad_range,
+            kicad_version=kicad_version,
+            fixture_id=EXPORT_INVENTORY_DIFFERENTIAL_FIXTURE_ID,
+            fixture=_fixture_file(
+                artifacts / "workspace", EXPORT_INVENTORY_DIFFERENTIAL_FIXTURE_ID, ".kicad_pcb"
+            ),
+            native_steps=manufacturing_steps,
+        )
+        if export_inventory_result is not None:
+            differential_results.append(export_inventory_result)
 
     if differential_results:
         _write_differential_summary(artifacts, differential_results)
