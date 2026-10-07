@@ -6,7 +6,7 @@ Mode: audit + implementation PR
 
 ## Executive summary
 
-`kicad-mcp-pro` already has many strong professional open-source signals: README, MIT license, contribution guide, code of conduct, security policy, support policy, release automation, CI, CodeQL, Gitleaks, Scorecard, fuzzing, package metadata, OpenSSF Silver evidence, generated tool references, and documented governance.
+`kicad-mcp-pro` already has many strong professional open-source signals: README, MIT license, contribution guide, code of conduct, security policy, support policy, release automation, CI, CodeQL, Gitleaks, Scorecard, fuzzing, package metadata, OpenSSF Best Practices evidence, generated tool references, and documented governance.
 
 The current maturity level is **Professional OSS / Mature OSS**. This report does **not** claim Gold or foundation-grade status because several conditions need human confirmation or are not yet true: single active maintainer, no evidence of independent human PR review in sampled recent PRs, classic branch protection is not used because an active GitHub ruleset protects `main`, and only team-growth controls remain out of scope for a solo maintainer.
 
@@ -14,7 +14,7 @@ The current maturity level is **Professional OSS / Mature OSS**. This report doe
 
 **Professional OSS / Mature OSS — Passed/Partial.**
 
-Evidence includes public repository, MIT license, active CI, release automation, strong security workflows, OpenSSF Silver evidence, documented governance, issue templates, PR template, support policy, and generated reference docs.
+Evidence includes public repository, MIT license, active CI, release automation, strong security workflows, OpenSSF Best Practices evidence, documented governance, issue templates, PR template, support policy, and generated reference docs.
 
 ## Target maturity level
 
@@ -40,8 +40,8 @@ Gold / foundation-grade is not a current target for this solo-maintainer reposit
 
 | Area | Status | Evidence / notes |
 | --- | --- | --- |
-| Passing readiness | Passed | `docs/openssf-best-practices.md`, `docs/openssf-evidence.md`. |
-| Silver readiness | Passed / Partial | Existing Silver evidence; this PR adds consolidated evidence and gaps. |
+| Passing readiness | In progress | Canonical BadgeApp project `12686` has Basics 13/13; remaining Passing sections are still being completed. |
+| Silver readiness | Not yet claimed | `docs/openssf-silver-evidence.md` is preparatory; Silver must not be claimed until canonical project `12686` reaches it. |
 | Gold feasibility | Not applicable | Gold is intentionally not targeted for the current solo-maintainer model. |
 | `.bestpractices.json` | Passed | Added in this PR. |
 | BadgeApp proposal links | Passed | `docs/openssf-proposal-links.md`. |
