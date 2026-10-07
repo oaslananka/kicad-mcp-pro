@@ -524,6 +524,8 @@ def test_connectivity_differential_writes_stable_machine_report(
 
     assert result is not None
     assert result.status == "match"
+    assert not (tmp_path / "artifacts" / "differential" / "summary.json").exists()
+    kicad_canary._write_differential_summary(tmp_path / "artifacts", [result])
     payload = json.loads(
         (tmp_path / "artifacts" / "differential" / "summary.json").read_text(encoding="utf-8")
     )
@@ -613,6 +615,8 @@ def test_connectivity_differential_missing_native_artifact_is_unavailable_author
     assert result.native_result_hash is None
     assert result.custom_result_hash is not None
     assert result.reason == "Native KiCad connectivity authority artifact is unavailable."
+    assert not (tmp_path / "artifacts" / "differential" / "summary.json").exists()
+    kicad_canary._write_differential_summary(tmp_path / "artifacts", [result])
     payload = json.loads(
         (tmp_path / "artifacts" / "differential" / "summary.json").read_text(encoding="utf-8")
     )
@@ -645,6 +649,8 @@ def test_connectivity_differential_parser_failure_is_infrastructure_invalid(
     assert result is not None
     assert result.status == "infrastructure-invalid"
     assert result.reason == "Connectivity differential infrastructure failed (ValueError)."
+    assert not (tmp_path / "artifacts" / "differential" / "summary.json").exists()
+    kicad_canary._write_differential_summary(tmp_path / "artifacts", [result])
     payload = json.loads(
         (tmp_path / "artifacts" / "differential" / "summary.json").read_text(encoding="utf-8")
     )

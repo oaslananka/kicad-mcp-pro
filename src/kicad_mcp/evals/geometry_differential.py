@@ -103,7 +103,7 @@ def classify_geometry_differential(
             comparison_method=GEOMETRY_COMPARISON_METHOD,
             native_result_hash=None,
             custom_result_hash=None,
-            authority_available=True,
+            authority_available=authority_available,
             infrastructure_valid=False,
             reason=reason or "Geometry differential infrastructure is invalid.",
         )

@@ -49,6 +49,7 @@ CONNECTIVITY_DIFFERENTIAL_FIXTURE_DIR = (
 )
 CONNECTIVITY_DIFFERENTIAL_FIXTURE_NAME = "esp32-c3-wroom-02-breakout.kicad_sch"
 CONNECTIVITY_DIFFERENTIAL_FIXTURE_ID = "gallery-esp32-c3-wroom-02-breakout"
+GEOMETRY_DIFFERENTIAL_FIXTURE_ID = "clean-led-kicad10"
 
 INSTALLERS = {
     "10.0.x": {
@@ -1000,9 +1001,7 @@ def _kicad_version_from_result(version_result: dict[str, object]) -> str | None:
     return match.group("version") if match is not None else None
 
 
-def _write_differential_summary(
-    artifacts: Path, results: list[DifferentialResult]
-) -> None:
+def _write_differential_summary(artifacts: Path, results: list[DifferentialResult]) -> None:
     if not results:
         return
     report = aggregate_differential_results(results)
@@ -1086,7 +1085,6 @@ def _write_connectivity_differential_report(
             infrastructure_valid=False,
             reason=f"Connectivity differential infrastructure failed ({type(exc).__name__}).",
         )
-    _write_differential_summary(artifacts, [result])
     return result
 
 
@@ -1115,7 +1113,7 @@ def _write_geometry_differential_result(
                 source_sha=source_sha,
                 lane="stable",
                 kicad_version=kicad_version,
-                fixture_id="clean-led-kicad10",
+                fixture_id=GEOMETRY_DIFFERENTIAL_FIXTURE_ID,
                 fixture_hash=fixture_hash,
                 native_stats_text=None,
                 custom_outline_bounds=custom_bounds,
@@ -1126,7 +1124,7 @@ def _write_geometry_differential_result(
             source_sha=source_sha,
             lane="stable",
             kicad_version=kicad_version,
-            fixture_id="clean-led-kicad10",
+            fixture_id=GEOMETRY_DIFFERENTIAL_FIXTURE_ID,
             fixture_hash=fixture_hash,
             native_stats_text=native_stats.read_text(encoding="utf-8", errors="strict"),
             custom_outline_bounds=custom_bounds,
@@ -1252,7 +1250,9 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
             kicad_range=kicad_range,
             kicad_version=kicad_version,
             native_stats=artifacts / "reports" / "board-stats.txt",
-            fixture=_fixture_file(artifacts / "workspace", "clean-led-kicad10", ".kicad_pcb"),
+            fixture=_fixture_file(
+                artifacts / "workspace", GEOMETRY_DIFFERENTIAL_FIXTURE_ID, ".kicad_pcb"
+            ),
             native_authority_available=bool(board_stats_step.get("ok")),
         )
         if geometry_result is not None:
