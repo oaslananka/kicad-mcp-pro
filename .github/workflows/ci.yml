@@ -198,6 +198,53 @@ jobs:
       - name: Validate deterministic KiCad PCM package
         run: uv run --all-extras python scripts/build_kicad_pcm.py --output-dir "/tmp/kicad-pcm" --verify
 
+  python-changed-quality:
+    name: Python changed-file quality
+    needs: [changes, release-metadata]
+    if: >-
+      always() &&
+      needs.release-metadata.result == 'success' &&
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Skip changed Python quality when unaffected
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          needs.changes.outputs.release_metadata_only == 'true' ||
+          needs.changes.outputs.python != 'true'
+        run: |
+          echo "::notice::Skipping changed Python Ruff parity — no applicable diff"
+          echo "skip_ci=true" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: env.skip_ci != 'true'
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        if: env.skip_ci != 'true'
+        with:
+          enable-cache: true
+          prune-cache: true
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+        if: env.skip_ci != 'true'
+      - name: Enforce changed Python Ruff scope
+        if: env.skip_ci != 'true'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          # pull_request checks out GitHub's synthetic merge commit; HEAD^1 is its base parent.
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' ]]; then
+            base_sha="$(git rev-parse HEAD^1)"
+          else
+            base_sha="$BEFORE_SHA"
+            if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
+              base_sha="$(git rev-parse HEAD^)"
+            fi
+          fi
+          uv run --all-extras python scripts/hook_pre_push.py --base "$base_sha" --ruff-only
+
   mcp-server:
     needs: [changes, release-metadata]
     if: >-
@@ -626,7 +673,7 @@ jobs:
 
   required-pr-gate:
     name: Required PR Gate
-    needs: [changes, release-metadata, mcp-server, coverage, mcp-npm, chatgpt-app, protocol-schemas, mcp-2026-compat, workflow-policy, security, release-readiness]
+    needs: [changes, release-metadata, python-changed-quality, mcp-server, coverage, mcp-npm, chatgpt-app, protocol-schemas, mcp-2026-compat, workflow-policy, security, release-readiness]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -637,6 +684,7 @@ jobs:
           declare -A results=(
             [changes]="${{ needs.changes.result }}"
             [release-metadata]="${{ needs.release-metadata.result }}"
+            [python-changed-quality]="${{ needs.python-changed-quality.result }}"
             [mcp-server]="${{ needs.mcp-server.result }}"
             [coverage]="${{ needs.coverage.result }}"
             [mcp-npm]="${{ needs.mcp-npm.result }}"
@@ -661,7 +709,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           failed=0
-          for job in changes release-metadata mcp-server coverage mcp-npm chatgpt-app protocol-schemas mcp-2026-compat workflow-policy security release-readiness; do
+          for job in changes release-metadata python-changed-quality mcp-server coverage mcp-npm chatgpt-app protocol-schemas mcp-2026-compat workflow-policy security release-readiness; do
             result="${results[$job]}"
             echo "| $job | $result |" >> "$GITHUB_STEP_SUMMARY"
             case "$result" in

@@ -1,7 +1,7 @@
 # CI/CD Policy — Path-Aware Risk-Based Gating
 
 > **Status**: Active
-> **Last updated**: 2026-10-06
+> **Last updated**: 2026-10-07
 
 ## Overview
 
@@ -45,6 +45,7 @@ would incorrectly no-op on a real dependency/Dockerfile change.
 
 | Job / Check | Docs-only PR | Python PR | NPM PR | Schema PR | Workflow PR | Full / Mixed PR |
 |-------------|:------------:|:---------:|:------:|:---------:|:-----------:|:---------------:|
+| `Python changed-file quality` | no-op ✅ | **changed-file Ruff** | no-op ✅ | no-op ✅ | no-op ✅ | **when Python changes** |
 | `mcp-server` (3 OS) | no-op ✅ | **full** | no-op ✅ | no-op ✅ | **full** | **full** |
 | `CI Tests / Coverage` | no-op ✅ | **full** | no-op ✅ | no-op ✅ | **full** | **full** |
 | `mcp-npm` (3 OS) | no-op ✅ | no-op ✅ | **full** | no-op ✅ | **full** | **full** |
@@ -65,6 +66,12 @@ configuration, `sonar-project.properties`, or `AGENTS.md` force the `mcp-server`
 OS matrix and full Python coverage lane to run their real unit/tooling-contract suite.
 This prevents a required check from reporting a no-op success when Python tests consume a
 non-Python repository contract.
+
+The internal `Python changed-file quality` job reuses `scripts/hook_pre_push.py`
+in `--ruff-only` mode against the exact pull-request/push diff. The shared selector
+keeps maintained Python files under `src/`, `tests/`, and `scripts/` aligned between
+local pre-push and remote CI while avoiding unrelated legacy-script cleanup. It joins
+the aggregate `Required PR Gate` rather than becoming a new branch-protection context.
 
 Dependency Review runs on every pull request to `main` and is a required
 status check. It must not be path-filtered at the workflow trigger because a
@@ -112,7 +119,8 @@ skipped entirely.
 ### Aggregate Gate (`required-pr-gate`)
 
 `ci.yml` includes a `required-pr-gate` job that evaluates the results of
-`changes`, `mcp-server`, `coverage`, `mcp-npm`, `protocol-schemas`, and `security`,
+`changes`, `python-changed-quality`, `mcp-server`, `coverage`, `mcp-npm`,
+`protocol-schemas`, and `security`,
 failing on any `failure`/`cancelled` result and passing on `success`/`skipped`.
 It exists to let branch protection eventually depend on **one** check instead
 of pinning every individual matrix context, so job renames or new matrix

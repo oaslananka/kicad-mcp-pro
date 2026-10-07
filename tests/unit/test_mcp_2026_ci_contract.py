@@ -28,6 +28,6 @@ def test_candidate_protocol_contract_runs_in_an_independent_required_ci_job() ->
     assert {"release-metadata", "mcp-2026-compat"} <= required_needs
     assert '[mcp-2026-compat]="${{ needs.mcp-2026-compat.result }}"' in workflow
     assert (
-        "for job in changes release-metadata mcp-server coverage mcp-npm chatgpt-app "
-        "protocol-schemas mcp-2026-compat workflow-policy security"
+        "for job in changes release-metadata python-changed-quality mcp-server coverage "
+        "mcp-npm chatgpt-app protocol-schemas mcp-2026-compat workflow-policy security"
     ) in " ".join(workflow.split())

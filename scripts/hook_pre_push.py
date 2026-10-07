@@ -18,6 +18,7 @@ from shutil import which
 ROOT = Path(__file__).resolve().parents[1]
 ZERO_SHA = "0" * 40
 MAX_TARGET_TEST_FILES = 12
+RUFF_CHECK_NAMES = frozenset({"ruff-format", "ruff-lint"})
 _SAFE_GIT_REF = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/@+,-]{0,254}")
 _GIT_OBJECT_ID = re.compile(r"[0-9a-fA-F]{40,64}")
 
@@ -345,6 +346,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", help="Compare HEAD against this ref instead of hook refs")
     parser.add_argument("--dry-run", action="store_true", help="Print the selected commands")
+    parser.add_argument(
+        "--ruff-only",
+        action="store_true",
+        help="Run only the shared changed-file Ruff format/lint checks",
+    )
     args = parser.parse_args(argv)
 
     changed = changed_files(args.base)
@@ -353,6 +359,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     plan = build_plan(changed)
+    if args.ruff_only:
+        plan = [check for check in plan if check.name in RUFF_CHECK_NAMES]
     if not plan:
         print("pre-push: no local checks selected; CI remains authoritative.")
         return 0
