@@ -370,6 +370,17 @@ def test_reference_bundle_rejects_unindexed_attempt_directory(tmp_path: Path) ->
         evals.validate_reference_board_bundle(root)
 
 
+@pytest.mark.parametrize("filename", ("attempt-undisclosed.json", "unlisted-output.log"))
+def test_reference_bundle_rejects_unindexed_attempt_file(tmp_path: Path, filename: str) -> None:
+    root = _write_bundle(tmp_path)
+    (root / "attempts" / filename).write_text(
+        "Unindexed output from a benchmark attempt.\\n", encoding="utf-8"
+    )
+
+    with pytest.raises(evals.ReferenceCorpusError, match="attempts.*unindexed"):
+        evals.validate_reference_board_bundle(root)
+
+
 def test_reference_bundle_rejects_manifest_benchmark_identity_mismatch(tmp_path: Path) -> None:
     root = _write_bundle(tmp_path)
     payload = json.loads((root / "attempt-manifest.json").read_text(encoding="utf-8"))
