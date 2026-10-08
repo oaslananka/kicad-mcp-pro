@@ -1,0 +1,68 @@
+{
+  "demo_id": "jetson-agx-thor-baseboard",
+  "input_manifest_sha256": "28275646ace84e0de2cc466d75d94f7ccad061058e45a3455c520dfe1c8efd2b",
+  "license": "Apache-2.0",
+  "native_inspect_ms": {
+    "p50": 38.72,
+    "p95_nearest_rank": 39.223
+  },
+  "native_load_ms": {
+    "p50": 6197.505,
+    "p95_nearest_rank": 6880.485
+  },
+  "not_measured": [
+    "incremental mutation/update latency",
+    "incremental graph/clean rebuild equivalence",
+    "bounded refresh work units",
+    "native ERC/DRC pass and manufacturing reproducibility",
+    "agent task-success denominator"
+  ],
+  "observations": [
+    {
+      "copper_layers": 10,
+      "footprints": 1125,
+      "inspect_ms": 37.577,
+      "kicad_build_version": "10.0.6-10.0.6~ubuntu24.04.1",
+      "load_ms": 6150.841,
+      "process_peak_rss_kib": 599544,
+      "tracks": 25386,
+      "wall_ms": 6509.706
+    },
+    {
+      "copper_layers": 10,
+      "footprints": 1125,
+      "inspect_ms": 39.223,
+      "kicad_build_version": "10.0.6-10.0.6~ubuntu24.04.1",
+      "load_ms": 6880.485,
+      "process_peak_rss_kib": 596084,
+      "tracks": 25386,
+      "wall_ms": 7244.396
+    },
+    {
+      "copper_layers": 10,
+      "footprints": 1125,
+      "inspect_ms": 38.72,
+      "kicad_build_version": "10.0.6-10.0.6~ubuntu24.04.1",
+      "load_ms": 6197.505,
+      "process_peak_rss_kib": 602184,
+      "tracks": 25386,
+      "wall_ms": 6559.6
+    }
+  ],
+  "pcb_sha256": "e61179b68ac151376f5552f91a8acc2aed46f0cc4cd9c771049490735cdbf3f8",
+  "platform": {
+    "architecture": "x86_64",
+    "os": "linux"
+  },
+  "process_peak_rss_kib": {
+    "p50": 599544.0,
+    "p95_nearest_rank": 602184.0
+  },
+  "repository_sha": "73b931a93dcdfa7a5f59d260880a517a829804fa",
+  "run_count": 3,
+  "schema_version": "native-kicad-large-inspect.v0",
+  "schematic_source_files": 17,
+  "status": "native_large_project_baseline_only",
+  "vendor_package": "kicad-demos",
+  "vendor_version": "10.0.6"
+}
