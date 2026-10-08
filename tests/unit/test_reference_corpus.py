@@ -826,3 +826,58 @@ def test_nonexcluded_tool_failure_remains_in_task_success_denominator(tmp_path: 
     assert result.summary.valid_attempts == 1
     assert result.summary.failed_attempts == 1
     assert result.summary.infrastructure_invalid_attempts == 0
+
+
+def test_reviewed_launcher_failure_with_failed_requirements_preserves_historical_attempt(
+    tmp_path: Path,
+) -> None:
+    payload = _pre_task_infrastructure_attempt()
+    payload["failure_reason_code"] = "reference_runner_runtime_mismatch"
+    payload["infrastructure_evidence"]["reason_code"] = "reference_runner_runtime_mismatch"
+    payload["stages"] = [{"stage": "requirements", "outcome": "failed"}]
+    root = _write_bundle(tmp_path, payload)
+    log = root / "attempts" / "attempt-001" / "agent-log.jsonl"
+    started = _event_payload()
+    started.update(event_type="workflow", name="claude_session", status="started")
+    failed = dict(started)
+    failed.update(sequence=2, status="failed", details={"exit_code": 1})
+    log.write_text(
+        json.dumps(started) + "\n" + json.dumps(failed) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_attempt_evidence_digest(root)
+    summary = evals.validate_reference_board_bundle(root).summary
+    assert summary.attempts_total == 1
+    assert summary.infrastructure_invalid_attempts == 1
+    assert summary.valid_attempts == 0
+    assert summary.successful_attempts == 0
+
+
+@pytest.mark.parametrize(
+    "unsafe",
+    ["wrong_reason", "executed_tool", "pcb_stage", "requirements_passed", "launcher_succeeded"],
+)
+def test_launcher_exception_never_hides_executed_design(tmp_path: Path, unsafe: str) -> None:
+    payload = _pre_task_infrastructure_attempt()
+    payload["failure_reason_code"] = "reference_runner_runtime_mismatch"
+    payload["infrastructure_evidence"]["reason_code"] = "reference_runner_runtime_mismatch"
+    payload["stages"] = [{"stage": "requirements", "outcome": "failed"}]
+    if unsafe == "wrong_reason":
+        payload["failure_reason_code"] = "preflight_unavailable"
+        payload["infrastructure_evidence"]["reason_code"] = "preflight_unavailable"
+    elif unsafe == "pcb_stage":
+        payload["stages"].append({"stage": "pcb", "outcome": "failed"})
+    elif unsafe == "requirements_passed":
+        payload["stages"] = [{"stage": "requirements", "outcome": "passed"}]
+    root = _write_bundle(tmp_path, payload)
+    log = root / "attempts" / "attempt-001" / "agent-log.jsonl"
+    event = _event_payload()
+    event.update(event_type="workflow", name="claude_session", status="failed")
+    if unsafe == "executed_tool":
+        event.update(event_type="tool_call", name="pcb_add_via", status="completed")
+    elif unsafe == "launcher_succeeded":
+        event["status"] = "completed"
+    log.write_text(json.dumps(event) + "\n", encoding="utf-8")
+    _refresh_attempt_evidence_digest(root)
+    with pytest.raises(evals.ReferenceCorpusError, match="infrastructure-invalid.*task execution"):
+        evals.validate_reference_board_bundle(root)

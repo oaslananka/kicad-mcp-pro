@@ -409,6 +409,27 @@ def _validate_success_quality_score(
 _TASK_EXECUTION_EVENTS = frozenset({"tool_call", "tool_result", "validation", "recovery"})
 
 
+def _is_reviewed_launcher_preflight_failure(
+    record: AttemptRecord, events: tuple[ReferenceAgentLogEvent, ...]
+) -> bool:
+    """Keep a legacy preflight failure only when no design tool ever ran."""
+    evidence = record.infrastructure_evidence
+    return (
+        record.failure_reason_code == "reference_runner_runtime_mismatch"
+        and evidence is not None
+        and evidence.reviewed
+        and not evidence.task_execution_started
+        and bool(events)
+        and all(
+            event.event_type == "workflow"
+            and event.name == "claude_session"
+            and event.status in {"started", "failed"}
+            for event in events
+        )
+        and any(event.status == "failed" for event in events)
+    )
+
+
 def _verify_pre_task_infrastructure_exclusion(
     record: AttemptRecord, events: tuple[ReferenceAgentLogEvent, ...]
 ) -> None:
@@ -424,7 +445,15 @@ def _verify_pre_task_infrastructure_exclusion(
         any(event.event_type in _TASK_EXECUTION_EVENTS for event in events)
         or record.mutations
         or any(item.execution_attempted for item in record.validations)
-        or any(stage.outcome != "not_applicable" for stage in record.stages)
+        or any(
+            stage.outcome != "not_applicable"
+            and not (
+                stage.stage == "requirements"
+                and stage.outcome == "failed"
+                and _is_reviewed_launcher_preflight_failure(record, events)
+            )
+            for stage in record.stages
+        )
         or (
             record.manufacturing is not None
             and (
@@ -434,7 +463,7 @@ def _verify_pre_task_infrastructure_exclusion(
         )
     ):
         raise ReferenceCorpusError(
-            "infrastructure-invalid attempt contains task execution evidence"
+            f"infrastructure-invalid attempt {record.attempt_id} contains task execution evidence"
         )
 
 
