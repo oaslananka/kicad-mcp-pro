@@ -13,6 +13,7 @@ import json
 import platform
 import re
 import shutil
+import stat
 import statistics
 import subprocess
 import tempfile
@@ -32,6 +33,35 @@ SUPPORTED = {".kicad_pro", ".kicad_sch", ".kicad_pcb", ".kicad_dru"}
 VIOLATIONS = re.compile(r"Found (\d+) violations")
 FOOTPRINTS = re.compile(r"(?m)^\s*\(footprint\s")
 SCHEMA = "native-fixture-readiness.v0"
+
+
+def _trusted_system_executable(value: str, expected_name: str) -> str:
+    """Only execute a pinned-name, non-writable OS-supplied native tool."""
+    candidate = Path(value)
+    trusted_dirs = (Path("/usr/bin"), Path("/usr/local/bin"))
+    if (
+        platform.system() != "Linux"
+        or not candidate.is_absolute()
+        or candidate.name != expected_name
+        or candidate.parent not in trusted_dirs
+    ):
+        raise ValueError("native CLI executable must be from a trusted system directory")
+    try:
+        resolved = candidate.resolve(strict=True)
+        metadata = resolved.stat()
+        mode = metadata.st_mode
+    except OSError as exc:
+        raise ValueError("trusted native CLI executable is unavailable") from exc
+    if (
+        resolved.parent not in trusted_dirs
+        or resolved.name != expected_name
+        or not resolved.is_file()
+        or not (mode & stat.S_IXUSR)
+        or metadata.st_uid != 0
+        or (mode & (stat.S_IWGRP | stat.S_IWOTH))
+    ):
+        raise ValueError("unsafe native CLI executable or permissions")
+    return str(resolved)
 
 
 def _sha(path: Path) -> str:
@@ -63,8 +93,9 @@ def _run_native(
 ) -> tuple[int | None, str, float]:
     started = time.perf_counter()
     try:
+        trusted_cli = _trusted_system_executable(binary, "kicad-cli")
         process = subprocess.run(
-            [binary, *command],
+            [trusted_cli, *command],
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -101,6 +132,8 @@ def _native_case(case: str, cli: str, *, samples: int, timeout: float) -> dict[s
             copy = dest / file.relative_to(original)
             copy.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(file, copy)
+            if _sha(copy) != files[file.relative_to(original).as_posix()]:
+                raise ValueError("native fixture changed during scratch copy")
         board_name = board.relative_to(original).as_posix()
         commands = ["pcb", "drc", "--exit-code-violations", "-o", "drc-audit.txt", board_name]
         observations: list[dict[str, Any]] = []
@@ -188,8 +221,9 @@ def run_audit(
         raise ValueError("invalid bounded audit settings")
     if not cases or len(set(cases)) != len(cases) or any(k not in FIXTURES for k in cases):
         raise ValueError("fixture must be explicitly allowlisted")
+    trusted_cli = _trusted_system_executable(cli, "kicad-cli")
     version = subprocess.run(
-        [cli, "version"], capture_output=True, text=True, check=True, timeout=15
+        [trusted_cli, "version"], capture_output=True, text=True, check=True, timeout=15
     ).stdout.strip()
     if not version or len(version) > 100:
         raise ValueError("KiCad CLI version is unavailable")
@@ -204,7 +238,9 @@ def run_audit(
         "classification": "existing_fixture_readiness_not_agent_outcome",
         "sample_count_per_case": samples,
         "peak_rss_measured": False,
-        "cases": [_native_case(case, cli, samples=samples, timeout=timeout) for case in cases],
+        "cases": [
+            _native_case(case, trusted_cli, samples=samples, timeout=timeout) for case in cases
+        ],
         "reference_corpus": _reference_readiness(),
         "limitations": [
             "Existing repo fixtures are not clean-start autonomous reference boards.",
@@ -225,9 +261,11 @@ def main(argv: list[str] | None = None) -> int:
     binary = shutil.which("kicad-cli")
     if binary is None:
         parser.error("kicad-cli not installed; cannot manufacture benchmark evidence")
+    binary = _trusted_system_executable(binary, "kicad-cli")
     git = shutil.which("git")
     if git is None:
         parser.error("git not installed; source provenance unavailable")
+    git = _trusted_system_executable(git, "git")
     sha = subprocess.run(
         [git, "rev-parse", "HEAD"],
         cwd=REPO,

@@ -10,7 +10,10 @@ of evidence. Do not combine them into a single "reference boards passing" KPI.
 
 ## Reproduce
 
-Use the maintained KiCad 10 CLI in an appropriately provisioned local runner:
+Use the maintained KiCad 10 CLI in an appropriately provisioned **Linux**
+runner. The audit only executes root-owned, non-group/world-writable
+`kicad-cli` and `git` from trusted OS system directories; scripts and
+arbitrary PATH/virtualenv executables are rejected:
 
 ```bash
 kicad-cli version

@@ -115,6 +115,9 @@ def test_native_process_failure_is_observable(
         raise exc
 
     monkeypatch.setattr(audit.subprocess, "run", fail)
+    monkeypatch.setattr(
+        audit, "_trusted_system_executable", lambda candidate, expected: "/usr/bin/kicad-cli"
+    )
     code, status, duration = audit._run_native("kicad-cli", ["pcb", "drc"], cwd=tmp_path, timeout=3)
     assert code is None
     assert status == expected
@@ -136,6 +139,9 @@ def test_native_exit_classification_does_not_turn_violations_into_success(
         return SimpleNamespace(returncode=rc, stdout=stdout, stderr="")
 
     monkeypatch.setattr(audit.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        audit, "_trusted_system_executable", lambda candidate, expected: "/usr/bin/kicad-cli"
+    )
     return_code, status, _duration = audit._run_native(
         "kicad-cli", ["pcb", "drc"], cwd=tmp_path, timeout=10
     )
@@ -158,3 +164,29 @@ def test_reference_specifications_cannot_be_counted_as_completed_designs(
     assert stm["status"] == "requires_independent_attempt_and_native_evidence"
     assert stm["autonomous_success_verified_by_this_audit"] is False
     assert "agent" not in str(stm["input_files_sha256"])
+
+
+@pytest.mark.parametrize(
+    "path,reason",
+    [
+        ("kicad-cli", "trusted system"),
+        ("/" + "tmp/kicad-cli", "trusted system"),
+        ("/home/runner/kicad-cli", "trusted system"),
+        ("/usr/bin/git", "trusted system"),
+    ],
+)
+def test_untrusted_native_cli_executable_is_rejected(
+    path: str, reason: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(audit.platform, "system", lambda: "Linux")
+    with pytest.raises(ValueError, match=reason):
+        audit._trusted_system_executable(path, "kicad-cli")
+
+
+def test_actual_os_cli_is_trusted_when_present() -> None:
+    executable = Path("/usr/bin/kicad-cli")
+    if not executable.exists():
+        pytest.skip("system KiCad CLI is not installed on this runner")
+    assert audit._trusted_system_executable(str(executable), "kicad-cli") == str(
+        executable.resolve()
+    )

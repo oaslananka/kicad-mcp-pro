@@ -13,6 +13,7 @@ import hashlib
 import json
 import platform
 import shutil
+import stat
 import statistics
 import subprocess
 import tempfile
@@ -43,7 +44,7 @@ footprints = len(board.GetFootprints())
 tracks = len(board.GetTracks())
 copper_layers = board.GetCopperLayerCount()
 inspect_ms = (time.perf_counter() - start) * 1000.0
-print(json.dumps({
+print('KICAD_NATIVE_INSPECT_V1:' + json.dumps({
     'footprints': footprints,
     'tracks': tracks,
     'copper_layers': copper_layers,
@@ -53,6 +54,29 @@ print(json.dumps({
     'kicad_build_version': pcbnew.GetBuildVersion(),
 }), flush=True)
 """
+
+
+def _trusted_system_python(interpreter: Path) -> Path:
+    """Reject executable injection from a virtualenv, writable tree or PATH."""
+    system_dirs = (Path("/usr/bin"), Path("/usr/local/bin"))
+    if not interpreter.is_absolute() or interpreter.parent not in system_dirs:
+        raise ValueError("native KiCad interpreter must be a trusted system Python")
+    try:
+        resolved = interpreter.resolve(strict=True)
+        metadata = resolved.stat()
+        mode = metadata.st_mode
+    except OSError as exc:
+        raise ValueError("native KiCad Python interpreter missing") from exc
+    if (
+        resolved.parent not in system_dirs
+        or not resolved.name.startswith("python3.")
+        or not resolved.is_file()
+        or not (mode & stat.S_IXUSR)
+        or metadata.st_uid != 0
+        or (mode & (stat.S_IWGRP | stat.S_IWOTH))
+    ):
+        raise ValueError("native KiCad Python interpreter is not trusted")
+    return resolved
 
 
 def sha256_file(path: Path) -> str:
@@ -127,14 +151,7 @@ def benchmark_demo(
         raise ValueError("unbounded benchmark settings")
     if platform.system() != "Linux":
         raise RuntimeError("true native peak RSS benchmark is currently Linux-only")
-    # System Python executables are often packaged as safe symlinks
-    # (/usr/bin/python3 -> python3.12). Resolve before invoking.
-    try:
-        runtime = interpreter.resolve(strict=True)
-    except OSError as exc:
-        raise ValueError("native KiCad Python interpreter missing") from exc
-    if not runtime.is_file():
-        raise ValueError("native KiCad Python interpreter missing")
+    runtime = _trusted_system_python(interpreter)
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     sources = validate_demo_files(demo_root, manifest)
     board_name = manifest["pcb"]
@@ -165,8 +182,17 @@ def benchmark_demo(
                 raise RuntimeError("native KiCad inspect cannot execute") from exc
             if result.returncode != 0:
                 raise RuntimeError("native KiCad inspect failed; cannot claim a benchmark")
+            # Native libraries may write diagnostics to stdout; trust only
+            # exactly one explicit protocol record, never the entire stream.
+            markers = [
+                line.removeprefix("KICAD_NATIVE_INSPECT_V1:")
+                for line in result.stdout.splitlines()
+                if line.startswith("KICAD_NATIVE_INSPECT_V1:")
+            ]
+            if len(markers) != 1:
+                raise RuntimeError("native KiCad worker protocol is missing or ambiguous")
             try:
-                observed = json.loads(result.stdout)
+                observed = json.loads(markers[0])
             except (TypeError, ValueError) as exc:
                 raise RuntimeError("native KiCad worker output is invalid") from exc
             if (
@@ -244,8 +270,14 @@ def main(argv: list[str] | None = None) -> int:
     git = shutil.which("git")
     if git is None:
         parser.error("git unavailable; source revision cannot be verified")
+    resolved_git = Path(git).resolve(strict=True)
+    if resolved_git not in (Path("/usr/bin/git"), Path("/usr/local/bin/git")):
+        parser.error("git must be an OS-supplied executable")
+    git_metadata = resolved_git.stat()
+    if git_metadata.st_uid != 0 or git_metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        parser.error("git executable is writable by untrusted users")
     source_sha = subprocess.run(
-        [git, "rev-parse", "HEAD"],
+        [str(resolved_git), "rev-parse", "HEAD"],
         cwd=ROOT,
         capture_output=True,
         text=True,

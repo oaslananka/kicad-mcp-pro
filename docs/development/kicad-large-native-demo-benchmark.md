@@ -33,8 +33,9 @@ python3 scripts/benchmark_kicad_large_demo.py --repeats 3 \
   --output /tmp/kicad-large-native-inspect.json
 ```
 
-The benchmark refuses to overwrite evidence and rejects output inside the
-source checkout. It copies **only pinned files** into an isolated temporary
+The benchmark only executes root-owned, non-group/world-writable system
+Python and Git binaries from trusted OS directories. It refuses to overwrite
+evidence and rejects output inside the source checkout. It copies **only pinned files** into an isolated temporary
 directory and rehashes every copy before launching a fresh native `pcbnew`
 process for each observation. The external demo is never edited.
 

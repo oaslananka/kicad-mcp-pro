@@ -43,13 +43,16 @@ def demo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     pinned = tmp_path / "manifest.json"
     pinned.write_text(json.dumps(manifest))
     monkeypatch.setattr(bench, "MANIFEST_PATH", pinned)
+    # Unit tests simulate the worker; the real runner only allows OS Python.
+    monkeypatch.setattr(bench, "_trusted_system_python", lambda interpreter: interpreter.resolve())
     return root, pinned
 
 
 def _response(*, footprints: int = 1100, tracks: int = 2500, peak: int = 250000):
     return SimpleNamespace(
         returncode=0,
-        stdout=json.dumps(
+        stdout="KiCad diagnostics before report\nKICAD_NATIVE_INSPECT_V1:"
+        + json.dumps(
             {
                 "footprints": footprints,
                 "tracks": tracks,
@@ -220,3 +223,32 @@ def test_native_memory_benchmark_platform_limit_is_explicit(
 def test_nearest_rank_p95_stays_within_observed_samples() -> None:
     assert bench.nearest_rank_p95([5, 1, 2, 3]) == 5
     assert bench.nearest_rank_p95(list(range(1, 101))) == 95
+
+
+def test_untrusted_interpreter_path_rejected_without_execution() -> None:
+    with pytest.raises(ValueError, match="trusted system Python"):
+        bench._trusted_system_python(Path("/" + "tmp/venv/python3"))
+    with pytest.raises(ValueError, match="trusted system Python"):
+        bench._trusted_system_python(Path("python3"))
+
+
+def test_diagnostic_stdout_without_unique_worker_record_fails_closed(
+    demo: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(bench.platform, "system", lambda: "Linux")
+    good = _response()
+    monkeypatch.setattr(
+        bench.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0, stdout=good.stdout + "\n" + good.stdout, stderr=""
+        ),
+    )
+    with pytest.raises(RuntimeError, match="protocol is missing or ambiguous"):
+        bench.benchmark_demo(
+            demo_root=demo[0],
+            interpreter=Path(sys.executable),
+            repeats=1,
+            timeout=10,
+            repository_sha="a" * 40,
+        )
