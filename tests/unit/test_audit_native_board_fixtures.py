@@ -38,9 +38,7 @@ def test_native_run_preserves_pinned_executable_and_status(
     stdout: str,
     expected_status: str,
 ) -> None:
-    monkeypatch.setattr(
-        audit, "_trusted_system_executable", lambda *_: audit.PINNED_KICAD_CLI
-    )
+    monkeypatch.setattr(audit, "_trusted_system_executable", lambda *_: audit.PINNED_KICAD_CLI)
     observed: list[str] = []
 
     def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -66,8 +64,6 @@ def test_native_run_preserves_pinned_executable_and_status(
 def test_native_run_rejects_other_trusted_binary(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(
-        audit, "_trusted_system_executable", lambda *_: "/usr/local/bin/kicad-cli"
-    )
+    monkeypatch.setattr(audit, "_trusted_system_executable", lambda *_: "/usr/local/bin/kicad-cli")
     with pytest.raises(ValueError, match="pinned system KiCad CLI"):
         audit._run_native("kicad-cli", ["pcb", "drc"], cwd=tmp_path, timeout=10)

@@ -31,12 +31,12 @@ FIXTURES = {
     "esp32-gallery": "examples/gallery/esp32-c3-wroom-02-breakout",
 }
 CORPUS = ("esp32-c6-usbc", "stm32f072-usbc", "rp2350-usbc")
+PCB_SUFFIX = ".kicad_pcb"
+PINNED_KICAD_CLI = "/usr/bin/kicad-cli"
 SUPPORTED = {".kicad_pro", ".kicad_sch", PCB_SUFFIX, ".kicad_dru"}
 VIOLATIONS = re.compile(r"Found (\d+) violations")
 FOOTPRINTS = re.compile(r"(?m)^\s*\(footprint\s")
 SCHEMA = "native-fixture-readiness.v0"
-PCB_SUFFIX = ".kicad_pcb"
-PINNED_KICAD_CLI = "/usr/bin/kicad-cli"
 
 
 def _trusted_system_executable(value: str, expected_name: str) -> str:
