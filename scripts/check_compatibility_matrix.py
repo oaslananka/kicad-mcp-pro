@@ -97,6 +97,16 @@ def _validate_issue_url(value: object, label: str) -> list[str]:
     return []
 
 
+def _validate_path_evidence(payload: str, label: str) -> list[str]:
+    errors = _validate_repo_relative_path(payload, label)
+    if errors or _repo_path_exists(payload):
+        return errors
+    # Standalone repository does not contain the optional VS Code extension.
+    if not HAS_VSCODE_EXTENSION and payload.startswith("apps/vscode-extension/"):
+        return []
+    return [f"{label} path does not exist: {payload!r}"]
+
+
 def _validate_evidence_entry(value: object, label: str) -> list[str]:
     if not isinstance(value, str) or ":" not in value:
         return [f"{label} must be prefixed evidence such as path:, fixture:, command:, smoke:"]
@@ -104,13 +114,7 @@ def _validate_evidence_entry(value: object, label: str) -> list[str]:
     if not payload:
         return [f"{label} must include evidence detail after {prefix!r}"]
     if prefix == "path":
-        errors = _validate_repo_relative_path(payload, label)
-        if not errors and not _repo_path_exists(payload):
-            # In standalone repo, skip paths under apps/vscode-extension/
-            if not HAS_VSCODE_EXTENSION and payload.startswith("apps/vscode-extension/"):
-                return errors
-            errors.append(f"{label} path does not exist: {payload!r}")
-        return errors
+        return _validate_path_evidence(payload, label)
     if prefix == "fixture":
         fixture_path = REPO_ROOT / "packages" / "kicad-fixtures" / "fixtures" / payload
         return [] if fixture_path.exists() else [f"{label} fixture does not exist: {payload!r}"]
