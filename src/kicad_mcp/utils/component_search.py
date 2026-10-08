@@ -20,6 +20,7 @@ from typing import Any, Protocol, cast
 HttpPostJson = Callable[[str, bytes, dict[str, str]], dict[str, Any]]
 
 DEFAULT_USER_AGENT = "kicad-mcp-pro/1.0 (+https://github.com/oaslananka/kicad-mcp-pro)"
+JSON_CONTENT_TYPE = "application/json"
 
 
 @dataclass(frozen=True)
@@ -465,7 +466,7 @@ class NexarClient:
         response = self._transport(
             self.ENDPOINT,
             body,
-            {"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            {"Authorization": f"Bearer {token}", "Content-Type": JSON_CONTENT_TYPE},
         )
         errors = response.get("errors")
         if errors:
@@ -612,7 +613,7 @@ class DigiKeyClient:
             {
                 "Authorization": f"Bearer {token}",
                 "X-DIGIKEY-Client-Id": client_id,
-                "Content-Type": "application/json",
+                "Content-Type": JSON_CONTENT_TYPE,
             },
         )
         products = response.get("Products") or []
@@ -769,7 +770,7 @@ class MouserClient:
         body = json.dumps(
             {"SearchByKeywordRequest": {"keyword": keyword, "records": max(1, min(limit, 50))}}
         ).encode("utf-8")
-        response = self._transport(url, body, {"Content-Type": "application/json"})
+        response = self._transport(url, body, {"Content-Type": JSON_CONTENT_TYPE})
         errors = response.get("Errors")
         if errors:
             if isinstance(errors, list) and errors:
