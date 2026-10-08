@@ -715,3 +715,114 @@ def test_reference_bundle_rejects_forged_passing_quality_report(tmp_path: Path) 
 
     with pytest.raises(evals.ReferenceCorpusError, match="deterministic scorer"):
         evals.validate_reference_board_bundle(root)
+
+
+def _pre_task_infrastructure_attempt() -> dict[str, Any]:
+    """A reviewed pre-task outage, not a failed agent PCB design."""
+    payload = _attempt_payload(classification="tool_failure")
+    payload["classification"] = "infrastructure_invalid"
+    payload["failure_category"] = "infrastructure"
+    payload["failure_reason_code"] = "preflight_unavailable"
+    payload["infrastructure_evidence"] = {
+        "reason_code": "preflight_unavailable",
+        "reviewed": True,
+        "task_execution_started": False,
+    }
+    payload["stages"] = []
+    payload["validations"] = []
+    return payload
+
+
+@pytest.mark.parametrize("event_type", ["tool_call", "tool_result", "validation", "recovery"])
+def test_infrastructure_invalid_attempt_cannot_hide_executed_tool_or_validation(
+    tmp_path: Path, event_type: str
+) -> None:
+    root = _write_bundle(tmp_path, _pre_task_infrastructure_attempt())
+    log = root / "attempts" / "attempt-001" / "agent-log.jsonl"
+    payload = _event_payload()
+    payload["event_type"] = event_type
+    payload["name"] = "completed_task_operation"
+    log.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    # An adversary can recompute the evidence digest; the semantic evidence
+    # cross-check must still prevent removing this attempt from the denominator.
+    _refresh_attempt_evidence_digest(root)
+
+    with pytest.raises(evals.ReferenceCorpusError, match="infrastructure-invalid.*task execution"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_pre_task_infrastructure_outage_is_counted_without_claiming_success(
+    tmp_path: Path,
+) -> None:
+    root = _write_bundle(tmp_path, _pre_task_infrastructure_attempt())
+    log = root / "attempts" / "attempt-001" / "agent-log.jsonl"
+    payload = _event_payload()
+    payload["event_type"] = "workflow"
+    payload["name"] = "preflight_unavailable"
+    payload["status"] = "failed"
+    log.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    _refresh_attempt_evidence_digest(root)
+
+    result = evals.validate_reference_board_bundle(root)
+    assert result.summary.attempts_total == 1
+    assert result.summary.infrastructure_invalid_attempts == 1
+    assert result.summary.valid_attempts == 0
+    assert result.summary.successful_attempts == 0
+
+
+@pytest.mark.parametrize("contradiction", ["stage", "validation", "mutation", "manufacturing"])
+def test_infrastructure_exclusion_rejects_contradictory_attempt_record(
+    tmp_path: Path, contradiction: str
+) -> None:
+    payload = _pre_task_infrastructure_attempt()
+    if contradiction == "stage":
+        payload["stages"] = [{"stage": "pcb", "outcome": "passed"}]
+    elif contradiction == "validation":
+        payload["validations"] = [
+            {
+                "kind": "drc",
+                "required": True,
+                "execution_attempted": True,
+                "execution_completed": True,
+                "result_consumed": True,
+                "disposition": "resolved",
+            }
+        ]
+    elif contradiction == "mutation":
+        payload["mutations"] = [
+            {
+                "mutation_id": "write-001",
+                "attempted": True,
+                "execution_state": "completed",
+                "recovery_required": False,
+                "final_state_verified": True,
+            }
+        ]
+    else:
+        payload["manufacturing"] = {
+            "required": False,
+            "generation_completed": True,
+            "regeneration_completed": False,
+            "comparison": "not_run",
+        }
+    root = _write_bundle(tmp_path, payload)
+    log = root / "attempts" / "attempt-001" / "agent-log.jsonl"
+    event = _event_payload()
+    event["event_type"] = "workflow"
+    event["name"] = "preflight_unavailable"
+    event["status"] = "failed"
+    log.write_text(json.dumps(event) + "\n", encoding="utf-8")
+    _refresh_attempt_evidence_digest(root)
+
+    with pytest.raises(evals.ReferenceCorpusError, match="infrastructure-invalid.*task execution"):
+        evals.validate_reference_board_bundle(root)
+
+
+def test_nonexcluded_tool_failure_remains_in_task_success_denominator(tmp_path: Path) -> None:
+    root = _write_bundle(tmp_path, _attempt_payload(classification="tool_failure"))
+    result = evals.validate_reference_board_bundle(root)
+
+    assert result.summary.attempts_total == 1
+    assert result.summary.valid_attempts == 1
+    assert result.summary.failed_attempts == 1
+    assert result.summary.infrastructure_invalid_attempts == 0
