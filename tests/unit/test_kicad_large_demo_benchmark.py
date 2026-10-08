@@ -27,7 +27,9 @@ def demo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
         "LICENSE": "Apache License\nVersion 2.0\n",
     }
     for name, contents in sources.items():
-        (root / name).write_text(contents)
+        # Native KiCad input hashes identify exact bytes. Windows text-mode
+        # writes translate LF to CRLF, invalidating our pinned SHA-256.
+        (root / name).write_bytes(contents.encode("utf-8"))
     manifest = {
         "schema_version": "native-kicad-demo-manifest.v1",
         "demo_id": "test-demo",
