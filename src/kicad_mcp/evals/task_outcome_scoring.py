@@ -401,6 +401,34 @@ def _file_corruption_status(
 def _partition_attempts(
     records: list[AttemptRecord],
 ) -> tuple[list[AttemptRecord], list[AttemptRecord]]:
+    # Reviewed pre-task infrastructure exclusions must not erase attempted
+    # mutations, real validation, manufacturing or stage execution from KPIs.
+    # A parsed AttemptRecord alone cannot prove the associated agent-log trace,
+    # but it can reject contradictory evidence before omitting any denominator.
+    for record in records:
+        if record.classification != "infrastructure_invalid":
+            continue
+        if (
+            record.mutations
+            or record.manual_repair
+            or any(item.execution_attempted for item in record.validations)
+            or any(
+                stage.outcome != "not_applicable"
+                and not (stage.stage == "requirements" and stage.outcome == "failed")
+                for stage in record.stages
+            )
+            or (
+                record.manufacturing is not None
+                and (
+                    record.manufacturing.generation_completed
+                    or record.manufacturing.regeneration_completed
+                )
+            )
+        ):
+            raise TaskOutcomeScoringError(
+                f"infrastructure-invalid attempt {record.attempt_id!r} " 
+                "contradicts pre-task exclusion evidence"
+            )
     invalid_records = [
         record for record in records if record.classification == "infrastructure_invalid"
     ]

@@ -201,6 +201,66 @@ def test_provider_failure_stays_in_denominator_and_infrastructure_invalid_does_n
     assert summary.failure_categories == {"provider": 1}
 
 
+@pytest.mark.parametrize(
+    "contradiction",
+    (
+        "mutation",
+        "validation",
+        "passed_stage",
+        "non_requirements_failed_stage",
+        "manufacturing",
+        "manual_repair",
+    ),
+)
+def test_infrastructure_exclusion_rejects_contradictory_task_evidence(
+    contradiction: str,
+) -> None:
+    # A reviewer flag is insufficient if the record itself proves task work.
+    # These records are all valid at the schema layer, so the aggregate must
+    # fail rather than silently exclude them from its denominator and KPIs.
+    payload = _attempt("invalid-pre-task", classification="infrastructure_invalid").model_dump(
+        mode="json"
+    )
+    if contradiction == "mutation":
+        payload["mutations"] = [
+            {
+                "mutation_id": "m1",
+                "attempted": True,
+                "execution_state": "completed",
+                "recovery_required": False,
+                "final_state_verified": True,
+            }
+        ]
+    elif contradiction == "validation":
+        payload["validations"] = [
+            {
+                "kind": "drc",
+                "required": True,
+                "execution_attempted": True,
+                "execution_completed": True,
+                "result_consumed": True,
+                "disposition": "resolved",
+            }
+        ]
+    elif contradiction == "passed_stage":
+        payload["stages"] = [{"stage": "requirements", "outcome": "passed"}]
+    elif contradiction == "non_requirements_failed_stage":
+        payload["stages"] = [{"stage": "pcb", "outcome": "failed"}]
+    elif contradiction == "manufacturing":
+        payload["manufacturing"] = {
+            "required": True,
+            "generation_completed": True,
+            "regeneration_completed": False,
+            "comparison": "not_run",
+        }
+    elif contradiction == "manual_repair":
+        payload["manual_repair"] = True
+    record = evals.AttemptRecord.model_validate(payload)
+
+    with pytest.raises(evals.TaskOutcomeScoringError, match="pre-task exclusion"):
+        evals.aggregate_task_outcomes(_contract(), [record])
+
+
 def test_missing_required_stage_fails_success_classification_closed() -> None:
     summary = evals.aggregate_task_outcomes(
         _contract(),
