@@ -500,3 +500,76 @@ def test_pcb_rules_fail_closed_on_missing_or_mismatched_evidence() -> None:
         "net_membership_mismatch",
         "outline_missing",
     )
+
+
+@pytest.mark.parametrize(
+    ("identifier", "valid"),
+    [
+        ("a", True),
+        ("a_b:c-d.8", True),
+        ("9" + "a" * 127, True),
+        ("", False),
+        ("-leading-dash", False),
+        (" space", False),
+        ("a/b", False),
+        ("a\\b", False),
+        ("a" * 129, False),
+        ("a\n", False),
+    ],
+)
+def test_quality_contract_identifiers_preserve_exact_native_evidence_boundary(
+    identifier: str, valid: bool
+) -> None:
+    from kicad_mcp.evals.reference_board_quality import (
+        BoardQualityScore,
+        QualityRuleResult,
+        parse_quality_contract,
+    )
+
+    contract_payload = _minimal_contract()
+    contract_payload["board_id"] = identifier
+    if valid:
+        assert parse_quality_contract(contract_payload).board_id == identifier
+    else:
+        with pytest.raises(ValidationError):
+            parse_quality_contract(contract_payload)
+
+    contract_payload = _minimal_contract()
+    contract_payload["rules"][0]["id"] = identifier
+    if valid:
+        assert parse_quality_contract(contract_payload).rules[0].id == identifier
+    else:
+        with pytest.raises(ValidationError):
+            parse_quality_contract(contract_payload)
+
+    score_fields = {
+        "board_id": "board-v1",
+        "benchmark_version": "v1",
+        "attempt_id": "attempt-1",
+        "source_revision": "a" * 40,
+        "required_rule_count": 1,
+        "passed_required_rule_count": 1,
+        "quality_score_percent": 100.0,
+        "overall_pass": True,
+        "results": [
+            {"id": "rule-v1", "type": "artifact", "status": "pass", "reason_code": "matched"}
+        ],
+    }
+    for field_name in ("board_id",):
+        with_field = {**score_fields, field_name: identifier}
+        if valid:
+            assert BoardQualityScore.model_validate(with_field).board_id == identifier
+        else:
+            with pytest.raises(ValidationError):
+                BoardQualityScore.model_validate(with_field)
+
+    if valid:
+        assert (
+            QualityRuleResult(
+                id=identifier, type="artifact", status="pass", reason_code="matched"
+            ).id
+            == identifier
+        )
+    else:
+        with pytest.raises(ValidationError):
+            QualityRuleResult(id=identifier, type="artifact", status="pass", reason_code="matched")
