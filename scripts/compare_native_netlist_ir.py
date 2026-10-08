@@ -16,7 +16,6 @@ import sys
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
-from xml.etree.ElementTree import ParseError
 
 from defusedxml import ElementTree as SafeElementTree  # type: ignore[import-untyped]
 from defusedxml.common import DefusedXmlException  # type: ignore[import-untyped]
@@ -50,7 +49,7 @@ def read_native_inventory(xml_path: Path) -> NativeInventory:
         raise ValueError("native XML DTD and entity declarations are forbidden")
     try:
         root = SafeElementTree.fromstring(xml_bytes)
-    except (ParseError, DefusedXmlException) as exc:
+    except (SafeElementTree.ParseError, DefusedXmlException) as exc:
         raise ValueError("native XML is malformed") from exc
     if root.tag != "export":
         raise ValueError("native XML must have a KiCad export root")
