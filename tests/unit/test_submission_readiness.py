@@ -44,3 +44,18 @@ def test_chatgpt_app_readiness_contract_passes() -> None:
 
     assert result.status == "PASS"
     assert "0.2.0" in result.detail
+
+
+@pytest.mark.parametrize(
+    ("check", "expected_name"),
+    [
+        (check_submission_readiness._privacy_check, "privacy policy"),
+        (check_submission_readiness._demo_cast_check, "demo cast"),
+        (check_submission_readiness._reviewer_prompts_check, "reviewer prompts"),
+        (check_submission_readiness._chatgpt_app_check, "ChatGPT App contract"),
+        (check_submission_readiness._server_schema_check, "server schema"),
+    ],
+)
+def test_readiness_check_labels_remain_stable(check, expected_name: str) -> None:
+    # External readiness reports key on these names even when a check fails.
+    assert check().name == expected_name

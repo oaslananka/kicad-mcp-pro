@@ -65,6 +65,15 @@ OBSOLETE_SELF_HOSTED_WORKFLOWS = {
 }
 SELF_HOSTED_RUNNER = ("self-hosted", "Linux", "X64")
 
+# Keep report labels and metadata filenames stable across success/error paths.
+PYPROJECT_FILENAME = "pyproject.toml"
+SERVER_MANIFEST_FILENAME = "server.json"
+PRIVACY_POLICY_CHECK = "privacy policy"
+DEMO_CAST_CHECK = "demo cast"
+REVIEWER_PROMPTS_CHECK = "reviewer prompts"
+CHATGPT_APP_CONTRACT_CHECK = "ChatGPT App contract"
+SERVER_SCHEMA_CHECK = "server schema"
+
 
 @dataclass
 class CheckResult:
@@ -152,15 +161,17 @@ def _runner_check() -> CheckResult:
 
 
 def _version_check() -> CheckResult:
-    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    pyproject = tomllib.loads((ROOT / PYPROJECT_FILENAME).read_text(encoding="utf-8"))
     tauri_cargo = tomllib.loads((ROOT / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8"))
     tauri_config = json.loads((ROOT / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
     release_manifest = json.loads(
         (ROOT / ".release-please-manifest.json").read_text(encoding="utf-8")
     )
     versions = {
-        "pyproject.toml": pyproject["project"]["version"],
-        "server.json": json.loads((ROOT / "server.json").read_text(encoding="utf-8"))["version"],
+        PYPROJECT_FILENAME: pyproject["project"]["version"],
+        SERVER_MANIFEST_FILENAME: json.loads(
+            (ROOT / SERVER_MANIFEST_FILENAME).read_text(encoding="utf-8")
+        )["version"],
         "src-tauri/Cargo.toml": tauri_cargo["package"]["version"],
         "src-tauri/tauri.conf.json": tauri_config["version"],
         ".release-please-manifest.json src-tauri": release_manifest["src-tauri"],
@@ -174,7 +185,7 @@ def _version_check() -> CheckResult:
 
 
 def _pypi_check() -> CheckResult:
-    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    pyproject = tomllib.loads((ROOT / PYPROJECT_FILENAME).read_text(encoding="utf-8"))
     version = pyproject["project"]["version"]
     try:
         with urlopen("https://pypi.org/pypi/kicad-mcp-pro/json", timeout=10) as response:  # noqa: S310
@@ -194,11 +205,11 @@ def _pypi_check() -> CheckResult:
 def _privacy_check() -> CheckResult:
     path = ROOT / "docs" / "privacy.md"
     if not path.is_file():
-        return CheckResult("privacy policy", "FAIL", "docs/privacy.md missing")
+        return CheckResult(PRIVACY_POLICY_CHECK, "FAIL", "docs/privacy.md missing")
     text = _read_text(path).lower()
     if "data" not in text or "telemetry" not in text:
-        return CheckResult("privacy policy", "FAIL", "missing data or telemetry language")
-    return CheckResult("privacy policy", "PASS", "privacy.md covers data and telemetry")
+        return CheckResult(PRIVACY_POLICY_CHECK, "FAIL", "missing data or telemetry language")
+    return CheckResult(PRIVACY_POLICY_CHECK, "PASS", "privacy.md covers data and telemetry")
 
 
 def _image_size(path: Path) -> tuple[int, int]:
@@ -247,18 +258,18 @@ def _demo_cast_check() -> CheckResult:
     path = ROOT / "docs" / "assets" / "demo.cast"
     gif_path = ROOT / "docs" / "assets" / "demo.gif"
     if not path.is_file():
-        return CheckResult("demo cast", "FAIL", "docs/assets/demo.cast missing")
+        return CheckResult(DEMO_CAST_CHECK, "FAIL", "docs/assets/demo.cast missing")
     if not gif_path.is_file():
-        return CheckResult("demo cast", "FAIL", "docs/assets/demo.gif missing")
+        return CheckResult(DEMO_CAST_CHECK, "FAIL", "docs/assets/demo.gif missing")
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
         header = json.loads(lines[0])
         frames = [json.loads(line) for line in lines[1:] if line.strip()]
     except (IndexError, json.JSONDecodeError) as exc:
-        return CheckResult("demo cast", "FAIL", str(exc))
+        return CheckResult(DEMO_CAST_CHECK, "FAIL", str(exc))
     if header.get("version") != 2 or not all(isinstance(frame, list) for frame in frames):
-        return CheckResult("demo cast", "FAIL", "invalid asciinema v2 structure")
-    return CheckResult("demo cast", "PASS", f"{len(frames)} frames and demo.gif present")
+        return CheckResult(DEMO_CAST_CHECK, "FAIL", "invalid asciinema v2 structure")
+    return CheckResult(DEMO_CAST_CHECK, "PASS", f"{len(frames)} frames and demo.gif present")
 
 
 def _submission_docs_check() -> CheckResult:
@@ -281,16 +292,16 @@ def _reviewer_prompts_check() -> CheckResult:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        return CheckResult("reviewer prompts", "FAIL", str(exc))
+        return CheckResult(REVIEWER_PROMPTS_CHECK, "FAIL", str(exc))
     prompts = payload.get("prompts")
     if not isinstance(prompts, list) or len(prompts) != 5:
-        return CheckResult("reviewer prompts", "FAIL", "expected exactly five prompts")
-    return CheckResult("reviewer prompts", "PASS", "five prompts")
+        return CheckResult(REVIEWER_PROMPTS_CHECK, "FAIL", "expected exactly five prompts")
+    return CheckResult(REVIEWER_PROMPTS_CHECK, "PASS", "five prompts")
 
 
 def _readme_check() -> CheckResult:
     text = (ROOT / "README.md").read_text(encoding="utf-8")
-    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    pyproject = tomllib.loads((ROOT / PYPROJECT_FILENAME).read_text(encoding="utf-8"))
     version = pyproject["project"]["version"]
     required = {
         "canonical repository": "https://github.com/oaslananka/kicad-mcp-pro",
@@ -313,7 +324,7 @@ def _chatgpt_app_check() -> CheckResult:
         source = (app_root / "src" / "server.ts").read_text(encoding="utf-8")
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     except (OSError, json.JSONDecodeError) as exc:
-        return CheckResult("ChatGPT App contract", "FAIL", str(exc))
+        return CheckResult(CHATGPT_APP_CONTRACT_CHECK, "FAIL", str(exc))
 
     version = package.get("version")
     scripts = package.get("scripts", {})
@@ -330,9 +341,9 @@ def _chatgpt_app_check() -> CheckResult:
     }
     failed = [name for name, passed in required.items() if not passed]
     if failed:
-        return CheckResult("ChatGPT App contract", "FAIL", ", ".join(failed))
+        return CheckResult(CHATGPT_APP_CONTRACT_CHECK, "FAIL", ", ".join(failed))
     return CheckResult(
-        "ChatGPT App contract",
+        CHATGPT_APP_CONTRACT_CHECK,
         "PASS",
         f"{version}: package, manifest, read-only metadata, E2E, and required CI aligned",
     )
@@ -342,7 +353,7 @@ def _server_schema_check() -> CheckResult:
     schema_path = ROOT / "scripts" / "schemas" / "server.schema.json"
     try:
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
-        server = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
+        server = json.loads((ROOT / SERVER_MANIFEST_FILENAME).read_text(encoding="utf-8"))
         validator_cls = jsonschema.validators.validator_for(schema)
         validator_cls.check_schema(schema)
         errors = sorted(
@@ -350,10 +361,10 @@ def _server_schema_check() -> CheckResult:
             key=lambda error: list(error.path),
         )
     except (OSError, json.JSONDecodeError, jsonschema.SchemaError) as exc:
-        return CheckResult("server schema", "FAIL", str(exc))
+        return CheckResult(SERVER_SCHEMA_CHECK, "FAIL", str(exc))
     if errors:
-        return CheckResult("server schema", "FAIL", errors[0].message)
-    return CheckResult("server schema", "PASS", "server.json validates")
+        return CheckResult(SERVER_SCHEMA_CHECK, "FAIL", errors[0].message)
+    return CheckResult(SERVER_SCHEMA_CHECK, "PASS", "server.json validates")
 
 
 def run_checks() -> list[CheckResult]:
