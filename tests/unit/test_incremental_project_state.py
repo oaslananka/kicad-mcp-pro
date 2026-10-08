@@ -20,6 +20,7 @@ from kicad_mcp.project.incremental_state import (
 
 PROJECT_KEY = "10000000-0000-0000-0000-100000000001"
 SOURCES = ("main.kicad_sch", "main.kicad_pcb")
+COMPATIBILITY_KEY = "kicad-10.0.6:parser-v1:engineering-graph-v1"
 
 
 def _circuit() -> IRCircuit:
@@ -47,7 +48,9 @@ def project(tmp_path: Path) -> Path:
 
 
 def _state(root: Path) -> PersistentProjectState:
-    return PersistentProjectState.rebuild(root, SOURCES, _circuit())
+    return PersistentProjectState.rebuild(
+        root, SOURCES, _circuit(), compatibility_key=COMPATIBILITY_KEY
+    )
 
 
 def test_deterministic_persistent_reopen_and_project_switch(project: Path) -> None:
@@ -58,14 +61,22 @@ def test_deterministic_persistent_reopen_and_project_switch(project: Path) -> No
     state.save_atomic(path)
     assert path.read_bytes() == original
     loaded = PersistentProjectState.load_verified(
-        project, path, project_key=PROJECT_KEY, native_sources=SOURCES
+        project,
+        path,
+        project_key=PROJECT_KEY,
+        native_sources=SOURCES,
+        compatibility_key=COMPATIBILITY_KEY,
     )
     assert loaded.graph.to_document() == state.graph.to_document()
     assert loaded.entity_hashes == state.entity_hashes
     assert loaded.generation == 0
     with pytest.raises(StateRebuildRequiredError):
         PersistentProjectState.load_verified(
-            project, path, project_key="other-project", native_sources=SOURCES
+            project,
+            path,
+            project_key="other-project",
+            native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
         )
 
 
@@ -97,7 +108,11 @@ def test_bounded_edit_preserves_unrelated_entities_and_invalidates_derived(proje
     path = project / ".kicad-mcp-cache" / "graph.json"
     state.save_atomic(path)
     reopened = PersistentProjectState.load_verified(
-        project, path, project_key=PROJECT_KEY, native_sources=SOURCES
+        project,
+        path,
+        project_key=PROJECT_KEY,
+        native_sources=SOURCES,
+        compatibility_key=COMPATIBILITY_KEY,
     )
     assert reopened.graph.to_document() == state.graph.to_document()
     assert not reopened.derived_is_current("r1-analysis")
@@ -118,6 +133,7 @@ def test_unknown_external_edit_forces_rebuild(project: Path) -> None:
             project / ".kicad-mcp-cache" / "graph.json",
             project_key=PROJECT_KEY,
             native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
         )
 
 
@@ -181,7 +197,11 @@ def test_schema_or_identity_change_invalidates_snapshot(project: Path, field: st
     path.write_text(json.dumps(contents))
     with pytest.raises(StateRebuildRequiredError):
         PersistentProjectState.load_verified(
-            project, path, project_key=PROJECT_KEY, native_sources=SOURCES
+            project,
+            path,
+            project_key=PROJECT_KEY,
+            native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
         )
 
 
@@ -195,7 +215,11 @@ def test_corrupted_graph_digests_do_not_survive_reopen(project: Path) -> None:
     path.write_text(json.dumps(contents))
     with pytest.raises(StateRebuildRequiredError, match="snapshot cannot"):
         PersistentProjectState.load_verified(
-            project, path, project_key=PROJECT_KEY, native_sources=SOURCES
+            project,
+            path,
+            project_key=PROJECT_KEY,
+            native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
         )
 
 
@@ -230,6 +254,7 @@ def test_missing_cache_file_requires_clean_rebuild(project: Path) -> None:
             project / ".kicad-mcp-cache" / "not-created.json",
             project_key=PROJECT_KEY,
             native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
         )
 
 
@@ -259,7 +284,11 @@ def test_journal_is_bounded_after_repeated_native_edits(project: Path) -> None:
     path = project / ".kicad-mcp-cache" / "graph.json"
     state.save_atomic(path)
     reopened = PersistentProjectState.load_verified(
-        project, path, project_key=PROJECT_KEY, native_sources=SOURCES
+        project,
+        path,
+        project_key=PROJECT_KEY,
+        native_sources=SOURCES,
+        compatibility_key=COMPATIBILITY_KEY,
     )
     assert reopened.journal == state.journal
 
@@ -311,7 +340,11 @@ def test_invalid_persisted_metadata_never_reused(project: Path, tamper: str) -> 
     path.write_text(json.dumps(document))
     with pytest.raises(StateRebuildRequiredError):
         PersistentProjectState.load_verified(
-            project, path, project_key=PROJECT_KEY, native_sources=SOURCES
+            project,
+            path,
+            project_key=PROJECT_KEY,
+            native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
         )
 
 
@@ -335,7 +368,9 @@ def test_large_synthetic_graph_bounded_update_and_full_rebuild_match(project: Pa
     for number in range(3, 1025):
         ref = f"R{number}"
         before.components[ref] = IRComponent(ref, "Device:R", "10k", "Resistor_SMD:R_0603")
-    state = PersistentProjectState.rebuild(project, SOURCES, before)
+    state = PersistentProjectState.rebuild(
+        project, SOURCES, before, compatibility_key=COMPATIBILITY_KEY
+    )
     baseline_entities = len(state.graph.entities)
     unchanged = canonical_entity_id(PROJECT_KEY, GraphEntityKind.COMPONENT, "R1024")
     identity = state.graph.entities[unchanged]
@@ -352,3 +387,37 @@ def test_large_synthetic_graph_bounded_update_and_full_rebuild_match(project: Pa
     assert entry.work_units == 1
     assert state.graph.entities[unchanged] is identity
     assert state.graph.to_document() == graph_from_circuit(after).to_document()
+
+
+def test_kicad_parser_version_change_forces_rebuild(project: Path) -> None:
+    state = _state(project)
+    path = project / ".kicad-mcp-cache" / "graph.json"
+    state.save_atomic(path)
+    with pytest.raises(StateRebuildRequiredError):
+        PersistentProjectState.load_verified(
+            project,
+            path,
+            project_key=PROJECT_KEY,
+            native_sources=SOURCES,
+            compatibility_key="kicad-11.0.0:parser-v2:engineering-graph-v1",
+        )
+
+
+def test_relocated_project_does_not_inherit_prior_analysis_state(
+    project: Path, tmp_path: Path
+) -> None:
+    import shutil
+
+    state = _state(project)
+    path = project / ".kicad-mcp-cache" / "graph.json"
+    state.save_atomic(path)
+    relocated = tmp_path / "different-project-root"
+    shutil.copytree(project, relocated)
+    with pytest.raises(StateRebuildRequiredError):
+        PersistentProjectState.load_verified(
+            relocated,
+            relocated / ".kicad-mcp-cache" / "graph.json",
+            project_key=PROJECT_KEY,
+            native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
+        )

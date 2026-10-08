@@ -13,10 +13,11 @@ always authoritative; cached state is never validation evidence.
    native KiCad documents.
 2. Inventories and hashes all tracked native `.kicad_sch`, `.kicad_pcb`,
    `.kicad_pro`, and `.kicad_dru` files, including hierarchical subfolders.
-   A new/missing/renamed sheet, symlink, unexpected byte change, project switch
-   or incompatible schema triggers `StateRebuildRequiredError`.
+   A new/missing/renamed sheet, symlink, unexpected byte change, project switch,
+   parser/KiCad-version change, or incompatible schema triggers `StateRebuildRequiredError`.
 3. Persists a deterministic Engineering Graph v1 snapshot, exact per-entity
-   SHA-256 hashes, derived-analysis dependency stamps and a **32-entry bounded
+   SHA-256 hashes, a local root identity, a required host-supplied KiCad/parser
+   compatibility key, derived-analysis dependency stamps and a **32-entry bounded
    journal** to an explicit `.kicad-mcp-cache/*.json` sidecar via atomic rename.
    Reopens only when the graph, schema, inventory and exact native hashes agree.
 4. Uses `prepare_native_edit()` before the caller's native mutation and
@@ -44,11 +45,15 @@ from kicad_mcp.project.incremental_state import PersistentProjectState
 
 root = Path("/trusted/local/project")
 sources = ("top.kicad_sch", "power.kicad_sch", "top.kicad_pcb", "top.kicad_pro")
-state = PersistentProjectState.rebuild(root, sources, circuit)
+state = PersistentProjectState.rebuild(
+    root, sources, circuit,
+    compatibility_key=detected_kicad_and_parser_versions,
+)
 state.save_atomic(root / ".kicad-mcp-cache/graph.json")
 reopened = PersistentProjectState.load_verified(
     root, root / ".kicad-mcp-cache/graph.json",
     project_key=state.project_key, native_sources=sources,
+    compatibility_key=detected_kicad_and_parser_versions,
 )
 ```
 

@@ -28,6 +28,7 @@ from kicad_mcp.project.evidence_current_state import canonical_graph_entity_sha2
 
 STATE_SCHEMA_VERSION = 1
 MAX_CHANGE_JOURNAL = 32
+# Caller-owned compatibility identity must include KiCad/parser/IR schema versions.
 SUPPORTED_SOURCES = frozenset({".kicad_sch", ".kicad_pcb", ".kicad_pro", ".kicad_dru"})
 
 
@@ -66,57 +67,58 @@ def source_digests(root: Path, names: tuple[str, ...]) -> dict[str, str]:
     }
     if discovered != set(names):
         raise StateRebuildRequiredError("native project source inventory changed")
-    hashes: dict[str, str] = {}
-    for name in sorted(names):
-        rel = _source_name(name)
-        parent = real_root
-        for part in rel.parts[:-1]:
-            parent /= part
-            if parent.is_symlink():
-                raise StateRebuildRequiredError("symlinked source directory")
-        path = real_root / rel
-        if path.is_symlink() or not path.is_file():
-            raise StateRebuildRequiredError("missing or symlinked native source")
+    return {name: _digest_one_source(real_root, name) for name in sorted(names)}
+
+
+def _digest_one_source(real_root: Path, name: str) -> str:
+    rel = _source_name(name)
+    parent = real_root
+    for part in rel.parts[:-1]:
+        parent /= part
+        if parent.is_symlink():
+            raise StateRebuildRequiredError("symlinked source directory")
+    path = real_root / rel
+    if path.is_symlink() or not path.is_file():
+        raise StateRebuildRequiredError("missing or symlinked native source")
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         try:
-            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-            try:
-                before = os.fstat(fd)
-                with os.fdopen(os.dup(fd), "rb") as stream:
-                    digest = hashlib.file_digest(stream, "sha256").hexdigest()
-                after = os.fstat(fd)
-            finally:
-                os.close(fd)
-        except OSError as exc:
-            raise StateRebuildRequiredError("cannot safely read native source") from exc
-        before_identity = (
-            before.st_dev,
-            before.st_ino,
-            before.st_size,
-            before.st_mtime_ns,
-            before.st_ctime_ns,
-        )
-        after_identity = (
-            after.st_dev,
-            after.st_ino,
-            after.st_size,
-            after.st_mtime_ns,
-            after.st_ctime_ns,
-        )
-        try:
-            path_stat = path.stat(follow_symlinks=False)
-        except OSError as exc:
-            raise StateRebuildRequiredError("native file disappeared during read") from exc
-        path_identity = (
-            path_stat.st_dev,
-            path_stat.st_ino,
-            path_stat.st_size,
-            path_stat.st_mtime_ns,
-            path_stat.st_ctime_ns,
-        )
-        if before_identity != after_identity or path_identity != after_identity:
-            raise StateRebuildRequiredError("native source changed during read")
-        hashes[name] = digest
-    return hashes
+            before = os.fstat(fd)
+            with os.fdopen(os.dup(fd), "rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            after = os.fstat(fd)
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise StateRebuildRequiredError("cannot safely read native source") from exc
+    before_identity = (
+        before.st_dev,
+        before.st_ino,
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    )
+    after_identity = (
+        after.st_dev,
+        after.st_ino,
+        after.st_size,
+        after.st_mtime_ns,
+        after.st_ctime_ns,
+    )
+    try:
+        path_stat = path.stat(follow_symlinks=False)
+    except OSError as exc:
+        raise StateRebuildRequiredError("native file disappeared during read") from exc
+    path_identity = (
+        path_stat.st_dev,
+        path_stat.st_ino,
+        path_stat.st_size,
+        path_stat.st_mtime_ns,
+        path_stat.st_ctime_ns,
+    )
+    if before_identity != after_identity or path_identity != after_identity:
+        raise StateRebuildRequiredError("native source changed during read")
+    return digest
 
 
 def _entity_hashes(graph: EngineeringGraph) -> dict[str, str]:
@@ -157,17 +159,31 @@ class PersistentProjectState:
     graph: EngineeringGraph
     source_hashes: dict[str, str]
     entity_hashes: dict[str, str]
+    compatibility_key: str
     generation: int = 0
     journal: tuple[ChangeJournalEntry, ...] = ()
     derived_dependencies: dict[str, dict[str, str]] = field(default_factory=dict)
 
     @classmethod
     def rebuild(
-        cls, root: Path, native_sources: tuple[str, ...], circuit: IRCircuit
+        cls,
+        root: Path,
+        native_sources: tuple[str, ...],
+        circuit: IRCircuit,
+        *,
+        compatibility_key: str,
     ) -> PersistentProjectState:
-        """Create a new trusted baseline only after a full external native parse."""
+        """Create a baseline only after a full native parse and version probe."""
+        if not compatibility_key.strip():
+            raise StateRebuildRequiredError("missing KiCad/parser compatibility identity")
         graph = graph_from_circuit(circuit)
-        return cls(root, graph, source_digests(root, native_sources), _entity_hashes(graph))
+        return cls(
+            root,
+            graph,
+            source_digests(root, native_sources),
+            _entity_hashes(graph),
+            compatibility_key,
+        )
 
     @property
     def project_key(self) -> str:
@@ -270,6 +286,8 @@ class PersistentProjectState:
             "schema_version": STATE_SCHEMA_VERSION,
             "graph_schema_version": ENGINEERING_GRAPH_SCHEMA_VERSION,
             "project_key": self.project_key,
+            "root_identity": _root_identity(self.root),
+            "compatibility_key": self.compatibility_key,
             "source_hashes": dict(sorted(self.source_hashes.items())),
             "entity_hashes": dict(sorted(self.entity_hashes.items())),
             "generation": self.generation,
@@ -315,6 +333,7 @@ class PersistentProjectState:
         *,
         project_key: str,
         native_sources: tuple[str, ...],
+        compatibility_key: str,
     ) -> PersistentProjectState:
         """Return state only when schema, graph, sources and hashes all agree."""
         path = _state_path(root, state_path)
@@ -326,6 +345,9 @@ class PersistentProjectState:
                 document.get("schema_version") != STATE_SCHEMA_VERSION
                 or document.get("graph_schema_version") != ENGINEERING_GRAPH_SCHEMA_VERSION
                 or document.get("project_key") != project_key
+                or document.get("compatibility_key") != compatibility_key
+                or document.get("root_identity") != _root_identity(root)
+                or not compatibility_key.strip()
             ):
                 raise ValueError("incompatible project or state schema")
             graph_document = document["graph"]
@@ -359,36 +381,61 @@ class PersistentProjectState:
                 raise ValueError("unrecognized native change")
             if _entity_hashes(graph) != stored_entities:
                 raise ValueError("cached entity digest mismatch")
-            records = tuple(_read_journal_entry(item) for item in journal)
-            if len(records) != min(generation, MAX_CHANGE_JOURNAL):
-                raise ValueError("journal must record every retained generation")
-            if records and records[-1].generation != generation:
-                raise ValueError("journal generation mismatch")
-            if records and [item.generation for item in records] != list(
-                range(generation - len(records) + 1, generation + 1)
-            ):
-                raise ValueError("non-contiguous journal generations")
-            if any(
-                not record.changed_sources
-                or not set(record.changed_sources) <= set(stored_sources)
-                or not record.updated_entities
-                or not set(record.updated_entities) <= set(stored_entities)
-                or not set(record.updated_entities) <= set(record.invalidated_entities)
-                or record.work_units != len(record.updated_entities)
-                for record in records
-            ):
-                raise ValueError("invalid journal change scope")
-            for key, hashes in derived.items():
-                if (
-                    not isinstance(key, str)
-                    or not isinstance(hashes, dict)
-                    or not hashes
-                    or any(stored_entities.get(k) != v for k, v in hashes.items())
-                ):
-                    raise ValueError("invalid analysis dependency stamp")
-            return cls(root, graph, stored_sources, stored_entities, generation, records, derived)
+            records = _validate_stored_journal(journal, generation, stored_sources, stored_entities)
+            _validate_derived_dependencies(derived, stored_entities)
+            return cls(
+                root,
+                graph,
+                stored_sources,
+                stored_entities,
+                compatibility_key,
+                generation,
+                records,
+                derived,
+            )
         except (OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
             raise StateRebuildRequiredError("snapshot cannot be safely reused") from exc
+
+
+def _validate_stored_journal(
+    journal: list[object],
+    generation: int,
+    sources: Mapping[str, str],
+    entities: Mapping[str, str],
+) -> tuple[ChangeJournalEntry, ...]:
+    records = tuple(_read_journal_entry(item) for item in journal)
+    if len(records) != min(generation, MAX_CHANGE_JOURNAL):
+        raise ValueError("journal must record every retained generation")
+    if records and records[-1].generation != generation:
+        raise ValueError("journal generation mismatch")
+    if records and [item.generation for item in records] != list(
+        range(generation - len(records) + 1, generation + 1)
+    ):
+        raise ValueError("non-contiguous journal generations")
+    for record in records:
+        if (
+            not record.changed_sources
+            or not set(record.changed_sources) <= sources.keys()
+            or not record.updated_entities
+            or not set(record.updated_entities) <= entities.keys()
+            or not set(record.updated_entities) <= set(record.invalidated_entities)
+            or record.work_units != len(record.updated_entities)
+        ):
+            raise ValueError("invalid journal change scope")
+    return records
+
+
+def _validate_derived_dependencies(
+    derived: Mapping[str, object], entities: Mapping[str, str]
+) -> None:
+    for key, hashes in derived.items():
+        if (
+            not isinstance(key, str)
+            or not isinstance(hashes, dict)
+            or not hashes
+            or any(entities.get(k) != v for k, v in hashes.items())
+        ):
+            raise ValueError("invalid analysis dependency stamp")
 
 
 def _state_path(root: Path, state_path: Path) -> Path:
@@ -441,3 +488,9 @@ def _read_journal_entry(value: object) -> ChangeJournalEntry:
         fields["invalidated_entities"],
         cast(int, work_units),
     )
+
+
+def _root_identity(root: Path) -> str:
+    if root.is_symlink() or not root.is_dir():
+        raise StateRebuildRequiredError("invalid project root")
+    return hashlib.sha256(os.fsencode(root.resolve(strict=True))).hexdigest()
