@@ -70,6 +70,35 @@ def source_digests(root: Path, names: tuple[str, ...]) -> dict[str, str]:
     return {name: _digest_one_source(real_root, name) for name in sorted(names)}
 
 
+_CHANGED_DURING_READ = "native source changed during read"
+
+
+def _file_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        info.st_dev,
+        info.st_ino,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
+def _verify_ambiguous_windows_identity(
+    path: Path, digest: str, original_identity: tuple[int, int, int, int, int]
+) -> None:
+    """Re-authenticate contents when Windows fstat/path stat disagree."""
+    if path.is_symlink() or not path.is_file():
+        raise StateRebuildRequiredError(_CHANGED_DURING_READ)
+    try:
+        with path.open("rb") as stream:
+            path_digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        verified = path.stat(follow_symlinks=False)
+    except OSError as exc:
+        raise StateRebuildRequiredError(_CHANGED_DURING_READ) from exc
+    if path_digest != digest or original_identity != _file_identity(verified):
+        raise StateRebuildRequiredError(_CHANGED_DURING_READ)
+
+
 def _digest_one_source(real_root: Path, name: str) -> str:
     rel = _source_name(name)
     parent = real_root
@@ -91,55 +120,19 @@ def _digest_one_source(real_root: Path, name: str) -> str:
             os.close(fd)
     except OSError as exc:
         raise StateRebuildRequiredError("cannot safely read native source") from exc
-    before_identity = (
-        before.st_dev,
-        before.st_ino,
-        before.st_size,
-        before.st_mtime_ns,
-        before.st_ctime_ns,
-    )
-    after_identity = (
-        after.st_dev,
-        after.st_ino,
-        after.st_size,
-        after.st_mtime_ns,
-        after.st_ctime_ns,
-    )
     try:
         path_stat = path.stat(follow_symlinks=False)
     except OSError as exc:
         raise StateRebuildRequiredError("native file disappeared during read") from exc
-    path_identity = (
-        path_stat.st_dev,
-        path_stat.st_ino,
-        path_stat.st_size,
-        path_stat.st_mtime_ns,
-        path_stat.st_ctime_ns,
-    )
+    before_identity = _file_identity(before)
+    after_identity = _file_identity(after)
     if before_identity != after_identity:
-        raise StateRebuildRequiredError("native source changed during read")
+        raise StateRebuildRequiredError(_CHANGED_DURING_READ)
+    path_identity = _file_identity(path_stat)
     if path_identity != after_identity:
-        # Some Windows filesystems report different inode/device identities
-        # for fstat(fd) and stat(path) on the SAME native file. Never treat
-        # that mismatch as proof of a successful read. Re-open the path and
-        # verify its actual bytes AND its path identity remained stable.
-        if path.is_symlink() or not path.is_file():
-            raise StateRebuildRequiredError("native source changed during read")
-        try:
-            with path.open("rb") as stream:
-                path_digest = hashlib.file_digest(stream, "sha256").hexdigest()
-            verified = path.stat(follow_symlinks=False)
-        except OSError as exc:
-            raise StateRebuildRequiredError("native source changed during read") from exc
-        verified_identity = (
-            verified.st_dev,
-            verified.st_ino,
-            verified.st_size,
-            verified.st_mtime_ns,
-            verified.st_ctime_ns,
-        )
-        if path_digest != digest or path_identity != verified_identity:
-            raise StateRebuildRequiredError("native source changed during read")
+        # File descriptor and path inode/device values can be incomparable on
+        # Windows. Verify original bytes and path identity independently.
+        _verify_ambiguous_windows_identity(path, digest, path_identity)
     return digest
 
 

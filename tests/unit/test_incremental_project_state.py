@@ -626,8 +626,9 @@ def test_sidecar_symlink_directory_and_wrong_suffix_rejected(project: Path, tmp_
 
 
 def test_missing_required_compatibility_identity_rejected(project: Path) -> None:
+    graph = _circuit()
     with pytest.raises(StateRebuildRequiredError, match="compatibility identity"):
-        PersistentProjectState.rebuild(project, SOURCES, _circuit(), compatibility_key=" ")
+        PersistentProjectState.rebuild(project, SOURCES, graph, compatibility_key=" ")
 
 
 def test_fd_identity_mismatch_rejects_identical_path_metadata_but_different_digest(
