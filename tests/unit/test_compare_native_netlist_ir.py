@@ -23,7 +23,7 @@ def _xml(*, refs: tuple[str, ...] = ("U1", "R1"), names: tuple[str, ...] = ("VCC
         + "".join(f"<comp ref='{ref}'><libsource lib='Device'/></comp>" for ref in refs)
         + "<comp ref='#PWR01'><libsource lib='power'/></comp>"
         + "</components><nets>"
-        + "".join(f"<net code='{i+1}' name='{name}'/>" for i, name in enumerate(names))
+        + "".join(f"<net code='{i + 1}' name='{name}'/>" for i, name in enumerate(names))
         + "</nets></export>"
     ).encode("utf-8")
 
@@ -71,8 +71,14 @@ def test_net_count_mismatch_blocks_inventory_match(tmp_path: Path) -> None:
         b"<export/>",
         b"<export><components/><nets/></export>",
         b"<!DOCTYPE x [<!ENTITY x SYSTEM 'file:///tmp/x'>]><export/>",
-        b"<export><components><comp ref='U1'/><comp ref='U1'/></components><nets><net name='A'/></nets></export>",
-        b"<export><components><comp ref='R1'/></components><nets><net name='A'/><net name='A'/></nets></export>",
+        (
+            b"<export><components><comp ref='U1'/><comp ref='U1'/>"
+            b"</components><nets><net name='A'/></nets></export>"
+        ),
+        (
+            b"<export><components><comp ref='R1'/></components><nets>"
+            b"<net name='A'/><net name='A'/></nets></export>"
+        ),
         b"<export><components><comp ref='R1'/></components><nets><net code='1'/></nets></export>",
         b"not-xml",
     ],

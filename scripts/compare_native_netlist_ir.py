@@ -15,7 +15,10 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from xml.etree import ElementTree
+from xml.etree.ElementTree import ParseError
+
+from defusedxml import ElementTree as SafeElementTree  # type: ignore[import-untyped]
+from defusedxml.common import DefusedXmlException  # type: ignore[import-untyped]
 
 _MAX_NATIVE_XML_BYTES = 32 * 1024 * 1024
 
@@ -45,8 +48,8 @@ def read_native_inventory(xml_path: Path) -> NativeInventory:
     if b"<!DOCTYPE" in upper or b"<!ENTITY" in upper:
         raise ValueError("native XML DTD and entity declarations are forbidden")
     try:
-        root = ElementTree.fromstring(xml_bytes)
-    except ElementTree.ParseError as exc:
+        root = SafeElementTree.fromstring(xml_bytes)
+    except (ParseError, DefusedXmlException) as exc:
         raise ValueError("native XML is malformed") from exc
     if root.tag != "export":
         raise ValueError("native XML must have a KiCad export root")
