@@ -784,6 +784,16 @@ def _agent_config_checks() -> list[CheckResult]:
     return checks
 
 
+def _missing_cli_message(cli_path: Path) -> str:
+    """Distinguish absent auto-discovery from an invalid explicit CLI path."""
+    if cli_path == Path("kicad-cli"):
+        return (
+            "KiCad CLI not detected. Install a supported KiCad release (10.x) "
+            "or select your installed kicad-cli executable in Settings."
+        )
+    return f"kicad-cli was not found at {cli_path}"
+
+
 def build_diagnostic_report(*, probe_cli: bool, probe_ipc: bool) -> DiagnosticReport:
     """Build a diagnostics report without raising for non-fatal KiCad unavailability."""
     cfg = get_config()
@@ -815,8 +825,8 @@ def build_diagnostic_report(*, probe_cli: bool, probe_ipc: bool) -> DiagnosticRe
             CheckResult(
                 name="kicad_cli",
                 status="warn",
-                message=f"kicad-cli was not found at {cfg.kicad_cli}",
-                hint="Install KiCad or set KICAD_CLI_PATH/KICAD_MCP_KICAD_CLI.",
+                message=_missing_cli_message(cfg.kicad_cli),
+                hint="Set KICAD_MCP_KICAD_CLI to the path of an installed kicad-cli.",
             )
         )
 

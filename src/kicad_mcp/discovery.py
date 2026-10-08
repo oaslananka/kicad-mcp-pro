@@ -74,13 +74,14 @@ class CliCapabilities:
 def _candidate_cli_paths() -> list[Path]:
     system = platform.system()
     if system == "Windows":
+        # Prefer the released stable KiCad 10 installation. The KiCad 11
+        # candidate is a future-compatible probe, not an assertion that 11
+        # is installed (or released).
         return [
-            Path(r"C:\Program Files\KiCad\11.0\bin\kicad-cli.exe"),
-            Path(r"C:\Program Files\KiCad\11.0\bin\kicad-cli"),
             Path(r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe"),
-            Path(r"C:\Program Files\KiCad\10.0\bin\kicad-cli"),
             Path(r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe"),
             Path(r"C:\Program Files\KiCad\8.0\bin\kicad-cli.exe"),
+            Path(r"C:\Program Files\KiCad\11.0\bin\kicad-cli.exe"),
         ]
     if system == "Darwin":
         return [
@@ -154,6 +155,11 @@ def discover_kicad_cli() -> Path:
         if candidate.exists():
             return candidate
 
+    # Never expose an imaginary versioned Windows installation as a
+    # discovered executable; the diagnostics UI should report an unavailable
+    # CLI rather than claiming a nonexistent KiCad 11 location.
+    if platform.system() == "Windows":
+        return Path("kicad-cli")
     return _candidate_cli_paths()[0]
 
 

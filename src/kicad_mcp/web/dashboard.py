@@ -31,6 +31,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
   /* Sidebar */
   .sidebar {
@@ -58,9 +59,10 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .status-dot.degraded { background: var(--warning); }
   .status-dot.error { background: var(--error); }
   .nav-item {
-    padding: 10px 16px; font-size: 13px; cursor: pointer;
-    color: var(--text-muted); transition: all 0.12s;
-    border-left: 3px solid transparent;
+    display: block; width: 100%; text-align: left;
+    padding: 10px 16px; font: inherit; font-size: 13px; cursor: pointer;
+    color: var(--text-muted); background: transparent;
+    transition: all 0.12s; border: 0; border-left: 3px solid transparent;
   }
   .nav-item:hover { background: var(--surface-2); color: var(--text); }
   .nav-item.active {
@@ -84,7 +86,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .nav-support.coffee { border-color: #d1b700; color: #171717; background: #ffdd00; }
 
   /* Main content */
-  .main { flex: 1; padding: 24px; overflow-y: auto; max-height: 100vh; }
+  .main { flex: 1; min-width: 0; padding: 28px; overflow-y: auto; max-height: 100vh; }
   .view { display: none; }
   .view.active { display: block; }
   .view h2 {
@@ -98,18 +100,30 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   }
   .card {
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: 8px; padding: 14px;
+    border-radius: 10px; padding: 18px; min-width: 0;
   }
   .card h3 {
     font-size: 11px; font-weight: 600; text-transform: uppercase;
     color: var(--text-muted); margin-bottom: 10px; letter-spacing: 0.4px;
   }
   .card .row {
-    display: flex; justify-content: space-between; padding: 3px 0;
-    font-size: 13px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 12px; padding: 6px 0; font-size: 13px; line-height: 1.55;
   }
-  .card .row .label { color: var(--text-muted); }
-  .card .row .value { font-weight: 500; }
+  .card .row .label { color: var(--text-muted); flex-shrink: 0; }
+  .card .row .value {
+    font-weight: 500; min-width: 0; overflow-wrap: anywhere; text-align: right;
+  }
+  /* Health messages contain long Windows paths. Stack the label and
+     message rather than squeezing two columns into a narrow card. */
+  #health-checks .row { display: block; padding: 10px 0; }
+  #health-checks .row + .row { border-top: 1px solid var(--border); }
+  #health-checks .row .label {
+    display: block; margin-bottom: 5px; font-size: 11px; letter-spacing: 0.02em;
+  }
+  #health-checks .row .value {
+    display: block; text-align: left; font-size: 12px; line-height: 1.6;
+  }
   .card .row .value.ok { color: var(--success); }
   .card .row .value.warn { color: var(--warning); }
   .card .row .value.err { color: var(--error); }
@@ -273,6 +287,9 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     .nav-support-group .nav-label { display: none; }
     .nav-support { margin: 0; padding: 6px 9px; border-bottom-width: 1px; }
     .main { padding: 16px; max-height: none; }
+    .grid { grid-template-columns: minmax(0, 1fr); }
+    .form-row { flex-wrap: wrap; }
+    .form-row .form-group { min-width: min(100%, 240px); }
   }
 </style>
 </head>
@@ -286,12 +303,12 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     <span class="badge" id="navVersion">v{{version}}</span>
   </div>
   <div class="status-row" id="navStatusText">Checking...</div>
-  <div class="nav-item active" data-view="dashboard">&#9664; Dashboard</div>
-  <div class="nav-item" data-view="log-viewer">&#9776; Logs</div>
-  <div class="nav-item" data-view="tools-catalog">&#9881; Tools</div>
-  <div class="nav-item" data-view="preview">&#128444; Preview</div>
-  <div class="nav-item" data-view="settings">&#9878; Settings</div>
-  <div class="nav-item" data-view="setup-wizard">&#9889; Setup</div>
+  <button type="button" class="nav-item active" data-view="dashboard">&#9664; Dashboard</button>
+  <button type="button" class="nav-item" data-view="log-viewer">&#9776; Logs</button>
+  <button type="button" class="nav-item" data-view="tools-catalog">&#9881; Tools</button>
+  <button type="button" class="nav-item" data-view="preview">&#128444; Preview</button>
+  <button type="button" class="nav-item" data-view="settings">&#9878; Settings</button>
+  <button type="button" class="nav-item" data-view="setup-wizard">&#9889; Setup</button>
   <div class="nav-sep"></div>
   <div class="nav-label">AI Agents</div>
   <a class="nav-item" href="https://oaslananka.github.io/kicad-mcp-pro/agents/" target="_blank" rel="noopener noreferrer">&#129302; Agent Setup &#8599;</a>
