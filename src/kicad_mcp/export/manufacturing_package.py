@@ -23,6 +23,7 @@ _MISSING_APPROVAL_EVIDENCE = (
 _APPROVED_PROJECT_SUFFIXES = frozenset({".kicad_pro", ".kicad_sch", ".kicad_pcb", ".kicad_dru"})
 _APPROVED_PROJECT_SPEC = ".kicad-mcp/project_spec.json"
 _REFERENCE_APPROVAL_FILENAME = "reference-manufacturing-approval.json"
+_INVALID_APPROVED_PROJECT_FILES = "Manufacturing evidence approved project files are invalid."
 
 
 @dataclass(frozen=True)
@@ -156,21 +157,21 @@ class ExportManufacturingPackageService:
         if raw_files is None:
             return None
         if not isinstance(raw_files, list) or not raw_files:
-            return "Manufacturing evidence approved project files are invalid."
+            return _INVALID_APPROVED_PROJECT_FILES
         seen: set[str] = set()
         approved_files: list[tuple[str, str]] = []
         for item in raw_files:
             if not isinstance(item, dict) or set(item) != {"path", "sha256"}:
-                return "Manufacturing evidence approved project files are invalid."
+                return _INVALID_APPROVED_PROJECT_FILES
             relative = item.get("path")
             expected = item.get("sha256")
             if not isinstance(relative, str) or not isinstance(expected, str):
-                return "Manufacturing evidence approved project files are invalid."
+                return _INVALID_APPROVED_PROJECT_FILES
             invalid_digest = len(expected) != 64 or any(
                 character not in "0123456789abcdef" for character in expected
             )
             if relative in seen or invalid_digest:
-                return "Manufacturing evidence approved project files are invalid."
+                return _INVALID_APPROVED_PROJECT_FILES
             seen.add(relative)
             approved_files.append((relative, expected))
 
