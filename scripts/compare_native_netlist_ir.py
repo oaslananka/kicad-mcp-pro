@@ -44,9 +44,6 @@ def read_native_inventory(xml_path: Path) -> NativeInventory:
         xml_bytes = source.read(_MAX_NATIVE_XML_BYTES + 1)
     if len(xml_bytes) > _MAX_NATIVE_XML_BYTES:
         raise ValueError("native XML exceeds 32 MiB safety limit")
-    upper = xml_bytes.upper()
-    if b"<!DOCTYPE" in upper or b"<!ENTITY" in upper:
-        raise ValueError("native XML DTD and entity declarations are forbidden")
     try:
         root = SafeElementTree.fromstring(xml_bytes)
     except (SafeElementTree.ParseError, DefusedXmlException) as exc:

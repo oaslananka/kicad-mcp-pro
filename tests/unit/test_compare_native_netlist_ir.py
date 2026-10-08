@@ -72,6 +72,11 @@ def test_net_count_mismatch_blocks_inventory_match(tmp_path: Path) -> None:
         b"<export><components/><nets/></export>",
         b"<!DOCTYPE x [<!ENTITY x SYSTEM 'file:///tmp/x'>]><export/>",
         (
+            "<?xml version='1.0' encoding='UTF-16'?>"
+            "<!DOCTYPE export [<!ENTITY unsafe 'yes'>]>"
+            "<export><components/><nets/></export>"
+        ).encode("utf-16"),
+        (
             b"<export><components><comp ref='U1'/><comp ref='U1'/>"
             b"</components><nets><net name='A'/></nets></export>"
         ),
