@@ -14,7 +14,8 @@ from .results import ProviderError, ProviderResult
 
 def _failure(request: ProviderRequest, code: ProviderErrorCode, message: str) -> ProviderResult:
     return ProviderResult(
-        request_id=request.request_id, ok=False,
+        request_id=request.request_id,
+        ok=False,
         error=ProviderError(code=code, message=message),
     )
 
@@ -33,7 +34,18 @@ def _select(
         candidates = tuple(item for item in candidates if not item.manifest.network_access)
         if not candidates:
             return _failure(request, ProviderErrorCode.NETWORK_DISABLED, "offline policy")
-    eligible = tuple(item for item in candidates if set(item.operation.permissions) <= permissions)
+    eligible = tuple(
+        item
+        for item in candidates
+        if (
+            set(item.operation.permissions)
+            | (
+                {ProviderPermission.NETWORK, ProviderPermission.DATA_EGRESS}
+                & set(item.manifest.permissions)
+            )
+        )
+        <= permissions
+    )
     if not eligible:
         return _failure(request, ProviderErrorCode.PERMISSION_DENIED, "permission not granted")
     return eligible[0]
@@ -88,7 +100,5 @@ async def execute_provider(
             or proof.source != manifest.provenance_source
             or proof.deterministic != manifest.deterministic
         ):
-            return _failure(
-                request, ProviderErrorCode.MALFORMED_RESULT, "provenance mismatch"
-            )
+            return _failure(request, ProviderErrorCode.MALFORMED_RESULT, "provenance mismatch")
     return result

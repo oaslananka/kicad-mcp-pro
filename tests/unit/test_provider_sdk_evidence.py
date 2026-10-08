@@ -20,26 +20,42 @@ from kicad_mcp.providers import (
 
 def test_attaches_only_a_measurement_with_host_owned_inputs() -> None:
     manifest = ProviderManifest(
-        sdk_version="0-experimental", provider_id="fixture-solver",
-        provider_version="0.1.0", family=ProviderFamily.SOLVER,
+        sdk_version="0-experimental",
+        provider_id="fixture-solver",
+        provider_version="0.1.0",
+        family=ProviderFamily.SOLVER,
         capabilities=("solver.dc",),
         operations=(ProviderOperation(name="solve", capability="solver.dc"),),
-        deterministic=False, provenance_source="solver:fixture",
-        healthcheck="ready", license_id="MIT", distribution_notes="Dummy",
+        deterministic=False,
+        provenance_source="solver:fixture",
+        healthcheck="ready",
+        license_id="MIT",
+        distribution_notes="Dummy",
     )
     result = ProviderResult(
-        request_id="run-001", ok=True, payload={"voltage": 3.3},
+        request_id="run-001",
+        ok=True,
+        payload={"voltage": 3.3},
         provenance=ProviderProvenance(
-            provider_id="fixture-solver", provider_version="0.1.0",
-            source="solver:fixture", execution_id="run-001",
-            deterministic=False, input_sha256="a" * 64, output_sha256="b" * 64,
+            provider_id="fixture-solver",
+            provider_version="0.1.0",
+            source="solver:fixture",
+            execution_id="run-001",
+            deterministic=False,
+            input_sha256="a" * 64,
+            output_sha256="b" * 64,
         ),
     )
     entries = (EvidenceInputDigest(entity_id="project:input", sha256="c" * 64),)
     evidence = provider_evidence_handoff(
-        result, manifest, evidence_id="provider-measurement-001",
-        project_key="fixture", source_revision="git:abc", source_sha256="d" * 64,
-        captured_at=datetime.now(UTC), inputs=entries,
+        result,
+        manifest,
+        evidence_id="provider-measurement-001",
+        project_key="fixture",
+        source_revision="git:abc",
+        source_sha256="d" * 64,
+        captured_at=datetime.now(UTC),
+        inputs=entries,
         dependency_manifest_complete=False,
     )
     assert evidence.kind is EvidenceRecordKind.MEASUREMENT
@@ -48,25 +64,37 @@ def test_attaches_only_a_measurement_with_host_owned_inputs() -> None:
     assert evidence.producer == "fixture-solver"
     assert evidence.provenance_source == "solver:fixture"
 
-    bad = result.model_copy(update={
-        "provenance": result.provenance.model_copy(update={"provider_id": "forged"})
-    })
+    bad = result.model_copy(
+        update={"provenance": result.provenance.model_copy(update={"provider_id": "forged"})}
+    )
     with pytest.raises(ValueError, match="mismatch"):
         provider_evidence_handoff(
-            bad, manifest, evidence_id="provider-measurement-002",
-            project_key="fixture", source_revision="git:abc", source_sha256="d" * 64,
-            captured_at=datetime.now(UTC), inputs=entries,
+            bad,
+            manifest,
+            evidence_id="provider-measurement-002",
+            project_key="fixture",
+            source_revision="git:abc",
+            source_sha256="d" * 64,
+            captured_at=datetime.now(UTC),
+            inputs=entries,
             dependency_manifest_complete=False,
         )
     with pytest.raises(ValueError, match="failed"):
         provider_evidence_handoff(
-            ProviderResult.model_validate({
-                "request_id": "run-001", "ok": False,
-                "error": {"code": "provider_failure", "message": "failed"},
-            }),
-            manifest, evidence_id="provider-measurement-003",
-            project_key="fixture", source_revision="git:abc", source_sha256="d" * 64,
-            captured_at=datetime.now(UTC), inputs=entries,
+            ProviderResult.model_validate(
+                {
+                    "request_id": "run-001",
+                    "ok": False,
+                    "error": {"code": "provider_failure", "message": "failed"},
+                }
+            ),
+            manifest,
+            evidence_id="provider-measurement-003",
+            project_key="fixture",
+            source_revision="git:abc",
+            source_sha256="d" * 64,
+            captured_at=datetime.now(UTC),
+            inputs=entries,
             dependency_manifest_complete=False,
         )
 

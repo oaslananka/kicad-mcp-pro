@@ -37,37 +37,55 @@ class Dummy:
         if self.mode == "malformed":
             return {"ok": True, "request_id": request.request_id}
         return ProviderResult(
-            request_id=request.request_id, ok=True, payload={"part": "R0603"},
+            request_id=request.request_id,
+            ok=True,
+            payload={"part": "R0603"},
             provenance=ProviderProvenance(
-                provider_id="fixture-part", provider_version="0.1",
-                source="fixture:unit", execution_id="exec-001", deterministic=True,
-                input_sha256="a" * 64, output_sha256="b" * 64,
+                provider_id="fixture-part",
+                provider_version="0.1",
+                source="fixture:unit",
+                execution_id="exec-001",
+                deterministic=True,
+                input_sha256="a" * 64,
+                output_sha256="b" * 64,
             ),
         )
 
 
 def fixture_manifest(*, network: bool = False, mutation: bool = False) -> ProviderManifest:
-    perm = ((ProviderPermission.PROJECT_WRITE,) if mutation else ())
+    perm = (ProviderPermission.PROJECT_WRITE,) if mutation else ()
     if network:
         perm += (ProviderPermission.NETWORK,)
     return ProviderManifest(
-        sdk_version="0-experimental", provider_id="fixture-part",
-        provider_version="0.1", family=ProviderFamily.PART,
+        sdk_version="0-experimental",
+        provider_id="fixture-part",
+        provider_version="0.1",
+        family=ProviderFamily.PART,
         capabilities=("parts.lookup",),
-        operations=(ProviderOperation(
-            name="lookup", capability="parts.lookup",
-            permissions=perm[:1] if mutation else (), idempotent=not mutation,
-        ),),
-        permissions=perm, network_access=network,
+        operations=(
+            ProviderOperation(
+                name="lookup",
+                capability="parts.lookup",
+                permissions=perm[:1] if mutation else (),
+                idempotent=not mutation,
+            ),
+        ),
+        permissions=perm,
+        network_access=network,
         network_hosts=("api.example.org",) if network else (),
-        deterministic=True, provenance_source="fixture:unit",
-        healthcheck="ready", license_id="MIT", distribution_notes="Dummy only",
+        deterministic=True,
+        provenance_source="fixture:unit",
+        healthcheck="ready",
+        license_id="MIT",
+        distribution_notes="Dummy only",
     )
 
 
 def request(**kwargs: object) -> ProviderRequest:
     fields: dict[str, object] = {
-        "request_id": "req-001", "capability": "parts.lookup", "operation": "lookup"
+        "request_id": "req-001",
+        "capability": "parts.lookup",
+        "operation": "lookup",
     }
     fields.update(kwargs)
     return ProviderRequest.model_validate(fields)
@@ -111,7 +129,9 @@ async def test_offline_network_permission_and_mutation_guards() -> None:
     offline = await execute_provider(registry, request())
     assert offline.error is not None
     assert offline.error.code is ProviderErrorCode.NETWORK_DISABLED
-    permitted = await execute_provider(registry, request(), offline=False)
+    permitted = await execute_provider(
+        registry, request(), offline=False, granted_permissions=(ProviderPermission.NETWORK,)
+    )
     assert permitted.ok is True
 
     mutations = ProviderRegistry()
@@ -120,12 +140,15 @@ async def test_offline_network_permission_and_mutation_guards() -> None:
     assert denied.error is not None
     assert denied.error.code is ProviderErrorCode.PERMISSION_DENIED
     missing_key = await execute_provider(
-        mutations, request(), granted_permissions=(ProviderPermission.PROJECT_WRITE,),
+        mutations,
+        request(),
+        granted_permissions=(ProviderPermission.PROJECT_WRITE,),
     )
     assert missing_key.error is not None
     assert missing_key.error.code is ProviderErrorCode.PERMISSION_DENIED
     accepted = await execute_provider(
-        mutations, request(idempotency_key="edit-001"),
+        mutations,
+        request(idempotency_key="edit-001"),
         granted_permissions=(ProviderPermission.PROJECT_WRITE,),
     )
     assert accepted.ok is True
@@ -138,3 +161,14 @@ def test_family_mismatch_and_duplicate_registration() -> None:
     registry.register(fixture_manifest(), Dummy())
     with pytest.raises(ValueError, match="duplicate"):
         registry.register(fixture_manifest(), Dummy())
+
+
+@pytest.mark.anyio
+async def test_cancellation_is_propagated() -> None:
+    registry = ProviderRegistry()
+    registry.register(fixture_manifest(), Dummy(mode="timeout"))
+    task = asyncio.create_task(execute_provider(registry, request()))
+    await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task

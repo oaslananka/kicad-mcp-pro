@@ -6,12 +6,12 @@ import pytest
 from pydantic import ValidationError
 
 from kicad_mcp.providers import (
+    SDK_VERSION,
     ProviderFamily,
     ProviderManifest,
     ProviderOperation,
     ProviderPermission,
     ProviderRequest,
-    SDK_VERSION,
 )
 
 
@@ -49,27 +49,42 @@ def test_manifest_is_versioned_and_declares_capabilities() -> None:
     [
         ({"capabilities": ("parts.lookup", "parts.lookup")}, "duplicate capabilities"),
         ({"capabilities": ("invalid capability",)}, "invalid capability"),
-        ({"operations": (ProviderOperation(name="lookup", capability="other"),)},
-         "undeclared capability"),
+        (
+            {"operations": (ProviderOperation(name="lookup", capability="other"),)},
+            "undeclared capability",
+        ),
         ({"permissions": (ProviderPermission.NETWORK,)}, "network declaration"),
         ({"network_access": True}, "network declaration"),
         ({"network_hosts": ("api.example.org",)}, "explicit host"),
-        ({"network_access": True, "permissions": (ProviderPermission.NETWORK,)},
-         "explicit host"),
-        ({"network_access": True, "permissions": (ProviderPermission.NETWORK,),
-          "network_hosts": ("*.example.org",)}, "exact names"),
+        ({"network_access": True, "permissions": (ProviderPermission.NETWORK,)}, "explicit host"),
+        (
+            {
+                "network_access": True,
+                "permissions": (ProviderPermission.NETWORK,),
+                "network_hosts": ("*.example.org",),
+            },
+            "exact names",
+        ),
         ({"data_egress": True}, "egress declaration"),
-        ({"data_egress": True, "permissions": (ProviderPermission.DATA_EGRESS,)},
-         "egress requires"),
-        ({"operations": (ProviderOperation(
-            name="lookup", capability="parts.lookup",
-            permissions=(ProviderPermission.PROJECT_WRITE,),
-        ),)}, "undeclared permission"),
+        (
+            {"data_egress": True, "permissions": (ProviderPermission.DATA_EGRESS,)},
+            "egress requires",
+        ),
+        (
+            {
+                "operations": (
+                    ProviderOperation(
+                        name="lookup",
+                        capability="parts.lookup",
+                        permissions=(ProviderPermission.PROJECT_WRITE,),
+                    ),
+                )
+            },
+            "undeclared permission",
+        ),
     ],
 )
-def test_manifest_rejects_unsafe_declarations(
-    change: dict[str, object], reason: str
-) -> None:
+def test_manifest_rejects_unsafe_declarations(change: dict[str, object], reason: str) -> None:
     with pytest.raises(ValidationError, match=reason):
         manifest(**change)
 
@@ -78,22 +93,28 @@ def test_mutations_require_explicit_permission_and_idempotency() -> None:
     with pytest.raises(ValidationError, match="mutation permission"):
         ProviderOperation(name="write", capability="parts.lookup", idempotent=False)
     op = ProviderOperation(
-        name="write", capability="parts.lookup", idempotent=False,
+        name="write",
+        capability="parts.lookup",
+        idempotent=False,
         permissions=(ProviderPermission.PROJECT_WRITE,),
     )
     assert op.idempotent is False
     with pytest.raises(ValidationError):
         ProviderRequest(
-            request_id="req-001", capability="parts.lookup",
-            operation="lookup", timeout_seconds=0,
+            request_id="req-001",
+            capability="parts.lookup",
+            operation="lookup",
+            timeout_seconds=0,
         )
 
 
 def test_provider_request_strict_unknown_fields_and_json_payload() -> None:
     request = ProviderRequest(
-        request_id="req-001", capability="parts.lookup",
-        operation="lookup", payload={"part": "C0603", "count": 3},
+        request_id="req-001",
+        capability="parts.lookup",
+        operation="lookup",
+        payload={"part": "C0603", "count": 3},
     )
     assert request.payload["count"] == 3
     with pytest.raises(ValidationError):
-        ProviderRequest.model_validate({**request.model_dump(), "unsafe_path": "/tmp/x"})
+        ProviderRequest.model_validate({**request.model_dump(), "unsafe_path": "unexpected-value"})

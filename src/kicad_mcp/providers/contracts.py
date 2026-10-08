@@ -50,7 +50,8 @@ class ProviderOperation(StrictContractModel):
         if len(set(self.permissions)) != len(self.permissions):
             raise ValueError("duplicate operation permissions")
         if not self.idempotent and not {
-            ProviderPermission.PROJECT_WRITE, ProviderPermission.INSTRUMENT_CONTROL
+            ProviderPermission.PROJECT_WRITE,
+            ProviderPermission.INSTRUMENT_CONTROL,
         }.intersection(self.permissions):
             raise ValueError("non-idempotent operation requires mutation permission")
         return self

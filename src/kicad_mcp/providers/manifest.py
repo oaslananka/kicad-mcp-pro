@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from kicad_mcp.project.hardware_intent_contract import StrictContractModel
+
 from .contracts import IDENTIFIER, ProviderFamily, ProviderOperation, ProviderPermission
 
 
@@ -32,8 +33,7 @@ class ProviderManifest(StrictContractModel):
     def check_declarations(self) -> ProviderManifest:
         if len(set(self.capabilities)) != len(self.capabilities):
             raise ValueError("duplicate capabilities")
-        if any(re.fullmatch(IDENTIFIER, x) is None or len(x) > 80
-               for x in self.capabilities):
+        if any(re.fullmatch(IDENTIFIER, x) is None or len(x) > 80 for x in self.capabilities):
             raise ValueError("invalid capability name")
         if len(set(self.permissions)) != len(self.permissions):
             raise ValueError("duplicate declared permissions")
@@ -54,8 +54,9 @@ class ProviderManifest(StrictContractModel):
             raise ValueError("network access requires explicit host declarations")
         if len(set(self.network_hosts)) != len(self.network_hosts):
             raise ValueError("duplicate network host")
-        if any(not host or "*" in host or "/" in host or "://" in host
-               for host in self.network_hosts):
+        if any(
+            not host or "*" in host or "/" in host or "://" in host for host in self.network_hosts
+        ):
             raise ValueError("network hosts must be exact names")
         return self
 
