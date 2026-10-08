@@ -542,26 +542,27 @@ def test_quality_contract_identifiers_preserve_exact_native_evidence_boundary(
         with pytest.raises(ValidationError):
             parse_quality_contract(contract_payload)
 
+    required_count = 1
+    passed_count = 1
     score_fields = {
         "board_id": "board-v1",
         "benchmark_version": "v1",
         "attempt_id": "attempt-1",
         "source_revision": "a" * 40,
-        "required_rule_count": 1,
-        "passed_required_rule_count": 1,
+        "required_rule_count": required_count,
+        "passed_required_rule_count": passed_count,
         "quality_score_percent": 100.0,
-        "overall_pass": True,
+        "overall_pass": passed_count == required_count,
         "results": [
             {"id": "rule-v1", "type": "artifact", "status": "pass", "reason_code": "matched"}
         ],
     }
-    for field_name in ("board_id",):
-        with_field = {**score_fields, field_name: identifier}
-        if valid:
-            assert BoardQualityScore.model_validate(with_field).board_id == identifier
-        else:
-            with pytest.raises(ValidationError):
-                BoardQualityScore.model_validate(with_field)
+    score_with_id = {**score_fields, "board_id": identifier}
+    if valid:
+        assert BoardQualityScore.model_validate(score_with_id).board_id == identifier
+    else:
+        with pytest.raises(ValidationError):
+            BoardQualityScore.model_validate(score_with_id)
 
     if valid:
         assert (
