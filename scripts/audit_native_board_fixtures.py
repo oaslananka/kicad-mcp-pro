@@ -31,10 +31,12 @@ FIXTURES = {
     "esp32-gallery": "examples/gallery/esp32-c3-wroom-02-breakout",
 }
 CORPUS = ("esp32-c6-usbc", "stm32f072-usbc", "rp2350-usbc")
-SUPPORTED = {".kicad_pro", ".kicad_sch", ".kicad_pcb", ".kicad_dru"}
+SUPPORTED = {".kicad_pro", ".kicad_sch", PCB_SUFFIX, ".kicad_dru"}
 VIOLATIONS = re.compile(r"Found (\d+) violations")
 FOOTPRINTS = re.compile(r"(?m)^\s*\(footprint\s")
 SCHEMA = "native-fixture-readiness.v0"
+PCB_SUFFIX = ".kicad_pcb"
+PINNED_KICAD_CLI = "/usr/bin/kicad-cli"
 
 
 def _trusted_system_executable(value: str, expected_name: str) -> str:
@@ -79,7 +81,7 @@ def _source_files(root: Path) -> list[Path]:
     )
     if not files or any(p.is_symlink() or not p.is_file() for p in files):
         raise ValueError("missing, symlinked or invalid KiCad source")
-    if not any(p.suffix == ".kicad_pcb" for p in files):
+    if not any(p.suffix == PCB_SUFFIX for p in files):
         raise ValueError("fixture must contain a KiCad PCB")
     return files
 
@@ -96,10 +98,10 @@ def _run_native(
     started = time.perf_counter()
     try:
         trusted_cli = _trusted_system_executable(binary, "kicad-cli")
-        if trusted_cli != "/usr/bin/kicad-cli":
+        if trusted_cli != PINNED_KICAD_CLI:
             raise ValueError("native benchmark requires the pinned system KiCad CLI")
         process = subprocess.run(  # nosec B603
-            ["/usr/bin/kicad-cli", *command],
+            [PINNED_KICAD_CLI, *command],
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -123,7 +125,7 @@ def _run_native(
 def _native_case(case: str, cli: str, *, samples: int, timeout: float) -> dict[str, Any]:
     original = REPO / FIXTURES[case]
     sources = _source_files(original)
-    boards = [file for file in sources if file.suffix == ".kicad_pcb"]
+    boards = [file for file in sources if file.suffix == PCB_SUFFIX]
     if len(boards) != 1:
         raise ValueError("native fixture must have exactly one PCB")
     board = boards[0]
@@ -226,10 +228,10 @@ def run_audit(
     if not cases or len(set(cases)) != len(cases) or any(k not in FIXTURES for k in cases):
         raise ValueError("fixture must be explicitly allowlisted")
     trusted_cli = _trusted_system_executable(cli, "kicad-cli")
-    if trusted_cli != "/usr/bin/kicad-cli":
+    if trusted_cli != PINNED_KICAD_CLI:
         raise ValueError("native benchmark requires the pinned system KiCad CLI")
     version = subprocess.run(  # nosec B603
-        ["/usr/bin/kicad-cli", "version"], capture_output=True, text=True, check=True, timeout=15
+        [PINNED_KICAD_CLI, "version"], capture_output=True, text=True, check=True, timeout=15
     ).stdout.strip()
     if not version or len(version) > 100:
         raise ValueError("KiCad CLI version is unavailable")
@@ -268,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
     if binary is None:
         parser.error("kicad-cli not installed; cannot manufacture benchmark evidence")
     binary = _trusted_system_executable(binary, "kicad-cli")
-    if binary != "/usr/bin/kicad-cli":
+    if binary != PINNED_KICAD_CLI:
         parser.error("audit requires the pinned /usr/bin/kicad-cli")
     git = shutil.which("git")
     if git is None:
