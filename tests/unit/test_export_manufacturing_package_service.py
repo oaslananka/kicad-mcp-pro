@@ -353,6 +353,11 @@ async def test_package_rejects_malformed_bound_file_manifests(
     )
 
     assert expected in result
+    assert result.splitlines() == [
+        "Manufacturing evidence approved project files are invalid.",
+        "- Manufacturing export stopped before artifact generation.",
+        "- Obtain fresh human approval for the current project state.",
+    ]
     assert all(not calls[name] for name in ("gerber", "drill", "bom", "pick", "ipc", "odb"))
 
 

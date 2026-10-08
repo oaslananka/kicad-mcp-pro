@@ -31,6 +31,27 @@ class NativeInventory:
     ignored_power_refs: frozenset[str]
 
 
+def _workspace_file(path: Path, *, label: str) -> Path:
+    """Resolve read-only CLI inputs below the operator-selected working directory.
+
+    CLI arguments are untrusted, including absolute paths and parent traversal.
+    The process working directory is the only trusted workspace authority: do
+    not accept a second CLI-supplied path that can widen the allowed root.
+    """
+    workspace = Path.cwd().resolve(strict=True)
+    if path.is_symlink():
+        raise ValueError(f"{label} must not be a symlink")
+    try:
+        candidate = path.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"{label} must exist within the working directory") from exc
+    if not candidate.is_relative_to(workspace):
+        raise ValueError(f"{label} must stay inside the working directory")
+    if not candidate.is_file():
+        raise ValueError(f"{label} input must be a regular file")
+    return candidate
+
+
 def read_native_inventory(xml_path: Path) -> NativeInventory:
     """Extract component identities and net count from native KiCad XML.
 
@@ -38,8 +59,7 @@ def read_native_inventory(xml_path: Path) -> NativeInventory:
     represents them as rails rather than ordinary components. Everything
     else remains in the comparison, including DNP/non-BOM components.
     """
-    if xml_path.is_symlink() or not xml_path.is_file():
-        raise ValueError("native XML input must be a regular, non-symlink file")
+    xml_path = _workspace_file(xml_path, label="native XML")
     with xml_path.open("rb") as source:
         xml_bytes = source.read(_MAX_NATIVE_XML_BYTES + 1)
     if len(xml_bytes) > _MAX_NATIVE_XML_BYTES:
@@ -130,7 +150,9 @@ def main(argv: list[str] | None = None) -> int:
         # The legacy parser may print diagnostics. Preserve those on stderr,
         # keeping stdout a single machine-readable JSON document.
         with redirect_stdout(sys.stderr):
-            ir = parse_schematic(args.schematic, load_pin_metadata=False)
+            ir = parse_schematic(
+                _workspace_file(args.schematic, label="schematic"), load_pin_metadata=False
+            )
         result = compare_inventory(native, set(ir.components), len(ir.nets))
     except (OSError, ValueError, ImportError) as exc:
         print(f"native IR audit failed: {exc}", file=sys.stderr)
