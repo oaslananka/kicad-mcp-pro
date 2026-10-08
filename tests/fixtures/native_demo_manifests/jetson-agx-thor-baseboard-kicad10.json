@@ -1,0 +1,33 @@
+{
+  "demo_id": "jetson-agx-thor-baseboard",
+  "files": {
+    "LICENSE": "c95bae1d1ce0235ecccd3560b772ec1efb97f348a79f0fbe0a634f0c2ccefe2c",
+    "csi.kicad_sch": "88c30801ce6ca909f356bad9d56ea9fdc4e28b8a0de64caf4d066fc6491244e5",
+    "dcdc.kicad_sch": "fee1d255a97df42a699818deece36980f6d8bb2f0f1bf48fe799e6652d92067f",
+    "expansion_connector.kicad_sch": "127c4cf2fe5f48ee5d2db4c1ad94fbe2f55f30aa9a53ab4b12704fb205e6b6bc",
+    "jetson-agx-thor-baseboard.kicad_dru": "afef3270ffbaa078e6136ea87f9a2fbbc2a186bab5073aae6bf8aae871ef30aa",
+    "jetson-agx-thor-baseboard.kicad_pcb": "e61179b68ac151376f5552f91a8acc2aed46f0cc4cd9c771049490735cdbf3f8",
+    "jetson-agx-thor-baseboard.kicad_pro": "36a2d42b52b71cde1709a17c058d509a62e85e34341134d5e079af74db527191",
+    "jetson-agx-thor-baseboard.kicad_sch": "bd943f5c309046e09a1c99e443e1ce23a0c922291371ca60839412694351340b",
+    "level_shifter_x8.kicad_sch": "05e24208b02c0761d9ed48171ce765d8e91430735a58349e31f7aa45a1d01346",
+    "m2.kicad_sch": "14e3b338feb6bac2bdf958c406ee6de7ed3e4629ded0d968b6eed6cab05a6d1a",
+    "peripherals.kicad_sch": "ebd17d39c52477297d055c74779497dab11ae6e51458b10030f4deb61794136f",
+    "power.kicad_sch": "ef8f96b6faffbbae1407e8f05056aa8f98b061b2d0a15ec1e1698bc189d5f600",
+    "recovery_usb.kicad_sch": "4e280e053b1d8ba0ee2a3191248a9bd7c46d9bf2f5d737361a23402954c98b27",
+    "sfp.kicad_sch": "8a6998aad647a2ae2e67fa2bffd62347a71683c3df41f731f5e68dee857d5323",
+    "som_io.kicad_sch": "d48a025c9e213a7ff601731ce0e96526b454ef9161dbfc07f66ba65cee0d7559",
+    "som_io2.kicad_sch": "3df968fe0dc304073b1b9425256e2c4967c930ac0956242ae5a4a01f85c09e16",
+    "som_power.kicad_sch": "adbc3997093bc617abfe23e03d06f8085ce9662636f039a42e808513a46a33d3",
+    "usb.kicad_sch": "940cb06421de5eaea77a6d54f2778f8c1d05024c478e5f04f487958e14b28a1e",
+    "usb_debug_pd.kicad_sch": "60d94bc61e32de2c8b0dbd759ba8cf21c9db24d1063e7b8fee61076d2a3cf3fc",
+    "usb_dp.kicad_sch": "dedbbbe2842256c3b84153e7ae147beeb6b5741bc412b377cac96addbd8a7ce8",
+    "usb_hub.kicad_sch": "309f447586550989959917e18ffae8207a36be8505f648f404190881359d865e"
+  },
+  "license": "Apache-2.0",
+  "minimum_pcb_footprints": 1000,
+  "minimum_schematic_files": 2,
+  "package": "kicad-demos",
+  "packaged_with_kicad_version": "10.0.6",
+  "pcb": "jetson-agx-thor-baseboard.kicad_pcb",
+  "schema_version": "native-kicad-demo-manifest.v1"
+}
