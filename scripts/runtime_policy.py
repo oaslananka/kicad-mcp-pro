@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import tomllib
 import urllib.parse
 import urllib.request
@@ -599,7 +601,8 @@ def detect_runtime_drift(
                     ),
                     action=(
                         "Raise apps/vscode-extension package engines.vscode, update "
-                        "compatibility.yaml, docs/status/runtime-policy-matrix.md, and release notes."
+                        "compatibility.yaml, docs/status/runtime-policy-matrix.md, "
+                        "and release notes."
                     ),
                 )
             )
@@ -797,6 +800,50 @@ def _findings_markdown(findings: list[RuntimePolicyFinding]) -> str:
     return "\n".join(lines)
 
 
+def _validated_drift_output_path(requested: Path) -> Path:
+    """Keep model/CLI supplied report destinations inside operator-selected cwd."""
+    root = Path.cwd().resolve(strict=True)
+    target = requested if requested.is_absolute() else root / requested
+    if ".." in requested.parts or not target.is_relative_to(root):
+        raise ValueError("drift output must remain inside the working directory")
+    # Refuse symlink redirects even when the target happens to be in bounds.
+    current = target
+    while current != root:
+        if current.is_symlink():
+            raise ValueError("drift output must not contain symlinks")
+        current = current.parent
+    resolved = target.resolve(strict=False)
+    if not resolved.is_relative_to(root):
+        raise ValueError("drift output must remain inside the working directory")
+    if resolved.exists() and not resolved.is_file():
+        raise ValueError("drift output must target a regular file")
+    return resolved
+
+
+def _write_drift_text(requested: Path, content: str) -> None:
+    """Atomically replace an in-workspace report, never follow a target symlink."""
+    output = _validated_drift_output_path(requested)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    # Revalidate after directory creation in case a parent was redirected.
+    output = _validated_drift_output_path(requested)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=output.parent,
+            prefix=".runtime-drift-",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(content)
+        os.replace(temporary, output)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def _write_drift_outputs(
     *,
     findings: list[RuntimePolicyFinding],
@@ -804,18 +851,16 @@ def _write_drift_outputs(
     json_output: Path | None,
 ) -> None:
     if markdown_output is not None:
-        markdown_output.parent.mkdir(parents=True, exist_ok=True)
-        markdown_output.write_text(_findings_markdown(findings), encoding="utf-8")
+        _write_drift_text(markdown_output, _findings_markdown(findings))
     if json_output is not None:
-        json_output.parent.mkdir(parents=True, exist_ok=True)
-        json_output.write_text(
+        _write_drift_text(
+            json_output,
             json.dumps(
                 {"findings": [asdict(finding) for finding in findings]},
                 indent=2,
                 sort_keys=True,
             )
             + "\n",
-            encoding="utf-8",
         )
 
 
