@@ -371,9 +371,7 @@ def test_reference_bundle_rejects_unindexed_attempt_directory(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize("filename", ("attempt-undisclosed.json", "unlisted-output.log"))
-def test_reference_bundle_rejects_unindexed_attempt_file(
-    tmp_path: Path, filename: str
-) -> None:
+def test_reference_bundle_rejects_unindexed_attempt_file(tmp_path: Path, filename: str) -> None:
     root = _write_bundle(tmp_path)
     (root / "attempts" / filename).write_text(
         "Unindexed output from a benchmark attempt.\\n", encoding="utf-8"
