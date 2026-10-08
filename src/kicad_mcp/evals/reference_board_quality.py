@@ -19,6 +19,7 @@ QUALITY_SCHEMA_VERSION: Literal["pcb-reference-board-quality.v1"] = "pcb-referen
 QUALITY_SCORE_SCHEMA_VERSION: Literal["pcb-reference-board-quality-score.v1"] = (
     "pcb-reference-board-quality-score.v1"
 )
+QUALITY_IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
 RuleType = Literal[
     "schematic_component",
     "schematic_net",
@@ -53,7 +54,7 @@ class _QualityModel(BaseModel):
 
 
 class _QualityRuleBase(_QualityModel):
-    id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+    id: str = Field(pattern=QUALITY_IDENTIFIER_PATTERN)
     required: Literal[True] = True
 
 
@@ -145,7 +146,7 @@ QualityRule = Annotated[RuleModel, Field(discriminator="type")]
 
 class BoardQualityContract(_QualityModel):
     schema_version: Literal["pcb-reference-board-quality.v1"] = QUALITY_SCHEMA_VERSION
-    board_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+    board_id: str = Field(pattern=QUALITY_IDENTIFIER_PATTERN)
     benchmark_version: str = Field(min_length=1, max_length=128)
     rules: tuple[QualityRule, ...] = Field(min_length=1)
 
@@ -158,7 +159,7 @@ class BoardQualityContract(_QualityModel):
 
 
 class QualityRuleResult(_QualityModel):
-    id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+    id: str = Field(pattern=QUALITY_IDENTIFIER_PATTERN)
     type: RuleType
     status: RuleStatus
     reason_code: QualityReasonCode
@@ -166,7 +167,7 @@ class QualityRuleResult(_QualityModel):
 
 class BoardQualityScore(_QualityModel):
     schema_version: Literal["pcb-reference-board-quality-score.v1"] = QUALITY_SCORE_SCHEMA_VERSION
-    board_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+    board_id: str = Field(pattern=QUALITY_IDENTIFIER_PATTERN)
     benchmark_version: str = Field(min_length=1, max_length=128)
     attempt_id: str = Field(min_length=1, max_length=128)
     source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
@@ -359,7 +360,7 @@ def _build_quality_score(
 
 
 def score_reference_board_attempt(bundle_root: Path, attempt_id: str) -> BoardQualityScore:
-    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", attempt_id) is None:
+    if re.fullmatch(QUALITY_IDENTIFIER_PATTERN, attempt_id) is None:
         raise ValueError("attempt id must be canonical")
     root = bundle_root.resolve(strict=True)
     attempt_dir = root / "attempts" / attempt_id
