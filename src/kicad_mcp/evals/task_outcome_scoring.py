@@ -426,7 +426,7 @@ def _partition_attempts(
             )
         ):
             raise TaskOutcomeScoringError(
-                f"infrastructure-invalid attempt {record.attempt_id!r} " 
+                f"infrastructure-invalid attempt {record.attempt_id!r} "
                 "contradicts pre-task exclusion evidence"
             )
     invalid_records = [
