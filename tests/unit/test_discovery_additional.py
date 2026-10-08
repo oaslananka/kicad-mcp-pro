@@ -107,7 +107,13 @@ def test_discover_kicad_cli_prefers_kipy_path_and_candidates(monkeypatch, tmp_pa
 
     missing_candidate = tmp_path / "missing-candidate"
     monkeypatch.setattr(discovery, "_candidate_cli_paths", lambda: [missing_candidate])
+    # The fallback is platform-specific, not dependent on the CI host OS.
+    monkeypatch.setattr(discovery.platform, "system", lambda: "Linux")
     assert discovery.discover_kicad_cli() == missing_candidate
+
+    # Windows must not claim an installation path for a missing CLI.
+    monkeypatch.setattr(discovery.platform, "system", lambda: "Windows")
+    assert discovery.discover_kicad_cli() == Path("kicad-cli")
 
 
 def test_get_cli_capabilities_and_recent_projects_cover_fallbacks(
