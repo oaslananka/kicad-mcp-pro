@@ -26,6 +26,7 @@ _VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _ARCHITECTURES = ("aarch64", "x86_64")
 _DOWNLOAD_TOOLS = ("node", "rustup", "task", "uv")
+_KICAD_CLI_CONTRACT_GATE = "test:kicad-cli-contract"
 
 
 @dataclass(frozen=True)
@@ -711,7 +712,7 @@ def run_ci_quality_gates(plan: BootstrapPlan) -> list[dict[str, Any]]:
     if kicad_cli is None:
         evidence.append(
             {
-                "command": "test:kicad-cli-contract",
+                "command": _KICAD_CLI_CONTRACT_GATE,
                 "ok": True,
                 "skipped": True,
                 "reason": "kicad-cli is not installed; live capability is limited",
@@ -720,14 +721,14 @@ def run_ci_quality_gates(plan: BootstrapPlan) -> list[dict[str, Any]]:
     else:
         pnpm = plan.tool_root / "pnpm" / plan.contract.pnpm_version / "bin" / "pnpm"
         completed = _run(
-            [str(pnpm), "run", "test:kicad-cli-contract"],
+            [str(pnpm), "run", _KICAD_CLI_CONTRACT_GATE],
             cwd=plan.root,
             env=env,
             capture=True,
         )
         evidence.append(
             {
-                "command": "test:kicad-cli-contract",
+                "command": _KICAD_CLI_CONTRACT_GATE,
                 "ok": True,
                 "stdoutTail": completed.stdout.strip().splitlines()[-10:],
             }
