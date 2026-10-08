@@ -23,11 +23,6 @@
         "center": true
       }
     ],
-    "trayIcon": {
-      "iconPath": "icons/32x32.png",
-      "title": "KiCad MCP Pro",
-      "tooltip": "KiCad MCP Pro - Running"
-    },
     "macOSPrivateApi": true,
     "security": {
       "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset:; font-src 'self' data:; script-src 'self' 'unsafe-inline'"
