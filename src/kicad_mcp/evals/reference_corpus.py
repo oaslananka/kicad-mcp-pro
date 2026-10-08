@@ -366,8 +366,11 @@ def _validate_attempt_directory_index(root: Path, manifest: ReferenceBoardManife
     for entry in attempts_dir.iterdir():
         if entry.is_symlink():
             raise ReferenceCorpusError("attempt directories must not be symlinks")
-        if entry.is_dir():
-            actual_dirs.add(entry.name)
+        if not entry.is_dir():
+            raise ReferenceCorpusError(
+                "attempts directory contains unindexed or unsupported filesystem entry"
+            )
+        actual_dirs.add(entry.name)
     manifest_dirs = {entry.attempt_id for entry in manifest.attempts}
     if actual_dirs != manifest_dirs:
         raise ReferenceCorpusError("manifest attempt directories do not match filesystem attempts")
