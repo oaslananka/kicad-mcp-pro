@@ -116,8 +116,30 @@ def _digest_one_source(real_root: Path, name: str) -> str:
         path_stat.st_mtime_ns,
         path_stat.st_ctime_ns,
     )
-    if before_identity != after_identity or path_identity != after_identity:
+    if before_identity != after_identity:
         raise StateRebuildRequiredError("native source changed during read")
+    if path_identity != after_identity:
+        # Some Windows filesystems report different inode/device identities
+        # for fstat(fd) and stat(path) on the SAME native file. Never treat
+        # that mismatch as proof of a successful read. Re-open the path and
+        # verify its actual bytes AND its path identity remained stable.
+        if path.is_symlink() or not path.is_file():
+            raise StateRebuildRequiredError("native source changed during read")
+        try:
+            with path.open("rb") as stream:
+                path_digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            verified = path.stat(follow_symlinks=False)
+        except OSError as exc:
+            raise StateRebuildRequiredError("native source changed during read") from exc
+        verified_identity = (
+            verified.st_dev,
+            verified.st_ino,
+            verified.st_size,
+            verified.st_mtime_ns,
+            verified.st_ctime_ns,
+        )
+        if path_digest != digest or path_identity != verified_identity:
+            raise StateRebuildRequiredError("native source changed during read")
     return digest
 
 
@@ -393,7 +415,7 @@ class PersistentProjectState:
                 records,
                 derived,
             )
-        except (OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
+        except (OSError, ValueError, TypeError, KeyError) as exc:
             raise StateRebuildRequiredError("snapshot cannot be safely reused") from exc
 
 

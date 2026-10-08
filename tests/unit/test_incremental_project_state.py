@@ -144,16 +144,19 @@ def test_mismatched_readback_cannot_mutate_graph(project: Path) -> None:
     edited = _circuit()
     edited.components["R1"] = replace(edited.components["R1"], value="12k")
     (project / "main.kicad_sch").write_text("new bytes")
+    before = _circuit()
     with pytest.raises(StateRebuildRequiredError, match="read-back"):
-        state.apply_native_edit(token, _circuit(), edited, expected_new_hashes={})
+        state.apply_native_edit(token, before, edited, expected_new_hashes={})
     assert state.graph.to_document() == old_graph
     assert state.generation == 0
+    stale_token = replace(token, generation=1)
+    expected_hashes = source_digests(project, SOURCES)
     with pytest.raises(StateRebuildRequiredError, match="stale"):
         state.apply_native_edit(
-            replace(token, generation=1),
-            _circuit(),
+            stale_token,
+            before,
             edited,
-            expected_new_hashes=source_digests(project, SOURCES),
+            expected_new_hashes=expected_hashes,
         )
 
 
@@ -164,12 +167,14 @@ def test_structural_edit_requires_clean_graph_rebuild(project: Path) -> None:
     changed.components.pop("R2")
     (project / "main.kicad_sch").write_text("removed R2")
     old = state.graph.to_document()
+    before = _circuit()
+    expected_hashes = source_digests(project, SOURCES)
     with pytest.raises(StateRebuildRequiredError, match="identity set changed"):
         state.apply_native_edit(
             token,
-            _circuit(),
+            before,
             changed,
-            expected_new_hashes=source_digests(project, SOURCES),
+            expected_new_hashes=expected_hashes,
         )
     assert state.graph.to_document() == old
 
@@ -178,12 +183,15 @@ def test_no_semantic_update_cannot_claim_native_refresh(project: Path) -> None:
     state = _state(project)
     token = state.prepare_native_edit()
     (project / "main.kicad_pcb").write_text("pcb-only edit")
+    before = _circuit()
+    after = _circuit()
+    expected_hashes = source_digests(project, SOURCES)
     with pytest.raises(StateRebuildRequiredError, match="without bounded graph update"):
         state.apply_native_edit(
             token,
-            _circuit(),
-            _circuit(),
-            expected_new_hashes=source_digests(project, SOURCES),
+            before,
+            after,
+            expected_new_hashes=expected_hashes,
         )
 
 
@@ -229,8 +237,9 @@ def test_cache_and_source_symlinks_fail_closed(project: Path, tmp_path: Path) ->
     path = project / ".kicad-mcp-cache" / "graph.json"
     path.parent.mkdir()
     path.symlink_to(outsider)
+    state = _state(project)
     with pytest.raises(StateRebuildRequiredError, match="symlink"):
-        _state(project).save_atomic(path)
+        state.save_atomic(path)
     assert outsider.read_text() == "sentinel"
     path.unlink()
     (project / "main.kicad_sch").unlink()
@@ -243,8 +252,10 @@ def test_cache_and_source_symlinks_fail_closed(project: Path, tmp_path: Path) ->
 def test_tracked_path_scope_cannot_escape_project(project: Path) -> None:
     with pytest.raises(StateRebuildRequiredError):
         source_digests(project, ("../outside.kicad_sch",))
+    state = _state(project)
+    escaped = project.parent / "leaked.json"
     with pytest.raises(StateRebuildRequiredError):
-        _state(project).save_atomic(project.parent / "leaked.json")
+        state.save_atomic(escaped)
 
 
 def test_missing_cache_file_requires_clean_rebuild(project: Path) -> None:
@@ -356,8 +367,9 @@ def test_rejected_untrusted_digest_cannot_poison_state(project: Path) -> None:
     (project / "main.kicad_sch").write_text("trusted native content")
     hashes = source_digests(project, SOURCES)
     hashes["main.kicad_sch"] = "f" * 64
+    before = _circuit()
     with pytest.raises(StateRebuildRequiredError, match="read-back"):
-        state.apply_native_edit(token, _circuit(), edited, expected_new_hashes=hashes)
+        state.apply_native_edit(token, before, edited, expected_new_hashes=hashes)
     assert state.generation == 0
 
 
@@ -421,3 +433,287 @@ def test_relocated_project_does_not_inherit_prior_analysis_state(
             native_sources=SOURCES,
             compatibility_key=COMPATIBILITY_KEY,
         )
+
+
+@pytest.mark.parametrize(
+    "invalid_name",
+    ["", "../other.kicad_sch", "folder\\escape.kicad_sch", "data.txt", "/outside/other.kicad_sch"],
+)
+def test_invalid_native_source_names_are_rejected(project: Path, invalid_name: str) -> None:
+    with pytest.raises(StateRebuildRequiredError):
+        source_digests(project, (invalid_name,))
+
+
+def test_untrusted_inventory_duplicates_and_empty_names_rejected(project: Path) -> None:
+    with pytest.raises(StateRebuildRequiredError, match="source list"):
+        source_digests(project, (SOURCES[0], SOURCES[0]))
+    with pytest.raises(StateRebuildRequiredError, match="at least one"):
+        source_digests(project, ())
+
+
+def test_windows_style_fd_identity_mismatch_verifies_real_bytes(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows can report incomparable fd/path inode IDs for identical files.
+
+    A second independent digest authenticates the bytes; a blind skip of the
+    cross-API identity check would silently admit concurrent replacements.
+    """
+    from types import SimpleNamespace
+
+    from kicad_mcp.project import incremental_state as module
+
+    original_fstat = module.os.fstat
+
+    def incomparable_fd_identity(fd: int) -> SimpleNamespace:
+        stat = original_fstat(fd)
+        return SimpleNamespace(
+            st_dev=stat.st_dev,
+            st_ino=stat.st_ino + 100_000,
+            st_size=stat.st_size,
+            st_mtime_ns=stat.st_mtime_ns,
+            st_ctime_ns=stat.st_ctime_ns,
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module.os, "fstat", incomparable_fd_identity)
+        actual = source_digests(project, SOURCES)
+    assert actual == source_digests(project, SOURCES)
+
+
+def test_fd_identity_mismatch_rejects_changed_bytes_on_reopen(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp.project import incremental_state as module
+
+    original_fstat = module.os.fstat
+    original_digest = module.hashlib.file_digest
+    target = project / "main.kicad_pcb"
+    calls = 0
+
+    def incomparable_fd_identity(fd: int) -> SimpleNamespace:
+        stat = original_fstat(fd)
+        return SimpleNamespace(
+            st_dev=stat.st_dev,
+            st_ino=stat.st_ino + 100_000,
+            st_size=stat.st_size,
+            st_mtime_ns=stat.st_mtime_ns,
+            st_ctime_ns=stat.st_ctime_ns,
+        )
+
+    def changed_while_confirming(stream, algorithm):
+        nonlocal calls
+        calls += 1
+        result = original_digest(stream, algorithm)
+        if calls == 2:
+            target.write_bytes(b"(kicad_pcb (externally changed in read))")
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module.os, "fstat", incomparable_fd_identity)
+        patch.setattr(module.hashlib, "file_digest", changed_while_confirming)
+        with pytest.raises(StateRebuildRequiredError, match="changed during read"):
+            module.source_digests(project, SOURCES)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("generation", -1),
+        ("generation", True),
+        ("generation", "2"),
+        ("source_hashes", []),
+        ("entity_hashes", None),
+        ("journal", {}),
+        ("derived_dependencies", None),
+    ],
+)
+def test_invalid_persisted_metadata_types_rejected(
+    project: Path, field: str, value: object
+) -> None:
+    state = _state(project)
+    path = project / ".kicad-mcp-cache" / "graph.json"
+    state.save_atomic(path)
+    document = json.loads(path.read_text())
+    document[field] = value
+    path.write_text(json.dumps(document))
+    with pytest.raises(StateRebuildRequiredError, match="snapshot cannot"):
+        PersistentProjectState.load_verified(
+            project,
+            path,
+            project_key=PROJECT_KEY,
+            native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
+        )
+
+
+@pytest.mark.parametrize("bad_record", [None, {}, {"generation": True, "work_units": 1}])
+def test_corrupt_journal_item_never_trusted(project: Path, bad_record: object) -> None:
+    state = _state(project)
+    path = project / ".kicad-mcp-cache" / "graph.json"
+    state.save_atomic(path)
+    document = json.loads(path.read_text())
+    document["journal"] = [bad_record]
+    document["generation"] = 1
+    path.write_text(json.dumps(document))
+    with pytest.raises(StateRebuildRequiredError):
+        PersistentProjectState.load_verified(
+            project,
+            path,
+            project_key=PROJECT_KEY,
+            native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
+        )
+
+
+@pytest.mark.parametrize(
+    "bad_dependencies",
+    [
+        {"": {"bad-id": "a" * 64}},
+        {"analysis": {}},
+        {"analysis": []},
+        {"analysis": {"unknown-entity": "b" * 64}},
+    ],
+)
+def test_untrusted_analysis_dependency_stamp_does_not_survive_restart(
+    project: Path, bad_dependencies: object
+) -> None:
+    state = _state(project)
+    path = project / ".kicad-mcp-cache" / "graph.json"
+    state.save_atomic(path)
+    document = json.loads(path.read_text())
+    document["derived_dependencies"] = bad_dependencies
+    path.write_text(json.dumps(document))
+    with pytest.raises(StateRebuildRequiredError):
+        PersistentProjectState.load_verified(
+            project,
+            path,
+            project_key=PROJECT_KEY,
+            native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
+        )
+
+
+@pytest.mark.parametrize(
+    "dependencies",
+    [
+        (),
+        ("unknown-entity",),
+        ("same", "same"),
+    ],
+)
+def test_derived_analysis_scope_must_be_explicit(
+    project: Path, dependencies: tuple[str, ...]
+) -> None:
+    state = _state(project)
+    with pytest.raises(StateRebuildRequiredError):
+        state.stamp_derived("analysis", dependencies)
+
+
+def test_sidecar_symlink_directory_and_wrong_suffix_rejected(project: Path, tmp_path: Path) -> None:
+    state = _state(project)
+    target = tmp_path / "different-cache"
+    target.mkdir()
+    cache = project / ".kicad-mcp-cache"
+    cache.symlink_to(target, target_is_directory=True)
+    with pytest.raises(StateRebuildRequiredError, match="symlinked"):
+        state.save_atomic(cache / "graph.json")
+    cache.unlink()
+    with pytest.raises(StateRebuildRequiredError, match="dedicated JSON"):
+        state.save_atomic(project / ".kicad-mcp-cache" / "graph.txt")
+
+
+def test_missing_required_compatibility_identity_rejected(project: Path) -> None:
+    with pytest.raises(StateRebuildRequiredError, match="compatibility identity"):
+        PersistentProjectState.rebuild(project, SOURCES, _circuit(), compatibility_key=" ")
+
+
+def test_fd_identity_mismatch_rejects_identical_path_metadata_but_different_digest(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Byte checks cannot be replaced with size/mtime checks on Windows."""
+    from types import SimpleNamespace
+
+    from kicad_mcp.project import incremental_state as module
+
+    original_fstat = module.os.fstat
+    original_digest = module.hashlib.file_digest
+    calls = 0
+
+    def incompatible_inode(fd: int) -> SimpleNamespace:
+        stat = original_fstat(fd)
+        return SimpleNamespace(
+            st_dev=stat.st_dev,
+            st_ino=stat.st_ino + 100_000,
+            st_size=stat.st_size,
+            st_mtime_ns=stat.st_mtime_ns,
+            st_ctime_ns=stat.st_ctime_ns,
+        )
+
+    def forged_second_read(stream, algorithm):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            import hashlib
+
+            return hashlib.sha256(b"altered native bytes")
+        return original_digest(stream, algorithm)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module.os, "fstat", incompatible_inode)
+        patch.setattr(module.hashlib, "file_digest", forged_second_read)
+        with pytest.raises(StateRebuildRequiredError, match="changed during read"):
+            source_digests(project, SOURCES)
+
+
+def test_file_modified_while_descriptor_open_is_rejected(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp.project import incremental_state as module
+
+    original_fstat = module.os.fstat
+    calls = 0
+
+    def changing_descriptor_metadata(fd: int) -> SimpleNamespace:
+        nonlocal calls
+        calls += 1
+        stat = original_fstat(fd)
+        return SimpleNamespace(
+            st_dev=stat.st_dev,
+            st_ino=stat.st_ino,
+            st_size=stat.st_size + (1 if calls == 2 else 0),
+            st_mtime_ns=stat.st_mtime_ns,
+            st_ctime_ns=stat.st_ctime_ns,
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module.os, "fstat", changing_descriptor_metadata)
+        with pytest.raises(StateRebuildRequiredError, match="changed during read"):
+            source_digests(project, SOURCES)
+
+
+def test_source_disappears_during_read_is_rejected(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.project import incremental_state as module
+
+    real_stat = module.Path.stat
+    target = project / "main.kicad_pcb"
+    inspections = 0
+
+    def disappear_on_final_identity(path: Path, *args: object, **kwargs: object):
+        nonlocal inspections
+        if path == target and kwargs.get("follow_symlinks") is False:
+            inspections += 1
+            if inspections == 2:
+                raise FileNotFoundError("simulated concurrent deletion")
+        return real_stat(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module.Path, "stat", disappear_on_final_identity)
+        with pytest.raises(StateRebuildRequiredError, match="disappeared"):
+            source_digests(project, SOURCES)
