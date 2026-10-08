@@ -17,6 +17,12 @@ sys.modules[_SPEC.name] = module
 _SPEC.loader.exec_module(module)
 
 
+@pytest.fixture(autouse=True)
+def _trusted_scratch_working_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Each test owns a scratch directory; never grant arbitrary host-file access.
+    monkeypatch.chdir(tmp_path)
+
+
 def _xml(*, refs: tuple[str, ...] = ("U1", "R1"), names: tuple[str, ...] = ("VCC", "GND")) -> bytes:
     return (
         "<?xml version='1.0'?>\n<export><components>"
@@ -122,6 +128,7 @@ def test_cli_output_remains_json_if_legacy_parser_prints(
 
     native_xml = tmp_path / "native.xml"
     native_xml.write_bytes(_xml())
+    (tmp_path / "demo.kicad_sch").write_text("(kicad_sch)", encoding="utf-8")
     legacy = ModuleType("kicad_mcp.ir.from_kicad")
 
     def fake_parse(_source: Path, *, load_pin_metadata: bool) -> object:
@@ -144,3 +151,68 @@ def test_cli_output_remains_json_if_legacy_parser_prints(
     assert json.loads(output.out)["inventory_match"] is True
     assert "diagnostic from legacy parser" in output.err
     assert "diagnostic from legacy parser" not in output.out
+
+
+@pytest.mark.parametrize("input_form", ["absolute", "parent"])
+def test_native_xml_outside_workspace_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, input_form: str
+) -> None:
+    outside = tmp_path / "outside.xml"
+    outside.write_bytes(_xml())
+    workspace = tmp_path / "scratch"
+    workspace.mkdir()
+    monkeypatch.chdir(workspace)
+    supplied = outside if input_form == "absolute" else Path("../outside.xml")
+    with pytest.raises(ValueError, match="working directory"):
+        module.read_native_inventory(supplied)
+
+
+def test_nested_symlink_directory_escape_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "native.xml").write_bytes(_xml())
+    workspace = tmp_path / "scratch"
+    workspace.mkdir()
+    link = workspace / "link"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks unavailable on runner")
+    monkeypatch.chdir(workspace)
+    with pytest.raises(ValueError, match="working directory"):
+        module.read_native_inventory(link / "native.xml")
+
+
+def test_absolute_native_xml_inside_workspace_is_allowed(tmp_path: Path) -> None:
+    source = tmp_path / "native.xml"
+    source.write_bytes(_xml())
+    assert module.read_native_inventory(source).raw_component_count == 3
+
+
+def test_cli_rejects_schematic_outside_workspace_before_legacy_parse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from types import ModuleType
+
+    native_xml = tmp_path / "native.xml"
+    native_xml.write_bytes(_xml())
+    outside = tmp_path / "outside.kicad_sch"
+    outside.write_text("(kicad_sch)", encoding="utf-8")
+    workspace = tmp_path / "scratch"
+    workspace.mkdir()
+    inside = workspace / "native.xml"
+    inside.write_bytes(_xml())
+    legacy = ModuleType("kicad_mcp.ir.from_kicad")
+
+    def unreachable_parse(_path: Path, *, load_pin_metadata: bool) -> None:
+        pytest.fail("untrusted schematic must be refused before parser access")
+
+    legacy.parse_schematic = unreachable_parse  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "kicad_mcp.ir.from_kicad", legacy)
+    monkeypatch.chdir(workspace)
+    assert module.main(["--native-xml", "native.xml", "--schematic", "../outside.kicad_sch"]) == 2
+    output = capsys.readouterr()
+    assert "working directory" in output.err
+    assert not output.out
