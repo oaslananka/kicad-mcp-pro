@@ -10,7 +10,8 @@ MCP transport remains separate from provider lifecycle and domain state.
 interfaces, v0 manifests, permission/capability declarations and structured
 request/result/provenance envelopes. Providers are explicitly registered from
 trusted host code only. Domain callers select by operation and capability,
-never a vendor name. The schema is available via
+never a vendor name. The versioned, drift-tested manifest schema is
+`src/kicad_mcp/providers/schemas/provider-manifest-v0.schema.json`, generated from
 `ProviderManifest.model_json_schema()`.
 
 Calls default to offline with no granted permissions. Non-idempotent calls

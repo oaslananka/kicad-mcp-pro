@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -118,3 +121,17 @@ def test_provider_request_strict_unknown_fields_and_json_payload() -> None:
     assert request.payload["count"] == 3
     with pytest.raises(ValidationError):
         ProviderRequest.model_validate({**request.model_dump(), "unsafe_path": "unexpected-value"})
+
+
+def test_versioned_manifest_schema_snapshot_matches_code() -> None:
+    schema = ProviderManifest.model_json_schema()
+    schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+    schema["$id"] = (
+        "https://raw.githubusercontent.com/oaslananka/kicad-mcp-pro/main/"
+        "src/kicad_mcp/providers/schemas/provider-manifest-v0.schema.json"
+    )
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "src/kicad_mcp/providers/schemas/provider-manifest-v0.schema.json"
+    )
+    assert json.loads(path.read_text(encoding="utf-8")) == schema
