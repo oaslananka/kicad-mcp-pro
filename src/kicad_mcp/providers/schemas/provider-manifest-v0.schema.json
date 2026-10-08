@@ -1,0 +1,175 @@
+{
+  "$defs": {
+    "ProviderFamily": {
+      "enum": [
+        "part",
+        "solver",
+        "router",
+        "lab_instrument"
+      ],
+      "title": "ProviderFamily",
+      "type": "string"
+    },
+    "ProviderOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "capability": {
+          "maxLength": 80,
+          "minLength": 2,
+          "pattern": "^[a-z][a-z0-9_.-]*$",
+          "title": "Capability",
+          "type": "string"
+        },
+        "idempotent": {
+          "default": true,
+          "title": "Idempotent",
+          "type": "boolean"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 2,
+          "pattern": "^[a-z][a-z0-9_.-]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "permissions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProviderPermission"
+          },
+          "title": "Permissions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "capability"
+      ],
+      "title": "ProviderOperation",
+      "type": "object"
+    },
+    "ProviderPermission": {
+      "enum": [
+        "project_read",
+        "project_write",
+        "network",
+        "data_egress",
+        "instrument_control"
+      ],
+      "title": "ProviderPermission",
+      "type": "string"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/oaslananka/kicad-mcp-pro/main/src/kicad_mcp/providers/schemas/provider-manifest-v0.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Capabilities",
+      "type": "array"
+    },
+    "data_egress": {
+      "default": false,
+      "title": "Data Egress",
+      "type": "boolean"
+    },
+    "deterministic": {
+      "title": "Deterministic",
+      "type": "boolean"
+    },
+    "distribution_notes": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Distribution Notes",
+      "type": "string"
+    },
+    "family": {
+      "$ref": "#/$defs/ProviderFamily"
+    },
+    "healthcheck": {
+      "maxLength": 80,
+      "minLength": 2,
+      "pattern": "^[a-z][a-z0-9_.-]*$",
+      "title": "Healthcheck",
+      "type": "string"
+    },
+    "license_id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "License Id",
+      "type": "string"
+    },
+    "network_access": {
+      "default": false,
+      "title": "Network Access",
+      "type": "boolean"
+    },
+    "network_hosts": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Network Hosts",
+      "type": "array"
+    },
+    "operations": {
+      "items": {
+        "$ref": "#/$defs/ProviderOperation"
+      },
+      "minItems": 1,
+      "title": "Operations",
+      "type": "array"
+    },
+    "permissions": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ProviderPermission"
+      },
+      "title": "Permissions",
+      "type": "array"
+    },
+    "provenance_source": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Provenance Source",
+      "type": "string"
+    },
+    "provider_id": {
+      "maxLength": 100,
+      "minLength": 2,
+      "pattern": "^[a-z][a-z0-9_.-]*$",
+      "title": "Provider Id",
+      "type": "string"
+    },
+    "provider_version": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Provider Version",
+      "type": "string"
+    },
+    "sdk_version": {
+      "const": "0-experimental",
+      "title": "Sdk Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sdk_version",
+    "provider_id",
+    "provider_version",
+    "family",
+    "capabilities",
+    "operations",
+    "deterministic",
+    "provenance_source",
+    "healthcheck",
+    "license_id",
+    "distribution_notes"
+  ],
+  "title": "ProviderManifest",
+  "type": "object"
+}
