@@ -22,6 +22,8 @@ from kicad_mcp.utils.component_search import (
     normalize_lcsc_code,
 )
 
+EXPECTED_JSON_CONTENT_TYPE = "application/json"
+
 
 def test_public_utils_exports_all_live_component_clients() -> None:
     assert utils.JLCSearchClient is JLCSearchClient
@@ -252,6 +254,7 @@ def test_digikey_search_parses_records_with_injected_transport() -> None:
             return {"access_token": "dk-tok", "expires_in": 600}
         assert headers.get("X-DIGIKEY-Client-Id") == "id"
         assert headers.get("Authorization") == "Bearer dk-tok"
+        assert headers.get("Content-Type") == EXPECTED_JSON_CONTENT_TYPE
         return {
             "Products": [
                 {
@@ -292,6 +295,7 @@ def test_mouser_search_parses_records_with_injected_transport() -> None:
 
     def transport(url: str, body: bytes, headers: dict[str, str]) -> dict[str, object]:
         seen_urls.append(url)
+        assert headers.get("Content-Type") == EXPECTED_JSON_CONTENT_TYPE
         return {
             "SearchResults": {
                 "Parts": [
@@ -438,6 +442,7 @@ class _FakeNexarTransport:
             assert b"client_credentials" in body
             return {"access_token": "tok-123", "expires_in": 3600}
         assert headers.get("Authorization") == "Bearer tok-123"
+        assert headers.get("Content-Type") == EXPECTED_JSON_CONTENT_TYPE
         return {
             "data": {
                 "supSearchMpn": {
