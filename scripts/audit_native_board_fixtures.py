@@ -96,8 +96,10 @@ def _run_native(
     started = time.perf_counter()
     try:
         trusted_cli = _trusted_system_executable(binary, "kicad-cli")
+        if trusted_cli != "/usr/bin/kicad-cli":
+            raise ValueError("native benchmark requires the pinned system KiCad CLI")
         process = subprocess.run(  # nosec B603
-            [trusted_cli, *command],
+            ["/usr/bin/kicad-cli", *command],
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -224,8 +226,10 @@ def run_audit(
     if not cases or len(set(cases)) != len(cases) or any(k not in FIXTURES for k in cases):
         raise ValueError("fixture must be explicitly allowlisted")
     trusted_cli = _trusted_system_executable(cli, "kicad-cli")
+    if trusted_cli != "/usr/bin/kicad-cli":
+        raise ValueError("native benchmark requires the pinned system KiCad CLI")
     version = subprocess.run(  # nosec B603
-        [trusted_cli, "version"], capture_output=True, text=True, check=True, timeout=15
+        ["/usr/bin/kicad-cli", "version"], capture_output=True, text=True, check=True, timeout=15
     ).stdout.strip()
     if not version or len(version) > 100:
         raise ValueError("KiCad CLI version is unavailable")
@@ -264,12 +268,16 @@ def main(argv: list[str] | None = None) -> int:
     if binary is None:
         parser.error("kicad-cli not installed; cannot manufacture benchmark evidence")
     binary = _trusted_system_executable(binary, "kicad-cli")
+    if binary != "/usr/bin/kicad-cli":
+        parser.error("audit requires the pinned /usr/bin/kicad-cli")
     git = shutil.which("git")
     if git is None:
         parser.error("git not installed; source provenance unavailable")
     git = _trusted_system_executable(git, "git")
+    if git != "/usr/bin/git":
+        parser.error("audit requires the root-owned system git executable")
     sha = subprocess.run(  # nosec B603
-        [git, "rev-parse", "HEAD"],
+        ["/usr/bin/git", "rev-parse", "HEAD"],
         cwd=REPO,
         check=True,
         capture_output=True,

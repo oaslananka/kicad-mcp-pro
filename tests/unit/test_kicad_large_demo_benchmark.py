@@ -7,7 +7,6 @@ import json
 
 # Import used solely to simulate TimeoutExpired in test doubles.
 import subprocess  # nosec B404
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -46,7 +45,9 @@ def demo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     pinned.write_text(json.dumps(manifest))
     monkeypatch.setattr(bench, "MANIFEST_PATH", pinned)
     # Unit tests simulate the worker; the real runner only allows OS Python.
-    monkeypatch.setattr(bench, "_trusted_system_python", lambda interpreter: interpreter.resolve())
+    monkeypatch.setattr(
+        bench, "_trusted_system_python", lambda interpreter: Path("/usr/bin/python3").resolve()
+    )
     return root, pinned
 
 
@@ -106,7 +107,7 @@ def test_native_large_demo_reports_true_process_peak_and_p95(
     paths: list[Path] = []
 
     def fake_execute(cmd: list[str], **kwargs: object):
-        assert Path(cmd[0]) == Path(sys.executable).resolve()
+        assert cmd[0] == "/usr/bin/python3"
         assert cmd[1] == "-c"
         project = Path(cmd[3])
         assert project.is_file()
@@ -119,7 +120,7 @@ def test_native_large_demo_reports_true_process_peak_and_p95(
     monkeypatch.setattr(bench.subprocess, "run", fake_execute)
     result = bench.benchmark_demo(
         demo_root=root,
-        interpreter=Path(sys.executable),
+        interpreter=Path("/usr/bin/python3"),
         repeats=3,
         timeout=15,
         repository_sha="a" * 40,
@@ -145,7 +146,7 @@ def test_unbounded_load_runs_fail_closed(
     with pytest.raises(ValueError):
         bench.benchmark_demo(
             demo_root=demo[0],
-            interpreter=Path(sys.executable),
+            interpreter=Path("/usr/bin/python3"),
             repeats=bad_repeats,
             timeout=bad_timeout,
             repository_sha="a" * 40,
@@ -160,7 +161,7 @@ def test_native_large_benchmark_rejects_toy_board_and_mocked_success(
     with pytest.raises(RuntimeError, match="size/metric floor"):
         bench.benchmark_demo(
             demo_root=demo[0],
-            interpreter=Path(sys.executable),
+            interpreter=Path("/usr/bin/python3"),
             repeats=1,
             timeout=10,
             repository_sha="a" * 40,
@@ -179,7 +180,7 @@ def test_native_large_benchmark_cannot_hide_timeout(
     with pytest.raises(RuntimeError, match="timeout"):
         bench.benchmark_demo(
             demo_root=demo[0],
-            interpreter=Path(sys.executable),
+            interpreter=Path("/usr/bin/python3"),
             repeats=1,
             timeout=10,
             repository_sha="a" * 40,
@@ -201,7 +202,7 @@ def test_native_large_benchmark_refuses_inconsistent_board_identity(
     with pytest.raises(RuntimeError, match="inconsistent"):
         bench.benchmark_demo(
             demo_root=demo[0],
-            interpreter=Path(sys.executable),
+            interpreter=Path("/usr/bin/python3"),
             repeats=2,
             timeout=10,
             repository_sha="a" * 40,
@@ -215,7 +216,7 @@ def test_native_memory_benchmark_platform_limit_is_explicit(
     with pytest.raises(RuntimeError, match="Linux-only"):
         bench.benchmark_demo(
             demo_root=demo[0],
-            interpreter=Path(sys.executable),
+            interpreter=Path("/usr/bin/python3"),
             repeats=1,
             timeout=10,
             repository_sha="a" * 40,
@@ -249,7 +250,7 @@ def test_diagnostic_stdout_without_unique_worker_record_fails_closed(
     with pytest.raises(RuntimeError, match="protocol is missing or ambiguous"):
         bench.benchmark_demo(
             demo_root=demo[0],
-            interpreter=Path(sys.executable),
+            interpreter=Path("/usr/bin/python3"),
             repeats=1,
             timeout=10,
             repository_sha="a" * 40,

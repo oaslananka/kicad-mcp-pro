@@ -12,7 +12,7 @@ of evidence. Do not combine them into a single "reference boards passing" KPI.
 
 Use the maintained KiCad 10 CLI in an appropriately provisioned **Linux**
 runner. The audit only executes root-owned, non-group/world-writable
-`kicad-cli` and `git` from trusted OS system directories; scripts and
+`kicad-cli` and `git` from the pinned `/usr/bin` system directory; scripts and
 arbitrary PATH/virtualenv executables are rejected:
 
 ```bash

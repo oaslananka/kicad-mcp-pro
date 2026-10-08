@@ -154,6 +154,8 @@ def benchmark_demo(
     if platform.system() != "Linux":
         raise RuntimeError("true native peak RSS benchmark is currently Linux-only")
     runtime = _trusted_system_python(interpreter)
+    if interpreter != Path("/usr/bin/python3") or runtime != Path("/usr/bin/python3").resolve():
+        raise ValueError("native benchmark requires pinned /usr/bin/python3")
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     sources = validate_demo_files(demo_root, manifest)
     board_name = manifest["pcb"]
@@ -171,7 +173,7 @@ def benchmark_demo(
             began = time.perf_counter()
             try:
                 result = subprocess.run(  # nosec B603
-                    [str(runtime), "-c", WORKER, str(board)],
+                    ["/usr/bin/python3", "-c", WORKER, str(board)],
                     cwd=scratch,
                     capture_output=True,
                     text=True,
@@ -273,13 +275,13 @@ def main(argv: list[str] | None = None) -> int:
     if git is None:
         parser.error("git unavailable; source revision cannot be verified")
     resolved_git = Path(git).resolve(strict=True)
-    if resolved_git not in (Path("/usr/bin/git"), Path("/usr/local/bin/git")):
-        parser.error("git must be an OS-supplied executable")
+    if resolved_git != Path("/usr/bin/git"):
+        parser.error("git must be the pinned /usr/bin/git executable")
     git_metadata = resolved_git.stat()
     if git_metadata.st_uid != 0 or git_metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
         parser.error("git executable is writable by untrusted users")
     source_sha = subprocess.run(  # nosec B603
-        [str(resolved_git), "rev-parse", "HEAD"],
+        ["/usr/bin/git", "rev-parse", "HEAD"],
         cwd=ROOT,
         capture_output=True,
         text=True,
