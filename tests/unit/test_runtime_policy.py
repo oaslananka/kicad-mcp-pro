@@ -147,7 +147,10 @@ def test_snapshot_from_metadata_reports_missing_required_keys() -> None:
         raise AssertionError("missing runtime metadata should raise ValueError")
 
 
-def test_write_drift_outputs_creates_parent_directories(tmp_path: Path) -> None:
+def test_write_drift_outputs_creates_parent_directories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
     finding = RuntimePolicyFinding(
         surface="Python",
         severity="warning",
@@ -202,3 +205,74 @@ def test_fetch_current_versions_reads_release_feeds(monkeypatch) -> None:
 def test_snapshot_from_git_ref_rejects_option_like_ref_before_git_invocation() -> None:
     with pytest.raises(ValueError, match="safe Git ref"):
         runtime_policy.snapshot_from_git_ref("--help")
+
+
+@pytest.mark.parametrize("form", ["parent", "absolute"])
+def test_runtime_drift_output_rejects_external_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, form: str
+) -> None:
+    root = tmp_path / "scratch"
+    root.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text("unchanged", encoding="utf-8")
+    monkeypatch.chdir(root)
+    candidate = Path("../outside.md") if form == "parent" else outside
+    with pytest.raises(ValueError, match="working directory"):
+        runtime_policy._write_drift_outputs(
+            findings=[], markdown_output=candidate, json_output=None
+        )
+    assert outside.read_text(encoding="utf-8") == "unchanged"
+
+
+def test_runtime_drift_output_rejects_symlink_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "scratch"
+    root.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text("unchanged", encoding="utf-8")
+    redirect = root / "drift.json"
+    try:
+        redirect.symlink_to(outside)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    monkeypatch.chdir(root)
+    with pytest.raises(ValueError, match="symlink"):
+        runtime_policy._write_drift_outputs(
+            findings=[], markdown_output=None, json_output=Path("drift.json")
+        )
+    assert outside.read_text(encoding="utf-8") == "unchanged"
+
+
+def test_runtime_drift_output_rejects_symlink_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "scratch"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    redirect = root / "reports"
+    try:
+        redirect.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    monkeypatch.chdir(root)
+    with pytest.raises(ValueError, match="symlink"):
+        runtime_policy._write_drift_outputs(
+            findings=[], markdown_output=Path("reports/drift.md"), json_output=None
+        )
+    assert not (outside / "drift.md").exists()
+
+
+def test_runtime_drift_outputs_overwrite_existing_in_workspace_regular_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    old = tmp_path / "drift.md"
+    old.write_text("old report", encoding="utf-8")
+    runtime_policy._write_drift_outputs(
+        findings=[], markdown_output=Path("drift.md"), json_output=None
+    )
+    assert old.read_text(encoding="utf-8") == (
+        "Runtime support policy drift check passed. No drift was detected.\n"
+    )

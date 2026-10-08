@@ -16,10 +16,20 @@ installed native KiCad runtime:
 ```sh
 kicad-cli sch export netlist --format kicadxml \
   -o /path/to/scratch/native.xml /path/to/scratch/root.kicad_sch
-python scripts/compare_native_netlist_ir.py \
-  --native-xml /path/to/scratch/native.xml \
-  --schematic /path/to/scratch/root.kicad_sch
+# The trusted working directory is the disposable hierarchy root.
+# Use the project's Python environment with the package dependencies installed.
+cd /path/to/scratch
+/path/to/repo/.venv/bin/python /path/to/repo/scripts/compare_native_netlist_ir.py \
+  --native-xml native.xml \
+  --schematic root.kicad_sch
 ```
+
+The audit only reads regular files resolved **inside its process working
+directory**. It rejects absolute paths outside that directory, parent traversal
+and symlink escapes for both native XML and the schematic input, even if they
+are supplied through CLI arguments. Run it from the disposable hierarchy copy,
+not from the repository root; do not widen the allowed directory in response to
+a model-supplied path. Missing inputs fail closed.
 
 The command does not invoke a subprocess or modify the input. It uses the
 existing semantic parser to load the same root file and compares **exact
