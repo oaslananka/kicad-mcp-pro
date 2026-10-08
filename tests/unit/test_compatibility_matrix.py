@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 import yaml
 
 from kicad_mcp.compatibility import COMPATIBILITY_MATRIX, MCP_PROTOCOL_VERSION
@@ -103,3 +106,50 @@ def test_kicad_adapter_matrix_contract_is_generated_and_release_gated() -> None:
         "transactionGuard",
         "adapterContract",
     }
+
+
+@pytest.mark.parametrize(
+    ("evidence", "expected"),
+    [
+        ("path:docs/exists.md", []),
+        ("path:docs/missing.md", ["fixture-test path does not exist: 'docs/missing.md'"]),
+        ("path:../escape", ["fixture-test must stay inside the repository: '../escape'"]),
+        ("path:apps/vscode-extension/future.md", []),
+        ("fixture:existing.kicad_sch", []),
+        ("fixture:missing.kicad_sch", ["fixture-test fixture does not exist: 'missing.kicad_sch'"]),
+        ("source:https://example.org/source", []),
+        ("source:http://example.org/source", ["fixture-test source must be an HTTPS URL"]),
+        ("command:run-test", []),
+        ("smoke:read-only", []),
+        ("unexpected:content", ["fixture-test uses unknown evidence prefix 'unexpected'"]),
+    ],
+)
+def test_compatibility_evidence_classification_preserved(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    evidence: str,
+    expected: list[str],
+) -> None:
+    from scripts import check_compatibility_matrix
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "exists.md").write_text("evidence", encoding="utf-8")
+    fixture_root = tmp_path / "packages" / "kicad-fixtures" / "fixtures"
+    fixture_root.mkdir(parents=True)
+    (fixture_root / "existing.kicad_sch").write_text("native fixture placeholder", encoding="utf-8")
+    monkeypatch.setattr(check_compatibility_matrix, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(check_compatibility_matrix, "HAS_VSCODE_EXTENSION", False)
+
+    assert check_compatibility_matrix._validate_evidence_entry(evidence, "fixture-test") == expected
+
+
+def test_compatibility_evidence_extension_path_missing_when_extension_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from scripts import check_compatibility_matrix
+
+    monkeypatch.setattr(check_compatibility_matrix, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(check_compatibility_matrix, "HAS_VSCODE_EXTENSION", True)
+    assert check_compatibility_matrix._validate_evidence_entry(
+        "path:apps/vscode-extension/future.md", "fixture-test"
+    ) == ["fixture-test path does not exist: 'apps/vscode-extension/future.md'"]
