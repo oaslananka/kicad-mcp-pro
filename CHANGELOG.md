@@ -10,6 +10,20 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.0.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.0.1...mcp-server-v4.0.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* **ci:** keep release contracts version-agnostic ([#1111](https://github.com/oaslananka/kicad-mcp-pro/issues/1111)) ([2f1770d](https://github.com/oaslananka/kicad-mcp-pro/commit/2f1770d7ea7ad7978db8a84ec98d7556cce91469))
+* **deps:** repair post-upgrade policy contracts ([#1117](https://github.com/oaslananka/kicad-mcp-pro/issues/1117)) ([0c29305](https://github.com/oaslananka/kicad-mcp-pro/commit/0c29305ac0489b81ef9f703b531a521005eeeff1))
+
+
+### Documentation
+
+* correct canonical OpenSSF badge project ([#1133](https://github.com/oaslananka/kicad-mcp-pro/issues/1133)) ([99abf95](https://github.com/oaslananka/kicad-mcp-pro/commit/99abf9584186d3c908b075a2556b9027bb031bf4))
+* **release:** align publish environment approval policy ([#1110](https://github.com/oaslananka/kicad-mcp-pro/issues/1110)) ([0235f87](https://github.com/oaslananka/kicad-mcp-pro/commit/0235f87cd5f82ee0e8519a758e7f9bfa7acdaa33))
+
 ## [4.0.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.0.0...mcp-server-v4.0.1) (2026-10-06)
 
 

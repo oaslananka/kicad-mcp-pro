@@ -2,7 +2,7 @@
   "schemaVersion": "2.0.0",
   "source": {
     "repository": "oaslananka/kicad-mcp-pro",
-    "version": "4.0.1",
+    "version": "4.0.2",
     "reviewed_source_sha": "66c0cd2750b8d79d717ece5299ec8da995f775cd"
   },
   "tools": [
