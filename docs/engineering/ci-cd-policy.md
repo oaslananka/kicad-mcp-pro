@@ -259,12 +259,17 @@ PR. No branch protection changes are needed for rollback.
 ## Repository settings drift audit
 
 `.github/workflows/repository-settings-audit.yml` runs daily and on manual dispatch from the
-default branch. It uses `RELEASE_PLEASE_TOKEN` as the GitHub API credential; that secret
-must grant repository `Administration: read`, and the audit fails closed if the token is missing
-or under-scoped. The workflow itself has `contents: read` permissions and is not exposed to pull
-requests. `scripts/check_github_repository_settings.py` compares live Actions
-permissions, selected-action allowlists, default workflow-token permissions, and the exact
-required-reviewer expectations for the `npm`, `mcp-registry`, and `ghcr` publish
-environments with `.github/actions-policy.json`. Under the current policy those three
-environments have no required reviewers. Any mismatch fails the audit instead of silently
-accepting drift.
+default branch. It mints a short-lived GitHub App token with `Actions: read` and
+`Administration: read` permissions; a missing or under-scoped token fails the audit.
+The workflow itself has `contents: read` permissions and is not exposed to pull requests.
+`scripts/check_github_repository_settings.py` compares live Actions permissions,
+selected-action allowlists, default workflow-token permissions, protected publish
+environments, and the repository rulesets against the reviewed JSON policy.
+
+GitHub's ruleset API **withholds `bypass_actors` from read-only tokens** (it requires
+ruleset write access to disclose them). The scheduled audit therefore warns when this
+field is absent and treats it as **unverified**, not as an empty actor list. All other
+ruleset fields are compared strictly. When an authorized maintainer runs the same audit
+with ruleset write access, a returned `bypass_actors` list is compared strictly as well.
+This visibility constraint does not justify granting the scheduled audit write permissions,
+and missing bypass visibility must not be reported as verified compliance.
