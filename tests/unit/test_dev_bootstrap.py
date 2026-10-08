@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tarfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -487,9 +488,9 @@ def test_ci_native_contract_report_retains_exact_command_label(
     plan = build_bootstrap_plan(ROOT, core_only=True)
     invoked: list[list[str]] = []
 
-    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(command: list[str], **_kwargs: object) -> SimpleNamespace:
         invoked.append(command)
-        return subprocess.CompletedProcess(command, 0, stdout="contract passed\n")
+        return SimpleNamespace(stdout="contract passed\n")
 
     monkeypatch.setattr(dev_environment, "ci_quality_gate_commands", lambda _plan: [])
     monkeypatch.setattr(dev_environment, "_run", fake_run)
@@ -502,7 +503,8 @@ def test_ci_native_contract_report_retains_exact_command_label(
     )
     evidence = dev_environment.run_ci_quality_gates(plan)
     assert len(evidence) == 1
-    assert evidence[0]["command"] == "test:kicad-cli-contract"
+    assert dev_environment._KICAD_CLI_CONTRACT_GATE == "test:kicad-cli-contract"
+    assert evidence[0]["command"] == dev_environment._KICAD_CLI_CONTRACT_GATE
     assert evidence[0]["ok"] is True
     if cli_present:
         assert evidence[0]["stdoutTail"] == ["contract passed"]
@@ -510,7 +512,7 @@ def test_ci_native_contract_report_retains_exact_command_label(
             [
                 str(plan.tool_root / "pnpm" / plan.contract.pnpm_version / "bin" / "pnpm"),
                 "run",
-                "test:kicad-cli-contract",
+                dev_environment._KICAD_CLI_CONTRACT_GATE,
             ]
         ]
     else:
