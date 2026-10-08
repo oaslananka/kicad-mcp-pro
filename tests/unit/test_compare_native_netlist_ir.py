@@ -107,3 +107,35 @@ def test_oversize_payload_rejected(tmp_path: Path) -> None:
     source.write_bytes(b"x" * (32 * 1024 * 1024 + 1))
     with pytest.raises(ValueError, match="32 MiB"):
         module.read_native_inventory(source)
+
+
+def test_cli_output_remains_json_if_legacy_parser_prints(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import json
+    from types import ModuleType, SimpleNamespace
+
+    native_xml = tmp_path / "native.xml"
+    native_xml.write_bytes(_xml())
+    legacy = ModuleType("kicad_mcp.ir.from_kicad")
+
+    def fake_parse(_source: Path, *, load_pin_metadata: bool) -> object:
+        assert not load_pin_metadata
+        print("diagnostic from legacy parser")
+        return SimpleNamespace(
+            components={"U1": object(), "R1": object()},
+            nets={"VCC": object(), "GND": object()},
+        )
+
+    legacy.parse_schematic = fake_parse  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "kicad_mcp.ir.from_kicad", legacy)
+    assert (
+        module.main(
+            ["--native-xml", str(native_xml), "--schematic", str(tmp_path / "demo.kicad_sch")]
+        )
+        == 0
+    )
+    output = capsys.readouterr()
+    assert json.loads(output.out)["inventory_match"] is True
+    assert "diagnostic from legacy parser" in output.err
+    assert "diagnostic from legacy parser" not in output.out

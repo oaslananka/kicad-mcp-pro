@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
 from xml.etree.ElementTree import ParseError
@@ -130,7 +131,10 @@ def main(argv: list[str] | None = None) -> int:
         # pure inventory comparison can be unit-tested without KiCad packages.
         from kicad_mcp.ir.from_kicad import parse_schematic
 
-        ir = parse_schematic(args.schematic, load_pin_metadata=False)
+        # The legacy parser may print diagnostics. Preserve those on stderr,
+        # keeping stdout a single machine-readable JSON document.
+        with redirect_stdout(sys.stderr):
+            ir = parse_schematic(args.schematic, load_pin_metadata=False)
         result = compare_inventory(native, set(ir.components), len(ir.nets))
     except (OSError, ValueError, ImportError) as exc:
         print(f"native IR audit failed: {exc}", file=sys.stderr)
