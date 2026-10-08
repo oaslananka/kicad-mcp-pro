@@ -73,6 +73,8 @@ DEMO_CAST_CHECK = "demo cast"
 REVIEWER_PROMPTS_CHECK = "reviewer prompts"
 CHATGPT_APP_CONTRACT_CHECK = "ChatGPT App contract"
 SERVER_SCHEMA_CHECK = "server schema"
+VERSION_METADATA_CHECK = "version metadata sync"
+README_LISTING_CHECK = "README listing references"
 
 
 @dataclass
@@ -183,10 +185,10 @@ def _version_check() -> CheckResult:
         match = re.search(r'__version__\s*=\s*"([^"]+)"', init_text)
         versions["src/kicad_mcp/__init__.py"] = match.group(1) if match else ""
     except (OSError, tomllib.TOMLDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
-        return CheckResult("version metadata sync", "FAIL", f"unreadable version metadata: {exc}")
+        return CheckResult(VERSION_METADATA_CHECK, "FAIL", f"unreadable version metadata: {exc}")
     if len(set(versions.values())) != 1:
-        return CheckResult("version metadata sync", "FAIL", json.dumps(versions, sort_keys=True))
-    return CheckResult("version metadata sync", "PASS", next(iter(versions.values())))
+        return CheckResult(VERSION_METADATA_CHECK, "FAIL", json.dumps(versions, sort_keys=True))
+    return CheckResult(VERSION_METADATA_CHECK, "PASS", next(iter(versions.values())))
 
 
 def _pypi_check() -> CheckResult:
@@ -313,9 +315,7 @@ def _readme_check() -> CheckResult:
         pyproject = tomllib.loads((ROOT / PYPROJECT_FILENAME).read_text(encoding="utf-8"))
         version = pyproject["project"]["version"]
     except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError) as exc:
-        return CheckResult(
-            "README listing references", "FAIL", f"unreadable listing metadata: {exc}"
-        )
+        return CheckResult(README_LISTING_CHECK, "FAIL", f"unreadable listing metadata: {exc}")
     required = {
         "canonical repository": "https://github.com/oaslananka/kicad-mcp-pro",
         "PyPI package": "kicad-mcp-pro",
@@ -325,8 +325,8 @@ def _readme_check() -> CheckResult:
     }
     missing = [label for label, marker in required.items() if marker not in text]
     if missing:
-        return CheckResult("README listing references", "FAIL", ", ".join(missing))
-    return CheckResult("README listing references", "PASS", "monorepo package identity linked")
+        return CheckResult(README_LISTING_CHECK, "FAIL", ", ".join(missing))
+    return CheckResult(README_LISTING_CHECK, "PASS", "monorepo package identity linked")
 
 
 def _chatgpt_app_check() -> CheckResult:

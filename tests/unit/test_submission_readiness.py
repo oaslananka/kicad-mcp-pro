@@ -8,6 +8,7 @@ from scripts import check_submission_readiness
 def test_readme_listing_references_use_current_package_version() -> None:
     result = check_submission_readiness._readme_check()
 
+    assert result.name == "README listing references"
     assert result.status == "PASS"
 
 
@@ -36,6 +37,7 @@ def test_submission_readiness_rejects_tauri_bundle_version_drift(
     result = check_submission_readiness._version_check()
 
     assert result.status == "FAIL"
+    assert result.name == "version metadata sync"
     assert "src-tauri/tauri.conf.json" in result.detail
 
 
