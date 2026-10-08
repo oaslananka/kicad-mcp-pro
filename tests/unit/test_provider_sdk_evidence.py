@@ -47,6 +47,7 @@ def test_attaches_only_a_measurement_with_host_owned_inputs() -> None:
         ),
     )
     entries = (EvidenceInputDigest(entity_id="project:input", sha256="c" * 64),)
+    captured = datetime.now(UTC)
     evidence = provider_evidence_handoff(
         result,
         manifest,
@@ -54,7 +55,7 @@ def test_attaches_only_a_measurement_with_host_owned_inputs() -> None:
         project_key="fixture",
         source_revision="git:abc",
         source_sha256="d" * 64,
-        captured_at=datetime.now(UTC),
+        captured_at=captured,
         inputs=entries,
         dependency_manifest_complete=False,
     )
@@ -75,25 +76,26 @@ def test_attaches_only_a_measurement_with_host_owned_inputs() -> None:
             project_key="fixture",
             source_revision="git:abc",
             source_sha256="d" * 64,
-            captured_at=datetime.now(UTC),
+            captured_at=captured,
             inputs=entries,
             dependency_manifest_complete=False,
         )
+    failed_result = ProviderResult.model_validate(
+        {
+            "request_id": "run-001",
+            "ok": False,
+            "error": {"code": "provider_failure", "message": "failed"},
+        }
+    )
     with pytest.raises(ValueError, match="failed"):
         provider_evidence_handoff(
-            ProviderResult.model_validate(
-                {
-                    "request_id": "run-001",
-                    "ok": False,
-                    "error": {"code": "provider_failure", "message": "failed"},
-                }
-            ),
+            failed_result,
             manifest,
             evidence_id="provider-measurement-003",
             project_key="fixture",
             source_revision="git:abc",
             source_sha256="d" * 64,
-            captured_at=datetime.now(UTC),
+            captured_at=captured,
             inputs=entries,
             dependency_manifest_complete=False,
         )

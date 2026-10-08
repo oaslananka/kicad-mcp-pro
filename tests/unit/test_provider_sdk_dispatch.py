@@ -37,15 +37,15 @@ class Dummy:
         if self.mode == "malformed":
             return {"ok": True, "request_id": request.request_id}
         return ProviderResult(
-            request_id=request.request_id,
+            request_id="req-wrong" if self.mode == "wrong_request" else request.request_id,
             ok=True,
             payload={"part": "R0603"},
             provenance=ProviderProvenance(
-                provider_id="fixture-part",
-                provider_version="0.1",
-                source="fixture:unit",
+                provider_id="other-part" if self.mode == "wrong_provider" else "fixture-part",
+                provider_version="0.2" if self.mode == "wrong_version" else "0.1",
+                source="unexpected:source" if self.mode == "wrong_source" else "fixture:unit",
                 execution_id="exec-001",
-                deterministic=True,
+                deterministic=self.mode != "wrong_determinism",
                 input_sha256="a" * 64,
                 output_sha256="b" * 64,
             ),
@@ -96,7 +96,8 @@ async def test_success_and_capability_selection_without_provider_name() -> None:
     registry = ProviderRegistry()
     registry.register(fixture_manifest(), Dummy())
     reply = await execute_provider(registry, request())
-    assert reply.ok and reply.payload["part"] == "R0603"
+    assert reply.ok
+    assert reply.payload["part"] == "R0603"
     assert registry.advertised_families() == {ProviderFamily.PART}
     unknown = await execute_provider(registry, request(capability="route.fast"))
     assert unknown.error is not None
@@ -110,6 +111,11 @@ async def test_success_and_capability_selection_without_provider_name() -> None:
         ("unavailable", ProviderErrorCode.NOT_READY),
         ("timeout", ProviderErrorCode.TIMEOUT),
         ("malformed", ProviderErrorCode.MALFORMED_RESULT),
+        ("wrong_request", ProviderErrorCode.MALFORMED_RESULT),
+        ("wrong_provider", ProviderErrorCode.MALFORMED_RESULT),
+        ("wrong_version", ProviderErrorCode.MALFORMED_RESULT),
+        ("wrong_source", ProviderErrorCode.MALFORMED_RESULT),
+        ("wrong_determinism", ProviderErrorCode.MALFORMED_RESULT),
         ("exception", ProviderErrorCode.PROVIDER_FAILURE),
     ],
 )
@@ -117,7 +123,8 @@ async def test_fail_closed(mode: str, code: ProviderErrorCode) -> None:
     registry = ProviderRegistry()
     registry.register(fixture_manifest(), Dummy(mode=mode))
     reply = await execute_provider(registry, request(timeout_seconds=0.005))
-    assert reply.ok is False and reply.error is not None
+    assert reply.ok is False
+    assert reply.error is not None
     assert reply.error.code is code
     assert reply.provenance is None
 
@@ -156,11 +163,15 @@ async def test_offline_network_permission_and_mutation_guards() -> None:
 
 def test_family_mismatch_and_duplicate_registration() -> None:
     registry = ProviderRegistry()
+    expected = fixture_manifest()
+    wrong_family = Dummy(family=ProviderFamily.SOLVER)
     with pytest.raises(ValueError, match="family mismatch"):
-        registry.register(fixture_manifest(), Dummy(family=ProviderFamily.SOLVER))
+        registry.register(expected, wrong_family)
     registry.register(fixture_manifest(), Dummy())
+    duplicate = fixture_manifest()
+    new_adapter = Dummy()
     with pytest.raises(ValueError, match="duplicate"):
-        registry.register(fixture_manifest(), Dummy())
+        registry.register(duplicate, new_adapter)
 
 
 @pytest.mark.anyio

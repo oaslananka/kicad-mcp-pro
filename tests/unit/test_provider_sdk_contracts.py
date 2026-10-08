@@ -119,8 +119,9 @@ def test_provider_request_strict_unknown_fields_and_json_payload() -> None:
         payload={"part": "C0603", "count": 3},
     )
     assert request.payload["count"] == 3
+    invalid_payload = {**request.model_dump(), "unsafe_path": "unexpected-value"}
     with pytest.raises(ValidationError):
-        ProviderRequest.model_validate({**request.model_dump(), "unsafe_path": "unexpected-value"})
+        ProviderRequest.model_validate(invalid_payload)
 
 
 def test_versioned_manifest_schema_snapshot_matches_code() -> None:
@@ -135,3 +136,32 @@ def test_versioned_manifest_schema_snapshot_matches_code() -> None:
         / "src/kicad_mcp/providers/schemas/provider-manifest-v0.schema.json"
     )
     assert json.loads(path.read_text(encoding="utf-8")) == schema
+
+
+def test_manifest_rejects_duplicate_permissions() -> None:
+    with pytest.raises(ValidationError, match="duplicate declared permissions"):
+        manifest(permissions=(ProviderPermission.PROJECT_READ, ProviderPermission.PROJECT_READ))
+
+
+def test_manifest_rejects_duplicate_operations() -> None:
+    op = ProviderOperation(name="lookup", capability="parts.lookup")
+    with pytest.raises(ValidationError, match="duplicate operation name"):
+        manifest(operations=(op, op))
+
+
+def test_manifest_rejects_duplicate_network_hosts() -> None:
+    with pytest.raises(ValidationError, match="duplicate network host"):
+        manifest(
+            permissions=(ProviderPermission.NETWORK,),
+            network_access=True,
+            network_hosts=("api.example.org", "api.example.org"),
+        )
+
+
+def test_operation_rejects_duplicate_permissions() -> None:
+    with pytest.raises(ValidationError, match="duplicate operation permissions"):
+        ProviderOperation(
+            name="lookup",
+            capability="parts.lookup",
+            permissions=(ProviderPermission.PROJECT_READ, ProviderPermission.PROJECT_READ),
+        )

@@ -44,6 +44,10 @@ class ProviderManifest(StrictContractModel):
                 raise ValueError("operation uses undeclared capability")
             if not set(op.permissions) <= set(self.permissions):
                 raise ValueError("operation uses undeclared permission")
+        return self
+
+    @model_validator(mode="after")
+    def check_network_declarations(self) -> ProviderManifest:
         if self.network_access != (ProviderPermission.NETWORK in self.permissions):
             raise ValueError("network declaration and permission disagree")
         if self.data_egress != (ProviderPermission.DATA_EGRESS in self.permissions):
