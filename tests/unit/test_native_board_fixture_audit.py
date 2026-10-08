@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-import subprocess
+
+# Import used solely to simulate TimeoutExpired in test doubles.
+import subprocess  # nosec B404
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -170,7 +172,7 @@ def test_reference_specifications_cannot_be_counted_as_completed_designs(
     "path,reason",
     [
         ("kicad-cli", "trusted system"),
-        ("/" + "tmp/kicad-cli", "trusted system"),
+        ("/untrusted/kicad-cli", "trusted system"),
         ("/home/runner/kicad-cli", "trusted system"),
         ("/usr/bin/git", "trusted system"),
     ],

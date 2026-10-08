@@ -15,7 +15,9 @@ import re
 import shutil
 import stat
 import statistics
-import subprocess
+
+# Reviewed bounded native process execution with root-owned OS binaries.
+import subprocess  # nosec B404
 import tempfile
 import time
 from pathlib import Path
@@ -94,7 +96,7 @@ def _run_native(
     started = time.perf_counter()
     try:
         trusted_cli = _trusted_system_executable(binary, "kicad-cli")
-        process = subprocess.run(
+        process = subprocess.run(  # nosec B603
             [trusted_cli, *command],
             cwd=cwd,
             capture_output=True,
@@ -222,7 +224,7 @@ def run_audit(
     if not cases or len(set(cases)) != len(cases) or any(k not in FIXTURES for k in cases):
         raise ValueError("fixture must be explicitly allowlisted")
     trusted_cli = _trusted_system_executable(cli, "kicad-cli")
-    version = subprocess.run(
+    version = subprocess.run(  # nosec B603
         [trusted_cli, "version"], capture_output=True, text=True, check=True, timeout=15
     ).stdout.strip()
     if not version or len(version) > 100:
@@ -266,7 +268,7 @@ def main(argv: list[str] | None = None) -> int:
     if git is None:
         parser.error("git not installed; source provenance unavailable")
     git = _trusted_system_executable(git, "git")
-    sha = subprocess.run(
+    sha = subprocess.run(  # nosec B603
         [git, "rev-parse", "HEAD"],
         cwd=REPO,
         check=True,

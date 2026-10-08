@@ -15,7 +15,9 @@ import platform
 import shutil
 import stat
 import statistics
-import subprocess
+
+# Reviewed bounded native process execution with root-owned OS binaries.
+import subprocess  # nosec B404
 import tempfile
 import time
 from pathlib import Path
@@ -168,7 +170,7 @@ def benchmark_demo(
         for _ in range(repeats):
             began = time.perf_counter()
             try:
-                result = subprocess.run(
+                result = subprocess.run(  # nosec B603
                     [str(runtime), "-c", WORKER, str(board)],
                     cwd=scratch,
                     capture_output=True,
@@ -276,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
     git_metadata = resolved_git.stat()
     if git_metadata.st_uid != 0 or git_metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
         parser.error("git executable is writable by untrusted users")
-    source_sha = subprocess.run(
+    source_sha = subprocess.run(  # nosec B603
         [str(resolved_git), "rev-parse", "HEAD"],
         cwd=ROOT,
         capture_output=True,

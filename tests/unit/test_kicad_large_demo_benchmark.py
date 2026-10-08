@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
+
+# Import used solely to simulate TimeoutExpired in test doubles.
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -227,7 +229,7 @@ def test_nearest_rank_p95_stays_within_observed_samples() -> None:
 
 def test_untrusted_interpreter_path_rejected_without_execution() -> None:
     with pytest.raises(ValueError, match="trusted system Python"):
-        bench._trusted_system_python(Path("/" + "tmp/venv/python3"))
+        bench._trusted_system_python(Path("/untrusted/venv/python3"))
     with pytest.raises(ValueError, match="trusted system Python"):
         bench._trusted_system_python(Path("python3"))
 
