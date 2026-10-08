@@ -46,7 +46,14 @@ of silently dropping out of the denominator or reusing stale residual output.
 
 Provider and tool failures remain normal valid attempts and stay in the product-success
 denominator. Only an existing `infrastructure_invalid` record that satisfies the reviewed
-pre-task contract is separated from that denominator. A successful attempt with
+pre-task contract is separated from that denominator. The bundle validator cross-checks that
+assertion against **both** the immutable attempt record and the sanitized agent log:
+a supposedly pre-task-invalid run cannot contain `tool_call`, `tool_result`,
+`validation`, or `recovery` log events; attempted mutations or validations,
+completed/failed task stages, or started manufacturing-generation evidence
+also prohibit exclusion. This cross-check runs even when the manifest digests have
+been refreshed, so self-consistent hashes alone cannot launder an executed
+but failed attempt out of the published denominator. A successful attempt with
 `manual_repair=true` is not publishable as autonomous success. A record declared as `success`
 must also be counted as successful by the canonical `aggregate_task_outcomes` quality gates;
 failed required stages, validation, recovery/integrity, or manufacturing requirements therefore

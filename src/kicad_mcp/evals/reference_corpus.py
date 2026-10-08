@@ -406,6 +406,67 @@ def _validate_success_quality_score(
         raise ReferenceCorpusError("quality score does not match deterministic scorer output")
 
 
+_TASK_EXECUTION_EVENTS = frozenset({"tool_call", "tool_result", "validation", "recovery"})
+
+
+def _is_reviewed_launcher_preflight_failure(
+    record: AttemptRecord, events: tuple[ReferenceAgentLogEvent, ...]
+) -> bool:
+    """Keep a legacy preflight failure only when no design tool ever ran."""
+    evidence = record.infrastructure_evidence
+    return (
+        record.failure_reason_code == "reference_runner_runtime_mismatch"
+        and evidence is not None
+        and evidence.reviewed
+        and not evidence.task_execution_started
+        and bool(events)
+        and all(
+            event.event_type == "workflow"
+            and event.name == "claude_session"
+            and event.status in {"started", "failed"}
+            for event in events
+        )
+        and any(event.status == "failed" for event in events)
+    )
+
+
+def _verify_pre_task_infrastructure_exclusion(
+    record: AttemptRecord, events: tuple[ReferenceAgentLogEvent, ...]
+) -> None:
+    """An excluded outage must not contradict the published execution evidence.
+
+    A reviewed 'task_execution_started=False' assertion is not sufficient
+    when the same evidence tree records tool execution, validations, recovery,
+    or completed task stages. These attempts must remain in the denominator.
+    """
+    if record.classification != "infrastructure_invalid":
+        return
+    if (
+        any(event.event_type in _TASK_EXECUTION_EVENTS for event in events)
+        or record.mutations
+        or any(item.execution_attempted for item in record.validations)
+        or any(
+            stage.outcome != "not_applicable"
+            and not (
+                stage.stage == "requirements"
+                and stage.outcome == "failed"
+                and _is_reviewed_launcher_preflight_failure(record, events)
+            )
+            for stage in record.stages
+        )
+        or (
+            record.manufacturing is not None
+            and (
+                record.manufacturing.generation_completed
+                or record.manufacturing.regeneration_completed
+            )
+        )
+    ):
+        raise ReferenceCorpusError(
+            f"infrastructure-invalid attempt {record.attempt_id} contains task execution evidence"
+        )
+
+
 def _load_reference_attempt(
     root: Path,
     manifest_entry: ReferenceAttemptEntry,
@@ -427,7 +488,8 @@ def _load_reference_attempt(
     ):
         raise ReferenceCorpusError("attempt benchmark identity does not match benchmark.json")
 
-    _parse_agent_log(attempt_dir / AGENT_LOG_FILE, record.attempt_id)
+    events = _parse_agent_log(attempt_dir / AGENT_LOG_FILE, record.attempt_id)
+    _verify_pre_task_infrastructure_exclusion(record, events)
     _validate_required_validation_evidence(contract, record)
     _validate_success_artifacts(attempt_dir, contract, record)
     _validate_success_quality_score(root, attempt_dir, quality, record)
