@@ -35,6 +35,7 @@ Thumbs.db
 .codex-checkpoints/
 .kicad_mcp/
 .kicad-mcp/
+.kicad-mcp-cache/
 .omo/
 .hypothesis/
 *.log
