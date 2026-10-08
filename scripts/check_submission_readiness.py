@@ -161,32 +161,40 @@ def _runner_check() -> CheckResult:
 
 
 def _version_check() -> CheckResult:
-    pyproject = tomllib.loads((ROOT / PYPROJECT_FILENAME).read_text(encoding="utf-8"))
-    tauri_cargo = tomllib.loads((ROOT / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8"))
-    tauri_config = json.loads((ROOT / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
-    release_manifest = json.loads(
-        (ROOT / ".release-please-manifest.json").read_text(encoding="utf-8")
-    )
-    versions = {
-        PYPROJECT_FILENAME: pyproject["project"]["version"],
-        SERVER_MANIFEST_FILENAME: json.loads(
-            (ROOT / SERVER_MANIFEST_FILENAME).read_text(encoding="utf-8")
-        )["version"],
-        "src-tauri/Cargo.toml": tauri_cargo["package"]["version"],
-        "src-tauri/tauri.conf.json": tauri_config["version"],
-        ".release-please-manifest.json src-tauri": release_manifest["src-tauri"],
-    }
-    init_text = (ROOT / "src" / "kicad_mcp" / "__init__.py").read_text(encoding="utf-8")
-    match = re.search(r'__version__\s*=\s*"([^"]+)"', init_text)
-    versions["src/kicad_mcp/__init__.py"] = match.group(1) if match else ""
+    try:
+        pyproject = tomllib.loads((ROOT / PYPROJECT_FILENAME).read_text(encoding="utf-8"))
+        tauri_cargo = tomllib.loads((ROOT / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8"))
+        tauri_config = json.loads(
+            (ROOT / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8")
+        )
+        release_manifest = json.loads(
+            (ROOT / ".release-please-manifest.json").read_text(encoding="utf-8")
+        )
+        versions = {
+            PYPROJECT_FILENAME: pyproject["project"]["version"],
+            SERVER_MANIFEST_FILENAME: json.loads(
+                (ROOT / SERVER_MANIFEST_FILENAME).read_text(encoding="utf-8")
+            )["version"],
+            "src-tauri/Cargo.toml": tauri_cargo["package"]["version"],
+            "src-tauri/tauri.conf.json": tauri_config["version"],
+            ".release-please-manifest.json src-tauri": release_manifest["src-tauri"],
+        }
+        init_text = (ROOT / "src" / "kicad_mcp" / "__init__.py").read_text(encoding="utf-8")
+        match = re.search(r'__version__\s*=\s*"([^"]+)"', init_text)
+        versions["src/kicad_mcp/__init__.py"] = match.group(1) if match else ""
+    except (OSError, tomllib.TOMLDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        return CheckResult("version metadata sync", "FAIL", f"unreadable version metadata: {exc}")
     if len(set(versions.values())) != 1:
         return CheckResult("version metadata sync", "FAIL", json.dumps(versions, sort_keys=True))
     return CheckResult("version metadata sync", "PASS", next(iter(versions.values())))
 
 
 def _pypi_check() -> CheckResult:
-    pyproject = tomllib.loads((ROOT / PYPROJECT_FILENAME).read_text(encoding="utf-8"))
-    version = pyproject["project"]["version"]
+    try:
+        pyproject = tomllib.loads((ROOT / PYPROJECT_FILENAME).read_text(encoding="utf-8"))
+        version = pyproject["project"]["version"]
+    except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError) as exc:
+        return CheckResult("pypi reachability", "FAIL", f"unreadable package metadata: {exc}")
     try:
         with urlopen("https://pypi.org/pypi/kicad-mcp-pro/json", timeout=10) as response:  # noqa: S310
             payload = json.loads(response.read().decode("utf-8"))
@@ -300,9 +308,14 @@ def _reviewer_prompts_check() -> CheckResult:
 
 
 def _readme_check() -> CheckResult:
-    text = (ROOT / "README.md").read_text(encoding="utf-8")
-    pyproject = tomllib.loads((ROOT / PYPROJECT_FILENAME).read_text(encoding="utf-8"))
-    version = pyproject["project"]["version"]
+    try:
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        pyproject = tomllib.loads((ROOT / PYPROJECT_FILENAME).read_text(encoding="utf-8"))
+        version = pyproject["project"]["version"]
+    except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError) as exc:
+        return CheckResult(
+            "README listing references", "FAIL", f"unreadable listing metadata: {exc}"
+        )
     required = {
         "canonical repository": "https://github.com/oaslananka/kicad-mcp-pro",
         "PyPI package": "kicad-mcp-pro",
@@ -364,7 +377,7 @@ def _server_schema_check() -> CheckResult:
         return CheckResult(SERVER_SCHEMA_CHECK, "FAIL", str(exc))
     if errors:
         return CheckResult(SERVER_SCHEMA_CHECK, "FAIL", errors[0].message)
-    return CheckResult(SERVER_SCHEMA_CHECK, "PASS", "server.json validates")
+    return CheckResult(SERVER_SCHEMA_CHECK, "PASS", f"{SERVER_MANIFEST_FILENAME} validates")
 
 
 def run_checks() -> list[CheckResult]:
