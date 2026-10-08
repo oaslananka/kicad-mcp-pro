@@ -324,6 +324,56 @@ def mock_api(page: Page) -> Iterator[None]:
 class TestDashboardSPA:
     """E2E tests for the SPA dashboard frontend."""
 
+    def test_missing_windows_cli_health_layout_and_keyboard_nav(
+        self, page: Page, dashboard_url: str
+    ) -> None:
+        """Long installation paths must wrap without overlap on narrow screens."""
+        page.goto(dashboard_url)
+        page.wait_for_selector("#health-checks .row")
+        page.evaluate(
+            """() => {
+                const root = document.querySelector('#health-checks');
+                const row = document.createElement('div');
+                row.className = 'row';
+                const label = document.createElement('span');
+                label.className = 'label';
+                label.textContent = 'kicad_cli';
+                const value = document.createElement('span');
+                value.className = 'value warn';
+                value.textContent = (
+                    'kicad-cli was not found at '
+                    + String.raw`C:\\Program Files\\KiCad\\11.0\\bin\\kicad-cli.exe`
+                );
+                row.append(label, value);
+                root.replaceChildren(row);
+            }"""
+        )
+        for width in (1200, 900, 390):
+            page.set_viewport_size({"width": width, "height": 820})
+            measures = page.evaluate(
+                """() => {
+                    const card = document.querySelector('#health-checks').closest('.card');
+                    const label = card.querySelector('#health-checks .label');
+                    const value = card.querySelector('#health-checks .value');
+                    return {
+                        cardOverflow: card.scrollWidth - card.clientWidth,
+                        messageOverflow: value.scrollWidth - value.clientWidth,
+                        labelBottom: label.getBoundingClientRect().bottom,
+                        messageTop: value.getBoundingClientRect().top,
+                    };
+                }"""
+            )
+            assert measures["cardOverflow"] <= 1
+            assert measures["messageOverflow"] <= 1
+            assert measures["labelBottom"] < measures["messageTop"]
+
+        settings = page.locator('button[data-view="settings"]')
+        settings.focus()
+        settings.press("Enter")
+        page.wait_for_function(
+            "() => document.querySelector('#view-settings').classList.contains('active')"
+        )
+
     def test_spa_loads(self, page: Page, dashboard_url: str) -> None:
         """The SPA loads and shows the dashboard view by default."""
         page.goto(dashboard_url)
