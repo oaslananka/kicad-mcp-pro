@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tarfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -476,3 +477,44 @@ def test_dev_doctor_text_renderer_handles_aggregate_tool_catalog(monkeypatch, ca
     assert "Development doctor: degraded" in output
     assert "- development ready: no" in output
     assert "- tool count: 382" in output
+
+
+@pytest.mark.parametrize("cli_present", [False, True])
+def test_ci_native_contract_report_retains_exact_command_label(
+    monkeypatch: pytest.MonkeyPatch, cli_present: bool
+) -> None:
+    from scripts import dev_environment
+
+    plan = build_bootstrap_plan(ROOT, core_only=True)
+    invoked: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        invoked.append(command)
+        return SimpleNamespace(stdout="contract passed\n")
+
+    monkeypatch.setattr(dev_environment, "ci_quality_gate_commands", lambda _plan: [])
+    monkeypatch.setattr(dev_environment, "_run", fake_run)
+    monkeypatch.setattr(
+        dev_environment.shutil,
+        "which",
+        lambda name, **_kwargs: (
+            "/usr/bin/kicad-cli" if cli_present and name == "kicad-cli" else None
+        ),
+    )
+    evidence = dev_environment.run_ci_quality_gates(plan)
+    assert len(evidence) == 1
+    assert dev_environment._KICAD_CLI_CONTRACT_GATE == "test:kicad-cli-contract"
+    assert evidence[0]["command"] == dev_environment._KICAD_CLI_CONTRACT_GATE
+    assert evidence[0]["ok"] is True
+    if cli_present:
+        assert evidence[0]["stdoutTail"] == ["contract passed"]
+        assert invoked == [
+            [
+                str(plan.tool_root / "pnpm" / plan.contract.pnpm_version / "bin" / "pnpm"),
+                "run",
+                dev_environment._KICAD_CLI_CONTRACT_GATE,
+            ]
+        ]
+    else:
+        assert evidence[0]["skipped"] is True
+        assert not invoked
