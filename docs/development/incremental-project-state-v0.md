@@ -31,12 +31,20 @@ always authoritative; cached state is never validation evidence.
 
 This v0 object is owned by one local project process. It assumes **trusted
 project cache storage and exclusive native mutation/read-back ownership**.
+**Current scope after #1169:** the IRCircuit-derived Engineering Graph sidecar
+only supports one native schematic source and at most one root sheet-hierarchy
+entry. A multi-sheet native project is deliberately rejected during baseline
+creation or cache reopen because native symbol-instance UUID and connectivity
+parity have not been established (#1141). Enumerating or hashing all files
+does not prove a root-only semantic graph is complete.
+
 SHA-256 guards cache freshness and detects accidental changes, but is not an
 authenticity signature against a malicious actor able to replace both the
 sidecar and project data. No background file watcher, OS sandbox, cross-process
 locking, dynamic adapter loading or distributed cache is provided.
 
-Example (caller supplies independently parsed authoritative `circuit`):
+Example (caller supplies independently parsed authoritative `circuit` for a
+single-sheet design; its sheet hierarchy contains at most the root entry):
 
 ```python
 from pathlib import Path
@@ -44,7 +52,7 @@ from pathlib import Path
 from kicad_mcp.project.incremental_state import PersistentProjectState
 
 root = Path("/trusted/local/project")
-sources = ("top.kicad_sch", "power.kicad_sch", "top.kicad_pcb", "top.kicad_pro")
+sources = ("top.kicad_sch", "top.kicad_pcb", "top.kicad_pro")
 state = PersistentProjectState.rebuild(
     root, sources, circuit,
     compatibility_key=detected_kicad_and_parser_versions,
