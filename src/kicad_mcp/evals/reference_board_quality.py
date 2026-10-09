@@ -10,8 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..ir.circuit_ir import IRCircuit
 from ..ir.from_kicad import parse_schematic
+from ..tools.board_file import _parse_board_footprint_blocks
 from ..tools.dfm import _outline_bounds_mm
-from ..tools.pcb import _parse_board_footprint_blocks
 from .evidence_sanitization import validate_sanitized_evidence
 from .task_outcomes import AttemptRecord, parse_attempt_record, parse_benchmark_contract
 

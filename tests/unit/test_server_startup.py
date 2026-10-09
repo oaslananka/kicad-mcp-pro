@@ -276,30 +276,34 @@ async def test_sync_tool_execution_does_not_block_event_loop() -> None:
     server._lazy_registration_complete = True
     events: list[str] = []
     release = threading.Event()
+    started = asyncio.Event()
+    loop = asyncio.get_running_loop()
 
     @server.tool(name="kicad_get_version")
     def blocking_sync_tool() -> str:
         events.append("tool-start")
-        assert release.wait(timeout=2)
+        # The sync tool executes in a worker thread; signal the async heartbeat.
+        loop.call_soon_threadsafe(started.set)
+        assert release.wait(timeout=5)
         events.append("tool-end")
         return "10.0.6"
 
     async def heartbeat() -> None:
-        await asyncio.sleep(0.02)
+        # Starting the heartbeat before the worker starts is valid scheduling,
+        # not evidence that the sync tool blocked the event loop.
+        await asyncio.wait_for(started.wait(), timeout=5)
         events.append("heartbeat")
+        release.set()
 
-    timer = threading.Timer(0.2, release.set)
-    timer.start()
     try:
-        await asyncio.gather(
-            server.call_tool("kicad_get_version", {}),
-            heartbeat(),
+        await asyncio.wait_for(
+            asyncio.gather(server.call_tool("kicad_get_version", {}), heartbeat()),
+            timeout=6,
         )
     finally:
         release.set()
-        timer.cancel()
 
-    assert events.index("tool-start") < events.index("heartbeat") < events.index("tool-end")
+    assert events == ["tool-start", "heartbeat", "tool-end"]
 
 
 async def test_ensure_registered_async_times_out_on_hung_registration() -> None:
