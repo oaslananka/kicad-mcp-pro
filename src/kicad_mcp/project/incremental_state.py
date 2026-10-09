@@ -13,7 +13,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, BinaryIO, cast
 
 from kicad_mcp.ir.circuit_ir import IRCircuit
 from kicad_mcp.ir.engineering_graph import (
@@ -47,6 +47,58 @@ def _source_name(name: str) -> Path:
     if relative.suffix not in SUPPORTED_SOURCES:
         raise StateRebuildRequiredError("unsupported native KiCad source")
     return relative
+
+
+def _require_no_native_child_sheets(stream: BinaryIO) -> None:
+    """Reject root-level KiCad sheet nodes in the IRCircuit-only cache pilot.
+
+    Scan the actual file descriptor used for hashing, rather than relying on
+    caller-supplied hierarchy metadata. Strings and nested library data are
+    not native sheet instances. Streaming bounds additional memory usage.
+    """
+    depth = 0
+    quoted = False
+    escaped = False
+    child_name = bytearray()
+    reading_child_name = False
+    whitespace = frozenset((9, 10, 13, 32))
+    delimiters = whitespace | {34, 40, 41}
+    for chunk in iter(lambda: stream.read(65536), b""):
+        for byte in chunk:
+            if quoted:
+                if escaped:
+                    escaped = False
+                elif byte == 92:
+                    escaped = True
+                elif byte == 34:
+                    quoted = False
+                continue
+            if reading_child_name:
+                if byte in whitespace and not child_name:
+                    continue
+                if byte not in delimiters:
+                    child_name.append(byte)
+                    if len(child_name) > 5:
+                        reading_child_name = False
+                    continue
+                if child_name == b"sheet":
+                    raise StateRebuildRequiredError(
+                        "native hierarchical sheet present; root-only graph is incomplete"
+                    )
+                reading_child_name = False
+            if byte == 34:
+                quoted = True
+            elif byte == 40:
+                depth += 1
+                if depth == 2:
+                    reading_child_name = True
+                    child_name.clear()
+            elif byte == 41:
+                depth -= 1
+                if depth < 0:
+                    raise StateRebuildRequiredError("invalid native schematic structure")
+    if quoted or depth != 0:
+        raise StateRebuildRequiredError("invalid native schematic structure")
 
 
 def source_digests(root: Path, names: tuple[str, ...]) -> dict[str, str]:
@@ -117,6 +169,9 @@ def _digest_one_source(real_root: Path, name: str) -> str:
             before = os.fstat(fd)
             with os.fdopen(os.dup(fd), "rb") as stream:
                 digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                if rel.suffix == ".kicad_sch":
+                    stream.seek(0)
+                    _require_no_native_child_sheets(stream)
             after = os.fstat(fd)
         finally:
             os.close(fd)
