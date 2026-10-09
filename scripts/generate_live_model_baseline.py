@@ -9,7 +9,6 @@ from datetime import date
 from pathlib import Path
 
 from kicad_mcp.evals.baseline_promotion import (
-    BaselinePromotionError,
     generate_approved_baseline,
     write_approved_baseline,
 )

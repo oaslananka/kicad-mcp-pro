@@ -56,8 +56,7 @@ def _git(*args: str) -> bytes:
     completed = subprocess.run(  # noqa: S607
         command,
         check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         env=env,
     )
     if completed.returncode != 0:
@@ -67,11 +66,7 @@ def _git(*args: str) -> bytes:
 
 
 def _nul_list(payload: bytes) -> list[str]:
-    return [
-        item.decode("utf-8", errors="surrogateescape")
-        for item in payload.split(b"\0")
-        if item
-    ]
+    return [item.decode("utf-8", errors="surrogateescape") for item in payload.split(b"\0") if item]
 
 
 def _safe_repo_path(relative: str) -> None:
@@ -155,9 +150,7 @@ def prepare_bundle(output_dir: Path) -> None:
         if payload is None:
             mode = _base_mode(relative)
             if mode is None:
-                raise PublishError(
-                    f"changed path disappeared without a tracked base: {relative}"
-                )
+                raise PublishError(f"changed path disappeared without a tracked base: {relative}")
             entries.append({"path": relative, "mode": mode, "deleted": True})
             continue
 
@@ -300,8 +293,7 @@ class GitHub:
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
             raise PublishError(
-                f"GitHub API request failed: {method} {endpoint}: "
-                f"{exc.code} {exc.reason}: {detail}"
+                f"GitHub API request failed: {method} {endpoint}: {exc.code} {exc.reason}: {detail}"
             ) from exc
         if not body:
             return {}
@@ -427,9 +419,7 @@ def publish_bundle(bundle_dir: Path) -> None:
 def main() -> None:
     try:
         if len(sys.argv) != 3 or sys.argv[1] not in {"prepare", "publish"}:
-            raise PublishError(
-                "usage: opencode_publish.py {prepare|publish} BUNDLE_DIR"
-            )
+            raise PublishError("usage: opencode_publish.py {prepare|publish} BUNDLE_DIR")
         bundle_dir = Path(sys.argv[2]).expanduser().resolve()
         if sys.argv[1] == "prepare":
             prepare_bundle(bundle_dir)
