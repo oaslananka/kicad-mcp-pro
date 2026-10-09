@@ -31,7 +31,7 @@
     "tool-effects:check": "uv run --all-extras python scripts/build_tool_effect_manifest.py --check",
     "tool-contracts:check": "uv run --all-extras python scripts/check_tool_contracts.py",
     "architecture:check": "uv run --all-extras python scripts/check_architecture_boundaries.py",
-    "lint": "uv run --all-extras ruff check src/ tests/",
+    "lint": "uv run --all-extras ruff check src/ tests/ scripts/",
     "format": "uv run --all-extras ruff format src/ tests/",
     "format:check": "uv run --all-extras ruff format --check src/ tests/",
     "typecheck": "uv run --all-extras python -m mypy src/kicad_mcp/",
