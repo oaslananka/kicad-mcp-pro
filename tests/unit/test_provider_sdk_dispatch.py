@@ -153,6 +153,46 @@ async def test_all_four_provider_families_share_the_typed_capability_contract(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("ready_value", "expected_code"),
+    [
+        (False, ProviderErrorCode.NOT_READY),
+        ("ready", ProviderErrorCode.MALFORMED_RESULT),
+        (1, ProviderErrorCode.MALFORMED_RESULT),
+        (None, ProviderErrorCode.MALFORMED_RESULT),
+        ([], ProviderErrorCode.MALFORMED_RESULT),
+    ],
+)
+async def test_readiness_requires_explicit_boolean_response(
+    ready_value: object, expected_code: ProviderErrorCode
+) -> None:
+    """Misbehaving ready() adapters cannot turn truthy values into readiness."""
+    invoked = False
+
+    async def ready() -> object:
+        return ready_value
+
+    async def invoke(_request: ProviderRequest) -> object:
+        nonlocal invoked
+        invoked = True
+        raise AssertionError("provider must not be invoked without explicit ready True")
+
+    registry = ProviderRegistry()
+    registry.register(
+        fixture_manifest(),
+        cast(
+            Provider,
+            SimpleNamespace(family=ProviderFamily.PART, ready=ready, invoke=invoke),
+        ),
+    )
+    reply = await execute_provider(registry, request())
+    assert not reply.ok
+    assert reply.error is not None
+    assert reply.error.code is expected_code
+    assert invoked is False
+
+
+@pytest.mark.anyio
 async def test_success_and_capability_selection_without_provider_name() -> None:
     registry = ProviderRegistry()
     registry.register(fixture_manifest(), Dummy())

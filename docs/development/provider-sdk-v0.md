@@ -11,8 +11,11 @@ interfaces, v0 manifests, permission/capability declarations and structured
 request/result/provenance envelopes. Providers are explicitly registered from
 trusted host code only. Registration rejects adapters whose `ready` and
 `invoke` methods are missing, non-callable or not asynchronous, instead of
-advertising capabilities that cannot be dispatched. Domain callers select by operation and capability,
-never a vendor name. The versioned, drift-tested manifest schema is
+advertising capabilities that cannot be dispatched. At dispatch, readiness
+must return the literal Boolean `True`; `False` means unavailable and a
+non-Boolean response is a malformed provider response (never invoked). Domain
+callers select by operation and capability, never a vendor name. The versioned,
+drift-tested manifest schema is
 `src/kicad_mcp/providers/schemas/provider-manifest-v0.schema.json`, generated from
 `ProviderManifest.model_json_schema()`.
 

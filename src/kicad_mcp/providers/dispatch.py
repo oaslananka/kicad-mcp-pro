@@ -75,7 +75,12 @@ async def execute_provider(
         )
     try:
         async with asyncio.timeout(request.timeout_seconds):
-            if not await adapter.ready():
+            readiness = await adapter.ready()
+            if not isinstance(readiness, bool):
+                return _failure(
+                    request, ProviderErrorCode.MALFORMED_RESULT, "invalid readiness response"
+                )
+            if not readiness:
                 return _failure(request, ProviderErrorCode.NOT_READY, "provider unavailable")
             raw = await adapter.invoke(request)
     except TimeoutError:
