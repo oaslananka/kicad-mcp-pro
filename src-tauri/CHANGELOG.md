@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.0](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v4.0.2...kicad-mcp-gui-v4.1.0) (2026-10-09)
+
+
+### Bug Fixes
+
+* **gui:** one functional Windows tray, supported KiCad discovery and readable health UI ([#1138](https://github.com/oaslananka/kicad-mcp-pro/issues/1138)) ([95145db](https://github.com/oaslananka/kicad-mcp-pro/commit/95145dbe628e74e6553242c7b540ebcc6ed1eaf0))
+
 ## [4.0.2](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v4.0.1...kicad-mcp-gui-v4.0.2) (2026-10-07)
 
 
