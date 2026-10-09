@@ -1095,7 +1095,7 @@ class KiCadFastMCP(FastMCP):
         )
         cfg = get_config()
         app.add_middleware(_DashboardAuthMiddleware)
-        app.add_middleware(_StreamableHttpContractMiddleware)
+        app.add_middleware(_StreamableHttpContractMiddleware, max_sessions=max_sessions)
         if cfg.legacy_sse:
             sse_routes = (
                 super()
@@ -1363,10 +1363,11 @@ class _McpPostBodyLimitMiddleware:
 class _StreamableHttpContractMiddleware:
     """Normalize the public Streamable HTTP contract before FastMCP handles it."""
 
-    _SESSION_CACHE_LIMIT = 256
-
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(self, app: ASGIApp, max_sessions: int | None = 10_000) -> None:
+        if max_sessions is not None and max_sessions <= 0:
+            raise ValueError("max_sessions must be positive or None")
         self.app = app
+        self._session_cache_limit = max_sessions
         self._session_ids: set[str] = set()
         self._session_order: deque[str] = deque()
 
@@ -1545,7 +1546,10 @@ class _StreamableHttpContractMiddleware:
     def _remember_session(self, session_id: str) -> None:
         if session_id in self._session_ids:
             return
-        if len(self._session_order) >= self._SESSION_CACHE_LIMIT:
+        if (
+            self._session_cache_limit is not None
+            and len(self._session_order) >= self._session_cache_limit
+        ):
             self._session_ids.discard(self._session_order.popleft())
             otel.record_session_delta(-1)
         self._session_order.append(session_id)
