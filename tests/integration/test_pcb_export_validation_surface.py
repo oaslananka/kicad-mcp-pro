@@ -14,6 +14,9 @@ from kicad_mcp.discovery import CliCapabilities, get_cli_capabilities
 from kicad_mcp.server import build_server
 from kicad_mcp.tools.export import LOW_LEVEL_EXPORT_NOTICE
 from tests.conftest import call_tool_text
+from tests.manufacturing_approval_helpers import (
+    write_manufacturing_approval as _write_manufacturing_approval,
+)
 
 
 def _field(value: str) -> SimpleNamespace:
@@ -217,23 +220,6 @@ def _fake_cli_run_factory(sample_project: Path):
         return subprocess.CompletedProcess(cmd, 0, stdout=str(sample_project), stderr="")
 
     return fake_run
-
-
-def _write_manufacturing_approval(project: Path) -> str:
-    evidence_dir = project / ".kicad-mcp"
-    evidence_dir.mkdir(parents=True, exist_ok=True)
-    path = evidence_dir / "manufacturing_approval.json"
-    path.write_text(
-        json.dumps(
-            {
-                "approved_by": "Test Reviewer",
-                "approved_at_utc": "2026-07-04T00:00:00Z",
-                "approval_scope": "manufacturing release package",
-            }
-        ),
-        encoding="utf-8",
-    )
-    return ".kicad-mcp/manufacturing_approval.json"
 
 
 @pytest.mark.anyio
