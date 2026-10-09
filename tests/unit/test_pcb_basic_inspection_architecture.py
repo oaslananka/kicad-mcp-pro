@@ -1,29 +1,9 @@
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
 from scripts import check_architecture_boundaries as boundaries
-
-
-def _imports(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    imports: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imports.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            imports.add(node.module or "")
-    return imports
-
-
-def _function_span(path: Path, name: str) -> int:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    node = next(
-        item for item in tree.body if isinstance(item, ast.FunctionDef) and item.name == name
-    )
-    assert node.end_lineno is not None
-    return node.end_lineno - node.lineno + 1
+from tests.architecture_source_helpers import _function_span, _imports
 
 
 def test_architecture_checker_tracks_pcb_basic_inspection_modules() -> None:
