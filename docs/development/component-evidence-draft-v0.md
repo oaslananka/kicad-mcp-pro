@@ -9,7 +9,9 @@ contract. It is intentionally separate from the legacy connectivity seed
 revision/hash/location and individual facts with source-local citations. Each
 fact explicitly distinguishes a cited value, unknown/not-applicable claim, and
 unresolved conflicting sources. Source IDs must exist in the same record; facts,
-documents and citations must be unique. A v0 draft can only be `draft` or
+documents and citations must be unique. A record containing any conflicting
+fact **must** explicitly use `needs_human_review`, not silently remain in the
+ordinary draft queue. A v0 draft can otherwise be `draft` or
 `needs_human_review`; it cannot claim `verified`/`approved`, even when source
 metadata is syntactically valid. The schema is generated from the model:
 `src/kicad_mcp/library/schemas/component-evidence-draft-v0.schema.json`.
