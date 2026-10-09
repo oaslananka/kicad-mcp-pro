@@ -443,6 +443,34 @@ def test_prior_hierarchical_sidecar_cannot_be_reused(project: Path) -> None:
         )
 
 
+def test_missing_project_entity_in_sidecar_requires_rebuild(project: Path) -> None:
+    """Do not accept old or corrupted graph snapshots without project identity."""
+    state = _state(project)
+    path = project / ".kicad-mcp-cache" / "graph.json"
+    state.save_atomic(path)
+    contents = json.loads(path.read_text())
+    project_id = canonical_entity_id(PROJECT_KEY, GraphEntityKind.PROJECT, "project")
+    graph = contents["graph"]
+    graph["entities"] = [
+        entity for entity in graph["entities"] if entity["entity_id"] != project_id
+    ]
+    graph["edges"] = [
+        edge
+        for edge in graph["edges"]
+        if edge["source_id"] != project_id and edge["target_id"] != project_id
+    ]
+    contents["entity_hashes"].pop(project_id)
+    path.write_text(json.dumps(contents))
+    with pytest.raises(StateRebuildRequiredError, match="snapshot cannot"):
+        PersistentProjectState.load_verified(
+            project,
+            path,
+            project_key=PROJECT_KEY,
+            native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
+        )
+
+
 def test_kicad_parser_version_change_forces_rebuild(project: Path) -> None:
     state = _state(project)
     path = project / ".kicad-mcp-cache" / "graph.json"
