@@ -99,11 +99,25 @@ def _font(size: int, *, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFon
     return ImageFont.load_default()
 
 
-def _text(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str, size: int, *, bold: bool = False, fill: str = TEXT) -> None:
+def _text(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[int, int],
+    text: str,
+    size: int,
+    *,
+    bold: bool = False,
+    fill: str = TEXT,
+) -> None:
     draw.text(xy, text, fill=fill, font=_font(size, bold=bold))
 
 
-def _rounded(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], fill: str, outline: str | None = None, width: int = 2) -> None:
+def _rounded(
+    draw: ImageDraw.ImageDraw,
+    box: tuple[int, int, int, int],
+    fill: str,
+    outline: str | None = None,
+    width: int = 2,
+) -> None:
     draw.rounded_rectangle(box, radius=24, fill=fill, outline=outline, width=width)
 
 
@@ -133,7 +147,13 @@ def _render(slot: dict[str, object], icon: Image.Image) -> Path:
         y += 88
 
     _rounded(draw, (184, 770, 852, 838), "#0b1020", outline="#2f3b57")
-    _text(draw, (214, 788), "Verification: metadata · manifest · parity · tool contracts", 24, fill=MUTED)
+    _text(
+        draw,
+        (214, 788),
+        "Verification: metadata · manifest · parity · tool contracts",
+        24,
+        fill=MUTED,
+    )
 
     # Right design surface.
     _rounded(draw, (962, 196, 1784, 880), "#0b1020", outline="#2f3b57")
@@ -148,15 +168,34 @@ def _render(slot: dict[str, object], icon: Image.Image) -> Path:
         draw.line((x, 382, x, 760), fill="#0a585a", width=2)
     for y in range(400, 760, 70):
         draw.line((1068, y, 1680, y), fill="#0a585a", width=2)
-    for x1, y1, x2, y2 in ((1100, 430, 1450, 430), (1450, 430, 1450, 620), (1160, 620, 1620, 620), (1260, 500, 1260, 700)):
+    for x1, y1, x2, y2 in (
+        (1100, 430, 1450, 430),
+        (1450, 430, 1450, 620),
+        (1160, 620, 1620, 620),
+        (1260, 500, 1260, 700),
+    ):
         draw.line((x1, y1, x2, y2), fill="#fdcb6e", width=8)
-    for x, y in ((1100, 430), (1450, 430), (1450, 620), (1160, 620), (1620, 620), (1260, 500), (1260, 700)):
+    for x, y in (
+        (1100, 430),
+        (1450, 430),
+        (1450, 620),
+        (1160, 620),
+        (1620, 620),
+        (1260, 500),
+        (1260, 700),
+    ):
         draw.ellipse((x - 18, y - 18, x + 18, y + 18), fill=ACCENT, outline=TEXT, width=3)
     for x, y, label in ((1168, 478, "U1"), (1520, 516, "J1"), (1330, 682, "PWR")):
         _rounded(draw, (x, y, x + 130, y + 70), "#172033", outline="#dfe6e9")
         _text(draw, (x + 34, y + 19), label, 26, bold=True)
 
-    _text(draw, (1044, 916), "Generated from repository-owned fixtures for public listing review", 24, fill=MUTED)
+    _text(
+        draw,
+        (1044, 916),
+        "Generated from repository-owned fixtures for public listing review",
+        24,
+        fill=MUTED,
+    )
 
     target = SCREENSHOT_DIR / str(slot["filename"])
     image.save(target, format="PNG", compress_level=9)
@@ -165,7 +204,11 @@ def _render(slot: dict[str, object], icon: Image.Image) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--update-placeholder-hashes", action="store_true", help="overwrite placeholder hash baselines; do not use for production media")
+    parser.add_argument(
+        "--update-placeholder-hashes",
+        action="store_true",
+        help="overwrite placeholder hash baselines; do not use for production media",
+    )
     args = parser.parse_args()
 
     if not ICON_PATH.is_file():
