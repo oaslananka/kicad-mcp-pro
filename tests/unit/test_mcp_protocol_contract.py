@@ -543,3 +543,12 @@ def test_streamable_http_accepts_codex_negotiated_2025_06_18_protocol(
     assert listed.status_code == 200
     tool_names = {tool["name"] for tool in listed.json()["result"]["tools"]}
     assert "kicad_get_version" in tool_names
+
+
+@pytest.mark.parametrize("invalid_limit", [0, -1])
+def test_session_capacity_rejects_zero_and_negative(invalid_limit: int) -> None:
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
+        _ = scope, receive, send
+
+    with pytest.raises(ValueError, match="max_sessions"):
+        _StreamableHttpContractMiddleware(app, max_sessions=invalid_limit)

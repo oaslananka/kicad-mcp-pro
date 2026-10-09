@@ -1338,6 +1338,8 @@ class _StreamableHttpContractMiddleware:
     """Normalize the public Streamable HTTP contract before FastMCP handles it."""
 
     def __init__(self, app: ASGIApp, max_sessions: int | None = 10_000) -> None:
+        if max_sessions is not None and max_sessions <= 0:
+            raise ValueError("max_sessions must be positive or None")
         self.app = app
         self._session_cache_limit = max_sessions
         self._session_ids: set[str] = set()
