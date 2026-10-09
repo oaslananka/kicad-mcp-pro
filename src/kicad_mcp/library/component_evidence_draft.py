@@ -92,4 +92,7 @@ class ComponentEvidenceDraft(StrictContractModel):
             for citation in fact.citations
         ):
             raise ValueError("fact references unknown source document")
+        if any(fact.state is FactState.CONFLICTING for fact in self.facts):
+            if self.review_state != "needs_human_review":
+                raise ValueError("conflicting facts require needs_human_review state")
         return self

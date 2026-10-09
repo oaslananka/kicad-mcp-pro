@@ -105,6 +105,35 @@ def test_conflicts_are_not_silently_resolved() -> None:
         cited_fact(state="conflicting", value=None, citations=[first], reason="dispute")
 
 
+def test_conflicting_facts_require_explicit_human_review_state() -> None:
+    """A contradictory fact must not remain in the generic draft intake queue."""
+    conflict = cited_fact(
+        state="conflicting",
+        value=None,
+        citations=[
+            {"source_id": "doc-main", "location": "page 2 table 1"},
+            {"source_id": "doc-main", "location": "page 5 table 4"},
+        ],
+        reason="conflicting limits in source",
+    )
+    with pytest.raises(ValidationError, match="needs_human_review"):
+        draft(facts=(conflict,))
+    pending = draft(facts=(conflict,), review_state="needs_human_review")
+    assert pending.review_state == "needs_human_review"
+    assert pending.facts[0].state is FactState.CONFLICTING
+
+
+def test_unknown_fact_does_not_force_human_review_without_conflict() -> None:
+    unknown = cited_fact(
+        state="unknown",
+        value=None,
+        citations=[],
+        reason="source revision not yet independently checked",
+    )
+    record = draft(facts=(unknown,))
+    assert record.review_state == "draft"
+
+
 @pytest.mark.parametrize(
     "changed",
     [
