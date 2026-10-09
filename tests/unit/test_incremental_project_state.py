@@ -401,6 +401,32 @@ def test_large_synthetic_graph_bounded_update_and_full_rebuild_match(project: Pa
     assert state.graph.to_document() == graph_from_circuit(after).to_document()
 
 
+@pytest.mark.parametrize(
+    ("fixture_name", "should_reject"),
+    [
+        ("pass_minimal_mcu_board", False),
+        ("fail_sismosmart_like_hierarchy", True),
+    ],
+)
+def test_existing_native_schematic_fixtures_observe_sheet_boundary(
+    fixture_name: str, should_reject: bool
+) -> None:
+    """Maintained real KiCad files preserve the one-sheet acceptance boundary."""
+    from kicad_mcp.project.incremental_state import SUPPORTED_SOURCES
+
+    root = Path(__file__).resolve().parents[1] / "fixtures" / "benchmark_projects" / fixture_name
+    sources = tuple(
+        sorted(
+            p.relative_to(root).as_posix() for p in root.rglob("*") if p.suffix in SUPPORTED_SOURCES
+        )
+    )
+    if should_reject:
+        with pytest.raises(StateRebuildRequiredError, match="hierarch"):
+            source_digests(root, sources)
+    else:
+        assert source_digests(root, sources)
+
+
 def test_native_hierarchical_ir_cannot_be_persisted_as_complete_graph(project: Path) -> None:
     """Root-only semantic IR is not authoritative for a multi-sheet native design."""
     circuit = _circuit()
@@ -408,6 +434,88 @@ def test_native_hierarchical_ir_cannot_be_persisted_as_complete_graph(project: P
     with pytest.raises(StateRebuildRequiredError, match="hierarch"):
         PersistentProjectState.rebuild(
             project, SOURCES, circuit, compatibility_key=COMPATIBILITY_KEY
+        )
+
+
+def test_root_sheet_reference_rejects_root_only_cache(project: Path) -> None:
+    """One tracked schematic can still contain missing hierarchical instances."""
+    (project / "main.kicad_sch").write_text(
+        '(kicad_sch (version 20250114) (sheet (property "Sheetname" "power") '
+        '(property "Sheetfile" "power.kicad_sch")))'
+    )
+    with pytest.raises(StateRebuildRequiredError, match="hierarch"):
+        PersistentProjectState.rebuild(
+            project, SOURCES, _circuit(), compatibility_key=COMPATIBILITY_KEY
+        )
+
+
+def test_root_sheet_token_across_stream_boundary_rejected(project: Path) -> None:
+    """A sheet token straddling fixed-size reads must not evade discovery."""
+    prefix = b'(kicad_sch (text "'
+    suffix = b'") '
+    padding = b"x" * (65534 - len(prefix) - len(suffix))
+    (project / "main.kicad_sch").write_bytes(
+        prefix + padding + suffix + b'(sheet (property "Sheetfile" "child.kicad_sch")))'
+    )
+    with pytest.raises(StateRebuildRequiredError, match="hierarch"):
+        _state(project)
+
+
+def test_nested_and_quoted_sheet_tokens_are_not_root_children(project: Path) -> None:
+    """Reject native sheet nodes, not literal user text or nested symbol content."""
+    (project / "main.kicad_sch").write_text(
+        "(kicad_sch (version 20250114) "
+        '(text "comment with (sheet (filename misleading.kicad_sch))") '
+        '(lib_symbols (symbol "Device:R" (sheet (dummy 1)))))'
+    )
+    state = _state(project)
+    assert state.source_hashes["main.kicad_sch"]
+
+
+def test_escaped_literal_and_whitespace_do_not_create_sheet(project: Path) -> None:
+    """Strings with escaped quotes and whitespace before a harmless node are safe."""
+    (project / "main.kicad_sch").write_bytes(
+        rb"(kicad_sch ("
+        + b"\n   "
+        + rb'text "a \"(sheet\" literal") '
+        + rb'(sheet_instances (path "/")))'
+    )
+    assert _state(project).source_hashes["main.kicad_sch"]
+
+
+@pytest.mark.parametrize(
+    "invalid_root",
+    [
+        b"(kicad_sch (version 20250114)))",
+        b"(kicad_sch (version 20250114)",
+        b'(kicad_sch (text "never closed))',
+    ],
+)
+def test_invalid_schematic_structure_cannot_be_cached(project: Path, invalid_root: bytes) -> None:
+    (project / "main.kicad_sch").write_bytes(invalid_root)
+    with pytest.raises(StateRebuildRequiredError, match="invalid native schematic structure"):
+        _state(project)
+
+
+def test_old_sidecar_with_unlisted_root_sheet_rejected(project: Path) -> None:
+    """Changing root bytes plus forged source hash cannot legitimize partial IR."""
+    import hashlib
+
+    state = _state(project)
+    cache_path = project / ".kicad-mcp-cache" / "graph.json"
+    state.save_atomic(cache_path)
+    new_root = b'(kicad_sch (version 20250114) (sheet (property "Sheetfile" "missing.kicad_sch")))'
+    (project / "main.kicad_sch").write_bytes(new_root)
+    sidecar = json.loads(cache_path.read_text())
+    sidecar["source_hashes"]["main.kicad_sch"] = hashlib.sha256(new_root).hexdigest()
+    cache_path.write_text(json.dumps(sidecar))
+    with pytest.raises(StateRebuildRequiredError, match="snapshot cannot"):
+        PersistentProjectState.load_verified(
+            project,
+            cache_path,
+            project_key=PROJECT_KEY,
+            native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
         )
 
 
