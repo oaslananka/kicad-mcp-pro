@@ -33,6 +33,7 @@ FIXTURES = {
 CORPUS = ("esp32-c6-usbc", "stm32f072-usbc", "rp2350-usbc")
 PCB_SUFFIX = ".kicad_pcb"
 PINNED_KICAD_CLI = "/usr/bin/kicad-cli"
+PINNED_GIT = "/usr/bin/git"
 SUPPORTED = {".kicad_pro", ".kicad_sch", PCB_SUFFIX, ".kicad_dru"}
 VIOLATIONS = re.compile(r"Found (\d+) violations")
 FOOTPRINTS = re.compile(r"(?m)^\s*\(footprint\s")
@@ -95,11 +96,13 @@ def _percentile95(samples: list[float]) -> float:
 def _run_native(
     binary: str, command: list[str], *, cwd: Path, timeout: float
 ) -> tuple[int | None, str, float]:
+    # Preserve per-invocation OS binary provenance checks without counting their
+    # filesystem/stat overhead as part of native KiCad CLI execution latency.
+    trusted_cli = _trusted_system_executable(binary, "kicad-cli")
+    if trusted_cli != PINNED_KICAD_CLI:
+        raise ValueError("native benchmark requires the pinned system KiCad CLI")
     started = time.perf_counter()
     try:
-        trusted_cli = _trusted_system_executable(binary, "kicad-cli")
-        if trusted_cli != PINNED_KICAD_CLI:
-            raise ValueError("native benchmark requires the pinned system KiCad CLI")
         process = subprocess.run(  # nosec B603
             [PINNED_KICAD_CLI, *command],
             cwd=cwd,
@@ -271,15 +274,15 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("kicad-cli not installed; cannot manufacture benchmark evidence")
     binary = _trusted_system_executable(binary, "kicad-cli")
     if binary != PINNED_KICAD_CLI:
-        parser.error("audit requires the pinned /usr/bin/kicad-cli")
+        parser.error(f"audit requires the pinned {PINNED_KICAD_CLI}")
     git = shutil.which("git")
     if git is None:
         parser.error("git not installed; source provenance unavailable")
     git = _trusted_system_executable(git, "git")
-    if git != "/usr/bin/git":
+    if git != PINNED_GIT:
         parser.error("audit requires the root-owned system git executable")
     sha = subprocess.run(  # nosec B603
-        ["/usr/bin/git", "rev-parse", "HEAD"],
+        [PINNED_GIT, "rev-parse", "HEAD"],
         cwd=REPO,
         check=True,
         capture_output=True,

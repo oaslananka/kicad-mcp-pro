@@ -61,6 +61,36 @@ def test_native_run_preserves_pinned_executable_and_status(
     assert elapsed_ms >= 0
 
 
+def test_native_run_benchmarks_cli_without_trusted_binary_preflight(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    clock = [1.0]
+    verified: list[str] = []
+
+    def trusted(binary: str, name: str) -> str:
+        verified.extend((binary, name))
+        clock[0] = 2.0  # Model the trusted executable's metadata check overhead.
+        return audit.PINNED_KICAD_CLI
+
+    def fake_run(argv: list[str], **kwargs: object) -> SimpleNamespace:
+        assert argv == [audit.PINNED_KICAD_CLI, "pcb", "drc"]
+        assert kwargs["cwd"] == tmp_path
+        clock[0] = 2.125
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(audit, "_trusted_system_executable", trusted)
+    monkeypatch.setattr(audit.time, "perf_counter", lambda: clock[0])
+    monkeypatch.setattr(audit.subprocess, "run", fake_run)
+
+    code, status, elapsed_ms = audit._run_native(
+        audit.PINNED_KICAD_CLI, ["pcb", "drc"], cwd=tmp_path, timeout=10.0
+    )
+
+    assert verified == [audit.PINNED_KICAD_CLI, "kicad-cli"]
+    assert (code, status) == (0, "clean")
+    assert elapsed_ms == pytest.approx(125.0)
+
+
 def test_native_run_rejects_other_trusted_binary(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
