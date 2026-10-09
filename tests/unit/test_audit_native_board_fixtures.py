@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -41,13 +41,13 @@ def test_native_run_preserves_pinned_executable_and_status(
     monkeypatch.setattr(audit, "_trusted_system_executable", lambda *_: audit.PINNED_KICAD_CLI)
     observed: list[str] = []
 
-    def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(argv: list[str], **kwargs: object) -> SimpleNamespace:
         observed.extend(argv)
         assert kwargs["cwd"] == tmp_path
         assert kwargs["timeout"] == 10.0
         assert kwargs["capture_output"] is True
         assert kwargs["check"] is False
-        return subprocess.CompletedProcess(argv, returncode, stdout, "")
+        return SimpleNamespace(returncode=returncode, stdout=stdout, stderr="")
 
     monkeypatch.setattr(audit.subprocess, "run", fake_run)
 
