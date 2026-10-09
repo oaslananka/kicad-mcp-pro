@@ -376,7 +376,7 @@ def test_rejected_untrusted_digest_cannot_poison_state(project: Path) -> None:
 def test_large_synthetic_graph_bounded_update_and_full_rebuild_match(project: Path) -> None:
     """Graph-only 1,024-component fixture, NOT a KiCad-native benchmark board."""
     before = _circuit()
-    before.sheet_hierarchy = ("top", "power", "control", "io")
+    before.sheet_hierarchy = ("top",)  # synthetic scale only; not native hierarchy evidence
     for number in range(3, 1025):
         ref = f"R{number}"
         before.components[ref] = IRComponent(ref, "Device:R", "10k", "Resistor_SMD:R_0603")
@@ -399,6 +399,48 @@ def test_large_synthetic_graph_bounded_update_and_full_rebuild_match(project: Pa
     assert entry.work_units == 1
     assert state.graph.entities[unchanged] is identity
     assert state.graph.to_document() == graph_from_circuit(after).to_document()
+
+
+def test_native_hierarchical_ir_cannot_be_persisted_as_complete_graph(project: Path) -> None:
+    """Root-only semantic IR is not authoritative for a multi-sheet native design."""
+    circuit = _circuit()
+    circuit.sheet_hierarchy = ("main.kicad_sch", "power.kicad_sch")
+    with pytest.raises(StateRebuildRequiredError, match="hierarch"):
+        PersistentProjectState.rebuild(
+            project, SOURCES, circuit, compatibility_key=COMPATIBILITY_KEY
+        )
+
+
+def test_multiple_native_schematics_need_proven_hierarchy_parity(project: Path) -> None:
+    (project / "power.kicad_sch").write_text("(kicad_sch (power))")
+    sources = (*SOURCES, "power.kicad_sch")
+    with pytest.raises(StateRebuildRequiredError, match="hierarch"):
+        PersistentProjectState.rebuild(
+            project, sources, _circuit(), compatibility_key=COMPATIBILITY_KEY
+        )
+
+
+def test_prior_hierarchical_sidecar_cannot_be_reused(project: Path) -> None:
+    """Existing snapshots must not sidestep tightened scope on load."""
+    from kicad_mcp.project.evidence_current_state import canonical_graph_entity_sha256
+
+    state = _state(project)
+    project_entity = state.graph.entities_of_kind(GraphEntityKind.PROJECT)[0]
+    project_entity.attributes["sheet_hierarchy"] = [
+        "main.kicad_sch",
+        "power.kicad_sch",
+    ]
+    state.entity_hashes[project_entity.entity_id] = canonical_graph_entity_sha256(project_entity)
+    path = project / ".kicad-mcp-cache" / "graph.json"
+    state.save_atomic(path)
+    with pytest.raises(StateRebuildRequiredError, match="snapshot cannot"):
+        PersistentProjectState.load_verified(
+            project,
+            path,
+            project_key=PROJECT_KEY,
+            native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
+        )
 
 
 def test_kicad_parser_version_change_forces_rebuild(project: Path) -> None:
