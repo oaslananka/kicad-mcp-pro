@@ -46,18 +46,23 @@ async def test_http_body_limit_scopes_only_mcp_post_to_preserve_other_routes() -
         await send({"type": "http.response.body", "body": b"ok"})
 
     app = _McpPostBodyLimitMiddleware(fake_app, max_body_size=2)
-    for path in ("/api/example", "/ui", "/mcp"):
-        status: list[int] = []
+
+    async def status_for_path(path: str) -> int:
+        statuses: list[int] = []
 
         async def receive():
             return {"type": "http.request", "body": b"123", "more_body": False}
 
-        async def send(message, statuses=status):
+        async def send(message):
             if message["type"] == "http.response.start":
                 statuses.append(message["status"])
 
         await app({"type": "http", "method": "POST", "path": path, "headers": []}, receive, send)
-        assert status == [413 if path == "/mcp" else 200]
+        return statuses[0]
+
+    assert await status_for_path("/api/example") == 200
+    assert await status_for_path("/ui") == 200
+    assert await status_for_path("/mcp") == 413
     assert recorded == ["/api/example", "/ui"]
 
 
