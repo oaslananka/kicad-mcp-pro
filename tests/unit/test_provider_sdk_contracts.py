@@ -158,6 +158,47 @@ def test_manifest_rejects_duplicate_network_hosts() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "unsafe_host",
+    [
+        "api.example.org@unexpected.example",
+        "api.example.org:443",
+        "api.example.org?token=abc",
+        "api.example.org#fragment",
+        "api.example.org\nInjected: value",
+        "api..example.org",
+        "-invalid.example.org",
+        "invalid-.example.org",
+        ".example.org",
+        "api.example.org.",
+        "a" * 64 + ".example.org",
+        "a." * 127 + "a",
+    ],
+)
+def test_manifest_rejects_non_hostname_network_targets(unsafe_host: str) -> None:
+    with pytest.raises(ValidationError, match="exact names"):
+        manifest(
+            permissions=(ProviderPermission.NETWORK,),
+            network_access=True,
+            network_hosts=(unsafe_host,),
+        )
+
+
+def test_manifest_accepts_explicit_dns_hostnames_and_rejects_case_duplicates() -> None:
+    accepted = manifest(
+        permissions=(ProviderPermission.NETWORK,),
+        network_access=True,
+        network_hosts=("api.example.org", "localhost", "127.0.0.1"),
+    )
+    assert len(accepted.network_hosts) == 3
+    with pytest.raises(ValidationError, match="duplicate network host"):
+        manifest(
+            permissions=(ProviderPermission.NETWORK,),
+            network_access=True,
+            network_hosts=("api.example.org", "API.EXAMPLE.ORG"),
+        )
+
+
 def test_operation_rejects_duplicate_permissions() -> None:
     with pytest.raises(ValidationError, match="duplicate operation permissions"):
         ProviderOperation(

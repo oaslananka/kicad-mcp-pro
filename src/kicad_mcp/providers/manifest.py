@@ -56,10 +56,17 @@ class ProviderManifest(StrictContractModel):
             raise ValueError("egress requires network access")
         if self.network_access != bool(self.network_hosts):
             raise ValueError("network access requires explicit host declarations")
-        if len(set(self.network_hosts)) != len(self.network_hosts):
+        if len({host.lower() for host in self.network_hosts}) != len(self.network_hosts):
             raise ValueError("duplicate network host")
+        # Network hosts are declarations for *exact* ASCII DNS names (or
+        # dotted-decimal addresses), never URL authorities or host patterns.
+        # This is validation, not a network sandbox for in-process adapters.
+        host_label = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
         if any(
-            not host or "*" in host or "/" in host or "://" in host for host in self.network_hosts
+            len(host) > 253
+            or not host.isascii()
+            or any(host_label.fullmatch(label) is None for label in host.split("."))
+            for host in self.network_hosts
         ):
             raise ValueError("network hosts must be exact names")
         return self

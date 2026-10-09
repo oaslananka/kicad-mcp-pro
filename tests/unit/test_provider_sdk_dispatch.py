@@ -95,6 +95,64 @@ def request(**kwargs: object) -> ProviderRequest:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("family", tuple(ProviderFamily))
+async def test_all_four_provider_families_share_the_typed_capability_contract(
+    family: ProviderFamily,
+) -> None:
+    """The experimental SDK must not special-case real vendor adapters."""
+
+    class FamilyDummy:
+        def __init__(self, requested: ProviderFamily) -> None:
+            self.family = requested
+
+        async def ready(self) -> bool:
+            return True
+
+        async def invoke(self, provider_request: ProviderRequest) -> object:
+            return ProviderResult(
+                request_id=provider_request.request_id,
+                ok=True,
+                payload={"family": self.family.value},
+                provenance=ProviderProvenance(
+                    provider_id=f"fixture-{self.family.value}",
+                    provider_version="0.1",
+                    source="fixture:family",
+                    execution_id="exec-001",
+                    deterministic=True,
+                    input_sha256="a" * 64,
+                    output_sha256="b" * 64,
+                ),
+            )
+
+    capability = f"{family.value}.probe"
+    registration = ProviderManifest(
+        sdk_version="0-experimental",
+        provider_id=f"fixture-{family.value}",
+        provider_version="0.1",
+        family=family,
+        capabilities=(capability,),
+        operations=(ProviderOperation(name="probe", capability=capability),),
+        deterministic=True,
+        provenance_source="fixture:family",
+        healthcheck="ready",
+        license_id="MIT",
+        distribution_notes="Dummy conformance only",
+    )
+    registry = ProviderRegistry()
+    registry.register(registration, FamilyDummy(family))
+    outcome = await execute_provider(
+        registry,
+        ProviderRequest(request_id="req-probe", operation="probe", capability=capability),
+    )
+    assert outcome.ok
+    assert outcome.payload == {"family": family.value}
+    assert registry.advertised_families() == {family}
+    missing = await execute_provider(registry, request(capability="missing.capability"))
+    assert missing.error is not None
+    assert missing.error.code is ProviderErrorCode.NO_CAPABILITY
+
+
+@pytest.mark.anyio
 async def test_success_and_capability_selection_without_provider_name() -> None:
     registry = ProviderRegistry()
     registry.register(fixture_manifest(), Dummy())
