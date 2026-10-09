@@ -53,7 +53,7 @@ def _iter_blocks(content: str, keyword: str) -> Iterable[str]:
     cursor = 0
     marker = f"({keyword}"
     while cursor < len(content):
-        if content[cursor:].startswith(marker):
+        if content.startswith(marker, cursor):
             block, length = _extract_block(content, cursor)
             if block:
                 yield block
@@ -142,7 +142,7 @@ def _parse_board_footprint_blocks(content: str) -> dict[str, dict[str, Any]]:
     with otel.pcb_parse_span() as span:
         cursor = 0
         while cursor < len(content):
-            if content[cursor:].startswith("(footprint"):
+            if content.startswith("(footprint", cursor):
                 block, length = _extract_block(content, cursor)
                 if block:
                     ref_match = re.search(rf'\(property\s+"Reference"\s+{STRING_PATTERN}', block)
