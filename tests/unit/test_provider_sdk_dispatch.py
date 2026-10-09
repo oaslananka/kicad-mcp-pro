@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
@@ -19,6 +21,7 @@ from kicad_mcp.providers import (
     ProviderResult,
     execute_provider,
 )
+from kicad_mcp.providers.contracts import Provider
 
 
 @dataclass
@@ -183,3 +186,46 @@ async def test_cancellation_is_propagated() -> None:
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+@pytest.mark.parametrize(
+    ("ready_mode", "invoke_mode"),
+    [
+        ("missing", "valid"),
+        ("sync", "valid"),
+        ("value", "valid"),
+        ("valid", "missing"),
+        ("valid", "sync"),
+        ("valid", "value"),
+    ],
+)
+def test_register_rejects_invalid_async_provider_before_advertising(
+    ready_mode: str, invoke_mode: str
+) -> None:
+    async def async_ready() -> bool:
+        return True
+
+    async def async_invoke(_request: ProviderRequest) -> object:
+        return None
+
+    def sync_ready() -> bool:
+        return True
+
+    def sync_invoke(_request: ProviderRequest) -> object:
+        return None
+
+    ready_values = {"valid": async_ready, "sync": sync_ready, "value": True}
+    invoke_values = {"valid": async_invoke, "sync": sync_invoke, "value": True}
+    methods: dict[str, object] = {"family": ProviderFamily.PART}
+    if ready_mode != "missing":
+        methods["ready"] = ready_values[ready_mode]
+    if invoke_mode != "missing":
+        methods["invoke"] = invoke_values[invoke_mode]
+    adapter = cast(Provider, SimpleNamespace(**methods))
+    registry = ProviderRegistry()
+
+    with pytest.raises(ValueError, match="asynchronous"):
+        registry.register(fixture_manifest(), adapter)
+
+    assert registry.candidates(request()) == ()
+    assert registry.advertised_families() == frozenset()
