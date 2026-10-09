@@ -1,9 +1,17 @@
 name: Release Please
 
 on:
-  push:
-    branches: [main]
+  # Keep release-PR versions current without an Actions run after every merge.
+  schedule:
+    - cron: "37 3 * * *"  # Daily, UTC; scheduled runs use the default branch.
   workflow_dispatch:
+    inputs:
+      operation:
+        description: "Prepare release PR or publish tags after its reviewed merge"
+        type: choice
+        options: [prepare, publish]
+        required: true
+        default: prepare
 
 permissions:
   contents: read
@@ -14,7 +22,10 @@ concurrency:
 
 jobs:
   release:
-    if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
+    # Never give the publication-capable GitHub App token to a feature-branch run.
+    if: >-
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
+      github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     steps:
       # Use a short-lived GitHub App installation token so release PR creation and the
@@ -34,12 +45,17 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           token: ${{ steps.release-app-token.outputs.token }}
+          # Only an explicit manual "publish" run may create tags / GitHub releases.
+          skip-github-release: ${{ github.event_name != 'workflow_dispatch' || inputs.operation != 'publish' }}
+          # Publishing must not also open or update another release PR.
+          skip-github-pull-request: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'publish' }}
 
       # release-please bumps package versions, while several tracked generated artifacts
       # derive values from the bumped pyproject and cannot be maintained safely by its
       # field updaters alone. Regenerate every canonical release-derived artifact through
       # one entry point, then push any drift onto the release PR branch before CI evaluates it.
       - name: Detect release PR branch
+        if: ${{ github.event_name == 'schedule' || inputs.operation == 'prepare' }}
         id: release-pr-branch
         env:
           GH_TOKEN: ${{ steps.release-app-token.outputs.token }}
