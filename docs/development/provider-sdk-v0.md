@@ -27,9 +27,12 @@ retry or engineering release claim.
 - **Code loading:** registration is explicit; arbitrary Python import, entry
   point scanning and untrusted plugins are NOT supported. The SDK provides
   no process sandbox. Only separately reviewed/trusted adapters may run.
-- **Network and egress:** both are declared in the manifest. Offline policy
-  prevents choosing a network provider. This is a policy filter, **not** an OS
-  firewall; untrusted adapters must be isolated before they can be enabled.
+- **Network and egress:** both are declared in the manifest. Host entries
+  must be exact ASCII DNS-style names or dotted-decimal addresses; URL parts,
+  credentials, ports, patterns and malformed labels are rejected. Duplicate
+  names are rejected case-insensitively. Offline policy prevents choosing a
+  network provider. This is a policy filter, **not** an OS firewall; untrusted
+  adapters must be isolated before they can be enabled.
 - **Credentials:** never store provider credentials in manifests, request
   payloads, logs or evidence. An approved host adapter owns its secret scope.
 - **Permissions:** mutation/instrument control require declared, granted
