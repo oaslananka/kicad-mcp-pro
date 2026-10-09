@@ -208,6 +208,39 @@ def test_ruleset_desired_state_matches_live_shape_and_reports_drift() -> None:
     assert any("ruleset.main-standard drift" in error for error in errors)
 
 
+def test_ruleset_read_only_api_cannot_observe_bypass_actors() -> None:
+    from scripts.check_github_repository_settings import (
+        load_ruleset_policies,
+        validate_ruleset_state,
+    )
+
+    expected = load_ruleset_policies()
+    live = json.loads(json.dumps(expected))
+    del live["main-standard"]["bypass_actors"]
+
+    # GitHub omits this field for read-only GitHub App tokens. Other
+    # ruleset controls remain subject to exact comparison.
+    assert validate_ruleset_state(expected, live) == []
+    live["main-standard"]["rules"][0]["type"] = "creation"
+    assert any(
+        "ruleset.main-standard drift" in error for error in validate_ruleset_state(expected, live)
+    )
+
+
+def test_ruleset_visible_bypass_drift_is_not_suppressed() -> None:
+    from scripts.check_github_repository_settings import (
+        load_ruleset_policies,
+        validate_ruleset_state,
+    )
+
+    expected = load_ruleset_policies()
+    live = json.loads(json.dumps(expected))
+    live["main-standard"]["bypass_actors"] = []
+    assert any(
+        "ruleset.main-standard drift" in error for error in validate_ruleset_state(expected, live)
+    )
+
+
 def test_ruleset_desired_state_requires_main_and_release_tag_policies() -> None:
     from scripts.check_github_repository_settings import load_ruleset_policies
 
