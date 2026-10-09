@@ -52,7 +52,10 @@ from mcp.server.mcpserver import Context
 from mcp.server.mcpserver import MCPServer as FastMCP
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.streamable_http import EventStore
-from mcp.server.transport_security import TransportSecuritySettings
+from mcp.server.transport_security import (
+    RequestBodyLimitMiddleware,
+    TransportSecuritySettings,
+)
 from mcp.types import (
     Icon,
     ToolAnnotations,
@@ -1125,6 +1128,11 @@ class KiCadFastMCP(FastMCP):
                 ],
             )
         app.add_middleware(_OriginValidationMiddleware)
+        # Enforce the SDK's size limit before the protocol shim reads the body.
+        app.add_middleware(
+            _McpPostBodyLimitMiddleware,
+            max_body_size=max_request_body_size,
+        )
         return app
 
     async def list_tools(self) -> list[mcp_types.Tool]:
@@ -1334,6 +1342,24 @@ class KiCadFastMCP(FastMCP):
                 )
 
 
+class _McpPostBodyLimitMiddleware:
+    """Apply the SDK body limit only to MCP POSTs, not dashboard routes."""
+
+    def __init__(self, app: ASGIApp, max_body_size: int) -> None:
+        self.app = app
+        self.limited_app = RequestBodyLimitMiddleware(app, max_body_size)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            scope["type"] == "http"
+            and scope.get("method") == "POST"
+            and scope.get("path") == get_config().mount_path
+        ):
+            await self.limited_app(scope, receive, send)
+        else:
+            await self.app(scope, receive, send)
+
+
 class _StreamableHttpContractMiddleware:
     """Normalize the public Streamable HTTP contract before FastMCP handles it."""
 
@@ -1379,14 +1405,15 @@ class _StreamableHttpContractMiddleware:
             await self.app(scope, receive, send)
             return
 
-        body, replay_receive = await _buffer_request_body(receive)
-
-        # Let FastMCP's auth layer preserve its existing 401/403 error shape.
+        # Avoid reading unauthenticated request bodies before the SDK auth layer.
+        # Let FastMCP preserve its existing 401/403 error shape.
         if cfg.auth_token and not secrets.compare_digest(
             _scope_bearer_token(headers), cfg.auth_token
         ):
-            await self.app(scope, replay_receive, send)
+            await self.app(scope, receive, send)
             return
+
+        body, replay_receive = await _buffer_request_body(receive)
 
         rpc_id, rpc_method = _json_rpc_metadata(body)
         post_response_status: int | None = None
