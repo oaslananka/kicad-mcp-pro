@@ -228,6 +228,12 @@ def validate_ruleset_state(
             continue
         expected_state = _normalized_ruleset(expected)
         live_state = _normalized_ruleset(live)
+        # GitHub withholds bypass_actors from read-only API callers. Missing
+        # is therefore unobservable, not evidence that the bypass list is empty.
+        # When an authorized caller can see the field, compare it strictly.
+        if "bypass_actors" not in live:
+            expected_state.pop("bypass_actors")
+            live_state.pop("bypass_actors")
         if live_state != expected_state:
             errors.append(
                 f"ruleset.{name} drift: actual={live_state!r} expected={expected_state!r}"
@@ -376,6 +382,18 @@ def main(argv: list[str] | None = None) -> int:
 
         expected_rulesets = load_ruleset_policies()
         live_rulesets = _github_rulesets(token)
+        hidden_bypass = sorted(
+            name for name, live in live_rulesets.items() if "bypass_actors" not in live
+        )
+        if hidden_bypass:
+            message = (
+                "Ruleset bypass_actors not visible to read-only API token for "
+                f"{', '.join(hidden_bypass)}; bypass permissions remain unverified. "
+                "Verify separately with an authorized ruleset administrator."
+            )
+            print(message, file=sys.stderr)
+            if os.environ.get("GITHUB_ACTIONS") == "true":
+                print(f"::warning title=Ruleset bypass visibility::{message}", file=sys.stderr)
         errors.extend(validate_ruleset_state(expected_rulesets, live_rulesets))
     except (OSError, ValueError, RuntimeError, HTTPException) as exc:
         print(f"GitHub repository settings check failed: {exc}", file=sys.stderr)
