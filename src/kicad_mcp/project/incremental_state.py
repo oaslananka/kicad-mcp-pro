@@ -61,7 +61,8 @@ def _require_no_native_child_sheets(stream: BinaryIO) -> None:
     escaped = False
     child_name = bytearray()
     reading_child_name = False
-    whitespace = (9, 10, 13, 32)
+    whitespace = frozenset((9, 10, 13, 32))
+    delimiters = whitespace | {34, 40, 41}
     for chunk in iter(lambda: stream.read(65536), b""):
         for byte in chunk:
             if quoted:
@@ -75,7 +76,7 @@ def _require_no_native_child_sheets(stream: BinaryIO) -> None:
             if reading_child_name:
                 if byte in whitespace and not child_name:
                     continue
-                if byte not in (*whitespace, 40, 41, 34):
+                if byte not in delimiters:
                     child_name.append(byte)
                     if len(child_name) > 5:
                         reading_child_name = False
