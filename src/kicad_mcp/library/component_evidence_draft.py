@@ -55,9 +55,14 @@ class ComponentEvidenceFact(StrictContractModel):
             if not self.value or not self.value.strip() or not self.citations:
                 raise ValueError("cited fact requires value and source location")
         elif self.state is FactState.CONFLICTING:
-            if self.value is not None or len(self.citations) < 2 or not self.reason:
+            if (
+                self.value is not None
+                or len(self.citations) < 2
+                or not self.reason
+                or not self.reason.strip()
+            ):
                 raise ValueError("conflicting fact needs multiple citations and reason, not value")
-        elif self.value is not None or not self.reason:
+        elif self.value is not None or not self.reason or not self.reason.strip():
             raise ValueError("unknown or not-applicable fact requires reason, not value")
         return self
 
@@ -75,8 +80,8 @@ class ComponentEvidenceDraft(StrictContractModel):
 
     @model_validator(mode="after")
     def validate_referenced_source_locations(self) -> Self:
-        source_ids = [doc.source_id for doc in self.source_documents]
-        if len(source_ids) != len(set(source_ids)):
+        source_ids = {doc.source_id for doc in self.source_documents}
+        if len(source_ids) != len(self.source_documents):
             raise ValueError("duplicate source document ID")
         facts = [fact.attribute for fact in self.facts]
         if len(facts) != len(set(facts)):

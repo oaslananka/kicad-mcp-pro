@@ -143,3 +143,17 @@ def test_generated_draft_schema_matches_source() -> None:
         / "src/kicad_mcp/library/schemas/component-evidence-draft-v0.schema.json"
     )
     assert json.loads(path.read_text(encoding="utf-8")) == schema
+
+
+def test_unknown_reason_rejects_only_spaces() -> None:
+    with pytest.raises(ValidationError, match="reason"):
+        cited_fact(state="unknown", value=None, citations=[], reason="   ")
+
+
+def test_conflicting_reason_rejects_only_spaces() -> None:
+    citations = [
+        {"source_id": "doc-main", "location": "p1"},
+        {"source_id": "doc-main", "location": "p2"},
+    ]
+    with pytest.raises(ValidationError, match="reason"):
+        cited_fact(state="conflicting", value=None, citations=citations, reason="   ")
