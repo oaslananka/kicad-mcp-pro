@@ -2399,7 +2399,7 @@ def _extract_wires(content: str) -> list[dict[str, Any]]:
     wires: list[dict[str, Any]] = []
     cursor = 0
     while cursor < len(content):
-        if content[cursor:].startswith("(wire"):
+        if content.startswith("(wire", cursor):
             block, length = _extract_block(content, cursor)
             if block:
                 pts_match = re.search(
@@ -2808,7 +2808,7 @@ def _get_symbol_bboxes(sexpr_content: str) -> list[BBox]:
     symbols: list[dict[str, Any]] = []
     cursor = 0
     while cursor < len(sexpr_content):
-        if sexpr_content[cursor:].startswith("(symbol"):
+        if sexpr_content.startswith("(symbol", cursor):
             block, length = _extract_block(sexpr_content, cursor)
             if block:
                 parsed = _parse_symbol_block(block)
@@ -2830,7 +2830,7 @@ def _remove_wire_blocks(content: str) -> str:
     cursor = 0
     last = 0
     while cursor < len(content):
-        if content[cursor:].startswith("(wire"):
+        if content.startswith("(wire", cursor):
             block, length = _extract_block(content, cursor)
             if block and _parse_wire_block(block) is not None:
                 pieces.append(content[last:cursor])
@@ -2943,7 +2943,7 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
 
     cursor = 0
     while cursor < len(content):
-        if content[cursor:].startswith("(symbol"):
+        if content.startswith("(symbol", cursor):
             block, length = _extract_block(content, cursor)
             if block:
                 parsed = _parse_symbol_block(block)
@@ -5882,7 +5882,7 @@ def _find_placed_symbol_blocks(
     matches: list[tuple[str, int, int, dict[str, Any]]] = []
     cursor = 0
     while cursor < len(content):
-        if content[cursor:].startswith("(symbol"):
+        if content.startswith("(symbol", cursor):
             block, length = _extract_block(content, cursor)
             if block:
                 parsed = _parse_symbol_block(block)
@@ -6397,7 +6397,7 @@ def _find_all_placed_symbol_blocks(
     matches: list[tuple[str, int, int, dict[str, Any]]] = []
     cursor = 0
     while cursor < len(content):
-        if content[cursor:].startswith("(symbol"):
+        if content.startswith("(symbol", cursor):
             block, length = _extract_block(content, cursor)
             if block:
                 parsed = _parse_symbol_block(block)
