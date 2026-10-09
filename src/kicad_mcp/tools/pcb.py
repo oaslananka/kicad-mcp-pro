@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import threading
 import time
 import uuid
 from collections.abc import Callable, Iterable, Sequence
@@ -121,6 +122,7 @@ from .schematic import _iter_child_sheet_paths, parse_schematic_file
 from .schematic_transfer import _parse_netlist_text as _parse_netlist_text
 
 logger = structlog.get_logger(__name__)
+_BOARD_FILE_WRITE_LOCK = threading.RLock()
 _KeepoutRegion = Annotated[list[float], Field(min_length=4, max_length=4)]
 BOARD_FILE_VERSION = GENERATED_SEXPR_DIALECT_VERSION
 STRING_PATTERN = r'"((?:\\.|[^"\\])*)"'
@@ -778,25 +780,33 @@ def run_auto_refill_zones() -> str:
 
 
 def _transactional_board_write(mutator: Callable[[str], str]) -> str:
-    board_file = _get_pcb_file_for_sync()
-    current = _normalize_board_content(board_file.read_text(encoding="utf-8", errors="ignore"))
-    updated = mutator(current)
-    _validate_board_text(updated)
-    with NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=board_file.parent) as handle:
-        handle.write(updated)
-        temp_path = Path(handle.name)
-    temp_path.replace(board_file)
-    format_upgrade = upgrade_generated_file(
-        board_file, "pcb", _run_cli, allowed_root=get_config().workspace
-    )
-    if not format_upgrade.upgraded:
-        logger.warning(
-            "generated_board_format_migration_unavailable",
-            path=str(board_file),
-            detail=format_upgrade.detail,
+    with _BOARD_FILE_WRITE_LOCK:
+        board_file = _get_pcb_file_for_sync()
+        current = _normalize_board_content(board_file.read_text(encoding="utf-8"))
+        updated = mutator(current)
+        _validate_board_text(updated)
+        temp_path: Path | None = None
+        try:
+            with NamedTemporaryFile(
+                "w", encoding="utf-8", delete=False, dir=board_file.parent
+            ) as handle:
+                temp_path = Path(handle.name)
+                handle.write(updated)
+            temp_path.replace(board_file)
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+        format_upgrade = upgrade_generated_file(
+            board_file, "pcb", _run_cli, allowed_root=get_config().workspace
         )
-    clear_ttl_cache()
-    return str(board_file)
+        if not format_upgrade.upgraded:
+            logger.warning(
+                "generated_board_format_migration_unavailable",
+                path=str(board_file),
+                detail=format_upgrade.detail,
+            )
+        clear_ttl_cache()
+        return str(board_file)
 
 
 def _board_is_open() -> bool:
