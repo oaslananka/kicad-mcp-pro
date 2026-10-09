@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from ipaddress import IPv4Address
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -69,6 +70,16 @@ class ProviderManifest(StrictContractModel):
             for host in self.network_hosts
         ):
             raise ValueError("network hosts must be exact names")
+        for host in self.network_hosts:
+            # Numeric-looking DNS names may resolve as legacy IPv4 shortcuts.
+            # Require strict canonical four-octet syntax for such declarations.
+            if re.fullmatch(r"[0-9.]+", host):
+                try:
+                    IPv4Address(host)
+                except ValueError as exc:
+                    raise ValueError("network hosts must be exact names") from exc
+            elif re.fullmatch(r"0[xX][0-9a-fA-F]+", host):
+                raise ValueError("network hosts must be exact names")
         return self
 
     def find_operation(self, name: str, capability: str) -> ProviderOperation | None:

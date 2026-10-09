@@ -31,7 +31,8 @@ retry or engineering release claim.
   point scanning and untrusted plugins are NOT supported. The SDK provides
   no process sandbox. Only separately reviewed/trusted adapters may run.
 - **Network and egress:** both are declared in the manifest. Host entries
-  must be exact ASCII DNS-style names or dotted-decimal addresses; URL parts,
+  must be exact ASCII DNS-style names or canonical four-octet IPv4 addresses;
+  abbreviated, out-of-range, hexadecimal or zero-padded numeric IP forms, URL parts,
   credentials, ports, patterns and malformed labels are rejected. Duplicate
   names are rejected case-insensitively. Offline policy prevents choosing a
   network provider. This is a policy filter, **not** an OS firewall; untrusted
