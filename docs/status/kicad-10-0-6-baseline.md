@@ -2,14 +2,23 @@
 
 **Reviewed:** 2026-09-04
 
-KiCad MCP Pro treats KiCad 10.0.6 as the current primary KiCad 10 stable
-baseline. The repository compatibility matrix records this in
-`kicad.latestVerified` and `kicad10FeatureParity.baseline`.
+KiCad MCP Pro treats KiCad 10.0.6 as the **last verified compatible**
+KiCad 10 baseline, not the newest upstream stable patch. The repository
+compatibility matrix records this tested baseline in `kicad.latestVerified`
+and `kicad10FeatureParity.baseline`.
+
+**Upstream status as of 2026-10-09:** KiCad
+[10.0.7 stable](https://www.kicad.org/blog/2026/10/KiCad-10.0.7-Release/)
+was released on 2026-10-07. It is **not yet promoted** by this project.
+A compatibility promotion requires successful version-pinned native canaries
+covering ERC/DRC, BOM/netlist and manufacturing exports, PCM/IPC and applicable
+platform regressions. Do not change `latestVerified` based only on the
+upstream release announcement.
 
 ## Release Impact
 
-KiCad 10.0.6 was released on 2026-08-29 as a 10.0-series bugfix release. The
-`kicad/kicad-10.0-releases` PPA now serves 10.0.6 exclusively; the prior
+KiCad 10.0.6 was released on 2026-08-29 as a 10.0-series bugfix release. At that review, the
+`kicad/kicad-10.0-releases` PPA served 10.0.6 exclusively; the prior
 10.0.5 package is no longer installable from it, which is why this promotion
 was required rather than optional. The MCP surface most at risk from patch
 drift remains the headless CLI path: ERC/DRC JSON reports, PCB export
