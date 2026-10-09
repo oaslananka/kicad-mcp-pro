@@ -10,6 +10,7 @@ from typing import cast
 import pytest
 
 from kicad_mcp.providers import (
+    ProviderError,
     ProviderErrorCode,
     ProviderFamily,
     ProviderManifest,
@@ -327,3 +328,41 @@ def test_register_rejects_invalid_async_provider_before_advertising(
 
     assert registry.candidates(request()) == ()
     assert registry.advertised_families() == frozenset()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("corruption", ("payload", "provenance", "error"))
+async def test_dispatch_revalidates_existing_provider_result_instances(
+    corruption: str,
+) -> None:
+    """An adapter can return a constructed or model_copy-updated invalid model."""
+
+    class CorruptResultDummy(Dummy):
+        async def invoke(self, provider_request: ProviderRequest) -> object:
+            valid = await super().invoke(provider_request)
+            assert isinstance(valid, ProviderResult)
+            if corruption == "payload":
+                return valid.model_copy(update={"payload": {"unserializable": object()}})
+            if corruption == "provenance":
+                proof = valid.provenance
+                assert proof is not None
+                return valid.model_copy(
+                    update={"provenance": proof.model_copy(update={"input_sha256": "invalid"})}
+                )
+            return valid.model_copy(
+                update={
+                    "ok": False,
+                    "payload": {},
+                    "provenance": None,
+                    "error": ProviderError.model_construct(
+                        code="invalid_error_code", message="bad"
+                    ),
+                }
+            )
+
+    registry = ProviderRegistry()
+    registry.register(fixture_manifest(), CorruptResultDummy())
+    reply = await execute_provider(registry, request())
+    assert not reply.ok
+    assert reply.error is not None
+    assert reply.error.code is ProviderErrorCode.MALFORMED_RESULT
