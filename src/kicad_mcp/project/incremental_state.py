@@ -19,6 +19,8 @@ from kicad_mcp.ir.circuit_ir import IRCircuit
 from kicad_mcp.ir.engineering_graph import (
     ENGINEERING_GRAPH_SCHEMA_VERSION,
     EngineeringGraph,
+    GraphEntityKind,
+    canonical_entity_id,
 )
 from kicad_mcp.ir.engineering_graph_from_ir import (
     graph_from_circuit,
@@ -143,6 +145,25 @@ def _entity_hashes(graph: EngineeringGraph) -> dict[str, str]:
     }
 
 
+def _require_single_sheet_scope(native_sources: tuple[str, ...], sheet_hierarchy: object) -> None:
+    """Do not persist an IR-only graph as verified whole-project hierarchy.
+
+    The #940 IRCircuit adapter only covers the root schematic. #1141 must
+    establish native instance UUID/net parity before multi-sheet persistence
+    is safe, even when all native file hashes are available.
+    """
+    schematic_count = sum(name.endswith(".kicad_sch") for name in native_sources)
+    if (
+        schematic_count != 1
+        or not isinstance(sheet_hierarchy, (list, tuple))
+        or len(sheet_hierarchy) > 1
+    ):
+        raise StateRebuildRequiredError(
+            "hierarchical native graph completeness is unverified; "
+            "do not persist root-only IRCircuit state"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class EditToken:
     project_key: str
@@ -191,6 +212,7 @@ class PersistentProjectState:
         """Create a baseline only after a full native parse and version probe."""
         if not compatibility_key.strip():
             raise StateRebuildRequiredError("missing KiCad/parser compatibility identity")
+        _require_single_sheet_scope(native_sources, circuit.sheet_hierarchy)
         graph = graph_from_circuit(circuit)
         return cls(
             root,
@@ -374,6 +396,14 @@ class PersistentProjectState:
             graph = EngineeringGraph.from_document(graph_document)
             if graph.project_key != project_key:
                 raise ValueError("Engineering Graph project identity mismatch")
+            project_entity = graph.entities.get(
+                canonical_entity_id(project_key, GraphEntityKind.PROJECT, "project")
+            )
+            if project_entity is None:
+                raise ValueError("missing Engineering Graph project entity")
+            _require_single_sheet_scope(
+                native_sources, project_entity.attributes.get("sheet_hierarchy")
+            )
             stored_sources = document["source_hashes"]
             stored_entities = document["entity_hashes"]
             generation = document["generation"]
