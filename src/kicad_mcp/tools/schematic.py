@@ -2132,7 +2132,7 @@ def _schematic_live_preview_state_read(filename: str) -> dict[str, Any] | None:
 
 def _schematic_live_preview_state_write(filename: str, state: dict[str, Any]) -> None:
     path = _schematic_state_path(filename)
-    path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    _atomic_write_state(path, json.dumps(state, indent=2, sort_keys=True))
 
 
 def _export_schematic_svg_for_render(
@@ -2399,7 +2399,7 @@ def _extract_wires(content: str) -> list[dict[str, Any]]:
     wires: list[dict[str, Any]] = []
     cursor = 0
     while cursor < len(content):
-        if content[cursor:].startswith("(wire"):
+        if content.startswith("(wire", cursor):
             block, length = _extract_block(content, cursor)
             if block:
                 pts_match = re.search(
@@ -2808,7 +2808,7 @@ def _get_symbol_bboxes(sexpr_content: str) -> list[BBox]:
     symbols: list[dict[str, Any]] = []
     cursor = 0
     while cursor < len(sexpr_content):
-        if sexpr_content[cursor:].startswith("(symbol"):
+        if sexpr_content.startswith("(symbol", cursor):
             block, length = _extract_block(sexpr_content, cursor)
             if block:
                 parsed = _parse_symbol_block(block)
@@ -2830,7 +2830,7 @@ def _remove_wire_blocks(content: str) -> str:
     cursor = 0
     last = 0
     while cursor < len(content):
-        if content[cursor:].startswith("(wire"):
+        if content.startswith("(wire", cursor):
             block, length = _extract_block(content, cursor)
             if block and _parse_wire_block(block) is not None:
                 pieces.append(content[last:cursor])
@@ -2943,7 +2943,7 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
 
     cursor = 0
     while cursor < len(content):
-        if content[cursor:].startswith("(symbol"):
+        if content.startswith("(symbol", cursor):
             block, length = _extract_block(content, cursor)
             if block:
                 parsed = _parse_symbol_block(block)
@@ -3083,7 +3083,7 @@ def _visual_diff_state_names(sch_file: Path) -> tuple[str, str]:
 def _record_schematic_visual_diff(sch_file: Path, before: str, after: str) -> None:
     state_name, snapshot_name = _visual_diff_state_names(sch_file)
     snapshot_path = _schematic_state_path(snapshot_name)
-    snapshot_path.write_text(before, encoding="utf-8")
+    _atomic_write_state(snapshot_path, before)
     changed_objects = _schematic_object_diff(before, after)
     changed_refs = sorted(
         {
@@ -3121,7 +3121,10 @@ def _load_schematic_visual_diff(sch_file: Path) -> dict[str, Any] | None:
     state_path = _schematic_state_path(state_name)
     if not state_path.is_file():
         return None
-    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
     return cast(dict[str, Any], payload)
 
 
@@ -5882,7 +5885,7 @@ def _find_placed_symbol_blocks(
     matches: list[tuple[str, int, int, dict[str, Any]]] = []
     cursor = 0
     while cursor < len(content):
-        if content[cursor:].startswith("(symbol"):
+        if content.startswith("(symbol", cursor):
             block, length = _extract_block(content, cursor)
             if block:
                 parsed = _parse_symbol_block(block)
@@ -5912,17 +5915,33 @@ def _schematic_state_path(filename: str) -> Path:
     return target / filename
 
 
+def _atomic_write_state(path: Path, content: str) -> None:
+    """Replace a preview/visual-diff state file without exposing partial writes."""
+    temporary: Path | None = None
+    try:
+        with NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=path.parent) as handle:
+            temporary = Path(handle.name)
+            handle.write(content)
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def _load_schematic_state(filename: str, default: dict[str, Any]) -> dict[str, Any]:
     path = _schematic_state_path(filename)
     if not path.exists():
-        path.write_text(json.dumps(default, indent=2), encoding="utf-8")
+        _atomic_write_state(path, json.dumps(default, indent=2))
         return dict(default)
-    return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
+    try:
+        return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError):
+        return dict(default)
 
 
 def _save_schematic_state(filename: str, payload: dict[str, Any]) -> Path:
     path = _schematic_state_path(filename)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    _atomic_write_state(path, json.dumps(payload, indent=2))
     return path
 
 
@@ -6397,7 +6416,7 @@ def _find_all_placed_symbol_blocks(
     matches: list[tuple[str, int, int, dict[str, Any]]] = []
     cursor = 0
     while cursor < len(content):
-        if content[cursor:].startswith("(symbol"):
+        if content.startswith("(symbol", cursor):
             block, length = _extract_block(content, cursor)
             if block:
                 parsed = _parse_symbol_block(block)
