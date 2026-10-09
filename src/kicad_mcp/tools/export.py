@@ -6,9 +6,7 @@ import re
 import subprocess as _subprocess
 import time as _time
 from pathlib import Path
-from typing import Any
 
-from mcp.server.mcpserver import Context
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
@@ -52,6 +50,7 @@ from .export_support import (
     _run_cli,
     _run_cli_variants,
 )
+from .progress import _report_progress
 from .variants import variant_apply_to_kicad_cli_args
 
 # Public compatibility for tests and downstream monkeypatches.  These aliases
@@ -171,20 +170,6 @@ def _active_variant_args(variant_name: str | None = None) -> list[str]:
             f"or run variant_set_active('default') to clear the override."
         )
     return args
-
-
-async def _report_progress(
-    ctx: Context[Any, Any] | None,
-    progress: float,
-    total: float,
-    message: str,
-) -> None:
-    if ctx is None:
-        return
-    try:
-        await ctx.report_progress(progress, total, message)
-    except ValueError:
-        return
 
 
 def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:

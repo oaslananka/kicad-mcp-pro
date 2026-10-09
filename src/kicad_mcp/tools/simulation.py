@@ -24,6 +24,7 @@ from ..models.simulation import (
 from ..utils.ngspice import NgspiceRunner, SimulationResult, prepare_spice_netlist
 from .export_support import _ensure_output_dir, _get_sch_file, _run_cli_variants
 from .metadata import headless_compatible
+from .progress import _report_progress
 from .schematic import update_symbol_property
 
 DIRECTIVE_FILENAME = ".kicad_mcp_spice_directives.cir"
@@ -39,20 +40,6 @@ _ALLOWED_DIRECTIVE_PREFIXES = (
     ".dc",
     "*",
 )
-
-
-async def _report_progress(
-    ctx: Context[Any, Any] | None,
-    progress: float,
-    total: float,
-    message: str,
-) -> None:
-    if ctx is None:
-        return
-    try:
-        await ctx.report_progress(progress, total, message)
-    except ValueError:
-        return
 
 
 def _simulation_output_dir() -> Path:
