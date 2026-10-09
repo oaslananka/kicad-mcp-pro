@@ -4,6 +4,15 @@ Assessment date: 2026-07-02
 Repository: `oaslananka/kicad-mcp-pro`
 Mode: audit + implementation PR
 
+> **Historical audit record (2026-07-02).** This document preserves the
+> findings and preparation-stage wording of its original audit. Its
+> `Before this PR`, `Recommended issues` and `Next actions` sections are
+> historical, **not instructions for the current `main` branch**.
+> For current CI, repository rules and manual-only publication behavior,
+> consult the corresponding workflow files and current engineering/release
+> policies. The 2026-10-09 v4.1.0 publication must not be re-triggered merely
+> because this historical report mentions merging or release preparation.
+
 ## Executive summary
 
 `kicad-mcp-pro` already has many strong professional open-source signals: README, MIT license, contribution guide, code of conduct, security policy, support policy, release automation, CI, CodeQL, Gitleaks, Scorecard, fuzzing, package metadata, OpenSSF Best Practices evidence, generated tool references, and documented governance.
@@ -180,7 +189,7 @@ Before this PR: `.github/workflows/dependency-review.yml` and `.github/workflows
 7. Evaluate OSV Scanner and container linting as non-blocking scheduled checks.
 8. Define formal SLSA target for each artifact class before making SLSA claims.
 
-## Next actions
+## Historical next actions from the July 2026 audit
 
 1. Merge this PR after CI passes.
 2. Apply the manual GitHub settings listed in the PR description.
