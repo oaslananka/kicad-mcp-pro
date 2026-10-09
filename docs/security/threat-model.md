@@ -24,6 +24,10 @@ MCP client (agent)  --tool calls-->  KiCad MCP Pro
   the operator (`KICAD_MCP_KICAD_CLI`, socket env). Whoever sets those env vars is in the
   trust base.
 - **HTTP/bridge transports are off by default** and local-only unless explicitly exposed.
+- **Project selection is per process, not per authenticated client or session.**
+  A server process is a single-project trust boundary at any moment. Independent
+  users/projects require separate processes and non-overlapping workspaces;
+  bearer authentication is not a substitute for per-client project isolation.
 
 ## Surfaces, controls, and verification
 
