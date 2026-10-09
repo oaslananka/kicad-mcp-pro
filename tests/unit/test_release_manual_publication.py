@@ -64,3 +64,14 @@ def test_publish_and_prepare_reuse_short_lived_github_app_with_pinned_actions() 
         assert "steps.release-app-token.outputs.token" in release["with"]["token"]
         assert release["with"]["config-file"] == "release-please-config.json"
         assert release["with"]["manifest-file"] == ".release-please-manifest.json"
+
+
+def test_release_attestation_documentation_distinguishes_publisher_and_sbom() -> None:
+    documentation = (ROOT.parents[1] / "docs" / "security" / "release-integrity.md").read_text(
+        encoding="utf-8"
+    )
+    assert "--predicate-type https://cyclonedx.org/bom" in documentation
+    assert "verify-pypi-provenance" in documentation
+    assert "--publisher-environment pypi" in documentation
+    assert "**not** SLSA build" in documentation
+    assert "python -m sigstore verify identity \\" not in documentation
