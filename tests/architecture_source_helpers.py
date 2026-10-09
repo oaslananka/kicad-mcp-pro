@@ -20,7 +20,9 @@ def _imports(path: Path) -> set[str]:
 def _function_span(path: Path, name: str) -> int:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     matches = [
-        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name
     ]
     if len(matches) != 1:
         raise AssertionError(f"expected exactly one function {name} in {path}")
