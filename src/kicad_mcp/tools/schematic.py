@@ -5933,7 +5933,10 @@ def _load_schematic_state(filename: str, default: dict[str, Any]) -> dict[str, A
     if not path.exists():
         _atomic_write_state(path, json.dumps(default, indent=2))
         return dict(default)
-    return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
+    try:
+        return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError):
+        return dict(default)
 
 
 def _save_schematic_state(filename: str, payload: dict[str, Any]) -> Path:

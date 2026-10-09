@@ -47,3 +47,14 @@ def test_corrupted_legacy_diff_state_is_not_treated_as_verified(
     state_file = schematic._schematic_state_path(state_name)
     state_file.write_text('{"partial":', encoding="utf-8")
     assert schematic._load_schematic_visual_diff(project) is None
+
+
+def test_malformed_legacy_json_state_returns_unverified_default(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(schematic, "get_config", lambda: SimpleNamespace(project_dir=tmp_path))
+    path = schematic._schematic_state_path("legacy-state.json")
+    path.write_text('{"interrupted":', encoding="utf-8")
+    fallback = {"verified": False, "status": "unknown"}
+    assert schematic._load_schematic_state("legacy-state.json", fallback) == fallback
+    assert path.read_text(encoding="utf-8") == '{"interrupted":'
