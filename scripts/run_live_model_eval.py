@@ -11,7 +11,6 @@ from pathlib import Path
 from kicad_mcp.capabilities import all_records
 from kicad_mcp.evals.live_runner import (
     EvalConfigurationError,
-    EvidenceSanitizationError,
     build_adapter,
     execute_evaluation,
     load_configurations,

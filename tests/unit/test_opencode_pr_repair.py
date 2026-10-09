@@ -122,15 +122,13 @@ def test_opencode_publisher_scrubs_token_from_git_subprocesses(
         command: list[str],
         *,
         check: bool,
-        stdout: int,
-        stderr: int,
+        capture_output: bool,
         env: dict[str, str],
     ) -> Completed:
         captured.update(
             command=command,
             check=check,
-            stdout=stdout,
-            stderr=stderr,
+            capture_output=capture_output,
             env=env,
         )
         return Completed()
@@ -141,6 +139,7 @@ def test_opencode_publisher_scrubs_token_from_git_subprocesses(
 
     opencode_publish._git("status", "--porcelain")
 
+    assert captured["capture_output"] is True
     env = captured["env"]
     assert isinstance(env, dict)
     assert "GITHUB_TOKEN" not in env
