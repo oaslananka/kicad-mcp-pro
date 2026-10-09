@@ -50,4 +50,5 @@ def test_export_root_no_longer_owns_manufacturing_package_or_private_release_hel
 
     assert MANUFACTURING_HELPERS.isdisjoint(top_level)
     assert "export_manufacturing_package" not in nested
-    assert "_report_progress" in top_level
+    # Progress is intentionally re-exported from the shared tool helper.
+    assert "_report_progress" not in top_level

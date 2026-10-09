@@ -14,23 +14,6 @@ from kicad_mcp.tools.validation import GateOutcome
 from tests.conftest import call_tool_content, call_tool_text, tool_text
 
 
-def _write_manufacturing_approval(project: Path) -> str:
-    evidence_dir = project / ".kicad-mcp"
-    evidence_dir.mkdir(parents=True, exist_ok=True)
-    path = evidence_dir / "manufacturing_approval.json"
-    path.write_text(
-        json.dumps(
-            {
-                "approved_by": "Test Reviewer",
-                "approved_at_utc": "2026-07-04T00:00:00Z",
-                "approval_scope": "manufacturing release package",
-            }
-        ),
-        encoding="utf-8",
-    )
-    return ".kicad-mcp/manufacturing_approval.json"
-
-
 @pytest.mark.anyio
 async def test_export_gerber_uses_cli_variants(sample_project, monkeypatch) -> None:
     out_dir = sample_project / "output" / "gerber"

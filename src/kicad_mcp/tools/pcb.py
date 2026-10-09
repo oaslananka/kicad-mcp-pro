@@ -118,6 +118,7 @@ from . import (
 from .export_support import _run_cli, _run_cli_variants
 from .metadata import headless_compatible, requires_kicad_running
 from .schematic import _iter_child_sheet_paths, parse_schematic_file
+from .schematic_transfer import _parse_netlist_text as _parse_netlist_text
 
 logger = structlog.get_logger(__name__)
 _KeepoutRegion = Annotated[list[float], Field(min_length=4, max_length=4)]
@@ -1423,7 +1424,7 @@ def _iter_blocks(content: str, keyword: str) -> Iterable[str]:
     cursor = 0
     marker = f"({keyword}"
     while cursor < len(content):
-        if content[cursor:].startswith(marker):
+        if content.startswith(marker, cursor):
             block, length = _extract_block(content, cursor)
             if block:
                 yield block
@@ -1585,7 +1586,7 @@ def _parse_board_footprint_blocks(content: str) -> dict[str, dict[str, Any]]:
     with otel.pcb_parse_span() as span:
         cursor = 0
         while cursor < len(content):
-            if content[cursor:].startswith("(footprint"):
+            if content.startswith("(footprint", cursor):
                 block, length = _extract_block(content, cursor)
                 if block:
                     ref_match = re.search(rf'\(property\s+"Reference"\s+{STRING_PATTERN}', block)
@@ -2283,7 +2284,7 @@ def _assign_pad_nets(block: str, pad_nets: dict[str, str]) -> str:
     rebuilt: list[str] = []
     cursor = 0
     while cursor < len(block):
-        if block[cursor:].startswith("(pad"):
+        if block.startswith("(pad", cursor):
             pad_block, length = _extract_block(block, cursor)
             if pad_block:
                 pad_match = re.match(rf"\(pad\s+{STRING_PATTERN}", pad_block.lstrip())
@@ -2430,29 +2431,6 @@ def _export_schematic_net_map() -> tuple[dict[tuple[str, str], str], str]:
         return _parse_netlist_text(content), ""
     last_stderr = stderr.strip() or "unknown error"
     return {}, f"Netlist export failed, so pad net names were skipped: {last_stderr}"
-
-
-def _parse_netlist_text(content: str) -> dict[tuple[str, str], str]:
-    net_map: dict[tuple[str, str], str] = {}
-    cursor = 0
-    while cursor < len(content):
-        if content[cursor : cursor + 4] == "(net" and (
-            cursor + 4 == len(content) or content[cursor + 4].isspace()
-        ):
-            block, length = _extract_block(content, cursor)
-            if block:
-                name_match = re.search(rf"\(name\s+{STRING_PATTERN}\)", block)
-                if name_match is not None:
-                    net_name = name_match.group(1)
-                    for node in re.finditer(
-                        rf"\(node\s+\(ref\s+{STRING_PATTERN}\)\s+\(pin\s+{STRING_PATTERN}\)",
-                        block,
-                    ):
-                        net_map[(node.group(1), node.group(2))] = net_name
-                cursor += length
-                continue
-        cursor += 1
-    return net_map
 
 
 def _schematic_files_for_pcb_sync() -> list[Path]:
