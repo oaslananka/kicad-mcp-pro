@@ -10,6 +10,13 @@ Configuration is resolved in this order:
 
 The active project can also be changed at runtime with `kicad_set_project()`.
 
+**One active project per server process:** project selection is process-wide, not
+scoped to an HTTP request or MCP session. Run separate server processes (and
+project-specific workspace roots) for independent projects or users. Do not
+use one shared HTTP server as a multi-tenant editing service. For a single
+local trusted client, switching the active project intentionally changes which
+project subsequent tool calls operate on.
+
 ## Operating Modes
 
 `KICAD_MCP_OPERATING_MODE` controls the risk level of the advertised and executable

@@ -18,6 +18,7 @@ from ..utils.freerouting import FreeRoutingRunner
 from .export_support import _get_pcb_file
 from .metadata import headless_compatible, requires_dependency
 from .pcb import _transactional_board_write
+from .progress import _report_progress
 
 
 @dataclass(frozen=True)
@@ -38,20 +39,6 @@ def _default_dependencies() -> RoutingAutorouterDependencies:
             transactional_board_write=_transactional_board_write,
         )
     )
-
-
-async def _report_progress(
-    ctx: Context[Any, Any] | None,
-    progress: float,
-    total: float,
-    message: str,
-) -> None:
-    if ctx is None:
-        return
-    try:
-        await ctx.report_progress(progress, total, message)
-    except ValueError:
-        return
 
 
 def register(
