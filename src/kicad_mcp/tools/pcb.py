@@ -781,15 +781,20 @@ def run_auto_refill_zones() -> str:
 def _transactional_board_write(mutator: Callable[[str], str]) -> str:
     with _BOARD_FILE_WRITE_LOCK:
         board_file = _get_pcb_file_for_sync()
-        current = _normalize_board_content(board_file.read_text(encoding="utf-8", errors="ignore"))
+        current = _normalize_board_content(board_file.read_text(encoding="utf-8"))
         updated = mutator(current)
         _validate_board_text(updated)
-        with NamedTemporaryFile(
-            "w", encoding="utf-8", delete=False, dir=board_file.parent
-        ) as handle:
-            handle.write(updated)
-            temp_path = Path(handle.name)
-        temp_path.replace(board_file)
+        temp_path: Path | None = None
+        try:
+            with NamedTemporaryFile(
+                "w", encoding="utf-8", delete=False, dir=board_file.parent
+            ) as handle:
+                temp_path = Path(handle.name)
+                handle.write(updated)
+            temp_path.replace(board_file)
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
         format_upgrade = upgrade_generated_file(
             board_file, "pcb", _run_cli, allowed_root=get_config().workspace
         )
