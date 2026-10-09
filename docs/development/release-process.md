@@ -14,24 +14,24 @@ This page is the development-facing release checklist. User-facing release notes
 Release Please no longer runs after every merge to `main`. Its scheduled run
 **once per day (03:37 UTC)** prepares or updates the release PR and synchronizes
 its generated version-derived files. For an immediate refresh, use
-**Actions → Release Please → Run workflow → `prepare`**, selecting `main`.
-Neither preparation mode creates tags nor publishes a GitHub Release.
+**Actions → Release Please → Run workflow**, selecting `main`.
+Neither scheduled nor manually requested preparation creates tags or publishes
+GitHub Releases.
 
 When a release is ready, first review and **merge the protected release PR**
 (e.g. the current `chore(main): release …` PR) after its required checks pass.
 That merge updates the version files in `main` but does **not** publish.
-Then use **Actions → Release Please → Run workflow → `publish`** on `main`.
-Only that explicit manual run may create the version tags and GitHub Releases;
-the existing tag/release-triggered workflows then publish their respective
-packages and verify the usual integrity, checksums, SBOMs and attestations.
-Publishing is not enabled by a scheduled run, ordinary PR merge, or an Actions
-approval prompt. A publish request before the release PR is merged has no
-completed release to tag.
+Then use **Actions → Publish Release → Run workflow**, selecting `main`.
+No extra parameters or additional environment approval are required. Only this
+explicit workflow creates the Release Please version tags and GitHub Releases;
+the existing tag/release-triggered workflows then publish the respective
+packages and verify the normal integrity, checksums, SBOMs and attestations.
+A release PR must have merged before Publish Release has any release to tag.
 
 **Avoid bypassing this release decision** by manually running individual
 `publish-*` backfill workflows or creating release tags by hand. Such workflows
-remain available only for authorized recovery and must retain their existing
-source/tag, environment, and integrity guards.
+remain available only for authorized recovery and retain their existing
+source/tag, environment and integrity guards.
 
 ## Pre-release checks
 

@@ -1,0 +1,40 @@
+name: Publish Release
+
+# Explicit maintainer click only. No workflow_dispatch inputs (CKV_GHA_7).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Never mint a release-capable installation token for a non-main ref.
+    if: >-
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Mint release automation token
+        id: release-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.OASLANANKA_OPS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.OASLANANKA_OPS_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # Release Please tags only previously merged/reviewed release PRs.
+      # Existing release/tag-driven publishers then run with their normal gates.
+      - name: Publish merged Release Please versions
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ steps.release-app-token.outputs.token }}
+          skip-github-pull-request: true
+          skip-github-release: false
