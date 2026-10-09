@@ -412,12 +412,32 @@ def test_contract_middleware_bounds_remembered_streamable_http_sessions() -> Non
 
     middleware = _StreamableHttpContractMiddleware(app)
 
+    # The SDK defaults to 10,000 concurrent stateful sessions: the shim must
+    # not prematurely forget a session the SDK still considers active.
     for index in range(257):
         middleware._remember_session(f"session-{index}")
 
-    assert middleware._has_session("session-0") is False
+    assert middleware._has_session("session-0") is True
     assert middleware._has_session("session-256") is True
-    assert len(middleware._session_ids) == 256
+    assert len(middleware._session_ids) == 257
+
+
+def test_contract_session_cache_uses_custom_sdk_limit() -> None:
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
+        _ = scope, receive, send
+
+    middleware = _StreamableHttpContractMiddleware(app, max_sessions=2)
+    for index in range(3):
+        middleware._remember_session(f"session-{index}")
+    assert middleware._has_session("session-0") is False
+    assert middleware._has_session("session-1") is True
+    assert middleware._has_session("session-2") is True
+    assert len(middleware._session_ids) == 2
+
+    unbounded = _StreamableHttpContractMiddleware(app, max_sessions=None)
+    for index in range(3):
+        unbounded._remember_session(f"session-{index}")
+    assert len(unbounded._session_ids) == 3
 
 
 @pytest.mark.parametrize("protocol_version", HANDSHAKE_PROTOCOL_VERSIONS)
