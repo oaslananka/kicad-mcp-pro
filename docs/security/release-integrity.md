@@ -47,38 +47,55 @@ Get-FileHash .\kicad_mcp_pro-<version>-py3-none-any.whl -Algorithm SHA256
 
 Compare the hash with the matching line in `SHA256SUMS.txt`.
 
-## Sigstore
+## PyPI publication identity and Sigstore
 
-The release workflow signs Python distribution artifacts with Sigstore using
-GitHub Actions OIDC identity. Verify identity-bound signatures with the Sigstore
-CLI:
+The Python publishing jobs use PyPI trusted publishing with GitHub Actions OIDC,
+and verify PEP 740 publication attestations for both the wheel and source archive.
+These attestations are signed using Sigstore and checked against the canonical
+`oaslananka/kicad-mcp-pro` publisher, `publish-python.yml` workflow, `pypi`
+environment, and exact artifact digest. The release pipeline verifies this contract
+with the repository-pinned `pypi-attestations` library. To repeat the verification
+with the downloaded release checksum file:
 
 ```bash
-python -m sigstore verify identity \
-  --cert-identity "https://github.com/oaslananka/kicad-mcp-pro/.github/workflows/publish-python.yml@refs/tags/mcp-server-v<version>" \
-  --cert-oidc-issuer "https://token.actions.githubusercontent.com" \
-  dist/kicad_mcp_pro-<version>-py3-none-any.whl
+uv run --frozen --group release python scripts/generate_release_evidence.py \
+  verify-pypi-provenance \
+  --repository pypi --package kicad-mcp-pro --version <version> \
+  --checksums kicad-mcp-pro-python-SHA256SUMS.txt \
+  --publisher-repository oaslananka/kicad-mcp-pro \
+  --publisher-workflow publish-python.yml --publisher-environment pypi
 ```
 
-Use the matching tag reference and artifact filename for the release being
-verified.
+This verifies **PyPI publication provenance**, not a separately distributed
+Sigstore signature file for the GitHub Release wheel. The repository does not
+publish a standalone wheel signature bundle for `4.0.2`, so a plain
+`python -m sigstore verify identity <wheel>` command is not a working substitute.
 
 ## GitHub Artifact Attestations
 
-The release workflow creates GitHub artifact attestations for release assets.
-Verify a local artifact:
+The Python workflow publishes a **CycloneDX SBOM attestation**, signed for the
+wheel and source archive with GitHub Actions. Verify the downloaded artifact:
 
 ```bash
-gh attestation verify dist/kicad_mcp_pro-<version>-py3-none-any.whl \
-  --repo oaslananka/kicad-mcp-pro
+gh attestation verify kicad_mcp_pro-<version>-py3-none-any.whl \
+  --repo oaslananka/kicad-mcp-pro \
+  --predicate-type https://cyclonedx.org/bom
 ```
 
-For source distributions:
+For the source archive:
 
 ```bash
-gh attestation verify dist/kicad_mcp_pro-<version>.tar.gz \
-  --repo oaslananka/kicad-mcp-pro
+gh attestation verify kicad_mcp_pro-<version>.tar.gz \
+  --repo oaslananka/kicad-mcp-pro \
+  --predicate-type https://cyclonedx.org/bom
 ```
+
+The GitHub CLI defaults to the SLSA v1 provenance predicate and will not find
+the CycloneDX attestation without the explicit `--predicate-type`. A valid SBOM
+attestation proves its signed statement and artifact digest, **not** SLSA build
+provenance or absence of vulnerabilities. PyPI PEP 740 publication provenance
+is separately verified above. Do not treat either mechanism as a replacement
+for the other.
 
 ## GHCR Image Digest and Provenance
 

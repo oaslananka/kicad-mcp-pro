@@ -9,6 +9,30 @@ This page is the development-facing release checklist. User-facing release notes
 - Publishing runs from GitHub Actions, not from a maintainer workstation.
 - Artifact-specific workflows attach checksums, SBOMs, provenance, and attestations where supported.
 
+### Preparing versus publishing
+
+Release Please no longer runs after every merge to `main`. Its scheduled run
+**once per day (03:37 UTC)** prepares or updates the release PR and synchronizes
+its generated version-derived files. For an immediate refresh, use
+**Actions → Release Please → Run workflow**, selecting `main`.
+Neither scheduled nor manually requested preparation creates tags or publishes
+GitHub Releases.
+
+When a release is ready, first review and **merge the protected release PR**
+(e.g. the current `chore(main): release …` PR) after its required checks pass.
+That merge updates the version files in `main` but does **not** publish.
+Then use **Actions → Publish Release → Run workflow**, selecting `main`.
+No extra parameters or additional environment approval are required. Only this
+explicit workflow creates the Release Please version tags and GitHub Releases;
+the existing tag/release-triggered workflows then publish the respective
+packages and verify the normal integrity, checksums, SBOMs and attestations.
+A release PR must have merged before Publish Release has any release to tag.
+
+**Avoid bypassing this release decision** by manually running individual
+`publish-*` backfill workflows or creating release tags by hand. Such workflows
+remain available only for authorized recovery and retain their existing
+source/tag, environment and integrity guards.
+
 ## Pre-release checks
 
 Before approving a release PR:

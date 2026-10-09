@@ -1,8 +1,9 @@
 name: Release Please
 
 on:
-  push:
-    branches: [main]
+  # Keep release-PR versions current without an Actions run after every merge.
+  schedule:
+    - cron: "37 3 * * *"  # Daily, UTC; scheduled runs use the default branch.
   workflow_dispatch:
 
 permissions:
@@ -14,7 +15,10 @@ concurrency:
 
 jobs:
   release:
-    if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
+    # Never give the publication-capable GitHub App token to a feature-branch run.
+    if: >-
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
+      github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     steps:
       # Use a short-lived GitHub App installation token so release PR creation and the
@@ -34,6 +38,8 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           token: ${{ steps.release-app-token.outputs.token }}
+          # Daily and on-demand preparation never tags or publishes.
+          skip-github-release: true
 
       # release-please bumps package versions, while several tracked generated artifacts
       # derive values from the bumped pyproject and cannot be maintained safely by its
