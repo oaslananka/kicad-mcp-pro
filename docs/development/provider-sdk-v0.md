@@ -21,6 +21,9 @@ drift-tested manifest schema is
 
 Calls default to offline with no granted permissions. Non-idempotent calls
 require a caller-generated idempotency key; the dispatcher never retries.
+External result envelopes, including existing Pydantic model instances, are
+revalidated at dispatch; invalid payloads, provenance, and error codes fail
+closed as malformed provider results.
 Timeouts/cancellation do **not** prove that a remote mutation was rolled back.
 Read-back and the existing transaction/recovery gates are required before any
 retry or engineering release claim.

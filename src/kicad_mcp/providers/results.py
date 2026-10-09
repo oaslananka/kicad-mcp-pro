@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import Field, JsonValue, model_validator
+from pydantic import ConfigDict, Field, JsonValue, model_validator
 
 from kicad_mcp.project.evidence_freshness import (
     EvidenceInputDigest,
@@ -18,7 +18,10 @@ from .contracts import SHA256, ProviderErrorCode
 from .manifest import ProviderManifest
 
 
+# Revalidate even constructed/copied model instances returned across the provider boundary.
 class ProviderProvenance(StrictContractModel):
+    model_config = ConfigDict(revalidate_instances="always")
+
     provider_id: str
     provider_version: str
     source: str
@@ -29,11 +32,16 @@ class ProviderProvenance(StrictContractModel):
 
 
 class ProviderError(StrictContractModel):
+    model_config = ConfigDict(revalidate_instances="always")
+
     code: ProviderErrorCode
     message: str = Field(min_length=1, max_length=200)
 
 
 class ProviderResult(StrictContractModel):
+    # Provider output crosses a trust boundary even when already a model instance.
+    model_config = ConfigDict(revalidate_instances="always")
+
     schema_version: Literal[0] = 0
     request_id: str
     ok: bool
