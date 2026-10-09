@@ -199,6 +199,37 @@ def test_manifest_accepts_explicit_dns_hostnames_and_rejects_case_duplicates() -
         )
 
 
+@pytest.mark.parametrize(
+    "unsafe_host",
+    [
+        "999.12.3.4",
+        "256.0.0.1",
+        "192.168.01.1",
+        "127.1",
+        "001",
+        "4294967295",
+        "0x7f000001",
+    ],
+)
+def test_manifest_rejects_ambiguous_or_invalid_numeric_hosts(unsafe_host: str) -> None:
+    """Numeric-looking host declarations must never rely on resolver interpretation."""
+    with pytest.raises(ValidationError, match="exact names"):
+        manifest(
+            permissions=(ProviderPermission.NETWORK,),
+            network_access=True,
+            network_hosts=(unsafe_host,),
+        )
+
+
+def test_manifest_accepts_canonical_ipv4_host_literal() -> None:
+    result = manifest(
+        permissions=(ProviderPermission.NETWORK,),
+        network_access=True,
+        network_hosts=("192.168.0.1",),
+    )
+    assert result.network_hosts == ("192.168.0.1",)
+
+
 def test_operation_rejects_duplicate_permissions() -> None:
     with pytest.raises(ValidationError, match="duplicate operation permissions"):
         ProviderOperation(
