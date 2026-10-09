@@ -26,6 +26,9 @@ from kicad_mcp.server import (
 from scripts.check_docker_metadata import _has_digest_pinned_image
 from scripts.check_github_actions_policy import has_sha_pinned_action
 from tests.conftest import call_tool_text
+from tests.manufacturing_approval_helpers import (
+    write_manufacturing_approval as _write_manufacturing_approval,
+)
 
 EXPOSED_HOST = "0." + "0.0.0"
 STRONG_TOKEN = "".join(("0123456789abcdef", "0123456789ABCDEF"))
@@ -133,23 +136,6 @@ def test_stateful_streamable_http_requires_session_header_after_initialize(
     assert accepted_notification.status_code == 202
     assert listed.status_code == 200
     assert listed.json()["result"]["tools"]
-
-
-def _write_manufacturing_approval(project: Path) -> str:
-    evidence_dir = project / ".kicad-mcp"
-    evidence_dir.mkdir(parents=True, exist_ok=True)
-    path = evidence_dir / "manufacturing_approval.json"
-    path.write_text(
-        json.dumps(
-            {
-                "approved_by": "Test Reviewer",
-                "approved_at_utc": "2026-07-04T00:00:00Z",
-                "approval_scope": "manufacturing release package",
-            }
-        ),
-        encoding="utf-8",
-    )
-    return ".kicad-mcp/manufacturing_approval.json"
 
 
 @pytest.mark.anyio

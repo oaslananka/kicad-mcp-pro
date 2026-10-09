@@ -1,0 +1,197 @@
+{
+  "$defs": {
+    "ComponentEvidenceFact": {
+      "additionalProperties": false,
+      "properties": {
+        "attribute": {
+          "maxLength": 120,
+          "minLength": 2,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$",
+          "title": "Attribute",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/FactState"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        },
+        "citations": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ComponentFactCitation"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "minLength": 3,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "attribute",
+        "state"
+      ],
+      "title": "ComponentEvidenceFact",
+      "type": "object"
+    },
+    "ComponentFactCitation": {
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "maxLength": 120,
+          "minLength": 2,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "location": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Location",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "location"
+      ],
+      "title": "ComponentFactCitation",
+      "type": "object"
+    },
+    "ComponentSourceDocument": {
+      "additionalProperties": false,
+      "description": "Reviewed source *identity*, not proof the referenced document was read.",
+      "properties": {
+        "source_id": {
+          "maxLength": 120,
+          "minLength": 2,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_locator": {
+          "maxLength": 500,
+          "minLength": 3,
+          "title": "Source Locator",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Revision",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_locator",
+        "revision",
+        "sha256"
+      ],
+      "title": "ComponentSourceDocument",
+      "type": "object"
+    },
+    "FactState": {
+      "enum": [
+        "cited",
+        "unknown",
+        "not_applicable",
+        "conflicting"
+      ],
+      "title": "FactState",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Metadata-only review intake. No verified/approved state exists in v0.",
+  "properties": {
+    "schema_version": {
+      "const": 0,
+      "default": 0,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "component_id": {
+      "maxLength": 120,
+      "minLength": 2,
+      "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$",
+      "title": "Component Id",
+      "type": "string"
+    },
+    "manufacturer": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Manufacturer",
+      "type": "string"
+    },
+    "mpn": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Mpn",
+      "type": "string"
+    },
+    "source_documents": {
+      "items": {
+        "$ref": "#/$defs/ComponentSourceDocument"
+      },
+      "minItems": 1,
+      "title": "Source Documents",
+      "type": "array"
+    },
+    "facts": {
+      "items": {
+        "$ref": "#/$defs/ComponentEvidenceFact"
+      },
+      "minItems": 1,
+      "title": "Facts",
+      "type": "array"
+    },
+    "review_state": {
+      "default": "draft",
+      "enum": [
+        "draft",
+        "needs_human_review"
+      ],
+      "title": "Review State",
+      "type": "string"
+    }
+  },
+  "required": [
+    "component_id",
+    "manufacturer",
+    "mpn",
+    "source_documents",
+    "facts"
+  ],
+  "title": "ComponentEvidenceDraft",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/oaslananka/kicad-mcp-pro/main/src/kicad_mcp/library/schemas/component-evidence-draft-v0.schema.json"
+}
