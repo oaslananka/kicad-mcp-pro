@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from inspect import iscoroutinefunction
 
 from .contracts import Provider, ProviderFamily, ProviderOperation, ProviderRequest
 from .manifest import ProviderManifest
@@ -30,6 +31,12 @@ class ProviderRegistry:
             raise ValueError("duplicate provider registration")
         if getattr(adapter, "family", None) != manifest.family:
             raise ValueError("provider family mismatch")
+        # Do not advertise capabilities for an incomplete or sync-only adapter.
+        # Runtime readiness and invocation are awaitable by the SDK contract.
+        if not iscoroutinefunction(getattr(adapter, "ready", None)):
+            raise ValueError("provider requires asynchronous ready method")
+        if not iscoroutinefunction(getattr(adapter, "invoke", None)):
+            raise ValueError("provider requires asynchronous invoke method")
         self._entries[manifest.provider_id] = (manifest, adapter)
 
     def candidates(self, request: ProviderRequest) -> tuple[ProviderSelection, ...]:
