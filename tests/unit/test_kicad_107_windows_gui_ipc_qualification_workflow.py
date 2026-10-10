@@ -46,6 +46,14 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     assert "KICAD_CONFIG_HOME" in prepare
     assert "'10.0'" in prepare
     assert "kicad_common.json" in prepare and "enable_server = $true" in prepare
+    assert "graphics = @{ canvas_type = 2 }" in prepare
+    assert "if ($settings.graphics.canvas_type -ne 2)" in prepare
+    assert "KICAD_107_GUI_RENDERER=cairo" in prepare
+    assert "KICAD_107_GUI_RENDERER -ne 'cairo'" in smoke
+    assert "guiRenderer = $env:KICAD_107_GUI_RENDERER" in smoke
+    assert prepare.index("graphics = @{ canvas_type = 2 }") < prepare.index(
+        "KICAD_MCP_ENABLE_GUI_SMOKE=1"
+    )
     assert "pcbnew.exe" in prepare
     assert "KICAD_MCP_ENABLE_GUI_SMOKE=1" in prepare
     assert "KICAD_MCP_GUI_SMOKE_REQUIRED=1" in prepare
