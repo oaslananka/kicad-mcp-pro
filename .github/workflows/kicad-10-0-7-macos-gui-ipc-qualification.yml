@@ -1,0 +1,213 @@
+name: KiCad 10.0.7 macOS GUI IPC Qualification
+
+# Deliberately opt-in. KiCad 10 requires a real running PCB Editor GUI.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-kicad-107-gui-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos-107-native-gui-ipc:
+    runs-on: macos-15
+    timeout-minutes: 65
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          version-file: uv.toml
+          enable-cache: true
+          prune-cache: true
+
+      - name: Prepare bounded fail-closed evidence
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          mkdir -p artifacts/kicad-10-0-7-macos
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          result = dict(
+              schemaVersion="macos-kicad-107-gui-ipc-qualification.v1",
+              sourceRevision=os.environ["SOURCE_REVISION"],
+              runner="macos-15",
+              scope="signed official macOS KiCad 10.0.7 native CLI and live PCB Editor IPC; no manufacturing claim",
+              versionVerified=False,
+              installerSignature="unverified",
+              testCount=0, failures=0, skips=0,
+              verdict="infrastructure-invalid",
+          )
+          Path("artifacts/kicad-10-0-7-macos/summary.json").write_text(
+              json.dumps(result, indent=2, sort_keys=True) + "\n"
+          )
+          PY
+
+      - name: Install isolated signed official KiCad 10.0.7 from DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg="$RUNNER_TEMP/kicad-unified-universal-10.0.7.dmg"
+          mount_dir="$RUNNER_TEMP/kicad-107-volume"
+          mkdir -p "$mount_dir"
+          ok=false
+          for src in \
+            'https://kicad-downloads.s3.cern.ch/osx/stable/kicad-unified-universal-10.0.7.dmg' \
+            'https://mirrors.mit.edu/kicad/osx/stable/kicad-unified-universal-10.0.7.dmg'; do
+            rm -f "$dmg"
+            if curl --fail --location --retry 0 --connect-timeout 20 \
+              --max-time 1000 --speed-limit 131072 --speed-time 75 -o "$dmg" "$src"; then
+              ok=true
+              break
+            fi
+          done
+          test "$ok" = true && test -s "$dmg"
+          hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mount_dir" -quiet
+          app=$(find "$mount_dir" -type d -name KiCad.app -print -quit)
+          test -n "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv --verbose=2 "$app" 2>&1 | grep -Ei '^Authority=.*KiCad' >/dev/null
+          cli=$(find "$app" -name kicad-cli -print -quit)
+          pcb=$(find "$mount_dir" -name pcbnew -print -quit)
+          symbol=$(find "$mount_dir" -name Device.kicad_sym -print -quit)
+          template=$(find "$mount_dir" -name sym-lib-table -print -quit)
+          test -x "$cli" && test -x "$pcb" && test -s "$symbol" && test -s "$template"
+          test "$("$cli" version)" = '10.0.7'
+          printf '%s\n' \
+            "KICAD_MAC_MOUNT=$mount_dir" \
+            "KICAD_MAC_CLI=$cli" \
+            "KICAD_MAC_PCB=$pcb" \
+            "KICAD_MAC_TEMPLATE=$(dirname "$template")" \
+            "KICAD_MAC_SYMBOLS=$(dirname "$symbol")" >> "$GITHUB_ENV"
+          python3 - "$dmg" <<'PY'
+          import hashlib, json, sys
+          from pathlib import Path
+          digest = hashlib.sha256()
+          with Path(sys.argv[1]).open("rb") as package:
+              for part in iter(lambda: package.read(1048576), b""):
+                  digest.update(part)
+          digest = digest.hexdigest()
+          p = Path("artifacts/kicad-10-0-7-macos/summary.json")
+          j = json.loads(p.read_text())
+          j.update(versionVerified=True, installerSignature="valid",
+                   installerSha256=digest)
+          p.write_text(json.dumps(j, indent=2, sort_keys=True) + "\n")
+          PY
+
+      - name: Provision disposable KiCad 10 GUI profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="$RUNNER_TEMP/kicad-107-config"
+          version_config="$config/10.0"
+          mkdir -p "$version_config"
+          cat > "$version_config/kicad_common.json" <<'EOF'
+          {"api":{"enable_server":true},"graphics":{"canvas_type":2},"do_not_show_again":{"update_check_prompt":true,"data_collection_prompt":true}}
+          EOF
+          for table in sym-lib-table fp-lib-table; do
+            test -s "$KICAD_MAC_TEMPLATE/$table"
+            cp "$KICAD_MAC_TEMPLATE/$table" "$version_config/$table"
+            cmp "$KICAD_MAC_TEMPLATE/$table" "$version_config/$table"
+          done
+          if test -s "$KICAD_MAC_TEMPLATE/design-block-lib-table"; then
+            cp "$KICAD_MAC_TEMPLATE/design-block-lib-table" "$version_config/design-block-lib-table"
+          else
+            printf '%s\n' '(design_block_lib_table (version 7))' > "$version_config/design-block-lib-table"
+          fi
+          grep -Eq '^\s*\(design_block_lib_table\b' "$version_config/design-block-lib-table"
+          mkdir -p "$RUNNER_TEMP/kicad-107-documents"
+          printf '%s\n' \
+            "KICAD_CONFIG_HOME=$config" \
+            "KICAD_DOCUMENTS_HOME=$RUNNER_TEMP/kicad-107-documents" \
+            "KICAD10_TEMPLATE_DIR=$KICAD_MAC_TEMPLATE" \
+            "KICAD10_SYMBOL_DIR=$KICAD_MAC_SYMBOLS" \
+            "KICAD_SYMBOL_DIR=$KICAD_MAC_SYMBOLS" \
+            "KICAD_PCBNEW_PATH=$KICAD_MAC_PCB" \
+            "KICAD_CANARY_KICAD_CLI=$KICAD_MAC_CLI" \
+            "KICAD_MCP_KICAD_CLI=$KICAD_MAC_CLI" \
+            'KICAD_MCP_ENABLE_GUI_SMOKE=1' \
+            'KICAD_MCP_GUI_SMOKE_REQUIRED=1' \
+            'KICAD_GUI_SMOKE_PCB_ONLY=1' >> "$GITHUB_ENV"
+
+      - name: Frozen project Python dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Run native CLI and real KiCad PCB Editor GUI-IPC canaries
+        shell: bash
+        run: |
+          set -uo pipefail
+          target=artifacts/kicad-10-0-7-macos
+          mkdir -p "$target/internal"
+          export KICAD_GUI_SMOKE_ARTIFACTS="$target/internal"
+          uv run --all-extras --frozen python scripts/kicad_canary.py run \
+            --artifacts "$target/internal/native" --kicad-range 10.0.x
+          native_rc=$?
+          uv run --all-extras --frozen python -m pytest -q \
+            tests/gui/test_kicad_gui_live_context.py --disable-warnings \
+            --junitxml="$target/internal/junit.xml"
+          gui_rc=$?
+          export NATIVE_RC="$native_rc" GUI_RC="$gui_rc"
+          python3 - <<'PY'
+          import json, os, xml.etree.ElementTree as ET
+          from pathlib import Path
+          root=Path("artifacts/kicad-10-0-7-macos")
+          p=root/"summary.json"
+          out=json.loads(p.read_text())
+          native=root/"internal/native/summary.json"
+          diff=root/"internal/native/differential/summary.json"
+          junit=root/"internal/junit.xml"
+          out.update(nativeExit=int(os.environ["NATIVE_RC"]), guiExit=int(os.environ["GUI_RC"]))
+          if native.exists():
+              v=json.loads(native.read_text())
+              out.update(nativeSteps=len(v.get("results",[])),
+                         nativeFailures=sum(not r.get("ok",False) for r in v.get("results",[])))
+          if diff.exists():
+              v=json.loads(diff.read_text())
+              out.update(differentialMatches=v.get("match_count"),
+                         differentialTotal=v.get("results_total"))
+          if junit.exists():
+              cases=ET.parse(junit).getroot().findall(".//testcase")
+              out.update(testCount=len(cases),
+                         failures=sum(bool(t.findall("failure") or t.findall("error")) for t in cases),
+                         skips=sum(bool(t.findall("skipped")) for t in cases),
+                         tests=[t.get("name") for t in cases])
+          success=(out.get("versionVerified") and out.get("installerSignature")=="valid"
+                   and out.get("nativeExit")==0 and out.get("nativeSteps")==32
+                   and out.get("nativeFailures")==0 and out.get("differentialMatches")==5
+                   and out.get("differentialTotal")==5 and out.get("guiExit")==0
+                   and out["testCount"]==2 and out["failures"]==0 and out["skips"]==0)
+          out["verdict"]="pass" if success else "fail"
+          p.write_text(json.dumps(out, indent=2, sort_keys=True)+"\n")
+          print("Bounded native GUI verdict:",out["verdict"])
+          PY
+          test "$native_rc" -eq 0 && test "$gui_rc" -eq 0
+          test "$(python3 -c 'import json;print(json.load(open("artifacts/kicad-10-0-7-macos/summary.json"))["verdict"])')" = pass
+
+      - name: Upload only bounded summary (never raw GUI logs)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kicad-10-0-7-macos-native-gui-ipc
+          path: artifacts/kicad-10-0-7-macos/summary.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Cleanup isolated macOS installation
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -n "${KICAD_MAC_MOUNT:-}"; then
+            hdiutil detach "$KICAD_MAC_MOUNT" -quiet || :
+          fi
+          rm -rf "$RUNNER_TEMP/kicad-unified-universal-10.0.7.dmg" \
+            "$RUNNER_TEMP/kicad-107-volume" "$RUNNER_TEMP/kicad-107-config" \
+            "$RUNNER_TEMP/kicad-107-documents"

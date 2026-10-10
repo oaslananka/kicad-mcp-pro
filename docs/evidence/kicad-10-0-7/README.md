@@ -157,3 +157,70 @@ failed to build against the distribution's libgit2 1.1 headers; see
 [issue #1181](https://github.com/oaslananka/kicad-mcp-pro/issues/1181).
 Keep `compatibility.yaml`'s `latestVerified: 10.0.6` and its existing CI
 version pins unchanged until the *whole* issue acceptance contract passes.
+
+## Ubuntu 24.04 — real GUI / IPC under Xvfb (2026-10-11)
+
+A distinct, genuine KiCad **10.0.7 PCB Editor GUI** test ran with
+authenticated Ubuntu 24.04 Noble stable PPA binaries in a disposable Linux
+container under the **Xvfb software display**, with a non-root GUI user,
+read-only source checkout, isolated first-run preferences, and three versioned
+library tables. The source was protected `main@fd58bf1319ffe3c7493a59be1b90538d1f3e2744`.
+
+The [bounded Linux GUI qualification record](2026-10-11-linux-noble-ppa-gui-ipc.json)
+confirms both real GUI test cases **PASS, 0 skips/failures**: closed editor
+file-backed fallback, then four MCP PCB reads classified **live-gui** from
+the running PCB Editor, followed by a different loaded PCB with altered
+net names and the same four **live-gui** reads. This is **not** a stubbed IPC
+connection or a headless kicad-cli-only test.
+
+Private per-tool text, process logs, screenshots, paths and fixture workspaces
+were **not** published. The repository stores only the constrained summary,
+the observed backend classes, source provenance and SHA-256 hashes of private
+raw evidence. The disposable container and its runtime files are removed
+after evidence verification.
+
+Xvfb is a software-driven display. This qualification does **not** assert
+native Wayland desktop compatibility, real graphics-driver behaviour, macOS
+GUI success, production release support, successful reference-board
+manufacturing or the whole #1181 issue acceptance.
+
+## macOS native GUI / IPC opt-in qualification (pending real run)
+
+The manually dispatched
+[`kicad-10-0-7-macos-gui-ipc-qualification.yml`](../../../.github/workflows/kicad-10-0-7-macos-gui-ipc-qualification.yml)
+downloads the **official universal 10.0.7 DMG** from the CERN or MIT KiCad
+stable mirror, verifies its embedded KiCad.app **Apple code signature**,
+runs the extracted exact-version native CLI with the locked Python toolchain,
+and then requires the **real PCB Editor GUI IPC** smoke: closed-GUI
+fallback, four live-gui MCP readers, and a second loaded PCB.
+It operates only on a disposable `macos-15` GitHub runner with isolated
+first-run preferences, `contents: read` token permissions and no
+schedule/PR triggers. The only uploaded evidence is a bounded result
+without private GUI logs, screenshots, paths, or installation text.
+
+**The existence of this workflow is not a successful macOS canary.**
+Only a successful exact-source run whose signed installer, 32 native
+checks, five semantic differentials, two real GUI tests and project
+switch all pass may qualify this macOS lane. If a hosted macOS runner has
+no usable WindowServer/interactive desktop session, a failure should
+remain **infrastructure-invalid / not-qualified**, not a file-backed
+false success. Real physical hardware and the broader #1181 matrix
+are separate acceptance questions.
+
+## Ubuntu 22.04 — upstream 10.0.7 source/build incompatibility
+
+On 2026-10-11, the official KiCad 10 stable Jammy PPA still publishes
+10.0.6 as the latest amd64 `kicad` binary. Its 10.0.7
+[amd64 build](https://launchpad.net/~kicad/+archive/ubuntu/kicad-10.0-releases/+build/33830758)
+and [arm64 build](https://launchpad.net/~kicad/+archive/ubuntu/kicad-10.0-releases/+build/33830759)
+both report **Failed to build**. Native compile logs identify
+`common/local_history.cpp:1624` using `git_packbuilder_name`, which
+is unavailable in Jammy's `libgit2-dev` 1.1 API. KiCad's upstream
+10.0.6-to-10.0.7 change added this packbuilder-name dependency.
+
+This is an **upstream binary package build gate**, not a failure of
+KiCad MCP Pro's Python DRC/parser or GUI logic. Remediation belongs
+to KiCad upstream packagers (e.g. correctly version-gating the API
+without weakening pack/rewrite semantics, or using a tested compatible
+libgit2 package). Do not install an unreviewed libgit2 override or
+claim Jammy compatibility using a different distro's binary.
