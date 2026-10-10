@@ -129,6 +129,7 @@ jobs:
             "KICAD_DOCUMENTS_HOME=$RUNNER_TEMP/kicad-107-documents" \
             "KICAD10_TEMPLATE_DIR=$KICAD_MAC_TEMPLATE" \
             "KICAD10_SYMBOL_DIR=$KICAD_MAC_SYMBOLS" \
+            "KICAD_SYMBOL_DIR=$KICAD_MAC_SYMBOLS" \
             "KICAD_PCBNEW_PATH=$KICAD_MAC_PCB" \
             "KICAD_CANARY_KICAD_CLI=$KICAD_MAC_CLI" \
             "KICAD_MCP_KICAD_CLI=$KICAD_MAC_CLI" \
@@ -146,10 +147,10 @@ jobs:
           target=artifacts/kicad-10-0-7-macos
           mkdir -p "$target/internal"
           export KICAD_GUI_SMOKE_ARTIFACTS="$target/internal"
-          uv run --all-extras python scripts/kicad_canary.py run \
+          uv run --all-extras --frozen python scripts/kicad_canary.py run \
             --artifacts "$target/internal/native" --kicad-range 10.0.x
           native_rc=$?
-          uv run --all-extras python -m pytest -q \
+          uv run --all-extras --frozen python -m pytest -q \
             tests/gui/test_kicad_gui_live_context.py --disable-warnings \
             --junitxml="$target/internal/junit.xml"
           gui_rc=$?
