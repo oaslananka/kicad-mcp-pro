@@ -47,11 +47,18 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     assert "pcbnew.exe" in prepare
     assert "KICAD_MCP_ENABLE_GUI_SMOKE=1" in prepare
     assert "KICAD_MCP_GUI_SMOKE_REQUIRED=1" in prepare
+    assert "KICAD_GUI_SMOKE_PCB_ONLY=1" in prepare
+    assert "Get-Process -Name explorer" in prepare
+    assert "[Environment]::UserInteractive" in prepare
     assert "test_kicad_gui_live_context.py" in smoke
-    assert "if ($exit -ne 0)" in smoke
-    assert "$skips.Count -ne 0" in smoke
-    assert "$cases.Count -ne 2" in smoke
-    assert "verdict = 'pass'" in smoke
+    assert "$accepted = (" in smoke
+    assert "if (-not $accepted)" in smoke
+    assert "$skips.Count -eq 0" in smoke
+    assert "verdict = $verdict" in smoke
+    assert "sessionZero" in smoke
+    assert "explorerPresent" in smoke
+    assert "$cases.Count -eq 2" in smoke
+    assert "if ($accepted) { 'pass' } else { 'fail' }" in smoke
     assert "kicad-107-config" in cleanup
     assert "kicad-107-native-install" in cleanup
     upload = next(s for s in steps if s.get("uses", "").startswith("actions/upload-artifact@"))
@@ -59,3 +66,14 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     assert upload["with"]["retention-days"] == 7
     assert upload["with"]["path"].endswith("/summary.json")
     assert steps[-1]["if"] == "always()"
+
+
+def test_gui_single_pcb_editor_mode_is_explicit_and_opt_in(monkeypatch) -> None:
+    from tests.gui import test_kicad_gui_live_context as smoke
+
+    monkeypatch.delenv("KICAD_GUI_SMOKE_PCB_ONLY", raising=False)
+    assert smoke._launch_auxiliary_editors() is True
+    monkeypatch.setenv("KICAD_GUI_SMOKE_PCB_ONLY", "1")
+    assert smoke._launch_auxiliary_editors() is False
+    monkeypatch.setenv("KICAD_GUI_SMOKE_PCB_ONLY", "0")
+    assert smoke._launch_auxiliary_editors() is True
