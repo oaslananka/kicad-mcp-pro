@@ -1,6 +1,5 @@
 """Manual-only isolated Windows 10.0.7 GUI/IPC qualification contract."""
 
-import subprocess
 from pathlib import Path
 from typing import Any, cast
 
@@ -113,7 +112,7 @@ def test_editor_snapshot_on_non_windows_is_bounded(
             return None
 
     monkeypatch.setattr("platform.system", lambda: "Linux")
-    editor = smoke.ManagedProcess("pcb", cast(subprocess.Popen[str], FakeProcess()), ROOT)
+    editor = smoke.ManagedProcess("pcb", cast(Any, FakeProcess()), ROOT)
     result = smoke._editor_readiness_snapshot(editor)
     assert result["processRunning"] is True
     assert result["processExitCode"] is None
