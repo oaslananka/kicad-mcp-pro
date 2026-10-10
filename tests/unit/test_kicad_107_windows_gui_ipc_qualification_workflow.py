@@ -47,6 +47,18 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     assert "pcbnew.exe" in prepare
     assert "KICAD_MCP_ENABLE_GUI_SMOKE=1" in prepare
     assert "KICAD_MCP_GUI_SMOKE_REQUIRED=1" in prepare
+    assert "KICAD_107_FIRST_RUN_TABLES_READY=true" in prepare
+    assert "KICAD_107_FIRST_RUN_TABLES_READY -ne 'true'" in smoke
+    assert "share/kicad/template" in prepare
+    assert "share/kicad/symbols" in prepare
+    assert "share/kicad/footprints" in prepare
+    assert "sym-lib-table" in prepare and "fp-lib-table" in prepare
+    assert "Copy-Item -LiteralPath $source -Destination $destination" in prepare
+    assert "Get-FileHash -LiteralPath $destination -Algorithm SHA256" in prepare
+    assert "KICAD10_TEMPLATE_DIR=$templateRoot" in prepare
+    assert "KICAD10_FOOTPRINT_DIR=$footprintRoot" in prepare
+    assert "KICAD10_SYMBOL_DIR=$symbolRoot" in prepare
+    assert 'throw "Signed isolated installation is missing standard $tableName"' in prepare
     assert "KICAD_GUI_SMOKE_PCB_ONLY=1" in prepare
     assert "Get-Process -Name explorer" in prepare
     assert "[Environment]::UserInteractive" in prepare
