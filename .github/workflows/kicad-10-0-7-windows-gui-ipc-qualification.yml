@@ -1,0 +1,209 @@
+name: KiCad 10.0.7 Windows GUI IPC Qualification
+
+# Deliberately opt-in: KiCad 10 IPC requires a *running* PCB Editor GUI.
+# Never run this on the owner's Windows workstation or as a PR side effect.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: win-kicad-107-gui-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-107-gui-ipc:
+    name: Windows 10.0.7 real PCB Editor / IPC smoke
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - name: Checkout tested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install project pinned uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          version-file: uv.toml
+          enable-cache: true
+          prune-cache: true
+
+      - name: Download and verify KiCad installer Authenticode
+        shell: pwsh
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Join-Path $env:RUNNER_TEMP 'kicad-10.0.7-x86_64.exe'
+          # CERN and AARNet are mirrors listed on the official KiCad download
+          # page. Download is bounded per mirror so a throttled route cannot
+          # exhaust the hosted runner; a failed partial file is never executed.
+          $sources = @(
+            'https://kicad-downloads.s3.cern.ch/windows/stable/kicad-10.0.7-x86_64.exe',
+            'https://mirror.aarnet.edu.au/pub/kicad/windows/stable/kicad-10.0.7-x86_64.exe'
+          )
+          $uri = $null
+          foreach ($candidate in $sources) {
+            if (Test-Path -LiteralPath $installer) {
+              Remove-Item -LiteralPath $installer -Force
+            }
+            Write-Host "Trying official KiCad mirror: $candidate"
+            & curl.exe --fail --location --retry 0 --connect-timeout 20 --max-time 420 --speed-limit 131072 --speed-time 60 --output $installer $candidate
+            if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $installer -PathType Leaf)) {
+              $uri = $candidate
+              break
+            }
+            Write-Warning "Mirror did not finish a full installer download; trying next official mirror"
+          }
+          if ($null -eq $uri) { throw 'All official KiCad mirrors failed to download the installer' }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate) {
+            throw "Installer Authenticode invalid: $($signature.Status)"
+          }
+          if ($signature.SignerCertificate.Subject -notmatch '(?i)(?:CN|O)=.*KiCad') {
+            throw 'Unexpected KiCad Authenticode signer'
+          }
+          New-Item -ItemType Directory -Force -Path 'artifacts/kicad-10-0-7-windows' | Out-Null
+          [ordered]@{
+            schemaVersion = 'windows-kicad-107-qualification.v1'
+            sourceRevision = $env:SOURCE_REVISION
+            installerVersion = '10.0.7'
+            installerUrl = $uri
+            installerSha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+            signatureStatus = [string]$signature.Status
+            signerSubject = $signature.SignerCertificate.Subject
+            signerIssuer = $signature.SignerCertificate.Issuer
+            scope = 'Windows GUI/IPC qualification attempt; no CLI semantic or autonomous manufacturing acceptance claim'
+          } | ConvertTo-Json | Set-Content -Path 'artifacts/kicad-10-0-7-windows/provenance.json' -Encoding utf8
+          "KICAD_107_INSTALLER=$installer" >> $env:GITHUB_ENV
+
+      - name: Install isolated KiCad only on disposable runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $target = Join-Path $env:RUNNER_TEMP 'kicad-107-native-install'
+          if (Test-Path -LiteralPath $target) { throw 'Isolated install target already exists' }
+          $proc = Start-Process -FilePath $env:KICAD_107_INSTALLER -ArgumentList @('/S', '/currentuser', "/D=$target") -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "KiCad installer failed ($($proc.ExitCode))" }
+          $cli = Join-Path $target 'bin/kicad-cli.exe'
+          if (-not (Test-Path -LiteralPath $cli -PathType Leaf)) {
+            throw 'Isolated CLI missing: cannot fall back to system KiCad'
+          }
+          # Do not pipe the native process directly to Select-Object -First:
+          # it can close the native stdout pipe early and distort exit status.
+          # Capture the entire native invocation and its exit code first.
+          $versionLines = @(& $cli version)
+          $versionExitCode = $LASTEXITCODE
+          $version = ($versionLines | Select-Object -First 1).Trim()
+          Write-Host "Native KiCad CLI reports '$version' (exit code $versionExitCode)"
+          if ($versionExitCode -ne 0) {
+            throw "Native KiCad CLI version invocation failed with exit code $versionExitCode"
+          }
+          if ($version -ne '10.0.7') {
+            throw "Wrong KiCad CLI version: $version"
+          }
+          # The library parser does not discover an arbitrary NSIS /D path on
+          # Windows. Bind both KiCad and kicad-sch-api to the SAME isolated
+          # versioned symbol corpus used by the native CLI, or fail closed.
+          $symbols = Join-Path $target 'share/kicad/symbols'
+          $deviceSymbols = Join-Path $symbols 'Device.kicad_sym'
+          if (-not (Test-Path -LiteralPath $symbols -PathType Container) -or
+              -not (Test-Path -LiteralPath $deviceSymbols -PathType Leaf)) {
+            throw 'Isolated KiCad 10.0.7 standard symbol libraries missing; cannot compare connectivity'
+          }
+          "KICAD_CANARY_KICAD_CLI=$cli" >> $env:GITHUB_ENV
+          "KICAD_MCP_KICAD_CLI=$cli" >> $env:GITHUB_ENV
+          "KICAD_SYMBOL_DIR=$symbols" >> $env:GITHUB_ENV
+          "KICAD10_SYMBOL_DIR=$symbols" >> $env:GITHUB_ENV
+          "KICAD_CONFIG_HOME=$(Join-Path $env:RUNNER_TEMP 'kicad-107-config')" >> $env:GITHUB_ENV
+
+      - name: Prepare isolated GUI IPC preferences and disposable fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $configBase = $env:KICAD_CONFIG_HOME
+          if (-not $configBase.StartsWith($env:RUNNER_TEMP, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Unsafe GUI configuration directory'
+          }
+          $versionConfig = Join-Path $configBase '10.0'
+          New-Item -ItemType Directory -Force -Path $versionConfig | Out-Null
+          $commonSettings = Join-Path $versionConfig 'kicad_common.json'
+          if (Test-Path -LiteralPath $commonSettings) { throw 'Not an isolated clean KiCad config' }
+          @{ api = @{ enable_server = $true } } |
+            ConvertTo-Json -Depth 5 |
+            Set-Content -LiteralPath $commonSettings -Encoding utf8
+          $settings = Get-Content -LiteralPath $commonSettings -Raw | ConvertFrom-Json
+          if ($settings.api.enable_server -ne $true) { throw 'Isolated IPC setting not enabled' }
+          $installBin = Split-Path -Parent $env:KICAD_CANARY_KICAD_CLI
+          $pcb = Join-Path $installBin 'pcbnew.exe'
+          if (-not (Test-Path -LiteralPath $pcb -PathType Leaf)) { throw 'Signed isolated install lacks PCB Editor' }
+          $documents = Join-Path $env:RUNNER_TEMP 'kicad-107-gui-documents'
+          New-Item -ItemType Directory -Force -Path $documents | Out-Null
+          "KICAD_DOCUMENTS_HOME=$documents" >> $env:GITHUB_ENV
+          "KICAD_GUI_SMOKE_BIN_DIR=$installBin" >> $env:GITHUB_ENV
+          "KICAD_MCP_ENABLE_GUI_SMOKE=1" >> $env:GITHUB_ENV
+          "KICAD_MCP_GUI_SMOKE_REQUIRED=1" >> $env:GITHUB_ENV
+          "KICAD_107_GUI_CONFIG_READY=true" >> $env:GITHUB_ENV
+
+      - name: Sync frozen Python dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Exercise real Windows GUI IPC and MCP live-board tools
+        shell: pwsh
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:KICAD_107_GUI_CONFIG_READY -ne 'true') { throw 'GUI IPC preflight was skipped' }
+          New-Item -ItemType Directory -Force -Path 'artifacts/kicad-10-0-7-gui-ipc' | Out-Null
+          uv run --all-extras python -m pytest -q tests/gui/test_kicad_gui_live_context.py --disable-warnings --junitxml=artifacts/kicad-10-0-7-gui-ipc/junit.xml
+          $exit = $LASTEXITCODE
+          if ($exit -ne 0) { throw "Actual Windows GUI / IPC MCP test failed (exit $exit)" }
+          $result = [xml](Get-Content -LiteralPath 'artifacts/kicad-10-0-7-gui-ipc/junit.xml' -Raw)
+          $cases = @($result.testsuites.testsuite.testcase)
+          $failures = @($cases | Where-Object { $_.failure -or $_.error })
+          $skips = @($cases | Where-Object { $_.skipped })
+          if ($cases.Count -ne 2 -or $failures.Count -ne 0 -or $skips.Count -ne 0) {
+            throw "GUI IPC smoke coverage missing or skipped: cases=$($cases.Count) failures=$($failures.Count) skips=$($skips.Count)"
+          }
+          [ordered]@{
+            schemaVersion = 'windows-kicad-107-gui-ipc-qualification.v1'
+            sourceRevision = $env:SOURCE_REVISION
+            kicadVersion = '10.0.7'
+            scope = 'actual PCB Editor GUI IPC / four live MCP tools and project switch only; no manufacturing success'
+            runner = 'windows-2025'
+            tests = @($cases | ForEach-Object { $_.name })
+            testCount = $cases.Count
+            failures = 0
+            skips = 0
+            verdict = 'pass'
+          } | ConvertTo-Json -Depth 4 |
+            Set-Content -LiteralPath 'artifacts/kicad-10-0-7-gui-ipc/summary.json' -Encoding utf8
+          Write-Output 'Actual KiCad 10.0.7 GUI IPC + MCP live-board switching passed'
+
+      - name: Publish bounded non-sensitive qualification result
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kicad-10-0-7-windows-gui-ipc
+          path: artifacts/kicad-10-0-7-gui-ipc/summary.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Remove installer and disposable GUI configuration
+        if: always()
+        shell: pwsh
+        run: |
+          foreach ($name in @(
+            'kicad-10.0.7-x86_64.exe',
+            'kicad-107-native-install',
+            'kicad-107-config',
+            'kicad-107-gui-documents'
+          )) {
+            $path = Join-Path $env:RUNNER_TEMP $name
+            if (Test-Path -LiteralPath $path) {
+              Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
+            }
+          }
