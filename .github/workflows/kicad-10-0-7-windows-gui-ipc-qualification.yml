@@ -230,8 +230,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path 'artifacts/kicad-10-0-7-gui-ipc' | Out-Null
           # TEMPORARY diagnostic branch only; ciphertext is safe to upload,
           # the matching RSA private key never leaves the diagnosing MSI.
-          "KICAD_GUI_DIAGNOSTIC_PUBLIC_KEY=$(Join-Path $env:GITHUB_WORKSPACE 'tests/gui/diagnostics/win107-temporary-public.txt')" >> $env:GITHUB_ENV
-          "KICAD_GUI_DIAGNOSTIC_ENCRYPTED_OUTPUT=$(Join-Path (Get-Location) 'artifacts/kicad-10-0-7-gui-ipc/encrypted-modal.json')" >> $env:GITHUB_ENV
+          # Set in THIS step's process environment: GITHUB_ENV alone only
+          # propagates to subsequent steps and not the pytest subprocess.
+          $env:KICAD_GUI_DIAGNOSTIC_PUBLIC_KEY = Join-Path $env:GITHUB_WORKSPACE 'tests/gui/diagnostics/win107-temporary-public.txt'
+          $env:KICAD_GUI_DIAGNOSTIC_ENCRYPTED_OUTPUT = Join-Path (Get-Location) 'artifacts/kicad-10-0-7-gui-ipc/encrypted-modal.json'
+          if (-not (Test-Path -LiteralPath $env:KICAD_GUI_DIAGNOSTIC_PUBLIC_KEY -PathType Leaf)) {
+            throw 'Ephemeral GUI diagnostic public key was not checked out'
+          }
           # Internal artifacts may contain paths/sensitive raw diagnostic logs:
           # publish only the explicitly sanitized summary below.
           $env:KICAD_GUI_SMOKE_ARTIFACTS = 'artifacts/kicad-10-0-7-gui-ipc/internal'
