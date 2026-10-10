@@ -90,8 +90,17 @@ jobs:
           if (-not (Test-Path -LiteralPath $cli -PathType Leaf)) {
             throw 'Isolated CLI missing: cannot fall back to system KiCad'
           }
-          $version = (& $cli version | Select-Object -First 1).Trim()
-          if ($LASTEXITCODE -ne 0 -or $version -ne '10.0.7') {
+          # Do not pipe the native process directly to Select-Object -First:
+          # it can close the native stdout pipe early and distort exit status.
+          # Capture the entire native invocation and its exit code first.
+          $versionLines = @(& $cli version)
+          $versionExitCode = $LASTEXITCODE
+          $version = ($versionLines | Select-Object -First 1).Trim()
+          Write-Host "Native KiCad CLI reports '$version' (exit code $versionExitCode)"
+          if ($versionExitCode -ne 0) {
+            throw "Native KiCad CLI version invocation failed with exit code $versionExitCode"
+          }
+          if ($version -ne '10.0.7') {
             throw "Wrong KiCad CLI version: $version"
           }
           "KICAD_CANARY_KICAD_CLI=$cli" >> $env:GITHUB_ENV
