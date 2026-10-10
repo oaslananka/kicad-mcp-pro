@@ -36,10 +36,27 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $installer = Join-Path $env:RUNNER_TEMP 'kicad-10.0.7-x86_64.exe'
-          $uri = 'https://mirrors.mit.edu/kicad/windows/stable/kicad-10.0.7-x86_64.exe'
-          & curl.exe --fail --location --retry 2 --connect-timeout 25 --max-time 900 --output $installer $uri
-          if ($LASTEXITCODE -ne 0) { throw 'Official KiCad installer download failed' }
-          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw 'Missing installer' }
+          # CERN and AARNet are mirrors listed on the official KiCad download
+          # page. Download is bounded per mirror so a throttled route cannot
+          # exhaust the hosted runner; a failed partial file is never executed.
+          $sources = @(
+            'https://kicad-downloads.s3.cern.ch/windows/stable/kicad-10.0.7-x86_64.exe',
+            'https://mirror.aarnet.edu.au/pub/kicad/windows/stable/kicad-10.0.7-x86_64.exe'
+          )
+          $uri = $null
+          foreach ($candidate in $sources) {
+            if (Test-Path -LiteralPath $installer) {
+              Remove-Item -LiteralPath $installer -Force
+            }
+            Write-Host "Trying official KiCad mirror: $candidate"
+            & curl.exe --fail --location --retry 0 --connect-timeout 20 --max-time 420 --speed-limit 131072 --speed-time 60 --output $installer $candidate
+            if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $installer -PathType Leaf)) {
+              $uri = $candidate
+              break
+            }
+            Write-Warning "Mirror did not finish a full installer download; trying next official mirror"
+          }
+          if ($null -eq $uri) { throw 'All official KiCad mirrors failed to download the installer' }
           $signature = Get-AuthenticodeSignature -LiteralPath $installer
           if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate) {
             throw "Installer Authenticode invalid: $($signature.Status)"
