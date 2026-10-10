@@ -15,11 +15,12 @@ Each release artifact class should provide the strongest evidence supported by i
 The Python publish workflow generates a CycloneDX SBOM as release evidence:
 
 ```text
-packages/mcp-server/release-evidence/sbom.cdx.json
+release-evidence/sbom.cdx.json
 ```
 
-Download it from the GitHub Release or the release workflow artifacts and keep
-it with the Python distributions being audited.
+Download the `python-release-evidence` Actions artifact or the corresponding
+`kicad-mcp-pro-python-sbom.cdx.json` GitHub Release asset and keep it with
+the matching Python distributions.
 
 ## SHA256SUMS
 
@@ -27,7 +28,7 @@ Release checksums are published as workflow evidence, separate from the PyPI
 distribution upload directory:
 
 ```text
-packages/mcp-server/release-evidence/SHA256SUMS.txt
+release-evidence/SHA256SUMS.txt
 ```
 
 In workflow artifacts, download `python-release-evidence` next to the

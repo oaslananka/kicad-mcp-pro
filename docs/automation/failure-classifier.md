@@ -1,8 +1,9 @@
 # Failure Classifier
 
 `scripts/classify-gh-failure.mjs` maps failed GitHub Actions logs to repository
-operations failure classes. It is a read-only helper for maintainers and the
-manual `actions-maintenance.yml` workflow.
+operations failure classes. It is a read-only maintainer diagnostic for
+locally saved logs and existing GitHub Actions runs; there is no
+`actions-maintenance.yml` workflow in the current repository.
 
 The classifier emits:
 
