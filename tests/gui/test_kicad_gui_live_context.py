@@ -475,7 +475,6 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
 
     def inspect_visible_dialog_body(dialog_hwnd: int) -> None:
         """Read only visible Static labels of the isolated PCB Editor modal."""
-        nonlocal static_count, body_read_failed
         max_labels = 32
 
         def inspect_child(child_hwnd: int, _unused: int) -> bool:
