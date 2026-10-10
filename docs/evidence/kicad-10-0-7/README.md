@@ -187,7 +187,7 @@ manufacturing or the whole #1181 issue acceptance.
 ## macOS native GUI / IPC opt-in qualification (pending real run)
 
 The manually dispatched
-[`kicad-10-0-7-macos-gui-ipc-qualification.yml`](../../../.github/workflows/kicad-10-0-7-macos-gui-ipc-qualification.yml)
+[`kicad-10-0-7-macos-gui-ipc-qualification.yml`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/.github/workflows/kicad-10-0-7-macos-gui-ipc-qualification.yml)
 downloads the **official universal 10.0.7 DMG** from the CERN or MIT KiCad
 stable mirror, verifies its embedded KiCad.app **Apple code signature**,
 runs the extracted exact-version native CLI with the locked Python toolchain,

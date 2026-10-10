@@ -47,6 +47,8 @@ def test_official_signed_native_installer_has_no_fallback_to_host_kicad() -> Non
     assert "'10.0.7'" in source
     assert "KICAD_MAC_CLI=$cli" in source
     assert "KICAD_MAC_PCB=$pcb" in source
+    assert 'template="$app/Contents/SharedSupport/template/sym-lib-table"' in source
+    assert 'template=$(find "$mount_dir" -name sym-lib-table' not in source
     assert "KICAD_CONFIG_HOME=" in source
     for name in ("sym-lib-table", "fp-lib-table", "design-block-lib-table"):
         assert name in source
@@ -57,6 +59,19 @@ def test_gui_and_cli_both_mandatory_with_sanitized_evidence_only() -> None:
     assert "KICAD_MCP_GUI_SMOKE_REQUIRED=1" in source
     assert "KICAD_GUI_SMOKE_PCB_ONLY=1" in source
     assert "tests/gui/test_kicad_gui_live_context.py" in source
+    # A native fixture failure must not suppress real GUI testing or the
+    # sanitized results: bash's default -e must be disabled around both.
+    acceptance = source.split("name: Run native CLI and real KiCad PCB Editor GUI-IPC canaries", 1)[
+        1
+    ].split("name: Upload only bounded summary", 1)[0]
+    assert acceptance.index("set +e") < acceptance.index("scripts/kicad_canary.py run")
+    assert acceptance.index("gui_rc=$?") < acceptance.index("set -e")
+    assert acceptance.index("set -e") < acceptance.index("failedFixtureIds=")
+    assert "re.fullmatch" in acceptance
+    assert "failedStepIds=" in acceptance
+    assert '"differentialCases"' in acceptance
+    assert '"nativeEqualsCustom"' in acceptance
+    assert '"unavailable_authority_count"' in acceptance
     assert "scripts/kicad_canary.py run" in source
     assert 'out["testCount"]==2' in source
     assert 'out["failures"]==0' in source
