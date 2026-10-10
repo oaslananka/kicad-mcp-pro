@@ -187,6 +187,26 @@ jobs:
               v=json.loads(diff.read_text())
               out.update(differentialMatches=v.get("match_count"),
                          differentialTotal=v.get("results_total"))
+              # Report source-bound categorical verdicts only, never raw
+              # netlists, diagnostic messages, paths or diff payloads.
+              out["differentialCases"]=[
+                  {"fixtureId":safe(r.get("fixture_id","")),
+                   "operation":safe(r.get("operation","")),
+                   "status":safe(r.get("status","")),
+                   "nativeEqualsCustom":(
+                       r.get("native_result_hash")==r.get("custom_result_hash")
+                       if r.get("native_result_hash") and r.get("custom_result_hash")
+                       else None),
+                   "nativePass":r.get("native_pass") if type(r.get("native_pass")) is bool else None,
+                   "customPass":r.get("custom_pass") if type(r.get("custom_pass")) is bool else None}
+                  for r in v.get("results",[])[:8]
+              ]
+              for name in (
+                  "false_pass_count","false_fail_count","divergence_count",
+                  "infrastructure_invalid_count","unavailable_authority_count",
+              ):
+                  value=v.get(name)
+                  out[name]=value if type(value) is int and 0 <= value <= 8 else None
           if junit.exists():
               cases=ET.parse(junit).getroot().findall(".//testcase")
               out.update(testCount=len(cases),

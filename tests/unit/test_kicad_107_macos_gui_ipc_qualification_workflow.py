@@ -69,6 +69,9 @@ def test_gui_and_cli_both_mandatory_with_sanitized_evidence_only() -> None:
     assert acceptance.index("set -e") < acceptance.index("failedFixtureIds=")
     assert "re.fullmatch" in acceptance
     assert "failedStepIds=" in acceptance
+    assert '"differentialCases"' in acceptance
+    assert '"nativeEqualsCustom"' in acceptance
+    assert '"unavailable_authority_count"' in acceptance
     assert "scripts/kicad_canary.py run" in source
     assert 'out["testCount"]==2' in source
     assert 'out["failures"]==0' in source
