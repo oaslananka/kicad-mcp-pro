@@ -47,6 +47,11 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     assert "'10.0'" in prepare
     assert "kicad_common.json" in prepare and "enable_server = $true" in prepare
     assert "graphics = @{ canvas_type = 2 }" in prepare
+    assert "do_not_show_again = @{" in prepare
+    assert "update_check_prompt = $true" in prepare
+    assert "data_collection_prompt = $true" in prepare
+    assert "$settings.do_not_show_again.update_check_prompt -ne $true" in prepare
+    assert "$settings.do_not_show_again.data_collection_prompt -ne $true" in prepare
     assert "if ($settings.graphics.canvas_type -ne 2)" in prepare
     assert "KICAD_107_GUI_RENDERER=cairo" in prepare
     assert "KICAD_107_GUI_RENDERER -ne 'cairo'" in smoke
@@ -58,6 +63,14 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     assert "KICAD_MCP_ENABLE_GUI_SMOKE=1" in prepare
     assert "KICAD_MCP_GUI_SMOKE_REQUIRED=1" in prepare
     assert "KICAD_107_FIRST_RUN_TABLES_READY=true" in prepare
+    assert "design-block-lib-table" in prepare
+    assert "KICAD_107_DESIGN_BLOCK_TABLE_READY=true" in prepare
+    assert "KICAD_107_DESIGN_BLOCK_TABLE_READY -ne 'true'" in smoke
+    assert "(design_block_lib_table" in prepare
+    assert "(version 7)" in prepare
+    assert "Test-Path -LiteralPath $designSource -PathType Leaf" in prepare
+    assert "Get-FileHash -LiteralPath $designDestination -Algorithm SHA256" in prepare
+    assert "Get-Content -LiteralPath $designDestination -Raw" in prepare
     assert "KICAD_107_FIRST_RUN_TABLES_READY -ne 'true'" in smoke
     assert "share/kicad/template" in prepare
     assert "share/kicad/symbols" in prepare
