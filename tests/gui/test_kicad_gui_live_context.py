@@ -337,6 +337,35 @@ def _classify_visible_kicad_dialog(title: str) -> str:
     return "unrecognized"
 
 
+def _classify_kicad_dialog_message(message: str) -> str:
+    """Classify ephemeral KiCad-owned modal body text; never return raw text."""
+    normalized = " ".join(message.casefold().split())
+    if (
+        ("library" in normalized and ("table" in normalized or "configur" in normalized))
+        or ("footprint" in normalized and ("table" in normalized or "library" in normalized))
+        or ("symbol" in normalized and ("table" in normalized or "library" in normalized))
+    ):
+        return "librarySetup"
+    if any(word in normalized for word in ("recover", "rescue", "autosave")):
+        return "fileRecovery"
+    if any(word in normalized for word in ("lock file", "already open", "file is in use")):
+        return "boardLock"
+    if any(word in normalized for word in ("opengl", "graphics", "rendering", "display driver")):
+        return "graphicsOrRendering"
+    if any(
+        word in normalized for word in ("outdated version", "newer version", "unsupported file")
+    ):
+        return "formatCompatibility"
+    if any(
+        word in normalized
+        for word in ("cannot open", "could not open", "failed to load", "invalid file")
+    ):
+        return "fileOpenFailure"
+    if any(word in normalized for word in ("warning", "error", "failed")):
+        return "warningOrError"
+    return "unrecognized"
+
+
 def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
     """Capture ONLY bounded lifecycle/window metadata, never titles or host paths."""
     exit_code = editor.process.poll()
@@ -351,6 +380,18 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
         "visibleStandardDialogWindowCount": 0,
         "enabledVisibleStandardDialogWindowCount": 0,
         "disabledVisibleStandardDialogWindowCount": 0,
+        "visibleDialogBodyCategories": {
+            "librarySetup": 0,
+            "fileRecovery": 0,
+            "boardLock": 0,
+            "graphicsOrRendering": 0,
+            "formatCompatibility": 0,
+            "fileOpenFailure": 0,
+            "warningOrError": 0,
+            "unrecognized": 0,
+        },
+        "visibleDialogStaticControlCount": 0,
+        "visibleDialogMessageReadFailed": False,
         "visibleDialogPromptCategories": {
             "librarySetup": 0,
             "fileRecovery": 0,
@@ -386,6 +427,20 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
     user32.GetWindowTextLengthW.restype = ctypes.c_int
     user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
     user32.GetWindowTextW.restype = ctypes.c_int
+    # WM_GETTEXT is needed for Static controls owned by another process.
+    # SendMessageTimeout avoids hanging on an unresponsive GUI thread.
+    user32.EnumChildWindows.argtypes = [wintypes.HWND, enum_callback_type, wintypes.LPARAM]
+    user32.EnumChildWindows.restype = wintypes.BOOL
+    user32.SendMessageTimeoutW.argtypes = [
+        wintypes.HWND,
+        wintypes.UINT,
+        wintypes.WPARAM,
+        wintypes.LPARAM,
+        wintypes.UINT,
+        wintypes.UINT,
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    user32.SendMessageTimeoutW.restype = wintypes.LPARAM
 
     counts = {
         "windowCount": 0,
@@ -404,6 +459,60 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
         "warningOrError": 0,
         "unrecognized": 0,
     }
+
+    body_categories = {
+        "librarySetup": 0,
+        "fileRecovery": 0,
+        "boardLock": 0,
+        "graphicsOrRendering": 0,
+        "formatCompatibility": 0,
+        "fileOpenFailure": 0,
+        "warningOrError": 0,
+        "unrecognized": 0,
+    }
+    static_count = 0
+    body_read_failed = False
+
+    def inspect_visible_dialog_body(dialog_hwnd: int) -> None:
+        """Read only visible Static labels of the isolated PCB Editor modal."""
+        nonlocal static_count, body_read_failed
+        max_labels = 32
+
+        def inspect_child(child_hwnd: int, _unused: int) -> bool:
+            nonlocal static_count, body_read_failed
+            if static_count >= max_labels:
+                return False
+            if not user32.IsWindowVisible(child_hwnd):
+                return True
+            cls = ctypes.create_unicode_buffer(128)
+            if not user32.GetClassNameW(child_hwnd, cls, len(cls)):
+                return True
+            if cls.value not in ("Static", "wxStaticText"):
+                return True
+            static_count += 1
+            body = ctypes.create_unicode_buffer(513)
+            written = ctypes.c_size_t()
+            # WM_GETTEXT=0x000D, SMTO_ABORTIFHUNG=0x0002; 120ms each.
+            completed = user32.SendMessageTimeoutW(
+                child_hwnd,
+                0x000D,
+                len(body),
+                ctypes.addressof(body),
+                0x0002,
+                120,
+                ctypes.byref(written),
+            )
+            if not completed:
+                body_read_failed = True
+                return True
+            # Never store or expose the actual label contents, even on error.
+            if written.value > 0:
+                category = _classify_kicad_dialog_message(body.value)
+                body_categories[category] += 1
+            return True
+
+        callback = enum_callback_type(inspect_child)
+        user32.EnumChildWindows(dialog_hwnd, callback, 0)
 
     def visit(hwnd: int, _unused: int) -> bool:
         owner_pid = wintypes.DWORD()
@@ -439,6 +548,7 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
                     user32.GetWindowTextW(hwnd, title_buffer, len(title_buffer))
                     category = _classify_visible_kicad_dialog(title_buffer.value)
                     categories[category] += 1
+                    inspect_visible_dialog_body(hwnd)
         return True
 
     callback = enum_callback_type(visit)
@@ -448,6 +558,9 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
     else:
         result.update(counts)
         result["visibleDialogPromptCategories"] = categories
+        result["visibleDialogBodyCategories"] = body_categories
+        result["visibleDialogStaticControlCount"] = static_count
+        result["visibleDialogMessageReadFailed"] = body_read_failed
     return result
 
 

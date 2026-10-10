@@ -257,6 +257,18 @@ jobs:
                 warningOrError = [int]$raw.visibleDialogPromptCategories.warningOrError
                 unrecognized = [int]$raw.visibleDialogPromptCategories.unrecognized
               }
+              visibleDialogBodyCategories = [ordered]@{
+                librarySetup = [int]$raw.visibleDialogBodyCategories.librarySetup
+                fileRecovery = [int]$raw.visibleDialogBodyCategories.fileRecovery
+                boardLock = [int]$raw.visibleDialogBodyCategories.boardLock
+                graphicsOrRendering = [int]$raw.visibleDialogBodyCategories.graphicsOrRendering
+                formatCompatibility = [int]$raw.visibleDialogBodyCategories.formatCompatibility
+                fileOpenFailure = [int]$raw.visibleDialogBodyCategories.fileOpenFailure
+                warningOrError = [int]$raw.visibleDialogBodyCategories.warningOrError
+                unrecognized = [int]$raw.visibleDialogBodyCategories.unrecognized
+              }
+              visibleDialogStaticControlCount = [int]$raw.visibleDialogStaticControlCount
+              visibleDialogMessageReadFailed = [bool]$raw.visibleDialogMessageReadFailed
               windowEnumerationFailed = [bool]$raw.windowEnumerationFailed
             }
           }
