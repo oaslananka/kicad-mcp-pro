@@ -3,7 +3,9 @@
 A passing CLI-only probe must never be mislabeled as real PCB Editor IPC.
 """
 
+import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -29,8 +31,16 @@ def test_opt_in_macos_runner_has_readonly_permissions_and_no_pr_trigger() -> Non
 def test_official_signed_native_installer_has_no_fallback_to_host_kicad() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
     assert "kicad-unified-universal-10.0.7.dmg" in source
-    assert "kicad-downloads.s3.cern.ch" in source
-    assert "mirrors.mit.edu" in source
+    official_sources = re.findall(r"'(https://[^']+\.dmg)'", source)
+    assert len(official_sources) == 2
+    assert {urlsplit(url).hostname for url in official_sources} == {
+        "kicad-downloads.s3.cern.ch",
+        "mirrors.mit.edu",
+    }
+    assert {urlsplit(url).path for url in official_sources} == {
+        "/osx/stable/kicad-unified-universal-10.0.7.dmg",
+        "/kicad/osx/stable/kicad-unified-universal-10.0.7.dmg",
+    }
     assert "codesign --verify --deep --strict" in source
     assert "Authority=.*KiCad" in source
     assert '"$cli" version' in source
