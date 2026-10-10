@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from git import Actor, Repo
 
-from scripts.check_sonar_docs_only import is_docs_only_diff
-
-ROOT = Path(__file__).resolve().parents[2]
+from scripts.check_sonar_docs_only import is_docs_only_diff, main
 
 
 @pytest.mark.parametrize(
@@ -52,56 +49,32 @@ def test_docs_only_rejects_incomplete_or_malformed_git_output(raw: bytes) -> Non
     assert is_docs_only_diff(raw) is False
 
 
-def test_docs_only_cli_accepts_only_bounded_docs_paths(tmp_path: Path) -> None:
+def test_docs_only_cli_accepts_only_bounded_docs_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     path = tmp_path / "changed-paths.bin"
     for data, code in [(b"docs/guide.md\0", 0), (b"docs/guide.md\0src/main.py\0", 1), (b"", 1)]:
         path.write_bytes(data)
-        done = subprocess.run(
-            [
-                sys.executable,
-                str(ROOT / "scripts/check_sonar_docs_only.py"),
-                "--paths-file",
-                str(path),
-            ],
-            check=False,
-            capture_output=True,
-        )
-        assert done.returncode == code
+        monkeypatch.setattr(sys, "argv", ["check_sonar_docs_only.py", "--paths-file", str(path)])
+        assert main() == code
 
 
 def test_renaming_source_into_docs_still_requires_analysis(tmp_path: Path) -> None:
-    """The workflow must use --no-renames to expose deleted analyzed source."""
-    git = shutil.which("git")
-    if git is None:
-        pytest.skip("Git CLI unavailable")
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    subprocess.run([git, "init", "-q"], cwd=repo, check=True)
-    (repo / "src").mkdir()
-    (repo / "src" / "module.py").write_text("x = 1\n", encoding="utf-8")
-    subprocess.run([git, "add", "."], cwd=repo, check=True)
-    subprocess.run(
-        [
-            git,
-            "-c",
-            "user.name=CI Fixture",
-            "-c",
-            "user.email=ci@example.invalid",
-            "commit",
-            "-qm",
-            "seed",
-        ],
-        cwd=repo,
-        check=True,
-    )
-    (repo / "docs").mkdir()
-    (repo / "src" / "module.py").rename(repo / "docs" / "module.py")
-    subprocess.run([git, "add", "-A"], cwd=repo, check=True)
-    diff = subprocess.run(
-        [git, "diff", "--no-renames", "--cached", "--name-only", "-z", "HEAD"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-    ).stdout
-    assert set(diff.rstrip(b"\0").split(b"\0")) == {b"src/module.py", b"docs/module.py"}
-    assert is_docs_only_diff(diff) is False
+    """The workflow's --no-renames reveals both the source removal and docs addition."""
+    repo = Repo.init(tmp_path / "repo")
+    source = Path(repo.working_tree_dir or "") / "src" / "module.py"
+    source.parent.mkdir()
+    source.write_text("x = 1\n", encoding="utf-8")
+    repo.index.add(["src/module.py"])
+    actor = Actor("CI Fixture", "ci@example.invalid")
+    repo.index.commit("seed", author=actor, committer=actor)
+
+    docs = source.parent.parent / "docs"
+    docs.mkdir()
+    source.rename(docs / "module.py")
+    repo.git.add("-A")
+    diff = repo.git.diff("--no-renames", "--cached", "--name-only", "-z", "HEAD")
+    paths = diff.encode("utf-8")
+    assert set(paths.rstrip(b"\0").split(b"\0")) == {b"src/module.py", b"docs/module.py"}
+    assert is_docs_only_diff(paths) is False
