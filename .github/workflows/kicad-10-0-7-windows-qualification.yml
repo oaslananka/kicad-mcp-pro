@@ -103,7 +103,19 @@ jobs:
           if ($version -ne '10.0.7') {
             throw "Wrong KiCad CLI version: $version"
           }
+          # The library parser does not discover an arbitrary NSIS /D path on
+          # Windows. Bind both KiCad and kicad-sch-api to the SAME isolated
+          # versioned symbol corpus used by the native CLI, or fail closed.
+          $symbols = Join-Path $target 'share/kicad/symbols'
+          $deviceSymbols = Join-Path $symbols 'Device.kicad_sym'
+          if (-not (Test-Path -LiteralPath $symbols -PathType Container) -or
+              -not (Test-Path -LiteralPath $deviceSymbols -PathType Leaf)) {
+            throw 'Isolated KiCad 10.0.7 standard symbol libraries missing; cannot compare connectivity'
+          }
           "KICAD_CANARY_KICAD_CLI=$cli" >> $env:GITHUB_ENV
+          "KICAD_MCP_KICAD_CLI=$cli" >> $env:GITHUB_ENV
+          "KICAD_SYMBOL_DIR=$symbols" >> $env:GITHUB_ENV
+          "KICAD10_SYMBOL_DIR=$symbols" >> $env:GITHUB_ENV
           "KICAD_CONFIG_HOME=$(Join-Path $env:RUNNER_TEMP 'kicad-107-config')" >> $env:GITHUB_ENV
 
       - name: Sync locked Python dependencies
