@@ -85,6 +85,50 @@ def test_native_and_custom_drc_projection_match_type_and_severity_semantics(
     assert result.native_result_hash == result.custom_result_hash
 
 
+@pytest.mark.parametrize(
+    ("old_description", "new_description"),
+    [
+        ("Shorted pads have a blank net name", "Shorted pads are on <no net>"),
+        ("Net '' conflicts with LED_A", "Net '<no net>' conflicts with LED_A"),
+    ],
+)
+def test_kicad_107_drc_wording_change_preserves_structured_authority(
+    tmp_path: Path,
+    old_description: str,
+    new_description: str,
+) -> None:
+    """KiCad 10.0.7 presentation changes must not alter DRC decisions."""
+    shared = {
+        "type": "shorting_items",
+        "severity": "error",
+    }
+    old_report = {
+        "violations": [{**shared, "description": old_description}],
+        "unconnected_items": [],
+    }
+    new_report = {
+        "violations": [{**shared, "description": new_description}],
+        "unconnected_items": [],
+    }
+    old = _compare(tmp_path / "old", old_report)
+    new = compare_drc_report_file(
+        report_path=_write_report(tmp_path / "new.json", new_report),
+        fixture_path=_fixture(tmp_path / "new-fixture"),
+        source_sha=SOURCE_SHA,
+        lane="stable",
+        kicad_version="10.0.7",
+        fixture_id="demo",
+    )
+
+    assert old.status == new.status == "match"
+    assert old.native_pass is new.native_pass is False
+    assert old.custom_pass is new.custom_pass is False
+    assert old.native_result_hash == new.native_result_hash
+    assert old.custom_result_hash == new.custom_result_hash
+    assert old.native_result_hash == old.custom_result_hash
+    assert old.comparison_method == new.comparison_method == DRC_COMPARISON_METHOD
+
+
 def test_seeded_false_pass_and_false_fail_are_detected(tmp_path: Path) -> None:
     false_pass = _compare(
         tmp_path / "false-pass",
