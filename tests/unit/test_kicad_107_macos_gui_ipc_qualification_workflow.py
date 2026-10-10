@@ -49,6 +49,10 @@ def test_official_signed_native_installer_has_no_fallback_to_host_kicad() -> Non
     assert "KICAD_MAC_PCB=$pcb" in source
     assert 'template="$app/Contents/SharedSupport/template/sym-lib-table"' in source
     assert 'template=$(find "$mount_dir" -name sym-lib-table' not in source
+    assert "MCP symbols do not come from the signed mounted KiCad DMG" in source
+    assert "symbolLibraryBinding" in source
+    assert "from kicad_mcp.config import get_config" in source
+    assert 'expected = Path(os.environ["KICAD_MAC_SYMBOLS"]).resolve()' in source
     assert "KICAD_CONFIG_HOME=" in source
     for name in ("sym-lib-table", "fp-lib-table", "design-block-lib-table"):
         assert name in source
