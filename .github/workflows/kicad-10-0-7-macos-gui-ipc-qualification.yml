@@ -1,8 +1,15 @@
 name: KiCad 10.0.7 macOS GUI IPC Qualification
 
 # Deliberately opt-in. KiCad 10 requires a real running PCB Editor GUI.
+# TEMPORARY source-bound diagnostic push below is confined to this one
+# feature branch and one contract-test path; remove before merge.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - fix/kicad-1181-macos-bundle-symbol-discovery
+    paths:
+      - tests/unit/test_kicad_107_macos_gui_ipc_qualification_workflow.py
 
 permissions:
   contents: read
@@ -142,6 +149,32 @@ jobs:
 
       - name: Frozen project Python dependencies
         run: uv sync --all-extras --frozen
+
+      - name: Verify MCP symbols come from the same signed KiCad app bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --all-extras --frozen python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from kicad_mcp.config import get_config
+
+          expected = Path(os.environ["KICAD_MAC_SYMBOLS"]).resolve()
+          cfg = get_config()
+          actual = cfg.symbol_library_dir
+          if actual is None or actual.resolve() != expected:
+              raise SystemExit("MCP symbols do not come from the signed mounted KiCad DMG")
+          for library in ("Device", "RF_Module"):
+              if not (actual / f"{library}.kicad_sym").is_file():
+                  raise SystemExit("An expected packaged KiCad library is missing")
+          p = Path("artifacts/kicad-10-0-7-macos/summary.json")
+          summary = json.loads(p.read_text())
+          summary["symbolLibraryBinding"] = "signed-app-bundle"
+          p.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+          print("KiCad MCP library root: exact mounted signed CLI application bundle")
+          PY
 
       - name: Run native CLI and real KiCad PCB Editor GUI-IPC canaries
         shell: bash
