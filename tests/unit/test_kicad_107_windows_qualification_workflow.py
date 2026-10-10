@@ -46,6 +46,14 @@ def test_windows_stable_native_qualification_is_opt_in() -> None:
     assert "/S" in install["run"] and "/currentuser" in install["run"]
     assert "RUNNER_TEMP" in install["run"] and "cannot fall back" in install["run"]
     assert "version -ne '10.0.7'" in install["run"]
+    assert "$versionLines = @(& $cli version)" in install["run"]
+    assert "$versionExitCode = $LASTEXITCODE" in install["run"]
+    assert "$version = ($versionLines | Select-Object -First 1).Trim()" in install["run"]
+    assert "& $cli version |" not in install["run"]
+    assert install["run"].index("$versionExitCode = $LASTEXITCODE") < install["run"].index(
+        "Select-Object -First 1"
+    )
+    assert "if ($versionExitCode -ne 0)" in install["run"]
     assert "--kicad-range 10.0.x" in native["run"]
     assert "source_sha -ne $env:SOURCE_REVISION" in native["run"]
     assert "match_count -ne 5" in native["run"]
