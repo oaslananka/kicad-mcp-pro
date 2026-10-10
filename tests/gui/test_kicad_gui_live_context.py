@@ -321,12 +321,88 @@ async def _call_smoke_tools(server: object) -> dict[str, dict[str, str]]:
     return outputs
 
 
-async def _wait_for_live_context(server: object, artifacts: Path) -> dict[str, dict[str, str]]:
+def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
+    """Capture ONLY bounded lifecycle/window metadata, never titles or host paths."""
+    exit_code = editor.process.poll()
+    result: dict[str, object] = {
+        "processRunning": exit_code is None,
+        "processExitCode": exit_code,
+        "windowCount": 0,
+        "visibleWindowCount": 0,
+        "enabledVisibleWindowCount": 0,
+        "disabledVisibleWindowCount": 0,
+        "standardDialogWindowCount": 0,
+    }
+    if platform.system() != "Windows":
+        return result
+
+    # A healthy socket can return KiCad AS_NOT_READY if its GUI frame never
+    # finishes initializing. Inspect *only* window counts for the launched
+    # PCB Editor PID; do not record usernames, window titles or screenshots.
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+    enum_callback_type = ctypes.WINFUNCTYPE(  # type: ignore[attr-defined]
+        wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+    )
+    user32.EnumWindows.argtypes = [enum_callback_type, wintypes.LPARAM]
+    user32.EnumWindows.restype = wintypes.BOOL
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.IsWindowVisible.restype = wintypes.BOOL
+    user32.IsWindowEnabled.argtypes = [wintypes.HWND]
+    user32.IsWindowEnabled.restype = wintypes.BOOL
+    user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetClassNameW.restype = ctypes.c_int
+
+    counts = {
+        "windowCount": 0,
+        "visibleWindowCount": 0,
+        "enabledVisibleWindowCount": 0,
+        "disabledVisibleWindowCount": 0,
+        "standardDialogWindowCount": 0,
+    }
+
+    def visit(hwnd: int, _unused: int) -> bool:
+        owner_pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner_pid))
+        if owner_pid.value != editor.process.pid:
+            return True
+        counts["windowCount"] += 1
+        if user32.IsWindowVisible(hwnd):
+            counts["visibleWindowCount"] += 1
+            if user32.IsWindowEnabled(hwnd):
+                counts["enabledVisibleWindowCount"] += 1
+            else:
+                counts["disabledVisibleWindowCount"] += 1
+        window_class = ctypes.create_unicode_buffer(128)
+        if user32.GetClassNameW(hwnd, window_class, len(window_class)):
+            if window_class.value == "#32770":
+                counts["standardDialogWindowCount"] += 1
+        return True
+
+    callback = enum_callback_type(visit)
+    if not user32.EnumWindows(callback, 0):
+        # Fail closed on diagnostics failure; do not invent window counts.
+        result["windowEnumerationFailed"] = True
+    else:
+        result.update(counts)
+    return result
+
+
+async def _wait_for_live_context(
+    server: object, artifacts: Path, editor: ManagedProcess | None = None
+) -> dict[str, dict[str, str]]:
     deadline = time.monotonic() + LIVE_TIMEOUT_SECONDS
     last_outputs: dict[str, dict[str, str]] = {}
     attempt = 0
     while time.monotonic() < deadline:
         attempt += 1
+        if editor is not None and editor.process.poll() is not None:
+            _write_json(artifacts / "editor-readiness.json", _editor_readiness_snapshot(editor))
+            raise AssertionError("PCB Editor exited before live GUI IPC became ready.")
         last_outputs = await _call_smoke_tools(server)
         _write_json(
             artifacts / "live-context-attempts" / f"attempt-{attempt:03d}.json",
@@ -336,6 +412,8 @@ async def _wait_for_live_context(server: object, artifacts: Path) -> dict[str, d
             return last_outputs
         await asyncio.sleep(3)
     _write_json(artifacts / "live-context-timeout.json", last_outputs)
+    if editor is not None:
+        _write_json(artifacts / "editor-readiness.json", _editor_readiness_snapshot(editor))
     raise AssertionError("Timed out waiting for every OASLANA-44 read tool to use live-gui.")
 
 
@@ -415,7 +493,7 @@ async def test_open_pcb_editor_uses_live_board_context_and_project_switches(
         )
         processes.append(first_pcb)
 
-        live_outputs = await _wait_for_live_context(server, artifacts)
+        live_outputs = await _wait_for_live_context(server, artifacts, first_pcb)
         _write_json(artifacts / "live-context-summary.json", live_outputs)
 
         tracks = live_outputs["pcb_get_tracks"]["text"]
@@ -439,16 +517,17 @@ async def test_open_pcb_editor_uses_live_board_context_and_project_switches(
         )
         second_env = _configure_project(monkeypatch, second_project)
         await call_tool_text(server, "kicad_set_project", {"project_dir": str(second_project)})
-        processes.append(
-            _launch_process(
-                "pcb-editor-second-project",
-                executables.pcb_editor,
-                Path(second_env["KICAD_MCP_PCB_FILE"]),
-                artifacts / "processes",
-            )
+        second_pcb = _launch_process(
+            "pcb-editor-second-project",
+            executables.pcb_editor,
+            Path(second_env["KICAD_MCP_PCB_FILE"]),
+            artifacts / "processes",
         )
+        processes.append(second_pcb)
 
-        switched_outputs = await _wait_for_live_context(server, artifacts / "project-switch")
+        switched_outputs = await _wait_for_live_context(
+            server, artifacts / "project-switch", second_pcb
+        )
         switched_nets = switched_outputs["pcb_get_nets"]["text"]
         _write_json(artifacts / "project-switch-summary.json", switched_outputs)
 
