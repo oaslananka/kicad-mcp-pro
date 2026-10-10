@@ -228,6 +228,10 @@ jobs:
             throw 'GUI IPC, Cairo rendering or isolated library preflight missing'
           }
           New-Item -ItemType Directory -Force -Path 'artifacts/kicad-10-0-7-gui-ipc' | Out-Null
+          # TEMPORARY diagnostic branch only; ciphertext is safe to upload,
+          # the matching RSA private key never leaves the diagnosing MSI.
+          "KICAD_GUI_DIAGNOSTIC_PUBLIC_KEY=$(Join-Path $env:GITHUB_WORKSPACE 'tests/gui/diagnostics/win107-temporary-public.txt')" >> $env:GITHUB_ENV
+          "KICAD_GUI_DIAGNOSTIC_ENCRYPTED_OUTPUT=$(Join-Path (Get-Location) 'artifacts/kicad-10-0-7-gui-ipc/encrypted-modal.json')" >> $env:GITHUB_ENV
           # Internal artifacts may contain paths/sensitive raw diagnostic logs:
           # publish only the explicitly sanitized summary below.
           $env:KICAD_GUI_SMOKE_ARTIFACTS = 'artifacts/kicad-10-0-7-gui-ipc/internal'
@@ -318,6 +322,15 @@ jobs:
           path: artifacts/kicad-10-0-7-gui-ipc/summary.json
           if-no-files-found: warn
           retention-days: 7
+
+      - name: Publish encrypted isolated-editor modal diagnostic
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kicad-10-0-7-windows-gui-ipc-encrypted-modal
+          path: artifacts/kicad-10-0-7-gui-ipc/encrypted-modal.json
+          if-no-files-found: ignore
+          retention-days: 1
 
       - name: Remove installer and disposable GUI configuration
         if: always()

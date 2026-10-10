@@ -8,6 +8,7 @@ the normal PR path.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import platform
@@ -366,6 +367,48 @@ def _classify_kicad_dialog_message(message: str) -> str:
     return "unrecognized"
 
 
+def _write_encrypted_modal_diagnostic(raw_labels: list[str]) -> None:
+    """Encrypt ephemeral own-editor modal labels, never persist or log plaintext.
+
+    This probe is temporary and only active with a disposable public key on
+    opt-in Windows diagnostic runs. RSA-OAEP SHA-256 ciphertext is public-safe;
+    its private key stays exclusively on the diagnosing MSI machine.
+    """
+    output = os.environ.get("KICAD_GUI_DIAGNOSTIC_ENCRYPTED_OUTPUT")
+    key_path = os.environ.get("KICAD_GUI_DIAGNOSTIC_PUBLIC_KEY")
+    if not output or not key_path or not raw_labels:
+        return
+
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa
+
+    key = serialization.load_pem_public_key(Path(key_path).read_bytes())
+    if not isinstance(key, rsa.RSAPublicKey) or key.key_size != 4096:
+        raise ValueError("GUI diagnostic requires a 4096-bit public RSA key")
+    plaintext = json.dumps(
+        {"schema": "encrypted-kicad-own-gui-modal.v1", "labels": raw_labels[:25]},
+        ensure_ascii=False,
+    ).encode("utf-8")
+    # RSA-4096 OAEP/SHA-256 limit is 446 bytes: leave ample margin per chunk.
+    chunks = [
+        base64.b64encode(
+            key.encrypt(
+                plaintext[i : i + 360],
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None,
+                ),
+            )
+        ).decode("ascii")
+        for i in range(0, len(plaintext), 360)
+    ]
+    _write_json(
+        Path(output),
+        {"schema": "encrypted-kicad-own-gui-modal.v1", "keyBits": 4096, "chunks": chunks},
+    )
+
+
 def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
     """Capture ONLY bounded lifecycle/window metadata, never titles or host paths."""
     exit_code = editor.process.poll()
@@ -472,6 +515,8 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
     }
     static_count = 0
     body_read_failed = False
+    # Ephemeral own-PID modal messages: only encrypted ciphertext may be stored.
+    diagnostic_labels: list[str] = []
 
     def inspect_visible_dialog_body(dialog_hwnd: int) -> None:
         """Read only visible Static labels of the isolated PCB Editor modal."""
@@ -508,6 +553,8 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
             if written.value > 0:
                 category = _classify_kicad_dialog_message(body.value)
                 body_categories[category] += 1
+                if os.environ.get("KICAD_GUI_DIAGNOSTIC_ENCRYPTED_OUTPUT"):
+                    diagnostic_labels.append(body.value[:512])
             return True
 
         callback = enum_callback_type(inspect_child)
@@ -547,6 +594,8 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
                     user32.GetWindowTextW(hwnd, title_buffer, len(title_buffer))
                     category = _classify_visible_kicad_dialog(title_buffer.value)
                     categories[category] += 1
+                    if os.environ.get("KICAD_GUI_DIAGNOSTIC_ENCRYPTED_OUTPUT"):
+                        diagnostic_labels.append(title_buffer.value[:512])
                     inspect_visible_dialog_body(hwnd)
         return True
 
@@ -560,6 +609,7 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
         result["visibleDialogBodyCategories"] = body_categories
         result["visibleDialogStaticControlCount"] = static_count
         result["visibleDialogMessageReadFailed"] = body_read_failed
+        _write_encrypted_modal_diagnostic(diagnostic_labels)
     return result
 
 
