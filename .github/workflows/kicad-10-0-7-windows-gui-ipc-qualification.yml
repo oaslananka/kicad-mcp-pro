@@ -136,6 +136,44 @@ jobs:
             Set-Content -LiteralPath $commonSettings -Encoding utf8
           $settings = Get-Content -LiteralPath $commonSettings -Raw | ConvertFrom-Json
           if ($settings.api.enable_server -ne $true) { throw 'Isolated IPC setting not enabled' }
+
+          # KiCad 10 first-run GUI may block on choosing symbol/footprint
+          # library tables. Provision BOTH from the same signed installer
+          # into the disposable versioned profile, without any UI clicks or
+          # reads from the runner/user's existing KiCad configuration.
+          $installBin = Split-Path -Parent $env:KICAD_CANARY_KICAD_CLI
+          $installRoot = Split-Path -Parent $installBin
+          $templateRoot = Join-Path $installRoot 'share/kicad/template'
+          $symbolRoot = Join-Path $installRoot 'share/kicad/symbols'
+          $footprintRoot = Join-Path $installRoot 'share/kicad/footprints'
+          foreach ($directory in @($templateRoot, $symbolRoot, $footprintRoot)) {
+            if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+              throw 'Signed isolated installation is missing standard KiCad library resources'
+            }
+          }
+          foreach ($tableName in @('sym-lib-table', 'fp-lib-table')) {
+            $source = Join-Path $templateRoot $tableName
+            $destination = Join-Path $versionConfig $tableName
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+              throw "Signed isolated installation is missing standard $tableName"
+            }
+            if (Test-Path -LiteralPath $destination) {
+              throw "Isolated $tableName already exists before first-run provisioning"
+            }
+            Copy-Item -LiteralPath $source -Destination $destination -ErrorAction Stop
+            $copied = Get-Item -LiteralPath $destination -ErrorAction Stop
+            if ($copied.Length -eq 0 -or
+                (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne
+                (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash) {
+              throw "Default KiCad $tableName table integrity check failed"
+            }
+          }
+          # Require KiCad 10's release-specific standard library paths;
+          # do not accidentally load the runner's global KiCad libraries.
+          "KICAD10_TEMPLATE_DIR=$templateRoot" >> $env:GITHUB_ENV
+          "KICAD10_SYMBOL_DIR=$symbolRoot" >> $env:GITHUB_ENV
+          "KICAD10_FOOTPRINT_DIR=$footprintRoot" >> $env:GITHUB_ENV
+          "KICAD_107_FIRST_RUN_TABLES_READY=true" >> $env:GITHUB_ENV
           $installBin = Split-Path -Parent $env:KICAD_CANARY_KICAD_CLI
           $pcb = Join-Path $installBin 'pcbnew.exe'
           if (-not (Test-Path -LiteralPath $pcb -PathType Leaf)) { throw 'Signed isolated install lacks PCB Editor' }
@@ -172,7 +210,10 @@ jobs:
           SOURCE_REVISION: ${{ github.sha }}
         run: |
           $ErrorActionPreference = 'Stop'
-          if ($env:KICAD_107_GUI_CONFIG_READY -ne 'true') { throw 'GUI IPC preflight was skipped' }
+          if ($env:KICAD_107_GUI_CONFIG_READY -ne 'true' -or
+              $env:KICAD_107_FIRST_RUN_TABLES_READY -ne 'true') {
+            throw 'GUI IPC and isolated library table preflight were skipped'
+          }
           New-Item -ItemType Directory -Force -Path 'artifacts/kicad-10-0-7-gui-ipc' | Out-Null
           uv run --all-extras python -m pytest -q tests/gui/test_kicad_gui_live_context.py --disable-warnings --junitxml=artifacts/kicad-10-0-7-gui-ipc/junit.xml
           $exit = $LASTEXITCODE
