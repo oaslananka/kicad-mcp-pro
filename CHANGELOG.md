@@ -10,6 +10,34 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.2.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.1.0...mcp-server-v4.2.0) (2026-10-10)
+
+
+### Features
+
+* **evals:** report incomplete real-board corpus versions fail closed ([#1174](https://github.com/oaslananka/kicad-mcp-pro/issues/1174)) ([f54500c](https://github.com/oaslananka/kicad-mcp-pro/commit/f54500cf920f716897d55221e2b6f3976b92f379))
+
+
+### Bug Fixes
+
+* **ir:** reject incomplete hierarchical graph sidecars ([#1169](https://github.com/oaslananka/kicad-mcp-pro/issues/1169)) ([121b7ec](https://github.com/oaslananka/kicad-mcp-pro/commit/121b7ece2b089ef035316a95f279c354b523df41))
+* **ir:** reject undeclared native child sheets before caching root-only graph ([#1172](https://github.com/oaslananka/kicad-mcp-pro/issues/1172)) ([5ab270f](https://github.com/oaslananka/kicad-mcp-pro/commit/5ab270f812764260f0fe2e1c287cc7fa83d8666f))
+* **library:** require human-review state for conflicting facts ([#1177](https://github.com/oaslananka/kicad-mcp-pro/issues/1177)) ([3490648](https://github.com/oaslananka/kicad-mcp-pro/commit/3490648a64523a34c2569e964f9f022be5f8c1b7))
+* **providers:** reject ambiguous numeric host declarations ([#1176](https://github.com/oaslananka/kicad-mcp-pro/issues/1176)) ([ee11ab2](https://github.com/oaslananka/kicad-mcp-pro/commit/ee11ab2276aed6364dc4bea92c18e76fd0f0ff12))
+* **providers:** reject non-Boolean readiness responses ([#1175](https://github.com/oaslananka/kicad-mcp-pro/issues/1175)) ([c70d18a](https://github.com/oaslananka/kicad-mcp-pro/commit/c70d18ae8377f19caeed38f261a83324847ea5eb))
+* **providers:** revalidate request manifest and evidence boundaries ([#1182](https://github.com/oaslananka/kicad-mcp-pro/issues/1182)) ([c93559e](https://github.com/oaslananka/kicad-mcp-pro/commit/c93559e47fc9dba2e0bdc11f64467f1ad1d0d6c1))
+* **providers:** revalidate returned SDK model instances ([#1178](https://github.com/oaslananka/kicad-mcp-pro/issues/1178)) ([e8be26a](https://github.com/oaslananka/kicad-mcp-pro/commit/e8be26a5f79521173830be95c25d7b97cbf759ec))
+* **providers:** validate exact network host declarations ([#1173](https://github.com/oaslananka/kicad-mcp-pro/issues/1173)) ([6e8b815](https://github.com/oaslananka/kicad-mcp-pro/commit/6e8b815aec3530d44f9718a70ac0eb72e61ae248))
+
+
+### Documentation
+
+* distinguish verified KiCad baseline and archived audit steps ([#1170](https://github.com/oaslananka/kicad-mcp-pro/issues/1170)) ([8f6a631](https://github.com/oaslananka/kicad-mcp-pro/commit/8f6a631d01cfb64fad91ba8b2707eaf4eec6741f))
+* **ir:** align incremental state pilot example with single-sheet guard ([#1171](https://github.com/oaslananka/kicad-mcp-pro/issues/1171)) ([44608f5](https://github.com/oaslananka/kicad-mcp-pro/commit/44608f552fe5b441705c79f03c636360a3845fad))
+* **kicad:** preserve native 10.0.7 Linux canary evidence ([#1183](https://github.com/oaslananka/kicad-mcp-pro/issues/1183)) ([6db1b36](https://github.com/oaslananka/kicad-mcp-pro/commit/6db1b36875e30aaf97b49ab87fd30e43253a100f))
+* **kicad:** retain signed Windows 10.0.7 native CLI evidence ([#1189](https://github.com/oaslananka/kicad-mcp-pro/issues/1189)) ([52b8b0b](https://github.com/oaslananka/kicad-mcp-pro/commit/52b8b0b5ada6e36ef809978105c119d82b23305b))
+* **release:** align manual publishing and maintenance paths ([#1180](https://github.com/oaslananka/kicad-mcp-pro/issues/1180)) ([f3522df](https://github.com/oaslananka/kicad-mcp-pro/commit/f3522dfc822811286c31860e70ee66acd47ac76e))
+
 ## [4.1.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.0.2...mcp-server-v4.1.0) (2026-10-09)
 
 
