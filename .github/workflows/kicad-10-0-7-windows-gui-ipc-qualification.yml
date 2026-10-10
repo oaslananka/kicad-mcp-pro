@@ -131,11 +131,23 @@ jobs:
           New-Item -ItemType Directory -Force -Path $versionConfig | Out-Null
           $commonSettings = Join-Path $versionConfig 'kicad_common.json'
           if (Test-Path -LiteralPath $commonSettings) { throw 'Not an isolated clean KiCad config' }
-          @{ api = @{ enable_server = $true } } |
-            ConvertTo-Json -Depth 5 |
+          # Independent Windows 10.0.7 GUI canary evidence (run #38037587614)
+          # classified two PCB Editor modal labels as graphics/rendering.
+          # KiCad's EDA_DRAW_PANEL_GAL enum assigns 1=OpenGL, 2=Cairo.
+          # The hosted Windows runner has no guaranteed 3D acceleration:
+          # select KiCad's supported Cairo software renderer IN THIS
+          # disposable profile only. Never click/dismiss an unknown modal.
+          @{
+            api = @{ enable_server = $true }
+            graphics = @{ canvas_type = 2 }
+          } | ConvertTo-Json -Depth 5 |
             Set-Content -LiteralPath $commonSettings -Encoding utf8
           $settings = Get-Content -LiteralPath $commonSettings -Raw | ConvertFrom-Json
           if ($settings.api.enable_server -ne $true) { throw 'Isolated IPC setting not enabled' }
+          if ($settings.graphics.canvas_type -ne 2) {
+            throw 'Isolated KiCad Cairo software renderer configuration missing'
+          }
+          "KICAD_107_GUI_RENDERER=cairo" >> $env:GITHUB_ENV
 
           # KiCad 10 first-run GUI may block on choosing symbol/footprint
           # library tables. Provision BOTH from the same signed installer
@@ -211,8 +223,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:KICAD_107_GUI_CONFIG_READY -ne 'true' -or
-              $env:KICAD_107_FIRST_RUN_TABLES_READY -ne 'true') {
-            throw 'GUI IPC and isolated library table preflight were skipped'
+              $env:KICAD_107_FIRST_RUN_TABLES_READY -ne 'true' -or
+              $env:KICAD_107_GUI_RENDERER -ne 'cairo') {
+            throw 'GUI IPC, Cairo rendering or isolated library preflight missing'
           }
           New-Item -ItemType Directory -Force -Path 'artifacts/kicad-10-0-7-gui-ipc' | Out-Null
           # Internal artifacts may contain paths/sensitive raw diagnostic logs:
@@ -278,6 +291,7 @@ jobs:
             kicadVersion = '10.0.7'
             scope = 'actual PCB Editor GUI IPC / four live MCP tools and project switch only; no manufacturing success'
             runner = 'windows-2025'
+            guiRenderer = $env:KICAD_107_GUI_RENDERER
             tests = @($cases | ForEach-Object { $_.name })
             testCount = $cases.Count
             failures = $failures.Count
