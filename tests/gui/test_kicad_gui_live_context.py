@@ -332,6 +332,9 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
         "enabledVisibleWindowCount": 0,
         "disabledVisibleWindowCount": 0,
         "standardDialogWindowCount": 0,
+        "visibleStandardDialogWindowCount": 0,
+        "enabledVisibleStandardDialogWindowCount": 0,
+        "disabledVisibleStandardDialogWindowCount": 0,
     }
     if platform.system() != "Windows":
         return result
@@ -363,6 +366,9 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
         "enabledVisibleWindowCount": 0,
         "disabledVisibleWindowCount": 0,
         "standardDialogWindowCount": 0,
+        "visibleStandardDialogWindowCount": 0,
+        "enabledVisibleStandardDialogWindowCount": 0,
+        "disabledVisibleStandardDialogWindowCount": 0,
     }
 
     def visit(hwnd: int, _unused: int) -> bool:
@@ -371,9 +377,11 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
         if owner_pid.value != editor.process.pid:
             return True
         counts["windowCount"] += 1
-        if user32.IsWindowVisible(hwnd):
+        visible = bool(user32.IsWindowVisible(hwnd))
+        enabled = bool(user32.IsWindowEnabled(hwnd))
+        if visible:
             counts["visibleWindowCount"] += 1
-            if user32.IsWindowEnabled(hwnd):
+            if enabled:
                 counts["enabledVisibleWindowCount"] += 1
             else:
                 counts["disabledVisibleWindowCount"] += 1
@@ -381,6 +389,14 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
         if user32.GetClassNameW(hwnd, window_class, len(window_class)):
             if window_class.value == "#32770":
                 counts["standardDialogWindowCount"] += 1
+                if visible:
+                    counts["visibleStandardDialogWindowCount"] += 1
+                    key = (
+                        "enabledVisibleStandardDialogWindowCount"
+                        if enabled
+                        else "disabledVisibleStandardDialogWindowCount"
+                    )
+                    counts[key] += 1
         return True
 
     callback = enum_callback_type(visit)

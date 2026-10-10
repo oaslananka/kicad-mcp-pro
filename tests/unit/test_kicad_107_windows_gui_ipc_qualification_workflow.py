@@ -64,6 +64,9 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     assert "editor-readiness.json" in smoke
     assert "editorReadiness = $editor" in smoke
     assert "windowCount" in smoke and "standardDialogWindowCount" in smoke
+    assert "visibleStandardDialogWindowCount" in smoke
+    assert "enabledVisibleStandardDialogWindowCount" in smoke
+    assert "disabledVisibleStandardDialogWindowCount" in smoke
     assert "Get-Content -LiteralPath $diag" in smoke
     assert 'throw "Signed isolated installation is missing standard $tableName"' in prepare
     assert "KICAD_GUI_SMOKE_PCB_ONLY=1" in prepare
@@ -117,5 +120,8 @@ def test_editor_snapshot_on_non_windows_is_bounded(
     assert result["processRunning"] is True
     assert result["processExitCode"] is None
     assert result["windowCount"] == 0
+    assert result["visibleStandardDialogWindowCount"] == 0
+    assert result["enabledVisibleStandardDialogWindowCount"] == 0
+    assert result["disabledVisibleStandardDialogWindowCount"] == 0
     assert "pid" not in result
     assert "title" not in result
