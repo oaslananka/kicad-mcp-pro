@@ -71,6 +71,20 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     for category in ("librarySetup", "fileRecovery", "boardLock", "warningOrError", "unrecognized"):
         assert f"{category} = [int]$raw.visibleDialogPromptCategories.{category}" in smoke
     assert "Get-Content -LiteralPath $diag" in smoke
+    assert "visibleDialogBodyCategories = [ordered]@{" in smoke
+    for category in (
+        "librarySetup",
+        "fileRecovery",
+        "boardLock",
+        "graphicsOrRendering",
+        "formatCompatibility",
+        "fileOpenFailure",
+        "warningOrError",
+        "unrecognized",
+    ):
+        assert f"{category} = [int]$raw.visibleDialogBodyCategories.{category}" in smoke
+    assert "visibleDialogStaticControlCount" in smoke
+    assert "visibleDialogMessageReadFailed" in smoke
     assert 'throw "Signed isolated installation is missing standard $tableName"' in prepare
     assert "KICAD_GUI_SMOKE_PCB_ONLY=1" in prepare
     assert "Get-Process -Name explorer" in prepare
@@ -124,6 +138,8 @@ def test_editor_snapshot_on_non_windows_is_bounded(
     assert result["processExitCode"] is None
     assert result["windowCount"] == 0
     assert result["visibleStandardDialogWindowCount"] == 0
+    assert result["visibleDialogStaticControlCount"] == 0
+    assert result["visibleDialogMessageReadFailed"] is False
     assert result["enabledVisibleStandardDialogWindowCount"] == 0
     assert result["disabledVisibleStandardDialogWindowCount"] == 0
     assert "pid" not in result
@@ -148,3 +164,24 @@ def test_only_approved_dialog_categories_are_exposed(title: str, expected: str) 
     from tests.gui import test_kicad_gui_live_context as smoke
 
     assert smoke._classify_visible_kicad_dialog(title) == expected
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("Configure the global footprint library table", "librarySetup"),
+        ("Symbol library table must be initialized", "librarySetup"),
+        ("PCB file rescue required", "fileRecovery"),
+        ("Board already open in another process", "boardLock"),
+        ("OpenGL renderer unavailable", "graphicsOrRendering"),
+        ("Unsupported file version", "formatCompatibility"),
+        ("Could not open the selected board", "fileOpenFailure"),
+        ("Failed to initialize KiCad", "warningOrError"),
+        ("A temporary path with no known trigger", "unrecognized"),
+        ("", "unrecognized"),
+    ],
+)
+def test_modal_body_only_approved_diagnostic_categories(body: str, expected: str) -> None:
+    from tests.gui import test_kicad_gui_live_context as smoke
+
+    assert smoke._classify_kicad_dialog_message(body) == expected
