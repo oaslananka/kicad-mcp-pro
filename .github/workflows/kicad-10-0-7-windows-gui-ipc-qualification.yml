@@ -250,6 +250,13 @@ jobs:
               visibleStandardDialogWindowCount = [int]$raw.visibleStandardDialogWindowCount
               enabledVisibleStandardDialogWindowCount = [int]$raw.enabledVisibleStandardDialogWindowCount
               disabledVisibleStandardDialogWindowCount = [int]$raw.disabledVisibleStandardDialogWindowCount
+              visibleDialogPromptCategories = [ordered]@{
+                librarySetup = [int]$raw.visibleDialogPromptCategories.librarySetup
+                fileRecovery = [int]$raw.visibleDialogPromptCategories.fileRecovery
+                boardLock = [int]$raw.visibleDialogPromptCategories.boardLock
+                warningOrError = [int]$raw.visibleDialogPromptCategories.warningOrError
+                unrecognized = [int]$raw.visibleDialogPromptCategories.unrecognized
+              }
               windowEnumerationFailed = [bool]$raw.windowEnumerationFailed
             }
           }

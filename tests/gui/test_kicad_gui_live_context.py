@@ -321,6 +321,22 @@ async def _call_smoke_tools(server: object) -> dict[str, dict[str, str]]:
     return outputs
 
 
+def _classify_visible_kicad_dialog(title: str) -> str:
+    """Classify a KiCad-owned dialog using an allowlist; never persist its title."""
+    normalized = " ".join(title.casefold().split())
+    if ("library" in normalized and ("table" in normalized or "configur" in normalized)) or (
+        "first run" in normalized or "first-time" in normalized
+    ):
+        return "librarySetup"
+    if "recover" in normalized or "rescue" in normalized:
+        return "fileRecovery"
+    if "lock" in normalized:
+        return "boardLock"
+    if "warning" in normalized or "error" in normalized:
+        return "warningOrError"
+    return "unrecognized"
+
+
 def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
     """Capture ONLY bounded lifecycle/window metadata, never titles or host paths."""
     exit_code = editor.process.poll()
@@ -335,6 +351,13 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
         "visibleStandardDialogWindowCount": 0,
         "enabledVisibleStandardDialogWindowCount": 0,
         "disabledVisibleStandardDialogWindowCount": 0,
+        "visibleDialogPromptCategories": {
+            "librarySetup": 0,
+            "fileRecovery": 0,
+            "boardLock": 0,
+            "warningOrError": 0,
+            "unrecognized": 0,
+        },
     }
     if platform.system() != "Windows":
         return result
@@ -359,6 +382,10 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
     user32.IsWindowEnabled.restype = wintypes.BOOL
     user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
     user32.GetClassNameW.restype = ctypes.c_int
+    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    user32.GetWindowTextLengthW.restype = ctypes.c_int
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowTextW.restype = ctypes.c_int
 
     counts = {
         "windowCount": 0,
@@ -369,6 +396,13 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
         "visibleStandardDialogWindowCount": 0,
         "enabledVisibleStandardDialogWindowCount": 0,
         "disabledVisibleStandardDialogWindowCount": 0,
+    }
+    categories = {
+        "librarySetup": 0,
+        "fileRecovery": 0,
+        "boardLock": 0,
+        "warningOrError": 0,
+        "unrecognized": 0,
     }
 
     def visit(hwnd: int, _unused: int) -> bool:
@@ -397,6 +431,14 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
                         else "disabledVisibleStandardDialogWindowCount"
                     )
                     counts[key] += 1
+                    # Only read window text from *this exact isolated PCB
+                    # Editor PID*, then discard it. Never upload titles,
+                    # child controls, screenshots, usernames or paths.
+                    title_length = min(511, max(0, user32.GetWindowTextLengthW(hwnd)))
+                    title_buffer = ctypes.create_unicode_buffer(title_length + 1)
+                    user32.GetWindowTextW(hwnd, title_buffer, len(title_buffer))
+                    category = _classify_visible_kicad_dialog(title_buffer.value)
+                    categories[category] += 1
         return True
 
     callback = enum_callback_type(visit)
@@ -405,6 +447,7 @@ def _editor_readiness_snapshot(editor: ManagedProcess) -> dict[str, object]:
         result["windowEnumerationFailed"] = True
     else:
         result.update(counts)
+        result["visibleDialogPromptCategories"] = categories
     return result
 
 

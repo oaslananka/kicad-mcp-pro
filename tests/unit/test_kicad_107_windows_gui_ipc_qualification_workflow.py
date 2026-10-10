@@ -67,6 +67,9 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     assert "visibleStandardDialogWindowCount" in smoke
     assert "enabledVisibleStandardDialogWindowCount" in smoke
     assert "disabledVisibleStandardDialogWindowCount" in smoke
+    assert "visibleDialogPromptCategories" in smoke
+    for category in ("librarySetup", "fileRecovery", "boardLock", "warningOrError", "unrecognized"):
+        assert f"{category} = [int]$raw.visibleDialogPromptCategories.{category}" in smoke
     assert "Get-Content -LiteralPath $diag" in smoke
     assert 'throw "Signed isolated installation is missing standard $tableName"' in prepare
     assert "KICAD_GUI_SMOKE_PCB_ONLY=1" in prepare
@@ -125,3 +128,23 @@ def test_editor_snapshot_on_non_windows_is_bounded(
     assert result["disabledVisibleStandardDialogWindowCount"] == 0
     assert "pid" not in result
     assert "title" not in result
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Configure Global Footprint Library Table", "librarySetup"),
+        ("Configure Global Symbol Library Table", "librarySetup"),
+        ("KiCad First Run", "librarySetup"),
+        ("Recover PCB data", "fileRecovery"),
+        ("File Locked", "boardLock"),
+        ("PCB Editor Warning", "warningOrError"),
+        ("Error loading board", "warningOrError"),
+        ("Temporary runner private path", "unrecognized"),
+        ("", "unrecognized"),
+    ],
+)
+def test_only_approved_dialog_categories_are_exposed(title: str, expected: str) -> None:
+    from tests.gui import test_kicad_gui_live_context as smoke
+
+    assert smoke._classify_visible_kicad_dialog(title) == expected
