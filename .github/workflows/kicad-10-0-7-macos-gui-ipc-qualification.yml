@@ -78,7 +78,10 @@ jobs:
           cli=$(find "$app" -name kicad-cli -print -quit)
           pcb=$(find "$mount_dir" -name pcbnew -print -quit)
           symbol=$(find "$mount_dir" -name Device.kicad_sym -print -quit)
-          template=$(find "$mount_dir" -name sym-lib-table -print -quit)
+          # The DMG also includes demo-project sym-lib-table files. Never
+          # select the first recursive match: it can silently bind an
+          # unrelated demo's global library table to our isolated profile.
+          template="$app/Contents/SharedSupport/template/sym-lib-table"
           test -x "$cli" && test -x "$pcb" && test -s "$symbol" && test -s "$template"
           test "$("$cli" version)" = '10.0.7'
           printf '%s\n' \
@@ -144,6 +147,10 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
+          # GitHub's bash step invokes -e by default. Disable it ONLY around
+          # the two acceptance commands, capture BOTH status codes, then
+          # re-enable fail-closed behavior for the bounded evidence writer.
+          set +e
           target=artifacts/kicad-10-0-7-macos
           mkdir -p "$target/internal"
           export KICAD_GUI_SMOKE_ARTIFACTS="$target/internal"
@@ -154,9 +161,10 @@ jobs:
             tests/gui/test_kicad_gui_live_context.py --disable-warnings \
             --junitxml="$target/internal/junit.xml"
           gui_rc=$?
+          set -e
           export NATIVE_RC="$native_rc" GUI_RC="$gui_rc"
           python3 - <<'PY'
-          import json, os, xml.etree.ElementTree as ET
+          import json, os, re, xml.etree.ElementTree as ET
           from pathlib import Path
           root=Path("artifacts/kicad-10-0-7-macos")
           p=root/"summary.json"
@@ -167,8 +175,14 @@ jobs:
           out.update(nativeExit=int(os.environ["NATIVE_RC"]), guiExit=int(os.environ["GUI_RC"]))
           if native.exists():
               v=json.loads(native.read_text())
-              out.update(nativeSteps=len(v.get("results",[])),
-                         nativeFailures=sum(not r.get("ok",False) for r in v.get("results",[])))
+              rows=v.get("results",[])
+              bad=[r for r in rows if not r.get("ok",False)]
+              # Strict fixture-name whitelist: never upload native stderr,
+              # absolute runner paths or arbitrary exception messages.
+              safe=lambda text: text if re.fullmatch(r"[a-zA-Z0-9_-]{1,96}", str(text)) else "redacted"
+              out.update(nativeSteps=len(rows), nativeFailures=len(bad),
+                         failedFixtureIds=sorted({safe(r.get("fixture","")) for r in bad}),
+                         failedStepIds=sorted({safe(r.get("name","")) for r in bad}))
           if diff.exists():
               v=json.loads(diff.read_text())
               out.update(differentialMatches=v.get("match_count"),
