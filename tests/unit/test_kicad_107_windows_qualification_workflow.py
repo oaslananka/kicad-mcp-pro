@@ -46,6 +46,16 @@ def test_windows_stable_native_qualification_is_opt_in() -> None:
     assert "/S" in install["run"] and "/currentuser" in install["run"]
     assert "RUNNER_TEMP" in install["run"] and "cannot fall back" in install["run"]
     assert "version -ne '10.0.7'" in install["run"]
+    assert "share/kicad/symbols" in install["run"]
+    assert "Device.kicad_sym" in install["run"]
+    assert "KICAD_SYMBOL_DIR=$symbols" in install["run"]
+    assert "KICAD10_SYMBOL_DIR=$symbols" in install["run"]
+    assert "KICAD_MCP_KICAD_CLI=$cli" in install["run"]
+    assert "cannot compare connectivity" in install["run"]
+    assert install["run"].index("Test-Path -LiteralPath $deviceSymbols") < install["run"].index(
+        '"KICAD_SYMBOL_DIR=$symbols"'
+    )
+    assert "KICAD_SYMBOL_DIR=$symbols" not in verify["run"]
     assert "$versionLines = @(& $cli version)" in install["run"]
     assert "$versionExitCode = $LASTEXITCODE" in install["run"]
     assert "$version = ($versionLines | Select-Object -First 1).Trim()" in install["run"]
