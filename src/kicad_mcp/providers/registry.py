@@ -27,6 +27,9 @@ class ProviderRegistry:
         self._entries: dict[str, tuple[ProviderManifest, Provider]] = {}
 
     def register(self, manifest: ProviderManifest, adapter: Provider) -> None:
+        # Registration is a policy boundary; model_copy/model_construct may bypass
+        # earlier checks, including network, egress and per-operation permissions.
+        manifest = ProviderManifest.model_validate(manifest)
         if manifest.provider_id in self._entries:
             raise ValueError("duplicate provider registration")
         if getattr(adapter, "family", None) != manifest.family:

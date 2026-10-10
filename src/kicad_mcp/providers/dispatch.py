@@ -62,7 +62,9 @@ async def execute_provider(
 
     Cancellation propagates. In particular a timed-out mutation may have
     succeeded remotely: the host must read back real state before retry.
+    Invalid host request contracts raise a validation error before adapter access.
     """
+    request = ProviderRequest.model_validate(request)
     selected = _select(
         registry, request, permissions=frozenset(granted_permissions), offline=offline
     )

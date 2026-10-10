@@ -106,3 +106,56 @@ def test_strict_result_envelope_rejects_missing_provenance() -> None:
         ProviderResult(request_id="req-001", ok=True)
     with pytest.raises(ValidationError, match="structured error"):
         ProviderResult(request_id="req-001", ok=False)
+
+
+@pytest.mark.parametrize("corruption", ("payload", "hash", "manifest"))
+def test_evidence_handoff_revalidates_constructed_provider_objects(corruption: str) -> None:
+    """Copied or constructed result/manifest objects must not create evidence."""
+    manifest = ProviderManifest(
+        sdk_version="0-experimental",
+        provider_id="fixture-solver",
+        provider_version="0.1.0",
+        family=ProviderFamily.SOLVER,
+        capabilities=("solver.dc",),
+        operations=(ProviderOperation(name="solve", capability="solver.dc"),),
+        deterministic=False,
+        provenance_source="solver:fixture",
+        healthcheck="ready",
+        license_id="MIT",
+        distribution_notes="Dummy",
+    )
+    result = ProviderResult(
+        request_id="run-001",
+        ok=True,
+        payload={"voltage": 3.3},
+        provenance=ProviderProvenance(
+            provider_id="fixture-solver",
+            provider_version="0.1.0",
+            source="solver:fixture",
+            execution_id="run-001",
+            deterministic=False,
+            input_sha256="a" * 64,
+            output_sha256="b" * 64,
+        ),
+    )
+    if corruption == "payload":
+        result = result.model_copy(update={"payload": {"invalid": object()}})
+    elif corruption == "hash":
+        assert result.provenance is not None
+        result = result.model_copy(
+            update={"provenance": result.provenance.model_copy(update={"output_sha256": "broken"})}
+        )
+    else:
+        manifest = manifest.model_copy(update={"network_access": True})
+    with pytest.raises(ValidationError):
+        provider_evidence_handoff(
+            result,
+            manifest,
+            evidence_id="provider-invalid-001",
+            project_key="fixture",
+            source_revision="git:abc",
+            source_sha256="d" * 64,
+            captured_at=datetime.now(UTC),
+            inputs=(EvidenceInputDigest(entity_id="project:input", sha256="c" * 64),),
+            dependency_manifest_complete=False,
+        )
