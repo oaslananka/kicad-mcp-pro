@@ -1,0 +1,125 @@
+name: KiCad 10.0.7 Windows Qualification
+
+# Explicit operator-triggered disposable Windows-native qualification only.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: win-kicad-107-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-windows-cli:
+    name: Windows 10.0.7 CLI canary
+    runs-on: windows-2025
+    timeout-minutes: 65
+    steps:
+      - name: Checkout tested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install project pinned uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          version-file: uv.toml
+          enable-cache: true
+          prune-cache: true
+
+      - name: Download and verify KiCad installer Authenticode
+        shell: pwsh
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Join-Path $env:RUNNER_TEMP 'kicad-10.0.7-x86_64.exe'
+          $uri = 'https://mirrors.mit.edu/kicad/windows/stable/kicad-10.0.7-x86_64.exe'
+          & curl.exe --fail --location --retry 2 --connect-timeout 25 --max-time 900 --output $installer $uri
+          if ($LASTEXITCODE -ne 0) { throw 'Official KiCad installer download failed' }
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw 'Missing installer' }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate) {
+            throw "Installer Authenticode invalid: $($signature.Status)"
+          }
+          if ($signature.SignerCertificate.Subject -notmatch '(?i)(?:CN|O)=.*KiCad') {
+            throw 'Unexpected KiCad Authenticode signer'
+          }
+          New-Item -ItemType Directory -Force -Path 'artifacts/kicad-10-0-7-windows' | Out-Null
+          [ordered]@{
+            schemaVersion = 'windows-kicad-107-qualification.v1'
+            sourceRevision = $env:SOURCE_REVISION
+            installerVersion = '10.0.7'
+            installerUrl = $uri
+            installerSha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+            signatureStatus = [string]$signature.Status
+            signerSubject = $signature.SignerCertificate.Subject
+            signerIssuer = $signature.SignerCertificate.Issuer
+            scope = 'Windows native CLI only; GUI/IPC and reference-board manufacturing not verified'
+          } | ConvertTo-Json | Set-Content -Path 'artifacts/kicad-10-0-7-windows/provenance.json' -Encoding utf8
+          "KICAD_107_INSTALLER=$installer" >> $env:GITHUB_ENV
+
+      - name: Install isolated KiCad only on disposable runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $target = Join-Path $env:RUNNER_TEMP 'kicad-107-native-install'
+          if (Test-Path -LiteralPath $target) { throw 'Isolated install target already exists' }
+          $proc = Start-Process -FilePath $env:KICAD_107_INSTALLER -ArgumentList @('/S', '/currentuser', "/D=$target") -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "KiCad installer failed ($($proc.ExitCode))" }
+          $cli = Join-Path $target 'bin/kicad-cli.exe'
+          if (-not (Test-Path -LiteralPath $cli -PathType Leaf)) {
+            throw 'Isolated CLI missing: cannot fall back to system KiCad'
+          }
+          $version = (& $cli version | Select-Object -First 1).Trim()
+          if ($LASTEXITCODE -ne 0 -or $version -ne '10.0.7') {
+            throw "Wrong KiCad CLI version: $version"
+          }
+          "KICAD_CANARY_KICAD_CLI=$cli" >> $env:GITHUB_ENV
+          "KICAD_CONFIG_HOME=$(Join-Path $env:RUNNER_TEMP 'kicad-107-config')" >> $env:GITHUB_ENV
+
+      - name: Sync locked Python dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Run full native Windows 10.0.7 CLI canary
+        shell: pwsh
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          uv run --all-extras python scripts/kicad_canary.py run --artifacts artifacts/kicad-10-0-7-windows --kicad-range 10.0.x
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows canary failed' }
+          $summary = Get-Content 'artifacts/kicad-10-0-7-windows/summary.json' -Raw | ConvertFrom-Json
+          $diff = Get-Content 'artifacts/kicad-10-0-7-windows/differential/summary.json' -Raw | ConvertFrom-Json
+          if ($summary.results.Count -ne 32 -or $summary.failingFixtures.Count -ne 0) { throw 'Incomplete native plan' }
+          if (($summary.results | Where-Object { $_.ok -ne $true }).Count -gt 0) { throw 'Native step failed' }
+          if ($diff.kicad_version -ne '10.0.7' -or $diff.source_sha -ne $env:SOURCE_REVISION) {
+            throw 'Native KiCad version or exact-source evidence mismatch'
+          }
+          if ($diff.match_count -ne 5 -or $diff.results_total -ne 5) { throw 'Incomplete differential acceptance' }
+          foreach ($key in @('false_pass_count', 'false_fail_count', 'divergence_count', 'infrastructure_invalid_count')) {
+            if ($diff.$key -ne 0) { throw "Unsafe differential status: $key" }
+          }
+          Write-Output 'Native Windows 10.0.7 CLI canary passed: 32 planned steps, 5/5 semantic differentials'
+
+      - name: Upload bounded Windows qualification artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: kicad-10-0-7-windows-native
+          path: artifacts/kicad-10-0-7-windows
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Clean up installer and isolated runner files
+        if: always()
+        shell: pwsh
+        run: |
+          foreach ($name in @('kicad-10.0.7-x86_64.exe', 'kicad-107-native-install', 'kicad-107-config')) {
+            $path = Join-Path $env:RUNNER_TEMP $name
+            if (Test-Path -LiteralPath $path) {
+              Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
+            }
+          }
