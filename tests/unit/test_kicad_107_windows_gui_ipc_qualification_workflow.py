@@ -1,15 +1,18 @@
 """Manual-only isolated Windows 10.0.7 GUI/IPC qualification contract."""
 
+import subprocess
 from pathlib import Path
+from typing import Any, cast
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/kicad-10-0-7-windows-gui-ipc-qualification.yml"
 
 
-def _workflow() -> dict:
-    return yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+def _workflow() -> dict[str | bool, Any]:
+    return cast(dict[str | bool, Any], yaml.safe_load(WORKFLOW.read_text(encoding="utf-8")))
 
 
 def test_manual_only_with_disposable_windows_runner() -> None:
@@ -58,6 +61,11 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     assert "KICAD10_TEMPLATE_DIR=$templateRoot" in prepare
     assert "KICAD10_FOOTPRINT_DIR=$footprintRoot" in prepare
     assert "KICAD10_SYMBOL_DIR=$symbolRoot" in prepare
+    assert "KICAD_GUI_SMOKE_ARTIFACTS" in smoke
+    assert "editor-readiness.json" in smoke
+    assert "editorReadiness = $editor" in smoke
+    assert "windowCount" in smoke and "standardDialogWindowCount" in smoke
+    assert "Get-Content -LiteralPath $diag" in smoke
     assert 'throw "Signed isolated installation is missing standard $tableName"' in prepare
     assert "KICAD_GUI_SMOKE_PCB_ONLY=1" in prepare
     assert "Get-Process -Name explorer" in prepare
@@ -80,7 +88,9 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     assert steps[-1]["if"] == "always()"
 
 
-def test_gui_single_pcb_editor_mode_is_explicit_and_opt_in(monkeypatch) -> None:
+def test_gui_single_pcb_editor_mode_is_explicit_and_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from tests.gui import test_kicad_gui_live_context as smoke
 
     monkeypatch.delenv("KICAD_GUI_SMOKE_PCB_ONLY", raising=False)
@@ -89,3 +99,24 @@ def test_gui_single_pcb_editor_mode_is_explicit_and_opt_in(monkeypatch) -> None:
     assert smoke._launch_auxiliary_editors() is False
     monkeypatch.setenv("KICAD_GUI_SMOKE_PCB_ONLY", "0")
     assert smoke._launch_auxiliary_editors() is True
+
+
+def test_editor_snapshot_on_non_windows_is_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.gui import test_kicad_gui_live_context as smoke
+
+    class FakeProcess:
+        pid = 42
+
+        def poll(self) -> int | None:
+            return None
+
+    monkeypatch.setattr("platform.system", lambda: "Linux")
+    editor = smoke.ManagedProcess("pcb", cast(subprocess.Popen[str], FakeProcess()), ROOT)
+    result = smoke._editor_readiness_snapshot(editor)
+    assert result["processRunning"] is True
+    assert result["processExitCode"] is None
+    assert result["windowCount"] == 0
+    assert "pid" not in result
+    assert "title" not in result

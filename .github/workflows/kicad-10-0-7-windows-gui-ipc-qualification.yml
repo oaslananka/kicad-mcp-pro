@@ -215,6 +215,9 @@ jobs:
             throw 'GUI IPC and isolated library table preflight were skipped'
           }
           New-Item -ItemType Directory -Force -Path 'artifacts/kicad-10-0-7-gui-ipc' | Out-Null
+          # Internal artifacts may contain paths/sensitive raw diagnostic logs:
+          # publish only the explicitly sanitized summary below.
+          $env:KICAD_GUI_SMOKE_ARTIFACTS = 'artifacts/kicad-10-0-7-gui-ipc/internal'
           uv run --all-extras python -m pytest -q tests/gui/test_kicad_gui_live_context.py --disable-warnings --junitxml=artifacts/kicad-10-0-7-gui-ipc/junit.xml
           $exit = $LASTEXITCODE
           $cases = @()
@@ -232,6 +235,21 @@ jobs:
           # Emit bounded, source-bound evidence even for a real failure.
           # Never upload JUnit contents, screenshot, raw logs or host paths.
           $verdict = if ($accepted) { 'pass' } else { 'fail' }
+          $editor = $null
+          $diag = Join-Path $env:KICAD_GUI_SMOKE_ARTIFACTS 'open-editors/editor-readiness.json'
+          if (Test-Path -LiteralPath $diag -PathType Leaf) {
+            $raw = Get-Content -LiteralPath $diag -Raw | ConvertFrom-Json
+            $editor = [ordered]@{
+              processRunning = [bool]$raw.processRunning
+              processExitCode = $raw.processExitCode
+              windowCount = [int]$raw.windowCount
+              visibleWindowCount = [int]$raw.visibleWindowCount
+              enabledVisibleWindowCount = [int]$raw.enabledVisibleWindowCount
+              disabledVisibleWindowCount = [int]$raw.disabledVisibleWindowCount
+              standardDialogWindowCount = [int]$raw.standardDialogWindowCount
+              windowEnumerationFailed = [bool]$raw.windowEnumerationFailed
+            }
+          }
           [ordered]@{
             schemaVersion = 'windows-kicad-107-gui-ipc-qualification.v1'
             sourceRevision = $env:SOURCE_REVISION
@@ -243,6 +261,7 @@ jobs:
             failures = $failures.Count
             skips = $skips.Count
             verdict = $verdict
+            editorReadiness = $editor
             desktop = [ordered]@{
               sessionZero = [System.Convert]::ToBoolean($env:KICAD_GUI_SESSION_ZERO)
               userInteractive = [System.Convert]::ToBoolean($env:KICAD_GUI_USER_INTERACTIVE)
