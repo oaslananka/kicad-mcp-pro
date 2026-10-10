@@ -247,6 +247,9 @@ jobs:
               enabledVisibleWindowCount = [int]$raw.enabledVisibleWindowCount
               disabledVisibleWindowCount = [int]$raw.disabledVisibleWindowCount
               standardDialogWindowCount = [int]$raw.standardDialogWindowCount
+              visibleStandardDialogWindowCount = [int]$raw.visibleStandardDialogWindowCount
+              enabledVisibleStandardDialogWindowCount = [int]$raw.enabledVisibleStandardDialogWindowCount
+              disabledVisibleStandardDialogWindowCount = [int]$raw.disabledVisibleStandardDialogWindowCount
               windowEnumerationFailed = [bool]$raw.windowEnumerationFailed
             }
           }
