@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       release_metadata_only: ${{ steps.release-classifier.outputs.release_metadata_only }}
+      docs_only: ${{ steps.release-classifier.outputs.docs_only }}
       run_analysis: ${{ steps.sonar-mode.outputs.run_analysis }}
       no_op_reason: ${{ steps.sonar-mode.outputs.no_op_reason }}
     steps:
@@ -54,12 +55,22 @@ jobs:
           else
             echo 'release_metadata_only=false' >> "$GITHUB_OUTPUT"
           fi
+          # Preserve source-to-doc rename deletions; Git -z avoids path quoting
+          # ambiguities. Empty/malformed or mixed diffs always run full analysis.
+          git diff --no-renames --name-only -z "$base_sha" "$head_sha" > "${RUNNER_TEMP}/changed-paths-nul.bin"
+          if python scripts/check_sonar_docs_only.py \
+            --paths-file "${RUNNER_TEMP}/changed-paths-nul.bin"; then
+            echo 'docs_only=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'docs_only=false' >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Determine Sonar execution mode
         id: sonar-mode
         shell: bash
         env:
           RELEASE_METADATA_ONLY: ${{ steps.release-classifier.outputs.release_metadata_only }}
+          DOCS_ONLY: ${{ steps.release-classifier.outputs.docs_only }}
           EVENT_NAME: ${{ github.event_name }}
           PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
@@ -77,6 +88,9 @@ jobs:
           elif [[ "$EVENT_NAME" == 'pull_request' && "$PR_AUTHOR" == 'dependabot[bot]' ]]; then
             run_analysis=false
             no_op_reason='Dependabot pull request cannot receive SONAR_TOKEN'
+          elif [[ "$DOCS_ONLY" == 'true' ]]; then
+            run_analysis=false
+            no_op_reason='docs-only change set outside Sonar analysis scope'
           fi
           echo "run_analysis=$run_analysis" >> "$GITHUB_OUTPUT"
           echo "no_op_reason=$no_op_reason" >> "$GITHUB_OUTPUT"
