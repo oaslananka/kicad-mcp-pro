@@ -9,6 +9,37 @@ import pytest
 from kicad_mcp import discovery
 
 
+@pytest.mark.parametrize(
+    "cli_path",
+    [
+        "/Volumes/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
+        "/Volumes/KiCad/KiCad.app/Contents/MacOS/alternate-cli",
+    ],
+)
+def test_macos_app_support_root_is_derived_from_matching_bundle(
+    cli_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(discovery.platform, "system", lambda: "Darwin")
+    assert discovery._macos_app_bundle_support_root(Path(cli_path)) == (
+        Path("/Volumes/KiCad/KiCad.app/Contents/SharedSupport")
+    )
+
+
+@pytest.mark.parametrize(
+    "cli_path",
+    [
+        "/Volumes/KiCad/KiCad.app/Contents/Resources/kicad-cli",
+        "/Volumes/KiCad/KiCad/Contents/MacOS/kicad-cli",
+        "/usr/local/bin/kicad-cli",
+    ],
+)
+def test_macos_bundle_support_root_rejects_non_bundle_cli_paths(
+    cli_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(discovery.platform, "system", lambda: "Darwin")
+    assert discovery._macos_app_bundle_support_root(Path(cli_path)) is None
+
+
 @pytest.mark.parametrize("via_symlink", [False, True])
 def test_mounted_macos_app_bundle_beats_preinstalled_host_libraries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, via_symlink: bool
