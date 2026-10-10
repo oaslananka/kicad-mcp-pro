@@ -193,6 +193,36 @@ jobs:
               throw "Default KiCad $tableName table integrity check failed"
             }
           }
+          # KiCad 10's first-run wizard checks THREE global tables:
+          # symbol, footprint AND design block.  Signed Windows installers
+          # can legitimately omit a stock design-block-lib-table; KiCad then
+          # creates an empty version-7 table on first setup.  Reproduce that
+          # native behavior in this disposable profile, never by clicking a
+          # modal or reading user/runner global preferences.
+          $designSource = Join-Path $templateRoot 'design-block-lib-table'
+          $designDestination = Join-Path $versionConfig 'design-block-lib-table'
+          if (Test-Path -LiteralPath $designDestination) {
+            throw 'Not a clean isolated KiCad design block table profile'
+          }
+          if (Test-Path -LiteralPath $designSource -PathType Leaf) {
+            Copy-Item -LiteralPath $designSource -Destination $designDestination -ErrorAction Stop
+            if ((Get-Item -LiteralPath $designDestination).Length -eq 0 -or
+                (Get-FileHash -LiteralPath $designSource -Algorithm SHA256).Hash -ne
+                (Get-FileHash -LiteralPath $designDestination -Algorithm SHA256).Hash) {
+              throw 'Signed KiCad design block library table integrity check failed'
+            }
+          } else {
+            # KiCad LIBRARY_TABLE::Format emits this empty, valid table when
+            # no stock design-block-lib-table is installed.
+            '(design_block_lib_table (version 7))' |
+              Set-Content -LiteralPath $designDestination -Encoding utf8
+          }
+          $designTable = Get-Content -LiteralPath $designDestination -Raw
+          if ($designTable -notmatch '^\s*\(design_block_lib_table\b' -or
+              $designTable -notmatch '\(version\s+7\)' ) {
+            throw 'Isolated KiCad design block library table format invalid'
+          }
+          "KICAD_107_DESIGN_BLOCK_TABLE_READY=true" >> $env:GITHUB_ENV
           # Require KiCad 10's release-specific standard library paths;
           # do not accidentally load the runner's global KiCad libraries.
           "KICAD10_TEMPLATE_DIR=$templateRoot" >> $env:GITHUB_ENV
@@ -237,6 +267,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if ($env:KICAD_107_GUI_CONFIG_READY -ne 'true' -or
               $env:KICAD_107_FIRST_RUN_TABLES_READY -ne 'true' -or
+              $env:KICAD_107_DESIGN_BLOCK_TABLE_READY -ne 'true' -or
               $env:KICAD_107_GUI_RENDERER -ne 'cairo') {
             throw 'GUI IPC, Cairo rendering or isolated library preflight missing'
           }

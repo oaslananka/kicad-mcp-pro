@@ -63,6 +63,14 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     assert "KICAD_MCP_ENABLE_GUI_SMOKE=1" in prepare
     assert "KICAD_MCP_GUI_SMOKE_REQUIRED=1" in prepare
     assert "KICAD_107_FIRST_RUN_TABLES_READY=true" in prepare
+    assert "design-block-lib-table" in prepare
+    assert "KICAD_107_DESIGN_BLOCK_TABLE_READY=true" in prepare
+    assert "KICAD_107_DESIGN_BLOCK_TABLE_READY -ne 'true'" in smoke
+    assert "(design_block_lib_table" in prepare
+    assert "(version 7)" in prepare
+    assert "Test-Path -LiteralPath $designSource -PathType Leaf" in prepare
+    assert "Get-FileHash -LiteralPath $designDestination -Algorithm SHA256" in prepare
+    assert "Get-Content -LiteralPath $designDestination -Raw" in prepare
     assert "KICAD_107_FIRST_RUN_TABLES_READY -ne 'true'" in smoke
     assert "share/kicad/template" in prepare
     assert "share/kicad/symbols" in prepare
