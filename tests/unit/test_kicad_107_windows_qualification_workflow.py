@@ -28,7 +28,18 @@ def test_windows_stable_native_qualification_is_opt_in() -> None:
     verify = next(step for step in steps if step["name"].startswith("Download and verify"))
     install = next(step for step in steps if step["name"].startswith("Install isolated"))
     native = next(step for step in steps if step["name"].startswith("Run full native"))
-    assert "mirrors.mit.edu/kicad/windows/stable/kicad-10.0.7-x86_64.exe" in verify["run"]
+    assert "kicad-downloads.s3.cern.ch/windows/stable/kicad-10.0.7-x86_64.exe" in verify["run"]
+    assert "mirror.aarnet.edu.au/pub/kicad/windows/stable/kicad-10.0.7-x86_64.exe" in verify["run"]
+    assert "mirrors.mit.edu" not in verify["run"]
+    assert "--max-time 420" in verify["run"]
+    assert "--speed-limit 131072 --speed-time 60" in verify["run"]
+    assert "--retry 0" in verify["run"]
+    assert "Remove-Item -LiteralPath $installer -Force" in verify["run"]
+    assert "$null -eq $uri" in verify["run"]
+    assert verify["run"].index("if ($null -eq $uri)") < verify["run"].index(
+        "Get-AuthenticodeSignature"
+    )
+    assert "installerUrl = $uri" in verify["run"]
     assert "Get-AuthenticodeSignature" in verify["run"]
     assert "signature.Status -ne 'Valid'" in verify["run"]
     assert "SignerCertificate.Subject -notmatch" in verify["run"]
