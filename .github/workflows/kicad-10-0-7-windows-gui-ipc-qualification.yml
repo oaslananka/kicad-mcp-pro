@@ -140,12 +140,25 @@ jobs:
           @{
             api = @{ enable_server = $true }
             graphics = @{ canvas_type = 2 }
+            # KiCad 10's startup wizard is independently triggered by
+            # unresolved update/privacy prompts, even with a valid common
+            # settings file and both built-in library tables.  This is a
+            # disposable CI-only profile: do not grant telemetry consent,
+            # touch the owner's preferences, or dismiss an unknown GUI dialog.
+            do_not_show_again = @{
+              update_check_prompt = $true
+              data_collection_prompt = $true
+            }
           } | ConvertTo-Json -Depth 5 |
             Set-Content -LiteralPath $commonSettings -Encoding utf8
           $settings = Get-Content -LiteralPath $commonSettings -Raw | ConvertFrom-Json
           if ($settings.api.enable_server -ne $true) { throw 'Isolated IPC setting not enabled' }
           if ($settings.graphics.canvas_type -ne 2) {
             throw 'Isolated KiCad Cairo software renderer configuration missing'
+          }
+          if ($settings.do_not_show_again.update_check_prompt -ne $true -or
+              $settings.do_not_show_again.data_collection_prompt -ne $true) {
+            throw 'Isolated KiCad first-run prompts must be resolved before GUI IPC smoke'
           }
           "KICAD_107_GUI_RENDERER=cairo" >> $env:GITHUB_ENV
 

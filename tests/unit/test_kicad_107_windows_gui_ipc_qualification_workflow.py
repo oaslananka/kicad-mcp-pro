@@ -47,6 +47,11 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     assert "'10.0'" in prepare
     assert "kicad_common.json" in prepare and "enable_server = $true" in prepare
     assert "graphics = @{ canvas_type = 2 }" in prepare
+    assert "do_not_show_again = @{" in prepare
+    assert "update_check_prompt = $true" in prepare
+    assert "data_collection_prompt = $true" in prepare
+    assert "$settings.do_not_show_again.update_check_prompt -ne $true" in prepare
+    assert "$settings.do_not_show_again.data_collection_prompt -ne $true" in prepare
     assert "if ($settings.graphics.canvas_type -ne 2)" in prepare
     assert "KICAD_107_GUI_RENDERER=cairo" in prepare
     assert "KICAD_107_GUI_RENDERER -ne 'cairo'" in smoke
