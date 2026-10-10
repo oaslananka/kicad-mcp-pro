@@ -113,3 +113,47 @@ reference-board production. The currently tested Ubuntu stable CI lane
 remains on KiCad 10.0.6. Do **not** promote
 `compatibility.yaml`'s `kicad.latestVerified: 10.0.6` or issue a release
 based solely on this Windows CLI evidence.
+
+## Ubuntu 24.04 — signed stable PPA binary, native CLI (2026-10-11)
+
+The independent machine-readable
+[Ubuntu 24.04 PPA record](2026-10-11-ubuntu-24-04-ppa-native-canary.json)
+is tied to protected `main@2fdde9b98f45960237c633a1eeae60134609a6db`.
+It qualifies an **actually published and installed Ubuntu Noble amd64
+10.0.7 binary**, not just a source upload, PPA index listing, or standalone
+AppImage. It is independent of the earlier Windows and AppImage results.
+
+A disposable **Ubuntu 24.04.5 amd64 container** used the official
+`ppa:kicad/kicad-10.0-releases` repository with authenticated APT
+metadata. Both `kicad` and `kicad-symbols` were installed at
+`10.0.7~ubuntu24.04.1`; the native CLI reported exact version `10.0.7`,
+and the standard Device symbol library was present. The published PPA
+`Packages.gz` checksum for the `kicad` binary is recorded in the JSON
+together with the symbols-package checksum, image digest, project revision,
+locked uv/Python versions, and raw report SHA-256 digests.
+
+| Native acceptance | Observed |
+| --- | --- |
+| Expected step statuses | **32/32** |
+| Optional skips | **1** — Allegro import capability not advertised |
+| Matched native/custom semantic comparisons | **5/5** |
+| False PASS, false FAIL, divergence, invalid authority | **0 / 0 / 0 / 0** |
+| Expected-negative ERC and DRC | Both native exit **5**, correctly treated as findings |
+| Read-only output rejection | Native exit **4** under non-root execution |
+| Failing fixtures | **0** |
+| Repository input mutation | Prevented by read-only source mount; fixture copies isolated |
+
+The native suite ran as a **non-root** user: a root process would bypass
+ordinary read-only directory permissions, invalidating the negative-output
+test. All report paths written by the raw canary remain local; the committed
+evidence intentionally records bounded semantic projections and relative
+output names, not absolute paths or free-form process logs.
+
+This is native **CLI and fixture-contract** acceptance on one stable Ubuntu
+distribution, not Linux editor GUI/IPC, macOS, successful autonomously
+engineered real-board manufacturing, or a release/promotion recommendation.
+At the same time, upstream Ubuntu **22.04 Jammy** 10.0.7 PPA binaries still
+failed to build against the distribution's libgit2 1.1 headers; see
+[issue #1181](https://github.com/oaslananka/kicad-mcp-pro/issues/1181).
+Keep `compatibility.yaml`'s `latestVerified: 10.0.6` and its existing CI
+version pins unchanged until the *whole* issue acceptance contract passes.
