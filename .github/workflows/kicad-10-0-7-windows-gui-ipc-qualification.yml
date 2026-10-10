@@ -145,6 +145,22 @@ jobs:
           "KICAD_GUI_SMOKE_BIN_DIR=$installBin" >> $env:GITHUB_ENV
           "KICAD_MCP_ENABLE_GUI_SMOKE=1" >> $env:GITHUB_ENV
           "KICAD_MCP_GUI_SMOKE_REQUIRED=1" >> $env:GITHUB_ENV
+          # Only the PCB Editor owns the KiCad 10 board IPC service.
+          # Do not start the project manager or schematic editor in parallel:
+          # a competing default pipe may connect to an editor without a board.
+          "KICAD_GUI_SMOKE_PCB_ONLY=1" >> $env:GITHUB_ENV
+          # Diagnoses hosted-runner desktop limitations without exposing
+          # usernames, directories, window titles or other host metadata.
+          $sessionId = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
+          $userInteractive = [Environment]::UserInteractive
+          $explorerPresent = @(
+            Get-Process -Name explorer -ErrorAction SilentlyContinue |
+              Where-Object { $_.SessionId -eq $sessionId }
+          ).Count -gt 0
+          Write-Host "GUI desktop preflight: session0=$($sessionId -eq 0), userInteractive=$userInteractive, explorerPresent=$explorerPresent"
+          "KICAD_GUI_SESSION_ZERO=$($sessionId -eq 0)" >> $env:GITHUB_ENV
+          "KICAD_GUI_USER_INTERACTIVE=$userInteractive" >> $env:GITHUB_ENV
+          "KICAD_GUI_EXPLORER_PRESENT=$explorerPresent" >> $env:GITHUB_ENV
           "KICAD_107_GUI_CONFIG_READY=true" >> $env:GITHUB_ENV
 
       - name: Sync frozen Python dependencies
@@ -160,14 +176,21 @@ jobs:
           New-Item -ItemType Directory -Force -Path 'artifacts/kicad-10-0-7-gui-ipc' | Out-Null
           uv run --all-extras python -m pytest -q tests/gui/test_kicad_gui_live_context.py --disable-warnings --junitxml=artifacts/kicad-10-0-7-gui-ipc/junit.xml
           $exit = $LASTEXITCODE
-          if ($exit -ne 0) { throw "Actual Windows GUI / IPC MCP test failed (exit $exit)" }
-          $result = [xml](Get-Content -LiteralPath 'artifacts/kicad-10-0-7-gui-ipc/junit.xml' -Raw)
-          $cases = @($result.testsuites.testsuite.testcase)
+          $cases = @()
+          $junit = 'artifacts/kicad-10-0-7-gui-ipc/junit.xml'
+          if (Test-Path -LiteralPath $junit -PathType Leaf) {
+            $result = [xml](Get-Content -LiteralPath $junit -Raw)
+            $cases = @($result.testsuites.testsuite.testcase)
+          }
           $failures = @($cases | Where-Object { $_.failure -or $_.error })
           $skips = @($cases | Where-Object { $_.skipped })
-          if ($cases.Count -ne 2 -or $failures.Count -ne 0 -or $skips.Count -ne 0) {
-            throw "GUI IPC smoke coverage missing or skipped: cases=$($cases.Count) failures=$($failures.Count) skips=$($skips.Count)"
-          }
+          $accepted = (
+            $exit -eq 0 -and $cases.Count -eq 2 -and
+            $failures.Count -eq 0 -and $skips.Count -eq 0
+          )
+          # Emit bounded, source-bound evidence even for a real failure.
+          # Never upload JUnit contents, screenshot, raw logs or host paths.
+          $verdict = if ($accepted) { 'pass' } else { 'fail' }
           [ordered]@{
             schemaVersion = 'windows-kicad-107-gui-ipc-qualification.v1'
             sourceRevision = $env:SOURCE_REVISION
@@ -176,11 +199,19 @@ jobs:
             runner = 'windows-2025'
             tests = @($cases | ForEach-Object { $_.name })
             testCount = $cases.Count
-            failures = 0
-            skips = 0
-            verdict = 'pass'
+            failures = $failures.Count
+            skips = $skips.Count
+            verdict = $verdict
+            desktop = [ordered]@{
+              sessionZero = [System.Convert]::ToBoolean($env:KICAD_GUI_SESSION_ZERO)
+              userInteractive = [System.Convert]::ToBoolean($env:KICAD_GUI_USER_INTERACTIVE)
+              explorerPresent = [System.Convert]::ToBoolean($env:KICAD_GUI_EXPLORER_PRESENT)
+            }
           } | ConvertTo-Json -Depth 4 |
             Set-Content -LiteralPath 'artifacts/kicad-10-0-7-gui-ipc/summary.json' -Encoding utf8
+          if (-not $accepted) {
+            throw "Actual Windows GUI / IPC MCP test failed: exit=$exit cases=$($cases.Count) failures=$($failures.Count) skips=$($skips.Count)"
+          }
           Write-Output 'Actual KiCad 10.0.7 GUI IPC + MCP live-board switching passed'
 
       - name: Publish bounded non-sensitive qualification result

@@ -65,6 +65,11 @@ def _required() -> bool:
     return os.environ.get("KICAD_MCP_GUI_SMOKE_REQUIRED") == "1"
 
 
+def _launch_auxiliary_editors() -> bool:
+    """Keep the Windows IPC probe single-editor when explicitly requested."""
+    return os.environ.get("KICAD_GUI_SMOKE_PCB_ONLY") != "1"
+
+
 def _artifact_root(tmp_path: Path) -> Path:
     raw_path = os.environ.get("KICAD_GUI_SMOKE_ARTIFACTS")
     root = Path(raw_path).expanduser() if raw_path else tmp_path / "kicad-gui-smoke-artifacts"
@@ -384,7 +389,7 @@ async def test_open_pcb_editor_uses_live_board_context_and_project_switches(
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(first_project)})
 
     try:
-        if executables.project_manager is not None:
+        if _launch_auxiliary_editors() and executables.project_manager is not None:
             processes.append(
                 _launch_process(
                     "project-manager",
@@ -393,7 +398,7 @@ async def test_open_pcb_editor_uses_live_board_context_and_project_switches(
                     artifacts / "processes",
                 )
             )
-        if executables.schematic_editor is not None:
+        if _launch_auxiliary_editors() and executables.schematic_editor is not None:
             processes.append(
                 _launch_process(
                     "schematic-editor",
