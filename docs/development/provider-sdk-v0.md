@@ -23,7 +23,13 @@ Calls default to offline with no granted permissions. Non-idempotent calls
 require a caller-generated idempotency key; the dispatcher never retries.
 External result envelopes, including existing Pydantic model instances, are
 revalidated at dispatch; invalid payloads, provenance, and error codes fail
-closed as malformed provider results.
+closed as malformed provider results. Existing/copied request models are
+revalidated before the host invokes an adapter (an invalid host request raises
+a contract validation error), and copied manifest and nested operation models
+are revalidated at registration. The independent #942 evidence handoff likewise
+rechecks result and manifest models before creating an **unverified** record.
+`model_copy(update=...)` and `model_construct(...)` never grant an exemption
+from validation at these boundaries.
 Timeouts/cancellation do **not** prove that a remote mutation was rolled back.
 Read-back and the existing transaction/recovery gates are required before any
 retry or engineering release claim.

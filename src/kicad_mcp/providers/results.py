@@ -76,6 +76,10 @@ def provider_evidence_handoff(
     The caller must separately attach it to a matching Engineering Graph and run
     the normal #942 freshness and quality-gate assessment.
     """
+    # The evidence boundary also accepts SDK instances from outside dispatch.
+    # Recheck copied/constructed models instead of trusting prior validation.
+    result = ProviderResult.model_validate(result)
+    manifest = ProviderManifest.model_validate(manifest)
     proof = result.provenance
     if not result.ok or proof is None:
         raise ValueError("cannot attach failed provider result as evidence")

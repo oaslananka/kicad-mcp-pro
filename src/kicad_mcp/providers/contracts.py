@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal, Protocol
 
-from pydantic import Field, JsonValue, model_validator
+from pydantic import ConfigDict, Field, JsonValue, model_validator
 
 from kicad_mcp.project.hardware_intent_contract import StrictContractModel
 
@@ -40,6 +40,8 @@ class ProviderErrorCode(StrEnum):
 
 
 class ProviderOperation(StrictContractModel):
+    model_config = ConfigDict(revalidate_instances="always")
+
     name: str = Field(min_length=2, max_length=80, pattern=IDENTIFIER)
     capability: str = Field(min_length=2, max_length=80, pattern=IDENTIFIER)
     permissions: tuple[ProviderPermission, ...] = ()
@@ -58,6 +60,8 @@ class ProviderOperation(StrictContractModel):
 
 
 class ProviderRequest(StrictContractModel):
+    model_config = ConfigDict(revalidate_instances="always")
+
     schema_version: Literal[0] = 0
     request_id: str = Field(min_length=3, max_length=120, pattern=IDENTIFIER)
     capability: str = Field(min_length=2, max_length=80, pattern=IDENTIFIER)

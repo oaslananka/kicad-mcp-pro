@@ -6,7 +6,7 @@ import re
 from ipaddress import IPv4Address
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from kicad_mcp.project.hardware_intent_contract import StrictContractModel
 
@@ -14,6 +14,8 @@ from .contracts import IDENTIFIER, ProviderFamily, ProviderOperation, ProviderPe
 
 
 class ProviderManifest(StrictContractModel):
+    model_config = ConfigDict(revalidate_instances="always")
+
     sdk_version: Literal["0-experimental"]
     provider_id: str = Field(min_length=2, max_length=100, pattern=IDENTIFIER)
     provider_version: str = Field(min_length=1, max_length=64)

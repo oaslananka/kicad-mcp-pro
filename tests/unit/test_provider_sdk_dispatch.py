@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
+from pydantic import ValidationError
 
 from kicad_mcp.providers import (
     ProviderError,
@@ -366,3 +367,48 @@ async def test_dispatch_revalidates_existing_provider_result_instances(
     assert not reply.ok
     assert reply.error is not None
     assert reply.error.code is ProviderErrorCode.MALFORMED_RESULT
+
+
+@pytest.mark.anyio
+async def test_dispatch_rejects_constructed_mutation_key_before_invocation() -> None:
+    """An invalid copied request must never pass the mutation idempotency gate."""
+
+    class CountingDummy(Dummy):
+        invoked = False
+
+        async def invoke(self, provider_request: ProviderRequest) -> object:
+            self.invoked = True
+            return await super().invoke(provider_request)
+
+    adapter = CountingDummy()
+    registry = ProviderRegistry()
+    registry.register(fixture_manifest(mutation=True), adapter)
+    unsafe = request().model_copy(update={"idempotency_key": ["not-a-valid-key"]})
+    with pytest.raises(ValidationError, match="idempotency_key"):
+        await execute_provider(
+            registry,
+            unsafe,
+            granted_permissions=(ProviderPermission.PROJECT_WRITE,),
+        )
+    assert not adapter.invoked
+
+
+@pytest.mark.parametrize("corruption", ("network_policy", "operation_permission"))
+def test_registry_revalidates_copied_manifest_before_advertising(
+    corruption: str,
+) -> None:
+    """Constructed/copy-updated manifests cannot relax offline or permission policy."""
+    if corruption == "network_policy":
+        original = fixture_manifest(network=True)
+        unsafe = original.model_copy(update={"network_access": False})
+    else:
+        original = fixture_manifest()
+        operation = original.operations[0].model_copy(
+            update={"permissions": (ProviderPermission.PROJECT_WRITE,)}
+        )
+        unsafe = original.model_copy(update={"operations": (operation,)})
+    registry = ProviderRegistry()
+    with pytest.raises(ValidationError):
+        registry.register(unsafe, Dummy())
+    assert registry.advertised_families() == frozenset()
+    assert registry.candidates(request()) == ()
