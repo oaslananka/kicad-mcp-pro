@@ -20,15 +20,7 @@ def _workflow() -> dict[str, object]:
 
 def test_opt_in_macos_runner_has_readonly_permissions_and_no_pr_trigger() -> None:
     data = _workflow()
-    # Temporary one-branch push hook runs exactly one real hosted macOS
-    # diagnosis; restore workflow_dispatch-only before protected merge.
-    assert data[True] == {
-        "workflow_dispatch": None,
-        "push": {
-            "branches": ["fix/kicad-1181-macos-bundle-symbol-discovery"],
-            "paths": ["tests/unit/test_kicad_107_macos_gui_ipc_qualification_workflow.py"],
-        },
-    }
+    assert data[True] == {"workflow_dispatch": None}
     assert data["permissions"] == {"contents": "read"}
     assert data["concurrency"]["cancel-in-progress"] is False
     job = data["jobs"]["macos-107-native-gui-ipc"]
@@ -58,8 +50,8 @@ def test_official_signed_native_installer_has_no_fallback_to_host_kicad() -> Non
     assert 'template="$app/Contents/SharedSupport/template/sym-lib-table"' in source
     assert 'template=$(find "$mount_dir" -name sym-lib-table' not in source
     assert "MCP symbols do not come from the signed mounted KiCad DMG" in source
-    assert 'symbolLibraryBinding' in source
-    assert 'from kicad_mcp.config import get_config' in source
+    assert "symbolLibraryBinding" in source
+    assert "from kicad_mcp.config import get_config" in source
     assert 'expected = Path(os.environ["KICAD_MAC_SYMBOLS"]).resolve()' in source
     assert "KICAD_CONFIG_HOME=" in source
     for name in ("sym-lib-table", "fp-lib-table", "design-block-lib-table"):

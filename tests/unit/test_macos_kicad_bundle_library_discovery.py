@@ -50,7 +50,9 @@ def test_mounted_macos_app_bundle_beats_preinstalled_host_libraries(
     assert found["symbols"] != stale / "symbols"
 
 
-def test_linux_symbol_path_discovery_unchanged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_linux_symbol_path_discovery_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """macOS bundle lookup must not alter standard Linux distribution paths."""
     usr_share = tmp_path / "usr" / "share" / "kicad"
     (usr_share / "symbols").mkdir(parents=True)
