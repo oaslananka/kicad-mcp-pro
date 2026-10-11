@@ -323,8 +323,6 @@ def _approved_nonfunctional_import_removal(
         current = ast.parse(new_content.decode("utf-8"))
     except (UnicodeDecodeError, SyntaxError):
         return False
-    if not isinstance(previous, ast.Module) or not isinstance(current, ast.Module):
-        return False
     # Reflection can observe even an unused module-global name; fail closed.
     reflective_calls = {"eval", "exec", "globals", "locals", "vars", "dir"}
     for node in ast.walk(previous):

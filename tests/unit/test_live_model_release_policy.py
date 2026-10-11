@@ -1003,3 +1003,41 @@ def test_release_policy_cli_writes_actionable_step_summary(
     assert "src/kicad_mcp/evals/selector.py" in summary
     assert "protected" in summary
     assert "Do **not** edit the digest manually" in summary
+
+
+def test_release_noop_import_guard_rejects_invalid_python_and_utf8() -> None:
+    from kicad_mcp.evals.release_policy import _approved_nonfunctional_import_removal
+
+    path = "scripts/run_live_model_eval.py"
+    old = (
+        b"from kicad_mcp.evals.live_runner import (\n"
+        b"    EvidenceSanitizationError,\n"
+        b"    build_adapter,\n"
+        b")\n"
+    )
+    current = b"from kicad_mcp.evals.live_runner import build_adapter\n"
+    assert not _approved_nonfunctional_import_removal(path, b"\xff", current)
+    assert not _approved_nonfunctional_import_removal(path, old, b"def broken(:\n")
+
+
+def test_release_noop_import_guard_fails_closed_when_git_blob_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.evals import release_policy as module
+
+    policy = load_release_policy(_policy(tmp_path / "policy.yaml"))
+    policy_path = tmp_path / "policy.yaml"
+    original = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+    original["agent_contract_paths"].append("scripts/run_live_model_eval.py")
+    policy_path.write_text(yaml.safe_dump(original), encoding="utf-8")
+    policy = load_release_policy(policy_path)
+
+    def fake_git(_repo: Path, *arguments: str, text: bool = True) -> str | bytes:
+        if arguments[0] == "diff":
+            return "scripts/run_live_model_eval.py\n"
+        raise ReleasePolicyError("Required Git blob missing")
+
+    monkeypatch.setattr(module, "_git", fake_git)
+    assert not module._only_verified_nonfunctional_release_diff(
+        tmp_path, policy, base_ref="base", head_ref="HEAD"
+    )
