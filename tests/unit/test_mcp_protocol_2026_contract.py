@@ -65,6 +65,16 @@ def _candidate_server(sample_project: Path, *, auth_token: str | None = None):
     return build_server("minimal")
 
 
+def test_modern_lane_streams_progress_while_legacy_keeps_json(sample_project: Path) -> None:
+    modern_server = _candidate_server(sample_project)
+    assert modern_server._json_response is False
+
+    cfg = get_config()
+    cfg.protocol_lane = "stable"
+    legacy_server = build_server("minimal")
+    assert legacy_server._json_response is True
+
+
 def test_candidate_discovery_is_available_without_initialize(sample_project: Path) -> None:
     server = _candidate_server(sample_project)
 

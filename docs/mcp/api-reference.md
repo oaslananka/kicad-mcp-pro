@@ -75,4 +75,10 @@ The primary supported and advertised public MCP contract is `2026-07-28`. `serve
 
 The historical `2026-07-28-rc` selector remains available as a strict stateless conformance mode on top of the same native SDK v2 final `2026-07-28` path. It covers per-request protocol/client metadata, `Mcp-Method`, `Mcp-Name`, direct `server/discover`, stateless tool/prompt/resource requests, SDK-native negotiation errors, `resultType`, and reviewed cache metadata without a request/response translation bridge.
 
+The opt-in strict lane supports SSE-delivered progress notifications; the stable
+lane retains JSON response defaults for legacy clients. The frozen official
+2026-07-28 mandatory server tests run against an isolated fixture-enabled KiCad
+server (see `tests/conformance/README.md`); test fixtures are never registered
+in normal runtime profiles.
+
 Tasks and Apps remain explicitly excluded from advertised capabilities. Unsupported extension registration fails closed at server construction, and the discovery contract contains no `extensions` capability. Public metadata now advertises `2026-07-28` as primary and `2025-11-25` as the backward-compatible legacy protocol under [ADR-0006](../adr/0006-mcp-2026-stateless-compatibility-lane.md).

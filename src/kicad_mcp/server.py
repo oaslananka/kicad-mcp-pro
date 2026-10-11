@@ -1588,7 +1588,12 @@ async def _buffer_request_body(receive: Receive) -> tuple[bytes, Receive]:
     iterator = iter(messages)
 
     async def replay_receive() -> Message:
-        return next(iterator, {"type": "http.request", "body": b"", "more_body": False})
+        try:
+            return next(iterator)
+        except StopIteration:
+            # The body is already replayed. Streaming handlers must observe the
+            # original connection lifecycle, especially an HTTP disconnect.
+            return await receive()
 
     return b"".join(chunks), replay_receive
 
@@ -2044,7 +2049,8 @@ def build_server(profile: str | None = None, *, defer_registration: bool = False
         streamable_http_path=cfg.mount_path,
         mount_path=cfg.mount_path,
         log_level=cfg.log_level,
-        json_response=True,
+        # Strict modern HTTP supports SSE progress; legacy mode keeps JSON replies.
+        json_response=cfg.protocol_lane != NATIVE_2026_PROTOCOL_LANE,
         stateless_http=not cfg.stateful_http,
         auth=auth,
         token_verifier=token_verifier,
@@ -2369,7 +2375,7 @@ def _run_server_from_options(
         host=cfg.host,
         port=cfg.port,
         streamable_http_path=cfg.mount_path,
-        json_response=True,
+        json_response=cfg.protocol_lane != NATIVE_2026_PROTOCOL_LANE,
         stateless_http=not cfg.stateful_http,
     )
 
