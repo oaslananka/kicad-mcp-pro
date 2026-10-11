@@ -38,3 +38,26 @@ See also [the common compatibility matrix](compatibility.md) and
 [Agent Skills ownership](progressive-disclosure.md). Local installation of the
 Gemini pilot is documented under
 `integrations/gemini-cli/kicad-mcp-pro/README.md`.
+
+
+## Sanitize and review native-host evidence (#1219)
+
+A manually captured, **sanitized** JSON observation should contain the host
+identity/version, platform, source SHA, server version, stdio/Streamable HTTP,
+exact discovered skill names, the observed readonly tool name, and booleans for
+MCP discovery, successful tool response and absence of write tool exposure.
+Include a SHA-256 digest of the separately retained sanitized native-host log;
+never embed tool arguments, transcripts, project paths, credentials, or raw
+provider responses in this JSON. Follow the exact field contract in
+`scripts/check_agent_native_smoke_evidence.py`. Review using:
+
+```sh
+uv run --all-extras --frozen python scripts/check_agent_native_smoke_evidence.py \
+  --report /path/to/sanitized-native-host-observation.json
+```
+
+Passing returns `structurally_complete_not_attested` — **never** a release
+compatibility pass. A reviewer must independently inspect the pinned real-host
+execution log/digest, the source commit and environment before updating any
+published compatibility claim. Synthetic unit-test data cannot serve as evidence.
+The normal CI job does not install any agent host or generate passing evidence.

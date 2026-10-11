@@ -54,3 +54,32 @@ against the relevant source revision for a fresh status.
 The KiCad 10.0.7 native fixture canaries under
 [platform evidence](../kicad-10-0-7/README.md) validate different
 interfaces; they do not upgrade these uncompleted reference-board tasks.
+
+
+## Reproducible phase preflight (reviewed runner, #1214)
+
+Before **any** new reference-board attempt, run the non-mutating preflight in
+an exact, clean source checkout with `kicad-cli` 10.x and the reviewed Claude
+CLI available. The preflight hashes the original prompt, specification,
+benchmark and board-specific gates; records the exact source SHA; refuses an
+already-used attempt ID; and returns a bounded JSON report without local paths,
+prompts, credentials or agent transcripts:
+
+```sh
+uv run --all-extras --frozen python scripts/check_reference_board_attempt_readiness.py \
+  --board-id esp32-c6-usbc --attempt-number 4 --phase schematic
+```
+
+Exit **0** means this *specific agent phase can be attempted*; exit **2** means
+one or more prerequisites are missing. Either exit code is **not a successful
+PCB attempt**, a scored design, a completed ERC/DRC, or manufacturing approval.
+A missing CLI should block the run, not be marked as a model failure or silently
+skip that attempt from the denominator. The preflight itself creates no attempt
+artifacts. The actual reviewed executor remains
+`scripts/run_reference_board_agent.py`; use its explicit phase, timeout and
+approval workflow. Treat `manufacturing` as separately human-authorized, not a
+phase to run automatically after a preflight.
+
+This is **preflight scaffolding**, not completion of #1214's benchmark runner:
+provider-neutral attempt execution, consistent persisted per-attempt evidence,
+full retry/history and score aggregation remain to be implemented and verified.
