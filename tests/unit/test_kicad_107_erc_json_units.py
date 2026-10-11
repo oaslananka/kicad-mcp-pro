@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -94,16 +93,20 @@ def test_wrong_cli_version_and_declared_units_fail_closed() -> None:
         validate_reports(reports)
 
 
-def test_native_cli_runs_only_on_isolated_fixture_and_expected_dirty_exit(monkeypatch) -> None:
+def test_native_cli_uses_audited_runner_and_an_isolated_fixture(monkeypatch) -> None:
     import scripts.kicad_107_erc_units as script
 
-    invocations = []
+    invocations: list[tuple[str, ...]] = []
 
-    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+    def fake_step(cli: Path, step: object, artifacts: Path) -> dict[str, object]:
+        args = step.args
         invocations.append(args)
-        if args[1:] == ["version"]:
-            return SimpleNamespace(returncode=0, stdout="10.0.7\n", stderr="")
-        assert args[1:3] == ["sch", "erc"]
+        if args == ("version",):
+            logs = artifacts / "logs"
+            logs.mkdir(exist_ok=True)
+            (logs / "kicad-107-version.stdout.log").write_text("10.0.7\n")
+            return {"returncode": 0, "ok": True}
+        assert args[:2] == ("sch", "erc")
         assert "--exit-code-violations" in args
         assert "--format" in args and args[args.index("--format") + 1] == "json"
         unit = args[args.index("--units") + 1]
@@ -116,9 +119,9 @@ def test_native_cli_runs_only_on_isolated_fixture_and_expected_dirty_exit(monkey
             / "packages/kicad-fixtures/fixtures/erc-power-pin-error/erc-power-pin-error.kicad_sch"
         )
         output.write_text(json.dumps(_report(unit)), encoding="utf-8")
-        return SimpleNamespace(returncode=5, stdout="Found violations", stderr="")
+        return {"returncode": 5, "ok": True}
 
-    monkeypatch.setattr(script.subprocess, "run", fake_run)
+    monkeypatch.setattr(script, "_run_step", fake_step)
     evidence = run_probe("fake-kicad-cli")
     assert evidence["status"] == "pass"
     assert len(invocations) == 4
@@ -127,13 +130,31 @@ def test_native_cli_runs_only_on_isolated_fixture_and_expected_dirty_exit(monkey
 def test_unexpected_native_exit_code_is_a_failure(monkeypatch) -> None:
     import scripts.kicad_107_erc_units as script
 
-    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
-        if args[1:] == ["version"]:
-            return SimpleNamespace(returncode=0, stdout="10.0.7\n", stderr="")
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
+    def fake_step(cli: Path, step: object, artifacts: Path) -> dict[str, object]:
+        if step.args == ("version",):
+            logs = artifacts / "logs"
+            logs.mkdir(exist_ok=True)
+            (logs / "kicad-107-version.stdout.log").write_text("10.0.7\n")
+            return {"returncode": 0, "ok": True}
+        return {"returncode": 0, "ok": False}
 
-    monkeypatch.setattr(script.subprocess, "run", fake_run)
+    monkeypatch.setattr(script, "_run_step", fake_step)
     with pytest.raises(ProbeError, match="exit code"):
+        run_probe("fake-kicad-cli")
+
+
+def test_version_gating_is_enforced_before_erc(monkeypatch) -> None:
+    import scripts.kicad_107_erc_units as script
+
+    def fake_step(cli: Path, step: object, artifacts: Path) -> dict[str, object]:
+        assert step.args == ("version",)
+        logs = artifacts / "logs"
+        logs.mkdir(exist_ok=True)
+        (logs / "kicad-107-version.stdout.log").write_text("10.0.6\n")
+        return {"returncode": 0, "ok": True}
+
+    monkeypatch.setattr(script, "_run_step", fake_step)
+    with pytest.raises(ProbeError, match="version"):
         run_probe("fake-kicad-cli")
 
 

@@ -13,14 +13,18 @@ import json
 import math
 import os
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
 
+# Reuse the repository's already audited argv-only native canary runner.
+# It enforces timeouts, checks native exit codes and records logs inside the
+# disposable workspace. No new subprocess boundary or shell interpolation.
 try:
+    from scripts.kicad_canary import CanaryStep, _resolve_cli, _run_step
     from scripts.runtime_path_safety import approved_runtime_path
 except ModuleNotFoundError:  # Direct `python scripts/foo.py` execution.
+    from kicad_canary import CanaryStep, _resolve_cli, _run_step
     from runtime_path_safety import approved_runtime_path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -96,48 +100,51 @@ def validate_reports(reports: dict[str, dict[str, Any]]) -> dict[str, Any]:
 
 
 def run_probe(cli: str) -> dict[str, Any]:
-    """Run exact-version CLI against three isolated copies of the same fixture."""
-    try:
-        result = subprocess.run(
-            [cli, "version"], capture_output=True, text=True, timeout=30, check=False
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise ProbeError("Unable to query native KiCad version") from exc
-    if result.returncode != 0 or result.stdout.strip() != VERSION:
-        raise ProbeError("Expected exact KiCad CLI version 10.0.7")
-
+    """Run exact-version CLI via the audited native runner in a temporary workspace."""
     reports: dict[str, dict[str, Any]] = {}
     with tempfile.TemporaryDirectory(prefix="kicad-107-erc-units-") as temp:
-        workspace = Path(temp) / "fixture"
+        artifacts = Path(temp)
+        version_result = _run_step(
+            Path(cli),
+            CanaryStep(name="kicad-107-version", fixture="compatibility", args=("version",)),
+            artifacts,
+        )
+        if version_result.get("returncode") != 0 or not version_result.get("ok"):
+            raise ProbeError("Unable to query native KiCad version")
+        version = (artifacts / "logs/kicad-107-version.stdout.log").read_text(encoding="utf-8")
+        if version.strip() != VERSION:
+            raise ProbeError("Expected exact KiCad CLI version 10.0.7")
+
+        workspace = artifacts / "fixture"
         shutil.copytree(FIXTURE, workspace)
         schematic = workspace / "erc-power-pin-error.kicad_sch"
         if not schematic.is_file():
             raise ProbeError("ERC regression schematic is missing")
         for unit in UNIT_SCALE:
-            output = Path(temp) / f"erc-{unit}.json"
-            command = [
-                cli,
-                "sch",
-                "erc",
-                "--format",
-                "json",
-                "--units",
-                unit,
-                "--exit-code-violations",
-                "--output",
-                str(output),
-                str(schematic),
-            ]
-            try:
-                result = subprocess.run(
-                    command, capture_output=True, text=True, timeout=90, check=False
-                )
-            except (OSError, subprocess.TimeoutExpired) as exc:
-                raise ProbeError(f"Native ERC invocation failed for {unit}") from exc
-            if result.returncode != NATIVE_VIOLATION_EXIT:
-                raise ProbeError(f"Wrong ERC exit code for {unit}: {result.returncode}")
-            if not output.is_file():
-                raise ProbeError(f"Missing native ERC JSON report for {unit}")
+            output = artifacts / f"erc-{unit}.json"
+            step = CanaryStep(
+                name=f"kicad-107-erc-{unit}",
+                fixture="erc-power-pin-error",
+                args=(
+                    "sch",
+                    "erc",
+                    "--format",
+                    "json",
+                    "--units",
+                    unit,
+                    "--exit-code-violations",
+                    "--output",
+                    str(output),
+                    str(schematic),
+                ),
+                outputs=(output,),
+                expects_violations=True,
+            )
+            result = _run_step(Path(cli), step, artifacts)
+            if result.get("returncode") != NATIVE_VIOLATION_EXIT:
+                raise ProbeError(f"Wrong ERC exit code for {unit}: {result.get('returncode')}")
+            if not result.get("ok") or not output.is_file():
+                raise ProbeError(f"Missing or invalid native ERC JSON report for {unit}")
             try:
                 reports[unit] = json.loads(output.read_text(encoding="utf-8-sig"))
             except (OSError, json.JSONDecodeError) as exc:
@@ -150,10 +157,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, help="Bounded JSON report destination")
     args = parser.parse_args()
-    cli = os.environ.get("KICAD_CANARY_KICAD_CLI") or shutil.which("kicad-cli")
-    if not cli:
-        parser.error("KiCad CLI executable is unavailable")
-    result = run_probe(cli)
+    cli = _resolve_cli()
+    result = run_probe(str(cli))
     result["sourceRevision"] = os.environ.get("SOURCE_REVISION", "")
     output = approved_runtime_path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
