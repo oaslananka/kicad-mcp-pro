@@ -57,6 +57,13 @@ jobs:
             Write-Warning "Mirror did not finish a full installer download; trying next official mirror"
           }
           if ($null -eq $uri) { throw 'All official KiCad mirrors failed to download the installer' }
+          # Pin the previously qualified distribution bytes as well as the signer.
+          # A mirror serving changed bytes must fail before the installer executes.
+          $expectedSha256 = 'ce3881b6a9188eb34ac1ebaaec7651149e8a025206410addfb11a1a9656ecf95'
+          $actualSha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $expectedSha256) {
+            throw "Unexpected KiCad 10.0.7 installer SHA-256: $actualSha256"
+          }
           $signature = Get-AuthenticodeSignature -LiteralPath $installer
           if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate) {
             throw "Installer Authenticode invalid: $($signature.Status)"
@@ -70,7 +77,7 @@ jobs:
             sourceRevision = $env:SOURCE_REVISION
             installerVersion = '10.0.7'
             installerUrl = $uri
-            installerSha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+            installerSha256 = $actualSha256
             signatureStatus = [string]$signature.Status
             signerSubject = $signature.SignerCertificate.Subject
             signerIssuer = $signature.SignerCertificate.Issuer
