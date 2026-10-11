@@ -15,7 +15,6 @@ import pytest
 
 import scripts.build_parity_matrix as builder
 from kicad_mcp.parity import CHANNELS, STATUSES, coverage_summary, get_matrix
-from kicad_mcp.server import build_server
 
 REQUIRED_FIELDS = {
     "capability",
@@ -30,13 +29,6 @@ REQUIRED_FIELDS = {
 @pytest.fixture(scope="module")
 def matrix() -> dict[str, Any]:
     return get_matrix()
-
-
-@pytest.fixture(scope="module")
-def registered_tool_names() -> set[str]:
-    server = build_server("agent_full")
-    server.ensure_registered()
-    return {tool.name for tool in server._tool_manager.list_tools()}
 
 
 def _rows(matrix: dict[str, Any]) -> Iterator[tuple[str, dict[str, Any]]]:

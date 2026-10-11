@@ -20,9 +20,6 @@ from __future__ import annotations
 
 from collections import Counter
 
-import pytest
-
-from kicad_mcp.server import build_server
 from kicad_mcp.tools.router import (
     EXPERIMENTAL_TOOL_NAMES,
     PROFILE_CATEGORIES,
@@ -36,14 +33,6 @@ def _declared_tool_names() -> list[str]:
     for info in TOOL_CATEGORIES.values():
         names.extend(info["tools"])
     return names
-
-
-@pytest.fixture(scope="module")
-def registered_tool_names() -> set[str]:
-    """The raw, unfiltered set of tool names registered on the maximal surface."""
-    server = build_server("agent_full")
-    server.ensure_registered()
-    return {tool.name for tool in server._tool_manager.list_tools()}
 
 
 # --- (b) every profile references existing categories -----------------------
