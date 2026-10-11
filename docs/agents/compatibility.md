@@ -43,3 +43,12 @@ must be recorded before marking a client release as independently verified.
 | ChatGPT Web | ❌ | ✅ | ✅ | ✅ |
 | Claude.ai Web | ❌ | ✅ | ✅ | ✅ |
 | Antigravity | ✅ | ✅ | ✅ | ✅ |
+
+
+## Evidence confidence (October 2026)
+
+The entries above describe intended/known integration capabilities and should
+not be read as a claim that every host has been independently installed and
+exercised in CI. The machine-validated **static** host catalog lives in
+`integrations/common/agent-host-evidence.json`. Actual supported build and
+runtime smoke evidence follows [host verification](host-verification.md).
