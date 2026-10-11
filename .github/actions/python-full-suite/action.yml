@@ -25,6 +25,8 @@ runs:
       shell: bash
       env:
         JUNITXML: ${{ inputs.junitxml }}
+        # Bound worker count on standard two-core GitHub-hosted Linux runners.
+        KICAD_CI_PYTEST_WORKERS: "2"
       run: |
         set -euo pipefail
         args=(full)
