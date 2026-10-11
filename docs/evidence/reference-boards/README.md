@@ -74,7 +74,12 @@ Exit **0** means this *specific agent phase can be attempted*; exit **2** means
 one or more prerequisites are missing. Either exit code is **not a successful
 PCB attempt**, a scored design, a completed ERC/DRC, or manufacturing approval.
 A missing CLI should block the run, not be marked as a model failure or silently
-skip that attempt from the denominator. The preflight itself creates no attempt
+skip that attempt from the denominator.
+
+For the opt-in, non-retry entry point that joins the preflight to the first
+schematic session, see [first schematic attempt](first-schematic-attempt.md).
+It requires explicit execution and provider-cost acknowledgement; no
+unattended CI jobs can launch agent sessions by default. The preflight itself creates no attempt
 artifacts. The actual reviewed executor remains
 `scripts/run_reference_board_agent.py`; use its explicit phase, timeout and
 approval workflow. Treat `manufacturing` as separately human-authorized, not a
