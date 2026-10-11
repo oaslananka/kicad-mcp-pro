@@ -93,7 +93,8 @@ jobs:
           echo "no_op_reason=$no_op_reason" >> "$GITHUB_OUTPUT"
 
   sonarcloud:
-    name: SonarCloud Scan
+    # Diagnostic invocation must not duplicate the required PR status context.
+    name: SonarCloud Manual Diagnostic
     needs: classify
     if: >
       always() &&

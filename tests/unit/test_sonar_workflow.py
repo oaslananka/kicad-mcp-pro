@@ -26,6 +26,7 @@ def test_sonar_uses_exact_run_coverage_and_preserves_manual_fallback() -> None:
     assert "workflow_dispatch:" in manual
     assert "  pull_request:" not in manual and "    branches: [main]" not in manual
     assert manual_workflow["jobs"]["sonarcloud"]["timeout-minutes"] == 45
+    assert manual_workflow["jobs"]["sonarcloud"]["name"] == "SonarCloud Manual Diagnostic"
 
     sonar = ci["jobs"]["sonarcloud"]
     coverage = ci["jobs"]["coverage"]
