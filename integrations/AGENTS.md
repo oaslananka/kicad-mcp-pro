@@ -19,7 +19,7 @@ Read first:
 Keep these surfaces aligned when they describe the same behavior:
 
 - runtime-specific example files under `integrations/<runtime>/`;
-- top-level project examples such as `.mcp.json`, `.codex/`, `.vscode/`, and `opencode.example.jsonc`;
+- top-level project examples such as `.mcp.json`, `.codex/`, `.vscode/`, and `integrations/opencode/opencode.example.json`;
 - `integrations/common/install-kicad-mcp.mjs`;
 - `integrations/common/validate-mcp-config.py`;
 - runtime documentation under `docs/agents/` and `docs/agent-runtime-config.md`.

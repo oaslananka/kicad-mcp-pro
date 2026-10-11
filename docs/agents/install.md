@@ -30,6 +30,29 @@ uvx kicad-mcp-pro
 pip install kicad-mcp-pro
 ```
 
+## Configure an agent without losing existing settings
+
+**Recommended (single supported writer):** the Python CLI merges only KiCad MCP
+settings into the selected agent's existing JSON/TOML configuration. It
+validates the result, creates a dated restorable backup, and atomically replaces
+the file. Preview first, then explicitly opt in to the write:
+
+```bash
+kicad-mcp-pro setup cursor --scope project --mode readonly
+kicad-mcp-pro setup cursor --scope project --mode readonly --write
+# Or for a user-level Codex config:
+kicad-mcp-pro setup codex --scope user --mode readonly --write
+```
+
+The legacy `node integrations/common/install-kicad-mcp.mjs` entry point now
+**delegates to this same Python writer** rather than copying an entire sample
+file over existing settings. It is only a compatibility wrapper; it requires
+`kicad-mcp-pro` on `PATH`. `--dry-run` prints a non-writing preview. It does not
+accept the old `local` scope: use the Python-supported `project` scope instead.
+For restoration use `kicad-mcp-pro setup-backups` and `setup-restore`. A config
+write does not prove real agent/KiCad connectivity; run the doctor and host
+smoke checks separately.
+
 ## Verify Installation
 
 ```bash
