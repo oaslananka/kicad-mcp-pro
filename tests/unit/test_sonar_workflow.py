@@ -45,6 +45,14 @@ def test_sonar_uses_exact_run_coverage_and_preserves_manual_fallback() -> None:
     assert steps["Require successful upstream coverage gate"]["if"] == (
         "steps.sonar-mode.outputs.run_analysis == 'true'"
     )
+    # The public SHA-pinned scanner is a known Semgrep secret-regex false positive;
+    # only that rule is suppressed on this one immutable action reference.
+    assert steps["SonarCloud Scan"]["uses"] == (
+        "SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9"
+    )
+    assert (
+        ci_raw.count("# nosemgrep: generic.secrets.security.detected-sonarqube-docs-api-key") == 1
+    )
 
 
 def test_sonar_docs_only_path_gate_keeps_required_check_reporting() -> None:
