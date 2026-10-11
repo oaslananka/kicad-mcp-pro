@@ -39,6 +39,27 @@ it does not allege a KiCad defect or a regression in this product.
 | `allegro-24-25-cli-capability` | Allegro 24.1/25.1 **PCB Editor** importer support and geometry fixes | Current Windows native canary explicitly skips unsupported CLI Allegro format | Inspect 10.0.7 `kicad-cli pcb import --help`; keep product CLI Allegro `blocked` until a tested CLI token exists; GUI format additions are not CLI API proof |
 | `ipc-expanded-object-contracts` | KiCad 10.0.7 IPC board table, variants, zone override and other object handling additions | Actual GUI/IPC smoke uses a bounded subset of four live MCP tools | Focused read/write/roundtrip/negative capability probes for newly used IPC objects before declaring parity |
 
+### Reproducible ERC JSON unit-scale acceptance candidate (#25582)
+
+`scripts/kicad_107_erc_units.py` implements a fail-closed, **exact 10.0.7**
+native CLI probe on an isolated *copy* of the maintained
+`erc-power-pin-error` fixture. It requires native `--exit-code-violations`
+exit code **5** for each `mm`, `in` and `mils` report; the unique non-zero J1
+`footprint_link_issues` location must be **(15, 14) mm**, **(15/25.4,
+14/25.4) in**, and **(15000/25.4, 14000/25.4) mils**, within a fixed
+numeric tolerance. It also compares diagnostic counts, metadata units, and
+installed CLI version. It emits only a sanitized coordinate/count JSON
+summary, not raw local filenames or native error text.
+
+This test is integrated into the signed, fixed-SHA-256 **Windows 2025 native
+10.0.7** post-merge/weekly workflow, alongside the existing 32/32 CLI and
+5/5 semantic gates. Standalone physical KiCad 10.0.7 execution is required
+before the pull request is merged; exact-head Windows runner success and
+artifact verification must be recorded separately. The probe's introduction
+**does not itself satisfy** the cross-platform/promotion criterion or change
+the six-row targeted evidence queue. The Ubuntu 22.04 **10.0.6** legacy lane
+and manually dispatched GUI/IPC workflow are not changed.
+
 **Status of all six patch-specific rows:** `targeted-evidence-pending`.
 This is a review queue, not an invented failure list. Base 10.0.6 statuses and
 unaffected KiCad 11 preview contracts are not rewritten.
