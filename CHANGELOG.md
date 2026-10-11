@@ -10,6 +10,26 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.3.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.2.0...mcp-server-v4.3.0) (2026-10-11)
+
+
+### Features
+
+* **agents:** pilot Gemini extension and evidence-scoped host checks ([#1218](https://github.com/oaslananka/kicad-mcp-pro/issues/1218)) ([7daa4d3](https://github.com/oaslananka/kicad-mcp-pro/commit/7daa4d3e475cb66713001ffd44e4b74deef8fbbc))
+
+
+### Bug Fixes
+
+* **agents:** one canonical KiCad skill source and consistent client setup ([#1217](https://github.com/oaslananka/kicad-mcp-pro/issues/1217)) ([ab84ff3](https://github.com/oaslananka/kicad-mcp-pro/commit/ab84ff35454da91f4bc3ffe781ddc63d12030384))
+* **agents:** safely delegate legacy installer to canonical Python setup ([#1223](https://github.com/oaslananka/kicad-mcp-pro/issues/1223)) ([0fedbc8](https://github.com/oaslananka/kicad-mcp-pro/commit/0fedbc858dafe6e299ca516ece223ea698af5bd2))
+* **metadata:** generate npm publication docs from canonical metadata ([#1216](https://github.com/oaslananka/kicad-mcp-pro/issues/1216)) ([52602f6](https://github.com/oaslananka/kicad-mcp-pro/commit/52602f6c52d33235944e6b79ef2e2cc77f786c4a))
+* **release:** auto-publish reviewed release after trusted green main CI ([#1215](https://github.com/oaslananka/kicad-mcp-pro/issues/1215)) ([03107fc](https://github.com/oaslananka/kicad-mcp-pro/commit/03107fc75e6b7dd2b32733c8e955df5f344069e8))
+
+
+### Documentation
+
+* **agents:** distinguish historical host tests from current qualification ([#1224](https://github.com/oaslananka/kicad-mcp-pro/issues/1224)) ([ad3bb67](https://github.com/oaslananka/kicad-mcp-pro/commit/ad3bb6780ece2d4e700674719a253c369f1f06b7))
+
 ## [4.2.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.1.0...mcp-server-v4.2.0) (2026-10-10)
 
 

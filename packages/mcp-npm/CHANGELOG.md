@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.3.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-npm-v4.2.0...mcp-npm-v4.3.0) (2026-10-11)
+
+
+### Bug Fixes
+
+* **metadata:** generate npm publication docs from canonical metadata ([#1216](https://github.com/oaslananka/kicad-mcp-pro/issues/1216)) ([52602f6](https://github.com/oaslananka/kicad-mcp-pro/commit/52602f6c52d33235944e6b79ef2e2cc77f786c4a))
+
 ## [4.2.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-npm-v4.1.0...mcp-npm-v4.2.0) (2026-10-10)
 
 
