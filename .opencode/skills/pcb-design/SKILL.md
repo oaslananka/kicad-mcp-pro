@@ -75,8 +75,17 @@ Use only after explaining the planned change and confirming that the workflow is
 - `pcb_add_tracks_bulk`
 - `pcb_add_via`
 - `pcb_add_zone`
+- `pcb_delete_items`
+- `pcb_delete_object`
 - `pcb_refill_zones`
 - `pcb_save`
+
+### MCP-first mutation boundary
+
+- Prefer `kicad_set_project` over a shell `cd` when the goal is to select the active KiCad project.
+- Use dedicated MCP operations for KiCad objects. For example, inspect tracks/vias through MCP, remove existing PCB objects with `pcb_delete_items` or `pcb_delete_object`, and verify with `run_drc`.
+- Do **not** rewrite `.kicad_pcb` or `.kicad_sch` with `sed`, regex-based Python, or other ad-hoc text mutation as a fallback when a required MCP tool is unavailable.
+- If the current profile or operating mode does not expose the required MCP operation, stop and report the missing tool plus the required profile/mode. Let the user explicitly opt into a broader supported MCP surface instead of silently switching to shell mutation.
 
 ### Quality gates and specialist checks
 
@@ -123,6 +132,7 @@ Stop and report clearly when:
 - No KiCad project is active
 - The board file is missing or not parseable
 - Required KiCad CLI/IPC capability is unavailable
+- A required MCP mutation tool is unavailable in the active profile/mode; report the required profile/mode instead of falling back to raw KiCad-file mutation
 - The user requested write operations but no safe project context exists
 - DRC or quality-gate output is missing after a layout-changing operation
 - The board depends on manufacturer constraints that were not provided

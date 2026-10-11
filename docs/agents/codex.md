@@ -6,29 +6,21 @@
 kicad-mcp-pro setup codex
 ```
 
-Or manually add to `~/.codex/config.toml`:
+Or add the verified `[mcp_servers.kicad]` block to `~/.codex/config.toml`.
+Do not use legacy `[[mcp_servers]]`, `default_tools_approval_mode`, or `cwd`
+fields; they are not part of the maintained Codex example:
 
 ```toml
 [mcp_servers.kicad]
-enabled = true
 command = "uvx"
-args = ["kicad-mcp-pro"]
-cwd = "."
-default_tools_approval_mode = "never"
-enabled_tools = [
-    "kicad_get_project_info",
-    "pcb_get_board_summary",
-    "sch_get_symbols",
-    "run_drc",
-    "run_erc",
-    "validate_design",
-    "project_quality_gate"
-]
+args = ["kicad-mcp-pro", "--transport", "stdio"]
+startup_timeout_sec = 20
+tool_timeout_sec = 120
 
 [mcp_servers.kicad.env]
-KICAD_MCP_PROJECT_DIR = "."
 KICAD_MCP_PROFILE = "default"
 KICAD_MCP_OPERATING_MODE = "readonly"
+# KICAD_MCP_PROJECT_DIR = "/absolute/path/to/kicad-project"
 ```
 
 ## Verification

@@ -6,8 +6,11 @@ This document gives copyable configuration examples for running KiCad MCP Pro fr
 
 The repository includes both:
 
-- `.claude-plugin/plugin.json` with a native `mcpServers` entry.
-- `.mcp.json` with the same MCP server definition for project-local Claude Code usage.
+- `.claude-plugin/plugin.json`, which declares the **seven skills** but does
+  **not** embed an MCP server configuration.
+- `.mcp.json`, which separately configures the **project-local MCP server**.
+  Installing/loading a skill does not install `uvx`, Python, or KiCad and does
+  not automatically connect the MCP server. Verify both steps independently.
 
 Validate the plugin locally:
 
@@ -23,7 +26,7 @@ claude --plugin-dir .
 
 ## Codex CLI
 
-Use `.codex/config.example.toml` as a starting point. Copy the `[[mcp_servers]]` block into your Codex config file and adjust command arguments if needed.
+Use `.codex/config.example.toml` as a starting point. Copy the `[mcp_servers.kicad]` block into your Codex config file and adjust command arguments if needed.
 
 ## VS Code / GitHub Copilot
 
@@ -31,9 +34,12 @@ Use `.vscode/mcp.example.json` as a workspace MCP configuration example. If your
 
 ## OpenCode
 
-Use `opencode.example.jsonc` as a project-level OpenCode MCP configuration example. Copy it to `opencode.json` in a working project, or merge the `mcp` block into an existing OpenCode config.
+Use `integrations/opencode/opencode.example.json` as a project-level OpenCode MCP configuration example. Copy it to `opencode.json` in a working project, or merge the `mcp` block into an existing OpenCode config.
 
-OpenCode discovers project-local skills from `.opencode/skills/<name>/SKILL.md`, so this repository mirrors the KiCad skills there for OpenCode-native loading.
+OpenCode discovers project-local skills from `.opencode/skills/<name>/SKILL.md`.
+These and the cross-client `.agents/skills/<name>/SKILL.md` copies are generated
+from the single `skills/` source using `python scripts/sync_agent_skills.py --write`;
+CI rejects drift using `--check`. Do not edit the mirrors directly.
 
 Local MCP server command:
 

@@ -1,37 +1,14 @@
-# Codex CLI KiCad MCP configuration
-#
-# Place in ~/.codex/config.toml or project-level .codex/config.toml
-#
-# Read-only default profile:
+# Canonical Codex CLI MCP connection. Copy this section into
+# ~/.codex/config.toml (or your trusted project's .codex/config.toml).
+# The local Python server controls mutating tools with a read-only default.
 [mcp_servers.kicad]
-enabled = true
 command = "uvx"
-args = ["kicad-mcp-pro"]
-cwd = "."
+args = ["kicad-mcp-pro", "--transport", "stdio"]
 startup_timeout_sec = 20
 tool_timeout_sec = 120
-default_tools_approval_mode = "never"  # read-only: no approval needed
-enabled_tools = [
-    "kicad_get_project_info",
-    "pcb_get_board_summary",
-    "sch_get_symbols",
-    "run_drc",
-    "run_erc",
-    "validate_design",
-    "project_quality_gate"
-]
 
 [mcp_servers.kicad.env]
-KICAD_MCP_PROJECT_DIR = "."
 KICAD_MCP_PROFILE = "default"
 KICAD_MCP_OPERATING_MODE = "readonly"
-
-# ── Write profile (uncomment to enable destructive tools) ──
-# [mcp_servers.kicad]
-# default_tools_approval_mode = "prompt"
-# disabled_tools = [
-#     "git_restore_checkpoint",
-#     "project_auto_fix_loop"
-# ]
-# [mcp_servers.kicad.env]
-# KICAD_MCP_OPERATING_MODE = "write"
+# Set an absolute KiCad project path when needed:
+# KICAD_MCP_PROJECT_DIR = "/absolute/path/to/kicad-project"

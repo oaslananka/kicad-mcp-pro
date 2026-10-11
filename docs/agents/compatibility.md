@@ -5,10 +5,10 @@
 | Agent | Local STDIO | Remote HTTP | Skills/AGENTS.md | App UI | OAuth | Tool Filtering |
 |-------|------------|-------------|-----------------|--------|-------|----------------|
 | Claude Code | ✅ | ✅ | ✅ | — | ✅ | ✅ include/exclude |
-| Codex CLI | ✅ | ✅ | ✅ AGENTS.md | — | — | ✅ enabled/disabled |
-| Gemini CLI | ✅ | ✅ | — | — | ✅ | ✅ include/exclude |
+| Codex CLI | ✅ | ✅ | ✅ AGENTS.md + Agent Skills | — | — | ✅ enabled/disabled |
+| Gemini CLI | ✅ | ✅ | ✅ Agent Skills (host-dependent) | — | ✅ | ✅ include/exclude |
 | OpenCode | ✅ | ✅ | ✅ AGENTS.md | ✅ Plugin | ✅ | ✅ glob patterns |
-| VS Code/Copilot | ✅ | ✅ | ✅ copilot-instructions.md | ⚠️ Experimental | ✅ | ✅ sandbox |
+| VS Code/Copilot | ✅ | ✅ | ✅ Copilot instructions + Agent Skills | ⚠️ Experimental | ✅ | ✅ sandbox |
 | Cursor | ✅ | ⚠️ Verify | ✅ Rules + Skills | — | — | ⚠️ Limited |
 | Claude Desktop | ✅ | — | — | — | — | — |
 | Claude.ai Web | ❌ | ✅ | ⚠️ Account feature | ⚠️ Limited | ✅ | ✅ tool allowlist |
@@ -25,11 +25,17 @@
 
 ## Protocol Support
 
+The table below describes **client-side transport feature support**, not
+server conformance tested in this repository. The maintained Codex examples
+include separate local stdio and HTTP configurations; older no-HTTP claims
+must not be interpreted as the current integration policy. A real-host smoke
+must be recorded before marking a client release as independently verified.
+
 | Agent | STDIO | SSE | Streamable HTTP | OAuth 2.1 |
 |-------|-------|-----|-----------------|-----------|
 | Claude Code | ✅ | ✅ | ✅ | ✅ |
 | Claude Desktop | ✅ | ❌ | ❌ | ❌ |
-| Codex CLI | ✅ | ❌ | ❌ | ❌ |
+| Codex CLI | ✅ | ❌ | ✅ | Verify per host |
 | Gemini CLI | ✅ | ✅ | ✅ | ✅ |
 | OpenCode | ✅ | ❌ | ✅ | ✅ |
 | VS Code | ✅ | ✅ | ✅ | ✅ |

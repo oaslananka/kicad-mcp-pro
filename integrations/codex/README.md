@@ -18,8 +18,8 @@ Or manually:
 
 | Mode | Config | Behavior |
 |------|--------|----------|
-| **Read-only** (default) | `enabled_tools = [...]` | Inspect project, run ERC/DRC, validate |
-| **Write** | Change `default_tools_approval_mode` to `"prompt"` | Edit schematic/PCB, export, route |
+| **Read-only** (default) | `KICAD_MCP_OPERATING_MODE=readonly` | Inspect project, run ERC/DRC, validate |
+| **Write** (explicit only) | `KICAD_MCP_OPERATING_MODE=write` plus approved bounded profile | Project-scoped edits with human review |
 
 ## AGENTS.md
 

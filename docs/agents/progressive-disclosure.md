@@ -72,3 +72,24 @@ pnpm run profiles:check
 ```
 
 The snapshot check runs as part of `check:meta`, so profile or schema changes cannot silently expand the default surface.
+
+
+## Portable Agent Skills ownership (October 2026)
+
+The **single editable source** is [`skills/`](https://github.com/oaslananka/kicad-mcp-pro/tree/main/skills). Seven KiCad
+skills are mirrored to `.opencode/skills/` and `.agents/skills/` for host-native
+discovery; these are generated outputs, not independent policy documents.
+OpenCode's maintainer-only `repo-repair` skill and Copilot's `code-review`
+skill remain independently owned and are **not** portable KiCad user skills.
+
+After editing a canonical skill run:
+
+```bash
+python scripts/sync_agent_skills.py --write
+python scripts/sync_agent_skills.py --check
+```
+
+The workflow-policy CI job fails if generated copies drift. Do not publish a
+skill bundle as verified for a host based solely on Markdown/YAML validation:
+actual host installation, discovery, MCP connection and safe readonly tool
+execution need separate recorded smoke evidence.

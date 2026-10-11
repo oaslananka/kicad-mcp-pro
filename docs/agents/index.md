@@ -7,10 +7,10 @@ kiCad-mcp-pro is an MCP server that exposes KiCad PCB design capabilities as too
 | Agent | Local STDIO | Remote HTTP | Skills | App UI |
 |-------|------------|-------------|--------|--------|
 | [Claude Code](claude-code.md) | ✅ Supported | ✅ Supported | ✅ Supported | — |
-| [Codex CLI](codex.md) | ✅ Supported | ✅ Supported | Via AGENTS.md | — |
-| [Gemini CLI](gemini-cli.md) | ✅ Supported | ✅ Supported | — | — |
+| [Codex CLI](codex.md) | ✅ Supported | ✅ Supported | AGENTS.md + Agent Skills | — |
+| [Gemini CLI](gemini-cli.md) | ✅ Supported | ✅ Supported | Agent Skills | — |
 | [OpenCode](opencode.md) | ✅ Supported | ✅ Supported | — | ✅ Plugin |
-| [VS Code / Copilot](vscode-copilot.md) | ✅ Supported | ✅ Supported | — | Experimental |
+| [VS Code / Copilot](vscode-copilot.md) | ✅ Supported | ✅ Supported | Agent Skills | Experimental |
 | [Cursor](cursor.md) | ✅ Supported | ⚠️ Verify | ✅ Supported | — |
 | [Claude Desktop](claude-desktop.md) | ✅ Supported | — | — | — |
 | [.mcpb bundle](mcpb.md) | ✅ Supported | — | — | ✅ 1-file install |

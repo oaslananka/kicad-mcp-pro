@@ -209,7 +209,7 @@ here so they stay synchronized with the actual MCP server tools.
 | [`.mcp.json`](.mcp.json) | Claude Code project-local MCP server configuration. |
 | [`.codex/config.example.toml`](.codex/config.example.toml) | Codex CLI MCP configuration example. |
 | [`.vscode/mcp.example.json`](.vscode/mcp.example.json) | VS Code / GitHub Copilot workspace MCP configuration example. |
-| [`opencode.example.jsonc`](opencode.example.jsonc) | OpenCode project MCP configuration example. |
+| [`integrations/opencode/opencode.example.json`](integrations/opencode/opencode.example.json) | OpenCode project MCP configuration example. |
 | [`.opencode/skills/`](.opencode/skills) | OpenCode-native mirrored skill definitions. |
 | [`docs/agent-runtime-config.md`](docs/agent-runtime-config.md) | Agent runtime setup and validation matrix. |
 | [`skills/kicad-design-review/SKILL.md`](skills/kicad-design-review/SKILL.md) | Comprehensive KiCad design review skill. |
