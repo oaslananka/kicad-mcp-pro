@@ -9,9 +9,11 @@ on:
 permissions:
   contents: read
 
+# Protect post-merge evidence: each main commit retains its own CI run.
+# On PRs, only the newest test run for that PR should consume runners.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   changes:
@@ -853,24 +855,43 @@ jobs:
             echo "docs_only: **${docs_only:-n/a}**"
             echo "release_metadata_only: **${release_metadata_only:-n/a}**"
             echo ''
-            echo '| Job | Result |'
-            echo '|-----|--------|'
+            echo '| Job | Result | Explanation |'
+            echo '|-----|--------|-------------|'
           } >> "$GITHUB_STEP_SUMMARY"
 
           failed=0
           for job in changes release-metadata python-changed-quality mcp-server coverage mcp-npm chatgpt-app protocol-schemas mcp-2026-compat workflow-policy security release-readiness; do
             result="${results[$job]}"
-            echo "| $job | $result |" >> "$GITHUB_STEP_SUMMARY"
             case "$result" in
+              success)
+                explanation='completed'
+                ;;
+              skipped)
+                if [[ "$job" == 'release-readiness' &&
+                      ! ( "$GITHUB_EVENT_NAME" == 'pull_request' && "${GITHUB_HEAD_REF:-}" == release-please--* ) ]]; then
+                  explanation='expected non-release event'
+                elif [[ "$job" == 'changes' && "$GITHUB_EVENT_NAME" == 'workflow_dispatch' ]]; then
+                  explanation='expected manual dispatch'
+                else
+                  explanation='unexpected skip — required job did not run'
+                  failed=1
+                fi
+                ;;
               failure|cancelled)
+                explanation='required job failed or was cancelled'
+                failed=1
+                ;;
+              *)
+                explanation='unexpected or missing result — fail closed'
                 failed=1
                 ;;
             esac
+            echo "| $job | $result | $explanation |" >> "$GITHUB_STEP_SUMMARY"
           done
 
           if [[ "$failed" -eq 1 ]]; then
             echo '' >> "$GITHUB_STEP_SUMMARY"
-            echo '❌ One or more required jobs failed or was cancelled.' >> "$GITHUB_STEP_SUMMARY"
+            echo '❌ A required job failed, was cancelled, unexpectedly skipped, or returned an unknown result.' >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 

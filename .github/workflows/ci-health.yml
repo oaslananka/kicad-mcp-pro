@@ -1,0 +1,35 @@
+name: CI Health Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "47 5 * * 1"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ci-health-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Summarize seven-day GitHub CI health
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci_health_report.py
+      - name: Preserve audit snapshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ci-health-${{ github.run_id }}
+          path: ci-health.json
+          if-no-files-found: error
+          retention-days: 14
