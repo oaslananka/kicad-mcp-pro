@@ -8,6 +8,8 @@ on:
       - ".vscode/mcp.example.json"
       - ".codex/config.example.toml"
       - "opencode.example.jsonc"
+      - "integrations/opencode/opencode.example.json"
+      - ".agents/skills/**/SKILL.md"
       - "skills/**/SKILL.md"
       - ".opencode/skills/**/SKILL.md"
       - "docs/agent-runtime-config.md"
@@ -20,6 +22,8 @@ on:
       - ".vscode/mcp.example.json"
       - ".codex/config.example.toml"
       - "opencode.example.jsonc"
+      - "integrations/opencode/opencode.example.json"
+      - ".agents/skills/**/SKILL.md"
       - "skills/**/SKILL.md"
       - ".opencode/skills/**/SKILL.md"
       - "docs/agent-runtime-config.md"
@@ -41,29 +45,34 @@ jobs:
       - name: Validate agent runtime references
         run: |
           python3 - <<'PY'
-          import json, re
+          import json, tomllib
           from pathlib import Path
-          root = Path('.')
-          plugin = json.loads(Path('.claude-plugin/plugin.json').read_text())
+
+          plugin = json.loads(Path('.claude-plugin/plugin.json').read_text(encoding='utf-8'))
           assert plugin.get('$schema') == 'https://anthropic.com/claude-code/plugin.schema.json'
+          # The Claude plugin ships skills; the MCP server is connected through .mcp.json.
+          assert 'mcpServers' not in plugin
           skills = plugin.get('skills')
-          assert isinstance(skills, list) and skills
+          assert isinstance(skills, list) and len(skills) == 7
           for entry in skills:
               assert entry.startswith('./skills/')
-              skill_file = Path(entry[2:]) / 'SKILL.md'
-              assert skill_file.is_file(), skill_file
-              text = skill_file.read_text()
-              assert text.startswith('---\n'), skill_file
-              assert f'name: {Path(entry).name}' in text, skill_file
-              mirror = Path('.opencode/skills') / Path(entry).name / 'SKILL.md'
-              assert mirror.is_file(), mirror
-              mtext = mirror.read_text()
-              assert mtext.startswith('---\n'), mirror
-              assert f'name: {Path(entry).name}' in mtext, mirror
-          assert '[[mcp_servers]]' in Path('.codex/config.example.toml').read_text()
-          raw = Path('opencode.example.jsonc').read_text()
-          clean = re.sub(r',\s*([}\]])', r'\1', raw)
-          opencode = json.loads(clean)
+              canonical = Path(entry[2:]) / 'SKILL.md'
+              assert canonical.is_file(), canonical
+              text = canonical.read_text(encoding='utf-8')
+              assert text.startswith('---\n'), canonical
+              assert f'name: {Path(entry).name}' in text, canonical
+              for root in (Path('.opencode/skills'), Path('.agents/skills')):
+                  mirror = root / Path(entry).name / 'SKILL.md'
+                  assert mirror.is_file(), mirror
+                  assert mirror.read_text(encoding='utf-8') == text, mirror
+
+          codex = tomllib.loads(Path('.codex/config.example.toml').read_text(encoding='utf-8'))
+          assert isinstance(codex.get('mcp_servers'), dict)
+          server = codex['mcp_servers']['kicad']
+          assert server['command'] == 'uvx'
+          assert server['env']['KICAD_MCP_OPERATING_MODE'] == 'readonly'
+          assert 'default_tools_approval_mode' not in server
+          opencode = json.loads(Path('integrations/opencode/opencode.example.json').read_text(encoding='utf-8'))
           assert isinstance(opencode.get('mcp'), dict) and opencode['mcp']
-          print('agent runtime config ok')
+          print('agent runtime configuration and skills are consistent')
           PY

@@ -200,3 +200,26 @@ def test_cli_requires_explicit_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert skill_sync.main() == 0
     monkeypatch.setattr(sys, "argv", ["sync_agent_skills.py", "--check"])
     assert skill_sync.main() == 0
+
+
+def test_availability_helper_does_not_execute_discovered_binary(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """Skill discovery preflight must not execute a PATH-resolved program."""
+    import importlib.util
+    import shutil
+
+    path = ROOT / "skills/kicad-design-review/scripts/check_mcp_available.py"
+    spec = importlib.util.spec_from_file_location("kicad_skill_availability", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(
+        shutil, "which", lambda name: "/untrusted/bin" if name == "kicad-mcp-pro" else None
+    )
+    assert module.main() == 0
+    assert "runtime not yet verified" in capsys.readouterr().out
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert module.main() == 1
+    assert "not found" in capsys.readouterr().out
+    assert "subprocess" not in path.read_text(encoding="utf-8")
