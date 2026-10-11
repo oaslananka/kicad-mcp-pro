@@ -25,8 +25,11 @@ def toolsets() -> dict[str, Any]:
     return json.loads(builder.TOOLSETS_PATH.read_text(encoding="utf-8"))
 
 
-@pytest.fixture(scope="module")
-def registered_tool_names() -> set[str]:
+@pytest.fixture
+# A module-scoped fixture runs before function-level reset_globals, so an
+# inherited HTTP environment can bypass the cleanup and break xdist workers.
+def registered_tool_names(reset_globals: None) -> set[str]:
+    _ = reset_globals
     server = build_server("agent_full")
     server.ensure_registered()
     return {tool.name for tool in server._tool_manager.list_tools()}
