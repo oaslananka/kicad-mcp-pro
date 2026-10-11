@@ -1475,13 +1475,20 @@ class _StreamableHttpContractMiddleware:
             return
 
         protocol_version = headers.get("mcp-protocol-version")
-        if protocol_version and protocol_version not in SUPPORTED_PROTOCOL_VERSIONS:
+        if protocol_version and (
+            protocol_version not in SUPPORTED_PROTOCOL_VERSIONS
+            or (
+                cfg.protocol_lane == NATIVE_2026_PROTOCOL_LANE
+                and protocol_version != MCP_PROTOCOL_VERSION
+            )
+        ):
+            code, message, error_data = _unsupported_protocol_version_error(
+                protocol_version, body, cfg
+            )
             await _streamable_http_error_response(
-                code=-32002,
-                message=(
-                    f"Unsupported MCP-Protocol-Version: {protocol_version}. "
-                    f"Supported versions: {', '.join(SUPPORTED_PROTOCOL_VERSIONS)}."
-                ),
+                code=code,
+                message=message,
+                data=error_data,
                 rpc_id=rpc_id,
                 status_code=400,
                 scope=scope,
@@ -1581,7 +1588,12 @@ async def _buffer_request_body(receive: Receive) -> tuple[bytes, Receive]:
     iterator = iter(messages)
 
     async def replay_receive() -> Message:
-        return next(iterator, {"type": "http.request", "body": b"", "more_body": False})
+        try:
+            return next(iterator)
+        except StopIteration:
+            # The body is already replayed. Streaming handlers must observe the
+            # original connection lifecycle, especially an HTTP disconnect.
+            return await receive()
 
     return b"".join(chunks), replay_receive
 
@@ -1639,6 +1651,60 @@ def _json_rpc_metadata(body: bytes) -> tuple[object | None, str | None]:
     return rpc_id, rpc_method if isinstance(rpc_method, str) else None
 
 
+def _json_rpc_protocol_version(body: bytes) -> str | None:
+    """Read modern per-request metadata for version diagnostics only."""
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    params = payload.get("params")
+    if not isinstance(params, dict):
+        return None
+    meta = params.get("_meta")
+    if not isinstance(meta, dict):
+        return None
+    version = meta.get("io.modelcontextprotocol/protocolVersion")
+    return version if isinstance(version, str) else None
+
+
+def _unsupported_protocol_version_error(
+    requested: str, body: bytes, cfg: KiCadMCPConfig
+) -> tuple[int, str, dict[str, Any] | None]:
+    """Distinguish modern version negotiation from legacy HTTP diagnostics."""
+    body_version = _json_rpc_protocol_version(body)
+    if body_version is not None and body_version != requested:
+        # A proxy may route on headers, so a conflicting body is never acceptable.
+        return (
+            -32020,
+            "Header mismatch: MCP-Protocol-Version does not match request metadata.",
+            None,
+        )
+
+    if cfg.protocol_lane == NATIVE_2026_PROTOCOL_LANE or body_version is not None:
+        supported = (
+            [MCP_PROTOCOL_VERSION]
+            if cfg.protocol_lane == NATIVE_2026_PROTOCOL_LANE
+            else list(SUPPORTED_PROTOCOL_VERSIONS)
+        )
+        return (
+            -32022,
+            "Unsupported protocol version",
+            {
+                "requested": requested,
+                "supported": supported,
+            },
+        )
+
+    # No modern _meta: keep the diagnostic used by initialize-era clients.
+    message = (
+        f"Unsupported MCP-Protocol-Version: {requested}. "
+        f"Supported versions: {', '.join(SUPPORTED_PROTOCOL_VERSIONS)}."
+    )
+    return -32002, message, None
+
+
 def _message_header(message: Message, header_name: str) -> str:
     expected = header_name.casefold().encode("latin-1")
     headers = message.get("headers", [])
@@ -1658,12 +1724,16 @@ async def _streamable_http_error_response(
     message: str,
     rpc_id: object | None,
     status_code: int,
+    data: dict[str, Any] | None = None,
     scope: Scope,
     receive: Receive,
     send: Send,
 ) -> None:
+    error: dict[str, Any] = {"code": code, "message": message}
+    if data is not None:
+        error["data"] = data
     response = JSONResponse(
-        {"jsonrpc": "2.0", "error": {"code": code, "message": message}, "id": rpc_id},
+        {"jsonrpc": "2.0", "error": error, "id": rpc_id},
         status_code=status_code,
     )
     await response(scope, receive, send)
@@ -1979,7 +2049,8 @@ def build_server(profile: str | None = None, *, defer_registration: bool = False
         streamable_http_path=cfg.mount_path,
         mount_path=cfg.mount_path,
         log_level=cfg.log_level,
-        json_response=True,
+        # Strict modern HTTP supports SSE progress; legacy mode keeps JSON replies.
+        json_response=cfg.protocol_lane != NATIVE_2026_PROTOCOL_LANE,
         stateless_http=not cfg.stateful_http,
         auth=auth,
         token_verifier=token_verifier,
@@ -2304,7 +2375,7 @@ def _run_server_from_options(
         host=cfg.host,
         port=cfg.port,
         streamable_http_path=cfg.mount_path,
-        json_response=True,
+        json_response=cfg.protocol_lane != NATIVE_2026_PROTOCOL_LANE,
         stateless_http=not cfg.stateful_http,
     )
 
