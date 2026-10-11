@@ -86,6 +86,53 @@ def _write_outputs(path: Path, decision: ReleasePolicyDecision) -> None:
             handle.write(f"{key}={value}\n")
 
 
+def _write_release_summary(decision: ReleasePolicyDecision) -> None:
+    """Explain the policy result without changing the fail-closed exit status."""
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    summary = approved_runtime_path(Path(path), extra_roots=(Path(path),))
+    baseline_age = (
+        str(decision.baseline_age_days)
+        if decision.baseline_age_days is not None
+        else "not applicable"
+    )
+    lines = [
+        "## Live-model release readiness",
+        "",
+        f"- **Decision:** `{decision.mode}` — `{decision.reason}`",
+        f"- **Previous release:** `{decision.release_base_ref or 'unavailable'}`",
+        f"- **Candidate contract SHA-256:** `{decision.current_contract_digest}`",
+        f"- **Approved baseline SHA-256:** `{decision.baseline_contract_digest or 'unapproved'}`",
+        f"- **Baseline age (days):** `{baseline_age}`",
+        "",
+        "### Agent-contract files changed since the last release",
+        "",
+    ]
+    lines.extend(f"- `{name}`" for name in decision.contract_changed_paths)
+    if not decision.contract_changed_paths:
+        lines.append("- None")
+    lines += ["", "### Next action", ""]
+    if decision.mode == "full":
+        lines.append(
+            "**Blocked:** Run the protected **Live Model Release Gate** on `main`, "
+            "review the complete evidence, then promote the approved baseline "
+            "via a separate reviewed PR. Do **not** edit the digest manually or "
+            "override required status checks."
+        )
+    elif decision.reason == "verified_unused_import_only_since_release":
+        lines.append(
+            "**Verified nonfunctional exception:** the only tracked contract diff "
+            "removes an unused exception alias from an already imported module. "
+            "Raw source digest remains distinct; no baseline evidence was modified. "
+            "All regular release, packaging and security checks still apply."
+        )
+    else:
+        lines.append("Release readiness passed under the configured contract policy.")
+    with summary.open("a", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -117,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     print(json.dumps(decision.as_dict(), sort_keys=True, separators=(",", ":")))
+    if args.command == "release":
+        _write_release_summary(decision)
     if args.github_output is not None:
         _write_outputs(args.github_output, decision)
     if args.require_ready and decision.mode == "full":
