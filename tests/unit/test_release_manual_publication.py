@@ -51,6 +51,10 @@ def test_publish_is_called_only_by_trusted_ci_or_manual_recovery() -> None:
     ci = _workflow("ci.yml")
     caller = ci["jobs"]["auto-publish-reviewed-release"]
     assert caller["needs"] == ["required-pr-gate", "sonarcloud"]
+    # release-readiness is deliberately skipped on a release metadata-only
+    # main push; GitHub's implicit success() propagation must not skip the
+    # publish caller despite the two actual required gates being green.
+    assert caller["if"].startswith("always() && !cancelled() &&")
     assert "github.event_name == 'push'" in caller["if"]
     assert "github.ref == 'refs/heads/main'" in caller["if"]
     assert "needs.required-pr-gate.result == 'success'" in caller["if"]

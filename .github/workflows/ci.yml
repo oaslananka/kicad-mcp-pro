@@ -905,10 +905,15 @@ jobs:
   # Publishing is an outcome of the reviewed release PR plus successful CI,
   # not an ambient side effect of ordinary main commits. Callable workflow
   # gates the exact merged Release Please PR before minting an App token.
+  # GitHub implicitly inserts success() for jobs with needs; a deliberately
+  # skipped ancestor (e.g. release-readiness on main push) otherwise prevents
+  # this caller even when both explicit required gates succeeded. always() only
+  # removes that implicit skip propagation; both success checks remain mandatory.
   auto-publish-reviewed-release:
     name: Publish reviewed release after green main CI
     needs: [required-pr-gate, sonarcloud]
     if: >-
+      always() && !cancelled() &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       needs.required-pr-gate.result == 'success' &&

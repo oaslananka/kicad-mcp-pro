@@ -23,6 +23,11 @@ its required checks pass. The merge updates the version metadata in `main`.
 The normal **CI** workflow validates that exact `main` commit. After its
 **Required PR Gate** and **SonarCloud Scan** jobs have succeeded, CI calls the
 reusable **Publish Release** workflow *only* for that trusted `main` push.
+The caller uses an explicit `always() && !cancelled()` status guard to avoid
+GitHub Actions' implicit `success()` propagation from **intentionally skipped
+upstream checks** on a release-metadata push; publishing still requires **both
+named gates to have succeeded**, the `main` push identity, and the exact merged
+Release Please PR identity check before minting a token.
 The called workflow confirms via the GitHub API that the exact commit is the
 merge commit of a reviewed `release-please--branches--main` PR; ordinary
 `main` merges return successfully without publishing. Normal PR merges,
