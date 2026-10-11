@@ -169,55 +169,45 @@ def test_sonar_s8541_exception_is_limited_to_github_workflows() -> None:
 
 
 def test_sonar_skips_fork_pull_requests_before_secret_bearing_steps() -> None:
-    path = ROOT / ".github" / "workflows" / "sonarcloud.yml"
-    raw = path.read_text(encoding="utf-8")
+    raw = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     workflow = yaml.safe_load(raw)
-
-    assert "pull_request_target" not in raw
-    classify = workflow["jobs"]["classify"]
-    assert "sonar-mode.outputs.run_analysis" in classify["outputs"]["run_analysis"]
-    assert "sonar-mode.outputs.no_op_reason" in classify["outputs"]["no_op_reason"]
-
-    mode_step = next(step for step in classify["steps"] if step.get("id") == "sonar-mode")
-    mode_script = mode_step["run"]
+    job = workflow["jobs"]["sonarcloud"]
+    assert job["name"] == "SonarCloud Scan"
+    assert "always()" in job["if"]
+    assert {"coverage", "changes", "release-metadata"} <= set(job["needs"])
+    assert job["permissions"] == {"contents": "read", "pull-requests": "read"}
+    steps = {step["name"]: step for step in job["steps"] if "name" in step}
+    mode_script = steps["Determine Sonar execution mode"]["run"]
     assert "PR_HEAD_REPO" in mode_script
     assert "PR_AUTHOR" in mode_script
     assert "dependabot[bot]" in mode_script
     assert "run_analysis=false" in mode_script
-
-    sonar = workflow["jobs"]["sonarcloud"]
-    assert "needs.classify.result == 'success'" in sonar["if"]
-    steps = {step["name"]: step for step in sonar["steps"] if "name" in step}
+    for name in ("Checkout code", "SonarCloud Scan"):
+        assert steps[name]["if"] == "steps.sonar-mode.outputs.run_analysis == 'true'"
     assert steps["Record intentional Sonar no-op"]["if"] == (
-        "needs.classify.outputs.run_analysis != 'true'"
+        "steps.sonar-mode.outputs.run_analysis != 'true'"
     )
-    for step_name in ("Checkout code", "Run tests with coverage", "SonarCloud Scan"):
-        assert steps[step_name]["if"] == "needs.classify.outputs.run_analysis == 'true'"
 
 
 def test_sonar_skips_release_metadata_only_change_sets() -> None:
     workflow = yaml.safe_load(
-        (ROOT / ".github" / "workflows" / "sonarcloud.yml").read_text(encoding="utf-8")
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     )
-
-    classify = workflow["jobs"]["classify"]
+    changes = workflow["jobs"]["changes"]
     assert (
         "release-classifier.outputs.release_metadata_only"
-        in classify["outputs"]["release_metadata_only"]
+        in changes["outputs"]["release_metadata_only"]
     )
-    assert "sonar-mode.outputs.run_analysis" in classify["outputs"]["run_analysis"]
-
-    mode_step = next(step for step in classify["steps"] if step.get("id") == "sonar-mode")
-    assert "RELEASE_METADATA_ONLY" in mode_step["env"]
-    assert "release-metadata-only change set" in mode_step["run"]
-
-    sonar = workflow["jobs"]["sonarcloud"]
-    assert sonar["needs"] == "classify"
-    assert "always()" in sonar["if"]
-    assert "needs.classify.result == 'success'" in sonar["if"]
+    assert "sonar-docs.outputs.docs_only" in changes["outputs"]["sonar_docs_only"]
+    job = workflow["jobs"]["sonarcloud"]
+    steps = {step["name"]: step for step in job["steps"] if "name" in step}
+    assert steps["Determine Sonar execution mode"]["env"]["RELEASE_METADATA_ONLY"] == (
+        "${{ needs.changes.outputs.release_metadata_only }}"
+    )
+    assert "release-metadata-only change set" in steps["Determine Sonar execution mode"]["run"]
 
 
-def test_full_python_suite_setup_is_shared_without_cross_workflow_artifacts() -> None:
+def test_full_python_suite_setup_reuses_coverage_within_one_workflow() -> None:
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     sonar = (ROOT / ".github" / "workflows" / "sonarcloud.yml").read_text(encoding="utf-8")
     action = (ROOT / ".github" / "actions" / "python-full-suite" / "action.yml").read_text(
@@ -226,23 +216,18 @@ def test_full_python_suite_setup_is_shared_without_cross_workflow_artifacts() ->
 
     local_action = "uses: ./.github/actions/python-full-suite"
     _require(local_action in ci, "CI coverage must use the shared full-suite action")
-    _require(local_action in sonar, "Sonar must use the shared full-suite action")
+    _require(local_action in sonar, "manual Sonar fallback must remain functional")
     _require(
         "astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7" in action,
         "shared action must pin setup-uv",
     )
-    _require(
-        "uv sync --all-extras --frozen" in action,
-        "shared action must sync the locked full environment",
-    )
-    _require(
-        "uv run python scripts/run_pytest.py" in action,
-        "shared action must own the full-suite command",
-    )
-    _require(
-        "cross-workflow artifact reuse" in sonar,
-        "Sonar must remain an independent full-suite execution",
-    )
+    _require("uv sync --all-extras --frozen" in action, "locked dependencies are mandatory")
+    _require("uv run python scripts/run_pytest.py" in action, "full-suite command unchanged")
+    _require("name: Upload same-run Sonar coverage report" in ci, "same-run report upload")
+    _require("name: Verify exact-run and exact-SHA coverage report" in ci, "SHA check")
+    _require("name: Run tests with coverage (non-Python fallback)" in ci, "fallback")
+    _require("needs.coverage.outputs.sonar_coverage_artifact_id == ''" in ci, "fallback only")
+    _require("steps.patch-coverage.outcome != 'failure'" in ci, "patch gate enforced")
 
 
 def test_gitleaks_binary_download_is_sha256_verified() -> None:
