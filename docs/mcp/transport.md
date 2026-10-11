@@ -76,6 +76,12 @@ export KICAD_MCP_STATEFUL_HTTP=0
 uv run --all-extras kicad-mcp-pro
 ```
 
+The strict 2026 lane enables streaming HTTP responses so request-scoped
+`notifications/progress` reach clients; clients must accept SSE as well as JSON.
+Normal `stable` mode keeps its existing JSON response default for older clients.
+The official conformance runner's frozen `2026-07-28` server requirement set is
+exercised with separate test-only fixtures under `tests/conformance/`.
+
 The native SDK validates the final `MCP-Protocol-Version: 2026-07-28`, `Mcp-Method`, `Mcp-Name`, and required per-request `_meta` envelope. KiCad MCP Pro no longer rewrites requests into the stable handshake protocol or decorates responses through a compatibility bridge.
 
 Call `server/discover` directly; `initialize` and `notifications/initialized` are not part of the final 2026 protocol. The lane is stateless: it neither requires nor emits `Mcp-Session-Id`, and an obsolete incoming session header does not establish server-side session state. Tasks and Apps are explicitly unsupported and unadvertised; server construction fails closed if a protocol extension is registered.

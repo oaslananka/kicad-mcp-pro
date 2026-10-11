@@ -73,6 +73,33 @@ def _assert_json_rpc_error(
     assert payload["error"]["message"] == message
 
 
+def test_http_body_replay_preserves_disconnect_after_consumed_body() -> None:
+    """Streaming consumers must observe actual ASGI disconnects after body replay."""
+    import asyncio
+
+    from kicad_mcp.server import _buffer_request_body
+
+    async def exercise() -> None:
+        messages = iter(
+            [
+                {"type": "http.request", "body": b"part1", "more_body": True},
+                {"type": "http.request", "body": b"part2", "more_body": False},
+                {"type": "http.disconnect"},
+            ]
+        )
+
+        async def receive():
+            return next(messages)
+
+        body, replay = await _buffer_request_body(receive)
+        assert body == b"part1part2"
+        assert (await replay())["body"] == b"part1"
+        assert (await replay())["body"] == b"part2"
+        assert (await replay())["type"] == "http.disconnect"
+
+    asyncio.run(exercise())
+
+
 def test_initialize_advertises_product_version(sample_project: Path) -> None:
     _ = sample_project
     cfg = get_config()

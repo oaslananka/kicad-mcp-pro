@@ -97,7 +97,7 @@ a status on every PR:
 | 9 | `analyze (python)` | `codeql.yml` | `analyze` |
 | 10 | `analyze (javascript-typescript)` | `codeql.yml` | `analyze` |
 | 11 | `Required PR Gate` | `ci.yml` | `required-pr-gate` |
-| 12 | `SonarCloud Scan` | `sonarcloud.yml` | `sonarcloud` |
+| 12 | `SonarCloud Scan` | `ci.yml` | `sonarcloud` |
 | 13 | `dependency-review` | `dependency-review.yml` | `dependency-review` |
 
 `Live Model Release Policy` is intentionally **not** a main-ruleset PR context. `live-model-assurance.yml` runs protected provider smoke after main pushes, while `release.yml` enforces deterministic live-model release readiness on release-please PRs and published releases. A missing, stale, or contract-mismatched approved baseline blocks that release boundary until the protected full gate promotes reviewed evidence.
@@ -115,6 +115,27 @@ To ensure required checks always report success even on docs-only PRs, we use
 
 This avoids the "pending check" problem that occurs when a required job is
 skipped entirely.
+
+### One-run Python coverage for SonarCloud
+
+The required `SonarCloud Scan` is produced by `ci.yml` after `CI Tests / Coverage`.
+For Python or workflow changes, the authoritative 83% full-suite and 90% changed-line
+coverage checks run once. A report is uploaded as an ephemeral, run-local artifact
+only after those checks pass. The Sonar job downloads it from **that same workflow
+run**, verifies the exact merge-commit SHA, run ID, run attempt and report digest,
+and then performs static analysis. The required check's name remains unchanged.
+
+When CI legitimately skips full Python coverage for non-Python changes, but
+Sonar still needs code analysis, the same trusted Sonar job executes the shared
+full-suite action as a fallback. Release-metadata-only changes, docs-only changes,
+fork pull requests, and Dependabot PRs retain explicit Sonar no-op handling.
+`sonarcloud.yml` remains available for **manual fallback diagnostics only**, not
+as a second pull-request workflow producing a duplicate required check.
+
+A failed Python full suite or patch-coverage gate always blocks the `Required PR
+Gate`, and is never replaced with an apparent successful Sonar report. Coverage
+artifacts are only exchanged within one workflow run; cross-workflow artifact
+reuse and untrusted PR credential promotion remain disallowed.
 
 ### Aggregate Gate (`required-pr-gate`)
 

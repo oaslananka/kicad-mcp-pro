@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -114,6 +115,30 @@ async def get_prompt_text(server: object, name: str, arguments: dict[str, object
     """Read an MCP prompt and normalize the returned text content."""
     result = await server.get_prompt(name, arguments)
     return tool_text([result.messages[0].content])
+
+
+@pytest.fixture(scope="module")
+def registered_tool_names() -> set[str]:
+    """Snapshot full tool registration without inheriting another test's HTTP config.
+
+    Module fixtures initialize before the function-scoped autouse reset_globals.
+    Build this expensive registry once per module under a temporary clean
+    environment, then restore the caller's environment and config cache.
+    """
+    from kicad_mcp.config import reset_config
+    from kicad_mcp.server import build_server
+
+    try:
+        with pytest.MonkeyPatch.context() as isolated:
+            for name in tuple(os.environ):
+                if name.startswith(("KICAD_MCP_", "KICAD_API_")) or name == "KICAD_CLI_PATH":
+                    isolated.delenv(name)
+            reset_config()
+            server = build_server("agent_full")
+            server.ensure_registered()  # type: ignore[attr-defined]
+            return {tool.name for tool in server._tool_manager.list_tools()}
+    finally:
+        reset_config()
 
 
 @pytest.fixture(autouse=True)

@@ -1,14 +1,11 @@
 # ---------------------------------------------------------------------------
-# SonarCloud analysis — runs on every push to main and on trusted same-repository PRs.
+# Manual SonarCloud fallback only; CI owns the required PR check and same-run coverage.
 # Requires SONAR_TOKEN repository secret; Dependabot/fork PRs cannot receive it.
 # ---------------------------------------------------------------------------
 name: SonarCloud
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 permissions:
   contents: read      # checkout
@@ -96,7 +93,8 @@ jobs:
           echo "no_op_reason=$no_op_reason" >> "$GITHUB_OUTPUT"
 
   sonarcloud:
-    name: SonarCloud Scan
+    # Diagnostic invocation must not duplicate the required PR status context.
+    name: SonarCloud Manual Diagnostic
     needs: classify
     if: >
       always() &&

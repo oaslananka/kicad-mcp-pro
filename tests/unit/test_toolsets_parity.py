@@ -14,7 +14,6 @@ from typing import Any
 import pytest
 
 import scripts.build_toolsets as builder
-from kicad_mcp.server import build_server
 from kicad_mcp.tools.router import PROFILE_CATEGORIES
 
 SHARED_NAMES = ("schematic", "manufacturing", "simulation", "high_speed")
@@ -23,13 +22,6 @@ SHARED_NAMES = ("schematic", "manufacturing", "simulation", "high_speed")
 @pytest.fixture(scope="module")
 def toolsets() -> dict[str, Any]:
     return json.loads(builder.TOOLSETS_PATH.read_text(encoding="utf-8"))
-
-
-@pytest.fixture(scope="module")
-def registered_tool_names() -> set[str]:
-    server = build_server("agent_full")
-    server.ensure_registered()
-    return {tool.name for tool in server._tool_manager.list_tools()}
 
 
 def test_toolsets_not_drifted() -> None:

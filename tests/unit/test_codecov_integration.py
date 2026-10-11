@@ -43,6 +43,35 @@ def test_test_driver_forwards_junit_args_and_preserves_external_basetemp(
     assert captured[-2:] == ["--basetemp", str(external)]
 
 
+def test_full_suite_bounds_xdist_workers_without_changing_unit_runs(
+    monkeypatch, tmp_path: Path
+) -> None:
+    module = _load_run_pytest()
+    captured: list[list[str]] = []
+    monkeypatch.setattr(module, "_basetemp", lambda _suite: tmp_path / "basetemp")
+    monkeypatch.setattr(module.pytest, "main", lambda args: captured.append(args) or 0)
+
+    monkeypatch.setenv("KICAD_CI_PYTEST_WORKERS", "2")
+    assert module.main(["run_pytest.py", "full", "--junitxml=python.junit.xml"]) == 0
+    assert captured[-1][-2:] == ["--basetemp", str(tmp_path / "basetemp")]
+    assert captured[-1].count("-n") == 1
+    assert captured[-1][captured[-1].index("-n") + 1] == "2"
+    assert "--dist=loadfile" in captured[-1]
+    assert "--durations=25" in captured[-1]
+    assert "--cov-fail-under=83" in captured[-1]
+
+    assert module.main(["run_pytest.py", "unit"]) == 0
+    assert "-n" not in captured[-1]
+
+    monkeypatch.setenv("KICAD_CI_PYTEST_WORKERS", "0")
+    assert module.main(["run_pytest.py", "full"]) == 0
+    assert "-n" not in captured[-1]
+
+    monkeypatch.setenv("KICAD_CI_PYTEST_WORKERS", "auto")
+    assert module.main(["run_pytest.py", "full"]) == 2
+    assert len(captured) == 3
+
+
 def test_full_suite_emits_json_for_local_patch_gate() -> None:
     module = _load_run_pytest()
 

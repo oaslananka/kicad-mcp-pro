@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import pytest
 
-from kicad_mcp.server import build_server
 from kicad_mcp.tools.router import TOOL_CATEGORIES
 
 SURFACED_TOOLS = [
@@ -28,13 +27,6 @@ SURFACED_TOOLS = [
     "fp_export_svg",
     "sym_export_svg",
 ]
-
-
-@pytest.fixture(scope="module")
-def registered_tool_names() -> set[str]:
-    server = build_server("agent_full")
-    server.ensure_registered()
-    return {tool.name for tool in server._tool_manager.list_tools()}
 
 
 def _declared_tool_names() -> set[str]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -26,6 +27,7 @@ SUITES = {
         "--cov-report=xml",
         "--cov-report=json",
         "--cov-fail-under=83",
+        "--durations=25",
     ],
 }
 
@@ -44,7 +46,16 @@ def main(argv: list[str]) -> int:
         valid = ", ".join(sorted(SUITES))
         print(f"Usage: python scripts/run_pytest.py <{valid}>", file=sys.stderr)
         return 2
-    args = [*SUITES[suite], *argv[2:], "--basetemp", str(_basetemp(suite))]
+    args = [*SUITES[suite], *argv[2:]]
+    if suite == "full":
+        workers = os.environ.get("KICAD_CI_PYTEST_WORKERS", "0")
+        if workers not in {"0", "1", "2", "3", "4"}:
+            print("KICAD_CI_PYTEST_WORKERS must be an integer between 0 and 4", file=sys.stderr)
+            return 2
+        if workers != "0":
+            # One test file stays on one worker, avoiding within-file fixture races.
+            args.extend(["-n", workers, "--dist=loadfile"])
+    args.extend(["--basetemp", str(_basetemp(suite))])
     return pytest.main(args)
 
 

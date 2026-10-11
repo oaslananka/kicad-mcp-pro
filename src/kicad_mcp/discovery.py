@@ -295,11 +295,29 @@ def _platform_library_roots(system: str) -> list[Path]:
     return [Path("/usr/share/kicad"), Path("/usr/local/share/kicad")]
 
 
+def _macos_app_bundle_support_root(resolved_cli: Path) -> Path | None:
+    """Find the shared libraries belonging to this specific macOS CLI bundle."""
+    if (
+        platform.system() == "Darwin"
+        and resolved_cli.parent.name == "MacOS"
+        and resolved_cli.parent.parent.name == "Contents"
+        and resolved_cli.parent.parent.parent.suffix == ".app"
+    ):
+        return resolved_cli.parent.parent / "SharedSupport"
+    return None
+
+
 def discover_library_paths(cli_path: Path) -> dict[str, Path | None]:
     """Discover symbol and footprint library directories."""
     candidates: list[Path] = []
-    resolved_cli = cli_path.expanduser()
+    expanded_cli = cli_path.expanduser()
+    resolved_cli = expanded_cli.resolve() if expanded_cli.exists() else expanded_cli
     if resolved_cli.exists():
+        # Prefer this mounted/installed macOS CLI's own signed app-bundle
+        # libraries to unrelated system libraries, including for CLI symlinks.
+        bundle_root = _macos_app_bundle_support_root(resolved_cli)
+        if bundle_root is not None:
+            candidates.append(bundle_root)
         parents = [
             resolved_cli.parent,
             resolved_cli.parent.parent,

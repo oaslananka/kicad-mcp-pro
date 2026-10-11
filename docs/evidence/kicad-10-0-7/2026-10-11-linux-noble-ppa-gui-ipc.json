@@ -1,0 +1,51 @@
+{
+  "environment": {
+    "architecture": "amd64",
+    "display": "isolated Xvfb 1600x1200x24",
+    "hardwareAcceleration": "not required: software display",
+    "nativeKiCadVersion": "10.0.7",
+    "packageSource": "authenticated ppa:kicad/kicad-10.0-releases",
+    "pinnedUv": "0.12.19",
+    "python": "3.13.12",
+    "sourceReadOnly": true,
+    "ubuntu": "24.04.5 LTS",
+    "user": "non-root disposable profile"
+  },
+  "privateRawEvidenceSha256": {
+    "live-context-summary-private.json": "79bad1debe829a6746ca52341a88b9f9f32192544f69089e097f64f5c0491564",
+    "project-switch-summary-private.json": "8bf0af76b4034297267f35929d07d2b758b028bf9fdab3d4b3c7b320056c6625",
+    "summary.json": "1147a705302876718dce70e78b02ad639fe50c3db685fb3a8efa41b3bdb9786a"
+  },
+  "recordDate": "2026-10-11",
+  "schemaVersion": "linux-kicad-107-gui-ipc-qualification.v1",
+  "scope": "Actual Ubuntu Noble native PPA KiCad 10.0.7 PCB Editor under isolated Xvfb display and MCP live GUI read/project switch; not physical GPU/display, macOS GUI, autonomous real-board or manufacturing claim",
+  "smoke": {
+    "closedGuiFallback": "file-backed",
+    "failures": 0,
+    "openGuiToolBackend": {
+      "pcb_get_board_summary": "live-gui",
+      "pcb_get_footprints": "live-gui",
+      "pcb_get_nets": "live-gui",
+      "pcb_get_tracks": "live-gui"
+    },
+    "projectSwitchNetsRequired": [
+      "SWITCHED_PROJECT_NET",
+      "SWITCHED_PROJECT_GND"
+    ],
+    "pytestExitCode": 0,
+    "secondProjectToolBackend": {
+      "pcb_get_board_summary": "live-gui",
+      "pcb_get_footprints": "live-gui",
+      "pcb_get_nets": "live-gui",
+      "pcb_get_tracks": "live-gui"
+    },
+    "skips": 0,
+    "testCount": 2,
+    "testNames": [
+      "test_gui_closed_reports_structured_file_backed_fallback[asyncio]",
+      "test_open_pcb_editor_uses_live_board_context_and_project_switches[asyncio]"
+    ],
+    "verdict": "pass"
+  },
+  "sourceRevision": "fd58bf1319ffe3c7493a59be1b90538d1f3e2744"
+}
