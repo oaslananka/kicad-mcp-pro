@@ -47,8 +47,9 @@ def test_bad_f_cu_flash_regression_is_rejected(control: str) -> None:
     ],
 )
 def test_missing_or_wrong_npth_drill_data_is_rejected(drill: str) -> None:
+    gerbers = _files()
     with pytest.raises(probe.ProbeError, match="NPTH"):
-        probe.validate_gerbers(_files(), drill)
+        probe.validate_gerbers(gerbers, drill)
 
 
 def test_source_boards_preserve_full_drill_plot_option_and_control_geometry() -> None:
@@ -85,7 +86,8 @@ def test_audited_runner_uses_disposable_copied_board_and_drill(monkeypatch) -> N
             (artifacts / "logs/gerber-107-version.stdout.log").write_text("10.0.7\n")
         elif step.args[:3] == ("pcb", "export", "gerbers"):
             board = Path(step.args[-1])
-            assert board.exists() and board.parent.name in probe.CASES
+            assert board.exists()
+            assert board.parent.name in probe.CASES
             assert "--board-plot-params" in step.args
             case = board.parent.name
             file = (
