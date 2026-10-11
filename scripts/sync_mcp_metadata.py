@@ -20,6 +20,7 @@ PACKAGE_INIT = ROOT / "src" / "kicad_mcp" / "__init__.py"
 SERVER_JSON = ROOT / "server.json"
 NPM_WRAPPER_PACKAGE = ROOT / "packages" / "mcp-npm" / "package.json"
 NPM_WRAPPER_README = ROOT / "packages" / "mcp-npm" / "README.md"
+GEMINI_EXTENSION = ROOT / "integrations" / "gemini-cli" / "kicad-mcp-pro" / "gemini-extension.json"
 COMPATIBILITY = ROOT / "compatibility.yaml"
 FAQ = ROOT / "docs" / "faq.md"
 ROADMAP = ROOT / "ROADMAP.md"
@@ -559,7 +560,10 @@ def _planned_updates() -> dict[Path, str]:
         _render_roadmap_runtime_block(compatibility),
     )
     npm_package = _updated_npm_wrapper_package(metadata, _load_json(NPM_WRAPPER_PACKAGE))
+    gemini = _load_json(GEMINI_EXTENSION)
+    gemini["version"] = metadata["version"]
     return {
+        GEMINI_EXTENSION: _dump_json(gemini),
         NPM_WRAPPER_README: _render_npm_wrapper_readme(metadata, compatibility, npm_package),
         PACKAGE_INIT: _updated_init(metadata, PACKAGE_INIT.read_text(encoding="utf-8")),
         SERVER_JSON: _dump_json(registry),

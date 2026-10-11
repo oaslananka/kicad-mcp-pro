@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "reviewedOn": "2026-10-11",
+  "evidenceScope": "repository-static",
+  "runtimeSmokeNote": "No production host-level smoke is implied by these static checks. Record independent dated installation/discovery/readonly-tool evidence before promotion.",
+  "hosts": [
+    {
+      "id": "claude-code",
+      "configuration": "integrations/claude-code/.mcp.json.example",
+      "guide": "docs/agents/claude-code.md",
+      "capability": "local-mcp",
+      "smokeStatus": "not-run"
+    },
+    {
+      "id": "codex",
+      "configuration": ".codex/config.example.toml",
+      "guide": "docs/agents/codex.md",
+      "capability": "local-mcp",
+      "smokeStatus": "not-run"
+    },
+    {
+      "id": "gemini-cli",
+      "configuration": "integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json",
+      "guide": "docs/agents/gemini-cli.md",
+      "capability": "local-mcp-extension-pilot",
+      "smokeStatus": "not-run"
+    },
+    {
+      "id": "cursor",
+      "configuration": "integrations/cursor/mcp.example.json",
+      "guide": "docs/agents/cursor.md",
+      "capability": "local-mcp",
+      "smokeStatus": "not-run"
+    },
+    {
+      "id": "vscode-copilot",
+      "configuration": "integrations/vscode/mcp.example.json",
+      "guide": "docs/agents/vscode-copilot.md",
+      "capability": "local-mcp",
+      "smokeStatus": "not-run"
+    },
+    {
+      "id": "opencode",
+      "configuration": "integrations/opencode/opencode.example.json",
+      "guide": "docs/agents/opencode.md",
+      "capability": "local-mcp",
+      "smokeStatus": "not-run"
+    }
+  ]
+}
