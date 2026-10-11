@@ -51,6 +51,10 @@ def test_publish_is_called_only_by_trusted_ci_or_manual_recovery() -> None:
     ci = _workflow("ci.yml")
     caller = ci["jobs"]["auto-publish-reviewed-release"]
     assert caller["needs"] == ["required-pr-gate", "sonarcloud"]
+    # On main, release-readiness is intentionally skipped. Without an
+    # explicit always(), GitHub's implicit success() prevents invocation
+    # despite the direct Required PR Gate and SonarCloud jobs succeeding.
+    assert caller["if"].lstrip().startswith("always() &&")
     assert "github.event_name == 'push'" in caller["if"]
     assert "github.ref == 'refs/heads/main'" in caller["if"]
     assert "needs.required-pr-gate.result == 'success'" in caller["if"]

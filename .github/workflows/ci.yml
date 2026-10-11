@@ -908,7 +908,14 @@ jobs:
   auto-publish-reviewed-release:
     name: Publish reviewed release after green main CI
     needs: [required-pr-gate, sonarcloud]
+    # Required PR Gate explicitly allows the release-readiness job to skip on
+    # main pushes. GitHub's implicit success() traverses that skipped ancestor
+    # and skips this reusable caller even if both direct needs succeeded.
+    # Explicit always() only disables that implicit graph check; the two
+    # successful direct gates, push/main restriction and exact release-merge
+    # authorization in publish-release.yml remain mandatory.
     if: >-
+      always() &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       needs.required-pr-gate.result == 'success' &&
