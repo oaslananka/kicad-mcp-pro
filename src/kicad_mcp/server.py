@@ -2698,9 +2698,13 @@ def setup(
             url=url,
             transport=transport,
         )
-        typer.echo(result)
     except Exception as exc:
         raise typer.Exit(code=1) from exc
+    typer.echo(result)
+    if write_config and not result.startswith("✓ Config written to "):
+        # setup_agent historically returned human-readable failures instead of
+        # raising; do not report a failed write as CLI success.
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -2840,6 +2844,9 @@ def init(
             mode=mode,
             write=write_config,
         )
+        if write_config and not result.startswith("✓ Config written to "):
+            typer.echo("\n  Config:  Failed — no confirmed config write", err=True)
+            raise typer.Exit(code=1)
         typer.echo(f"\n  Config:  {'Written' if write_config else 'Generated'}")
         typer.echo(f"  Result:  {result[:200]}")
     except Exception as exc:

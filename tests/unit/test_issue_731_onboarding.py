@@ -306,3 +306,32 @@ def test_project_backup_restore_honors_explicit_project_dir(tmp_path: Path) -> N
 
     assert "Restored" in restored
     assert json.loads(target.read_text(encoding="utf-8")) == original
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["setup", "cursor", "--scope", "project", "--write"],
+        ["init", "--agent", "cursor", "--write"],
+    ],
+)
+def test_setup_write_failure_returns_nonzero_exit(
+    monkeypatch: pytest.MonkeyPatch, command: list[str]
+) -> None:
+    """Both CLI entry points must not mark failed config writes as success."""
+    monkeypatch.setattr(
+        "kicad_mcp.setup.setup_agent",
+        lambda *args, **kwargs: "Failed to write config: cannot safely merge",
+    )
+    monkeypatch.setattr("kicad_mcp.discovery.discover_kicad_cli", lambda: None)
+    monkeypatch.setattr("kicad_mcp.server.find_kicad_version", lambda _: None)
+    result = CliRunner().invoke(app, command)
+    assert result.exit_code == 1, result.output
+    assert "Failed" in result.output
+
+
+def test_setup_preview_does_not_require_write_confirmation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("kicad_mcp.setup.setup_agent", lambda *args, **kwargs: "preview")
+    response = CliRunner().invoke(app, ["setup", "cursor"])
+    assert response.exit_code == 0, response.output
+    assert "preview" in response.output
