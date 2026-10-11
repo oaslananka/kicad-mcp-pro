@@ -18,36 +18,50 @@ def test_sonar_cancels_superseded_runs_for_the_same_ref() -> None:
     }
 
 
-def test_sonar_full_suite_runtime_is_bounded_and_intentional() -> None:
-    path = ROOT / ".github" / "workflows" / "sonarcloud.yml"
-    raw = path.read_text(encoding="utf-8")
-    workflow = yaml.safe_load(raw)
-    ci_workflow = yaml.safe_load(
-        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    )
-    job = workflow["jobs"]["sonarcloud"]
-    ci_coverage_job = ci_workflow["jobs"]["coverage"]
+def test_sonar_uses_exact_run_coverage_and_preserves_manual_fallback() -> None:
+    manual = (ROOT / ".github" / "workflows" / "sonarcloud.yml").read_text(encoding="utf-8")
+    ci_raw = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    ci = yaml.safe_load(ci_raw)
+    manual_workflow = yaml.safe_load(manual)
+    assert "workflow_dispatch:" in manual
+    assert "  pull_request:" not in manual and "    branches: [main]" not in manual
+    assert manual_workflow["jobs"]["sonarcloud"]["timeout-minutes"] == 45
 
-    assert job["timeout-minutes"] == ci_coverage_job["timeout-minutes"] == 45
-    assert "independent full-suite coverage run" in raw
-    assert "exact-SHA" in raw
+    sonar = ci["jobs"]["sonarcloud"]
+    coverage = ci["jobs"]["coverage"]
+    assert sonar["name"] == "SonarCloud Scan"
+    assert sonar["timeout-minutes"] == coverage["timeout-minutes"] == 45
+    assert "coverage" in sonar["needs"]
+    steps = {step["name"]: step for step in sonar["steps"] if "name" in step}
+    assert steps["Download same-run coverage report"]["uses"].startswith(
+        "actions/download-artifact@3e5f45b2"
+    )
+    assert steps["Verify exact-run and exact-SHA coverage report"]["env"] == {
+        "SOURCE_SHA": "${{ github.sha }}",
+        "SOURCE_RUN_ID": "${{ github.run_id }}",
+        "SOURCE_ATTEMPT": "${{ github.run_attempt }}",
+    }
+    assert steps["Require successful upstream coverage gate"]["if"] == (
+        "steps.sonar-mode.outputs.run_analysis == 'true'"
+    )
 
 
 def test_sonar_docs_only_path_gate_keeps_required_check_reporting() -> None:
-    workflow = yaml.safe_load(
-        (ROOT / ".github" / "workflows" / "sonarcloud.yml").read_text(encoding="utf-8")
+    ci = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    changes = ci["jobs"]["changes"]
+    assert "sonar-docs.outputs.docs_only" in changes["outputs"]["sonar_docs_only"]
+    classify = next(s for s in changes["steps"] if s.get("id") == "sonar-docs")
+    assert "git diff --no-renames --name-only -z" in classify["run"]
+    assert "scripts/check_sonar_docs_only.py" in classify["run"]
+
+    sonar = ci["jobs"]["sonarcloud"]
+    assert "always()" in sonar["if"]
+    steps = {step["name"]: step for step in sonar["steps"] if "name" in step}
+    assert steps["Determine Sonar execution mode"]["env"]["DOCS_ONLY"] == (
+        "${{ needs.changes.outputs.sonar_docs_only }}"
     )
-    classify = workflow["jobs"]["classify"]
-    assert "release-classifier.outputs.docs_only" in classify["outputs"]["docs_only"]
-    step = next(s for s in classify["steps"] if s.get("id") == "release-classifier")
-    script = step["run"]
-    assert "git diff --no-renames --name-only -z" in script
-    assert "scripts/check_sonar_docs_only.py" in script
-    mode = next(s for s in classify["steps"] if s.get("id") == "sonar-mode")
-    assert mode["env"]["DOCS_ONLY"] == "${{ steps.release-classifier.outputs.docs_only }}"
-    assert "docs-only change set outside Sonar analysis scope" in mode["run"]
-    job = workflow["jobs"]["sonarcloud"]
-    assert "always()" in job["if"]
-    assert "needs.classify.result == 'success'" in job["if"]
-    assert any(step.get("name") == "Record intentional Sonar no-op" for step in job["steps"])
-    assert any(step.get("name") == "Run tests with coverage" for step in job["steps"])
+    assert (
+        "docs-only change set outside Sonar analysis scope"
+        in steps["Determine Sonar execution mode"]["run"]
+    )
+    assert "Record intentional Sonar no-op" in steps

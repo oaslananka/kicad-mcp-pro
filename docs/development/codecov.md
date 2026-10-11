@@ -25,6 +25,17 @@ The pytest step uses `continue-on-error` only to allow coverage and JUnit
 reports to upload after a failing test. A final step propagates the original
 test failure, so test failures still block the Required PR Gate.
 
+## Reusing the authoritative report for SonarCloud
+
+For source changes requiring Python coverage, `CI Tests / Coverage` creates
+`coverage.xml` once and gives SonarCloud a short-lived artifact from the **same
+GitHub Actions run**. A manifest is checked against the exact commit, run ID,
+run attempt, and report digest before scanning. This eliminates the normal
+second 20-minute full pytest execution without weakening patch/total coverage
+gates. Non-Python code changes for which CI intentionally skips Python tests
+still get one full suite run in the Sonar job when analysis is applicable.
+The standalone Sonar workflow remains a manual, independent fallback.
+
 ## Rollout policy
 
 Repository-level `codecov.yml` uses relative `auto` targets and initially

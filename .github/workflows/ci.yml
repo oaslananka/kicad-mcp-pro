@@ -23,6 +23,7 @@ jobs:
       docs: ${{ steps.filter.outputs.docs }}
       docs_only: ${{ steps.check.outputs.docs_only }}
       release_metadata_only: ${{ steps.release-classifier.outputs.release_metadata_only }}
+      sonar_docs_only: ${{ steps.sonar-docs.outputs.docs_only }}
       python: ${{ steps.filter.outputs.python }}
       repo_tooling: ${{ steps.filter.outputs.repo_tooling }}
       npm: ${{ steps.filter.outputs.npm }}
@@ -141,6 +142,31 @@ jobs:
             echo 'release_metadata_only=true' >> "$GITHUB_OUTPUT"
           else
             echo 'release_metadata_only=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Classify Sonar docs-only source changes
+        id: sonar-docs
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' ]]; then
+            base_sha="$(git rev-parse HEAD^1)"
+            head_sha="$(git rev-parse HEAD^2)"
+          else
+            base_sha="$BEFORE_SHA"
+            head_sha="$(git rev-parse HEAD)"
+            if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
+              base_sha="$(git rev-parse HEAD^)"
+            fi
+          fi
+          # -z and --no-renames ensure deleted source files never look docs-only.
+          git diff --no-renames --name-only -z "$base_sha" "$head_sha" > "${RUNNER_TEMP}/sonar-changed-paths.bin"
+          if python scripts/check_sonar_docs_only.py --paths-file "${RUNNER_TEMP}/sonar-changed-paths.bin"; then
+            echo 'docs_only=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'docs_only=false' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Compute docs_only flag
@@ -310,6 +336,8 @@ jobs:
   coverage:
     name: CI Tests / Coverage
     needs: [changes, release-metadata]
+    outputs:
+      sonar_coverage_artifact_id: ${{ steps.sonar-coverage-upload.outputs.artifact-id }}
     if: >-
       always() &&
       needs.release-metadata.result == 'success' &&
@@ -356,6 +384,31 @@ jobs:
           uv run python scripts/check_patch_coverage.py \
             --coverage-file coverage.json \
             --min-percent 90
+      # Share reports only within this exact workflow run. A failed required
+      # coverage or patch gate must never be converted into a Sonar pass.
+      - name: Prepare same-run Sonar coverage report
+        if: >-
+          env.skip_ci != 'true' &&
+          steps.python-tests.outcome == 'success' &&
+          steps.patch-coverage.outcome != 'failure'
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_RUN_ID: ${{ github.run_id }}
+          SOURCE_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          python3 scripts/ci_coverage_artifact.py create \
+            --sha "$SOURCE_SHA" --run-id "$SOURCE_RUN_ID" --attempt "$SOURCE_ATTEMPT"
+      - name: Upload same-run Sonar coverage report
+        id: sonar-coverage-upload
+        if: env.skip_ci != 'true' && hashFiles('ci-coverage-manifest.json') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: python-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            coverage.xml
+            ci-coverage-manifest.json
+          if-no-files-found: error
+          retention-days: 3
       - name: Upload Python coverage to Codecov
         if: env.skip_ci != 'true' && !cancelled() && hashFiles('coverage.xml') != ''
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
@@ -414,6 +467,97 @@ jobs:
             echo "Python patch coverage gate failed; see the preceding gate output for details."
           fi
           exit 1
+
+  sonarcloud:
+    name: SonarCloud Scan
+    needs: [changes, release-metadata, coverage]
+    if: >-
+      always() &&
+      needs.release-metadata.result == 'success' &&
+      (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Determine Sonar execution mode
+        id: sonar-mode
+        shell: bash
+        env:
+          RELEASE_METADATA_ONLY: ${{ needs.changes.outputs.release_metadata_only }}
+          DOCS_ONLY: ${{ needs.changes.outputs.sonar_docs_only }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          run_analysis=true
+          no_op_reason=''
+          if [[ "$RELEASE_METADATA_ONLY" == 'true' ]]; then
+            run_analysis=false
+            no_op_reason='release-metadata-only change set'
+          elif [[ "$EVENT_NAME" == 'pull_request' && "$PR_HEAD_REPO" != "$REPOSITORY" ]]; then
+            run_analysis=false
+            no_op_reason='fork pull request'
+          elif [[ "$EVENT_NAME" == 'pull_request' && "$PR_AUTHOR" == 'dependabot[bot]' ]]; then
+            run_analysis=false
+            no_op_reason='Dependabot pull request cannot receive SONAR_TOKEN'
+          elif [[ "$DOCS_ONLY" == 'true' ]]; then
+            run_analysis=false
+            no_op_reason='docs-only change set outside Sonar analysis scope'
+          fi
+          echo "run_analysis=$run_analysis" >> "$GITHUB_OUTPUT"
+          echo "no_op_reason=$no_op_reason" >> "$GITHUB_OUTPUT"
+      - name: Record intentional Sonar no-op
+        if: steps.sonar-mode.outputs.run_analysis != 'true'
+        env:
+          NO_OP_REASON: ${{ steps.sonar-mode.outputs.no_op_reason }}
+        run: |
+          echo "SonarCloud analysis intentionally not run: ${NO_OP_REASON:-not applicable}"
+      - name: Require successful upstream coverage gate
+        if: steps.sonar-mode.outputs.run_analysis == 'true'
+        env:
+          COVERAGE_JOB_RESULT: ${{ needs.coverage.result }}
+        run: test "$COVERAGE_JOB_RESULT" = success
+      - name: Checkout code
+        if: steps.sonar-mode.outputs.run_analysis == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download same-run coverage report
+        if: >-
+          steps.sonar-mode.outputs.run_analysis == 'true' &&
+          needs.coverage.outputs.sonar_coverage_artifact_id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: python-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Verify exact-run and exact-SHA coverage report
+        if: >-
+          steps.sonar-mode.outputs.run_analysis == 'true' &&
+          needs.coverage.outputs.sonar_coverage_artifact_id != ''
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_RUN_ID: ${{ github.run_id }}
+          SOURCE_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          python3 scripts/ci_coverage_artifact.py verify \
+            --sha "$SOURCE_SHA" --run-id "$SOURCE_RUN_ID" --attempt "$SOURCE_ATTEMPT"
+      # Coverage already ran in CI for Python changes. Preserve the prior
+      # non-Python behavior: one full fallback for code-analysis-only changes.
+      - name: Run tests with coverage (non-Python fallback)
+        if: >-
+          steps.sonar-mode.outputs.run_analysis == 'true' &&
+          needs.coverage.outputs.sonar_coverage_artifact_id == ''
+        uses: ./.github/actions/python-full-suite
+      - name: SonarCloud Scan
+        if: steps.sonar-mode.outputs.run_analysis == 'true'
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   mcp-2026-compat:
     name: MCP 2026 Compatibility
