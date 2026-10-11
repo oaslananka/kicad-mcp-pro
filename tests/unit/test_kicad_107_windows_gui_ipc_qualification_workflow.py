@@ -30,10 +30,18 @@ def test_signed_official_installer_and_version_required_before_gui() -> None:
     codes = [s.get("run", "") for s in steps]
     assert any("kicad-downloads.s3.cern.ch" in c for c in codes)
     signer = next(c for c in codes if "Get-AuthenticodeSignature" in c)
-    assert "$expectedSha256 = 'ce3881b6a9188eb34ac1ebaaec7651149e8a025206410addfb11a1a9656ecf95'" in signer
-    assert "$actualSha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()" in signer
+    assert (
+        "$expectedSha256 = 'ce3881b6a9188eb34ac1ebaaec7651149e8a025206410addfb11a1a9656ecf95'"
+        in signer
+    )
+    assert (
+        "$actualSha256 = (Get-FileHash -LiteralPath $installer "
+        "-Algorithm SHA256).Hash.ToLowerInvariant()"
+    ) in signer
     assert "if ($actualSha256 -ne $expectedSha256)" in signer
-    assert signer.index("if ($actualSha256 -ne $expectedSha256)") < signer.index("Get-AuthenticodeSignature")
+    assert signer.index("if ($actualSha256 -ne $expectedSha256)") < signer.index(
+        "Get-AuthenticodeSignature"
+    )
     assert "installerSha256 = $actualSha256" in signer
     assert "$signature.Status -ne 'Valid'" in signer
     assert "Unexpected KiCad Authenticode signer" in signer

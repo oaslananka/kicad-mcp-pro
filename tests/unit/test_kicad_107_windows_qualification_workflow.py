@@ -40,10 +40,18 @@ def test_windows_stable_native_qualification_is_opt_in() -> None:
         "Get-AuthenticodeSignature"
     )
     assert "installerUrl = $uri" in verify["run"]
-    assert "$expectedSha256 = 'ce3881b6a9188eb34ac1ebaaec7651149e8a025206410addfb11a1a9656ecf95'" in verify["run"]
-    assert "$actualSha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()" in verify["run"]
+    assert (
+        "$expectedSha256 = 'ce3881b6a9188eb34ac1ebaaec7651149e8a025206410addfb11a1a9656ecf95'"
+        in verify["run"]
+    )
+    assert (
+        "$actualSha256 = (Get-FileHash -LiteralPath $installer "
+        "-Algorithm SHA256).Hash.ToLowerInvariant()"
+    ) in verify["run"]
     assert "if ($actualSha256 -ne $expectedSha256)" in verify["run"]
-    assert verify["run"].index("if ($actualSha256 -ne $expectedSha256)") < verify["run"].index("Get-AuthenticodeSignature")
+    assert verify["run"].index("if ($actualSha256 -ne $expectedSha256)") < verify["run"].index(
+        "Get-AuthenticodeSignature"
+    )
     assert "installerSha256 = $actualSha256" in verify["run"]
     assert "Get-AuthenticodeSignature" in verify["run"]
     assert "signature.Status -ne 'Valid'" in verify["run"]
