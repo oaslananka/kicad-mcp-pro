@@ -107,3 +107,13 @@ def test_actual_local_cli_reports_missing_agent_without_claiming_success(
     assert payload["counts_as_task_success"] is False
     assert payload["executes_agent"] is False
     assert payload["status"] in ("ready", "blocked")
+
+
+def test_kicad_cli_uses_existing_bounded_version_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli.shutil, "which", lambda _: "/reviewed/kicad-cli")
+    monkeypatch.setattr(cli, "find_kicad_version", lambda _: "10.0.7")
+    assert cli._kicad_10_cli_available() is True
+    monkeypatch.setattr(cli, "find_kicad_version", lambda _: "11.0.0")
+    assert cli._kicad_10_cli_available() is False
+    monkeypatch.setattr(cli.shutil, "which", lambda _: None)
+    assert cli._kicad_10_cli_available() is False

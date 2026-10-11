@@ -11,11 +11,11 @@ import argparse
 import hashlib
 import json
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
+from kicad_mcp.discovery import find_kicad_version
 from kicad_mcp.evals.reference_agent_runner import (
     ReferenceAgentPhase,
     ReferenceAgentRunnerError,
@@ -62,18 +62,8 @@ def _kicad_10_cli_available() -> bool:
     binary = shutil.which("kicad-cli")
     if binary is None:
         return False
-    try:
-        result = subprocess.run(
-            [binary, "version"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-            shell=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return result.returncode == 0 and result.stdout.strip().startswith("10.")
+    version = find_kicad_version(Path(binary))
+    return version is not None and version.lstrip("v").startswith("10.")
 
 
 def preflight(*, root: Path, board_id: str, attempt_number: int, phase_name: str) -> dict[str, Any]:
