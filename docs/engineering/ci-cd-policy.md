@@ -139,13 +139,27 @@ reuse and untrusted PR credential promotion remain disallowed.
 
 ### Aggregate Gate (`required-pr-gate`)
 
-`ci.yml` includes a `required-pr-gate` job that evaluates the results of
-`changes`, `python-changed-quality`, `mcp-server`, `coverage`, `mcp-npm`,
-`protocol-schemas`, and `security`,
-failing on any `failure`/`cancelled` result and passing on `success`/`skipped`.
-It exists to let branch protection eventually depend on **one** check instead
-of pinning every individual matrix context, so job renames or new matrix
-entries don't require a ruleset edit.
+`ci.yml` includes `required-pr-gate`, which collects all mandatory job
+results and fails closed on `failure`, `cancelled`, unknown results and
+**unexpected `skipped`**. Only two skips are permitted at the aggregate job
+level: `changes` on an explicit manual dispatch, and `release-readiness` for
+a non-release-please event. Other path-aware test work is skipped **within**
+its job so GitHub always receives a successful required status. The aggregate
+step summary now records a rationale for every outcome.
+
+For normal pull requests, CI concurrency cancels a superseded commit to
+conserve runner minutes. On `main` pushes the concurrency key includes the
+exact Git SHA and does **not** cancel ongoing post-merge CI evidence; every
+merge receives its own immutable validation result. This is a conscious
+tradeoff between complete main evidence and additional runner usage.
+
+`CI Health Report` runs on Mondays (or manual dispatch) with read-only Actions
+permissions. It publishes a seven-day PR/main p50/p95 duration sample, counts
+of passed/failed/cancelled runs, frequent failing jobs, and the five longest
+observed jobs. Its JSON snapshot is retained 14 days. Durations are only
+approximate; the job statistics sample up to 12 recent CI runs, and the run
+query is capped at the latest 100. This report is **observability only**, not
+an additional required PR check or auto-retry mechanism.
 
 `Required PR Gate` is active in the `main-standard` ruleset. The existing operating-
 system matrix, protocol schema, secret scan, CodeQL, and dependency-review

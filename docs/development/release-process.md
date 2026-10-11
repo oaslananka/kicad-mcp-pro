@@ -62,6 +62,14 @@ versioned `agent_contract_paths` at that release with the release candidate.
 - If the contract is unchanged, live-model readiness succeeds with
   `no_agent_contract_change_since_release`; an old or temporarily unapproved live baseline
   does not block an unrelated release.
+- One **narrow, audited nonfunctional exception** is verified by exact Python AST:
+  removing the unused `EvidenceSanitizationError` name from the existing
+  `kicad_mcp.evals.live_runner` import in `scripts/run_live_model_eval.py`.
+  The original module must still be imported, no reflection or reference to
+  that name may be present, and **every other tracked agent-contract file must
+  match the preceding server release**. Source content digests are *not*
+  rewritten and approved baseline evidence is *not* modified. Any other change
+  to a tracked contract path still requires the protected full gate.
 - If the contract changed, the existing fail-closed baseline rules apply. Unapproved,
   stale, future-dated, or digest-mismatched evidence requires the protected full gate and
   reviewed baseline promotion before publishing.
@@ -74,6 +82,14 @@ versioned `agent_contract_paths` at that release with the release candidate.
   Cross-provider OpenCode/OpenAI runs remain available as manual diagnostics, but external
   provider authentication, quota, or trial-service outages do not block an otherwise
   healthy release unless they affect the blocking NVIDIA evidence path.
+
+`Release Readiness` and `Release Validation` each print an actionable
+**Live-model release readiness** GitHub Actions step summary, including the
+changed tracked paths, baseline age, digests, release tag and whether protected
+full evidence or baseline promotion is required. A successful verified no-op
+classification is **not** permission to bypass normal CI, security, packaging,
+review, or manual publication decisions. No preflight automatically promotes
+model evidence or publishes a release.
 
 This rule is based on the actual model-facing contract diff, not on whether the version is
 a patch, minor, or major release. Deterministic CI, security, packaging, metadata, and
