@@ -14,7 +14,11 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 CANONICAL = ROOT / "skills"
-HOST_ROOTS = (ROOT / ".opencode" / "skills", ROOT / ".agents" / "skills")
+HOST_ROOTS = (
+    ROOT / ".opencode" / "skills",
+    ROOT / ".agents" / "skills",
+    ROOT / "integrations" / "gemini-cli" / "kicad-mcp-pro" / "skills",
+)
 SKILLS = (
     "drc-check",
     "fabrication-output",

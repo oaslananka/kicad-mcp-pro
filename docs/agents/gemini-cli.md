@@ -63,3 +63,23 @@ Add to your Gemini repo instructions:
   }
 }
 ```
+
+
+## Gemini CLI extension pilot (opt-in)
+
+A local, unsubmitted extension combines the MCP server connection with the
+**seven generated Agent Skills**. See
+[`integrations/gemini-cli/kicad-mcp-pro/`](../../integrations/gemini-cli/kicad-mcp-pro/).
+On a trusted developer machine where Gemini CLI and `uvx` are installed:
+
+```bash
+gemini extensions install ./integrations/gemini-cli/kicad-mcp-pro
+gemini extensions list
+```
+
+Gemini copies local extension packages, so installed copies do not update when
+this repository changes. The extension defaults to **readonly** mode; a
+pre-existing `settings.json` entry can override its MCP server definition.
+Review that precedence before declaring the installation safe. A static
+manifest check is **not** real-host verification: follow
+[the host smoke checklist](host-verification.md) and log the actual outcome.

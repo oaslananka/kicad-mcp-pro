@@ -747,6 +747,8 @@ jobs:
       - run: uv sync --all-extras --frozen
       - name: Verify portable Agent Skills have no stale host copies
         run: uv run --all-extras python scripts/sync_agent_skills.py --check
+      - name: Verify static agent host/extension configurations
+        run: uv run --all-extras python scripts/check_agent_host_evidence.py
       - run: uv run --all-extras python scripts/check_github_actions_policy.py
       - run: uv run --all-extras python scripts/check_workflows.py --actionlint
       - run: uv run --all-extras python scripts/workflow_security.py --min-severity high
