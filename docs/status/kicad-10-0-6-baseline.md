@@ -15,6 +15,25 @@ covering ERC/DRC, BOM/netlist and manufacturing exports, PCM/IPC and applicable
 platform regressions. Do not change `latestVerified` based only on the
 upstream release announcement.
 
+## Legacy Ubuntu 22.04 exception and candidate 10.0.7 evidence
+
+The `ubuntu-22.04` jobs in `.github/workflows/kicad-live-e2e.yml` and
+`.github/workflows/dev-bootstrap.yml` still explicitly require `10.0.6`.
+This is a **legacy platform exception**, not an assertion that Ubuntu 22.04
+has passed the 10.0.7 qualification. A tested attempt to build the official
+10.0.7 Jammy PPA encountered a libgit2 `git_packbuilder_name` compatibility
+blocker; do not silently remove these jobs or relax their exact-version tests.
+The separately qualified Ubuntu 24.04 10.0.7 lane is not interchangeable
+with Ubuntu 22.04. See the [10.0.7 patch parity and platform audit](../evidence/kicad-10-0-7/2026-10-12-feature-parity-audit.md).
+
+On hosted Windows, the signed fixed-SHA-256 official 10.0.7 installer has
+been exercised by an [automatic main-push native run](https://github.com/oaslananka/kicad-mcp-pro/actions/runs/38176395461)
+(32/32 native steps, 5/5 semantic comparisons); the [community Chocolatey
+KiCad package](https://community.chocolatey.org/packages/kicad) was listed at
+10.0.6 on 2026-10-12. The new Windows runner is an **extra post-merge and
+weekly signal**, not a new required PR context or a general version promotion.
+The real Windows GUI/IPC qualification remains explicitly operator-dispatched.
+
 ## Release Impact
 
 KiCad 10.0.6 was released on 2026-08-29 as a 10.0-series bugfix release. At that review, the

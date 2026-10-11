@@ -96,6 +96,40 @@ kicad10FeatureParity:
   baseline: 10.0.6
   primaryIssue: https://github.com/oaslananka/kicad-mcp-pro/issues/427
   documentation: docs/compatibility/kicad-10-0-6-feature-parity.md
+  # A separate patch review must not overwrite the 10.0.6 feature-parity baseline.
+  # This is an evidence index and a queue of targeted semantic regressions,
+  # not a claim that every 10.0.7 native/editor feature is qualified.
+  candidatePatchReview:
+    version: 10.0.7
+    reviewed: '2026-10-12'
+    status: bounded-not-promoted
+    globalPromotionApproved: false
+    issue: https://github.com/oaslananka/kicad-mcp-pro/issues/1181
+    audit: docs/evidence/kicad-10-0-7/2026-10-12-feature-parity-audit.md
+    upstreamReleaseNotes: https://www.kicad.org/blog/2026/10/KiCad-10.0.7-Release/
+    windowsNativeAutomatic:
+      mainRevision: 6b4474d1c02889a61e16a1eedccd9e6973d63056
+      run: https://github.com/oaslananka/kicad-mcp-pro/actions/runs/38176395461
+      canarySteps: 32
+      semanticMatches: 5
+      semanticTotal: 5
+    ubuntu22Legacy:
+      runner: ubuntu-22.04
+      retainedVersion: 10.0.6
+      workflows:
+        - .github/workflows/kicad-live-e2e.yml
+        - .github/workflows/dev-bootstrap.yml
+      reason: >-
+        Preserve the previously qualified Jammy lane while the official
+        10.0.7 Jammy PPA build remains blocked by the observed libgit2 error;
+        Ubuntu 24.04 10.0.7 evidence must not be treated as Jammy evidence.
+    targetedRegressionGaps:
+      - erc-json-unit-scale
+      - multi-root-schematic-plot
+      - bom-project-output-filename
+      - gerber-drill-marks
+      - allegro-24-25-cli-capability
+      - ipc-expanded-object-contracts
   allowedStatuses:
     - supported
     - not-applicable

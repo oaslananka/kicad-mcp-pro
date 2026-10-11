@@ -5,6 +5,14 @@ This page is the human-readable view of
 tracks KiCad 10.0.6 parity separately from the current KiCad 11 readiness plan
 so release gates stay focused on the stable KiCad line.
 
+**10.0.7 candidate review:** The source-linked
+[KiCad 10.0.7 patch feature-parity audit](../evidence/kicad-10-0-7/2026-10-12-feature-parity-audit.md)
+tracks successful bounded native/GUI qualification separately from patch-specific
+semantic regressions that have not received focused acceptance. This page and
+`kicad10FeatureParity.baseline` intentionally continue to describe **10.0.6**;
+the upstream release and passing 10.0.7 canary do not silently upgrade each
+feature status or change `kicad.latestVerified`.
+
 Status vocabulary:
 
 | State            | Meaning                                                                                   |
