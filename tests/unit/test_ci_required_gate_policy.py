@@ -29,7 +29,7 @@ JOB_RESULTS = (
 
 
 def _required_gate() -> str:
-    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
     return next(
         step["run"]
         for step in workflow["jobs"]["required-pr-gate"]["steps"]
@@ -59,7 +59,7 @@ def test_gate_fails_closed_on_unknown_and_unexpected_skips() -> None:
 
 
 def test_main_and_pr_concurrency_are_isolated() -> None:
-    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
     group = workflow["concurrency"]["group"]
     cancel = workflow["concurrency"]["cancel-in-progress"]
     assert "github.sha" in group and "github.ref" in group
