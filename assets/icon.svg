@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="96" fill="#1a1a2e"/>
+  <!-- PCB grid background -->
+  <g stroke="#16213e" stroke-width="1" opacity="0.6">
+    <line x1="64" y1="0" x2="64" y2="512"/>
+    <line x1="128" y1="0" x2="128" y2="512"/>
+    <line x1="192" y1="0" x2="192" y2="512"/>
+    <line x1="256" y1="0" x2="256" y2="512"/>
+    <line x1="320" y1="0" x2="320" y2="512"/>
+    <line x1="384" y1="0" x2="384" y2="512"/>
+    <line x1="448" y1="0" x2="448" y2="512"/>
+    <line x1="0" y1="64" x2="512" y2="64"/>
+    <line x1="0" y1="128" x2="512" y2="128"/>
+    <line x1="0" y1="192" x2="512" y2="192"/>
+    <line x1="0" y1="256" x2="512" y2="256"/>
+    <line x1="0" y1="320" x2="512" y2="320"/>
+    <line x1="0" y1="384" x2="512" y2="384"/>
+    <line x1="0" y1="448" x2="512" y2="448"/>
+  </g>
+  <!-- PCB traces (green) -->
+  <g stroke="#00b894" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Horizontal traces -->
+    <polyline points="64,192 192,192 192,128 320,128 320,192 448,192"/>
+    <polyline points="64,320 160,320 160,384 352,384 352,320 448,320"/>
+    <!-- Vertical traces -->
+    <polyline points="192,192 192,320"/>
+    <polyline points="320,192 320,320"/>
+    <!-- Cross connection -->
+    <polyline points="128,256 384,256"/>
+  </g>
+  <!-- Vias / pads -->
+  <g fill="#00cec9" stroke="#dfe6e9" stroke-width="4">
+    <circle cx="192" cy="192" r="16"/>
+    <circle cx="320" cy="192" r="16"/>
+    <circle cx="192" cy="320" r="16"/>
+    <circle cx="320" cy="320" r="16"/>
+    <circle cx="256" cy="256" r="20"/>
+  </g>
+  <!-- IC chip center -->
+  <rect x="208" y="208" width="96" height="96" rx="8" fill="#0984e3" stroke="#74b9ff" stroke-width="3"/>
+  <!-- IC pins -->
+  <g fill="#dfe6e9">
+    <rect x="196" y="220" width="12" height="8" rx="2"/>
+    <rect x="196" y="236" width="12" height="8" rx="2"/>
+    <rect x="196" y="252" width="12" height="8" rx="2"/>
+    <rect x="196" y="268" width="12" height="8" rx="2"/>
+    <rect x="304" y="220" width="12" height="8" rx="2"/>
+    <rect x="304" y="236" width="12" height="8" rx="2"/>
+    <rect x="304" y="252" width="12" height="8" rx="2"/>
+    <rect x="304" y="268" width="12" height="8" rx="2"/>
+    <rect x="220" y="196" width="8" height="12" rx="2"/>
+    <rect x="236" y="196" width="8" height="12" rx="2"/>
+    <rect x="252" y="196" width="8" height="12" rx="2"/>
+    <rect x="268" y="196" width="8" height="12" rx="2"/>
+    <rect x="220" y="304" width="8" height="12" rx="2"/>
+    <rect x="236" y="304" width="8" height="12" rx="2"/>
+    <rect x="252" y="304" width="8" height="12" rx="2"/>
+    <rect x="268" y="304" width="8" height="12" rx="2"/>
+  </g>
+  <!-- MCP text on chip -->
+  <text x="256" y="261" font-family="monospace" font-size="20" font-weight="bold"
+        fill="white" text-anchor="middle" dominant-baseline="middle">MCP</text>
+  <!-- Corner mounting holes -->
+  <circle cx="80" cy="80" r="12" fill="none" stroke="#636e72" stroke-width="4"/>
+  <circle cx="432" cy="80" r="12" fill="none" stroke="#636e72" stroke-width="4"/>
+  <circle cx="80" cy="432" r="12" fill="none" stroke="#636e72" stroke-width="4"/>
+  <circle cx="432" cy="432" r="12" fill="none" stroke="#636e72" stroke-width="4"/>
+</svg>

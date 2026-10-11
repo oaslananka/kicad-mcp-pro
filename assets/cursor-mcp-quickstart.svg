@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
+  <title id="title">Cursor MCP quickstart configuration screenshot</title>
+  <desc id="desc">Sanitized example of a project-scoped Cursor MCP configuration for KiCad MCP Pro.</desc>
+  <rect width="960" height="540" rx="18" fill="#111827"/>
+  <rect x="32" y="32" width="896" height="476" rx="14" fill="#0f172a" stroke="#334155"/>
+  <text x="64" y="78" fill="#e5e7eb" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22">.cursor/mcp.json</text>
+  <text x="64" y="122" fill="#a7f3d0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">{</text>
+  <text x="88" y="154" fill="#93c5fd" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">"mcpServers": {</text>
+  <text x="112" y="186" fill="#fde68a" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">"kicad": {</text>
+  <text x="136" y="218" fill="#e5e7eb" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">"command": "uvx",</text>
+  <text x="136" y="250" fill="#e5e7eb" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">"args": ["kicad-mcp-pro", "--mode", "readonly"],</text>
+  <text x="136" y="282" fill="#e5e7eb" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">"env": {</text>
+  <text x="160" y="314" fill="#fca5a5" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">"KICAD_MCP_OPERATING_MODE": "readonly"</text>
+  <text x="136" y="346" fill="#e5e7eb" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">}</text>
+  <text x="112" y="378" fill="#fde68a" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">}</text>
+  <text x="88" y="410" fill="#93c5fd" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">}</text>
+  <text x="64" y="442" fill="#a7f3d0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">}</text>
+  <rect x="610" y="118" width="260" height="210" rx="12" fill="#172554" stroke="#2563eb"/>
+  <text x="634" y="162" fill="#bfdbfe" font-family="Arial, sans-serif" font-size="19" font-weight="700">Quick verification</text>
+  <text x="634" y="200" fill="#dbeafe" font-family="Arial, sans-serif" font-size="16">Server name: kicad</text>
+  <text x="634" y="232" fill="#dbeafe" font-family="Arial, sans-serif" font-size="16">Default mode: readonly</text>
+  <text x="634" y="264" fill="#dbeafe" font-family="Arial, sans-serif" font-size="16">No tokens or private paths</text>
+  <text x="634" y="296" fill="#dbeafe" font-family="Arial, sans-serif" font-size="16">Project scoped config</text>
+</svg>
