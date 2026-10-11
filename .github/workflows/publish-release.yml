@@ -1,24 +1,84 @@
 name: Publish Release
 
-# Explicit maintainer click only. No workflow_dispatch inputs (CKV_GHA_7).
+# The trusted CI workflow calls this only after its own required main gates.
+# Explicit manual recovery remains possible; no privileged workflow_run trigger.
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
+# Serialize automatic and manual publication of the same release family.
 concurrency:
-  group: publish-release-${{ github.ref }}
+  group: publish-release-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
-  publish:
-    # Never mint a release-capable installation token for a non-main ref.
+  authorize:
+    # The same-source CI caller checks its full required-gate and Sonar jobs.
+    # Never publish from a PR, a fork, or a non-main ref.
     if: >-
       (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
-      github.ref == 'refs/heads/main'
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      approved: ${{ steps.gate.outputs.approved }}
     steps:
+      - name: Authorize reviewed release merge after required main CI
+        id: gate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY_NAME: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          CI_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          echo 'approved=false' >> "$GITHUB_OUTPUT"
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
+            echo 'Explicit maintainer dispatch on main; allow recovery publish.'
+            echo 'approved=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          [[ "$EVENT_NAME" == 'push' ]]
+          [[ "$CI_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$REPOSITORY_NAME" == 'oaslananka/kicad-mcp-pro' || "$REPOSITORY_NAME" == 'oaslananka-ops/kicad-mcp-pro' ]]
+          # Trusted caller CI has already passed Required PR Gate and SonarCloud;
+          # never poll, download PR artifacts, or evaluate an untrusted checkout.
+
+          # This exact SHA must be the merge commit of a reviewed Release
+          # Please PR. Merely changing a version file in a normal PR is NOT
+          # authority to publish. No untrusted PR files or artifacts are read.
+          merged_pr_json="$(gh api "repos/${REPOSITORY_NAME}/commits/${CI_HEAD_SHA}/pulls?per_page=100")"
+          if ! jq -e --arg sha "$CI_HEAD_SHA" --arg repo "$REPOSITORY_NAME" '
+                [.[] | select(
+                  .state == "closed" and .merged_at != null and
+                  .merge_commit_sha == $sha and
+                  .head.ref == "release-please--branches--main" and
+                  .head.repo.full_name == $repo and
+                  .base.ref == "main" and .base.repo.full_name == $repo
+                )] | length == 1
+              ' <<< "$merged_pr_json" > /dev/null; then
+            echo 'Ordinary main merge: not a Release Please merge, no publication.'
+            exit 0
+          fi
+          echo 'Verified CI-gated Release Please merge; authorize publication.'
+          echo 'approved=true' >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: authorize
+    if: needs.authorize.outputs.approved == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      # The privileged GitHub App token is created only after authorization.
       - name: Mint release automation token
         id: release-app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
@@ -29,7 +89,7 @@ jobs:
           permission-pull-requests: write
 
       # Release Please tags only previously merged/reviewed release PRs.
-      # Existing release/tag-driven publishers then run with their normal gates.
+      # Existing release/tag-driven publishers retain their normal gates.
       - name: Publish merged Release Please versions
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7
         with:

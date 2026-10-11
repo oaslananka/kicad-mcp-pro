@@ -1,4 +1,7 @@
-"""Release PR preparation is scheduled; publication needs a manual workflow."""
+"""Release preparation stays separate; publishing requires verified CI + PR merge.
+
+Production publication is never exercised by this test module.
+"""
 
 from __future__ import annotations
 
@@ -16,12 +19,12 @@ def _workflow(name: str) -> dict:
     return workflow
 
 
-def test_daily_prepare_has_no_merge_or_publish_trigger() -> None:
+def test_daily_prepare_never_creates_releases() -> None:
     workflow = _workflow("release-please.yml")
     events = workflow["on"]
     assert set(events) == {"schedule", "workflow_dispatch"}
     assert events["schedule"] == [{"cron": "37 3 * * *"}]
-    assert events["workflow_dispatch"] is None  # No user-controlled parameters.
+    assert events["workflow_dispatch"] is None
     job = workflow["jobs"]["release"]
     assert "github.ref == 'refs/heads/main'" in job["if"]
     steps = job["steps"]
@@ -34,12 +37,63 @@ def test_daily_prepare_has_no_merge_or_publish_trigger() -> None:
     assert any("scripts/sync_release_artifacts.py --write" in str(step) for step in steps)
 
 
-def test_only_manual_publish_creates_release_tags() -> None:
+def test_publish_is_called_only_by_trusted_ci_or_manual_recovery() -> None:
     workflow = _workflow("publish-release.yml")
-    assert set(workflow["on"]) == {"workflow_dispatch"}
-    assert workflow["on"]["workflow_dispatch"] is None  # Checkov CKV_GHA_7.
-    job = workflow["jobs"]["publish"]
-    assert "github.ref == 'refs/heads/main'" in job["if"]
+    events = workflow["on"]
+    assert set(events) == {"workflow_dispatch", "workflow_call"}
+    assert events["workflow_dispatch"] is None
+    assert events["workflow_call"] is None
+    assert workflow["concurrency"]["cancel-in-progress"] is False
+    assert workflow["concurrency"]["group"] == "publish-release-${{ github.repository }}"
+    assert "workflow_run" not in events and "push" not in events
+    assert "schedule" not in events
+
+    ci = _workflow("ci.yml")
+    caller = ci["jobs"]["auto-publish-reviewed-release"]
+    assert caller["needs"] == ["required-pr-gate", "sonarcloud"]
+    assert "github.event_name == 'push'" in caller["if"]
+    assert "github.ref == 'refs/heads/main'" in caller["if"]
+    assert "needs.required-pr-gate.result == 'success'" in caller["if"]
+    assert "needs.sonarcloud.result == 'success'" in caller["if"]
+    assert caller["uses"] == "./.github/workflows/publish-release.yml"
+    assert caller["secrets"] == "inherit"
+    assert caller["permissions"] == {"contents": "read", "pull-requests": "read"}
+
+
+def test_publish_requires_exact_reviewed_release_merge_before_minting_token() -> None:
+    workflow = _workflow("publish-release.yml")
+    authorize = workflow["jobs"]["authorize"]
+    gate = authorize["steps"][0]
+    condition = authorize["if"]
+    shell = gate["run"]
+    assert "github.event_name == 'push'" in condition
+    assert "github.event_name == 'workflow_dispatch'" in condition
+    assert "github.ref == 'refs/heads/main'" in condition
+    assert gate["env"]["CI_HEAD_SHA"] == "${{ github.sha }}"
+    assert '[[ "$CI_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]' in shell
+    assert '"release-please--branches--main"' in shell
+    assert ".merge_commit_sha == $sha" in shell
+    assert ".head.repo.full_name == $repo" in shell
+    assert '.base.ref == "main" and .base.repo.full_name == $repo' in shell
+    assert 'merged_pr_json="$(gh api ' in shell
+    assert "if ! jq -e" in shell  # ordinary main merges must be a no-op, not red CI.
+    assert "approved=false" in shell
+    assert "approved=true" in shell
+    assert authorize["permissions"] == {"contents": "read", "pull-requests": "read"}
+    assert not any("create-github-app-token" in str(step) for step in authorize["steps"])
+
+    publish = workflow["jobs"]["publish"]
+    assert publish["needs"] == "authorize"
+    assert publish["if"] == "needs.authorize.outputs.approved == 'true'"
+    assert authorize["outputs"]["approved"] == "${{ steps.gate.outputs.approved }}"
+    assert any(
+        "actions/create-github-app-token@" in step.get("uses", "") for step in publish["steps"]
+    )
+    assert not any("actions/checkout@" in str(step) for step in publish["steps"])
+
+
+def test_publish_action_does_not_create_release_pr_or_sync_artifacts() -> None:
+    job = _workflow("publish-release.yml")["jobs"]["publish"]
     action = next(
         step for step in job["steps"] if "googleapis/release-please-action@" in step.get("uses", "")
     )
@@ -48,7 +102,7 @@ def test_only_manual_publish_creates_release_tags() -> None:
     assert not any("sync_release_artifacts.py" in str(step) for step in job["steps"])
 
 
-def test_publish_and_prepare_reuse_short_lived_github_app_with_pinned_actions() -> None:
+def test_publish_and_prepare_use_short_lived_pinned_github_app_actions() -> None:
     for filename, jobname in (
         ("release-please.yml", "release"),
         ("publish-release.yml", "publish"),
@@ -74,4 +128,4 @@ def test_release_attestation_documentation_distinguishes_publisher_and_sbom() ->
     assert "verify-pypi-provenance" in documentation
     assert "--publisher-environment pypi" in documentation
     assert "**not** SLSA build" in documentation
-    assert "python -m sigstore verify identity \\" not in documentation
+    assert "python -m sigstore verify identity " + chr(92) not in documentation

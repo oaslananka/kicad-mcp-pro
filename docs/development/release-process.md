@@ -18,15 +18,29 @@ its generated version-derived files. For an immediate refresh, use
 Neither scheduled nor manually requested preparation creates tags or publishes
 GitHub Releases.
 
-When a release is ready, first review and **merge the protected release PR**
-(e.g. the current `chore(main): release …` PR) after its required checks pass.
-That merge updates the version files in `main` but does **not** publish.
-Then use **Actions → Publish Release → Run workflow**, selecting `main`.
-No extra parameters or additional environment approval are required. Only this
-explicit workflow creates the Release Please version tags and GitHub Releases;
-the existing tag/release-triggered workflows then publish the respective
-packages and verify the normal integrity, checksums, SBOMs and attestations.
-A release PR must have merged before Publish Release has any release to tag.
+When a release is ready, review and **merge the protected release PR** after
+its required checks pass. The merge updates the version metadata in `main`.
+The normal **CI** workflow validates that exact `main` commit. After its
+**Required PR Gate** and **SonarCloud Scan** jobs have succeeded, CI calls the
+reusable **Publish Release** workflow *only* for that trusted `main` push.
+The called workflow confirms via the GitHub API that the exact commit is the
+merge commit of a reviewed `release-please--branches--main` PR; ordinary
+`main` merges return successfully without publishing. Normal PR merges,
+failed CI runs, cancelled/skipped aggregate gates, fork-originated CI and daily
+release preparation cannot start publication. The publish-capable GitHub App
+token is minted **only after** this verification.
+
+The existing tag/release-triggered workflows then publish the respective
+packages and verify the usual checksums, SBOMs, provenance, and attestations.
+This keeps protected PR review and CI as the publication approval boundary;
+merging a release PR is an intentional authorization to publish once those
+checks succeed.
+
+For recovery only, an authorized maintainer can still use **Actions → Publish
+Release → Run workflow**, selecting `main`. The automatic and manual paths
+share a serialized concurrency group; Release Please's released-version
+tracking prevents publication of the same candidate as a new version. Do not
+use the manual workflow unless publication failed or did not start.
 
 **Avoid bypassing this release decision** by manually running individual
 `publish-*` backfill workflows or creating release tags by hand. Such workflows

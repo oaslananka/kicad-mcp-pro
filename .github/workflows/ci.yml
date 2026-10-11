@@ -897,3 +897,20 @@ jobs:
 
           echo '' >> "$GITHUB_STEP_SUMMARY"
           echo '✅ All required jobs passed or were not applicable to this event.' >> "$GITHUB_STEP_SUMMARY"
+
+  # Publishing is an outcome of the reviewed release PR plus successful CI,
+  # not an ambient side effect of ordinary main commits. Callable workflow
+  # gates the exact merged Release Please PR before minting an App token.
+  auto-publish-reviewed-release:
+    name: Publish reviewed release after green main CI
+    needs: [required-pr-gate, sonarcloud]
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.required-pr-gate.result == 'success' &&
+      needs.sonarcloud.result == 'success'
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/publish-release.yml
+    secrets: inherit
