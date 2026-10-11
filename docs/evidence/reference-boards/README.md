@@ -77,7 +77,7 @@ A missing CLI should block the run, not be marked as a model failure or silently
 skip that attempt from the denominator.
 
 For the opt-in, non-retry entry point that joins the preflight to the first
-schematic session, see [first schematic attempt](first-schematic-attempt.md).
+schematic session, see [first schematic attempt](../../development/reference-board-first-attempt.md).
 It requires explicit execution and provider-cost acknowledgement; no
 unattended CI jobs can launch agent sessions by default. The preflight itself creates no attempt
 artifacts. The actual reviewed executor remains
