@@ -1,7 +1,7 @@
 {
   "name": "kicad-mcp-pro",
   "version": "4.2.0",
-  "description": "npm wrapper for the KiCad MCP Pro Python package.",
+  "description": "Node.js launcher for kicad-mcp-pro (Python MCP server for KiCad EDA).",
   "license": "MIT",
   "homepage": "https://oaslananka.github.io/kicad-mcp-pro",
   "repository": {
@@ -30,5 +30,18 @@
   "scripts": {
     "check": "npm pack --dry-run",
     "build": "node scripts/build-smoke.js"
-  }
+  },
+  "keywords": [
+    "kicad",
+    "mcp",
+    "pcb",
+    "eda",
+    "ai",
+    "llm",
+    "schematic",
+    "pcb-design",
+    "eda-automation",
+    "gerber-export",
+    "model-context-protocol"
+  ]
 }

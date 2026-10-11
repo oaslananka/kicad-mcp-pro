@@ -9,6 +9,8 @@ on:
       - "release-please-config.json"
       - ".release-please-manifest.json"
       - "pyproject.toml"
+      - "packages/mcp-npm/package.json"
+      - "packages/mcp-npm/README.md"
       - "src-tauri/Cargo.toml"
       - "src-tauri/Cargo.lock"
       - "package.json"
