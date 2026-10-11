@@ -10,11 +10,11 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/kicad-10-0-7-windows-qualification.yml"
 
 
-def test_windows_stable_native_qualification_is_opt_in() -> None:
+def test_windows_stable_native_qualification_retains_manual_dispatch() -> None:
     raw = WORKFLOW.read_text(encoding="utf-8")
     workflow = yaml.safe_load(raw)
     events = workflow.get("on", workflow.get(True))
-    assert set(events) == {"workflow_dispatch"}
+    assert set(events) == {"workflow_dispatch", "schedule", "push"}
     assert workflow["permissions"] == {"contents": "read"}
     job = workflow["jobs"]["native-windows-cli"]
     assert job["runs-on"] == "windows-2025"
@@ -89,3 +89,40 @@ def test_windows_stable_native_qualification_is_opt_in() -> None:
     assert steps[-1]["if"] == "always()"
     assert "Remove-Item" in steps[-1]["run"]
     assert "compatibility.yaml" not in raw
+
+
+def test_windows_native_automation_is_trusted_bounded_and_non_privileged() -> None:
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    events = workflow.get("on", workflow.get(True))
+    assert set(events) == {"workflow_dispatch", "schedule", "push"}
+    assert events["workflow_dispatch"] is None
+    assert events["schedule"] == [{"cron": "17 5 * * 2"}]
+    assert events["push"]["branches"] == ["main"]
+    paths = set(events["push"]["paths"])
+    assert {
+        ".github/workflows/kicad-10-0-7-windows-qualification.yml",
+        "scripts/kicad_canary.py",
+        "scripts/runtime_path_safety.py",
+        "src/kicad_mcp/evals/**",
+        "src/kicad_mcp/tools/**",
+        "packages/kicad-fixtures/fixtures/**",
+        "examples/gallery/**",
+        "pyproject.toml",
+        "uv.lock",
+    } <= paths
+    assert all(not value.startswith("!") for value in paths)
+    assert "src/**" not in paths
+    assert "pull_request" not in events
+    assert "pull_request_target" not in events
+    assert "workflow_run" not in events
+    assert workflow["permissions"] == {"contents": "read"}
+    assert workflow["concurrency"]["cancel-in-progress"] is False
+    assert all(
+        "secrets." not in str(step) for step in workflow["jobs"]["native-windows-cli"]["steps"]
+    )
+
+
+def test_real_windows_gui_ipc_remains_strictly_manual() -> None:
+    gui_path = ROOT / ".github/workflows/kicad-10-0-7-windows-gui-ipc-qualification.yml"
+    gui = yaml.safe_load(gui_path.read_text(encoding="utf-8"))
+    assert gui.get("on", gui.get(True)) == {"workflow_dispatch": None}

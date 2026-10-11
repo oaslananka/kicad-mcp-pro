@@ -79,6 +79,39 @@ missing required context would leave an otherwise valid pull request blocked.
 The action itself reports success when a pull request has no dependency-graph
 delta.
 
+### Windows 10.0.7 bounded native qualification (non-required)
+
+`kicad-10-0-7-windows-qualification.yml` runs the **native CLI** suite on
+`windows-2025` after selected `main` pushes and on a weekly Tuesday 05:17 UTC
+schedule; maintainers can also dispatch it manually. It deliberately has **no**
+`pull_request`, `pull_request_target`, or `workflow_run` event, is **not** a
+branch-protection context, and does not introduce a new required PR check.
+The path filter covers the KiCad canary implementation, differential/PCB/
+export/validation/tool adapters, fixtures, and locked dependencies so ordinary
+documentation or unrelated package changes do not download the large installer.
+Scheduled events always execute the default branch. Separate concurrency groups
+for `push`, `schedule`, and `workflow_dispatch` keep unattended runs from
+coalescing with explicitly operator-dispatched runs; running jobs are not
+force-cancelled. GitHub may replace an older pending event in a group.
+
+Every run uses an ephemeral GitHub-hosted Windows runner, read-only token,
+credential-free checkout, SHA-pinned third-party Actions, a bounded download
+from official KiCad mirrors, an independently reviewed **fixed SHA-256**,
+Authenticode signer validation, an isolated installer directory, exact CLI
+version, the 32-step native canary/5 semantic comparisons, limited artifact
+retention and `always()` cleanup. No repository secrets or elevated publishing
+identity are passed to the checked-out source. The interactive **GUI/IPC**
+workflow is **operator-only** and never launched by this automation.
+
+This is a *post-merge and scheduled qualification signal*, not evidence that
+KiCad 10.0.7 is supported on every platform, not a replacement for the
+Ubuntu 22.04 legacy 10.0.6 lane, and not authorization to modify
+`kicad.latestVerified`, autonomous manufacturing evidence or release policy.
+If it is ever promoted to a mandatory pre-merge check, review PR/fork trust,
+runner minutes, always-reporting branch-protection contexts, Mergify conditions,
+and ruleset/documentation together as a separate change. Track promotion in
+[#1181](https://github.com/oaslananka/kicad-mcp-pro/issues/1181).
+
 ## Required Status Checks
 
 The following checks are required by the `main-standard` branch ruleset and must report

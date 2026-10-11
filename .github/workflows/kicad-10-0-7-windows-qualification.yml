@@ -1,14 +1,38 @@
 name: KiCad 10.0.7 Windows Qualification
 
-# Explicit operator-triggered disposable Windows-native qualification only.
+# Trusted post-merge and scheduled Windows native qualification; no PR/fork trigger.
+# Operator dispatch remains available. Live GUI/IPC stays manual in its own workflow.
 on:
   workflow_dispatch:
+  # Weekly Tuesday 05:17 UTC, on the default branch only.
+  schedule:
+    - cron: "17 5 * * 2"
+  push:
+    branches: [main]
+    # Bound installer downloads to changes that affect the native KiCad contract.
+    paths:
+      - ".github/workflows/kicad-10-0-7-windows-qualification.yml"
+      - "scripts/kicad_canary.py"
+      - "scripts/runtime_path_safety.py"
+      - "src/kicad_mcp/evals/**"
+      - "src/kicad_mcp/pcb/**"
+      - "src/kicad_mcp/export/**"
+      - "src/kicad_mcp/validation/**"
+      - "src/kicad_mcp/tools/**"
+      - "src/kicad_mcp/ipc/**"
+      - "src/kicad_mcp/server_info.py"
+      - "src/kicad_mcp/adapter_matrix.py"
+      - "tests/fixtures/**"
+      - "packages/kicad-fixtures/fixtures/**"
+      - "examples/gallery/**"
+      - "pyproject.toml"
+      - "uv.lock"
 
 permissions:
   contents: read
 
 concurrency:
-  group: win-kicad-107-${{ github.ref }}
+  group: win-kicad-107-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
