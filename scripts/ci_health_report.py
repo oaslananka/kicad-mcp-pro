@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import os
 from collections import Counter
 from datetime import UTC, datetime, timedelta
-from http.client import HTTPSConnection
 from pathlib import Path
 from typing import Any
 
@@ -123,48 +123,20 @@ def format_summary(report: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
-def _api_json(path: str, *, token: str) -> dict[str, Any]:
-    """Only call the fixed GitHub API HTTPS host, never a caller-supplied URL."""
-    if not path.startswith("/repos/") or ".." in path or "://" in path:
-        raise ValueError("Invalid GitHub Actions API path")
-    connection = HTTPSConnection("api.github.com", timeout=25)
-    try:
-        connection.request(
-            "GET",
-            path,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "kicad-ci-health-readonly",
-            },
-        )
-        response = connection.getresponse()
-        if response.status != 200:
-            raise OSError(f"GitHub API returned HTTP {response.status}")
-        result = json.loads(response.read())
-        if not isinstance(result, dict):
-            raise ValueError("Unexpected GitHub API response")
-        return result
-    finally:
-        connection.close()
-
-
 def main() -> int:
-    token = os.environ.get("GH_TOKEN")
-    repository = os.environ.get("GITHUB_REPOSITORY")
-    if not token or not repository or repository.count("/") != 1:
-        raise SystemExit("GH_TOKEN and GITHUB_REPOSITORY required")
-    runs = _api_json(
-        f"/repos/{repository}/actions/workflows/ci.yml/runs?per_page=100", token=token
-    ).get("workflow_runs", [])
-    complete = [run for run in runs if run.get("status") == "completed"]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--runs-file", type=Path, required=True)
+    parser.add_argument("--jobs-dir", type=Path, required=True)
+    args = parser.parse_args()
+    runs = json.loads(args.runs_file.read_text(encoding="utf-8"))["workflow_runs"]
+    if not isinstance(runs, list):
+        raise ValueError("GitHub CI runs must be a JSON array")
     jobs_by_run: dict[int, list[dict[str, Any]]] = {}
-    for run in complete[:12]:
+    for run in runs:
         run_id = int(run["id"])
-        jobs_by_run[run_id] = _api_json(
-            f"/repos/{repository}/actions/runs/{run_id}/jobs?per_page=100", token=token
-        ).get("jobs", [])
+        job_file = args.jobs_dir / f"{run_id}.json"
+        if job_file.is_file():
+            jobs_by_run[run_id] = json.loads(job_file.read_text(encoding="utf-8"))["jobs"]
     report = build_report(runs, jobs_by_run, now=datetime.now(UTC))
     Path("ci-health.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     summary = format_summary(report)
@@ -178,5 +150,5 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         raise SystemExit(f"GitHub CI health report failed: {exc}") from exc
