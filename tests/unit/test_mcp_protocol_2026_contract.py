@@ -110,6 +110,89 @@ def test_candidate_tools_list_is_direct_stateless_and_cache_annotated(
     assert all(tool["inputSchema"].get("type") == "object" for tool in result["tools"])
 
 
+@pytest.mark.parametrize("mismatched", [False, True])
+def test_modern_unsupported_protocol_version_is_discoverable(
+    sample_project: Path,
+    mismatched: bool,
+) -> None:
+    """Modern version errors must distinguish unsupported versions from header spoofing."""
+    server = _candidate_server(sample_project)
+    requested = "1900-01-01"
+    body = _request("tools/list", request_id=42)
+    if not mismatched:
+        body["params"]["_meta"]["io.modelcontextprotocol/protocolVersion"] = requested
+    headers = {**_headers("tools/list"), "MCP-Protocol-Version": requested}
+
+    with TestClient(server.streamable_http_app(), base_url="http://127.0.0.1:3334") as client:
+        response = client.post("/mcp", headers=headers, json=body)
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["id"] == 42
+    if mismatched:
+        assert payload["error"]["code"] == -32020
+    else:
+        assert payload["error"]["code"] == -32022
+        assert payload["error"]["data"] == {
+            "requested": requested,
+            "supported": [CANDIDATE_PROTOCOL_VERSION],
+        }
+
+
+def test_modern_lane_rejects_known_but_disabled_legacy_version(sample_project: Path) -> None:
+    """The native 2026 lane must not silently serve an era absent from discovery."""
+    server = _candidate_server(sample_project)
+    body = _request("tools/list", request_id=44)
+    body["params"]["_meta"]["io.modelcontextprotocol/protocolVersion"] = MCP_LEGACY_PROTOCOL_VERSION
+
+    with TestClient(server.streamable_http_app(), base_url="http://127.0.0.1:3334") as client:
+        response = client.post(
+            "/mcp",
+            headers={
+                **_headers("tools/list"),
+                "MCP-Protocol-Version": MCP_LEGACY_PROTOCOL_VERSION,
+            },
+            json=body,
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == {
+        "code": -32022,
+        "message": "Unsupported protocol version",
+        "data": {
+            "requested": MCP_LEGACY_PROTOCOL_VERSION,
+            "supported": [MCP_PROTOCOL_VERSION],
+        },
+    }
+
+
+def test_dual_era_default_recognizes_modern_error_contract(sample_project: Path) -> None:
+    """Modern request metadata gets modern errors even in the legacy-default configuration."""
+    _ = sample_project
+    cfg = get_config()
+    cfg.transport = "streamable-http"
+    cfg.protocol_lane = "stable"
+    cfg.stateful_http = False
+    server = build_server("minimal")
+    requested = "1900-01-01"
+    body = _request("tools/list", request_id=43)
+    body["params"]["_meta"]["io.modelcontextprotocol/protocolVersion"] = requested
+
+    with TestClient(server.streamable_http_app(), base_url="http://127.0.0.1:3334") as client:
+        response = client.post(
+            "/mcp",
+            headers={**_headers("tools/list"), "MCP-Protocol-Version": requested},
+            json=body,
+        )
+
+    assert response.status_code == 400
+    error = response.json()["error"]
+    assert error["code"] == -32022
+    assert error["data"]["requested"] == requested
+    assert MCP_PROTOCOL_VERSION in error["data"]["supported"]
+    assert MCP_LEGACY_PROTOCOL_VERSION in error["data"]["supported"]
+
+
 def test_candidate_rejects_invalid_json_rpc_envelope(sample_project: Path) -> None:
     server = _candidate_server(sample_project)
     request = _request("tools/list", request_id=8)
