@@ -1,6 +1,12 @@
 # KiCad 10.0.7 — native CLI and real GUI/IPC platform evidence
 
 Issue: [#1181](https://github.com/oaslananka/kicad-mcp-pro/issues/1181).
+
+**Current-source checkpoint (2026-10-11):** Windows official signed installer
+native and real GUI/IPC acceptance, isolated Linux native requalification,
+physical Windows maintained-board copy/hash checks, and the remaining global
+package/pin blockers are documented in
+[2026-10-11 main qualification](2026-10-11-main-qualification.md).
 Linux source checkout: `c93559e47fc9dba2e0bdc11f64467f1ad1d0d6c1`.
 Windows source checkout: `f5a498c71b9cb45cc52302e5ee98da39104b5c09`.
 Recorded on 2026-10-10; OS/architecture: Linux x86_64. The original paired Linux and Windows reports covered native CLI/fixture
