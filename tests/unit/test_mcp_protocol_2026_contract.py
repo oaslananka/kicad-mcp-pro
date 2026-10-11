@@ -10,7 +10,7 @@ from starlette.testclient import TestClient
 
 from kicad_mcp.compatibility import MCP_LEGACY_PROTOCOL_VERSION, MCP_PROTOCOL_VERSION
 from kicad_mcp.config import get_config, reset_config
-from kicad_mcp.server import build_server
+from kicad_mcp.server import _json_rpc_protocol_version, build_server
 
 CANDIDATE_PROTOCOL_VERSION = LATEST_MODERN_VERSION
 
@@ -147,6 +147,29 @@ def test_modern_unsupported_protocol_version_is_discoverable(
             "requested": requested,
             "supported": [CANDIDATE_PROTOCOL_VERSION],
         }
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_version"),
+    [
+        (b"\xff", None),  # Malformed UTF-8 must not leak out of diagnostics.
+        (b"{", None),  # Truncated JSON is not per-request version metadata.
+        (b"[]", None),  # JSON-RPC envelope must be an object.
+        (b'{"params": []}', None),  # Params must be an object.
+        (b'{"params": {}}', None),  # Missing metadata is legacy-compatible.
+        (b'{"params": {"_meta": null}}', None),
+        (b'{"params": {"_meta": {"io.modelcontextprotocol/protocolVersion": 2}}}', None),
+        (
+            b'{"params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28"}}}',
+            "2026-07-28",
+        ),
+    ],
+)
+def test_protocol_version_diagnostic_ignores_malformed_and_legacy_metadata(
+    body: bytes, expected_version: str | None
+) -> None:
+    """Missing or malformed request metadata is never mistaken for modern version negotiation."""
+    assert _json_rpc_protocol_version(body) == expected_version
 
 
 def test_modern_lane_rejects_known_but_disabled_legacy_version(sample_project: Path) -> None:
