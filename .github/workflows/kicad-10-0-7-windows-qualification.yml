@@ -14,6 +14,7 @@ on:
       - ".github/workflows/kicad-10-0-7-windows-qualification.yml"
       - "scripts/kicad_canary.py"
       - "scripts/kicad_107_erc_units.py"
+      - "scripts/kicad_107_flat_root_pdf.py"
       - "scripts/runtime_path_safety.py"
       - "src/kicad_mcp/evals/**"
       - "src/kicad_mcp/pcb/**"
@@ -186,6 +187,20 @@ jobs:
           if ($result.status -ne 'pass' -or $result.kicadVersion -ne '10.0.7' -or
               $result.sourceRevision -ne $env:SOURCE_REVISION) {
             throw 'ERC unit-scale report does not match the exact tested source'
+          }
+
+      - name: Verify 10.0.7 flat multi-root schematic PDF pages
+        shell: pwsh
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          uv run --all-extras python scripts/kicad_107_flat_root_pdf.py --output artifacts/kicad-10-0-7-windows/flat-root-pdf.json
+          if ($LASTEXITCODE -ne 0) { throw 'Native KiCad 10.0.7 flat multi-root PDF regression failed' }
+          $result = Get-Content 'artifacts/kicad-10-0-7-windows/flat-root-pdf.json' -Raw | ConvertFrom-Json
+          if ($result.status -ne 'pass' -or $result.kicadVersion -ne '10.0.7' -or
+              $result.pageCount -ne 2 -or $result.sourceRevision -ne $env:SOURCE_REVISION) {
+            throw 'Flat multi-root PDF report does not match expected exact-source contract'
           }
 
       - name: Upload bounded Windows qualification artifacts

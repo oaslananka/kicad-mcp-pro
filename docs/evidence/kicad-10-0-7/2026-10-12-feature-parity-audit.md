@@ -60,6 +60,34 @@ artifact verification must be recorded separately. The probe's introduction
 the six-row targeted evidence queue. The Ubuntu 22.04 **10.0.6** legacy lane
 and manually dispatched GUI/IPC workflow are not changed.
 
+### Native flat multi-root PDF candidate acceptance (#25198)
+
+`scripts/kicad_107_flat_root_pdf.py` creates a disposable KiCad 10.0.7
+project from **two independent existing in-repository schematic fixtures**.
+The script adds distinct top-level root UUIDs, and writes the actual project
+`schematic.top_level_sheets` records (filename, name and UUID), plus their
+`sheets` identity mapping. Neither schematic is a hierarchical child; the
+source fixtures themselves remain untouched. An unrelated hierarchical
+multi-sheet fixture would not exercise upstream #25198.
+
+The CLI is **exact-version gated at 10.0.7** and run via the existing native
+canary executor. Exporting the first root must create a parseable PDF with
+**exactly two pages**, one containing each corresponding named root **and** its
+unique schematic title; missing, repeated, ambiguous or mismatched identities
+are errors. Page sequence is not assumed: on an observed physical Linux 10.0.7
+run the output order was the reverse of the project manifest. The native PDF
+and temporary project are deleted; only two page names/titles and a source
+revision are persisted as bounded JSON evidence.
+
+The project locks **pypdf 6.20.0** (BSD-3-Clause) as a dev-only dependency for
+cross-platform PDF page-text assertions. This is a narrowly scoped native
+regression integrated into the existing SHA-256/Authenticode-verified Windows
+10.0.7 post-merge and weekly workflow, **not** a fork PR installer trigger or
+a new branch-protection required context. Hosted Windows exact-source execution
+and artifact validation remain separate acceptance gates before this gap is
+classified as validated outside the physical Linux proof. Global version
+promotion and independent GUI/IPC acceptance are still out of scope.
+
 **Status of all six patch-specific rows:** `targeted-evidence-pending`.
 This is a review queue, not an invented failure list. Base 10.0.6 statuses and
 unaffected KiCad 11 preview contracts are not rewritten.
