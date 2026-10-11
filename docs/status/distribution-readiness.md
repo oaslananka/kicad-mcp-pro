@@ -2,6 +2,9 @@
 
 This matrix separates repository contract evidence from physical/product evidence.
 A file existing in the repository is not enough to mark a surface verified.
+Historical Claude Code and Codex host runs are retained in the
+[dated agent-host evidence index](../evidence/agent-host-smoke-history.md).
+They do not establish current host/skill/extension compatibility; see #1219.
 
 | Surface | Current status | Objective evidence | Notes |
 | --- | --- | --- | --- |
