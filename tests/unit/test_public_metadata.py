@@ -200,3 +200,96 @@ def test_public_docs_distinguish_canonical_inputs_from_registry_payload() -> Non
     assert "generated registry manifest" in readme
     assert "generated registry payload" in registry
     assert "generated registry payload" in submission
+
+
+def test_npm_metadata_uses_single_public_metadata_source() -> None:
+    module = _load_metadata_sync_module()
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    package = json.loads(
+        (ROOT / "packages" / "mcp-npm" / "package.json").read_text(encoding="utf-8")
+    )
+    assert package["version"] == project["version"]
+    assert package["license"] == project["license"]["text"]
+    assert package["keywords"] == module._npm_keywords(module._project_metadata())
+    assert "model-context-protocol" in package["keywords"]
+    assert "kicad" in package["keywords"]
+    assert "Python MCP server" in package["description"]
+
+
+def test_npm_readme_is_generated_from_current_version_and_runtime_policy() -> None:
+    module = _load_metadata_sync_module()
+    metadata = module._project_metadata()
+    runtime = module._compatibility_metadata()
+    package = json.loads(
+        (ROOT / "packages" / "mcp-npm" / "package.json").read_text(encoding="utf-8")
+    )
+    readme = (ROOT / "packages" / "mcp-npm" / "README.md").read_text(encoding="utf-8")
+    assert readme == module._render_npm_wrapper_readme(metadata, runtime, package)
+    assert f"npx --yes {metadata['package_name']}@{metadata['version']} --help" in readme
+    assert f"uvx {metadata['package_name']}@{metadata['version']} --help" in readme
+    assert f"Node.js {package['engines']['node']}" in readme
+    assert f"Python {metadata['requires_python']}" in readme
+    assert f"{runtime['kicad']['latestVerified']}" in readme
+    assert "uvx" in readme and "does not install uv" in readme
+    assert "3.9.2" not in readme
+
+
+def test_npm_readme_versions_change_without_manual_edits() -> None:
+    module = _load_metadata_sync_module()
+    metadata = {**module._project_metadata(), "version": "9.8.7"}
+    runtime = module._compatibility_metadata()
+    pkg = json.loads((ROOT / "packages/mcp-npm/package.json").read_text(encoding="utf-8"))
+    updated = module._updated_npm_wrapper_package(metadata, pkg)
+    rendered = module._render_npm_wrapper_readme(metadata, runtime, updated)
+    assert updated["version"] == "9.8.7"
+    assert "kicad-mcp-pro@9.8.7 --help" in rendered
+    assert "kicad-mcp-pro@4.2.0" not in rendered
+    runtime["kicad"]["latestVerified"] = "9.2.4"
+    changed = module._render_npm_wrapper_readme(metadata, runtime, updated)
+    assert "9.2.4" in changed and changed != rendered
+
+
+def test_npm_readme_drift_is_detected_without_mutating_repo(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    module = _load_metadata_sync_module()
+    stale = tmp_path / "README.md"
+    stale.write_text("Stale npm instructions: @3.9.2\n", encoding="utf-8")
+    monkeypatch.setattr(module, "NPM_WRAPPER_README", stale)
+    assert module.main(["--check"]) == 1
+    assert "README.md" in capsys.readouterr().err
+    assert stale.read_text(encoding="utf-8") == "Stale npm instructions: @3.9.2\n"
+    assert module.main(["--write"]) == 0
+    assert module.main(["--check"]) == 0
+    assert "@3.9.2" not in stale.read_text(encoding="utf-8")
+
+
+def test_npm_keywords_reject_invalid_input() -> None:
+    import pytest
+
+    module = _load_metadata_sync_module()
+    with pytest.raises(ValueError, match="nonempty strings"):
+        module._npm_keywords({"keywords": ["kicad", ""]})
+    with pytest.raises(ValueError, match="nonempty strings"):
+        module._npm_keywords({"keywords": "kicad"})
+
+
+def test_npm_readme_requires_canonical_python_runtime() -> None:
+    import pytest
+
+    module = _load_metadata_sync_module()
+    metadata = {**module._project_metadata(), "requires_python": None}
+    runtime = module._compatibility_metadata()
+    package = json.loads((ROOT / "packages/mcp-npm/package.json").read_text(encoding="utf-8"))
+    with pytest.raises(ValueError, match="requires-python"):
+        module._render_npm_wrapper_readme(metadata, runtime, package)
+
+
+def test_publish_npm_verifies_generated_publication_docs_before_pack() -> None:
+    publish = (ROOT / ".github/workflows/publish-npm.yml").read_text(encoding="utf-8")
+    release_validation = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    assert "scripts/sync_mcp_metadata.py --check" in publish
+    assert publish.index("scripts/sync_mcp_metadata.py --check") < publish.index("npm pack --json")
+    assert '"packages/mcp-npm/README.md"' in release_validation
+    assert '"packages/mcp-npm/package.json"' in release_validation
+    assert "corepack pnpm run metadata:check" in release_validation
