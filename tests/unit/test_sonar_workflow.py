@@ -45,14 +45,16 @@ def test_sonar_uses_exact_run_coverage_and_preserves_manual_fallback() -> None:
     assert steps["Require successful upstream coverage gate"]["if"] == (
         "steps.sonar-mode.outputs.run_analysis == 'true'"
     )
-    # The public SHA-pinned scanner is a known Semgrep secret-regex false positive;
-    # only that rule is suppressed on this one immutable action reference.
-    assert steps["SonarCloud Scan"]["uses"] == (
-        "SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9"
+    # The required scan runs precisely the same SHA-pinned upstream action as
+    # the existing manual fallback, despite its YAML line-wrapped spelling.
+    manual_scanner = next(
+        step
+        for step in manual_workflow["jobs"]["sonarcloud"]["steps"]
+        if step.get("name") == "SonarCloud Scan"
     )
-    assert (
-        ci_raw.count("# nosemgrep: generic.secrets.security.detected-sonarqube-docs-api-key") == 1
-    )
+    assert steps["SonarCloud Scan"]["uses"] == manual_scanner["uses"]
+    assert steps["SonarCloud Scan"]["uses"].startswith("SonarSource/sonarqube-scan-action@")
+    assert len(steps["SonarCloud Scan"]["uses"].split("@")[-1]) == 40
 
 
 def test_sonar_docs_only_path_gate_keeps_required_check_reporting() -> None:

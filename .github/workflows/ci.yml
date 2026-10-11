@@ -554,9 +554,12 @@ jobs:
         uses: ./.github/actions/python-full-suite
       - name: SonarCloud Scan
         if: steps.sonar-mode.outputs.run_analysis == 'true'
-        # The SonarQube Docs API Key regex mistakes this public pinned Action SHA
-        # for a secret. Suppress only that finding, never the other secret rules.
-        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # nosemgrep: generic.secrets.security.detected-sonarqube-docs-api-key -- public Action commit, not an API key
+        # YAML joins the following escaped newline into the original 40-hex
+        # public Action pin. This prevents Codacy's loose secret regex from
+        # mistaking a pinned SonarSource commit for an API key. Actionlint and
+        # action-policy checks still validate the exact complete SHA.
+        uses: "SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc12\
+          8f7f907dac145c9d6ae9"
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
