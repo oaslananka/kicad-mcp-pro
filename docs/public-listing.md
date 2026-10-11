@@ -24,7 +24,7 @@ snapshot in a dated `release-readiness-<date>.md` document.
 
 | Item | Status | Evidence |
 |---|---|---|
-| Release line | Validated per release | Latest dated [`release-readiness-*.md`](.) snapshot |
+| Release line | Validated per release | Historical [July 2026 readiness snapshot](release-readiness-2026-07-03.md); consult the release workflow for the current candidate |
 | PyPI package | Verified | `kicad-mcp-pro` current release present in PyPI JSON metadata |
 | npm wrapper | Verified | `kicad-mcp-pro` current release present in npm registry metadata |
 | GHCR image | Verified | `ghcr.io/oaslananka/kicad-mcp-pro:<version>` returns a multi-arch OCI index |
