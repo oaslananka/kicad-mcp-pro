@@ -1,11 +1,12 @@
-# KiCad 10.0.7 — Linux and Windows native CLI qualification evidence
+# KiCad 10.0.7 — native CLI and real GUI/IPC platform evidence
 
 Issue: [#1181](https://github.com/oaslananka/kicad-mcp-pro/issues/1181).
 Linux source checkout: `c93559e47fc9dba2e0bdc11f64467f1ad1d0d6c1`.
 Windows source checkout: `f5a498c71b9cb45cc52302e5ee98da39104b5c09`.
-Recorded on 2026-10-10; OS/architecture: Linux x86_64. This folder records
-the **native CLI/fixture scope only** (Linux and Windows), not a GUI/IPC
-or autonomous real-board qualification.
+Recorded on 2026-10-10; OS/architecture: Linux x86_64. The original paired Linux and Windows reports covered native CLI/fixture
+regressions only; **later, separate source-bound Windows, Ubuntu and macOS
+real GUI/IPC evidence** is linked below. None of these results qualifies
+autonomously engineered manufacturable reference boards.
 
 The paired Linux machine-readable evidence file
 [`2026-10-10-linux-native-canary.json`](2026-10-10-linux-native-canary.json)
@@ -114,6 +115,23 @@ remains on KiCad 10.0.6. Do **not** promote
 `compatibility.yaml`'s `kicad.latestVerified: 10.0.6` or issue a release
 based solely on this Windows CLI evidence.
 
+## Windows 10.0.7 — real PCB Editor GUI/IPC (2026-10-10)
+
+In addition to the signed-installer CLI proof above, a separate
+[hosted real Windows GUI/IPC qualification](2026-10-10-windows-10-0-7-real-gui-ipc.json)
+ran on `windows-2025`, source
+`e82432c81ba2ae31b04d2780c43971ac87aff7cb`,
+[Actions run #38045310304](https://github.com/oaslananka/kicad-mcp-pro/actions/runs/38045310304).
+The runner had a **user-interactive non-session-zero desktop** and
+native KiCad version `10.0.7`. It passed **2/2 genuine GUI/IPC tests,
+0 failures/skips**: structured file-backed fallback when the editor was
+closed, then actual PCB Editor-backed live MCP reads and switching to
+a distinct project. The bounded JSON copies the source runner's
+schema/verdict/test identities and records its artifact ID and original
+downloaded SHA-256. This real GUI result is independent of the
+earlier native Windows 32/32 + 5/5 canary, and neither is a successful
+autonomous board-production claim.
+
 ## Ubuntu 24.04 — signed stable PPA binary, native CLI (2026-10-11)
 
 The independent machine-readable
@@ -184,7 +202,41 @@ native Wayland desktop compatibility, real graphics-driver behaviour, macOS
 GUI success, production release support, successful reference-board
 manufacturing or the whole #1181 issue acceptance.
 
-## macOS native GUI / IPC opt-in qualification (pending real run)
+## macOS — signed KiCad 10.0.7 native CLI and real GUI/IPC (2026-10-11)
+
+The independent
+[hosted macOS native and GUI/IPC result](2026-10-11-macos-10-0-7-signed-native-gui-ipc.json)
+records a **successful actual macos-15 execution**, not merely the existence
+of a workflow. The bounded JSON was derived from the original GitHub
+Actions [run #38093783089](https://github.com/oaslananka/kicad-mcp-pro/actions/runs/38093783089)
+on exact source `d0ce717cee95630f0a7d8f65a3f725005a82a48f`.
+The original artifact identifier and SHA-256 of its downloaded
+`summary.json` are retained for independent provenance.
+
+| Actual macOS 10.0.7 gate | Verified observation |
+| --- | --- |
+| Official KiCad universal DMG | Exact SHA-256 captured; Apple app code signature valid |
+| Version and MCP library binding | Native CLI 10.0.7, symbols bound to the **same signed app bundle** |
+| Native expected-step statuses | **32/32**, native failures 0 |
+| Native-vs-MCP differential comparisons | **5/5 matches** |
+| False pass / false fail / divergence / unavailable authority | **0 / 0 / 0 / 0** |
+| Real PCB Editor GUI/IPC | **2/2 passing**, 0 skips/failures, including second-board switch |
+| Overall strict result | **PASS** |
+
+The first macOS native run failed because of an incorrect packaged library
+table source and premature shell exit. Two subsequent runs genuinely
+passed GUI/IPC but only matched **4/5** native/MCP semantic comparisons:
+the gallery ESP32-C3 WROOM-02 breakout's pin-membership connectivity
+groups disagreed. Root cause was that MCP's KiCad CLI library discovery
+ignored the mounted app bundle's
+`KiCad.app/Contents/SharedSupport/symbols`, producing missing or
+unrelated pin geometry while native KiCad read the correct libraries.
+The fix in protected [PR #1204](https://github.com/oaslananka/kicad-mcp-pro/pull/1204)
+restores 5/5 without loosening any native or GUI criteria. Protected
+[PR #1205](https://github.com/oaslananka/kicad-mcp-pro/pull/1205)
+keeps that behavior and also resolves the subsequent SonarCloud
+`python:S3776` maintainability finding, with zero new Sonar issues
+on its passing PR.
 
 The manually dispatched
 [`kicad-10-0-7-macos-gui-ipc-qualification.yml`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/.github/workflows/kicad-10-0-7-macos-gui-ipc-qualification.yml)
@@ -198,14 +250,13 @@ first-run preferences, `contents: read` token permissions and no
 schedule/PR triggers. The only uploaded evidence is a bounded result
 without private GUI logs, screenshots, paths, or installation text.
 
-**The existence of this workflow is not a successful macOS canary.**
-Only a successful exact-source run whose signed installer, 32 native
-checks, five semantic differentials, two real GUI tests and project
-switch all pass may qualify this macOS lane. If a hosted macOS runner has
-no usable WindowServer/interactive desktop session, a failure should
-remain **infrastructure-invalid / not-qualified**, not a file-backed
-false success. Real physical hardware and the broader #1181 matrix
-are separate acceptance questions.
+The verified success belongs to the **exact feature revision** above;
+merging its fix and the behavior-preserving follow-up into protected main
+does not turn a historical runner result into a fresh run of every native
+test on every final main commit. The workflow remains opt-in, so platform
+requalification is explicit. Hardware-dependent WindowServer,
+non-hosted macOS configurations, and full autonomous manufacture remain
+out of scope.
 
 ## Ubuntu 22.04 — upstream 10.0.7 source/build incompatibility
 
@@ -224,3 +275,29 @@ to KiCad upstream packagers (e.g. correctly version-gating the API
 without weakening pack/rewrite semantics, or using a tested compatible
 libgit2 package). Do not install an unreviewed libgit2 override or
 claim Jammy compatibility using a different distro's binary.
+
+
+## Decision matrix — scope of #1181 at 2026-10-11
+
+Each row is a separately source-bound check, **not** proof that all rows ran
+on the same image or source commit. Native canary success means correct
+pass/fail classification and matching semantic authority, not that
+deliberately defective ERC/DRC designs were clean.
+
+| Contract | Source-backed observation | Qualification boundary |
+| --- | --- | --- |
+| Native CLI 10.0.7, expected/negative status and five differential operations | Linux AppImage, Windows installer and Ubuntu Noble PPA: **32/32 expected statuses** and **5/5 semantic matches** | Only their recorded run revisions; optional documented capability skips remain |
+| Actual editor GUI/IPC, fallback and second-board switch | Windows interactive runner **2/2**; Ubuntu Noble PPA Xvfb **2/2**; signed macOS DMG **2/2** | Xvfb is not physical Wayland/GPU; each result is OS- and revision-bound |
+| Native DRC/ERC semantic consumer | Structured violation type/bucket/severity differential passed; deliberate DRC and ERC negative fixtures fail closed | Human-readable short-net description differs between 10.0.6 and 10.0.7 |
+| Gallery-board *regression* | Public ESP32-C3 WROOM-02 breakout native/MCP connectivity member-set hash now matches on actual macOS 10.0.7; this was the initial 4/5 Mac blocker | A preexisting gallery board is **not** an autonomous from-spec reference-board success |
+| Real agent-authored reference-board manufacturing | **Not qualified**; [#729](https://github.com/oaslananka/kicad-mcp-pro/issues/729) and [#730](https://github.com/oaslananka/kicad-mcp-pro/issues/730) require complete attempt accounting, independently verified ERC/DRC and reproducible fabrication outputs | Do not claim any STM32/ESP32-C6/RP2350 project is accepted until individual benchmark evidence exists |
+| Ubuntu 22.04 Jammy 10.0.7 | Official stable PPA amd64/arm64 failed to build against legacy distro libgit2; legacy 10.0.6 workflow stays intact | Ubuntu 22.04 is upstream unsupported; no invented 10.0.7 Jammy build or cross-distro workaround |
+| Global compatibility / release pin | **Retain `latestVerified: 10.0.6`**, no 10.0.7 promotion, release/tag or manufacturing claim | Requires explicit broader issue review and genuinely successful outstanding acceptance gates |
+
+**Decision:** the evidence supports *specific native KiCad 10.0.7 CLI and
+real GUI/IPC contracts* on those measured environments, while the full
+#1181 promotion gate remains **open**. The old real macOS 4/5 divergence
+was fixed and proved **5/5**; the incomplete autonomous real-board corpus
+is a separate product-quality boundary. Retaining the current global pin
+avoids conflating bounded platform acceptance with broader software
+support, manufacturing readiness, or approval to publish a release.
