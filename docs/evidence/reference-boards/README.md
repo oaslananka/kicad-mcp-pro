@@ -88,3 +88,40 @@ phase to run automatically after a preflight.
 This is **preflight scaffolding**, not completion of #1214's benchmark runner:
 provider-neutral attempt execution, consistent persisted per-attempt evidence,
 full retry/history and score aggregation remain to be implemented and verified.
+
+
+## Attempt-level scoreboard (complete-history contract, #1214)
+
+To inspect **each actual attempt**, rather than only corpus publication
+readiness, use the deterministic, read-only scoreboard:
+
+```sh
+uv run --all-extras --frozen python scripts/report_reference_board_attempts.py \
+  --corpus-root docs/evidence/reference-boards
+
+# A single validated board version can be audited independently:
+uv run --all-extras --frozen python scripts/report_reference_board_attempts.py \
+  --bundle docs/evidence/reference-boards/stm32f072-usbc/v1
+```
+
+Output schema: `reference-board-attempt-scoreboard.v1`. Each validated board
+version includes the manifest-verified **entire** attempt history (attempt
+identity, classification, stable failure reason, ERC/DRC disposition, and
+recomputed required-rule quality), alongside the canonical task-outcome KPI,
+confidence interval, infrastructure exclusions and denominator. Quality
+percent is a diagnostic; it **does not** override the task-success verdict.
+No saved score can be trusted without re-evaluation against the current
+read-only scorer and authenticated attempt digest. A missing/unindexed/tampered
+attempt makes the entire board version incomplete, not a higher pass rate.
+
+The corpus command exits **2** while any board lacks validated complete
+history; it includes incomplete board versions with bounded reason codes but
+never guesses their attempts or publishes a cross-benchmark success rate.
+A single fully validated board bundle exits **0**, including when its task
+success rate is **0%**. Distinguish evidence integrity from engineering task
+success: an ERC, DRC or manufacturing signoff cannot be inferred from a CLI
+exit code or score percentage alone.
+
+This scoreboard is one reporting and integrity milestone of #1214. Actual
+end-to-end agent task execution, complete additional board histories and
+human-reviewed publication eligibility remain open under #1214/#729/#730.
