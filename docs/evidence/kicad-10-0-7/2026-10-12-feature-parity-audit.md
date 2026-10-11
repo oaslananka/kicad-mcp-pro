@@ -88,6 +88,34 @@ and artifact validation remain separate acceptance gates before this gap is
 classified as validated outside the physical Linux proof. Global version
 promotion and independent GUI/IPC acceptance are still out of scope.
 
+### Gerber NPTH drill-mark exclusion candidate acceptance (#25532)
+
+`scripts/kicad_107_gerber_drill_marks.py` uses the already audited native
+CLI runner and exact KiCad **10.0.7** version gate on two tiny *committed*
+`.kicad_pcb` controls generated from the 10.0.7 `pcbnew` Python API:
+`npth-stored-full-drill` has a single **non-plated 3.2-mm hole** at
+(50, 50) mm; `pth-stored-full-drill` has one plated pad. **Both board
+files explicitly persist `pcbplotparams (drillshape 2)`**, meaning full
+drill marks were selected. With `pcb export gerbers --board-plot-params`,
+the NPTH-only F.Cu file must have **zero Gerber `D03*` flash opcodes**,
+while the PTH positive control must flash exactly **once**. This guards
+against an accidentally empty or nonfunctional copper Gerber renderer.
+
+The NPTH hole must remain in the independently generated *non-plated*
+Excellon drill file with tool **3.2 mm** and expected drill XY position.
+This distinguishes **suppression of false Gerber copper** from inadvertent
+deletion of physical drill intent. All native Gerber/drill files and project
+copies are isolated and deleted; the only uploaded artifact is bounded,
+source-SHA-linked counts and known geometry (no customer PCB data).
+
+A physical MSI KiCad **10.0.7** trial additionally executed the upstream
+`pcbnew.PLOT_CONTROLLER` API on the NPTH sample with full drill marks and
+observed zero F.Cu flashes. The portable automated Windows lane uses the
+stored-settings CLI path; **this is not yet the complete plugin-specific GUI
+or Python API qualification on Windows**. It remains a bounded native fix
+regression for upstream #25532. GUI/IPC continues operator-dispatched and
+no manufacturing success or global support promotion follows from this check.
+
 **Status of all six patch-specific rows:** `targeted-evidence-pending`.
 This is a review queue, not an invented failure list. Base 10.0.6 statuses and
 unaffected KiCad 11 preview contracts are not rewritten.

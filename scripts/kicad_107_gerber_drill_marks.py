@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Qualify KiCad 10.0.7 Gerber non-plated drill-mark exclusion (#25532).
+
+Native CLI is exercised with saved ``drillshape 2`` board options; NPTH holes
+must not ink F.Cu while a real PTH pad still creates a valid flash. The NPTH
+hole must remain present in its separate Excellon drill output. All generated
+manufacturing-like outputs stay inside a disposable directory and are deleted.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import tempfile
+from pathlib import Path
+from typing import Any
+
+try:
+    from scripts.kicad_canary import CanaryStep, _resolve_cli, _run_step
+    from scripts.runtime_path_safety import approved_runtime_path
+except ModuleNotFoundError:  # Direct `python scripts/foo.py` execution.
+    from kicad_canary import CanaryStep, _resolve_cli, _run_step
+    from runtime_path_safety import approved_runtime_path
+
+ROOT = Path(__file__).resolve().parents[1]
+FIXTURES = ROOT / "tests/fixtures/kicad-10-0-7-drill-marks"
+VERSION = "10.0.7"
+CASES = {"npth": 0, "pth": 1}
+FLASH = re.compile(r"D0*3\*")
+
+
+class ProbeError(ValueError):
+    """The native KiCad 10.0.7 Gerber drill-mark contract was not satisfied."""
+
+
+def validate_gerbers(gerbers: dict[str, str], drill: str) -> dict[str, Any]:
+    """Check actual Gerber flashes and that the NPTH drill file retains its hole."""
+    if set(gerbers) != set(CASES):
+        raise ProbeError("Expected NPTH and PTH independent Gerber controls")
+    observed: dict[str, int] = {}
+    for case, expected in CASES.items():
+        text = gerbers[case]
+        if "%FSLAX" not in text or "M02*" not in text:
+            raise ProbeError(f"Malformed native F.Cu Gerber for {case}")
+        count = len(FLASH.findall(text))
+        if count != expected:
+            raise ProbeError(f"Unexpected copper flash count for {case}: {count}")
+        observed[case] = count
+    if "TF.FileFunction,NonPlated" not in drill:
+        raise ProbeError("Missing NPTH non-plated drill file identity")
+    if "T1C3.200" not in drill or not re.search(r"(?m)^X50(?:\.0+)?Y-50(?:\.0+)?$", drill):
+        raise ProbeError("NPTH 3.2-mm drill tool or known XY location missing")
+    return {
+        "schemaVersion": "kicad-107-gerber-drill-marks.v1",
+        "kicadVersion": VERSION,
+        "status": "pass",
+        "savedDrillMarkStyle": "full",
+        "copperFlashCount": observed,
+        "npthDrillMm": 3.2,
+        "npthLocationMm": {"x": 50, "y": 50},
+    }
+
+
+def run_probe(cli: str) -> dict[str, Any]:
+    """Run exact-version KiCad CLI via audited subprocess runner on copied boards."""
+    snapshots = {
+        case: hashlib.sha256(
+            (FIXTURES / f"{case}-stored-full-drill.kicad_pcb").read_bytes()
+        ).hexdigest()
+        for case in CASES
+    }
+    gerbers: dict[str, str] = {}
+    with tempfile.TemporaryDirectory(prefix="kicad-107-gerber-drill-") as tmp:
+        root = Path(tmp)
+        version = _run_step(
+            Path(cli),
+            CanaryStep(name="gerber-107-version", fixture="compatibility", args=("version",)),
+            root,
+        )
+        if not version.get("ok") or version.get("returncode") != 0:
+            raise ProbeError("Unable to inspect native KiCad version")
+        actual_version = (root / "logs/gerber-107-version.stdout.log").read_text(encoding="utf-8")
+        if actual_version.strip() != VERSION:
+            raise ProbeError("Gerber drill-mark probe requires KiCad CLI 10.0.7")
+        drill_data = ""
+        for case in CASES:
+            source = FIXTURES / f"{case}-stored-full-drill.kicad_pcb"
+            text = source.read_text(encoding="utf-8")
+            if "(drillshape 2)" not in text or "(at 50 50)" not in text:
+                raise ProbeError(f"Unexpected stored Gerber plot settings for {case}")
+            if f"{case} np_thru_hole" in text:
+                raise ProbeError("Malformed fixture pad descriptor")
+            if ("np_thru_hole" in text) != (case == "npth"):
+                raise ProbeError(f"Incorrect PTH/NPTH fixture type for {case}")
+            board_dir = root / case
+            board_dir.mkdir()
+            board = board_dir / source.name
+            shutil.copyfile(source, board)
+            output_dir = board_dir / "gerbers"
+            output_dir.mkdir()
+            gerber_file = output_dir / f"{case}-stored-full-drill-F_Cu.gbr"
+            step = CanaryStep(
+                name=f"gerber-{case}",
+                fixture="drill-marks-107",
+                args=(
+                    "pcb",
+                    "export",
+                    "gerbers",
+                    "--board-plot-params",
+                    "--output",
+                    str(output_dir),
+                    str(board),
+                ),
+                outputs=(gerber_file,),
+            )
+            result = _run_step(Path(cli), step, root)
+            if not result.get("ok") or result.get("returncode") != 0:
+                raise ProbeError(f"Stored-options native Gerber plot failed for {case}")
+            gerbers[case] = gerber_file.read_text(encoding="utf-8")
+            if case == "npth":
+                drill_dir = board_dir / "drill"
+                drill_dir.mkdir()
+                nc = drill_dir / "npth-stored-full-drill-NPTH.drl"
+                drill_step = CanaryStep(
+                    name="gerber-npth-excellon",
+                    fixture="drill-marks-107",
+                    args=(
+                        "pcb",
+                        "export",
+                        "drill",
+                        "--excellon-separate-th",
+                        "--output",
+                        str(drill_dir),
+                        str(board),
+                    ),
+                    outputs=(nc,),
+                )
+                result = _run_step(Path(cli), drill_step, root)
+                if not result.get("ok") or result.get("returncode") != 0:
+                    raise ProbeError("Native NPTH Excellon drill export failed")
+                drill_data = nc.read_text(encoding="utf-8")
+        report = validate_gerbers(gerbers, drill_data)
+    for case, digest in snapshots.items():
+        if (
+            hashlib.sha256(
+                (FIXTURES / f"{case}-stored-full-drill.kicad_pcb").read_bytes()
+            ).hexdigest()
+            != digest
+        ):
+            raise ProbeError("Read-only source fixture changed")
+    return report
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", required=True, help="Path to bounded JSON report")
+    args = parser.parse_args()
+    report = run_probe(str(_resolve_cli()))
+    report["sourceRevision"] = os.environ.get("SOURCE_REVISION", "")
+    output = approved_runtime_path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    print(
+        "KiCad 10.0.7 Gerber drill marks: 0 NPTH flashes, 1 PTH control flash, NPTH drill preserved"
+    )
+
+
+if __name__ == "__main__":
+    main()

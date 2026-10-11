@@ -15,6 +15,7 @@ on:
       - "scripts/kicad_canary.py"
       - "scripts/kicad_107_erc_units.py"
       - "scripts/kicad_107_flat_root_pdf.py"
+      - "scripts/kicad_107_gerber_drill_marks.py"
       - "scripts/runtime_path_safety.py"
       - "src/kicad_mcp/evals/**"
       - "src/kicad_mcp/pcb/**"
@@ -201,6 +202,21 @@ jobs:
           if ($result.status -ne 'pass' -or $result.kicadVersion -ne '10.0.7' -or
               $result.pageCount -ne 2 -or $result.sourceRevision -ne $env:SOURCE_REVISION) {
             throw 'Flat multi-root PDF report does not match expected exact-source contract'
+          }
+
+      - name: Verify 10.0.7 Gerber NPTH drill-mark exclusion
+        shell: pwsh
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          uv run --all-extras python scripts/kicad_107_gerber_drill_marks.py --output artifacts/kicad-10-0-7-windows/gerber-drill-marks.json
+          if ($LASTEXITCODE -ne 0) { throw 'Native KiCad 10.0.7 Gerber drill-mark regression failed' }
+          $result = Get-Content 'artifacts/kicad-10-0-7-windows/gerber-drill-marks.json' -Raw | ConvertFrom-Json
+          if ($result.status -ne 'pass' -or $result.kicadVersion -ne '10.0.7' -or
+              $result.copperFlashCount.npth -ne 0 -or $result.copperFlashCount.pth -ne 1 -or
+              $result.savedDrillMarkStyle -ne 'full' -or $result.sourceRevision -ne $env:SOURCE_REVISION) {
+            throw 'Gerber drill-mark report does not match the exact-source native contract'
           }
 
       - name: Upload bounded Windows qualification artifacts
