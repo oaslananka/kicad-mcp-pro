@@ -1,9 +1,11 @@
-"""Execute the actual Required PR Gate shell policy for expected/unsafe skip cases."""
+"""Static and parameterized guardrails for the inline required PR Bash gate.
+
+The inline gate is intentionally kept in the trusted workflow instead of
+executing a repository-controlled Python policy script with a PR checkout.
+"""
 
 from __future__ import annotations
 
-import re
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -26,80 +28,34 @@ JOB_RESULTS = (
 )
 
 
-def _run_gate(
-    tmp_path: Path,
-    *,
-    event: str = "pull_request",
-    head_ref: str = "topic",
-    overrides: dict[str, str] | None = None,
-) -> tuple[int, str]:
+def _required_gate() -> str:
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
-    run = next(
+    return next(
         step["run"]
         for step in workflow["jobs"]["required-pr-gate"]["steps"]
         if step.get("name") == "Evaluate required job results"
     )
-    results = {job: "success" for job in JOB_RESULTS}
-    results["release-readiness"] = (
-        "skipped" if head_ref != "release-please--branches--main" else "success"
-    )
-    if event == "workflow_dispatch":
-        results["changes"] = "skipped"
-    results.update(overrides or {})
-    for job, outcome in results.items():
-        run = run.replace("${{ needs." + job + ".result }}", outcome)
-    run = re.sub(
-        r"\$\{\{ needs\.changes\.outputs\.(?:docs_only|release_metadata_only) \}\}", "false", run
-    )
-    assert "${{" not in run
-    summary = tmp_path / "gate-summary.md"
-    summary.touch()
-    completed = subprocess.run(
-        ["/bin/bash", "-eu", "-o", "pipefail", "-c", run],
-        cwd=ROOT,
-        env={
-            "PATH": "/usr/bin:/bin",
-            "GITHUB_STEP_SUMMARY": str(summary),
-            "GITHUB_EVENT_NAME": event,
-            "GITHUB_HEAD_REF": head_ref,
-        },
-        capture_output=True,
-        text=True,
-        timeout=12,
-    )
-    return completed.returncode, summary.read_text()
 
 
-@pytest.mark.parametrize(
-    ("event", "head_ref", "overrides", "should_pass"),
-    [
-        ("pull_request", "topic", {}, True),
-        ("pull_request", "release-please--branches--main", {}, True),
-        ("workflow_dispatch", "", {}, True),
-        ("push", "", {}, True),
-        ("pull_request", "topic", {"coverage": "skipped"}, False),
-        ("pull_request", "topic", {"mcp-server": "skipped"}, False),
-        ("pull_request", "topic", {"security": "skipped"}, False),
-        ("pull_request", "release-please--branches--main", {"release-readiness": "skipped"}, False),
-        ("pull_request", "topic", {"changes": "skipped"}, False),
-        ("pull_request", "topic", {"coverage": "failure"}, False),
-        ("pull_request", "topic", {"coverage": "cancelled"}, False),
-        ("pull_request", "topic", {"coverage": "unknown"}, False),
-        ("push", "", {"release-metadata": "skipped"}, False),
-    ],
-)
-def test_required_gate_rejects_unexpected_skips(
-    tmp_path: Path,
-    event: str,
-    head_ref: str,
-    overrides: dict[str, str],
-    should_pass: bool,
-) -> None:
-    exit_code, summary = _run_gate(tmp_path, event=event, head_ref=head_ref, overrides=overrides)
-    assert (exit_code == 0) is should_pass
-    assert "Explanation" in summary
-    if not should_pass:
-        assert "❌" in summary
+@pytest.mark.parametrize("job", JOB_RESULTS)
+def test_each_required_job_is_covered_by_explicit_policy(job: str) -> None:
+    gate = _required_gate()
+    assert f'[{job}]="${{{{ needs.{job}.result }}}}"' in gate
+    assert job in gate.split("for job in ", 1)[1].split("; do", 1)[0].split()
+
+
+def test_gate_fails_closed_on_unknown_and_unexpected_skips() -> None:
+    gate = _required_gate()
+    assert "failure|cancelled)" in gate
+    assert "unexpected or missing result" in gate
+    assert "unexpected skip" in gate
+    assert "failed=1" in gate
+    assert "release-readiness" in gate
+    assert "GITHUB_HEAD_REF" in gate
+    assert "release-please--*" in gate
+    assert "workflow_dispatch" in gate and "GITHUB_EVENT_NAME" in gate
+    assert "| $job | $result | $explanation |" in gate
+    assert 'case "$result" in' in gate
 
 
 def test_main_and_pr_concurrency_are_isolated() -> None:

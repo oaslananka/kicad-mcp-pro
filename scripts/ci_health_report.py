@@ -7,10 +7,9 @@ import math
 import os
 from collections import Counter
 from datetime import UTC, datetime, timedelta
+from http.client import HTTPSConnection
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 
 def _utc(value: str) -> datetime:
@@ -125,17 +124,30 @@ def format_summary(report: dict[str, object]) -> str:
 
 
 def _api_json(path: str, *, token: str) -> dict[str, Any]:
-    request = Request(
-        "https://api.github.com" + path,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "kicad-ci-health-readonly",
-        },
-    )
-    with urlopen(request, timeout=25) as response:  # noqa: S310 — fixed GitHub API domain
-        return json.load(response)
+    """Only call the fixed GitHub API HTTPS host, never a caller-supplied URL."""
+    if not path.startswith("/repos/") or ".." in path or "://" in path:
+        raise ValueError("Invalid GitHub Actions API path")
+    connection = HTTPSConnection("api.github.com", timeout=25)
+    try:
+        connection.request(
+            "GET",
+            path,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"Bearer {token}",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "kicad-ci-health-readonly",
+            },
+        )
+        response = connection.getresponse()
+        if response.status != 200:
+            raise OSError(f"GitHub API returned HTTP {response.status}")
+        result = json.loads(response.read())
+        if not isinstance(result, dict):
+            raise ValueError("Unexpected GitHub API response")
+        return result
+    finally:
+        connection.close()
 
 
 def main() -> int:
@@ -166,5 +178,5 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (HTTPError, URLError, ValueError, KeyError, TypeError) as exc:
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         raise SystemExit(f"GitHub CI health report failed: {exc}") from exc
