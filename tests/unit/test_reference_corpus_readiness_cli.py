@@ -200,3 +200,30 @@ def test_machine_readable_bundle_reports_failure_without_error_payload(
         "schema_version": "reference-corpus-readiness.v1",
         "status": "incomplete",
     }
+
+
+def test_corpus_readme_is_not_counted_as_board_or_success(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    import json
+
+    (tmp_path / "README.md").write_text("# Documented corpus\n")
+    (tmp_path / "board-a" / "v1").mkdir(parents=True)
+    monkeypatch.setattr(cli, "validate_reference_board_bundle", lambda _: _result())
+    assert cli.main(["--corpus-root", str(tmp_path), "--format", "json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["boards"] == 1
+    assert len(payload["boards"]) == 1
+    assert payload["boards"][0]["successful"] == 0
+
+
+def test_symlinked_corpus_readme_is_rejected(tmp_path: Path, capsys) -> None:
+    import json
+
+    target = tmp_path.parent / "other-description.md"
+    target.write_text("# Out of corpus\n")
+    (tmp_path / "README.md").symlink_to(target)
+    (tmp_path / "board-a" / "v1").mkdir(parents=True)
+    assert cli.main(["--corpus-root", str(tmp_path), "--format", "json"]) == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error"] == "reference_corpus_contains_an_unsupported_board_entry"

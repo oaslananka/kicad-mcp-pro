@@ -30,22 +30,47 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _format_record(record: dict[str, Any]) -> str:
+    message = f"board={record['board_id']}"
+    if "version" in record:
+        message += f" version={record['version']}"
+    message += f" status={record['status']}"
+    if record["status"] == "validated":
+        return (
+            f"{message} attempts={record['attempts']}"
+            f" successful={record['successful']}"
+            f" failed={record['failed']}"
+            f" infrastructure_invalid={record['infrastructure_invalid']}"
+        )
+    if record.get("reason") == "no_benchmark_versions":
+        message += " reason=no benchmark versions"
+    return message
+
+
+def _corpus_status(board_count: int, incomplete: int, error: str | None) -> str:
+    if error:
+        return "invalid_corpus"
+    if not board_count or incomplete:
+        return "incomplete"
+    return "validated"
+
+
 def _emit_corpus(
     records: list[dict[str, Any]],
     *,
     board_count: int,
-    complete_versions: int,
-    incomplete_versions: int,
     json_output: bool,
     error: str | None = None,
 ) -> int:
-    """Report all observed versions without fabricating a success denominator."""
+    """Retain every board/version without inventing a success denominator."""
+    complete_versions = sum(record["status"] == "validated" for record in records)
+    incomplete_versions = len(records) - complete_versions
+    status = _corpus_status(board_count, incomplete_versions, error)
+
     if json_output:
-        payload = {
+        payload: dict[str, Any] = {
             "schema_version": READINESS_SCHEMA,
-            "status": "invalid_corpus"
-            if error
-            else ("validated" if board_count and not incomplete_versions else "incomplete"),
+            "status": status,
             "boards": records,
             "summary": {
                 "boards": board_count,
@@ -60,105 +85,79 @@ def _emit_corpus(
         if error:
             print(error.replace("_", " "), file=sys.stderr)
         for record in records:
-            message = f"board={record['board_id']}"
-            if "version" in record:
-                message += f" version={record['version']}"
-            message += f" status={record['status']}"
-            if record["status"] == "validated":
-                message += (
-                    f" attempts={record['attempts']}"
-                    f" successful={record['successful']}"
-                    f" failed={record['failed']}"
-                    f" infrastructure_invalid={record['infrastructure_invalid']}"
-                )
-            elif record.get("reason") == "no_benchmark_versions":
-                message += " reason=no benchmark versions"
-            print(message)
+            print(_format_record(record))
         if not error:
             print(
                 f"corpus boards={board_count} validated_versions={complete_versions} "
                 f"incomplete_versions={incomplete_versions}"
             )
-    return 0 if not error and board_count > 0 and incomplete_versions == 0 else 2
+    return 0 if status == "validated" else 2
+
+
+def _version_record(board: Path, version: Path) -> dict[str, Any]:
+    record: dict[str, Any] = {"board_id": board.name, "version": version.name}
+    try:
+        result = validate_reference_board_bundle(version)
+    except (OSError, ReferenceCorpusError, ValueError):
+        record.update(status="incomplete", reason="missing_or_invalid_evidence")
+        return record
+    if result.manifest.board_id != board.name or result.manifest.benchmark_version != version.name:
+        record.update(status="incomplete", reason="manifest_identity_mismatch")
+        return record
+    record.update(
+        status="validated",
+        attempts=result.summary.attempts_total,
+        successful=result.summary.successful_attempts,
+        failed=result.summary.failed_attempts,
+        infrastructure_invalid=result.summary.infrastructure_invalid_attempts,
+    )
+    return record
+
+
+def _board_records(board: Path) -> list[dict[str, Any]]:
+    if board.is_symlink() or not board.is_dir() or _SAFE_ID.fullmatch(board.name) is None:
+        raise ValueError("reference_corpus_contains_an_unsupported_board_entry")
+    versions = sorted(board.iterdir())
+    if not versions:
+        return [{"board_id": board.name, "status": "incomplete", "reason": "no_benchmark_versions"}]
+    if any(
+        version.is_symlink() or not version.is_dir() or _SAFE_ID.fullmatch(version.name) is None
+        for version in versions
+    ):
+        raise ValueError("reference_corpus_contains_an_unsupported_version_entry")
+    return [_version_record(board, version) for version in versions]
 
 
 def _validate_corpus_root(root: Path, *, json_output: bool = False) -> int:
-    """Account for every board version; no aggregate success claim."""
+    """Report all boards, even if no attempted design meets release gates."""
     if root.is_symlink() or not root.is_dir():
         return _emit_corpus(
             [],
             board_count=0,
-            complete_versions=0,
-            incomplete_versions=0,
             json_output=json_output,
             error="reference_corpus_root_must_be_a_real_directory",
         )
 
     records: list[dict[str, Any]] = []
-    board_count = complete_versions = incomplete_versions = 0
+    board_count = 0
     for board in sorted(root.iterdir()):
-        if board.is_symlink() or not board.is_dir() or _SAFE_ID.fullmatch(board.name) is None:
+        # Only this canonical, regular documentation file is not a board.
+        # Do not permit symlinks or arbitrary extra files to evade auditing.
+        if board.name == "README.md" and board.is_file() and not board.is_symlink():
+            continue
+        try:
+            board_records = _board_records(board)
+        except ValueError as exc:
+            # _board_records raises only constant, public-safe reason codes.
             return _emit_corpus(
                 records,
                 board_count=board_count,
-                complete_versions=complete_versions,
-                incomplete_versions=incomplete_versions,
                 json_output=json_output,
-                error="reference_corpus_contains_an_unsupported_board_entry",
+                error=str(exc),
             )
-        versions = sorted(board.iterdir())
+        records.extend(board_records)
         board_count += 1
-        if not versions:
-            records.append(
-                {"board_id": board.name, "status": "incomplete", "reason": "no_benchmark_versions"}
-            )
-            incomplete_versions += 1
-            continue
-        for version in versions:
-            if (
-                version.is_symlink()
-                or not version.is_dir()
-                or _SAFE_ID.fullmatch(version.name) is None
-            ):
-                return _emit_corpus(
-                    records,
-                    board_count=board_count,
-                    complete_versions=complete_versions,
-                    incomplete_versions=incomplete_versions,
-                    json_output=json_output,
-                    error="reference_corpus_contains_an_unsupported_version_entry",
-                )
-            record: dict[str, Any] = {"board_id": board.name, "version": version.name}
-            try:
-                result = validate_reference_board_bundle(version)
-            except (OSError, ReferenceCorpusError, ValueError):
-                record.update(status="incomplete", reason="missing_or_invalid_evidence")
-            else:
-                if (
-                    result.manifest.board_id != board.name
-                    or result.manifest.benchmark_version != version.name
-                ):
-                    record.update(status="incomplete", reason="manifest_identity_mismatch")
-                else:
-                    record.update(
-                        status="validated",
-                        attempts=result.summary.attempts_total,
-                        successful=result.summary.successful_attempts,
-                        failed=result.summary.failed_attempts,
-                        infrastructure_invalid=result.summary.infrastructure_invalid_attempts,
-                    )
-            records.append(record)
-            if record["status"] == "validated":
-                complete_versions += 1
-            else:
-                incomplete_versions += 1
-    return _emit_corpus(
-        records,
-        board_count=board_count,
-        complete_versions=complete_versions,
-        incomplete_versions=incomplete_versions,
-        json_output=json_output,
-    )
+    return _emit_corpus(records, board_count=board_count, json_output=json_output)
 
 
 def main(argv: list[str] | None = None) -> int:
