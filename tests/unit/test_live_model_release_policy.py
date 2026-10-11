@@ -844,3 +844,162 @@ def test_agent_contract_digest_ignores_workflow_action_pin_bumps(tmp_path: Path)
     after_real_change = _git(repo, "rev-parse", "HEAD")
     digest_after_real_change = compute_agent_contract_digest(repo, policy, ref=after_real_change)
     assert digest_after_real_change != digest_after_pin_bump
+
+
+@pytest.mark.parametrize(
+    ("previous", "candidate", "should_accept"),
+    [
+        (
+            (
+                "from kicad_mcp.evals.live_runner import (\n"
+                "    EvidenceSanitizationError,\n"
+                "    build_adapter,\n"
+                ")\n"
+            ),
+            "from kicad_mcp.evals.live_runner import (\n    build_adapter,\n)\n",
+            True,
+        ),
+        (
+            (
+                "from kicad_mcp.evals.live_runner import (\n"
+                "    EvidenceSanitizationError,\n"
+                "    build_adapter,\n"
+                ")\n"
+            ),
+            (
+                "from kicad_mcp.evals.live_runner import (\n"
+                "    build_adapter,\n"
+                ")\n"
+                "print('new behavior')\n"
+            ),
+            False,
+        ),
+        (
+            "from kicad_mcp.evals.live_runner import EvidenceSanitizationError, build_adapter\n"
+            "print(EvidenceSanitizationError)\n",
+            "from kicad_mcp.evals.live_runner import build_adapter\n"
+            "print(EvidenceSanitizationError)\n",
+            False,
+        ),
+        (
+            "from kicad_mcp.evals.live_runner import EvidenceSanitizationError, build_adapter\n"
+            "print(globals())\n",
+            "from kicad_mcp.evals.live_runner import build_adapter\nprint(globals())\n",
+            False,
+        ),
+        (
+            "from kicad_mcp.evals.live_runner import EvidenceSanitizationError\n",
+            "",
+            False,
+        ),
+        (
+            "from other.module import EvidenceSanitizationError, build_adapter\n",
+            "from other.module import build_adapter\n",
+            False,
+        ),
+    ],
+)
+def test_release_noop_import_guard_fails_closed_for_semantic_changes(
+    previous: str, candidate: str, should_accept: bool
+) -> None:
+    from kicad_mcp.evals.release_policy import _approved_nonfunctional_import_removal
+
+    assert (
+        _approved_nonfunctional_import_removal(
+            "scripts/run_live_model_eval.py", previous.encode(), candidate.encode()
+        )
+        is should_accept
+    )
+    assert not _approved_nonfunctional_import_removal(
+        "src/kicad_mcp/evals/live_runner.py", previous.encode(), candidate.encode()
+    )
+
+
+def test_release_verified_import_cleanup_preserves_raw_digest_and_requires_no_baseline_edit(
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp.evals.release_policy import compute_agent_contract_digest
+
+    repo = _repository(tmp_path)
+    folder = repo / "scripts"
+    folder.mkdir()
+    script = folder / "run_live_model_eval.py"
+    script.write_text(
+        "from kicad_mcp.evals.live_runner import (\n"
+        "    EvidenceSanitizationError,\n"
+        "    build_adapter,\n"
+        ")\n",
+        encoding="utf-8",
+    )
+    _git(repo, "add", ".")
+    _git(repo, "commit", "--no-verify", "-m", "approved contract")
+    release_revision = _git(repo, "rev-parse", "HEAD")
+    _tag_server_release(repo)
+    policy_path = _policy(tmp_path / "policy.yaml")
+    policy_contents = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+    policy_contents["agent_contract_paths"].append("scripts/run_live_model_eval.py")
+    policy_path.write_text(yaml.safe_dump(policy_contents), encoding="utf-8")
+    policy = load_release_policy(policy_path)
+    baseline_digest = compute_agent_contract_digest(repo, policy, ref=release_revision)
+    baseline_path = _baseline(tmp_path / "baseline.yaml", approved=False)
+
+    script.write_text(
+        "from kicad_mcp.evals.live_runner import (\n    build_adapter,\n)\n",
+        encoding="utf-8",
+    )
+    _git(repo, "add", ".")
+    _git(repo, "commit", "--no-verify", "-m", "verified unused import removal")
+    decision = evaluate_release_readiness(
+        repo_root=repo,
+        policy_path=policy_path,
+        baseline_path=baseline_path,
+        ref="HEAD",
+    )
+    assert decision.reason == "verified_unused_import_only_since_release"
+    assert decision.mode == "none"
+    assert decision.release_contract_changed is False
+    assert decision.contract_changed_paths == ("scripts/run_live_model_eval.py",)
+    assert decision.current_contract_digest != baseline_digest
+
+    # Any other model-facing change restores the full protected evidence gate.
+    _commit_contract(repo, 9)
+    changed = evaluate_release_readiness(
+        repo_root=repo,
+        policy_path=policy_path,
+        baseline_path=baseline_path,
+        ref="HEAD",
+    )
+    assert changed.mode == "full"
+    assert changed.reason == "baseline_unapproved"
+    assert "src/kicad_mcp/evals/selector.py" in changed.contract_changed_paths
+
+
+def test_release_policy_cli_writes_actionable_step_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from scripts import check_live_model_release_policy as cli
+
+    repo = _repository(tmp_path)
+    _tag_server_release(repo)
+    _commit_contract(repo, 3)
+    path = tmp_path / "summary.md"
+    path.touch()
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(path))
+    result = cli.main(
+        [
+            "--repo-root",
+            str(repo),
+            "--policy",
+            str(_policy(tmp_path / "policy.yaml")),
+            "--baseline",
+            str(_baseline(tmp_path / "baseline.yaml", approved=False)),
+            "--require-ready",
+            "release",
+        ]
+    )
+    assert result == 1
+    summary = path.read_text(encoding="utf-8")
+    assert "Live-model release readiness" in summary
+    assert "src/kicad_mcp/evals/selector.py" in summary
+    assert "protected" in summary
+    assert "Do **not** edit the digest manually" in summary

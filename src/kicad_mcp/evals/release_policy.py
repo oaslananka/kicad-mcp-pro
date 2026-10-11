@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+import copy
 import fnmatch
 import hashlib
 import os
@@ -91,6 +93,7 @@ class ReleasePolicyDecision:
     smoke_configurations: tuple[str, ...]
     release_base_ref: str | None
     release_contract_changed: bool | None
+    contract_changed_paths: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -103,6 +106,7 @@ class ReleasePolicyDecision:
             "smoke_configurations": list(self.smoke_configurations),
             "release_base_ref": self.release_base_ref,
             "release_contract_changed": self.release_contract_changed,
+            "contract_changed_paths": list(self.contract_changed_paths),
         }
 
 
@@ -292,6 +296,89 @@ def _normalize_workflow_action_pins(path: str, content: bytes) -> bytes:
     return _ACTION_PIN_RE.sub(rb"\1", content)
 
 
+# Intentionally narrow: this is a reviewed, non-model-facing maintenance
+# exception, NOT an AST-based blanket bypass for agent adapter changes.
+# Removing this unused *name* from an already-executed from-import leaves the
+# module import and all remaining bindings intact. Preserve the raw digest.
+_VERIFIED_UNUSED_IMPORT = (
+    "scripts/run_live_model_eval.py",
+    "kicad_mcp.evals.live_runner",
+    "EvidenceSanitizationError",
+)
+
+
+def _approved_nonfunctional_import_removal(
+    path: str, old_content: bytes, new_content: bytes
+) -> bool:
+    """Accept only the reviewed, unused alias removal from an existing import.
+
+    Never normalize arbitrary Python, import side effects, comments, prompts,
+    or changes to any other model-facing file. AST must otherwise be identical.
+    """
+    file_path, module, alias = _VERIFIED_UNUSED_IMPORT
+    if path != file_path:
+        return False
+    try:
+        previous = ast.parse(old_content.decode("utf-8"))
+        current = ast.parse(new_content.decode("utf-8"))
+    except (UnicodeDecodeError, SyntaxError):
+        return False
+    if not isinstance(previous, ast.Module) or not isinstance(current, ast.Module):
+        return False
+    # Reflection can observe even an unused module-global name; fail closed.
+    reflective_calls = {"eval", "exec", "globals", "locals", "vars", "dir"}
+    for node in ast.walk(previous):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in reflective_calls:
+                return False
+        if isinstance(node, ast.Name) and node.id == alias and isinstance(node.ctx, ast.Load):
+            return False
+    canonical_previous = copy.deepcopy(previous)
+    candidates = [
+        node
+        for node in canonical_previous.body
+        if isinstance(node, ast.ImportFrom)
+        and node.level == 0
+        and node.module == module
+        and len(node.names) > 1
+        and sum(name.name == alias and name.asname is None for name in node.names) == 1
+    ]
+    if len(candidates) != 1:
+        return False
+    candidates[0].names = [name for name in candidates[0].names if name.name != alias]
+    return ast.dump(canonical_previous, include_attributes=False) == ast.dump(
+        current, include_attributes=False
+    )
+
+
+def _contract_changed_paths(
+    repo_root: str | Path,
+    policy: ReleasePolicyConfig,
+    *,
+    base_ref: str,
+    head_ref: str,
+) -> tuple[str, ...]:
+    """List actual model-facing file differences, including added/deleted files."""
+    root = Path(repo_root)
+    paths = cast(str, _git(root, "diff", "--name-only", "--no-renames", base_ref, head_ref))
+    return tuple(sorted(path for path in paths.splitlines() if _matches_contract(path, policy)))
+
+
+def _only_verified_nonfunctional_release_diff(
+    repo_root: str | Path, policy: ReleasePolicyConfig, *, base_ref: str, head_ref: str
+) -> bool:
+    paths = _contract_changed_paths(repo_root, policy, base_ref=base_ref, head_ref=head_ref)
+    if paths != (_VERIFIED_UNUSED_IMPORT[0],):
+        return False
+    root = Path(repo_root)
+    try:
+        original = cast(bytes, _git(root, "show", f"{base_ref}:{paths[0]}", text=False))
+        candidate = cast(bytes, _git(root, "show", f"{head_ref}:{paths[0]}", text=False))
+    except ReleasePolicyError:
+        return False
+    return _approved_nonfunctional_import_removal(paths[0], original, candidate)
+
+
 def compute_agent_contract_digest(
     repo_root: str | Path,
     policy: ReleasePolicyConfig,
@@ -440,6 +527,29 @@ def evaluate_release_readiness(
     current_digest = compute_agent_contract_digest(repo_root, policy, ref=ref)
     release_digest = compute_agent_contract_digest(repo_root, policy, ref=release_base_ref)
     release_contract_changed = current_digest != release_digest
+    changed_paths = (
+        _contract_changed_paths(repo_root, policy, base_ref=release_base_ref, head_ref=ref)
+        if release_contract_changed
+        else ()
+    )
+    # Keep the byte-level digest and original approved evidence unchanged.
+    # Only this explicitly reviewed no-op deletion can avoid a full re-baseline.
+    verified_noop = release_contract_changed and _only_verified_nonfunctional_release_diff(
+        repo_root, policy, base_ref=release_base_ref, head_ref=ref
+    )
+    if verified_noop:
+        return ReleasePolicyDecision(
+            mode="none",
+            reason="verified_unused_import_only_since_release",
+            baseline_age_days=None,
+            current_contract_digest=current_digest,
+            baseline_contract_digest=baseline.agent_contract_digest,
+            required_configurations=baseline.required_configurations,
+            smoke_configurations=policy.smoke_configurations,
+            release_base_ref=release_base_ref,
+            release_contract_changed=False,
+            contract_changed_paths=changed_paths,
+        )
 
     if not release_contract_changed:
         return ReleasePolicyDecision(
@@ -452,6 +562,7 @@ def evaluate_release_readiness(
             smoke_configurations=policy.smoke_configurations,
             release_base_ref=release_base_ref,
             release_contract_changed=False,
+            contract_changed_paths=changed_paths,
         )
 
     if not baseline.approved:
@@ -465,6 +576,7 @@ def evaluate_release_readiness(
             smoke_configurations=policy.smoke_configurations,
             release_base_ref=release_base_ref,
             release_contract_changed=True,
+            contract_changed_paths=changed_paths,
         )
 
     approved_at = baseline.approved_at
@@ -484,6 +596,7 @@ def evaluate_release_readiness(
             smoke_configurations=policy.smoke_configurations,
             release_base_ref=release_base_ref,
             release_contract_changed=True,
+            contract_changed_paths=changed_paths,
         )
     if age_days > policy.baseline_max_age_days:
         return ReleasePolicyDecision(
@@ -496,6 +609,7 @@ def evaluate_release_readiness(
             smoke_configurations=policy.smoke_configurations,
             release_base_ref=release_base_ref,
             release_contract_changed=True,
+            contract_changed_paths=changed_paths,
         )
     if current_digest != baseline.agent_contract_digest:
         return ReleasePolicyDecision(
@@ -508,6 +622,7 @@ def evaluate_release_readiness(
             smoke_configurations=policy.smoke_configurations,
             release_base_ref=release_base_ref,
             release_contract_changed=True,
+            contract_changed_paths=changed_paths,
         )
     return ReleasePolicyDecision(
         mode="smoke",
@@ -519,6 +634,7 @@ def evaluate_release_readiness(
         smoke_configurations=policy.smoke_configurations,
         release_base_ref=release_base_ref,
         release_contract_changed=True,
+        contract_changed_paths=changed_paths,
     )
 
 
