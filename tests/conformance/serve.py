@@ -296,9 +296,11 @@ def make_app() -> Starlette:
     def static_binary() -> bytes:
         return base64.b64decode(_PNG)
 
-    @server.resource("test://template/{id}/data")
-    def template(id: str) -> str:
-        return json.dumps({"id": id, "templateTest": True, "data": f"Data for ID: {id}"})
+    @server.resource("test://template/{resource_id}/data")
+    def template(resource_id: str) -> str:
+        return json.dumps(
+            {"id": resource_id, "templateTest": True, "data": f"Data for ID: {resource_id}"}
+        )
 
     @server.prompt(description="Test-only MCP conformance prompt using the actual server.")
     def test_simple_prompt() -> str:
@@ -365,8 +367,10 @@ def make_app() -> Starlette:
     ) -> Completion:
         return Completion(values=[], total=0, has_more=False)
 
-    assert server.allowed_tool_names is not None
-    server.allowed_tool_names.update(
+    allowed_tools = server.allowed_tool_names
+    if allowed_tools is None:
+        raise RuntimeError("Conformance fixtures require an explicit restricted tool profile")
+    allowed_tools.update(
         {
             "test_simple_text",
             "test_image_content",
