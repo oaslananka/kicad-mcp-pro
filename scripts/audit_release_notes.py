@@ -9,10 +9,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
-import subprocess
 import sys
 from pathlib import Path
+
+from git import Git, GitCommandError
 
 MATERIAL = {"feat", "fix", "perf", "security", "compat", "revert"}
 INTERNAL = {"test", "style"}
@@ -27,19 +27,11 @@ class AuditError(Exception):
 
 
 def git(repo: Path, *args: str) -> str:
-    executable = shutil.which("git")
-    if executable is None:
-        raise AuditError("git executable is unavailable")
-    proc = subprocess.run(
-        [executable, "-C", str(repo), *args],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=40,
-    )
-    if proc.returncode:
-        raise AuditError(f"git {args[0]} failed: {proc.stderr.strip()[:300]}")
-    return proc.stdout.strip()
+    try:
+        # Existing pinned GitPython dependency; an argument vector, never a shell.
+        return Git(repo).execute(["git", "-C", str(repo), *args]).strip()
+    except GitCommandError as exc:
+        raise AuditError(f"git {args[0]} failed: {str(exc)[:300]}") from exc
 
 
 def verified_commit(repo: Path, ref: str) -> str:
@@ -231,7 +223,7 @@ def main() -> int:
             args.candidate,
             set(args.families),
         )
-    except (AuditError, json.JSONDecodeError, OSError, subprocess.TimeoutExpired) as exc:
+    except (AuditError, json.JSONDecodeError, OSError) as exc:
         print(f"release audit ERROR: {exc}", file=sys.stderr)
         return 2
     json_text = json.dumps(result, sort_keys=True, indent=2) + "\n"

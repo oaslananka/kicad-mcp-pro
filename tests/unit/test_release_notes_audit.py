@@ -1,11 +1,10 @@
 """Immutable release-note coverage regression tests."""
 
 import json
-import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
+from git import Git
 
 from scripts.audit_release_notes import AuditError, audit, version_notes
 
@@ -35,11 +34,7 @@ def test_version_section_absence_or_duplication_fails_closed() -> None:
 
 
 def _git(repo: Path, *args: str) -> str:
-    executable = shutil.which("git")
-    assert executable is not None
-    return subprocess.run(
-        [executable, "-C", str(repo), *args], check=True, capture_output=True, text=True
-    ).stdout.strip()
+    return Git(repo).execute(["git", "-C", str(repo), *args]).strip()
 
 
 def _write_commit(repo: Path, path: str, value: str, message: str) -> str:
