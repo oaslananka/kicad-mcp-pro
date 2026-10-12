@@ -52,6 +52,25 @@ def _compatibility_matrix() -> dict[str, object]:
     }
 
 
+@pytest.mark.parametrize(
+    ("constant", "expected"),
+    [
+        ("KICAD_10_RANGE", "10.0.x"),
+        ("CLEAN_DRC_FILENAME", "clean-drc.json"),
+        ("DIRTY_DRC_FILENAME", "dirty-drc.json"),
+        ("IPC2581_FILENAME", "board.ipc2581"),
+        ("CONNECTIVITY_NETLIST_FILENAME", "connectivity-native.net"),
+        ("CANARY_SUMMARY_FILENAME", "summary.json"),
+        ("NET_COMPILATION_OPERATION", "connectivity.net-compilation"),
+        ("NATIVE_NETLIST_AUTHORITY", "kicad-cli:sch-export-netlist-kicadsexpr"),
+        ("PIN_MEMBERSHIP_COMPARISON", "pin-membership-sha256.v1"),
+    ],
+)
+def test_canary_evidence_contract_identifiers_remain_stable(constant: str, expected: str) -> None:
+    """Report filenames and native authority tags are public evidence contracts."""
+    assert getattr(kicad_canary, constant) == expected
+
+
 def test_kicad_canary_matrix_uses_scheduled_non_blocking_deprecated_lanes() -> None:
     matrix = build_canary_matrix(_compatibility_matrix(), include_manual=False)
 

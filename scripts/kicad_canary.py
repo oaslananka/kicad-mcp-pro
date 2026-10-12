@@ -47,6 +47,17 @@ KICAD_VIOLATION_EXIT_CODE = 5
 WINDOWS_PRIMARY_RUNNER = "windows-2025-vs2026"
 WINDOWS_PRIMARY_KICAD_VERSION = "10.0.6"
 
+# Names and filenames persisted in native canary artifacts.
+KICAD_10_RANGE = "10.0.x"
+CLEAN_DRC_FILENAME = "clean-drc.json"
+DIRTY_DRC_FILENAME = "dirty-drc.json"
+IPC2581_FILENAME = "board.ipc2581"
+CONNECTIVITY_NETLIST_FILENAME = "connectivity-native.net"
+CANARY_SUMMARY_FILENAME = "summary.json"
+NET_COMPILATION_OPERATION = "connectivity.net-compilation"
+NATIVE_NETLIST_AUTHORITY = "kicad-cli:sch-export-netlist-kicadsexpr"
+PIN_MEMBERSHIP_COMPARISON = "pin-membership-sha256.v1"
+
 CONNECTIVITY_DIFFERENTIAL_FIXTURE_DIR = (
     REPO_ROOT / "examples" / "gallery" / "esp32-c3-wroom-02-breakout"
 )
@@ -56,7 +67,7 @@ GEOMETRY_DIFFERENTIAL_FIXTURE_ID = "clean-led-kicad10"
 EXPORT_INVENTORY_DIFFERENTIAL_FIXTURE_ID = "clean-led-kicad10"
 
 INSTALLERS = {
-    "10.0.x": {
+    KICAD_10_RANGE: {
         "release_ppa": "ppa:kicad/kicad-10.0-releases",
         "nightly_ppa": "ppa:kicad/kicad-10.0-nightly",
         "package": "kicad",
@@ -372,10 +383,10 @@ def _command_plan(
                 "json",
                 "--severity-all",
                 "--output",
-                str(reports / "clean-drc.json"),
+                str(reports / CLEAN_DRC_FILENAME),
                 str(clean_board),
             ),
-            outputs=(reports / "clean-drc.json",),
+            outputs=(reports / CLEAN_DRC_FILENAME,),
         ),
         CanaryStep(
             name="dirty-drc",
@@ -388,10 +399,10 @@ def _command_plan(
                 "--severity-all",
                 "--exit-code-violations",
                 "--output",
-                str(reports / "dirty-drc.json"),
+                str(reports / DIRTY_DRC_FILENAME),
                 str(dirty_drc),
             ),
-            outputs=(reports / "dirty-drc.json",),
+            outputs=(reports / DIRTY_DRC_FILENAME,),
             expects_violations=True,
         ),
         CanaryStep(
@@ -507,13 +518,13 @@ def _command_plan(
                 "--format",
                 "kicadsexpr",
                 "--output",
-                str(differential / "connectivity-native.net"),
+                str(differential / CONNECTIVITY_NETLIST_FILENAME),
                 str(connectivity_schematic),
             ),
-            outputs=(differential / "connectivity-native.net",),
+            outputs=(differential / CONNECTIVITY_NETLIST_FILENAME,),
             skip_reason=(
                 None
-                if kicad_range == "10.0.x"
+                if kicad_range == KICAD_10_RANGE
                 else "connectivity differential is currently enabled on the stable KiCad 10 lane"
             ),
         ),
@@ -644,10 +655,10 @@ def _command_plan(
                     "export",
                     "ipc2581",
                     "--output",
-                    str(manufacturing / "board.ipc2581"),
+                    str(manufacturing / IPC2581_FILENAME),
                     str(clean_board),
                 ),
-                outputs=(manufacturing / "board.ipc2581",),
+                outputs=(manufacturing / IPC2581_FILENAME,),
                 skip_reason=manufacturing_skip,
             ),
         ]
@@ -1017,7 +1028,8 @@ def _write_differential_summary(artifacts: Path, results: list[DifferentialResul
         return
     report = aggregate_differential_results(results)
     _write_text(
-        artifacts / "differential" / "summary.json", render_differential_report_json(report)
+        artifacts / "differential" / CANARY_SUMMARY_FILENAME,
+        render_differential_report_json(report),
     )
 
 
@@ -1029,7 +1041,7 @@ def _write_connectivity_differential_report(
     native_netlist: Path,
     fixture: Path,
 ) -> DifferentialResult | None:
-    if kicad_range != "10.0.x":
+    if kicad_range != KICAD_10_RANGE:
         return None
 
     fixture_hash = _fixture_hash(fixture)
@@ -1046,9 +1058,9 @@ def _write_connectivity_differential_report(
                 kicad_version=kicad_version,
                 fixture_id=CONNECTIVITY_DIFFERENTIAL_FIXTURE_ID,
                 fixture_hash=fixture_hash,
-                operation="connectivity.net-compilation",
-                authority="kicad-cli:sch-export-netlist-kicadsexpr",
-                comparison_method="pin-membership-sha256.v1",
+                operation=NET_COMPILATION_OPERATION,
+                authority=NATIVE_NETLIST_AUTHORITY,
+                comparison_method=PIN_MEMBERSHIP_COMPARISON,
                 native_result_hash=None,
                 custom_result_hash=custom_hash,
                 authority_available=False,
@@ -1063,9 +1075,9 @@ def _write_connectivity_differential_report(
                     kicad_version=kicad_version,
                     fixture_id=CONNECTIVITY_DIFFERENTIAL_FIXTURE_ID,
                     fixture_hash=fixture_hash,
-                    operation="connectivity.net-compilation",
-                    authority="kicad-cli:sch-export-netlist-kicadsexpr",
-                    comparison_method="pin-membership-sha256.v1",
+                    operation=NET_COMPILATION_OPERATION,
+                    authority=NATIVE_NETLIST_AUTHORITY,
+                    comparison_method=PIN_MEMBERSHIP_COMPARISON,
                     native_result_hash=None,
                     custom_result_hash=custom_hash,
                     authority_available=False,
@@ -1088,9 +1100,9 @@ def _write_connectivity_differential_report(
             kicad_version=kicad_version,
             fixture_id=CONNECTIVITY_DIFFERENTIAL_FIXTURE_ID,
             fixture_hash=fixture_hash,
-            operation="connectivity.net-compilation",
-            authority="kicad-cli:sch-export-netlist-kicadsexpr",
-            comparison_method="pin-membership-sha256.v1",
+            operation=NET_COMPILATION_OPERATION,
+            authority=NATIVE_NETLIST_AUTHORITY,
+            comparison_method=PIN_MEMBERSHIP_COMPARISON,
             native_result_hash=None,
             custom_result_hash=None,
             infrastructure_valid=False,
@@ -1100,7 +1112,7 @@ def _write_connectivity_differential_report(
 
 
 def _differential_lane_for_range(kicad_range: str) -> DifferentialLane | None:
-    if kicad_range == "10.0.x":
+    if kicad_range == KICAD_10_RANGE:
         return "stable"
     if kicad_range.startswith("10.99.") or kicad_range.startswith("11."):
         return "preview"
@@ -1120,8 +1132,8 @@ def _write_drc_differential_results(
 
     source_sha = _source_sha()
     report_paths = {
-        "clean-drc": artifacts / "reports" / "clean-drc.json",
-        "dirty-drc": artifacts / "reports" / "dirty-drc.json",
+        "clean-drc": artifacts / "reports" / CLEAN_DRC_FILENAME,
+        "dirty-drc": artifacts / "reports" / DIRTY_DRC_FILENAME,
     }
     records: list[DifferentialResult] = []
     for step in native_steps:
@@ -1183,7 +1195,7 @@ def _write_export_inventory_differential_result(
         fixture_hash=_fixture_hash(fixture),
         gerber_dir=artifacts / "manufacturing" / "gerbers",
         drill_dir=artifacts / "manufacturing" / "drill",
-        ipc2581_path=artifacts / "manufacturing" / "board.ipc2581",
+        ipc2581_path=artifacts / "manufacturing" / IPC2581_FILENAME,
         authority_available=authority_available,
     )
 
@@ -1198,7 +1210,7 @@ def _write_geometry_differential_result(
     fixture: Path,
     native_authority_available: bool = True,
 ) -> DifferentialResult | None:
-    if kicad_range != "10.0.x":
+    if kicad_range != KICAD_10_RANGE:
         return None
 
     fixture_hash = _fixture_hash(fixture)
@@ -1299,7 +1311,8 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
             "failingFixtures": ["environment"],
         }
         _write_text(
-            artifacts / "summary.json", json.dumps(summary, indent=2, sort_keys=True) + "\n"
+            artifacts / CANARY_SUMMARY_FILENAME,
+            json.dumps(summary, indent=2, sort_keys=True) + "\n",
         )
         _write_text(artifacts / "failing-fixtures.txt", "environment\n")
         print(str(exc), file=sys.stderr)
@@ -1331,7 +1344,7 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
             artifacts=artifacts,
             kicad_range=kicad_range,
             kicad_version=kicad_version,
-            native_netlist=artifacts / "differential" / "connectivity-native.net",
+            native_netlist=artifacts / "differential" / CONNECTIVITY_NETLIST_FILENAME,
             fixture=(
                 artifacts
                 / "workspace"
@@ -1419,7 +1432,9 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
             (result.status for result in differential_results if result.status != "match"),
             "match",
         )
-    _write_text(artifacts / "summary.json", json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    _write_text(
+        artifacts / CANARY_SUMMARY_FILENAME, json.dumps(summary, indent=2, sort_keys=True) + "\n"
+    )
     _write_text(artifacts / "failing-fixtures.txt", "\n".join(failing_fixtures) + "\n")
 
     if failing_fixtures:
