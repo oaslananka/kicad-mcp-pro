@@ -63,6 +63,37 @@ corepack pnpm run check:build
 
 If the full suite exceeds local time limits, run the same underlying pytest suites in documented chunks and record the evidence in the PR.
 
+## Release-note completeness before release PR approval
+
+Release Please may prepare its draft before later feature/fix merges. Resolve the
+**last actually published GitHub Release** and matching component tag separately
+for server, npm and GUI; tag existence alone is not proof of publication.
+Compare against the **exact release PR head SHA**, not floating `main`.
+
+For the already-published v4.2.0-to-v4.3.0 regression case:
+
+```bash
+python3 scripts/audit_release_notes.py \
+  --version 4.3.0 --previous-version 4.2.0 \
+  --candidate 282c7499f67457bb247d2390379410f05e96a3e8 \
+  --json-out release-audit.json --markdown-out release-audit.md
+```
+
+The read-only tool checks exact tag ancestry, candidate source/config/changelog
+versions and immutable commit links. `missing` requires material-impact review;
+`needs_review` and `cross_component_review` are open questions, not exclusions.
+`excluded` records the conservative convention-based reason. Inspect actual
+diffs before deciding what affects users. Native compatibility, release asset
+integrity and manufactured-board acceptance **cannot** be inferred from a note.
+
+Before merging any release PR, reconcile every material uncovered change or
+justify its exclusion, update the PR's generated notes through its normal
+review process, and rerun against the new exact head. Missing tags, history or
+version sections fail closed. Never use this audit to bypass existing required
+checks, approval, tag restrictions or trusted publishing controls. The
+historical example is recorded under `docs/evidence/release-notes/` and flags
+one missing `feat(evals)` #1225 server entry without asserting product failure.
+
 ## Release validation
 
 `.github/workflows/release.yml` is a low-risk validation workflow. It checks release metadata and package build behavior without publishing artifacts or requiring secrets.
