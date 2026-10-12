@@ -140,6 +140,13 @@ def _checked_owned_target(target: Path) -> Path:
 
 def _write_mirror_target(target: Path, content: bytes) -> None:
     safe_target = _checked_owned_target(target)
+    # Enforce the concrete resolved parent as a second sink-local boundary.
+    # A regex filename allowlist alone would not prevent linked ancestor traversal.
+    maintained_roots = tuple(
+        (host_root / name).resolve() for host_root in HOST_ROOTS for name in SKILLS
+    )
+    if not any(root in safe_target.parents for root in maintained_roots):
+        raise ValueError(f"Mirror output outside maintained skills: {target}")
     safe_target.parent.mkdir(parents=True, exist_ok=True)
     safe_target.write_bytes(content)
 
