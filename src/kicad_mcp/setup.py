@@ -250,20 +250,22 @@ def resolve_all_paths(agent_key: str) -> dict[Scope, Path]:
 # Environment variable defaults
 # ---------------------------------------------------------------------------
 
+_PROJECT_DIR_TEMPLATE = "{project_dir}"
+
 _READONLY_ENV: dict[str, str] = {
-    "KICAD_MCP_PROJECT_DIR": "{project_dir}",
+    "KICAD_MCP_PROJECT_DIR": _PROJECT_DIR_TEMPLATE,
     "KICAD_MCP_PROFILE": "default",
     "KICAD_MCP_OPERATING_MODE": "readonly",
 }
 
 _WRITE_ENV: dict[str, str] = {
-    "KICAD_MCP_PROJECT_DIR": "{project_dir}",
+    "KICAD_MCP_PROJECT_DIR": _PROJECT_DIR_TEMPLATE,
     "KICAD_MCP_PROFILE": "build",
     "KICAD_MCP_OPERATING_MODE": "write",
 }
 
 _MANUFACTURING_ENV: dict[str, str] = {
-    "KICAD_MCP_PROJECT_DIR": "{project_dir}",
+    "KICAD_MCP_PROJECT_DIR": _PROJECT_DIR_TEMPLATE,
     "KICAD_MCP_PROFILE": "release",
     "KICAD_MCP_OPERATING_MODE": "manufacturing",
 }
@@ -529,48 +531,51 @@ class ConfigValidationError(ValueError):
     """Raised when a config fails validation."""
 
 
+def _validate_json_agent_entry(data: dict[str, dict[str, object]], agent_key: str) -> list[str]:
+    """Check the agent-specific JSON root without changing legacy validation policy."""
+    issues: list[str] = []
+    if agent_key == "codex":
+        # TOML is validated via the Codex-specific path below.
+        return issues
+    if agent_key == "vscode":
+        if "servers" not in data:
+            issues.append('Missing top-level "servers" key (expected for VS Code).')
+        elif "kicad" not in data.get("servers", {}):
+            issues.append('Missing "servers.kicad" entry.')
+    elif agent_key == "opencode":
+        if "mcp" not in data:
+            issues.append('Missing top-level "mcp" key (expected for OpenCode).')
+        elif "kicad" not in data.get("mcp", {}):
+            # A remote server can be registered under a different name.
+            pass
+    else:
+        if "mcpServers" not in data:
+            issues.append('Missing top-level "mcpServers" key.')
+        elif "kicad" not in data.get("mcpServers", {}):
+            issues.append('Missing "mcpServers.kicad" entry.')
+    return issues
+
+
 def validate_config(config_str: str, agent_key: str, fmt: ConfigFormat) -> list[str]:
     """Validate a configuration string for a specific agent.
 
     Returns a list of issues (empty = valid).
     """
-    issues: list[str] = []
-
     if not config_str.strip():
         return ["Config string is empty."]
-
     if fmt == "json":
         try:
             data = json.loads(config_str)
         except json.JSONDecodeError as exc:
             return [f"Invalid JSON: {exc}"]
+        return _validate_json_agent_entry(data, agent_key)
 
-        if agent_key == "codex":
-            # TOML is validated via the Codex-specific path below
-            pass
-        elif agent_key == "vscode":
-            if "servers" not in data:
-                issues.append('Missing top-level "servers" key (expected for VS Code).')
-            elif "kicad" not in data.get("servers", {}):
-                issues.append('Missing "servers.kicad" entry.')
-        elif agent_key == "opencode":
-            if "mcp" not in data:
-                issues.append('Missing top-level "mcp" key (expected for OpenCode).')
-            elif "kicad" not in data.get("mcp", {}):
-                # Could be remote with a different key name
-                pass
-        else:
-            if "mcpServers" not in data:
-                issues.append('Missing top-level "mcpServers" key.')
-            elif "kicad" not in data.get("mcpServers", {}):
-                issues.append('Missing "mcpServers.kicad" entry.')
-
-    elif fmt == "toml":
+    issues: list[str] = []
+    if fmt == "toml":
         if "command" not in config_str or "args" not in config_str:
             issues.append("TOML config should contain command and args keys.")
         if "[mcp_servers.kicad]" not in config_str:
             issues.append("Missing [mcp_servers.kicad] section header (expected for Codex).")
-
     return issues
 
 
@@ -913,6 +918,15 @@ def _run_smoke_test(agent_key: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _format_validation_issues(issues: list[str]) -> str:
+    """Preserve the CLI warning layout for successfully written configs."""
+    if not issues:
+        return ""
+    lines = [f"⚠ Config written but has {len(issues)} issue(s):"]
+    lines.extend(f"  - {issue}" for issue in issues)
+    return "\n" + "\n".join(lines)
+
+
 def setup_agent(
     agent: str,
     project_dir: str | None = None,
@@ -956,13 +970,7 @@ def setup_agent(
             agent, config_str, scope, project_dir=project if scope == "project" else None
         )
         if ok:
-            # Validate after writing
-            issues = validate_config(config_str, agent, fmt)
-            validation = ""
-            if issues:
-                validation = f"\n⚠ Config written but has {len(issues)} issue(s):"
-                for iss in issues:
-                    validation += f"\n  - {iss}"
+            validation = _format_validation_issues(validate_config(config_str, agent, fmt))
             return f"✓ Config written to {path_str}{validation}\n\n{config_str}"
         return f"Failed to write config: {path_str}\n\nConfig snippet:\n{config_str}"
 

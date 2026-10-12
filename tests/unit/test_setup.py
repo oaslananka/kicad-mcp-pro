@@ -19,6 +19,7 @@ from kicad_mcp.setup import (
     check_all_agent_configs,
     generate_config,
     resolve_path,
+    setup_agent,
     validate_config,
     write_config,
 )
@@ -300,6 +301,46 @@ class TestCheckAgentConfig:
         keys = [r["key"] for r in results]
         assert "claude-code" in keys
         assert "chatgpt" not in keys  # remote excluded
+
+
+@pytest.mark.parametrize(
+    ("agent_key", "config", "expected"),
+    [
+        ("vscode", "{}", ['Missing top-level "servers" key (expected for VS Code).']),
+        ("vscode", '{"servers":{}}', ['Missing "servers.kicad" entry.']),
+        ("vscode", '{"servers":{"kicad":{}}}', []),
+        ("opencode", "{}", ['Missing top-level "mcp" key (expected for OpenCode).']),
+        ("opencode", '{"mcp":{}}', []),
+        ("codex", "{}", []),
+        ("claude-code", "{}", ['Missing top-level "mcpServers" key.']),
+        ("claude-code", '{"mcpServers":{}}', ['Missing "mcpServers.kicad" entry.']),
+        ("claude-code", '{"mcpServers":{"kicad":{}}}', []),
+    ],
+)
+def test_json_agent_config_validation_preserves_legacy_results(
+    agent_key: str, config: str, expected: list[str]
+) -> None:
+    assert validate_config(config, agent_key, "json") == expected
+
+
+@pytest.mark.parametrize(
+    ("issues", "warning_text"),
+    [
+        ([], ""),
+        (["first", "second"], "\n⚠ Config written but has 2 issue(s):\n  - first\n  - second"),
+    ],
+)
+def test_setup_write_validation_message_is_unchanged(
+    monkeypatch: pytest.MonkeyPatch, issues: list[str], warning_text: str
+) -> None:
+    monkeypatch.setattr(
+        "kicad_mcp.setup.write_config", lambda *args, **kwargs: ("config.json", True)
+    )
+    monkeypatch.setattr("kicad_mcp.setup.validate_config", lambda *args: issues)
+    snippet, _ = generate_config("claude-code", "/safe/project")
+    assert setup_agent("claude-code", project_dir="/safe/project", write=True) == (
+        f"✓ Config written to config.json{warning_text}\n\n{snippet}"
+    )
 
 
 # ---------------------------------------------------------------------------
