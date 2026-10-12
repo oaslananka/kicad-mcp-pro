@@ -34,7 +34,7 @@ it does not allege a KiCad defect or a regression in this product.
 | --- | --- | --- | --- |
 | `erc-json-unit-scale` | ERC JSON report unit-scale fix ([#25582](https://gitlab.com/kicad/code/kicad/-/work_items/25582)) | Native canary confirms ERC JSON generation and negative exit-code behavior | Compare known coordinate/unit magnitudes and serialized ERC JSON against a versioned fixture; avoid relying on localized report wording |
 | `multi-root-schematic-plot` | Plot every top-level sheet of a multi-root schematic ([#25198](https://gitlab.com/kicad/code/kicad/-/work_items/25198)) | General schematic PDF export exists | A multi-root fixture asserting expected sheet/page identities, counts and no missing output |
-| `bom-project-output-filename` | Honor BOM output filename saved in project ([#24860](https://gitlab.com/kicad/code/kicad/-/work_items/24860)) | Generic BOM creation is exercised | Project-file configured output filename with no unexpected overwrite or path escape |
+| `bom-project-output-filename` | Honor BOM output filename saved in project ([#24860](https://gitlab.com/kicad/code/kicad/-/work_items/24860)) | Native Linux **10.0.7** operator GUI/Xvfb fixture passed: saved output field, edit→Cancel, reopen-original, unchanged file SHA-256 (see below) | Independent Windows/macOS real GUI reruns before cross-platform acceptance; CLI BOM creation is not proof |
 | `gerber-drill-marks` | Keep drill marks out of Gerber export ([#25532](https://gitlab.com/kicad/code/kicad/-/work_items/25532)) | Gerber + Excellon drill export existence checked | Geometry/content assertions that exclude unintended drill marks and preserve intended plated holes |
 | `allegro-24-25-cli-capability` | Allegro 24.1/25.1 **PCB Editor** importer support and geometry fixes | Current Windows native canary explicitly skips unsupported CLI Allegro format | Inspect 10.0.7 `kicad-cli pcb import --help`; keep product CLI Allegro `blocked` until a tested CLI token exists; GUI format additions are not CLI API proof |
 | `ipc-expanded-object-contracts` | KiCad 10.0.7 IPC board table, variants, zone override and other object handling additions | Actual GUI/IPC smoke uses a bounded subset of four live MCP tools | Focused read/write/roundtrip/negative capability probes for newly used IPC objects before declaring parity |
@@ -87,6 +87,54 @@ a new branch-protection required context. Hosted Windows exact-source execution
 and artifact validation remain separate acceptance gates before this gap is
 classified as validated outside the physical Linux proof. Global version
 promotion and independent GUI/IPC acceptance are still out of scope.
+
+### BOM GUI persisted filename and Cancel acceptance (#24860) — physical Linux 10.0.7
+
+An **operator-only Xvfb-backed real KiCad Project Manager + Schematic Editor**
+qualification confirmed the [upstream #24860](https://gitlab.com/kicad/code/kicad/-/work_items/24860)
+GUI behavior on a locally installed native KiCad **10.0.7**. This is **not**
+a `kicad-cli sch export bom` inference. The upstream report covers two distinct
+contracts: read the project's persisted `schematic.bom_export_filename` into
+the **Symbol Fields Table → Export → Output file** field, and discard a user
+edit when clicking **Cancel**, without mutating the project file.
+
+A reproducible, deliberately **manual-only Linux Xvfb** test is stored in
+`tests/gui/manual_kicad_107_bom_gui.sh`. On an operator workstation equipped
+with the *official installed single-root demo*, KiCad 10.0.7, Xvfb, `xdotool`
+and apt Python `wx`, run:
+
+```bash
+KICAD_BOM_GUI_OPERATOR=1 bash tests/gui/manual_kicad_107_bom_gui.sh
+```
+
+The script has **no user-project path argument**. It copies only the
+installation-bundled single-root RoyalBlue54L NFC schematic/project into a
+throwaway workspace, injects `BOM_STORED_PROJECT_107.csv` into a **copied**
+`.kicad_pro`, and provisions private `HOME`, XDG settings, library tables and
+software renderer for a fresh Xvfb 1440×900 session. No KiCad startup wizard,
+telemetry permission, third-party browser terms or user configuration is
+accepted or modified. Interaction **fails closed** if an unknown visible
+window/modal appears. Raw screenshots, host paths, generated BOM files and
+project copies are **not uploaded**; temporary workspace and display are
+destroyed at completion.
+
+The probe machine-reads the native wxWidgets text field through the isolated
+Xvfb clipboard (not OCR), checks the **exact** stored filename, edits it to
+`BOM_CANCEL_MUST_DISCARD_107.csv`, confirms the edit was actually applied,
+clicks **Cancel**, requires the modal to close and the project SHA-256 to stay
+**byte-identical**, then **reopens** the BOM Export dialog and requires the
+*original* stored value rather than the cancelled edit. It cancels the reopened
+dialog and checks the same SHA-256 again and confirms no BOM output was
+written. An independently observed small-fixture manual trial produced all
+these results at KiCad CLI/editor 10.0.7; the scripted run repeated them with
+`status=pass` and all four flags `true`.
+
+**Acceptance scope:** one genuine GUI session on one Linux native 10.0.7 host,
+with explicit operator consent for a disposable test only. Not proof of
+Windows/macOS GUI behavior or a stable, headless KiCad 10 IPC API. It adds **no**
+automatic PR/`push`/release workflow, no installed package dependency and no
+global feature-parity promotion. Keep BOM GUI portable-platform qualification
+and independent GUI/IPC/manual gates in the #1181 review queue.
 
 ### Gerber NPTH drill-mark exclusion candidate acceptance (#25532)
 

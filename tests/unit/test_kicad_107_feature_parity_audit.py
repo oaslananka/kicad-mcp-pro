@@ -53,6 +53,7 @@ def test_audit_accounts_for_every_targeted_upstream_gap_without_claiming_pass() 
     assert "scripts/kicad_107_erc_units.py" in audit
     assert "scripts/kicad_107_flat_root_pdf.py" in audit
     assert "scripts/kicad_107_gerber_drill_marks.py" in audit
+    assert "tests/gui/manual_kicad_107_bom_gui.sh" in audit
     assert "10.0.6" in audit and "10.0.7" in audit
     assert "#25582" in audit and "#24860" in audit and "#25532" in audit
     assert "#729" in audit and "#730" in audit
