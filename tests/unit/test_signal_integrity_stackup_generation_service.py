@@ -52,8 +52,10 @@ def test_four_layer_fabricator_role_contract_remains_stable(
 ) -> None:
     """Stackup roles are consumed by downstream KiCad layer mapping."""
     template = _stackup_templates(manufacturer, 4)
-    assert (template[2]["name"], template[4]["name"]) == ("In1.Cu", "In2.Cu")
-    assert (template[2]["role"], template[4]["role"]) == expected_roles
+    actual_names = (template[2]["name"], template[4]["name"])
+    actual_roles = (template[2]["role"], template[4]["role"])
+    assert actual_names == ("In1.Cu", "In2.Cu")
+    assert actual_roles == expected_roles
 
 
 @pytest.mark.parametrize("manufacturer", ["JLCPCB", "PCBWay", "Generic"])
