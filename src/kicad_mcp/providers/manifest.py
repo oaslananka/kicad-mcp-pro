@@ -12,6 +12,8 @@ from kicad_mcp.project.hardware_intent_contract import StrictContractModel
 
 from .contracts import IDENTIFIER, ProviderFamily, ProviderOperation, ProviderPermission
 
+_EXACT_NETWORK_HOST_ERROR = "network hosts must be exact names"
+
 
 class ProviderManifest(StrictContractModel):
     model_config = ConfigDict(revalidate_instances="always")
@@ -71,7 +73,7 @@ class ProviderManifest(StrictContractModel):
             or any(host_label.fullmatch(label) is None for label in host.split("."))
             for host in self.network_hosts
         ):
-            raise ValueError("network hosts must be exact names")
+            raise ValueError(_EXACT_NETWORK_HOST_ERROR)
         for host in self.network_hosts:
             # Numeric-looking DNS names may resolve as legacy IPv4 shortcuts.
             # Require strict canonical four-octet syntax for such declarations.
@@ -79,9 +81,9 @@ class ProviderManifest(StrictContractModel):
                 try:
                     IPv4Address(host)
                 except ValueError as exc:
-                    raise ValueError("network hosts must be exact names") from exc
+                    raise ValueError(_EXACT_NETWORK_HOST_ERROR) from exc
             elif re.fullmatch(r"0[xX][0-9a-fA-F]+", host):
-                raise ValueError("network hosts must be exact names")
+                raise ValueError(_EXACT_NETWORK_HOST_ERROR)
         return self
 
     def find_operation(self, name: str, capability: str) -> ProviderOperation | None:

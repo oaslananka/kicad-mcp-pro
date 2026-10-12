@@ -40,6 +40,33 @@ def test_pcbway_template_preserves_manufacturer_specific_core() -> None:
     assert template[3]["thickness_mm"] == 1.124
 
 
+@pytest.mark.parametrize(
+    ("manufacturer", "expected_roles"),
+    [
+        ("PCBWay", ("ground plane", "power / signal")),
+        ("JLCPCB", ("solid GND plane", "power / signal")),
+    ],
+)
+def test_four_layer_fabricator_role_contract_remains_stable(
+    manufacturer: str, expected_roles: tuple[str, str]
+) -> None:
+    """Stackup roles are consumed by downstream KiCad layer mapping."""
+    template = _stackup_templates(manufacturer, 4)
+    assert (template[2]["name"], template[4]["name"]) == ("In1.Cu", "In2.Cu")
+    assert (template[2]["role"], template[4]["role"]) == expected_roles
+
+
+@pytest.mark.parametrize("manufacturer", ["JLCPCB", "PCBWay", "Generic"])
+def test_six_layer_fabricator_inner_copper_names_unchanged(manufacturer: str) -> None:
+    template = _stackup_templates(manufacturer, 6)
+    assert [entry["name"] for entry in template if str(entry["name"]).startswith("In")] == [
+        "In1.Cu",
+        "In2.Cu",
+        "In3.Cu",
+        "In4.Cu",
+    ]
+
+
 def test_generate_preserves_stackup_input_validation() -> None:
     service = SignalIntegrityStackupGenerationService()
 

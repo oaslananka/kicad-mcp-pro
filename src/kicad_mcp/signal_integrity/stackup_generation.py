@@ -12,6 +12,12 @@ from ..utils.impedance import (
     trace_impedance,
 )
 
+# Fabricator template layer identifiers and role labels used in generated reports.
+INNER_1_COPPER = "In1.Cu"
+INNER_2_COPPER = "In2.Cu"
+GROUND_PLANE_ROLE = "ground plane"
+SOLID_GND_PLANE_ROLE = "solid GND plane"
+
 
 def _stackup_templates(manufacturer: str, layer_count: int) -> list[dict[str, str | float]]:
     normalized = manufacturer.casefold()
@@ -26,14 +32,14 @@ def _stackup_templates(manufacturer: str, layer_count: int) -> list[dict[str, st
                 {"name": "F.Cu", "role": "signal", "material": "Copper", "thickness_mm": 0.035},
                 {"name": "Prepreg", "role": "dielectric", "material": "FR4", "thickness_mm": 0.17},
                 {
-                    "name": "In1.Cu",
-                    "role": "ground plane",
+                    "name": INNER_1_COPPER,
+                    "role": GROUND_PLANE_ROLE,
                     "material": "Copper",
                     "thickness_mm": 0.018,
                 },
                 {"name": "Core", "role": "dielectric", "material": "FR4", "thickness_mm": 1.124},
                 {
-                    "name": "In2.Cu",
+                    "name": INNER_2_COPPER,
                     "role": "power / signal",
                     "material": "Copper",
                     "thickness_mm": 0.018,
@@ -45,13 +51,18 @@ def _stackup_templates(manufacturer: str, layer_count: int) -> list[dict[str, st
                 {"name": "F.Cu", "role": "signal", "material": "Copper", "thickness_mm": 0.035},
                 {"name": "Prepreg", "role": "dielectric", "material": "FR4", "thickness_mm": 0.11},
                 {
-                    "name": "In1.Cu",
-                    "role": "ground plane",
+                    "name": INNER_1_COPPER,
+                    "role": GROUND_PLANE_ROLE,
                     "material": "Copper",
                     "thickness_mm": 0.018,
                 },
                 {"name": "Core", "role": "dielectric", "material": "FR4", "thickness_mm": 0.35},
-                {"name": "In2.Cu", "role": "signal", "material": "Copper", "thickness_mm": 0.018},
+                {
+                    "name": INNER_2_COPPER,
+                    "role": "signal",
+                    "material": "Copper",
+                    "thickness_mm": 0.018,
+                },
                 {"name": "Core", "role": "dielectric", "material": "FR4", "thickness_mm": 0.65},
                 {
                     "name": "In3.Cu",
@@ -62,7 +73,7 @@ def _stackup_templates(manufacturer: str, layer_count: int) -> list[dict[str, st
                 {"name": "Core", "role": "dielectric", "material": "FR4", "thickness_mm": 0.35},
                 {
                     "name": "In4.Cu",
-                    "role": "ground plane",
+                    "role": GROUND_PLANE_ROLE,
                     "material": "Copper",
                     "thickness_mm": 0.018,
                 },
@@ -82,14 +93,14 @@ def _stackup_templates(manufacturer: str, layer_count: int) -> list[dict[str, st
             {"name": "F.Cu", "role": "signal", "material": "Copper", "thickness_mm": 0.035},
             {"name": "Prepreg", "role": "dielectric", "material": "FR4", "thickness_mm": 0.18},
             {
-                "name": "In1.Cu",
-                "role": "solid GND plane",
+                "name": INNER_1_COPPER,
+                "role": SOLID_GND_PLANE_ROLE,
                 "material": "Copper",
                 "thickness_mm": 0.018,
             },
             {"name": "Core", "role": "dielectric", "material": "FR4", "thickness_mm": 1.114},
             {
-                "name": "In2.Cu",
+                "name": INNER_2_COPPER,
                 "role": "power / signal",
                 "material": "Copper",
                 "thickness_mm": 0.018,
@@ -101,14 +112,14 @@ def _stackup_templates(manufacturer: str, layer_count: int) -> list[dict[str, st
             {"name": "F.Cu", "role": "signal", "material": "Copper", "thickness_mm": 0.035},
             {"name": "Prepreg", "role": "dielectric", "material": "FR4", "thickness_mm": 0.11},
             {
-                "name": "In1.Cu",
-                "role": "solid GND plane",
+                "name": INNER_1_COPPER,
+                "role": SOLID_GND_PLANE_ROLE,
                 "material": "Copper",
                 "thickness_mm": 0.018,
             },
             {"name": "Core", "role": "dielectric", "material": "FR4", "thickness_mm": 0.33},
             {
-                "name": "In2.Cu",
+                "name": INNER_2_COPPER,
                 "role": "high-speed signal",
                 "material": "Copper",
                 "thickness_mm": 0.018,
@@ -123,7 +134,7 @@ def _stackup_templates(manufacturer: str, layer_count: int) -> list[dict[str, st
             {"name": "Core", "role": "dielectric", "material": "FR4", "thickness_mm": 0.33},
             {
                 "name": "In4.Cu",
-                "role": "solid GND plane",
+                "role": SOLID_GND_PLANE_ROLE,
                 "material": "Copper",
                 "thickness_mm": 0.018,
             },

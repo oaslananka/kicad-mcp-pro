@@ -40,6 +40,17 @@ def test_macos_bundle_support_root_rejects_non_bundle_cli_paths(
     assert discovery._macos_app_bundle_support_root(Path(cli_path)) is None
 
 
+def test_resolved_bundle_library_candidate_order_is_stable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Candidate order must keep the mounted app ahead of unrelated host roots."""
+    monkeypatch.setattr(discovery.platform, "system", lambda: "Darwin")
+    cli = Path("/Volumes/KiCad/KiCad.app/Contents/MacOS/kicad-cli")
+    app_support = cli.parent.parent / "SharedSupport"
+    parents = [cli.parent, cli.parent.parent, cli.parent.parent.parent]
+    assert discovery._cli_adjacent_library_roots(cli) == (
+        [app_support] + parents + [parent / "share" / "kicad" for parent in parents]
+    )
+
+
 @pytest.mark.parametrize("via_symlink", [False, True])
 def test_mounted_macos_app_bundle_beats_preinstalled_host_libraries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, via_symlink: bool
