@@ -61,3 +61,43 @@ compatibility pass. A reviewer must independently inspect the pinned real-host
 execution log/digest, the source commit and environment before updating any
 published compatibility claim. Synthetic unit-test data cannot serve as evidence.
 The normal CI job does not install any agent host or generate passing evidence.
+
+## Isolated Windows host connectivity checkpoint — 2026-10-12 (#1219)
+
+A manual, model-free observation of the exact source revision
+`ed7bb77eda6e2f1ac087942a5b0302cab718b71f` on Windows used KiCad
+10.0.7 and a clean frozen/offline Python environment with KiCad MCP Pro
+4.3.0. **No end-user project, model/provider inference, personal config
+or credential was read or modified**; CLI configuration homes and repository
+clone were restricted to temporary, dedicated locations.
+
+The real **Claude Code 2.1.296** executable reported the actual KiCad MCP
+stdio server as `Connected` through a dedicated `CLAUDE_CONFIG_DIR`. The
+real **Codex CLI 0.151.0** executable listed the same temporary stdio server
+definition using an isolated `CODEX_HOME`, but the Codex CLI's `mcp list`
+is **configuration inspection rather than evidence of an active transport**.
+
+An *independent* pinned Python MCP SDK 2.2.0 client (not Claude/Codex) then
+performed MCP initialization, listed 24 tools in `readonly/default` mode and
+successfully called `kicad_get_server_info`. None of the probed PCB/schematic
+file-mutating names appeared. The `kicad_set_project` tool **was** present:
+it changes only the server's selected active project context and is
+registered with read-tier access. Its write-like name must not be confused
+with on-disk schematic/PCB mutation; nor should this be promoted to a
+general assertion that every possible side effect has been tested.
+
+[Machine-readable, sanitized partial observations](
+../evidence/agent-host/2026-10-12-windows-readonly-stdio-partial.json)
+retain the precise distinction between observed real-host connectivity,
+Codex static config visibility and the *separate* SDK tool invocation.
+No raw host transcripts, executable paths, device/user identities, API
+keys or private project content are included.
+
+**Remaining work:** actual Claude/Codex native host-originated
+`kicad_get_server_info` call; named-host Skill discovery; supported
+Gemini/Cursor/Copilot/OpenCode binary/transport validation; reproducible
+pinned manual-dispatch CI evidence. Running a model-bearing CLI session
+could require login or incur provider usage and was deliberately not
+attempted. The strict native evidence validator intentionally rejects this
+partial record, and `integrations/common/agent-host-evidence.json` remains
+`not-run` for every host. No compatibility promotion is authorized.
