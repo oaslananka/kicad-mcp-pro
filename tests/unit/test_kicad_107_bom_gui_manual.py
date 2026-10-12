@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import os
-import shutil
-import subprocess
 from pathlib import Path
-
-import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tests/gui/manual_kicad_107_bom_gui.sh"
@@ -52,30 +47,28 @@ def test_only_bundled_public_demo_is_copied_and_no_user_project_argument() -> No
     assert "--private-child" in source
 
 
-def test_native_gui_probe_cannot_run_without_operator_approval() -> None:
-    bash = shutil.which("bash")
-    if bash is None:
-        pytest.skip("Bash is not installed on this host")
-    environment = os.environ.copy()
-    environment.pop("KICAD_BOM_GUI_OPERATOR", None)
-    result = subprocess.run(
-        [bash, str(SCRIPT)],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        env=environment,
-        check=False,
-    )
-    assert result.returncode != 0
-    assert "Requires deliberate KICAD_BOM_GUI_OPERATOR=1 opt-in" in result.stderr
-    assert '"status":"pass"' not in result.stdout
+def test_operator_consent_must_precede_native_gui_execution() -> None:
+    """Static fail-closed review; never launch a GUI from normal unit pytest."""
+    source = SCRIPT.read_text(encoding="utf-8")
+    entrypoint = source.split("main() {", 1)[1]
+    permission_gate = "[[ \"${KICAD_BOM_GUI_OPERATOR:-}\" == '1' ]] || fail"
+    assert permission_gate in entrypoint
+    assert entrypoint.index(permission_gate) < entrypoint.index("BOM_WORKSPACE=$(mktemp")
+    assert "[[ $(id -u) -ne 0 ]]" in entrypoint
+    assert "[[ $# -eq 0 ]]" in source
+    assert "Requires deliberate KICAD_BOM_GUI_OPERATOR=1 opt-in" in source
+    assert "Private child mode requires an operator-launched Xvfb session" in source
+    assert "KICAD_BOM_GUI_PRIVATE_CHILD=1 xvfb-run" in source
+    assert "Unknown GUI window/modal detected" in source
 
 
-def test_shell_syntax_and_workflows_stay_separate() -> None:
-    bash = shutil.which("bash")
-    if bash is None:
-        pytest.skip("Bash is not installed on this host")
-    subprocess.run([bash, "-n", str(SCRIPT)], check=True, timeout=10)
+def test_no_automatic_workflow_starts_operator_gui() -> None:
+    """Portable static policy, including Windows without a Bash installation."""
     workflows = ROOT / ".github/workflows"
     for workflow in workflows.glob("*.yml"):
         assert "manual_kicad_107_bom_gui.sh" not in workflow.read_text(encoding="utf-8")
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "#!/usr/bin/env bash" in source
+    assert "set -Eeuo pipefail" in source
+    assert "xvfb-run -a -s '-screen 0 1440x900x24'" in source
+    assert "wx.TheClipboard.GetData(data)" in source
