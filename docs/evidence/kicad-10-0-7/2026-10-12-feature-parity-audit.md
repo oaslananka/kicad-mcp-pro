@@ -119,6 +119,69 @@ board fixtures** pass. This is an availability precondition, **not** a
 supported-version promotion, headless IPC substitute, upstream defect claim,
 or authorization to bypass read-only/manual manufacturing controls.
 
+### Portable operator-only Windows/macOS Schematic Editor BOM fixture (NOT qualified)
+
+KiCad 10.0.7's upstream [BOM regression #24860](https://gitlab.com/kicad/code/kicad/-/work_items/24860)
+is explicitly a **Schematic Editor GUI** problem, not a CLI BOM export
+problem. The pre-existing Windows/macOS `workflow_dispatch` GUI/IPC smoke
+runs **PCB Editor** and does not exercise this field, so neither platform is
+qualified for the BOM fix by those passing jobs.
+
+`scripts/kicad_107_bom_portable.py` provides **cross-platform, dependency-free
+preparation and post-observation integrity checks** for two *brand-new*,
+non-hierarchical, valid native KiCad 10.0.7 schematic/project pairs generated
+under an operator-selected **new absolute workspace directory**. No user
+project, source corpus, global settings, existing directory or GUI is opened,
+overwritten, or cleaned by the script. Different projects A and B have
+different saved `schematic.bom_export_filename` values, so a stale filename
+leaking between projects is detectable. This small empty-sheet fixture was
+opened on **real Linux 10.0.7 Project Manager + Schematic Editor + Symbol
+Fields Table** in an isolated Xvfb profile as a structural preflight; it does
+**not** constitute Windows/macOS GUI qualification.
+
+An operator using an **isolated disposable Windows/macOS GUI account/profile**
+with a verified native 10.0.7 installation may run:
+
+```bash
+python scripts/kicad_107_bom_portable.py prepare --workspace /absolute/new/session-folder
+python scripts/kicad_107_bom_portable.py verify --workspace /absolute/new/session-folder
+```
+
+Use a **platform-native absolute directory path** (for example a newly named
+folder below a temporary directory); on Windows invoke a native Python 3.13+
+interpreter with the same arguments and a drive-qualified absolute path. The
+workspace must **not already exist**. Inspect `manifest.json` for the two
+unique stored BOM output filename sentinels, then manually, on a **trusted
+interactive desktop**:
+
+1. Open `PortableBom107A.kicad_pro` **through KiCad Project Manager**, open
+   Schematic Editor, choose **Tools → Generate Bill of Materials** (or the
+   Symbol Fields Table icon), select **Export**, and record the exact **Output
+   file** value. Click **Cancel**, not Export, then fully close that KiCad
+   session; do not proceed past unknown windows, permission prompts or terms.
+2. Under the **same isolated GUI profile**, open independent project B via
+   its `.kicad_pro`, inspect Export's output field. It must contain project
+   **B's** unique saved value, never A's. Change the field to
+   `BOM_CANCEL_NOT_PERSISTED_107.csv`; click **Cancel** without saving or
+   exporting, then reopen the same dialog and record the restored output
+   field value (B's original). Close KiCad cleanly.
+3. Run `verify` again. It checks SHA-256 of both original `.kicad_pro` and
+   `.kicad_sch` files against the saved preparation manifest and refuses any
+   unexpected `.csv` output, symlinks or malformed project identities. A
+   machine-readable result `integrity-pass` **does not prove that the GUI was
+   used**. With *independently witnessed* exact field readings, optionally
+   submit `--observed-a NAME_A --observed-b NAME_B --reopened-b NAME_B
+   --cancelled-b`; the result is **operator-attested**, not automated proof.
+
+An untrusted party capable of editing both the project and `manifest.json`
+can fabricate matching digests; this checks accidental file changes, **not
+signed provenance**. Neither `integrity-pass` nor `operator-attested` ever
+reports `nativeGuiQualified=true`. Windows/macOS BOM GUI status stays
+**unverified** until a reviewer independently validates native session,
+correct window and fields, exact KiCad build, Cancel semantics and source
+integrity. This helper is deliberately **not** called by automatic CI or
+underlying release/manufacturing workflows and does not change 10.0.6 pins.
+
 ### BOM GUI persisted filename and Cancel acceptance (#24860) — physical Linux 10.0.7
 
 An **operator-only Xvfb-backed real KiCad Project Manager + Schematic Editor**
