@@ -70,6 +70,16 @@ jobs:
             fi
           done
           test "$ok" = true && test -s "$dmg"
+          # Pin the distribution bytes to the previously qualified, code-signed
+          # official KiCad 10.0.7 universal DMG (run #38170872908). A changed
+          # mirror artifact must fail BEFORE it is mounted or executed.
+          expected_sha256='fbc27419b841a9a2a8b143b5875a87b8bd943ffcf487d53c78a8fb6d24c59e27'
+          actual_sha256="$(shasum -a 256 "$dmg" | cut -d " " -f1)"
+          if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+            echo "Unexpected KiCad 10.0.7 DMG SHA-256" >&2
+            exit 1
+          fi
+          export KICAD_MAC_INSTALLER_SHA256="$actual_sha256"
           hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mount_dir" -quiet
           app=$(find "$mount_dir" -type d -name KiCad.app -print -quit)
           test -n "$app"
@@ -90,18 +100,13 @@ jobs:
             "KICAD_MAC_PCB=$pcb" \
             "KICAD_MAC_TEMPLATE=$(dirname "$template")" \
             "KICAD_MAC_SYMBOLS=$(dirname "$symbol")" >> "$GITHUB_ENV"
-          python3 - "$dmg" <<'PY'
-          import hashlib, json, sys
+          python3 - <<'PY'
+          import json, os
           from pathlib import Path
-          digest = hashlib.sha256()
-          with Path(sys.argv[1]).open("rb") as package:
-              for part in iter(lambda: package.read(1048576), b""):
-                  digest.update(part)
-          digest = digest.hexdigest()
           p = Path("artifacts/kicad-10-0-7-macos/summary.json")
           j = json.loads(p.read_text())
           j.update(versionVerified=True, installerSignature="valid",
-                   installerSha256=digest)
+                   installerSha256=os.environ["KICAD_MAC_INSTALLER_SHA256"])
           p.write_text(json.dumps(j, indent=2, sort_keys=True) + "\n")
           PY
 

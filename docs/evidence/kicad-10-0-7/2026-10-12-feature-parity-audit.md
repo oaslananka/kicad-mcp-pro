@@ -23,6 +23,29 @@ They do not assert every KiCad 10.0.7 patch-specific bugfix, every GUI workflow,
 or PCB electrical/manufacturing success. The pre-existing 10.0.6 feature matrix
 still contains deliberately `partial`, `blocked`, and `not-applicable` surfaces.
 
+## macOS DMG supply-chain digest pin (qualification infrastructure)
+
+The opt-in `.github/workflows/kicad-10-0-7-macos-gui-ipc-qualification.yml`
+previously required a valid KiCad Apple app code signature, exact CLI
+version and native GUI/IPC tests, but it only **recorded** the DMG SHA-256
+**after** mounting. A new workflow guard compares the downloaded official
+universal **10.0.7** DMG SHA-256 against
+`fbc27419b841a9a2a8b143b5875a87b8bd943ffcf487d53c78a8fb6d24c59e27`
+**before** calling `hdiutil attach`; any mismatched CERN/MIT mirror content
+now fails closed without mounting or executing it. The digest comes from
+the source-bound, signed [2026-10-11 macOS native evidence](2026-10-11-macos-10-0-7-signed-native-gui-ipc.json)
+and was **independently rechecked** against the bounded artifact of successful
+[macOS run #38170872908](https://github.com/oaslananka/kicad-mcp-pro/actions/runs/38170872908).
+The same attested digest is carried into the sanitized provenance summary.
+
+This hardens the **already manually dispatched native PCB Editor GUI/IPC**
+qualification lane; it does **not** run automatically for PRs, change the
+KiCad 10.0.6 compatibility baselines, or prove the missing Windows/macOS
+**Schematic Editor BOM** user-interface contract. The new exact-head hosted
+macOS execution and artifact verdict, when available, must be recorded as
+separate evidence; workflow static review alone does not establish a tested
+native run.
+
 ## New upstream patch deltas requiring targeted regressions
 
 The upstream [10.0.7 release notes](https://www.kicad.org/blog/2026/10/KiCad-10.0.7-Release/)

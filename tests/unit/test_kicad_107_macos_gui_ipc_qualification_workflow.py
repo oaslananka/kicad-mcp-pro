@@ -58,6 +58,40 @@ def test_official_signed_native_installer_has_no_fallback_to_host_kicad() -> Non
         assert name in source
 
 
+def test_official_mac_dmg_sha256_pinned_to_signed_provenance_before_mount() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    signed_evidence = ROOT / (
+        "docs/evidence/kicad-10-0-7/2026-10-11-macos-10-0-7-signed-native-gui-ipc.json"
+    )
+    import json
+
+    report = json.loads(signed_evidence.read_text(encoding="utf-8"))
+    digest = report["installerSha256"]
+    assert report["installerSignature"] == "valid"
+    assert report["verdict"] == "pass"
+    assert len(digest) == 64
+
+    installation = workflow.split(
+        "- name: Install isolated signed official KiCad 10.0.7 from DMG", 1
+    )[1].split("- name: Provision disposable KiCad 10 GUI profile", 1)[0]
+    assert f"expected_sha256='{digest}'" in installation
+    assert 'actual_sha256="$(shasum -a 256 "$dmg" | cut -d " " -f1)"' in installation
+    assert 'if [[ "$actual_sha256" != "$expected_sha256" ]]; then' in installation
+    assert 'echo "Unexpected KiCad 10.0.7 DMG SHA-256" >&2' in installation
+    assert "exit 1" in installation
+    assert installation.index('test "$ok" = true && test -s "$dmg"') < installation.index(
+        'actual_sha256="$(shasum -a 256'
+    )
+    assert installation.index(
+        'if [[ "$actual_sha256" != "$expected_sha256" ]]'
+    ) < installation.index('hdiutil attach "$dmg"')
+    assert installation.index('hdiutil attach "$dmg"') < installation.index(
+        "codesign --verify --deep --strict"
+    )
+    assert 'installerSha256=os.environ["KICAD_MAC_INSTALLER_SHA256"]' in installation
+    assert 'export KICAD_MAC_INSTALLER_SHA256="$actual_sha256"' in installation
+
+
 def test_gui_and_cli_both_mandatory_with_sanitized_evidence_only() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
     assert "KICAD_MCP_GUI_SMOKE_REQUIRED=1" in source
