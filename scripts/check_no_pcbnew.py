@@ -27,7 +27,11 @@ DEFAULT_ALLOWED_PATHS = ("scripts/check_no_pcbnew.py",)
 
 
 def _is_pcbnew_module(module_name: str | None) -> bool:
-    return bool(module_name) and (module_name == "pcbnew" or module_name.startswith("pcbnew."))
+    return (
+        module_name is not None
+        and bool(module_name)
+        and (module_name == "pcbnew" or module_name.startswith("pcbnew."))
+    )
 
 
 def _repo_relative(path: Path) -> str:
@@ -59,6 +63,20 @@ def _is_allowed(path: Path, patterns: tuple[str, ...]) -> bool:
     return any(fnmatch.fnmatchcase(relative, pattern) for pattern in patterns)
 
 
+def _node_pcbnew_findings(node: ast.AST) -> list[str]:
+    if isinstance(node, ast.Import):
+        return ["deprecated pcbnew import" for alias in node.names if _is_pcbnew_module(alias.name)]
+    if isinstance(node, ast.ImportFrom) and _is_pcbnew_module(node.module):
+        return ["deprecated pcbnew import"]
+    if (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "pcbnew"
+    ):
+        return ["deprecated pcbnew attribute access"]
+    return []
+
+
 def _violations(path: Path) -> list[str]:
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -67,16 +85,10 @@ def _violations(path: Path) -> list[str]:
 
     findings: list[str] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if _is_pcbnew_module(alias.name):
-                    findings.append(f"{path}:{node.lineno}: deprecated pcbnew import")
-        elif isinstance(node, ast.ImportFrom):
-            if _is_pcbnew_module(node.module):
-                findings.append(f"{path}:{node.lineno}: deprecated pcbnew import")
-        elif isinstance(node, ast.Attribute):
-            if isinstance(node.value, ast.Name) and node.value.id == "pcbnew":
-                findings.append(f"{path}:{node.lineno}: deprecated pcbnew attribute access")
+        if isinstance(node, (ast.Import, ast.ImportFrom, ast.Attribute)):
+            findings.extend(
+                f"{path}:{node.lineno}: {finding}" for finding in _node_pcbnew_findings(node)
+            )
     return findings
 
 

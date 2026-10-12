@@ -48,12 +48,12 @@ def _lefthook_command(*arguments: str) -> list[str]:
     return [node, str(launcher), *arguments]
 
 
-def install() -> None:
-    git_dir = _resolve_repo_path(_git_output(["rev-parse", "--git-dir"]))
-    common_dir = _resolve_repo_path(_git_output(["rev-parse", "--git-common-dir"]))
-    effective_hooks = _git_output(["config", "--get", "core.hooksPath"], scope_optional=True)
-    local_hooks = _git_output(["config", "--local", "--get", "core.hooksPath"], scope_optional=True)
-
+def _select_hooks_install(
+    git_dir: Path,
+    common_dir: Path,
+    effective_hooks: str,
+    local_hooks: str,
+) -> list[str]:
     if git_dir != common_dir:
         if effective_hooks:
             raise RuntimeError(
@@ -61,29 +61,31 @@ def install() -> None:
                 "configuration. Configure a worktree-specific hooks path explicitly before "
                 "installing Lefthook."
             )
-        command = _lefthook_command("install")
-    else:
-        expected_dir = (git_dir / "hooks").resolve()
-        if local_hooks:
-            current_dir = _resolve_repo_path(local_hooks)
-            if current_dir != expected_dir:
-                raise RuntimeError(
-                    "repository-local core.hooksPath is custom; refusing to overwrite it. "
-                    f"Current: {local_hooks!r}; expected: {expected_dir}"
-                )
-            command = _lefthook_command("install", "--force")
-        elif effective_hooks:
-            config_value = (
-                ".git/hooks" if git_dir == (ROOT / ".git").resolve() else str(expected_dir)
-            )
-            _run(["git", "config", "--local", "core.hooksPath", config_value])
-            print(
-                "hooks: preserving global core.hooksPath and overriding it only for this repository"
-            )
-            command = _lefthook_command("install", "--force")
-        else:
-            command = _lefthook_command("install")
+        return _lefthook_command("install")
 
+    expected_dir = (git_dir / "hooks").resolve()
+    if local_hooks:
+        current_dir = _resolve_repo_path(local_hooks)
+        if current_dir != expected_dir:
+            raise RuntimeError(
+                "repository-local core.hooksPath is custom; refusing to overwrite it. "
+                f"Current: {local_hooks!r}; expected: {expected_dir}"
+            )
+        return _lefthook_command("install", "--force")
+    if effective_hooks:
+        config_value = ".git/hooks" if git_dir == (ROOT / ".git").resolve() else str(expected_dir)
+        _run(["git", "config", "--local", "core.hooksPath", config_value])
+        print("hooks: preserving global core.hooksPath and overriding it only for this repository")
+        return _lefthook_command("install", "--force")
+    return _lefthook_command("install")
+
+
+def install() -> None:
+    git_dir = _resolve_repo_path(_git_output(["rev-parse", "--git-dir"]))
+    common_dir = _resolve_repo_path(_git_output(["rev-parse", "--git-common-dir"]))
+    effective_hooks = _git_output(["config", "--get", "core.hooksPath"], scope_optional=True)
+    local_hooks = _git_output(["config", "--local", "--get", "core.hooksPath"], scope_optional=True)
+    command = _select_hooks_install(git_dir, common_dir, effective_hooks, local_hooks)
     completed = _run(command, check=False)
     sys.stdout.write(completed.stdout)
     sys.stderr.write(completed.stderr)

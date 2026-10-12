@@ -257,3 +257,47 @@ def test_diagnostic_stdout_without_unique_worker_record_fails_closed(
             timeout=10,
             repository_sha="a" * 40,
         )
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    [
+        ("ordinary stdout", "protocol is missing or ambiguous"),
+        ("KICAD_NATIVE_INSPECT_V1:{not-json}", "worker output is invalid"),
+        (
+            "KICAD_NATIVE_INSPECT_V1:"
+            + json.dumps(
+                {
+                    "footprints": 1100,
+                    "tracks": 5,
+                    "copper_layers": 2,
+                    "kicad_build_version": "10.0.6",
+                    "load_ms": -1,
+                    "inspect_ms": 1,
+                    "peak_rss_kib": 500,
+                }
+            ),
+            "size/metric floor",
+        ),
+    ],
+)
+def test_native_worker_result_decoder_remains_fail_closed(
+    demo: tuple[Path, Path], raw: str, message: str
+) -> None:
+    _root, pinned = demo
+    manifest = json.loads(pinned.read_text())
+    with pytest.raises(RuntimeError, match=message):
+        bench._decode_native_inspection(raw, manifest)
+
+
+def test_native_worker_launch_failure_is_not_silently_accepted(
+    demo: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _manifest = demo
+    monkeypatch.setattr(
+        bench.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=13, stdout="malformed"),
+    )
+    with pytest.raises(RuntimeError, match="cannot claim a benchmark"):
+        bench._execute_native_inspection(root / "project.kicad_pcb", root, 10)
