@@ -69,6 +69,34 @@ complete all six upstream patch deltas, support-platform qualification,
 Windows/macOS *Schematic Editor* BOM GUI, stable expanded IPC bindings or
 manufacturing. `latestVerified` and the parity baseline remain **10.0.6**.
 
+## Exact merged-source signed Windows native patch regressions (2026-10-12)
+
+The **manual** [Windows 2025 native workflow run #38199126080](https://github.com/oaslananka/kicad-mcp-pro/actions/runs/38199126080)
+ran on protected `main@5d5324b1c90d65eebec545d7f83c455b05b6042b`.
+The official **10.0.7** installer was verified against the previously
+reviewed SHA-256 **before execution** and had valid KiCad Authenticode.
+The job finished **SUCCESS**; an independent download of artifact
+`kicad-10-0-7-windows-native` (artifact ID `11724038722`) was checked for
+its exact source revision, installer SHA/signature, **32/32 native canary**
+steps, **5/5 semantic differentials** and **all three** patch-specific
+regressions. No failing fixtures or false PASS/FAIL/divergence were observed.
+The source-bound [bounded Windows JSON record](2026-10-12-main-windows-targeted-patch-regressions.json)
+preserves the five raw report SHA-256 digests, not the reports, free-form logs,
+or local file paths. The downloaded report workspace was deleted after review.
+
+| Upstream patch | **Real Windows 2025 KiCad 10.0.7 CLI** result | Difference from prior Linux check |
+| --- | --- | --- |
+| ERC JSON scaling #25582 | **PASS** J1 (15,14) mm with correct `mm`, `in`, `mils` values; **5** diagnoses per unit | Linux source-bound CLI probe recorded **4** per unit; unit conversions and within-host counts remain consistent |
+| Flat two-root PDF #25198 | **PASS**, both named roots; 2 pages | Windows rendered FlatRoot1 then FlatRoot2; Linux rendered the reverse; test deliberately requires identities, not ordering |
+| NPTH full drill marks #25532 | **PASS**, **0** NPTH F.Cu flashes and **1** plated control flash; Excellon retains 3.2-mm NPTH at (50,50) mm | Same measurable geometry on Linux; Windows **PCB Editor Python API** mode was not separately tested |
+
+This adds **actual Windows native CLI platform evidence**, not a native
+Windows/macOS **Schematic Editor BOM GUI** test, signed macOS BOM field
+verification, unavailable expanded IPC bindings or manufactured-board success.
+`kicad.latestVerified` and feature-parity baseline remain **10.0.6**.
+The different ERC diagnostic counts are recorded, **not** silently
+reconciled or generalized to other schematics.
+
 ## New upstream patch deltas requiring targeted regressions
 
 The upstream [10.0.7 release notes](https://www.kicad.org/blog/2026/10/KiCad-10.0.7-Release/)
