@@ -47,11 +47,7 @@ def _uv_required_version() -> str | None:
     return None
 
 
-def main() -> int:
-    errors: list[str] = []
-    uv_version = _uv_required_version()
-    if uv_version is None:
-        errors.append("uv.toml must define a valid required-version")
+def _check_dockerfile(errors: list[str], uv_version: str | None) -> None:
     dockerfiles = {"Dockerfile": _read("Dockerfile")}
 
     for path, content in dockerfiles.items():
@@ -97,6 +93,9 @@ def main() -> int:
         errors.append("Dockerfile must install the optional KiCad CLI APK package without cache")
     if "addgroup -S kicadmcp" not in dockerfile or "adduser -S -G kicadmcp" not in dockerfile:
         errors.append("Dockerfile must create the non-root runtime user with Alpine tools")
+
+
+def _check_compose(errors: list[str]) -> None:
     compose = _read("docker-compose.yml")
     if ":latest" in compose:
         errors.append("docker-compose.yml must not use :latest images")
@@ -107,6 +106,8 @@ def main() -> int:
     if not _has_digest_pinned_image(compose, "ghcr.io/freerouting/freerouting"):
         errors.append("docker-compose.yml must pin the freerouting image by digest")
 
+
+def _check_publish_workflows(errors: list[str]) -> None:
     docker_workflow = _read_repo(".github/workflows/publish-mcp-registry.yml")
     if "type=raw,value=latest" in docker_workflow:
         errors.append("publish-mcp-registry.yml must not publish a mutable latest tag")
@@ -149,6 +150,8 @@ def main() -> int:
         if not _has_sha_pinned_action(container_workflow, action_path):
             errors.append(message)
 
+
+def _check_docker_docs(errors: list[str]) -> None:
     docs_to_scan = [
         PACKAGE_ROOT / "docs" / "install" / "docker.md",
         PACKAGE_ROOT / "docs" / "deployment" / "docker.md",
@@ -178,6 +181,16 @@ def main() -> int:
     if "read_only: true" not in compose_example:
         errors.append("examples/mcp-docker/docker-compose.yml must mount projects read-only")
 
+
+def main() -> int:
+    errors: list[str] = []
+    uv_version = _uv_required_version()
+    if uv_version is None:
+        errors.append("uv.toml must define a valid required-version")
+    _check_dockerfile(errors, uv_version)
+    _check_compose(errors)
+    _check_publish_workflows(errors)
+    _check_docker_docs(errors)
     if errors:
         for error in errors:
             print(error, file=sys.stderr)

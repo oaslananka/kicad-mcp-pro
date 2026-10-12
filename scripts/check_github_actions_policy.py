@@ -87,6 +87,98 @@ def _permission_writes(value: object, context: str, errors: list[str]) -> set[st
     return writes
 
 
+def _check_workflow_permissions(
+    workflow: Path,
+    data: dict[str, object],
+    errors: list[str],
+) -> dict[str, list[str]]:
+    top_permissions = data.get("permissions")
+    top_writes = _permission_writes(
+        top_permissions, f"{workflow.name}: workflow permissions", errors
+    )
+    if top_writes:
+        errors.append(
+            f"{workflow.name}: write permissions must be scoped to a job: {sorted(top_writes)}"
+        )
+    if not isinstance(top_permissions, dict) or top_permissions.get("contents") != "read":
+        errors.append(f"{workflow.name}: workflow permissions must declare contents: read")
+    jobs = data.get("jobs", {})
+    workflow_writes: dict[str, list[str]] = {}
+    if not isinstance(jobs, dict):
+        errors.append(f"{workflow.name}: jobs must be a mapping")
+        jobs = {}
+    for job_name, job in jobs.items():
+        if not isinstance(job, dict):
+            continue
+        writes = _permission_writes(
+            job.get("permissions"), f"{workflow.name}:{job_name} permissions", errors
+        )
+        if writes:
+            workflow_writes[str(job_name)] = sorted(writes)
+    return workflow_writes
+
+
+def _check_action_reference(
+    action: str,
+    workflow: Path,
+    github_owned: set[str],
+    permitted: set[str],
+    allowed_transitive: set[str],
+    errors: list[str],
+) -> str | None:
+    if action.startswith("./") or action.startswith("docker://"):
+        return None
+    if "@" not in action:
+        errors.append(f"{workflow.name}: action has no immutable ref: {action}")
+        return None
+    action_path, ref = action.rsplit("@", 1)
+    if not SHA_REF.fullmatch(ref):
+        errors.append(f"{workflow.name}: action is not pinned to a 40-character SHA: {action}")
+    parts = action_path.split("/")
+    if len(parts) < 2:
+        errors.append(f"{workflow.name}: malformed action reference: {action}")
+        return None
+    repository = "/".join(parts[:2])
+    if parts[0] in github_owned:
+        return None
+    if repository in allowed_transitive:
+        errors.append(
+            f"{workflow.name}: directly used Action must be promoted from the "
+            f"transitive allowlist: {repository}"
+        )
+    elif repository not in permitted:
+        errors.append(f"{workflow.name}: action repository is not allowlisted: {repository}")
+    return repository
+
+
+def _scan_workflows(
+    root: Path,
+    github_owned: set[str],
+    permitted: set[str],
+    allowed_transitive: set[str],
+    errors: list[str],
+) -> tuple[set[str], dict[str, dict[str, list[str]]]]:
+    workflows = sorted((root / ".github" / "workflows").glob("*.y*ml"))
+    actual_third_party: set[str] = set()
+    actual_writes: dict[str, dict[str, list[str]]] = {}
+    for workflow in workflows:
+        try:
+            data = _load_yaml(workflow)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            errors.append(str(exc))
+            continue
+        workflow_writes = _check_workflow_permissions(workflow, data, errors)
+        if workflow_writes:
+            actual_writes[workflow.name] = workflow_writes
+        for action in _iter_uses(data):
+            repository = _check_action_reference(
+                action, workflow, github_owned, permitted, allowed_transitive, errors
+            )
+            if repository is not None:
+                actual_third_party.add(repository)
+    return actual_third_party, actual_writes
+
+
 def validate_repository(root: Path, policy: dict[str, object]) -> list[str]:
     errors: list[str] = []
     settings = policy.get("repository_settings")
@@ -118,71 +210,13 @@ def validate_repository(root: Path, policy: dict[str, object]) -> list[str]:
         errors.append("actions-policy.json: workflow_write_permissions must be an object")
         expected_writes = {}
 
-    workflows = sorted((root / ".github" / "workflows").glob("*.y*ml"))
-    actual_third_party: set[str] = set()
-    actual_writes: dict[str, dict[str, list[str]]] = {}
-
-    for workflow in workflows:
-        try:
-            data = _load_yaml(workflow)
-        except (OSError, ValueError, yaml.YAMLError) as exc:
-            errors.append(str(exc))
-            continue
-
-        top_permissions = data.get("permissions")
-        top_writes = _permission_writes(
-            top_permissions, f"{workflow.name}: workflow permissions", errors
-        )
-        if top_writes:
-            errors.append(
-                f"{workflow.name}: write permissions must be scoped to a job: {sorted(top_writes)}"
-            )
-        if not isinstance(top_permissions, dict) or top_permissions.get("contents") != "read":
-            errors.append(f"{workflow.name}: workflow permissions must declare contents: read")
-
-        jobs = data.get("jobs", {})
-        workflow_writes: dict[str, list[str]] = {}
-        if not isinstance(jobs, dict):
-            errors.append(f"{workflow.name}: jobs must be a mapping")
-            jobs = {}
-        for job_name, job in jobs.items():
-            if not isinstance(job, dict):
-                continue
-            writes = _permission_writes(
-                job.get("permissions"), f"{workflow.name}:{job_name} permissions", errors
-            )
-            if writes:
-                workflow_writes[str(job_name)] = sorted(writes)
-        if workflow_writes:
-            actual_writes[workflow.name] = workflow_writes
-
-        for action in _iter_uses(data):
-            if action.startswith("./") or action.startswith("docker://"):
-                continue
-            if "@" not in action:
-                errors.append(f"{workflow.name}: action has no immutable ref: {action}")
-                continue
-            action_path, ref = action.rsplit("@", 1)
-            if not SHA_REF.fullmatch(ref):
-                errors.append(
-                    f"{workflow.name}: action is not pinned to a 40-character SHA: {action}"
-                )
-            parts = action_path.split("/")
-            if len(parts) < 2:
-                errors.append(f"{workflow.name}: malformed action reference: {action}")
-                continue
-            repository = "/".join(parts[:2])
-            if parts[0] not in github_owned:
-                actual_third_party.add(repository)
-                if repository in allowed_transitive_repositories:
-                    errors.append(
-                        f"{workflow.name}: directly used Action must be promoted from the "
-                        f"transitive allowlist: {repository}"
-                    )
-                elif repository not in permitted_repositories:
-                    errors.append(
-                        f"{workflow.name}: action repository is not allowlisted: {repository}"
-                    )
+    actual_third_party, actual_writes = _scan_workflows(
+        root,
+        github_owned,
+        permitted_repositories,
+        allowed_transitive_repositories,
+        errors,
+    )
 
     normalized_expected: dict[str, dict[str, list[str]]] = {}
     for workflow, jobs in expected_writes.items():
