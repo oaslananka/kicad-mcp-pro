@@ -228,3 +228,68 @@ def test_availability_helper_does_not_execute_discovered_binary(
     assert module.main() == 1
     assert "not found" in capsys.readouterr().out
     assert "subprocess" not in path.read_text(encoding="utf-8")
+
+
+def test_symlinked_mirror_root_rejected_before_any_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, first, second = _temporary_skill_mirror(tmp_path, monkeypatch)
+    external = tmp_path / "external"
+    external.mkdir()
+    first.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        first.symlink_to(external, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Filesystem disallows directory symlink creation")
+    with pytest.raises(ValueError, match="symlink"):
+        skill_sync.run(write=True)
+    assert not list(external.iterdir())
+    assert not (second / "pcb-design/SKILL.md").exists()
+
+
+def test_symlinked_nested_target_parent_rejected_before_any_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, first, second = _temporary_skill_mirror(tmp_path, monkeypatch)
+    external = tmp_path / "external"
+    external.mkdir()
+    nested = first / "pcb-design/references"
+    nested.parent.mkdir(parents=True)
+    try:
+        nested.symlink_to(external, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Filesystem disallows directory symlink creation")
+    with pytest.raises(ValueError, match="symlink"):
+        skill_sync.run(write=True)
+    assert not list(external.iterdir())
+    assert not (second / "pcb-design/SKILL.md").exists()
+
+
+def test_symlinked_canonical_directory_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    canonical, _, _ = _temporary_skill_mirror(tmp_path, monkeypatch)
+    original = canonical / "pcb-design"
+    destination = tmp_path / "external-source"
+    original.rename(destination)
+    try:
+        original.symlink_to(destination, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Filesystem disallows directory symlink creation")
+    with pytest.raises(ValueError, match="symlink"):
+        skill_sync.expected_skill_files()
+
+
+def test_symlinked_canonical_nested_directory_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    canonical, _, _ = _temporary_skill_mirror(tmp_path, monkeypatch)
+    external = tmp_path / "external-source"
+    external.mkdir()
+    linked = canonical / "pcb-design/external-reference"
+    try:
+        linked.symlink_to(external, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Filesystem disallows directory symlink creation")
+    with pytest.raises(ValueError, match="symlink"):
+        skill_sync.expected_skill_files()
