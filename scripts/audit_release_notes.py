@@ -18,7 +18,7 @@ MATERIAL = {"feat", "fix", "perf", "security", "compat", "revert"}
 INTERNAL = {"test", "style"}
 SHA_LINK = re.compile(r"/commit/([0-9a-f]{7,40})(?![0-9a-f])")
 TYPE = re.compile(r"^(?P<kind>[a-z]+)(?:\([^)]+\))?!?\s*:")
-HEADER = re.compile(r"^## \[?(?P<version>[0-9]+\.[0-9]+\.[0-9]+)\]?(?:\(|\s|$)", re.M)
+HEADER = re.compile(r"^## \[?(?P<version>\d+\.\d+\.\d+)\]?(?:\(|\s|$)", re.M | re.ASCII)
 FAMILIES = {"mcp-server", "mcp-npm", "kicad-mcp-gui"}
 
 
@@ -90,9 +90,73 @@ def change_classification(subject: str, package_path: str, paths: list[str]) -> 
     return "missing", f"{kind} change has no matching immutable commit link in release notes"
 
 
+def audit_commit_rows(repo: Path, commits: list[str], refs: list[str], path: str) -> list[dict]:
+    rows = []
+    for sha in commits:
+        subject = git(repo, "show", "-s", "--format=%s", sha)
+        paths = changed_paths(repo, sha)
+        if any(sha.startswith(ref) for ref in refs):
+            status, reason = "matched", "explicit commit permalink in versioned notes"
+        else:
+            status, reason = change_classification(subject, path, paths)
+        rows.append(
+            {"sha": sha, "subject": subject, "status": status, "reason": reason, "paths": paths}
+        )
+    return rows
+
+
+def audit_family(
+    repo: Path, packages: dict, component: str, previous: str, candidate_sha: str, version: str
+) -> dict:
+    matches = [
+        (path, setting)
+        for path, setting in packages.items()
+        if setting.get("component") == component
+    ]
+    if len(matches) != 1:
+        raise AuditError(f"expected one config entry for {component}")
+    path, setting = matches[0]
+    prefix = setting.get("tag-prefix")
+    if not isinstance(prefix, str) or not prefix:
+        raise AuditError(f"missing tag prefix for {component}")
+    tag = f"{prefix}{previous}"
+    base_sha = verified_commit(repo, f"refs/tags/{tag}")
+    git(repo, "merge-base", "--is-ancestor", base_sha, candidate_sha)
+    changelog_path = ("" if path == "." else path + "/") + setting.get(
+        "changelog-path", "CHANGELOG.md"
+    )
+    notes = version_notes(blob(repo, candidate_sha, changelog_path), version)
+    refs = SHA_LINK.findall(notes)
+    commits = git(repo, "rev-list", "--reverse", f"{base_sha}..{candidate_sha}").splitlines()
+    for ref in refs:
+        linked = [s for s in commits if s.startswith(ref)]
+        if len(linked) > 1:
+            raise AuditError(f"ambiguous changelog commit link: {ref}")
+    rows = audit_commit_rows(repo, commits, refs, path)
+    summary = {
+        status: sum(row["status"] == status for row in rows)
+        for status in (
+            "matched",
+            "missing",
+            "needs_review",
+            "cross_component_review",
+            "excluded",
+        )
+    }
+    return {
+        "package_path": path,
+        "changelog_path": changelog_path,
+        "previous_tag": tag,
+        "previous_sha": base_sha,
+        "candidate_sha": candidate_sha,
+        "summary": summary,
+        "commits": rows,
+    }
+
+
 def audit(repo: Path, version: str, previous: str, candidate: str, families: set[str]) -> dict:
-    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) or not re.fullmatch(
-        r"[0-9]+\.[0-9]+\.[0-9]+", previous
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version, re.ASCII) or not re.fullmatch(
+        r"\d+\.\d+\.\d+", previous, re.ASCII
     ):
         raise AuditError("versions must be numeric X.Y.Z")
     candidate_sha = verified_commit(repo, candidate)
@@ -108,60 +172,9 @@ def audit(repo: Path, version: str, previous: str, candidate: str, families: set
         "families": {},
     }
     for component in sorted(families):
-        matches = [
-            (path, setting)
-            for path, setting in packages.items()
-            if setting.get("component") == component
-        ]
-        if len(matches) != 1:
-            raise AuditError(f"expected one config entry for {component}")
-        path, setting = matches[0]
-        prefix = setting.get("tag-prefix")
-        if not isinstance(prefix, str) or not prefix:
-            raise AuditError(f"missing tag prefix for {component}")
-        tag = f"{prefix}{previous}"
-        base_sha = verified_commit(repo, f"refs/tags/{tag}")
-        git(repo, "merge-base", "--is-ancestor", base_sha, candidate_sha)
-        changelog_path = ("" if path == "." else path + "/") + setting.get(
-            "changelog-path", "CHANGELOG.md"
+        output["families"][component] = audit_family(
+            repo, packages, component, previous, candidate_sha, version
         )
-        notes = version_notes(blob(repo, candidate_sha, changelog_path), version)
-        refs = SHA_LINK.findall(notes)
-        commits = git(repo, "rev-list", "--reverse", f"{base_sha}..{candidate_sha}").splitlines()
-        for ref in refs:
-            linked = [s for s in commits if s.startswith(ref)]
-            if len(linked) > 1:
-                raise AuditError(f"ambiguous changelog commit link: {ref}")
-        rows = []
-        for sha in commits:
-            subject = git(repo, "show", "-s", "--format=%s", sha)
-            paths = changed_paths(repo, sha)
-            if any(sha.startswith(ref) for ref in refs):
-                status, reason = "matched", "explicit commit permalink in versioned notes"
-            else:
-                status, reason = change_classification(subject, path, paths)
-            rows.append(
-                {"sha": sha, "subject": subject, "status": status, "reason": reason, "paths": paths}
-            )
-        summary = {
-            status: sum(row["status"] == status for row in rows)
-            for status in (
-                "matched",
-                "missing",
-                "needs_review",
-                "cross_component_review",
-                "excluded",
-            )
-        }
-        output["families"][component] = {
-            "package_path": path,
-            "changelog_path": changelog_path,
-            "previous_tag": tag,
-            "previous_sha": base_sha,
-            "candidate_sha": candidate_sha,
-            "summary": summary,
-            "commits": rows,
-        }
     return output
 
 

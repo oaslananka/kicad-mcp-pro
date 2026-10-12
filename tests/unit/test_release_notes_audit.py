@@ -33,6 +33,11 @@ def test_version_section_absence_or_duplication_fails_closed() -> None:
         version_notes("## [1.1.0]\n## [1.1.0]", "1.1.0")
 
 
+def test_unicode_digit_version_rejected() -> None:
+    with pytest.raises(AuditError, match="versions must be numeric"):
+        audit(Path("."), "４.３.０", "4.2.0", "HEAD", {"mcp-server"})
+
+
 def _git(repo: Path, *args: str) -> str:
     return Git(repo).execute(["git", "-C", str(repo), *args]).strip()
 
