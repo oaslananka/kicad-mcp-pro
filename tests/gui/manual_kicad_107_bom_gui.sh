@@ -11,7 +11,8 @@ readonly CANCELLED='BOM_CANCEL_MUST_DISCARD_107.csv'
 fail() { printf 'KiCad BOM GUI qualification failed: %s\n' "$*" >&2; exit 1; }
 
 window_id() {
-  xdotool search --onlyvisible --name "$1" 2>/dev/null | head -n 1 || true
+  local title="$1"
+  xdotool search --onlyvisible --name "$title" 2>/dev/null | head -n 1 || true
 }
 
 wait_for_window() {
