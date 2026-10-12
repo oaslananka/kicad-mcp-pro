@@ -20,7 +20,7 @@ from kicad_mcp.evals.reference_board_quality import score_reference_board_attemp
 
 SCHEMA = "reference-board-attempt-scoreboard.v1"
 _BOARD = re.compile(r"[a-z0-9][a-z0-9-]{0,63}\Z")
-_VERSION = re.compile(r"v[1-9][0-9]*\Z")
+_VERSION = re.compile(r"v[1-9]\d*\Z", re.ASCII)
 
 
 def _summarize_valid_bundle(root: Path, board: str, version: str) -> dict[str, Any]:
@@ -119,6 +119,30 @@ def _valid_entry(path: Path, regex: re.Pattern[str]) -> bool:
     return path.is_dir() and not path.is_symlink() and bool(regex.fullmatch(path.name))
 
 
+def _collect_corpus_versions(root: Path) -> list[dict[str, Any]]:
+    """Enumerate identities without silently skipping malformed evidence."""
+    versions: list[dict[str, Any]] = []
+    for board in sorted(root.iterdir()):
+        if board.name == "README.md" and board.is_file() and not board.is_symlink():
+            continue
+        if not _valid_entry(board, _BOARD):
+            raise ValueError("invalid board")
+        entries = sorted(board.iterdir())
+        if not entries:
+            versions.append(
+                {
+                    "board_id": board.name,
+                    "status": "incomplete",
+                    "reason_code": "no_benchmark_versions",
+                }
+            )
+        for version in entries:
+            if not _valid_entry(version, _VERSION):
+                raise ValueError("invalid version")
+            versions.append(_board_version(version, board.name, version.name))
+    return versions
+
+
 def audit_corpus(root: Path) -> dict[str, Any]:
     """Inventory *all* versions before deciding if anything is publishable."""
     if root.is_symlink() or not root.is_dir():
@@ -127,26 +151,8 @@ def audit_corpus(root: Path) -> dict[str, Any]:
             "status": "invalid_corpus",
             "reason_code": "invalid_corpus_root",
         }
-    versions: list[dict[str, Any]] = []
     try:
-        for board in sorted(root.iterdir()):
-            if board.name == "README.md" and board.is_file() and not board.is_symlink():
-                continue
-            if not _valid_entry(board, _BOARD):
-                raise ValueError("invalid board")
-            entries = sorted(board.iterdir())
-            if not entries:
-                versions.append(
-                    {
-                        "board_id": board.name,
-                        "status": "incomplete",
-                        "reason_code": "no_benchmark_versions",
-                    }
-                )
-            for version in entries:
-                if not _valid_entry(version, _VERSION):
-                    raise ValueError("invalid version")
-                versions.append(_board_version(version, board.name, version.name))
+        versions = _collect_corpus_versions(root)
     except (OSError, ValueError):
         return {
             "schema_version": SCHEMA,

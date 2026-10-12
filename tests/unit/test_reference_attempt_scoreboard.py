@@ -177,3 +177,13 @@ def test_unexpected_file_in_corpus_root_fails_closed(tmp_path: Path) -> None:
     assert result["status"] == "invalid_corpus"
     assert result["reason_code"] == "unsupported_corpus_entry"
     assert "not an allowed evidence tree" not in json.dumps(result)
+
+
+def test_unicode_version_identifier_remains_invalid(tmp_path: Path) -> None:
+    board = tmp_path / "stm32f072-usbc"
+    board.mkdir()
+    (board / "v١").mkdir()
+    report = scoreboard.audit_corpus(tmp_path)
+    assert report["status"] == "invalid_corpus"
+    assert report["reason_code"] == "unsupported_corpus_entry"
+    assert "board_versions" not in report

@@ -26,7 +26,8 @@ from kicad_mcp.evals.reference_agent_runner import (
 ROOT = Path(__file__).resolve().parents[1]
 BOARD_IDS = ("esp32-c6-usbc", "stm32f072-usbc", "rp2350-usbc")
 SCHEMA = "reference-agent-preflight.v1"
-_INPUTS = ("original-prompt.md", "specification.md", "benchmark.json", "quality-gates.json")
+_BENCHMARK_METADATA = "benchmark.json"
+_INPUTS = ("original-prompt.md", "specification.md", _BENCHMARK_METADATA, "quality-gates.json")
 
 
 def _input_sha256(path: Path) -> str:
@@ -39,11 +40,11 @@ def _input_sha256(path: Path) -> str:
 
 
 def _assert_metadata(board_id: str, board_dir: Path) -> None:
-    for name in ("benchmark.json", "quality-gates.json"):
+    for name in (_BENCHMARK_METADATA, "quality-gates.json"):
         data = json.loads((board_dir / name).read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ValueError("invalid_benchmark_metadata")
-        if name == "benchmark.json":
+        if name == _BENCHMARK_METADATA:
             if (
                 data.get("schema_version") != "pcb-task-outcome.v1"
                 or data.get("benchmark_version") != "v1"
@@ -83,7 +84,7 @@ def preflight(*, root: Path, board_id: str, attempt_number: int, phase_name: str
     if len(hashes) == len(_INPUTS):
         try:
             _assert_metadata(board_id, board_dir)
-        except (OSError, ValueError, json.JSONDecodeError):
+        except (OSError, ValueError):
             blocking.add("invalid_benchmark_metadata")
 
     # Fail closed on reused attempts: do not overwrite a prior run or conceal
@@ -132,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
             attempt_number=args.attempt_number,
             phase_name=args.phase,
         )
-    except (ValueError, OSError, ReferenceAgentRunnerError):
+    except (ValueError, OSError):
         print(
             json.dumps(
                 {
