@@ -65,7 +65,8 @@ def test_observation_is_sanitized_exact_source_and_not_an_attestation() -> None:
 def test_native_host_statuses_are_not_mixed_with_generic_sdk_tool_calls() -> None:
     report = _observation()
     rows = report["hosts"]
-    assert isinstance(rows, list) and len(rows) == 2
+    assert isinstance(rows, list)
+    assert len(rows) == 2
     by_host = {row["id"]: row for row in rows}
     assert set(by_host) == {"claude-code", "codex"}
     assert by_host["claude-code"]["version"] == "2.1.296"
