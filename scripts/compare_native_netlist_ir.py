@@ -16,12 +16,22 @@ import sys
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
-from xml.etree.ElementTree import Element
+from typing import Protocol
 
 from defusedxml import ElementTree as SafeElementTree  # type: ignore[import-untyped]
 from defusedxml.common import DefusedXmlException  # type: ignore[import-untyped]
 
 _MAX_NATIVE_XML_BYTES = 32 * 1024 * 1024
+
+
+class _XMLNode(Protocol):
+    """Read-only structural interface for nodes from the defused XML parser."""
+
+    def findall(self, path: str) -> list[_XMLNode]: ...
+
+    def find(self, path: str) -> _XMLNode | None: ...
+
+    def get(self, key: str) -> str | None: ...
 
 
 @dataclass(frozen=True)
@@ -53,7 +63,7 @@ def _workspace_file(path: Path, *, label: str) -> Path:
     return candidate
 
 
-def _component_refs(components: Element) -> tuple[set[str], set[str], int]:
+def _component_refs(components: _XMLNode) -> tuple[set[str], set[str], int]:
     """Keep duplicate/power-reference detection independent of net handling."""
     active: set[str] = set()
     power: set[str] = set()
@@ -73,7 +83,7 @@ def _component_refs(components: Element) -> tuple[set[str], set[str], int]:
     return active, power, count
 
 
-def _native_net_count(nets: Element) -> int:
+def _native_net_count(nets: _XMLNode) -> int:
     """Reject nameless/duplicate nets before validating nonempty coverage."""
     names: set[str] = set()
     count = 0
