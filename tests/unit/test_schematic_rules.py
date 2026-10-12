@@ -63,9 +63,13 @@ def test_rail_voltage_parses_embedded_voltage_token() -> None:
 
 
 def test_ground_and_i2c_classification() -> None:
-    assert is_ground_name("GND") and is_ground_name("agnd")
-    assert is_i2c_name("SDA") and is_i2c_name("I2C_SCL") and is_i2c_name("SENSOR_SDA")
-    assert not is_i2c_name("SDATA") and not is_i2c_name("VCC")
+    assert is_ground_name("GND")
+    assert is_ground_name("agnd")
+    assert is_i2c_name("SDA")
+    assert is_i2c_name("I2C_SCL")
+    assert is_i2c_name("SENSOR_SDA")
+    assert not is_i2c_name("SDATA")
+    assert not is_i2c_name("VCC")
 
 
 def test_merge_nets_by_name_unions_cross_sheet_named_nets() -> None:
@@ -121,7 +125,8 @@ def test_reset_name_classification() -> None:
 def test_reset_line_without_pull_resistor_is_flagged() -> None:
     flagged = run_schematic_design_rules([_net(["NRST"], [("U1", "7")])])
     reset = [f for f in flagged if f.rule_id == "reset_pullup"]
-    assert len(reset) == 1 and "U1" in reset[0].refs
+    assert len(reset) == 1
+    assert "U1" in reset[0].refs
 
     with_r = run_schematic_design_rules([_net(["NRST"], [("U1", "7"), ("R1", "1")])])
     assert not any(f.rule_id == "reset_pullup" for f in with_r)
@@ -138,7 +143,8 @@ def test_crystal_without_load_caps_is_flagged() -> None:
     ]
     flagged = run_schematic_design_rules(nets)
     crystal = [f for f in flagged if f.rule_id == "crystal_load_caps"]
-    assert len(crystal) == 1 and crystal[0].refs == ("Y1",)
+    assert len(crystal) == 1
+    assert crystal[0].refs == ("Y1",)
 
     with_caps = run_schematic_design_rules(
         [
@@ -164,7 +170,8 @@ def test_decoupling_count_flags_partial_decoupling() -> None:
         )
     ]
     flagged = [f for f in run_schematic_design_rules(nets) if f.rule_id == "decoupling_count"]
-    assert len(flagged) == 1 and flagged[0].refs == ("U1",)
+    assert len(flagged) == 1
+    assert flagged[0].refs == ("U1",)
 
 
 def test_decoupling_count_clean_when_caps_match_pins() -> None:
@@ -201,17 +208,24 @@ def test_pin_records_capture_electrical_type() -> None:
         ' (number "2" (effects (font (size 1.27 1.27))))))'
     )
     records = {r["number"]: r for r in _extract_pin_records(block)}
-    assert records["1"]["etype"] == "power_in" and records["1"]["name"] == "VDD"
+    assert records["1"]["etype"] == "power_in"
+    assert records["1"]["name"] == "VDD"
     assert records["2"]["etype"] == "input"
 
 
 def test_can_and_interrupt_classification() -> None:
-    assert is_can_name("CANH") and is_can_name("CAN_L") and is_can_name("CAN-H")
-    assert not is_can_name("VCAN") and not is_can_name("SCAN")
-    assert is_active_low_interrupt_name("NINT") and is_active_low_interrupt_name("INT_N")
-    assert is_active_low_interrupt_name("~IRQ") and is_active_low_interrupt_name("MCU_IRQ_N")
+    assert is_can_name("CANH")
+    assert is_can_name("CAN_L")
+    assert is_can_name("CAN-H")
+    assert not is_can_name("VCAN")
+    assert not is_can_name("SCAN")
+    assert is_active_low_interrupt_name("NINT")
+    assert is_active_low_interrupt_name("INT_N")
+    assert is_active_low_interrupt_name("~IRQ")
+    assert is_active_low_interrupt_name("MCU_IRQ_N")
     assert not is_active_low_interrupt_name("INT")  # active-high, not flagged
-    assert not is_active_low_interrupt_name("PRINT") and not is_active_low_interrupt_name("POINT_N")
+    assert not is_active_low_interrupt_name("PRINT")
+    assert not is_active_low_interrupt_name("POINT_N")
 
 
 def _net_e(names: list[str], pins: list[tuple[str, str, str]]) -> dict:
@@ -226,7 +240,8 @@ def test_no_connect_pin_wired_is_flagged() -> None:
         [_net_e(["NET1"], [("U1", "3", "no_connect"), ("U2", "1", "input")])]
     )
     nc = [f for f in wired if f.rule_id == "nc_pin_connected"]
-    assert len(nc) == 1 and nc[0].refs == ("U1",)
+    assert len(nc) == 1
+    assert nc[0].refs == ("U1",)
 
     # An NC pin alone on its own net is fine.
     alone = run_schematic_design_rules([_net_e([], [("U1", "3", "no_connect")])])
@@ -274,7 +289,8 @@ def test_conflicting_supply_rails_on_one_net_is_flagged() -> None:
     conflict = [f for f in flagged if f.rule_id == "conflicting_supply_rails"]
     assert len(conflict) == 1
     assert conflict[0].severity == "error"
-    assert "+3V3" in conflict[0].message and "+5V" in conflict[0].message
+    assert "+3V3" in conflict[0].message
+    assert "+5V" in conflict[0].message
     assert conflict[0].refs == ("U1",)
 
 
@@ -423,7 +439,8 @@ def test_smps_bootstrap_and_feedback_classification() -> None:
 def test_smps_bootstrap_cap_is_required_and_cap_clears_it() -> None:
     flagged = run_schematic_design_rules([_net(["SW_BST"], [("U1", "3")])])
     bst = [f for f in flagged if f.rule_id == "smps_bootstrap_cap"]
-    assert len(bst) == 1 and bst[0].refs == ("U1",)
+    assert len(bst) == 1
+    assert bst[0].refs == ("U1",)
 
     with_cap = run_schematic_design_rules([_net(["SW_BST"], [("U1", "3"), ("C1", "1")])])
     assert not any(f.rule_id == "smps_bootstrap_cap" for f in with_cap)
@@ -436,7 +453,8 @@ def test_smps_bootstrap_cap_is_required_and_cap_clears_it() -> None:
 def test_smps_feedback_divider_is_required_and_resistor_clears_it() -> None:
     flagged = run_schematic_design_rules([_net(["VFB"], [("U1", "4")])])
     fb = [f for f in flagged if f.rule_id == "smps_feedback_divider"]
-    assert len(fb) == 1 and fb[0].refs == ("U1",)
+    assert len(fb) == 1
+    assert fb[0].refs == ("U1",)
 
     with_r = run_schematic_design_rules([_net(["VFB"], [("U1", "4"), ("R1", "1")])])
     assert not any(f.rule_id == "smps_feedback_divider" for f in with_r)
