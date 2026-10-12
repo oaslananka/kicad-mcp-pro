@@ -80,20 +80,8 @@ def expected_skill_files() -> dict[Path, bytes]:
     return generated
 
 
-def _collect_mirror_changes(
-    expected: dict[Path, bytes],
-) -> tuple[list[Path], list[Path]]:
-    """Validate the whole mirror, including linked parents, before any write."""
-    changed: list[Path] = []
+def _stale_mirror_files(expected: dict[Path, bytes]) -> list[Path]:
     stale: list[Path] = []
-    for target_root in HOST_ROOTS:
-        _reject_linked_path(target_root)
-        for name in SKILLS:
-            _reject_linked_path(target_root / name)
-    for target, content in expected.items():
-        _reject_linked_path(target)
-        if not target.is_file() or target.read_bytes() != content:
-            changed.append(target)
     for root in HOST_ROOTS:
         for name in SKILLS:
             target_dir = root / name
@@ -103,18 +91,62 @@ def _collect_mirror_changes(
                 _reject_linked_path(existing)
                 if existing.is_file() and existing not in expected:
                     stale.append(existing)
-    return changed, stale
+    return stale
+
+
+def _collect_mirror_changes(
+    expected: dict[Path, bytes],
+) -> tuple[list[Path], list[Path]]:
+    """Validate the whole mirror, including linked parents, before any write."""
+    for target_root in HOST_ROOTS:
+        _reject_linked_path(target_root)
+        for name in SKILLS:
+            _reject_linked_path(target_root / name)
+    changed = []
+    for target, content in expected.items():
+        _reject_linked_path(target)
+        if not target.is_file() or target.read_bytes() != content:
+            changed.append(target)
+    return changed, _stale_mirror_files(expected)
+
+
+def _prune_empty_children(directory: Path) -> None:
+    if not directory.exists():
+        return
+    for child in sorted(directory.rglob("*"), reverse=True):
+        if child.is_dir() and not any(child.iterdir()):
+            child.rmdir()
 
 
 def _remove_empty_skill_directories() -> None:
     for root in HOST_ROOTS:
         for name in SKILLS:
-            directory = root / name
-            if directory.exists():
-                # Remove abandoned empty children only after generated files are deleted.
-                for child in sorted(directory.rglob("*"), reverse=True):
-                    if child.is_dir() and not any(child.iterdir()):
-                        child.rmdir()
+            _prune_empty_children(root / name)
+
+
+def _checked_owned_target(target: Path) -> Path:
+    """Resolve and contain mirror paths; fail closed on links before filesystem writes."""
+    _reject_linked_path(target)
+    resolved = target.resolve()
+    relative = resolved.relative_to(ROOT.resolve())
+    if not any(
+        relative.is_relative_to(host_root.relative_to(ROOT) / name)
+        for host_root in HOST_ROOTS
+        for name in SKILLS
+    ):
+        raise ValueError(f"Mirror output outside maintained skills: {target}")
+    return resolved
+
+
+def _write_mirror_target(target: Path, content: bytes) -> None:
+    safe_target = _checked_owned_target(target)
+    safe_target.parent.mkdir(parents=True, exist_ok=True)
+    safe_target.write_bytes(content)
+
+
+def _unlink_mirror_target(target: Path) -> None:
+    safe_target = _checked_owned_target(target)
+    safe_target.unlink()
 
 
 def run(*, write: bool) -> int:
@@ -125,10 +157,9 @@ def run(*, write: bool) -> int:
         print("Agent Skills mirror drift: " + ", ".join(discrepancies[:12]))
     if write:
         for target in changed:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(expected[target])
+            _write_mirror_target(target, expected[target])
         for existing in stale:
-            existing.unlink()
+            _unlink_mirror_target(existing)
         _remove_empty_skill_directories()
         return 0
     return 1 if discrepancies else 0
