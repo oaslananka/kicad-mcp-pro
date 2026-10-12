@@ -46,6 +46,29 @@ macOS execution and artifact verdict, when available, must be recorded as
 separate evidence; workflow static review alone does not establish a tested
 native run.
 
+## Exact merged-source physical Linux patch regressions (2026-10-12)
+
+On **Ubuntu 24.04.5 x86_64 with native KiCad CLI 10.0.7**, the *actual*
+three isolated read-only regression probes ran against clean canonical
+`main@8e31947f9e136ea1e33d07e89d9cd599a3263592`. The versioned bounded
+[JSON evidence](2026-10-12-main-linux-targeted-patch-regressions.json)
+includes exact source revision, four source fixture SHA-256 digests, observed
+native measurements and explicit unsupported scopes. The source repo was
+**clean after execution**; native project copies, PDFs, Gerbers, drills,
+ERC reports and temporary pypdf installation were deleted.
+
+| Upstream patch | Exact observed result on **this Linux host** | Qualification boundary |
+| --- | --- | --- |
+| ERC JSON coordinate scale #25582 | **PASS** for `mm`, `in`, `mils`: J1 (15,14) mm, unit-scaled positions and **4** expected diagnostics each | Native CLI format semantics only; not GUI or other hosts |
+| Flat top-level multi-root PDF #25198 | **PASS**: **2 PDF pages**, one for `FlatRoot2` / `clean-led-kicad10`, one for `FlatRoot1` / `erc-power-pin-error`; order not assumed | Exact fixture/title and page count; not arbitrary hierarchy |
+| NPTH Gerber drill marks #25532 | **PASS**: full drill style selected; **0** NPTH F.Cu flashes, **1** PTH positive-control flash, 3.2-mm NPTH hole preserved at (50,50) mm in Excellon | Saved board-settings CLI and drill intent; not Windows editor Python plot API |
+
+These three targeted **Linux CLI** subgates are now verified on this exact
+source; they were previously merely candidate scripts. This **does not**
+complete all six upstream patch deltas, support-platform qualification,
+Windows/macOS *Schematic Editor* BOM GUI, stable expanded IPC bindings or
+manufacturing. `latestVerified` and the parity baseline remain **10.0.6**.
+
 ## New upstream patch deltas requiring targeted regressions
 
 The upstream [10.0.7 release notes](https://www.kicad.org/blog/2026/10/KiCad-10.0.7-Release/)
@@ -284,9 +307,11 @@ or Python API qualification on Windows**. It remains a bounded native fix
 regression for upstream #25532. GUI/IPC continues operator-dispatched and
 no manufacturing success or global support promotion follows from this check.
 
-**Status of all six patch-specific rows:** `targeted-evidence-pending`.
-This is a review queue, not an invented failure list. Base 10.0.6 statuses and
-unaffected KiCad 11 preview contracts are not rewritten.
+**Six patch-specific rows remain in the global review queue**; the three
+physical Linux CLI subgates above are **passed for that host and exact source**.
+The remaining platform, GUI/editor, IPC and packaging acceptance is still
+**pending**. Base 10.0.6 statuses and unaffected KiCad 11 preview contracts
+are not rewritten.
 
 ## Platform exception, packaging and promotion gates
 
