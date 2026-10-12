@@ -13,6 +13,8 @@ from mcp.server.mcpserver import MCPServer as FastMCP
 from ..capabilities import metadata_coverage
 from ..parity import coverage_summary, find_capabilities, get_matrix, opportunities
 
+_NO_TOOL_LABEL = "(no tool)"
+
 
 def _pct(value: float) -> str:
     return f"{value:.1f}%"
@@ -40,7 +42,7 @@ def register(mcp: FastMCP) -> None:
                 return f"No capabilities match '{query}'."
             lines = [f"# Capabilities matching '{query}'", ""]
             for hit in hits:
-                tool = f"`{hit['mcp_tool']}`" if hit["mcp_tool"] else "(no tool)"
+                tool = f"`{hit['mcp_tool']}`" if hit["mcp_tool"] else _NO_TOOL_LABEL
                 lines.append(
                     f"- **{hit['capability']}** [`{hit['domain']}`] — {tool}, "
                     f"status `{hit['status']}`, channel `{hit['kicad_channel']}`."
@@ -67,7 +69,7 @@ def register(mcp: FastMCP) -> None:
                 "",
             ]
             for cap in info["capabilities"]:
-                tool = f"`{cap['mcp_tool']}`" if cap["mcp_tool"] else "(no tool)"
+                tool = f"`{cap['mcp_tool']}`" if cap["mcp_tool"] else _NO_TOOL_LABEL
                 lines.append(
                     f"- [`{cap['status']}`] **{cap['capability']}** — {tool} "
                     f"via `{cap['kicad_channel']}`."
@@ -109,7 +111,7 @@ def register(mcp: FastMCP) -> None:
             )
         lines.extend(["", "## Biggest open gaps"])
         for row in opportunities(matrix, limit=8):
-            tool = f"`{row['mcp_tool']}`" if row["mcp_tool"] else "(no tool)"
+            tool = f"`{row['mcp_tool']}`" if row["mcp_tool"] else _NO_TOOL_LABEL
             lines.append(f"- [`{row['status']}`] {row['capability']} [`{row['domain']}`] — {tool}")
         lines.append("")
         lines.append("Query a domain with domain=<name> or search with query=<text>.")

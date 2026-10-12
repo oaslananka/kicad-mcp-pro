@@ -28,6 +28,7 @@ DevelopmentClassification = Literal["required", "optional", "live-kicad"]
 DevelopmentToolStatus = Literal["ok", "missing", "version-mismatch"]
 DevelopmentCapabilityMode = Literal["core-only", "headless-kicad", "gui-connected"]
 DIAGNOSTIC_SCHEMA_VERSION = "1.0.0"
+_PYPROJECT_FILENAME = "pyproject.toml"
 _PRIVATE_KEY_MARKER = "PRIVATE" + " KEY"
 _SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)\b(token|access_token|refresh_token|client_secret|password)=([^\s,;]+)"),
@@ -265,7 +266,7 @@ def _find_checkout_root(start: Path) -> Path | None:
     except OSError:
         return None
     for candidate in (current, *current.parents):
-        pyproject = candidate / "pyproject.toml"
+        pyproject = candidate / _PYPROJECT_FILENAME
         metadata = _pyproject_metadata(pyproject)
         if metadata is None:
             continue
@@ -521,7 +522,7 @@ def _package_diagnostics() -> tuple[PackageDiagnostics, list[CheckResult]]:
     git_commit: str | None = None
     checks: list[CheckResult] = []
     if checkout is not None:
-        metadata = _pyproject_metadata(checkout / "pyproject.toml")
+        metadata = _pyproject_metadata(checkout / _PYPROJECT_FILENAME)
         if metadata is not None:
             _name, repo_version = metadata
         git_branch = _git_value(checkout, "branch", "--show-current")
@@ -577,7 +578,7 @@ def _required_uv_version_from_uv_toml(checkout: Path) -> str | None:
 
 
 def _required_uv_version_from_pyproject(checkout: Path) -> str | None:
-    data = _toml_data(checkout / "pyproject.toml")
+    data = _toml_data(checkout / _PYPROJECT_FILENAME)
     if data is None:
         return None
     tool = data.get("tool")

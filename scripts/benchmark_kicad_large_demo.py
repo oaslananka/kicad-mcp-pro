@@ -26,7 +26,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "tests/fixtures/native_demo_manifests/jetson-agx-thor-baseboard-kicad10.json"
 DEFAULT_DEMO_ROOT = Path("/usr/share/kicad/demos/jetson-agx-thor-baseboard")
-ALLOWED_SUFFIXES = {".kicad_pcb", ".kicad_sch", ".kicad_pro", ".kicad_dru"}
+SCHEMATIC_SUFFIX = ".kicad_sch"
+ALLOWED_SUFFIXES = {".kicad_pcb", SCHEMATIC_SUFFIX, ".kicad_pro", ".kicad_dru"}
 SCHEMA = "native-kicad-large-inspect.v0"
 SYSTEM_PYTHON = "/usr/bin/python3"
 
@@ -90,7 +91,7 @@ def sha256_file(path: Path) -> str:
 def _verify_demo_board_identity(
     manifest: dict[str, Any], expected: dict[str, Any], sources: list[Path]
 ) -> None:
-    if sum(file.suffix == ".kicad_sch" for file in sources) < int(
+    if sum(file.suffix == SCHEMATIC_SUFFIX for file in sources) < int(
         manifest.get("minimum_schematic_files", 2)
     ):
         raise ValueError("native demo is not multi-sheet")
@@ -270,7 +271,7 @@ def benchmark_demo(
         "vendor_version": manifest["packaged_with_kicad_version"],
         "license": manifest["license"],
         "pcb_sha256": manifest["files"][board_name],
-        "schematic_source_files": sum(path.suffix == ".kicad_sch" for path in sources),
+        "schematic_source_files": sum(path.suffix == SCHEMATIC_SUFFIX for path in sources),
         "platform": {"os": "linux", "architecture": platform.machine()},
         "run_count": repeats,
         "observations": measurements,
