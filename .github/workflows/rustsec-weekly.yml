@@ -1,0 +1,47 @@
+name: RustSec Advisory Drift
+
+# The RustSec database changes even when Cargo.lock does not.
+# This is an informational recurring guard, not a required PR check.
+on:
+  schedule:
+    - cron: "23 6 * * 3" # Weekly Wednesday 06:23 UTC, away from Monday Scorecard.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rustsec-advisory-drift-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rustsec-drift:
+    if: github.repository == 'oaslananka/kicad-mcp-pro'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout immutable default-branch snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install repository-pinned RustSec scanner
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Verify live advisory database against reviewed baseline
+        working-directory: src-tauri
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rm -f ../rustsec-weekly-audit.json' EXIT
+          audit_status=0
+          cargo audit --json --no-yanked > ../rustsec-weekly-audit.json || audit_status=$?
+          if (( audit_status > 1 )); then
+            echo "cargo-audit execution failed (exit=$audit_status)" >&2
+            exit "$audit_status"
+          fi
+          audit_version="$(cargo audit --version | awk '{print $2}')"
+          python3 ../scripts/check_rustsec_audit.py \
+            --report ../rustsec-weekly-audit.json \
+            --baseline ../.github/security/rustsec-baseline.json \
+            --cargo-audit-version "$audit_version"

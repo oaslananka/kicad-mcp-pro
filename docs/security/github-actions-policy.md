@@ -27,6 +27,30 @@ A new write scope requires all of the following in the same pull request:
 3. a security rationale in the pull-request description;
 4. successful workflow policy and security checks.
 
+## Periodic RustSec advisory-database drift review
+
+The **read-only** `rustsec-weekly.yml` workflow runs every Wednesday at
+**06:23 UTC** and supports explicit manual dispatch. Unlike the path-aware
+`ci.yml` RustSec job, it checks for **new RustSec advisory DB findings even
+when `src-tauri/Cargo.lock` has not changed**. GitHub scheduled workflows
+run the latest default-branch commit. The job has only `contents: read`, a
+SHA-pinned credential-free checkout and a pinned `cargo-audit 0.22.2`, and
+uses the **same fail-closed validator** and reviewed
+`.github/security/rustsec-baseline.json` as existing CI. Unexpected new
+warnings/vulnerabilities **or the removal of a baseline entry** fail; no
+advisory is ignored, no lockfile is upgraded, and scanner or policy errors
+cannot be silently treated as a successful scan. Raw JSON evidence is
+removed after evaluation and is never uploaded as a public artifact.
+
+The existing Linux GTK3-transitive `RUSTSEC-2024-0429` and
+`RUSTSEC-2024-0370` warnings are **still present and tracked by #779**;
+a green matching-baseline run is a drift check, **not** evidence of
+mitigation or closure of Code Scanning Scorecard #53. The workflow is
+neither a release gate nor a new required PR context; ordinary dependency
+change PRs continue to use the existing mandatory CI policies. Weekly
+results should trigger #779 upstream-dependency reassessment when the
+reviewed RustSec findings change, without weakening the warnings baseline.
+
 ## Action allowlist changes
 
 A third-party Action may be added only when its repository is listed in `.github/actions-policy.json` and the workflow references a full 40-character commit SHA. Tags and branches are rejected even for allowlisted repositories. Composite Actions may invoke other Actions; those repositories must be recorded in the transitive allowlist and confirmed from the pinned parent Action source.

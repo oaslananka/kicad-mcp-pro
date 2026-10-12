@@ -32,8 +32,10 @@ def test_native_gui_and_physical_results_are_not_conflated() -> None:
         assert native["canarySteps" if key != "macOsCurrent" else "nativeSteps"] == 32
         assert native["semanticMatches"] == native["semanticTotal"] == 5
     win = report["windowsNative"]
-    assert win["failingFixtures"] == 0 and win["allowedSkips"] == 2
-    assert win["installerSignature"] == "Valid" and len(win["installerSha256"]) == 64
+    assert win["failingFixtures"] == 0
+    assert win["allowedSkips"] == 2
+    assert win["installerSignature"] == "Valid"
+    assert len(win["installerSha256"]) == 64
     assert report["windowsGuiIpc"]["actualEditorTests"] == 2
     assert report["windowsGuiIpc"]["failures"] == 0
     mac = report["macOsCurrent"]
@@ -46,17 +48,21 @@ def test_native_gui_and_physical_results_are_not_conflated() -> None:
     assert physical["noProviderCalls"] is True
     drc = report["linuxWindowsDiagnosticParity"]
     assert (drc["drcViolationCountBoth"], drc["drcUnconnectedCountBoth"]) == (17, 4)
-    assert drc["violationExitCode"] == 5 and drc["claimsCleanBoard"] is False
+    assert drc["violationExitCode"] == 5
+    assert drc["claimsCleanBoard"] is False
 
 
 def test_bounded_report_has_no_local_paths_and_keeps_review_links() -> None:
     report = _evidence()
     serialized = json.dumps(report, sort_keys=True)
-    assert "C:\\Users" not in serialized and "/home/" not in serialized
+    assert "C:\\Users" not in serialized
+    assert "/home/" not in serialized
     assert "sk-" not in serialized
     note = NOTE.read_text(encoding="utf-8")
     for run_id in (38170396646, 38170399571, 38170872908):
         assert report["sourceRevision"] == "ee60c037a25187b6d2487b45d085781c6986f25b"
         assert str(run_id) in note
-    assert "Chocolatey" in note and "Ubuntu 22.04" in note
-    assert "latestVerified" in note and "10.0.6" in note
+    assert "Chocolatey" in note
+    assert "Ubuntu 22.04" in note
+    assert "latestVerified" in note
+    assert "10.0.6" in note
