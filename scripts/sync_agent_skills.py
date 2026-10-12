@@ -80,94 +80,59 @@ def expected_skill_files() -> dict[Path, bytes]:
     return generated
 
 
-def _stale_mirror_files(expected: dict[Path, bytes]) -> list[Path]:
-    stale: list[Path] = []
+def _preflight_mirror_paths(expected: dict[Path, bytes]) -> None:
+    """Fail closed on linked ancestor paths before updating any generated skill."""
     for root in HOST_ROOTS:
+        _reject_linked_path(root)
         for name in SKILLS:
-            target_dir = root / name
-            if not target_dir.exists():
-                continue
-            for existing in target_dir.rglob("*"):
-                _reject_linked_path(existing)
-                if existing.is_file() and existing not in expected:
-                    stale.append(existing)
-    return stale
-
-
-def _collect_mirror_changes(
-    expected: dict[Path, bytes],
-) -> tuple[list[Path], list[Path]]:
-    """Validate the whole mirror, including linked parents, before any write."""
-    for target_root in HOST_ROOTS:
-        _reject_linked_path(target_root)
-        for name in SKILLS:
-            _reject_linked_path(target_root / name)
-    changed = []
-    for target, content in expected.items():
+            _reject_linked_path(root / name)
+    for target in expected:
         _reject_linked_path(target)
-        if not target.is_file() or target.read_bytes() != content:
-            changed.append(target)
-    return changed, _stale_mirror_files(expected)
-
-
-def _prune_empty_children(directory: Path) -> None:
-    if not directory.exists():
-        return
-    for child in sorted(directory.rglob("*"), reverse=True):
-        if child.is_dir() and not any(child.iterdir()):
-            child.rmdir()
-
-
-def _remove_empty_skill_directories() -> None:
     for root in HOST_ROOTS:
         for name in SKILLS:
-            _prune_empty_children(root / name)
-
-
-def _checked_owned_target(target: Path) -> Path:
-    """Resolve and contain mirror paths; fail closed on links before filesystem writes."""
-    _reject_linked_path(target)
-    resolved = target.resolve()
-    relative = resolved.relative_to(ROOT.resolve())
-    if not any(
-        relative.is_relative_to(host_root.relative_to(ROOT) / name)
-        for host_root in HOST_ROOTS
-        for name in SKILLS
-    ):
-        raise ValueError(f"Mirror output outside maintained skills: {target}")
-    return resolved
-
-
-def _write_mirror_target(target: Path, content: bytes) -> None:
-    safe_target = _checked_owned_target(target)
-    # Enforce the concrete resolved parent as a second sink-local boundary.
-    # A regex filename allowlist alone would not prevent linked ancestor traversal.
-    maintained_roots = tuple(
-        (host_root / name).resolve() for host_root in HOST_ROOTS for name in SKILLS
-    )
-    if not any(root in safe_target.parents for root in maintained_roots):
-        raise ValueError(f"Mirror output outside maintained skills: {target}")
-    safe_target.parent.mkdir(parents=True, exist_ok=True)
-    safe_target.write_bytes(content)
-
-
-def _unlink_mirror_target(target: Path) -> None:
-    safe_target = _checked_owned_target(target)
-    safe_target.unlink()
+            directory = root / name
+            if directory.exists():
+                for item in directory.rglob("*"):
+                    _reject_linked_path(item)
 
 
 def run(*, write: bool) -> int:
     expected = expected_skill_files()
-    changed, stale = _collect_mirror_changes(expected)
-    discrepancies = [str(path.relative_to(ROOT)) for path in (*changed, *stale)]
+    _preflight_mirror_paths(expected)
+    discrepancies: list[str] = []
+    for target, content in expected.items():
+        if target.is_symlink():
+            raise ValueError(f"Generated skill target symlink not permitted: {target}")
+        if not target.is_file() or target.read_bytes() != content:
+            discrepancies.append(str(target.relative_to(ROOT)))
+            if write:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+    for root in HOST_ROOTS:
+        for name in SKILLS:
+            target_dir = root / name
+            if target_dir.is_symlink():
+                raise ValueError(f"Generated skill directory symlink not permitted: {target_dir}")
+            if not target_dir.exists():
+                continue
+            for existing in target_dir.rglob("*"):
+                if existing.is_symlink():
+                    raise ValueError(f"Generated skill path symlink not permitted: {existing}")
+                if existing.is_file() and existing not in expected:
+                    discrepancies.append(str(existing.relative_to(ROOT)))
+                    if write:
+                        existing.unlink()
     if discrepancies:
         print("Agent Skills mirror drift: " + ", ".join(discrepancies[:12]))
     if write:
-        for target in changed:
-            _write_mirror_target(target, expected[target])
-        for existing in stale:
-            _unlink_mirror_target(existing)
-        _remove_empty_skill_directories()
+        for root in HOST_ROOTS:
+            for name in SKILLS:
+                directory = root / name
+                if directory.exists():
+                    # Remove empty abandoned directories after generated files are removed.
+                    for child in sorted(directory.rglob("*"), reverse=True):
+                        if child.is_dir() and not any(child.iterdir()):
+                            child.rmdir()
         return 0
     return 1 if discrepancies else 0
 
