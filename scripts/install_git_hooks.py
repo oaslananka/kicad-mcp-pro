@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+HOOKS_CONFIG_KEY = "core.hooksPath"
 
 
 def _run(command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -74,7 +75,7 @@ def _select_hooks_install(
         return _lefthook_command("install", "--force")
     if effective_hooks:
         config_value = ".git/hooks" if git_dir == (ROOT / ".git").resolve() else str(expected_dir)
-        _run(["git", "config", "--local", "core.hooksPath", config_value])
+        _run(["git", "config", "--local", HOOKS_CONFIG_KEY, config_value])
         print("hooks: preserving global core.hooksPath and overriding it only for this repository")
         return _lefthook_command("install", "--force")
     return _lefthook_command("install")
@@ -83,8 +84,8 @@ def _select_hooks_install(
 def install() -> None:
     git_dir = _resolve_repo_path(_git_output(["rev-parse", "--git-dir"]))
     common_dir = _resolve_repo_path(_git_output(["rev-parse", "--git-common-dir"]))
-    effective_hooks = _git_output(["config", "--get", "core.hooksPath"], scope_optional=True)
-    local_hooks = _git_output(["config", "--local", "--get", "core.hooksPath"], scope_optional=True)
+    effective_hooks = _git_output(["config", "--get", HOOKS_CONFIG_KEY], scope_optional=True)
+    local_hooks = _git_output(["config", "--local", "--get", HOOKS_CONFIG_KEY], scope_optional=True)
     command = _select_hooks_install(git_dir, common_dir, effective_hooks, local_hooks)
     completed = _run(command, check=False)
     sys.stdout.write(completed.stdout)

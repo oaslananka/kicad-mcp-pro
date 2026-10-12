@@ -28,6 +28,7 @@ MANIFEST_PATH = ROOT / "tests/fixtures/native_demo_manifests/jetson-agx-thor-bas
 DEFAULT_DEMO_ROOT = Path("/usr/share/kicad/demos/jetson-agx-thor-baseboard")
 ALLOWED_SUFFIXES = {".kicad_pcb", ".kicad_sch", ".kicad_pro", ".kicad_dru"}
 SCHEMA = "native-kicad-large-inspect.v0"
+SYSTEM_PYTHON = "/usr/bin/python3"
 
 # Isolated worker must run under the native KiCad Python interpreter, not the
 # project's uv Python virtualenv (which may not expose Debian pcbnew bindings).
@@ -156,7 +157,7 @@ def nearest_rank_p95(values: list[float]) -> float:
 def _execute_native_inspection(board: Path, scratch: Path, timeout: float) -> str:
     try:
         result = subprocess.run(  # nosec B603
-            ["/usr/bin/python3", "-c", WORKER, str(board)],
+            [SYSTEM_PYTHON, "-c", WORKER, str(board)],
             cwd=scratch,
             capture_output=True,
             text=True,
@@ -226,7 +227,7 @@ def benchmark_demo(
     if platform.system() != "Linux":
         raise RuntimeError("true native peak RSS benchmark is currently Linux-only")
     runtime = _trusted_system_python(interpreter)
-    if interpreter != Path("/usr/bin/python3") or runtime != Path("/usr/bin/python3").resolve():
+    if interpreter != Path(SYSTEM_PYTHON) or runtime != Path(SYSTEM_PYTHON).resolve():
         raise ValueError("native benchmark requires pinned /usr/bin/python3")
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     sources = validate_demo_files(demo_root, manifest)
@@ -290,7 +291,7 @@ def benchmark_demo(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--demo-root", type=Path, default=DEFAULT_DEMO_ROOT)
-    parser.add_argument("--python", type=Path, default=Path("/usr/bin/python3"))
+    parser.add_argument("--python", type=Path, default=Path(SYSTEM_PYTHON))
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--timeout", type=float, default=100.0)
     parser.add_argument("--output", type=Path)
