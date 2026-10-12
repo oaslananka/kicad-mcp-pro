@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / "integrations" / "common" / "agent-host-evidence.json"
@@ -28,60 +28,67 @@ def _read_object(path: Path) -> dict[str, Any]:
     return parsed
 
 
-def check(root: Path = ROOT) -> list[str]:
-    problems: list[str] = []
-    catalog = _read_object(root / EVIDENCE.relative_to(ROOT))
-    if catalog.get("schemaVersion") != 1 or catalog.get("evidenceScope") != "repository-static":
-        problems.append("Invalid evidence schema or static-only scope")
-    hosts = catalog.get("hosts")
-    if not isinstance(hosts, list) or len(hosts) < 6:
-        return ["Agent host catalog needs the six maintained local host entries"]
-    ids: set[str] = set()
-    for item in hosts:
-        if not isinstance(item, dict):
-            problems.append("Host row is not an object")
+def _valid_host_path(relative: object) -> TypeGuard[str]:
+    """Reject non-relative or parent-traversing host catalog paths."""
+    return (
+        isinstance(relative, str)
+        and not relative.startswith("/")
+        and ".." not in Path(relative).parts
+    )
+
+
+def _check_host_files(root: Path, item: dict[str, Any], name: str, problems: list[str]) -> None:
+    for field in ("configuration", "guide"):
+        relative = item.get(field)
+        if not _valid_host_path(relative):
+            problems.append(f"Invalid {field} path for {name}")
             continue
-        name = item.get("id")
-        if not isinstance(name, str) or not name or name in ids:
-            problems.append(f"Duplicate or malformed host id: {name}")
-            continue
-        ids.add(name)
-        if item.get("smokeStatus") != "not-run":
-            problems.append(
-                f"Host smoke cannot be claimed without separately reviewed evidence: {name}"
-            )
-        for field in ("configuration", "guide"):
-            relative = item.get(field)
-            if (
-                not isinstance(relative, str)
-                or relative.startswith("/")
-                or ".." in Path(relative).parts
-            ):
-                problems.append(f"Invalid {field} path for {name}")
-                continue
-            target = root / relative
-            if not target.is_file() or target.is_symlink():
-                problems.append(f"Missing {field} file for {name}: {relative}")
-        relative = item.get("configuration")
-        if (
-            isinstance(relative, str)
-            and not relative.startswith("/")
-            and ".." not in Path(relative).parts
-        ):
-            target = root / relative
-            if target.is_file():
-                try:
-                    config = _read_object(target)
-                    servers = (
-                        config.get("mcp_servers")
-                        or config.get("mcpServers")
-                        or config.get("servers")
-                        or config.get("mcp")
-                    )
-                    if not isinstance(servers, dict) or not servers:
-                        problems.append(f"No MCP servers defined for {name}")
-                except (json.JSONDecodeError, tomllib.TOMLDecodeError, ValueError) as exc:
-                    problems.append(f"Invalid configuration for {name}: {exc}")
+        target = root / relative
+        if not target.is_file() or target.is_symlink():
+            problems.append(f"Missing {field} file for {name}: {relative}")
+
+
+def _check_host_configuration(
+    root: Path, item: dict[str, Any], name: str, problems: list[str]
+) -> None:
+    relative = item.get("configuration")
+    if not _valid_host_path(relative):
+        return
+    target = root / relative
+    if not target.is_file():
+        return
+    try:
+        config = _read_object(target)
+        servers = (
+            config.get("mcp_servers")
+            or config.get("mcpServers")
+            or config.get("servers")
+            or config.get("mcp")
+        )
+        if not isinstance(servers, dict) or not servers:
+            problems.append(f"No MCP servers defined for {name}")
+    except (json.JSONDecodeError, tomllib.TOMLDecodeError, ValueError) as exc:
+        problems.append(f"Invalid configuration for {name}: {exc}")
+
+
+def _check_host_row(root: Path, item: object, ids: set[str], problems: list[str]) -> None:
+    if not isinstance(item, dict):
+        problems.append("Host row is not an object")
+        return
+    name = item.get("id")
+    if not isinstance(name, str) or not name or name in ids:
+        problems.append(f"Duplicate or malformed host id: {name}")
+        return
+    ids.add(name)
+    if item.get("smokeStatus") != "not-run":
+        problems.append(
+            f"Host smoke cannot be claimed without separately reviewed evidence: {name}"
+        )
+    _check_host_files(root, item, name, problems)
+    _check_host_configuration(root, item, name, problems)
+
+
+def _check_extension(root: Path, problems: list[str]) -> None:
     extension = _read_object(root / EXTENSION.relative_to(ROOT) / "gemini-extension.json")
     if extension.get("name") != "kicad-mcp-pro":
         problems.append("Gemini extension name does not match installed directory")
@@ -106,6 +113,20 @@ def check(root: Path = ROOT) -> list[str]:
     expected_version = _read_object(root / "packages/mcp-npm/package.json").get("version")
     if extension.get("version") != expected_version:
         problems.append("Gemini extension and current package version have drifted")
+
+
+def check(root: Path = ROOT) -> list[str]:
+    problems: list[str] = []
+    catalog = _read_object(root / EVIDENCE.relative_to(ROOT))
+    if catalog.get("schemaVersion") != 1 or catalog.get("evidenceScope") != "repository-static":
+        problems.append("Invalid evidence schema or static-only scope")
+    hosts = catalog.get("hosts")
+    if not isinstance(hosts, list) or len(hosts) < 6:
+        return ["Agent host catalog needs the six maintained local host entries"]
+    ids: set[str] = set()
+    for item in hosts:
+        _check_host_row(root, item, ids, problems)
+    _check_extension(root, problems)
     return problems
 
 

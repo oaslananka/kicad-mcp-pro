@@ -6,7 +6,7 @@ import asyncio
 import sys
 from typing import Any
 
-from kicad_mcp.capabilities import AccessTier, all_records, metadata_coverage
+from kicad_mcp.capabilities import AccessTier, CapabilityRecord, all_records, metadata_coverage
 from kicad_mcp.operating_modes import OperatingMode
 from kicad_mcp.server import build_server
 from kicad_mcp.tool_effect_manifest import REVIEWED_TOOL_EFFECTS
@@ -59,9 +59,7 @@ def _array_schema_paths_missing_items(node: object, path: str = "$") -> list[str
     return missing
 
 
-async def lint() -> list[str]:
-    """Return human-readable contract errors."""
-    errors: list[str] = []
+def _check_metadata_coverage(errors: list[str]) -> None:
     coverage = metadata_coverage()
     missing_tools = coverage["missing_tools"]
     if not isinstance(missing_tools, list):
@@ -70,9 +68,9 @@ async def lint() -> list[str]:
         missing = ", ".join(str(name) for name in missing_tools)
         errors.append(f"Missing capability metadata for routed tools: {missing}")
 
-    records = all_records()
-    read_only_profiles = {"beginner", "read_only_inspection"}
-    for profile in read_only_profiles:
+
+async def _check_readonly_profiles(records: dict[str, CapabilityRecord], errors: list[str]) -> None:
+    for profile in {"beginner", "read_only_inspection"}:
         server = build_server(profile)
         surfaced = {tool.name for tool in await server.list_tools()}
         for tool_name in surfaced:
@@ -82,21 +80,25 @@ async def lint() -> list[str]:
             if record.tier in {AccessTier.WRITE, AccessTier.PUBLISH, AccessTier.HUMAN_ONLY}:
                 errors.append(f"Read-only profile '{profile}' exposes mutating tool {tool_name}")
 
-    schemas = await _tool_schemas()
-    declared_schemas = await _declared_tool_schemas()
-    for tool_name, schema in sorted(declared_schemas.items()):
+
+def _check_declared_array_items(schemas: dict[str, dict[str, Any]], errors: list[str]) -> None:
+    for tool_name, schema in sorted(schemas.items()):
         for path in _array_schema_paths_missing_items(schema):
             errors.append(
                 f"{tool_name} input schema array at {path} must declare items "
                 "for MCP host compatibility."
             )
 
-    lib_search_components = _schema_properties(schemas.get("lib_search_components", {}))
-    if "query" not in lib_search_components:
+
+def _check_search_compatibility(schemas: dict[str, dict[str, Any]], errors: list[str]) -> None:
+    properties = _schema_properties(schemas.get("lib_search_components", {}))
+    if "query" not in properties:
         errors.append("lib_search_components must expose preferred parameter 'query'.")
-    if "keyword" not in lib_search_components:
+    if "keyword" not in properties:
         errors.append("lib_search_components must keep backward-compatible 'keyword'.")
 
+
+def _check_mutation_flags(records: dict[str, CapabilityRecord], errors: list[str]) -> None:
     for name, record in records.items():
         if record.tier in {AccessTier.WRITE, AccessTier.PUBLISH, AccessTier.HUMAN_ONLY}:
             if not isinstance(record.supports_rollback, bool):
@@ -104,11 +106,9 @@ async def lint() -> list[str]:
             if not isinstance(record.supports_dry_run, bool):
                 errors.append(f"{name} must explicitly declare dry-run support.")
 
-    # Contract/tier consistency: the side-effect flags an agent reads to decide
-    # whether a call is safe must never contradict the access tier. A READ tool
-    # that writes files or mutates GUI state would be wrongly surfaced in
-    # read-only profiles; a human-gated op whose tier is not HUMAN_ONLY (or vice
-    # versa) lets an agent auto-run something that needs a person.
+
+def _check_access_tiers(records: dict[str, CapabilityRecord], errors: list[str]) -> None:
+    # An agent must never mistake a GUI/file mutation for a read-only effect.
     for name, record in records.items():
         if record.tier is AccessTier.READ:
             if record.writes_files:
@@ -124,10 +124,14 @@ async def lint() -> list[str]:
             errors.append(
                 f"{name} declares human_gate_required=True but its tier is not HUMAN_ONLY."
             )
-    # Reviewed external-policy effect contracts must track the exact public
-    # MCP argument surface and the metadata facts they publish. A tool may
-    # exist without a reviewed effect contract; that remains fail-closed for
-    # external consumers rather than being inferred from its name.
+
+
+def _check_reviewed_effects(
+    records: dict[str, CapabilityRecord],
+    declared_schemas: dict[str, dict[str, Any]],
+    errors: list[str],
+) -> None:
+    # Effects are authoritative only when a reviewed manifest matches metadata.
     for contract in REVIEWED_TOOL_EFFECTS:
         schema = declared_schemas.get(contract.name)
         if schema is None:
@@ -150,6 +154,20 @@ async def lint() -> list[str]:
         if is_tool_idempotent(contract.name) is not contract.idempotent:
             errors.append(f"Reviewed effect idempotency fact drifted for {contract.name}.")
 
+
+async def lint() -> list[str]:
+    """Return human-readable contract errors in the original deterministic order."""
+    errors: list[str] = []
+    _check_metadata_coverage(errors)
+    records = all_records()
+    await _check_readonly_profiles(records, errors)
+    schemas = await _tool_schemas()
+    declared_schemas = await _declared_tool_schemas()
+    _check_declared_array_items(declared_schemas, errors)
+    _check_search_compatibility(schemas, errors)
+    _check_mutation_flags(records, errors)
+    _check_access_tiers(records, errors)
+    _check_reviewed_effects(records, declared_schemas, errors)
     return errors
 
 

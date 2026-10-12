@@ -175,3 +175,32 @@ def test_host_evidence_cli_reports_fail_closed(monkeypatch: pytest.MonkeyPatch, 
     monkeypatch.setattr(verifier, "check", lambda: [])
     assert verifier.main() == 0
     assert "static only" in capsys.readouterr().out
+
+
+def test_symlinked_host_config_is_rejected_before_parsing(tmp_path: Path) -> None:
+    repo = _temp_host_repo(tmp_path)
+    config = repo / ".codex/config.example.toml"
+    config.unlink()
+    try:
+        config.symlink_to(repo / "packages/mcp-npm/package.json")
+    except (OSError, NotImplementedError):
+        pytest.skip("Filesystem disallows symlink creation")
+
+    failures = verifier.check(repo)
+    assert any("Missing configuration file for codex:" in msg for msg in failures)
+    assert any("Invalid configuration for codex:" in msg for msg in failures)
+
+
+def test_host_path_traversal_and_absolute_path_fail_closed(tmp_path: Path) -> None:
+    repo = _temp_host_repo(tmp_path)
+    relative = "integrations/common/agent-host-evidence.json"
+    _update_json(
+        repo,
+        relative,
+        lambda data: data["hosts"][0].update(
+            configuration="../outside.json", guide="/etc/irrelevant"
+        ),
+    )
+    failures = verifier.check(repo)
+    assert any("Invalid configuration path for claude-code" in msg for msg in failures)
+    assert any("Invalid guide path for claude-code" in msg for msg in failures)
