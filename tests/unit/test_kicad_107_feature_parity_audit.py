@@ -56,9 +56,13 @@ def test_audit_accounts_for_every_targeted_upstream_gap_without_claiming_pass() 
     assert "tests/gui/manual_kicad_107_bom_gui.sh" in audit
     assert "scripts/kicad_107_bom_portable.py" in audit
     assert "scripts/kicad_107_ipc_binding_gate.py" in audit
-    assert "10.0.6" in audit and "10.0.7" in audit
-    assert "#25582" in audit and "#24860" in audit and "#25532" in audit
-    assert "#729" in audit and "#730" in audit
+    assert "10.0.6" in audit
+    assert "10.0.7" in audit
+    assert "#25582" in audit
+    assert "#24860" in audit
+    assert "#25532" in audit
+    assert "#729" in audit
+    assert "#730" in audit
     assert "not** a new required PR gate" in audit
     assert "manual" in audit
     assert "Do **not**" in audit
@@ -111,6 +115,8 @@ def test_legacy_and_candidate_documentation_are_cross_linked() -> None:
         encoding="utf-8"
     )
     name = AUDIT.name
-    assert name in baseline and name in parity_doc
+    assert name in baseline
+    assert name in parity_doc
     assert "ubuntu-22.04" in baseline
-    assert "10.0.6" in baseline and "10.0.7" in baseline
+    assert "10.0.6" in baseline
+    assert "10.0.7" in baseline

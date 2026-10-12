@@ -28,7 +28,8 @@ def test_all_generated_skill_trees_match_authoritative_sources() -> None:
 def test_skills_preserve_fail_closed_mcp_mutation_guards() -> None:
     for host in (ROOT / "skills", ROOT / ".opencode/skills", ROOT / ".agents/skills"):
         text = (host / "pcb-design/SKILL.md").read_text(encoding="utf-8")
-        assert "pcb_delete_items" in text and "pcb_delete_object" in text
+        assert "pcb_delete_items" in text
+        assert "pcb_delete_object" in text
         assert "Do **not** rewrite `.kicad_pcb` or `.kicad_sch`" in text
         assert "required MCP mutation tool is unavailable" in text
 
@@ -57,7 +58,8 @@ def test_codex_examples_have_valid_map_named_mcp_servers() -> None:
     for path in examples:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
         servers = data["mcp_servers"]
-        assert isinstance(servers, dict) and set(servers) == {"kicad"}, path
+        assert isinstance(servers, dict), path
+        assert set(servers) == {"kicad"}, path
         server = servers["kicad"]
         assert "default_tools_approval_mode" not in server
         assert "cwd" not in server
@@ -75,7 +77,8 @@ def test_claude_manifest_and_copilot_instructions_match_installed_features() -> 
         assert (ROOT / name / "SKILL.md").is_file()
     assert (ROOT / ".mcp.json").is_file()
     entry = (ROOT / ".github/copilot-instructions.md").read_text(encoding="utf-8")
-    assert "AGENTS.md" in entry and ".agents/skills/" in entry
+    assert "AGENTS.md" in entry
+    assert ".agents/skills/" in entry
     assert "Do not" in entry
 
 
@@ -133,7 +136,8 @@ def test_check_write_refresh_and_remove_stale_skill_files(
     assert skill_sync.run(write=False) == 1
     assert old.is_file()
     assert skill_sync.run(write=True) == 0
-    assert not old.exists() and not old.parent.exists()
+    assert not old.exists()
+    assert not old.parent.exists()
     assert skill_sync.run(write=False) == 0
     assert "# Updated" in (second / "pcb-design/SKILL.md").read_text()
 
@@ -211,7 +215,8 @@ def test_availability_helper_does_not_execute_discovered_binary(
 
     path = ROOT / "skills/kicad-design-review/scripts/check_mcp_available.py"
     spec = importlib.util.spec_from_file_location("kicad_skill_availability", path)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(
