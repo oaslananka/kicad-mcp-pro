@@ -88,6 +88,37 @@ and artifact validation remain separate acceptance gates before this gap is
 classified as validated outside the physical Linux proof. Global version
 promotion and independent GUI/IPC acceptance are still out of scope.
 
+### Expanded KiCad 10.0.7 IPC binding availability (not GUI parity)
+
+Upstream's [official `kicad-python` Board reference](https://docs.kicad.org/kicad-python/board.html)
+marks new board **tables**, **reference points**, **embedded files** and
+related wrappers as **Added in 0.9.0 (KiCad 10.0.7)**. However, as of
+2026-10-12, the latest stable [published PyPI package](https://pypi.org/project/kicad-python/)
+is **0.8.0**, while this repository intentionally locks **0.7.1** under
+`kicad-python>=0.6,<0.8`. A native KiCad 10.0.7 binary does not itself
+supply the missing Python wrapper methods.
+
+`scripts/kicad_107_ipc_binding_gate.py` performs a **read-only**, offline
+installed-binding audit; it does not contact the IPC server, edit a board or
+claim a KiCad GUI verdict. It requires a stable published binding at least
+**0.9.0**, checks five documented methods on `kipy.board.Board` and three
+corresponding wrapper classes. Missing package, prerelease version, missing
+method or missing type all produce a bounded JSON `status: blocked`.
+`--require-ready` exits nonzero in that case; the default audit mode exits
+successfully after reporting the blocked state so maintained 0.7.1 CI is not
+mistakenly failed for an unshipped upstream feature:
+
+```bash
+uv run --frozen python scripts/kicad_107_ipc_binding_gate.py
+uv run --frozen python scripts/kicad_107_ipc_binding_gate.py --require-ready
+```
+
+Even a future `binding-ready-only` result keeps `nativeGuiQualified: false`
+until **independent native GUI IPC read/write/negative cases on versioned
+board fixtures** pass. This is an availability precondition, **not** a
+supported-version promotion, headless IPC substitute, upstream defect claim,
+or authorization to bypass read-only/manual manufacturing controls.
+
 ### BOM GUI persisted filename and Cancel acceptance (#24860) — physical Linux 10.0.7
 
 An **operator-only Xvfb-backed real KiCad Project Manager + Schematic Editor**
