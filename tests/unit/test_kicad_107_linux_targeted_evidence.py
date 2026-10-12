@@ -84,17 +84,20 @@ def test_source_fixture_sha256_is_recomputed_from_committed_fixture() -> None:
     evidence = _evidence()
     fixtures = evidence["sourceFixtureSha256"]
     assert len(fixtures) == 4
+    # Manifest keys are platform-neutral POSIX-style paths even on Windows.
+    # Keep their serialized identifiers as fixed strings, not str(Path),
+    # which would introduce backslashes on Windows runners.
     allowed_paths = (
-        Path("packages/kicad-fixtures/fixtures/erc-power-pin-error/erc-power-pin-error.kicad_sch"),
-        Path("packages/kicad-fixtures/fixtures/clean-led-kicad10/clean-led-kicad10.kicad_sch"),
-        Path("tests/fixtures/kicad-10-0-7-drill-marks/npth-stored-full-drill.kicad_pcb"),
-        Path("tests/fixtures/kicad-10-0-7-drill-marks/pth-stored-full-drill.kicad_pcb"),
+        "packages/kicad-fixtures/fixtures/erc-power-pin-error/erc-power-pin-error.kicad_sch",
+        "packages/kicad-fixtures/fixtures/clean-led-kicad10/clean-led-kicad10.kicad_sch",
+        "tests/fixtures/kicad-10-0-7-drill-marks/npth-stored-full-drill.kicad_pcb",
+        "tests/fixtures/kicad-10-0-7-drill-marks/pth-stored-full-drill.kicad_pcb",
     )
-    assert set(fixtures) == {str(p) for p in allowed_paths}
+    assert set(fixtures) == set(allowed_paths)
     for rel in allowed_paths:
         source = ROOT / rel
         assert source.is_file()
-        assert hashlib.sha256(source.read_bytes()).hexdigest() == fixtures[str(rel)]
+        assert hashlib.sha256(source.read_bytes()).hexdigest() == fixtures[rel]
 
 
 def test_audit_explicitly_limits_native_linux_acceptance() -> None:
