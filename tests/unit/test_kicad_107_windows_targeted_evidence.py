@@ -105,7 +105,8 @@ def test_windows_erc_coordinate_values_with_real_cross_platform_count_difference
 def test_windows_pdf_both_named_roots_independent_of_linux_page_order() -> None:
     e = _read(EVIDENCE)["patchProbeScopes"]["multi-root-schematic-plot"]
     linux = _read(LINUX_EVIDENCE)["patchProbeScopes"]["multi-root-schematic-plot"]
-    assert e["pageCount"] == linux["pageCount"] == 2
+    assert e["pageCount"] == 2
+    assert linux["pageCount"] == 2
     assert {(p["root"], p["title"]) for p in e["pages"]} == {
         ("FlatRoot1", "erc-power-pin-error"),
         ("FlatRoot2", "clean-led-kicad10"),
@@ -124,7 +125,8 @@ def test_windows_npth_and_control_geometry_preserved() -> None:
 
 def test_audit_limits_cross_platform_native_cli_to_documented_gates() -> None:
     doc = AUDIT.read_text(encoding="utf-8")
-    assert EVIDENCE.name in doc and LINUX_EVIDENCE.name in doc
+    assert EVIDENCE.name in doc
+    assert LINUX_EVIDENCE.name in doc
     assert "**5** diagnoses per unit" in doc
     assert "**4** per unit" in doc
     assert "**Schematic Editor BOM GUI**" in doc
