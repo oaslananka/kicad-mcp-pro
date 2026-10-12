@@ -11,7 +11,8 @@ from typing import cast
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_POLICY = REPO_ROOT / ".github" / "actions-policy.json"
+_GITHUB_DIRECTORY = ".github"
+DEFAULT_POLICY = REPO_ROOT / _GITHUB_DIRECTORY / "actions-policy.json"
 SHA_REF = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
@@ -158,7 +159,7 @@ def _scan_workflows(
     allowed_transitive: set[str],
     errors: list[str],
 ) -> tuple[set[str], dict[str, dict[str, list[str]]]]:
-    workflows = sorted((root / ".github" / "workflows").glob("*.y*ml"))
+    workflows = sorted((root / _GITHUB_DIRECTORY / "workflows").glob("*.y*ml"))
     actual_third_party: set[str] = set()
     actual_writes: dict[str, dict[str, list[str]]] = {}
     for workflow in workflows:
@@ -240,7 +241,7 @@ def validate_repository(root: Path, policy: dict[str, object]) -> list[str]:
             f"used={sorted(actual_third_party)!r} allowed={sorted(allowed_repositories)!r}"
         )
 
-    codeowners_path = root / ".github" / "CODEOWNERS"
+    codeowners_path = root / _GITHUB_DIRECTORY / "CODEOWNERS"
     codeowners = {
         line.strip()
         for line in codeowners_path.read_text(encoding="utf-8").splitlines()
@@ -268,7 +269,7 @@ def main() -> None:
             print(f"ERROR: {error}")
         raise SystemExit(1)
 
-    workflow_count = len(list((root / ".github" / "workflows").glob("*.y*ml")))
+    workflow_count = len(list((root / _GITHUB_DIRECTORY / "workflows").glob("*.y*ml")))
     print(f"GitHub Actions policy passed for {workflow_count} workflows.")
 
 

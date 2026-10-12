@@ -115,6 +115,26 @@ def test_web_and_tauri_checks_are_pre_push_only_and_conditional(tmp_path: Path) 
     assert "tauri-cargo-check" in _names(plan)
 
 
+def test_web_route_change_keeps_exact_scoped_test_command(tmp_path: Path) -> None:
+    """Changing policy path constants must not change pre-push test selection."""
+    web_file = tmp_path / "src" / "kicad_mcp" / "web" / "dashboard.py"
+    web_file.parent.mkdir(parents=True)
+    web_file.write_text("VALUE = 1\n", encoding="utf-8")
+
+    plan = build_plan(["src/kicad_mcp/web/dashboard.py"], root=tmp_path)
+    web_commands = [check.command for check in plan if check.name == "web-route-tests"]
+    assert web_commands == [
+        [
+            hook_pre_push.sys.executable,
+            "-m",
+            "pytest",
+            "tests/unit/test_web_routes.py",
+            "tests/unit/test_web_routes_step3.py",
+            "-q",
+        ]
+    ]
+
+
 def test_documentation_only_change_has_no_python_or_full_suite(tmp_path: Path) -> None:
     doc = tmp_path / "docs" / "notes.md"
     doc.parent.mkdir(parents=True)

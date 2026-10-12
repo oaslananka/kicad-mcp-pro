@@ -15,10 +15,11 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_POLICY = ROOT / ".github" / "actions-policy.json"
+_GITHUB_DIRECTORY = ".github"
+DEFAULT_POLICY = ROOT / _GITHUB_DIRECTORY / "actions-policy.json"
 DEFAULT_RULESET_POLICIES = {
-    "main-standard": ROOT / ".github" / "rulesets" / "main.json",
-    "release-tags": ROOT / ".github" / "rulesets" / "release-tags.json",
+    "main-standard": ROOT / _GITHUB_DIRECTORY / "rulesets" / "main.json",
+    "release-tags": ROOT / _GITHUB_DIRECTORY / "rulesets" / "release-tags.json",
 }
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
 _CANONICAL_REPOSITORY = "oaslananka/kicad-mcp-pro"

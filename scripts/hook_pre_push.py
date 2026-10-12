@@ -18,6 +18,8 @@ from shutil import which
 ROOT = Path(__file__).resolve().parents[1]
 ZERO_SHA = "0" * 40
 MAX_TARGET_TEST_FILES = 12
+_WEB_ROUTES_TEST = "tests/unit/test_web_routes.py"
+_WEB_ROUTES_STEP3_TEST = "tests/unit/test_web_routes_step3.py"
 RUFF_CHECK_NAMES = frozenset({"ruff-format", "ruff-lint"})
 _SAFE_GIT_REF = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/@+,-]{0,254}")
 _GIT_OBJECT_ID = re.compile(r"[0-9a-fA-F]{40,64}")
@@ -91,8 +93,7 @@ def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
         )
 
     web_changed = any(
-        _is_under(path, "src/kicad_mcp/web")
-        or path in {"tests/unit/test_web_routes.py", "tests/unit/test_web_routes_step3.py"}
+        _is_under(path, "src/kicad_mcp/web") or path in {_WEB_ROUTES_TEST, _WEB_ROUTES_STEP3_TEST}
         for path in changed
     )
 
@@ -107,7 +108,7 @@ def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
         targeted_tests = [
             path
             for path in targeted_tests
-            if path not in {"tests/unit/test_web_routes.py", "tests/unit/test_web_routes_step3.py"}
+            if path not in {_WEB_ROUTES_TEST, _WEB_ROUTES_STEP3_TEST}
         ]
     if targeted_tests:
         checks.append(
@@ -226,8 +227,8 @@ def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
                     sys.executable,
                     "-m",
                     "pytest",
-                    "tests/unit/test_web_routes.py",
-                    "tests/unit/test_web_routes_step3.py",
+                    _WEB_ROUTES_TEST,
+                    _WEB_ROUTES_STEP3_TEST,
                     "-q",
                 ],
             )
