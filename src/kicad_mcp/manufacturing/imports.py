@@ -26,6 +26,10 @@ CliRunner = Callable[[list[list[str]]], tuple[int, str, str]]
 PathResolver = Callable[[str], Path]
 CapabilitiesProvider = Callable[[], ImportCapabilities]
 
+# Stable CLI result prefixes consumed by legacy import wrappers.
+_BOARD_IMPORT_FAILURE_PREFIX = "Board import failed"
+_BOARD_IMPORT_SUCCESS_PREFIX = "Board imported successfully"
+
 
 @dataclass(frozen=True)
 class ManufacturingImportService:
@@ -103,9 +107,9 @@ class ManufacturingImportService:
             output_file=output_dir,
             import_format="pads",
         )
-        if "Board import failed" in result:
-            return result.replace("Board import failed", "pads import failed")
-        return result.replace("Board imported successfully", "pads import completed")
+        if _BOARD_IMPORT_FAILURE_PREFIX in result:
+            return result.replace(_BOARD_IMPORT_FAILURE_PREFIX, "pads import failed")
+        return result.replace(_BOARD_IMPORT_SUCCESS_PREFIX, "pads import completed")
 
     def import_geda(self, geda_pcb_path: str, output_dir: str = "") -> str:
         result = self.import_board(
@@ -113,9 +117,9 @@ class ManufacturingImportService:
             output_file=output_dir,
             import_format="geda",
         )
-        if "Board import failed" in result:
-            return result.replace("Board import failed", "geda import failed")
-        return result.replace("Board imported successfully", "geda import completed")
+        if _BOARD_IMPORT_FAILURE_PREFIX in result:
+            return result.replace(_BOARD_IMPORT_FAILURE_PREFIX, "geda import failed")
+        return result.replace(_BOARD_IMPORT_SUCCESS_PREFIX, "geda import completed")
 
     def import_specctra(self, specctra_ses_path: str, output_dir: str = "") -> str:
         result = self.import_board(
@@ -123,6 +127,6 @@ class ManufacturingImportService:
             output_file=output_dir,
             import_format="specctra",
         )
-        if "Board import failed" in result:
-            return result.replace("Board import failed", "specctra import failed")
-        return result.replace("Board imported successfully", "specctra import completed")
+        if _BOARD_IMPORT_FAILURE_PREFIX in result:
+            return result.replace(_BOARD_IMPORT_FAILURE_PREFIX, "specctra import failed")
+        return result.replace(_BOARD_IMPORT_SUCCESS_PREFIX, "specctra import completed")

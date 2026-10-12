@@ -17,7 +17,9 @@ LIVE_OBJECT_IDENTITY_AUTHORITY = "kicad-headless-ipc:board-project-identity"
 LIVE_OBJECT_IDENTITY_OPERATION = "live-object.board-identity"
 LIVE_OBJECT_IDENTITY_COMPARISON_METHOD = "resolved-project-path-board-name-sha256.v1"
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
-_FIXTURE_SUFFIXES = frozenset({".kicad_pcb", ".kicad_pro"})
+_BOARD_SUFFIX = ".kicad_pcb"
+_PROJECT_SUFFIX = ".kicad_pro"
+_FIXTURE_SUFFIXES = frozenset({_BOARD_SUFFIX, _PROJECT_SUFFIX})
 
 
 def _identity_material(project_path: str, board_name: str) -> bytes:
@@ -45,8 +47,10 @@ def hash_live_identity_fixture(project_or_board: Path) -> str:
     resolved = project_or_board.expanduser().resolve(strict=True)
     if resolved.suffix not in _FIXTURE_SUFFIXES:
         raise ValueError(f"Unsupported live identity fixture: {project_or_board}")
-    board = resolved if resolved.suffix == ".kicad_pcb" else resolved.with_suffix(".kicad_pcb")
-    project = resolved if resolved.suffix == ".kicad_pro" else resolved.with_suffix(".kicad_pro")
+    board = resolved if resolved.suffix == _BOARD_SUFFIX else resolved.with_suffix(_BOARD_SUFFIX)
+    project = (
+        resolved if resolved.suffix == _PROJECT_SUFFIX else resolved.with_suffix(_PROJECT_SUFFIX)
+    )
     files = (board, project)
     if any(not path.is_file() for path in files):
         raise ValueError("Live identity fixture requires paired .kicad_pcb and .kicad_pro files")

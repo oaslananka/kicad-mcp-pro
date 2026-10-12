@@ -111,9 +111,9 @@ def test_legacy_import_wrappers_preserve_block_and_result_wording(tmp_path: Path
     assert service.import_allegro("legacy.brd") == (
         "blocked: KiCad CLI does not support allegro import in 10.0.6"
     )
-    assert "pads import failed: unsupported" in service.import_pads("legacy.brd")
-    assert "geda import failed: unsupported" in service.import_geda("legacy.brd")
-    assert "specctra import failed: unsupported" in service.import_specctra("legacy.brd")
+    assert service.import_pads("legacy.brd") == "pads import failed: unsupported"
+    assert service.import_geda("legacy.brd") == "geda import failed: unsupported"
+    assert service.import_specctra("legacy.brd") == "specctra import failed: unsupported"
 
 
 def test_legacy_import_wrappers_preserve_success_wording(tmp_path: Path) -> None:
@@ -132,6 +132,9 @@ def test_legacy_import_wrappers_preserve_success_wording(tmp_path: Path) -> None
         ),
     )
 
-    assert "pads import completed" in service.import_pads("legacy.brd")
-    assert "geda import completed" in service.import_geda("legacy.brd")
-    assert "specctra import completed" in service.import_specctra("legacy.brd")
+    assert service.import_pads("legacy.brd") == "pads import completed. Output: default location"
+    assert service.import_geda("legacy.brd") == "geda import completed. Output: default location"
+    assert (
+        service.import_specctra("legacy.brd")
+        == "specctra import completed. Output: default location"
+    )

@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+_INVALID_DPI_MESSAGE = "dpi must be between 72 and 600."
+
 
 class SchematicTargetLike(Protocol):
     @property
@@ -75,7 +77,7 @@ class SchematicRenderingService:
     ) -> SchematicRenderingResponse:
         """Render a schematic sheet to a PNG response."""
         if dpi < 72 or dpi > 600:
-            return self._text("dpi must be between 72 and 600.")
+            return self._text(_INVALID_DPI_MESSAGE)
 
         target = self.resolve_target(sheet, sheet_file)
         data = self.parse_schematic(target.path)
@@ -125,7 +127,7 @@ class SchematicRenderingService:
     ) -> SchematicRenderingResponse:
         """Render the exact visual delta from the latest mutation snapshot."""
         if dpi < 72 or dpi > 600:
-            return self._text("dpi must be between 72 and 600.")
+            return self._text(_INVALID_DPI_MESSAGE)
 
         target = self.resolve_target(sheet, sheet_file)
         state = self.load_visual_diff(target.path)
@@ -230,7 +232,7 @@ class SchematicRenderingService:
         if debounce_ms < 0 or debounce_ms > 60_000:
             return self._text("debounce_ms must be between 0 and 60000.")
         if dpi < 72 or dpi > 600:
-            return self._text("dpi must be between 72 and 600.")
+            return self._text(_INVALID_DPI_MESSAGE)
 
         target = self.resolve_target(sheet, sheet_file)
         files = self.preview_files(target.path, include_child_sheets)

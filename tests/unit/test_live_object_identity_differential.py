@@ -146,6 +146,8 @@ def test_live_identity_malformed_native_or_custom_identity_is_infrastructure_inv
 def test_live_identity_fixture_hash_covers_board_and_project(tmp_path: Path) -> None:
     board, project = _fixture(tmp_path)
     first = hash_live_identity_fixture(board)
+    from_project_path = hash_live_identity_fixture(project)
+    assert first == from_project_path
 
     board.write_text("(kicad_pcb changed)\n", encoding="utf-8")
     second = hash_live_identity_fixture(board)
