@@ -1,148 +1,145 @@
-"""Portable cross-project BOM GUI operator fixture is tamper-evident and scoped."""
+"""Portable KiCad BOM operator sessions are fail-closed and path-safe."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
-from scripts.kicad_107_bom_portable import FixtureError, main, prepare, verify
+import scripts.kicad_107_bom_portable as tool
 
 
-def test_prepare_and_verify_two_independent_minimal_real_projects(tmp_path: Path) -> None:
-    work = tmp_path / "session"
-    prepared = prepare(work)
+@pytest.fixture
+def session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, dict]:
+    monkeypatch.setattr(tool.tempfile, "gettempdir", lambda: str(tmp_path))
+    report = tool.prepare()
+    return tool._session_workspace(report["sessionId"]), report
+
+
+def test_generate_two_unique_os_temp_schematics(session: tuple[Path, dict]) -> None:
+    work, prepared = session
     assert prepared["status"] == "prepared"
     assert prepared["nativeGuiQualified"] is False
+    assert len(prepared["sessionId"]) == 32
     assert prepared["savedNames"][0] != prepared["savedNames"][1]
+    assert work.parent.is_dir()
     assert not (work / "PortableBom107A/PortableBom107A.kicad_pcb").exists()
-    report = verify(work)
-    assert report["status"] == "integrity-pass"
-    assert report["projectSha256Unchanged"] is True
-    assert report["nativeGuiQualified"] is False
+    result = tool.verify(work)
+    assert result["status"] == "integrity-pass"
+    assert result["projectSha256Unchanged"] is True
+    assert result["nativeGuiQualified"] is False
 
 
-def test_operator_attestation_never_counts_as_automated_gui_evidence(tmp_path: Path) -> None:
-    work = tmp_path / "session"
-    names = prepare(work)["savedNames"]
-    result = verify(
-        work,
-        observed_a=names[0],
-        observed_b=names[1],
-        reopened_b=names[1],
-        cancelled_b=True,
-    )
+def test_operator_attestation_never_counts_as_automatic_gui_evidence(
+    session: tuple[Path, dict],
+) -> None:
+    work, data = session
+    a, b = data["savedNames"]
+    result = tool.verify(work, observed_a=a, observed_b=b, reopened_b=b, cancelled_b=True)
     assert result["status"] == "operator-attested"
     assert result["operatorAttested"] is True
     assert result["nativeGuiQualified"] is False
 
 
 @pytest.mark.parametrize("field", ["observed_a", "observed_b", "reopened_b"])
-def test_wrong_operator_observation_is_rejected(tmp_path: Path, field: str) -> None:
-    work = tmp_path / "session"
-    a, b = prepare(work)["savedNames"]
+def test_wrong_operator_observation_fails(session: tuple[Path, dict], field: str) -> None:
+    work, data = session
+    a, b = data["savedNames"]
     options = {"observed_a": a, "observed_b": b, "reopened_b": b, "cancelled_b": True}
-    options[field] = "BOM_CROSS_PROJECT_LEAK.csv"
-    with pytest.raises(FixtureError, match="operator-"):
-        verify(work, **options)
+    options[field] = "BOM_STALE_CROSS_PROJECT_LEAK.csv"
+    with pytest.raises(tool.FixtureError, match="operator-"):
+        tool.verify(work, **options)
 
 
-def test_partial_operator_observation_is_rejected(tmp_path: Path) -> None:
-    work = tmp_path / "session"
-    prepare(work)
-    with pytest.raises(FixtureError, match="operator-observation-incomplete"):
-        verify(work, cancelled_b=True)
+def test_partial_operator_attestation_fails(session: tuple[Path, dict]) -> None:
+    with pytest.raises(tool.FixtureError, match="operator-observation-incomplete"):
+        tool.verify(session[0], cancelled_b=True)
 
 
-def test_modified_project_json_fails_even_if_saved_filename_is_preserved(tmp_path: Path) -> None:
-    work = tmp_path / "session"
-    prepare(work)
-    p = work / "PortableBom107B/PortableBom107B.kicad_pro"
-    p.write_text(p.read_text() + " ")
-    with pytest.raises(FixtureError, match="fixture-project-file-changed"):
-        verify(work)
+@pytest.mark.parametrize("filename", ["PortableBom107A.kicad_sch", "PortableBom107B.kicad_pro"])
+def test_file_modification_fails(session: tuple[Path, dict], filename: str) -> None:
+    work = session[0]
+    name = filename.split(".")[0]
+    file = work / name / filename
+    file.write_text(file.read_text() + " ")
+    with pytest.raises(tool.FixtureError, match="fixture-(project|schematic)-file-changed"):
+        tool.verify(work)
 
 
-def test_modified_schematic_bytes_fail(tmp_path: Path) -> None:
-    work = tmp_path / "session"
-    prepare(work)
-    p = work / "PortableBom107A/PortableBom107A.kicad_sch"
-    p.write_text(p.read_text() + " ")
-    with pytest.raises(FixtureError, match="fixture-schematic-file-changed"):
-        verify(work)
+@pytest.mark.parametrize("extension", ["csv", "CSV"])
+def test_unexpected_bom_file_fails(session: tuple[Path, dict], extension: str) -> None:
+    work = session[0]
+    (work / "PortableBom107A" / f"UNEXPECTED.{extension}").write_text("unexpected")
+    with pytest.raises(tool.FixtureError, match="fixture-unexpected-bom-output"):
+        tool.verify(work)
 
 
-def test_uppercase_bom_extension_is_rejected(tmp_path: Path) -> None:
-    work = tmp_path / "session"
-    prepare(work)
-    (work / "PortableBom107B/WRONG_EXPORT.CSV").write_text("unexpected")
-    with pytest.raises(FixtureError, match="fixture-unexpected-bom-output"):
-        verify(work)
-
-
-def test_unexpected_bom_file_is_rejected(tmp_path: Path) -> None:
-    work = tmp_path / "session"
-    prepare(work)
-    (work / "PortableBom107A/BOM.csv").write_text("unexpected")
-    with pytest.raises(FixtureError, match="fixture-unexpected-bom-output"):
-        verify(work)
-
-
-def test_existing_workspace_is_never_overwritten(tmp_path: Path) -> None:
-    work = tmp_path / "session"
-    work.mkdir()
-    source = work / "do-not-overwrite.txt"
-    source.write_text("keep")
-    with pytest.raises(FixtureError, match="workspace-must-be-a-new-absolute-directory"):
-        prepare(work)
-    assert source.read_text() == "keep"
-
-
-def test_manifest_hijack_is_rejected(tmp_path: Path) -> None:
-    work = tmp_path / "session"
-    prepare(work)
-    p = work / "manifest.json"
-    d = json.loads(p.read_text())
-    d["projects"][0]["name"] = "../../private"
-    p.write_text(json.dumps(d))
-    with pytest.raises(FixtureError, match="fixture-project-name-mismatch"):
-        verify(work)
-
-
-def test_symlinked_project_file_is_never_read(tmp_path: Path) -> None:
-    work = tmp_path / "session"
-    prepare(work)
-    outside = tmp_path / "outside.json"
-    outside.write_text('{"secret":"not-for-audit"}')
-    p = work / "PortableBom107B/PortableBom107B.kicad_pro"
-    p.unlink()
-    p.symlink_to(outside)
-    with pytest.raises(FixtureError, match="fixture-missing-or-unsafe-file"):
-        verify(work)
-
-
-def test_cli_output_is_bounded_json_and_never_claims_gui_qualification(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+def test_existing_session_is_never_overwritten(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    work = tmp_path / "session"
-    assert main(["prepare", "--workspace", str(work)]) == 0
+    monkeypatch.setattr(tool.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(tool, "uuid4", lambda: UUID("f31c783b-08e9-4d4e-99da-535b9f36fada"))
+    path = tool._session_workspace("f31c783b08e94d4e99da535b9f36fada")
+    path.mkdir()
+    (path / "keep.txt").write_text("do not overwrite")
+    with pytest.raises(tool.FixtureError, match="workspace-session-already-exists"):
+        tool.prepare()
+    assert (path / "keep.txt").read_text() == "do not overwrite"
+
+
+def test_manifest_traversal_is_rejected(session: tuple[Path, dict]) -> None:
+    work = session[0]
+    file = work / "manifest.json"
+    obj = json.loads(file.read_text())
+    obj["projects"][0]["name"] = "../../private"
+    file.write_text(json.dumps(obj))
+    with pytest.raises(tool.FixtureError, match="fixture-project-name-mismatch"):
+        tool.verify(work)
+
+
+def test_symlinked_project_is_rejected(session: tuple[Path, dict], tmp_path: Path) -> None:
+    work = session[0]
+    outside = tmp_path / "private-file"
+    outside.write_text("secret")
+    project = work / "PortableBom107B/PortableBom107B.kicad_pro"
+    project.unlink()
+    project.symlink_to(outside)
+    with pytest.raises(tool.FixtureError, match="fixture-missing-or-unsafe-file"):
+        tool.verify(work)
+
+
+@pytest.mark.parametrize(
+    "untrusted", ["../../etc/passwd", "C:\\Windows", "prefix/anything", "bad-token", "A" * 32]
+)
+def test_cli_session_input_cannot_escape_system_temp(untrusted: str) -> None:
+    with pytest.raises(tool.FixtureError, match="session-identifier-invalid"):
+        tool._session_workspace(untrusted)
+
+
+def test_cli_uses_opaque_session_not_operator_supplied_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(tool.tempfile, "gettempdir", lambda: str(tmp_path))
+    assert tool.main(["prepare"]) == 0
     prepared = json.loads(capsys.readouterr().out)
     assert prepared["nativeGuiQualified"] is False
-    assert main(["verify", "--workspace", str(work)]) == 0
+    token = prepared["sessionId"]
+    assert tool.main(["verify", "--session", token]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["status"] == "integrity-pass"
     assert report["nativeGuiQualified"] is False
     assert str(tmp_path) not in json.dumps(report)
+    assert tool.main(["locate", "--session", token]) == 0
+    assert capsys.readouterr().out.strip() == str(tool._session_workspace(token))
 
 
-def test_cli_rejects_partial_attestation_without_printing_workspace_path(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+def test_cli_rejects_bad_session_without_leaking_host_path(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    work = tmp_path / "session"
-    prepare(work)
-    assert main(["verify", "--workspace", str(work), "--cancelled-b"]) == 2
+    assert tool.main(["verify", "--session", str(tmp_path)]) == 2
     report = json.loads(capsys.readouterr().out)
     assert report["status"] == "fail"
-    assert report["nativeGuiQualified"] is False
+    assert report["reason"] == "session-identifier-invalid"
     assert str(tmp_path) not in json.dumps(report)

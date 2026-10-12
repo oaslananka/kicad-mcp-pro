@@ -11,6 +11,7 @@ import hashlib
 import json
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -57,13 +58,21 @@ def _report(*, status: str, project_names: list[str]) -> dict[str, Any]:
     }
 
 
-def prepare(workspace: Path) -> dict[str, Any]:
-    """Create ONLY new named files in a brand-new, operator-specified directory."""
-    if not workspace.is_absolute() or workspace.exists():
-        raise FixtureError("workspace-must-be-a-new-absolute-directory")
-    if not workspace.parent.is_dir() or workspace.parent.is_symlink():
-        raise FixtureError("workspace-parent-must-exist-and-not-be-a-symlink")
-    workspace.mkdir(mode=0o700)
+def _session_workspace(session: str) -> Path:
+    """Map a strictly bounded opaque session token to the OS temporary root."""
+    if not re.fullmatch(r"[0-9a-f]{32}", session):
+        raise FixtureError("session-identifier-invalid")
+    return Path(tempfile.gettempdir()) / f"kicad-107-bom-operator-{session}"
+
+
+def prepare() -> dict[str, Any]:
+    """Only create a fresh random session below the OS-managed temp root."""
+    session = uuid4().hex
+    workspace = _session_workspace(session)
+    try:
+        workspace.mkdir(mode=0o700)
+    except FileExistsError as exc:
+        raise FixtureError("workspace-session-already-exists") from exc
     records: list[dict[str, str]] = []
     token = uuid4().hex[:12]
     for index, name in enumerate(PROJECTS):
@@ -89,6 +98,7 @@ def prepare(workspace: Path) -> dict[str, Any]:
     return {
         **_report(status="prepared", project_names=list(PROJECTS)),
         "savedNames": [r["savedFilename"] for r in records],
+        "sessionId": session,
     }
 
 
@@ -97,7 +107,7 @@ def _read_json(path: Path) -> object:
         raise FixtureError("fixture-missing-or-unsafe-file")
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (ValueError, UnicodeError) as exc:
+    except ValueError as exc:
         raise FixtureError("fixture-invalid-json") from exc
 
 
@@ -194,12 +204,11 @@ def verify(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subcommands = parser.add_subparsers(dest="action", required=True)
-    create = subcommands.add_parser("prepare", help="Create two new disposable projects")
-    create.add_argument("--workspace", type=Path, required=True)
-    audit = subcommands.add_parser(
-        "verify", help="Check that the prepared project bytes did not change"
-    )
-    audit.add_argument("--workspace", type=Path, required=True)
+    subcommands.add_parser("prepare", help="Create a secure random OS-temp session")
+    for action in ("verify", "locate"):
+        subcommands.add_parser(action).add_argument("--session", required=True)
+    # Only the integrity-check subcommand accepts optional GUI observations.
+    audit = subcommands.choices["verify"]
     audit.add_argument(
         "--observed-a", default=None, help="Human-observed first project GUI output field"
     )
@@ -215,22 +224,31 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.action == "prepare":
-            result = prepare(args.workspace)
+            result = prepare()
         else:
+            workspace = _session_workspace(args.session)
+            if args.action == "locate":
+                verify_integrity(workspace)
+                # Local, explicitly requested operator output only; not in JSON evidence.
+                print(workspace)
+                return 0
             result = verify(
-                args.workspace,
+                workspace,
                 observed_a=args.observed_a,
                 observed_b=args.observed_b,
                 reopened_b=args.reopened_b,
                 cancelled_b=args.cancelled_b,
             )
-    except FixtureError as exc:
+    except (FixtureError, OSError) as exc:
+        reason = (
+            str(exc) if isinstance(exc, FixtureError) else "fixture-filesystem-operation-failed"
+        )
         print(
             json.dumps(
                 {
                     "schemaVersion": SCHEMA,
                     "status": "fail",
-                    "reason": str(exc),
+                    "reason": reason,
                     "nativeGuiQualified": False,
                 }
             )

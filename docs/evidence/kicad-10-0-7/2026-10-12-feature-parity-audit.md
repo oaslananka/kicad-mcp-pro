@@ -130,9 +130,11 @@ qualified for the BOM fix by those passing jobs.
 `scripts/kicad_107_bom_portable.py` provides **cross-platform, dependency-free
 preparation and post-observation integrity checks** for two *brand-new*,
 non-hierarchical, valid native KiCad 10.0.7 schematic/project pairs generated
-under an operator-selected **new absolute workspace directory**. No user
-project, source corpus, global settings, existing directory or GUI is opened,
-overwritten, or cleaned by the script. Different projects A and B have
+under a **fresh cryptographically random session ID in the operating
+system’s temporary directory**. The CLI does **not accept an arbitrary file
+path** for project creation or verification; its session identifier is a
+strict 32-character lowercase hexadecimal token. No user project, global
+settings or GUI is opened, overwritten or cleaned by the script. Different projects A and B have
 different saved `schematic.bom_export_filename` values, so a stale filename
 leaking between projects is detectable. This small empty-sheet fixture was
 opened on **real Linux 10.0.7 Project Manager + Schematic Editor + Symbol
@@ -143,16 +145,17 @@ An operator using an **isolated disposable Windows/macOS GUI account/profile**
 with a verified native 10.0.7 installation may run:
 
 ```bash
-python scripts/kicad_107_bom_portable.py prepare --workspace /absolute/new/session-folder
-python scripts/kicad_107_bom_portable.py verify --workspace /absolute/new/session-folder
+python scripts/kicad_107_bom_portable.py prepare
+python scripts/kicad_107_bom_portable.py locate --session HEX_SESSION_FROM_PREPARE
+python scripts/kicad_107_bom_portable.py verify --session HEX_SESSION_FROM_PREPARE
 ```
 
-Use a **platform-native absolute directory path** (for example a newly named
-folder below a temporary directory); on Windows invoke a native Python 3.13+
-interpreter with the same arguments and a drive-qualified absolute path. The
-workspace must **not already exist**. Inspect `manifest.json` for the two
-unique stored BOM output filename sentinels, then manually, on a **trusted
-interactive desktop**:
+Run with a native Python 3.13+ interpreter on Windows/macOS. `prepare`
+prints an opaque `sessionId`; `locate` prints the absolute **local** OS-temp
+workspace path for the operator to open, and neither command is a public CI
+artifact. The workspace is new and the script refuses collisions. Inspect
+`manifest.json` for the two unique stored BOM output filename sentinels,
+then manually, on a **trusted interactive desktop**:
 
 1. Open `PortableBom107A.kicad_pro` **through KiCad Project Manager**, open
    Schematic Editor, choose **Tools → Generate Bill of Materials** (or the
