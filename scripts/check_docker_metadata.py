@@ -48,34 +48,41 @@ def _uv_required_version() -> str | None:
 
 
 def _check_dockerfile(errors: list[str], uv_version: str | None) -> None:
-    dockerfiles = {"Dockerfile": _read("Dockerfile")}
+    dockerfile = _read("Dockerfile")
+    _check_base_dockerfile_markers("Dockerfile", dockerfile, errors, uv_version)
+    _check_dockerfile_runtime(dockerfile, errors)
 
-    for path, content in dockerfiles.items():
-        required = [
-            f'io.modelcontextprotocol.server.name="{MCP_SERVER_NAME}"',
-            'org.opencontainers.image.source="https://github.com/oaslananka/kicad-mcp-pro"',
-            "ARG KICAD_MCP_VERSION",
-            "ARG VCS_REF",
-        ]
-        for marker in required:
-            if marker not in content:
-                errors.append(f"{path} is missing {marker}")
-        if "@sha256:" not in content:
-            errors.append(f"{path} must pin Docker base images by digest")
-        if uv_version is not None and f"ARG UV_VERSION={uv_version}" not in content:
-            errors.append(f"{path} must pin ARG UV_VERSION={uv_version}")
-        if "EXPOSE 3334" not in content:
-            errors.append(f"{path} must expose 3334")
-        if 'CMD ["--transport", "streamable-http"]' not in content:
-            errors.append(f"{path} must default to streamable HTTP")
-        if "ghcr.io/astral-sh/uv:${UV_VERSION}@sha256:" not in content:
-            errors.append(f"{path} must install uv from a digest-pinned image")
-        if "COPY --from=uv-bin /uv /usr/local/bin/uv" not in content:
-            errors.append(f"{path} must copy uv from the pinned uv image")
-        if "uv pip install --system --no-cache --require-hashes" not in content:
-            errors.append(f"{path} must install runtime dependencies with hash enforcement")
 
-    dockerfile = dockerfiles["Dockerfile"]
+def _check_base_dockerfile_markers(
+    path: str, content: str, errors: list[str], uv_version: str | None
+) -> None:
+
+    required = [
+        f'io.modelcontextprotocol.server.name="{MCP_SERVER_NAME}"',
+        'org.opencontainers.image.source="https://github.com/oaslananka/kicad-mcp-pro"',
+        "ARG KICAD_MCP_VERSION",
+        "ARG VCS_REF",
+    ]
+    for marker in required:
+        if marker not in content:
+            errors.append(f"{path} is missing {marker}")
+    if "@sha256:" not in content:
+        errors.append(f"{path} must pin Docker base images by digest")
+    if uv_version is not None and f"ARG UV_VERSION={uv_version}" not in content:
+        errors.append(f"{path} must pin ARG UV_VERSION={uv_version}")
+    if "EXPOSE 3334" not in content:
+        errors.append(f"{path} must expose 3334")
+    if 'CMD ["--transport", "streamable-http"]' not in content:
+        errors.append(f"{path} must default to streamable HTTP")
+    if "ghcr.io/astral-sh/uv:${UV_VERSION}@sha256:" not in content:
+        errors.append(f"{path} must install uv from a digest-pinned image")
+    if "COPY --from=uv-bin /uv /usr/local/bin/uv" not in content:
+        errors.append(f"{path} must copy uv from the pinned uv image")
+    if "uv pip install --system --no-cache --require-hashes" not in content:
+        errors.append(f"{path} must install runtime dependencies with hash enforcement")
+
+
+def _check_dockerfile_runtime(dockerfile: str, errors: list[str]) -> None:
     if "python:3.14.5-alpine3.22@sha256:" not in dockerfile:
         errors.append("Dockerfile must use the pinned Python 3.14.5 Alpine base")
     if "python:3.14.7-slim@sha256:" not in dockerfile:
