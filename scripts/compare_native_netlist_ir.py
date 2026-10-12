@@ -16,6 +16,7 @@ import sys
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
+from xml.etree.ElementTree import Element
 
 from defusedxml import ElementTree as SafeElementTree  # type: ignore[import-untyped]
 from defusedxml.common import DefusedXmlException  # type: ignore[import-untyped]
@@ -52,6 +53,39 @@ def _workspace_file(path: Path, *, label: str) -> Path:
     return candidate
 
 
+def _component_refs(components: Element) -> tuple[set[str], set[str], int]:
+    """Keep duplicate/power-reference detection independent of net handling."""
+    active: set[str] = set()
+    power: set[str] = set()
+    all_refs: set[str] = set()
+    count = 0
+    for comp in components.findall("comp"):
+        count += 1
+        reference = (comp.get("ref") or "").strip()
+        if not reference or reference in all_refs:
+            raise ValueError("native XML has an empty or duplicate component reference")
+        all_refs.add(reference)
+        libsource = comp.find("libsource")
+        if libsource is not None and libsource.get("lib") == "power":
+            power.add(reference)
+        else:
+            active.add(reference)
+    return active, power, count
+
+
+def _native_net_count(nets: Element) -> int:
+    """Reject nameless/duplicate nets before validating nonempty coverage."""
+    names: set[str] = set()
+    count = 0
+    for net in nets.findall("net"):
+        count += 1
+        name = net.get("name")
+        if name is None or name in names:
+            raise ValueError("native XML has a missing or duplicate net name")
+        names.add(name)
+    return count
+
+
 def read_native_inventory(xml_path: Path) -> NativeInventory:
     """Extract component identities and net count from native KiCad XML.
 
@@ -75,30 +109,8 @@ def read_native_inventory(xml_path: Path) -> NativeInventory:
     if components is None or nets is None:
         raise ValueError("native XML lacks components or nets inventory")
 
-    active: set[str] = set()
-    power: set[str] = set()
-    all_refs: set[str] = set()
-    count = 0
-    for comp in components.findall("comp"):
-        count += 1
-        reference = (comp.get("ref") or "").strip()
-        if not reference or reference in all_refs:
-            raise ValueError("native XML has an empty or duplicate component reference")
-        all_refs.add(reference)
-        libsource = comp.find("libsource")
-        if libsource is not None and libsource.get("lib") == "power":
-            power.add(reference)
-        else:
-            active.add(reference)
-
-    names: set[str] = set()
-    count_nets = 0
-    for net in nets.findall("net"):
-        count_nets += 1
-        name = net.get("name")
-        if name is None or name in names:
-            raise ValueError("native XML has a missing or duplicate net name")
-        names.add(name)
+    active, power, count = _component_refs(components)
+    count_nets = _native_net_count(nets)
     if count == 0 or count_nets == 0:
         raise ValueError("native XML has no components or no nets; cannot establish coverage")
     return NativeInventory(

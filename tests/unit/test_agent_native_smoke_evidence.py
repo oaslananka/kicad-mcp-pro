@@ -95,3 +95,18 @@ def test_missing_or_symlinked_report_fails_closed(
     assert gate.main(["--report", str(f)]) == 2
     output = capsys.readouterr().out
     assert output.count("rejected") == 2
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        ({"host_version": "١.2.3"}, "invalid_version"),
+        ({"server_version": "٤.3.0"}, "invalid_version"),
+        ({"observed_on": "20٢6-10-11"}, "invalid_observation_date"),
+        ({"skills_discovered": ["pcb-design", "pcb-design"]}, "invalid_skill_discovery"),
+        ({"skills_discovered": [{"untrusted": "pcb-design"}]}, "invalid_skill_discovery"),
+    ],
+)
+def test_unicode_digits_and_untrusted_skills_fail_closed(change: dict, expected: str) -> None:
+    report = _sample() | change
+    assert expected in gate.validate_report(report, known_hosts={"codex"})

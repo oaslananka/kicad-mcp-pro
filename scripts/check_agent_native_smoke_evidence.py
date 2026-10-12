@@ -47,8 +47,8 @@ _ALLOWED_SKILLS = frozenset(
     }
 )
 _TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}\Z")
-_VERSION = re.compile(r"[0-9][A-Za-z0-9.+-]{0,79}\Z")
-_DATE = re.compile(r"20[0-9]{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])\Z")
+_VERSION = re.compile(r"\d[A-Za-z0-9.+-]{0,79}\Z", re.ASCII)
+_DATE = re.compile(r"20\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])\Z", re.ASCII)
 _SHA = re.compile(r"[0-9a-f]{40}\Z")
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -57,11 +57,9 @@ def _valid_text(value: object, regex: re.Pattern[str]) -> bool:
     return type(value) is str and bool(regex.fullmatch(value))
 
 
-def validate_report(report: object, *, known_hosts: set[str]) -> list[str]:
-    """Return constant safe error codes; never echo user-supplied text."""
-    errors: set[str] = set()
-    if not isinstance(report, dict) or set(report) != _FIELDS:
-        return ["invalid_schema_fields"]
+def _validate_host_identity(
+    report: dict[str, object], known_hosts: set[str], errors: set[str]
+) -> None:
     if report["schema_version"] != SCHEMA:
         errors.add("invalid_schema_version")
     if not _valid_text(report["host_id"], _TOKEN) or report["host_id"] not in known_hosts:
@@ -77,6 +75,9 @@ def validate_report(report: object, *, known_hosts: set[str]) -> list[str]:
         errors.add("missing_sanitized_log_digest")
     if not _valid_text(report["observed_on"], _DATE):
         errors.add("invalid_observation_date")
+
+
+def _validate_readonly_observations(report: dict[str, object], errors: set[str]) -> None:
     if report["transport"] not in ("stdio", "streamable-http") or report["mode"] != "readonly":
         errors.add("unsafe_transport_or_mode")
     for field in ("mcp_server_discovered", "tool_call_successful", "write_tools_absent"):
@@ -92,6 +93,15 @@ def validate_report(report: object, *, known_hosts: set[str]) -> list[str]:
         or len(set(skills)) != len(skills)
     ):
         errors.add("invalid_skill_discovery")
+
+
+def validate_report(report: object, *, known_hosts: set[str]) -> list[str]:
+    """Return constant safe error codes; never echo user-supplied text."""
+    errors: set[str] = set()
+    if not isinstance(report, dict) or set(report) != _FIELDS:
+        return ["invalid_schema_fields"]
+    _validate_host_identity(report, known_hosts, errors)
+    _validate_readonly_observations(report, errors)
     return sorted(errors)
 
 
