@@ -28,6 +28,12 @@ Sources:
 
 ## MCP Tasks (long-running work proof)
 
+The hermetic, read-only draft protocol state-machine and pinned SDK 2.2.0
+synchronous compatibility probe are described in
+[the isolated Tasks research evidence](mcp-tasks-readonly-probe.md).
+This does **not** enable production Tasks or attest real host support.
+
+
 The MCP Tasks draft for protocol 2026-07-28 introduces task handles and
 `tasks/get`, `tasks/update`, `tasks/cancel`. A future **disposable test fixture**
 could model a long-running *read-only* ERC/DRC summary with a bounded deadline,
