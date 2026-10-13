@@ -55,6 +55,17 @@ if TYPE_CHECKING:
     from .design_intent_state import ProjectDesignIntent
 
 
+# Stable validation messages and gate labels shared across reports.
+_PCB_TRANSFER_GATE = "PCB transfer"
+_STACKUP_CONSISTENCY_GATE = "Stackup consistency"
+_WARNING_PREFIX = "WARN: "
+_ROUTE_CORNER_STYLE_GATE = "Route corner style"
+_FOOTPRINT_PARITY_GATE = "Footprint parity"
+_SCHEMATIC_CONNECTIVITY_GATE = "Schematic connectivity"
+_DRC_CLI_RECOVERY_HINT = "Make kicad-cli/report generation available, then rerun run_drc()."
+_ERC_CLI_RECOVERY_HINT = "Make kicad-cli/report generation available, then rerun run_erc()."
+
+
 @dataclass(slots=True)
 class PlacementAnalysis:
     """Detailed placement scoring used by both the gate and the score tool."""
@@ -357,9 +368,14 @@ def _fix_for_gate(gate_name: str) -> SuggestedFix | None:
 
 def _finding_for_gate_detail(outcome: GateOutcome, detail: str) -> Finding:
     cleaned = detail.strip()
-    severity = "warning" if outcome.status == "EMPTY" or cleaned.startswith("WARN: ") else "error"
+    severity = (
+        "warning" if outcome.status == "EMPTY" or cleaned.startswith(_WARNING_PREFIX) else "error"
+    )
     description = (
-        cleaned.removeprefix("FAIL: ").removeprefix("WARN: ").removeprefix("BLOCKED: ").strip()
+        cleaned.removeprefix("FAIL: ")
+        .removeprefix(_WARNING_PREFIX)
+        .removeprefix("BLOCKED: ")
+        .strip()
         or outcome.summary
     )
     suggested_fix = _fix_for_gate(outcome.name)
@@ -389,7 +405,7 @@ def _gate_findings(outcome: GateOutcome) -> list[Finding]:
     tagged = [
         detail
         for detail in outcome.details
-        if detail.strip().startswith(("FAIL: ", "WARN: ", "BLOCKED: "))
+        if detail.strip().startswith(("FAIL: ", _WARNING_PREFIX, "BLOCKED: "))
     ]
     if outcome.status == "PASS":
         actionable = tagged
@@ -487,7 +503,7 @@ def _drc_report_payload(
                             "error": classification_error or "unknown error",
                         }
                     ],
-                    remediation="Make kicad-cli/report generation available, then rerun run_drc().",
+                    remediation=_DRC_CLI_RECOVERY_HINT,
                     retryable=True,
                     failure_mode="environment",
                     suggested_fix=SuggestedFix(tool="run_drc", args={"save_report": True}),
@@ -495,8 +511,8 @@ def _drc_report_payload(
             ],
             failure_mode="environment",
             retryable=True,
-            remediation="Make kicad-cli/report generation available, then rerun run_drc().",
-            next_action="Make kicad-cli/report generation available, then rerun run_drc().",
+            remediation=_DRC_CLI_RECOVERY_HINT,
+            next_action=_DRC_CLI_RECOVERY_HINT,
             metadata={
                 "report_path": str(path),
                 "available": False,
@@ -591,7 +607,7 @@ def _erc_report_payload(
                     location=str(path),
                     description=message,
                     evidence=[{"report_path": str(path), "error": error or "unknown error"}],
-                    remediation="Make kicad-cli/report generation available, then rerun run_erc().",
+                    remediation=_ERC_CLI_RECOVERY_HINT,
                     retryable=True,
                     failure_mode="environment",
                     suggested_fix=SuggestedFix(tool="run_erc", args={"save_report": True}),
@@ -599,8 +615,8 @@ def _erc_report_payload(
             ],
             failure_mode="environment",
             retryable=True,
-            remediation="Make kicad-cli/report generation available, then rerun run_erc().",
-            next_action="Make kicad-cli/report generation available, then rerun run_erc().",
+            remediation=_ERC_CLI_RECOVERY_HINT,
+            next_action=_ERC_CLI_RECOVERY_HINT,
             metadata={"report_path": str(path), "available": False, "failure_mode": "environment"},
         )
 
@@ -742,7 +758,7 @@ def _footprint_parity_outcome() -> GateOutcome:
     cfg = get_config()
     if cfg.sch_file is None or cfg.pcb_file is None:
         return GateOutcome(
-            name="Footprint parity",
+            name=_FOOTPRINT_PARITY_GATE,
             status="BLOCKED",
             summary="Both schematic and PCB files must be configured first.",
         )
@@ -761,7 +777,7 @@ def _footprint_parity_outcome() -> GateOutcome:
     board_refs, source, error = _board_footprint_references()
     if error is not None:
         return GateOutcome(
-            name="Footprint parity",
+            name=_FOOTPRINT_PARITY_GATE,
             status="BLOCKED",
             summary=f"PCB references were unavailable via {source} mode ({error}).",
         )
@@ -781,7 +797,7 @@ def _footprint_parity_outcome() -> GateOutcome:
     if missing_in_schematic:
         details.append("Missing in schematic refs: " + ", ".join(missing_in_schematic[:20]))
     return GateOutcome(
-        name="Footprint parity",
+        name=_FOOTPRINT_PARITY_GATE,
         status=status,
         summary="PCB and schematic references are aligned."
         if status == "PASS"
@@ -798,7 +814,7 @@ def _evaluate_pcb_transfer_gate() -> GateOutcome:
     cfg = get_config()
     if cfg.sch_file is None or cfg.pcb_file is None:
         return GateOutcome(
-            name="PCB transfer",
+            name=_PCB_TRANSFER_GATE,
             status="BLOCKED",
             summary="Both schematic and PCB files must be configured first.",
         )
@@ -807,13 +823,13 @@ def _evaluate_pcb_transfer_gate() -> GateOutcome:
         components, issues = collect_schematic_components()
     except ValueError as exc:
         return GateOutcome(
-            name="PCB transfer",
+            name=_PCB_TRANSFER_GATE,
             status="BLOCKED",
             summary=str(exc),
         )
     if issues:
         return GateOutcome(
-            name="PCB transfer",
+            name=_PCB_TRANSFER_GATE,
             status="FAIL",
             summary="Schematic component metadata is not stable enough for pad-net transfer.",
             details=issues[:12],
@@ -822,13 +838,13 @@ def _evaluate_pcb_transfer_gate() -> GateOutcome:
     expected_map, note = export_schematic_net_map()
     if note:
         return GateOutcome(
-            name="PCB transfer",
+            name=_PCB_TRANSFER_GATE,
             status="BLOCKED",
             summary=note,
         )
     if not expected_map:
         return GateOutcome(
-            name="PCB transfer",
+            name=_PCB_TRANSFER_GATE,
             status="BLOCKED",
             summary="The schematic did not export any named pad nets to compare against the PCB.",
         )
@@ -837,7 +853,7 @@ def _evaluate_pcb_transfer_gate() -> GateOutcome:
         board_text = cfg.pcb_file.read_text(encoding="utf-8", errors="ignore")
     except OSError as exc:
         return GateOutcome(
-            name="PCB transfer",
+            name=_PCB_TRANSFER_GATE,
             status="BLOCKED",
             summary=f"Could not read the PCB file ({exc}).",
         )
@@ -888,7 +904,7 @@ def _evaluate_pcb_transfer_gate() -> GateOutcome:
 
     if total_expected_pads == 0:
         return GateOutcome(
-            name="PCB transfer",
+            name=_PCB_TRANSFER_GATE,
             status="BLOCKED",
             summary="No expected named pads were available for transfer comparison.",
         )
@@ -906,7 +922,7 @@ def _evaluate_pcb_transfer_gate() -> GateOutcome:
         details.append("Missing footprint refs: " + ", ".join(missing_refs[:20]))
     details.extend(f"FAIL: {item}" for item in mismatches[:12])
     return GateOutcome(
-        name="PCB transfer",
+        name=_PCB_TRANSFER_GATE,
         status=status,
         summary="Named schematic pad nets match the PCB footprint pads."
         if status == "PASS"
@@ -1144,7 +1160,7 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
         top_file = _get_sch_file()
     except ValueError as exc:
         return GateOutcome(
-            name="Schematic connectivity",
+            name=_SCHEMATIC_CONNECTIVITY_GATE,
             status="BLOCKED",
             summary=str(exc),
         )
@@ -1157,7 +1173,7 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
         contracts = _sheet_contracts(top_file)
     except OSError as exc:
         return GateOutcome(
-            name="Schematic connectivity",
+            name=_SCHEMATIC_CONNECTIVITY_GATE,
             status="BLOCKED",
             summary=f"Top-level sheet contract data was unavailable ({exc}).",
         )
@@ -1347,7 +1363,7 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
     if blocked:
         details.extend(f"BLOCKED: {item}" for item in blocked[:12])
         return GateOutcome(
-            name="Schematic connectivity",
+            name=_SCHEMATIC_CONNECTIVITY_GATE,
             status="BLOCKED",
             summary="Connectivity checks could not complete for every sheet.",
             details=details,
@@ -1355,7 +1371,7 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
     if failures:
         details.extend(f"FAIL: {item}" for item in failures[:20])
         return GateOutcome(
-            name="Schematic connectivity",
+            name=_SCHEMATIC_CONNECTIVITY_GATE,
             status="FAIL",
             summary=(
                 "Connectivity smells suggest the schematic is not ready for PCB or release work."
@@ -1363,7 +1379,7 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
             details=details,
         )
     return GateOutcome(
-        name="Schematic connectivity",
+        name=_SCHEMATIC_CONNECTIVITY_GATE,
         status="PASS",
         summary="Connectivity structure looks consistent across the active schematic set.",
         details=details,
@@ -3157,7 +3173,7 @@ def _evaluate_stackup_consistency_gate() -> GateOutcome:
     cfg = get_config()
     if cfg.pcb_file is None:
         return GateOutcome(
-            name="Stackup consistency",
+            name=_STACKUP_CONSISTENCY_GATE,
             status="BLOCKED",
             summary="PCB file must be configured first.",
         )
@@ -3165,7 +3181,7 @@ def _evaluate_stackup_consistency_gate() -> GateOutcome:
         pcb_text = cfg.pcb_file.read_text(encoding="utf-8", errors="ignore")
     except OSError as exc:
         return GateOutcome(
-            name="Stackup consistency",
+            name=_STACKUP_CONSISTENCY_GATE,
             status="BLOCKED",
             summary=f"Could not read PCB file: {exc}",
         )
@@ -3178,14 +3194,14 @@ def _evaluate_stackup_consistency_gate() -> GateOutcome:
     ]
     if not table_layers:
         return GateOutcome(
-            name="Stackup consistency",
+            name=_STACKUP_CONSISTENCY_GATE,
             status="FAIL",
             summary="The PCB layer table contains no copper layers.",
             details=details,
         )
     if not stackup_layers:
         return GateOutcome(
-            name="Stackup consistency",
+            name=_STACKUP_CONSISTENCY_GATE,
             status="WARN",
             summary="The PCB has copper layers but no explicit stackup profile.",
             details=details,
@@ -3200,13 +3216,13 @@ def _evaluate_stackup_consistency_gate() -> GateOutcome:
             ]
         )
         return GateOutcome(
-            name="Stackup consistency",
+            name=_STACKUP_CONSISTENCY_GATE,
             status="FAIL",
             summary="Board layer table and stackup copper layers are inconsistent.",
             details=details,
         )
     return GateOutcome(
-        name="Stackup consistency",
+        name=_STACKUP_CONSISTENCY_GATE,
         status="PASS",
         summary=f"Layer table and stackup agree on {len(table_layers)} copper layer(s).",
         details=details,
@@ -3221,7 +3237,7 @@ def _evaluate_route_corner_style_gate(
     cfg = get_config()
     if cfg.pcb_file is None:
         return GateOutcome(
-            name="Route corner style",
+            name=_ROUTE_CORNER_STYLE_GATE,
             status="BLOCKED",
             summary="PCB file must be configured first.",
         )
@@ -3229,7 +3245,7 @@ def _evaluate_route_corner_style_gate(
         pcb_text = cfg.pcb_file.read_text(encoding="utf-8", errors="ignore")
     except OSError as exc:
         return GateOutcome(
-            name="Route corner style",
+            name=_ROUTE_CORNER_STYLE_GATE,
             status="BLOCKED",
             summary=f"Could not read PCB file: {exc}",
         )
@@ -3246,7 +3262,7 @@ def _evaluate_route_corner_style_gate(
     ]
     if len(corners) > max_90_degree_corners:
         return GateOutcome(
-            name="Route corner style",
+            name=_ROUTE_CORNER_STYLE_GATE,
             status="FAIL",
             summary=(
                 "PCB routing contains right-angle corners that should be "
@@ -3255,7 +3271,7 @@ def _evaluate_route_corner_style_gate(
             details=details,
         )
     return GateOutcome(
-        name="Route corner style",
+        name=_ROUTE_CORNER_STYLE_GATE,
         status="PASS",
         summary="PCB route corners satisfy the configured 45°/rounded-style policy.",
         details=details,
