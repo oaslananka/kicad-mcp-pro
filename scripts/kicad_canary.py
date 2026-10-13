@@ -47,6 +47,12 @@ KICAD_VIOLATION_EXIT_CODE = 5
 WINDOWS_PRIMARY_RUNNER = "windows-2025-vs2026"
 WINDOWS_PRIMARY_KICAD_VERSION = "10.0.6"
 
+UNICODE_PATH_FIXTURE = "unicode-path-çöğü"
+SCHEMATIC_FILE_SUFFIX = ".kicad_sch"
+PCB_FILE_SUFFIX = ".kicad_pcb"
+PCB_EXPORT_LAYERS = "F.Cu,B.Cu,Edge.Cuts"
+BOARD_STATS_FILENAME = "board-stats.txt"
+
 # Names and filenames persisted in native canary artifacts.
 KICAD_10_RANGE = "10.0.x"
 CLEAN_DRC_FILENAME = "clean-drc.json"
@@ -313,17 +319,19 @@ def _command_plan(
             "erc-power-pin-error",
             "kicad-10-0-3-regressions",
             "paths-with-spaces",
-            "unicode-path-çöğü",
+            UNICODE_PATH_FIXTURE,
         },
     )
-    clean_schematic = _fixture_file(workspace_root, "clean-led-kicad10", ".kicad_sch")
+    clean_schematic = _fixture_file(workspace_root, "clean-led-kicad10", SCHEMATIC_FILE_SUFFIX)
     connectivity_schematic = _prepare_connectivity_differential_workspace(artifacts)
-    clean_board = _fixture_file(workspace_root, "clean-led-kicad10", ".kicad_pcb")
-    regression_schematic = _fixture_file(workspace_root, "kicad-10-0-3-regressions", ".kicad_sch")
-    dirty_erc = _fixture_file(workspace_root, "erc-power-pin-error", ".kicad_sch")
-    dirty_drc = _fixture_file(workspace_root, "drc-courtyard-error", ".kicad_pcb")
-    path_with_spaces_board = _fixture_file(workspace_root, "paths-with-spaces", ".kicad_pcb")
-    unicode_path_board = _fixture_file(workspace_root, "unicode-path-çöğü", ".kicad_pcb")
+    clean_board = _fixture_file(workspace_root, "clean-led-kicad10", PCB_FILE_SUFFIX)
+    regression_schematic = _fixture_file(
+        workspace_root, "kicad-10-0-3-regressions", SCHEMATIC_FILE_SUFFIX
+    )
+    dirty_erc = _fixture_file(workspace_root, "erc-power-pin-error", SCHEMATIC_FILE_SUFFIX)
+    dirty_drc = _fixture_file(workspace_root, "drc-courtyard-error", PCB_FILE_SUFFIX)
+    path_with_spaces_board = _fixture_file(workspace_root, "paths-with-spaces", PCB_FILE_SUFFIX)
+    unicode_path_board = _fixture_file(workspace_root, UNICODE_PATH_FIXTURE, PCB_FILE_SUFFIX)
 
     reports = artifacts / "reports"
     manufacturing = artifacts / "manufacturing"
@@ -443,7 +451,7 @@ def _command_plan(
                 "--output",
                 str(reports / "pcb.pdf"),
                 "--layers",
-                "F.Cu,B.Cu,Edge.Cuts",
+                PCB_EXPORT_LAYERS,
                 str(clean_board),
             ),
             outputs=(reports / "pcb.pdf",),
@@ -458,7 +466,7 @@ def _command_plan(
                 "--output",
                 str(graphics / "pcb-svg"),
                 "--layers",
-                "F.Cu,B.Cu,Edge.Cuts",
+                PCB_EXPORT_LAYERS,
                 str(clean_board),
             ),
             outputs=(graphics / "pcb-svg",),
@@ -473,7 +481,7 @@ def _command_plan(
                 "--output",
                 str(graphics / "pcb.dxf"),
                 "--layers",
-                "F.Cu,B.Cu,Edge.Cuts",
+                PCB_EXPORT_LAYERS,
                 str(clean_board),
             ),
             outputs=(graphics / "pcb.dxf",),
@@ -536,10 +544,10 @@ def _command_plan(
                 "export",
                 "stats",
                 "--output",
-                str(reports / "board-stats.txt"),
+                str(reports / BOARD_STATS_FILENAME),
                 str(clean_board),
             ),
-            outputs=(reports / "board-stats.txt",),
+            outputs=(reports / BOARD_STATS_FILENAME,),
             skip_reason=board_stats_skip,
         ),
         CanaryStep(
@@ -586,7 +594,7 @@ def _command_plan(
         ),
         CanaryStep(
             name="unicode-path-board-stats",
-            fixture="unicode-path-çöğü",
+            fixture=UNICODE_PATH_FIXTURE,
             args=(
                 "pcb",
                 "export",
@@ -606,7 +614,7 @@ def _command_plan(
                 "export",
                 "stats",
                 "--output",
-                str(readonly_output / "board-stats.txt"),
+                str(readonly_output / BOARD_STATS_FILENAME),
                 str(clean_board),
             ),
             expects_failure=True,
@@ -1365,9 +1373,9 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
             kicad_range=kicad_range,
             kicad_version=kicad_version,
             fixture_id=GEOMETRY_DIFFERENTIAL_FIXTURE_ID,
-            native_stats=artifacts / "reports" / "board-stats.txt",
+            native_stats=artifacts / "reports" / BOARD_STATS_FILENAME,
             fixture=_fixture_file(
-                artifacts / "workspace", GEOMETRY_DIFFERENTIAL_FIXTURE_ID, ".kicad_pcb"
+                artifacts / "workspace", GEOMETRY_DIFFERENTIAL_FIXTURE_ID, PCB_FILE_SUFFIX
             ),
             native_authority_available=bool(board_stats_step.get("ok")),
         )
@@ -1400,7 +1408,7 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
             kicad_version=kicad_version,
             fixture_id=EXPORT_INVENTORY_DIFFERENTIAL_FIXTURE_ID,
             fixture=_fixture_file(
-                artifacts / "workspace", EXPORT_INVENTORY_DIFFERENTIAL_FIXTURE_ID, ".kicad_pcb"
+                artifacts / "workspace", EXPORT_INVENTORY_DIFFERENTIAL_FIXTURE_ID, PCB_FILE_SUFFIX
             ),
             native_steps=manufacturing_steps,
         )

@@ -23,6 +23,9 @@ import yaml
 MCP_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = MCP_ROOT
 
+COMPATIBILITY_FILENAME = "compatibility.yaml"
+PYPROJECT_FILENAME = "pyproject.toml"
+
 VSCODE_STABLE_RELEASES_URL = "https://update.code.visualstudio.com/api/releases/stable"
 VSCODE_INSIDER_RELEASES_URL = (
     "https://update.code.visualstudio.com/api/update/linux-x64/insider/latest"
@@ -315,9 +318,9 @@ def _extension_package(root: Path) -> dict[str, Any]:
 def snapshot_from_repo(root: Path = REPO_ROOT) -> RuntimeSupportSnapshot:
     """Build the current runtime support snapshot from repository files."""
     return _snapshot_from_metadata(
-        compatibility=_read_yaml(root / "compatibility.yaml"),
+        compatibility=_read_yaml(root / COMPATIBILITY_FILENAME),
         extension_package=_extension_package(root),
-        pyproject=_read_pyproject(root / "pyproject.toml"),
+        pyproject=_read_pyproject(root / PYPROJECT_FILENAME),
     )
 
 
@@ -374,10 +377,10 @@ def snapshot_from_git_ref(ref: str) -> RuntimeSupportSnapshot:
     """Build a runtime support snapshot from files at a git ref."""
     commit = _resolve_commit(ref)
     compatibility = _read_yaml_text(
-        _show_text(commit, Path("compatibility.yaml")), label="compatibility.yaml"
+        _show_text(commit, Path(COMPATIBILITY_FILENAME)), label=COMPATIBILITY_FILENAME
     )
     extension_package = _extension_package_from_git(commit)
-    pyproject = _read_toml_text(_show_text(commit, Path("pyproject.toml")))
+    pyproject = _read_toml_text(_show_text(commit, Path(PYPROJECT_FILENAME)))
     return _snapshot_from_metadata(
         compatibility=compatibility,
         extension_package=extension_package,
@@ -405,9 +408,9 @@ def _minor_window_from_requires(python_requires: str, window: int) -> tuple[str,
 def validate_runtime_policy(root: Path = REPO_ROOT) -> list[str]:
     """Return local runtime policy metadata errors without remote release checks."""
     errors: list[str] = []
-    matrix = _read_yaml(root / "compatibility.yaml")
+    matrix = _read_yaml(root / COMPATIBILITY_FILENAME)
     extension_package = _extension_package(root)
-    pyproject = _read_pyproject(root / "pyproject.toml")
+    pyproject = _read_pyproject(root / PYPROJECT_FILENAME)
 
     try:
         policy = _runtime_policy(matrix)
@@ -905,7 +908,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "drift":
-        matrix = _read_yaml(REPO_ROOT / "compatibility.yaml")
+        matrix = _read_yaml(REPO_ROOT / COMPATIBILITY_FILENAME)
         python_window = _policy_int(matrix, "python", "supportedMinorWindow", 2)
         findings = detect_runtime_drift(
             snapshot=snapshot_from_repo(),
@@ -924,7 +927,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "guard-lowering":
-        matrix = _read_yaml(REPO_ROOT / "compatibility.yaml")
+        matrix = _read_yaml(REPO_ROOT / COMPATIBILITY_FILENAME)
         findings = detect_runtime_lowering(
             base=snapshot_from_git_ref(args.base_ref),
             current=snapshot_from_repo(),
