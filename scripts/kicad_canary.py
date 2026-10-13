@@ -1242,7 +1242,7 @@ def _write_geometry_differential_result(
             native_stats_text=native_stats.read_text(encoding="utf-8", errors="strict"),
             custom_outline_bounds=custom_bounds,
         )
-    except (OSError, UnicodeError, ValueError, RuntimeError, TypeError) as exc:
+    except (OSError, ValueError, RuntimeError, TypeError) as exc:
         return classify_geometry_differential(
             source_sha=source_sha,
             lane="stable",

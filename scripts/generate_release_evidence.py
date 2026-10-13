@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import binascii
 import hashlib
 import json
 import re
@@ -237,7 +236,7 @@ def verify_pypi(
             if not failures:
                 return
             last_error = "\n- ".join(failures)
-        except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        except (OSError, json.JSONDecodeError) as exc:
             last_error = str(exc)
         if attempt < retries:
             time.sleep(retry_delay)
@@ -416,14 +415,7 @@ def verify_pypi_provenance(
                     )
                     if crypto_failure:
                         errors.append(crypto_failure)
-        except (
-            OSError,
-            ValueError,
-            urllib.error.URLError,
-            json.JSONDecodeError,
-            UnicodeDecodeError,
-            binascii.Error,
-        ) as exc:
+        except (OSError, ValueError) as exc:
             errors = [str(exc)]
         if not errors:
             return

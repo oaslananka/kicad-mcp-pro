@@ -91,7 +91,7 @@ def bridge_status() -> None:
         s.connect(("127.0.0.1", DEFAULT_BRIDGE_PORT))
         s.close()
         typer.echo(f"Bridge is running (PID: {pid}, port: {DEFAULT_BRIDGE_PORT})")
-    except (ConnectionRefusedError, OSError):
+    except OSError:
         typer.echo(f"PID file exists ({pid}) but bridge is not responding.")
         typer.echo("Run 'kicad-mcp-pro bridge stop' to clean up.")
 

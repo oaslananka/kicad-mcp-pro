@@ -566,7 +566,7 @@ def _provider_request_failure_detail(response: httpx.Response) -> FailureDetail:
     """Return only an allowlisted request field from one validation response."""
     try:
         payload = response.json()
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except (TypeError, ValueError):
         return "request_unknown"
     if not isinstance(payload, dict):
         return "request_unknown"

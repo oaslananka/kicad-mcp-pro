@@ -1206,7 +1206,7 @@ def _symbol_bbox_bounds(symbol: dict[str, Any]) -> tuple[float, float, float, fl
             rotation=rotation,
             unit=unit,
         )
-    except (FileNotFoundError, OSError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         logger.debug("symbol_bbox_pin_lookup_failed", lib_id=lib_id, error=str(exc))
         return x_min, y_min, x_max, y_max
     if not pins:
@@ -1598,7 +1598,7 @@ def _symbol_local_extent(symbol: dict[str, Any]) -> tuple[float, float, float, f
             int(symbol.get("rotation", 0) or 0),
             int(symbol.get("unit", 1) or 1),
         )
-    except (FileNotFoundError, OSError, ValueError):
+    except (OSError, ValueError):
         return None
     if not pins:
         return None
@@ -5995,7 +5995,7 @@ def _transactional_write_to_schematic_file(
         if updated != current:
             try:
                 _record_schematic_visual_diff(sch_file, current, updated)
-            except (OSError, ValueError, json.JSONDecodeError, AttributeError) as exc:
+            except (OSError, ValueError, AttributeError) as exc:
                 logger.warning(
                     "schematic_visual_diff_record_failed",
                     path=str(sch_file),
@@ -6113,7 +6113,7 @@ def _symbol_body_and_pins(parsed: dict[str, Any]) -> tuple[GeoBox, list[tuple[fl
                 unit=int(parsed.get("unit", 1) or 1),
             )
             pin_points = list(pins.values())
-        except (FileNotFoundError, OSError, ValueError) as exc:
+        except (OSError, ValueError) as exc:
             logger.debug("autoplace_fields_pin_lookup_failed", lib_id=lib_id, error=str(exc))
     body = body_box_from_pins(pin_points, center=(x, y))
     return body, pin_points
@@ -6514,7 +6514,7 @@ def _population_records(
 
 def _parse_wire_block(block: str) -> dict[str, Any] | None:
     pts_match = re.search(
-        (r"\(pts\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s+" r"\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s*\)"),
+        (r"\(pts\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s*\)"),
         block,
     )
     if pts_match is None:

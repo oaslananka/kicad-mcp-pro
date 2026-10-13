@@ -85,8 +85,12 @@ from .diagnostics import (
 )
 from .discovery import ensure_studio_project_watcher, find_kicad_version
 from .errors import (
-    IpcDisconnectedError,
-    KiCadConnectionTimeoutError,
+    IpcDisconnectedError as IpcDisconnectedError,  # Preserve existing module exports.
+)
+from .errors import (
+    KiCadConnectionTimeoutError as KiCadConnectionTimeoutError,
+)
+from .errors import (
     KiCadNotRunningError,
     ToolRegistrationTimeoutError,
 )
@@ -1272,7 +1276,7 @@ class KiCadFastMCP(FastMCP):
                     },
                 )
                 return result
-            except (KiCadNotRunningError, IpcDisconnectedError, KiCadConnectionTimeoutError) as exc:
+            except KiCadNotRunningError as exc:
                 status = "error"
                 error_code = exc.code
                 _error_detail["error_code"] = exc.code
@@ -1655,7 +1659,7 @@ def _json_rpc_protocol_version(body: bytes) -> str | None:
     """Read modern per-request metadata for version diagnostics only."""
     try:
         payload = json.loads(body.decode("utf-8"))
-    except (UnicodeError, ValueError):
+    except ValueError:
         return None
     if not isinstance(payload, dict):
         return None

@@ -49,15 +49,14 @@ class GateHistory:
         return history
 
     def _init(self) -> None:
-        with closing(sqlite3.connect(self.db_path)) as db:
-            with db:
-                version = int(db.execute("PRAGMA user_version").fetchone()[0])
-                if version > SCHEMA_VERSION:
-                    raise RuntimeError(
-                        f"Gate history schema version {version} is newer than this server supports."
-                    )
-                db.execute(
-                    """
+        with closing(sqlite3.connect(self.db_path)) as db, db:
+            version = int(db.execute("PRAGMA user_version").fetchone()[0])
+            if version > SCHEMA_VERSION:
+                raise RuntimeError(
+                    f"Gate history schema version {version} is newer than this server supports."
+                )
+            db.execute(
+                """
                     CREATE TABLE IF NOT EXISTS gate_history (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         timestamp TEXT NOT NULL,
@@ -68,34 +67,33 @@ class GateHistory:
                         payload TEXT NOT NULL
                     )
                     """
-                )
-                db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            )
+            db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     def record(self, outcome: GateOutcome, auto_fixed: int = 0) -> None:
         issue_count = 0 if outcome.status == "PASS" else max(1, len(outcome.details))
-        with closing(sqlite3.connect(self.db_path)) as db:
-            with db:
-                db.execute(
-                    """
+        with closing(sqlite3.connect(self.db_path)) as db, db:
+            db.execute(
+                """
                     INSERT INTO gate_history
                         (timestamp, gate_name, status, issue_count, auto_fixed, payload)
                     VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (
-                        datetime.now(UTC).isoformat(),
-                        outcome.name,
-                        outcome.status,
-                        issue_count,
-                        auto_fixed,
-                        json.dumps(
-                            {
-                                "summary": outcome.summary,
-                                "details": outcome.details,
-                            },
-                            sort_keys=True,
-                        ),
+                (
+                    datetime.now(UTC).isoformat(),
+                    outcome.name,
+                    outcome.status,
+                    issue_count,
+                    auto_fixed,
+                    json.dumps(
+                        {
+                            "summary": outcome.summary,
+                            "details": outcome.details,
+                        },
+                        sort_keys=True,
                     ),
-                )
+                ),
+            )
 
     def trend(self, gate_name: str, last_n: int = 10) -> list[GateHistoryRecord]:
         with closing(sqlite3.connect(self.db_path)) as db:

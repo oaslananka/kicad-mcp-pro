@@ -67,7 +67,7 @@ def main() -> int:
             write_manifest(sha=args.sha, run_id=args.run_id, attempt=args.attempt)
         else:
             verify_manifest(sha=args.sha, run_id=args.run_id, attempt=args.attempt)
-    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, TypeError) as exc:
         parser.exit(1, f"coverage identity check failed: {exc}\n")
     return 0
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSET_DIR = ROOT / "docs" / "assets"
@@ -22,7 +22,7 @@ def _check_png(path: Path, size: int) -> list[str]:
                 errors.append(f"{path.relative_to(ROOT)} is {actual}, expected {expected}")
             if image.format != "PNG":
                 errors.append(f"{path.relative_to(ROOT)} is {image.format}, expected PNG")
-    except (OSError, UnidentifiedImageError) as exc:
+    except OSError as exc:
         errors.append(f"{path.relative_to(ROOT)} is unreadable: {exc}")
 
     return errors

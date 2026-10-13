@@ -173,7 +173,7 @@ class RoutingAutorouterService:
             applied_pcb_file = Path(
                 await anyio.to_thread.run_sync(lambda: self.transactional_board_write(apply_ses))
             )
-        except (_NoRouteError, _AlreadyAppliedError, ValueError, OSError) as exc:
+        except (ValueError, OSError) as exc:
             apply_error = str(exc)
         except Exception as exc:  # noqa: BLE001
             apply_error = f"Unexpected error during headless SES apply: {exc}"

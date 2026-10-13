@@ -36,7 +36,7 @@ def get_matrix() -> dict[str, Any]:
 
 
 def _count(capabilities: list[dict[str, Any]]) -> dict[str, Any]:
-    counts = {status: 0 for status in STATUSES}
+    counts = dict.fromkeys(STATUSES, 0)
     for cap in capabilities:
         counts[cap["status"]] += 1
     total = sum(counts.values())

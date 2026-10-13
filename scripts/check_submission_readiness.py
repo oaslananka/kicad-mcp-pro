@@ -8,7 +8,6 @@ import subprocess
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.error import URLError
 from urllib.request import urlopen
 
 import jsonschema
@@ -200,7 +199,7 @@ def _pypi_check() -> CheckResult:
     try:
         with urlopen("https://pypi.org/pypi/kicad-mcp-pro/json", timeout=10) as response:  # noqa: S310
             payload = json.loads(response.read().decode("utf-8"))
-    except (OSError, URLError, TimeoutError) as exc:
+    except OSError as exc:
         return CheckResult("pypi reachability", "WARN", f"offline or unavailable: {exc}")
     releases = payload.get("releases", {})
     if version not in releases:

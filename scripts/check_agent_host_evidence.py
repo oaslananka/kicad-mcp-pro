@@ -67,7 +67,7 @@ def _check_host_configuration(
         )
         if not isinstance(servers, dict) or not servers:
             problems.append(f"No MCP servers defined for {name}")
-    except (json.JSONDecodeError, tomllib.TOMLDecodeError, ValueError) as exc:
+    except ValueError as exc:
         problems.append(f"Invalid configuration for {name}: {exc}")
 
 
