@@ -21,6 +21,45 @@ _PCB_GEOMETRY_MODULE = "kicad_mcp.pcb.geometry"
 _PCB_BOARD_ACCESS_SOURCE = "kicad_mcp/pcb/board_access.py"
 _DRC_RUNNER_SOURCE = "kicad_mcp/validation/drc_runner.py"
 
+# Module and source identifiers reused by architecture guards.
+_TOOL_EXPORT_SCH_VECTOR = "kicad_mcp.tools.export_sch_vector"
+_TOOL_SCHEMATIC_LIFECYCLE_AUTHORING = "kicad_mcp.tools.schematic_lifecycle_authoring"
+_TOOL_VALIDATION = "kicad_mcp.tools.validation"
+_TOOL_SCHEMATIC_TEMPLATE_INSTANTIATION = "kicad_mcp.tools.schematic_template_instantiation"
+_TOOL_EXPORT_SCH_PYTHON_BOM = "kicad_mcp.tools.export_sch_python_bom"
+_TOOL_SCHEMATIC_DESTRUCTIVE_EDIT = "kicad_mcp.tools.schematic_destructive_edit"
+_TOOL_SCHEMATIC_HIERARCHY_AUTHORING = "kicad_mcp.tools.schematic_hierarchy_authoring"
+_TOOL_SCHEMATIC_TOPOLOGY = "kicad_mcp.tools.schematic_topology"
+_TOOL_EXPORT_PCB_PDF = "kicad_mcp.tools.export_pcb_pdf"
+_TOOL_PCB_GROUPS_INSPECTION = "kicad_mcp.tools.pcb_groups_inspection"
+_TOOL_EXPORT_NETLIST = "kicad_mcp.tools.export_netlist"
+_TOOL_PCB_BASIC_INSPECTION = "kicad_mcp.tools.pcb_basic_inspection"
+_TOOL_PCB_SESSION_INSPECTION = "kicad_mcp.tools.pcb_session_inspection"
+_TOOL_SCHEMATIC_SEMANTIC_IR = "kicad_mcp.tools.schematic_semantic_ir"
+_TOOL_EXPORT_BOARD_STATS = "kicad_mcp.tools.export_board_stats"
+_TOOL_SCHEMATIC_LAYOUT_INSPECTION = "kicad_mcp.tools.schematic_layout_inspection"
+_TOOL_PCB_BOARD_INSPECTION = "kicad_mcp.tools.pcb_board_inspection"
+_TOOL_SCHEMATIC_DOCUMENT_SETTINGS = "kicad_mcp.tools.schematic_document_settings"
+_TOOL_EXPORT_BOM = "kicad_mcp.tools.export_bom"
+_TOOL_PCB_FILE_INSPECTION = "kicad_mcp.tools.pcb_file_inspection"
+_TOOL_SCHEMATIC_CONNECTIVITY_AUTHORING = "kicad_mcp.tools.schematic_connectivity_authoring"
+_TOOL_SCHEMATIC_TEMPLATE_CATALOG = "kicad_mcp.tools.schematic_template_catalog"
+_TOOL_SCHEMATIC_LAYOUT_AUTOMATION = "kicad_mcp.tools.schematic_layout_automation"
+_TOOL_PCB_TITLE_BLOCK_MANAGEMENT = "kicad_mcp.tools.pcb_title_block_management"
+_TOOL_SCHEMATIC_BACK_ANNOTATION = "kicad_mcp.tools.schematic_back_annotation"
+_TOOL_SCHEMATIC_CIRCUIT_COMPILATION = "kicad_mcp.tools.schematic_circuit_compilation"
+_TOOL_VALIDATION_POLICY_STATE = "kicad_mcp.tools.validation_policy_state"
+_TOOL_SCHEMATIC_INSPECTION = "kicad_mcp.tools.schematic_inspection"
+_TOOL_PCB_STACKUP_MANAGEMENT = "kicad_mcp.tools.pcb_stackup_management"
+_TOOL_EXPORT_DRILL = "kicad_mcp.tools.export_drill"
+_TOOL_SCHEMATIC_BASIC_AUTHORING = "kicad_mcp.tools.schematic_basic_authoring"
+_TOOL_EXPORT_GERBER = "kicad_mcp.tools.export_gerber"
+_TOOL_EXPORT_SCH_PDF = "kicad_mcp.tools.export_sch_pdf"
+_TOOL_PCB_ORIGIN_MANAGEMENT = "kicad_mcp.tools.pcb_origin_management"
+_TOOL_SCHEMATIC_SYMBOL_MUTATION = "kicad_mcp.tools.schematic_symbol_mutation"
+_TOOL_PCB_TRANSACTION_LIFECYCLE = "kicad_mcp.tools.pcb_transaction_lifecycle"
+_TOOL_SCHEMATIC_RENDERING = "kicad_mcp.tools.schematic_rendering"
+
 _EXPORT_ROOT_MODULE = "kicad_mcp.tools.export"
 _EXPORT_PCB_3D_PDF_ADAPTER = "kicad_mcp.tools.export_pcb_3d_pdf"
 _EXPORT_PCB_FILE_FORMATS_ADAPTER = "kicad_mcp.tools.export_pcb_file_formats"
@@ -169,18 +208,15 @@ DOMAIN_MODULES = {
     / "project"
     / "validation_loops.py",
     "kicad_mcp.project.workflow": SRC_ROOT / "kicad_mcp" / "project" / "workflow.py",
-    "kicad_mcp.tools.export_bom": SRC_ROOT / "kicad_mcp" / "tools" / "export_bom.py",
-    "kicad_mcp.tools.export_board_stats": SRC_ROOT
-    / "kicad_mcp"
-    / "tools"
-    / "export_board_stats.py",
-    "kicad_mcp.tools.export_drill": SRC_ROOT / "kicad_mcp" / "tools" / "export_drill.py",
-    "kicad_mcp.tools.export_gerber": SRC_ROOT / "kicad_mcp" / "tools" / "export_gerber.py",
+    _TOOL_EXPORT_BOM: SRC_ROOT / "kicad_mcp" / "tools" / "export_bom.py",
+    _TOOL_EXPORT_BOARD_STATS: SRC_ROOT / "kicad_mcp" / "tools" / "export_board_stats.py",
+    _TOOL_EXPORT_DRILL: SRC_ROOT / "kicad_mcp" / "tools" / "export_drill.py",
+    _TOOL_EXPORT_GERBER: SRC_ROOT / "kicad_mcp" / "tools" / "export_gerber.py",
     _EXPORT_MANUFACTURING_PACKAGE_ADAPTER: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "export_manufacturing_package.py",
-    "kicad_mcp.tools.export_netlist": SRC_ROOT / "kicad_mcp" / "tools" / "export_netlist.py",
+    _TOOL_EXPORT_NETLIST: SRC_ROOT / "kicad_mcp" / "tools" / "export_netlist.py",
     _EXPORT_PCB_3D_PDF_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_3d_pdf.py",
     _EXPORT_PCB_3D_RENDER_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_3d_render.py",
     _EXPORT_PCB_FILE_FORMATS_ADAPTER: SRC_ROOT
@@ -191,14 +227,11 @@ DOMAIN_MODULES = {
     / "kicad_mcp"
     / "tools"
     / "export_pcb_manufacturing_outputs.py",
-    "kicad_mcp.tools.export_pcb_pdf": SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_pdf.py",
+    _TOOL_EXPORT_PCB_PDF: SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_pdf.py",
     _EXPORT_PCB_VECTOR_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_vector.py",
-    "kicad_mcp.tools.export_sch_pdf": SRC_ROOT / "kicad_mcp" / "tools" / "export_sch_pdf.py",
-    "kicad_mcp.tools.export_sch_python_bom": SRC_ROOT
-    / "kicad_mcp"
-    / "tools"
-    / "export_sch_python_bom.py",
-    "kicad_mcp.tools.export_sch_vector": SRC_ROOT / "kicad_mcp" / "tools" / "export_sch_vector.py",
+    _TOOL_EXPORT_SCH_PDF: SRC_ROOT / "kicad_mcp" / "tools" / "export_sch_pdf.py",
+    _TOOL_EXPORT_SCH_PYTHON_BOM: SRC_ROOT / "kicad_mcp" / "tools" / "export_sch_python_bom.py",
+    _TOOL_EXPORT_SCH_VECTOR: SRC_ROOT / "kicad_mcp" / "tools" / "export_sch_vector.py",
     _LIBRARY_CATALOG_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "library_catalog.py",
     _LIBRARY_DATASHEET_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "library_datasheet.py",
     _LIBRARY_LOCAL_AUTHORING_ADAPTER: SRC_ROOT
@@ -462,13 +495,10 @@ DOMAIN_MODULES = {
     / "tools"
     / "project_validation_loops.py",
     _PROJECT_WORKFLOW_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "project_workflow.py",
-    "kicad_mcp.tools.validation": SRC_ROOT / "kicad_mcp" / "tools" / "validation.py",
+    _TOOL_VALIDATION: SRC_ROOT / "kicad_mcp" / "tools" / "validation.py",
     "kicad_mcp.validation.drc_runner": SRC_ROOT / "kicad_mcp" / "validation" / "drc_runner.py",
     "kicad_mcp.validation.policy_state": SRC_ROOT / "kicad_mcp" / "validation" / "policy_state.py",
-    "kicad_mcp.tools.validation_policy_state": SRC_ROOT
-    / "kicad_mcp"
-    / "tools"
-    / "validation_policy_state.py",
+    _TOOL_VALIDATION_POLICY_STATE: SRC_ROOT / "kicad_mcp" / "tools" / "validation_policy_state.py",
     _SCHEMATIC_TOOL_MODULE: SRC_ROOT / "kicad_mcp" / "tools" / "schematic.py",
     "kicad_mcp.companion.context": SRC_ROOT / "kicad_mcp" / "companion" / "context.py",
     "kicad_mcp.ipc.command_queue": SRC_ROOT / "kicad_mcp" / "ipc" / "command_queue.py",
@@ -551,112 +581,79 @@ DOMAIN_MODULES = {
     / "schematic"
     / "template_instantiation.py",
     "kicad_mcp.schematic.topology": SRC_ROOT / "kicad_mcp" / "schematic" / "topology.py",
-    "kicad_mcp.tools.pcb_groups_inspection": SRC_ROOT
-    / "kicad_mcp"
-    / "tools"
-    / "pcb_groups_inspection.py",
+    _TOOL_PCB_GROUPS_INSPECTION: SRC_ROOT / "kicad_mcp" / "tools" / "pcb_groups_inspection.py",
     "kicad_mcp.pcb.board_inspection": SRC_ROOT / "kicad_mcp" / "pcb" / "board_inspection.py",
-    "kicad_mcp.tools.pcb_board_inspection": SRC_ROOT
-    / "kicad_mcp"
-    / "tools"
-    / "pcb_board_inspection.py",
-    "kicad_mcp.tools.pcb_basic_inspection": SRC_ROOT
-    / "kicad_mcp"
-    / "tools"
-    / "pcb_basic_inspection.py",
-    "kicad_mcp.tools.pcb_file_inspection": SRC_ROOT
-    / "kicad_mcp"
-    / "tools"
-    / "pcb_file_inspection.py",
-    "kicad_mcp.tools.pcb_origin_management": SRC_ROOT
-    / "kicad_mcp"
-    / "tools"
-    / "pcb_origin_management.py",
-    "kicad_mcp.tools.pcb_session_inspection": SRC_ROOT
-    / "kicad_mcp"
-    / "tools"
-    / "pcb_session_inspection.py",
+    _TOOL_PCB_BOARD_INSPECTION: SRC_ROOT / "kicad_mcp" / "tools" / "pcb_board_inspection.py",
+    _TOOL_PCB_BASIC_INSPECTION: SRC_ROOT / "kicad_mcp" / "tools" / "pcb_basic_inspection.py",
+    _TOOL_PCB_FILE_INSPECTION: SRC_ROOT / "kicad_mcp" / "tools" / "pcb_file_inspection.py",
+    _TOOL_PCB_ORIGIN_MANAGEMENT: SRC_ROOT / "kicad_mcp" / "tools" / "pcb_origin_management.py",
+    _TOOL_PCB_SESSION_INSPECTION: SRC_ROOT / "kicad_mcp" / "tools" / "pcb_session_inspection.py",
     "kicad_mcp.pcb.stackup_management": SRC_ROOT / "kicad_mcp" / "pcb" / "stackup_management.py",
-    "kicad_mcp.tools.pcb_stackup_management": SRC_ROOT
-    / "kicad_mcp"
-    / "tools"
-    / "pcb_stackup_management.py",
-    "kicad_mcp.tools.pcb_title_block_management": SRC_ROOT
+    _TOOL_PCB_STACKUP_MANAGEMENT: SRC_ROOT / "kicad_mcp" / "tools" / "pcb_stackup_management.py",
+    _TOOL_PCB_TITLE_BLOCK_MANAGEMENT: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "pcb_title_block_management.py",
-    "kicad_mcp.tools.pcb_transaction_lifecycle": SRC_ROOT
+    _TOOL_PCB_TRANSACTION_LIFECYCLE: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "pcb_transaction_lifecycle.py",
-    "kicad_mcp.tools.schematic_back_annotation": SRC_ROOT
+    _TOOL_SCHEMATIC_BACK_ANNOTATION: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "schematic_back_annotation.py",
-    "kicad_mcp.tools.schematic_basic_authoring": SRC_ROOT
+    _TOOL_SCHEMATIC_BASIC_AUTHORING: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "schematic_basic_authoring.py",
-    "kicad_mcp.tools.schematic_circuit_compilation": SRC_ROOT
+    _TOOL_SCHEMATIC_CIRCUIT_COMPILATION: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "schematic_circuit_compilation.py",
-    "kicad_mcp.tools.schematic_connectivity_authoring": SRC_ROOT
+    _TOOL_SCHEMATIC_CONNECTIVITY_AUTHORING: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "schematic_connectivity_authoring.py",
-    "kicad_mcp.tools.schematic_destructive_edit": SRC_ROOT
+    _TOOL_SCHEMATIC_DESTRUCTIVE_EDIT: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "schematic_destructive_edit.py",
-    "kicad_mcp.tools.schematic_document_settings": SRC_ROOT
+    _TOOL_SCHEMATIC_DOCUMENT_SETTINGS: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "schematic_document_settings.py",
-    "kicad_mcp.tools.schematic_symbol_mutation": SRC_ROOT
+    _TOOL_SCHEMATIC_SYMBOL_MUTATION: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "schematic_symbol_mutation.py",
-    "kicad_mcp.tools.schematic_template_catalog": SRC_ROOT
+    _TOOL_SCHEMATIC_TEMPLATE_CATALOG: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "schematic_template_catalog.py",
-    "kicad_mcp.tools.schematic_template_instantiation": SRC_ROOT
+    _TOOL_SCHEMATIC_TEMPLATE_INSTANTIATION: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "schematic_template_instantiation.py",
-    "kicad_mcp.tools.schematic_topology": SRC_ROOT
-    / "kicad_mcp"
-    / "tools"
-    / "schematic_topology.py",
-    "kicad_mcp.tools.schematic_hierarchy_authoring": SRC_ROOT
+    _TOOL_SCHEMATIC_TOPOLOGY: SRC_ROOT / "kicad_mcp" / "tools" / "schematic_topology.py",
+    _TOOL_SCHEMATIC_HIERARCHY_AUTHORING: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "schematic_hierarchy_authoring.py",
-    "kicad_mcp.tools.schematic_inspection": SRC_ROOT
-    / "kicad_mcp"
-    / "tools"
-    / "schematic_inspection.py",
-    "kicad_mcp.tools.schematic_lifecycle_authoring": SRC_ROOT
+    _TOOL_SCHEMATIC_INSPECTION: SRC_ROOT / "kicad_mcp" / "tools" / "schematic_inspection.py",
+    _TOOL_SCHEMATIC_LIFECYCLE_AUTHORING: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "schematic_lifecycle_authoring.py",
-    "kicad_mcp.tools.schematic_layout_automation": SRC_ROOT
+    _TOOL_SCHEMATIC_LAYOUT_AUTOMATION: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "schematic_layout_automation.py",
-    "kicad_mcp.tools.schematic_layout_inspection": SRC_ROOT
+    _TOOL_SCHEMATIC_LAYOUT_INSPECTION: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "schematic_layout_inspection.py",
-    "kicad_mcp.tools.schematic_rendering": SRC_ROOT
-    / "kicad_mcp"
-    / "tools"
-    / "schematic_rendering.py",
-    "kicad_mcp.tools.schematic_semantic_ir": SRC_ROOT
-    / "kicad_mcp"
-    / "tools"
-    / "schematic_semantic_ir.py",
+    _TOOL_SCHEMATIC_RENDERING: SRC_ROOT / "kicad_mcp" / "tools" / "schematic_rendering.py",
+    _TOOL_SCHEMATIC_SEMANTIC_IR: SRC_ROOT / "kicad_mcp" / "tools" / "schematic_semantic_ir.py",
     "kicad_mcp.tools.schematic_constants": SRC_ROOT
     / "kicad_mcp"
     / "tools"
@@ -823,22 +820,22 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     _MANUFACTURING_TEST_PLAN_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
     _MANUFACTURING_IMPORT_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
     _MANUFACTURING_PANELIZATION_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
-    "kicad_mcp.tools.validation_policy_state": ("kicad_mcp.tools.validation",),
-    "kicad_mcp.tools.export_bom": (_EXPORT_ROOT_MODULE,),
-    "kicad_mcp.tools.export_board_stats": (_EXPORT_ROOT_MODULE,),
-    "kicad_mcp.tools.export_drill": (_EXPORT_ROOT_MODULE,),
-    "kicad_mcp.tools.export_gerber": (_EXPORT_ROOT_MODULE,),
+    _TOOL_VALIDATION_POLICY_STATE: (_TOOL_VALIDATION,),
+    _TOOL_EXPORT_BOM: (_EXPORT_ROOT_MODULE,),
+    _TOOL_EXPORT_BOARD_STATS: (_EXPORT_ROOT_MODULE,),
+    _TOOL_EXPORT_DRILL: (_EXPORT_ROOT_MODULE,),
+    _TOOL_EXPORT_GERBER: (_EXPORT_ROOT_MODULE,),
     _EXPORT_MANUFACTURING_PACKAGE_ADAPTER: (_EXPORT_ROOT_MODULE,),
-    "kicad_mcp.tools.export_netlist": (_EXPORT_ROOT_MODULE,),
+    _TOOL_EXPORT_NETLIST: (_EXPORT_ROOT_MODULE,),
     _EXPORT_PCB_3D_PDF_ADAPTER: (_EXPORT_ROOT_MODULE,),
     _EXPORT_PCB_3D_RENDER_ADAPTER: (_EXPORT_ROOT_MODULE,),
     _EXPORT_PCB_FILE_FORMATS_ADAPTER: (_EXPORT_ROOT_MODULE,),
     _EXPORT_PCB_MANUFACTURING_OUTPUTS_ADAPTER: (_EXPORT_ROOT_MODULE,),
-    "kicad_mcp.tools.export_pcb_pdf": (_EXPORT_ROOT_MODULE,),
+    _TOOL_EXPORT_PCB_PDF: (_EXPORT_ROOT_MODULE,),
     _EXPORT_PCB_VECTOR_ADAPTER: (_EXPORT_ROOT_MODULE,),
-    "kicad_mcp.tools.export_sch_pdf": (_EXPORT_ROOT_MODULE,),
-    "kicad_mcp.tools.export_sch_python_bom": (_EXPORT_ROOT_MODULE,),
-    "kicad_mcp.tools.export_sch_vector": (_EXPORT_ROOT_MODULE,),
+    _TOOL_EXPORT_SCH_PDF: (_EXPORT_ROOT_MODULE,),
+    _TOOL_EXPORT_SCH_PYTHON_BOM: (_EXPORT_ROOT_MODULE,),
+    _TOOL_EXPORT_SCH_VECTOR: (_EXPORT_ROOT_MODULE,),
     _LIBRARY_CATALOG_ADAPTER: (_LIBRARY_ROOT_MODULE,),
     _LIBRARY_DATASHEET_ADAPTER: (_LIBRARY_ROOT_MODULE,),
     _LIBRARY_FOOTPRINT_ENGINEERING_ADAPTER: (_LIBRARY_ROOT_MODULE,),
@@ -855,51 +852,51 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     _PROJECT_RUNTIME_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_VALIDATION_LOOPS_ADAPTER: (_PROJECT_ROOT_MODULE,),
     _PROJECT_WORKFLOW_ADAPTER: (_PROJECT_ROOT_MODULE,),
-    "kicad_mcp.tools.pcb_basic_inspection": (_PCB_TOOL_MODULE,),
-    "kicad_mcp.tools.pcb_board_inspection": (_PCB_TOOL_MODULE,),
-    "kicad_mcp.tools.pcb_file_inspection": (_PCB_TOOL_MODULE,),
-    "kicad_mcp.tools.pcb_groups_inspection": (_PCB_TOOL_MODULE,),
-    "kicad_mcp.tools.pcb_origin_management": (_PCB_TOOL_MODULE,),
-    "kicad_mcp.tools.pcb_session_inspection": (_PCB_TOOL_MODULE,),
-    "kicad_mcp.tools.pcb_stackup_management": (_PCB_TOOL_MODULE,),
-    "kicad_mcp.tools.pcb_title_block_management": (_PCB_TOOL_MODULE,),
-    "kicad_mcp.tools.pcb_transaction_lifecycle": (_PCB_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_back_annotation": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_basic_authoring": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_circuit_compilation": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_connectivity_authoring": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_destructive_edit": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_document_settings": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_hierarchy_authoring": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_inspection": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_lifecycle_authoring": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_layout_automation": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_layout_inspection": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_rendering": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_semantic_ir": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_symbol_mutation": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_template_catalog": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_template_instantiation": (_SCHEMATIC_TOOL_MODULE,),
-    "kicad_mcp.tools.schematic_topology": (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_PCB_BASIC_INSPECTION: (_PCB_TOOL_MODULE,),
+    _TOOL_PCB_BOARD_INSPECTION: (_PCB_TOOL_MODULE,),
+    _TOOL_PCB_FILE_INSPECTION: (_PCB_TOOL_MODULE,),
+    _TOOL_PCB_GROUPS_INSPECTION: (_PCB_TOOL_MODULE,),
+    _TOOL_PCB_ORIGIN_MANAGEMENT: (_PCB_TOOL_MODULE,),
+    _TOOL_PCB_SESSION_INSPECTION: (_PCB_TOOL_MODULE,),
+    _TOOL_PCB_STACKUP_MANAGEMENT: (_PCB_TOOL_MODULE,),
+    _TOOL_PCB_TITLE_BLOCK_MANAGEMENT: (_PCB_TOOL_MODULE,),
+    _TOOL_PCB_TRANSACTION_LIFECYCLE: (_PCB_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_BACK_ANNOTATION: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_BASIC_AUTHORING: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_CIRCUIT_COMPILATION: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_CONNECTIVITY_AUTHORING: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_DESTRUCTIVE_EDIT: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_DOCUMENT_SETTINGS: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_HIERARCHY_AUTHORING: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_INSPECTION: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_LIFECYCLE_AUTHORING: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_LAYOUT_AUTOMATION: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_LAYOUT_INSPECTION: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_RENDERING: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_SEMANTIC_IR: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_SYMBOL_MUTATION: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_TEMPLATE_CATALOG: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_TEMPLATE_INSTANTIATION: (_SCHEMATIC_TOOL_MODULE,),
+    _TOOL_SCHEMATIC_TOPOLOGY: (_SCHEMATIC_TOOL_MODULE,),
 }
 
 REGISTER_LINE_LIMITS = {
     _PCB_TOOL_MODULE: 300,
-    "kicad_mcp.tools.export_bom": 100,
-    "kicad_mcp.tools.export_board_stats": 100,
-    "kicad_mcp.tools.export_drill": 100,
-    "kicad_mcp.tools.export_gerber": 100,
+    _TOOL_EXPORT_BOM: 100,
+    _TOOL_EXPORT_BOARD_STATS: 100,
+    _TOOL_EXPORT_DRILL: 100,
+    _TOOL_EXPORT_GERBER: 100,
     _EXPORT_MANUFACTURING_PACKAGE_ADAPTER: 100,
-    "kicad_mcp.tools.export_netlist": 100,
+    _TOOL_EXPORT_NETLIST: 100,
     _EXPORT_PCB_3D_PDF_ADAPTER: 100,
     _EXPORT_PCB_3D_RENDER_ADAPTER: 140,
     _EXPORT_PCB_FILE_FORMATS_ADAPTER: 100,
     _EXPORT_PCB_MANUFACTURING_OUTPUTS_ADAPTER: 100,
-    "kicad_mcp.tools.export_pcb_pdf": 100,
+    _TOOL_EXPORT_PCB_PDF: 100,
     _EXPORT_PCB_VECTOR_ADAPTER: 100,
-    "kicad_mcp.tools.export_sch_pdf": 100,
-    "kicad_mcp.tools.export_sch_python_bom": 100,
-    "kicad_mcp.tools.export_sch_vector": 100,
+    _TOOL_EXPORT_SCH_PDF: 100,
+    _TOOL_EXPORT_SCH_PYTHON_BOM: 100,
+    _TOOL_EXPORT_SCH_VECTOR: 100,
     _LIBRARY_CATALOG_ADAPTER: 160,
     _LIBRARY_DATASHEET_ADAPTER: 100,
     _LIBRARY_LOCAL_AUTHORING_ADAPTER: 100,
@@ -958,35 +955,35 @@ REGISTER_LINE_LIMITS = {
     _PROJECT_RUNTIME_ADAPTER: 55,
     _PROJECT_VALIDATION_LOOPS_ADAPTER: 55,
     _PROJECT_WORKFLOW_ADAPTER: 55,
-    "kicad_mcp.tools.validation": 300,
-    "kicad_mcp.tools.validation_policy_state": 300,
-    "kicad_mcp.tools.pcb_basic_inspection": 300,
-    "kicad_mcp.tools.pcb_board_inspection": 300,
-    "kicad_mcp.tools.pcb_file_inspection": 300,
-    "kicad_mcp.tools.pcb_groups_inspection": 300,
-    "kicad_mcp.tools.pcb_origin_management": 300,
-    "kicad_mcp.tools.pcb_session_inspection": 300,
-    "kicad_mcp.tools.pcb_stackup_management": 300,
-    "kicad_mcp.tools.pcb_title_block_management": 300,
-    "kicad_mcp.tools.pcb_transaction_lifecycle": 300,
+    _TOOL_VALIDATION: 300,
+    _TOOL_VALIDATION_POLICY_STATE: 300,
+    _TOOL_PCB_BASIC_INSPECTION: 300,
+    _TOOL_PCB_BOARD_INSPECTION: 300,
+    _TOOL_PCB_FILE_INSPECTION: 300,
+    _TOOL_PCB_GROUPS_INSPECTION: 300,
+    _TOOL_PCB_ORIGIN_MANAGEMENT: 300,
+    _TOOL_PCB_SESSION_INSPECTION: 300,
+    _TOOL_PCB_STACKUP_MANAGEMENT: 300,
+    _TOOL_PCB_TITLE_BLOCK_MANAGEMENT: 300,
+    _TOOL_PCB_TRANSACTION_LIFECYCLE: 300,
     _SCHEMATIC_TOOL_MODULE: 300,
-    "kicad_mcp.tools.schematic_back_annotation": 300,
-    "kicad_mcp.tools.schematic_basic_authoring": 300,
-    "kicad_mcp.tools.schematic_circuit_compilation": 300,
-    "kicad_mcp.tools.schematic_connectivity_authoring": 300,
-    "kicad_mcp.tools.schematic_destructive_edit": 300,
-    "kicad_mcp.tools.schematic_document_settings": 300,
-    "kicad_mcp.tools.schematic_hierarchy_authoring": 320,
-    "kicad_mcp.tools.schematic_inspection": 300,
-    "kicad_mcp.tools.schematic_lifecycle_authoring": 300,
-    "kicad_mcp.tools.schematic_layout_automation": 300,
-    "kicad_mcp.tools.schematic_layout_inspection": 300,
-    "kicad_mcp.tools.schematic_rendering": 300,
-    "kicad_mcp.tools.schematic_semantic_ir": 300,
-    "kicad_mcp.tools.schematic_symbol_mutation": 300,
-    "kicad_mcp.tools.schematic_template_catalog": 300,
-    "kicad_mcp.tools.schematic_template_instantiation": 300,
-    "kicad_mcp.tools.schematic_topology": 300,
+    _TOOL_SCHEMATIC_BACK_ANNOTATION: 300,
+    _TOOL_SCHEMATIC_BASIC_AUTHORING: 300,
+    _TOOL_SCHEMATIC_CIRCUIT_COMPILATION: 300,
+    _TOOL_SCHEMATIC_CONNECTIVITY_AUTHORING: 300,
+    _TOOL_SCHEMATIC_DESTRUCTIVE_EDIT: 300,
+    _TOOL_SCHEMATIC_DOCUMENT_SETTINGS: 300,
+    _TOOL_SCHEMATIC_HIERARCHY_AUTHORING: 320,
+    _TOOL_SCHEMATIC_INSPECTION: 300,
+    _TOOL_SCHEMATIC_LIFECYCLE_AUTHORING: 300,
+    _TOOL_SCHEMATIC_LAYOUT_AUTOMATION: 300,
+    _TOOL_SCHEMATIC_LAYOUT_INSPECTION: 300,
+    _TOOL_SCHEMATIC_RENDERING: 300,
+    _TOOL_SCHEMATIC_SEMANTIC_IR: 300,
+    _TOOL_SCHEMATIC_SYMBOL_MUTATION: 300,
+    _TOOL_SCHEMATIC_TEMPLATE_CATALOG: 300,
+    _TOOL_SCHEMATIC_TEMPLATE_INSTANTIATION: 300,
+    _TOOL_SCHEMATIC_TOPOLOGY: 300,
 }
 
 
