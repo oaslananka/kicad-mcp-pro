@@ -174,7 +174,7 @@ def find_kicad_version(cli_path: Path) -> str | None:
             timeout=10,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (FileNotFoundError, OSError, PermissionError, subprocess.TimeoutExpired):
         return None
     text = (result.stdout or result.stderr).strip()
     return text or None
@@ -211,7 +211,7 @@ def get_cli_capabilities(cli_path: Path) -> CliCapabilities:
                 timeout=10,
                 check=False,
             )
-        except (OSError, subprocess.TimeoutExpired):
+        except (FileNotFoundError, OSError, PermissionError, subprocess.TimeoutExpired):
             continue
         help_outputs.append(f"{result.stdout}\n{result.stderr}")
 
