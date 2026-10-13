@@ -184,20 +184,23 @@ _CONFIG_PATHS: dict[str, dict[Scope, str]] = {
 }
 
 
+_CLAUDE_DESKTOP_CONFIG_FILENAME = "claude_desktop_config.json"
+
+
 def _claude_desktop_path() -> Path:
     """Return the platform-appropriate Claude Desktop config path."""
     if sys.platform == "win32":
         appdata = os.environ.get("APPDATA", "")
-        return Path(appdata) / "Claude" / "claude_desktop_config.json"
+        return Path(appdata) / "Claude" / _CLAUDE_DESKTOP_CONFIG_FILENAME
     if sys.platform == "darwin":
         return (
             Path.home()
             / "Library"
             / "Application Support"
             / "Claude"
-            / "claude_desktop_config.json"
+            / _CLAUDE_DESKTOP_CONFIG_FILENAME
         )
-    return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+    return Path.home() / ".config" / "Claude" / _CLAUDE_DESKTOP_CONFIG_FILENAME
 
 
 def resolve_path(agent_key: str, scope: str, project_dir: str | Path | None = None) -> Path:

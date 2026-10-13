@@ -23,6 +23,12 @@ SOURCES = ("main.kicad_sch", "main.kicad_pcb")
 COMPATIBILITY_KEY = "kicad-10.0.6:parser-v1:engineering-graph-v1"
 
 
+def test_native_source_allowlist_preserved() -> None:
+    from kicad_mcp.project.incremental_state import SUPPORTED_SOURCES
+
+    assert SUPPORTED_SOURCES == frozenset({".kicad_sch", ".kicad_pcb", ".kicad_pro", ".kicad_dru"})
+
+
 def _circuit() -> IRCircuit:
     circuit = IRCircuit(
         source_path="main.kicad_sch",

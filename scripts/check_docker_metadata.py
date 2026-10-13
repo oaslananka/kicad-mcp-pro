@@ -9,6 +9,7 @@ from pathlib import Path
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PACKAGE_ROOT
+DOCKER_DOC_FILENAME = "docker.md"
 MCP_SERVER_NAME = "io.github.oaslananka/kicad-mcp-pro"
 GHCR_IMAGE = "ghcr.io/oaslananka/kicad-mcp-pro"
 OLD_GHCR_IMAGE = "ghcr.io/oaslananka/kicad-mcp-pro/kicad-mcp-pro"
@@ -160,10 +161,10 @@ def _check_publish_workflows(errors: list[str]) -> None:
 
 def _check_docker_docs(errors: list[str]) -> None:
     docs_to_scan = [
-        PACKAGE_ROOT / "docs" / "install" / "docker.md",
-        PACKAGE_ROOT / "docs" / "deployment" / "docker.md",
+        PACKAGE_ROOT / "docs" / "install" / DOCKER_DOC_FILENAME,
+        PACKAGE_ROOT / "docs" / "deployment" / DOCKER_DOC_FILENAME,
         PACKAGE_ROOT / "docs" / "publishing.md",
-        REPO_ROOT / "docs" / "deployment" / "docker.md",
+        REPO_ROOT / "docs" / "deployment" / DOCKER_DOC_FILENAME,
     ]
     for doc_path in docs_to_scan:
         text = doc_path.read_text(encoding="utf-8")

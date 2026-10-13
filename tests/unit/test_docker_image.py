@@ -195,3 +195,28 @@ def test_docker_healthcheck_uses_machine_readable_health_endpoint() -> None:
     assert "HEALTHCHECK" in dockerfile
     assert health_path in dockerfile
     assert "127.0.0.1:3334/').status" not in dockerfile
+
+
+def test_docker_docs_checker_reads_exact_expected_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Docker metadata policy must keep scanning all relevant doc locations."""
+    observed: list[Path] = []
+    read_text = Path.read_text
+
+    def read_tracked(path: Path, *args: object, **kwargs: object) -> str:
+        observed.append(path)
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_tracked)
+    errors: list[str] = []
+    check_docker_metadata._check_docker_docs(errors)
+    assert not errors
+    root = check_docker_metadata.PACKAGE_ROOT
+    expected = {
+        root / "docs" / "install" / "docker.md",
+        root / "docs" / "deployment" / "docker.md",
+        root / "docs" / "publishing.md",
+    }
+    assert expected.issubset(set(observed))
+    assert (root / "docs" / "deployment" / "docker.md") in observed

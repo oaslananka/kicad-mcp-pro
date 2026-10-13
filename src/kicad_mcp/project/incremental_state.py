@@ -29,9 +29,10 @@ from kicad_mcp.ir.engineering_graph_from_ir import (
 from kicad_mcp.project.evidence_current_state import canonical_graph_entity_sha256
 
 STATE_SCHEMA_VERSION = 1
+SCHEMATIC_SOURCE_SUFFIX = ".kicad_sch"
 MAX_CHANGE_JOURNAL = 32
 # Caller-owned compatibility identity must include KiCad/parser/IR schema versions.
-SUPPORTED_SOURCES = frozenset({".kicad_sch", ".kicad_pcb", ".kicad_pro", ".kicad_dru"})
+SUPPORTED_SOURCES = frozenset({SCHEMATIC_SOURCE_SUFFIX, ".kicad_pcb", ".kicad_pro", ".kicad_dru"})
 
 
 class StateRebuildRequiredError(ValueError):
@@ -169,7 +170,7 @@ def _digest_one_source(real_root: Path, name: str) -> str:
             before = os.fstat(fd)
             with os.fdopen(os.dup(fd), "rb") as stream:
                 digest = hashlib.file_digest(stream, "sha256").hexdigest()
-                if rel.suffix == ".kicad_sch":
+                if rel.suffix == SCHEMATIC_SOURCE_SUFFIX:
                     stream.seek(0)
                     _require_no_native_child_sheets(stream)
             after = os.fstat(fd)
@@ -207,7 +208,7 @@ def _require_single_sheet_scope(native_sources: tuple[str, ...], sheet_hierarchy
     establish native instance UUID/net parity before multi-sheet persistence
     is safe, even when all native file hashes are available.
     """
-    schematic_count = sum(name.endswith(".kicad_sch") for name in native_sources)
+    schematic_count = sum(name.endswith(SCHEMATIC_SOURCE_SUFFIX) for name in native_sources)
     if (
         schematic_count != 1
         or not isinstance(sheet_hierarchy, (list, tuple))

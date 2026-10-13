@@ -67,19 +67,29 @@ class TestResolvePath:
         monkeypatch.setattr(sys, "platform", "win32")
         monkeypatch.setenv("APPDATA", "C:\\Users\\Test\\AppData\\Roaming")
         path = resolve_path("claude-desktop", "user")
-        assert "Claude" in str(path)
+        assert (
+            path
+            == Path("C:\\Users\\Test\\AppData\\Roaming") / "Claude" / "claude_desktop_config.json"
+        )
 
     def test_claude_desktop_macos_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(sys, "platform", "darwin")
         path = resolve_path("claude-desktop", "user")
-        assert "Application Support" in str(path)
+        assert (
+            path
+            == Path.home()
+            / "Library"
+            / "Application Support"
+            / "Claude"
+            / "claude_desktop_config.json"
+        )
 
     def test_claude_desktop_linux_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(sys, "platform", "linux")
         path = resolve_path("claude-desktop", "user")
         # Check for ".config" path segment (OS-agnostic)
         assert ".config" in str(path).replace("\\", "/")
-        assert "Claude" in str(path)
+        assert path == Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
 
     def test_invalid_scope_raises(self) -> None:
         with pytest.raises(ValueError, match="does not support scope"):
