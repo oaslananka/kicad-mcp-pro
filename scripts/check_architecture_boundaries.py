@@ -14,6 +14,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
 
+_EXPORT_ROOT_MODULE = "kicad_mcp.tools.export"
+_EXPORT_PCB_3D_PDF_ADAPTER = "kicad_mcp.tools.export_pcb_3d_pdf"
+_EXPORT_PCB_FILE_FORMATS_ADAPTER = "kicad_mcp.tools.export_pcb_file_formats"
+_EXPORT_PCB_VECTOR_ADAPTER = "kicad_mcp.tools.export_pcb_vector"
 _EXPORT_PCB_3D_RENDER_ADAPTER = "kicad_mcp.tools.export_pcb_3d_render"
 _EXPORT_PCB_MANUFACTURING_OUTPUTS_ADAPTER = "kicad_mcp.tools.export_pcb_manufacturing_outputs"
 _EXPORT_MANUFACTURING_PACKAGE_ADAPTER = "kicad_mcp.tools.export_manufacturing_package"
@@ -170,9 +174,9 @@ DOMAIN_MODULES = {
     / "tools"
     / "export_manufacturing_package.py",
     "kicad_mcp.tools.export_netlist": SRC_ROOT / "kicad_mcp" / "tools" / "export_netlist.py",
-    "kicad_mcp.tools.export_pcb_3d_pdf": SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_3d_pdf.py",
+    _EXPORT_PCB_3D_PDF_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_3d_pdf.py",
     _EXPORT_PCB_3D_RENDER_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_3d_render.py",
-    "kicad_mcp.tools.export_pcb_file_formats": SRC_ROOT
+    _EXPORT_PCB_FILE_FORMATS_ADAPTER: SRC_ROOT
     / "kicad_mcp"
     / "tools"
     / "export_pcb_file_formats.py",
@@ -181,7 +185,7 @@ DOMAIN_MODULES = {
     / "tools"
     / "export_pcb_manufacturing_outputs.py",
     "kicad_mcp.tools.export_pcb_pdf": SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_pdf.py",
-    "kicad_mcp.tools.export_pcb_vector": SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_vector.py",
+    _EXPORT_PCB_VECTOR_ADAPTER: SRC_ROOT / "kicad_mcp" / "tools" / "export_pcb_vector.py",
     "kicad_mcp.tools.export_sch_pdf": SRC_ROOT / "kicad_mcp" / "tools" / "export_sch_pdf.py",
     "kicad_mcp.tools.export_sch_python_bom": SRC_ROOT
     / "kicad_mcp"
@@ -813,21 +817,21 @@ ADAPTER_FORBIDDEN_IMPORT_PREFIXES = {
     _MANUFACTURING_IMPORT_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
     _MANUFACTURING_PANELIZATION_ADAPTER: (_MANUFACTURING_ROOT_MODULE,),
     "kicad_mcp.tools.validation_policy_state": ("kicad_mcp.tools.validation",),
-    "kicad_mcp.tools.export_bom": ("kicad_mcp.tools.export",),
-    "kicad_mcp.tools.export_board_stats": ("kicad_mcp.tools.export",),
-    "kicad_mcp.tools.export_drill": ("kicad_mcp.tools.export",),
-    "kicad_mcp.tools.export_gerber": ("kicad_mcp.tools.export",),
-    _EXPORT_MANUFACTURING_PACKAGE_ADAPTER: ("kicad_mcp.tools.export",),
-    "kicad_mcp.tools.export_netlist": ("kicad_mcp.tools.export",),
-    "kicad_mcp.tools.export_pcb_3d_pdf": ("kicad_mcp.tools.export",),
-    _EXPORT_PCB_3D_RENDER_ADAPTER: ("kicad_mcp.tools.export",),
-    "kicad_mcp.tools.export_pcb_file_formats": ("kicad_mcp.tools.export",),
-    _EXPORT_PCB_MANUFACTURING_OUTPUTS_ADAPTER: ("kicad_mcp.tools.export",),
-    "kicad_mcp.tools.export_pcb_pdf": ("kicad_mcp.tools.export",),
-    "kicad_mcp.tools.export_pcb_vector": ("kicad_mcp.tools.export",),
-    "kicad_mcp.tools.export_sch_pdf": ("kicad_mcp.tools.export",),
-    "kicad_mcp.tools.export_sch_python_bom": ("kicad_mcp.tools.export",),
-    "kicad_mcp.tools.export_sch_vector": ("kicad_mcp.tools.export",),
+    "kicad_mcp.tools.export_bom": (_EXPORT_ROOT_MODULE,),
+    "kicad_mcp.tools.export_board_stats": (_EXPORT_ROOT_MODULE,),
+    "kicad_mcp.tools.export_drill": (_EXPORT_ROOT_MODULE,),
+    "kicad_mcp.tools.export_gerber": (_EXPORT_ROOT_MODULE,),
+    _EXPORT_MANUFACTURING_PACKAGE_ADAPTER: (_EXPORT_ROOT_MODULE,),
+    "kicad_mcp.tools.export_netlist": (_EXPORT_ROOT_MODULE,),
+    _EXPORT_PCB_3D_PDF_ADAPTER: (_EXPORT_ROOT_MODULE,),
+    _EXPORT_PCB_3D_RENDER_ADAPTER: (_EXPORT_ROOT_MODULE,),
+    _EXPORT_PCB_FILE_FORMATS_ADAPTER: (_EXPORT_ROOT_MODULE,),
+    _EXPORT_PCB_MANUFACTURING_OUTPUTS_ADAPTER: (_EXPORT_ROOT_MODULE,),
+    "kicad_mcp.tools.export_pcb_pdf": (_EXPORT_ROOT_MODULE,),
+    _EXPORT_PCB_VECTOR_ADAPTER: (_EXPORT_ROOT_MODULE,),
+    "kicad_mcp.tools.export_sch_pdf": (_EXPORT_ROOT_MODULE,),
+    "kicad_mcp.tools.export_sch_python_bom": (_EXPORT_ROOT_MODULE,),
+    "kicad_mcp.tools.export_sch_vector": (_EXPORT_ROOT_MODULE,),
     _LIBRARY_CATALOG_ADAPTER: (_LIBRARY_ROOT_MODULE,),
     _LIBRARY_DATASHEET_ADAPTER: (_LIBRARY_ROOT_MODULE,),
     _LIBRARY_FOOTPRINT_ENGINEERING_ADAPTER: (_LIBRARY_ROOT_MODULE,),
@@ -880,12 +884,12 @@ REGISTER_LINE_LIMITS = {
     "kicad_mcp.tools.export_gerber": 100,
     _EXPORT_MANUFACTURING_PACKAGE_ADAPTER: 100,
     "kicad_mcp.tools.export_netlist": 100,
-    "kicad_mcp.tools.export_pcb_3d_pdf": 100,
+    _EXPORT_PCB_3D_PDF_ADAPTER: 100,
     _EXPORT_PCB_3D_RENDER_ADAPTER: 140,
-    "kicad_mcp.tools.export_pcb_file_formats": 100,
+    _EXPORT_PCB_FILE_FORMATS_ADAPTER: 100,
     _EXPORT_PCB_MANUFACTURING_OUTPUTS_ADAPTER: 100,
     "kicad_mcp.tools.export_pcb_pdf": 100,
-    "kicad_mcp.tools.export_pcb_vector": 100,
+    _EXPORT_PCB_VECTOR_ADAPTER: 100,
     "kicad_mcp.tools.export_sch_pdf": 100,
     "kicad_mcp.tools.export_sch_python_bom": 100,
     "kicad_mcp.tools.export_sch_vector": 100,
