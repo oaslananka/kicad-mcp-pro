@@ -18,13 +18,16 @@ class ComponentContract:
     notes: str = ""
 
 
+# Shared user-facing values; preserve spelling and case across CLI and reports.
+_POWER_RAIL_3V3 = "+3.3V"
+
 COMPONENT_CONTRACTS: tuple[ComponentContract, ...] = (
     ComponentContract(
         key="esp32_s3_wroom_1",
         category="mcu_module",
         lib_ids=("RF_Module:ESP32-S3-WROOM-1",),
         footprint_patterns=("RF_Module:ESP32-S3-WROOM-1*",),
-        required_net_groups=(("GND",), ("+3.3V", "+3V3", "3V3")),
+        required_net_groups=(("GND",), (_POWER_RAIL_3V3, "+3V3", "3V3")),
         notes="ESP32 modules should at least expose ground and a 3.3 V rail.",
     ),
     ComponentContract(
@@ -34,7 +37,7 @@ COMPONENT_CONTRACTS: tuple[ComponentContract, ...] = (
         footprint_patterns=("Package_LGA:*ADXL355*",),
         required_net_groups=(
             ("GND",),
-            ("+3.3V", "+3V3", "3V3_ANA"),
+            (_POWER_RAIL_3V3, "+3V3", "3V3_ANA"),
             ("SPI_SCLK",),
             ("SPI_MOSI",),
             ("SPI_MISO",),
@@ -48,7 +51,7 @@ COMPONENT_CONTRACTS: tuple[ComponentContract, ...] = (
         footprint_patterns=("Package_LGA:*BME280*", "Package_LGA:*Bosch_LGA-8*"),
         required_net_groups=(
             ("GND",),
-            ("+3.3V", "+3V3", "3V3_ANA"),
+            (_POWER_RAIL_3V3, "+3V3", "3V3_ANA"),
             ("I2C_SDA",),
             ("I2C_SCL",),
         ),
@@ -69,7 +72,7 @@ COMPONENT_CONTRACTS: tuple[ComponentContract, ...] = (
         required_net_groups=(
             ("GND",),
             ("+5V", "VBUS"),
-            ("+3.3V", "+3V3", "3V3", "3V3_ANA"),
+            (_POWER_RAIL_3V3, "+3V3", "3V3", "3V3_ANA"),
         ),
         notes="AP2112 3.3 V regulators should expose ground, input, and output rails.",
     ),
@@ -82,21 +85,21 @@ COMPONENT_CONTRACTS: tuple[ComponentContract, ...] = (
             "MCU_ST_STM32G0:STM32G0B1KBTx",
             "MCU_ST_STM32L4:STM32L432KCUx",
         ),
-        required_net_groups=(("GND",), ("+3.3V", "+3V3", "VDD")),
+        required_net_groups=(("GND",), (_POWER_RAIL_3V3, "+3V3", "VDD")),
         notes="STM32-class MCUs should expose ground and their primary VDD rail.",
     ),
     ComponentContract(
         key="rp2040",
         category="mcu",
         lib_ids=("MCU_RaspberryPi_and_Broadcom:RP2040",),
-        required_net_groups=(("GND",), ("+3.3V", "+3V3", "IOVDD", "VREG_VIN")),
+        required_net_groups=(("GND",), (_POWER_RAIL_3V3, "+3V3", "IOVDD", "VREG_VIN")),
         notes="RP2040 designs should expose ground and a 3.3 V rail.",
     ),
     ComponentContract(
         key="nrf52840_module",
         category="mcu_module",
         lib_ids=("RF_Module:nRF52840-Dongle", "RF_Module:E73-2G4M08S1C"),
-        required_net_groups=(("GND",), ("+3.3V", "+3V3", "VDD")),
+        required_net_groups=(("GND",), (_POWER_RAIL_3V3, "+3V3", "VDD")),
         notes="nRF52 modules should expose ground and a 3.3 V rail.",
     ),
     ComponentContract(
@@ -106,7 +109,7 @@ COMPONENT_CONTRACTS: tuple[ComponentContract, ...] = (
         footprint_patterns=("Package_SO:*W25Q*",),
         required_net_groups=(
             ("GND",),
-            ("+3.3V", "+3V3", "VCC"),
+            (_POWER_RAIL_3V3, "+3V3", "VCC"),
             ("SPI_SCLK", "QSPI_SCK"),
             ("SPI_MOSI", "QSPI_IO0"),
             ("SPI_MISO", "QSPI_IO1"),
@@ -119,7 +122,7 @@ COMPONENT_CONTRACTS: tuple[ComponentContract, ...] = (
         lib_ids=("Memory_EEPROM:24LC256", "Memory_EEPROM:24LC32", "Memory_EEPROM:AT24CS02"),
         required_net_groups=(
             ("GND",),
-            ("+3.3V", "+3V3", "VCC"),
+            (_POWER_RAIL_3V3, "+3V3", "VCC"),
             ("I2C_SDA",),
             ("I2C_SCL",),
         ),
@@ -131,7 +134,7 @@ COMPONENT_CONTRACTS: tuple[ComponentContract, ...] = (
         lib_ids=("Sensor_Motion:MPU-6050",),
         required_net_groups=(
             ("GND",),
-            ("+3.3V", "+3V3", "VCC"),
+            (_POWER_RAIL_3V3, "+3V3", "VCC"),
             ("I2C_SDA",),
             ("I2C_SCL",),
         ),
@@ -143,7 +146,7 @@ COMPONENT_CONTRACTS: tuple[ComponentContract, ...] = (
         lib_ids=("Sensor_Motion:LIS3DH",),
         required_net_groups=(
             ("GND",),
-            ("+3.3V", "+3V3", "VDD"),
+            (_POWER_RAIL_3V3, "+3V3", "VDD"),
             ("SPI_SCLK", "I2C_SCL"),
         ),
         notes="LIS3DH should expose power plus at least one clock/control bus.",
@@ -159,7 +162,7 @@ COMPONENT_CONTRACTS: tuple[ComponentContract, ...] = (
         required_net_groups=(
             ("GND",),
             ("+5V", "VBUS", "VIN"),
-            ("+3.3V", "+3V3", "VOUT"),
+            (_POWER_RAIL_3V3, "+3V3", "VOUT"),
         ),
         notes="Buck regulators should expose ground plus an input and output rail.",
     ),
@@ -171,14 +174,18 @@ COMPONENT_CONTRACTS: tuple[ComponentContract, ...] = (
             "Amplifier_Operational:LMV358",
             "Amplifier_Operational:OPA2333",
         ),
-        required_net_groups=(("GND", "V-", "VSS"), ("+3.3V", "+5V", "V+", "VDD")),
+        required_net_groups=(("GND", "V-", "VSS"), (_POWER_RAIL_3V3, "+5V", "V+", "VDD")),
         notes="Dual op-amps should expose both supply rails before analog review continues.",
     ),
     ComponentContract(
         key="level_shifter",
         category="interface",
         lib_ids=("Level_Shifter:TXS0108EPWR", "Level_Shifter:TXB0108PWR"),
-        required_net_groups=(("GND",), ("+1.8V", "+3.3V", "+5V", "VCCA"), ("+3.3V", "+5V", "VCCB")),
+        required_net_groups=(
+            ("GND",),
+            ("+1.8V", _POWER_RAIL_3V3, "+5V", "VCCA"),
+            (_POWER_RAIL_3V3, "+5V", "VCCB"),
+        ),
         notes="Level shifters should expose ground and both rail domains.",
     ),
 )
