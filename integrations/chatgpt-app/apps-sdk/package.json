@@ -12,15 +12,15 @@
     "test:smoke": "node --test test/app-smoke.test.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.31.0",
-    "dotenv": "^18.0.5",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "dotenv": "^18.0.6",
     "express": "5.2.1",
-    "express-rate-limit": "^8.7.0",
+    "express-rate-limit": "^8.7.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.4",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   },
