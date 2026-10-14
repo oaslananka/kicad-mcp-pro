@@ -62,6 +62,10 @@ _WARNING_PREFIX = "WARN: "
 _ROUTE_CORNER_STYLE_GATE = "Route corner style"
 _FOOTPRINT_PARITY_GATE = "Footprint parity"
 _SCHEMATIC_CONNECTIVITY_GATE = "Schematic connectivity"
+_SCHEMATIC_COSMETICS_GATE = "Schematic cosmetics"
+_TOP_LEVEL_SHEET = "Top level"
+_SCHEMATIC_DESIGN_RULES_GATE = "Schematic design rules"
+_MISSING_PLACEMENT_ANALYSIS = "Placement analysis unexpectedly returned no result."
 _DRC_CLI_RECOVERY_HINT = "Make kicad-cli/report generation available, then rerun run_drc()."
 _ERC_CLI_RECOVERY_HINT = "Make kicad-cli/report generation available, then rerun run_erc()."
 
@@ -1119,7 +1123,7 @@ def _evaluate_schematic_cosmetics_gate() -> GateOutcome:
     except Exception:
         sheets = []
     if not sheets:
-        return GateOutcome("Schematic cosmetics", "PASS", "No schematic sheets to score.")
+        return GateOutcome(_SCHEMATIC_COSMETICS_GATE, "PASS", "No schematic sheets to score.")
 
     worst_score = 100.0
     worst_sheet = ""
@@ -1139,13 +1143,13 @@ def _evaluate_schematic_cosmetics_gate() -> GateOutcome:
 
     if worst_score >= _COSMETIC_GATE_THRESHOLD:
         return GateOutcome(
-            "Schematic cosmetics",
+            _SCHEMATIC_COSMETICS_GATE,
             "PASS",
             f"Cosmetic score {worst_score:.0f}/100 across all sheets.",
             details,
         )
     return GateOutcome(
-        "Schematic cosmetics",
+        _SCHEMATIC_COSMETICS_GATE,
         "WARN",
         f"Cosmetic score {worst_score:.0f}/100 on {worst_sheet} "
         f"(worst category: {worst_category or 'none'}). Advisory — does not block release.",
@@ -1165,7 +1169,7 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
             summary=str(exc),
         )
 
-    pages: list[tuple[str, Path]] = [("Top level", top_file)]
+    pages: list[tuple[str, Path]] = [(_TOP_LEVEL_SHEET, top_file)]
     blocked: list[str] = []
     failures: list[str] = []
     page_summaries: list[str] = []
@@ -1249,7 +1253,7 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
         )
 
         page_keys = sheet_keys_by_path.get(page_path, set())
-        is_child_sheet = page_name != "Top level"
+        is_child_sheet = page_name != _TOP_LEVEL_SHEET
         is_empty_sheet = symbol_count == 0 and label_count == 0 and wire_count == 0
         if has_sheet_contract and is_child_sheet and is_empty_sheet:
             if page_keys & required_sheet_keys:
@@ -1399,9 +1403,9 @@ def _evaluate_schematic_design_rule_gate() -> GateOutcome:
     try:
         top_file = _get_sch_file()
     except ValueError as exc:
-        return GateOutcome(name="Schematic design rules", status="BLOCKED", summary=str(exc))
+        return GateOutcome(name=_SCHEMATIC_DESIGN_RULES_GATE, status="BLOCKED", summary=str(exc))
 
-    pages: list[tuple[str, Path]] = [("Top level", top_file)]
+    pages: list[tuple[str, Path]] = [(_TOP_LEVEL_SHEET, top_file)]
     notes: list[str] = []
     try:
         pages.extend(_iter_child_sheet_paths(top_file))
@@ -1419,7 +1423,7 @@ def _evaluate_schematic_design_rule_gate() -> GateOutcome:
 
     if notes and not all_nets:
         return GateOutcome(
-            name="Schematic design rules",
+            name=_SCHEMATIC_DESIGN_RULES_GATE,
             status="BLOCKED",
             summary="Design-rule checks could not read the schematic connectivity.",
             details=notes,
@@ -1435,13 +1439,13 @@ def _evaluate_schematic_design_rule_gate() -> GateOutcome:
 
     if not findings:
         return GateOutcome(
-            name="Schematic design rules",
+            name=_SCHEMATIC_DESIGN_RULES_GATE,
             status="PASS",
             summary="No electrical-design-rule issues detected.",
             details=details,
         )
     return GateOutcome(
-        name="Schematic design rules",
+        name=_SCHEMATIC_DESIGN_RULES_GATE,
         status="WARN",
         summary=(
             f"{len(findings)} electrical-design-rule advisory finding(s); "
@@ -2139,7 +2143,7 @@ def _evaluate_pcb_placement_gate() -> GateOutcome:
     if blocked is not None:
         return blocked
     if analysis is None:
-        raise RuntimeError("Placement analysis unexpectedly returned no result.")
+        raise RuntimeError(_MISSING_PLACEMENT_ANALYSIS)
 
     status: GateStatus = "PASS" if not analysis.hard_failures else "FAIL"
     details = [
@@ -2947,7 +2951,7 @@ def _placement_gate_report_payload() -> PlacementGateReportPayload:
             hard_failures=blocked.details,
         )
     if analysis is None:
-        raise RuntimeError("Placement analysis unexpectedly returned no result.")
+        raise RuntimeError(_MISSING_PLACEMENT_ANALYSIS)
     outcome = _evaluate_pcb_placement_gate()
     return PlacementGateReportPayload(
         text=_format_gate(outcome),
@@ -3731,7 +3735,7 @@ def _register_validation_gate_tools(mcp: FastMCP) -> None:
                 ]
             )
         if analysis is None:
-            raise RuntimeError("Placement analysis unexpectedly returned no result.")
+            raise RuntimeError(_MISSING_PLACEMENT_ANALYSIS)
         return _format_placement_score(analysis)
 
     @mcp.tool()
