@@ -134,6 +134,10 @@ logger = structlog.get_logger(__name__)
 _BOARD_FILE_WRITE_LOCK = threading.RLock()
 _KeepoutRegion = Annotated[list[float], Field(min_length=4, max_length=4)]
 BOARD_FILE_VERSION = GENERATED_SEXPR_DIALECT_VERSION
+_DIAGNOSTICS_HEADER = "Diagnostics:"
+_FILE_BACKED_SOURCE_LABEL = "- Source: file-backed"
+_MANUAL_BOARD_RELOAD_MESSAGE = "The PCB file was updated. Reload it manually in KiCad if needed."
+_NOT_CONFIGURED_LABEL = "(not configured)"
 STRING_PATTERN = r'"((?:\\.|[^"\\])*)"'
 FLOAT_PATTERN = r"-?\d+(?:\.\d+)?"
 PLACEMENT_MARGIN_MM = 1.27
@@ -844,14 +848,14 @@ def _format_file_backed_diagnostics(
     fallback_status: str,
 ) -> list[str]:
     cfg = get_config()
-    project_path = cfg.project_dir if cfg.project_dir is not None else "(not configured)"
+    project_path = cfg.project_dir if cfg.project_dir is not None else _NOT_CONFIGURED_LABEL
     return [
-        "Diagnostics:",
-        "- Source: file-backed",
+        _DIAGNOSTICS_HEADER,
+        _FILE_BACKED_SOURCE_LABEL,
         f"- IPC endpoint: {_ipc_endpoint_label()}",
         f"- KiCad board from IPC: unavailable ({_first_error_line(ipc_error)})",
         f"- Active project path: {project_path}",
-        f"- Board file: {board_file if board_file is not None else '(not configured)'}",
+        f"- Board file: {board_file if board_file is not None else _NOT_CONFIGURED_LABEL}",
         f"- Fallback status: {fallback_status}",
     ]
 
@@ -863,12 +867,12 @@ def _format_board_file_diagnostics(
 ) -> list[str]:
     """Render configured board-file diagnostics for file-only PCB tools."""
     cfg = get_config()
-    project_path = cfg.project_dir if cfg.project_dir is not None else "(not configured)"
+    project_path = cfg.project_dir if cfg.project_dir is not None else _NOT_CONFIGURED_LABEL
     return [
-        "Diagnostics:",
-        "- Source: file-backed",
+        _DIAGNOSTICS_HEADER,
+        _FILE_BACKED_SOURCE_LABEL,
         f"- Active project path: {project_path}",
-        f"- Board file: {board_file if board_file is not None else '(not configured)'}",
+        f"- Board file: {board_file if board_file is not None else _NOT_CONFIGURED_LABEL}",
         f"- Fallback status: {status}",
     ]
 
@@ -897,14 +901,14 @@ def _with_pcb_diagnostics(message: str) -> str:
     """
     cfg = get_config()
     board_file = _configured_board_file()
-    project_path = cfg.project_dir if cfg.project_dir is not None else "(not configured)"
+    project_path = cfg.project_dir if cfg.project_dir is not None else _NOT_CONFIGURED_LABEL
     return "\n".join(
         [
             message,
-            "Diagnostics:",
+            _DIAGNOSTICS_HEADER,
             "- Source: live-gui",
             f"- Active project path: {project_path}",
-            f"- Board file: {board_file if board_file is not None else '(not configured)'}",
+            f"- Board file: {board_file if board_file is not None else _NOT_CONFIGURED_LABEL}",
         ]
     )
 
@@ -1402,7 +1406,7 @@ def _reload_board_after_file_sync() -> str:
         board = get_board()
     except (KiCadConnectionError, OSError) as exc:
         logger.debug("board_reload_skipped", error=str(exc))
-        return "The PCB file was updated. Reload it manually in KiCad if needed."
+        return _MANUAL_BOARD_RELOAD_MESSAGE
 
     try:
         revert = cast(Callable[[], None], board.revert)
@@ -1410,7 +1414,7 @@ def _reload_board_after_file_sync() -> str:
         return "The PCB file was updated and KiCad was asked to reload it."
     except Exception as exc:
         logger.debug("board_reload_after_sync_failed", error=str(exc))
-        return "The PCB file was updated. Reload it manually in KiCad if needed."
+        return _MANUAL_BOARD_RELOAD_MESSAGE
 
 
 def _footprint_size_from_assignment(assignment: str) -> tuple[float, float]:
@@ -1531,7 +1535,7 @@ def _guard_file_based_board_edit(operation: str, allow_open_board: bool) -> str 
 def _finalize_file_based_board_edit(allow_open_board: bool) -> str:
     if allow_open_board and _board_is_open():
         return _reload_board_after_file_sync()
-    return "The PCB file was updated. Reload it manually in KiCad if needed."
+    return _MANUAL_BOARD_RELOAD_MESSAGE
 
 
 def _strategy_board_positions(
@@ -2558,7 +2562,7 @@ def _register_board_rules_tools(mcp: FastMCP) -> None:
         return "\n".join(
             [
                 "Design rules (file-backed):",
-                "- Source: file-backed",
+                _FILE_BACKED_SOURCE_LABEL,
                 f"- Design rules file: {matches[0]}",
                 "",
                 content,
@@ -3528,7 +3532,7 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
         reload_note = (
             _reload_board_after_file_sync()
             if (additions or replacements) and payload.allow_open_board
-            else "The PCB file was updated. Reload it manually in KiCad if needed."
+            else _MANUAL_BOARD_RELOAD_MESSAGE
             if additions or replacements
             else ""
         )
