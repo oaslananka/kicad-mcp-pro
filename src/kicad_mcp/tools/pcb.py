@@ -3532,7 +3532,7 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
         reload_note = (
             _reload_board_after_file_sync()
             if (additions or replacements) and payload.allow_open_board
-            else _MANUAL_BOARD_RELOAD_MESSAGE
+            else "The PCB file was updated. Reload it manually in KiCad if needed."
             if additions or replacements
             else ""
         )
