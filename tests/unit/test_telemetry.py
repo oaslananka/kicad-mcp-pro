@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -17,6 +18,7 @@ from kicad_mcp.compatibility import MCP_LEGACY_PROTOCOL_VERSION
 from kicad_mcp.config import KiCadMCPConfig, get_config
 from kicad_mcp.server import _apply_cli_env, build_server
 from kicad_mcp.tools import board_file, export_support
+from kicad_mcp.utils import telemetry as telemetry_module
 from kicad_mcp.utils.telemetry import (
     configure_telemetry,
     kicad_cli_major_minor,
@@ -66,6 +68,38 @@ def _metric_points(metrics_data: MetricsData, name: str) -> list[Any]:
 
 def _metric_attributes(points: list[Any]) -> list[dict[str, object]]:
     return [dict(point.attributes or {}) for point in points]
+
+
+def test_managed_telemetry_defaults_to_http_exporters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = SimpleNamespace(otel_endpoint=None, otel_service_name="kicad-mcp-test")
+    span_calls: list[dict[str, object]] = []
+    metric_calls: list[dict[str, object]] = []
+    tracer = SimpleNamespace(add_span_processor=lambda _processor: None)
+    meter = object()
+    monkeypatch.setattr(telemetry_module, "TracerProvider", lambda **_kwargs: tracer)
+    monkeypatch.setattr(telemetry_module, "MeterProvider", lambda **_kwargs: meter)
+    monkeypatch.setattr(telemetry_module, "BatchSpanProcessor", lambda exporter: exporter)
+    monkeypatch.setattr(
+        telemetry_module, "PeriodicExportingMetricReader", lambda exporter: exporter
+    )
+    monkeypatch.setattr(
+        telemetry_module,
+        "HttpSpanExporter",
+        lambda **kwargs: span_calls.append(kwargs) or object(),
+    )
+    monkeypatch.setattr(
+        telemetry_module,
+        "HttpMetricExporter",
+        lambda **kwargs: metric_calls.append(kwargs) or object(),
+    )
+
+    assert telemetry_module._endpoint_value(cfg) == "http://127.0.0.1:4318"
+    assert telemetry_module._configure_managed_tracer_provider(cfg, {}) is tracer
+    assert telemetry_module._configure_managed_meter_provider(cfg, {}) is meter
+    assert span_calls[0]["endpoint"] == "http://127.0.0.1:4318/v1/traces"
+    assert metric_calls[0]["endpoint"] == "http://127.0.0.1:4318/v1/metrics"
 
 
 def test_telemetry_config_enables_standard_otlp_env_and_cli_flag(

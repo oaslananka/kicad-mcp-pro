@@ -35,6 +35,7 @@ from opentelemetry.trace import Span, Status, StatusCode, Tracer
 
 _SAFE_COMMAND_TOKEN = re.compile(r"^[A-Za-z0-9_.:-]+$")
 _INSTRUMENTATION_SCOPE = "kicad-mcp-pro"
+_DEFAULT_OTLP_PROTOCOL = "http/protobuf"
 _DEFAULT_HTTP_OTLP_ENDPOINT = "http://127.0.0.1:4318"
 _DEFAULT_GRPC_OTLP_ENDPOINT = "http://127.0.0.1:4317"
 _SECRET_VALUE = re.compile(
@@ -116,7 +117,7 @@ def _endpoint_value(cfg: object) -> str | None:
     endpoint = getattr(cfg, "otel_endpoint", None)
     if endpoint not in (None, ""):
         return str(endpoint)
-    protocol = str(getattr(cfg, "otel_protocol", "http/protobuf"))
+    protocol = str(getattr(cfg, "otel_protocol", _DEFAULT_OTLP_PROTOCOL))
     if protocol == "grpc":
         return _DEFAULT_GRPC_OTLP_ENDPOINT
     return _DEFAULT_HTTP_OTLP_ENDPOINT
@@ -130,7 +131,7 @@ def _resource(cfg: object) -> Resource:
 
 def _configure_managed_tracer_provider(cfg: object, headers: Mapping[str, str]) -> TracerProvider:
     endpoint = _endpoint_value(cfg)
-    protocol = str(getattr(cfg, "otel_protocol", "http/protobuf"))
+    protocol = str(getattr(cfg, "otel_protocol", _DEFAULT_OTLP_PROTOCOL))
     provider = TracerProvider(resource=_resource(cfg))
     if protocol == "grpc":
         exporter: SpanExporter = GrpcSpanExporter(endpoint=endpoint, headers=dict(headers) or None)
@@ -145,7 +146,7 @@ def _configure_managed_tracer_provider(cfg: object, headers: Mapping[str, str]) 
 
 def _configure_managed_meter_provider(cfg: object, headers: Mapping[str, str]) -> MeterProvider:
     endpoint = _endpoint_value(cfg)
-    protocol = str(getattr(cfg, "otel_protocol", "http/protobuf"))
+    protocol = str(getattr(cfg, "otel_protocol", _DEFAULT_OTLP_PROTOCOL))
     if protocol == "grpc":
         exporter: MetricExporter = GrpcMetricExporter(
             endpoint=endpoint,

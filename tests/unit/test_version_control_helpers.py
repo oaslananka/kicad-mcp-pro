@@ -173,6 +173,33 @@ def test_commit_blocked_by_drc_branches(monkeypatch, tmp_path: Path) -> None:
     assert version_control._commit_blocked_by_drc() is None
 
 
+@pytest.mark.parametrize(
+    ("tool_name", "args"),
+    [
+        ("vcs_commit_checkpoint", ("checkpoint",)),
+        ("vcs_list_checkpoints", ()),
+        ("vcs_restore_checkpoint", ("deadbeef",)),
+        ("vcs_diff_with_checkpoint", ("deadbeef",)),
+        ("vcs_tag_release", ("v1.0.0", "release")),
+    ],
+)
+def test_vcs_tools_preserve_missing_repository_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    tool_name: str,
+    args: tuple[str, ...],
+) -> None:
+    mcp = FakeMCP()
+    version_control.register(mcp)
+    monkeypatch.setattr(version_control, "_resolve_project_dir", lambda: tmp_path)
+    monkeypatch.setattr(version_control, "_git_repo_root", lambda _path: None)
+
+    with pytest.raises(ValueError) as exc_info:
+        mcp.tools[tool_name](*args)  # type: ignore[operator]
+
+    assert str(exc_info.value) == "No Git repository was found. Run vcs_init_git() first."
+
+
 def test_register_version_control_tools(monkeypatch, tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     project_dir = repo_root / "project"

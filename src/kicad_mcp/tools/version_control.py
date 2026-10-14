@@ -14,6 +14,7 @@ from .gates import _combined_status
 from .metadata import headless_compatible
 from .validation import _entries, _evaluate_project_gate, _run_drc_report
 
+_MISSING_GIT_REPOSITORY_MESSAGE = "No Git repository was found. Run vcs_init_git() first."
 _CHECKPOINT_TRAILER = "KiCad-MCP-Checkpoint: true"
 _DEFAULT_GIT_NAME = "KiCad MCP Pro"
 _DEFAULT_GIT_EMAIL = "kicad-mcp@example.invalid"
@@ -260,7 +261,7 @@ def register(mcp: FastMCP) -> None:
         project_dir = _resolve_project_dir()
         repo_root = _git_repo_root(project_dir)
         if repo_root is None:
-            raise ValueError("No Git repository was found. Run vcs_init_git() first.")
+            raise ValueError(_MISSING_GIT_REPOSITORY_MESSAGE)
         pathspec = _project_pathspec(repo_root, project_dir)
         _ensure_git_identity(repo_root)
 
@@ -298,7 +299,7 @@ def register(mcp: FastMCP) -> None:
         project_dir = _resolve_project_dir()
         repo_root = _git_repo_root(project_dir)
         if repo_root is None:
-            raise ValueError("No Git repository was found. Run vcs_init_git() first.")
+            raise ValueError(_MISSING_GIT_REPOSITORY_MESSAGE)
         pathspec = _project_pathspec(repo_root, project_dir)
         result = _run_git(repo_root, *_checkpoint_log_args(repo_root, pathspec))
         entries = [line for line in result.stdout.splitlines() if line.strip()]
@@ -320,7 +321,7 @@ def register(mcp: FastMCP) -> None:
         project_dir = _resolve_project_dir()
         repo_root = _git_repo_root(project_dir)
         if repo_root is None:
-            raise ValueError("No Git repository was found. Run vcs_init_git() first.")
+            raise ValueError(_MISSING_GIT_REPOSITORY_MESSAGE)
         pathspec = _project_pathspec(repo_root, project_dir)
         _run_git(repo_root, "rev-parse", "--verify", commit_hash)
         if not confirm:
@@ -366,7 +367,7 @@ def register(mcp: FastMCP) -> None:
         project_dir = _resolve_project_dir()
         repo_root = _git_repo_root(project_dir)
         if repo_root is None:
-            raise ValueError("No Git repository was found. Run vcs_init_git() first.")
+            raise ValueError(_MISSING_GIT_REPOSITORY_MESSAGE)
         pathspec = _project_pathspec(repo_root, project_dir)
         _run_git(repo_root, "rev-parse", "--verify", commit_hash)
         summary = _run_git(repo_root, "diff", "--stat", commit_hash, "--", pathspec).stdout.strip()
@@ -401,7 +402,7 @@ def register(mcp: FastMCP) -> None:
         project_dir = _resolve_project_dir()
         repo_root = _git_repo_root(project_dir)
         if repo_root is None:
-            raise ValueError("No Git repository was found. Run vcs_init_git() first.")
+            raise ValueError(_MISSING_GIT_REPOSITORY_MESSAGE)
         if _combined_status(_evaluate_project_gate()) != "PASS":
             raise ValueError(
                 "Release tagging is only allowed after project_quality_gate() returns PASS."
