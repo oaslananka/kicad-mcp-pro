@@ -27,6 +27,7 @@ type SnapNotice = Callable[[tuple[float, ...], tuple[float, ...]], str]
 type NormalizeLabelJustify = Callable[[str | None], str | None]
 type SetLabelJustify = Callable[[str, str], str]
 
+_LABEL_BLOCK_PREFIXES = ("(label", "(global_label", "(hierarchical_label")
 _JUNCTION_AT_RE = re.compile(r"\(at\s+([-\d.]+)\s+([-\d.]+)\)")
 
 
@@ -261,7 +262,7 @@ class SchematicDestructiveEditService:
             cursor = 0
             last = 0
             while cursor < len(current):
-                if current.startswith(("(label", "(global_label", "(hierarchical_label"), cursor):
+                if current.startswith(_LABEL_BLOCK_PREFIXES, cursor):
                     block, length = self.extract_block(current, cursor)
                     parsed = self.parse_label_block(block) if block else None
                     if parsed is not None and parsed["name"] == name and matches_target(parsed):
@@ -360,9 +361,7 @@ class SchematicDestructiveEditService:
             cursor = 0
             last = 0
             while cursor < len(current):
-                if moved == 0 and current.startswith(
-                    ("(label", "(global_label", "(hierarchical_label"), cursor
-                ):
+                if moved == 0 and current.startswith(_LABEL_BLOCK_PREFIXES, cursor):
                     block, length = self.extract_block(current, cursor)
                     parsed = self.parse_label_block(block) if block else None
                     if (
@@ -426,9 +425,7 @@ class SchematicDestructiveEditService:
             cursor = 0
             last = 0
             while cursor < len(current):
-                if modified == 0 and current.startswith(
-                    ("(label", "(global_label", "(hierarchical_label"), cursor
-                ):
+                if modified == 0 and current.startswith(_LABEL_BLOCK_PREFIXES, cursor):
                     block, length = self.extract_block(current, cursor)
                     parsed = self.parse_label_block(block) if block else None
                     if (

@@ -4,6 +4,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from kicad_mcp.schematic.destructive_edit import SchematicDestructiveEditService
 
 
@@ -192,6 +194,39 @@ def test_delete_symbol_preserves_missing_reference_result() -> None:
     assert service.delete_symbol("R404") == ("Reference 'R404' was not found in the schematic.")
     assert transaction.calls == [True]
     assert transaction.updated is None
+
+
+@pytest.mark.parametrize("kind", ["label", "global_label", "hierarchical_label"])
+@pytest.mark.parametrize("action", ["delete", "move", "modify"])
+def test_label_mutation_supports_all_label_kinds(kind: str, action: str) -> None:
+    block = f"({kind}-vcc (at 1 2 90)" if action == "move" else f"({kind}-vcc)"
+    original = f"aa{block}bb"
+    justify_calls: list[tuple[str, str]] = []
+    service, tx = _service(
+        current=original,
+        label_blocks={block: {"name": "VCC", "x": 1.0, "y": 2.0, "rotation": 90}},
+        justify_calls=justify_calls,
+    )
+
+    if action == "delete":
+        assert service.delete_label("VCC", 1.0, 2.0) == (
+            "Reloaded schematic.\nDeleted 1 label(s) 'VCC' at (1, 2)."
+        )
+        assert tx.updated == "aabb"
+        assert tx.calls == [True]
+    elif action == "move":
+        assert service.move_label("VCC", 1.0, 2.0, 3.0, 4.0, None, False) == (
+            "Reloaded schematic.\nMoved label 'VCC' to (3.00, 4.00) mm."
+        )
+        assert tx.updated == f"aa({kind}-vcc (at 3 4 90)bb"
+        assert tx.calls == [False]
+    else:
+        assert service.modify_label("VCC", 1.0, 2.0, "LEFT") == (
+            "Reloaded schematic.\nSet justify='left' on label 'VCC' at (1, 2)."
+        )
+        assert tx.updated == f"aa{block}[justify=left]bb"
+        assert tx.calls == [False]
+        assert justify_calls == [(block, "left")]
 
 
 def test_delete_label_matches_raw_or_grid_snapped_coordinates() -> None:
