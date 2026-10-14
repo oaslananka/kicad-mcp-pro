@@ -25,6 +25,7 @@ from kipy.board_types import (
     Via,
     Zone,
 )
+from kipy.errors import ApiError
 from kipy.geometry import PolygonWithHoles, PolyLine, PolyLineNode, Vector2
 from kipy.proto.board import board_types_pb2
 from kipy.proto.board.board_types_pb2 import BoardLayer, ViaType, ZoneType
@@ -245,7 +246,13 @@ def _verify_deleted_items(board: Board, item_ids: tuple[object, ...]) -> bool:
     get_items_by_id = getattr(board, "get_items_by_id", None)
     if not callable(get_items_by_id):
         return False
-    return len(list(get_items_by_id(list(item_ids)))) == 0
+    try:
+        return len(list(get_items_by_id(list(item_ids)))) == 0
+    except ApiError as exc:
+        # KiCad 10 raises instead of returning an empty list when all IDs are absent.
+        if str(exc).casefold().endswith("none of the requested ids were found or valid"):
+            return True
+        raise
 
 
 class _ComponentPlacement(Protocol):
