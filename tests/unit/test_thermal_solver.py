@@ -54,13 +54,18 @@ def test_zero_power_is_isothermal_at_ambient() -> None:
 
 
 def test_invalid_specs_raise() -> None:
+    invalid_plane_spec = _spec(plane_width_mm=-1.0)
     with pytest.raises(ValueError):
-        solve_plane_temperature(_spec(plane_width_mm=-1.0))
+        solve_plane_temperature(invalid_plane_spec)
+
+    # Source larger than the plane is non-physical.
+    invalid_source_spec = _spec(source_width_mm=100.0)
     with pytest.raises(ValueError):
-        # Source larger than the plane is non-physical.
-        solve_plane_temperature(_spec(source_width_mm=100.0))
+        solve_plane_temperature(invalid_source_spec)
+
+    invalid_film_spec = _spec(film_coefficient_w_per_m2_k=0.0)
     with pytest.raises(ValueError):
-        solve_plane_temperature(_spec(film_coefficient_w_per_m2_k=0.0))
+        solve_plane_temperature(invalid_film_spec)
 
 
 def test_thermal_fd_method_is_solver_grade_but_not_fea() -> None:

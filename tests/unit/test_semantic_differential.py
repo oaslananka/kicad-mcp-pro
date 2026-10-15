@@ -176,8 +176,9 @@ def test_json_report_is_deterministic_and_sanitized() -> None:
     assert rendered == render_differential_report_json(report)
 
     sensitive = _classify(fixture_id="/home/private/fixture")
+    aggregated = aggregate_differential_results([sensitive])
     with pytest.raises(ValueError, match="sensitive string"):
-        render_differential_report_json(aggregate_differential_results([sensitive]))
+        render_differential_report_json(aggregated)
 
 
 def test_eval_package_exports_differential_reporting_surface() -> None:

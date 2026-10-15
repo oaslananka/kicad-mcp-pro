@@ -217,7 +217,8 @@ async def test_pcb_read_tools_report_active_board_items(
     assert "GND_FILL" in zones
     assert "SimpleNamespace layer=BL_Edge_Cuts" in shapes
     assert "U1:1 net=USB_DP" in pads
-    assert "BL_F_Cu" in layers and "BL_B_Cu" in layers
+    assert "BL_F_Cu" in layers
+    assert "BL_B_Cu" in layers
     assert "Selected items (1 total)" in selection
     assert "... [truncated]" in board_text
     assert "Live ratsnest extraction is not exposed" in ratsnest

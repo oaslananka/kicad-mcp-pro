@@ -93,7 +93,8 @@ def test_pcb_child_block_replacement_and_inner_graphic_rendering() -> None:
     assert "(pad_to_mask_clearance 0.05)" in replaced
     assert "(stackup" in appended
     assert "fp_line" in with_child
-    assert "fp_rect" in rect and 'layer "In1.Cu"' in rect
+    assert "fp_rect" in rect
+    assert 'layer "In1.Cu"' in rect
     assert 'fp_text user "RF"' in text
     with pytest.raises(ValueError, match="shape_type"):
         _inner_layer_graphic_block("arc", "In1_Cu", 0.0, 0.0, 1.0, 1.0, "", 0.1)

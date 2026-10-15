@@ -101,8 +101,10 @@ async def test_schematic_misc_file_tools_cover_buses_labels_jumper_and_project_f
     assert '(global_label "USB_DP"' in schematic
     assert '(hierarchical_label "SENSE"' in schematic
     assert '"hop_over_display": true' in project_payload
-    assert "USB_DP" in labels and "SENSE" in labels
-    assert "- USB_DP" in nets and "- SENSE" in nets
+    assert "USB_DP" in labels
+    assert "SENSE" in labels
+    assert "- USB_DP" in nets
+    assert "- SENSE" in nets
     assert "Wires" in wires or "contains no wires" in wires
 
 
@@ -279,7 +281,8 @@ async def test_schematic_end_to_end_editing_and_analysis_tools(
     reload_result = await call_tool_text(server, "sch_reload", {})
 
     assert "Symbols (2 total)" in symbols
-    assert "Pin 1" in pin_positions and "Pin 2" in pin_positions
+    assert "Pin 1" in pin_positions
+    assert "Pin 2" in pin_positions
     assert "does not support unit 2" in bad_unit
     assert '"pins"' in swappable
     assert "Recorded pin swap" in pin_swap

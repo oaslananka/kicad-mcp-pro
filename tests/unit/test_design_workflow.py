@@ -40,7 +40,8 @@ def test_all_phases_complete_reports_release_ready() -> None:
 
 def test_manufacturing_release_phase_is_human_gated() -> None:
     release = [p for p in build_design_workflow([]).phases if p.role == "Release Manager"]
-    assert release and release[0].human_gate_required
+    assert release
+    assert release[0].human_gate_required
 
 
 @pytest.mark.anyio

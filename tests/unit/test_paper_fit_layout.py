@@ -68,7 +68,8 @@ def test_symbol_footprint_cells_scales_with_extent() -> None:
     assert _symbol_footprint_cells(None, 38.1, 35.56) == (1, 1)
     # A tall multi-pin part (extent height 40 mm + margin) needs >1 row.
     cols, rows = _symbol_footprint_cells((0.0, 0.0, 6.0, 40.0), 38.1, 35.56)
-    assert rows >= 2 and cols >= 1
+    assert rows >= 2
+    assert cols >= 1
 
 
 def test_ladder_cap_index_rejects_unknown_paper() -> None:

@@ -188,7 +188,8 @@ def test_do214_long_alias() -> None:
     fp1 = generate_footprint("DO-214AB")
     fp2 = generate_footprint("SMA")
     assert _count_pads(fp1) == _count_pads(fp2) == 2
-    assert _is_balanced(fp1) and _is_balanced(fp2)
+    assert _is_balanced(fp1)
+    assert _is_balanced(fp2)
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +294,8 @@ def test_qfn_density_a_wider_pads() -> None:
     fp_a = generate_footprint("QFN", pin_count=32, pitch_mm=0.5, body_l_mm=5.0, density="A")
     fp_b = generate_footprint("QFN", pin_count=32, pitch_mm=0.5, body_l_mm=5.0, density="B")
     # Both valid — check density A is wider by verifying more chars (approximation).
-    assert len(fp_a) > 0 and len(fp_b) > 0
+    assert len(fp_a) > 0
+    assert len(fp_b) > 0
 
 
 # ---------------------------------------------------------------------------

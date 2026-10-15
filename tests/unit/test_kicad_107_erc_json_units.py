@@ -108,7 +108,8 @@ def test_native_cli_uses_audited_runner_and_an_isolated_fixture(monkeypatch) -> 
             return {"returncode": 0, "ok": True}
         assert args[:2] == ("sch", "erc")
         assert "--exit-code-violations" in args
-        assert "--format" in args and args[args.index("--format") + 1] == "json"
+        assert "--format" in args
+        assert args[args.index("--format") + 1] == "json"
         unit = args[args.index("--units") + 1]
         output = Path(args[args.index("--output") + 1])
         source = Path(args[-1])

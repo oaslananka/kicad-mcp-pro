@@ -100,13 +100,14 @@ def test_opencode_paid_minimax_uses_reviewed_non_thinking_profile() -> None:
 
 
 def test_opencode_request_rejects_unreviewed_model_before_network() -> None:
+    transport = httpx.MockTransport(lambda _request: pytest.fail("network called"))
     with pytest.raises(ValueError, match="reviewed OpenCode Zen chat model"):
         request_opencode_zen(
             model="big-pickle",
             prompt="Inspect.",
             api_key="test-" + "key",
             catalog=(),
-            transport=httpx.MockTransport(lambda _request: pytest.fail("network called")),
+            transport=transport,
         )
 
 

@@ -42,7 +42,8 @@ def test_duplicate_rule_name_is_flagged() -> None:
     conflicts = _analyze(dru)
     dupes = [c for c in conflicts if c.kind == "duplicate_name"]
     assert len(dupes) == 1
-    assert dupes[0].severity == "error" and dupes[0].rules == ("clr",)
+    assert dupes[0].severity == "error"
+    assert dupes[0].rules == ("clr",)
 
 
 def test_contradictory_min_for_same_condition_is_flagged() -> None:
@@ -74,14 +75,16 @@ def test_inverted_bounds_are_flagged() -> None:
     dru = '(rules (rule "r" (constraint track_width (min 0.6mm) (max 0.2mm))))\n'
     conflicts = _analyze(dru)
     inverted = [c for c in conflicts if c.kind == "inverted_bounds"]
-    assert len(inverted) == 1 and inverted[0].severity == "error"
+    assert len(inverted) == 1
+    assert inverted[0].severity == "error"
 
 
 def test_negative_dimension_is_flagged() -> None:
     dru = '(rules (rule "r" (constraint clearance (min -0.1mm))))\n'
     conflicts = _analyze(dru)
     negative = [c for c in conflicts if c.kind == "negative_dimension"]
-    assert len(negative) == 1 and negative[0].severity == "error"
+    assert len(negative) == 1
+    assert negative[0].severity == "error"
 
 
 def test_errors_sort_before_warnings() -> None:

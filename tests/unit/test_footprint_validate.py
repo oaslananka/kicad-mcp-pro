@@ -115,20 +115,24 @@ def test_count_numbered_pads_ignores_mechanical_and_grid_pads() -> None:
 def test_check_footprint_pad_count_matches_and_misses() -> None:
     soic8 = "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
     ok = check_footprint_pad_count(soic8, _pads_text(["1", "2", "3", "4", "5", "6", "7", "8"]))
-    assert ok is not None and ok.verdict == "PASS"
+    assert ok is not None
+    assert ok.verdict == "PASS"
 
     missing = check_footprint_pad_count(soic8, _pads_text(["1", "2", "3", "4", "5", "6"]))
-    assert missing is not None and missing.verdict == "FAIL"
+    assert missing is not None
+    assert missing.verdict == "FAIL"
     assert missing.findings
 
     # QFN-32 with an exposed thermal pad (33 numbered pads) passes within tolerance.
     qfn = "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm"
     exposed = check_footprint_pad_count(qfn, _pads_text([str(n) for n in range(1, 34)]))
-    assert exposed is not None and exposed.verdict == "PASS"
+    assert exposed is not None
+    assert exposed.verdict == "PASS"
 
     # Far too many pads warns.
     too_many = check_footprint_pad_count(soic8, _pads_text([str(n) for n in range(1, 13)]))
-    assert too_many is not None and too_many.verdict == "WARN"
+    assert too_many is not None
+    assert too_many.verdict == "WARN"
 
     # An uncertifiable package name yields no finding.
     assert (

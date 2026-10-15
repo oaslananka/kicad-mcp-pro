@@ -230,7 +230,8 @@ def test_npm_readme_is_generated_from_current_version_and_runtime_policy() -> No
     assert f"Node.js {package['engines']['node']}" in readme
     assert f"Python {metadata['requires_python']}" in readme
     assert f"{runtime['kicad']['latestVerified']}" in readme
-    assert "uvx" in readme and "does not install uv" in readme
+    assert "uvx" in readme
+    assert "does not install uv" in readme
     assert "3.9.2" not in readme
 
 
@@ -246,7 +247,8 @@ def test_npm_readme_versions_change_without_manual_edits() -> None:
     assert "kicad-mcp-pro@4.2.0" not in rendered
     runtime["kicad"]["latestVerified"] = "9.2.4"
     changed = module._render_npm_wrapper_readme(metadata, runtime, updated)
-    assert "9.2.4" in changed and changed != rendered
+    assert "9.2.4" in changed
+    assert changed != rendered
 
 
 def test_npm_readme_drift_is_detected_without_mutating_repo(

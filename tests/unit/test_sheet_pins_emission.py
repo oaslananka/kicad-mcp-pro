@@ -193,9 +193,10 @@ def test_apply_plan_refuses_a_sheet_without_an_instances_anchor() -> None:
     text = ROOT.replace("(instances", "(nothing")
     sheet = parse_sheet_blocks(text)[0]
     plan = plan_sheet_pins((("VIN", "input"),), sheet, grid_mm=GRID)
+    stamped_plan = _stamp(plan)
 
     with pytest.raises(ValueError, match="instances"):
-        apply_plan(text, sheet, _stamp(plan))
+        apply_plan(text, sheet, stamped_plan)
 
 
 def test_insert_pin_adds_one_pin_and_leaves_the_size_alone() -> None:
@@ -211,9 +212,10 @@ def test_insert_pin_rejects_a_duplicate_name() -> None:
     sheet = parse_sheet_blocks(ROOT)[0]
     once = insert_pin(ROOT, sheet, _placement(name="MANUAL"))
     reparsed = parse_sheet_blocks(once)[0]
+    duplicate_placement = _placement(name="MANUAL")
 
     with pytest.raises(ValueError, match="MANUAL"):
-        insert_pin(once, reparsed, _placement(name="MANUAL"))
+        insert_pin(once, reparsed, duplicate_placement)
 
 
 def test_apply_plan_relocates_a_pin_that_sits_after_instances() -> None:
@@ -321,9 +323,10 @@ def test_apply_plan_refuses_a_sheet_written_on_one_line() -> None:
 
 def test_insert_pin_refuses_a_sheet_written_on_one_line() -> None:
     sheet = parse_sheet_blocks(SINGLE_LINE_ROOT)[0]
+    placement = _placement(name="MANUAL")
 
     with pytest.raises(ValueError, match="02_mcu"):
-        insert_pin(SINGLE_LINE_ROOT, sheet, _placement(name="MANUAL"))
+        insert_pin(SINGLE_LINE_ROOT, sheet, placement)
 
 
 def test_apply_plan_refuses_a_one_line_sheet_starting_at_column_zero() -> None:

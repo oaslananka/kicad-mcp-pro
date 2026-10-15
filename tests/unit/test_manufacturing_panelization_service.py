@@ -151,8 +151,9 @@ def test_panelization_executes_variants_and_preserves_failures(tmp_path: Path) -
         resolve_output_path=lambda path_text: tmp_path / path_text,
         run_command=lambda _cmd: SimpleNamespace(returncode=2, stdout="", stderr="bad panel"),
     )
-    assert "KiKit panelization failed (exit 2):\nbad panel" == failing.panelize(
-        dry_run=False, confirm=True
+    assert (
+        failing.panelize(dry_run=False, confirm=True)
+        == "KiKit panelization failed (exit 2):\nbad panel"
     )
 
     def timeout(_cmd: list[str]):  # type: ignore[no-untyped-def]

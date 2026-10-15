@@ -461,6 +461,7 @@ def test_approved_baseline_requires_auditable_metadata(tmp_path: Path) -> None:
     _commit_contract(repo, 2)
     policy_path = _policy(tmp_path / "policy.yaml")
     baseline_path = _baseline(tmp_path / "baseline.yaml", approved=True)
+    today = date(2026, 8, 2)
 
     with pytest.raises(ReleasePolicyError, match="approved_at"):
         evaluate_release_readiness(
@@ -468,7 +469,7 @@ def test_approved_baseline_requires_auditable_metadata(tmp_path: Path) -> None:
             policy_path=policy_path,
             baseline_path=baseline_path,
             ref="HEAD",
-            today=date(2026, 8, 2),
+            today=today,
         )
 
 

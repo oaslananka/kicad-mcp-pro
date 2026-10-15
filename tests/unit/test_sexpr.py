@@ -396,7 +396,8 @@ def test_pin_alias_resolves_diff_pair_and_duplicate_contacts() -> None:
         ' (pin passive line (at 0 7.62 0) (length 2.54) (name "D+") (number "3")))'
     )
     aliases = _pin_alias_positions(block, 0.0, 0.0, 0)
-    assert "D+" in aliases and "D-" in aliases
+    assert "D+" in aliases
+    assert "D-" in aliases
     assert aliases["D+"] != aliases["D-"]
     # The normalized "d" (D+ vs D- collision) is ambiguous and must be dropped.
     assert "d" not in aliases

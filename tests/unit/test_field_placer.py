@@ -73,7 +73,8 @@ def test_field_extent_merges_visible_fields() -> None:
     placements = autoplace_fields(VERTICAL_BODY, VERTICAL_PINS, [], specs)
     extent = field_extent(specs, placements)
     assert extent is not None
-    assert extent.width > 0.0 and extent.height > 0.0
+    assert extent.width > 0.0
+    assert extent.height > 0.0
 
 
 def test_field_extent_none_when_all_empty() -> None:

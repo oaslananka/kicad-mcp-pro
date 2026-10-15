@@ -227,7 +227,8 @@ async def test_route_apply_ses_applies_routing_headlessly(sample_project: Path) 
     assert '(layer "F.Cu") (net 1)' in text
     assert "(via (at 11 5)" in text
     # The original net table is preserved (round-trip safe).
-    assert '(net 1 "GND")' in text and "(version 20250216)" in text
+    assert '(net 1 "GND")' in text
+    assert "(version 20250216)" in text
 
 
 @pytest.mark.anyio

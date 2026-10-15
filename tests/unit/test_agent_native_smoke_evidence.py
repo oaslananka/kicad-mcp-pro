@@ -71,7 +71,8 @@ def test_cli_does_not_echo_untrusted_data(
     f.write_text(json.dumps(sample))
     assert gate.main(["--report", str(f)]) == 2
     output = capsys.readouterr().out
-    assert "rejected" in output and "/private" not in output
+    assert "rejected" in output
+    assert "/private" not in output
     assert "establishes_real_host_compatibility" in output
 
 

@@ -68,7 +68,8 @@ def test_tune_net_preserves_success_response_and_status(tmp_path: Path) -> None:
 
     result = service.tune_net("CLK", 45.0, 0.75, 0.2)
 
-    assert calls and calls[0][0] == "Length tune CLK"
+    assert calls
+    assert calls[0][0] == "Length tune CLK"
     assert result == (
         f"Length-tuning rule 'Length tune CLK' written to {path}.\n"
         "Current length: 42.000 mm\n"
