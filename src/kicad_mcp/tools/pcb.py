@@ -138,6 +138,7 @@ _DIAGNOSTICS_HEADER = "Diagnostics:"
 _FILE_BACKED_SOURCE_LABEL = "- Source: file-backed"
 _MANUAL_BOARD_RELOAD_MESSAGE = "The PCB file was updated. Reload it manually in KiCad if needed."
 _NOT_CONFIGURED_LABEL = "(not configured)"
+_PCB_BLOCKS_STATE_FILENAME = "pcb_blocks.json"
 STRING_PATTERN = r'"((?:\\.|[^"\\])*)"'
 FLOAT_PATTERN = r"-?\d+(?:\.\d+)?"
 PLACEMENT_MARGIN_MM = 1.27
@@ -4210,7 +4211,7 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
     @headless_compatible
     def pcb_block_list() -> str:
         """List stored PCB design blocks created from selected footprints."""
-        state = _load_pcb_state("pcb_blocks.json", {"blocks": {}})
+        state = _load_pcb_state(_PCB_BLOCKS_STATE_FILENAME, {"blocks": {}})
         blocks = cast(dict[str, dict[str, Any]], state.get("blocks", {}))
         payload = {
             "blocks": {
@@ -4221,7 +4222,7 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
             },
             "diagnostics": {
                 "source": "file-backed",
-                "state_file": str(_pcb_state_path("pcb_blocks.json")),
+                "state_file": str(_pcb_state_path(_PCB_BLOCKS_STATE_FILENAME)),
             },
         }
         return json.dumps(payload, indent=2)
@@ -4244,7 +4245,7 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
         selected = [footprints[reference] for reference in references]
         min_x = min(float(item["x_mm"]) for item in selected if item["x_mm"] is not None)
         min_y = min(float(item["y_mm"]) for item in selected if item["y_mm"] is not None)
-        state = _load_pcb_state("pcb_blocks.json", {"blocks": {}})
+        state = _load_pcb_state(_PCB_BLOCKS_STATE_FILENAME, {"blocks": {}})
         blocks = cast(dict[str, object], state.setdefault("blocks", {}))
         blocks[name] = {
             "footprints": [
@@ -4258,7 +4259,7 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
                 for reference in references
             ]
         }
-        path = _save_pcb_state("pcb_blocks.json", state)
+        path = _save_pcb_state(_PCB_BLOCKS_STATE_FILENAME, state)
         return f"PCB block '{name}' saved to {path}."
 
     @mcp.tool()
@@ -4270,7 +4271,7 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
         rotation_deg: int = 0,
     ) -> str:
         """Place a stored PCB design block by cloning its saved footprint blocks."""
-        state = _load_pcb_state("pcb_blocks.json", {"blocks": {}})
+        state = _load_pcb_state(_PCB_BLOCKS_STATE_FILENAME, {"blocks": {}})
         blocks = cast(dict[str, dict[str, Any]], state.get("blocks", {}))
         block = blocks.get(block_name)
         if block is None:
