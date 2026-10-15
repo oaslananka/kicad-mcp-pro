@@ -85,6 +85,8 @@ from .diagnostics import (
 )
 from .discovery import ensure_studio_project_watcher, find_kicad_version
 from .errors import (
+    IpcDisconnectedError,
+    KiCadConnectionTimeoutError,
     KiCadNotRunningError,
     ToolRegistrationTimeoutError,
 )
@@ -1274,7 +1276,7 @@ class KiCadFastMCP(FastMCP):
                     },
                 )
                 return result
-            except KiCadNotRunningError as exc:
+            except (KiCadNotRunningError, IpcDisconnectedError, KiCadConnectionTimeoutError) as exc:
                 status = "error"
                 error_code = exc.code
                 _error_detail["error_code"] = exc.code
@@ -2980,7 +2982,9 @@ def log(
                     if not line:
                         time.sleep(0.1)
                         continue
-                    if not level or _log_level_match(line, level):
+                    if level and _log_level_match(line, level):
+                        typer.echo(line.rstrip())
+                    elif not level:
                         typer.echo(line.rstrip())
         except KeyboardInterrupt:
             pass
@@ -2990,7 +2994,9 @@ def log(
             all_lines = f.readlines()
         tail = all_lines[-lines:] if lines < len(all_lines) else all_lines
         for line in tail:
-            if not level or _log_level_match(line, level):
+            if level and _log_level_match(line, level):
+                typer.echo(line.rstrip())
+            elif not level:
                 typer.echo(line.rstrip())
 
 

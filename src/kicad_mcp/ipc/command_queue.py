@@ -157,7 +157,7 @@ class KiCadCommandQueue:
                 attempts += 1
                 try:
                     result = command()
-                except Exception as exc:  # noqa: BLE001 -- classified below
+                except Exception as exc:  # noqa: BLE001 - classified below
                     last_exc = exc
                     classification = classify_error(exc)
                     can_retry = (

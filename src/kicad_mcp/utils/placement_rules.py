@@ -133,7 +133,7 @@ def _check_decap_distance(
     if not decaps or not ics:
         return findings
     for cap_ref, cap_fp in decaps.items():
-        nearest_ref = min(ics, key=lambda r, cfp=cap_fp: _dist(cfp, ics[r]))
+        nearest_ref = min(ics, key=lambda r: _dist(cap_fp, ics[r]))
         d = _dist(cap_fp, ics[nearest_ref])
         if d > cfg.decap_max_distance_mm:
             findings.append(
@@ -164,7 +164,7 @@ def _check_crystal_distance(
     if not crystals or not ics:
         return findings
     for xtal_ref, xtal_fp in crystals.items():
-        nearest_ref = min(ics, key=lambda r, xfp=xtal_fp: _dist(xfp, ics[r]))
+        nearest_ref = min(ics, key=lambda r: _dist(xtal_fp, ics[r]))
         d = _dist(xtal_fp, ics[nearest_ref])
         if d > cfg.crystal_max_distance_mm:
             findings.append(

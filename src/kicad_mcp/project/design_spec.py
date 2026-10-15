@@ -871,8 +871,8 @@ def _infer_design_intent_from_board() -> tuple[ProjectDesignIntent, list[str]]:
             continue
         nearest_caps = sorted(
             capacitor_refs,
-            key=lambda capacitor_ref, ref=reference: _distance_mm(
-                footprints[ref], footprints[capacitor_ref]
+            key=lambda capacitor_ref: _distance_mm(
+                footprints[reference], footprints[capacitor_ref]
             ),
         )[:1]
         if nearest_caps:
