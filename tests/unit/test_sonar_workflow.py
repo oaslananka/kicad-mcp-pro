@@ -35,7 +35,7 @@ def test_sonar_uses_exact_run_coverage_and_preserves_manual_fallback() -> None:
     assert "coverage" in sonar["needs"]
     steps = {step["name"]: step for step in sonar["steps"] if "name" in step}
     assert steps["Download same-run coverage report"]["uses"].startswith(
-        "actions/download-artifact@3e5f45b2"
+        "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333"
     )
     assert steps["Verify exact-run and exact-SHA coverage report"]["env"] == {
         "SOURCE_SHA": "${{ github.sha }}",

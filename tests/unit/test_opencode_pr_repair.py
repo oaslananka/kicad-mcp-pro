@@ -42,8 +42,8 @@ def test_opencode_repair_workflow_is_hardened() -> None:
 
     upload = next(step for step in repair["steps"] if step["name"] == "Upload repair bundle")
     download = next(step for step in publish["steps"] if step["name"] == "Download repair bundle")
-    assert upload["uses"] == "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
-    assert download["uses"] == "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
+    assert upload["uses"] == "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+    assert download["uses"] == "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333"
 
     install = next(
         step for step in repair["steps"] if step["name"] == "Install pinned OpenCode CLI"
