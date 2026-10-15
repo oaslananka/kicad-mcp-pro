@@ -190,7 +190,7 @@ def operating_mode_contract(config: object | None = None) -> dict[str, object]:
     return {
         "active": active.value,
         "default": DEFAULT_OPERATING_MODE.value,
-        "available": list(OPERATING_MODE_VALUES),
+        "available": [*OPERATING_MODE_VALUES],
         "experimentalEnabled": active is OperatingMode.EXPERIMENTAL,
         "toolAvailability": {
             name: tool_availability(name, active).as_contract() for name in known_tool_names()

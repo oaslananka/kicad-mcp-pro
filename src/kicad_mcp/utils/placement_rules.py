@@ -28,7 +28,7 @@ _SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
 _CAP_RE = re.compile(r"^C\d", re.IGNORECASE)
 _IC_RE = re.compile(r"^(?:U|IC)\d", re.IGNORECASE)
-_CRYSTAL_RE = re.compile(r"^(?:Y|X)\d", re.IGNORECASE)
+_CRYSTAL_RE = re.compile(r"^[YX]\d", re.IGNORECASE)
 _INDUCTOR_RE = re.compile(r"^L\d", re.IGNORECASE)
 
 _DECAP_VALUE_RE = re.compile(

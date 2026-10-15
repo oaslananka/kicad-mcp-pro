@@ -2714,7 +2714,7 @@ def _export_release_readiness_report(
                 "<!doctype html>",
                 '<html><head><meta charset="utf-8">',
                 "<title>Project release readiness</title>",
-                "<style>"
+                "<style>",
                 "body{font-family:Segoe UI,Arial,sans-serif;margin:2rem;}"
                 "pre{white-space:pre-wrap;font-family:Consolas,Monaco,monospace;line-height:1.45;}"
                 "@media print{body{margin:1cm;}}"

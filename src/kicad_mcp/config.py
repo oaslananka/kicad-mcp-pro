@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import Field, PrivateAttr, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -170,7 +170,7 @@ class KiCadMCPConfig(BaseSettings):
     cli_timeout: float = Field(default=120.0, gt=0.1, le=600.0)
     max_items_per_response: int = Field(default=200, ge=1, le=2000)
     max_text_response_chars: int = Field(default=50000, ge=1000, le=500000)
-    _project_dir_explicit: bool = PrivateAttr(default=False)
+    _project_dir_explicit: bool = False
 
     @classmethod
     def settings_customise_sources(

@@ -201,7 +201,7 @@ def _is_oci_identifier(identifier: str) -> bool:
     if ":" not in last_segment:
         return False
     name, tag = last_segment.rsplit(":", 1)
-    return bool(name and tag) and re.search(r"\s|/", tag) is None
+    return bool(name and tag) and re.search(r"[\s/]", tag) is None
 
 
 def _has_command(manifest: Mapping[str, Any], packages: Sequence[Mapping[str, Any]]) -> bool:

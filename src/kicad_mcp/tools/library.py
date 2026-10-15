@@ -138,7 +138,7 @@ def _passive_value_variants(value: str, kind: str) -> tuple[str, ...]:
             variants.add(f"{ohms:g}")
             variants.add(f"{ohms:g}ohm")
     else:
-        match = re.fullmatch(r"(\d+(?:\.\d+)?)(p|n|u|µ|m)?f", normalized)
+        match = re.fullmatch(r"(\d+(?:\.\d+)?)([pnuµm])?f", normalized)
         if match:
             number = float(match.group(1))
             suffix = (match.group(2) or "").replace("µ", "u")
