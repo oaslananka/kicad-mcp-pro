@@ -149,8 +149,9 @@ def test_gate_history_rejects_newer_schema(tmp_path: Path) -> None:
         with db:
             db.execute("PRAGMA user_version = 999")
 
+    history = GateHistory(db_path)
     with pytest.raises(RuntimeError, match="newer than this server supports"):
-        GateHistory(db_path)._init()
+        history._init()
 
 
 def test_routing_rules_load_upsert_and_write(sample_project: Path) -> None:

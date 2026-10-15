@@ -23,18 +23,14 @@ _BOARD = re.compile(r"[a-z0-9][a-z0-9-]{0,63}\Z")
 _VERSION = re.compile(r"v[1-9]\d*\Z", re.ASCII)
 
 
-def _summarize_valid_bundle(root: Path, board: str, version: str) -> dict[str, Any]:
-    result = validate_reference_board_bundle(root)
-    if (result.manifest.board_id, result.manifest.benchmark_version) != (board, version):
-        raise ReferenceCorpusError("manifest identity mismatch")
-    summary = result.summary
-    if summary.attempts_total != len(result.manifest.attempts):
-        raise ReferenceCorpusError("manifest attempt count mismatch")
-    indexed = {entry.attempt_id for entry in result.manifest.attempts}
-    if indexed != {record.attempt_id for record in result.attempts}:
-        raise ReferenceCorpusError("manifest attempt identities mismatch")
+def _score_and_format_attempts(
+    root: Path,
+    board: str,
+    version: str,
+    records: list[Any],
+) -> list[dict[str, Any]]:
     attempts: list[dict[str, Any]] = []
-    for attempt in sorted(result.attempts, key=lambda record: record.attempt_id):
+    for attempt in sorted(records, key=lambda record: record.attempt_id):
         # Recompute rather than trusting cached score JSON. Importantly, this
         # score is a *quality diagnostic*, never task success by itself.
         quality = score_reference_board_attempt(root, attempt.attempt_id)
@@ -75,6 +71,20 @@ def _summarize_valid_bundle(root: Path, board: str, version: str) -> dict[str, A
                 },
             }
         )
+    return attempts
+
+
+def _summarize_valid_bundle(root: Path, board: str, version: str) -> dict[str, Any]:
+    result = validate_reference_board_bundle(root)
+    if (result.manifest.board_id, result.manifest.benchmark_version) != (board, version):
+        raise ReferenceCorpusError("manifest identity mismatch")
+    summary = result.summary
+    if summary.attempts_total != len(result.manifest.attempts):
+        raise ReferenceCorpusError("manifest attempt count mismatch")
+    indexed = {entry.attempt_id for entry in result.manifest.attempts}
+    if indexed != {record.attempt_id for record in result.attempts}:
+        raise ReferenceCorpusError("manifest attempt identities mismatch")
+    attempts = _score_and_format_attempts(root, board, version, result.attempts)
     classifications = Counter(record.classification for record in result.attempts)
     if sum(classifications.values()) != summary.attempts_total:
         raise ReferenceCorpusError("attempt classification count mismatch")

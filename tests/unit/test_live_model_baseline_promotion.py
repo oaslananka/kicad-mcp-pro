@@ -221,6 +221,7 @@ def test_generate_approved_baseline_rejects_empty_required_configurations(tmp_pa
     template_payload["required_configurations"] = []
     template.write_text(yaml.safe_dump(template_payload, sort_keys=False), encoding="utf-8")
     aggregate = _aggregate(tmp_path / "aggregate.json", revision)
+    approved_at = date(2026, 8, 2)
 
     with pytest.raises(
         BaselinePromotionError,
@@ -232,7 +233,7 @@ def test_generate_approved_baseline_rejects_empty_required_configurations(tmp_pa
             policy_path=policy,
             repo_root=repo,
             workflow_run_id=987654,
-            approved_at=date(2026, 8, 2),
+            approved_at=approved_at,
         )
 
 
@@ -273,6 +274,7 @@ def test_generate_approved_baseline_rejects_safety_quality_or_infrastructure_fai
     policy = _policy(tmp_path / "policy.yaml")
     template = _baseline(tmp_path / "baseline.yaml")
     aggregate = _aggregate(tmp_path / "aggregate.json", revision)
+    approved_at = date(2026, 8, 2)
     payload = json.loads(aggregate.read_text(encoding="utf-8"))
     payload["classifications"]["safety_failures"] = ["alpha: safety=1"]
     aggregate.write_text(json.dumps(payload), encoding="utf-8")
@@ -284,7 +286,7 @@ def test_generate_approved_baseline_rejects_safety_quality_or_infrastructure_fai
             policy_path=policy,
             repo_root=repo,
             workflow_run_id=987654,
-            approved_at=date(2026, 8, 2),
+            approved_at=approved_at,
         )
 
     payload["classifications"]["safety_failures"] = []
@@ -297,7 +299,7 @@ def test_generate_approved_baseline_rejects_safety_quality_or_infrastructure_fai
             policy_path=policy,
             repo_root=repo,
             workflow_run_id=987654,
-            approved_at=date(2026, 8, 2),
+            approved_at=approved_at,
         )
 
     payload["classifications"]["quality_failures"] = ["approved baselines unavailable"]
@@ -310,7 +312,7 @@ def test_generate_approved_baseline_rejects_safety_quality_or_infrastructure_fai
             policy_path=policy,
             repo_root=repo,
             workflow_run_id=987654,
-            approved_at=date(2026, 8, 2),
+            approved_at=approved_at,
         )
 
 
@@ -368,6 +370,7 @@ def test_generate_approved_baseline_rejects_safety_or_quality_categorized_per_ca
         }
     ]
     aggregate.write_text(json.dumps(payload), encoding="utf-8")
+    approved_at = date(2026, 8, 2)
 
     with pytest.raises(BaselinePromotionError, match="Per-case failures"):
         generate_approved_baseline(
@@ -376,7 +379,7 @@ def test_generate_approved_baseline_rejects_safety_or_quality_categorized_per_ca
             policy_path=policy,
             repo_root=repo,
             workflow_run_id=987654,
-            approved_at=date(2026, 8, 2),
+            approved_at=approved_at,
         )
 
 
@@ -388,6 +391,7 @@ def test_generate_approved_baseline_rejects_malformed_per_case_failures(tmp_path
     payload = json.loads(aggregate.read_text(encoding="utf-8"))
     payload["per_case_failures"] = "not-a-list"
     aggregate.write_text(json.dumps(payload), encoding="utf-8")
+    approved_at = date(2026, 8, 2)
 
     with pytest.raises(BaselinePromotionError, match="per_case_failures must be a list"):
         generate_approved_baseline(
@@ -396,7 +400,7 @@ def test_generate_approved_baseline_rejects_malformed_per_case_failures(tmp_path
             policy_path=policy,
             repo_root=repo,
             workflow_run_id=987654,
-            approved_at=date(2026, 8, 2),
+            approved_at=approved_at,
         )
 
 
@@ -410,6 +414,7 @@ def test_generate_approved_baseline_rejects_non_mapping_per_case_failure_entry(
     payload = json.loads(aggregate.read_text(encoding="utf-8"))
     payload["per_case_failures"] = ["not-a-mapping"]
     aggregate.write_text(json.dumps(payload), encoding="utf-8")
+    approved_at = date(2026, 8, 2)
 
     with pytest.raises(BaselinePromotionError, match="entries must be mappings"):
         generate_approved_baseline(
@@ -418,7 +423,7 @@ def test_generate_approved_baseline_rejects_non_mapping_per_case_failure_entry(
             policy_path=policy,
             repo_root=repo,
             workflow_run_id=987654,
-            approved_at=date(2026, 8, 2),
+            approved_at=approved_at,
         )
 
 
@@ -430,13 +435,16 @@ def test_generate_approved_baseline_rejects_missing_or_mismatched_configuration(
     payload = json.loads(aggregate.read_text(encoding="utf-8"))
     del payload["observed"]["gamma"]
     aggregate.write_text(json.dumps(payload), encoding="utf-8")
+    baseline_template = _baseline(tmp_path / "baseline.yaml")
+    policy_path = _policy(tmp_path / "policy.yaml")
+    approved_at = date(2026, 8, 2)
 
     with pytest.raises(BaselinePromotionError, match="required configurations"):
         generate_approved_baseline(
             aggregate_report_path=aggregate,
-            baseline_template_path=_baseline(tmp_path / "baseline.yaml"),
-            policy_path=_policy(tmp_path / "policy.yaml"),
+            baseline_template_path=baseline_template,
+            policy_path=policy_path,
             repo_root=repo,
             workflow_run_id=987654,
-            approved_at=date(2026, 8, 2),
+            approved_at=approved_at,
         )

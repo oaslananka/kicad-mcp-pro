@@ -60,9 +60,11 @@ def test_route_message_enforces_general_rate_limit() -> None:
     second = asyncio.run(_route_message(state, {"method": "bridge.ping", "id": 2}))
     blocked = asyncio.run(_route_message(state, {"method": "bridge.ping", "id": 3}))
 
-    assert first is not None and first["result"]["pong"] is True  # type: ignore[index]
+    assert first is not None
+    assert first["result"]["pong"] is True
     assert second is not None
-    assert blocked is not None and blocked["error"]["code"] == RATE_LIMIT_ERROR_CODE  # type: ignore[index]
+    assert blocked is not None
+    assert blocked["error"]["code"] == RATE_LIMIT_ERROR_CODE
     assert state.rate_limited_count == 1
     assert state.request_count == 2  # blocked request is not counted as served
 
@@ -78,7 +80,8 @@ def test_pairing_brute_force_is_throttled() -> None:
         resp = asyncio.run(
             _route_message(state, {"method": "bridge.pair", "id": i, "params": {"code": "WRONG"}})
         )
-        assert resp is not None and resp["error"]["message"] == "Invalid pairing code"  # type: ignore[index]
+        assert resp is not None
+        assert resp["error"]["message"] == "Invalid pairing code"
 
     throttled = asyncio.run(
         _route_message(state, {"method": "bridge.pair", "id": 99, "params": {"code": "WRONG"}})

@@ -28,9 +28,11 @@ def test_readiness_has_stable_reviewed_inputs_and_no_side_effects(
         root=ROOT, board_id="esp32-c6-usbc", attempt_number=812, phase_name="schematic"
     )
     assert result["status"] == "ready", result
-    assert result["executes_agent"] is False and result["counts_as_task_success"] is False
+    assert result["executes_agent"] is False
+    assert result["counts_as_task_success"] is False
     assert result["source_revision"] == "a" * 40
-    assert result["agent"] == "claude" and result["operating_mode"] == "write"
+    assert result["agent"] == "claude"
+    assert result["operating_mode"] == "write"
     assert set(result["reviewed_input_sha256"]) == set(cli._INPUTS)
     assert all(len(v) == 64 for v in result["reviewed_input_sha256"].values())
     assert "/home/" not in json.dumps(result)

@@ -147,6 +147,8 @@ def test_evidence_handoff_revalidates_constructed_provider_objects(corruption: s
         )
     else:
         manifest = manifest.model_copy(update={"network_access": True})
+    captured_at = datetime.now(UTC)
+    evidence_inputs = (EvidenceInputDigest(entity_id="project:input", sha256="c" * 64),)
     with pytest.raises(ValidationError):
         provider_evidence_handoff(
             result,
@@ -155,7 +157,7 @@ def test_evidence_handoff_revalidates_constructed_provider_objects(corruption: s
             project_key="fixture",
             source_revision="git:abc",
             source_sha256="d" * 64,
-            captured_at=datetime.now(UTC),
-            inputs=(EvidenceInputDigest(entity_id="project:input", sha256="c" * 64),),
+            captured_at=captured_at,
+            inputs=evidence_inputs,
             dependency_manifest_complete=False,
         )

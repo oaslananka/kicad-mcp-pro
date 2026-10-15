@@ -77,7 +77,8 @@ def test_plan_changes_lists_components_and_labels() -> None:
 def test_insert_labels_keeps_balance() -> None:
     out = insert_labels(MINIMAL_SCH, (Label("NET1", 1, 2), Label("NET2", 3, 4)))
     assert out.count("(") == out.count(")")
-    assert '"NET1"' in out and '"NET2"' in out
+    assert '"NET1"' in out
+    assert '"NET2"' in out
     # Original closing structure is preserved.
     assert out.rstrip().endswith(")")
 
@@ -115,7 +116,9 @@ async def test_full_plan_lifecycle(tmp_path: Path) -> None:
     assert applied["status"] == "applied"
     assert applied["labels_added"] == 3
     after_apply = sch_file.read_text(encoding="utf-8")
-    assert '"VIN"' in after_apply and '"VOUT"' in after_apply and '"GND"' in after_apply
+    assert '"VIN"' in after_apply
+    assert '"VOUT"' in after_apply
+    assert '"GND"' in after_apply
     assert Path(applied["checkpoint"]).is_dir()
 
     # 4. Verify fails closed because the plan's components were never placed.

@@ -58,7 +58,8 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     cleanup = next(s["run"] for s in steps if s["name"].startswith("Remove installer"))
     assert "KICAD_CONFIG_HOME" in prepare
     assert "'10.0'" in prepare
-    assert "kicad_common.json" in prepare and "enable_server = $true" in prepare
+    assert "kicad_common.json" in prepare
+    assert "enable_server = $true" in prepare
     assert "graphics = @{ canvas_type = 2 }" in prepare
     assert "do_not_show_again = @{" in prepare
     assert "update_check_prompt = $true" in prepare
@@ -88,7 +89,8 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     assert "share/kicad/template" in prepare
     assert "share/kicad/symbols" in prepare
     assert "share/kicad/footprints" in prepare
-    assert "sym-lib-table" in prepare and "fp-lib-table" in prepare
+    assert "sym-lib-table" in prepare
+    assert "fp-lib-table" in prepare
     assert "Copy-Item -LiteralPath $source -Destination $destination" in prepare
     assert "Get-FileHash -LiteralPath $destination -Algorithm SHA256" in prepare
     assert "KICAD10_TEMPLATE_DIR=$templateRoot" in prepare
@@ -97,7 +99,8 @@ def test_actual_gui_enabled_and_missing_ipc_never_passes() -> None:
     assert "KICAD_GUI_SMOKE_ARTIFACTS" in smoke
     assert "editor-readiness.json" in smoke
     assert "editorReadiness = $editor" in smoke
-    assert "windowCount" in smoke and "standardDialogWindowCount" in smoke
+    assert "windowCount" in smoke
+    assert "standardDialogWindowCount" in smoke
     assert "visibleStandardDialogWindowCount" in smoke
     assert "enabledVisibleStandardDialogWindowCount" in smoke
     assert "disabledVisibleStandardDialogWindowCount" in smoke

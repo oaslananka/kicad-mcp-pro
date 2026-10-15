@@ -605,6 +605,22 @@ def check_prepared_environment(plan: BootstrapPlan) -> dict[str, Any]:
     }
 
 
+def _evaluate_tool_policies(
+    tools: list[dict[str, Any]],
+    blocking: list[dict[str, str]],
+    limitations: list[dict[str, str]],
+) -> None:
+    for tool in tools:
+        status = str(tool.get("status", "missing"))
+        classification = tool.get("classification")
+        item = {"name": str(tool.get("name", "tool")), "reason": f"tool status is {status}"}
+        if classification == "required" and status != "ok":
+            item["reason"] = f"required tool status is {status}"
+            blocking.append(item)
+        elif classification in {"optional", "live-kicad"} and status != "ok":
+            limitations.append(item)
+
+
 def evaluate_development_policy(development: dict[str, Any] | None) -> dict[str, Any]:
     """Evaluate source-development readiness without blocking optional/live limitations."""
 
@@ -628,15 +644,7 @@ def evaluate_development_policy(development: dict[str, Any] | None) -> dict[str,
                     "reason": "development root is not writable",
                 }
             )
-    for tool in development.get("tools") or []:
-        status = str(tool.get("status", "missing"))
-        classification = tool.get("classification")
-        item = {"name": str(tool.get("name", "tool")), "reason": f"tool status is {status}"}
-        if classification == "required" and status != "ok":
-            item["reason"] = f"required tool status is {status}"
-            blocking.append(item)
-        elif classification in {"optional", "live-kicad"} and status != "ok":
-            limitations.append(item)
+    _evaluate_tool_policies(development.get("tools") or [], blocking, limitations)
     return {"ready": not blocking, "blocking": blocking, "limitations": limitations}
 
 

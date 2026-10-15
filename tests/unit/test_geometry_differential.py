@@ -94,8 +94,9 @@ def test_geometry_classifier_reports_infrastructure_invalid_without_fabricated_h
 
 
 def test_geometry_normalizers_reject_missing_ambiguous_or_invalid_facts() -> None:
+    missing_width = NATIVE_STATS.replace("- Width: 100.0000 mm\n", "")
     with pytest.raises(ValueError, match="exactly one Width"):
-        normalize_native_board_stats(NATIVE_STATS.replace("- Width: 100.0000 mm\n", ""))
+        normalize_native_board_stats(missing_width)
 
     duplicate_width = NATIVE_STATS + "- Width: 100.0000 mm\n"
     with pytest.raises(ValueError, match="exactly one Width"):
@@ -127,8 +128,9 @@ def test_geometry_normalization_rejects_non_numeric_and_sub_precision_dimensions
     with pytest.raises(ValueError, match="finite numeric millimetre values"):
         geometry._canonical_mm(object())
 
+    bad_float = FloatableButNotDecimal()
     with pytest.raises(ValueError, match="finite numeric millimetre values"):
-        geometry._canonical_mm(FloatableButNotDecimal())
+        geometry._canonical_mm(bad_float)
 
     with pytest.raises(ValueError, match="positive width and height"):
         geometry._canonical_mm(0.00001)

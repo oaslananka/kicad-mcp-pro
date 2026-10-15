@@ -65,7 +65,8 @@ def test_native_audit_runs_on_copy_and_preserves_canonical_sources(
     assert result["drc_p95_ms"] == 12.0
     assert not result["is_autonomous_reference_success"]
     assert result["native_peak_rss_kib"] is None
-    assert len(observed) == 2 and observed[0] == observed[1]
+    assert len(observed) == 2
+    assert observed[0] == observed[1]
     assert not observed[0].exists(), "audit scratch must be removed"
     assert hashlib.sha256((root / "sample.kicad_pcb").read_bytes()).hexdigest() == expected_hash
     assert (root / "sample.kicad_prl").read_text() == "do-not-copy"

@@ -782,10 +782,12 @@ def test_runner_retries_transient_provider_failure_but_keeps_selection_failure_s
     first, second = report.executions
     assert first.attempts == 2
     assert first.failure_kind is None
-    assert first.score is not None and first.score.passed
+    assert first.score is not None
+    assert first.score.passed
     assert second.attempts == 1
     assert second.failure_kind is None
-    assert second.score is not None and not second.score.passed
+    assert second.score is not None
+    assert not second.score.passed
     assert report.summary["adapter_failures"] == 0
     assert report.summary["selection_failures"] == 1
     assert report.summary["pipeline_passed"] is False
@@ -986,7 +988,8 @@ def test_runner_retries_model_output_invalid_with_bounded_backoff(
     assert waits == [1.0]
     assert execution.attempts == 2
     assert execution.failure_kind is None
-    assert execution.score is not None and execution.score.passed
+    assert execution.score is not None
+    assert execution.score.passed
     assert report.summary["adapter_failures"] == 0
 
 
@@ -1341,15 +1344,18 @@ def test_runner_rejects_planned_observations_above_case_budget(tmp_path: Path) -
     trace = tmp_path / "trace.jsonl"
     trace.write_text("", encoding="utf-8")
     configuration = _replay_configuration(tmp_path, trace, max_cases=1)
+    cases = [_case()]
+    adapter = ReplayAdapter(trace)
+    thresholds = _thresholds(tmp_path)
 
     with pytest.raises(EvalConfigurationError, match="max_cases"):
         execute_evaluation(
-            [_case()],
+            cases,
             configuration,
-            ReplayAdapter(trace),
+            adapter,
             repeats=2,
             source_revision="d" * 40,
-            thresholds=_thresholds(tmp_path),
+            thresholds=thresholds,
             tool_tiers={"pcb_get_board_summary": "read"},
         )
 
@@ -1587,8 +1593,9 @@ def test_cli_case_tag_selects_only_matching_canonical_cases() -> None:
 
 
 def test_cli_case_tag_fails_closed_when_no_case_matches() -> None:
+    cases = [_case()]
     with pytest.raises(EvalConfigurationError, match="case tag"):
-        live_eval_cli._select_cases_by_tag([_case()], "missing-smoke-tag")
+        live_eval_cli._select_cases_by_tag(cases, "missing-smoke-tag")
 
 
 def test_cli_case_tag_limits_the_executed_corpus(tmp_path: Path) -> None:
@@ -1968,17 +1975,23 @@ def test_runner_emits_sanitized_atomic_checkpoint_before_and_after_observations(
     configuration = _replay_configuration(tmp_path, trace, max_cases=10)
     output = tmp_path / "evidence.json"
     cases = [_case("first"), _case("second")]
+    adapter = _InterruptingAdapter()
+    thresholds = _thresholds(tmp_path)
+    tool_tiers = {name: record.tier for name, record in all_records().items()}
+
+    def checkpoint(report: object) -> None:
+        write_evidence(output, report)
 
     with pytest.raises(KeyboardInterrupt):
         execute_evaluation(
             cases,
             configuration,
-            _InterruptingAdapter(),
+            adapter,
             repeats=1,
             source_revision="a" * 40,
-            thresholds=_thresholds(tmp_path),
-            tool_tiers={name: record.tier for name, record in all_records().items()},
-            checkpoint=lambda report: write_evidence(output, report),
+            thresholds=thresholds,
+            tool_tiers=tool_tiers,
+            checkpoint=checkpoint,
         )
 
     payload = json.loads(output.read_text(encoding="utf-8"))

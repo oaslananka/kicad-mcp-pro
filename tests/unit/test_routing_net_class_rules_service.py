@@ -49,7 +49,8 @@ def test_set_rules_preserves_success_response(tmp_path: Path) -> None:
 
     result = service.set_rules("high_speed", 0.18, 0.15, 0.45, 0.2)
 
-    assert calls and calls[0][0] == "Net class high_speed"
+    assert calls
+    assert calls[0][0] == "Net class high_speed"
     assert result == (
         f"Net-class routing rule 'Net class high_speed' written to {path}.\n"
         "Track width: 0.1800mm, clearance: 0.1500mm, "

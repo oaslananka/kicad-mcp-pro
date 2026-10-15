@@ -132,6 +132,24 @@ def _namespace_check() -> CheckResult:
     return CheckResult("namespace regression", "PASS", "no forbidden owner strings")
 
 
+def _check_workflow_jobs_for_self_hosted(
+    path: Path,
+    jobs: dict[str, object],
+) -> list[str]:
+    hits: list[str] = []
+    for job_name, job in jobs.items():
+        if not isinstance(job, dict) or "runs-on" not in job:
+            continue
+        runs_on = job["runs-on"]
+        values = runs_on if isinstance(runs_on, list) else [runs_on]
+        normalized = tuple(str(value).strip().strip("'\"") for value in values)
+        if "self-hosted" in normalized:
+            hits.append(
+                f"{path.relative_to(REPO_ROOT)} job {job_name}: self-hosted runner is not allowed"
+            )
+    return hits
+
+
 def _runner_check() -> CheckResult:
     hits: list[str] = []
     workflow_dir = REPO_ROOT / ".github" / "workflows"
@@ -141,17 +159,7 @@ def _runner_check() -> CheckResult:
             continue
         payload = yaml.safe_load(_read_text(path)) or {}
         jobs = payload.get("jobs", {}) if isinstance(payload, dict) else {}
-        for job_name, job in jobs.items():
-            if not isinstance(job, dict) or "runs-on" not in job:
-                continue
-            runs_on = job["runs-on"]
-            values = runs_on if isinstance(runs_on, list) else [runs_on]
-            normalized = tuple(str(value).strip().strip("'\"") for value in values)
-            if "self-hosted" in normalized:
-                hits.append(
-                    f"{path.relative_to(REPO_ROOT)} job {job_name}: "
-                    "self-hosted runner is not allowed"
-                )
+        hits.extend(_check_workflow_jobs_for_self_hosted(path, jobs))
     if hits:
         return CheckResult("runner regression", "FAIL", "; ".join(hits))
     return CheckResult(

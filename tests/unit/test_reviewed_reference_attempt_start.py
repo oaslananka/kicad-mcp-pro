@@ -55,7 +55,8 @@ def test_default_preview_has_no_cost_reservation(
         tmp_path, execute=False, acknowledged=True, runner=lambda _: touched.append("run")
     )
     assert result["status"] == "ready_for_explicit_execution"
-    assert not touched and not _receipt(tmp_path).exists()
+    assert not touched
+    assert not _receipt(tmp_path).exists()
     assert result["counts_as_task_success"] is False
 
 

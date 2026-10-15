@@ -35,8 +35,9 @@ def test_point_xy_mm_uses_canonical_coordinate_conversion(
 
 
 def test_point_xy_mm_rejects_malformed_points() -> None:
+    point = SimpleNamespace(x_nm=1)
     with pytest.raises(BoardGeometryError, match="Could not read point geometry"):
-        point_xy_mm(SimpleNamespace(x_nm=1))
+        point_xy_mm(point)
 
 
 @pytest.mark.parametrize(
