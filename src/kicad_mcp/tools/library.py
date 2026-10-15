@@ -159,7 +159,28 @@ def _parse_passive_parametric_query(
     parsed_package = explicit_package or (package_match.group(1) if package_match else "")
 
     tolerance_match = re.search(r"(?<!\w)(0\.1%|0\.5%|1%|2%|5%|10%)(?!\w)", text)
-    voltage_match = re.search(r"(?<!\w)(\d++(?:\.\d++)?\s*+v)(?!\w)", text)
+    voltage_value = None
+    for number in re.finditer(r"\d+", text):
+        start, end = number.span()
+        if start and (text[start - 1].isalnum() or text[start - 1] == "_"):
+            continue
+        if end + 1 < len(text) and text[end] == "." and text[end + 1].isdecimal():
+            end += 2
+            while end < len(text) and text[end].isdecimal():
+                end += 1
+        cursor = end
+        while cursor < len(text) and text[cursor].isspace():
+            cursor += 1
+        if (
+            cursor < len(text)
+            and text[cursor] == "v"
+            and (
+                cursor + 1 == len(text)
+                or not (text[cursor + 1].isalnum() or text[cursor + 1] == "_")
+            )
+        ):
+            voltage_value = text[start : cursor + 1].replace(" ", "")
+            break
 
     resistor_match = re.search(
         r"\b(\d+(?:\.\d+)?\s*(?:r|k|m|ohm|kohm|mohm|Ω|kΩ|mΩ))\b",
@@ -185,7 +206,7 @@ def _parse_passive_parametric_query(
         variants=_passive_value_variants(normalized_value, kind),
         package=parsed_package or None,
         tolerance=tolerance_match.group(1) if tolerance_match else None,
-        voltage=voltage_match.group(1).replace(" ", "") if voltage_match else None,
+        voltage=voltage_value,
     )
 
 

@@ -156,14 +156,33 @@ def _fetch_text(url: str) -> str:
 
 
 def _parse_version(value: str) -> Version:
-    match = re.search(r"(?<!\d)(?P<major>\d++)\.(?P<minor>\d++)(?:\.(?P<patch>\d++))?", value)
-    if match is None:
-        raise ValueError(f"Cannot parse version from {value!r}")
-    return Version(
-        major=int(match.group("major")),
-        minor=int(match.group("minor")),
-        patch=int(match.group("patch") or 0),
-    )
+    # Parse the first dotted version without regex backtracking on arbitrary input.
+    for start, ch in enumerate(value):
+        if not ch.isdecimal() or (start > 0 and value[start - 1].isdecimal()):
+            continue
+        cursor = start
+        while cursor < len(value) and value[cursor].isdecimal():
+            cursor += 1
+        if cursor >= len(value) or value[cursor] != ".":
+            continue
+        major = value[start:cursor]
+        cursor += 1
+        minor_start = cursor
+        while cursor < len(value) and value[cursor].isdecimal():
+            cursor += 1
+        if cursor == minor_start:
+            continue
+        minor = value[minor_start:cursor]
+        patch = "0"
+        if cursor < len(value) and value[cursor] == ".":
+            patch_start = cursor + 1
+            patch_end = patch_start
+            while patch_end < len(value) and value[patch_end].isdecimal():
+                patch_end += 1
+            if patch_end > patch_start:
+                patch = value[patch_start:patch_end]
+        return Version(major=int(major), minor=int(minor), patch=int(patch))
+    raise ValueError(f"Cannot parse version from {value!r}")
 
 
 def _parse_vscode_engine_range(value: str) -> Version:
