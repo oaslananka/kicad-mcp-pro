@@ -456,3 +456,25 @@ def test_config_filter_runtime_tools(monkeypatch) -> None:
     monkeypatch.setenv("KICAD_MCP_FILTER_RUNTIME_TOOLS", "false")
     cfg = KiCadMCPConfig()
     assert cfg.filter_runtime_tools is False
+
+
+def test_settings_sources_include_dotenv_only_outside_pytest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+    from unittest.mock import Mock
+
+    init, env, dotenv, secrets = (Mock() for _ in range(4))
+    args = (KiCadMCPConfig, init, env, dotenv, secrets)
+
+    during_pytest = KiCadMCPConfig.settings_customise_sources(*args)
+    assert len(during_pytest) == 4
+    assert during_pytest[0:2] == (init, env)
+    assert during_pytest[3] is secrets
+
+    with monkeypatch.context() as patch:
+        patch.delitem(sys.modules, "pytest")
+        outside_pytest = KiCadMCPConfig.settings_customise_sources(*args)
+    assert len(outside_pytest) == 5
+    assert outside_pytest[:3] == (init, env, dotenv)
+    assert outside_pytest[4] is secrets

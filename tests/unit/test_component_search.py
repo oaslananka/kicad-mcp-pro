@@ -543,3 +543,26 @@ def test_rate_limiter_waits_when_window_is_full(monkeypatch) -> None:
     limiter.acquire()
 
     assert slept and slept[0] > 0.0
+
+
+def test_jlcpcb_detail_page_finds_case_insensitive_absolute_datasheet_link() -> None:
+    from kicad_mcp.utils.component_search import _record_from_jlcpcb_detail_page
+
+    html = (
+        "<html><title>Resistor | JLC</title><body>C25804"
+        '<a href="/relative/datasheet.pdf">relative</a>'
+        '<a href="HTTPS://example.org/DATASHEET/r.pdf">PDF</a>'
+        "</body></html>"
+    )
+    record = _record_from_jlcpcb_detail_page(html, "C25804")
+    assert record is not None
+    assert record.datasheet_url == "HTTPS://example.org/DATASHEET/r.pdf"
+
+
+def test_jlcpcb_detail_page_ignores_unterminated_datasheet_href() -> None:
+    from kicad_mcp.utils.component_search import _record_from_jlcpcb_detail_page
+
+    html = 'C25804 <a href="/relative/datasheet.pdf">relative</a> <a href="https://example.org/datasheet'
+    record = _record_from_jlcpcb_detail_page(html, "C25804")
+    assert record is not None
+    assert record.datasheet_url == ""
