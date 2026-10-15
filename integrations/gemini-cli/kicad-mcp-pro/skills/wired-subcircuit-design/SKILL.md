@@ -12,7 +12,7 @@ just an electrically valid netlist. It is the deliberate, higher-effort path tha
 
 Specific to `oaslananka/kicad-mcp-pro`. Keep in sync with
 `docs/tools-reference.generated.md`. Worked reference:
-[`examples/gallery/esp32-c3-wroom-02-breakout`](../../examples/gallery/esp32-c3-wroom-02-breakout/README.md).
+[`examples/gallery/esp32-c3-wroom-02-breakout`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/examples/gallery/esp32-c3-wroom-02-breakout/README.md).
 
 ## Why auto layout is not enough
 

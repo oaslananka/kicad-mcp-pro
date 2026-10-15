@@ -25,6 +25,19 @@ def test_all_generated_skill_trees_match_authoritative_sources() -> None:
     assert canonical == set(module.SKILLS)
 
 
+def test_mirrored_wired_subcircuit_reference_has_portable_gallery_link() -> None:
+    reference = (
+        "https://github.com/oaslananka/kicad-mcp-pro/blob/main/"
+        "examples/gallery/esp32-c3-wroom-02-breakout/README.md"
+    )
+    assert (ROOT / "examples/gallery/esp32-c3-wroom-02-breakout/README.md").is_file()
+    hosts = (ROOT / "skills", *skill_sync.HOST_ROOTS)
+    for root in hosts:
+        content = (root / "wired-subcircuit-design/SKILL.md").read_text(encoding="utf-8")
+        assert f"]({reference})" in content
+        assert "../../examples/gallery/" not in content
+
+
 def test_skills_preserve_fail_closed_mcp_mutation_guards() -> None:
     for host in (ROOT / "skills", ROOT / ".opencode/skills", ROOT / ".agents/skills"):
         text = (host / "pcb-design/SKILL.md").read_text(encoding="utf-8")
