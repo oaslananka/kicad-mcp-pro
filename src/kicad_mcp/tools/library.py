@@ -150,6 +150,27 @@ def _passive_value_variants(value: str, kind: str) -> tuple[str, ...]:
     return tuple(sorted(variants, key=len, reverse=True))
 
 
+def _find_passive_voltage(text: str) -> str | None:
+    """Read a numeric voltage token without regex suffix backtracking."""
+    decimal = re.compile(r"\.\d++")
+    for number in re.finditer(r"\d+", text):
+        start, end = number.span()
+        if start and (text[start - 1].isalnum() or text[start - 1] == "_"):
+            continue
+        fraction = decimal.match(text, end)
+        if fraction is not None:
+            end = fraction.end()
+        cursor = end
+        while cursor < len(text) and text[cursor].isspace():
+            cursor += 1
+        if cursor >= len(text) or text[cursor] != "v":
+            continue
+        if cursor + 1 < len(text) and (text[cursor + 1].isalnum() or text[cursor + 1] == "_"):
+            continue
+        return text[start : cursor + 1].replace(" ", "")
+    return None
+
+
 def _parse_passive_parametric_query(
     keyword: str, package: str = ""
 ) -> PassiveParametricQuery | None:
@@ -159,28 +180,7 @@ def _parse_passive_parametric_query(
     parsed_package = explicit_package or (package_match.group(1) if package_match else "")
 
     tolerance_match = re.search(r"(?<!\w)(0\.1%|0\.5%|1%|2%|5%|10%)(?!\w)", text)
-    voltage_value = None
-    for number in re.finditer(r"\d+", text):
-        start, end = number.span()
-        if start and (text[start - 1].isalnum() or text[start - 1] == "_"):
-            continue
-        if end + 1 < len(text) and text[end] == "." and text[end + 1].isdecimal():
-            end += 2
-            while end < len(text) and text[end].isdecimal():
-                end += 1
-        cursor = end
-        while cursor < len(text) and text[cursor].isspace():
-            cursor += 1
-        if (
-            cursor < len(text)
-            and text[cursor] == "v"
-            and (
-                cursor + 1 == len(text)
-                or not (text[cursor + 1].isalnum() or text[cursor + 1] == "_")
-            )
-        ):
-            voltage_value = text[start : cursor + 1].replace(" ", "")
-            break
+    voltage_value = _find_passive_voltage(text)
 
     resistor_match = re.search(
         r"\b(\d+(?:\.\d+)?\s*(?:r|k|m|ohm|kohm|mohm|Ω|kΩ|mΩ))\b",

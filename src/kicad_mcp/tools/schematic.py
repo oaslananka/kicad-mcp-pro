@@ -2901,6 +2901,23 @@ def _label_justify_from_block(block: str) -> str:
     return justify_match.group(1).strip() if justify_match else ""
 
 
+def _strip_whitespace_before_closing_parens(effects_block: str) -> str:
+    cleaned: list[str] = []
+    cursor = 0
+    while cursor < len(effects_block):
+        if effects_block[cursor].isspace():
+            end = cursor + 1
+            while end < len(effects_block) and effects_block[end].isspace():
+                end += 1
+            if end == len(effects_block) or effects_block[end] != ")":
+                cleaned.append(effects_block[cursor:end])
+            cursor = end
+        else:
+            cleaned.append(effects_block[cursor])
+            cursor += 1
+    return "".join(cleaned)
+
+
 def _set_label_justify(block: str, justify_value: str) -> str:
     """Insert, replace, or remove the ``(justify ...)`` node inside a label's
     ``(effects ...)`` block. An empty ``justify_value`` removes any existing
@@ -2913,20 +2930,7 @@ def _set_label_justify(block: str, justify_value: str) -> str:
     if jidx != -1:
         _, jlen = _extract_block(effects_block, jidx)
         effects_block = effects_block[:jidx] + effects_block[jidx + jlen :]
-        cleaned: list[str] = []
-        cursor = 0
-        while cursor < len(effects_block):
-            if effects_block[cursor].isspace():
-                end = cursor + 1
-                while end < len(effects_block) and effects_block[end].isspace():
-                    end += 1
-                if end == len(effects_block) or effects_block[end] != ")":
-                    cleaned.append(effects_block[cursor:end])
-                cursor = end
-            else:
-                cleaned.append(effects_block[cursor])
-                cursor += 1
-        effects_block = "".join(cleaned)
+        effects_block = _strip_whitespace_before_closing_parens(effects_block)
     if justify_value:
         effects_block = effects_block[:-1].rstrip() + f" (justify {justify_value}))"
     return block[:idx] + effects_block + block[idx + eff_len :]

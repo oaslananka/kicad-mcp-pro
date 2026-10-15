@@ -42,6 +42,7 @@ def test_voltage_from_net_name(name: str, voltage: float) -> None:
     [
         ("resistor 10k 12v", "12v"),
         ("resistor 10k 4.5 v", "4.5v"),
+        ("resistor 10k 1.2.3v", "2.3v"),
         ("resistor 10k noise42v 9v", "9v"),
         ("resistor 10k 5vx", None),
         ("resistor 10k 5    V", "5v"),

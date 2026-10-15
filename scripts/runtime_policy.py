@@ -156,32 +156,24 @@ def _fetch_text(url: str) -> str:
 
 
 def _parse_version(value: str) -> Version:
-    # Parse the first dotted version without regex backtracking on arbitrary input.
-    for start, ch in enumerate(value):
-        if not ch.isdecimal() or (start > 0 and value[start - 1].isdecimal()):
+    digit_runs = re.compile(r"\d+")
+    for major in digit_runs.finditer(value):
+        pos = major.end()
+        if value[pos : pos + 1] != ".":
             continue
-        cursor = start
-        while cursor < len(value) and value[cursor].isdecimal():
-            cursor += 1
-        if cursor >= len(value) or value[cursor] != ".":
+        minor = digit_runs.match(value, pos + 1)
+        if minor is None:
             continue
-        major = value[start:cursor]
-        cursor += 1
-        minor_start = cursor
-        while cursor < len(value) and value[cursor].isdecimal():
-            cursor += 1
-        if cursor == minor_start:
-            continue
-        minor = value[minor_start:cursor]
-        patch = "0"
-        if cursor < len(value) and value[cursor] == ".":
-            patch_start = cursor + 1
-            patch_end = patch_start
-            while patch_end < len(value) and value[patch_end].isdecimal():
-                patch_end += 1
-            if patch_end > patch_start:
-                patch = value[patch_start:patch_end]
-        return Version(major=int(major), minor=int(minor), patch=int(patch))
+        patch = (
+            digit_runs.match(value, minor.end() + 1)
+            if value[minor.end() : minor.end() + 1] == "."
+            else None
+        )
+        return Version(
+            major=int(major.group()),
+            minor=int(minor.group()),
+            patch=int(patch.group()) if patch else 0,
+        )
     raise ValueError(f"Cannot parse version from {value!r}")
 
 
