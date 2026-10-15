@@ -176,9 +176,9 @@ pypi-attestations verify pypi \
   https://files.pythonhosted.org/.../kicad_mcp_pro-<version>-py3-none-any.whl
 ```
 
-The token fallback is emergency-only and cannot produce the Trusted Publisher
-publish attestation. Its successful digest verification does not satisfy the
-normal provenance requirement.
+Only the protected OIDC Trusted Publisher workflow is authorized to publish
+Python artifacts. An OIDC outage blocks publication until trusted publishing
+and its provenance checks have been restored.
 
 ## DockerHub
 

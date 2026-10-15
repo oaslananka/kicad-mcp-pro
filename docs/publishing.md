@@ -27,30 +27,13 @@ then cryptographically verifies every uploaded file with the pinned
 `pypi-attestations` release dependency. Production completion fails
 when the package is present but provenance does not match the canonical identity.
 
-### Token fallback
+### Publishing recovery
 
-`.github/workflows/publish-python-token.yml` is an emergency-only manual path. It
-is restricted to `main`, requires an incident or issue reference, requires an
-explicit confirmation input, and is gated by the required reviewer on the
-`pypi-token` or `testpypi-token` environment. Token publication does not produce
-PEP 740 Trusted Publisher attestations and must not be treated as a normal
-release path.
-
-The repository owner is accountable for the fallback project token. Use a
-project-scoped token with upload permission only. Rotate it after every use and
-at least every 90 days while retained. Revoke it immediately after suspected
-exposure, maintainer access changes, unexpected publication, or restoration of a
-replacement token. Record the authorization reference and the rotation or
-revocation action in the associated private incident record; do not paste token
-values into issues, logs, workflow inputs, or release notes.
-
-Before using fallback:
-
-1. record why OIDC is unavailable;
-2. confirm the Trusted Publisher owner, repository, workflow, and environment;
-3. approve the protected environment deployment;
-4. publish and verify registry digests;
-5. repair OIDC and prove it with TestPyPI before the next production release.
+If PyPI Trusted Publishing (OIDC) is unavailable, stop publication rather than
+substituting a long-lived token or accepting an unattested artifact. Restore the
+configured PyPI/TestPyPI Trusted Publisher identity and prove the repaired OIDC
+path with a protected TestPyPI publication before resuming production.
+Record the incident privately; never bypass the normal provenance verification.
 
 ## GitHub Releases
 

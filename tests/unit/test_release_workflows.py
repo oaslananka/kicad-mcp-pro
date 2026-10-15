@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.check_github_actions_policy import has_sha_pinned_action
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -56,26 +54,6 @@ def test_python_trusted_publish_is_tag_gated_and_provenance_verified() -> None:
     assert workflow.count("--publisher-repository oaslananka/kicad-mcp-pro") == 2
     assert "--publisher-environment pypi" in workflow
     assert "--publisher-environment testpypi" in workflow
-
-
-def test_python_token_fallback_is_manual_approved_and_tokenized() -> None:
-    workflow = _read(".github/workflows/publish-python-token.yml")
-
-    assert "workflow_dispatch:" in workflow
-    assert "\n  release:" not in workflow
-    assert "password: ${{ secrets.PYPI_PUBLISH_TOKEN }}" in workflow
-    assert "attestations: false" in workflow
-    assert "Check if version already published" in workflow
-    assert "steps.check-published.outputs.already_published != 'true'" in workflow
-    assert "github.repository_owner == 'oaslananka'" in workflow
-    assert "github.ref == 'refs/heads/main'" in workflow
-    assert "inputs.confirm_token_fallback == true" in workflow
-    assert "incident_reference:" in workflow
-    assert "Validate emergency authorization" in workflow
-    assert "pypi-token" in workflow
-    assert "testpypi-token" in workflow
-    assert has_sha_pinned_action(workflow, "pypa/gh-action-pypi-publish")
-    assert "id-token: write" not in workflow
 
 
 def test_manual_production_publish_requires_existing_release_tags() -> None:

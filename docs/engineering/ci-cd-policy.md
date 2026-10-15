@@ -186,14 +186,6 @@ exact Git SHA and does **not** cancel ongoing post-merge CI evidence; every
 merge receives its own immutable validation result. This is a conscious
 tradeoff between complete main evidence and additional runner usage.
 
-`CI Health Report` runs on Mondays (or manual dispatch) with read-only Actions
-permissions. It publishes a seven-day PR/main p50/p95 duration sample, counts
-of passed/failed/cancelled runs, frequent failing jobs, and the five longest
-observed jobs. Its JSON snapshot is retained 14 days. Durations are only
-approximate; the job statistics sample up to 12 recent CI runs, and the run
-query is capped at the latest 100. This report is **observability only**, not
-an additional required PR check or auto-retry mechanism.
-
 `Required PR Gate` is active in the `main-standard` ruleset. The existing operating-
 system matrix, protocol schema, secret scan, CodeQL, and dependency-review
 contexts remain required alongside it. New internal jobs such as `coverage`
