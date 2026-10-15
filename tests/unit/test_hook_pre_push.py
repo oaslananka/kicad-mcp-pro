@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pytest import MonkeyPatch
+import pytest
 
 from scripts import hook_pre_push
 from scripts.hook_pre_push import Check, build_plan
@@ -50,7 +50,7 @@ def test_script_change_gets_shared_ruff_quality_checks(tmp_path: Path) -> None:
     assert _names(plan) == ["ruff-format", "ruff-lint"]
 
 
-def _setup_ruff_only_mode(monkeypatch: MonkeyPatch) -> list[str]:
+def _setup_ruff_only_mode(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     plan = [
         Check("ruff-format", ["ruff", "format"]),
         Check("ruff-lint", ["ruff", "check"]),
@@ -63,7 +63,7 @@ def _setup_ruff_only_mode(monkeypatch: MonkeyPatch) -> list[str]:
     return executed
 
 
-def test_ruff_only_mode_runs_only_shared_ruff_checks(monkeypatch: MonkeyPatch) -> None:
+def test_ruff_only_mode_runs_only_shared_ruff_checks(monkeypatch: pytest.MonkeyPatch) -> None:
     executed = _setup_ruff_only_mode(monkeypatch)
     monkeypatch.setattr(
         hook_pre_push,
@@ -75,7 +75,7 @@ def test_ruff_only_mode_runs_only_shared_ruff_checks(monkeypatch: MonkeyPatch) -
     assert executed == ["ruff-format", "ruff-lint"]
 
 
-def test_ruff_only_mode_propagates_first_ruff_failure(monkeypatch: MonkeyPatch) -> None:
+def test_ruff_only_mode_propagates_first_ruff_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     executed = _setup_ruff_only_mode(monkeypatch)
 
     def fail_format(check: Check) -> int:
@@ -145,7 +145,7 @@ def test_documentation_only_change_has_no_python_or_full_suite(tmp_path: Path) -
     assert plan == []
 
 
-def test_changed_files_uses_pre_commit_push_range(monkeypatch: MonkeyPatch) -> None:
+def test_changed_files_uses_pre_commit_push_range(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
 
     def fake_git_output(arguments: list[str]) -> str:
@@ -163,7 +163,7 @@ def test_changed_files_uses_pre_commit_push_range(monkeypatch: MonkeyPatch) -> N
 
 
 def test_explicit_base_rejects_option_like_ref_before_git_invocation(
-    monkeypatch: MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[list[str]] = []
 
@@ -183,7 +183,7 @@ def test_explicit_base_rejects_option_like_ref_before_git_invocation(
     assert calls == []
 
 
-def test_explicit_base_is_canonicalized_before_merge_base(monkeypatch: MonkeyPatch) -> None:
+def test_explicit_base_is_canonicalized_before_merge_base(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
     commit = "e" * 40
     merge_base = "f" * 40
@@ -208,7 +208,7 @@ def test_explicit_base_is_canonicalized_before_merge_base(monkeypatch: MonkeyPat
     ]
 
 
-def test_new_branch_falls_back_to_main_merge_base(monkeypatch: MonkeyPatch) -> None:
+def test_new_branch_falls_back_to_main_merge_base(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
 
     def fake_git_output(arguments: list[str]) -> str:
