@@ -79,8 +79,8 @@ The snapshot check runs as part of `check:meta`, so profile or schema changes ca
 The **single editable source** is [`skills/`](https://github.com/oaslananka/kicad-mcp-pro/tree/main/skills). Seven KiCad
 skills are mirrored to `.opencode/skills/` and `.agents/skills/` for host-native
 discovery; these are generated outputs, not independent policy documents.
-OpenCode's maintainer-only `repo-repair` skill and Copilot's `code-review`
-skill remain independently owned and are **not** portable KiCad user skills.
+Copilot's `code-review` skill remains independently owned and is **not** a
+portable KiCad user skill.
 
 After editing a canonical skill run:
 

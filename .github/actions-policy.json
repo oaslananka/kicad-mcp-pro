@@ -61,12 +61,6 @@
         "id-token"
       ]
     },
-    "opencode.yml": {
-      "publish": [
-        "contents",
-        "pull-requests"
-      ]
-    },
     "publish-kicad-pcm.yml": {
       "publish": [
         "artifact-metadata",

@@ -1,8 +1,8 @@
 """Mirror canonical Agent Skills into host-discovery paths without semantic drift.
 
 Use --write for deliberate refresh; CI uses --check and never rewrites files.
-Only the seven enumerated public KiCad skills are synchronized. Host-specific
-skills, such as OpenCode's repo-repair skill, remain independently owned.
+Only the seven enumerated public KiCad skills are synchronized. Other
+host-specific skills remain independently owned.
 """
 
 from __future__ import annotations
