@@ -170,9 +170,13 @@ def test_roundtrip_failed_edit_does_not_serialize(monkeypatch, tmp_path: Path) -
         "kicad_mcp.utils.schematic_roundtrip.load",
         lambda _path: StubSchematic(),
     )
-    with pytest.raises(RuntimeError, match="abort edit"):
+
+    def abort_edit() -> None:
         with roundtrip_edit(path):
             raise RuntimeError("abort edit")
+
+    with pytest.raises(RuntimeError, match="abort edit"):
+        abort_edit()
 
     assert save_calls == []
     assert path.read_text(encoding="utf-8") == _MINIMAL

@@ -141,6 +141,7 @@ _NOT_CONFIGURED_LABEL = "(not configured)"
 _PCB_BLOCKS_STATE_FILENAME = "pcb_blocks.json"
 STRING_PATTERN = r'"((?:\\.|[^"\\])*)"'
 FLOAT_PATTERN = r"-?\d+(?:\.\d+)?"
+_LAYERS_BLOCK_RE = re.compile(r"\(layers\s++([^)]++)\)")
 PLACEMENT_MARGIN_MM = 1.27
 DECOUPLING_RULES: dict[str, dict[str, object]] = {
     "100n": {"max_dist_mm": 2.5, "prefer_side": "same"},
@@ -994,7 +995,7 @@ def _board_file_vias(content: str) -> list[dict[str, object]]:
         position = re.search(rf"\(at\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})", block)
         size = re.search(rf"\(size\s+({FLOAT_PATTERN})\)", block)
         drill = re.search(rf"\(drill\s+({FLOAT_PATTERN})\)", block)
-        layers = re.search(r"\(layers\s++([^)]++)\)", block)
+        layers = _LAYERS_BLOCK_RE.search(block)
         net = re.search(r"\(net\s+(\d+)\)", block)
         via_type_match = re.match(r"\(via\s+([A-Za-z_-]+)", block.strip())
         via_type = via_type_match.group(1) if via_type_match is not None else "through"
@@ -1024,7 +1025,7 @@ def _board_file_zones(content: str) -> list[dict[str, object]]:
         net_name = re.search(rf"\(net_name\s+{STRING_PATTERN}\)", block)
         net = re.search(r"\(net\s+(\d+)\)", block)
         layer = re.search(rf"\(layer\s+{STRING_PATTERN}\)", block)
-        layers_match = re.search(r"\(layers\s++([^)]++)\)", block)
+        layers_match = _LAYERS_BLOCK_RE.search(block)
         layers = _quoted_values(layers_match.group(1)) if layers_match else []
         if not layers and layer is not None:
             layers = [layer.group(1)]
@@ -2016,7 +2017,7 @@ def _save_pcb_state(filename: str, payload: dict[str, Any]) -> Path:
 
 def _footprint_layers_from_block(block: str) -> list[str]:
     layers = set(re.findall(r'\(layer\s+"([^"]+)"\)', block))
-    for match in re.findall(r"\(layers\s++([^)]++)\)", block):
+    for match in _LAYERS_BLOCK_RE.findall(block):
         layers.update(re.findall(r'"([^"]+)"', match))
     return sorted(layers)
 

@@ -99,11 +99,20 @@ def _parse_pass_count(text: str) -> int:
 
 
 def _parse_routed_pct(text: str, total_nets: int, unrouted_nets: list[str], ses_ok: bool) -> float:
-    pct_match = re.search(
-        r"(?<!\d)(\d++(?:\.\d++)?)\s*+%\s*+(?:routed|completed)", text, re.IGNORECASE
-    )
-    if pct_match is not None:
-        return round(float(pct_match.group(1)), 2)
+    # Scan overlapping numeric starts and check the percent/label suffix literally.
+    # Requiring the suffix within a regex permits super-linear backtracking.
+    for number in re.finditer(r"(?=(?<!\d)(\d+(?:\.\d+)?))", text):
+        cursor = number.start() + len(number.group(1))
+        while cursor < len(text) and text[cursor].isspace():
+            cursor += 1
+        if cursor >= len(text) or text[cursor] != "%":
+            continue
+        cursor += 1
+        while cursor < len(text) and text[cursor].isspace():
+            cursor += 1
+        suffix = text[cursor : cursor + 9].casefold()
+        if suffix.startswith(("routed", "completed")):
+            return round(float(number.group(1)), 2)
     if total_nets > 0 and unrouted_nets:
         return round(((total_nets - len(unrouted_nets)) / total_nets) * 100.0, 2)
     return 100.0 if ses_ok else 0.0
@@ -133,7 +142,7 @@ class FreeRoutingRunner:
 
         Returns True only if a non-empty DSN file was produced. The capability probe
         gates the call, but the exact CLI build may still reject it, so failure is not
-        fatal — the caller falls back to a manual-step path.
+        fatal Ã¢â‚¬â€ the caller falls back to a manual-step path.
         """
         cli = str(kicad_cli)
         variants = [

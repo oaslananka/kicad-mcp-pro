@@ -149,3 +149,28 @@ def test_import_ses_stages_then_requires_manual_gui_step(
     assert "File > Import > Specctra Session" in str(exc_info.value)
     staged = sample_project / "output" / "routing" / "board.ses"
     assert staged.exists()
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        ("pass 3: 100% routed", 100.0),
+        ("Pass 11\n 97.25 % completed", 97.25),
+        ("input (100 nets) 42%ROUTED", 42.0),
+        ("1.2.3%routed", 2.3),
+        ("9" * 12_000 + "not-a-percent\n12.5% completed", 12.5),
+    ],
+)
+def test_routed_percent_parser_matches_freerouting_output_without_backtracking(
+    output: str, expected: float
+) -> None:
+    from kicad_mcp.utils.freerouting import _parse_routed_pct
+
+    assert _parse_routed_pct(output, 0, [], False) == expected
+
+
+def test_routed_percent_parser_retains_fallback_on_unrecognized_status() -> None:
+    from kicad_mcp.utils.freerouting import _parse_routed_pct
+
+    assert _parse_routed_pct("25% negotiating", 8, ["N1", "N2"], False) == 75.0
+    assert _parse_routed_pct("no percent", 0, [], True) == 100.0
