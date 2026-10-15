@@ -190,6 +190,20 @@ def _nightly_lane(primary_range: str) -> dict[str, object]:
     }
 
 
+def _should_include_ci_entry(
+    entry: dict[str, Any],
+    *,
+    required_only: bool,
+    include_manual: bool,
+) -> bool:
+    ci_mode = _entry_value(entry, "ci")
+    if required_only:
+        return ci_mode == "required"
+    if ci_mode in {"required", "scheduled"}:
+        return True
+    return include_manual and ci_mode == "manual"
+
+
 def build_canary_matrix(
     compatibility: dict[str, Any],
     *,
@@ -210,11 +224,8 @@ def build_canary_matrix(
 
     lanes: list[dict[str, object]] = []
     for entry in entries:
-        ci_mode = _entry_value(entry, "ci")
-        if required_only and ci_mode != "required":
-            continue
-        if ci_mode not in {"required", "scheduled"} and not (
-            include_manual and ci_mode == "manual"
+        if not _should_include_ci_entry(
+            entry, required_only=required_only, include_manual=include_manual
         ):
             continue
         if _entry_value(entry, "range") == primary and _entry_value(entry, "state") == "primary":

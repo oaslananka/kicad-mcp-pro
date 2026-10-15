@@ -224,6 +224,27 @@ def check_regression(matrix: dict[str, Any]) -> list[str]:
     return failures
 
 
+def _handle_check_regression(matrix: dict[str, Any]) -> int:
+    failures = check_regression(matrix)
+    if failures:
+        print("capability-parity coverage REGRESSION:", file=sys.stderr)
+        for failure in failures:
+            print(f"  - {failure}", file=sys.stderr)
+        for row in opportunities(matrix, limit=5):
+            print(
+                f"  open: {row['domain']}/{row['capability']} [{row['status']}]",
+                file=sys.stderr,
+            )
+        print(
+            "If this drop is intentional, justify it and run --update-baseline.",
+            file=sys.stderr,
+        )
+        return 1
+    overall = coverage_summary(matrix)["overall"]["coverage_pct"]
+    print(f"capability-parity coverage OK: {overall:.1f}% (>= baseline)")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build the capability-parity artifacts.")
     parser.add_argument("--check", action="store_true", help="Fail if committed artifacts drift.")
@@ -242,24 +263,7 @@ def main(argv: list[str] | None = None) -> int:
     matrix = load_matrix()
 
     if args.check_regression:
-        failures = check_regression(matrix)
-        if failures:
-            print("capability-parity coverage REGRESSION:", file=sys.stderr)
-            for failure in failures:
-                print(f"  - {failure}", file=sys.stderr)
-            for row in opportunities(matrix, limit=5):
-                print(
-                    f"  open: {row['domain']}/{row['capability']} [{row['status']}]",
-                    file=sys.stderr,
-                )
-            print(
-                "If this drop is intentional, justify it and run --update-baseline.",
-                file=sys.stderr,
-            )
-            return 1
-        overall = coverage_summary(matrix)["overall"]["coverage_pct"]
-        print(f"capability-parity coverage OK: {overall:.1f}% (>= baseline)")
-        return 0
+        return _handle_check_regression(matrix)
 
     py_text = render_python(matrix)
     md_text = render_markdown(matrix)

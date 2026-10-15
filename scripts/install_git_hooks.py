@@ -49,6 +49,16 @@ def _lefthook_command(*arguments: str) -> list[str]:
     return [node, str(launcher), *arguments]
 
 
+def _select_worktree_hooks_install(effective_hooks: str) -> list[str]:
+    if effective_hooks:
+        raise RuntimeError(
+            "linked worktree has a custom core.hooksPath; refusing to rewrite shared Git "
+            "configuration. Configure a worktree-specific hooks path explicitly before "
+            "installing Lefthook."
+        )
+    return _lefthook_command("install")
+
+
 def _select_hooks_install(
     git_dir: Path,
     common_dir: Path,
@@ -56,13 +66,7 @@ def _select_hooks_install(
     local_hooks: str,
 ) -> list[str]:
     if git_dir != common_dir:
-        if effective_hooks:
-            raise RuntimeError(
-                "linked worktree has a custom core.hooksPath; refusing to rewrite shared Git "
-                "configuration. Configure a worktree-specific hooks path explicitly before "
-                "installing Lefthook."
-            )
-        return _lefthook_command("install")
+        return _select_worktree_hooks_install(effective_hooks)
 
     expected_dir = (git_dir / "hooks").resolve()
     if local_hooks:

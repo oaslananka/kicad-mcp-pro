@@ -129,6 +129,21 @@ def _string_list(value: object, description: str) -> tuple[str, ...]:
     return tuple(items)
 
 
+def _validate_release_tag_pattern(pattern: object) -> str:
+    if not isinstance(pattern, str) or not pattern.strip():
+        raise ReleasePolicyError("release_tag_pattern must be a non-empty string.")
+    cleaned = pattern.strip()
+    if any(character.isspace() for character in cleaned):
+        raise ReleasePolicyError("release_tag_pattern must not contain whitespace.")
+    return cleaned
+
+
+def _validate_contract_paths(paths: tuple[str, ...]) -> None:
+    for pattern in paths:
+        if pattern.startswith("/") or ".." in Path(pattern).parts:
+            raise ReleasePolicyError(f"Unsafe agent contract path pattern: {pattern!r}.")
+
+
 def load_release_policy(path: str | Path) -> ReleasePolicyConfig:
     """Load one strict versioned release-assurance policy."""
     raw = _mapping(
@@ -149,12 +164,7 @@ def load_release_policy(path: str | Path) -> ReleasePolicyConfig:
     release_head = raw.get("release_pull_request_head")
     if not isinstance(release_head, str) or not release_head.strip():
         raise ReleasePolicyError("release_pull_request_head must be a non-empty string.")
-    release_tag_pattern = raw.get("release_tag_pattern")
-    if not isinstance(release_tag_pattern, str) or not release_tag_pattern.strip():
-        raise ReleasePolicyError("release_tag_pattern must be a non-empty string.")
-    release_tag_pattern = release_tag_pattern.strip()
-    if any(character.isspace() for character in release_tag_pattern):
-        raise ReleasePolicyError("release_tag_pattern must not contain whitespace.")
+    release_tag_pattern = _validate_release_tag_pattern(raw.get("release_tag_pattern"))
 
     minimum_smoke = raw.get("minimum_smoke_configurations")
     if isinstance(minimum_smoke, bool) or not isinstance(minimum_smoke, int) or minimum_smoke < 1:
@@ -163,9 +173,7 @@ def load_release_policy(path: str | Path) -> ReleasePolicyConfig:
     if minimum_smoke > len(smoke_configurations):
         raise ReleasePolicyError("minimum_smoke_configurations cannot exceed smoke_configurations.")
     paths = _string_list(raw.get("agent_contract_paths"), "agent_contract_paths")
-    for pattern in paths:
-        if pattern.startswith("/") or ".." in Path(pattern).parts:
-            raise ReleasePolicyError(f"Unsafe agent contract path pattern: {pattern!r}.")
+    _validate_contract_paths(paths)
 
     return ReleasePolicyConfig(
         baseline_max_age_days=max_age,

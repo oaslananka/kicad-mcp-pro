@@ -584,14 +584,10 @@ def _rule_conflicting_supply_rails(nets: Sequence[NetView]) -> list[Finding]:
     return findings
 
 
-def _rule_usb_diff_pair_complete(nets: Sequence[NetView]) -> list[Finding]:
-    """Flag a USB design that wires only one half of the D+/D- data pair.
-
-    USB data is a differential pair: D+ and D- must both be present. When the
-    design carries one polarity but not its complement, the other half is missing
-    (or mis-named), which breaks the link. Fires once per missing polarity.
-    """
-    present: dict[str, str] = {}  # polarity -> example net label
+def _collect_usb_diff_pair_nets(
+    nets: Sequence[NetView],
+) -> tuple[dict[str, str], dict[str, list[str]]]:
+    present: dict[str, str] = {}
     refs_by_polarity: dict[str, list[str]] = {"+": [], "-": []}
     for net in nets:
         for name in _net_names(net):
@@ -602,6 +598,17 @@ def _rule_usb_diff_pair_complete(nets: Sequence[NetView]) -> list[Finding]:
             for ref in _net_refs(net, _IC_RE) + _net_refs(net, _CONNECTOR_RE):
                 if ref not in refs_by_polarity[polarity]:
                     refs_by_polarity[polarity].append(ref)
+    return present, refs_by_polarity
+
+
+def _rule_usb_diff_pair_complete(nets: Sequence[NetView]) -> list[Finding]:
+    """Flag a USB design that wires only one half of the D+/D- data pair.
+
+    USB data is a differential pair: D+ and D- must both be present. When the
+    design carries one polarity but not its complement, the other half is missing
+    (or mis-named), which breaks the link. Fires once per missing polarity.
+    """
+    present, refs_by_polarity = _collect_usb_diff_pair_nets(nets)
     if len(present) != 1:
         return []  # neither half, or both halves present -> nothing to flag
     have = next(iter(present))
