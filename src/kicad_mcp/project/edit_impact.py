@@ -151,9 +151,13 @@ def render_impact_report(report: ImpactReport) -> str:
             lines.append(f"  [{change.kind}] {change.category}: {change.detail}")
     else:
         lines.append("  (none)")
-    lines.append("")
-    lines.append(f"Gates to re-run: {', '.join(report.affected_gates) or '(none)'}")
-    lines.append(f"Gates preserved: {', '.join(report.preserved_gates) or '(none)'}")
+    lines.extend(
+        [
+            "",
+            f"Gates to re-run: {', '.join(report.affected_gates) or '(none)'}",
+            f"Gates preserved: {', '.join(report.preserved_gates) or '(none)'}",
+        ]
+    )
     return "\n".join(lines)
 
 

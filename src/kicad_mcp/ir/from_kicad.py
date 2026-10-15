@@ -94,6 +94,21 @@ _INTERFACE_PATTERNS: list[tuple[str, str, list[str]]] = [
 """Patterns used to detect interface types from net names."""
 
 
+def _parse_numeric_rail_voltage(net_name: str) -> float | None:
+    for index, ch in enumerate(net_name):
+        if ch not in "Vv" or index == 0 or not net_name[index - 1].isdecimal():
+            continue
+        start = index - 1
+        while start > 0 and net_name[start - 1].isdecimal():
+            start -= 1
+        end = index + 1
+        while end < len(net_name) and net_name[end].isdecimal():
+            end += 1
+        volts = float(f"{net_name[start:index]}.{net_name[index + 1 : end] or '0'}")
+        return volts
+    return None
+
+
 def _rail_name_and_voltage(net_name: str) -> tuple[str, float]:
     """Return a canonical (rail_name, voltage) for *net_name*."""
     upper = net_name.upper()
@@ -101,12 +116,10 @@ def _rail_name_and_voltage(net_name: str) -> tuple[str, float]:
     if known is not None:
         return known
     # Try to parse voltage from name patterns like "3V3", "5V0", "1V8"
-    import re
 
-    m = re.search(r"(\d+)[Vv](\d*)", net_name)
-    if m:
-        volts = float(f"{m.group(1)}.{m.group(2) or '0'}")
-        return (net_name, volts)
+    voltage = _parse_numeric_rail_voltage(net_name)
+    if voltage is not None:
+        return (net_name, voltage)
     # Default — assume a generic rail at 0 V, likely GND derived
     if "GND" in upper or "VSS" in upper:
         return (net_name, 0.0)

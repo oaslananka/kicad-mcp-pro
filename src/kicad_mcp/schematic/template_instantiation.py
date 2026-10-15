@@ -66,11 +66,16 @@ class SchematicTemplateInstantiationService:
         ]
         for index, symbol in enumerate(symbols, start=1):
             reference = f"{prefix_str}{symbol.get('ref_prefix', 'X')}{index}"
-            lines.append(
-                f"- `sch_add_symbol(reference={reference!r}, value={symbol.get('value', '?')!r})`"
+            lines.extend(
+                [
+                    (
+                        f"- `sch_add_symbol(reference={reference!r}, "
+                        f"value={symbol.get('value', '?')!r})`"
+                    ),
+                    f"  Comment: {symbol.get('comment', '')}",
+                    f"  Footprint hint: {symbol.get('default_footprint', '—')}",
+                ]
             )
-            lines.append(f"  Comment: {symbol.get('comment', '')}")
-            lines.append(f"  Footprint hint: {symbol.get('default_footprint', '—')}")
 
         lines += [
             "",

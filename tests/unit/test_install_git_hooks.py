@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from pytest import MonkeyPatch
 
 from scripts import install_git_hooks
 
@@ -21,7 +20,7 @@ class _Harness:
     def __init__(
         self,
         tmp_path: Path,
-        monkeypatch: MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,
         *,
         git_dir: str = ".git",
         common_dir: str = ".git",
@@ -57,7 +56,7 @@ class _Harness:
 
 
 @pytest.fixture
-def harness_factory(tmp_path: Path, monkeypatch: MonkeyPatch) -> Callable[..., _Harness]:
+def harness_factory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., _Harness]:
     def build(**kwargs: str) -> _Harness:
         return _Harness(tmp_path, monkeypatch, **kwargs)
 

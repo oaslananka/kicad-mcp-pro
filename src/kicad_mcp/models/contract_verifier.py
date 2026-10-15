@@ -293,9 +293,13 @@ def verify_contract(
                     )
                 )
 
-    findings.append(_completeness_finding("courtyard", footprint.has_courtyard))
-    findings.append(_completeness_finding("fabrication", footprint.has_fabrication))
-    findings.append(_completeness_finding("silkscreen", footprint.has_silkscreen))
+    findings.extend(
+        [
+            _completeness_finding("courtyard", footprint.has_courtyard),
+            _completeness_finding("fabrication", footprint.has_fabrication),
+            _completeness_finding("silkscreen", footprint.has_silkscreen),
+        ]
+    )
 
     if footprint.has_3d_model:
         findings.append(Finding("PASS", "model_3d", "Footprint references a 3D model."))

@@ -156,14 +156,25 @@ def _fetch_text(url: str) -> str:
 
 
 def _parse_version(value: str) -> Version:
-    match = re.search(r"(?P<major>\d+)\.(?P<minor>\d+)(?:\.(?P<patch>\d+))?", value)
-    if match is None:
-        raise ValueError(f"Cannot parse version from {value!r}")
-    return Version(
-        major=int(match.group("major")),
-        minor=int(match.group("minor")),
-        patch=int(match.group("patch") or 0),
-    )
+    digit_runs = re.compile(r"\d+")
+    for major in digit_runs.finditer(value):
+        pos = major.end()
+        if value[pos : pos + 1] != ".":
+            continue
+        minor = digit_runs.match(value, pos + 1)
+        if minor is None:
+            continue
+        patch = (
+            digit_runs.match(value, minor.end() + 1)
+            if value[minor.end() : minor.end() + 1] == "."
+            else None
+        )
+        return Version(
+            major=int(major.group()),
+            minor=int(minor.group()),
+            patch=int(patch.group()) if patch else 0,
+        )
+    raise ValueError(f"Cannot parse version from {value!r}")
 
 
 def _parse_vscode_engine_range(value: str) -> Version:

@@ -47,10 +47,15 @@ class ProjectRuntimeService:
         if runtime.unavailable is not None:
             lines.append(f"IPC connection: {runtime.unavailable}")
         else:
-            lines.append(f"IPC version: {runtime.version}")
-            lines.append(f"Open PCB documents: {_document_count_text(runtime.pcb_documents)}")
-            lines.append(
-                f"Open schematic documents: {_document_count_text(runtime.schematic_documents)}"
+            lines.extend(
+                [
+                    f"IPC version: {runtime.version}",
+                    f"Open PCB documents: {_document_count_text(runtime.pcb_documents)}",
+                    (
+                        "Open schematic documents: "
+                        f"{_document_count_text(runtime.schematic_documents)}"
+                    ),
+                ]
             )
 
         lines.extend(["", "Use `kicad_set_project()` to configure an active project."])

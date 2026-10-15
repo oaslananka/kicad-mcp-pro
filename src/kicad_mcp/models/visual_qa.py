@@ -273,7 +273,7 @@ def _parse_effects(prop_block: str) -> tuple[float, frozenset[str], bool]:
             font_mm = float(size_match.group(1)) or DEFAULT_FONT_MM
         except ValueError:
             font_mm = DEFAULT_FONT_MM
-    justify_match = re.search(r"\(justify\s+([^)]*)\)", prop_block)
+    justify_match = re.search(r"\(justify\s++([^)]*+)\)", prop_block)
     justify = parse_justify(justify_match.group(1)) if justify_match else frozenset()
     hidden = bool(re.search(r"\(hide\s+yes\)", prop_block)) or bool(
         re.search(r"\(effects\b[^)]*\bhide\b", prop_block)
@@ -356,7 +356,7 @@ def parse_labels(sch_text: str) -> list[LabelItem]:
         for match in re.finditer(pattern, sch_text):
             angle = float(match.group(4)) if match.group(4) else 0.0
             block = extract_balanced_block(sch_text, match.start())
-            justify_match = re.search(r"\(justify\s+([^)]*)\)", block) if block else None
+            justify_match = re.search(r"\(justify\s++([^)]*+)\)", block) if block else None
             justify = parse_justify(justify_match.group(1)) if justify_match else frozenset()
             size_match = re.search(r"\(font[^)]*\(size\s+(-?[\d.]+)", block) if block else None
             font_mm = DEFAULT_FONT_MM

@@ -903,10 +903,14 @@ def register(mcp: FastMCP) -> None:
             tools = visible_tools(category)
             if not tools:
                 continue
-            lines.append(f"## `{category}`")
-            lines.append(str(info["description"]))
-            lines.append(f"Tools: {len(tools)}")
-            lines.append("")
+            lines.extend(
+                [
+                    f"## `{category}`",
+                    str(info["description"]),
+                    f"Tools: {len(tools)}",
+                    "",
+                ]
+            )
         lines.append("Profiles:")
         lines.extend(f"- `{profile}`" for profile in available_profiles())
         return "\n".join(lines)

@@ -36,7 +36,7 @@ HTTP_HEADERS = {
 }
 
 
-@pytest.fixture()
+@pytest.fixture
 def telemetry_exporters() -> Iterable[
     tuple[InMemorySpanExporter, InMemoryMetricReader, MeterProvider]
 ]:

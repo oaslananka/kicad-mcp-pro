@@ -125,12 +125,16 @@ def render_markdown(matrix: dict[str, Any]) -> str:
 
     lines.extend(["", "## Full matrix", ""])
     for name, info in matrix["domains"].items():
-        lines.append(f"### `{name}`")
-        lines.append("")
-        lines.append(str(info.get("description", "")))
-        lines.append("")
-        lines.append("| Capability | Channel | MCP tool | Status | KiCad | Notes |")
-        lines.append("|---|---|---|---|---|---|")
+        lines.extend(
+            [
+                f"### `{name}`",
+                "",
+                str(info.get("description", "")),
+                "",
+                "| Capability | Channel | MCP tool | Status | KiCad | Notes |",
+                "|---|---|---|---|---|---|",
+            ]
+        )
         for cap in info["capabilities"]:
             tool = f"`{cap['mcp_tool']}`" if cap["mcp_tool"] else "—"
             notes = (cap["notes"] or "").replace("|", "\\|")

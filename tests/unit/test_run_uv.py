@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pytest import MonkeyPatch
 
 from scripts.run_uv import required_uv_version, resolve_uv
 
@@ -57,7 +56,7 @@ def test_resolve_uv_accepts_explicit_override(tmp_path: Path) -> None:
 
 def test_resolve_uv_rejects_only_mismatched_global_uv(
     tmp_path: Path,
-    monkeypatch: MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     scripts = tmp_path / "scripts"
     scripts.mkdir()

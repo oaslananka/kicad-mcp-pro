@@ -138,8 +138,10 @@ _DIAGNOSTICS_HEADER = "Diagnostics:"
 _FILE_BACKED_SOURCE_LABEL = "- Source: file-backed"
 _MANUAL_BOARD_RELOAD_MESSAGE = "The PCB file was updated. Reload it manually in KiCad if needed."
 _NOT_CONFIGURED_LABEL = "(not configured)"
+_PCB_BLOCKS_STATE_FILENAME = "pcb_blocks.json"
 STRING_PATTERN = r'"((?:\\.|[^"\\])*)"'
 FLOAT_PATTERN = r"-?\d+(?:\.\d+)?"
+_LAYERS_BLOCK_RE = re.compile(r"\(layers\s++([^)]++)\)")
 PLACEMENT_MARGIN_MM = 1.27
 DECOUPLING_RULES: dict[str, dict[str, object]] = {
     "100n": {"max_dist_mm": 2.5, "prefer_side": "same"},
@@ -993,7 +995,7 @@ def _board_file_vias(content: str) -> list[dict[str, object]]:
         position = re.search(rf"\(at\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})", block)
         size = re.search(rf"\(size\s+({FLOAT_PATTERN})\)", block)
         drill = re.search(rf"\(drill\s+({FLOAT_PATTERN})\)", block)
-        layers = re.search(r"\(layers\s+([^)]+)\)", block)
+        layers = _LAYERS_BLOCK_RE.search(block)
         net = re.search(r"\(net\s+(\d+)\)", block)
         via_type_match = re.match(r"\(via\s+([A-Za-z_-]+)", block.strip())
         via_type = via_type_match.group(1) if via_type_match is not None else "through"
@@ -1023,7 +1025,7 @@ def _board_file_zones(content: str) -> list[dict[str, object]]:
         net_name = re.search(rf"\(net_name\s+{STRING_PATTERN}\)", block)
         net = re.search(r"\(net\s+(\d+)\)", block)
         layer = re.search(rf"\(layer\s+{STRING_PATTERN}\)", block)
-        layers_match = re.search(r"\(layers\s+([^)]+)\)", block)
+        layers_match = _LAYERS_BLOCK_RE.search(block)
         layers = _quoted_values(layers_match.group(1)) if layers_match else []
         if not layers and layer is not None:
             layers = [layer.group(1)]
@@ -2015,7 +2017,7 @@ def _save_pcb_state(filename: str, payload: dict[str, Any]) -> Path:
 
 def _footprint_layers_from_block(block: str) -> list[str]:
     layers = set(re.findall(r'\(layer\s+"([^"]+)"\)', block))
-    for match in re.findall(r"\(layers\s+([^)]+)\)", block):
+    for match in _LAYERS_BLOCK_RE.findall(block):
         layers.update(re.findall(r'"([^"]+)"', match))
     return sorted(layers)
 
@@ -4210,7 +4212,7 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
     @headless_compatible
     def pcb_block_list() -> str:
         """List stored PCB design blocks created from selected footprints."""
-        state = _load_pcb_state("pcb_blocks.json", {"blocks": {}})
+        state = _load_pcb_state(_PCB_BLOCKS_STATE_FILENAME, {"blocks": {}})
         blocks = cast(dict[str, dict[str, Any]], state.get("blocks", {}))
         payload = {
             "blocks": {
@@ -4221,7 +4223,7 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
             },
             "diagnostics": {
                 "source": "file-backed",
-                "state_file": str(_pcb_state_path("pcb_blocks.json")),
+                "state_file": str(_pcb_state_path(_PCB_BLOCKS_STATE_FILENAME)),
             },
         }
         return json.dumps(payload, indent=2)
@@ -4244,7 +4246,7 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
         selected = [footprints[reference] for reference in references]
         min_x = min(float(item["x_mm"]) for item in selected if item["x_mm"] is not None)
         min_y = min(float(item["y_mm"]) for item in selected if item["y_mm"] is not None)
-        state = _load_pcb_state("pcb_blocks.json", {"blocks": {}})
+        state = _load_pcb_state(_PCB_BLOCKS_STATE_FILENAME, {"blocks": {}})
         blocks = cast(dict[str, object], state.setdefault("blocks", {}))
         blocks[name] = {
             "footprints": [
@@ -4258,7 +4260,7 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
                 for reference in references
             ]
         }
-        path = _save_pcb_state("pcb_blocks.json", state)
+        path = _save_pcb_state(_PCB_BLOCKS_STATE_FILENAME, state)
         return f"PCB block '{name}' saved to {path}."
 
     @mcp.tool()
@@ -4270,7 +4272,7 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
         rotation_deg: int = 0,
     ) -> str:
         """Place a stored PCB design block by cloning its saved footprint blocks."""
-        state = _load_pcb_state("pcb_blocks.json", {"blocks": {}})
+        state = _load_pcb_state(_PCB_BLOCKS_STATE_FILENAME, {"blocks": {}})
         blocks = cast(dict[str, dict[str, Any]], state.get("blocks", {}))
         block = blocks.get(block_name)
         if block is None:

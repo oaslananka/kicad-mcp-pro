@@ -298,9 +298,14 @@ def _record_from_jlcpcb_detail_page(html: str, lcsc_code: str) -> ComponentRecor
                 datasheet_url = parts[1].strip()
     # Also try to find datasheet URL in HTML href attributes
     if not datasheet_url:
-        ds_match = re.search(r'href="(https?://[^"]*datasheet[^"]*)"', html, re.IGNORECASE)
-        if ds_match:
-            datasheet_url = ds_match.group(1)
+        for opening in re.finditer(r'href="', html, re.IGNORECASE):
+            closing = html.find('"', opening.end())
+            if closing < 0:
+                break
+            url = html[opening.end() : closing]
+            if url.casefold().startswith(("http://", "https://")) and "datasheet" in url.casefold():
+                datasheet_url = url
+                break
     return ComponentRecord(
         source="jlcpcb-public",
         lcsc_code=normalize_lcsc_code(lcsc_code),

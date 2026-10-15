@@ -66,6 +66,7 @@ _SCHEMATIC_COSMETICS_GATE = "Schematic cosmetics"
 _TOP_LEVEL_SHEET = "Top level"
 _SCHEMATIC_DESIGN_RULES_GATE = "Schematic design rules"
 _MISSING_PLACEMENT_ANALYSIS = "Placement analysis unexpectedly returned no result."
+_NO_ACTIVE_PROJECT_ERROR = "No active project is configured."
 _DRC_CLI_RECOVERY_HINT = "Make kicad-cli/report generation available, then rerun run_drc()."
 _ERC_CLI_RECOVERY_HINT = "Make kicad-cli/report generation available, then rerun run_erc()."
 
@@ -2489,7 +2490,7 @@ def _release_artifact_evidence() -> ReadinessEvidencePayload:
 
     cfg = get_config()
     if cfg.project_dir is None:
-        raise ValueError("No active project is configured.")
+        raise ValueError(_NO_ACTIVE_PROJECT_ERROR)
     output_dir = cfg.output_dir or (cfg.project_dir / "output")
     if not output_dir.exists():
         return ReadinessEvidencePayload(
@@ -2581,7 +2582,7 @@ def _release_manifest_evidence(output_dir: str) -> ReadinessEvidencePayload:
 def _release_waiver_evidence() -> ReadinessEvidencePayload:
     cfg = get_config()
     if cfg.project_dir is None:
-        raise ValueError("No active project is configured.")
+        raise ValueError(_NO_ACTIVE_PROJECT_ERROR)
     path = cfg.project_dir / ".kicad-mcp" / "drc_exclusions.json"
     if not path.exists():
         return ReadinessEvidencePayload(
@@ -3161,7 +3162,7 @@ def _pcb_layer_table_copper_layers(pcb_text: str) -> list[str]:
     layer_blocks = _balanced_blocks(pcb_text, "layers")
     if not layer_blocks:
         return []
-    layers = re.findall(r'\(\s*\d+\s+"([^"]+\.Cu)"\s+[^\)]*\)', layer_blocks[0])
+    layers = re.findall(r'\(\s*+\d++\s++"([^"]+\.Cu)"\s++[^)]*+\)', layer_blocks[0])
     return list(dict.fromkeys(layers))
 
 
@@ -3315,7 +3316,7 @@ def _evaluate_professional_release_gate(
 def _drc_state_path() -> Path:
     cfg = get_config()
     if cfg.project_dir is None:
-        raise ValueError("No active project is configured.")
+        raise ValueError(_NO_ACTIVE_PROJECT_ERROR)
     target = cfg.project_dir / ".kicad-mcp"
     target.mkdir(parents=True, exist_ok=True)
     return target / "drc_rules_state.json"
@@ -3324,7 +3325,7 @@ def _drc_state_path() -> Path:
 def _write_drc_state(path: Path, payload: dict[str, object]) -> Path:
     cfg = get_config()
     if cfg.project_dir is None:
-        raise ValueError("No active project is configured.")
+        raise ValueError(_NO_ACTIVE_PROJECT_ERROR)
     safe_path = resolve_under(cfg.project_dir, path)
     with safe_path.open("w", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, indent=2))

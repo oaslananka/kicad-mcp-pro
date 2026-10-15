@@ -338,7 +338,7 @@ def _extract_structured_spec_block(markdown: str) -> tuple[dict[str, Any], str]:
                     return parsed_yaml, "frontmatter"
                 break
 
-    fence = re.search(r"```(?:json|ya?ml)\s*(.*?)```", markdown, re.IGNORECASE | re.DOTALL)
+    fence = re.search(r"```(?:json|ya?ml)\s*+(.*?)```", markdown, re.IGNORECASE | re.DOTALL)
     if fence is not None:
         block = fence.group(1).strip()
         try:
@@ -493,11 +493,15 @@ def _render_import_result(
     intent: ProjectDesignIntent,
 ) -> str:
     lines = ["Project design-spec import:"]
-    lines.append(f"- Source format: {source_kind}")
-    lines.append(f"- Mode: {'dry-run' if dry_run else 'write'}")
-    lines.append(f"- Strict: {strict}")
-    lines.append(f"- Wrote project spec: {wrote}")
-    lines.append(f"- Missing mandatory fields: {len(missing)}")
+    lines.extend(
+        [
+            f"- Source format: {source_kind}",
+            f"- Mode: {('dry-run' if dry_run else 'write')}",
+            f"- Strict: {strict}",
+            f"- Wrote project spec: {wrote}",
+            f"- Missing mandatory fields: {len(missing)}",
+        ]
+    )
     for item in missing[:20]:
         lines.append(f"  - {item}")
     lines.append(f"- Placeholder fields: {len(placeholders)}")
@@ -668,29 +672,31 @@ def save_design_intent(intent: ProjectDesignIntent) -> Path:
 
 def _render_design_intent(intent: ProjectDesignIntent) -> str:
     lines = ["Project design spec:"]
-    lines.append("- Connector refs: " + (_join_or_none(intent.connector_refs)))
-    lines.append("- Critical nets: " + (_join_or_none(intent.critical_nets)))
-    lines.append("- Power-tree refs: " + (_join_or_none(intent.power_tree_refs)))
-    lines.append("- Analog refs: " + (_join_or_none(intent.analog_refs)))
-    lines.append("- Digital refs: " + (_join_or_none(intent.digital_refs)))
-    lines.append("- Sensor cluster refs: " + (_join_or_none(intent.sensor_cluster_refs)))
-    lines.append("- Required sheets: " + (_join_or_none(intent.required_sheets)))
-    lines.append("- Optional sheets: " + (_join_or_none(intent.optional_sheets)))
-    lines.append(
-        "- Manufacturer: "
-        + (
-            f"{intent.manufacturer} / {intent.manufacturer_tier}"
-            if intent.manufacturer or intent.manufacturer_tier
-            else _NONE_DISPLAY
-        )
+    lines.extend(
+        [
+            "- Connector refs: " + _join_or_none(intent.connector_refs),
+            "- Critical nets: " + _join_or_none(intent.critical_nets),
+            "- Power-tree refs: " + _join_or_none(intent.power_tree_refs),
+            "- Analog refs: " + _join_or_none(intent.analog_refs),
+            "- Digital refs: " + _join_or_none(intent.digital_refs),
+            "- Sensor cluster refs: " + _join_or_none(intent.sensor_cluster_refs),
+            "- Required sheets: " + _join_or_none(intent.required_sheets),
+            "- Optional sheets: " + _join_or_none(intent.optional_sheets),
+            "- Manufacturer: "
+            + (
+                f"{intent.manufacturer} / {intent.manufacturer_tier}"
+                if intent.manufacturer or intent.manufacturer_tier
+                else _NONE_DISPLAY
+            ),
+            f"- Functional spacing: {intent.functional_spacing_mm:.2f} mm",
+            "- Thermal hotspots: " + _join_or_none(intent.thermal_hotspots),
+            "- Critical frequencies: "
+            + _join_or_none(
+                f"{frequency:.2f} MHz" for frequency in intent.critical_frequencies_mhz
+            ),
+            f"- Decoupling pairs: {len(intent.decoupling_pairs)}",
+        ]
     )
-    lines.append(f"- Functional spacing: {intent.functional_spacing_mm:.2f} mm")
-    lines.append("- Thermal hotspots: " + (_join_or_none(intent.thermal_hotspots)))
-    lines.append(
-        "- Critical frequencies: "
-        + _join_or_none(f"{frequency:.2f} MHz" for frequency in intent.critical_frequencies_mhz)
-    )
-    lines.append(f"- Decoupling pairs: {len(intent.decoupling_pairs)}")
     for pair in intent.decoupling_pairs[:10]:
         lines.append(
             f"  {pair.ic_ref} <- {', '.join(pair.cap_refs)} (max {pair.max_distance_mm:.2f} mm)"
