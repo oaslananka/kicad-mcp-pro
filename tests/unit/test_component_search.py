@@ -231,17 +231,19 @@ def test_plain_text_lines_ignores_script_tags_with_spaced_end_tags() -> None:
 def test_optional_search_clients_raise_clear_messages(monkeypatch) -> None:
     monkeypatch.delenv("NEXAR_CLIENT_ID", raising=False)
     monkeypatch.delenv("NEXAR_CLIENT_SECRET", raising=False)
+    nexar_client = NexarClient()
     with pytest.raises(RuntimeError, match="NEXAR_CLIENT_ID"):
-        NexarClient().search("accelerometer")
+        nexar_client.search("accelerometer")
     with pytest.raises(RuntimeError, match="NEXAR_CLIENT_ID"):
-        NexarClient().get_part("C12345")
+        nexar_client.get_part("C12345")
 
     monkeypatch.delenv("DIGIKEY_CLIENT_ID", raising=False)
     monkeypatch.delenv("DIGIKEY_CLIENT_SECRET", raising=False)
+    digikey_client = DigiKeyClient()
     with pytest.raises(RuntimeError, match="DIGIKEY_CLIENT_ID"):
-        DigiKeyClient().search("buzzer")
+        digikey_client.search("buzzer")
     with pytest.raises(RuntimeError, match="DIGIKEY_CLIENT_ID"):
-        DigiKeyClient().get_part("C12345")
+        digikey_client.get_part("C12345")
 
 
 def test_digikey_search_parses_records_with_injected_transport() -> None:
@@ -286,8 +288,9 @@ def test_digikey_search_parses_records_with_injected_transport() -> None:
 
 def test_mouser_requires_api_key(monkeypatch) -> None:
     monkeypatch.delenv("MOUSER_API_KEY", raising=False)
+    mouser_client = MouserClient()
     with pytest.raises(RuntimeError, match="MOUSER_API_KEY"):
-        MouserClient().search("resistor")
+        mouser_client.search("resistor")
 
 
 def test_mouser_search_parses_records_with_injected_transport() -> None:
@@ -410,8 +413,9 @@ def test_mouser_api_error_surfaces() -> None:
     def transport(url: str, body: bytes, headers: dict[str, str]) -> dict[str, object]:
         return {"Errors": [{"Message": "Invalid API key"}]}
 
+    mouser_client = MouserClient(api_key="bad", transport=transport)
     with pytest.raises(RuntimeError, match="Mouser API error: Invalid API key"):
-        MouserClient(api_key="bad", transport=transport).search("x")
+        mouser_client.search("x")
 
 
 def test_digikey_token_is_cached_across_searches() -> None:
@@ -542,7 +546,8 @@ def test_rate_limiter_waits_when_window_is_full(monkeypatch) -> None:
     limiter.acquire()
     limiter.acquire()
 
-    assert slept and slept[0] > 0.0
+    assert slept
+    assert slept[0] > 0.0
 
 
 def test_jlcpcb_detail_page_finds_case_insensitive_absolute_datasheet_link() -> None:

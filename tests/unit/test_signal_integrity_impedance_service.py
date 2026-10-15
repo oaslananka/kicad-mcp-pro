@@ -59,6 +59,7 @@ def test_width_synthesis_preserves_response_contract() -> None:
 )
 def test_input_validation_remains_pydantic(method: str, kwargs: dict[str, float]) -> None:
     service = SignalIntegrityImpedanceService()
+    fn = getattr(service, method)
 
     with pytest.raises(ValidationError):
-        getattr(service, method)(**kwargs)
+        fn(**kwargs)

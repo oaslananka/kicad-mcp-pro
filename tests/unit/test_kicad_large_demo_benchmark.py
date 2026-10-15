@@ -86,20 +86,22 @@ def test_vendor_input_manifest_requires_exact_hash_inventory_and_license(
 def test_new_native_source_is_not_silently_ignored(demo: tuple[Path, Path]) -> None:
     root, pinned = demo
     (root / "new-sheet.kicad_sch").write_text("(kicad_sch)")
+    pinned_manifest = json.loads(pinned.read_text())
     with pytest.raises(ValueError, match="inventory"):
-        bench.validate_demo_files(root, json.loads(pinned.read_text()))
+        bench.validate_demo_files(root, pinned_manifest)
 
 
 def test_missing_license_and_symlinked_sources_are_rejected(demo: tuple[Path, Path]) -> None:
     root, pinned = demo
+    pinned_manifest = json.loads(pinned.read_text())
     license_file = root / "LICENSE"
     license_file.write_text("proprietary")
     with pytest.raises(ValueError, match="license"):
-        bench.validate_demo_files(root, json.loads(pinned.read_text()))
+        bench.validate_demo_files(root, pinned_manifest)
     license_file.unlink()
     license_file.symlink_to(pinned)
     with pytest.raises(ValueError, match="symlinked"):
-        bench.validate_demo_files(root, json.loads(pinned.read_text()))
+        bench.validate_demo_files(root, pinned_manifest)
 
 
 def test_native_large_demo_reports_true_process_peak_and_p95(
@@ -127,7 +129,8 @@ def test_native_large_demo_reports_true_process_peak_and_p95(
         timeout=15,
         repository_sha="a" * 40,
     )
-    assert len(paths) == 3 and len(set(paths)) == 1
+    assert len(paths) == 3
+    assert len(set(paths)) == 1
     assert not paths[0].exists()
     assert result["schematic_source_files"] == 2
     assert result["native_load_ms"]["p95_nearest_rank"] == 12

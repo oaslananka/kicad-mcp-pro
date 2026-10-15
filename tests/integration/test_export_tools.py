@@ -378,7 +378,8 @@ async def test_export_odb_uses_kicad_10_odb_cli_surface(sample_project, monkeypa
     assert commands
     assert commands[0][3] == "odb"
     assert "--compression" in commands[0]
-    assert "--variant" in commands[0] and "fab" in commands[0]
+    assert "--variant" in commands[0]
+    assert "fab" in commands[0]
 
 
 @pytest.mark.anyio

@@ -83,6 +83,40 @@ def pin_sides(body: Box, pin_points: Sequence[tuple[float, float]]) -> frozenset
     return frozenset(sides)
 
 
+def _stacked_boxes_horizontal(
+    side: str,
+    body: Box,
+    specs: Sequence[FieldSpec],
+    *,
+    margin_mm: float,
+    pitch_mm: float,
+) -> list[tuple[float, float, frozenset[str]]]:
+    _cx, cy = body.center
+    justify = frozenset({"left"}) if side == "right" else frozenset({"right"})
+    x = body.x_max + margin_mm if side == "right" else body.x_min - margin_mm
+    total_h = pitch_mm * max(len(specs) - 1, 0)
+    start_y = cy - total_h / 2.0
+    return [(x, start_y + i * pitch_mm, justify) for i in range(len(specs))]
+
+
+def _stacked_boxes_vertical(
+    side: str,
+    body: Box,
+    specs: Sequence[FieldSpec],
+    *,
+    margin_mm: float,
+    pitch_mm: float,
+    line_h: float,
+) -> list[tuple[float, float, frozenset[str]]]:
+    cx, _cy = body.center
+    justify: frozenset[str] = frozenset()
+    if side == "top":
+        base_y = body.y_min - margin_mm - line_h / 2.0
+        return [(cx, base_y - (len(specs) - 1 - i) * pitch_mm, justify) for i in range(len(specs))]
+    base_y = body.y_max + margin_mm + line_h / 2.0
+    return [(cx, base_y + i * pitch_mm, justify) for i in range(len(specs))]
+
+
 def _stacked_boxes_for_side(
     side: str,
     body: Box,
@@ -92,28 +126,12 @@ def _stacked_boxes_for_side(
     pitch_mm: float,
 ) -> list[tuple[float, float, frozenset[str]]]:
     """Return ``(x, y, justify)`` for each field stacked along ``side``."""
-    cx, cy = body.center
-    placements: list[tuple[float, float, frozenset[str]]] = []
     line_h = max((s.font_mm for s in specs), default=DEFAULT_FONT_MM)
-    total_h = pitch_mm * max(len(specs) - 1, 0)
-
     if side in ("left", "right"):
-        justify = frozenset({"left"}) if side == "right" else frozenset({"right"})
-        x = body.x_max + margin_mm if side == "right" else body.x_min - margin_mm
-        start_y = cy - total_h / 2.0
-        for i, _spec in enumerate(specs):
-            placements.append((x, start_y + i * pitch_mm, justify))
-    else:  # top / bottom — stack vertically, centred horizontally
-        justify = frozenset()
-        if side == "top":
-            base_y = body.y_min - margin_mm - line_h / 2.0
-            for i, _spec in enumerate(specs):
-                placements.append((cx, base_y - (len(specs) - 1 - i) * pitch_mm, justify))
-        else:
-            base_y = body.y_max + margin_mm + line_h / 2.0
-            for i, _spec in enumerate(specs):
-                placements.append((cx, base_y + i * pitch_mm, justify))
-    return placements
+        return _stacked_boxes_horizontal(side, body, specs, margin_mm=margin_mm, pitch_mm=pitch_mm)
+    return _stacked_boxes_vertical(
+        side, body, specs, margin_mm=margin_mm, pitch_mm=pitch_mm, line_h=line_h
+    )
 
 
 def _side_cost(

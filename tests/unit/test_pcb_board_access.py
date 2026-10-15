@@ -57,11 +57,12 @@ def test_board_collection_readers_distinguish_empty_data_from_access_failure(
 
 
 def test_board_collection_reader_reports_missing_method_with_original_cause() -> None:
+    board = SimpleNamespace()
     with pytest.raises(
         BoardAccessError,
         match="Could not read board vias via get_vias",
     ) as exc_info:
-        board_vias(SimpleNamespace())
+        board_vias(board)
 
     assert isinstance(exc_info.value.__cause__, AttributeError)
 

@@ -323,9 +323,10 @@ def test_register_rejects_invalid_async_provider_before_advertising(
         methods["invoke"] = invoke_values[invoke_mode]
     adapter = cast(Provider, SimpleNamespace(**methods))
     registry = ProviderRegistry()
+    manifest = fixture_manifest()
 
     with pytest.raises(ValueError, match="asynchronous"):
-        registry.register(fixture_manifest(), adapter)
+        registry.register(manifest, adapter)
 
     assert registry.candidates(request()) == ()
     assert registry.advertised_families() == frozenset()
@@ -408,7 +409,8 @@ def test_registry_revalidates_copied_manifest_before_advertising(
         )
         unsafe = original.model_copy(update={"operations": (operation,)})
     registry = ProviderRegistry()
+    dummy = Dummy()
     with pytest.raises(ValidationError):
-        registry.register(unsafe, Dummy())
+        registry.register(unsafe, dummy)
     assert registry.advertised_families() == frozenset()
     assert registry.candidates(request()) == ()

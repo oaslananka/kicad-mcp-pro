@@ -217,8 +217,10 @@ def test_apply_footprint_rotation_falls_back_to_writable_orientation() -> None:
 
 
 def test_apply_footprint_rotation_rejects_non_finite_degrees() -> None:
+    surface = _StrictRotationSurface("orientation")
+    degrees = float("inf")
     with pytest.raises(FootprintRotationError, match="must be finite"):
-        apply_footprint_rotation(_StrictRotationSurface("orientation"), float("inf"))
+        apply_footprint_rotation(surface, degrees)
 
 
 @pytest.mark.anyio

@@ -57,6 +57,25 @@ def _matching_unit_tests(source_files: list[str], root: Path) -> list[str]:
     return sorted(selected)[:MAX_TARGET_TEST_FILES]
 
 
+def _resolve_targeted_tests(
+    changed: list[str],
+    source_python: list[str],
+    *,
+    web_changed: bool,
+    root: Path,
+) -> list[str]:
+    explicit_unit_tests = [
+        path
+        for path in changed
+        if _is_under(path, "tests/unit") and Path(path).name.startswith("test_")
+    ]
+    inferred_unit_tests = _matching_unit_tests(source_python, root)
+    targeted = sorted(set(explicit_unit_tests) | set(inferred_unit_tests))
+    if web_changed:
+        return [path for path in targeted if path not in {_WEB_ROUTES_TEST, _WEB_ROUTES_STEP3_TEST}]
+    return targeted
+
+
 def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
     """Return deterministic checks for the supplied repository-relative paths."""
     changed = _existing(changed_files, root)
@@ -97,19 +116,9 @@ def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
         for path in changed
     )
 
-    explicit_unit_tests = [
-        path
-        for path in changed
-        if _is_under(path, "tests/unit") and Path(path).name.startswith("test_")
-    ]
-    inferred_unit_tests = _matching_unit_tests(source_python, root)
-    targeted_tests = sorted(set(explicit_unit_tests) | set(inferred_unit_tests))
-    if web_changed:
-        targeted_tests = [
-            path
-            for path in targeted_tests
-            if path not in {_WEB_ROUTES_TEST, _WEB_ROUTES_STEP3_TEST}
-        ]
+    targeted_tests = _resolve_targeted_tests(
+        changed, source_python, web_changed=web_changed, root=root
+    )
     if targeted_tests:
         checks.append(
             Check(

@@ -54,7 +54,8 @@ def test_set_pair_preserves_success_response(tmp_path: Path) -> None:
         write_rule=lambda name, body: calls.append((name, body)) or path,
     )
     result = service.set_pair("USB_DP", "USB_DN", "B_Cu", 0.16, 0.18, 0.12)
-    assert calls and calls[0][0] == "Differential pair USB_DP USB_DN"
+    assert calls
+    assert calls[0][0] == "Differential pair USB_DP USB_DN"
     assert result == (
         f"Differential-pair routing rule 'Differential pair USB_DP USB_DN' written to {path}.\n"
         "Layer intent: B_Cu, width: 0.1600mm, gap: 0.1800mm, max skew: 0.1200mm."

@@ -10,7 +10,8 @@ import pytest
 
 AUDIT = Path(__file__).resolve().parents[2] / "scripts" / "compare_native_netlist_ir.py"
 _SPEC = importlib.util.spec_from_file_location("compare_native_netlist_ir", AUDIT)
-assert _SPEC is not None and _SPEC.loader is not None
+assert _SPEC is not None
+assert _SPEC.loader is not None
 
 module = importlib.util.module_from_spec(_SPEC)
 sys.modules[_SPEC.name] = module

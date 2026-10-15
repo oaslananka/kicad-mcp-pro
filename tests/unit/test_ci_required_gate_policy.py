@@ -53,7 +53,8 @@ def test_gate_fails_closed_on_unknown_and_unexpected_skips() -> None:
     assert "release-readiness" in gate
     assert "GITHUB_HEAD_REF" in gate
     assert "release-please--*" in gate
-    assert "workflow_dispatch" in gate and "GITHUB_EVENT_NAME" in gate
+    assert "workflow_dispatch" in gate
+    assert "GITHUB_EVENT_NAME" in gate
     assert "| $job | $result | $explanation |" in gate
     assert 'case "$result" in' in gate
 
@@ -62,6 +63,7 @@ def test_main_and_pr_concurrency_are_isolated() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
     group = workflow["concurrency"]["group"]
     cancel = workflow["concurrency"]["cancel-in-progress"]
-    assert "github.sha" in group and "github.ref" in group
+    assert "github.sha" in group
+    assert "github.ref" in group
     assert "github.event_name == 'push'" in group
     assert "github.event_name != 'push'" in cancel

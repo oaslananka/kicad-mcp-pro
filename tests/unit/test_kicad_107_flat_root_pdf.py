@@ -49,8 +49,9 @@ def test_independent_pdf_root_identity_acceptance_any_order() -> None:
     ],
 )
 def test_missing_duplicate_or_wrong_root_identity_is_rejected(pages: tuple[str, ...]) -> None:
+    reader = _reader(*pages)
     with pytest.raises(probe.ProbeError):
-        probe.validate_pdf(_reader(*pages))
+        probe.validate_pdf(reader)
 
 
 def test_disposable_project_uses_true_kicad_top_level_roots(tmp_path: Path) -> None:
@@ -105,7 +106,8 @@ def test_audited_runner_executes_version_then_isolated_two_root_pdf(monkeypatch)
     monkeypatch.setattr(probe, "_run_step", fake_step)
     monkeypatch.setattr(probe, "PdfReader", lambda filename, strict: _reader(GOOD_2, GOOD_1))
     report = probe.run_probe("fake-kicad-cli")
-    assert report["status"] == "pass" and report["pageCount"] == 2
+    assert report["status"] == "pass"
+    assert report["pageCount"] == 2
     assert len(commands) == 2
 
 

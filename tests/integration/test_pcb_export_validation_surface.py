@@ -554,7 +554,8 @@ async def test_pcb_read_tools_fall_back_to_configured_board_file(
     assert "Zones (file-backed fallback, 1 total)" in zones
     assert "VIN_FILL" in zones
     assert "Enabled layers (file-backed fallback, 3 total)" in layers
-    assert "F.Cu" in layers and "B.Cu" in layers
+    assert "F.Cu" in layers
+    assert "B.Cu" in layers
     assert "Design rules (file-backed)" in rules
     assert "- Source: file-backed" in rules
     assert "(rules)" in rules

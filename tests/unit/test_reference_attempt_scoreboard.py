@@ -146,7 +146,8 @@ def test_repeated_report_is_byte_deterministic() -> None:
     first = json.dumps(scoreboard.audit_corpus(CORPUS), sort_keys=True)
     second = json.dumps(scoreboard.audit_corpus(CORPUS), sort_keys=True)
     assert first == second
-    assert "provider_rate_limit" in first and "provider_api_error" in first
+    assert "provider_rate_limit" in first
+    assert "provider_api_error" in first
 
 
 def test_recomputed_score_identity_mismatch_invalidates_version(
