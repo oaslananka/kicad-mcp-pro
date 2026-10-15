@@ -67,13 +67,15 @@ def test_status_tool_invariants(matrix: dict[str, Any], registered_tool_names: s
         status, tool, channel = cap["status"], cap["mcp_tool"], cap["kicad_channel"]
         label = f"{domain}/{cap['capability']}"
         if status == "covered":
-            assert tool is not None and tool in registered_tool_names, (
-                f"{label}: 'covered' requires a registered tool"
-            )
+            assert tool is not None, f"{label}: 'covered' requires a registered tool"
+            assert tool in registered_tool_names, f"{label}: 'covered' requires a registered tool"
         if status == "gap":
             assert tool is None, f"{label}: 'gap' must have no tool"
         if status == "gui-only-no-api":
-            assert tool is None and channel == "gui-only", (
+            assert tool is None, (
+                f"{label}: 'gui-only-no-api' must be tool-less and channel 'gui-only'"
+            )
+            assert channel == "gui-only", (
                 f"{label}: 'gui-only-no-api' must be tool-less and channel 'gui-only'"
             )
 

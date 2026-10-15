@@ -8,12 +8,15 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_historical_host_evidence_points_to_real_maintained_source() -> None:
     index = ROOT / "docs/evidence/agent-host-smoke-history.md"
     evidence = ROOT / "docs/evidence/kicad-pcm/2026-08-29/linux-kicad-10.0.5.md"
-    assert index.is_file() and evidence.is_file()
+    assert index.is_file()
+    assert evidence.is_file()
     original = evidence.read_text(encoding="utf-8")
     current = index.read_text(encoding="utf-8")
     for marker in ("2.1.238", "0.150.1", "546227bcb13eb851913eaf6d6d8d95c9a5ae367c"):
-        assert marker in current and marker in original
-    assert "not-run" in current and "current" in current
+        assert marker in current
+        assert marker in original
+    assert "not-run" in current
+    assert "current" in current
     assert "does not" in current.lower()
 
 

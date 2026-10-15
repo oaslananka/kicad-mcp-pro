@@ -58,9 +58,10 @@ def test_download_verified_rejects_checksum_mismatch(tmp_path: Path) -> None:
     source = tmp_path / "source.bin"
     source.write_bytes(payload)
     destination = tmp_path / "destination.bin"
+    source_uri = source.as_uri()
 
     with pytest.raises(ValueError, match="SHA-256 mismatch"):
-        download_verified(source.as_uri(), destination, "0" * 64)
+        download_verified(source_uri, destination, "0" * 64)
 
     assert not destination.exists()
 

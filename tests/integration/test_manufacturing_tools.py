@@ -279,7 +279,8 @@ async def test_release_manifest_is_reproducible_with_provenance(
     second = await call_tool_text(server, "mfg_generate_release_manifest", {})
     manifest_two = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
 
-    assert "Content hash:" in first and "Content hash:" in second
+    assert "Content hash:" in first
+    assert "Content hash:" in second
     # Reproducible: identical inputs produce an identical content hash...
     assert manifest_one["content_hash"] == manifest_two["content_hash"]
     assert manifest_one["content_hash"]
@@ -314,7 +315,7 @@ async def test_mfg_create_release_evidence_dry_run_selv(
     assert payload.get("dry_run") is True
     assert payload.get("evidence_path") is None
     gate_names = {g["gate"] for g in payload["gates"]}
-    assert {"artifact_coverage", "drc", "erc", "hv_safety"} == gate_names
+    assert gate_names == {"artifact_coverage", "drc", "erc", "hv_safety"}
     # SELV domain: HV safety gate is not applicable
     hv_gate = next(g for g in payload["gates"] if g["gate"] == "hv_safety")
     assert hv_gate["applicable"] is False

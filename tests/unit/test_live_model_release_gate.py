@@ -630,7 +630,8 @@ def test_committed_baseline_records_reviewed_required_configurations() -> None:
     assert baseline["minimum_repeats"] == 2
     assert baseline["required_configurations"] == [CONFIG_IDS[0]]
     assert list(baseline["configurations"]) == [CONFIG_IDS[0]]
-    assert isinstance(baseline["approved_at"], str) and baseline["approved_at"]
+    assert isinstance(baseline["approved_at"], str)
+    assert baseline["approved_at"]
     assert len(baseline["source_revision"]) == 40
     assert len(baseline["agent_contract_digest"]) == 64
     assert isinstance(baseline["evidence"]["workflow_run_id"], int)

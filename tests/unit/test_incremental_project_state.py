@@ -449,9 +449,10 @@ def test_root_sheet_reference_rejects_root_only_cache(project: Path) -> None:
         '(kicad_sch (version 20250114) (sheet (property "Sheetname" "power") '
         '(property "Sheetfile" "power.kicad_sch")))'
     )
+    circuit = _circuit()
     with pytest.raises(StateRebuildRequiredError, match="hierarch"):
         PersistentProjectState.rebuild(
-            project, SOURCES, _circuit(), compatibility_key=COMPATIBILITY_KEY
+            project, SOURCES, circuit, compatibility_key=COMPATIBILITY_KEY
         )
 
 
@@ -528,9 +529,10 @@ def test_old_sidecar_with_unlisted_root_sheet_rejected(project: Path) -> None:
 def test_multiple_native_schematics_need_proven_hierarchy_parity(project: Path) -> None:
     (project / "power.kicad_sch").write_text("(kicad_sch (power))")
     sources = (*SOURCES, "power.kicad_sch")
+    circuit = _circuit()
     with pytest.raises(StateRebuildRequiredError, match="hierarch"):
         PersistentProjectState.rebuild(
-            project, sources, _circuit(), compatibility_key=COMPATIBILITY_KEY
+            project, sources, circuit, compatibility_key=COMPATIBILITY_KEY
         )
 
 

@@ -140,8 +140,9 @@ def test_parse_claude_stream_rejects_unreviewed_executed_tool() -> None:
         },
     )
 
+    stream_lines = _lines(rows)
     with pytest.raises(ReferenceAgentRunnerError, match="unreviewed tool"):
-        parse_claude_stream(_lines(rows), attempt_id="attempt-001")
+        parse_claude_stream(stream_lines, attempt_id="attempt-001")
 
 
 def test_parse_claude_stream_rejects_available_execution_tools() -> None:
@@ -152,9 +153,10 @@ def test_parse_claude_stream_rejects_available_execution_tools() -> None:
 
     rows = _stream_rows()
     rows[0]["tools"] = ["ToolSearch", "Bash", "mcp__kicad__kicad_get_server_info"]
+    stream_lines = _lines(rows)
 
     with pytest.raises(ReferenceAgentRunnerError, match="tool inventory"):
-        parse_claude_stream(_lines(rows), attempt_id="attempt-001")
+        parse_claude_stream(stream_lines, attempt_id="attempt-001")
 
 
 def test_build_claude_command_exposes_only_reviewed_agent_surface(tmp_path) -> None:
@@ -378,9 +380,10 @@ def test_parse_claude_stream_requires_only_connected_kicad_mcp() -> None:
         {"name": "kicad", "status": "connected"},
         {"name": "unreviewed", "status": "connected"},
     ]
+    stream_lines = _lines(rows)
 
     with pytest.raises(ReferenceAgentRunnerError, match="MCP server inventory"):
-        parse_claude_stream(_lines(rows), attempt_id="attempt-001")
+        parse_claude_stream(stream_lines, attempt_id="attempt-001")
 
 
 def test_run_claude_session_preserves_parseable_failed_session(tmp_path, monkeypatch) -> None:
@@ -447,9 +450,10 @@ def test_parse_claude_stream_rejects_tool_outside_reviewed_phase_surface() -> No
     )
 
     allowed = frozenset({"mcp__kicad__kicad_set_project"})
+    stream_lines = _lines(_stream_rows())
     with pytest.raises(ReferenceAgentRunnerError, match="reviewed phase surface"):
         parse_claude_stream(
-            _lines(_stream_rows()),
+            stream_lines,
             attempt_id="attempt-001",
             allowed_mcp_tools=allowed,
         )
@@ -554,9 +558,10 @@ def test_parse_claude_stream_allows_catalog_tool_but_rejects_unreviewed_executio
 
     catalog = frozenset({"mcp__kicad__kicad_get_server_info", "mcp__kicad__kicad_set_project"})
     allowed = frozenset({"mcp__kicad__kicad_set_project"})
+    stream_lines = _lines(_stream_rows())
     with pytest.raises(ReferenceAgentRunnerError, match="reviewed phase execution surface"):
         parse_claude_stream(
-            _lines(_stream_rows()),
+            stream_lines,
             attempt_id="attempt-001",
             catalog_mcp_tools=catalog,
             allowed_mcp_tools=allowed,
@@ -646,7 +651,8 @@ def test_reference_agent_cli_manufacturing_does_not_require_release_approval(
 
     script = Path(__file__).resolve().parents[2] / "scripts/run_reference_board_agent.py"
     spec = importlib.util.spec_from_file_location("reference_agent_benchmark_manufacturing", script)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     board = tmp_path / "docs/evidence/reference-boards/stm32f072-usbc/v1"
