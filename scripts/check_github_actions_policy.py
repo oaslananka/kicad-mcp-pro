@@ -127,7 +127,7 @@ def _check_action_reference(
     allowed_transitive: set[str],
     errors: list[str],
 ) -> str | None:
-    if action.startswith("./") or action.startswith("docker://"):
+    if action.startswith(("./", "docker://")):
         return None
     if "@" not in action:
         errors.append(f"{workflow.name}: action has no immutable ref: {action}")

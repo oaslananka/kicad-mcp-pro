@@ -55,7 +55,7 @@ def normalize_custom_connectivity_groups(
         if pins:
             overlap = seen_pins.intersection(pins)
             if overlap:
-                duplicate = sorted(overlap)[0]
+                duplicate = min(overlap)
                 raise ValueError(
                     f"Pin {duplicate[0]}:{duplicate[1]} appears in multiple connectivity groups"
                 )

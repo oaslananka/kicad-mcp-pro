@@ -173,9 +173,7 @@ def _validate_kicad10_feature(
             require_product_evidence=status == "supported",
         )
     )
-    if status in {"partial", "blocked"}:
-        errors.extend(_validate_issue_url(detail.get("issue"), f"{label}.issue"))
-    elif "issue" in detail:
+    if status in {"partial", "blocked"} or "issue" in detail:
         errors.extend(_validate_issue_url(detail.get("issue"), f"{label}.issue"))
     if docs_text and feature not in docs_text:
         errors.append(f"{label} is not documented in the parity docs page")

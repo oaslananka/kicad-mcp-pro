@@ -1122,7 +1122,7 @@ def _write_connectivity_differential_report(
 def _differential_lane_for_range(kicad_range: str) -> DifferentialLane | None:
     if kicad_range == KICAD_10_RANGE:
         return "stable"
-    if kicad_range.startswith("10.99.") or kicad_range.startswith("11."):
+    if kicad_range.startswith(("10.99.", "11.")):
         return "preview"
     return None
 

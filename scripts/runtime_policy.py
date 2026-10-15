@@ -528,11 +528,11 @@ def _latest_vscode_release(data: object) -> str:
 
 def _kicad_stable_from_download_page(text: str) -> str:
     match = re.search(
-        r"Current Version:\s*(?:<strong>\s*)?([0-9]+(?:\.[0-9]+)+)",
+        r"Current Version:\s*(?:<strong>\s*)?(\d+(?:\.\d+)+)",
         text,
     )
     if match is None:
-        match = re.search(r"Current Version:\s*([0-9]+(?:\.[0-9]+)+)", text)
+        match = re.search(r"Current Version:\s*(\d+(?:\.\d+)+)", text)
     if match is None:
         raise ValueError("Could not find KiCad current version on download page")
     return match.group(1)

@@ -85,8 +85,6 @@ from .diagnostics import (
 )
 from .discovery import ensure_studio_project_watcher, find_kicad_version
 from .errors import (
-    IpcDisconnectedError,
-    KiCadConnectionTimeoutError,
     KiCadNotRunningError,
     ToolRegistrationTimeoutError,
 )
@@ -1276,7 +1274,7 @@ class KiCadFastMCP(FastMCP):
                     },
                 )
                 return result
-            except (KiCadNotRunningError, IpcDisconnectedError, KiCadConnectionTimeoutError) as exc:
+            except KiCadNotRunningError as exc:
                 status = "error"
                 error_code = exc.code
                 _error_detail["error_code"] = exc.code
@@ -1659,7 +1657,7 @@ def _json_rpc_protocol_version(body: bytes) -> str | None:
     """Read modern per-request metadata for version diagnostics only."""
     try:
         payload = json.loads(body.decode("utf-8"))
-    except (UnicodeError, ValueError):
+    except ValueError:
         return None
     if not isinstance(payload, dict):
         return None
@@ -2982,9 +2980,7 @@ def log(
                     if not line:
                         time.sleep(0.1)
                         continue
-                    if level and _log_level_match(line, level):
-                        typer.echo(line.rstrip())
-                    elif not level:
+                    if not level or _log_level_match(line, level):
                         typer.echo(line.rstrip())
         except KeyboardInterrupt:
             pass
@@ -2994,9 +2990,7 @@ def log(
             all_lines = f.readlines()
         tail = all_lines[-lines:] if lines < len(all_lines) else all_lines
         for line in tail:
-            if level and _log_level_match(line, level):
-                typer.echo(line.rstrip())
-            elif not level:
+            if not level or _log_level_match(line, level):
                 typer.echo(line.rstrip())
 
 

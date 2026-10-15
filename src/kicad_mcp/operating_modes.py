@@ -21,7 +21,7 @@ class OperatingMode(StrEnum):
 
 
 DEFAULT_OPERATING_MODE = OperatingMode.READONLY
-OPERATING_MODE_VALUES = tuple(mode.value for mode in OperatingMode)
+OPERATING_MODE_VALUES = [mode.value for mode in OperatingMode]
 
 _ALLOWED_REQUIREMENTS: dict[OperatingMode, frozenset[OperatingMode]] = {
     OperatingMode.READONLY: frozenset({OperatingMode.READONLY}),

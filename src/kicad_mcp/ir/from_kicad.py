@@ -197,7 +197,7 @@ def parse_schematic(
     _populate_nets(ir, connectivity_groups, raw_data)
 
     # 4. Detect power rails
-    _detect_power_rails(ir, connectivity_groups)
+    _detect_power_rails(ir)
 
     # 5. Detect interfaces from net naming
     _detect_interfaces(ir)
@@ -327,14 +327,13 @@ def _populate_nets(
 
 def _detect_power_rails(
     ir: IRCircuit,
-    connectivity_groups: list[dict[str, Any]],
 ) -> None:
     """Detect power / ground nets and group them into rails."""
     # Collect all nets that carry power names
     rail_map: dict[str, set[str]] = {}
     rail_voltage: dict[str, float] = {}
 
-    for net_name, net in list(ir.nets.items()):
+    for net_name, net in ir.nets.items():
         if not net.is_power:
             upper = net_name.upper()
             if upper not in _COMMON_POWER_TYPES and "V" not in net_name[0:1]:

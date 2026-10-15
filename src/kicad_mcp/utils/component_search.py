@@ -642,7 +642,7 @@ _mouser_limiter = RateLimiter(max_calls=5, period_seconds=1.0)
 
 
 _CURRENCY_SYMBOLS = {"$": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "₹": "INR"}
-_PRICE_NUMBER_RE = re.compile(r"\d[\d.,'\s\u00a0\u202f]*")
+_PRICE_NUMBER_RE = re.compile(r"\d[\d.,'\s]*")
 
 
 def _parse_price_text(text: str) -> float | None:
@@ -657,7 +657,7 @@ def _parse_price_text(text: str) -> float | None:
     match = _PRICE_NUMBER_RE.search(raw)
     if match is None:
         return None
-    number = re.sub(r"[\s\u00a0\u202f']", "", match.group()).rstrip(".,")
+    number = re.sub(r"[\s']", "", match.group()).rstrip(".,")
     if not number:
         return None
     prefix_currency = bool(raw[: match.start()].strip())

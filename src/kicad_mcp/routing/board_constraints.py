@@ -29,7 +29,7 @@ def ipc_trace_width_mm(current_a: float) -> float:
 
 
 def _safe_rule_name(value: str, fallback: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_]", "_", value).strip("_") or fallback
+    return re.sub(r"\W", "_", value).strip("_") or fallback
 
 
 @dataclass(frozen=True)

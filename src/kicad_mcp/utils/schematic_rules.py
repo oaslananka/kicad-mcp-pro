@@ -96,7 +96,7 @@ def _net_refs(net: NetView, prefix_re: re.Pattern[str]) -> list[str]:
 _RESISTOR_RE = re.compile(r"^R\d")
 _CAP_RE = re.compile(r"^C\d")
 _IC_RE = re.compile(r"^(?:U|IC)\d")
-_CRYSTAL_RE = re.compile(r"^(?:Y|X)\d")
+_CRYSTAL_RE = re.compile(r"^[YX]\d")
 _CONNECTOR_RE = re.compile(r"^(?:J|CN|CON)\d")
 _RESET_TOKENS = frozenset({"RST", "NRST", "RSTN", "POR"})
 _EXTERNAL_PORT_TOKEN_RE = re.compile(
@@ -246,7 +246,7 @@ def is_feedback_name(name: str) -> bool:
 # carrying an explicit polarity (+/-, _P/_N, trailing P/N). The required polarity
 # is what excludes single-ended UART TX/RX and MII control lines (TXEN, RXDV).
 _ETH_PAIR_RE = re.compile(
-    r"^(?:ETH(?:ERNET)?[ _-]*)?(?:PHY[ _-]*)?((?:MDI|MX|TRD|TX|RX|TD|RD)\d*)[ _-]*([+\-]|[PN])$",
+    r"^(?:ETH(?:ERNET)?[ _-]*)?(?:PHY[ _-]*)?((?:MDI|MX|TRD|TX|RX|TD|RD)\d*)[ _-]*([+\-PN])$",
     re.IGNORECASE,
 )
 
@@ -777,7 +777,7 @@ def _rule_external_port_protection(nets: Sequence[NetView]) -> list[Finding]:
                     "fuse, or reverse-polarity protection evidence. Add appropriate "
                     "protection at the connector or document why the port is internal."
                 ),
-                refs=tuple([*connectors, *ics]),
+                refs=(*connectors, *ics),
             )
         )
     return findings

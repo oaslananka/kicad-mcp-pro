@@ -43,8 +43,8 @@ documented contract that an unusable block is skipped. Matching only real
 numbers turns such a block back into a skip.
 """
 
-_TAG_RE = re.compile(r"\(\s*([A-Za-z_][A-Za-z0-9_]*)")
-_SHEET_RE = re.compile(r"\(sheet(?![A-Za-z0-9_])")
+_TAG_RE = re.compile(r"\(\s*([A-Za-z_]\w*)")
+_SHEET_RE = re.compile(r"\(sheet(?!\w)")
 _TWO_FLOATS_RE = re.compile(rf"\(\w+\s+({_FLOAT})\s+({_FLOAT})\s*\)")
 _PROPERTY_RE = re.compile(r'\(property\s+"((?:[^"\\]|\\.)*)"\s+"((?:[^"\\]|\\.)*)"')
 _PIN_HEAD_RE = re.compile(r'\(pin\s+"((?:[^"\\]|\\.)*)"\s+([A-Za-z_]+)')

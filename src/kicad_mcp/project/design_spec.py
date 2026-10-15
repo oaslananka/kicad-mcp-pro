@@ -193,7 +193,7 @@ def _parse_import_scalar(value: str) -> object:
         return ""
     if cleaned in {"[]", "{}"}:
         return [] if cleaned == "[]" else {}
-    if cleaned[0:1] in {"'", '"'} and cleaned[-1:] == cleaned[0]:
+    if cleaned[0:1] in {"'", '"'} and cleaned.endswith(cleaned[0]):
         return cleaned[1:-1]
     lowered = cleaned.casefold()
     if lowered in {"true", "yes", "on"}:
@@ -452,7 +452,7 @@ def _import_spec_extra_fields(
     intent_payload: dict[str, Any], outer_extras: dict[str, Any]
 ) -> dict[str, Any]:
     extras = dict(outer_extras)
-    for key in list(intent_payload):
+    for key in intent_payload:
         if key in _IMPORT_EXTRA_KEYS:
             extras[key] = intent_payload[key]
     unsupported = sorted(
@@ -871,8 +871,8 @@ def _infer_design_intent_from_board() -> tuple[ProjectDesignIntent, list[str]]:
             continue
         nearest_caps = sorted(
             capacitor_refs,
-            key=lambda capacitor_ref: _distance_mm(
-                footprints[reference], footprints[capacitor_ref]
+            key=lambda capacitor_ref, ref=reference: _distance_mm(
+                footprints[ref], footprints[capacitor_ref]
             ),
         )[:1]
         if nearest_caps:
