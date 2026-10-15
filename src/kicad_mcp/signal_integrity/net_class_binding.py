@@ -64,9 +64,13 @@ class SignalIntegrityNetClassBindingService:
 
         lines = ["## Net Class Binding Plan", ""]
         for entry in plan:
-            lines.append(f"### {entry['net_class']}")
-            lines.append(f"- Clearance: {entry['clearance_mm']} mm")
-            lines.append(f"- Track width: {entry['track_width_mm']} mm")
+            lines.extend(
+                [
+                    f"### {entry['net_class']}",
+                    f"- Clearance: {entry['clearance_mm']} mm",
+                    f"- Track width: {entry['track_width_mm']} mm",
+                ]
+            )
             if entry.get("diff_pair_gap_mm") is not None:
                 lines.append(f"- Diff-pair gap: {entry['diff_pair_gap_mm']} mm")
             if entry.get("impedance_target_ohm") is not None:

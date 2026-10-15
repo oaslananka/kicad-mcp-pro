@@ -20,11 +20,13 @@ class SignalIntegrityDielectricMaterialsService:
         materials = self.materials_provider()
         lines = [f"Available dielectric materials ({len(materials)} total):", ""]
         for material in materials:
-            lines.append(
-                f"  [{material['key']}] {material['name']}  "
-                f"Er={material['er']}  tan_d={material['loss_tangent']}"
+            lines.extend(
+                [
+                    f"  [{material['key']}] {material['name']}  "
+                    f"Er={material['er']}  tan_d={material['loss_tangent']}",
+                    f"    {material['description']}",
+                    "",
+                ]
             )
-            lines.append(f"    {material['description']}")
-            lines.append("")
         lines.append("Use key string with si_synthesize_stackup_for_interfaces().")
         return "\n".join(lines)
