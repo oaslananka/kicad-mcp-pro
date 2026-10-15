@@ -215,7 +215,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           enable-cache: true
           prune-cache: true
@@ -248,7 +248,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         if: env.skip_ci != 'true'
         with:
           enable-cache: true
@@ -301,12 +301,12 @@ jobs:
         if: env.skip_ci != 'true'
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         if: env.skip_ci != 'true'
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         if: env.skip_ci != 'true'
         with:
           enable-cache: true
@@ -403,7 +403,7 @@ jobs:
       - name: Upload same-run Sonar coverage report
         id: sonar-coverage-upload
         if: env.skip_ci != 'true' && hashFiles('ci-coverage-manifest.json') != ''
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: python-coverage-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -533,7 +533,7 @@ jobs:
         if: >-
           steps.sonar-mode.outputs.run_analysis == 'true' &&
           needs.coverage.outputs.sonar_coverage_artifact_id != ''
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: python-coverage-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Verify exact-run and exact-SHA coverage report
@@ -589,7 +589,7 @@ jobs:
         if: env.skip_ci != 'true'
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         if: env.skip_ci != 'true'
         with:
           enable-cache: true
@@ -643,7 +643,7 @@ jobs:
         if: env.skip_ci != 'true'
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         if: env.skip_ci != 'true'
         with:
           node-version-file: .node-version
@@ -676,7 +676,7 @@ jobs:
         if: env.skip_ci != 'true'
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         if: env.skip_ci != 'true'
         with:
           node-version-file: .node-version
@@ -710,7 +710,7 @@ jobs:
         if: env.skip_ci != 'true'
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         if: env.skip_ci != 'true'
         with:
           node-version-file: .node-version
@@ -739,7 +739,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           enable-cache: true
           prune-cache: true
@@ -818,7 +818,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           enable-cache: false
           version-file: uv.toml

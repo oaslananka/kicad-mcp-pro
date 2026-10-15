@@ -91,7 +91,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           enable-cache: true
           prune-cache: true
@@ -121,7 +121,7 @@ jobs:
 
       - name: Upload KiCad 10.0.6 canary artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: kicad-10-0-6-canary
           path: artifacts/kicad-10-0-6
@@ -137,7 +137,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           enable-cache: true
           prune-cache: true
@@ -240,7 +240,7 @@ jobs:
 
       - name: Upload KiCad 11 headless read report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: kicad-11-headless-read
           path: artifacts/kicad-11-preview/read
@@ -249,7 +249,7 @@ jobs:
 
       - name: Upload KiCad 11 headless write report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: kicad-11-headless-write
           path: artifacts/kicad-11-preview/write
@@ -258,7 +258,7 @@ jobs:
 
       - name: Upload KiCad 11 headless export report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: kicad-11-headless-export
           path: artifacts/kicad-11-preview/export
@@ -267,7 +267,7 @@ jobs:
 
       - name: Upload KiCad 11 preview smoke artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: kicad-11-preview-smoke
           path: artifacts/kicad-11-preview

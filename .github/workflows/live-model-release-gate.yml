@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           enable-cache: false
           version-file: uv.toml
@@ -111,7 +111,7 @@ jobs:
           PY
       - name: Upload sanitized smoke evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: live-model-smoke-${{ matrix.configuration }}-${{ github.run_id }}
           path: artifacts/live-model-smoke
@@ -146,7 +146,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           enable-cache: false
           version-file: uv.toml
@@ -207,7 +207,7 @@ jobs:
           PY
       - name: Upload sanitized configuration evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: live-model-release-${{ matrix.configuration }}-${{ github.run_id }}
           path: artifacts/live-model-eval
@@ -223,7 +223,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           enable-cache: true
           prune-cache: true
@@ -232,7 +232,7 @@ jobs:
       - name: Download sanitized configuration evidence
         id: download
         continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           pattern: live-model-release-*-${{ github.run_id }}
           path: artifacts/downloaded
@@ -247,7 +247,7 @@ jobs:
             --output artifacts/live-model-release-gate/report.json
       - name: Upload sanitized aggregate report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: live-model-release-gate-${{ github.run_id }}
           path: artifacts/live-model-release-gate/report.json
@@ -266,7 +266,7 @@ jobs:
             --output artifacts/live-model-release-gate/baselines.candidate.yaml
       - name: Upload reviewed baseline candidate
         if: steps.baseline-candidate.outcome == 'success'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: live-model-baseline-candidate-${{ github.run_id }}
           path: artifacts/live-model-release-gate/baselines.candidate.yaml

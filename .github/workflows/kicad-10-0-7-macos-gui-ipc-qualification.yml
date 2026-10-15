@@ -22,7 +22,7 @@ jobs:
           persist-credentials: false
 
       - name: Install pinned uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           version-file: uv.toml
           enable-cache: true
@@ -258,7 +258,7 @@ jobs:
 
       - name: Upload only bounded summary (never raw GUI logs)
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: kicad-10-0-7-macos-native-gui-ipc
           path: artifacts/kicad-10-0-7-macos/summary.json
