@@ -249,9 +249,13 @@ def _sot23(density: DensityLevel = "B") -> str:
     x_r = 1.45
     lines = _fp_header("SOT-23-3", "SOT-23 3-lead", "SOT-23 transistor", density)
     lines += _ref_value(-2.0, 2.0)
-    lines.append(_pad_smd(1, x_l, -pitch / 2, pad_w, pad_h))
-    lines.append(_pad_smd(2, x_l, pitch / 2, pad_w, pad_h))
-    lines.append(_pad_smd(3, x_r, 0.0, pad_w, pad_h))
+    lines.extend(
+        [
+            _pad_smd(1, x_l, -pitch / 2, pad_w, pad_h),
+            _pad_smd(2, x_l, pitch / 2, pad_w, pad_h),
+            _pad_smd(3, x_r, 0.0, pad_w, pad_h),
+        ]
+    )
     lines += _rect_line(_LAYER_FAB, -1.3, -0.65, 1.3, 0.65)
     lines += _rect_line(_LAYER_CYARD, -1.85, -1.25, 1.85, 1.25, 0.05)
     lines.append(")")
@@ -272,10 +276,14 @@ def _sot223(density: DensityLevel = "B") -> str:
         "SOT-223-3_TabPin2", "SOT-223 3-lead with tab", "SOT-223 regulator transistor", density
     )
     lines += _ref_value(-4.4, 4.4)
-    lines.append(_pad_smd(1, -pitch, y_lead, lead_w, lead_h))
-    lines.append(_pad_smd(2, 0.0, y_lead, lead_w, lead_h))
-    lines.append(_pad_smd(3, pitch, y_lead, lead_w, lead_h))
-    lines.append(_pad_smd(2, 0.0, y_tab, tab_w, tab_h))
+    lines.extend(
+        [
+            _pad_smd(1, -pitch, y_lead, lead_w, lead_h),
+            _pad_smd(2, 0.0, y_lead, lead_w, lead_h),
+            _pad_smd(3, pitch, y_lead, lead_w, lead_h),
+            _pad_smd(2, 0.0, y_tab, tab_w, tab_h),
+        ]
+    )
     lines += _rect_line(_LAYER_FAB, -3.3, -2.25, 3.3, 2.25)
     lines.append(_circle_line(_LAYER_FAB, -2.7, 1.6, 0.18, 0.08))
     lines += _rect_line(_LAYER_CYARD, -4.05, -3.85, 4.05, 4.05, 0.05)
@@ -297,10 +305,14 @@ def _sot89(density: DensityLevel = "B") -> str:
         "SOT-89-3_TabPin2", "SOT-89 3-lead with tab", "SOT-89 regulator transistor", density
     )
     lines += _ref_value(-3.7, 3.7)
-    lines.append(_pad_smd(1, -pitch, y_lead, lead_w, lead_h))
-    lines.append(_pad_smd(2, 0.0, y_lead, lead_w, lead_h))
-    lines.append(_pad_smd(3, pitch, y_lead, lead_w, lead_h))
-    lines.append(_pad_smd(2, 0.0, y_tab, tab_w, tab_h))
+    lines.extend(
+        [
+            _pad_smd(1, -pitch, y_lead, lead_w, lead_h),
+            _pad_smd(2, 0.0, y_lead, lead_w, lead_h),
+            _pad_smd(3, pitch, y_lead, lead_w, lead_h),
+            _pad_smd(2, 0.0, y_tab, tab_w, tab_h),
+        ]
+    )
     lines += _rect_line(_LAYER_FAB, -2.25, -1.55, 2.25, 1.55)
     lines.append(_circle_line(_LAYER_FAB, -1.75, 1.1, 0.15, 0.08))
     lines += _rect_line(_LAYER_CYARD, -2.75, -2.8, 2.75, 2.75, 0.05)
@@ -360,9 +372,13 @@ def _sc70(density: DensityLevel = "B") -> str:
         "SC-70-3", "SC-70 / SOT-323 3-lead small SOT", "SC-70 SOT-323 transistor", density
     )
     lines += _ref_value(-1.8, 1.8)
-    lines.append(_pad_smd(1, x_l, pitch / 2, pad_w, pad_h))
-    lines.append(_pad_smd(2, x_l, -pitch / 2, pad_w, pad_h))
-    lines.append(_pad_smd(3, x_r, 0.0, pad_w, pad_h))
+    lines.extend(
+        [
+            _pad_smd(1, x_l, pitch / 2, pad_w, pad_h),
+            _pad_smd(2, x_l, -pitch / 2, pad_w, pad_h),
+            _pad_smd(3, x_r, 0.0, pad_w, pad_h),
+        ]
+    )
     lines += _rect_line(_LAYER_FAB, -1.05, -0.65, 1.05, 0.65)
     lines += _rect_line(_LAYER_CYARD, -1.55, -1.10, 1.55, 1.10, 0.05)
     lines.append(")")
@@ -542,9 +558,13 @@ def _dpak(variant: str, density: DensityLevel = "B") -> str:
     )
     lines += _ref_value(-(cyard_y_pos + 0.6), cyard_y_pos + 0.6)
     # Pin 1 (left), Pin 2 (centre, centre lead + tab), Pin 3 (right)
-    lines.append(_pad_smd(1, -pitch, y_leads, lead_pad_w, lead_pad_h))
-    lines.append(_pad_smd(2, 0.0, y_leads, lead_pad_w, lead_pad_h))
-    lines.append(_pad_smd(3, pitch, y_leads, lead_pad_w, lead_pad_h))
+    lines.extend(
+        [
+            _pad_smd(1, -pitch, y_leads, lead_pad_w, lead_pad_h),
+            _pad_smd(2, 0.0, y_leads, lead_pad_w, lead_pad_h),
+            _pad_smd(3, pitch, y_leads, lead_pad_w, lead_pad_h),
+        ]
+    )
     # Tab (exposed pad = pin 2)
     lines.append(_pad_smd(2, 0.0, y_tab, tab_pad_w, tab_pad_h))
     lines += _rect_line(_LAYER_FAB, -body_w / 2, -body_l / 2, body_w / 2, body_l / 2)

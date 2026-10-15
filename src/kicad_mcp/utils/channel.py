@@ -197,10 +197,14 @@ def build_rlgc_ladder_deck(spec: ChannelSpec, segments: int = 20) -> str:
         node_a = f"n{index}"
         node_b = f"n{index + 1}"
         mid = f"m{index}"
-        lines.append(f"R{index} {node_a} {mid} {r_pul * seg_len:.6g}")
-        lines.append(f"L{index} {mid} {node_b} {l_pul * seg_len:.6g}")
-        lines.append(f"G{index} {node_b} 0 {node_b} 0 {g_pul * seg_len:.6g}")
-        lines.append(f"C{index} {node_b} 0 {c_pul * seg_len:.6g}")
+        lines.extend(
+            [
+                f"R{index} {node_a} {mid} {r_pul * seg_len:.6g}",
+                f"L{index} {mid} {node_b} {l_pul * seg_len:.6g}",
+                f"G{index} {node_b} 0 {node_b} 0 {g_pul * seg_len:.6g}",
+                f"C{index} {node_b} 0 {c_pul * seg_len:.6g}",
+            ]
+        )
     lines.append(f"Rload n{segments} 0 {spec.z0_ohm:.6g}")
     lines.append(".end")
     return "\n".join(lines) + "\n"

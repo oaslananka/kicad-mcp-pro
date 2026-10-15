@@ -559,12 +559,16 @@ def register(mcp: FastMCP) -> None:
         for name, verdict, detail in checks:
             lines.append(f"- {name}: {verdict} | {detail}")
         method = emc_method()
-        lines.append(
-            f"- Method: {method['method']} (solver_grade={method['solver_grade']}). "
-            f"{method['accuracy']}"
+        lines.extend(
+            [
+                (
+                    f"- Method: {method['method']} (solver_grade={method['solver_grade']}). "
+                    f"{method['accuracy']}"
+                ),
+                f"- {format_solver_verdict(method)}",
+                f"- Note: {method['note']} Treat results as a critic, not a release sign-off.",
+            ]
         )
-        lines.append(f"- {format_solver_verdict(method)}")
-        lines.append(f"- Note: {method['note']} Treat results as a critic, not a release sign-off.")
         overall: Verdict = "PASS"
         if any(verdict == "FAIL" for _, verdict, _ in checks):
             overall = "FAIL"

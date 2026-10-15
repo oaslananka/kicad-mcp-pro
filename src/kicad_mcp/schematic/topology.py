@@ -106,17 +106,21 @@ class SchematicTopologyService:
         position = info.get("position", {})
         size = info.get("size", {})
         lines = [f"Sheet '{sheet_name}'"]
-        lines.append(f"- File: {info.get('filename')}")
-        lines.append(
-            "- Position: "
-            f"({float(position.get('x', 0.0)):.2f}, {float(position.get('y', 0.0)):.2f}) mm"
+        lines.extend(
+            [
+                f"- File: {info.get('filename')}",
+                (
+                    f"- Position: ({float(position.get('x', 0.0)):.2f}, "
+                    f"{float(position.get('y', 0.0)):.2f}) mm"
+                ),
+                (
+                    f"- Size: ({float(size.get('width', 0.0)):.2f}, "
+                    f"{float(size.get('height', 0.0)):.2f}) mm"
+                ),
+                f"- Page: {info.get('page_number', '?')}",
+                f"- Pins: {len(pins)}",
+            ]
         )
-        lines.append(
-            "- Size: "
-            f"({float(size.get('width', 0.0)):.2f}, {float(size.get('height', 0.0)):.2f}) mm"
-        )
-        lines.append(f"- Page: {info.get('page_number', '?')}")
-        lines.append(f"- Pins: {len(pins)}")
         return "\n".join(lines)
 
     def connectivity_graph(self, schematic_file: Path) -> str:

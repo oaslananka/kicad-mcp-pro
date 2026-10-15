@@ -317,29 +317,19 @@ def _dfm_check_lines(
             )
     else:
         checks_run += 3
-        lines.append(
-            _format_status(
-                "PASS" if not violations else "FAIL",
-                f"DRC violations: {len(violations)}",
-            )
-        )
-        lines.append(
-            _format_status(
-                "PASS" if not unconnected else "FAIL",
-                f"Unconnected items: {len(unconnected)}",
-            )
-        )
-        lines.append(
-            _format_status(
-                "PASS" if not courtyard else "WARN",
-                f"Courtyard issues: {len(courtyard)}",
-            )
-        )
-        lines.append(
-            _format_status(
-                "PASS" if not silk else "WARN",
-                f"Silk overlap hints: {len(silk)}",
-            )
+        lines.extend(
+            [
+                _format_status(
+                    "PASS" if not violations else "FAIL", f"DRC violations: {len(violations)}"
+                ),
+                _format_status(
+                    "PASS" if not unconnected else "FAIL", f"Unconnected items: {len(unconnected)}"
+                ),
+                _format_status(
+                    "PASS" if not courtyard else "WARN", f"Courtyard issues: {len(courtyard)}"
+                ),
+                _format_status("PASS" if not silk else "WARN", f"Silk overlap hints: {len(silk)}"),
+            ]
         )
         checks_run += 1
 
