@@ -404,14 +404,14 @@ def _tool_error_code(message: str, *, tool_name: str = "") -> str:
     if "permission" in lowered or "denied" in lowered or "not allowed" in lowered:
         return "PERMISSION_DENIED"
     missing_or_not_found = _NOT_FOUND_LITERAL in lowered or "missing" in lowered
+    if _NOT_FOUND_LITERAL in lowered:
+        return "NOT_FOUND"
     if "symbol" in lowered and missing_or_not_found:
         return "SYMBOL_NOT_FOUND"
     if "footprint" in lowered and missing_or_not_found:
         return "FOOTPRINT_NOT_FOUND"
     if "net" in lowered and missing_or_not_found:
         return "NET_NOT_FOUND"
-    if _NOT_FOUND_LITERAL in lowered:
-        return "NOT_FOUND"
     return "TOOL_EXECUTION_FAILED"
 
 
@@ -2862,7 +2862,7 @@ def init(
         status_icon = "✅" if report.ok else "⚠️"
         typer.echo(f"\n  Health:  {report.status} {status_icon}")
         for check in report.checks:
-            icon = {"ok": "✅", "warn": "⚠️"}.get(check.status, "❌")
+            icon = "✅" if check.status == "ok" else "⚠️" if check.status == "warn" else "❌"
             typer.echo(f"    {icon} {check.name}: {check.message}")
     except Exception as exc:
         typer.echo(f"\n  Health:  Check failed - {exc}")
@@ -2935,17 +2935,12 @@ def status(
     # ── Checks ──
     typer.echo(f"\n{'─── Health Checks ───'}")
     for check in report.checks:
-        icon = {"ok": "✅", "warn": "⚠️"}.get(check.status, "❌")
+        icon = "✅" if check.status == "ok" else "⚠️" if check.status == "warn" else "❌"
         typer.echo(f"  {icon}  {check.name}: {check.message}")
         if check.hint:
             typer.echo(f"      Hint: {check.hint}")
 
-    if report.ok:
-        overall_icon = "✅"
-    elif report.status == "degraded":
-        overall_icon = "⚠️"
-    else:
-        overall_icon = "❌"
+    overall_icon = "✅" if report.ok else "⚠️" if report.status == "degraded" else "❌"
     typer.echo(f"\n  Overall: {report.status} {overall_icon}")
 
 
