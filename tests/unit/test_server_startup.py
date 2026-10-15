@@ -228,7 +228,9 @@ def test_lazy_registration_routes_stdout_to_stderr(capsys) -> None:
     assert server._lazy_registration_complete is True
 
 
-def test_lazy_registration_thread_does_not_capture_protocol_stdout(capsys) -> None:
+def test_lazy_registration_thread_does_not_capture_protocol_stdout(
+    capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
     server = KiCadFastMCP(name="kicad-mcp-pro-test")
     started = threading.Event()
     release = threading.Event()
@@ -239,17 +241,14 @@ def test_lazy_registration_thread_does_not_capture_protocol_stdout(capsys) -> No
         print("2026-lazy-thread-before-json")
 
     server.set_lazy_registration(register)
-    original_stdout = sys.stdout
+    monkeypatch.setattr(sys, "stdout", sys.stdout)
     _ensure_thread_aware_stdout()
-    try:
-        thread = threading.Thread(target=server.ensure_registered)
-        thread.start()
-        assert started.wait(timeout=5)
-        print("2026-json-rpc-response")
-        release.set()
-        thread.join(timeout=5)
-    finally:
-        sys.stdout = original_stdout
+    thread = threading.Thread(target=server.ensure_registered)
+    thread.start()
+    assert started.wait(timeout=5)
+    print("2026-json-rpc-response")
+    release.set()
+    thread.join(timeout=5)
 
     assert not thread.is_alive()
     captured = capsys.readouterr()
