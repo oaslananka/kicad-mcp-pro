@@ -138,6 +138,9 @@ _DIAGNOSTICS_HEADER = "Diagnostics:"
 _FILE_BACKED_SOURCE_LABEL = "- Source: file-backed"
 _MANUAL_BOARD_RELOAD_MESSAGE = "The PCB file was updated. Reload it manually in KiCad if needed."
 _NOT_CONFIGURED_LABEL = "(not configured)"
+_UNKNOWN_LABEL = "(unknown)"
+_NONE_LABEL = "(none)"
+_NET_NUMBER_PATTERN = r"\(net\s+(\d+)\)"
 _PCB_BLOCKS_STATE_FILENAME = "pcb_blocks.json"
 STRING_PATTERN = r'"((?:\\.|[^"\\])*)"'
 FLOAT_PATTERN = r"-?\d+(?:\.\d+)?"
@@ -968,17 +971,17 @@ def _board_file_segments(content: str) -> list[dict[str, object]]:
         end = re.search(rf"\(end\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\)", block)
         layer = re.search(r'\(layer\s+"([^"]+)"\)', block)
         width = re.search(rf"\(width\s+({FLOAT_PATTERN})\)", block)
-        net = re.search(r"\(net\s+(\d+)\)", block)
+        net = re.search(_NET_NUMBER_PATTERN, block)
         segments.append(
             {
                 "index": index,
                 "start": (float(start.group(1)), float(start.group(2))) if start else None,
                 "end": (float(end.group(1)), float(end.group(2))) if end else None,
-                "layer": layer.group(1) if layer else "(unknown)",
+                "layer": layer.group(1) if layer else _UNKNOWN_LABEL,
                 "width_mm": float(width.group(1)) if width else None,
                 "net": net_names.get(net.group(1), f"net-{net.group(1)}")
                 if net is not None
-                else "(none)",
+                else _NONE_LABEL,
             }
         )
     return segments
@@ -996,7 +999,7 @@ def _board_file_vias(content: str) -> list[dict[str, object]]:
         size = re.search(rf"\(size\s+({FLOAT_PATTERN})\)", block)
         drill = re.search(rf"\(drill\s+({FLOAT_PATTERN})\)", block)
         layers = _LAYERS_BLOCK_RE.search(block)
-        net = re.search(r"\(net\s+(\d+)\)", block)
+        net = re.search(_NET_NUMBER_PATTERN, block)
         via_type_match = re.match(r"\(via\s+([A-Za-z_-]+)", block.strip())
         via_type = via_type_match.group(1) if via_type_match is not None else "through"
         vias.append(
@@ -1010,7 +1013,7 @@ def _board_file_vias(content: str) -> list[dict[str, object]]:
                 "layers": _quoted_values(layers.group(1)) if layers else [],
                 "net": net_names.get(net.group(1), f"net-{net.group(1)}")
                 if net is not None
-                else "(none)",
+                else _NONE_LABEL,
                 "type": via_type,
             }
         )
@@ -1023,23 +1026,23 @@ def _board_file_zones(content: str) -> list[dict[str, object]]:
     for index, block in enumerate(_iter_blocks(content, "zone"), start=1):
         name = re.search(rf"\(name\s+{STRING_PATTERN}\)", block)
         net_name = re.search(rf"\(net_name\s+{STRING_PATTERN}\)", block)
-        net = re.search(r"\(net\s+(\d+)\)", block)
+        net = re.search(_NET_NUMBER_PATTERN, block)
         layer = re.search(rf"\(layer\s+{STRING_PATTERN}\)", block)
         layers_match = _LAYERS_BLOCK_RE.search(block)
         layers = _quoted_values(layers_match.group(1)) if layers_match else []
         if not layers and layer is not None:
             layers = [layer.group(1)]
+        if net_name is not None:
+            zone_net = net_name.group(1)
+        elif net is not None:
+            zone_net = net_names.get(net.group(1), f"net-{net.group(1)}")
+        else:
+            zone_net = _NONE_LABEL
         zones.append(
             {
                 "index": index,
                 "name": name.group(1) if name else "",
-                "net": net_name.group(1)
-                if net_name is not None
-                else (
-                    net_names.get(net.group(1), f"net-{net.group(1)}")
-                    if net is not None
-                    else "(none)"
-                ),
+                "net": zone_net,
                 "layers": layers,
             }
         )
@@ -1073,7 +1076,7 @@ def _board_file_layers(content: str) -> list[dict[str, object]]:
     inferred: set[str] = set()
     for segment in _board_file_segments(content):
         layer = str(segment.get("layer", "")).strip()
-        if layer and layer != "(unknown)":
+        if layer and layer != _UNKNOWN_LABEL:
             inferred.add(layer)
     for via in _board_file_vias(content):
         inferred.update(str(layer) for layer in cast(list[object], via.get("layers", [])) if layer)
@@ -1250,10 +1253,10 @@ def _file_backed_tracks(
     for index, track in enumerate(tracks, start=1):
         start = cast(tuple[float, float] | None, track["start"])
         end = cast(tuple[float, float] | None, track["end"])
-        start_text = f"({start[0]:.2f}, {start[1]:.2f})" if start else "(unknown)"
-        end_text = f"({end[0]:.2f}, {end[1]:.2f})" if end else "(unknown)"
+        start_text = f"({start[0]:.2f}, {start[1]:.2f})" if start else _UNKNOWN_LABEL
+        end_text = f"({end[0]:.2f}, {end[1]:.2f})" if end else _UNKNOWN_LABEL
         width = track["width_mm"]
-        width_text = f"{float(width):.3f} mm" if isinstance(width, int | float) else "(unknown)"
+        width_text = f"{float(width):.3f} mm" if isinstance(width, int | float) else _UNKNOWN_LABEL
         lines.append(
             f"{index}. {start_text} -> {end_text} mm "
             f"layer={track['layer']} width={width_text} net={track['net']} "
@@ -1306,7 +1309,7 @@ def _file_backed_footprints(
         position = (
             f"({float(x_mm):.2f}, {float(y_mm):.2f})"
             if isinstance(x_mm, int | float) and isinstance(y_mm, int | float)
-            else "(unknown)"
+            else _UNKNOWN_LABEL
         )
         lines.append(
             f"- {reference} ({entry.get('value', '')}) @ {position} mm "
@@ -1327,15 +1330,15 @@ def _file_backed_vias(ipc_error: BaseException) -> str:
     lines = [f"Vias (file-backed fallback, {total} total):"]
     for via in vias:
         position = cast(tuple[float, float] | None, via["position"])
-        position_text = f"({position[0]:.2f}, {position[1]:.2f})" if position else "(unknown)"
+        position_text = f"({position[0]:.2f}, {position[1]:.2f})" if position else _UNKNOWN_LABEL
         diameter = via["diameter_mm"]
         drill = via["drill_mm"]
         diameter_text = (
-            f"{float(diameter):.3f} mm" if isinstance(diameter, int | float) else "(unknown)"
+            f"{float(diameter):.3f} mm" if isinstance(diameter, int | float) else _UNKNOWN_LABEL
         )
-        drill_text = f"{float(drill):.3f} mm" if isinstance(drill, int | float) else "(unknown)"
+        drill_text = f"{float(drill):.3f} mm" if isinstance(drill, int | float) else _UNKNOWN_LABEL
         layers = cast(list[str], via["layers"])
-        layer_text = ",".join(layers) if layers else "(unknown)"
+        layer_text = ",".join(layers) if layers else _UNKNOWN_LABEL
         lines.append(
             f"{via['index']}. {position_text} mm diameter={diameter_text} "
             f"drill={drill_text} net={via['net']} type={via['type']} "
@@ -1370,7 +1373,7 @@ def _file_backed_zones(ipc_error: BaseException) -> str:
     lines = [f"Zones (file-backed fallback, {total} total):"]
     for zone in zones:
         layers = cast(list[str], zone["layers"])
-        layer_text = ",".join(layers) if layers else "(unknown)"
+        layer_text = ",".join(layers) if layers else _UNKNOWN_LABEL
         lines.append(
             f"{zone['index']}. name={zone['name'] or '(unnamed)'} "
             f"net={zone['net']} layers={layer_text} id=file:zone:{zone['index']}"
@@ -3531,13 +3534,14 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
         if (additions or replacements) and payload.auto_place:
             auto_place_note = _auto_place_force_directed_board_file(grid_mm=1.0)
 
-        reload_note = (
-            _reload_board_after_file_sync()
-            if (additions or replacements) and payload.allow_open_board
-            else "The PCB file was updated. Reload it manually in KiCad if needed."
-            if additions or replacements
-            else ""
-        )
+        if additions or replacements:
+            reload_note = (
+                _reload_board_after_file_sync()
+                if payload.allow_open_board
+                else _MANUAL_BOARD_RELOAD_MESSAGE
+            )
+        else:
+            reload_note = ""
 
         lines = [
             f"Schematic components considered: {len(components)}",
@@ -3555,7 +3559,7 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
         unresolved_refs = cast(list[str], pad_summary["unresolved_refs"])
         lines.append(
             "Refs with unresolved pad nets: "
-            + (", ".join(unresolved_refs[:12]) if unresolved_refs else "(none)")
+            + (", ".join(unresolved_refs[:12]) if unresolved_refs else _NONE_LABEL)
         )
         if len(unresolved_refs) > 12:
             lines.append(f"... and {len(unresolved_refs) - 12} more")
@@ -4675,7 +4679,12 @@ def _register_placement_critique_tools(mcp: FastMCP) -> None:
 
         errors = [f for f in findings if f.severity == "error"]
         warnings = [f for f in findings if f.severity == "warning"]
-        verdict = "fail" if errors else ("warn" if warnings else "pass")
+        if errors:
+            verdict = "fail"
+        elif warnings:
+            verdict = "warn"
+        else:
+            verdict = "pass"
 
         result = {
             "status": "ok",

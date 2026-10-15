@@ -88,11 +88,8 @@ def artifact_coverage(
     files: list[Path] | None = None,
 ) -> dict[str, list[Path]]:
     """Classify required manufacturing artifacts using disjoint reviewed filename rules."""
-    files = (
-        files
-        if files is not None
-        else (find_release_files(output_dir) if output_dir.exists() else [])
-    )
+    if files is None:
+        files = find_release_files(output_dir) if output_dir.exists() else []
     pick_and_place = [path for path in files if _is_pick_and_place(path)]
     pick_and_place_set = set(pick_and_place)
     return {

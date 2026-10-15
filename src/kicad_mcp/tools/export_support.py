@@ -89,7 +89,7 @@ def _run_cli(*args: str, timeout: float | None = None) -> tuple[int, str, str]:
 
                 code, _stdout, stderr = last_result
                 return_code = code
-                status = "ok" if code == 0 else "timeout" if code == 124 else "error"
+                status = {0: "ok", 124: "timeout"}.get(code, "error")
                 if code == 0:
                     return last_result
                 if attempt == _CLI_RETRY_ATTEMPTS - 1:

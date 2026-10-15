@@ -161,7 +161,7 @@ def start_reviewed_attempt(
             # existence of a log that an interrupted runner might have left.
             _parse_agent_log(workspace.agent_log_path, workspace.attempt_id)
             state = "executor_returned_success_with_log"
-    except (Exception, SystemExit, KeyboardInterrupt):
+    except Exception:
         # No exception or provider error text is placed in the public receipt.
         state = "executor_failed"
     evidence["state"] = state

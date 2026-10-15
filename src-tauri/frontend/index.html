@@ -161,7 +161,7 @@
       </div>
     </div>
 
-    <script>
+    <script type="module">
       const DASHBOARD_URL = 'http://127.0.0.1:3334/ui';
       const HEALTH_URL = 'http://127.0.0.1:3334/api/health';
 
@@ -270,8 +270,8 @@
           if (resp.status === 200 || resp.status === 0) {
             healthOk = true;
           }
-        } catch (_) {
-          // Retry with HEAD
+        } catch (_error) {
+          // Ignore probe failure; fallback to HEAD probe if GET fails
           try {
             const headResp = await fetch(HEALTH_URL, {
               method: 'HEAD',
@@ -281,8 +281,8 @@
             if (headResp.status === 200 || headResp.status === 0) {
               healthOk = true;
             }
-          } catch (_2) {
-            // Will retry
+          } catch (_headError) {
+            // Ignore probe failure; retry loop continues until MAX_RETRIES
           }
         }
 
@@ -316,8 +316,10 @@
         setTimeout(checkServer, RETRY_INTERVAL_MS);
       }
 
+      window.handleRestartServer = handleRestartServer;
+
       // Start checking
-      checkServer();
+      await checkServer();
     </script>
   </body>
 </html>

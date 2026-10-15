@@ -718,11 +718,10 @@ def _render_design_intent(intent: ProjectDesignIntent) -> str:
     if intent.interfaces:
         lines.append(f"- Interfaces: {len(intent.interfaces)}")
         for iface in intent.interfaces[:10]:
-            impedance = (
-                f"  {iface.impedance_target_ohm}ohm" + (" diff" if iface.differential else "")
-                if iface.impedance_target_ohm is not None
-                else ""
-            )
+            impedance = ""
+            if iface.impedance_target_ohm is not None:
+                diff_suffix = " diff" if iface.differential else ""
+                impedance = f"  {iface.impedance_target_ohm}ohm{diff_suffix}"
             lines.append(f"  {iface.kind}{impedance}")
     if intent.compliance:
         lines.append("- Compliance: " + ", ".join(c.kind for c in intent.compliance))

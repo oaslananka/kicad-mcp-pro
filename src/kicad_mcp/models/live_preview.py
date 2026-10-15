@@ -210,13 +210,12 @@ class LivePreviewPayload(BaseModel):
             reload_outcome = "confirmed"
         else:
             reload_outcome = str(payload.get("reload_outcome") or "skipped")
-        reload_mode = (
-            "confirmed_gui_reload"
-            if reload_confirmed
-            else "best_effort_gui_request"
-            if reload_attempted
-            else "skipped"
-        )
+        if reload_confirmed:
+            reload_mode = "confirmed_gui_reload"
+        elif reload_attempted:
+            reload_mode = "best_effort_gui_request"
+        else:
+            reload_mode = "skipped"
         upstream_blockers = [str(item) for item in payload.get("upstream_blockers", [])]
         if reload_attempted and not reload_confirmed:
             upstream_blockers.append(SCHEMATIC_GUI_RELOAD_UPSTREAM_BLOCKER_URL)

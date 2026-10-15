@@ -141,7 +141,12 @@ def _render(slot: dict[str, object], icon: Image.Image) -> Path:
 
     y = 390
     for idx, line in enumerate(slot["lines"]):
-        color = SUCCESS if idx < 2 else (WARN if idx == 2 else ACCENT)
+        if idx < 2:
+            color = SUCCESS
+        elif idx == 2:
+            color = WARN
+        else:
+            color = ACCENT
         draw.rounded_rectangle((184, y - 6, 218, y + 28), radius=8, fill=color)
         _text(draw, (238, y - 12), str(line), 27)
         y += 88

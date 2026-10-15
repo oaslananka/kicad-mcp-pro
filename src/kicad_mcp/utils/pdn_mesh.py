@@ -35,7 +35,7 @@ def ipc2221_temperature_rise_c(
     thickness_mils = copper_weight_oz * OZ_TO_THICKNESS_MM * _MM_TO_MILS
     area_mils2 = width_mils * thickness_mils
     k = _IPC2221_K_INTERNAL if internal else _IPC2221_K_EXTERNAL
-    # dT = (I / (k * A^0.725)) ^ (1 / 0.44)
+    # Compute delta temperature via IPC-2221 formula:
     return float((current_a / (k * area_mils2**0.725)) ** (1.0 / 0.44))
 
 

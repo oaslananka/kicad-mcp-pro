@@ -122,16 +122,13 @@ class SignalIntegrityStackupSynthesisService:
                 has_differential = True
             if freq >= 1.0:
                 has_highspeed = True
-            iface_summaries.append(
-                f"  {kind}: {freq:.2f} GHz"
-                + (
-                    f", {impedance}ohm diff"
-                    if impedance and diff
-                    else f", {impedance}ohm SE"
-                    if impedance
-                    else ""
-                )
-            )
+            if impedance and diff:
+                imp_suffix = f", {impedance}ohm diff"
+            elif impedance:
+                imp_suffix = f", {impedance}ohm SE"
+            else:
+                imp_suffix = ""
+            iface_summaries.append(f"  {kind}: {freq:.2f} GHz{imp_suffix}")
 
         # Override material if frequency mandates it
         freq_material = recommend_dielectric_for_frequency(max_freq_ghz)

@@ -43,6 +43,8 @@ _SIDE_DIR: dict[PinSide, str] = {
     "bottom": "up",
 }
 
+_EFFECTS_HIDE = "\t\t\t(effects (font (size 1.27 1.27)) (hide yes))"
+
 # Grid spacing for symbol pins (50 mil = 1.27 mm in KiCad 6+ units)
 _PIN_PITCH = 2.54  # mm (100 mil)
 _PIN_LENGTH = 2.54  # mm (100 mil)
@@ -164,15 +166,15 @@ def generate_symbol(
         "\t\t)",
         f'\t\t(property "Footprint" {_escape(footprint_hint)}',
         "\t\t\t(at 0 -5.08 0)",
-        "\t\t\t(effects (font (size 1.27 1.27)) (hide yes))",
+        _EFFECTS_HIDE,
         "\t\t)",
         f'\t\t(property "Datasheet" {_escape(datasheet)}',
         "\t\t\t(at 0 -7.62 0)",
-        "\t\t\t(effects (font (size 1.27 1.27)) (hide yes))",
+        _EFFECTS_HIDE,
         "\t\t)",
         f'\t\t(property "Description" {_escape(description)}',
         "\t\t\t(at 0 -10.16 0)",
-        "\t\t\t(effects (font (size 1.27 1.27)) (hide yes))",
+        _EFFECTS_HIDE,
         "\t\t)",
     ]
 

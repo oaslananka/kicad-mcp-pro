@@ -363,6 +363,14 @@ def _development_tool_version(name: str, path: Path | None, arguments: list[str]
     return output[0] if output else None
 
 
+def _capability_mode(ipc_reachable: bool, cli_found: bool) -> DevelopmentCapabilityMode:
+    if ipc_reachable:
+        return "gui-connected"
+    if cli_found:
+        return "headless-kicad"
+    return "core-only"
+
+
 def build_development_diagnostics(
     checkout: Path,
     *,
@@ -377,11 +385,7 @@ def build_development_diagnostics(
     if contract is None:
         return DevelopmentDiagnostics(
             available=False,
-            capability_mode="gui-connected"
-            if ipc_reachable
-            else "headless-kicad"
-            if cli_found
-            else "core-only",
+            capability_mode=_capability_mode(ipc_reachable, cli_found),
             prepared=False,
         )
 
@@ -491,9 +495,7 @@ def build_development_diagnostics(
             ("venv", venv_root),
         )
     ]
-    capability_mode: DevelopmentCapabilityMode = (
-        "gui-connected" if ipc_reachable else "headless-kicad" if cli_found else "core-only"
-    )
+    capability_mode: DevelopmentCapabilityMode = _capability_mode(ipc_reachable, cli_found)
     return DevelopmentDiagnostics(
         capability_mode=capability_mode,
         prepared=(root / ".dev-env.sh").is_file(),
@@ -884,16 +886,15 @@ def build_diagnostic_report(*, probe_cli: bool, probe_ipc: bool) -> DiagnosticRe
     checkout = (
         Path(package_diagnostics.repo_path) if package_diagnostics.repo_path is not None else None
     )
-    development = (
-        build_development_diagnostics(
+    development: DevelopmentDiagnostics | None = None
+    if checkout is not None:
+        cli_path = Path(cfg.kicad_cli) if cfg.kicad_cli else None
+        development = build_development_diagnostics(
             checkout,
             cli_found=cli_found,
             ipc_reachable=ipc_reachable,
-            cli_path=Path(cfg.kicad_cli) if cfg.kicad_cli else None,
+            cli_path=cli_path,
         )
-        if checkout is not None
-        else None
-    )
     return DiagnosticReport(
         ok=ok,
         status=status,

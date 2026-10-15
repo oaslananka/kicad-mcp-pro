@@ -155,11 +155,19 @@ class SchematicCapabilityEntry(TypedDict):
     notes: str
 
 
+_API_COMPONENT_COLLECTION_GET = "ComponentCollection.get"
+_API_COMPONENT_COLLECTION_ADD = "ComponentCollection.add"
+_API_SCHEMATIC_GET_NET_FOR_PIN = "Schematic.get_net_for_pin"
+_API_SHEET_MANAGER_GET_SHEET_BY_NAME = "SheetManager.get_sheet_by_name"
+_POWER_LIB_PREFIX = "power:"
+_SEXPR_SYMBOL_OPEN = "(symbol"
+
+
 SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
     "sch_get_symbols": {
         "kicad_sch_api_support": "wrapper_needed",
         "verified_surface": [
-            "ComponentCollection.get",
+            _API_COMPONENT_COLLECTION_GET,
             "ComponentCollection.filter",
             "Component.to_dict",
         ],
@@ -183,7 +191,7 @@ SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
     },
     "sch_get_net_names": {
         "kicad_sch_api_support": "wrapper_needed",
-        "verified_surface": ["Schematic.get_net_for_pin", "Schematic.get_connected_pins"],
+        "verified_surface": [_API_SCHEMATIC_GET_NET_FOR_PIN, "Schematic.get_connected_pins"],
         "notes": (
             "Net-name summaries can be rebuilt from pin connectivity helpers, but require "
             "a compatibility wrapper."
@@ -191,7 +199,7 @@ SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
     },
     "sch_add_symbol": {
         "kicad_sch_api_support": "native",
-        "verified_surface": ["ComponentCollection.add"],
+        "verified_surface": [_API_COMPONENT_COLLECTION_ADD],
         "notes": "Component placement maps directly to ComponentCollection.add().",
     },
     "sch_add_wire": {
@@ -206,7 +214,7 @@ SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
     },
     "sch_add_power_symbol": {
         "kicad_sch_api_support": "wrapper_needed",
-        "verified_surface": ["ComponentCollection.add"],
+        "verified_surface": [_API_COMPONENT_COLLECTION_ADD],
         "notes": (
             "Power symbols can be added as components, but hidden reference/value formatting "
             "needs a wrapper."
@@ -234,7 +242,7 @@ SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
     },
     "sch_update_properties": {
         "kicad_sch_api_support": "wrapper_needed",
-        "verified_surface": ["ComponentCollection.get", "Component.set_property"],
+        "verified_surface": [_API_COMPONENT_COLLECTION_GET, "Component.set_property"],
         "notes": (
             "Property updates are supported through component objects, but the current tool "
             "contract needs a wrapper."
@@ -244,7 +252,7 @@ SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
         "kicad_sch_api_support": "wrapper_needed",
         "verified_surface": [
             "create_schematic",
-            "ComponentCollection.add",
+            _API_COMPONENT_COLLECTION_ADD,
             "Schematic.add_wire",
             "Schematic.add_label",
         ],
@@ -279,7 +287,7 @@ SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
     },
     "sch_annotate": {
         "kicad_sch_api_support": "wrapper_needed",
-        "verified_surface": ["ComponentCollection.all", "ComponentCollection.get"],
+        "verified_surface": ["ComponentCollection.all", _API_COMPONENT_COLLECTION_GET],
         "notes": "Annotation remains a deterministic wrapper built on top of component metadata.",
     },
     "sch_reload": {
@@ -325,12 +333,15 @@ SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
     },
     "sch_list_sheets": {
         "kicad_sch_api_support": "native",
-        "verified_surface": ["SheetManager.get_sheet_hierarchy", "SheetManager.get_sheet_by_name"],
+        "verified_surface": [
+            "SheetManager.get_sheet_hierarchy",
+            _API_SHEET_MANAGER_GET_SHEET_BY_NAME,
+        ],
         "notes": "Sheet listing is available directly from the verified sheet manager APIs.",
     },
     "sch_get_sheet_info": {
         "kicad_sch_api_support": "native",
-        "verified_surface": ["SheetManager.get_sheet_by_name"],
+        "verified_surface": [_API_SHEET_MANAGER_GET_SHEET_BY_NAME],
         "notes": (
             "Detailed sheet metadata is available directly from SheetManager.get_sheet_by_name()."
         ),
@@ -347,7 +358,7 @@ SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
         "kicad_sch_api_support": "wrapper_needed",
         "verified_surface": [
             "Schematic.get_connected_pins",
-            "Schematic.get_net_for_pin",
+            _API_SCHEMATIC_GET_NET_FOR_PIN,
             "WireCollection.all",
         ],
         "notes": (
@@ -358,9 +369,9 @@ SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
     "sch_trace_net": {
         "kicad_sch_api_support": "wrapper_needed",
         "verified_surface": [
-            "Schematic.get_net_for_pin",
+            _API_SCHEMATIC_GET_NET_FOR_PIN,
             "SheetManager.get_sheet_hierarchy",
-            "SheetManager.get_sheet_by_name",
+            _API_SHEET_MANAGER_GET_SHEET_BY_NAME,
         ],
         "notes": (
             "Net tracing uses verified sheet metadata plus compatibility parsing to report "
@@ -369,7 +380,7 @@ SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
     },
     "sch_auto_place_symbols": {
         "kicad_sch_api_support": "wrapper_needed",
-        "verified_surface": ["ComponentCollection.get", "Component.move", "Schematic.save"],
+        "verified_surface": [_API_COMPONENT_COLLECTION_GET, "Component.move", "Schematic.save"],
         "notes": (
             "Auto-placement is implemented as a deterministic wrapper around component "
             "move helpers."
@@ -377,7 +388,7 @@ SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
     },
     "sch_autoplace_fields": {
         "kicad_sch_api_support": "wrapper_needed",
-        "verified_surface": ["ComponentCollection.get"],
+        "verified_surface": [_API_COMPONENT_COLLECTION_GET],
         "notes": (
             "Reference/Value field auto-placement is a deterministic S-expression "
             "wrapper; kicad-sch-api does not expose KiCad's autoplace_fields."
@@ -385,7 +396,7 @@ SCHEMATIC_BACKEND_CAPABILITY_MATRIX: dict[str, SchematicCapabilityEntry] = {
     },
     "sch_fix_readability": {
         "kicad_sch_api_support": "wrapper_needed",
-        "verified_surface": ["ComponentCollection.get"],
+        "verified_surface": [_API_COMPONENT_COLLECTION_GET],
         "notes": (
             "Closed-loop readability fixer orchestrating headless visual-QA, field "
             "auto-placement, and sheet resizing; no direct kicad-sch-api surface."
@@ -572,7 +583,7 @@ class _KicadSchApiBackend:
                 # definition; project libraries such as "ecc83-pp:GND" carry it too.
                 is_power = power_flags.get(parsed["lib_id"])
                 if is_power is None:
-                    is_power = parsed["lib_id"].startswith("power:")
+                    is_power = parsed["lib_id"].startswith(_POWER_LIB_PREFIX)
                 if is_power:
                     power_symbols.append(parsed)
                 else:
@@ -2808,7 +2819,7 @@ def _get_symbol_bboxes(sexpr_content: str) -> list[BBox]:
     symbols: list[dict[str, Any]] = []
     cursor = 0
     while cursor < len(sexpr_content):
-        if sexpr_content.startswith("(symbol", cursor):
+        if sexpr_content.startswith(_SEXPR_SYMBOL_OPEN, cursor):
             block, length = _extract_block(sexpr_content, cursor)
             if block:
                 parsed = _parse_symbol_block(block)
@@ -2960,7 +2971,7 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
 
     cursor = 0
     while cursor < len(content):
-        if content.startswith("(symbol", cursor):
+        if content.startswith(_SEXPR_SYMBOL_OPEN, cursor):
             block, length = _extract_block(content, cursor)
             if block:
                 parsed = _parse_symbol_block(block)
@@ -4750,7 +4761,13 @@ def _terminal_stub_length(net_name: str) -> float:
 
 
 def _terminal_rotation_from_vector(ux: float, uy: float) -> int:
-    return 0 if ux > 0 else 180 if ux < 0 else 90 if uy < 0 else 270
+    if ux > 0:
+        return 0
+    if ux < 0:
+        return 180
+    if uy < 0:
+        return 90
+    return 270
 
 
 def _power_symbol_rotation_from_vector(ux: float, uy: float) -> int:
@@ -5739,7 +5756,7 @@ def place_symbol_block(
     """
     symbol_uuid = new_uuid()
     root = root_uuid or new_uuid()
-    is_power_symbol = lib_id.startswith("power:") or reference.startswith("#PWR")
+    is_power_symbol = lib_id.startswith(_POWER_LIB_PREFIX) or reference.startswith("#PWR")
     if is_power_symbol and value.upper().startswith("GND"):
         value_y = y + 5.08
         reference_y = y + 6.35
@@ -5902,7 +5919,7 @@ def _find_placed_symbol_blocks(
     matches: list[tuple[str, int, int, dict[str, Any]]] = []
     cursor = 0
     while cursor < len(content):
-        if content.startswith("(symbol", cursor):
+        if content.startswith(_SEXPR_SYMBOL_OPEN, cursor):
             block, length = _extract_block(content, cursor)
             if block:
                 parsed = _parse_symbol_block(block)
@@ -6433,7 +6450,7 @@ def _find_all_placed_symbol_blocks(
     matches: list[tuple[str, int, int, dict[str, Any]]] = []
     cursor = 0
     while cursor < len(content):
-        if content.startswith("(symbol", cursor):
+        if content.startswith(_SEXPR_SYMBOL_OPEN, cursor):
             block, length = _extract_block(content, cursor)
             if block:
                 parsed = _parse_symbol_block(block)
@@ -6574,7 +6591,7 @@ def _shift_symbol_block(block: str, dx_mm: float, dy_mm: float) -> str:
 def _symbol_connection_points(parsed: dict[str, Any]) -> set[tuple[float, float]]:
     points = {_coord_pair_key(parsed["x"], parsed["y"])}
     lib_id = str(parsed.get("lib_id", ""))
-    if lib_id.startswith("power:"):
+    if lib_id.startswith(_POWER_LIB_PREFIX):
         return points
     try:
         library, symbol_name = _split_lib_id(lib_id)

@@ -17,6 +17,7 @@ Connector_Generic) and ``kicad-cli`` on PATH. Run from a checkout:
 
     KICAD_MCP_OPERATING_MODE=write python examples/gallery/esp32-c3-wroom-02-breakout/generate.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -63,9 +64,9 @@ def gg(v: float) -> float:
 def seed() -> None:
     (PROJECT / f"{NAME}.kicad_pro").write_text('{"meta":{"version":1}}', encoding="utf-8")
     (PROJECT / f"{NAME}.kicad_sch").write_text(
-        "(kicad_sch\n\t(version 20250316)\n\t(generator \"kicad-mcp-pro\")\n"
+        '(kicad_sch\n\t(version 20250316)\n\t(generator "kicad-mcp-pro")\n'
         '\t(uuid "b2c3d4e5-0000-4000-8000-000000000001")\n\t(paper "A3")\n'
-        "\t(lib_symbols)\n\t(sheet_instances\n\t\t(path \"/\" (page \"1\"))\n\t)\n"
+        '\t(lib_symbols)\n\t(sheet_instances\n\t\t(path "/" (page "1"))\n\t)\n'
         "\t(embedded_fonts no)\n)\n",
         encoding="utf-8",
     )
@@ -77,21 +78,39 @@ def seed() -> None:
     (PROJECT / "sym-lib-table").write_text(f"(sym_lib_table\n{entries}\n)\n", encoding="utf-8")
 
 
-def PP(lib, name, x, y, rot=0):
+def placed_pins(lib, name, x, y, rot=0):
     placed = _pins(lib, name, gg(x), gg(y), rot, 1)
     return {p: (round(px, 2), round(py, 2)) for p, (px, py) in placed.items()}
 
 
 def sym(lib, name, x, y, ref, val, rot=0):
     x, y = gg(x), gg(y)
-    SYMS.append({"library": lib, "symbol_name": name, "x_mm": x, "y_mm": y,
-                 "reference": ref, "value": val, "rotation": rot})
-    return PP(lib, name, x, y, rot)
+    SYMS.append(
+        {
+            "library": lib,
+            "symbol_name": name,
+            "x_mm": x,
+            "y_mm": y,
+            "reference": ref,
+            "value": val,
+            "rotation": rot,
+        }
+    )
+    return placed_pins(lib, name, x, y, rot)
 
 
 def raw_sym(lib, name, x, y, ref, val, rot=0):
-    SYMS.append({"library": lib, "symbol_name": name, "x_mm": gg(x), "y_mm": gg(y),
-                 "reference": ref, "value": val, "rotation": rot})
+    SYMS.append(
+        {
+            "library": lib,
+            "symbol_name": name,
+            "x_mm": gg(x),
+            "y_mm": gg(y),
+            "reference": ref,
+            "value": val,
+            "rotation": rot,
+        }
+    )
 
 
 def wire(x1, y1, x2, y2):
@@ -127,10 +146,22 @@ def build_plan():
 
     # single source of truth for the breakout bus (U1 pin -> net)
     BREAKOUT = [
-        ("2", "EN"), ("18", "IO0"), ("17", "IO1"), ("16", "IO2"), ("15", "IO3"),
-        ("3", "IO4"), ("4", "IO5"), ("5", "IO6"), ("6", "IO7"), ("7", "IO8"),
-        ("8", "IO9"), ("10", "IO10"), ("13", "IO18"), ("14", "IO19"),
-        ("11", "RXD"), ("12", "TXD"),
+        ("2", "EN"),
+        ("18", "IO0"),
+        ("17", "IO1"),
+        ("16", "IO2"),
+        ("15", "IO3"),
+        ("3", "IO4"),
+        ("4", "IO5"),
+        ("5", "IO6"),
+        ("6", "IO7"),
+        ("7", "IO8"),
+        ("8", "IO9"),
+        ("10", "IO10"),
+        ("13", "IO18"),
+        ("14", "IO19"),
+        ("11", "RXD"),
+        ("12", "TXD"),
     ]
     for pin, net in BREAKOUT:
         stub_label(U[pin], ux, net)
@@ -144,62 +175,74 @@ def build_plan():
 
     # power rails + decoupling, to the RIGHT of U1 (clear of the left stub fan)
     x3, y3 = U["1"]
-    railY = gg(y3 - 12.7)
-    railR = gg(ux + 45)
-    wire(x3, y3, x3, railY)
-    wire(x3, railY, railR, railY)
-    pwr("+3V3", x3, railY)
-    raw_sym("power", "PWR_FLAG", railR, railY, "#FLG01", "PWR_FLAG", rot=0)
+    rail_y = gg(y3 - 12.7)
+    rail_r = gg(ux + 45)
+    wire(x3, y3, x3, rail_y)
+    wire(x3, rail_y, rail_r, rail_y)
+    pwr("+3V3", x3, rail_y)
+    raw_sym("power", "PWR_FLAG", rail_r, rail_y, "#FLG01", "PWR_FLAG", rot=0)
 
     xg, yg = U["9"]
-    gndY = gg(yg + 12.7)
-    wire(xg, yg, xg, gndY)
-    pwr("GND", xg, gndY)
-    raw_sym("power", "PWR_FLAG", gg(xg - 22), gndY, "#FLG02", "PWR_FLAG", rot=0)
-    wire(xg, gndY, gg(xg - 22), gndY)
+    gnd_y = gg(yg + 12.7)
+    wire(xg, yg, xg, gnd_y)
+    pwr("GND", xg, gnd_y)
+    raw_sym("power", "PWR_FLAG", gg(xg - 22), gnd_y, "#FLG02", "PWR_FLAG", rot=0)
+    wire(xg, gnd_y, gg(xg - 22), gnd_y)
 
     for ref, val, cx in [("C1", "10uF", gg(ux + 30)), ("C2", "100nF", gg(ux + 40))]:
-        C = sym("Device", "C", cx, gg(railY + 10), ref, val)
+        C = sym("Device", "C", cx, gg(rail_y + 10), ref, val)
         (_, tp), (_, bp) = two(C)
-        wire(tp[0], tp[1], tp[0], railY)
+        wire(tp[0], tp[1], tp[0], rail_y)
         wire(bp[0], bp[1], bp[0], gg(bp[1] + 7.62))
         pwr("GND", bp[0], gg(bp[1] + 7.62))
 
     # support circuits below U1 — one x-column each, wired islands tapped by label
-    baseY = 170.0
-    R1 = sym("Device", "R", 150.0, baseY, "R1", "10k")
+    base_y = 170.0
+    R1 = sym("Device", "R", 150.0, base_y, "R1", "10k")
     (_, r1t), (_, r1b) = two(R1)
-    wire(r1t[0], r1t[1], r1t[0], gg(r1t[1] - 7.62)); pwr("+3V3", r1t[0], gg(r1t[1] - 7.62))
-    node = (r1b[0], gg(r1b[1] + 5.08)); wire(r1b[0], r1b[1], node[0], node[1])
+    wire(r1t[0], r1t[1], r1t[0], gg(r1t[1] - 7.62))
+    pwr("+3V3", r1t[0], gg(r1t[1] - 7.62))
+    node = (r1b[0], gg(r1b[1] + 5.08))
+    wire(r1b[0], r1b[1], node[0], node[1])
     wire(node[0], node[1], gg(node[0] - 6.35), node[1])
     lbl("EN", gg(node[0] - 6.35), node[1], justify="right")
     C3 = sym("Device", "C", gg(150.0 + 13), gg(node[1] + 6), "C3", "100nF")
     (_, c3t), (_, c3b) = two(C3)
-    wire(node[0], node[1], c3t[0], node[1]); wire(c3t[0], node[1], c3t[0], c3t[1])
-    wire(c3b[0], c3b[1], c3b[0], gg(c3b[1] + 7.62)); pwr("GND", c3b[0], gg(c3b[1] + 7.62))
+    wire(node[0], node[1], c3t[0], node[1])
+    wire(c3t[0], node[1], c3t[0], c3t[1])
+    wire(c3b[0], c3b[1], c3b[0], gg(c3b[1] + 7.62))
+    pwr("GND", c3b[0], gg(c3b[1] + 7.62))
     SW1 = sym("Switch", "SW_Push", 150.0, gg(node[1] + 15), "SW1", "RESET", rot=90)
     (_, s1a), (_, s1b) = two(SW1)
     wire(node[0], node[1], s1a[0], s1a[1])
-    wire(s1b[0], s1b[1], s1b[0], gg(s1b[1] + 7.62)); pwr("GND", s1b[0], gg(s1b[1] + 7.62))
+    wire(s1b[0], s1b[1], s1b[0], gg(s1b[1] + 7.62))
+    pwr("GND", s1b[0], gg(s1b[1] + 7.62))
 
-    R2 = sym("Device", "R", 205.0, baseY, "R2", "10k")
+    R2 = sym("Device", "R", 205.0, base_y, "R2", "10k")
     (_, r2t), (_, r2b) = two(R2)
-    wire(r2t[0], r2t[1], r2t[0], gg(r2t[1] - 7.62)); pwr("+3V3", r2t[0], gg(r2t[1] - 7.62))
-    bnode = (r2b[0], gg(r2b[1] + 5.08)); wire(r2b[0], r2b[1], bnode[0], bnode[1])
+    wire(r2t[0], r2t[1], r2t[0], gg(r2t[1] - 7.62))
+    pwr("+3V3", r2t[0], gg(r2t[1] - 7.62))
+    bnode = (r2b[0], gg(r2b[1] + 5.08))
+    wire(r2b[0], r2b[1], bnode[0], bnode[1])
     wire(bnode[0], bnode[1], gg(bnode[0] - 6.35), bnode[1])
     lbl("IO9", gg(bnode[0] - 6.35), bnode[1], justify="right")
     SW2 = sym("Switch", "SW_Push", 205.0, gg(bnode[1] + 12), "SW2", "BOOT", rot=90)
     (_, s2a), (_, s2b) = two(SW2)
     wire(bnode[0], bnode[1], s2a[0], s2a[1])
-    wire(s2b[0], s2b[1], s2b[0], gg(s2b[1] + 7.62)); pwr("GND", s2b[0], gg(s2b[1] + 7.62))
+    wire(s2b[0], s2b[1], s2b[0], gg(s2b[1] + 7.62))
+    pwr("GND", s2b[0], gg(s2b[1] + 7.62))
 
-    R3 = sym("Device", "R", 258.0, baseY, "R3", "330")
+    R3 = sym("Device", "R", 258.0, base_y, "R3", "330")
     (_, r3t), (_, r3b) = two(R3)
-    lbl("IO8", r3t[0], gg(r3t[1] - 7.62)); wire(r3t[0], gg(r3t[1] - 7.62), r3t[0], r3t[1])
+    lbl("IO8", r3t[0], gg(r3t[1] - 7.62))
+    wire(r3t[0], gg(r3t[1] - 7.62), r3t[0], r3t[1])
     D1 = sym("Device", "LED", 258.0, gg(r3b[1] + 11), "D1", "LED", rot=270)
-    da = D1["2"]; dk = D1["1"]
-    wire(r3b[0], r3b[1], r3b[0], da[1]); wire(r3b[0], da[1], da[0], da[1])
-    wire(dk[0], dk[1], dk[0], gg(dk[1] + 7.62)); pwr("GND", dk[0], gg(dk[1] + 7.62))
+    da = D1["2"]
+    dk = D1["1"]
+    wire(r3b[0], r3b[1], r3b[0], da[1])
+    wire(r3b[0], da[1], da[0], da[1])
+    wire(dk[0], dk[1], dk[0], gg(dk[1] + 7.62))
+    pwr("GND", dk[0], gg(dk[1] + 7.62))
 
 
 async def main() -> None:
@@ -217,13 +260,29 @@ async def main() -> None:
     _pins = get_pin_positions
 
     build_plan()
-    await call_tool_text(server, "sch_build_circuit", {
-        "symbols": SYMS, "wires": WIRES, "labels": LABELS, "power_symbols": POWERS,
-        "auto_layout": False, "snap_to_grid": True})
-    await call_tool_text(server, "sch_set_title_block_info", {
-        "title": "ESP32-C3-WROOM-02 Breakout", "rev": "A", "date": "2026-07-10",
-        "company": "kicad-mcp-pro example gallery",
-        "comment1": "Agent-generated wired reference schematic"})
+    await call_tool_text(
+        server,
+        "sch_build_circuit",
+        {
+            "symbols": SYMS,
+            "wires": WIRES,
+            "labels": LABELS,
+            "power_symbols": POWERS,
+            "auto_layout": False,
+            "snap_to_grid": True,
+        },
+    )
+    await call_tool_text(
+        server,
+        "sch_set_title_block_info",
+        {
+            "title": "ESP32-C3-WROOM-02 Breakout",
+            "rev": "A",
+            "date": "2026-07-10",
+            "company": "kicad-mcp-pro example gallery",
+            "comment1": "Agent-generated wired reference schematic",
+        },
+    )
     erc = await call_tool_text(server, "run_erc", {})
     print("ERC:", "PASS" if '"verdict": "PASS"' in erc else "FAIL\n" + erc)
 

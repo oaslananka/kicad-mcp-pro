@@ -151,11 +151,12 @@ class SchematicConnectivityAuthoringService:
             raise ValueError(
                 f"label_kind must be one of {sorted(LABEL_KIND_TO_BLOCK_KIND)}, got {label_kind!r}"
             )
-        block_kind = (
-            LABEL_KIND_TO_BLOCK_KIND[label_kind]
-            if label_kind is not None
-            else ("global_label" if global_labels else "label")
-        )
+        if label_kind is not None:
+            block_kind = LABEL_KIND_TO_BLOCK_KIND[label_kind]
+        elif global_labels:
+            block_kind = "global_label"
+        else:
+            block_kind = "label"
         target = self.resolve_target(sheet, sheet_file)
         data = self.parse_schematic(target.path)
         # A reference may map to several placed blocks (multi-unit symbols share a
