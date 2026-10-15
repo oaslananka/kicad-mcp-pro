@@ -142,6 +142,7 @@ except ImportError:
 
 # Shared user-facing values; preserve spelling and case across CLI and reports.
 _HELP_JSON_OUTPUT = "Emit machine-readable JSON."
+_TOOL_ERROR_EVENT_NAME = "mcp.tool_error"
 
 logger = structlog.get_logger(__name__)
 app = typer.Typer(help=localize(SERVER_DESCRIPTION))
@@ -1266,7 +1267,7 @@ class KiCadFastMCP(FastMCP):
                     _exc_info=True,
                 )
                 otel.record_error_event(
-                    "mcp.tool_error",
+                    _TOOL_ERROR_EVENT_NAME,
                     exc,
                     {
                         "tool": name,
@@ -1286,7 +1287,7 @@ class KiCadFastMCP(FastMCP):
                     **_error_detail,
                 )
                 otel.record_error_event(
-                    "mcp.tool_error",
+                    _TOOL_ERROR_EVENT_NAME,
                     exc,
                     {
                         "tool": name,
@@ -1306,7 +1307,7 @@ class KiCadFastMCP(FastMCP):
                     _exc_info=True,
                 )
                 otel.record_error_event(
-                    "mcp.tool_error",
+                    _TOOL_ERROR_EVENT_NAME,
                     exc,
                     {
                         "tool": name,
