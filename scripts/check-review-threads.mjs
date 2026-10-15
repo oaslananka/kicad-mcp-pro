@@ -339,7 +339,7 @@ async function main() {
 
 try {
   await main();
-} catch (error) {
-  console.error(`check-review-threads: ${error.message}`);
+} catch {
+  console.error("check-review-threads: review-thread check failed");
   process.exitCode = 2;
 }

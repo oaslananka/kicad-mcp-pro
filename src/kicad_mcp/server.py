@@ -2397,11 +2397,15 @@ def _run_server_from_options(
 
 @app.callback(invoke_without_command=True)
 def main_callback(
-    transport: str | None = typer.Option(None, help=option_help(_HELP_TRANSPORT)),
-    host: str | None = typer.Option(None, help=option_help(_HELP_HOST)),
-    port: int | None = typer.Option(None, help=option_help(_HELP_PORT)),
-    project_dir: str | None = typer.Option(None, help=option_help(_HELP_PROJECT_DIR)),
-    log_level: str | None = typer.Option(None, help=option_help(_HELP_LOG_LEVEL)),
+    transport: str | None = typer.Option(
+        None, help=option_help("Transport: stdio, http, sse, streamable-http")
+    ),
+    host: str | None = typer.Option(None, help=option_help("HTTP bind host")),
+    port: int | None = typer.Option(None, help=option_help("HTTP bind port")),
+    project_dir: str | None = typer.Option(
+        None, help=option_help("Active KiCad project directory")
+    ),
+    log_level: str | None = typer.Option(None, help=option_help("Log level")),
     log_format: str | None = typer.Option(None, help=option_help("Log format: text or json")),
     log_file: str | None = typer.Option(None, help=option_help("Rotating log file path")),
     profile: str | None = typer.Option(
@@ -2410,9 +2414,9 @@ def main_callback(
     operating_mode: str | None = typer.Option(
         None,
         "--mode",
-        help=option_help(_HELP_OPERATING_MODE),
+        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
     ),
-    experimental: bool | None = typer.Option(None, help=option_help(_HELP_EXPERIMENTAL)),
+    experimental: bool | None = typer.Option(None, help=option_help("Enable experimental tools")),
     telemetry: bool | None = typer.Option(
         None, "--telemetry/--no-telemetry", help=option_help("Enable OpenTelemetry export")
     ),
@@ -2457,11 +2461,15 @@ def main_callback(
 
 @app.command()
 def serve(
-    transport: str | None = typer.Option(None, help=option_help(_HELP_TRANSPORT)),
-    host: str | None = typer.Option(None, help=option_help(_HELP_HOST)),
-    port: int | None = typer.Option(None, help=option_help(_HELP_PORT)),
-    project_dir: str | None = typer.Option(None, help=option_help(_HELP_PROJECT_DIR)),
-    log_level: str | None = typer.Option(None, help=option_help(_HELP_LOG_LEVEL)),
+    transport: str | None = typer.Option(
+        None, help=option_help("Transport: stdio, http, sse, streamable-http")
+    ),
+    host: str | None = typer.Option(None, help=option_help("HTTP bind host")),
+    port: int | None = typer.Option(None, help=option_help("HTTP bind port")),
+    project_dir: str | None = typer.Option(
+        None, help=option_help("Active KiCad project directory")
+    ),
+    log_level: str | None = typer.Option(None, help=option_help("Log level")),
     log_format: str | None = typer.Option(None, help=option_help("Log format: text or json")),
     log_file: str | None = typer.Option(None, help=option_help("Rotating log file path")),
     profile: str | None = typer.Option(
@@ -2470,9 +2478,9 @@ def serve(
     operating_mode: str | None = typer.Option(
         None,
         "--mode",
-        help=option_help(_HELP_OPERATING_MODE),
+        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
     ),
-    experimental: bool | None = typer.Option(None, help=option_help(_HELP_EXPERIMENTAL)),
+    experimental: bool | None = typer.Option(None, help=option_help("Enable experimental tools")),
     telemetry: bool | None = typer.Option(
         None, "--telemetry/--no-telemetry", help=option_help("Enable OpenTelemetry export")
     ),
