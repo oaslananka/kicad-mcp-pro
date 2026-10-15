@@ -183,21 +183,14 @@ class KiCadMCPConfig(BaseSettings):
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         import sys
 
-        # Skip loading local .env files during pytest runs to avoid test pollution
-        if "pytest" in sys.modules:
-            return (
-                init_settings,
-                env_settings,
-                TomlConfigSettingsSource(settings_cls, toml_file=CONFIG_FILE),
-                file_secret_settings,
-            )
-        return (
-            init_settings,
-            env_settings,
-            dotenv_settings,
-            TomlConfigSettingsSource(settings_cls, toml_file=CONFIG_FILE),
-            file_secret_settings,
+        # Keep the same precedence while excluding .env during pytest runs.
+        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings]
+        if "pytest" not in sys.modules:
+            sources.append(dotenv_settings)
+        sources.extend(
+            (TomlConfigSettingsSource(settings_cls, toml_file=CONFIG_FILE), file_secret_settings)
         )
+        return tuple(sources)
 
     @model_validator(mode="before")
     @classmethod

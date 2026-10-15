@@ -95,3 +95,11 @@ def test_errors_sort_before_warnings() -> None:
     conflicts = _analyze(dru)
     assert conflicts == sorted(conflicts, key=lambda c: c.sort_key())
     assert conflicts[0].severity == "error"
+
+
+def test_dimension_parser_accepts_decimal_boundaries_without_backtracking() -> None:
+    assert parse_dimension_mm(".5mm") == 0.5
+    assert parse_dimension_mm("+12.25mm") == 12.25
+    assert parse_dimension_mm("-2mil") == -2 * 0.0254
+    assert parse_dimension_mm("12.") is None
+    assert parse_dimension_mm("9" * 3000 + "x") is None

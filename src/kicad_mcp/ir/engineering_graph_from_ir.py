@@ -164,16 +164,17 @@ def _imported_provenance() -> GraphProvenance:
 
 
 def _project_native_links(circuit: IRCircuit) -> tuple[NativeLink, ...]:
-    if not (circuit.source_path or circuit.source_uuid):
-        return ()
-    return (
-        NativeLink(
-            system="kicad",
-            kind="schematic",
-            key=circuit.source_path or circuit.title,
-            uuid=circuit.source_uuid,
-        ),
-    )
+    links: list[NativeLink] = []
+    if circuit.source_path or circuit.source_uuid:
+        links.append(
+            NativeLink(
+                system="kicad",
+                kind="schematic",
+                key=circuit.source_path or circuit.title,
+                uuid=circuit.source_uuid,
+            )
+        )
+    return tuple(links)
 
 
 def _add_project_entity(

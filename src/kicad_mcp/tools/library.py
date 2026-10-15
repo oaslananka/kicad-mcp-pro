@@ -159,7 +159,7 @@ def _parse_passive_parametric_query(
     parsed_package = explicit_package or (package_match.group(1) if package_match else "")
 
     tolerance_match = re.search(r"(?<!\w)(0\.1%|0\.5%|1%|2%|5%|10%)(?!\w)", text)
-    voltage_match = re.search(r"(?<!\w)(\d+(?:\.\d+)?\s*v)(?!\w)", text)
+    voltage_match = re.search(r"(?<!\w)(\d++(?:\.\d++)?\s*+v)(?!\w)", text)
 
     resistor_match = re.search(
         r"\b(\d+(?:\.\d+)?\s*(?:r|k|m|ohm|kohm|mohm|Ω|kΩ|mΩ))\b",

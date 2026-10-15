@@ -3162,7 +3162,7 @@ def _pcb_layer_table_copper_layers(pcb_text: str) -> list[str]:
     layer_blocks = _balanced_blocks(pcb_text, "layers")
     if not layer_blocks:
         return []
-    layers = re.findall(r'\(\s*\d+\s+"([^"]+\.Cu)"\s+[^\)]*\)', layer_blocks[0])
+    layers = re.findall(r'\(\s*+\d++\s++"([^"]+\.Cu)"\s++[^)]*+\)', layer_blocks[0])
     return list(dict.fromkeys(layers))
 
 

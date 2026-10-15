@@ -156,7 +156,7 @@ def _fetch_text(url: str) -> str:
 
 
 def _parse_version(value: str) -> Version:
-    match = re.search(r"(?P<major>\d+)\.(?P<minor>\d+)(?:\.(?P<patch>\d+))?", value)
+    match = re.search(r"(?<!\d)(?P<major>\d++)\.(?P<minor>\d++)(?:\.(?P<patch>\d++))?", value)
     if match is None:
         raise ValueError(f"Cannot parse version from {value!r}")
     return Version(

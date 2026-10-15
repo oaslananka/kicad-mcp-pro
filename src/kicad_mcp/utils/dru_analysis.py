@@ -45,7 +45,10 @@ _UNIT_TO_MM = {
     "mil": 0.0254,
     "in": 25.4,
 }
-_DIMENSION_RE = re.compile(r"^([-+]?\d*\.?\d+)\s*(mm|cm|um|nm|mil|in)?$", re.IGNORECASE)
+_DIMENSION_RE = re.compile(
+    r"^([-+]?(?:\d+(?:\.\d+)?|\.\d+))\s*+(mm|cm|um|nm|mil|in)?$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)

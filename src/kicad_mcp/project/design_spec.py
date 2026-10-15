@@ -338,7 +338,7 @@ def _extract_structured_spec_block(markdown: str) -> tuple[dict[str, Any], str]:
                     return parsed_yaml, "frontmatter"
                 break
 
-    fence = re.search(r"```(?:json|ya?ml)\s*(.*?)```", markdown, re.IGNORECASE | re.DOTALL)
+    fence = re.search(r"```(?:json|ya?ml)\s*+(.*?)```", markdown, re.IGNORECASE | re.DOTALL)
     if fence is not None:
         block = fence.group(1).strip()
         try:

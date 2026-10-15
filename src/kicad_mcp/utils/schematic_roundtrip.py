@@ -103,17 +103,22 @@ def roundtrip_edit(path: str | Path, *, allow_node_loss: bool = False) -> Iterat
     target = Path(path).expanduser().resolve()
     before = target.read_text(encoding="utf-8")
     sch = load(target)
-    yield sch
-    sch.save()
-    after = target.read_text(encoding="utf-8")
-    if not allow_node_loss:
-        lost = dropped_nodes(before, after)
-        if lost:
-            with target.open("w", encoding="utf-8") as handle:
-                handle.write(before)
-            detail = ", ".join(f"{kind} {b}->{a}" for kind, (b, a) in sorted(lost.items()))
-            raise SchematicWriteUnsafeError(
-                f"Refusing to write {target.name}: the round trip dropped structure "
-                f"({detail}). kicad-sch-api 0.5.x does not preserve global_label on save; "
-                "the original file was restored."
-            )
+    completed = False
+    try:
+        yield sch
+        completed = True
+    finally:
+        if completed:
+            sch.save()
+            after = target.read_text(encoding="utf-8")
+            if not allow_node_loss:
+                lost = dropped_nodes(before, after)
+                if lost:
+                    with target.open("w", encoding="utf-8") as handle:
+                        handle.write(before)
+                    detail = ", ".join(f"{kind} {b}->{a}" for kind, (b, a) in sorted(lost.items()))
+                    raise SchematicWriteUnsafeError(
+                        f"Refusing to write {target.name}: the round trip dropped structure "
+                        f"({detail}). kicad-sch-api 0.5.x does not preserve global_label on save; "
+                        "the original file was restored."
+                    )

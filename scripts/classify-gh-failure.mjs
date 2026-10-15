@@ -137,7 +137,7 @@ const CLASSES = [
     patterns: [
       /would clobber existing tag/i,
       /stale tag/i,
-      /refs\/tags\/v[\w.-]+.*rejected/i,
+      /refs\/tags\/v[\w.-].*rejected/i,
       /tag .* already exists/i,
     ],
     root_cause:

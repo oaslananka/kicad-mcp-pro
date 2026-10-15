@@ -93,13 +93,15 @@ def _parse_unrouted_nets(text: str) -> list[str]:
 def _parse_pass_count(text: str) -> int:
     passes = [
         int(match.group(1))
-        for match in re.finditer(r"\bpass(?:es)?\s*[:#]?\s*(\d+)", text, flags=re.IGNORECASE)
+        for match in re.finditer(r"\bpass(?:es)?\s*+[:#]?\s*+(\d++)", text, flags=re.IGNORECASE)
     ]
     return max(passes) if passes else 0
 
 
 def _parse_routed_pct(text: str, total_nets: int, unrouted_nets: list[str], ses_ok: bool) -> float:
-    pct_match = re.search(r"(\d+(?:\.\d+)?)\s*%\s*(?:routed|completed)", text, re.IGNORECASE)
+    pct_match = re.search(
+        r"(?<!\d)(\d++(?:\.\d++)?)\s*+%\s*+(?:routed|completed)", text, re.IGNORECASE
+    )
     if pct_match is not None:
         return round(float(pct_match.group(1)), 2)
     if total_nets > 0 and unrouted_nets:

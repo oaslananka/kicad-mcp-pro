@@ -31,7 +31,7 @@ _WATCHER_LOCK = threading.Lock()
 _WATCHER_STATE = _StudioWatcherState()
 _WATCHER_STOP = threading.Event()
 _CLI_CAPABILITIES_CACHE: dict[tuple[Path, int | None], CliCapabilities] = {}
-_NUMBERED_DUPLICATE_RE = re.compile(r"^.+\s+\d+\.kicad_(?:pro|sch|pcb)$", re.IGNORECASE)
+_NUMBERED_DUPLICATE_RE = re.compile(r"^.+\s\d++\.kicad_(?:pro|sch|pcb)$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)

@@ -28,7 +28,7 @@ asciinema rec "${DEMO_CAST}" \
 
 agg --speed 1.2 --theme monokai --font-size 18 "${DEMO_CAST}" "${DEMO_GIF}"
 
-if [ "$(wc -c < "${DEMO_GIF}")" -gt $((2 * 1024 * 1024)) ]; then
+if [[ "$(wc -c < "${DEMO_GIF}")" -gt $((2 * 1024 * 1024)) ]]; then
   echo "warning: docs/assets/demo.gif exceeded 2 MB; retrying with --font-size 14"
   agg --speed 1.2 --theme monokai --font-size 14 "${DEMO_CAST}" "${DEMO_GIF}"
 fi

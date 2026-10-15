@@ -2897,7 +2897,7 @@ def _extract_labels(content: str) -> list[dict[str, Any]]:
 
 def _label_justify_from_block(block: str) -> str:
     """Read the raw ``(justify ...)`` token string from a label block, if any."""
-    justify_match = re.search(r"\(justify\s+([^)]*)\)", block)
+    justify_match = re.search(r"\(justify\s++([^)]*+)\)", block)
     return justify_match.group(1).strip() if justify_match else ""
 
 
@@ -2913,7 +2913,7 @@ def _set_label_justify(block: str, justify_value: str) -> str:
     if jidx != -1:
         _, jlen = _extract_block(effects_block, jidx)
         effects_block = effects_block[:jidx] + effects_block[jidx + jlen :]
-        effects_block = re.sub(r"\s+\)", ")", effects_block)
+        effects_block = re.sub(r"\s++\)", ")", effects_block)
     if justify_value:
         effects_block = effects_block[:-1].rstrip() + f" (justify {justify_value}))"
     return block[:idx] + effects_block + block[idx + eff_len :]

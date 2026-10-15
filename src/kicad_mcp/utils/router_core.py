@@ -128,7 +128,7 @@ def parse_ses(text: str) -> SesRoute:
 
 
 def _parse_net_wires(net_block: str, net_name: str, route: SesRoute) -> None:
-    for path in re.finditer(r"\(path\s+(\S+)\s+([0-9.]+)\s+([0-9.\s-]+?)\)", net_block):
+    for path in re.finditer(r"\(path\s++(\S+)\s++([0-9.]+)\s++([0-9.\s-]+?)\)", net_block):
         layer = _strip_quotes(path.group(1))
         width_mm = round(float(path.group(2)) / route.units_per_mm, 6)
         coords = [float(value) for value in path.group(3).split()]

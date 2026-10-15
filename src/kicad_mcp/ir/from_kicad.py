@@ -103,7 +103,7 @@ def _rail_name_and_voltage(net_name: str) -> tuple[str, float]:
     # Try to parse voltage from name patterns like "3V3", "5V0", "1V8"
     import re
 
-    m = re.search(r"(\d+)[Vv](\d*)", net_name)
+    m = re.search(r"(?<!\d)(\d++)[Vv](\d*+)", net_name)
     if m:
         volts = float(f"{m.group(1)}.{m.group(2) or '0'}")
         return (net_name, volts)

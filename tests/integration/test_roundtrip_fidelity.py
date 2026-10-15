@@ -156,3 +156,23 @@ def test_guard_protects_real_multi_sheet_fixture(tmp_path: Path) -> None:
         with roundtrip_edit(work):
             pass
     assert work.read_text(encoding="utf-8") == original
+
+
+def test_roundtrip_failed_edit_does_not_serialize(monkeypatch, tmp_path: Path) -> None:
+    path = _write(tmp_path, _MINIMAL)
+    save_calls: list[bool] = []
+
+    class StubSchematic:
+        def save(self) -> None:
+            save_calls.append(True)
+
+    monkeypatch.setattr(
+        "kicad_mcp.utils.schematic_roundtrip.load",
+        lambda _path: StubSchematic(),
+    )
+    with pytest.raises(RuntimeError, match="abort edit"):
+        with roundtrip_edit(path):
+            raise RuntimeError("abort edit")
+
+    assert save_calls == []
+    assert path.read_text(encoding="utf-8") == _MINIMAL

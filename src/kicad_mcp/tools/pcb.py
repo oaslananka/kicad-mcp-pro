@@ -994,7 +994,7 @@ def _board_file_vias(content: str) -> list[dict[str, object]]:
         position = re.search(rf"\(at\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})", block)
         size = re.search(rf"\(size\s+({FLOAT_PATTERN})\)", block)
         drill = re.search(rf"\(drill\s+({FLOAT_PATTERN})\)", block)
-        layers = re.search(r"\(layers\s+([^)]+)\)", block)
+        layers = re.search(r"\(layers\s++([^)]++)\)", block)
         net = re.search(r"\(net\s+(\d+)\)", block)
         via_type_match = re.match(r"\(via\s+([A-Za-z_-]+)", block.strip())
         via_type = via_type_match.group(1) if via_type_match is not None else "through"
@@ -1024,7 +1024,7 @@ def _board_file_zones(content: str) -> list[dict[str, object]]:
         net_name = re.search(rf"\(net_name\s+{STRING_PATTERN}\)", block)
         net = re.search(r"\(net\s+(\d+)\)", block)
         layer = re.search(rf"\(layer\s+{STRING_PATTERN}\)", block)
-        layers_match = re.search(r"\(layers\s+([^)]+)\)", block)
+        layers_match = re.search(r"\(layers\s++([^)]++)\)", block)
         layers = _quoted_values(layers_match.group(1)) if layers_match else []
         if not layers and layer is not None:
             layers = [layer.group(1)]
@@ -2016,7 +2016,7 @@ def _save_pcb_state(filename: str, payload: dict[str, Any]) -> Path:
 
 def _footprint_layers_from_block(block: str) -> list[str]:
     layers = set(re.findall(r'\(layer\s+"([^"]+)"\)', block))
-    for match in re.findall(r"\(layers\s+([^)]+)\)", block):
+    for match in re.findall(r"\(layers\s++([^)]++)\)", block):
         layers.update(re.findall(r'"([^"]+)"', match))
     return sorted(layers)
 
