@@ -377,15 +377,15 @@ def test_import_server_without_optional_watchfiles_and_tray(
 
     original_import = builtins.__import__
 
-    def reject_optional(name, globals=None, locals=None, fromlist=(), level=0):
+    def reject_optional(name, module_globals=None, module_locals=None, fromlist=(), level=0):
         if name == "watchfiles" or (
             name == "tray"
             and level == 1
-            and globals is not None
-            and globals.get("__package__") == "kicad_mcp"
+            and module_globals is not None
+            and module_globals.get("__package__") == "kicad_mcp"
         ):
             raise ImportError("Optional module intentionally unavailable")
-        return original_import(name, globals, locals, fromlist, level)
+        return original_import(name, module_globals, module_locals, fromlist, level)
 
     with monkeypatch.context() as patcher:
         patcher.setattr(builtins, "__import__", reject_optional)

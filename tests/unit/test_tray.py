@@ -380,10 +380,10 @@ def test_import_tray_without_pillow_installed(monkeypatch: pytest.MonkeyPatch) -
 
     original_import = builtins.__import__
 
-    def reject_pillow(name, globals=None, locals=None, fromlist=(), level=0):
+    def reject_pillow(name, module_globals=None, module_locals=None, fromlist=(), level=0):
         if name == "PIL" or name.startswith("PIL."):
             raise ImportError("Pillow intentionally unavailable")
-        return original_import(name, globals, locals, fromlist, level)
+        return original_import(name, module_globals, module_locals, fromlist, level)
 
     with monkeypatch.context() as patcher:
         patcher.setattr(builtins, "__import__", reject_pillow)
