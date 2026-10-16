@@ -63,8 +63,14 @@ def _canonical(spec: dict[str, Any]) -> str:
 
 
 def compute_plan_id(spec: dict[str, Any]) -> str:
-    """Return a stable, content-addressed id for ``spec``."""
-    digest = hashlib.sha1(_canonical(spec).encode("utf-8"), usedforsecurity=False).hexdigest()
+    """Return a stable, content-addressed id for ``spec``.
+
+    Uses non-cryptographic SHA-1 (usedforsecurity=False) to preserve the
+    established 12-char plan identifier compatibility contract.
+    """
+    digest = hashlib.sha1(  # nosec B303, B324 - non-cryptographic contract identifier
+        _canonical(spec).encode("utf-8"), usedforsecurity=False
+    ).hexdigest()
     return f"plan_{digest[:12]}"
 
 

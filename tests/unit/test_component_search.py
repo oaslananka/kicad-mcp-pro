@@ -571,3 +571,58 @@ def test_jlcpcb_detail_page_ignores_unterminated_datasheet_href() -> None:
     record = _record_from_jlcpcb_detail_page(html, "C25804")
     assert record is not None
     assert record.datasheet_url == ""
+
+
+def test_network_client_rejects_insecure_schemes_and_metadata_hosts() -> None:
+    from kicad_mcp.utils.component_search import _https_post_json, _request_json
+
+    with pytest.raises(ValueError, match="Only https"):
+        _request_json("http://insecure.org/search", {})
+
+    with pytest.raises(ValueError, match="Only https"):
+        _request_json("file:///etc/passwd", {})
+
+    with pytest.raises(ValueError, match="local or metadata"):
+        _request_json("https://169.254.169.254/latest/meta-data", {})
+
+    with pytest.raises(ValueError, match="local or metadata"):
+        _request_json("https://127.0.0.1/admin", {})
+
+    with pytest.raises(ValueError, match="local or metadata"):
+        _request_json("https://localhost/admin", {})
+
+    with pytest.raises(ValueError, match="Only https"):
+        _https_post_json("http://insecure.org/api", b"{}", {})
+
+    with pytest.raises(ValueError, match="local or metadata"):
+        _https_post_json("https://169.254.169.254/api", b"{}", {})
+
+
+def test_redirect_handler_blocks_insecure_redirects() -> None:
+    import urllib.request
+    from http.client import HTTPMessage
+
+    from kicad_mcp.utils.component_search import SafeSearchRedirectHandler
+
+    handler = SafeSearchRedirectHandler()
+    dummy_req = urllib.request.Request("https://example.com/api")
+    dummy_headers = HTTPMessage()
+
+    with pytest.raises(ValueError, match="Insecure redirect scheme rejected"):
+        handler.redirect_request(dummy_req, None, 302, "Found", dummy_headers, "http://evil.com")
+
+    with pytest.raises(ValueError, match="Insecure redirect scheme rejected"):
+        handler.redirect_request(dummy_req, None, 302, "Found", dummy_headers, "file:///etc/passwd")
+
+    with pytest.raises(ValueError, match="Redirection to local or metadata host rejected"):
+        handler.redirect_request(dummy_req, None, 302, "Found", dummy_headers, "https://169.254.169.254/secret")
+
+    with pytest.raises(ValueError, match="Redirection to local or metadata host rejected"):
+        handler.redirect_request(dummy_req, None, 302, "Found", dummy_headers, "https://localhost:8080/")
+
+
+def test_jlcpcb_request_text_rejects_unapproved_host() -> None:
+    client = JLCSearchClient()
+    with pytest.raises(ValueError, match="not in the allowed"):
+        client._request_text("https://evil.com/parts")
+
