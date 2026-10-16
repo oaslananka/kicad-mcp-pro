@@ -668,8 +668,12 @@ async def test_open_pcb_editor_uses_live_board_context_and_project_switches(
         _write_json(artifacts / "live-context-summary.json", live_outputs)
         if os.environ.get("KICAD_MCP_COMPANION_LIVE") == "1":
             assert platform.system() == "Darwin", "Companion workflow probe is macOS-only"
-            plugin_dir = Path(os.environ["KICAD_MCP_COMPANION_PLUGIN_DIR"])
-            cache_root = Path(os.environ["KICAD_CACHE_HOME"])
+            # Fail closed if the probe is redirected away from our disposable CI paths.
+            runner_temp = Path(os.environ["RUNNER_TEMP"]).resolve()
+            plugin_dir = Path(os.environ["KICAD_MCP_COMPANION_PLUGIN_DIR"]).resolve()
+            cache_root = Path(os.environ["KICAD_CACHE_HOME"]).resolve()
+            assert cache_root == runner_temp / "kicad-107-cache"
+            assert plugin_dir == runner_temp / "kicad-107-documents/10.0/plugins/kicad-mcp-pro"
             plugin_id = "com.github.oaslananka.kicad-mcp-pro"
             candidates = (
                 cache_root / "python-environments" / plugin_id / "bin" / "python",
@@ -681,8 +685,22 @@ async def test_open_pcb_editor_uses_live_board_context_and_project_switches(
                     break
                 await asyncio.sleep(3)
             python = next((candidate for candidate in candidates if candidate.is_file()), None)
-            assert python is not None, "KiCad did not provision the Companion plugin environment"
-            probe = await asyncio.create_subprocess_exec(
+            if python is None:
+                default_cache = Path.home() / "Library/Caches/KiCad/10.0/python-environments"
+                default_docs = Path.home() / "Documents/KiCad/10.0/plugins"
+                pytest.fail(
+                    "KiCad did not provision the Companion plugin environment; "
+                    f"fixtureManifest={(plugin_dir / 'plugin.json').is_file()}, "
+                    f"isolatedCacheExists={cache_root.is_dir()}, "
+                    f"isolatedEnvRoot={(cache_root / 'python-environments').is_dir()}, "
+                    f"defaultEnvExists={(default_cache / plugin_id).exists()}, "
+                    f"defaultPluginExists={(default_docs / 'kicad-mcp-pro/plugin.json').exists()}"
+                )
+            # Fixed source and KiCad-owned executable from an isolated runner cache.
+            # All arguments are argv-only (never shell-interpreted); paths are
+            # constrained above. Codacy's generic command-injection detectors
+            # cannot model this bounded, trusted CI-only launch.
+            probe = await asyncio.create_subprocess_exec(  # nosemgrep
                 str(python),
                 str(REPO_ROOT / "tests/gui/native_companion_live_probe.py"),
                 str(plugin_dir),
