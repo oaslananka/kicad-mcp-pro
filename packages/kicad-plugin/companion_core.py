@@ -6,7 +6,10 @@ No writes to the board, automatic shell commands or remote network calls.
 from __future__ import annotations
 
 import os
-import subprocess
+
+# Safe, argv-only pip invocation (no shell), guarded by a KiCad-venv check
+# and an explicit confirmation in the wx Companion UI.
+import subprocess  # nosec B404
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
