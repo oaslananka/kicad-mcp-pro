@@ -7,6 +7,7 @@ Only an isolated fixture is read; this script does not mutate a PCB.
 from __future__ import annotations
 
 import sys
+import traceback
 from pathlib import Path
 
 import wx
@@ -31,6 +32,7 @@ def main() -> int:
         "syncDisabled": False,
         "error": "none",
         "stage": "init",
+        "source": "none",
     }
 
     def verify() -> None:
@@ -67,6 +69,15 @@ def main() -> int:
                 "AssertionError",
             }
             outcome["error"] = exception_name if exception_name in known_errors else "Other"
+            # Only emit source symbols and line numbers from our public package,
+            # never exception messages or private runner paths.
+            safe_sources = {"companion.py", "companion_core.py", "context.py"}
+            frames = [
+                f"{Path(item.filename).stem}_{item.lineno}"
+                for item in traceback.extract_tb(exc.__traceback__)
+                if Path(item.filename).name in safe_sources
+            ]
+            outcome["source"] = frames[-1] if frames else "outside-package"
         finally:
             frame.Close()
 
