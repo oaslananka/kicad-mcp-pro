@@ -90,6 +90,7 @@ dev = [
   "shellcheck-py==0.11.0.1",
   "vulture>=2.11",
   "zizmor>=1.24.1",
+  "pytest-codspeed>=4.0.0",
 ]
 freerouting = []
 http = ["httpx>=0.27.0", "uvicorn[standard]>=0.30.0"]
@@ -132,6 +133,7 @@ ignore = ["S603"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["ANN001", "ANN202", "S101"]
+"benchmarks/**/*.py" = ["ANN001", "ANN202", "S101"]
 "src/kicad_mcp/web/dashboard.py" = ["E501"]
 # Generated file: long JSON lines live inside a raw string (regenerate via
 # scripts/build_parity_matrix.py); do not hand-edit.

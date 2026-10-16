@@ -29,6 +29,7 @@
   <a href="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/codeql.yml"><img src="https://github.com/oaslananka/kicad-mcp-pro/actions/workflows/codeql.yml/badge.svg?branch=main" alt="CodeQL" /></a>
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/oaslananka/kicad-mcp-pro"><img src="https://api.scorecard.dev/projects/github.com/oaslananka/kicad-mcp-pro/badge" alt="OpenSSF Scorecard" /></a>
   <a href="https://www.bestpractices.dev/projects/12686"><img src="https://www.bestpractices.dev/projects/12686/badge" alt="OpenSSF Best Practices: Passing" /></a>
+  <a href="https://app.codspeed.io/oaslananka/kicad-mcp-pro?utm_source=badge"><img src="https://img.shields.io/endpoint?url=https://codspeed.io/badge.json" alt="CodSpeed" /></a>
 </p>
 
 <p>
