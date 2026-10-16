@@ -89,7 +89,8 @@ def main() -> int:
             for key in ("board", "name", "footprints", "nets", "syncDisabled")
         )
         print(
-            f"MACOS_COMPANION_PROBE {flags} stage={outcome['stage']} error={outcome['error']}",
+            f"MACOS_COMPANION_PROBE {flags} stage={outcome['stage']} "
+            f"error={outcome['error']} source={outcome['source']}",
             flush=True,
         )
     print("MACOS_COMPANION_LIVE_PASS" if outcome["ok"] else "MACOS_COMPANION_LIVE_FAIL", flush=True)
