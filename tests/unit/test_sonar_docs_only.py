@@ -63,18 +63,22 @@ def test_docs_only_cli_accepts_only_bounded_docs_paths(
 def test_renaming_source_into_docs_still_requires_analysis(tmp_path: Path) -> None:
     """The workflow's --no-renames reveals both the source removal and docs addition."""
     repo = Repo.init(tmp_path / "repo")
-    source = Path(repo.working_tree_dir or "") / "src" / "module.py"
-    source.parent.mkdir()
-    source.write_text("x = 1\n", encoding="utf-8")
-    repo.index.add(["src/module.py"])
-    actor = Actor("CI Fixture", "ci@example.invalid")
-    repo.index.commit("seed", author=actor, committer=actor)
+    try:
+        repo.git.config("--local", "core.hooksPath", "")
+        source = Path(repo.working_tree_dir or "") / "src" / "module.py"
+        source.parent.mkdir()
+        source.write_text("x = 1\n", encoding="utf-8")
+        repo.index.add(["src/module.py"])
+        actor = Actor("CI Fixture", "ci@example.invalid")
+        repo.index.commit("seed", author=actor, committer=actor, skip_hooks=True)
 
-    docs = source.parent.parent / "docs"
-    docs.mkdir()
-    source.rename(docs / "module.py")
-    repo.git.add("-A")
-    diff = repo.git.diff("--no-renames", "--cached", "--name-only", "-z", "HEAD")
-    paths = diff.encode("utf-8")
-    assert set(paths.rstrip(b"\0").split(b"\0")) == {b"src/module.py", b"docs/module.py"}
-    assert is_docs_only_diff(paths) is False
+        docs = source.parent.parent / "docs"
+        docs.mkdir()
+        source.rename(docs / "module.py")
+        repo.git.add("-A")
+        diff = repo.git.diff("--no-renames", "--cached", "--name-only", "-z", "HEAD")
+        paths = diff.encode("utf-8")
+        assert set(paths.rstrip(b"\0").split(b"\0")) == {b"src/module.py", b"docs/module.py"}
+        assert is_docs_only_diff(paths) is False
+    finally:
+        repo.close()

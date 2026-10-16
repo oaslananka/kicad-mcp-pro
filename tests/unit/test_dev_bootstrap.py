@@ -5,6 +5,7 @@ import io
 import json
 import shutil
 import subprocess
+import sys
 import tarfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -82,10 +83,31 @@ def test_safe_extract_tar_rejects_path_traversal(tmp_path: Path) -> None:
     assert not (tmp_path / "escape.txt").exists()
 
 
+def _resolve_bash() -> str | None:
+    if sys.platform == "win32":
+        git_exe = shutil.which("git")
+        if git_exe:
+            git_root = Path(git_exe).resolve().parents[1]
+            for candidate in (git_root / "bin" / "bash.exe", git_root / "usr" / "bin" / "bash.exe"):
+                if candidate.is_file():
+                    return str(candidate)
+        for standard_path in (
+            Path(r"C:\Program Files\Git\bin\bash.exe"),
+            Path(r"C:\Program Files\Git\usr\bin\bash.exe"),
+        ):
+            if standard_path.is_file():
+                return str(standard_path)
+    bash = shutil.which("bash")
+    if bash and sys.platform == "win32" and "system32" in bash.lower():
+        return None
+    return bash
+
+
 def test_bootstrap_cli_plan_and_missing_check_are_machine_readable(tmp_path: Path) -> None:
     script = ROOT / "scripts" / "bootstrap-dev.sh"
-    bash = shutil.which("bash")
-    assert bash is not None
+    bash = _resolve_bash()
+    if bash is None:
+        pytest.skip("A working bash executable is not available on this platform")
     plan = subprocess.run(
         [bash, str(script), "--plan", "--json"],
         cwd=ROOT,
@@ -142,7 +164,10 @@ def test_safe_extract_tar_allows_internal_symlink_but_rejects_escape(tmp_path: P
 
     safe_root = tmp_path / "safe"
     safe_extract_tar(safe_archive, safe_root)
-    assert (safe_root / "package/bin/tool").resolve() == (safe_root / "package/lib/cli.js")
+    tool = safe_root / "package/bin/tool"
+    if not tool.is_symlink():
+        pytest.skip("Filesystem does not support unprivileged symbolic links")
+    assert tool.resolve() == (safe_root / "package/lib/cli.js")
 
     hostile_archive = tmp_path / "hostile-links.tar.gz"
     with tarfile.open(hostile_archive, "w:gz") as bundle:
@@ -216,7 +241,12 @@ def test_node_install_preserves_archive_symlinks(tmp_path: Path, monkeypatch) ->
     cli.parent.mkdir(parents=True)
     (node_root / "bin" / "node").write_text("node", encoding="utf-8")
     cli.write_text("#!/usr/bin/env node\n", encoding="utf-8")
-    (node_root / "bin" / "npm").symlink_to("../lib/node_modules/npm/bin/npm-cli.js")
+    try:
+        (node_root / "bin" / "npm").symlink_to("../lib/node_modules/npm/bin/npm-cli.js")
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Creating symbolic links requires privileges or Developer Mode on Windows")
+        raise
     archive = tmp_path / "node.tar.xz"
     with tarfile.open(archive, "w:xz") as bundle:
         bundle.add(node_root, arcname=node_root.name, recursive=True)
