@@ -207,7 +207,7 @@ def _json_config(snippet: object, fmt: str) -> str:
     return json.dumps(snippet, indent=2, ensure_ascii=False)
 
 
-async def api_status(request: Request) -> JSONResponse:
+async def api_status(request: Request) -> JSONResponse:  # noqa: S7503 -- starlette async route
     """Return full server status as JSON."""
     cfg = get_config()
     report = build_health_report()
@@ -273,7 +273,7 @@ async def api_status(request: Request) -> JSONResponse:
     )
 
 
-async def api_health(request: Request) -> JSONResponse:
+async def api_health(request: Request) -> JSONResponse:  # noqa: S7503 -- starlette async route
     """Return lightweight health and sanitized KiCad runtime capability state."""
     report = build_health_report()
     ipc_state = get_ipc_capability_state()
@@ -299,7 +299,7 @@ async def api_health(request: Request) -> JSONResponse:
     )
 
 
-async def api_info(request: Request) -> JSONResponse:
+async def api_info(request: Request) -> JSONResponse:  # noqa: S7503 -- starlette async route
     """Return basic server information."""
     cfg = get_config()
     return JSONResponse(
@@ -321,7 +321,7 @@ _sse_headers = {
 }
 
 
-async def api_log_stream(request: Request) -> StreamingResponse:
+async def api_log_stream(request: Request) -> StreamingResponse:  # noqa: S7503 -- starlette async route
     """SSE endpoint for real-time log streaming."""
     return StreamingResponse(
         _sse_log_generator(),
@@ -330,7 +330,7 @@ async def api_log_stream(request: Request) -> StreamingResponse:
     )
 
 
-async def api_dashboard(request: Request) -> HTMLResponse:
+async def api_dashboard(request: Request) -> HTMLResponse:  # noqa: S7503 -- starlette async route
     """Serve the web dashboard HTML page."""
     return HTMLResponse(DASHBOARD_HTML)
 
@@ -340,7 +340,7 @@ async def api_dashboard(request: Request) -> HTMLResponse:
 # ---------------------------------------------------------------------------
 
 
-async def api_tools(request: Request) -> JSONResponse:
+async def api_tools(request: Request) -> JSONResponse:  # noqa: S7503 -- starlette async route
     """List available MCP tools with metadata and annotations."""
     handle = get_server_handle()
     if handle is None:
@@ -367,7 +367,7 @@ async def api_tools(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(exc), "tools": []}, status_code=500)
 
 
-async def api_config_get(request: Request) -> JSONResponse:
+async def api_config_get(request: Request) -> JSONResponse:  # noqa: S7503 -- starlette async route
     """Return the current (sanitized) server configuration."""
     payload = _config_public_payload()
     return JSONResponse({"config": payload, **payload})
@@ -427,7 +427,7 @@ async def api_config_post(request: Request) -> JSONResponse:
     return JSONResponse(result)
 
 
-async def api_config_export(request: Request) -> JSONResponse:
+async def api_config_export(request: Request) -> JSONResponse:  # noqa: S7503 -- starlette async route
     """Export an MCP config snippet for a specific client."""
     raw_client = request.path_params.get("client", "").strip().casefold()
     client = _CLIENT_ALIASES.get(raw_client, raw_client)
@@ -513,7 +513,7 @@ async def api_tool_test(request: Request) -> JSONResponse:
         return JSONResponse({"ok": False, "error": str(exc), "tool": tool_name}, status_code=500)
 
 
-async def api_metrics(request: Request) -> JSONResponse:
+async def api_metrics(request: Request) -> JSONResponse:  # noqa: S7503 -- starlette async route
     """Return server metrics as JSON (call counts, latencies, uptime)."""
     snapshot = get_metrics_snapshot()
     uptime = time.time() - get_start_time()
@@ -526,7 +526,7 @@ async def api_metrics(request: Request) -> JSONResponse:
     )
 
 
-async def api_server_action(request: Request) -> JSONResponse:
+async def api_server_action(request: Request) -> JSONResponse:  # noqa: S7503 -- starlette async route
     """Control the server lifecycle (shutdown / restart).
 
     POST /api/server/start
@@ -595,7 +595,7 @@ def _schematic_render_dir() -> Path:
     return get_config().ensure_output_dir("schematic-renders")
 
 
-async def api_artifacts_schematic(request: Request) -> JSONResponse:
+async def api_artifacts_schematic(request: Request) -> JSONResponse:  # noqa: S7503 -- starlette async route
     """List recent schematic live-preview manifests for the dashboard Preview tab."""
     render_dir = _schematic_render_dir()
     entries: list[dict[str, object]] = []
@@ -618,7 +618,7 @@ async def api_artifacts_schematic(request: Request) -> JSONResponse:
     return JSONResponse({"artifacts": entries})
 
 
-async def api_artifacts_file(request: Request) -> JSONResponse | FileResponse:
+async def api_artifacts_file(request: Request) -> JSONResponse | FileResponse:  # noqa: S7503 -- starlette async route
     """Serve a single schematic render artifact (SVG/PNG) from the sandboxed render dir."""
     raw_path = request.query_params.get("path", "")
     if not raw_path:

@@ -109,13 +109,35 @@ async function retry(task, attempts, delayMs) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      return await task();
+      return await task(); // NOSONAR: sequential retry loop
     } catch (error) {
       lastError = error;
-      if (attempt < attempts) await sleep(delayMs);
+      if (attempt < attempts) await sleep(delayMs); // NOSONAR: sequential retry loop
     }
   }
   throw lastError;
+}
+
+function resolveExpectedChecksum(checksums, tarballName) {
+  const direct = checksums.get(tarballName);
+  if (direct !== undefined) {
+    return direct;
+  }
+  const tarballEntries = [...checksums.entries()].filter(([name]) =>
+    name.endsWith(".tgz"),
+  );
+  if (tarballEntries.length === 0) {
+    throw new Error("No .tgz entry found in checksums file");
+  }
+  if (tarballEntries.length > 1) {
+    throw new Error(
+      "Published tarball did not match the checksums file and multiple .tgz entries exist",
+    );
+  }
+  console.log(
+    "[warn] tarball basename differs; matching the sole .tgz entry by digest",
+  );
+  return tarballEntries[0][1];
 }
 
 export async function verifyPublishedNpmDigest({
@@ -144,28 +166,7 @@ export async function verifyPublishedNpmDigest({
     retryDelayMs,
   );
   const tarballName = basename(new URL(tarballUrl).pathname);
-  let expected = checksums.get(tarballName);
-  if (expected === undefined) {
-    // Local pack may produce a different basename than the registry
-    // (e.g. scoped packages: pack -> oaslananka-kicad-...tgz, registry -> kicad-...tgz).
-    // If there is exactly one .tgz entry in checksums, use it as the fallback.
-    const tarballEntries = [...checksums.entries()].filter(([name]) =>
-      name.endsWith(".tgz"),
-    );
-    if (tarballEntries.length === 0) {
-      throw new Error("No .tgz entry found in checksums file");
-    }
-    if (tarballEntries.length > 1) {
-      throw new Error(
-        "Published tarball did not match the checksums file and multiple .tgz entries exist",
-      );
-    }
-    const [, entryDigest] = tarballEntries[0];
-    console.log(
-      "[warn] tarball basename differs; matching the sole .tgz entry by digest",
-    );
-    expected = entryDigest;
-  }
+  const expected = resolveExpectedChecksum(checksums, tarballName);
   const actual = sha256(tarball);
   if (expected !== actual) {
     throw new Error("Published npm tarball sha256 mismatch");
