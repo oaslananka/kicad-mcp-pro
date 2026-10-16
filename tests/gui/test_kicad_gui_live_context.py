@@ -682,19 +682,21 @@ async def test_open_pcb_editor_uses_live_board_context_and_project_switches(
                 await asyncio.sleep(3)
             python = next((candidate for candidate in candidates if candidate.is_file()), None)
             assert python is not None, "KiCad did not provision the Companion plugin environment"
-            probe = subprocess.run(
-                [
-                    str(python),
-                    str(REPO_ROOT / "tests/gui/native_companion_live_probe.py"),
-                    str(plugin_dir),
-                    Path(env["KICAD_MCP_PCB_FILE"]).name,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=55,
-                check=False,
+            probe = await asyncio.create_subprocess_exec(
+                str(python),
+                str(REPO_ROOT / "tests/gui/native_companion_live_probe.py"),
+                str(plugin_dir),
+                Path(env["KICAD_MCP_PCB_FILE"]).name,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            assert probe.returncode == 0 and "MACOS_COMPANION_LIVE_PASS" in probe.stdout, (
+            try:
+                stdout, _stderr = await asyncio.wait_for(probe.communicate(), timeout=55)
+            except TimeoutError:
+                probe.kill()
+                await probe.wait()
+                pytest.fail("Companion wx/IPC probe timed out")
+            assert probe.returncode == 0 and b"MACOS_COMPANION_LIVE_PASS" in stdout, (
                 "Companion wx/IPC probe failed in KiCad-managed environment"
             )
             _write_json(
