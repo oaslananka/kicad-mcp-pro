@@ -2862,7 +2862,7 @@ def init(
         status_icon = "✅" if report.ok else "⚠️"
         typer.echo(f"\n  Health:  {report.status} {status_icon}")
         for check in report.checks:
-            icon = {"ok": "✅", "warn": "⚠️"}.get(check.status, "❌")
+            icon = "✅" if check.status == "ok" else "⚠️" if check.status == "warn" else "❌"
             typer.echo(f"    {icon} {check.name}: {check.message}")
     except Exception as exc:
         typer.echo(f"\n  Health:  Check failed - {exc}")
@@ -2935,17 +2935,12 @@ def status(
     # ── Checks ──
     typer.echo(f"\n{'─── Health Checks ───'}")
     for check in report.checks:
-        icon = {"ok": "✅", "warn": "⚠️"}.get(check.status, "❌")
+        icon = "✅" if check.status == "ok" else "⚠️" if check.status == "warn" else "❌"
         typer.echo(f"  {icon}  {check.name}: {check.message}")
         if check.hint:
             typer.echo(f"      Hint: {check.hint}")
 
-    if report.ok:
-        overall_icon = "✅"
-    elif report.status == "degraded":
-        overall_icon = "⚠️"
-    else:
-        overall_icon = "❌"
+    overall_icon = "✅" if report.ok else "⚠️" if report.status == "degraded" else "❌"
     typer.echo(f"\n  Overall: {report.status} {overall_icon}")
 
 
@@ -2990,7 +2985,9 @@ def log(
                     if not line:
                         time.sleep(0.1)
                         continue
-                    if not level or _log_level_match(line, level):
+                    if level and _log_level_match(line, level):
+                        typer.echo(line.rstrip())
+                    elif not level:
                         typer.echo(line.rstrip())
         except KeyboardInterrupt:
             pass
@@ -3000,7 +2997,9 @@ def log(
             all_lines = f.readlines()
         tail = all_lines[-lines:] if lines < len(all_lines) else all_lines
         for line in tail:
-            if not level or _log_level_match(line, level):
+            if level and _log_level_match(line, level):
+                typer.echo(line.rstrip())
+            elif not level:
                 typer.echo(line.rstrip())
 
 

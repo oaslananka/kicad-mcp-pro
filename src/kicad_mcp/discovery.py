@@ -352,40 +352,39 @@ def discover_library_paths(cli_path: Path) -> dict[str, Path | None]:
     return {"root": None, "symbols": None, "footprints": None}
 
 
-def _recent_kicad_config_dirs() -> list[Path]:
-    home = Path.home()
-    system = platform.system()
-    if system == "Windows":
-        base = home / "AppData" / "Roaming" / "kicad"
-    elif system == "Darwin":
-        base = home / "Library" / "Preferences" / "kicad"
-    else:
-        base = home / ".config" / "kicad"
-    return [base / "11.0", base / "10.0"]
-
-
-def _read_recent_projects_from_config(common: Path) -> list[Path]:
-    try:
-        data = json.loads(common.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    recent = data.get("recentlyUsedFiles", {}).get("projects", [])
-    project_files: list[Path] = []
-    for raw in recent:
-        candidate = Path(raw).expanduser()
-        if candidate.exists() and candidate.suffix == ".kicad_pro":
-            project_files.append(candidate)
-    return project_files
-
-
 def find_recent_projects(limit: int = 10) -> list[Path]:
     """Find recently opened KiCad projects on this system."""
+    system = platform.system()
+    if system == "Windows":
+        config_dirs = [
+            Path.home() / "AppData" / "Roaming" / "kicad" / "11.0",
+            Path.home() / "AppData" / "Roaming" / "kicad" / "10.0",
+        ]
+    elif system == "Darwin":
+        config_dirs = [
+            Path.home() / "Library" / "Preferences" / "kicad" / "11.0",
+            Path.home() / "Library" / "Preferences" / "kicad" / "10.0",
+        ]
+    else:
+        config_dirs = [
+            Path.home() / ".config" / "kicad" / "11.0",
+            Path.home() / ".config" / "kicad" / "10.0",
+        ]
+
     project_files: list[Path] = []
-    for config_dir in _recent_kicad_config_dirs():
+    for config_dir in config_dirs:
         common = config_dir / "kicad_common.json"
         if not common.exists():
             continue
-        project_files = _read_recent_projects_from_config(common)
+        try:
+            data = json.loads(common.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        recent = data.get("recentlyUsedFiles", {}).get("projects", [])
+        for raw in recent:
+            candidate = Path(raw).expanduser()
+            if candidate.exists() and candidate.suffix == ".kicad_pro":
+                project_files.append(candidate)
         if project_files:
             break
     return project_files[:limit]
