@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -12,9 +13,14 @@ import pytest
 from kicad_mcp.bridge import (
     BridgeState,
     _bridge_pid_path,
+    _bridge_server,
+    _generate_pairing_code,
+    _message_too_large_error,
     _proxy_to_local,
+    _rate_limited_error,
     _route_message,
     _start_daemon,
+    bridge_start,
     bridge_status,
     bridge_stop,
 )
@@ -316,3 +322,174 @@ async def test_proxy_to_local_connection_error(mock_post: MagicMock) -> None:
     assert resp["error"]["code"] == -32003
     assert "Bridge proxy error" in resp["error"]["message"]
     assert state.error_count == 1
+
+
+def test_generate_pairing_code() -> None:
+    code1 = _generate_pairing_code()
+    code2 = _generate_pairing_code()
+    assert len(code1) == 32
+    assert code1.isupper()
+    assert int(code1, 16) > 0
+    assert code1 != code2
+
+
+def test_error_helpers() -> None:
+    rate_err = _rate_limited_error(123)
+    assert rate_err["id"] == 123
+    assert rate_err["error"]["code"] == -32004
+
+    large_err = _message_too_large_error(456)
+    assert large_err["id"] == 456
+    assert large_err["error"]["code"] == -32005
+
+
+def test_bridge_state_to_dict() -> None:
+    state = BridgeState(pairing_code="SECRET_123", port=9090, target_url="http://127.0.0.1:3334")
+    public_dict = state.to_dict(include_secret=False)
+    assert "pairing_code" not in public_dict
+    assert public_dict["port"] == 9090
+    assert public_dict["paired"] is False
+
+    private_dict = state.to_dict(include_secret=True)
+    assert private_dict["pairing_code"] == "SECRET_123"
+
+
+def test_bridge_start_flows(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 1. Daemon branch
+    mock_start_daemon = MagicMock()
+    monkeypatch.setattr("kicad_mcp.bridge._start_daemon", mock_start_daemon)
+    bridge_start(port=9091, code="TESTCODE", daemon=True)
+    mock_start_daemon.assert_called_once()
+    assert mock_start_daemon.call_args[0][0].port == 9091
+    assert mock_start_daemon.call_args[0][0].pairing_code == "TESTCODE"
+
+    # 2. Interactive branch
+    mock_start_daemon.reset_mock()
+    monkeypatch.setattr(
+        "kicad_mcp.setup._check_kicad_mcp_available", lambda: True
+    )
+
+    def mock_run(coro: object) -> None:
+        if hasattr(coro, "close"):
+            coro.close()
+
+    monkeypatch.setattr("asyncio.run", mock_run)
+    bridge_start(port=9092, code="INTERACTIVE")
+    captured = capsys.readouterr()
+    assert "KiCad MCP Bridge Daemon" in captured.out
+    assert "Port:         9092" in captured.out
+    assert "Pairing Code: INTERACTIVE" in captured.out
+
+
+@pytest.mark.asyncio
+@patch("httpx.AsyncClient.post")
+async def test_proxy_to_local_http_status_error(mock_post: MagicMock) -> None:
+    state = BridgeState(
+        pairing_code="CODE123",
+        port=9090,
+        target_url="http://127.0.0.1:3334",
+        paired=True,
+    )
+    msg = {"jsonrpc": "2.0", "method": "pcb_get_tracks", "id": 11}
+
+    import httpx
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 502
+    mock_post.side_effect = httpx.HTTPStatusError(
+        "Bad Gateway", request=MagicMock(), response=mock_resp
+    )
+
+    resp = await _proxy_to_local(state, msg, 11)
+    assert resp is not None
+    assert "error" in resp
+    assert resp["error"]["code"] == -32003
+    assert "502" in resp["error"]["message"]
+    assert state.error_count == 1
+
+
+@pytest.mark.asyncio
+@patch("httpx.AsyncClient.post")
+async def test_proxy_to_local_auth_token_header(
+    mock_post: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("KICAD_MCP_AUTH_TOKEN", "bearer_token_xyz")
+    state = BridgeState(
+        pairing_code="CODE123",
+        port=9090,
+        target_url="http://127.0.0.1:3334",
+        paired=True,
+    )
+    msg = {"jsonrpc": "2.0", "method": "pcb_get_tracks", "id": 12}
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"jsonrpc": "2.0", "id": 1, "result": {"tracks": []}}
+    mock_post.return_value = mock_resp
+
+    await _proxy_to_local(state, msg, 12)
+    headers = mock_post.call_args.kwargs.get("headers", {})
+    assert headers.get("Authorization") == "Bearer bearer_token_xyz"
+
+
+@pytest.mark.asyncio
+async def test_bridge_server_tcp_lifecycle() -> None:
+    import socket
+
+    # Bind to an OS-assigned free port
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    free_port = sock.getsockname()[1]
+    sock.close()
+
+    state = BridgeState(
+        pairing_code="SECRET_TCP",
+        port=free_port,
+        target_url="http://127.0.0.1:3334",
+    )
+
+    import asyncio
+
+    server_task = asyncio.create_task(_bridge_server(state))
+    # Give server a moment to start listening
+    await asyncio.sleep(0.1)
+
+    try:
+        reader, writer = await asyncio.open_connection("127.0.0.1", free_port)
+
+        # 1. Send invalid JSON
+        writer.write(b"not a json string\n")
+        await writer.drain()
+        await asyncio.sleep(0.05)
+        assert state.error_count >= 1
+
+        # 2. Pair successfully
+        pair_msg = {
+            "jsonrpc": "2.0",
+            "method": "bridge.pair",
+            "params": {"code": "SECRET_TCP"},
+            "id": 1,
+        }
+        writer.write((json.dumps(pair_msg) + "\n").encode("utf-8"))
+        await writer.drain()
+        line = await asyncio.wait_for(reader.readline(), timeout=2.0)
+        resp = json.loads(line.decode("utf-8"))
+        assert resp["result"]["status"] == "paired"
+        assert state.paired is True
+
+        # 3. Check status
+        status_msg = {"jsonrpc": "2.0", "method": "bridge.status", "id": 2}
+        writer.write((json.dumps(status_msg) + "\n").encode("utf-8"))
+        await writer.drain()
+        line = await asyncio.wait_for(reader.readline(), timeout=2.0)
+        resp = json.loads(line.decode("utf-8"))
+        assert resp["result"]["port"] == free_port
+        assert resp["result"]["paired"] is True
+
+        writer.close()
+        await writer.wait_closed()
+    finally:
+        server_task.cancel()
+        await asyncio.gather(server_task, return_exceptions=True)
+
