@@ -155,7 +155,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          uv run --all-extras --frozen python scripts/build_kicad_pcm.py --output-dir "$RUNNER_TEMP/kicad-companion-pcm" --verify
+          uv run --all-extras --frozen python scripts/build_kicad_pcm.py --output-dir artifacts/kicad-10-0-7-macos/companion-pcm --verify
           uv run --all-extras --frozen python - <<'PYCODE'
           import os
           import tomllib
@@ -163,7 +163,7 @@ jobs:
           from pathlib import Path
 
           version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
-          source = Path(os.environ["RUNNER_TEMP"]) / "kicad-companion-pcm" / f"kicad-mcp-pro-pcm-{version}.zip"
+          source = Path("artifacts/kicad-10-0-7-macos/companion-pcm") / f"kicad-mcp-pro-pcm-{version}.zip"
           destination = Path(os.environ["KICAD_MCP_COMPANION_PLUGIN_DIR"])
           destination.mkdir(parents=True, exist_ok=True)
           with zipfile.ZipFile(source) as archive:
@@ -312,5 +312,4 @@ jobs:
           fi
           rm -rf "$RUNNER_TEMP/kicad-unified-universal-10.0.7.dmg" \
             "$RUNNER_TEMP/kicad-107-volume" "$RUNNER_TEMP/kicad-107-config" \
-            "$RUNNER_TEMP/kicad-107-documents" "$RUNNER_TEMP/kicad-107-cache" \
-            "$RUNNER_TEMP/kicad-companion-pcm"
+            "$RUNNER_TEMP/kicad-107-documents" "$RUNNER_TEMP/kicad-107-cache"
