@@ -1636,6 +1636,7 @@ def _next_free_block(
     frows: int,
     *,
     cell_w: float,
+    cell_h: float = 0.0,
     paper: str,
 ) -> tuple[int, int]:
     """Reserve a free ``fcols×frows`` block of grid cells; return its ``(col, row)``.
@@ -1644,6 +1645,7 @@ def _next_free_block(
     overflows the sheet width (the block itself may exceed it for very wide parts,
     in which case it starts at column 0).
     """
+    _ = cell_h
     max_cols = max(_sheet_usable_cols(paper, cell_w), fcols)
     col, row = 0, 0
     while True:
@@ -1713,7 +1715,7 @@ def _apply_netlist_auto_layout(
     for reference in ordered_refs:
         fcols, frows = footprints.get(reference, (1, 1))
         col, row = _next_free_block(
-            netlist_occupied, fcols, frows, cell_w=cell_w, paper=chosen_paper
+            netlist_occupied, fcols, frows, cell_w=cell_w, cell_h=cell_h, paper=chosen_paper
         )
         cell_x = AUTO_LAYOUT_ORIGIN_X_MM + col * cell_w
         cell_y = AUTO_LAYOUT_ORIGIN_Y_MM + row * cell_h
