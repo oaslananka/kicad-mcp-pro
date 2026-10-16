@@ -208,7 +208,7 @@ def test_register_resources_exposes_blocked_paths(monkeypatch, tmp_path: Path) -
     assert "Project quality gate: BLOCKED" in mcp.resources["kicad://project/quality_gate"]()
     assert '"status": "blocked"' in mcp.resources["kicad://project/gate_history"]()
     assert (
-        "Project fix queue\n- BLOCKED: queue failed" == mcp.resources["kicad://project/fix_queue"]()
+        mcp.resources["kicad://project/fix_queue"]() == "Project fix queue\n- BLOCKED: queue failed"
     )
     assert (
         "Schematic connectivity quality gate: BLOCKED"

@@ -174,7 +174,7 @@ def find_kicad_version(cli_path: Path) -> str | None:
             timeout=10,
             check=False,
         )
-    except (FileNotFoundError, OSError, PermissionError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired):
         return None
     text = (result.stdout or result.stderr).strip()
     return text or None

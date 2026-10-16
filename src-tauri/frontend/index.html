@@ -270,8 +270,8 @@
           if (resp.status === 200 || resp.status === 0) {
             healthOk = true;
           }
-        } catch (_error) {
-          // Ignore probe failure; fallback to HEAD probe if GET fails
+        } catch (_getErr) {
+          // Probe GET failed; fallback to HEAD request before retrying
           try {
             const headResp = await fetch(HEALTH_URL, {
               method: 'HEAD',
@@ -281,8 +281,8 @@
             if (headResp.status === 200 || headResp.status === 0) {
               healthOk = true;
             }
-          } catch (_headError) {
-            // Ignore probe failure; retry loop continues until MAX_RETRIES
+          } catch (_headErr) {
+            // Server probe failed; poll loop will retry on next scheduled interval
           }
         }
 

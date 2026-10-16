@@ -5532,7 +5532,7 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
             )
 
     name_roots: dict[str, tuple[float, float]] = {}
-    for root, group in list(groups.items()):
+    for root, group in groups.items():
         for name in {*group["labels"], *group["power"]}:
             if name in name_roots:
                 union(name_roots[name], root)

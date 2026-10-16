@@ -142,13 +142,6 @@ except ImportError:
 
 # Shared user-facing values; preserve spelling and case across CLI and reports.
 _HELP_JSON_OUTPUT = "Emit machine-readable JSON."
-_HELP_TRANSPORT = "Transport: stdio, http, sse, streamable-http"
-_HELP_HOST = "HTTP bind host"
-_HELP_PORT = "HTTP bind port"
-_HELP_PROJECT_DIR = "Active KiCad project directory"
-_HELP_LOG_LEVEL = "Log level"
-_HELP_OPERATING_MODE = "Operating mode: readonly, write, manufacturing, experimental"
-_HELP_EXPERIMENTAL = "Enable experimental tools"
 _HTTP_RESPONSE_START = "http.response.start"
 _NOT_FOUND_LITERAL = "not found"
 _TOOL_ERROR_EVENT_NAME = "mcp.tool_error"
@@ -1670,7 +1663,7 @@ def _json_rpc_protocol_version(body: bytes) -> str | None:
     """Read modern per-request metadata for version diagnostics only."""
     try:
         payload = json.loads(body.decode("utf-8"))
-    except (UnicodeError, ValueError):
+    except ValueError:
         return None
     if not isinstance(payload, dict):
         return None
@@ -3025,7 +3018,7 @@ def dashboard(
     operating_mode: str | None = typer.Option(
         None,
         "--mode",
-        help=option_help(_HELP_OPERATING_MODE),
+        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
     ),
 ) -> None:
     """Start the server with the web dashboard enabled."""
@@ -3130,7 +3123,7 @@ def list_tools_command(
     operating_mode: str | None = typer.Option(
         None,
         "--mode",
-        help=option_help(_HELP_OPERATING_MODE),
+        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
     ),
 ) -> None:
     """List MCP tools available for the selected profile."""
@@ -3346,20 +3339,24 @@ def _run_with_watch(
 
 @app.command(name="inspect")
 def inspect_command(
-    transport: str | None = typer.Option(None, help=option_help(_HELP_TRANSPORT)),
-    host: str | None = typer.Option(None, help=option_help(_HELP_HOST)),
-    port: int | None = typer.Option(None, help=option_help(_HELP_PORT)),
-    project_dir: str | None = typer.Option(None, help=option_help(_HELP_PROJECT_DIR)),
-    log_level: str | None = typer.Option(None, help=option_help(_HELP_LOG_LEVEL)),
+    transport: str | None = typer.Option(
+        None, help=option_help("Transport: stdio, http, sse, streamable-http")
+    ),
+    host: str | None = typer.Option(None, help=option_help("HTTP bind host")),
+    port: int | None = typer.Option(None, help=option_help("HTTP bind port")),
+    project_dir: str | None = typer.Option(
+        None, help=option_help("Active KiCad project directory")
+    ),
+    log_level: str | None = typer.Option(None, help=option_help("Log level")),
     profile: str | None = typer.Option(
         None, help=f"Server profile: {', '.join(available_profiles())}"
     ),
     operating_mode: str | None = typer.Option(
         None,
         "--mode",
-        help=option_help(_HELP_OPERATING_MODE),
+        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
     ),
-    experimental: bool | None = typer.Option(None, help=option_help(_HELP_EXPERIMENTAL)),
+    experimental: bool | None = typer.Option(None, help=option_help("Enable experimental tools")),
 ) -> None:
     """Launch the MCP Inspector GUI for interactive tool debugging."""
     # Start server on a random port for the inspector

@@ -581,6 +581,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _apply_or_detect_drift(updates: dict[Path, str], *, write: bool) -> list[Path]:
+    drift: list[Path] = []
+    for path, rendered in updates.items():
+        if path.read_text(encoding="utf-8") != rendered:
+            drift.append(path)
+            if write:
+                with path.open("w", encoding="utf-8", newline="\n") as manifest:
+                    manifest.write(rendered)
+    return drift
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     metadata = _project_metadata()
@@ -592,14 +603,7 @@ def main(argv: list[str] | None = None) -> int:
             print(error, file=sys.stderr)
         return 1
     updates = _planned_updates()
-    drift: list[Path] = []
-
-    for path, rendered in updates.items():
-        if path.read_text(encoding="utf-8") != rendered:
-            drift.append(path)
-            if args.write:
-                with path.open("w", encoding="utf-8", newline="\n") as manifest:
-                    manifest.write(rendered)
+    drift = _apply_or_detect_drift(updates, write=args.write)
 
     if drift and args.check:
         rel = ", ".join(

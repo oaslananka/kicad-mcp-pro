@@ -45,7 +45,8 @@ def test_publish_is_called_only_by_trusted_ci_or_manual_recovery() -> None:
     assert events["workflow_call"] is None
     assert workflow["concurrency"]["cancel-in-progress"] is False
     assert workflow["concurrency"]["group"] == "publish-release-${{ github.repository }}"
-    assert "workflow_run" not in events and "push" not in events
+    assert "workflow_run" not in events
+    assert "push" not in events
     assert "schedule" not in events
 
     ci = _workflow("ci.yml")

@@ -104,5 +104,6 @@ def test_native_cache_hints_preserve_reviewed_repository_policy(sample_project: 
 
 
 def test_repository_fails_closed_when_protocol_extension_is_registered() -> None:
+    extensions = [Apps()]
     with pytest.raises(ValueError, match="MCP protocol extensions are not enabled"):
-        KiCadFastMCP(name="extension-policy-test", extensions=[Apps()])
+        KiCadFastMCP(name="extension-policy-test", extensions=extensions)

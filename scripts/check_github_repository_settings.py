@@ -292,7 +292,7 @@ def _github_token() -> str:
 
 def _github_api_payload(path: str, token: str) -> object:
     allowed_dynamic = path == _RULESETS_PATH or re.fullmatch(
-        r"/repos/oaslananka/kicad-mcp-pro/rulesets/[0-9]+", path
+        r"/repos/oaslananka/kicad-mcp-pro/rulesets/\d+", path
     )
     if path not in _API_PATHS.values() and not allowed_dynamic:
         raise ValueError(f"unreviewed GitHub API path: {path!r}")

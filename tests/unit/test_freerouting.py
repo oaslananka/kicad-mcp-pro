@@ -118,8 +118,9 @@ def test_run_freerouting_jar_requires_jar_path(sample_project: Path) -> None:
     ses_path = sample_project / "board.ses"
     dsn_path.write_text("dsn", encoding="utf-8")
 
+    runner = FreeRoutingRunner()
     with pytest.raises(RuntimeError) as exc_info:
-        FreeRoutingRunner().run_freerouting(dsn_path, ses_path, use_docker=False)
+        runner.run_freerouting(dsn_path, ses_path, use_docker=False)
 
     assert "FreeRouting JAR path is required" in str(exc_info.value)
 
@@ -143,8 +144,10 @@ def test_import_ses_stages_then_requires_manual_gui_step(
 
     # The session is staged (a real action), but applying it has no headless path, so
     # import_ses must never silently succeed: it raises a clear manual-step error.
+    runner = FreeRoutingRunner()
+    pcb_path = sample_project / "demo.kicad_pcb"
     with pytest.raises(ManualStepRequiredError) as exc_info:
-        FreeRoutingRunner().import_ses(sample_project / "demo.kicad_pcb", ses_path)
+        runner.import_ses(pcb_path, ses_path)
 
     assert "File > Import > Specctra Session" in str(exc_info.value)
     staged = sample_project / "output" / "routing" / "board.ses"

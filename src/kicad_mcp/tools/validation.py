@@ -2714,7 +2714,7 @@ def _export_release_readiness_report(
                 "<!doctype html>",
                 '<html><head><meta charset="utf-8">',
                 "<title>Project release readiness</title>",
-                "<style>"
+                "<style>",
                 "body{font-family:Segoe UI,Arial,sans-serif;margin:2rem;}"
                 "pre{white-space:pre-wrap;font-family:Consolas,Monaco,monospace;line-height:1.45;}"
                 "@media print{body{margin:1cm;}}"
@@ -3423,7 +3423,7 @@ def _build_constraint_node(
     min_value: float | str | None,
     max_value: float | str | None,
 ) -> SExprNode:
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", constraint_type):
+    if not re.fullmatch(r"[A-Za-z_]\w*", constraint_type):
         raise ValueError("constraint_type must be a simple KiCad rule atom such as clearance.")
     node: SExprNode = ["constraint", constraint_type]
     min_atom = _coerce_constraint_value(min_value)

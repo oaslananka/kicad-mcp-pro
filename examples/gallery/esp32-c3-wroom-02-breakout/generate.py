@@ -78,7 +78,7 @@ def seed() -> None:
     (PROJECT / "sym-lib-table").write_text(f"(sym_lib_table\n{entries}\n)\n", encoding="utf-8")
 
 
-def placed_pins(lib, name, x, y, rot=0):
+def _pp(lib, name, x, y, rot=0):
     placed = _pins(lib, name, gg(x), gg(y), rot, 1)
     return {p: (round(px, 2), round(py, 2)) for p, (px, py) in placed.items()}
 
@@ -96,7 +96,7 @@ def sym(lib, name, x, y, ref, val, rot=0):
             "rotation": rot,
         }
     )
-    return placed_pins(lib, name, x, y, rot)
+    return _pp(lib, name, x, y, rot)
 
 
 def raw_sym(lib, name, x, y, ref, val, rot=0):

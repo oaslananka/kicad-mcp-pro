@@ -147,9 +147,8 @@ def test_every_tool_has_description() -> None:
     tools = server.list_tools_sync()
 
     for tool in tools:
-        assert tool.description and tool.description.strip(), (
-            f"{tool.name}: description is empty or missing"
-        )
+        assert tool.description, f"{tool.name}: description is empty or missing"
+        assert tool.description.strip(), f"{tool.name}: description is empty or missing"
 
 
 def test_tool_property_names_are_snake_case() -> None:

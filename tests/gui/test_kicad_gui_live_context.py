@@ -670,9 +670,12 @@ async def test_open_pcb_editor_uses_live_board_context_and_project_switches(
         tracks = live_outputs["pcb_get_tracks"]["text"]
         footprints = live_outputs["pcb_get_footprints"]["text"]
         nets = live_outputs["pcb_get_nets"]["text"]
-        assert "Tracks (" in tracks and "LED_A" in tracks
-        assert "R1" in footprints and "LED1" in footprints
-        assert "LED_A" in nets and "GND" in nets
+        assert "Tracks (" in tracks
+        assert "LED_A" in tracks
+        assert "R1" in footprints
+        assert "LED1" in footprints
+        assert "LED_A" in nets
+        assert "GND" in nets
 
         _stop_process(first_pcb)
         processes.remove(first_pcb)

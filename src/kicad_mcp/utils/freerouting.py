@@ -80,7 +80,7 @@ def _count_dsn_nets(dsn_path: Path) -> int:
 def _parse_unrouted_nets(text: str) -> list[str]:
     names: list[str] = []
     for match in re.finditer(
-        r"(?:unrouted|failed)\s+(?:net|connection)\s+['\"]?([A-Za-z0-9_.$:+/-]+)",
+        r"(?:unrouted|failed)\s+(?:net|connection)\s+['\"]?([A-Z0-9_.$:+/-]+)",
         text,
         flags=re.IGNORECASE,
     ):

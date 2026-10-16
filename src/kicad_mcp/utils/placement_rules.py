@@ -28,7 +28,7 @@ _SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
 _CAP_RE = re.compile(r"^C\d", re.IGNORECASE)
 _IC_RE = re.compile(r"^(?:U|IC)\d", re.IGNORECASE)
-_CRYSTAL_RE = re.compile(r"^(?:Y|X)\d", re.IGNORECASE)
+_CRYSTAL_RE = re.compile(r"^[YX]\d", re.IGNORECASE)
 _INDUCTOR_RE = re.compile(r"^L\d", re.IGNORECASE)
 
 _DECAP_VALUE_RE = re.compile(
@@ -187,6 +187,25 @@ def _check_crystal_distance(
     return findings
 
 
+def _find_smps_hot_loop_cluster(
+    ic_ref: str,
+    ic_fp: dict[str, Any],
+    inductors: dict[str, dict[str, Any]],
+    caps: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    nearby: list[dict[str, Any]] = [ic_fp]
+    nearby_refs = [ic_ref]
+    for l_ref, l_fp in inductors.items():
+        if _dist(ic_fp, l_fp) <= 30.0:
+            nearby.append(l_fp)
+            nearby_refs.append(l_ref)
+    for c_ref, c_fp in caps.items():
+        if _dist(ic_fp, c_fp) <= 20.0:
+            nearby.append(c_fp)
+            nearby_refs.append(c_ref)
+    return nearby, nearby_refs
+
+
 def _check_smps_hot_loop(
     footprints: FootprintMap, cfg: PlacementThresholds
 ) -> list[PlacementFinding]:
@@ -197,16 +216,7 @@ def _check_smps_hot_loop(
         r: fp for r, fp in footprints.items() if _CAP_RE.match(r) and fp.get("x_mm") is not None
     }
     for ic_ref, ic_fp in smps_ics.items():
-        nearby: list[dict[str, Any]] = [ic_fp]
-        nearby_refs = [ic_ref]
-        for l_ref, l_fp in inductors.items():
-            if _dist(ic_fp, l_fp) <= 30.0:
-                nearby.append(l_fp)
-                nearby_refs.append(l_ref)
-        for c_ref, c_fp in caps.items():
-            if _dist(ic_fp, c_fp) <= 20.0:
-                nearby.append(c_fp)
-                nearby_refs.append(c_ref)
+        nearby, nearby_refs = _find_smps_hot_loop_cluster(ic_ref, ic_fp, inductors, caps)
         if len(nearby) < 3:
             continue
         xs = [float(fp["x_mm"]) for fp in nearby]

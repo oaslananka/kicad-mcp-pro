@@ -303,8 +303,9 @@ def test_build_raises_when_no_net_endpoint_can_be_generated(tmp_path: Path) -> N
         chosen_paper="A4",
     )
 
+    service = harness.service()
     with pytest.raises(ValueError, match="could not generate any safe terminal stubs") as exc:
-        harness.service().build(nets=[{"name": "BROKEN"}])
+        service.build(nets=[{"name": "BROKEN"}])
 
     assert "BROKEN (resolved 0/2, missing: U9.1, U10.2)" in str(exc.value)
     assert "Alias matches: 3" in str(exc.value)
@@ -404,8 +405,10 @@ def test_build_deduplicates_libraries_and_generates_all_element_types(tmp_path: 
     content = harness.transaction_calls[0][2]
     assert content.count('(symbol "Device:R")') == 1
     assert content.count('(symbol "power:GND")') == 1
-    assert "reference=R1" in content and "reference=R2" in content
-    assert "reference=#PWR001" in content and "reference=#PWR002" in content
+    assert "reference=R1" in content
+    assert "reference=R2" in content
+    assert "reference=#PWR001" in content
+    assert "reference=#PWR002" in content
     assert "WIRE:1.0,2.0->3.0,4.0" in content
     assert "LABEL:NET_A,3.0,4.0,90,True,input,None" in content
     assert "project_name=demo-project" in content

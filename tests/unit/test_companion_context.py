@@ -108,7 +108,8 @@ def test_client_push_posts_to_mcp_endpoint() -> None:
     assert captured["auth"] == "Bearer secret"
     # MCP Streamable HTTP rejects a JSON-only Accept header with HTTP 400.
     accept = str(captured["accept"])
-    assert "application/json" in accept and "text/event-stream" in accept
+    assert "application/json" in accept
+    assert "text/event-stream" in accept
     body = captured["body"]
     assert body["params"]["name"] == "studio_push_context"  # type: ignore[index]
     assert body["params"]["arguments"]["active_file"] == "b.kicad_pcb"  # type: ignore[index]

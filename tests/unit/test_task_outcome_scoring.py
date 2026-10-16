@@ -256,9 +256,9 @@ def test_infrastructure_exclusion_rejects_contradictory_task_evidence(
     elif contradiction == "manual_repair":
         payload["manual_repair"] = True
     record = evals.AttemptRecord.model_validate(payload)
-
+    contract = _contract()
     with pytest.raises(evals.TaskOutcomeScoringError, match="pre-task exclusion"):
-        evals.aggregate_task_outcomes(_contract(), [record])
+        evals.aggregate_task_outcomes(contract, [record])
 
 
 def test_missing_required_stage_fails_success_classification_closed() -> None:

@@ -24,7 +24,8 @@ def test_sonar_uses_exact_run_coverage_and_preserves_manual_fallback() -> None:
     ci = yaml.safe_load(ci_raw)
     manual_workflow = yaml.safe_load(manual)
     assert "workflow_dispatch:" in manual
-    assert "  pull_request:" not in manual and "    branches: [main]" not in manual
+    assert "  pull_request:" not in manual
+    assert "    branches: [main]" not in manual
     assert manual_workflow["jobs"]["sonarcloud"]["timeout-minutes"] == 45
     assert manual_workflow["jobs"]["sonarcloud"]["name"] == "SonarCloud Manual Diagnostic"
 

@@ -49,12 +49,14 @@ def test_service_preserves_package_power_parallel_path_branch() -> None:
 
 def test_service_preserves_missing_power_and_invalid_temperature_errors() -> None:
     service = PowerIntegrityThermalViaService()
+    missing_power_input = ThermalViaInput()
 
     with pytest.raises(ValueError, match="Thermal via power is missing"):
-        service.estimate(ThermalViaInput(), board_thickness_mm=1.6)
+        service.estimate(missing_power_input, board_thickness_mm=1.6)
 
+    invalid_temp_input = ThermalViaInput(power_w=1.0, ambient_c=125.0, max_junction_c=125.0)
     with pytest.raises(ValueError, match="max_junction_c must be greater than ambient_c"):
         service.estimate(
-            ThermalViaInput(power_w=1.0, ambient_c=125.0, max_junction_c=125.0),
+            invalid_temp_input,
             board_thickness_mm=1.6,
         )

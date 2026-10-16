@@ -92,7 +92,8 @@ async def test_fix_readability_grows_sheet_for_offsheet(sample_project, mock_kic
     assert "grew sheet" in result
 
     paper = re.search(r'\(paper\s+"([^"]+)"', sch_file.read_text(encoding="utf-8"))
-    assert paper is not None and paper.group(1) != "A4"
+    assert paper is not None
+    assert paper.group(1) != "A4"
 
 
 @pytest.mark.anyio

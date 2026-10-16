@@ -38,8 +38,8 @@ class ReferenceAgentRunnerError(ValueError):
 
 
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-_ATTEMPT_IDENTIFIER = re.compile(r"^attempt-[0-9]{3,6}$")
-_VERSION_IDENTIFIER = re.compile(r"^v[1-9][0-9]*$")
+_ATTEMPT_IDENTIFIER = re.compile(r"^attempt-\d{3,6}$")
+_VERSION_IDENTIFIER = re.compile(r"^v[1-9]\d*$")
 _REVIEWED_BOARD_ROOTS = {
     "esp32-c6-usbc": Path("docs/evidence/reference-boards/esp32-c6-usbc/v1"),
     "stm32f072-usbc": Path("docs/evidence/reference-boards/stm32f072-usbc/v1"),

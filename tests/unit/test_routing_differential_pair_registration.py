@@ -44,7 +44,8 @@ def test_dependency_factory_wires_late_bound_callbacks() -> None:
     )
     result = deps.service.set_pair("USB_DP", "USB_DN")
     assert net_calls == ["nets"]
-    assert write_calls and write_calls[0][0] == "Differential pair USB_DP USB_DN"
+    assert write_calls
+    assert write_calls[0][0] == "Differential pair USB_DP USB_DN"
     assert "demo.kicad_dru" in result
 
 
