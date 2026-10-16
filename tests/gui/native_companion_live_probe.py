@@ -22,26 +22,41 @@ def main() -> int:
     app = wx.App(False)
     frame = CompanionFrame()
     frame.Show()
-    outcome = {"ok": False}
+    outcome = {
+        "ok": False,
+        "board": False,
+        "name": False,
+        "footprints": False,
+        "nets": False,
+        "syncDisabled": False,
+        "error": "none",
+    }
 
     def verify() -> None:
         try:
             frame.refresh()
             board = frame.board
-            outcome["ok"] = bool(
-                board is not None
-                and board.name == expected_board
-                and board.footprints > 0
-                and board.nets > 0
-                and not frame.sync_btn.IsEnabled()
+            outcome["board"] = board is not None
+            outcome["name"] = bool(board is not None and board.name == expected_board)
+            outcome["footprints"] = bool(board is not None and board.footprints > 0)
+            outcome["nets"] = bool(board is not None and board.nets > 0)
+            outcome["syncDisabled"] = not frame.sync_btn.IsEnabled()
+            outcome["ok"] = all(
+                outcome[key] for key in ("board", "name", "footprints", "nets", "syncDisabled")
             )
         except Exception:
-            outcome["ok"] = False
+            outcome["error"] = "callback"
         finally:
             frame.Close()
 
     wx.CallLater(2500, verify)
     app.MainLoop()
+    if not outcome["ok"]:
+        flags = " ".join(
+            f"{key}={int(bool(outcome[key]))}"
+            for key in ("board", "name", "footprints", "nets", "syncDisabled")
+        )
+        print(f"MACOS_COMPANION_PROBE {flags} error={outcome['error']}", flush=True)
     print("MACOS_COMPANION_LIVE_PASS" if outcome["ok"] else "MACOS_COMPANION_LIVE_FAIL", flush=True)
     return 0 if outcome["ok"] else 2
 
