@@ -39,7 +39,7 @@ _DEFAULT_OTLP_PROTOCOL = "http/protobuf"
 _DEFAULT_HTTP_OTLP_ENDPOINT = "http://127.0.0.1:4318"
 _DEFAULT_GRPC_OTLP_ENDPOINT = "http://127.0.0.1:4317"
 _SECRET_VALUE = re.compile(
-    r"\b((?:(?:access|refresh)[_-]?)?token|(?:api|client)[_-]?(?:key|secret)|password|authorization)\s*[:=]\s*[^\s,;]+",
+    r"\b(api[_-]?key|token|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|authorization)\s*[:=]\s*[^\s,;]+",
     re.IGNORECASE,
 )
 _URL = re.compile(r"\bhttps?://[^\s\"'<>]+", re.IGNORECASE)
