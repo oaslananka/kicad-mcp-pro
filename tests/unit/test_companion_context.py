@@ -4,16 +4,26 @@ from __future__ import annotations
 
 import json
 import urllib.request
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
 
 from kicad_mcp.companion.context import (
     BoardInfo,
+    CompanionHealthStatus,
     StudioContextClient,
     build_studio_context,
     requires_confirmation,
 )
+
+
+def test_companion_context_keeps_immutable_contract() -> None:
+    health = CompanionHealthStatus("ready", "ok")
+    board = BoardInfo(file_name="board.kicad_pcb")
+    for obj, field_name in ((health, "state"), (board, "file_name")):
+        with pytest.raises(FrozenInstanceError):
+            setattr(obj, field_name, "changed")
 
 
 def test_build_studio_context_maps_fields() -> None:

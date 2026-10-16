@@ -21,7 +21,9 @@ or security-gate bypasses occur here.
 
 Requirements: KiCad 10.x, IPC enabled, a graphical wxPython-enabled KiCad runtime,
 and the separately installed/running KiCad MCP Pro backend for dashboard or
-context-sync actions. The UI does not silently launch or configure a server.
+context-sync actions. The plugin supports Python 3.9+ because the official
+macOS KiCad 10 bundle may still ship Python 3.9; it does not require the user
+to replace KiCad's selected interpreter. The UI does not silently launch or configure a server.
 
 To install for development, put the package contents directly under a
 subdirectory of the KiCad 10 IPC plugins directory, for example

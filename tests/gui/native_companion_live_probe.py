@@ -90,7 +90,8 @@ def main() -> int:
         )
         print(
             f"MACOS_COMPANION_PROBE {flags} stage={outcome['stage']} "
-            f"error={outcome['error']} source={outcome['source']}",
+            f"error={outcome['error']} source={outcome['source']} "
+            f"python={sys.version_info.major}.{sys.version_info.minor}",
             flush=True,
         )
     print("MACOS_COMPANION_LIVE_PASS" if outcome["ok"] else "MACOS_COMPANION_LIVE_FAIL", flush=True)

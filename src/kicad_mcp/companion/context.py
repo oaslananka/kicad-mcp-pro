@@ -49,9 +49,12 @@ CompanionHealthState = Literal[
 ]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CompanionHealthStatus:
     """Closed, user-safe companion/backend readiness state."""
+
+    # KiCad's macOS-bundled runtime may be Python 3.9 (no dataclass slots).
+    # The frozen contract remains enforced on every supported runtime.
 
     state: CompanionHealthState
     message: str
@@ -143,7 +146,7 @@ def classify_backend_health(
     return CompanionHealthStatus("ready", "Backend is healthy and compatible.", version_text)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BoardInfo:
     """Snapshot of the live KiCad document the plugin can read without mutating it."""
 

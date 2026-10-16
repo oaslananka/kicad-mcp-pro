@@ -64,6 +64,7 @@ def test_pcm_archive_has_exact_reviewed_structure_and_metadata(tmp_path: Path) -
 
     assert manifest["identifier"] == metadata["identifier"]
     assert manifest["runtime"]["type"] == "python"
+    assert manifest["runtime"]["min_version"] == "3.9"
     assert manifest["actions"][0]["scopes"] == ["pcb"]
     assert manifest["actions"][0]["entrypoint"] == "companion.py"
     assert manifest["actions"][0]["show-button"] is True
