@@ -1217,7 +1217,7 @@ def _symbol_bbox_bounds(symbol: dict[str, Any]) -> tuple[float, float, float, fl
             rotation=rotation,
             unit=unit,
         )
-    except (OSError, ValueError) as exc:
+    except (FileNotFoundError, OSError, ValueError) as exc:
         logger.debug("symbol_bbox_pin_lookup_failed", lib_id=lib_id, error=str(exc))
         return x_min, y_min, x_max, y_max
     if not pins:
@@ -1609,7 +1609,7 @@ def _symbol_local_extent(symbol: dict[str, Any]) -> tuple[float, float, float, f
             int(symbol.get("rotation", 0) or 0),
             int(symbol.get("unit", 1) or 1),
         )
-    except (OSError, ValueError):
+    except (FileNotFoundError, OSError, ValueError):
         return None
     if not pins:
         return None
@@ -1636,7 +1636,7 @@ def _next_free_block(
     frows: int,
     *,
     cell_w: float,
-    cell_h: float = 0.0,
+    cell_h: float,
     paper: str,
 ) -> tuple[int, int]:
     """Reserve a free ``fcols×frows`` block of grid cells; return its ``(col, row)``.
@@ -1645,7 +1645,6 @@ def _next_free_block(
     overflows the sheet width (the block itself may exceed it for very wide parts,
     in which case it starts at column 0).
     """
-    _ = cell_h
     max_cols = max(_sheet_usable_cols(paper, cell_w), fcols)
     col, row = 0, 0
     while True:
@@ -3295,7 +3294,7 @@ def _resolve_kicad_table_uri(uri: str, project_dir: Path | None) -> str:
             return str(project_dir)
         return os.environ.get(name, match.group(0))
 
-    return re.sub(r"\$\{([A-Za-z_]\w*)\}", _sub, uri)
+    return re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", _sub, uri)
 
 
 def _project_symbol_library_files() -> dict[str, Path]:
@@ -6148,7 +6147,7 @@ def _symbol_body_and_pins(parsed: dict[str, Any]) -> tuple[GeoBox, list[tuple[fl
                 unit=int(parsed.get("unit", 1) or 1),
             )
             pin_points = list(pins.values())
-        except (OSError, ValueError) as exc:
+        except (FileNotFoundError, OSError, ValueError) as exc:
             logger.debug("autoplace_fields_pin_lookup_failed", lib_id=lib_id, error=str(exc))
     body = body_box_from_pins(pin_points, center=(x, y))
     return body, pin_points
