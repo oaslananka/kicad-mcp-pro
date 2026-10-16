@@ -146,6 +146,86 @@ def _unavailable_error(return_code: int, stderr: str, *, report_missing: bool) -
     return f"DRC command failed with exit code {return_code}."
 
 
+def _evaluate_drc_json(
+    report_path: Path,
+    return_code: int,
+    normalized_stderr: str,
+) -> tuple[DrcRunResult | None, str | None]:
+    try:
+        parsed = json.loads(report_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        error = f"DRC report is not valid JSON: line {exc.lineno}, column {exc.colno}."
+        return (
+            DrcRunResult(
+                report_path,
+                "malformed",
+                None,
+                return_code,
+                normalized_stderr,
+                error,
+            ),
+            None,
+        )
+    except OSError as exc:
+        return (
+            DrcRunResult(
+                report_path,
+                "unavailable",
+                None,
+                return_code,
+                normalized_stderr,
+                f"Could not read DRC report: {exc}",
+            ),
+            None,
+        )
+
+    status, schema_error = classify_drc_report(parsed)
+    report = cast(Report, parsed) if isinstance(parsed, dict) else None
+    if status == "malformed":
+        return (
+            DrcRunResult(
+                report_path,
+                status,
+                report,
+                return_code,
+                normalized_stderr,
+                schema_error,
+            ),
+            None,
+        )
+    if status == "findings":
+        return (
+            DrcRunResult(
+                report_path,
+                status,
+                report,
+                return_code,
+                normalized_stderr,
+                None,
+            ),
+            None,
+        )
+    if return_code == 0:
+        return (
+            DrcRunResult(
+                report_path,
+                "clean",
+                report,
+                return_code,
+                normalized_stderr,
+                None,
+            ),
+            None,
+        )
+
+    error = _unavailable_error(
+        return_code,
+        normalized_stderr,
+        report_missing=False,
+    )
+    return None, error
+
+
 def run_drc_report(
     report_name: str,
     *,
@@ -222,63 +302,11 @@ def run_drc_report(
             )
             continue
 
-        try:
-            parsed = json.loads(report_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            error = f"DRC report is not valid JSON: line {exc.lineno}, column {exc.colno}."
-            return DrcRunResult(
-                report_path,
-                "malformed",
-                None,
-                return_code,
-                normalized_stderr,
-                error,
-            )
-        except OSError as exc:
-            return DrcRunResult(
-                report_path,
-                "unavailable",
-                None,
-                return_code,
-                normalized_stderr,
-                f"Could not read DRC report: {exc}",
-            )
-
-        status, schema_error = classify_drc_report(parsed)
-        report = cast(Report, parsed) if isinstance(parsed, dict) else None
-        if status == "malformed":
-            return DrcRunResult(
-                report_path,
-                status,
-                report,
-                return_code,
-                normalized_stderr,
-                schema_error,
-            )
-        if status == "findings":
-            return DrcRunResult(
-                report_path,
-                status,
-                report,
-                return_code,
-                normalized_stderr,
-                None,
-            )
-        if return_code == 0:
-            return DrcRunResult(
-                report_path,
-                "clean",
-                report,
-                return_code,
-                normalized_stderr,
-                None,
-            )
-
-        last_error = _unavailable_error(
-            return_code,
-            normalized_stderr,
-            report_missing=False,
-        )
+        result, unavailable_err = _evaluate_drc_json(report_path, return_code, normalized_stderr)
+        if result is not None:
+            return result
+        if unavailable_err is not None:
+            last_error = unavailable_err
 
     return DrcRunResult(
         report_path,
