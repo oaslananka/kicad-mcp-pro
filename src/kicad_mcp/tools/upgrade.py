@@ -15,6 +15,50 @@ from .export_support import _run_cli
 from .metadata import headless_compatible
 
 
+def _resolve_upgrade_paths(
+    input_file: str,
+    output_file: str,
+    configured_file: Path | None,
+    file_type: str,
+) -> tuple[Path, str] | str:
+    cfg = get_config()
+    if not input_file:
+        if configured_file is None:
+            return (
+                f"No input file provided and no {file_type} configured. "
+                "Provide an input_file path or call kicad_set_project() first."
+            )
+        in_file = str(configured_file)
+    else:
+        in_file = input_file
+
+    try:
+        from ..path_safety import resolve_under
+
+        if cfg.project_dir is not None:
+            in_path = resolve_under(cfg.project_dir, in_file)
+        else:
+            in_path = Path(in_file).expanduser().resolve()
+    except Exception as exc:
+        raise ValueError(f"Unsafe input path: {exc}") from exc
+
+    out_raw = output_file.strip() if output_file else ""
+    if out_raw:
+        try:
+            from ..path_safety import resolve_under
+
+            if cfg.project_dir is not None:
+                out_path = str(resolve_under(cfg.project_dir, out_raw))
+            else:
+                out_path = str(Path(out_raw).expanduser().resolve())
+        except Exception as exc:
+            raise ValueError(f"Unsafe output path: {exc}") from exc
+    else:
+        out_path = str(in_path)
+
+    return in_path, out_path
+
+
 def register(mcp: FastMCP) -> None:
     """Register file-format upgrade tools."""
 
@@ -40,39 +84,10 @@ def register(mcp: FastMCP) -> None:
             Only report commands and files that would be affected.
         """
         cfg = get_config()
-        if not input_file:
-            if cfg.sch_file is None:
-                return (
-                    "No input file provided and no schematic configured. "
-                    "Provide an input_file path or call kicad_set_project() first."
-                )
-            in_file = str(cfg.sch_file)
-        else:
-            in_file = input_file
-
-        try:
-            from ..path_safety import resolve_under
-
-            if cfg.project_dir is not None:
-                in_path = resolve_under(cfg.project_dir, in_file)
-            else:
-                in_path = Path(in_file).expanduser().resolve()
-        except Exception as exc:
-            raise ValueError(f"Unsafe input path: {exc}") from exc
-
-        out_raw = output_file.strip() if output_file else ""
-        if out_raw:
-            try:
-                from ..path_safety import resolve_under
-
-                if cfg.project_dir is not None:
-                    out_path = str(resolve_under(cfg.project_dir, out_raw))
-                else:
-                    out_path = str(Path(out_raw).expanduser().resolve())
-            except Exception as exc:
-                raise ValueError(f"Unsafe output path: {exc}") from exc
-        else:
-            out_path = str(in_path)
+        resolved = _resolve_upgrade_paths(input_file, output_file, cfg.sch_file, "schematic")
+        if isinstance(resolved, str):
+            return resolved
+        in_path, out_path = resolved
 
         if dry_run:
             return (
@@ -113,39 +128,10 @@ def register(mcp: FastMCP) -> None:
             Only report commands and files that would be affected.
         """
         cfg = get_config()
-        if not input_file:
-            if cfg.pcb_file is None:
-                return (
-                    "No input file provided and no PCB configured. "
-                    "Provide an input_file path or call kicad_set_project() first."
-                )
-            in_file = str(cfg.pcb_file)
-        else:
-            in_file = input_file
-
-        try:
-            from ..path_safety import resolve_under
-
-            if cfg.project_dir is not None:
-                in_path = resolve_under(cfg.project_dir, in_file)
-            else:
-                in_path = Path(in_file).expanduser().resolve()
-        except Exception as exc:
-            raise ValueError(f"Unsafe input path: {exc}") from exc
-
-        out_raw = output_file.strip() if output_file else ""
-        if out_raw:
-            try:
-                from ..path_safety import resolve_under
-
-                if cfg.project_dir is not None:
-                    out_path = str(resolve_under(cfg.project_dir, out_raw))
-                else:
-                    out_path = str(Path(out_raw).expanduser().resolve())
-            except Exception as exc:
-                raise ValueError(f"Unsafe output path: {exc}") from exc
-        else:
-            out_path = str(in_path)
+        resolved = _resolve_upgrade_paths(input_file, output_file, cfg.pcb_file, "PCB")
+        if isinstance(resolved, str):
+            return resolved
+        in_path, out_path = resolved
 
         if dry_run:
             return (
