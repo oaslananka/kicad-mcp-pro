@@ -152,13 +152,11 @@ class KiCadCommandQueue:
 
             attempts = 0
             started = self._time()
-            last_exc: BaseException | None = None
             while True:
                 attempts += 1
                 try:
                     result = command()
                 except Exception as exc:  # noqa: BLE001 - classified below
-                    last_exc = exc
                     classification = classify_error(exc)
                     can_retry = (
                         classification in (RetryClass.RETRYABLE, RetryClass.TIMEOUT)
@@ -211,8 +209,6 @@ class KiCadCommandQueue:
                         )
                     )
                     return result
-            # Unreachable: the loop either returns or raises.
-            raise last_exc  # pragma: no cover
 
     def execute_mutation[T](
         self,

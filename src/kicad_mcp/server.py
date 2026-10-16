@@ -42,6 +42,7 @@ try:
     HAS_WATCHFILES = True
 except ImportError:
     HAS_WATCHFILES = False
+    watchfiles = None  # type: ignore[assignment]
 from mcp import types as mcp_types
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
@@ -139,6 +140,7 @@ try:
     HAS_TRAY = True
 except ImportError:
     HAS_TRAY = False
+    tray_main = None  # type: ignore[assignment]
 
 # Shared user-facing values; preserve spelling and case across CLI and reports.
 _HELP_JSON_OUTPUT = "Emit machine-readable JSON."
@@ -3305,18 +3307,20 @@ def _run_with_watch(
         )
 
         # Watch for file changes and restart on .py modification
+        if watchfiles is None:
+            return
         changes = watchfiles.watch(str(pkg_dir))
         for change_set in changes:
-            restart = False
-            for _change_type, changed_path in change_set:
-                if changed_path.endswith(".py"):
-                    restart = True
-                    break
-            if restart:
+            trigger = next(
+                ((c_type, path) for c_type, path in change_set if path.endswith(".py")),
+                None,
+            )
+            if trigger is not None:
+                change_type, changed_path = trigger
                 log.info(
                     "hot_reload_restarting",
                     changed=changed_path,
-                    change_type=_change_type,
+                    change_type=change_type,
                 )
                 if proc is not None and proc.poll() is None:
                     proc.terminate()

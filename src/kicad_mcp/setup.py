@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import tomllib
@@ -898,8 +899,6 @@ def _run_smoke_test(agent_key: str) -> str:
         claude_path = shutil.which("claude")
         if claude_path:
             try:
-                import subprocess
-
                 result = subprocess.run(
                     [claude_path, "mcp", "list"],
                     capture_output=True,

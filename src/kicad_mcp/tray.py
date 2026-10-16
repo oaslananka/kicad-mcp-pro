@@ -19,7 +19,10 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from PIL import Image, ImageDraw
 
 import structlog
 
@@ -40,6 +43,9 @@ try:
     _HAS_PIL = True
 except ImportError:
     _HAS_PIL = False
+    if not TYPE_CHECKING:
+        Image = None
+        ImageDraw = None
 
 _HAS_TRAY = _HAS_PIL and _importlib_util.find_spec("pystray") is not None
 
@@ -58,7 +64,7 @@ _STATUS_COLORS: dict[str, tuple[int, int, int]] = {
 
 def _create_icon(status: str = "stopped") -> Image.Image:
     """Create a 64x64 tray icon (KiCad-style MCP logo)."""
-    if not _HAS_PIL:
+    if not _HAS_PIL or Image is None or ImageDraw is None:
         msg = "PIL (Pillow) is required for icon generation"
         raise ImportError(msg)
     size = 64

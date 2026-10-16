@@ -418,6 +418,7 @@ def generate_bga_fanout_plan(
         else:  # inline
             # Place via directly to the right/left alternating by column
             dx = 1.0 if ball.col % 2 == 0 else -1.0
+            dy = 0.0
             vx = bx + dx * pitch_mm
             vy = by
 
