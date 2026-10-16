@@ -81,6 +81,46 @@ def _grid_dim(length_mm: float, target_cells: int, span_mm: float) -> int:
     return max(8, min(target_cells, int(cells)))
 
 
+def _build_source_grid(spec: ThermalPlaneSpec, cols: int, rows: int) -> list[list[float]]:
+    src_cols = max(1, round(spec.source_width_mm / spec.plane_width_mm * cols))
+    src_rows = max(1, round(spec.source_height_mm / spec.plane_height_mm * rows))
+    col_start = (cols - src_cols) // 2
+    row_start = (rows - src_rows) // 2
+    power_per_cell = spec.power_w / (src_cols * src_rows)
+    source = [[0.0 for _ in range(cols)] for _ in range(rows)]
+    for r in range(row_start, row_start + src_rows):
+        for c in range(col_start, col_start + src_cols):
+            source[r][c] = power_per_cell
+    return source
+
+
+def _cell_stencil(
+    r: int,
+    c: int,
+    rows: int,
+    cols: int,
+    rise: list[list[float]],
+    cond_x: float,
+    cond_y: float,
+    sink: float,
+) -> tuple[float, float]:
+    neighbour_sum = 0.0
+    diag = sink
+    if c > 0:
+        neighbour_sum += cond_x * rise[r][c - 1]
+        diag += cond_x
+    if c < cols - 1:
+        neighbour_sum += cond_x * rise[r][c + 1]
+        diag += cond_x
+    if r > 0:
+        neighbour_sum += cond_y * rise[r - 1][c]
+        diag += cond_y
+    if r < rows - 1:
+        neighbour_sum += cond_y * rise[r + 1][c]
+        diag += cond_y
+    return neighbour_sum, diag
+
+
 def solve_plane_temperature(
     spec: ThermalPlaneSpec,
     *,
@@ -105,17 +145,7 @@ def solve_plane_temperature(
     cond_y = sheet_conductance * dx_m / dy_m
     sink = spec.film_coefficient_w_per_m2_k * cell_area_m2  # W/K to ambient per cell
 
-    # Distribute the source power over the cells covered by the source footprint.
-    src_cols = max(1, round(spec.source_width_mm / spec.plane_width_mm * cols))
-    src_rows = max(1, round(spec.source_height_mm / spec.plane_height_mm * rows))
-    col_start = (cols - src_cols) // 2
-    row_start = (rows - src_rows) // 2
-    power_per_cell = spec.power_w / (src_cols * src_rows)
-    source = [[0.0 for _ in range(cols)] for _ in range(rows)]
-    for r in range(row_start, row_start + src_rows):
-        for c in range(col_start, col_start + src_cols):
-            source[r][c] = power_per_cell
-
+    source = _build_source_grid(spec, cols, rows)
     rise = [[0.0 for _ in range(cols)] for _ in range(rows)]
     omega = 1.8
     iterations = 0
@@ -125,20 +155,7 @@ def solve_plane_temperature(
         max_delta = 0.0
         for r in range(rows):
             for c in range(cols):
-                neighbour_sum = 0.0
-                diag = sink
-                if c > 0:
-                    neighbour_sum += cond_x * rise[r][c - 1]
-                    diag += cond_x
-                if c < cols - 1:
-                    neighbour_sum += cond_x * rise[r][c + 1]
-                    diag += cond_x
-                if r > 0:
-                    neighbour_sum += cond_y * rise[r - 1][c]
-                    diag += cond_y
-                if r < rows - 1:
-                    neighbour_sum += cond_y * rise[r + 1][c]
-                    diag += cond_y
+                neighbour_sum, diag = _cell_stencil(r, c, rows, cols, rise, cond_x, cond_y, sink)
                 updated = (source[r][c] + neighbour_sum) / diag
                 delta = updated - rise[r][c]
                 rise[r][c] += omega * delta
