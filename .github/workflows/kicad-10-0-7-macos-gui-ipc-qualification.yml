@@ -135,6 +135,9 @@ jobs:
           printf '%s\n' \
             "KICAD_CONFIG_HOME=$config" \
             "KICAD_DOCUMENTS_HOME=$RUNNER_TEMP/kicad-107-documents" \
+            "KICAD_CACHE_HOME=$RUNNER_TEMP/kicad-107-cache" \
+            "KICAD_MCP_COMPANION_PLUGIN_DIR=$RUNNER_TEMP/kicad-107-documents/10.0/plugins/kicad-mcp-pro" \
+            'KICAD_MCP_COMPANION_LIVE=1' \
             "KICAD10_TEMPLATE_DIR=$KICAD_MAC_TEMPLATE" \
             "KICAD10_SYMBOL_DIR=$KICAD_MAC_SYMBOLS" \
             "KICAD_SYMBOL_DIR=$KICAD_MAC_SYMBOLS" \
@@ -147,6 +150,34 @@ jobs:
 
       - name: Frozen project Python dependencies
         run: uv sync --all-extras --frozen
+
+      - name: Install exact PCM Companion payload into disposable IPC profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --all-extras --frozen python scripts/build_kicad_pcm.py --output-dir "$RUNNER_TEMP/kicad-companion-pcm" --verify
+          uv run --all-extras --frozen python - <<'PYCODE'
+          import os
+          import tomllib
+          import zipfile
+          from pathlib import Path
+
+          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          source = Path(os.environ["RUNNER_TEMP"]) / "kicad-companion-pcm" / f"kicad-mcp-pro-pcm-{version}.zip"
+          destination = Path(os.environ["KICAD_MCP_COMPANION_PLUGIN_DIR"])
+          destination.mkdir(parents=True, exist_ok=True)
+          with zipfile.ZipFile(source) as archive:
+              entries = [name for name in archive.namelist() if name.startswith("plugins/")]
+              assert "plugins/plugin.json" in entries
+              for name in entries:
+                  relative = Path(name).relative_to("plugins")
+                  if not relative.parts or relative.is_absolute() or ".." in relative.parts:
+                      raise SystemExit("Invalid PCM plugin member")
+                  target = destination / relative
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(archive.read(name))
+          PYCODE
+
 
       - name: Verify MCP symbols come from the same signed KiCad app bundle
         shell: bash
@@ -244,11 +275,17 @@ jobs:
                          failures=sum(bool(t.findall("failure") or t.findall("error")) for t in cases),
                          skips=sum(bool(t.findall("skipped")) for t in cases),
                          tests=[t.get("name") for t in cases])
+          companion=root/"internal/open-editors/companion-acceptance.json"
+          out["companionLive"]=(
+              companion.exists()
+              and json.loads(companion.read_text()).get("wxWindowAndLiveBoard") is True
+          )
           success=(out.get("versionVerified") and out.get("installerSignature")=="valid"
                    and out.get("nativeExit")==0 and out.get("nativeSteps")==32
                    and out.get("nativeFailures")==0 and out.get("differentialMatches")==5
                    and out.get("differentialTotal")==5 and out.get("guiExit")==0
-                   and out["testCount"]==2 and out["failures"]==0 and out["skips"]==0)
+                   and out["testCount"]==2 and out["failures"]==0 and out["skips"]==0
+                   and out["companionLive"] is True)
           out["verdict"]="pass" if success else "fail"
           p.write_text(json.dumps(out, indent=2, sort_keys=True)+"\n")
           print("Bounded native GUI verdict:",out["verdict"])
@@ -275,4 +312,5 @@ jobs:
           fi
           rm -rf "$RUNNER_TEMP/kicad-unified-universal-10.0.7.dmg" \
             "$RUNNER_TEMP/kicad-107-volume" "$RUNNER_TEMP/kicad-107-config" \
-            "$RUNNER_TEMP/kicad-107-documents"
+            "$RUNNER_TEMP/kicad-107-documents" "$RUNNER_TEMP/kicad-107-cache" \
+            "$RUNNER_TEMP/kicad-companion-pcm"

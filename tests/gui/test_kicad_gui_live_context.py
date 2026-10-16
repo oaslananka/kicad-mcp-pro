@@ -666,6 +666,41 @@ async def test_open_pcb_editor_uses_live_board_context_and_project_switches(
 
         live_outputs = await _wait_for_live_context(server, artifacts, first_pcb)
         _write_json(artifacts / "live-context-summary.json", live_outputs)
+        if os.environ.get("KICAD_MCP_COMPANION_LIVE") == "1":
+            assert platform.system() == "Darwin", "Companion workflow probe is macOS-only"
+            plugin_dir = Path(os.environ["KICAD_MCP_COMPANION_PLUGIN_DIR"])
+            cache_root = Path(os.environ["KICAD_CACHE_HOME"])
+            plugin_id = "com.github.oaslananka.kicad-mcp-pro"
+            candidates = (
+                cache_root / "python-environments" / plugin_id / "bin" / "python",
+                cache_root / "10.0" / "python-environments" / plugin_id / "bin" / "python",
+            )
+            deadline = time.monotonic() + 120
+            while time.monotonic() < deadline:
+                if any(candidate.is_file() for candidate in candidates):
+                    break
+                await asyncio.sleep(3)
+            python = next((candidate for candidate in candidates if candidate.is_file()), None)
+            assert python is not None, "KiCad did not provision the Companion plugin environment"
+            probe = subprocess.run(
+                [
+                    str(python),
+                    str(REPO_ROOT / "tests/gui/native_companion_live_probe.py"),
+                    str(plugin_dir),
+                    Path(env["KICAD_MCP_PCB_FILE"]).name,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=55,
+                check=False,
+            )
+            assert probe.returncode == 0 and "MACOS_COMPANION_LIVE_PASS" in probe.stdout, (
+                "Companion wx/IPC probe failed in KiCad-managed environment"
+            )
+            _write_json(
+                artifacts / "companion-acceptance.json",
+                {"pluginManagedPython": True, "wxWindowAndLiveBoard": True},
+            )
 
         tracks = live_outputs["pcb_get_tracks"]["text"]
         footprints = live_outputs["pcb_get_footprints"]["text"]
