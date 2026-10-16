@@ -180,19 +180,7 @@ def find_kicad_version(cli_path: Path) -> str | None:
     return text or None
 
 
-def get_cli_capabilities(cli_path: Path) -> CliCapabilities:
-    """Inspect the local CLI and cache supported commands."""
-    cache_key = _cli_capabilities_cache_key(cli_path)
-    cached = _CLI_CAPABILITIES_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-
-    version = find_kicad_version(cli_path)
-    if not cli_path.exists():
-        capabilities = CliCapabilities(version=version)
-        _CLI_CAPABILITIES_CACHE[cache_key] = capabilities
-        return capabilities
-
+def _collect_cli_help(cli_path: Path) -> str:
     help_outputs: list[str] = []
     commands = (
         [str(cli_path), "pcb", "export", "--help"],
@@ -211,16 +199,18 @@ def get_cli_capabilities(cli_path: Path) -> CliCapabilities:
                 timeout=10,
                 check=False,
             )
-        except (FileNotFoundError, OSError, PermissionError, subprocess.TimeoutExpired):
+        except (OSError, subprocess.TimeoutExpired):
             continue
         help_outputs.append(f"{result.stdout}\n{result.stderr}")
+    return "\n".join(help_outputs).lower()
 
-    blob = "\n".join(help_outputs).lower()
+
+def _parse_cli_capabilities(version: str | None, blob: str) -> CliCapabilities:
     tokens = set(re.findall(r"[a-z0-9_-]+", blob))
     gerber_command = "gerbers" if "gerbers" in tokens else "gerber"
     position_command = "positions" if "positions" in tokens else "pos"
 
-    capabilities = CliCapabilities(
+    return CliCapabilities(
         version=version,
         gerber_command=gerber_command,
         position_command=position_command,
@@ -253,6 +243,22 @@ def get_cli_capabilities(cli_path: Path) -> CliCapabilities:
         supports_drc_exit_code_violations="--exit-code-violations" in blob
         or "exit-code-violations" in blob,
     )
+
+
+def get_cli_capabilities(cli_path: Path) -> CliCapabilities:
+    """Inspect the local CLI and cache supported commands."""
+    cache_key = _cli_capabilities_cache_key(cli_path)
+    cached = _CLI_CAPABILITIES_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    version = find_kicad_version(cli_path)
+    if not cli_path.exists():
+        capabilities = CliCapabilities(version=version)
+    else:
+        blob = _collect_cli_help(cli_path)
+        capabilities = _parse_cli_capabilities(version, blob)
+
     _CLI_CAPABILITIES_CACHE[cache_key] = capabilities
     return capabilities
 
@@ -346,39 +352,40 @@ def discover_library_paths(cli_path: Path) -> dict[str, Path | None]:
     return {"root": None, "symbols": None, "footprints": None}
 
 
-def find_recent_projects(limit: int = 10) -> list[Path]:
-    """Find recently opened KiCad projects on this system."""
+def _recent_kicad_config_dirs() -> list[Path]:
+    home = Path.home()
     system = platform.system()
     if system == "Windows":
-        config_dirs = [
-            Path.home() / "AppData" / "Roaming" / "kicad" / "11.0",
-            Path.home() / "AppData" / "Roaming" / "kicad" / "10.0",
-        ]
+        base = home / "AppData" / "Roaming" / "kicad"
     elif system == "Darwin":
-        config_dirs = [
-            Path.home() / "Library" / "Preferences" / "kicad" / "11.0",
-            Path.home() / "Library" / "Preferences" / "kicad" / "10.0",
-        ]
+        base = home / "Library" / "Preferences" / "kicad"
     else:
-        config_dirs = [
-            Path.home() / ".config" / "kicad" / "11.0",
-            Path.home() / ".config" / "kicad" / "10.0",
-        ]
+        base = home / ".config" / "kicad"
+    return [base / "11.0", base / "10.0"]
 
+
+def _read_recent_projects_from_config(common: Path) -> list[Path]:
+    try:
+        data = json.loads(common.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    recent = data.get("recentlyUsedFiles", {}).get("projects", [])
     project_files: list[Path] = []
-    for config_dir in config_dirs:
+    for raw in recent:
+        candidate = Path(raw).expanduser()
+        if candidate.exists() and candidate.suffix == ".kicad_pro":
+            project_files.append(candidate)
+    return project_files
+
+
+def find_recent_projects(limit: int = 10) -> list[Path]:
+    """Find recently opened KiCad projects on this system."""
+    project_files: list[Path] = []
+    for config_dir in _recent_kicad_config_dirs():
         common = config_dir / "kicad_common.json"
         if not common.exists():
             continue
-        try:
-            data = json.loads(common.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        recent = data.get("recentlyUsedFiles", {}).get("projects", [])
-        for raw in recent:
-            candidate = Path(raw).expanduser()
-            if candidate.exists() and candidate.suffix == ".kicad_pro":
-                project_files.append(candidate)
+        project_files = _read_recent_projects_from_config(common)
         if project_files:
             break
     return project_files[:limit]
