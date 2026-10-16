@@ -198,7 +198,7 @@ def register(mcp: FastMCP) -> None:
         nets = _nets()
         matches = [n for n in nets if n.get("name", "") == net_name]
         if not matches:
-            available = ", ".join(sorted({n.get("name", "") for n in nets[:100]}))
+            available = ", ".join(sorted(set(n.get("name", "") for n in nets[:100])))
             return f"Net '{net_name}' was not found in the PCB. Sample nets: {available}"
 
         net = matches[0]

@@ -25,9 +25,11 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, TypeVar
 
 from .errors import KiCadIpcTimeoutError
+
+T = TypeVar("T")
 
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_BASE_DELAY_S = 0.05
@@ -118,7 +120,7 @@ class KiCadCommandQueue:
         delay = self._base_delay_s * (2 ** max(0, attempt - 1))
         return float(min(self._max_delay_s, delay))
 
-    def execute[T](
+    def execute(
         self,
         operation: str,
         command: Callable[[], T],
@@ -166,7 +168,7 @@ class KiCadCommandQueue:
                         try:
                             if self._reconnect is not None:
                                 self._reconnect()
-                        except Exception as reconnect_exc:  # noqa: BLE001 - journaled, then re-raised
+                        except Exception as reconnect_exc:  # noqa: BLE001 -- journaled, then re-raised
                             self._journal.append(
                                 JournalEntry(
                                     operation=operation,
