@@ -285,6 +285,10 @@ Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request. All
 changes must pass the repository's format, lint, type-check, test, workflow,
 security, and package metadata gates.
 
+## Independent industry coverage
+
+- **JLCPCB (October 14, 2026)** — [KiCad MCP: How to Design a PCB with Claude Code](https://jlcpcb.com/blog/kicad-mcp-how-to-design-a-pcb-with-claude-code) documents a hands-on KiCad MCP Pro workflow for an XL4015/LM358 buck-converter design, including checks and limitations. The board was not fabricated or bench-tested. This is independent coverage, not a JLCPCB endorsement or partnership; reported issues are being evaluated in [#1314](https://github.com/oaslananka/kicad-mcp-pro/issues/1314).
+
 ## Cite this software
 
 If you use KiCad MCP Pro in research or a technical publication, cite the
