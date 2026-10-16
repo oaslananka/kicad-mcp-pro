@@ -673,11 +673,17 @@ async def test_open_pcb_editor_uses_live_board_context_and_project_switches(
             plugin_dir = Path(os.environ["KICAD_MCP_COMPANION_PLUGIN_DIR"]).resolve()
             cache_root = Path(os.environ["KICAD_CACHE_HOME"]).resolve()
             assert cache_root == runner_temp / "kicad-107-cache"
-            assert plugin_dir == runner_temp / "kicad-107-documents/10.0/plugins/kicad-mcp-pro"
+            expected_plugin = runner_temp / "kicad-107-documents/KiCad/10.0/plugins/kicad-mcp-pro"
+            assert plugin_dir == expected_plugin
             plugin_id = "com.github.oaslananka.kicad-mcp-pro"
             candidates = (
-                cache_root / "python-environments" / plugin_id / "bin" / "python",
-                cache_root / "10.0" / "python-environments" / plugin_id / "bin" / "python",
+                cache_root
+                / "KiCad"
+                / "10.0"
+                / "python-environments"
+                / plugin_id
+                / "bin"
+                / "python",
             )
             deadline = time.monotonic() + 120
             while time.monotonic() < deadline:
@@ -692,7 +698,7 @@ async def test_open_pcb_editor_uses_live_board_context_and_project_switches(
                     "KiCad did not provision the Companion plugin environment; "
                     f"fixtureManifest={(plugin_dir / 'plugin.json').is_file()}, "
                     f"isolatedCacheExists={cache_root.is_dir()}, "
-                    f"isolatedEnvRoot={(cache_root / 'python-environments').is_dir()}, "
+                    f"isolatedEnvRoot={(cache_root / 'KiCad/10.0/python-environments').is_dir()}, "
                     f"defaultEnvExists={(default_cache / plugin_id).exists()}, "
                     f"defaultPluginExists={(default_docs / 'kicad-mcp-pro/plugin.json').exists()}"
                 )
