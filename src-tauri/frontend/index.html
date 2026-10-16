@@ -236,54 +236,57 @@
         detailsEl.classList.add('visible');
       }
 
+      function handleTauriStatus(tauriStatus) {
+        if (!tauriStatus) return true;
+        if (tauriStatus.running) {
+          setStep('uvx', 'ok');
+          setStep('pkg', 'ok');
+          return true;
+        }
+        if (tauriStatus.message && tauriStatus.message !== 'Server is not running.') {
+          if (errorDetailEl) {
+            errorDetailEl.textContent = tauriStatus.message;
+            errorDetailEl.style.display = 'block';
+          }
+          setStep('uvx', 'fail');
+          setStep('pkg', 'fail');
+          setStep('server', 'fail');
+          showError('Backend error');
+          return false;
+        }
+        return true;
+      }
+
+      async function probeHttpHealth() {
+        for (const method of ['GET', 'HEAD']) {
+          try {
+            const resp = await fetch(HEALTH_URL, {
+              method,
+              mode: 'no-cors',
+              signal: AbortSignal.timeout(2000),
+            });
+            if (resp.status === 200 || resp.status === 0) {
+              return true;
+            }
+          } catch (err) {
+            console.debug(`Health probe ${method} failed:`, err);
+          }
+        }
+        return false;
+      }
+
       async function checkServer() {
         retries++;
 
         // 1. Query Tauri backend for server status (no CORS issues)
         const tauriStatus = await getTauriStatus();
-        if (tauriStatus) {
-          if (tauriStatus.running) {
-            // Backend says it's running — mark steps as ok
-            setStep('uvx', 'ok');
-            setStep('pkg', 'ok');
-          } else if (tauriStatus.message && tauriStatus.message !== 'Server is not running.') {
-            // Backend has a real error — show it immediately
-            if (errorDetailEl) {
-              errorDetailEl.textContent = tauriStatus.message;
-              errorDetailEl.style.display = 'block';
-            }
-            setStep('uvx', 'fail');
-            setStep('pkg', 'fail');
-            setStep('server', 'fail');
-            showError('Backend error');
-            return;
-          }
+        if (!handleTauriStatus(tauriStatus)) {
+          return;
         }
 
         // 2. HTTP health-check the Python server directly
-        try {
-          const resp = await fetch(HEALTH_URL, {
-            method: 'GET',
-            mode: 'no-cors',
-            signal: AbortSignal.timeout(2000),
-          });
-          if (resp.status === 200 || resp.status === 0) {
-            healthOk = true;
-          }
-        } catch (_getErr) {
-          console.debug('Health probe GET failed; trying HEAD:', _getErr);
-          try {
-            const headResp = await fetch(HEALTH_URL, {
-              method: 'HEAD',
-              mode: 'no-cors',
-              signal: AbortSignal.timeout(2000),
-            });
-            if (headResp.status === 200 || headResp.status === 0) {
-              healthOk = true;
-            }
-          } catch (_headErr) {
-            console.debug('Health probe HEAD failed; will retry:', _headErr);
-          }
+        if (!healthOk && (await probeHttpHealth())) {
+          healthOk = true;
         }
 
         if (healthOk) {
@@ -299,11 +302,9 @@
         if (retries >= MAX_RETRIES) {
           // One last check: pull the error from the Tauri backend
           const finalStatus = await getTauriStatus();
-          if (finalStatus && finalStatus.message && !finalStatus.running) {
-            if (errorDetailEl) {
-              errorDetailEl.textContent = finalStatus.message;
-              errorDetailEl.style.display = 'block';
-            }
+          if (finalStatus && finalStatus.message && !finalStatus.running && errorDetailEl) {
+            errorDetailEl.textContent = finalStatus.message;
+            errorDetailEl.style.display = 'block';
           }
           showError('Server failed to start');
           return;
