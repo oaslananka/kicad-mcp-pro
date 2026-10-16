@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404 - fixed CLI argv, shell=False, bounded timeout
 import sys
 import tempfile
 import tomllib
