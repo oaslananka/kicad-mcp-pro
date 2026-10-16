@@ -59,6 +59,14 @@ class TestTrayImport:
         assert icon.size == (64, 64)
         assert icon.mode == "RGBA"
 
+    def test_icon_creation_without_pil(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that _create_icon raises ImportError when PIL is not available."""
+        from kicad_mcp import tray
+
+        monkeypatch.setattr(tray, "_HAS_PIL", False)
+        with pytest.raises(ImportError, match="PIL"):
+            tray._create_icon()
+
 
 # ---------------------------------------------------------------------------
 # KiCadTrayApp tests

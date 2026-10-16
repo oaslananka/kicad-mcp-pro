@@ -253,3 +253,15 @@ def test_placement_analysis_return_path_warnings_in_warnings() -> None:
         return_path_warnings=["DDR4 proximity warning"],
     )
     assert len(analysis.warnings) == 1
+
+
+def test_generate_bga_fanout_plan_inline_and_dogbone() -> None:
+    balls = [
+        BGABall(row="A", col=1, net="GND", x_mm=0.0, y_mm=0.0),
+        BGABall(row="A", col=2, net="VCC", x_mm=1.0, y_mm=0.0),
+    ]
+    plan_inline = generate_bga_fanout_plan(balls, pitch_mm=1.0, strategy="inline")
+    assert len(plan_inline) == 2
+
+    plan_dogbone = generate_bga_fanout_plan(balls, pitch_mm=1.0, strategy="dog_ear")
+    assert len(plan_dogbone) == 2

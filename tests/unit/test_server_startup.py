@@ -339,3 +339,30 @@ def test_deferred_build_registers_tools_on_first_discovery(sample_project: Path)
     assert server._lazy_registration_complete is True
     assert "kicad_get_version" in tool_names
     assert "export_bom" in tool_names
+
+
+def test_run_with_watch_without_watchfiles(monkeypatch: pytest.MonkeyPatch) -> None:
+    import kicad_mcp.server as srv
+
+    monkeypatch.setattr(srv, "watchfiles", None)
+    srv._run_with_watch()
+
+
+def test_run_with_watch_restarting_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import MagicMock
+
+    import kicad_mcp.server as srv
+
+    mock_proc = MagicMock()
+    mock_proc.poll.return_value = None
+    monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: mock_proc)
+
+    class FakeWatchfiles:
+        @staticmethod
+        def watch(path: str):  # noqa: ANN205
+            yield [(1, "changed_file.py")]
+            return
+
+    monkeypatch.setattr(srv, "watchfiles", FakeWatchfiles)
+    srv._run_with_watch()
+    mock_proc.terminate.assert_called()
