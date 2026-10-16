@@ -126,9 +126,11 @@ def test_request_json_builds_expected_request(monkeypatch) -> None:
         seen["timeout"] = timeout
         return FakeResponse('{"components": []}')
 
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
-
-    payload = _request_json("https://example.com/search", {"q": "10k", "limit": 5, "empty": ""})
+    payload = _request_json(
+        "https://example.com/search",
+        {"q": "10k", "limit": 5, "empty": ""},
+        opener=fake_urlopen,
+    )
 
     assert payload == {"components": []}
     assert seen["url"] == "https://example.com/search?q=10k&limit=5"
@@ -629,3 +631,74 @@ def test_jlcpcb_request_text_rejects_unapproved_host() -> None:
     client = JLCSearchClient()
     with pytest.raises(ValueError, match="not in the allowed"):
         client._request_text("https://evil.com/parts")
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "127.0.0.2",
+        "127.1",
+        "10.0.0.1",
+        "192.168.1.2",
+        "169.254.1.1",
+        "[::1]",
+        "[::ffff:127.0.0.1]",
+        "localhost.local",
+    ],
+)
+def test_component_search_blocks_private_and_noncanonical_hosts(host: str) -> None:
+    with pytest.raises(ValueError, match="local or metadata"):
+        _request_json(f"https://{host}/api", {})
+
+
+def test_actual_component_transports_install_safe_redirect_handler(monkeypatch) -> None:
+    import io
+    import urllib.request
+
+    from kicad_mcp.utils.component_search import (
+        SafeSearchRedirectHandler,
+        _https_post_json,
+    )
+
+    installed: list[SafeSearchRedirectHandler] = []
+
+    class FakeOpener:
+        def open(self, request, timeout: int):
+            assert isinstance(request, urllib.request.Request)
+            assert timeout == 20
+            return io.BytesIO(b'{"ok": true}')
+
+    def fake_build_opener(handler: SafeSearchRedirectHandler):
+        assert isinstance(handler, SafeSearchRedirectHandler)
+        installed.append(handler)
+        return FakeOpener()
+
+    monkeypatch.setattr(urllib.request, "build_opener", fake_build_opener)
+    assert _request_json("https://example.com/json", {}) == {"ok": True}
+    assert _https_post_json("https://example.com/post", b"{}", {}) == {"ok": True}
+    assert JLCSearchClient()._request_text("https://jlcpcb.com/search") == '{"ok": true}'
+    assert len(installed) == 3
+    assert installed[0]._allowed_hosts is None
+    assert installed[1]._allowed_hosts is None
+    assert installed[2]._allowed_hosts == frozenset({"jlcpcb.com", "www.jlcpcb.com"})
+
+
+def test_redirect_handler_rejects_cross_host_even_when_https() -> None:
+    import urllib.request
+    from http.client import HTTPMessage
+
+    from kicad_mcp.utils.component_search import SafeSearchRedirectHandler
+
+    original = urllib.request.Request("https://api.example.com/v1")
+    handler = SafeSearchRedirectHandler()
+    with pytest.raises(ValueError, match="unapproved host"):
+        handler.redirect_request(
+            original, None, 302, "Found", HTTPMessage(), "https://attacker.example/path"
+        )
+
+    allowed = SafeSearchRedirectHandler(frozenset({"api.example.com", "www.example.com"}))
+    redirect = allowed.redirect_request(
+        original, None, 302, "Found", HTTPMessage(), "https://www.example.com/ok"
+    )
+    assert redirect is not None
+    assert redirect.full_url == "https://www.example.com/ok"

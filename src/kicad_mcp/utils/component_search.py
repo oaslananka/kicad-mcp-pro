@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
@@ -99,8 +100,23 @@ def normalize_lcsc_code(value: str | int) -> str:
     return f"C{suffix}" if suffix.isdigit() else raw
 
 
+def _is_local_or_private_host(hostname: str) -> bool:
+    """Reject local DNS labels, private IP literals and alternate numeric IP forms."""
+    if not hostname or hostname == "localhost" or hostname.endswith((".localhost", ".local")):
+        return True
+    try:
+        return not ipaddress.ip_address(hostname).is_global
+    except ValueError:
+        # urllib can resolve non-canonical numeric IPv4 forms (e.g. 127.1).
+        return hostname.startswith("0x") or all(char.isdigit() or char == "." for char in hostname)
+
+
 class SafeSearchRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Disallows redirection to non-https schemes or local/metadata hosts."""
+    """Disallows non-HTTPS, private and unapproved cross-host redirects."""
+
+    def __init__(self, allowed_hosts: frozenset[str] | None = None) -> None:
+        super().__init__()
+        self._allowed_hosts = allowed_hosts
 
     def redirect_request(
         self,
@@ -115,13 +131,14 @@ class SafeSearchRedirectHandler(urllib.request.HTTPRedirectHandler):
         if parsed.scheme != "https":
             raise ValueError(f"Insecure redirect scheme rejected: {parsed.scheme}")
         hostname = (parsed.hostname or "").lower()
-        is_local = (
-            not hostname
-            or hostname in {"localhost", "127.0.0.1", "::1"}
-            or hostname.startswith("169.254.")
-        )
-        if is_local:
+        if _is_local_or_private_host(hostname):
             raise ValueError(f"Redirection to local or metadata host rejected: {hostname}")
+        source_host = (urllib.parse.urlparse(req.full_url).hostname or "").lower()
+        allowed = (
+            self._allowed_hosts if self._allowed_hosts is not None else frozenset({source_host})
+        )
+        if hostname not in allowed:
+            raise ValueError(f"Redirection to unapproved host rejected: {hostname}")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -134,16 +151,22 @@ def _validate_safe_url(
     if parsed.scheme != "https":
         raise ValueError("Only https component-search endpoints are permitted.")
     hostname = (parsed.hostname or "").lower()
-    is_local = (
-        not hostname
-        or hostname in {"localhost", "127.0.0.1", "::1"}
-        or hostname.startswith("169.254.")
-    )
-    if is_local:
+    if _is_local_or_private_host(hostname):
         raise ValueError(f"Requests to local or metadata hosts are not permitted: {hostname}")
     if allowed_hosts is not None and hostname not in allowed_hosts:
         raise ValueError(f"Host {hostname!r} is not in the allowed component search hosts.")
     return parsed
+
+
+def _open_safe_request(
+    request: urllib.request.Request,
+    *,
+    timeout: int = 20,
+    allowed_hosts: frozenset[str] | None = None,
+) -> IO[bytes]:
+    """Install redirect validation on the actual urllib transport."""
+    handler = SafeSearchRedirectHandler(allowed_hosts)
+    return cast(IO[bytes], urllib.request.build_opener(handler).open(request, timeout=timeout))
 
 
 def _request_json(
@@ -160,7 +183,7 @@ def _request_json(
         f"{url}?{query}",
         headers={"User-Agent": DEFAULT_USER_AGENT},
     )
-    open_fn = opener or urllib.request.urlopen
+    open_fn = opener or _open_safe_request
     with open_fn(request, timeout=20) as response:  # noqa: S310  # nosec B310
         return cast(dict[str, Any], json.load(response))
 
@@ -249,8 +272,11 @@ class JLCSearchClient:
             target,
             headers={"User-Agent": DEFAULT_USER_AGENT},
         )
-        with urllib.request.urlopen(request, timeout=20) as response:  # noqa: S310  # nosec B310
-            return cast(bytes, response.read()).decode("utf-8", errors="replace")
+        with _open_safe_request(
+            request,
+            allowed_hosts=frozenset({"jlcpcb.com", "www.jlcpcb.com"}),
+        ) as response:
+            return response.read().decode("utf-8", errors="replace")
 
     def _search_jlcpcb_public(self, keyword: str, *, limit: int) -> list[ComponentRecord]:
         if not keyword.strip():
@@ -391,7 +417,7 @@ def _https_post_json(
     _validate_safe_url(url)
     merged = {"User-Agent": DEFAULT_USER_AGENT, **headers}
     request = urllib.request.Request(url, data=body, headers=merged, method="POST")  # noqa: S310
-    open_fn = opener or urllib.request.urlopen
+    open_fn = opener or _open_safe_request
     with open_fn(request, timeout=20) as response:  # noqa: S310  # nosec B310
         return cast(dict[str, Any], json.load(response))
 
