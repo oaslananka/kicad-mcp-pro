@@ -30,22 +30,43 @@ def main() -> int:
         "nets": False,
         "syncDisabled": False,
         "error": "none",
+        "stage": "init",
     }
 
     def verify() -> None:
         try:
+            outcome["stage"] = "refresh"
             frame.refresh()
+            outcome["stage"] = "board"
             board = frame.board
             outcome["board"] = board is not None
             outcome["name"] = bool(board is not None and board.name == expected_board)
             outcome["footprints"] = bool(board is not None and board.footprints > 0)
             outcome["nets"] = bool(board is not None and board.nets > 0)
+            outcome["stage"] = "widget"
             outcome["syncDisabled"] = not frame.sync_btn.IsEnabled()
             outcome["ok"] = all(
                 outcome[key] for key in ("board", "name", "footprints", "nets", "syncDisabled")
             )
-        except Exception:
-            outcome["error"] = "callback"
+        except Exception as exc:
+            exception_name = type(exc).__name__
+            known_errors = {
+                "AttributeError",
+                "RuntimeError",
+                "TypeError",
+                "ValueError",
+                "ImportError",
+                "ModuleNotFoundError",
+                "OSError",
+                "KeyError",
+                "wxAssertionError",
+                "PyDeadObjectError",
+                "FileNotFoundError",
+                "ConnectionError",
+                "TimeoutError",
+                "AssertionError",
+            }
+            outcome["error"] = exception_name if exception_name in known_errors else "Other"
         finally:
             frame.Close()
 
@@ -56,7 +77,10 @@ def main() -> int:
             f"{key}={int(bool(outcome[key]))}"
             for key in ("board", "name", "footprints", "nets", "syncDisabled")
         )
-        print(f"MACOS_COMPANION_PROBE {flags} error={outcome['error']}", flush=True)
+        print(
+            f"MACOS_COMPANION_PROBE {flags} stage={outcome['stage']} error={outcome['error']}",
+            flush=True,
+        )
     print("MACOS_COMPANION_LIVE_PASS" if outcome["ok"] else "MACOS_COMPANION_LIVE_FAIL", flush=True)
     return 0 if outcome["ok"] else 2
 
