@@ -180,7 +180,19 @@ def find_kicad_version(cli_path: Path) -> str | None:
     return text or None
 
 
-def _collect_cli_help(cli_path: Path) -> str:
+def get_cli_capabilities(cli_path: Path) -> CliCapabilities:
+    """Inspect the local CLI and cache supported commands."""
+    cache_key = _cli_capabilities_cache_key(cli_path)
+    cached = _CLI_CAPABILITIES_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    version = find_kicad_version(cli_path)
+    if not cli_path.exists():
+        capabilities = CliCapabilities(version=version)
+        _CLI_CAPABILITIES_CACHE[cache_key] = capabilities
+        return capabilities
+
     help_outputs: list[str] = []
     commands = (
         [str(cli_path), "pcb", "export", "--help"],
@@ -199,18 +211,16 @@ def _collect_cli_help(cli_path: Path) -> str:
                 timeout=10,
                 check=False,
             )
-        except (OSError, subprocess.TimeoutExpired):
+        except (FileNotFoundError, OSError, PermissionError, subprocess.TimeoutExpired):
             continue
         help_outputs.append(f"{result.stdout}\n{result.stderr}")
-    return "\n".join(help_outputs).lower()
 
-
-def _parse_cli_capabilities(version: str | None, blob: str) -> CliCapabilities:
+    blob = "\n".join(help_outputs).lower()
     tokens = set(re.findall(r"[a-z0-9_-]+", blob))
     gerber_command = "gerbers" if "gerbers" in tokens else "gerber"
     position_command = "positions" if "positions" in tokens else "pos"
 
-    return CliCapabilities(
+    capabilities = CliCapabilities(
         version=version,
         gerber_command=gerber_command,
         position_command=position_command,
@@ -243,22 +253,6 @@ def _parse_cli_capabilities(version: str | None, blob: str) -> CliCapabilities:
         supports_drc_exit_code_violations="--exit-code-violations" in blob
         or "exit-code-violations" in blob,
     )
-
-
-def get_cli_capabilities(cli_path: Path) -> CliCapabilities:
-    """Inspect the local CLI and cache supported commands."""
-    cache_key = _cli_capabilities_cache_key(cli_path)
-    cached = _CLI_CAPABILITIES_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-
-    version = find_kicad_version(cli_path)
-    if not cli_path.exists():
-        capabilities = CliCapabilities(version=version)
-    else:
-        blob = _collect_cli_help(cli_path)
-        capabilities = _parse_cli_capabilities(version, blob)
-
     _CLI_CAPABILITIES_CACHE[cache_key] = capabilities
     return capabilities
 
