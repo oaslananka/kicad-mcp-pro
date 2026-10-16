@@ -25,11 +25,9 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, TypeVar
+from typing import Any
 
 from .errors import KiCadIpcTimeoutError
-
-T = TypeVar("T")
 
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_BASE_DELAY_S = 0.05
@@ -120,7 +118,7 @@ class KiCadCommandQueue:
         delay = self._base_delay_s * (2 ** max(0, attempt - 1))
         return float(min(self._max_delay_s, delay))
 
-    def execute(
+    def execute[T](
         self,
         operation: str,
         command: Callable[[], T],
@@ -157,7 +155,7 @@ class KiCadCommandQueue:
                 attempts += 1
                 try:
                     result = command()
-                except Exception as exc:  # noqa: BLE001 - classified below
+                except Exception as exc:  # noqa: BLE001 -- classified below
                     last_exc = exc
                     classification = classify_error(exc)
                     can_retry = (

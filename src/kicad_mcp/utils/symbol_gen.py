@@ -137,6 +137,7 @@ def generate_symbol(
     Returns:
         Complete ``.kicad_sym`` S-expression as a string.
     """
+    _ = unit_count
     # Group pins per unit
     units: dict[int, list[PinSpec]] = {}
     for pin in pins:

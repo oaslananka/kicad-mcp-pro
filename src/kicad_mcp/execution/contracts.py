@@ -6,11 +6,9 @@ import functools
 import inspect
 import time
 from collections.abc import Callable, Coroutine
-from typing import Any, TypeVar, cast
+from typing import Any, cast
 
 from kicad_mcp.models.tool_result import ToolResult
-
-F = TypeVar("F", bound=Callable[..., Coroutine[Any, Any, Any]])
 
 
 def tool_contract(
@@ -18,10 +16,10 @@ def tool_contract(
     writes_files: bool = False,
     source_file_args: list[str] | None = None,
     human_gate: bool = False,
-) -> Callable[[F], F]:
+) -> Callable[[Any], Any]:
     """Decorate a tool function so it always returns a ``ToolResult`` envelope."""
 
-    def decorator(fn: F) -> F:
+    def decorator[F: Callable[..., Coroutine[Any, Any, Any]]](fn: F) -> F:
         resolved_name = tool_name or fn.__name__
 
         @functools.wraps(fn)

@@ -81,7 +81,7 @@ def _reference_silk_box(reference: str, entry: dict[str, Any]) -> Box | None:
     if fx is None or fy is None or not block:
         return None
     match = re.search(
-        r'\(property\s+"Reference"\s+"[^"]*"\s*\(at\s+(-?[\d.]+)\s+(-?[\d.]+)(?:\s+(-?[\d.]+))?\)',
+        r'\(property\s+"Reference"\s+"[^"]*"\s*\(at\s+([-\d.]+)\s+([-\d.]+)(?:\s+([-\d.]+))?\)',
         block,
     )
     if match is None:

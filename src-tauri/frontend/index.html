@@ -271,7 +271,7 @@
             healthOk = true;
           }
         } catch (_getErr) {
-          // Probe GET failed; fallback to HEAD request before retrying
+          console.debug('Health probe GET failed; trying HEAD:', _getErr);
           try {
             const headResp = await fetch(HEALTH_URL, {
               method: 'HEAD',
@@ -282,7 +282,7 @@
               healthOk = true;
             }
           } catch (_headErr) {
-            // Server probe failed; poll loop will retry on next scheduled interval
+            console.debug('Health probe HEAD failed; will retry:', _headErr);
           }
         }
 

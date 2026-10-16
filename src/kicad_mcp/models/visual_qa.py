@@ -222,7 +222,7 @@ def _collect_symbol_local_points(block: str) -> list[tuple[float, float]]:
         cxf, cyf, rf = float(cx), float(cy), float(radius)
         points.extend([(cxf - rf, cyf - rf), (cxf + rf, cyf + rf)])
     for px, py, angle, length in re.findall(
-        r"\(pin\s+\w+\s+\w+\s+\(at\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\)\s+\(length\s+(-?[\d.]+)\)",
+        r"\(pin\s+\w+\s+\w+\s+\(at\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)\s+\(length\s+([-\d.]+)\)",
         block,
     ):
         pxf, pyf, angf, lenf = float(px), float(py), float(angle), float(length)

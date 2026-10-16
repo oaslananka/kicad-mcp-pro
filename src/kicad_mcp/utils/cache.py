@@ -6,11 +6,9 @@ import time
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
-from typing import Any, ParamSpec, TypeVar, cast
+from typing import Any, cast
 
 _CACHE: dict[tuple[object, ...], tuple[float, Any]] = {}
-P = ParamSpec("P")
-R = TypeVar("R")
 
 
 def _freeze(value: object) -> object:
@@ -27,7 +25,7 @@ def _freeze(value: object) -> object:
     return value
 
 
-def ttl_cache(ttl_seconds: int = 5) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def ttl_cache[**P, R](ttl_seconds: int = 5) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Cache a function result for a small, fixed amount of time."""
 
     def decorator(func: Callable[P, R]) -> Callable[P, R]:

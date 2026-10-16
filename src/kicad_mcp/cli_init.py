@@ -136,6 +136,7 @@ def _generate_mcp_config(
     version: str = __version__,
 ) -> dict[str, Any]:
     """Generate the ``mcpServers`` snippet for a client config file."""
+    _ = port
     if transport == TRANSPORT_STDIO:
         args: list[str] = [f"kicad-mcp-pro@{version}"]
     else:
