@@ -156,9 +156,7 @@ async def test_pcb_add_test_point_unknown_net(monkeypatch: pytest.MonkeyPatch) -
 
 
 @pytest.mark.anyio
-async def test_pcb_add_test_point_success(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_pcb_add_test_point_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     tp_path = tmp_path / "test_points.json"
     monkeypatch.setattr("kicad_mcp.tools.test_points._test_points_path", lambda: tp_path)
     monkeypatch.setattr(

@@ -367,9 +367,7 @@ def test_bridge_start_flows(
 
     # 2. Interactive branch
     mock_start_daemon.reset_mock()
-    monkeypatch.setattr(
-        "kicad_mcp.setup._check_kicad_mcp_available", lambda: True
-    )
+    monkeypatch.setattr("kicad_mcp.setup._check_kicad_mcp_available", lambda: True)
 
     def mock_run(coro: object) -> None:
         if hasattr(coro, "close"):
@@ -492,4 +490,3 @@ async def test_bridge_server_tcp_lifecycle() -> None:
     finally:
         server_task.cancel()
         await asyncio.gather(server_task, return_exceptions=True)
-

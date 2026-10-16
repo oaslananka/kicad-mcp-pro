@@ -327,16 +327,12 @@ async def test_project_extract_missing_and_corrupt(
         ),
         encoding="utf-8",
     )
-    res2 = await call_tool_text(
-        server, "project_extract_embedded_file", {"name": "corrupt.bin"}
-    )
+    res2 = await call_tool_text(server, "project_extract_embedded_file", {"name": "corrupt.bin"})
     assert "Failed to decode embedded file" in res2
 
 
 @pytest.mark.anyio
-async def test_project_extract_unsafe_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_project_extract_unsafe_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     workspace = tmp_path / "workspace"
     project = workspace / "project"
     server = await _configured_project_server(workspace, project, monkeypatch)
@@ -372,4 +368,3 @@ async def test_project_remove_embedded_file(
 
     res2 = await call_tool_text(server, "project_remove_embedded_file", {"name": "temp.txt"})
     assert "Removed embedded file 'temp.txt' from the project (1 entry deleted)." in res2
-

@@ -106,9 +106,7 @@ async def test_jobset_export_success(tmp_path: Path, monkeypatch: pytest.MonkeyP
     cfg.pcb_file = tmp_path / "board.kicad_pcb"
     cfg.pcb_file.touch()
     monkeypatch.setattr("kicad_mcp.tools.jobset.get_config", lambda: cfg)
-    monkeypatch.setattr(
-        "kicad_mcp.tools.jobset._ensure_output_dir", lambda name: tmp_path / "out"
-    )
+    monkeypatch.setattr("kicad_mcp.tools.jobset._ensure_output_dir", lambda name: tmp_path / "out")
     out_dir = tmp_path / "out"
     out_dir.mkdir(parents=True)
     (out_dir / "board.zip").write_bytes(b"x" * 2048)
@@ -129,9 +127,7 @@ async def test_jobset_export_failure(tmp_path: Path, monkeypatch: pytest.MonkeyP
     cfg.pcb_file = tmp_path / "board.kicad_pcb"
     cfg.pcb_file.touch()
     monkeypatch.setattr("kicad_mcp.tools.jobset.get_config", lambda: cfg)
-    monkeypatch.setattr(
-        "kicad_mcp.tools.jobset._ensure_output_dir", lambda name: tmp_path / "out"
-    )
+    monkeypatch.setattr("kicad_mcp.tools.jobset._ensure_output_dir", lambda name: tmp_path / "out")
     (tmp_path / "out").mkdir(parents=True)
 
     monkeypatch.setattr(
@@ -371,4 +367,3 @@ async def test_jobset_validate_success(tmp_path: Path, monkeypatch: pytest.Monke
         {"jobset_file": "valid.kicad_jobset"},
     )
     assert "Jobset file is valid. Found 2 jobs defined." in result
-
