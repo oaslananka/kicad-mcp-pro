@@ -921,7 +921,7 @@ def test_docker_metadata_contains_mcp_oci_label_and_release_image_contract() -> 
     # Deliberately avoid hard-coding the patch version: Dependabot should be able
     # to update it without breaking an otherwise valid release contract.
     kicad10_images = re.findall(
-        r"^FROM python:(3\\.14\\.\\d+)-slim@sha256:([0-9a-f]{64}) AS (builder-kicad10|runtime-kicad10)$",
+        r"^FROM python:(3\.14\.\d+)-slim@sha256:([0-9a-f]{64}) AS (builder-kicad10|runtime-kicad10)$",
         dockerfile,
         flags=re.MULTILINE,
     )
