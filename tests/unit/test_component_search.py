@@ -615,14 +615,17 @@ def test_redirect_handler_blocks_insecure_redirects() -> None:
         handler.redirect_request(dummy_req, None, 302, "Found", dummy_headers, "file:///etc/passwd")
 
     with pytest.raises(ValueError, match="Redirection to local or metadata host rejected"):
-        handler.redirect_request(dummy_req, None, 302, "Found", dummy_headers, "https://169.254.169.254/secret")
+        handler.redirect_request(
+            dummy_req, None, 302, "Found", dummy_headers, "https://169.254.169.254/secret"
+        )
 
     with pytest.raises(ValueError, match="Redirection to local or metadata host rejected"):
-        handler.redirect_request(dummy_req, None, 302, "Found", dummy_headers, "https://localhost:8080/")
+        handler.redirect_request(
+            dummy_req, None, 302, "Found", dummy_headers, "https://localhost:8080/"
+        )
 
 
 def test_jlcpcb_request_text_rejects_unapproved_host() -> None:
     client = JLCSearchClient()
     with pytest.raises(ValueError, match="not in the allowed"):
         client._request_text("https://evil.com/parts")
-
