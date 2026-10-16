@@ -366,3 +366,32 @@ def test_run_with_watch_restarting_flow(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(srv, "watchfiles", FakeWatchfiles)
     srv._run_with_watch()
     mock_proc.terminate.assert_called()
+
+
+def test_import_server_without_optional_watchfiles_and_tray(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing optional integrations must not leave unbound module globals."""
+    import builtins
+    import runpy
+
+    original_import = builtins.__import__
+
+    def reject_optional(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "watchfiles" or (
+            name == "tray"
+            and level == 1
+            and globals is not None
+            and globals.get("__package__") == "kicad_mcp"
+        ):
+            raise ImportError("Optional module intentionally unavailable")
+        return original_import(name, globals, locals, fromlist, level)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(builtins, "__import__", reject_optional)
+        namespace = runpy.run_module("kicad_mcp.server", run_name="kicad_mcp._optional_server_test")
+
+    assert namespace["HAS_WATCHFILES"] is False
+    assert namespace["watchfiles"] is None
+    assert namespace["HAS_TRAY"] is False
+    assert namespace["tray_main"] is None

@@ -371,3 +371,27 @@ class TestIconCreation:
 
         icon = _create_icon()
         assert icon.mode == "RGBA"
+
+
+def test_import_tray_without_pillow_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The optional Pillow import must leave icon generation safely disabled."""
+    import builtins
+    import runpy
+
+    original_import = builtins.__import__
+
+    def reject_pillow(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "PIL" or name.startswith("PIL."):
+            raise ImportError("Pillow intentionally unavailable")
+        return original_import(name, globals, locals, fromlist, level)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(builtins, "__import__", reject_pillow)
+        namespace = runpy.run_module("kicad_mcp.tray", run_name="kicad_mcp._optional_pillow_test")
+
+    assert namespace["_HAS_PIL"] is False
+    assert namespace["_HAS_TRAY"] is False
+    assert namespace["Image"] is None
+    assert namespace["ImageDraw"] is None
+    with pytest.raises(ImportError, match="Pillow"):
+        namespace["_create_icon"]()
