@@ -4,7 +4,7 @@ ARG UV_VERSION=0.12.19
 
 FROM ghcr.io/astral-sh/uv:${UV_VERSION}@sha256:ecd4de2f060c64bea0ff8ecb182ddf46ba3fcccdc8a60cfdbaf20d1a047d7437 AS uv-bin
 
-FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS kicad-extract
+FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS kicad-extract
 ARG KICAD_APPIMAGE_URL
 ARG DEBIAN_FRONTEND=noninteractive
 RUN if [ -n "${KICAD_APPIMAGE_URL}" ]; then \

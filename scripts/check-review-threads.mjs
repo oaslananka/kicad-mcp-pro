@@ -172,7 +172,7 @@ async function fetchPullRequest(owner, name, number) {
   let pullRequest = null;
   let cursor = null;
   do {
-    const data = await graphql(query, {
+    const data = await graphql(query, { // NOSONAR: sequential pagination requires cursor
       owner,
       name,
       number: Number(number),

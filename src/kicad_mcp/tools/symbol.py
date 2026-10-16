@@ -15,6 +15,49 @@ from .export_support import _ensure_output_dir, _run_cli, _run_cli_variants
 from .metadata import headless_compatible
 
 
+def _resolve_sym_upgrade_paths(
+    input_file: str,
+    output_file: str,
+) -> tuple[Path, str] | str:
+    cfg = get_config()
+    if not input_file:
+        if cfg.sch_file is None:
+            return (
+                "No input file provided and no schematic configured. "
+                "Provide an input_file path or call kicad_set_project() first."
+            )
+        in_file = str(cfg.sch_file)
+    else:
+        in_file = input_file
+
+    try:
+        from ..path_safety import resolve_under
+
+        if cfg.project_dir is not None:
+            in_path = resolve_under(cfg.project_dir, in_file)
+        else:
+            in_path = Path(in_file).expanduser().resolve()
+    except Exception as exc:
+        raise ValueError(f"Unsafe input file path: {exc}") from exc
+
+    out_path = output_file.strip() if output_file else ""
+    if out_path:
+        try:
+            if cfg.project_dir is not None:
+                from ..path_safety import resolve_under
+
+                out_path = str(resolve_under(cfg.project_dir, out_path))
+            else:
+                out_path = str(Path(out_path).expanduser().resolve())
+        except Exception as exc:
+            raise ValueError(f"Unsafe output path: {exc}") from exc
+    else:
+        out_dir = _ensure_output_dir("upgraded")
+        out_path = str(out_dir / f"upgraded_{in_path.name}")
+
+    return in_path, out_path
+
+
 def register(mcp: FastMCP) -> None:
     """Register symbol management tools."""
 
@@ -156,41 +199,10 @@ def register(mcp: FastMCP) -> None:
         dry_run : bool
             Only report commands and files that would be affected.
         """
-        cfg = get_config()
-        if not input_file:
-            if cfg.sch_file is None:
-                return (
-                    "No input file provided and no schematic configured. "
-                    "Provide an input_file path or call kicad_set_project() first."
-                )
-            in_file = str(cfg.sch_file)
-        else:
-            in_file = input_file
-
-        try:
-            from ..path_safety import resolve_under
-
-            if cfg.project_dir is not None:
-                in_path = resolve_under(cfg.project_dir, in_file)
-            else:
-                in_path = Path(in_file).expanduser().resolve()
-        except Exception as exc:
-            raise ValueError(f"Unsafe input file path: {exc}") from exc
-
-        out_path = output_file.strip() if output_file else ""
-        if out_path:
-            try:
-                if cfg.project_dir is not None:
-                    from ..path_safety import resolve_under
-
-                    out_path = str(resolve_under(cfg.project_dir, out_path))
-                else:
-                    out_path = str(Path(out_path).expanduser().resolve())
-            except Exception as exc:
-                raise ValueError(f"Unsafe output path: {exc}") from exc
-        else:
-            out_dir = _ensure_output_dir("upgraded")
-            out_path = str(out_dir / f"upgraded_{in_path.name}")
+        resolved = _resolve_sym_upgrade_paths(input_file, output_file)
+        if isinstance(resolved, str):
+            return resolved
+        in_path, out_path = resolved
 
         if dry_run:
             return (

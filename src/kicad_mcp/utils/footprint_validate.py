@@ -318,6 +318,17 @@ _DOCUMENTATION_LAYER_RE = re.compile(
 )
 
 
+def _match_geometry_layer(footprint_text: str, index: int) -> tuple[str | None, int]:
+    token_match = _SEXPR_TOKEN_RE.match(footprint_text, index)
+    if token_match and token_match.group(1).lower() in _FOOTPRINT_GEOMETRY_TOKENS:
+        block, length = _extract_block(footprint_text, index)
+        if block and length:
+            layer_match = _DOCUMENTATION_LAYER_RE.search(block)
+            layer = layer_match.group("layer").lower() if layer_match else None
+            return layer, length
+    return None, 1
+
+
 def _footprint_geometry_layers(footprint_text: str) -> set[str]:
     """Return documentation layers used by actual footprint geometry elements."""
     layers: set[str] = set()
@@ -340,15 +351,11 @@ def _footprint_geometry_layers(footprint_text: str) -> set[str]:
             index += 1
             continue
         if char == "(":
-            token_match = _SEXPR_TOKEN_RE.match(footprint_text, index)
-            if token_match and token_match.group(1).lower() in _FOOTPRINT_GEOMETRY_TOKENS:
-                block, length = _extract_block(footprint_text, index)
-                if block and length:
-                    layer_match = _DOCUMENTATION_LAYER_RE.search(block)
-                    if layer_match:
-                        layers.add(layer_match.group("layer").lower())
-                    index += length
-                    continue
+            layer, length = _match_geometry_layer(footprint_text, index)
+            if layer:
+                layers.add(layer)
+            index += length
+            continue
         index += 1
     return layers
 

@@ -269,6 +269,34 @@ def _line_after_label(lines: list[str], label: str) -> str:
     return ""
 
 
+def _extract_detail_metadata(lines: list[str]) -> tuple[str, str, str]:
+    lifecycle = ""
+    rohs = ""
+    datasheet_url = ""
+    for line in lines:
+        lower = line.strip().casefold()
+        if not lifecycle and lower.startswith("lifecycle"):
+            lifecycle = line.split(":", 1)[-1].strip()
+        if not rohs and lower.startswith("rohs"):
+            rohs = line.split(":", 1)[-1].strip()
+        if not datasheet_url and lower.startswith("datasheet"):
+            parts = line.split(":", 1)
+            if len(parts) > 1 and parts[1].strip():
+                datasheet_url = parts[1].strip()
+    return lifecycle, rohs, datasheet_url
+
+
+def _find_datasheet_href(html: str) -> str:
+    for opening in re.finditer(r'href="', html, re.IGNORECASE):
+        closing = html.find('"', opening.end())
+        if closing < 0:
+            break
+        url = html[opening.end() : closing]
+        if url.casefold().startswith(("http://", "https://")) and "datasheet" in url.casefold():
+            return url
+    return ""
+
+
 def _record_from_jlcpcb_detail_page(html: str, lcsc_code: str) -> ComponentRecord | None:
     if lcsc_code not in html:
         return None
@@ -283,29 +311,9 @@ def _record_from_jlcpcb_detail_page(html: str, lcsc_code: str) -> ComponentRecor
     library_type = " ".join(lines[:80]).casefold()
     stock_match = re.search(r"In Stock:\s*([\d,]+)", full_text, re.IGNORECASE)
     price_match = re.search(r"1\+\s*\$([0-9.]+)", full_text)
-    lifecycle = ""
-    rohs = ""
-    datasheet_url = ""
-    for line in lines:
-        lower = line.strip().casefold()
-        if not lifecycle and lower.startswith("lifecycle"):
-            lifecycle = line.split(":", 1)[-1].strip()
-        if not rohs and lower.startswith("rohs"):
-            rohs = line.split(":", 1)[-1].strip()
-        if not datasheet_url and lower.startswith("datasheet"):
-            parts = line.split(":", 1)
-            if len(parts) > 1 and parts[1].strip():
-                datasheet_url = parts[1].strip()
-    # Also try to find datasheet URL in HTML href attributes
+    lifecycle, rohs, datasheet_url = _extract_detail_metadata(lines)
     if not datasheet_url:
-        for opening in re.finditer(r'href="', html, re.IGNORECASE):
-            closing = html.find('"', opening.end())
-            if closing < 0:
-                break
-            url = html[opening.end() : closing]
-            if url.casefold().startswith(("http://", "https://")) and "datasheet" in url.casefold():
-                datasheet_url = url
-                break
+        datasheet_url = _find_datasheet_href(html)
     return ComponentRecord(
         source="jlcpcb-public",
         lcsc_code=normalize_lcsc_code(lcsc_code),
