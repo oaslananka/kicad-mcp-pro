@@ -79,7 +79,7 @@ def pin_sides(body: Box, pin_points: Sequence[tuple[float, float]]) -> frozenset
                 "top": abs(py - body.y_min),
                 "bottom": abs(py - body.y_max),
             }
-            sides.add(min(gaps, key=lambda k: gaps[k]))
+            sides.add(min(gaps, key=gaps.__getitem__))
     return frozenset(sides)
 
 

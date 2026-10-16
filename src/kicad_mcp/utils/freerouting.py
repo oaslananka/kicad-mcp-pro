@@ -366,6 +366,7 @@ class FreeRoutingRunner:
         ``ManualStepRequiredError`` describing the one-time GUI import. The staged path is
         in the message so the caller can surface exactly where the session is.
         """
+        _ = pcb_path
         staged = self.stage_ses(ses_path)
         raise ManualStepRequiredError(
             f"The routed session is staged at {staged}, but KiCad has no headless Specctra "

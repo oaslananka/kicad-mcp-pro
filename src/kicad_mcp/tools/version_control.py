@@ -166,7 +166,7 @@ def _has_session_scraps(status_lines: list[str]) -> str | None:
     return None
 
 
-def _checkpoint_log_args(repo_root: Path, pathspec: str) -> list[str]:
+def _checkpoint_log_args(pathspec: str) -> list[str]:
     return [
         "log",
         "--grep",
@@ -301,7 +301,7 @@ def register(mcp: FastMCP) -> None:
         if repo_root is None:
             raise ValueError(_MISSING_GIT_REPOSITORY_MESSAGE)
         pathspec = _project_pathspec(repo_root, project_dir)
-        result = _run_git(repo_root, *_checkpoint_log_args(repo_root, pathspec))
+        result = _run_git(repo_root, *_checkpoint_log_args(pathspec))
         entries = [line for line in result.stdout.splitlines() if line.strip()]
         if not entries:
             return "No KiCad MCP checkpoints were found for the active project."

@@ -238,6 +238,7 @@ def evaluate_project(
 
     Returns a ``CorpusEvalResult``.
     """
+    _ = dry_run
     if base_dir is None:
         # Assume relative to repo root (grandparent of evals/)
         base_dir = _GOLDEN_CORPUS_PATH.resolve().parent.parent
