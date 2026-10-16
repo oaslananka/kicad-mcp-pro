@@ -211,7 +211,7 @@ def get_cli_capabilities(cli_path: Path) -> CliCapabilities:
                 timeout=10,
                 check=False,
             )
-        except (FileNotFoundError, OSError, PermissionError, subprocess.TimeoutExpired):
+        except (OSError, subprocess.TimeoutExpired):
             continue
         help_outputs.append(f"{result.stdout}\n{result.stderr}")
 
