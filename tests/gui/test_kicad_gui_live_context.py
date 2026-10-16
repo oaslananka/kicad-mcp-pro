@@ -728,8 +728,11 @@ async def test_open_pcb_editor_uses_live_board_context_and_project_switches(
                 ),
                 "probe did not emit bounded diagnostics",
             )
-            assert probe.returncode == 0 and b"MACOS_COMPANION_LIVE_PASS" in stdout, (
-                f"Companion wx/IPC probe failed in KiCad-managed environment: {diagnostics}"
+            assert probe.returncode == 0, (
+                f"Companion wx/IPC probe exited unsuccessfully: {diagnostics}"
+            )
+            assert b"MACOS_COMPANION_LIVE_PASS" in stdout, (
+                f"Companion wx/IPC probe did not confirm live acceptance: {diagnostics}"
             )
             _write_json(
                 artifacts / "companion-acceptance.json",
