@@ -691,9 +691,10 @@ def test_redirect_handler_rejects_cross_host_even_when_https() -> None:
 
     original = urllib.request.Request("https://api.example.com/v1")
     handler = SafeSearchRedirectHandler()
+    redirect_headers = HTTPMessage()
     with pytest.raises(ValueError, match="unapproved host"):
         handler.redirect_request(
-            original, None, 302, "Found", HTTPMessage(), "https://attacker.example/path"
+            original, None, 302, "Found", redirect_headers, "https://attacker.example/path"
         )
 
     allowed = SafeSearchRedirectHandler(frozenset({"api.example.com", "www.example.com"}))
