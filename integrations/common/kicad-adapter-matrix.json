@@ -384,8 +384,8 @@
             "kicad-cli"
           ],
           "selectedBackends": {
-            "local-engine": 15,
-            "local-filesystem": 16
+            "local-engine": 16,
+            "local-filesystem": 15
           },
           "toolCount": 31
         },
@@ -709,8 +709,8 @@
             "kicad-cli"
           ],
           "selectedBackends": {
-            "local-engine": 15,
-            "local-filesystem": 16
+            "local-engine": 16,
+            "local-filesystem": 15
           },
           "toolCount": 31
         },
@@ -1034,8 +1034,8 @@
             "kicad-cli"
           ],
           "selectedBackends": {
-            "local-engine": 15,
-            "local-filesystem": 16
+            "local-engine": 16,
+            "local-filesystem": 15
           },
           "toolCount": 31
         },
@@ -9847,24 +9847,24 @@
       "routes": {
         "degradedNoKiCad": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "atomic-write-validation"
+          "backend": "local-engine",
+          "mutationGuard": null
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "atomic-write-validation"
+          "backend": "local-engine",
+          "mutationGuard": null
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "atomic-write-validation"
+          "backend": "local-engine",
+          "mutationGuard": null
         }
       },
       "runtime": "none",
-      "tier": "write",
+      "tier": "read",
       "tool": "studio_push_context",
-      "writesFiles": true
+      "writesFiles": false
     },
     {
       "category": "manufacturing",
