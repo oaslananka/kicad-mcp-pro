@@ -96,9 +96,6 @@ kicad10FeatureParity:
   baseline: 10.0.6
   primaryIssue: https://github.com/oaslananka/kicad-mcp-pro/issues/427
   documentation: docs/compatibility/kicad-10-0-6-feature-parity.md
-  # A separate patch review must not overwrite the 10.0.6 feature-parity baseline.
-  # This is an evidence index and a queue of targeted semantic regressions,
-  # not a claim that every 10.0.7 native/editor feature is qualified.
   candidatePatchReview:
     version: 10.0.7
     reviewed: '2026-10-12'
@@ -120,9 +117,9 @@ kicad10FeatureParity:
         - .github/workflows/kicad-live-e2e.yml
         - .github/workflows/dev-bootstrap.yml
       reason: >-
-        Preserve the previously qualified Jammy lane while the official
-        10.0.7 Jammy PPA build remains blocked by the observed libgit2 error;
-        Ubuntu 24.04 10.0.7 evidence must not be treated as Jammy evidence.
+        Preserve the previously qualified Jammy lane while the official 10.0.7
+        Jammy PPA build remains blocked by the observed libgit2 error; Ubuntu
+        24.04 10.0.7 evidence must not be treated as Jammy evidence.
     targetedRegressionGaps:
       - erc-json-unit-scale
       - multi-root-schematic-plot
@@ -684,7 +681,7 @@ mcp:
 products:
   kicad-mcp-pro:
     packagePath: pyproject.toml
-    version: 4.3.0
+    version: 4.4.0
     compatibleExtension:
       required: '>=1.0.0 <2.0.0'
       testedAgainst: 1.0.0

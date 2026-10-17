@@ -10,6 +10,46 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.4.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.3.0...mcp-server-v4.4.0) (2026-10-17)
+
+
+### Features
+
+* **evals:** gate first reference agent execution on preflight and cost approval ([#1230](https://github.com/oaslananka/kicad-mcp-pro/issues/1230)) ([ee60c03](https://github.com/oaslananka/kicad-mcp-pro/commit/ee60c037a25187b6d2487b45d085781c6986f25b))
+* **evals:** report complete reference attempt histories without cherry-picking ([#1229](https://github.com/oaslananka/kicad-mcp-pro/issues/1229)) ([555225d](https://github.com/oaslananka/kicad-mcp-pro/commit/555225da047fbf26d1d9176af16c6da135cee1a3))
+* **kicad:** native IPC Companion plugin for PCB Editor ([#1316](https://github.com/oaslananka/kicad-mcp-pro/issues/1316)) ([4b7b1ce](https://github.com/oaslananka/kicad-mcp-pro/commit/4b7b1ce9b8a128d69d7e748db562fdd50cc856b6))
+
+
+### Bug Fixes
+
+* **ci:** make required SonarCloud Scan fail on Quality Gate rejection ([#1301](https://github.com/oaslananka/kicad-mcp-pro/issues/1301)) ([abf2ac6](https://github.com/oaslananka/kicad-mcp-pro/commit/abf2ac67f3232a320c96212a5132d6f22430659e))
+* **companion:** permit memory-only Studio sync in readonly mode ([#1320](https://github.com/oaslananka/kicad-mcp-pro/issues/1320)) ([0769038](https://github.com/oaslananka/kicad-mcp-pro/commit/0769038ceaa89b468447e532b911230c9e937700))
+* **compat:** pin official KiCad 10.0.7 Windows installer digest ([#1233](https://github.com/oaslananka/kicad-mcp-pro/issues/1233)) ([ef5c8df](https://github.com/oaslananka/kicad-mcp-pro/commit/ef5c8df7de0dee646b34d8356ddf31b033c1d1e6))
+* **compat:** reuse vetted native runner for ERC units probe ([#1237](https://github.com/oaslananka/kicad-mcp-pro/issues/1237)) ([f0a7728](https://github.com/oaslananka/kicad-mcp-pro/commit/f0a77283a5963138a3503ea5dfdf1a7961ca20f6))
+* **pcb:** accept KiCad 10 missing-ID deletion postcondition ([#1275](https://github.com/oaslananka/kicad-mcp-pro/issues/1275)) ([47056e4](https://github.com/oaslananka/kicad-mcp-pro/commit/47056e46eab4c9cea9afa5de5d4b8d1fd87f5afe))
+* **pcb:** keep NPTH mounting-hole pads copper-free ([#1324](https://github.com/oaslananka/kicad-mcp-pro/issues/1324)) ([b3d4e95](https://github.com/oaslananka/kicad-mcp-pro/commit/b3d4e95f791b6b4e09f40c0d818d971e33aabba8))
+* **pcb:** preserve schematic footprint identity fields and angles ([#1326](https://github.com/oaslananka/kicad-mcp-pro/issues/1326)) ([714ebb5](https://github.com/oaslananka/kicad-mcp-pro/commit/714ebb5e40e7161052cba38539fbaf4193b36226))
+* **quality:** reduce cognitive complexity in scripts and domain utility helpers ([#1300](https://github.com/oaslananka/kicad-mcp-pro/issues/1300)) ([bd55d0d](https://github.com/oaslananka/kicad-mcp-pro/commit/bd55d0d7710ae2901593f2eec064170b8d4e8d88))
+* **quality:** resolve 53 sonar code smells across core, tools, and scripts ([#1296](https://github.com/oaslananka/kicad-mcp-pro/issues/1296)) ([66b5884](https://github.com/oaslananka/kicad-mcp-pro/commit/66b5884e1de9516d05607c696992101280e5ab6e))
+* **quality:** resolve idioms, regex simplifications, and cleanups ([#1299](https://github.com/oaslananka/kicad-mcp-pro/issues/1299)) ([fece559](https://github.com/oaslananka/kicad-mcp-pro/commit/fece5599b153886a7bb24f5a1a5a652faa29bb1d))
+* **quality:** resolve production code smells and nested conditionals ([#1297](https://github.com/oaslananka/kicad-mcp-pro/issues/1297)) ([42fd070](https://github.com/oaslananka/kicad-mcp-pro/commit/42fd070e565fb98f06dfb4de5977cd72627510e9))
+* **release:** evaluate publish gate after intentionally skipped jobs ([#1227](https://github.com/oaslananka/kicad-mcp-pro/issues/1227)) ([30021b7](https://github.com/oaslananka/kicad-mcp-pro/commit/30021b7eea5f77f84b625137371403cef29cc5d7))
+* **skills:** reject symlinked mirror paths before writes ([#854](https://github.com/oaslananka/kicad-mcp-pro/issues/854)) ([#1255](https://github.com/oaslananka/kicad-mcp-pro/issues/1255)) ([b02d064](https://github.com/oaslananka/kicad-mcp-pro/commit/b02d0649815a3d6a0accb12bd632cde9ed5d5641))
+* **sonar:** address 24 regex and reliability findings ([#854](https://github.com/oaslananka/kicad-mcp-pro/issues/854)) ([#1286](https://github.com/oaslananka/kicad-mcp-pro/issues/1286)) ([ed4d1b1](https://github.com/oaslananka/kicad-mcp-pro/commit/ed4d1b1506458cf6540b29fd2976621f37bfd3d1))
+* **sonar:** avoid new review findings in batch ([#854](https://github.com/oaslananka/kicad-mcp-pro/issues/854)) ([#1287](https://github.com/oaslananka/kicad-mcp-pro/issues/1287)) ([9f8e7f1](https://github.com/oaslananka/kicad-mcp-pro/commit/9f8e7f1dc7faaa8895a98dfd5c42a4911cbf3a7b))
+* **sonar:** resolve final five regex performance findings ([#854](https://github.com/oaslananka/kicad-mcp-pro/issues/854)) ([#1288](https://github.com/oaslananka/kicad-mcp-pro/issues/1288)) ([1179ea6](https://github.com/oaslananka/kicad-mcp-pro/commit/1179ea6617c992bf0df1a020dd85a6a3037cf60d))
+* **telemetry:** simplify secret-field redaction pattern ([#1312](https://github.com/oaslananka/kicad-mcp-pro/issues/1312)) ([6da4fed](https://github.com/oaslananka/kicad-mcp-pro/commit/6da4fed0f5452a8cfb9e0f9e0738e5eb0d102a6b))
+* **tests:** resolve composite assertions and narrow pytest raises blocks ([#1298](https://github.com/oaslananka/kicad-mcp-pro/issues/1298)) ([aa57335](https://github.com/oaslananka/kicad-mcp-pro/commit/aa5733559d3581da6fec1f5a240c8cb77d8e0fc9))
+* **types:** resolve unbound variables, dead code, and optional dependency fallbacks ([#1309](https://github.com/oaslananka/kicad-mcp-pro/issues/1309)) ([caedd40](https://github.com/oaslananka/kicad-mcp-pro/commit/caedd40317d0f244729c7e488fd0b6ea172d8de4))
+
+
+### Documentation
+
+* **compat:** audit KiCad 10.0.7 patch parity and Jammy exception ([#1235](https://github.com/oaslananka/kicad-mcp-pro/issues/1235)) ([dd6b50e](https://github.com/oaslananka/kicad-mcp-pro/commit/dd6b50ea0ba3ef13e4d085cb02ea071edc77f339))
+* **compat:** record exact-main 10.0.7 native and GUI qualification ([#1232](https://github.com/oaslananka/kicad-mcp-pro/issues/1232)) ([7cb3240](https://github.com/oaslananka/kicad-mcp-pro/commit/7cb32400d4fa65ea4dd744faf84f1748ab2e9b57))
+* reference independent JLCPCB KiCad MCP Pro case study ([#1315](https://github.com/oaslananka/kicad-mcp-pro/issues/1315)) ([97fc067](https://github.com/oaslananka/kicad-mcp-pro/commit/97fc06796ad0ced427ee594a9dfef4f898741298))
+* **skills:** fix gallery link across mirrored host skills ([#1295](https://github.com/oaslananka/kicad-mcp-pro/issues/1295)) ([e530e28](https://github.com/oaslananka/kicad-mcp-pro/commit/e530e28d0c348725c9b87c378d58bd222e58498a))
+
 ## [4.3.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.2.0...mcp-server-v4.3.0) (2026-10-11)
 
 
