@@ -5,7 +5,7 @@ import json
 import pytest
 from starlette.testclient import TestClient
 
-from kicad_mcp.config import get_config
+from kicad_mcp.config import get_config, reset_config
 from kicad_mcp.server import build_server, create_server
 from kicad_mcp.wellknown import get_wellknown_metadata
 from tests.conftest import call_tool_text
@@ -125,6 +125,37 @@ async def test_studio_push_context_updates_resource_and_auto_sets_project(sample
     assert payload["selected_reference"] == "U1"
     assert get_config().project_dir == sample_project.resolve()
     assert "Studio context updated" in result
+
+
+@pytest.mark.anyio
+async def test_readonly_studio_context_sync_is_ephemeral_and_does_not_activate_project(
+    sample_project, monkeypatch
+) -> None:
+    monkeypatch.setenv("KICAD_MCP_OPERATING_MODE", "readonly")
+    # The shared sample_project fixture preconfigures a project directory.
+    # Clear it so this test actually exercises the no-project branch.
+    monkeypatch.delenv("KICAD_MCP_PROJECT_DIR")
+    reset_config()
+    assert get_config().project_dir is None
+    monkeypatch.setattr(
+        "kicad_mcp.resources.studio_context.auto_set_project_from_file",
+        lambda _path: (_ for _ in ()).throw(AssertionError("readonly activated a project")),
+    )
+    server = build_server("read_only_inspection")
+    server.filter_runtime_tools = False
+    pcb = sample_project / "demo.kicad_pcb"
+    original_bytes = pcb.read_bytes()
+    result = await call_tool_text(
+        server,
+        "studio_push_context",
+        {"active_file": str(pcb), "file_type": "pcb"},
+    )
+    assert "Studio context updated" in result
+    resource_items = list(await server.read_resource("kicad://studio/context"))
+    payload = json.loads(resource_items[0].content)
+    assert payload["active_file"] == str(pcb)
+    assert get_config().project_dir is None
+    assert pcb.read_bytes() == original_bytes
 
 
 @pytest.mark.anyio

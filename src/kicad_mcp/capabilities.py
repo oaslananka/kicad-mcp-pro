@@ -354,6 +354,8 @@ def _is_read_tool(name: str, category: str) -> bool:
     if category in {"pcb_read", "dfm"}:
         return True
     if name in {
+        # Ephemeral session context only; the readonly handler never activates a project.
+        "studio_push_context",
         "kicad_set_project",
         "project_design_workflow",
         "pcb_placement_quality_gate",

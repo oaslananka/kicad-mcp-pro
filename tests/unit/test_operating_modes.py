@@ -35,6 +35,8 @@ def test_operating_mode_policy_matches_required_risk_levels(monkeypatch) -> None
     assert is_tool_allowed_in_mode("pcb_placement_quality_gate", OperatingMode.READONLY) is True
     assert tool_required_mode("pcb_placement_quality_report") is OperatingMode.READONLY
 
+    assert tool_required_mode("studio_push_context") is OperatingMode.READONLY
+    assert is_tool_allowed_in_mode("studio_push_context", OperatingMode.READONLY) is True
     assert tool_required_mode("pcb_add_track") is OperatingMode.WRITE
     assert is_tool_allowed_in_mode("pcb_add_track", OperatingMode.READONLY) is False
     assert tool_required_mode("pcb_place_component") is OperatingMode.WRITE
@@ -65,6 +67,7 @@ def test_default_readonly_mode_filters_mutating_and_high_risk_tools(sample_proje
         "export_bom",
         "sch_get_symbols",
     } <= tool_names
+    assert "studio_push_context" in tool_names
     assert "pcb_add_track" not in tool_names
     assert "sch_add_symbol" not in tool_names
     assert "export_manufacturing_package" not in tool_names

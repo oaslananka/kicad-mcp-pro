@@ -11,6 +11,7 @@ from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
 from ..discovery import auto_set_project_from_file
+from ..operating_modes import OperatingMode, active_operating_mode
 from ..tools.metadata import headless_compatible
 
 
@@ -85,7 +86,13 @@ def register(mcp: FastMCP) -> None:
         _studio_context_store.set(payload)
 
         detected = None
-        if active_file and get_config().project_dir is None:
+        # In readonly mode only update the ephemeral session snapshot. Do not
+        # change the active project/config or reset an existing IPC connection.
+        if (
+            active_file
+            and get_config().project_dir is None
+            and active_operating_mode() is not OperatingMode.READONLY
+        ):
             detected = auto_set_project_from_file(active_file)
 
         return {
