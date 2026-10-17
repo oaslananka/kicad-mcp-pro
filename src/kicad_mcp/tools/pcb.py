@@ -1755,7 +1755,8 @@ def _mounting_hole_block(
     clearance_mm: float,
 ) -> str:
     outer_radius_mm = max((diameter_mm / 2) + clearance_mm, diameter_mm)
-    outer_size_mm = diameter_mm + (clearance_mm * 2)
+    # An NPTH mounting hole has no copper annulus. Screw-head clearance is
+    # represented by the courtyard, never by enlarging the physical pad.
     return "\n".join(
         [
             f'(footprint "MountingHole_{diameter_mm:.2f}mm"',
@@ -1781,7 +1782,7 @@ def _mounting_hole_block(
             ),
             (
                 f'\t(pad "" np_thru_hole circle (at 0 0) '
-                f"(size {outer_size_mm:.4f} {outer_size_mm:.4f}) "
+                f"(size {diameter_mm:.4f} {diameter_mm:.4f}) "
                 f'(drill {diameter_mm:.4f}) (layers "*.Cu" "*.Mask"))'
             ),
             ")",
@@ -4124,21 +4125,31 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
         )
         existing = _parse_board_footprint_blocks(board_content)
         min_x_mm, min_y_mm, max_x_mm, max_y_mm = _board_frame_mm(board_content, existing)
+        courtyard_radius_mm = max(
+            (payload.diameter_mm / 2) + payload.clearance_mm, payload.diameter_mm
+        )
+        margin_mm = max(payload.margin_mm, courtyard_radius_mm)
+        if max_x_mm - min_x_mm <= 2 * margin_mm or max_y_mm - min_y_mm <= 2 * margin_mm:
+            return (
+                "Mounting holes not added: board frame is too small to fit "
+                f"the {courtyard_radius_mm:.2f} mm courtyard radius at "
+                f"a {margin_mm:.2f} mm edge margin."
+            )
         positions = [
-            (min_x_mm + payload.margin_mm, min_y_mm + payload.margin_mm),
-            (max_x_mm - payload.margin_mm, min_y_mm + payload.margin_mm),
-            (min_x_mm + payload.margin_mm, max_y_mm - payload.margin_mm),
-            (max_x_mm - payload.margin_mm, max_y_mm - payload.margin_mm),
+            (min_x_mm + margin_mm, min_y_mm + margin_mm),
+            (max_x_mm - margin_mm, min_y_mm + margin_mm),
+            (min_x_mm + margin_mm, max_y_mm - margin_mm),
+            (max_x_mm - margin_mm, max_y_mm - margin_mm),
         ]
         if payload.pattern == "top_bottom":
             positions = [
-                ((min_x_mm + max_x_mm) / 2, min_y_mm + payload.margin_mm),
-                ((min_x_mm + max_x_mm) / 2, max_y_mm - payload.margin_mm),
+                ((min_x_mm + max_x_mm) / 2, min_y_mm + margin_mm),
+                ((min_x_mm + max_x_mm) / 2, max_y_mm - margin_mm),
             ]
         elif payload.pattern == "left_right":
             positions = [
-                (min_x_mm + payload.margin_mm, (min_y_mm + max_y_mm) / 2),
-                (max_x_mm - payload.margin_mm, (min_y_mm + max_y_mm) / 2),
+                (min_x_mm + margin_mm, (min_y_mm + max_y_mm) / 2),
+                (max_x_mm - margin_mm, (min_y_mm + max_y_mm) / 2),
             ]
         existing_refs = set(existing)
         additions: list[str] = []
@@ -4160,6 +4171,12 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
         return "\n".join(
             [
                 f"Added {len(additions)} mounting hole(s): {', '.join(added_refs)}.",
+                (
+                    f"Edge margin increased to {margin_mm:.2f} mm to keep the "
+                    "mounting-hole courtyards inside the board frame."
+                    if margin_mm > payload.margin_mm
+                    else f"Edge margin: {margin_mm:.2f} mm."
+                ),
                 _finalize_file_based_board_edit(payload.allow_open_board),
             ]
         )
