@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Literal
+from typing import Any, Literal, cast
 
 from kipy.geometry import Angle
 
@@ -24,6 +24,17 @@ def _rotation_degrees(value: object) -> float:
     if isinstance(degrees, int | float) and not isinstance(degrees, bool):
         return float(degrees)
     raise FootprintRotationError("Footprint rotation value does not expose numeric degrees.")
+
+
+def _restore_missing_3d_models(definition: object | None, original_models: list[object]) -> None:
+    """Work around kicad-python 0.7/0.8 orientation setter dropping 3D models."""
+    if definition is None or not original_models:
+        return
+    existing = getattr(definition, "models", ())
+    missing = [model for model in original_models if not any(model is item for item in existing)]
+    if missing:
+        preserved = cast(Any, definition)
+        preserved.items = [*preserved.items, *missing]
 
 
 def apply_footprint_rotation(footprint: object, rotation_deg: float) -> RotationAttribute:
@@ -56,13 +67,7 @@ def apply_footprint_rotation(footprint: object, rotation_deg: float) -> Rotation
         except Exception as exc:  # KiCad IPC surfaces raise generated transport/type errors.
             failures.append(f"{attribute}: {type(exc).__name__}")
             continue
-        if models_before and definition is not None:
-            existing = getattr(definition, "models", ())
-            missing = [
-                model for model in models_before if not any(model is item for item in existing)
-            ]
-            if missing:
-                definition.items = [*definition.items, *missing]
+        _restore_missing_3d_models(definition, models_before)
         return attribute
 
     if not available:
