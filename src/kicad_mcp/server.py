@@ -143,6 +143,14 @@ except ImportError:
     tray_main = None  # type: ignore[assignment]
 
 # Shared user-facing values; preserve spelling and case across CLI and reports.
+_CLI_HELP_TRANSPORT = "Transport: stdio, http, sse, streamable-http"
+_CLI_HELP_HTTP_HOST = "HTTP bind host"
+_CLI_HELP_HTTP_PORT = "HTTP bind port"
+_CLI_HELP_PROJECT_DIR = "Active KiCad project directory"
+_CLI_HELP_LOG_LEVEL = "Log level"
+_CLI_HELP_OPERATING_MODE = "Operating mode: readonly, write, manufacturing, experimental"
+_CLI_HELP_EXPERIMENTAL = "Enable experimental tools"
+
 _HELP_JSON_OUTPUT = "Emit machine-readable JSON."
 _HTTP_RESPONSE_START = "http.response.start"
 _NOT_FOUND_LITERAL = "not found"
@@ -2392,15 +2400,11 @@ def _run_server_from_options(
 
 @app.callback(invoke_without_command=True)
 def main_callback(
-    transport: str | None = typer.Option(
-        None, help=option_help("Transport: stdio, http, sse, streamable-http")
-    ),
-    host: str | None = typer.Option(None, help=option_help("HTTP bind host")),
-    port: int | None = typer.Option(None, help=option_help("HTTP bind port")),
-    project_dir: str | None = typer.Option(
-        None, help=option_help("Active KiCad project directory")
-    ),
-    log_level: str | None = typer.Option(None, help=option_help("Log level")),
+    transport: str | None = typer.Option(None, help=option_help(_CLI_HELP_TRANSPORT)),
+    host: str | None = typer.Option(None, help=option_help(_CLI_HELP_HTTP_HOST)),
+    port: int | None = typer.Option(None, help=option_help(_CLI_HELP_HTTP_PORT)),
+    project_dir: str | None = typer.Option(None, help=option_help(_CLI_HELP_PROJECT_DIR)),
+    log_level: str | None = typer.Option(None, help=option_help(_CLI_HELP_LOG_LEVEL)),
     log_format: str | None = typer.Option(None, help=option_help("Log format: text or json")),
     log_file: str | None = typer.Option(None, help=option_help("Rotating log file path")),
     profile: str | None = typer.Option(
@@ -2409,9 +2413,9 @@ def main_callback(
     operating_mode: str | None = typer.Option(
         None,
         "--mode",
-        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
+        help=option_help(_CLI_HELP_OPERATING_MODE),
     ),
-    experimental: bool | None = typer.Option(None, help=option_help("Enable experimental tools")),
+    experimental: bool | None = typer.Option(None, help=option_help(_CLI_HELP_EXPERIMENTAL)),
     telemetry: bool | None = typer.Option(
         None, "--telemetry/--no-telemetry", help=option_help("Enable OpenTelemetry export")
     ),
@@ -2456,15 +2460,11 @@ def main_callback(
 
 @app.command()
 def serve(
-    transport: str | None = typer.Option(
-        None, help=option_help("Transport: stdio, http, sse, streamable-http")
-    ),
-    host: str | None = typer.Option(None, help=option_help("HTTP bind host")),
-    port: int | None = typer.Option(None, help=option_help("HTTP bind port")),
-    project_dir: str | None = typer.Option(
-        None, help=option_help("Active KiCad project directory")
-    ),
-    log_level: str | None = typer.Option(None, help=option_help("Log level")),
+    transport: str | None = typer.Option(None, help=option_help(_CLI_HELP_TRANSPORT)),
+    host: str | None = typer.Option(None, help=option_help(_CLI_HELP_HTTP_HOST)),
+    port: int | None = typer.Option(None, help=option_help(_CLI_HELP_HTTP_PORT)),
+    project_dir: str | None = typer.Option(None, help=option_help(_CLI_HELP_PROJECT_DIR)),
+    log_level: str | None = typer.Option(None, help=option_help(_CLI_HELP_LOG_LEVEL)),
     log_format: str | None = typer.Option(None, help=option_help("Log format: text or json")),
     log_file: str | None = typer.Option(None, help=option_help("Rotating log file path")),
     profile: str | None = typer.Option(
@@ -2473,9 +2473,9 @@ def serve(
     operating_mode: str | None = typer.Option(
         None,
         "--mode",
-        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
+        help=option_help(_CLI_HELP_OPERATING_MODE),
     ),
-    experimental: bool | None = typer.Option(None, help=option_help("Enable experimental tools")),
+    experimental: bool | None = typer.Option(None, help=option_help(_CLI_HELP_EXPERIMENTAL)),
     telemetry: bool | None = typer.Option(
         None, "--telemetry/--no-telemetry", help=option_help("Enable OpenTelemetry export")
     ),
@@ -3020,7 +3020,7 @@ def dashboard(
     operating_mode: str | None = typer.Option(
         None,
         "--mode",
-        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
+        help=option_help(_CLI_HELP_OPERATING_MODE),
     ),
 ) -> None:
     """Start the server with the web dashboard enabled."""
@@ -3125,7 +3125,7 @@ def list_tools_command(
     operating_mode: str | None = typer.Option(
         None,
         "--mode",
-        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
+        help=option_help(_CLI_HELP_OPERATING_MODE),
     ),
 ) -> None:
     """List MCP tools available for the selected profile."""
@@ -3343,24 +3343,20 @@ def _run_with_watch(
 
 @app.command(name="inspect")
 def inspect_command(
-    transport: str | None = typer.Option(
-        None, help=option_help("Transport: stdio, http, sse, streamable-http")
-    ),
-    host: str | None = typer.Option(None, help=option_help("HTTP bind host")),
-    port: int | None = typer.Option(None, help=option_help("HTTP bind port")),
-    project_dir: str | None = typer.Option(
-        None, help=option_help("Active KiCad project directory")
-    ),
-    log_level: str | None = typer.Option(None, help=option_help("Log level")),
+    transport: str | None = typer.Option(None, help=option_help(_CLI_HELP_TRANSPORT)),
+    host: str | None = typer.Option(None, help=option_help(_CLI_HELP_HTTP_HOST)),
+    port: int | None = typer.Option(None, help=option_help(_CLI_HELP_HTTP_PORT)),
+    project_dir: str | None = typer.Option(None, help=option_help(_CLI_HELP_PROJECT_DIR)),
+    log_level: str | None = typer.Option(None, help=option_help(_CLI_HELP_LOG_LEVEL)),
     profile: str | None = typer.Option(
         None, help=f"Server profile: {', '.join(available_profiles())}"
     ),
     operating_mode: str | None = typer.Option(
         None,
         "--mode",
-        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
+        help=option_help(_CLI_HELP_OPERATING_MODE),
     ),
-    experimental: bool | None = typer.Option(None, help=option_help("Enable experimental tools")),
+    experimental: bool | None = typer.Option(None, help=option_help(_CLI_HELP_EXPERIMENTAL)),
 ) -> None:
     """Launch the MCP Inspector GUI for interactive tool debugging."""
     # Start server on a random port for the inspector
