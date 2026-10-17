@@ -1015,6 +1015,40 @@ async def test_pcb_add_mounting_holes_appends_custom_footprints(
     assert "Added 4 mounting hole(s)" in result
     assert pcb_text.count('(footprint "MountingHole_3.20mm"') == 4
     assert '(property "Reference" "H1"' in pcb_text
+    # Regression #1322: the screw-head clearance must never form a copper ring.
+    assert (
+        pcb_text.count(
+            '(pad "" np_thru_hole circle (at 0 0) '
+            '(size 3.2000 3.2000) (drill 3.2000) (layers "*.Cu" "*.Mask"))'
+        )
+        == 4
+    )
+    assert "(size 15.9000 15.9000)" not in pcb_text
+    assert "end 7.9500 0" in pcb_text
+    assert "Edge margin increased to 7.95 mm" in result
+    for reference in ("H1", "H2", "H3", "H4"):
+        x_mm, y_mm, _ = _footprint_position(pcb_text, reference)
+        assert 7.95 <= x_mm <= 92.05
+        assert 7.95 <= y_mm <= 72.05
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("pattern", ["corners", "top_bottom", "left_right"])
+async def test_pcb_mounting_holes_refuse_frame_smaller_than_courtyard(
+    sample_project, monkeypatch: pytest.MonkeyPatch, pattern: str
+) -> None:
+    monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb._board_frame_mm",
+        lambda *_args: (0.0, 0.0, 12.0, 10.0),
+    )
+    board_file = sample_project / "demo.kicad_pcb"
+    original = board_file.read_bytes()
+    result = await call_tool_text(
+        build_server("pcb"), "pcb_add_mounting_holes", {"pattern": pattern}
+    )
+    assert "Mounting holes not added: board frame is too small" in result
+    assert board_file.read_bytes() == original
 
 
 @pytest.mark.anyio
