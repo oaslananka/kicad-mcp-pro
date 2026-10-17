@@ -221,8 +221,29 @@ with a verified native 10.0.7 installation may run:
 ```bash
 python scripts/kicad_107_bom_portable.py prepare
 python scripts/kicad_107_bom_portable.py locate --session HEX_SESSION_FROM_PREPARE
+# After first native Project Manager open/close of BOTH disposable projects:
+python scripts/kicad_107_bom_portable.py baseline --session HEX_SESSION_FROM_PREPARE
+# After independent BOM GUI field/Cancel observations:
 python scripts/kicad_107_bom_portable.py verify --session HEX_SESSION_FROM_PREPARE
 ```
+
+**Required initialization boundary:** KiCad's first native Project Manager
+exit can expand the minimal `.kicad_pro` into full defaults. Real Windows
+10.0.7.51283 reproduced this: both project hashes changed, but the BOM
+filename and schematic hashes were preserved; the expanded project was
+byte-identical on the next manager open/close.
+
+Before the actual BOM-dialog observations, open and close **each** disposable
+project once in the **same isolated native KiCad profile**, without exporting
+or editing. Close both managers, then run `baseline --session
+HEX_SESSION_FROM_PREPARE` exactly once. It requires KiCad's full project
+shape, unchanged schematic bytes and stored BOM names, and no unexpected
+keys, CSV outputs or symlinks. This explicitly seals the **post-initialization,
+pre-BOM-test** project hashes. It rejects an uninitialized project and
+refuses a second baseline. Never re-arm after starting BOM GUI observations:
+post-test `verify` compares project bytes strictly with this reference.
+The manifest is operator-mutable, not tamper-proof provenance. Baseline
+arming itself is **not** a BOM GUI acceptance result.
 
 Run with a native Python 3.13+ interpreter on Windows/macOS. `prepare`
 prints an opaque `sessionId`; `locate` prints the absolute **local** OS-temp
@@ -242,8 +263,9 @@ then manually, on a **trusted interactive desktop**:
    `BOM_CANCEL_NOT_PERSISTED_107.csv`; click **Cancel** without saving or
    exporting, then reopen the same dialog and record the restored output
    field value (B's original). Close KiCad cleanly.
-3. Run `verify` again. It checks SHA-256 of both original `.kicad_pro` and
-   `.kicad_sch` files against the saved preparation manifest and refuses any
+3. Run `verify` again. It checks SHA-256 of both initialized
+   `.kicad_pro` baselines and original `.kicad_sch` files against the
+   saved manifest and refuses any
    unexpected `.csv` output, symlinks or malformed project identities. A
    machine-readable result `integrity-pass` **does not prove that the GUI was
    used**. With *independently witnessed* exact field readings, optionally

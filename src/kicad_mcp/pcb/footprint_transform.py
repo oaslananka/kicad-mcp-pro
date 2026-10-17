@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Literal
+from typing import Any, Literal, cast
 
 from kipy.geometry import Angle
 
@@ -26,6 +26,17 @@ def _rotation_degrees(value: object) -> float:
     raise FootprintRotationError("Footprint rotation value does not expose numeric degrees.")
 
 
+def _restore_missing_3d_models(definition: object | None, original_models: list[object]) -> None:
+    """Work around kicad-python 0.7/0.8 orientation setter dropping 3D models."""
+    if definition is None or not original_models:
+        return
+    existing = getattr(definition, "models", ())
+    missing = [model for model in original_models if not any(model is item for item in existing)]
+    if missing:
+        preserved = cast(Any, definition)
+        preserved.items = [*preserved.items, *missing]
+
+
 def apply_footprint_rotation(footprint: object, rotation_deg: float) -> RotationAttribute:
     """Assign a KiCad ``Angle`` through the first writable rotation surface."""
     if not math.isfinite(rotation_deg):
@@ -40,11 +51,23 @@ def apply_footprint_rotation(footprint: object, rotation_deg: float) -> Rotation
         except AttributeError:
             continue
         available.append(attribute)
+        # kicad-python <= 0.8.0 reconstructs definition.items when orientation
+        # is assigned and silently drops 3D models. Avoid a no-op assignment
+        # altogether, then restore only lost models after an actual rotation.
+        try:
+            current_deg = _rotation_degrees(getattr(footprint, attribute))
+        except FootprintRotationError:
+            current_deg = None
+        if current_deg is not None and abs((current_deg - rotation_deg + 180) % 360 - 180) < 1e-9:
+            return attribute
+        definition = getattr(footprint, "definition", None)
+        models_before = list(getattr(definition, "models", ()))
         try:
             setattr(footprint, attribute, requested)
         except Exception as exc:  # KiCad IPC surfaces raise generated transport/type errors.
             failures.append(f"{attribute}: {type(exc).__name__}")
             continue
+        _restore_missing_3d_models(definition, models_before)
         return attribute
 
     if not available:

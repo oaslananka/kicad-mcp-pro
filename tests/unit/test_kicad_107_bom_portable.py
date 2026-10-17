@@ -76,6 +76,107 @@ def test_unexpected_bom_file_fails(session: tuple[Path, dict], extension: str) -
         tool.verify(work)
 
 
+def _simulate_native_project_initialization(session: tuple[Path, dict]) -> None:
+    work, data = session
+    for name, saved in zip(tool.PROJECTS, data["savedNames"], strict=True):
+        file = work / name / f"{name}.kicad_pro"
+        # Reflect the stable KiCad 10.0.7 full-project shape from the Windows run.
+        normalized = {
+            "board": {},
+            "boards": [],
+            "component_class_settings": {},
+            "cvpcb": {},
+            "erc": {},
+            "libraries": {},
+            "meta": {},
+            "net_settings": {},
+            "pcbnew": {},
+            "schematic": {"bom_export_filename": saved},
+            "sheets": {},
+            "text_variables": {},
+            "tuning_profiles": {},
+        }
+        file.write_text(json.dumps(normalized))
+
+
+def test_baseline_requires_native_initialization(session: tuple[Path, dict]) -> None:
+    with pytest.raises(tool.FixtureError, match="fixture-project-not-initialized"):
+        tool.arm_baseline(session[0])
+    assert tool.verify(session[0])["status"] == "integrity-pass"
+
+
+def test_native_initialization_can_be_sealed_before_gui_observation(
+    session: tuple[Path, dict],
+) -> None:
+    work, prepared = session
+    _simulate_native_project_initialization(session)
+    with pytest.raises(tool.FixtureError, match="fixture-project-file-changed"):
+        tool.verify(work)
+    result = tool.arm_baseline(work)
+    assert result["status"] == "baseline-armed"
+    assert result["nativeGuiQualified"] is False
+    with pytest.raises(tool.FixtureError, match="fixture-baseline-already-armed"):
+        tool.arm_baseline(work)
+    a, b = prepared["savedNames"]
+    verified = tool.verify(work, observed_a=a, observed_b=b, reopened_b=b, cancelled_b=True)
+    assert verified["status"] == "operator-attested"
+    assert verified["projectSha256Unchanged"] is False
+    assert verified["projectSha256UnchangedSinceBaseline"] is True
+    assert verified["projectNormalizationObserved"] is True
+    assert verified["nativeGuiQualified"] is False
+
+
+def test_project_changes_after_baseline_are_still_rejected(
+    session: tuple[Path, dict],
+) -> None:
+    work = session[0]
+    _simulate_native_project_initialization(session)
+    tool.arm_baseline(work)
+    file = work / "PortableBom107A" / "PortableBom107A.kicad_pro"
+    data = json.loads(file.read_text())
+    data["board"]["settings"] = "unexpected-edit"
+    file.write_text(json.dumps(data))
+    with pytest.raises(tool.FixtureError, match="fixture-project-file-changed"):
+        tool.verify(work)
+
+
+@pytest.mark.parametrize("mutation", ["bom", "unknown-key", "schematic", "csv"])
+def test_baseline_rejects_unexpected_initializer_changes(
+    session: tuple[Path, dict], mutation: str
+) -> None:
+    work = session[0]
+    _simulate_native_project_initialization(session)
+    project = work / "PortableBom107B/PortableBom107B.kicad_pro"
+    data = json.loads(project.read_text())
+    if mutation == "bom":
+        data["schematic"]["bom_export_filename"] = tool.CANCELLED_NAME
+    elif mutation == "unknown-key":
+        data["arbitrary_private_settings"] = {"foo": "bar"}
+    elif mutation == "schematic":
+        schematic = work / "PortableBom107B/PortableBom107B.kicad_sch"
+        schematic.write_text(schematic.read_text() + " ")
+    elif mutation == "csv":
+        (work / "PortableBom107B/unexpected.csv").write_text("data")
+    project.write_text(json.dumps(data))
+    with pytest.raises(tool.FixtureError, match="fixture-"):
+        tool.arm_baseline(work)
+
+
+def test_cli_baseline_command_is_explicit_and_path_free(
+    session: tuple[Path, dict], capsys: pytest.CaptureFixture[str]
+) -> None:
+    work, prepared = session
+    _simulate_native_project_initialization(session)
+    assert tool.main(["baseline", "--session", prepared["sessionId"]]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["status"] == "baseline-armed"
+    assert report["nativeGuiQualified"] is False
+    assert str(work) not in json.dumps(report)
+    assert tool.main(["verify", "--session", prepared["sessionId"]]) == 0
+    verified = json.loads(capsys.readouterr().out)
+    assert verified["projectNormalizationObserved"] is True
+
+
 def test_existing_session_is_never_overwritten(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -105,7 +206,12 @@ def test_symlinked_project_is_rejected(session: tuple[Path, dict], tmp_path: Pat
     outside.write_text("secret")
     project = work / "PortableBom107B/PortableBom107B.kicad_pro"
     project.unlink()
-    project.symlink_to(outside)
+    try:
+        project.symlink_to(outside)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows host forbids unprivileged symlink creation")
+        raise
     with pytest.raises(tool.FixtureError, match="fixture-missing-or-unsafe-file"):
         tool.verify(work)
 
