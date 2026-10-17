@@ -323,9 +323,10 @@ async def test_pcb_sync_from_schematic_adds_missing_footprints(
     assert "Partially net-mapped refs: 0" in result
     assert "Refs with unresolved pad nets: (none)" in result
     assert f"(version {GENERATED_SEXPR_DIALECT_VERSION})" in pcb_text
-    assert pcb_text.count('(footprint "R_0805"') == 2
+    assert pcb_text.count('(footprint "Resistor_SMD:R_0805"') == 2
     assert '(property "Reference" "R1"' in pcb_text
     assert '(property "Reference" "R2"' in pcb_text
+    assert pcb_text.count('(property "Datasheet" "~"') == 2
     assert '(net "VIN")' in pcb_text
     assert '(net "MID")' in pcb_text
     assert '(net "GND")' in pcb_text
@@ -478,7 +479,7 @@ async def test_pcb_sync_from_schematic_deduplicates_multi_unit_references(
     pcb_text = (sample_project / "demo.kicad_pcb").read_text(encoding="utf-8")
 
     assert "New footprints added: 1" in result
-    assert pcb_text.count('(footprint "R_1206"') == 1
+    assert pcb_text.count('(footprint "Resistor_SMD:R_1206"') == 1
     assert pcb_text.count('(property "Reference" "U1"') == 1
 
 
@@ -784,7 +785,7 @@ async def test_pcb_sync_from_schematic_replaces_mismatched_footprints_in_place(
     pcb_text = (sample_project / "demo.kicad_pcb").read_text(encoding="utf-8")
 
     assert "Mismatched footprints replaced: 1" in result
-    assert '(footprint "R_0805"' in pcb_text
+    assert '(footprint "Resistor_SMD:R_0805"' in pcb_text
     assert '(footprint "R_1206"' not in pcb_text
     assert re.search(r"\s+\(at 40\.0000 50\.0000 90\)", pcb_text) is not None
 
@@ -835,7 +836,7 @@ async def test_pcb_sync_from_schematic_avoids_simple_footprint_overlap(
         for match in re.finditer(r"\n\t\t\(at\s+([0-9.\-]+\s+[0-9.\-]+\s+\d+)\)", pcb_text)
     }
 
-    assert pcb_text.count('(footprint "R_0805"') == 2
+    assert pcb_text.count('(footprint "Resistor_SMD:R_0805"') == 2
     assert len(positions) >= 2
 
 

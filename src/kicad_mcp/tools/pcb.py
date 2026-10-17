@@ -127,7 +127,7 @@ from .board_file import (
 )
 from .export_support import _run_cli, _run_cli_variants
 from .metadata import headless_compatible, requires_kicad_running
-from .schematic import _iter_child_sheet_paths, parse_schematic_file
+from .schematic import _iter_child_sheet_paths, _symbol_property_values, parse_schematic_file
 from .schematic_transfer import _parse_netlist_text as _parse_netlist_text
 
 logger = structlog.get_logger(__name__)
@@ -2132,6 +2132,56 @@ def _assign_pad_nets(block: str, pad_nets: dict[str, str]) -> str:
     return "".join(rebuilt)
 
 
+def _apply_schematic_footprint_fields(block: str, properties: dict[str, str]) -> str:
+    for name, value in properties.items():
+        if name in {"Reference", "Value", "Footprint"}:
+            continue
+        existing = re.search(rf"\(property\s+{re.escape(_sexpr_string(name))}\s+", block)
+        if existing is not None:
+            block = _replace_property_value(block, name, value)
+            continue
+        # KiCad's PCB field format stores non-visible schematic user fields
+        # in footprint properties, not in the pad/net records.
+        addition = (
+            f"\n\t(property {_sexpr_string(name)} {_sexpr_string(value)}"
+            '\n\t\t(at 0 0 0)\n\t\t(layer "F.Fab")\n\t\t(hide yes)'
+            "\n\t\t(effects (font (size 1 1)))\n\t)"
+        )
+        first_property = re.search(r"\n\s*\(property\s+", block)
+        insertion = first_property.start() if first_property else block.rfind(")")
+        block = block[:insertion] + addition + block[insertion:]
+    return block
+
+
+def _rotate_footprint_child_angles(block: str, rotation: int) -> str:
+    """Pad/text local XY stays fixed; KiCad PCB child angles are absolute."""
+    if rotation % 360 == 0:
+        return block
+    child = re.compile(r"\((?:pad|property|fp_text)\s+")
+    at = re.compile(rf"\(at\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})(?:\s+({FLOAT_PATTERN}))?\)")
+    rendered: list[str] = []
+    cursor = 0
+    for match in child.finditer(block):
+        if match.start() < cursor:
+            continue
+        section, length = _extract_block(block, match.start())
+        if not section:
+            continue
+        rendered.append(block[cursor : match.start()])
+        section = at.sub(
+            lambda found: (
+                f"(at {found.group(1)} {found.group(2)} "
+                f"{(float(found.group(3) or 0) + rotation) % 360:g})"
+            ),
+            section,
+            count=1,
+        )
+        rendered.append(section)
+        cursor = match.start() + length
+    rendered.append(block[cursor:])
+    return "".join(rendered)
+
+
 def _inject_root_placement(block: str, *, x_mm: float, y_mm: float, rotation: int) -> str:
     layer_match = re.search(r'\n(\s*\(layer\s+"[^"]+"\))', block)
     insertion = (
@@ -2155,15 +2205,24 @@ def _render_board_footprint_block(
     y_mm: float,
     rotation: int,
     pad_nets: dict[str, str],
+    properties: dict[str, str] | None = None,
 ) -> str:
     library, footprint = _split_footprint_assignment(footprint_assignment)
     path = _footprint_file(library, footprint)
     if not path.exists():
         raise FileNotFoundError(f"Footprint '{footprint_assignment}' was not found.")
     block = path.read_text(encoding="utf-8", errors="ignore").strip()
+    block = re.sub(
+        rf"\(footprint\s+{STRING_PATTERN}",
+        lambda _match: f"(footprint {_sexpr_string(footprint_assignment)}",
+        block,
+        count=1,
+    )
     block = _replace_property_value(block, "Reference", reference)
     block = _replace_property_value(block, "Value", value)
+    block = _apply_schematic_footprint_fields(block, properties or {})
     block = _assign_pad_nets(block, pad_nets)
+    block = _rotate_footprint_child_angles(block, rotation)
     return _inject_root_placement(block, x_mm=x_mm, y_mm=y_mm, rotation=rotation)
 
 
@@ -2271,11 +2330,29 @@ def _schematic_files_for_pcb_sync() -> list[Path]:
     return unique
 
 
+def _placed_schematic_properties_for_sync(sch_file: Path) -> dict[str, dict[str, str]]:
+    """Recover per-instance fields which kicad-sch-api does not expose yet."""
+    content = sch_file.read_text(encoding="utf-8", errors="ignore")
+    result: dict[str, dict[str, str]] = {}
+    for match in re.finditer(r"\(symbol\s+\(lib_id\s+", content):
+        block, _ = _extract_block(content, match.start())
+        if not block:
+            continue
+        properties = _symbol_property_values(block)
+        reference = properties.get("Reference", "")
+        if reference:
+            values = result.setdefault(reference, {})
+            for name, value in properties.items():
+                values.setdefault(name, value)
+    return result
+
+
 def _collect_schematic_components() -> tuple[list[dict[str, Any]], list[str]]:
     grouped: dict[str, dict[str, Any]] = {}
     issues: list[str] = []
     for sch_file in _schematic_files_for_pcb_sync():
         data = parse_schematic_file(sch_file)
+        placed_properties = _placed_schematic_properties_for_sync(sch_file)
         for symbol in data["symbols"]:
             reference = str(symbol["reference"])
             component = grouped.setdefault(
@@ -2284,10 +2361,15 @@ def _collect_schematic_components() -> tuple[list[dict[str, Any]], list[str]]:
                     "reference": reference,
                     "value": str(symbol["value"]),
                     "footprints": set(),
+                    "properties": {},
                     "positions": [],
                     "rotations": [],
                 },
             )
+            instance_fields = placed_properties.get(reference, {})
+            component_fields = cast(dict[str, str], component["properties"])
+            for name, field_value in instance_fields.items():
+                component_fields.setdefault(name, field_value)
             footprint = str(symbol["footprint"]).strip()
             if footprint:
                 component["footprints"].add(footprint)
@@ -2308,6 +2390,7 @@ def _collect_schematic_components() -> tuple[list[dict[str, Any]], list[str]]:
                 "reference": reference,
                 "value": str(component["value"]),
                 "footprint": next(iter(footprints), ""),
+                "properties": dict(component["properties"]),
                 "x": sum(position[0] for position in positions) / len(positions),
                 "y": sum(position[1] for position in positions) / len(positions),
                 "rotation": rotations[0] if rotations else 0,
@@ -3492,6 +3575,7 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
                     y_mm=y_mm,
                     rotation=int(component["rotation"]),
                     pad_nets=pad_nets,
+                    properties=cast(dict[str, str], component["properties"]),
                 )
             )
 
@@ -3520,6 +3604,7 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
                     y_mm=y_mm,
                     rotation=int(existing_entry["rotation"]),
                     pad_nets=pad_nets,
+                    properties=cast(dict[str, str], component["properties"]),
                 )
 
         if not additions and not mismatches:
