@@ -56,7 +56,7 @@ def apply_footprint_rotation(footprint: object, rotation_deg: float) -> Rotation
         except Exception as exc:  # KiCad IPC surfaces raise generated transport/type errors.
             failures.append(f"{attribute}: {type(exc).__name__}")
             continue
-        if models_before:
+        if models_before and definition is not None:
             existing = getattr(definition, "models", ())
             missing = [
                 model for model in models_before if not any(model is item for item in existing)
