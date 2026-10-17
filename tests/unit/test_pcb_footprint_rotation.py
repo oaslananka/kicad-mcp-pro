@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from kipy.board_types import Footprint3DModel, FootprintInstance
 from kipy.geometry import Angle
 
 from kicad_mcp.pcb.footprint_transform import (
@@ -72,6 +73,35 @@ def test_apply_footprint_rotation_assigns_an_angle(attribute: str) -> None:
     assert len(footprint.assigned_values) == 1
     assert isinstance(footprint.assigned_values[0], Angle)
     assert footprint.assigned_values[0].degrees == pytest.approx(180.0)
+
+
+@pytest.mark.parametrize("degrees", [0.0, 90.0, 180.0])
+def test_kipy_orientation_preserves_stock_footprint_3d_models(degrees: float) -> None:
+    # A real kicad-python 0.7/0.8 FootprintInstance loses models even on a
+    # same-angle assignment; using its actual setter catches the regression.
+    footprint = FootprintInstance()
+    model = Footprint3DModel()
+    model.filename = "Resistor_SMD.3dshapes/R_0603_1608Metric.step"
+    footprint.definition.items = [model]
+    assert len(footprint.definition.models) == 1
+
+    chosen = apply_footprint_rotation(footprint, degrees)
+
+    assert chosen == "orientation"
+    assert footprint.orientation.degrees == pytest.approx(degrees)
+    assert [item.filename for item in footprint.definition.models] == [model.filename]
+    # Regression must survive the proto conversion used by board.update_items.
+    round_trip = FootprintInstance(proto=footprint.proto)
+    assert [item.filename for item in round_trip.definition.models] == [model.filename]
+    assert (
+        round_trip.definition.models[0].proto.SerializeToString() == model.proto.SerializeToString()
+    )
+
+
+def test_unchanged_rotation_does_not_call_orientation_setter() -> None:
+    footprint = _StrictRotationSurface("orientation", initial_degrees=0.0)
+    assert apply_footprint_rotation(footprint, 360.0) == "orientation"
+    assert footprint.assigned_values == []
 
 
 def test_apply_footprint_rotation_fails_when_no_supported_surface_exists() -> None:
