@@ -151,6 +151,14 @@ _CLI_HELP_LOG_LEVEL = "Log level"
 _CLI_HELP_OPERATING_MODE = "Operating mode: readonly, write, manufacturing, experimental"
 _CLI_HELP_EXPERIMENTAL = "Enable experimental tools"
 
+_CLI_OPT_TRANSPORT = typer.Option(None, help=option_help(_CLI_HELP_TRANSPORT))
+_CLI_OPT_HTTP_HOST = typer.Option(None, help=option_help(_CLI_HELP_HTTP_HOST))
+_CLI_OPT_HTTP_PORT = typer.Option(None, help=option_help(_CLI_HELP_HTTP_PORT))
+_CLI_OPT_PROJECT_DIR = typer.Option(None, help=option_help(_CLI_HELP_PROJECT_DIR))
+_CLI_OPT_LOG_LEVEL = typer.Option(None, help=option_help(_CLI_HELP_LOG_LEVEL))
+_CLI_OPT_OPERATING_MODE = typer.Option(None, "--mode", help=option_help(_CLI_HELP_OPERATING_MODE))
+_CLI_OPT_EXPERIMENTAL = typer.Option(None, help=option_help(_CLI_HELP_EXPERIMENTAL))
+
 _HELP_JSON_OUTPUT = "Emit machine-readable JSON."
 _HTTP_RESPONSE_START = "http.response.start"
 _NOT_FOUND_LITERAL = "not found"
@@ -2400,22 +2408,18 @@ def _run_server_from_options(
 
 @app.callback(invoke_without_command=True)
 def main_callback(
-    transport: str | None = typer.Option(None, help=option_help(_CLI_HELP_TRANSPORT)),
-    host: str | None = typer.Option(None, help=option_help(_CLI_HELP_HTTP_HOST)),
-    port: int | None = typer.Option(None, help=option_help(_CLI_HELP_HTTP_PORT)),
-    project_dir: str | None = typer.Option(None, help=option_help(_CLI_HELP_PROJECT_DIR)),
-    log_level: str | None = typer.Option(None, help=option_help(_CLI_HELP_LOG_LEVEL)),
+    transport: str | None = _CLI_OPT_TRANSPORT,
+    host: str | None = _CLI_OPT_HTTP_HOST,
+    port: int | None = _CLI_OPT_HTTP_PORT,
+    project_dir: str | None = _CLI_OPT_PROJECT_DIR,
+    log_level: str | None = _CLI_OPT_LOG_LEVEL,
     log_format: str | None = typer.Option(None, help=option_help("Log format: text or json")),
     log_file: str | None = typer.Option(None, help=option_help("Rotating log file path")),
     profile: str | None = typer.Option(
         None, help=f"Server profile: {', '.join(available_profiles())}"
     ),
-    operating_mode: str | None = typer.Option(
-        None,
-        "--mode",
-        help=option_help(_CLI_HELP_OPERATING_MODE),
-    ),
-    experimental: bool | None = typer.Option(None, help=option_help(_CLI_HELP_EXPERIMENTAL)),
+    operating_mode: str | None = _CLI_OPT_OPERATING_MODE,
+    experimental: bool | None = _CLI_OPT_EXPERIMENTAL,
     telemetry: bool | None = typer.Option(
         None, "--telemetry/--no-telemetry", help=option_help("Enable OpenTelemetry export")
     ),
@@ -2460,22 +2464,18 @@ def main_callback(
 
 @app.command()
 def serve(
-    transport: str | None = typer.Option(None, help=option_help(_CLI_HELP_TRANSPORT)),
-    host: str | None = typer.Option(None, help=option_help(_CLI_HELP_HTTP_HOST)),
-    port: int | None = typer.Option(None, help=option_help(_CLI_HELP_HTTP_PORT)),
-    project_dir: str | None = typer.Option(None, help=option_help(_CLI_HELP_PROJECT_DIR)),
-    log_level: str | None = typer.Option(None, help=option_help(_CLI_HELP_LOG_LEVEL)),
+    transport: str | None = _CLI_OPT_TRANSPORT,
+    host: str | None = _CLI_OPT_HTTP_HOST,
+    port: int | None = _CLI_OPT_HTTP_PORT,
+    project_dir: str | None = _CLI_OPT_PROJECT_DIR,
+    log_level: str | None = _CLI_OPT_LOG_LEVEL,
     log_format: str | None = typer.Option(None, help=option_help("Log format: text or json")),
     log_file: str | None = typer.Option(None, help=option_help("Rotating log file path")),
     profile: str | None = typer.Option(
         None, help=f"Server profile: {', '.join(available_profiles())}"
     ),
-    operating_mode: str | None = typer.Option(
-        None,
-        "--mode",
-        help=option_help(_CLI_HELP_OPERATING_MODE),
-    ),
-    experimental: bool | None = typer.Option(None, help=option_help(_CLI_HELP_EXPERIMENTAL)),
+    operating_mode: str | None = _CLI_OPT_OPERATING_MODE,
+    experimental: bool | None = _CLI_OPT_EXPERIMENTAL,
     telemetry: bool | None = typer.Option(
         None, "--telemetry/--no-telemetry", help=option_help("Enable OpenTelemetry export")
     ),
@@ -3017,11 +3017,7 @@ def dashboard(
     open_browser: bool = typer.Option(
         False, "--open", "-o", help=option_help("Open the dashboard in the default browser.")
     ),
-    operating_mode: str | None = typer.Option(
-        None,
-        "--mode",
-        help=option_help(_CLI_HELP_OPERATING_MODE),
-    ),
+    operating_mode: str | None = _CLI_OPT_OPERATING_MODE,
 ) -> None:
     """Start the server with the web dashboard enabled."""
     if not HAS_WEB:
@@ -3122,11 +3118,7 @@ def list_tools_command(
     profile: str | None = typer.Option(
         None, help=f"Server profile: {', '.join(available_profiles())}"
     ),
-    operating_mode: str | None = typer.Option(
-        None,
-        "--mode",
-        help=option_help(_CLI_HELP_OPERATING_MODE),
-    ),
+    operating_mode: str | None = _CLI_OPT_OPERATING_MODE,
 ) -> None:
     """List MCP tools available for the selected profile."""
     if profile is not None and profile not in available_profiles():
@@ -3343,20 +3335,16 @@ def _run_with_watch(
 
 @app.command(name="inspect")
 def inspect_command(
-    transport: str | None = typer.Option(None, help=option_help(_CLI_HELP_TRANSPORT)),
-    host: str | None = typer.Option(None, help=option_help(_CLI_HELP_HTTP_HOST)),
-    port: int | None = typer.Option(None, help=option_help(_CLI_HELP_HTTP_PORT)),
-    project_dir: str | None = typer.Option(None, help=option_help(_CLI_HELP_PROJECT_DIR)),
-    log_level: str | None = typer.Option(None, help=option_help(_CLI_HELP_LOG_LEVEL)),
+    transport: str | None = _CLI_OPT_TRANSPORT,
+    host: str | None = _CLI_OPT_HTTP_HOST,
+    port: int | None = _CLI_OPT_HTTP_PORT,
+    project_dir: str | None = _CLI_OPT_PROJECT_DIR,
+    log_level: str | None = _CLI_OPT_LOG_LEVEL,
     profile: str | None = typer.Option(
         None, help=f"Server profile: {', '.join(available_profiles())}"
     ),
-    operating_mode: str | None = typer.Option(
-        None,
-        "--mode",
-        help=option_help(_CLI_HELP_OPERATING_MODE),
-    ),
-    experimental: bool | None = typer.Option(None, help=option_help(_CLI_HELP_EXPERIMENTAL)),
+    operating_mode: str | None = _CLI_OPT_OPERATING_MODE,
+    experimental: bool | None = _CLI_OPT_EXPERIMENTAL,
 ) -> None:
     """Launch the MCP Inspector GUI for interactive tool debugging."""
     # Start server on a random port for the inspector
