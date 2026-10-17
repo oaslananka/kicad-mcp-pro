@@ -1,0 +1,6644 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://oaslananka.github.io/kicad-mcp-pro/compatibility/capability-parity.generated/">
+      
+      
+        <link rel="prev" href="../../status/runtime-policy-matrix/">
+      
+      
+        <link rel="next" href="../../status/work-order-audit-2026-06-17/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Capability Parity - KiCad MCP Pro</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../assets/support-links.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#kicad-capability-parity-generated" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="KiCad MCP Pro" class="md-header__button md-logo" aria-label="KiCad MCP Pro" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            KiCad MCP Pro
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Capability Parity
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="teal" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="teal" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/oaslananka/kicad-mcp-pro" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    oaslananka/kicad-mcp-pro
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="KiCad MCP Pro" class="md-nav__button md-logo" aria-label="KiCad MCP Pro" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    KiCad MCP Pro
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/oaslananka/kicad-mcp-pro" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    oaslananka/kicad-mcp-pro
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_1">
+        
+          
+          <label class="md-nav__link" for="__nav_2_1" id="__nav_2_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started Tutorial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How-to Guides
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../accessibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Accessibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../internationalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internationalization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client-configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Client Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked="">
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference and Status
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference and Status
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diataxis Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools-agent-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Tool Workflow Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools-reference.generated/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Generated Tools Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../errors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Error Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_6">
+        
+          
+          <label class="md-nav__link" for="__nav_3_6" id="__nav_3_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MCP Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mcp/api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mcp/tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mcp/transport/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transport
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mcp/deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api-stability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Stability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../maintenance-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maintenance Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../status/capability-levels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capability Verification Levels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../status/runtime-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../status/runtime-policy-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime Policy Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capability Parity
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capability Parity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#coverage-by-domain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coverage by domain
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#closeable-surface-gap-then-partial" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Closeable surface (gap, then partial)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#full-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Full matrix
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Full matrix">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#schematic_edit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        schematic_edit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pcb_edit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pcb_edit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        routing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#library" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        library
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        export
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#project" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        project
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cosmetics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cosmetics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../status/work-order-audit-2026-06-17/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Work-Order Audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install, Packaging, and Distribution
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Install, Packaging, and Distribution
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/client-config-generator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Client Config Generator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../publishing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Publishing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../public-listing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Listings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integrations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Integrations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integration/kicad-studio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad Studio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integration/companion-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Companion Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integration/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integration/cursor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cursor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integration/claude-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_6">
+        
+          
+          <label class="md-nav__link" for="__nav_5_6" id="__nav_5_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Agent Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/toolsets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Toolsets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/antigravity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antigravity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/chatgpt-app/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ChatGPT App
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/claude-ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude AI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/claude-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/mcpb/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Bundle (.mcpb)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/cline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/codex/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Codex
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/continue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/cursor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cursor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/gemini-cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gemini CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/opencode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenCode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/vscode-copilot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VS Code Copilot
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/windsurf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windsurf
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/zed/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zed
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad 10
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    KiCad 10
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../kicad10/variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../kicad10/time-domain/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Time-Domain Tuning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../kicad10/graphical-drc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Graphical DRC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kicad-10-0-6-feature-parity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad 10.0.6 Feature Parity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../status/kicad-10-0-6-baseline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad 10.0.6 Baseline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kicad-10-to-11-migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad 10 to 11 Migration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kicad-adapter-matrix.generated/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Generated Adapter Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/kicad-10-0-4-canary-report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad 10.0.4 Canary Report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/kicad-10-0-4-gap-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad 10.0.4 Gap Audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflows
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Workflows
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/first-pcb/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First PCB
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/read-only-agent-review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Read-only Agent Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/schematic-to-pcb/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Schematic to PCB
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/professional-circuit-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Professional Circuit Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/high-speed-review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    High-Speed Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/live-preview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Safe Live Preview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/manufacturing-export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manufacturing Export
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8">
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations and Release
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operations and Release
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/repository-topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository and CI/CD Topology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autonomy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Autonomy Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../repository-operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../branch-protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Branch Protection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_5">
+        
+          
+          <label class="md-nav__link" for="__nav_8_5" id="__nav_8_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Automation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Automation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../automation/failure-classifier/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Failure Classifier
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../automation/review-thread-gate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Review Thread Gate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/http-mode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HTTP Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../openssf-best-practices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenSSF Best Practices
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../openssf-silver-evidence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenSSF Silver Evidence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../repo-maturity-report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Maturity Report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../openssf-evidence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenSSF Evidence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../openssf-gap-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenSSF Gap Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../openssf-proposal-links/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenSSF Proposal Links
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../legal/dependency-license-awareness/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Package License Inventory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../release/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../release-readiness-2026-07-03/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    July 2026 Release Readiness
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../status/distribution-readiness/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Distribution and Onboarding Readiness
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../demo-media/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Demo Media
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9">
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security and Privacy
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Security and Privacy
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Privacy Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/threat-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Threat Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/release-integrity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Integrity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/release-security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release and Supply-Chain Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/release-signing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Signing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/sonar-vulnerability-disposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sonar Vulnerability Disposition
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/input-validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/assurance-case/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Assurance Case
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/scorecard-exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scorecard Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/rustsec-gtk3-unic-disposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RustSec GTK3/Unic Disposition
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/github-actions-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub Actions Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflow-security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflow Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10">
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Submission
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Submission
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../submission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../submission/anthropic-directory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Anthropic Directory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../submission/chatgpt-apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ChatGPT Apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../submission/openai-mcp-registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../submission/kicad-pcm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad PCM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../submission/reviewer-test-prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reviewer Test Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../submission/safety-and-permissions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Safety and Permissions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11">
+        
+          
+          <label class="md-nav__link" for="__nav_11" id="__nav_11_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Local Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/reproducible-bootstrap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reproducible Bootstrap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/coding-standards/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coding Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/testing-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/reference-board-corpus/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference-board Corpus
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/codecov/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Codecov and Test Analytics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/dependency-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dependency Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/commit-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commit Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/installation-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/dependency-audit-2026-06/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dependency Audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../explanation/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture Explanation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11_16">
+        
+          
+          <label class="md-nav__link" for="__nav_11_16" id="__nav_11_16_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture Decisions
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_11_16_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_16">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture Decisions
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0001-repository-topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Topology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0002-version-single-source/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Version Single Source
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0003-export-tool-naming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Export Tool Naming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0005-public-metadata-sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public Metadata Sources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0006-mcp-2026-stateless-compatibility-lane/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP 2026 Stateless Compatibility Lane
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0007-kicad-adapter-selection-and-swig-retirement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KiCad Adapter Selection and SWIG Retirement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/contributing-fixtures/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Regression Fixtures
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Production Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/roadmap-2026/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2026 Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RFCs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/v2-migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v2 Migration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#coverage-by-domain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coverage by domain
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#closeable-surface-gap-then-partial" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Closeable surface (gap, then partial)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#full-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Full matrix
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Full matrix">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#schematic_edit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        schematic_edit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pcb_edit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pcb_edit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        routing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#library" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        library
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        export
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#project" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        project
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cosmetics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cosmetics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="kicad-capability-parity-generated">KiCad Capability Parity (generated)<a class="headerlink" href="#kicad-capability-parity-generated" title="Permanent link">¶</a></h1>
+<p>Machine-generated from <code>docs/compatibility/capability-parity-matrix.yaml</code>. Refresh with <code>uv run python scripts/build_parity_matrix.py</code>.</p>
+<p>KiCad baseline: <code>10.0.x</code> · Updated: 2026-08-28</p>
+<p><strong>Overall: 59 / 77 programmatically-reachable capabilities driven = 76.6%</strong> (18 partial, 0 gap; 4 GUI-only with no KiCad API, excluded from the denominator).</p>
+<h2 id="coverage-by-domain">Coverage by domain<a class="headerlink" href="#coverage-by-domain" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Domain</th>
+<th style="text-align: right;">Coverage</th>
+<th style="text-align: right;">Covered</th>
+<th style="text-align: right;">Partial</th>
+<th style="text-align: right;">Gap</th>
+<th style="text-align: right;">GUI-only (no API)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>schematic_edit</code></td>
+<td style="text-align: right;">84.6%</td>
+<td style="text-align: right;">11</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr>
+<td><code>pcb_edit</code></td>
+<td style="text-align: right;">94.1%</td>
+<td style="text-align: right;">16</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr>
+<td><code>routing</code></td>
+<td style="text-align: right;">66.7%</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr>
+<td><code>library</code></td>
+<td style="text-align: right;">57.1%</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td><code>analysis</code></td>
+<td style="text-align: right;">23.1%</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">10</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td><code>export</code></td>
+<td style="text-align: right;">100.0%</td>
+<td style="text-align: right;">9</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td><code>project</code></td>
+<td style="text-align: right;">100.0%</td>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td><code>cosmetics</code></td>
+<td style="text-align: right;">100.0%</td>
+<td style="text-align: right;">7</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr>
+<td><strong>Overall</strong></td>
+<td style="text-align: right;"><strong>76.6%</strong></td>
+<td style="text-align: right;">59</td>
+<td style="text-align: right;">18</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">4</td>
+</tr>
+</tbody>
+</table>
+<h2 id="closeable-surface-gap-then-partial">Closeable surface (gap, then partial)<a class="headerlink" href="#closeable-surface-gap-then-partial" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Domain</th>
+<th>Capability</th>
+<th>Status</th>
+<th>Channel</th>
+<th>MCP tool</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>analysis</code></td>
+<td>2D/3D field / EM solver for impedance &amp; coupling</td>
+<td><code>partial</code></td>
+<td><code>file</code></td>
+<td><code>si_get_solver_capabilities</code></td>
+<td>si_get_solver_capabilities exposes the configured solver seams and explicit solver-unavailable policy. No full field/EM backend is integrated yet; closed-form results remain critic-only and blocked for release signoff unless a solver-grade backend is configured.</td>
+</tr>
+<tr>
+<td><code>analysis</code></td>
+<td>Copper-plane thermal spreading (2-D FD solve)</td>
+<td><code>partial</code></td>
+<td><code>file</code></td>
+<td><code>thermal_simulate_plane_spreading</code></td>
+<td>Genuine 2-D finite-difference steady-state heat-spreading solve over the copper plane (utils/thermal_solver + solver_seams.thermal_fd_method) with peak/average temperature rise and a PASS/WARN/FAIL verdict; not a 3-D FEA with airflow / board-stack conduction (full FEA remains a future upgrade).</td>
+</tr>
+<tr>
+<td><code>analysis</code></td>
+<td>DC IR-drop / voltage-drop analysis</td>
+<td><code>partial</code></td>
+<td><code>file</code></td>
+<td><code>pdn_calculate_voltage_drop</code></td>
+<td>pdn_calculate_voltage_drop is a first-order single-trace lumped estimate, now with an IPC-2221 current-density fusing / temperature-rise PASS/WARN/FAIL verdict; check_power_integrity runs a genuine distributed multi-load resistive PDN mesh (DC drop + frequency-domain Z(f)), labeled solver-grade via the seam (utils/solver_seams.pdn_mesh_method). Remaining P3-T2 upgrade: a 2-D copper-plane field solve.</td>
+</tr>
+<tr>
+<td><code>analysis</code></td>
+<td>Decoupling recommendation / power-plane generation</td>
+<td><code>partial</code></td>
+<td><code>file</code></td>
+<td><code>pdn_recommend_decoupling_caps</code></td>
+<td>pdn_generate_power_plane covered; frequency-domain PDN target-Z checking now delivered via check_power_integrity (pdn_mesh Z(f) vs target_impedance_ohm with violations); a full plane-capacitance field model remains a future upgrade.</td>
+</tr>
+<tr>
+<td><code>analysis</code></td>
+<td>Differential-pair skew gate</td>
+<td><code>partial</code></td>
+<td><code>file</code></td>
+<td><code>si_check_differential_pair_skew</code></td>
+<td>Real PASS/WARN/FAIL verdict with intent-derived skew budget (P1-T3); localized intra-pair phase-skew / mode-conversion is Phase 3 (P3-T3).</td>
+</tr>
+<tr>
+<td><code>analysis</code></td>
+<td>EMC layout compliance checks</td>
+<td><code>partial</code></td>
+<td><code>file</code></td>
+<td><code>emc_run_full_compliance</code></td>
+<td>Presence/heuristic checks with fixed Er (work order K2/K10); EM-result-based, standard-named, fail-capable checks are Phase 3 (P3-T5).</td>
+</tr>
+<tr>
+<td><code>analysis</code></td>
+<td>High-speed channel insertion-loss / eye analysis</td>
+<td><code>partial</code></td>
+<td><code>file</code></td>
+<td><code>si_analyze_high_speed_channel</code></td>
+<td>Closed-form lossy-line insertion loss (conductor skin-effect + dielectric loss) with a loss-limited eye and PASS/WARN/FAIL verdict; when an ngspice CLI is present the insertion loss is measured from an RLGC-ladder AC sweep (utils/channel + solver seam). Full S-parameter / IBIS-AMI channel simulation remains a future upgrade.</td>
+</tr>
+<tr>
+<td><code>analysis</code></td>
+<td>Length-matching validation</td>
+<td><code>partial</code></td>
+<td><code>file</code></td>
+<td><code>si_validate_length_matching</code></td>
+<td>Three-level PASS/WARN/FAIL verdict against a tolerance budget (P1-T3); track-length based heuristic.</td>
+</tr>
+<tr>
+<td><code>analysis</code></td>
+<td>Single-ended / differential trace impedance</td>
+<td><code>partial</code></td>
+<td><code>file</code></td>
+<td><code>si_calculate_trace_impedance</code></td>
+<td>First-order closed-form (IPC-2141/Wheeler) estimate ~5-10% (work order K4); field-solver accuracy is Phase 3 (P3-T1).</td>
+</tr>
+<tr>
+<td><code>analysis</code></td>
+<td>Thermal via / copper-pour sizing</td>
+<td><code>partial</code></td>
+<td><code>file</code></td>
+<td><code>thermal_calculate_via_count</code></td>
+<td>thermal_check_copper_pour; first-order theta_JA / via-count rule of thumb labeled honestly via the solver seam (utils/solver_seams.thermal_method); for distributed spreading use thermal_simulate_plane_spreading.</td>
+</tr>
+<tr>
+<td><code>library</code></td>
+<td>Generate an IPC-7351 footprint</td>
+<td><code>partial</code></td>
+<td><code>file</code></td>
+<td><code>lib_generate_footprint_ipc7351</code></td>
+<td>Footprint family coverage now includes chip passives, SOT-23/SOT-223/SOT-89, SOT-363/SOT-26, SC-70/SOT-323, SOD-123/SOD-323, DO-214 (SMA/SMB/SMC), DPAK/TO-252, D2PAK/TO-263, SOIC/SOP/SSOP/TSSOP, QFP, QFN/DFN, BGA, and PinHeader; datasheet/3D model consistency remains partial.</td>
+</tr>
+<tr>
+<td><code>library</code></td>
+<td>Recommend / bind a part to a symbol</td>
+<td><code>partial</code></td>
+<td><code>file</code></td>
+<td><code>lib_recommend_part</code></td>
+<td>lib_bind_part_to_symbol; depends on the same sourcing backends as above.</td>
+</tr>
+<tr>
+<td><code>library</code></td>
+<td>Source live component data (price/stock/lifecycle)</td>
+<td><code>partial</code></td>
+<td><code>file</code></td>
+<td><code>lib_search_components</code></td>
+<td>Live JLCPCB, Nexar, DigiKey, and Mouser sourcing clients are implemented; lib_check_sourcing_policy emits structured stock, price, lifecycle, RoHS, and AVL policy verdicts. Remaining P4-T3 work is datasheet-grounded footprint/3D hard gates and provider manufacturer metadata normalization.</td>
+</tr>
+<tr>
+<td><code>pcb_edit</code></td>
+<td>Auto-place footprints from schematic</td>
+<td><code>partial</code></td>
+<td><code>ipc</code></td>
+<td><code>pcb_auto_place_by_schematic</code></td>
+<td>Force-directed placement now stops by deterministic convergence (K7); placement scoring now includes return-path constraints (high-speed interface grouping via InterfaceSpec), mechanical mount-hole clearance, connector edge-placement specs, and before/after score evidence; explainable per-category FAIL/WARN output is emitted after each auto-placement run. Current-path (multi-sink power delivery) and board-level high-speed routing constraints remain P4-T2 partial.</td>
+</tr>
+<tr>
+<td><code>routing</code></td>
+<td>Export Specctra DSN / import routed SES</td>
+<td><code>partial</code></td>
+<td><code>cli</code></td>
+<td><code>route_export_dsn</code></td>
+<td>route_export_dsn attempts headless kicad-cli specctra export, else a clear human-gated manual step; the routed SES is applied fully headlessly by route_apply_ses (deterministic, idempotent, round-trip-safe via utils/router_core, P4-T1) -- no GUI import. Export side stays partial when kicad-cli lacks headless specctra export.</td>
+</tr>
+<tr>
+<td><code>routing</code></td>
+<td>Full autoroute (FreeRouting orchestration)</td>
+<td><code>partial</code></td>
+<td><code>cli</code></td>
+<td><code>route_autoroute_freerouting</code></td>
+<td>Routes headlessly (Docker/JAR); the routed SES is now applied headlessly by route_apply_ses (utils/router_core writes segments/vias into the .kicad_pcb), closing the former GUI step (P4-T1). Status stays partial: FreeRouting's own determinism is bounded and the SES coordinate transform assumes KiCad's standard Specctra export convention (verified end-to-end only in the KiCad CI job).</td>
+</tr>
+<tr>
+<td><code>schematic_edit</code></td>
+<td>Modify a symbol property by reference</td>
+<td><code>partial</code></td>
+<td><code>ipc</code></td>
+<td><code>sch_modify_property</code></td>
+<td>Round-trip-safe edit primitive (utils/schematic_roundtrip) with a corruption guard exists (P2-T1); testing showed kicad-sch-api 0.5.x drops global_label on save, so writes refuse+restore rather than silently corrupt (K5). Migrating each regex write path through the guarded primitive is incremental.</td>
+</tr>
+<tr>
+<td><code>schematic_edit</code></td>
+<td>Swap pins / gates</td>
+<td><code>partial</code></td>
+<td><code>file</code></td>
+<td><code>sch_swap_pins</code></td>
+<td>Experimental; sch_swap_gates is also experimental and profile-gated.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="full-matrix">Full matrix<a class="headerlink" href="#full-matrix" title="Permanent link">¶</a></h2>
+<h3 id="schematic_edit"><code>schematic_edit</code><a class="headerlink" href="#schematic_edit" title="Permanent link">¶</a></h3>
+<p>Symbol/wire/label/bus/hierarchy/power/no-connect/annotate/ERC editing of .kicad_sch.</p>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Channel</th>
+<th>MCP tool</th>
+<th>Status</th>
+<th>KiCad</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Place a library symbol at an absolute coordinate</td>
+<td><code>file</code></td>
+<td><code>sch_add_symbol</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>sch_add_component covers the by-library convenience path.</td>
+</tr>
+<tr>
+<td>Move a placed symbol</td>
+<td><code>file</code></td>
+<td><code>sch_move_symbol</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Delete a placed symbol and attached wires</td>
+<td><code>file</code></td>
+<td><code>sch_delete_symbol</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Add a wire between points / between pins</td>
+<td><code>file</code></td>
+<td><code>sch_route_wire_between_pins</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>sch_add_wire for raw segments; sch_add_missing_junctions repairs T-junctions.</td>
+</tr>
+<tr>
+<td>Add local / global / hierarchical labels</td>
+<td><code>file</code></td>
+<td><code>sch_add_label</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>sch_add_global_label, sch_add_hierarchical_label, sch_move_label, sch_delete_label, sch_modify_label (justify).</td>
+</tr>
+<tr>
+<td>Add a bus and bus-wire entries</td>
+<td><code>file</code></td>
+<td><code>sch_add_bus</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>sch_add_bus_wire_entry for member entries.</td>
+</tr>
+<tr>
+<td>Add a power symbol / power flag</td>
+<td><code>file</code></td>
+<td><code>sch_add_power_symbol</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>sch_check_power_flags audits coverage.</td>
+</tr>
+<tr>
+<td>Add no-connect markers</td>
+<td><code>file</code></td>
+<td><code>sch_add_no_connect</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Create and wire hierarchical sheets</td>
+<td><code>file</code></td>
+<td><code>sch_create_sheet</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>sch_list_sheets / sch_get_sheet_info for inspection.</td>
+</tr>
+<tr>
+<td>Annotate references</td>
+<td><code>file</code></td>
+<td><code>sch_annotate</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Run ERC and inspect violations</td>
+<td><code>cli</code></td>
+<td><code>run_erc</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>erc_set_rule_severity / erc_list_rules tune severities.</td>
+</tr>
+<tr>
+<td>Modify a symbol property by reference</td>
+<td><code>ipc</code></td>
+<td><code>sch_modify_property</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>Round-trip-safe edit primitive (utils/schematic_roundtrip) with a corruption guard exists (P2-T1); testing showed kicad-sch-api 0.5.x drops global_label on save, so writes refuse+restore rather than silently corrupt (K5). Migrating each regex write path through the guarded primitive is incremental.</td>
+</tr>
+<tr>
+<td>Swap pins / gates</td>
+<td><code>file</code></td>
+<td><code>sch_swap_pins</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>Experimental; sch_swap_gates is also experimental and profile-gated.</td>
+</tr>
+<tr>
+<td>Interactive symbol graphic drawing in the editor</td>
+<td><code>gui-only</code></td>
+<td>—</td>
+<td><code>gui-only-no-api</code></td>
+<td>10.0.x</td>
+<td>Custom symbol bodies are created via lib_create_custom_symbol; freehand editor drawing is GUI-only.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="pcb_edit"><code>pcb_edit</code><a class="headerlink" href="#pcb_edit" title="Permanent link">¶</a></h3>
+<p>Footprint place/move, track/via/zone/stackup/rules/groups/teardrops/fanout on .kicad_pcb.</p>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Channel</th>
+<th>MCP tool</th>
+<th>Status</th>
+<th>KiCad</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Place / move a footprint</td>
+<td><code>ipc</code></td>
+<td><code>pcb_place_component</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>pcb_move_footprint / pcb_move_component for relocation.</td>
+</tr>
+<tr>
+<td>Add a track / route a trace</td>
+<td><code>ipc</code></td>
+<td><code>pcb_add_track</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>pcb_route_trace, pcb_add_tracks_bulk for batches.</td>
+</tr>
+<tr>
+<td>Add through / blind / micro vias</td>
+<td><code>ipc</code></td>
+<td><code>pcb_add_via</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>pcb_add_blind_via, pcb_add_microvia.</td>
+</tr>
+<tr>
+<td>Add and refill copper zones</td>
+<td><code>ipc</code></td>
+<td><code>pcb_add_copper_zone</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>pcb_add_zone, pcb_refill_zones.</td>
+</tr>
+<tr>
+<td>Read / set the layer stackup</td>
+<td><code>file</code></td>
+<td><code>pcb_set_stackup</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>pcb_get_stackup for inspection.</td>
+</tr>
+<tr>
+<td>Read / set design rules</td>
+<td><code>file</code></td>
+<td><code>pcb_set_design_rules</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>pcb_get_design_rules; drc_rule_create/delete/enable for custom rules.</td>
+</tr>
+<tr>
+<td>Assign net classes</td>
+<td><code>file</code></td>
+<td><code>pcb_set_net_class</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>route_set_net_class_rules for routing constraints.</td>
+</tr>
+<tr>
+<td>Add teardrops</td>
+<td><code>ipc</code></td>
+<td><code>pcb_add_teardrops</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>BGA / fine-pitch fanout</td>
+<td><code>ipc</code></td>
+<td><code>pcb_bga_fanout</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Set the board outline</td>
+<td><code>ipc</code></td>
+<td><code>pcb_set_board_outline</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Auto-place footprints from schematic</td>
+<td><code>ipc</code></td>
+<td><code>pcb_auto_place_by_schematic</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>Force-directed placement now stops by deterministic convergence (K7); placement scoring now includes return-path constraints (high-speed interface grouping via InterfaceSpec), mechanical mount-hole clearance, connector edge-placement specs, and before/after score evidence; explainable per-category FAIL/WARN output is emitted after each auto-placement run. Current-path (multi-sink power delivery) and board-level high-speed routing constraints remain P4-T2 partial.</td>
+</tr>
+<tr>
+<td>Run DRC and inspect violations</td>
+<td><code>cli</code></td>
+<td><code>run_drc</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>drc_add_exclusion / drc_validate_exclusions manage waivers.</td>
+</tr>
+<tr>
+<td>Manage design blocks / reusable groups</td>
+<td><code>file</code></td>
+<td><code>pcb_block_create_from_selection</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>pcb_block_list, pcb_block_place.</td>
+</tr>
+<tr>
+<td>Read / set board groups</td>
+<td><code>ipc</code></td>
+<td><code>pcb_get_groups</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>pcb_get_groups for inspection; pcb_group_by_function and pcb_block_* for grouping.</td>
+</tr>
+<tr>
+<td>Read / set drawing origin</td>
+<td><code>ipc</code></td>
+<td><code>pcb_set_origin</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>pcb_get_origin / pcb_set_origin.</td>
+</tr>
+<tr>
+<td>Begin / push / revert an IPC commit transaction</td>
+<td><code>ipc</code></td>
+<td><code>pcb_push_commit</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>pcb_begin_commit / pcb_push_commit / pcb_drop_commit / pcb_revert expose the native KiCad commit lifecycle. Transaction participation is limited to reviewed verified mutations; unsupported writes fail before side effects while a native-live session is active.</td>
+</tr>
+<tr>
+<td>Report verified native-live transaction and recovery state</td>
+<td><code>ipc</code></td>
+<td><code>pcb_get_live_edit_state</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>Path-free state reports board fingerprint, verified/ambiguous mutation counts, recovery requirement, and terminal outcome without representing file-backed or schematic writes as native-live IPC.</td>
+</tr>
+<tr>
+<td>Interactive push-and-shove routing</td>
+<td><code>gui-only</code></td>
+<td>—</td>
+<td><code>gui-only-no-api</code></td>
+<td>10.0.x</td>
+<td>KiCad's interactive router (push/shove, walkaround) has no IPC/CLI surface.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="routing"><code>routing</code><a class="headerlink" href="#routing" title="Permanent link">¶</a></h3>
+<p>Autoroute, length/skew tuning, diff-pair, and interactive routing.</p>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Channel</th>
+<th>MCP tool</th>
+<th>Status</th>
+<th>KiCad</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Route a single track / pad-to-pad</td>
+<td><code>ipc</code></td>
+<td><code>route_single_track</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>route_from_pad_to_pad.</td>
+</tr>
+<tr>
+<td>Route a differential pair</td>
+<td><code>ipc</code></td>
+<td><code>route_differential_pair</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Tune track / diff-pair length</td>
+<td><code>file</code></td>
+<td><code>route_tune_length</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>tune_diff_pair_length, route_tune_time_domain, tuning-profile tools.</td>
+</tr>
+<tr>
+<td>Full autoroute (FreeRouting orchestration)</td>
+<td><code>cli</code></td>
+<td><code>route_autoroute_freerouting</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>Routes headlessly (Docker/JAR); the routed SES is now applied headlessly by route_apply_ses (utils/router_core writes segments/vias into the .kicad_pcb), closing the former GUI step (P4-T1). Status stays partial: FreeRouting's own determinism is bounded and the SES coordinate transform assumes KiCad's standard Specctra export convention (verified end-to-end only in the KiCad CI job).</td>
+</tr>
+<tr>
+<td>Export Specctra DSN / import routed SES</td>
+<td><code>cli</code></td>
+<td><code>route_export_dsn</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>route_export_dsn attempts headless kicad-cli specctra export, else a clear human-gated manual step; the routed SES is applied fully headlessly by route_apply_ses (deterministic, idempotent, round-trip-safe via utils/router_core, P4-T1) -- no GUI import. Export side stays partial when kicad-cli lacks headless specctra export.</td>
+</tr>
+<tr>
+<td>Set per-net-class routing rules</td>
+<td><code>file</code></td>
+<td><code>route_set_net_class_rules</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Interactive length tuning / meander drawing</td>
+<td><code>gui-only</code></td>
+<td>—</td>
+<td><code>gui-only-no-api</code></td>
+<td>10.0.x</td>
+<td>Interactive trace tuning UX is GUI-only; programmatic tuning is modeled by route_tune_length.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="library"><code>library</code><a class="headerlink" href="#library" title="Permanent link">¶</a></h3>
+<p>Symbol/footprint/3D generation + assignment + part sourcing.</p>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Channel</th>
+<th>MCP tool</th>
+<th>Status</th>
+<th>KiCad</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Search symbols / footprints</td>
+<td><code>file</code></td>
+<td><code>lib_search_symbols</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>lib_search_footprints, lib_list_libraries, lib_rebuild_index.</td>
+</tr>
+<tr>
+<td>Assign a footprint to a symbol</td>
+<td><code>file</code></td>
+<td><code>lib_assign_footprint</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Create a custom symbol</td>
+<td><code>file</code></td>
+<td><code>lib_create_custom_symbol</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>lib_generate_symbol_from_pintable for pin-table-driven generation.</td>
+</tr>
+<tr>
+<td>Generate an IPC-7351 footprint</td>
+<td><code>file</code></td>
+<td><code>lib_generate_footprint_ipc7351</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>Footprint family coverage now includes chip passives, SOT-23/SOT-223/SOT-89, SOT-363/SOT-26, SC-70/SOT-323, SOD-123/SOD-323, DO-214 (SMA/SMB/SMC), DPAK/TO-252, D2PAK/TO-263, SOIC/SOP/SSOP/TSSOP, QFP, QFN/DFN, BGA, and PinHeader; datasheet/3D model consistency remains partial.</td>
+</tr>
+<tr>
+<td>Assign / manage 3D models</td>
+<td><code>file</code></td>
+<td><code>lib_set_3d_model_path</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>lib_bulk_assign_3d_models, lib_search_3d_models, lib_remove_3d_model.</td>
+</tr>
+<tr>
+<td>Source live component data (price/stock/lifecycle)</td>
+<td><code>file</code></td>
+<td><code>lib_search_components</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>Live JLCPCB, Nexar, DigiKey, and Mouser sourcing clients are implemented; lib_check_sourcing_policy emits structured stock, price, lifecycle, RoHS, and AVL policy verdicts. Remaining P4-T3 work is datasheet-grounded footprint/3D hard gates and provider manufacturer metadata normalization.</td>
+</tr>
+<tr>
+<td>Recommend / bind a part to a symbol</td>
+<td><code>file</code></td>
+<td><code>lib_recommend_part</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>lib_bind_part_to_symbol; depends on the same sourcing backends as above.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="analysis"><code>analysis</code><a class="headerlink" href="#analysis" title="Permanent link">¶</a></h3>
+<p>SI / PI / EMC / thermal / DFM / SPICE analysis.</p>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Channel</th>
+<th>MCP tool</th>
+<th>Status</th>
+<th>KiCad</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Single-ended / differential trace impedance</td>
+<td><code>file</code></td>
+<td><code>si_calculate_trace_impedance</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>First-order closed-form (IPC-2141/Wheeler) estimate ~5-10% (work order K4); field-solver accuracy is Phase 3 (P3-T1).</td>
+</tr>
+<tr>
+<td>Differential-pair skew gate</td>
+<td><code>file</code></td>
+<td><code>si_check_differential_pair_skew</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>Real PASS/WARN/FAIL verdict with intent-derived skew budget (P1-T3); localized intra-pair phase-skew / mode-conversion is Phase 3 (P3-T3).</td>
+</tr>
+<tr>
+<td>Length-matching validation</td>
+<td><code>file</code></td>
+<td><code>si_validate_length_matching</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>Three-level PASS/WARN/FAIL verdict against a tolerance budget (P1-T3); track-length based heuristic.</td>
+</tr>
+<tr>
+<td>Synthesize a stackup for target interfaces</td>
+<td><code>file</code></td>
+<td><code>si_synthesize_stackup_for_interfaces</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>si_generate_stackup, si_bind_interfaces_to_net_classes, si_list_dielectric_materials.</td>
+</tr>
+<tr>
+<td>High-speed channel insertion-loss / eye analysis</td>
+<td><code>file</code></td>
+<td><code>si_analyze_high_speed_channel</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>Closed-form lossy-line insertion loss (conductor skin-effect + dielectric loss) with a loss-limited eye and PASS/WARN/FAIL verdict; when an ngspice CLI is present the insertion loss is measured from an RLGC-ladder AC sweep (utils/channel + solver seam). Full S-parameter / IBIS-AMI channel simulation remains a future upgrade.</td>
+</tr>
+<tr>
+<td>DC IR-drop / voltage-drop analysis</td>
+<td><code>file</code></td>
+<td><code>pdn_calculate_voltage_drop</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>pdn_calculate_voltage_drop is a first-order single-trace lumped estimate, now with an IPC-2221 current-density fusing / temperature-rise PASS/WARN/FAIL verdict; check_power_integrity runs a genuine distributed multi-load resistive PDN mesh (DC drop + frequency-domain Z(f)), labeled solver-grade via the seam (utils/solver_seams.pdn_mesh_method). Remaining P3-T2 upgrade: a 2-D copper-plane field solve.</td>
+</tr>
+<tr>
+<td>Decoupling recommendation / power-plane generation</td>
+<td><code>file</code></td>
+<td><code>pdn_recommend_decoupling_caps</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>pdn_generate_power_plane covered; frequency-domain PDN target-Z checking now delivered via check_power_integrity (pdn_mesh Z(f) vs target_impedance_ohm with violations); a full plane-capacitance field model remains a future upgrade.</td>
+</tr>
+<tr>
+<td>Thermal via / copper-pour sizing</td>
+<td><code>file</code></td>
+<td><code>thermal_calculate_via_count</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>thermal_check_copper_pour; first-order theta_JA / via-count rule of thumb labeled honestly via the solver seam (utils/solver_seams.thermal_method); for distributed spreading use thermal_simulate_plane_spreading.</td>
+</tr>
+<tr>
+<td>Copper-plane thermal spreading (2-D FD solve)</td>
+<td><code>file</code></td>
+<td><code>thermal_simulate_plane_spreading</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>Genuine 2-D finite-difference steady-state heat-spreading solve over the copper plane (utils/thermal_solver + solver_seams.thermal_fd_method) with peak/average temperature rise and a PASS/WARN/FAIL verdict; not a 3-D FEA with airflow / board-stack conduction (full FEA remains a future upgrade).</td>
+</tr>
+<tr>
+<td>EMC layout compliance checks</td>
+<td><code>file</code></td>
+<td><code>emc_run_full_compliance</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>Presence/heuristic checks with fixed Er (work order K2/K10); EM-result-based, standard-named, fail-capable checks are Phase 3 (P3-T5).</td>
+</tr>
+<tr>
+<td>DFM manufacturer checks and cost</td>
+<td><code>file</code></td>
+<td><code>dfm_run_manufacturer_check</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>dfm_load_manufacturer_profile, dfm_calculate_manufacturing_cost.</td>
+</tr>
+<tr>
+<td>SPICE simulation (op / AC / transient / DC sweep)</td>
+<td><code>cli</code></td>
+<td><code>sim_run_transient</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>ngspice engine; sim_run_operating_point/ac_analysis/dc_sweep, sim_check_stability.</td>
+</tr>
+<tr>
+<td>2D/3D field / EM solver for impedance &amp; coupling</td>
+<td><code>file</code></td>
+<td><code>si_get_solver_capabilities</code></td>
+<td><code>partial</code></td>
+<td>10.0.x</td>
+<td>si_get_solver_capabilities exposes the configured solver seams and explicit solver-unavailable policy. No full field/EM backend is integrated yet; closed-form results remain critic-only and blocked for release signoff unless a solver-grade backend is configured.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="export"><code>export</code><a class="headerlink" href="#export" title="Permanent link">¶</a></h3>
+<p>Gerber/drill/BOM/POS/STEP/ODB/IPC2581/SVG/PDF/3D manufacturing outputs.</p>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Channel</th>
+<th>MCP tool</th>
+<th>Status</th>
+<th>KiCad</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gerber export</td>
+<td><code>cli</code></td>
+<td><code>export_gerber</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Drill export</td>
+<td><code>cli</code></td>
+<td><code>export_drill</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>BOM export</td>
+<td><code>cli</code></td>
+<td><code>export_bom</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>export_sch_python_bom for the Python BOM path.</td>
+</tr>
+<tr>
+<td>Pick-and-place (POS/CPL) export</td>
+<td><code>cli</code></td>
+<td><code>export_pick_and_place</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>mfg_correct_cpl_rotations for fab rotation fixups.</td>
+</tr>
+<tr>
+<td>STEP / 3D model export</td>
+<td><code>cli</code></td>
+<td><code>export_step</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>export_stepz, export_glb, export_vrml, export_stl, export_ply, export_brep, export_u3d.</td>
+</tr>
+<tr>
+<td>IPC-2581 / ODB++ interchange export</td>
+<td><code>cli</code></td>
+<td><code>export_ipc2581</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>export_odb.</td>
+</tr>
+<tr>
+<td>SVG / PDF / DXF documentation export</td>
+<td><code>cli</code></td>
+<td><code>export_pcb_pdf</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>export_sch_pdf, export_svg, export_dxf, export_sch_svg, export_sch_dxf.</td>
+</tr>
+<tr>
+<td>Netlist export</td>
+<td><code>cli</code></td>
+<td><code>export_netlist</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>export_spice_netlist.</td>
+</tr>
+<tr>
+<td>Release-gated manufacturing package</td>
+<td><code>cli</code></td>
+<td><code>export_manufacturing_package</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>Hard-gated on project_quality_gate PASS.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="project"><code>project</code><a class="headerlink" href="#project" title="Permanent link">¶</a></h3>
+<p>Variants, embedded files, jobsets, VCS, and design intent.</p>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Channel</th>
+<th>MCP tool</th>
+<th>Status</th>
+<th>KiCad</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Assembly variants (create / activate / diff / export)</td>
+<td><code>file</code></td>
+<td><code>variant_create</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>variant_set_active, variant_diff_bom, variant_export_bom, variant_clone.</td>
+</tr>
+<tr>
+<td>Embedded project files</td>
+<td><code>file</code></td>
+<td><code>project_embed_file</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>project_list_embedded_files, project_extract_embedded_file, project_remove_embedded_file.</td>
+</tr>
+<tr>
+<td>Job sets (export automation)</td>
+<td><code>cli</code></td>
+<td><code>jobset_export</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>jobset_list_templates, jobset_run, jobset_validate.</td>
+</tr>
+<tr>
+<td>Version-control checkpoints</td>
+<td><code>file</code></td>
+<td><code>vcs_commit_checkpoint</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>vcs_init_git, vcs_list_checkpoints, vcs_restore_checkpoint, vcs_diff_with_checkpoint, vcs_tag_release.</td>
+</tr>
+<tr>
+<td>Capture / infer design intent and spec</td>
+<td><code>file</code></td>
+<td><code>project_set_design_intent</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>project_get_design_spec, project_infer_design_spec, project_validate_design_spec.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="cosmetics"><code>cosmetics</code><a class="headerlink" href="#cosmetics" title="Permanent link">¶</a></h3>
+<p>Silk, board art, drawing sheet / title block, fab notes, fiducials, mounting holes.</p>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Channel</th>
+<th>MCP tool</th>
+<th>Status</th>
+<th>KiCad</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Add silkscreen / fab text</td>
+<td><code>ipc</code></td>
+<td><code>pcb_add_text</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Add a barcode / data-matrix</td>
+<td><code>file</code></td>
+<td><code>pcb_add_barcode</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Add fiducials</td>
+<td><code>ipc</code></td>
+<td><code>pcb_add_fiducial_marks</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Add mounting holes</td>
+<td><code>ipc</code></td>
+<td><code>pcb_add_mounting_holes</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Add inner-layer graphics to a footprint</td>
+<td><code>file</code></td>
+<td><code>add_footprint_inner_layer_graphic</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td></td>
+</tr>
+<tr>
+<td>Set drawing-sheet title-block fields</td>
+<td><code>ipc</code></td>
+<td><code>pcb_set_title_block_info</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>pcb_set_title_block_info.</td>
+</tr>
+<tr>
+<td>Import a logo/bitmap as board art (bitmap2component)</td>
+<td><code>file</code></td>
+<td><code>pcb_add_bitmap_board_art</code></td>
+<td><code>covered</code></td>
+<td>10.0.x</td>
+<td>pcb_add_bitmap_board_art imports bitmap/logo pixels into deterministic filled board-art rectangles on the requested PCB graphics layer. It intentionally avoids private paths and caps generated shape count for reviewable output.</td>
+</tr>
+<tr>
+<td>Custom drawing-sheet (.kicad_wks) template design</td>
+<td><code>gui-only</code></td>
+<td>—</td>
+<td><code>gui-only-no-api</code></td>
+<td>10.0.x</td>
+<td>The page-layout editor is interactive; no headless drawing-sheet authoring surface.</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+  
+    
+  
+  
+    
+  
+
+
+  <aside class="md-source-file">
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Last update">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"></path></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="August 28, 2026 15:22:30 UTC">August 28, 2026</span>
+  </span>
+
+    
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Created">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"></path></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="June 15, 2026 21:15:27 UTC">June 15, 2026</span>
+  </span>
+
+    
+    
+    
+  </aside>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      © 2026 oaslananka · <a href="https://github.com/sponsors/oaslananka">Sponsor</a> · <a href="https://www.buymeacoffee.com/oaslananka">Buy me a coffee</a>
+
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.sections", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../assets/support-links.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>

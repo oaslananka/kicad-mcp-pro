@@ -1,0 +1,590 @@
+{
+  "candidate_sha": "282c7499f67457bb247d2390379410f05e96a3e8",
+  "families": {
+    "kicad-mcp-gui": {
+      "candidate_sha": "282c7499f67457bb247d2390379410f05e96a3e8",
+      "changelog_path": "src-tauri/CHANGELOG.md",
+      "commits": [
+        {
+          "paths": [
+            ".github/workflows/ci.yml",
+            ".github/workflows/publish-release.yml",
+            "docs/development/release-process.md",
+            "tests/unit/test_release_manual_publication.py"
+          ],
+          "reason": "no direct package-path changes; shared impact not automatically excluded",
+          "sha": "03107fc75e6b7dd2b32733c8e955df5f344069e8",
+          "status": "cross_component_review",
+          "subject": "fix(release): auto-publish reviewed release after trusted green main CI (#1215)"
+        },
+        {
+          "paths": [
+            ".github/workflows/publish-npm.yml",
+            ".github/workflows/release.yml",
+            "docs/registry.md",
+            "packages/mcp-npm/README.md",
+            "packages/mcp-npm/package.json",
+            "scripts/sync_mcp_metadata.py",
+            "tests/unit/test_public_metadata.py"
+          ],
+          "reason": "no direct package-path changes; shared impact not automatically excluded",
+          "sha": "52602f6c52d33235944e6b79ef2e2cc77f786c4a",
+          "status": "cross_component_review",
+          "subject": "fix(metadata): generate npm publication docs from canonical metadata (#1216)"
+        },
+        {
+          "paths": [
+            ".agents/skills/drc-check/SKILL.md",
+            ".agents/skills/fabrication-output/SKILL.md",
+            ".agents/skills/kicad-design-review/SKILL.md",
+            ".agents/skills/kicad-design-review/references/kicad-quality-gates.md",
+            ".agents/skills/kicad-design-review/references/manufacturing-release.md",
+            ".agents/skills/kicad-design-review/scripts/check_mcp_available.py",
+            ".agents/skills/pcb-design/SKILL.md",
+            ".agents/skills/schematic-review/SKILL.md",
+            ".agents/skills/visual-excellence/SKILL.md",
+            ".agents/skills/visual-excellence/reference/professional.png",
+            ".agents/skills/visual-excellence/reference/rushed.png",
+            ".agents/skills/wired-subcircuit-design/SKILL.md",
+            ".codex/config.example.toml",
+            ".github/copilot-instructions.md",
+            ".github/workflows/agent-runtime-config.yml",
+            ".github/workflows/ci.yml",
+            ".opencode/skills/kicad-design-review/references/kicad-quality-gates.md",
+            ".opencode/skills/kicad-design-review/references/manufacturing-release.md",
+            ".opencode/skills/kicad-design-review/scripts/check_mcp_available.py",
+            ".opencode/skills/pcb-design/SKILL.md",
+            "README.md",
+            "docs/agent-runtime-config.md",
+            "docs/agents/codex.md",
+            "docs/agents/compatibility.md",
+            "docs/agents/index.md",
+            "docs/agents/progressive-disclosure.md",
+            "docs/examples/clients/codex-config.toml",
+            "integrations/codex/README.md",
+            "integrations/codex/config.toml.example",
+            "scripts/sync_agent_skills.py",
+            "skills/kicad-design-review/scripts/check_mcp_available.py",
+            "tests/unit/test_agent_skills_distribution.py"
+          ],
+          "reason": "no direct package-path changes; shared impact not automatically excluded",
+          "sha": "ab84ff35454da91f4bc3ffe781ddc63d12030384",
+          "status": "cross_component_review",
+          "subject": "fix(agents): one canonical KiCad skill source and consistent client setup (#1217)"
+        },
+        {
+          "paths": [
+            ".github/workflows/ci.yml",
+            "docs/agents/compatibility.md",
+            "docs/agents/gemini-cli.md",
+            "docs/agents/host-verification.md",
+            "docs/agents/mcp-extension-research.md",
+            "integrations/common/agent-host-evidence.json",
+            "integrations/gemini-cli/kicad-mcp-pro/README.md",
+            "integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/drc-check/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/fabrication-output/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/kicad-design-review/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/kicad-design-review/references/kicad-quality-gates.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/kicad-design-review/references/manufacturing-release.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/kicad-design-review/scripts/check_mcp_available.py",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/pcb-design/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/schematic-review/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/visual-excellence/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/visual-excellence/reference/professional.png",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/visual-excellence/reference/rushed.png",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/wired-subcircuit-design/SKILL.md",
+            "scripts/check_agent_host_evidence.py",
+            "scripts/sync_agent_skills.py",
+            "scripts/sync_mcp_metadata.py",
+            "tests/unit/test_agent_host_evidence.py"
+          ],
+          "reason": "no direct package-path changes; shared impact not automatically excluded",
+          "sha": "7daa4d3e475cb66713001ffd44e4b74deef8fbbc",
+          "status": "cross_component_review",
+          "subject": "feat(agents): pilot Gemini extension and evidence-scoped host checks (#1218)"
+        },
+        {
+          "paths": [
+            "docs/evidence/agent-host-smoke-history.md",
+            "docs/public-listing.md",
+            "docs/status/distribution-readiness.md",
+            "tests/unit/test_agent_host_evidence_history.py"
+          ],
+          "reason": "docs/CI/chore/refactor or unclassified: human impact review required",
+          "sha": "ad3bb6780ece2d4e700674719a253c369f1f06b7",
+          "status": "needs_review",
+          "subject": "docs(agents): distinguish historical host tests from current qualification (#1224)"
+        },
+        {
+          "paths": [
+            "docs/agents/install.md",
+            "integrations/AGENTS.md",
+            "integrations/common/install-kicad-mcp.mjs",
+            "src/kicad_mcp/server.py",
+            "tests/js/install-kicad-mcp-security.test.mjs",
+            "tests/unit/test_issue_731_onboarding.py"
+          ],
+          "reason": "no direct package-path changes; shared impact not automatically excluded",
+          "sha": "0fedbc858dafe6e299ca516ece223ea698af5bd2",
+          "status": "cross_component_review",
+          "subject": "fix(agents): safely delegate legacy installer to canonical Python setup (#1223)"
+        },
+        {
+          "paths": [
+            "docs/agents/host-verification.md",
+            "scripts/check_agent_native_smoke_evidence.py",
+            "tests/unit/test_agent_native_smoke_evidence.py"
+          ],
+          "reason": "conventional test: test/style-only unless manually overridden",
+          "sha": "c7659f42b4bf5748403b187c5096a9c8bc57069a",
+          "status": "excluded",
+          "subject": "test(agents): validate evidence shapes for native host smoke (#1226)"
+        },
+        {
+          "paths": [
+            "docs/evidence/reference-boards/README.md",
+            "scripts/check_reference_board_attempt_readiness.py",
+            "tests/unit/test_reference_board_attempt_preflight.py"
+          ],
+          "reason": "no direct package-path changes; shared impact not automatically excluded",
+          "sha": "d8ca28e0dbddd8b57d7ddccf967b4e26135db073",
+          "status": "cross_component_review",
+          "subject": "feat(evals): fail-closed reproducible reference-board attempt preflight (#1225)"
+        },
+        {
+          "paths": [
+            ".claude-plugin/plugin.json",
+            ".release-please-manifest.json",
+            "CHANGELOG.md",
+            "CITATION.cff",
+            "README.md",
+            "compatibility.yaml",
+            "contracts/tool-effect-manifest.json",
+            "integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json",
+            "package.json",
+            "packages/mcp-npm/CHANGELOG.md",
+            "packages/mcp-npm/README.md",
+            "packages/mcp-npm/package-lock.json",
+            "packages/mcp-npm/package.json",
+            "packaging/mcpb/manifest.json",
+            "pyproject.toml",
+            "server.json",
+            "sonar-project.properties",
+            "src-tauri/CHANGELOG.md",
+            "src-tauri/Cargo.lock",
+            "src-tauri/Cargo.toml",
+            "src-tauri/tauri.conf.json",
+            "src/kicad_mcp/__init__.py",
+            "uv.lock"
+          ],
+          "reason": "version-bump release metadata commit; not a product feature",
+          "sha": "282c7499f67457bb247d2390379410f05e96a3e8",
+          "status": "excluded",
+          "subject": "chore(main): release mcp-server 4.3.0 (#1222)"
+        }
+      ],
+      "package_path": "src-tauri",
+      "previous_sha": "588891f5357e42cdc934b81349b78a160a5dac76",
+      "previous_tag": "kicad-mcp-gui-v4.2.0",
+      "summary": {
+        "cross_component_review": 6,
+        "excluded": 2,
+        "matched": 0,
+        "missing": 0,
+        "needs_review": 1
+      }
+    },
+    "mcp-npm": {
+      "candidate_sha": "282c7499f67457bb247d2390379410f05e96a3e8",
+      "changelog_path": "packages/mcp-npm/CHANGELOG.md",
+      "commits": [
+        {
+          "paths": [
+            ".github/workflows/ci.yml",
+            ".github/workflows/publish-release.yml",
+            "docs/development/release-process.md",
+            "tests/unit/test_release_manual_publication.py"
+          ],
+          "reason": "no direct package-path changes; shared impact not automatically excluded",
+          "sha": "03107fc75e6b7dd2b32733c8e955df5f344069e8",
+          "status": "cross_component_review",
+          "subject": "fix(release): auto-publish reviewed release after trusted green main CI (#1215)"
+        },
+        {
+          "paths": [
+            ".github/workflows/publish-npm.yml",
+            ".github/workflows/release.yml",
+            "docs/registry.md",
+            "packages/mcp-npm/README.md",
+            "packages/mcp-npm/package.json",
+            "scripts/sync_mcp_metadata.py",
+            "tests/unit/test_public_metadata.py"
+          ],
+          "reason": "explicit commit permalink in versioned notes",
+          "sha": "52602f6c52d33235944e6b79ef2e2cc77f786c4a",
+          "status": "matched",
+          "subject": "fix(metadata): generate npm publication docs from canonical metadata (#1216)"
+        },
+        {
+          "paths": [
+            ".agents/skills/drc-check/SKILL.md",
+            ".agents/skills/fabrication-output/SKILL.md",
+            ".agents/skills/kicad-design-review/SKILL.md",
+            ".agents/skills/kicad-design-review/references/kicad-quality-gates.md",
+            ".agents/skills/kicad-design-review/references/manufacturing-release.md",
+            ".agents/skills/kicad-design-review/scripts/check_mcp_available.py",
+            ".agents/skills/pcb-design/SKILL.md",
+            ".agents/skills/schematic-review/SKILL.md",
+            ".agents/skills/visual-excellence/SKILL.md",
+            ".agents/skills/visual-excellence/reference/professional.png",
+            ".agents/skills/visual-excellence/reference/rushed.png",
+            ".agents/skills/wired-subcircuit-design/SKILL.md",
+            ".codex/config.example.toml",
+            ".github/copilot-instructions.md",
+            ".github/workflows/agent-runtime-config.yml",
+            ".github/workflows/ci.yml",
+            ".opencode/skills/kicad-design-review/references/kicad-quality-gates.md",
+            ".opencode/skills/kicad-design-review/references/manufacturing-release.md",
+            ".opencode/skills/kicad-design-review/scripts/check_mcp_available.py",
+            ".opencode/skills/pcb-design/SKILL.md",
+            "README.md",
+            "docs/agent-runtime-config.md",
+            "docs/agents/codex.md",
+            "docs/agents/compatibility.md",
+            "docs/agents/index.md",
+            "docs/agents/progressive-disclosure.md",
+            "docs/examples/clients/codex-config.toml",
+            "integrations/codex/README.md",
+            "integrations/codex/config.toml.example",
+            "scripts/sync_agent_skills.py",
+            "skills/kicad-design-review/scripts/check_mcp_available.py",
+            "tests/unit/test_agent_skills_distribution.py"
+          ],
+          "reason": "no direct package-path changes; shared impact not automatically excluded",
+          "sha": "ab84ff35454da91f4bc3ffe781ddc63d12030384",
+          "status": "cross_component_review",
+          "subject": "fix(agents): one canonical KiCad skill source and consistent client setup (#1217)"
+        },
+        {
+          "paths": [
+            ".github/workflows/ci.yml",
+            "docs/agents/compatibility.md",
+            "docs/agents/gemini-cli.md",
+            "docs/agents/host-verification.md",
+            "docs/agents/mcp-extension-research.md",
+            "integrations/common/agent-host-evidence.json",
+            "integrations/gemini-cli/kicad-mcp-pro/README.md",
+            "integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/drc-check/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/fabrication-output/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/kicad-design-review/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/kicad-design-review/references/kicad-quality-gates.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/kicad-design-review/references/manufacturing-release.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/kicad-design-review/scripts/check_mcp_available.py",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/pcb-design/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/schematic-review/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/visual-excellence/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/visual-excellence/reference/professional.png",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/visual-excellence/reference/rushed.png",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/wired-subcircuit-design/SKILL.md",
+            "scripts/check_agent_host_evidence.py",
+            "scripts/sync_agent_skills.py",
+            "scripts/sync_mcp_metadata.py",
+            "tests/unit/test_agent_host_evidence.py"
+          ],
+          "reason": "no direct package-path changes; shared impact not automatically excluded",
+          "sha": "7daa4d3e475cb66713001ffd44e4b74deef8fbbc",
+          "status": "cross_component_review",
+          "subject": "feat(agents): pilot Gemini extension and evidence-scoped host checks (#1218)"
+        },
+        {
+          "paths": [
+            "docs/evidence/agent-host-smoke-history.md",
+            "docs/public-listing.md",
+            "docs/status/distribution-readiness.md",
+            "tests/unit/test_agent_host_evidence_history.py"
+          ],
+          "reason": "docs/CI/chore/refactor or unclassified: human impact review required",
+          "sha": "ad3bb6780ece2d4e700674719a253c369f1f06b7",
+          "status": "needs_review",
+          "subject": "docs(agents): distinguish historical host tests from current qualification (#1224)"
+        },
+        {
+          "paths": [
+            "docs/agents/install.md",
+            "integrations/AGENTS.md",
+            "integrations/common/install-kicad-mcp.mjs",
+            "src/kicad_mcp/server.py",
+            "tests/js/install-kicad-mcp-security.test.mjs",
+            "tests/unit/test_issue_731_onboarding.py"
+          ],
+          "reason": "no direct package-path changes; shared impact not automatically excluded",
+          "sha": "0fedbc858dafe6e299ca516ece223ea698af5bd2",
+          "status": "cross_component_review",
+          "subject": "fix(agents): safely delegate legacy installer to canonical Python setup (#1223)"
+        },
+        {
+          "paths": [
+            "docs/agents/host-verification.md",
+            "scripts/check_agent_native_smoke_evidence.py",
+            "tests/unit/test_agent_native_smoke_evidence.py"
+          ],
+          "reason": "conventional test: test/style-only unless manually overridden",
+          "sha": "c7659f42b4bf5748403b187c5096a9c8bc57069a",
+          "status": "excluded",
+          "subject": "test(agents): validate evidence shapes for native host smoke (#1226)"
+        },
+        {
+          "paths": [
+            "docs/evidence/reference-boards/README.md",
+            "scripts/check_reference_board_attempt_readiness.py",
+            "tests/unit/test_reference_board_attempt_preflight.py"
+          ],
+          "reason": "no direct package-path changes; shared impact not automatically excluded",
+          "sha": "d8ca28e0dbddd8b57d7ddccf967b4e26135db073",
+          "status": "cross_component_review",
+          "subject": "feat(evals): fail-closed reproducible reference-board attempt preflight (#1225)"
+        },
+        {
+          "paths": [
+            ".claude-plugin/plugin.json",
+            ".release-please-manifest.json",
+            "CHANGELOG.md",
+            "CITATION.cff",
+            "README.md",
+            "compatibility.yaml",
+            "contracts/tool-effect-manifest.json",
+            "integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json",
+            "package.json",
+            "packages/mcp-npm/CHANGELOG.md",
+            "packages/mcp-npm/README.md",
+            "packages/mcp-npm/package-lock.json",
+            "packages/mcp-npm/package.json",
+            "packaging/mcpb/manifest.json",
+            "pyproject.toml",
+            "server.json",
+            "sonar-project.properties",
+            "src-tauri/CHANGELOG.md",
+            "src-tauri/Cargo.lock",
+            "src-tauri/Cargo.toml",
+            "src-tauri/tauri.conf.json",
+            "src/kicad_mcp/__init__.py",
+            "uv.lock"
+          ],
+          "reason": "version-bump release metadata commit; not a product feature",
+          "sha": "282c7499f67457bb247d2390379410f05e96a3e8",
+          "status": "excluded",
+          "subject": "chore(main): release mcp-server 4.3.0 (#1222)"
+        }
+      ],
+      "package_path": "packages/mcp-npm",
+      "previous_sha": "588891f5357e42cdc934b81349b78a160a5dac76",
+      "previous_tag": "mcp-npm-v4.2.0",
+      "summary": {
+        "cross_component_review": 5,
+        "excluded": 2,
+        "matched": 1,
+        "missing": 0,
+        "needs_review": 1
+      }
+    },
+    "mcp-server": {
+      "candidate_sha": "282c7499f67457bb247d2390379410f05e96a3e8",
+      "changelog_path": "CHANGELOG.md",
+      "commits": [
+        {
+          "paths": [
+            ".github/workflows/ci.yml",
+            ".github/workflows/publish-release.yml",
+            "docs/development/release-process.md",
+            "tests/unit/test_release_manual_publication.py"
+          ],
+          "reason": "explicit commit permalink in versioned notes",
+          "sha": "03107fc75e6b7dd2b32733c8e955df5f344069e8",
+          "status": "matched",
+          "subject": "fix(release): auto-publish reviewed release after trusted green main CI (#1215)"
+        },
+        {
+          "paths": [
+            ".github/workflows/publish-npm.yml",
+            ".github/workflows/release.yml",
+            "docs/registry.md",
+            "packages/mcp-npm/README.md",
+            "packages/mcp-npm/package.json",
+            "scripts/sync_mcp_metadata.py",
+            "tests/unit/test_public_metadata.py"
+          ],
+          "reason": "explicit commit permalink in versioned notes",
+          "sha": "52602f6c52d33235944e6b79ef2e2cc77f786c4a",
+          "status": "matched",
+          "subject": "fix(metadata): generate npm publication docs from canonical metadata (#1216)"
+        },
+        {
+          "paths": [
+            ".agents/skills/drc-check/SKILL.md",
+            ".agents/skills/fabrication-output/SKILL.md",
+            ".agents/skills/kicad-design-review/SKILL.md",
+            ".agents/skills/kicad-design-review/references/kicad-quality-gates.md",
+            ".agents/skills/kicad-design-review/references/manufacturing-release.md",
+            ".agents/skills/kicad-design-review/scripts/check_mcp_available.py",
+            ".agents/skills/pcb-design/SKILL.md",
+            ".agents/skills/schematic-review/SKILL.md",
+            ".agents/skills/visual-excellence/SKILL.md",
+            ".agents/skills/visual-excellence/reference/professional.png",
+            ".agents/skills/visual-excellence/reference/rushed.png",
+            ".agents/skills/wired-subcircuit-design/SKILL.md",
+            ".codex/config.example.toml",
+            ".github/copilot-instructions.md",
+            ".github/workflows/agent-runtime-config.yml",
+            ".github/workflows/ci.yml",
+            ".opencode/skills/kicad-design-review/references/kicad-quality-gates.md",
+            ".opencode/skills/kicad-design-review/references/manufacturing-release.md",
+            ".opencode/skills/kicad-design-review/scripts/check_mcp_available.py",
+            ".opencode/skills/pcb-design/SKILL.md",
+            "README.md",
+            "docs/agent-runtime-config.md",
+            "docs/agents/codex.md",
+            "docs/agents/compatibility.md",
+            "docs/agents/index.md",
+            "docs/agents/progressive-disclosure.md",
+            "docs/examples/clients/codex-config.toml",
+            "integrations/codex/README.md",
+            "integrations/codex/config.toml.example",
+            "scripts/sync_agent_skills.py",
+            "skills/kicad-design-review/scripts/check_mcp_available.py",
+            "tests/unit/test_agent_skills_distribution.py"
+          ],
+          "reason": "explicit commit permalink in versioned notes",
+          "sha": "ab84ff35454da91f4bc3ffe781ddc63d12030384",
+          "status": "matched",
+          "subject": "fix(agents): one canonical KiCad skill source and consistent client setup (#1217)"
+        },
+        {
+          "paths": [
+            ".github/workflows/ci.yml",
+            "docs/agents/compatibility.md",
+            "docs/agents/gemini-cli.md",
+            "docs/agents/host-verification.md",
+            "docs/agents/mcp-extension-research.md",
+            "integrations/common/agent-host-evidence.json",
+            "integrations/gemini-cli/kicad-mcp-pro/README.md",
+            "integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/drc-check/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/fabrication-output/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/kicad-design-review/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/kicad-design-review/references/kicad-quality-gates.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/kicad-design-review/references/manufacturing-release.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/kicad-design-review/scripts/check_mcp_available.py",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/pcb-design/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/schematic-review/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/visual-excellence/SKILL.md",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/visual-excellence/reference/professional.png",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/visual-excellence/reference/rushed.png",
+            "integrations/gemini-cli/kicad-mcp-pro/skills/wired-subcircuit-design/SKILL.md",
+            "scripts/check_agent_host_evidence.py",
+            "scripts/sync_agent_skills.py",
+            "scripts/sync_mcp_metadata.py",
+            "tests/unit/test_agent_host_evidence.py"
+          ],
+          "reason": "explicit commit permalink in versioned notes",
+          "sha": "7daa4d3e475cb66713001ffd44e4b74deef8fbbc",
+          "status": "matched",
+          "subject": "feat(agents): pilot Gemini extension and evidence-scoped host checks (#1218)"
+        },
+        {
+          "paths": [
+            "docs/evidence/agent-host-smoke-history.md",
+            "docs/public-listing.md",
+            "docs/status/distribution-readiness.md",
+            "tests/unit/test_agent_host_evidence_history.py"
+          ],
+          "reason": "explicit commit permalink in versioned notes",
+          "sha": "ad3bb6780ece2d4e700674719a253c369f1f06b7",
+          "status": "matched",
+          "subject": "docs(agents): distinguish historical host tests from current qualification (#1224)"
+        },
+        {
+          "paths": [
+            "docs/agents/install.md",
+            "integrations/AGENTS.md",
+            "integrations/common/install-kicad-mcp.mjs",
+            "src/kicad_mcp/server.py",
+            "tests/js/install-kicad-mcp-security.test.mjs",
+            "tests/unit/test_issue_731_onboarding.py"
+          ],
+          "reason": "explicit commit permalink in versioned notes",
+          "sha": "0fedbc858dafe6e299ca516ece223ea698af5bd2",
+          "status": "matched",
+          "subject": "fix(agents): safely delegate legacy installer to canonical Python setup (#1223)"
+        },
+        {
+          "paths": [
+            "docs/agents/host-verification.md",
+            "scripts/check_agent_native_smoke_evidence.py",
+            "tests/unit/test_agent_native_smoke_evidence.py"
+          ],
+          "reason": "conventional test: test/style-only unless manually overridden",
+          "sha": "c7659f42b4bf5748403b187c5096a9c8bc57069a",
+          "status": "excluded",
+          "subject": "test(agents): validate evidence shapes for native host smoke (#1226)"
+        },
+        {
+          "paths": [
+            "docs/evidence/reference-boards/README.md",
+            "scripts/check_reference_board_attempt_readiness.py",
+            "tests/unit/test_reference_board_attempt_preflight.py"
+          ],
+          "reason": "feat change has no matching immutable commit link in release notes",
+          "sha": "d8ca28e0dbddd8b57d7ddccf967b4e26135db073",
+          "status": "missing",
+          "subject": "feat(evals): fail-closed reproducible reference-board attempt preflight (#1225)"
+        },
+        {
+          "paths": [
+            ".claude-plugin/plugin.json",
+            ".release-please-manifest.json",
+            "CHANGELOG.md",
+            "CITATION.cff",
+            "README.md",
+            "compatibility.yaml",
+            "contracts/tool-effect-manifest.json",
+            "integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json",
+            "package.json",
+            "packages/mcp-npm/CHANGELOG.md",
+            "packages/mcp-npm/README.md",
+            "packages/mcp-npm/package-lock.json",
+            "packages/mcp-npm/package.json",
+            "packaging/mcpb/manifest.json",
+            "pyproject.toml",
+            "server.json",
+            "sonar-project.properties",
+            "src-tauri/CHANGELOG.md",
+            "src-tauri/Cargo.lock",
+            "src-tauri/Cargo.toml",
+            "src-tauri/tauri.conf.json",
+            "src/kicad_mcp/__init__.py",
+            "uv.lock"
+          ],
+          "reason": "version-bump release metadata commit; not a product feature",
+          "sha": "282c7499f67457bb247d2390379410f05e96a3e8",
+          "status": "excluded",
+          "subject": "chore(main): release mcp-server 4.3.0 (#1222)"
+        }
+      ],
+      "package_path": ".",
+      "previous_sha": "588891f5357e42cdc934b81349b78a160a5dac76",
+      "previous_tag": "mcp-server-v4.2.0",
+      "summary": {
+        "cross_component_review": 0,
+        "excluded": 2,
+        "matched": 6,
+        "missing": 1,
+        "needs_review": 0
+      }
+    }
+  },
+  "previous_version": "4.2.0",
+  "release_version": "4.3.0",
+  "schema": 1
+}
