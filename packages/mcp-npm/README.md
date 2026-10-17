@@ -21,13 +21,13 @@ The npm tarball **does not bundle** KiCad, Python, or the MCP server.
 
 ```bash
 # Run the version-matched launcher without a global npm installation.
-npx --yes kicad-mcp-pro@4.3.0 --help
+npx --yes kicad-mcp-pro@4.4.0 --help
 
 # Direct Python alternative (does not require Node.js).
-uvx kicad-mcp-pro@4.3.0 --help
+uvx kicad-mcp-pro@4.4.0 --help
 ```
 
-The launcher invokes `uvx kicad-mcp-pro@4.3.0` by default. For controlled
+The launcher invokes `uvx kicad-mcp-pro@4.4.0` by default. For controlled
 compatibility testing, `KICAD_MCP_PRO_PYPI_VERSION` can override the Python
 package version; normal use should keep both versions matched.
 
