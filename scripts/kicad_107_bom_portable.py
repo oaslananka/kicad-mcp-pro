@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import tempfile
@@ -22,6 +23,24 @@ PROJECTS = ("PortableBom107A", "PortableBom107B")
 SAVED_NAME = re.compile(r"BOM_SAVED_[AB]_[0-9a-f]{12}\.csv\Z")
 CANCELLED_NAME = "BOM_CANCEL_NOT_PERSISTED_107.csv"
 MAX_MANIFEST_BYTES = 16384
+# KiCad 10.0.7 expands a minimal .kicad_pro on first GUI close.
+NORMALIZED_PROJECT_KEYS = frozenset(
+    {
+        "board",
+        "boards",
+        "component_class_settings",
+        "cvpcb",
+        "erc",
+        "libraries",
+        "meta",
+        "net_settings",
+        "pcbnew",
+        "schematic",
+        "sheets",
+        "text_variables",
+        "tuning_profiles",
+    }
+)
 
 
 class FixtureError(Exception):
@@ -149,20 +168,115 @@ def _checked_record(workspace: Path, record: object, *, index: int) -> dict[str,
         raise FixtureError("fixture-unexpected-bom-output")
     project_bytes = _checked_bytes(project_dir / f"{name}.kicad_pro")
     schematic_bytes = _checked_bytes(project_dir / f"{name}.kicad_sch")
-    if _digest(project_bytes) != record.get("projectSha256"):
+    baseline_sha = record.get("baselineProjectSha256")
+    if baseline_sha is not None and (
+        not isinstance(baseline_sha, str) or not re.fullmatch(r"[0-9a-f]{64}", baseline_sha)
+    ):
+        raise FixtureError("fixture-baseline-invalid")
+    expected_sha = baseline_sha if baseline_sha is not None else record.get("projectSha256")
+    if _digest(project_bytes) != expected_sha:
         raise FixtureError("fixture-project-file-changed")
     if _digest(schematic_bytes) != record.get("schematicSha256"):
         raise FixtureError("fixture-schematic-file-changed")
     project = _read_json(project_dir / f"{name}.kicad_pro")
-    if not isinstance(project, dict) or project.get("schematic") != {"bom_export_filename": saved}:
+    if not isinstance(project, dict):
         raise FixtureError("fixture-project-content-changed")
+    if baseline_sha is None:
+        if project.get("schematic") != {"bom_export_filename": saved}:
+            raise FixtureError("fixture-project-content-changed")
+    else:
+        _check_normalized_project(project, saved)
     return {"name": name, "savedFilename": saved}
+
+
+def _check_normalized_project(project: dict[str, Any], saved: str) -> None:
+    """Allow *only* known native KiCad 10.0.7 top-level default settings."""
+    required = {"board", "boards", "meta", "pcbnew", "schematic"}
+    if not required.issubset(project) or not set(project).issubset(NORMALIZED_PROJECT_KEYS):
+        raise FixtureError("fixture-project-normalization-unexpected")
+    if any(not isinstance(project[key], dict) for key in required - {"boards"}):
+        raise FixtureError("fixture-project-normalization-unexpected")
+    if not isinstance(project["boards"], list):
+        raise FixtureError("fixture-project-normalization-unexpected")
+    if project["schematic"].get("bom_export_filename") != saved:
+        raise FixtureError("fixture-project-content-changed")
+
+
+def arm_baseline(workspace: Path) -> dict[str, Any]:
+    """Seal native one-time initialization *before* the actual BOM GUI test.
+
+    Explicit operator step.  Never automatically accept changed project bytes
+    during post-test verification, and never claim this attests a GUI run.
+    """
+    if workspace.is_symlink() or not workspace.is_dir():
+        raise FixtureError("fixture-workspace-is-not-a-directory")
+    records = _read_manifest(workspace)
+    manifest_path = workspace / "manifest.json"
+    manifest = _read_json(manifest_path)
+    if not isinstance(manifest, dict) or manifest.get("baselineState") is not None:
+        raise FixtureError("fixture-baseline-already-armed")
+    sealed: list[str] = []
+    for index, record in enumerate(records):
+        if not isinstance(record, dict) or record.get("name") != PROJECTS[index]:
+            raise FixtureError("fixture-project-name-mismatch")
+        saved = record.get("savedFilename")
+        if (
+            not isinstance(saved, str)
+            or not SAVED_NAME.fullmatch(saved)
+            or f"_{'AB'[index]}_" not in saved
+        ):
+            raise FixtureError("fixture-saved-filename-invalid")
+        if record.get("baselineProjectSha256") is not None:
+            raise FixtureError("fixture-baseline-already-armed")
+        project_dir = workspace / PROJECTS[index]
+        if project_dir.is_symlink() or not project_dir.is_dir():
+            raise FixtureError("fixture-project-directory-invalid")
+        if any(x.suffix.lower() == ".csv" for x in project_dir.iterdir()):
+            raise FixtureError("fixture-unexpected-bom-output")
+        schematic = _checked_bytes(project_dir / f"{PROJECTS[index]}.kicad_sch")
+        if _digest(schematic) != record.get("schematicSha256"):
+            raise FixtureError("fixture-schematic-file-changed")
+        project_path = project_dir / f"{PROJECTS[index]}.kicad_pro"
+        project_bytes = _checked_bytes(project_path)
+        if _digest(project_bytes) == record.get("projectSha256"):
+            raise FixtureError("fixture-project-not-initialized")
+        project = _read_json(project_path)
+        if not isinstance(project, dict):
+            raise FixtureError("fixture-project-normalization-unexpected")
+        _check_normalized_project(project, record.get("savedFilename", ""))
+        sealed.append(_digest(project_bytes))
+    if records[0]["savedFilename"] == records[1]["savedFilename"]:
+        raise FixtureError("fixture-cross-project-sentinels-identical")
+    for record, digest in zip(manifest["projects"], sealed, strict=True):
+        record["baselineProjectSha256"] = digest
+    manifest["baselineState"] = "armed"
+    # Prevent partially written manifests; stay in the same bounded workspace.
+    replacement = workspace / "manifest.json.pending"
+    if replacement.exists() or replacement.is_symlink():
+        raise FixtureError("fixture-baseline-pending-file-exists")
+    try:
+        replacement.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        os.replace(replacement, manifest_path)
+    finally:
+        replacement.unlink(missing_ok=True)
+    result = _report(status="baseline-armed", project_names=list(PROJECTS))
+    result["projectNormalizationObserved"] = True
+    result["nativeGuiQualified"] = False
+    return result
 
 
 def verify_integrity(workspace: Path) -> list[dict[str, str]]:
     if workspace.is_symlink() or not workspace.is_dir():
         raise FixtureError("fixture-workspace-is-not-a-directory")
     manifest = _read_manifest(workspace)
+    marker = _read_json(workspace / "manifest.json")
+    if not isinstance(marker, dict):
+        raise FixtureError("fixture-invalid-manifest")
+    armed = marker.get("baselineState") == "armed"
+    if marker.get("baselineState") not in (None, "armed"):
+        raise FixtureError("fixture-baseline-invalid")
+    if any(("baselineProjectSha256" in record) != armed for record in manifest):
+        raise FixtureError("fixture-baseline-invalid")
     checked = [
         _checked_record(workspace, record, index=index) for index, record in enumerate(manifest)
     ]
@@ -195,7 +309,12 @@ def verify(
         status="operator-attested" if operator_supplied else "integrity-pass",
         project_names=list(PROJECTS),
     )
-    result["projectSha256Unchanged"] = True
+    marker = _read_json(workspace / "manifest.json")
+    armed = isinstance(marker, dict) and marker.get("baselineState") == "armed"
+    # The prepared files may have been expanded by KiCad *before* baseline.
+    result["projectSha256Unchanged"] = not armed
+    result["projectSha256UnchangedSinceBaseline"] = True
+    result["projectNormalizationObserved"] = armed
     result["noBomFilesCreated"] = True
     result["savedNames"] = [r["savedFilename"] for r in records]
     return result
@@ -205,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subcommands = parser.add_subparsers(dest="action", required=True)
     subcommands.add_parser("prepare", help="Create a secure random OS-temp session")
-    for action in ("verify", "locate"):
+    for action in ("verify", "locate", "baseline"):
         subcommands.add_parser(action).add_argument("--session", required=True)
     # Only the integrity-check subcommand accepts optional GUI observations.
     audit = subcommands.choices["verify"]
@@ -227,18 +346,21 @@ def main(argv: list[str] | None = None) -> int:
             result = prepare()
         else:
             workspace = _session_workspace(args.session)
-            if args.action == "locate":
+            if args.action == "baseline":
+                result = arm_baseline(workspace)
+            elif args.action == "locate":
                 verify_integrity(workspace)
                 # Local, explicitly requested operator output only; not in JSON evidence.
                 print(workspace)
                 return 0
-            result = verify(
-                workspace,
-                observed_a=args.observed_a,
-                observed_b=args.observed_b,
-                reopened_b=args.reopened_b,
-                cancelled_b=args.cancelled_b,
-            )
+            else:
+                result = verify(
+                    workspace,
+                    observed_a=args.observed_a,
+                    observed_b=args.observed_b,
+                    reopened_b=args.reopened_b,
+                    cancelled_b=args.cancelled_b,
+                )
     except (FixtureError, OSError) as exc:
         reason = (
             str(exc) if isinstance(exc, FixtureError) else "fixture-filesystem-operation-failed"
