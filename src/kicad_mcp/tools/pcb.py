@@ -2137,6 +2137,11 @@ def _apply_schematic_footprint_fields(block: str, properties: dict[str, str]) ->
     for name, value in properties.items():
         if name in {"Reference", "Value", "Footprint"}:
             continue
+        # KiCad normalizes the schematic Datasheet placeholder "~" to an
+        # empty field in its exported netlist/parity model. Copying "~"
+        # verbatim to PCB creates a false footprint_symbol_field_mismatch.
+        if name == "Datasheet" and value == "~":
+            value = ""
         existing = re.search(rf"\(property\s+{re.escape(_sexpr_string(name))}\s+", block)
         if existing is not None:
             block = _replace_property_value(block, name, value)

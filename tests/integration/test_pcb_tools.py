@@ -326,7 +326,8 @@ async def test_pcb_sync_from_schematic_adds_missing_footprints(
     assert pcb_text.count('(footprint "Resistor_SMD:R_0805"') == 2
     assert '(property "Reference" "R1"' in pcb_text
     assert '(property "Reference" "R2"' in pcb_text
-    assert pcb_text.count('(property "Datasheet" "~"') == 2
+    assert pcb_text.count('(property "Datasheet" ""') == 2
+    assert '(property "Datasheet" "~"' not in pcb_text
     assert '(net "VIN")' in pcb_text
     assert '(net "MID")' in pcb_text
     assert '(net "GND")' in pcb_text
