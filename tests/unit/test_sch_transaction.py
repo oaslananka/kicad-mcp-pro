@@ -58,8 +58,24 @@ def test_empty_plan_rejected() -> None:
 
 
 def test_component_requires_reference_and_lib_id() -> None:
-    with pytest.raises(PlanValidationError):
+    with pytest.raises(PlanValidationError, match="Each component needs a reference and lib_id."):
         plan_from_spec({"components": [{"reference": "R1"}]})
+    with pytest.raises(PlanValidationError, match="Each component needs a reference and lib_id."):
+        plan_from_spec({"components": [{"lib_id": "Device:R"}]})
+
+
+def test_component_not_dict_rejected() -> None:
+    with pytest.raises(PlanValidationError, match="Each component must be an object."):
+        plan_from_spec({"components": ["not-a-dict"]})
+
+
+def test_label_validation_branches() -> None:
+    with pytest.raises(PlanValidationError, match="Each label must be an object."):
+        plan_from_spec({"labels": ["not-a-dict"]})
+    with pytest.raises(PlanValidationError, match="Each label needs text."):
+        plan_from_spec({"labels": [{"text": "   "}]})
+    with pytest.raises(PlanValidationError, match="Label x/y must be numbers."):
+        plan_from_spec({"labels": [{"text": "VCC", "x": "invalid"}]})
 
 
 def test_plan_id_is_deterministic() -> None:

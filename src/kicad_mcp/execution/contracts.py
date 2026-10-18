@@ -11,6 +11,29 @@ from typing import Any, cast
 from kicad_mcp.models.tool_result import ToolResult
 
 
+def _normalize_tool_result(
+    raw_result: object,
+    resolved_name: str,
+    kwargs: dict[str, object],
+) -> ToolResult:
+    if isinstance(raw_result, ToolResult):
+        return raw_result
+    if isinstance(raw_result, dict):
+        return ToolResult(
+            ok=bool(raw_result.get("ok", True)),
+            changed=bool(raw_result.get("changed", False)),
+            dry_run=bool(raw_result.get("dry_run", kwargs.get("dry_run", False))),
+            tool_name=resolved_name,
+            extra=raw_result,
+        )
+    return ToolResult.success(
+        resolved_name,
+        changed=False,
+        dry_run=bool(kwargs.get("dry_run", False)),
+        extra={"raw": str(raw_result)},
+    )
+
+
 def tool_contract(
     tool_name: str | None = None,
     writes_files: bool = False,
@@ -27,23 +50,7 @@ def tool_contract(
             start = time.monotonic()
             try:
                 raw_result = await fn(*args, **kwargs)
-                if isinstance(raw_result, ToolResult):
-                    result = raw_result
-                elif isinstance(raw_result, dict):
-                    result = ToolResult(
-                        ok=bool(raw_result.get("ok", True)),
-                        changed=bool(raw_result.get("changed", False)),
-                        dry_run=bool(raw_result.get("dry_run", kwargs.get("dry_run", False))),
-                        tool_name=resolved_name,
-                        extra=raw_result,
-                    )
-                else:
-                    result = ToolResult.success(
-                        resolved_name,
-                        changed=False,
-                        dry_run=bool(kwargs.get("dry_run", False)),
-                        extra={"raw": str(raw_result)},
-                    )
+                result = _normalize_tool_result(raw_result, resolved_name, kwargs)
             except Exception as exc:  # noqa: BLE001
                 result = ToolResult.failure(resolved_name, str(exc))
 

@@ -43,8 +43,10 @@ async def test_sch_upgrade_fails_without_project_or_input() -> None:
 @pytest.mark.anyio
 async def test_sch_upgrade_runs_cli(sample_project: Path, monkeypatch) -> None:
     """sch_upgrade should invoke kicad-cli and report success."""
+    invoked: list[list[str]] = []
 
     def fake_run_cli(*cmd: str) -> tuple[int, str, str]:
+        invoked.append(list(cmd))
         return (0, "", "")
 
     monkeypatch.setattr("kicad_mcp.tools.upgrade._run_cli", fake_run_cli)
@@ -52,9 +54,10 @@ async def test_sch_upgrade_runs_cli(sample_project: Path, monkeypatch) -> None:
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
 
     result = await call_tool_text(
-        server, "sch_upgrade", {"input_file": "demo.kicad_sch", "dry_run": False}
+        server, "sch_upgrade", {"input_file": "demo.kicad_sch", "force": True, "dry_run": False}
     )
     assert "Schematic upgraded and saved" in result
+    assert "--force" in invoked[0]
 
 
 @pytest.mark.anyio

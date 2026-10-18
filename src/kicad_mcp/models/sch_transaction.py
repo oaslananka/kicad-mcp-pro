@@ -68,6 +68,35 @@ def compute_plan_id(spec: dict[str, Any]) -> str:
     return f"plan_{digest[:12]}"
 
 
+def _parse_planned_component(raw: object) -> PlannedComponent:
+    if not isinstance(raw, dict):
+        raise PlanValidationError("Each component must be an object.")
+    reference = str(raw.get("reference", "")).strip()
+    lib_id = str(raw.get("lib_id", "")).strip()
+    if not reference or not lib_id:
+        raise PlanValidationError("Each component needs a reference and lib_id.")
+    return PlannedComponent(
+        reference=reference,
+        lib_id=lib_id,
+        value=str(raw.get("value", "")).strip(),
+        footprint=str(raw.get("footprint", "")).strip(),
+    )
+
+
+def _parse_planned_label(raw: object) -> PlannedLabel:
+    if not isinstance(raw, dict):
+        raise PlanValidationError("Each label must be an object.")
+    text = str(raw.get("text", "")).strip()
+    if not text:
+        raise PlanValidationError("Each label needs text.")
+    try:
+        x = float(raw.get("x", 0.0))
+        y = float(raw.get("y", 0.0))
+    except (TypeError, ValueError) as exc:
+        raise PlanValidationError("Label x/y must be numbers.") from exc
+    return PlannedLabel(text=text, x=x, y=y)
+
+
 def plan_from_spec(spec: dict[str, Any]) -> SchPlan:
     """Validate and normalize a plan spec into a :class:`SchPlan`.
 
@@ -86,36 +115,8 @@ def plan_from_spec(spec: dict[str, Any]) -> SchPlan:
 
     title = str(spec.get("title", "")).strip() or "Untitled plan"
 
-    components: list[PlannedComponent] = []
-    for raw in spec.get("components", []) or []:
-        if not isinstance(raw, dict):
-            raise PlanValidationError("Each component must be an object.")
-        reference = str(raw.get("reference", "")).strip()
-        lib_id = str(raw.get("lib_id", "")).strip()
-        if not reference or not lib_id:
-            raise PlanValidationError("Each component needs a reference and lib_id.")
-        components.append(
-            PlannedComponent(
-                reference=reference,
-                lib_id=lib_id,
-                value=str(raw.get("value", "")).strip(),
-                footprint=str(raw.get("footprint", "")).strip(),
-            )
-        )
-
-    labels: list[PlannedLabel] = []
-    for raw in spec.get("labels", []) or []:
-        if not isinstance(raw, dict):
-            raise PlanValidationError("Each label must be an object.")
-        text = str(raw.get("text", "")).strip()
-        if not text:
-            raise PlanValidationError("Each label needs text.")
-        try:
-            x = float(raw.get("x", 0.0))
-            y = float(raw.get("y", 0.0))
-        except (TypeError, ValueError) as exc:
-            raise PlanValidationError("Label x/y must be numbers.") from exc
-        labels.append(PlannedLabel(text=text, x=x, y=y))
+    components = [_parse_planned_component(raw) for raw in spec.get("components", []) or []]
+    labels = [_parse_planned_label(raw) for raw in spec.get("labels", []) or []]
 
     nets = tuple(str(net).strip() for net in (spec.get("nets", []) or []) if str(net).strip())
 

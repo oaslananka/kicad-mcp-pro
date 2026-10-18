@@ -60,6 +60,14 @@ def test_config_derives_project_dir_from_explicit_files(tmp_path: Path, fake_cli
     assert cfg.output_dir == project / "output"
 
 
+def test_config_infer_project_dir_returns_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = KiCadMCPConfig(project_dir=None, project_file=None, pcb_file=None, sch_file=None)
+    assert cfg._infer_project_dir() is None
+
+
 def test_mount_path_is_normalized_without_trailing_slash(sample_project: Path) -> None:
     _ = sample_project
     cfg = KiCadMCPConfig(mount_path="api/")
