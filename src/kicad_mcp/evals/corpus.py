@@ -112,6 +112,34 @@ def _parse_violation_spec(raw: object) -> ViolationSpec | None:
     return None
 
 
+def _validate_expected_gates(gates: object, project_id: str) -> list[str]:
+    """Validate named gates without changing schema error ordering."""
+    errors: list[str] = []
+    valid_gates = {"erc", "drc", "placement", "manufacturing", "project"}
+    if isinstance(gates, list):
+        for gate in gates:
+            if gate not in valid_gates:
+                errors.append(f"Project {project_id!r}: unknown gate {gate!r}")
+    else:
+        errors.append(f"Project {project_id!r}: expected_gates must be a list")
+    return errors
+
+
+def _validate_expected_violations(violations: object, project_id: str) -> list[str]:
+    """Validate each violation expression while preserving error messages."""
+    errors: list[str] = []
+    if isinstance(violations, dict):
+        for gate_key, spec in violations.items():
+            if _parse_violation_spec(spec) is None:
+                errors.append(
+                    f"Project {project_id!r}: expected_violations.{gate_key!r} has "
+                    f"invalid spec {spec!r}"
+                )
+    else:
+        errors.append(f"Project {project_id!r}: expected_violations must be a mapping")
+    return errors
+
+
 def _validate_project_schema(raw: dict[str, Any], project_id: str) -> list[str]:
     """Validate a single project entry schema. Returns a list of error messages."""
     errors: list[str] = []
@@ -124,25 +152,8 @@ def _validate_project_schema(raw: dict[str, Any], project_id: str) -> list[str]:
     if outcome not in ("pass", "fail"):
         errors.append(f"Project {project_id!r}: expected_outcome must be 'pass' or 'fail'")
 
-    gates = raw.get("expected_gates", [])
-    valid_gates = {"erc", "drc", "placement", "manufacturing", "project"}
-    if isinstance(gates, list):
-        for g in gates:
-            if g not in valid_gates:
-                errors.append(f"Project {project_id!r}: unknown gate {g!r}")
-    else:
-        errors.append(f"Project {project_id!r}: expected_gates must be a list")
-
-    violations = raw.get("expected_violations", {})
-    if isinstance(violations, dict):
-        for gate_key, spec in violations.items():
-            if _parse_violation_spec(spec) is None:
-                errors.append(
-                    f"Project {project_id!r}: expected_violations.{gate_key!r} has "
-                    f"invalid spec {spec!r}"
-                )
-    else:
-        errors.append(f"Project {project_id!r}: expected_violations must be a mapping")
+    errors.extend(_validate_expected_gates(raw.get("expected_gates", []), project_id))
+    errors.extend(_validate_expected_violations(raw.get("expected_violations", {}), project_id))
 
     return errors
 

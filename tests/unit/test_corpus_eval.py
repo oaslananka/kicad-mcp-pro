@@ -78,6 +78,49 @@ class TestValidateProjectSchema:
         missing = [e for e in errors if "missing required field" in e]
         assert len(missing) >= 3  # dir, kicad_version, expected_outcome
 
+    @pytest.mark.parametrize(
+        ("gates", "violations", "expected"),
+        [
+            (
+                ["erc", "unknown"],
+                {"drc": "n/a"},
+                (
+                    "Project 'probe': unknown gate 'unknown'",
+                    "Project 'probe': expected_violations.'drc' has invalid spec 'n/a'",
+                ),
+            ),
+            (
+                "erc",
+                [],
+                (
+                    "Project 'probe': expected_gates must be a list",
+                    "Project 'probe': expected_violations must be a mapping",
+                ),
+            ),
+            (["erc"], {"erc": 0, "drc": ">=2"}, ()),
+            (
+                [],
+                {"drc": object()},
+                ("Project 'probe': expected_violations.'drc' has invalid spec ",),
+            ),
+        ],
+    )
+    def test_schema_error_order_and_message_contract(
+        self, gates: object, violations: object, expected: tuple[str, ...]
+    ) -> None:
+        raw = {
+            "id": "probe",
+            "dir": "fixtures/probe",
+            "kicad_version": "10.0.x",
+            "expected_outcome": "pass",
+            "expected_gates": gates,
+            "expected_violations": violations,
+        }
+        errors = _validate_project_schema(raw, "probe")
+        assert len(errors) == len(expected)
+        for actual, prefix in zip(errors, expected, strict=True):
+            assert actual.startswith(prefix)
+
 
 # ── Violation matching ────────────────────────────────────────────────────────
 
