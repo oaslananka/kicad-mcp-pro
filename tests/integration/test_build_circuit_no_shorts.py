@@ -170,3 +170,82 @@ async def test_unsafe_opt_in_still_routes_wires(sample_project, mock_kicad) -> N
     # The opt-in path routes real spans between parts, so at least one wire is
     # longer than a collision-safe stub — the very geometry the default avoids.
     assert any(length > _MAX_SAFE_STUB_MM for length in lengths)
+
+
+@pytest.mark.anyio
+async def test_three_unit_opamp_nets_resolve_each_pin_instead_of_last_unit(
+    sample_project, mock_kicad
+) -> None:
+    """A dual op-amp and its power unit share U1 without losing earlier pins (#1314)."""
+    pins = ("1", "2", "3", "7", "6", "5", "8", "4")
+    symbols = [
+        {
+            "library": "MultiUnit",
+            "symbol_name": "DualChild",
+            "reference": "U1",
+            "value": "DualChild",
+            "x_mm": x,
+            "y_mm": 50.8,
+            "unit": unit,
+        }
+        for unit, x in ((1, 50.8), (2, 101.6), (3, 152.4))
+    ]
+    symbols.extend(
+        {
+            "library": "Device",
+            "symbol_name": "R",
+            "reference": f"R{i}",
+            "value": "10k",
+            "x_mm": 50.8 + 25.4 * i,
+            "y_mm": 101.6,
+        }
+        for i in range(1, 5)
+    )
+    nets = [
+        {
+            "name": f"PIN_{pin}",
+            "endpoints": [f"U1.{pin}", f"R{index // 2 + 1}.{index % 2 + 1}"],
+        }
+        for index, pin in enumerate(pins)
+    ]
+    result = await call_tool_text(
+        build_server("schematic"), "sch_build_circuit", {"symbols": symbols, "nets": nets}
+    )
+    assert "Generated 16 collision-safe terminal stub(s)" in result
+    assert "WARNING" not in result
+    schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
+    for pin in pins:
+        assert schematic.count(f'(global_label "PIN_{pin}"') >= 2
+
+
+@pytest.mark.anyio
+async def test_reused_reference_with_conflicting_pin_coordinates_fails_closed(
+    sample_project, mock_kicad
+) -> None:
+    """Two distinct physical positions cannot claim the same reference and pad."""
+    result = await call_tool_text(
+        build_server("schematic"),
+        "sch_analyze_net_compilation",
+        {
+            "symbols": [
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "reference": "R1",
+                    "value": "10k",
+                    "x_mm": 50.8,
+                    "y_mm": 50.8,
+                },
+                {
+                    "library": "Device",
+                    "symbol_name": "R",
+                    "reference": "R1",
+                    "value": "10k",
+                    "x_mm": 101.6,
+                    "y_mm": 50.8,
+                },
+            ],
+            "nets": [{"name": "SIGNAL", "endpoints": ["R1.1", "R1.2"]}],
+        },
+    )
+    assert "Ambiguous pin R1.1" in result

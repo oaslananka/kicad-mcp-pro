@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from kicad_mcp.models.schematic import AddSymbolInput
 from kicad_mcp.tools import schematic as sch
 
 _STATS = {
@@ -108,3 +109,36 @@ def test_net_compilation_report_announces_routing_mode() -> None:
         terminalized=False,
     )
     assert "routed wires (unsafe)" in unsafe
+
+
+def test_multi_unit_shared_pin_name_alias_does_not_silently_select_unit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A repeated alias on different units must require numeric pin identity."""
+    monkeypatch.setattr(
+        sch,
+        "get_pin_positions",
+        lambda _library, _name, x, y, _rotation, unit: {str(unit): (x, y)},
+    )
+    monkeypatch.setattr(
+        sch,
+        "get_pin_alias_positions",
+        lambda _library, _name, x, y, _rotation, _unit: {"OUT": (x, y)},
+    )
+    symbols = [
+        AddSymbolInput.model_validate(
+            {
+                "library": "MultiUnit",
+                "symbol_name": "DualChild",
+                "reference": "U1",
+                "value": "DualChild",
+                "x_mm": x,
+                "y_mm": 50.8,
+                "unit": unit,
+            }
+        )
+        for unit, x in ((1, 50.8), (2, 101.6), (3, 152.4))
+    ]
+    points, aliases, _, _ = sch._netlist_symbol_geometry(symbols, snap_to_grid=True)
+    assert set(points["U1"]) == {"1", "2", "3"}
+    assert "OUT" not in aliases["U1"]

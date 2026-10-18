@@ -4812,6 +4812,65 @@ def _terminal_label_spec(
     return spec
 
 
+def _netlist_symbol_geometry(
+    symbols: list[AddSymbolInput],
+    snap_to_grid: bool,
+) -> tuple[
+    dict[str, dict[str, tuple[float, float]]],
+    dict[str, dict[str, tuple[float, float]]],
+    dict[str, tuple[float, float]],
+    dict[
+        tuple[str, tuple[float, float]], tuple[tuple[float, float], tuple[tuple[float, float], ...]]
+    ],
+]:
+    """Combine pins from every placed unit sharing a reference.
+
+    A multi-unit component has one reference but multiple symbol instances.
+    Replacing the map per instance silently disconnects earlier units.
+    """
+    points: dict[str, dict[str, tuple[float, float]]] = {}
+    aliases: dict[str, dict[str, tuple[float, float]]] = {}
+    ambiguous_aliases: dict[str, set[str]] = {}
+    centers: dict[str, tuple[float, float]] = {}
+    geometry: dict[
+        tuple[str, tuple[float, float]],
+        tuple[tuple[float, float], tuple[tuple[float, float], ...]],
+    ] = {}
+    for symbol in symbols:
+        center = _snap_point(symbol.x_mm, symbol.y_mm, snap_to_grid and symbol.snap_to_grid)
+        ref = symbol.reference
+        centers[ref] = center
+        unit_points = get_pin_positions(
+            symbol.library, symbol.symbol_name, *center, symbol.rotation, symbol.unit
+        )
+        reference_pins = points.setdefault(ref, {})
+        for number, point in unit_points.items():
+            previous = reference_pins.get(number)
+            if previous is not None and _point_key(*previous) != _point_key(*point):
+                raise ValueError(
+                    f"Ambiguous pin {ref}.{number}: multiple units place it at "
+                    "different coordinates"
+                )
+            reference_pins[number] = point
+            geometry[(ref, _point_key(*point))] = (center, tuple(unit_points.values()))
+        reference_aliases = aliases.setdefault(ref, {})
+        ambiguous = ambiguous_aliases.setdefault(ref, set())
+        for name, point in get_pin_alias_positions(
+            symbol.library, symbol.symbol_name, *center, symbol.rotation, symbol.unit
+        ).items():
+            # The same named pin may appear in different units. Never silently
+            # choose one physical location for an ambiguous pin-name endpoint.
+            if name in ambiguous:
+                continue
+            previous = reference_aliases.get(name)
+            if previous is not None and _point_key(*previous) != _point_key(*point):
+                reference_aliases.pop(name, None)
+                ambiguous.add(name)
+            else:
+                reference_aliases[name] = point
+    return points, aliases, centers, geometry
+
+
 def _plan_netlist_pin_terminals(
     symbols: list[AddSymbolInput],
     powers: list[PowerSymbolInput],
@@ -4834,28 +4893,9 @@ def _plan_netlist_pin_terminals(
     conventional power symbols.  Same-named terminals connect by name rather than
     by accidental wire geometry.
     """
-    symbol_points: dict[str, dict[str, tuple[float, float]]] = {}
-    symbol_pin_aliases: dict[str, dict[str, tuple[float, float]]] = {}
-    symbol_centers: dict[str, tuple[float, float]] = {}
-    for symbol in symbols:
-        x, y = _snap_point(symbol.x_mm, symbol.y_mm, snap_to_grid and symbol.snap_to_grid)
-        symbol_centers[symbol.reference] = (x, y)
-        symbol_points[symbol.reference] = get_pin_positions(
-            symbol.library,
-            symbol.symbol_name,
-            x,
-            y,
-            symbol.rotation,
-            symbol.unit,
-        )
-        symbol_pin_aliases[symbol.reference] = get_pin_alias_positions(
-            symbol.library,
-            symbol.symbol_name,
-            x,
-            y,
-            symbol.rotation,
-            symbol.unit,
-        )
+    symbol_points, symbol_pin_aliases, symbol_centers, pin_geometry = _netlist_symbol_geometry(
+        symbols, snap_to_grid
+    )
 
     # Pin electrical types, keyed by number/name/case-fold, so a net's driver
     # status can be judged: KiCad's plain power symbols (power:+3V3, power:GND)
@@ -4872,7 +4912,7 @@ def _plan_netlist_pin_terminals(
             for key in (number, name, number.casefold(), name.casefold()):
                 if key:
                     emap.setdefault(key, etype)
-        pin_etypes[symbol.reference] = emap
+        pin_etypes.setdefault(symbol.reference, {}).update(emap)
 
     power_points: dict[str, tuple[float, float]] = {}
     for power in powers:
@@ -4979,8 +5019,11 @@ def _plan_netlist_pin_terminals(
             elif etype == "power_in":
                 net_needs_driver.setdefault(net_name, True)
 
-            all_points = symbol_points.get(reference, {}).values()
-            ux, uy = _pin_label_stub_direction(point, symbol_centers[reference], all_points)
+            center, unit_points = pin_geometry.get(
+                (reference, _point_key(*point)),
+                (symbol_centers[reference], tuple(symbol_points.get(reference, {}).values())),
+            )
+            ux, uy = _pin_label_stub_direction(point, center, unit_points)
             stub = _terminal_stub_length(net_name)
             ex = round(point[0] + ux * stub, 4)
             ey = round(point[1] + uy * stub, 4)
@@ -5080,28 +5123,9 @@ def _plan_netlist_wires(
     nets: list[dict[str, Any]],
     snap_to_grid: bool,
 ) -> tuple[list[dict[str, float | bool]], list[dict[str, Any]], dict[str, int]]:
-    symbol_points: dict[str, dict[str, tuple[float, float]]] = {}
-    symbol_pin_aliases: dict[str, dict[str, tuple[float, float]]] = {}
-    symbol_centers: dict[str, tuple[float, float]] = {}
-    for symbol in symbols:
-        x, y = _snap_point(symbol.x_mm, symbol.y_mm, snap_to_grid and symbol.snap_to_grid)
-        symbol_centers[symbol.reference] = (x, y)
-        symbol_points[symbol.reference] = get_pin_positions(
-            symbol.library,
-            symbol.symbol_name,
-            x,
-            y,
-            symbol.rotation,
-            symbol.unit,
-        )
-        symbol_pin_aliases[symbol.reference] = get_pin_alias_positions(
-            symbol.library,
-            symbol.symbol_name,
-            x,
-            y,
-            symbol.rotation,
-            symbol.unit,
-        )
+    symbol_points, symbol_pin_aliases, symbol_centers, _ = _netlist_symbol_geometry(
+        symbols, snap_to_grid
+    )
 
     power_points: dict[str, tuple[float, float]] = {}
     for power in powers:
