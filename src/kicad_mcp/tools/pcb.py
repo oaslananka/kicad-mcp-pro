@@ -3085,12 +3085,27 @@ def _register_board_graphics_tools(mcp: FastMCP) -> None:
             payload.origin_y_mm + payload.height_mm,
         )
         rectangle.attributes.stroke.width = mm_to_nm(0.05)
-        execute_live_board_mutation(
-            "pcb_set_board_outline",
-            lambda board: list(board.create_items([rectangle])),
-            verifier=None,
-        )
-        return "Board outline added successfully."
+
+        def _apply_outline(board: Board) -> str:
+            existing_edges = [
+                shape for shape in board.get_shapes() if shape.layer == BoardLayer.BL_Edge_Cuts
+            ]
+            if existing_edges:
+                if (
+                    len(existing_edges) == 1
+                    and isinstance(existing_edges[0], BoardRectangle)
+                    and existing_edges[0].top_left == rectangle.top_left
+                    and existing_edges[0].bottom_right == rectangle.bottom_right
+                ):
+                    return "Board outline already matches requested rectangle; no change."
+                return (
+                    "Board outline unchanged: existing Edge.Cuts geometry must be "
+                    "reviewed or removed explicitly before setting another outline."
+                )
+            list(board.create_items([rectangle]))
+            return "Board outline added successfully."
+
+        return execute_live_board_mutation("pcb_set_board_outline", _apply_outline, verifier=None)
 
     @mcp.tool()
     def pcb_add_text(
