@@ -1054,7 +1054,6 @@ def _write_differential_summary(artifacts: Path, results: list[DifferentialResul
 
 def _write_connectivity_differential_report(
     *,
-    artifacts: Path,
     kicad_range: str,
     kicad_version: str,
     native_netlist: Path,
@@ -1221,7 +1220,6 @@ def _write_export_inventory_differential_result(
 
 def _write_geometry_differential_result(
     *,
-    artifacts: Path,
     kicad_range: str,
     kicad_version: str,
     fixture_id: str,
@@ -1360,7 +1358,6 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
         and not bool(connectivity_step.get("skipped"))
     ):
         connectivity_result = _write_connectivity_differential_report(
-            artifacts=artifacts,
             kicad_range=kicad_range,
             kicad_version=kicad_version,
             native_netlist=artifacts / "differential" / CONNECTIVITY_NETLIST_FILENAME,
@@ -1380,7 +1377,6 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
     )
     if kicad_version is not None and board_stats_step is not None:
         geometry_result = _write_geometry_differential_result(
-            artifacts=artifacts,
             kicad_range=kicad_range,
             kicad_version=kicad_version,
             fixture_id=GEOMETRY_DIFFERENTIAL_FIXTURE_ID,

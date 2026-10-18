@@ -334,7 +334,8 @@ class SchematicHierarchyAuthoringService:
             placement if placement.uuid else replace(placement, uuid=self.new_uuid())
             for placement in plan.placements
         )
-        return replace(plan, placements=placements)
+        updated: SheetPinPlan = replace(plan, placements=placements)
+        return updated
 
     def _apply_sheet_pins(
         self,

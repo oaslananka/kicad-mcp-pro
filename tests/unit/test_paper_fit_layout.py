@@ -135,9 +135,9 @@ def test_next_free_block_reserves_non_overlapping_blocks() -> None:
     from kicad_mcp.tools.schematic import _next_free_block
 
     occupied: set[tuple[int, int]] = set()
-    first = _next_free_block(occupied, 2, 2, cell_w=20.0, cell_h=20.0, paper="A2")
+    first = _next_free_block(occupied, 2, 2, cell_w=20.0, paper="A2")
     assert first == (0, 0)
     # The 2x2 block (0,0)-(1,1) is now reserved.
     assert {(0, 0), (1, 0), (0, 1), (1, 1)} <= occupied
-    second = _next_free_block(occupied, 1, 1, cell_w=20.0, cell_h=20.0, paper="A2")
+    second = _next_free_block(occupied, 1, 1, cell_w=20.0, paper="A2")
     assert second not in {(0, 0), (1, 0), (0, 1), (1, 1)}

@@ -564,7 +564,6 @@ def test_connectivity_differential_writes_stable_machine_report(
     )
 
     result = kicad_canary._write_connectivity_differential_report(
-        artifacts=tmp_path / "artifacts",
         kicad_range="10.0.x",
         kicad_version="10.0.6",
         native_netlist=native,
@@ -592,7 +591,6 @@ def test_connectivity_differential_is_not_claimed_for_non_stable_lane(
     fixture.write_text("(kicad_sch)", encoding="utf-8")
     assert (
         kicad_canary._write_connectivity_differential_report(
-            artifacts=tmp_path / "artifacts",
             kicad_range="11.x",
             kicad_version="11.0.0",
             native_netlist=tmp_path / "missing.net",
@@ -652,7 +650,6 @@ def test_connectivity_differential_missing_native_artifact_is_unavailable_author
     )
 
     result = kicad_canary._write_connectivity_differential_report(
-        artifacts=tmp_path / "artifacts",
         kicad_range="10.0.x",
         kicad_version="10.0.6",
         native_netlist=tmp_path / "missing.net",
@@ -688,7 +685,6 @@ def test_connectivity_differential_parser_failure_is_infrastructure_invalid(
     )
 
     result = kicad_canary._write_connectivity_differential_report(
-        artifacts=tmp_path / "artifacts",
         kicad_range="10.0.x",
         kicad_version="10.0.6",
         native_netlist=native,
@@ -766,7 +762,6 @@ def test_geometry_differential_matches_native_board_stats(tmp_path: Path, monkey
     monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
 
     result = kicad_canary._write_geometry_differential_result(
-        artifacts=artifacts,
         kicad_range="10.0.x",
         kicad_version="10.0.6",
         fixture_id="geometry-fixture",
@@ -789,7 +784,6 @@ def test_geometry_differential_missing_native_artifact_is_unavailable_authority(
     monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
 
     result = kicad_canary._write_geometry_differential_result(
-        artifacts=artifacts,
         kicad_range="10.0.x",
         kicad_version="10.0.6",
         fixture_id="geometry-fixture",
@@ -810,7 +804,6 @@ def test_geometry_differential_failed_native_step_is_unavailable_even_with_artif
     monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
 
     result = kicad_canary._write_geometry_differential_result(
-        artifacts=artifacts,
         kicad_range="10.0.x",
         kicad_version="10.0.6",
         fixture_id="geometry-fixture",
@@ -837,7 +830,6 @@ def test_geometry_differential_parser_failure_is_infrastructure_invalid(
     )
 
     result = kicad_canary._write_geometry_differential_result(
-        artifacts=artifacts,
         kicad_range="10.0.x",
         kicad_version="10.0.6",
         fixture_id="geometry-fixture",
