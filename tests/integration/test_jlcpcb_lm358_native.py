@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
 from defusedxml.ElementTree import parse
 
+from kicad_mcp.config import reset_config
 from kicad_mcp.server import build_server
+from kicad_mcp.tools.export_support import _run_cli
 from tests.conftest import call_tool_text
 
 _PIN_NETS = {
@@ -36,6 +37,10 @@ async def test_lm358_three_units_preserve_pin_nets_in_native_export(
     if not cli or not (Path(symbols_path) / "Amplifier_Operational.kicad_sym").is_file():
         pytest.skip("requires installed KiCad official symbols and native CLI")
     monkeypatch.setenv("KICAD_MCP_SYMBOL_LIBRARY_DIR", symbols_path)
+    # Use the actual executable through the application's validated CLI runner,
+    # not the sample project's stub executable.
+    monkeypatch.setenv("KICAD_MCP_KICAD_CLI", cli)
+    reset_config()
     symbols = [
         {
             "library": "Amplifier_Operational",
@@ -69,23 +74,18 @@ async def test_lm358_three_units_preserve_pin_nets_in_native_export(
     assert "Generated 16 collision-safe terminal stub(s)" in result
     assert "WARNING" not in result
     output = tmp_path / "lm358.xml"
-    proc = subprocess.run(
-        [
-            cli,
-            "sch",
-            "export",
-            "netlist",
-            "--format",
-            "kicadxml",
-            "-o",
-            str(output),
-            str(sample_project / "demo.kicad_sch"),
-        ],
-        capture_output=True,
-        text=True,
+    code, stdout, stderr = _run_cli(
+        "sch",
+        "export",
+        "netlist",
+        "--format",
+        "kicadxml",
+        "-o",
+        str(output),
+        str(sample_project / "demo.kicad_sch"),
         timeout=30,
     )
-    assert proc.returncode == 0, f"native KiCad export failed: {proc.stdout} {proc.stderr}"
+    assert code == 0, f"native KiCad export failed: {stdout} {stderr}"
     tree = parse(output)
     graph = {
         node.attrib["pin"]: net.attrib["name"]
