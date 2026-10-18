@@ -4854,20 +4854,16 @@ def _netlist_symbol_geometry(
             reference_pins[number] = point
             geometry[(ref, _point_key(*point))] = (center, tuple(unit_points.values()))
         reference_aliases = aliases.setdefault(ref, {})
-        ambiguous = ambiguous_aliases.setdefault(ref, set())
+        conflicts = ambiguous_aliases.setdefault(ref, set())
         for name, point in get_pin_alias_positions(
             symbol.library, symbol.symbol_name, *center, symbol.rotation, symbol.unit
         ).items():
-            # The same named pin may appear in different units. Never silently
-            # choose one physical location for an ambiguous pin-name endpoint.
-            if name in ambiguous:
-                continue
-            previous = reference_aliases.get(name)
-            if previous is not None and _point_key(*previous) != _point_key(*point):
-                reference_aliases.pop(name, None)
-                ambiguous.add(name)
-            else:
-                reference_aliases[name] = point
+            # Reuse the existing conflict tracker; keep names shared at one
+            # location, but fail closed on multi-unit name ambiguity.
+            _merge_pin_alias(reference_aliases, conflicts, name, _point_key(*point))
+    for ref, conflicts in ambiguous_aliases.items():
+        for name in conflicts:
+            aliases[ref].pop(name, None)
     return points, aliases, centers, geometry
 
 
