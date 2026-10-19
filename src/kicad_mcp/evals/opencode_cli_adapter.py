@@ -128,6 +128,49 @@ def _cost_micros(value: object) -> int | None:
     return round(float(value) * 1_000_000)
 
 
+def _parse_opencode_event_line(line: str) -> tuple[str, dict[str, Any]]:
+    value = json.loads(line)
+    if not isinstance(value, dict):
+        raise ValueError("OpenCode event must be a JSON object.")
+    event_type = value.get("type")
+    if event_type not in _KNOWN_EVENT_TYPES:
+        raise ValueError("OpenCode emitted an unsupported event type.")
+    part = value.get("part")
+    if not isinstance(part, dict):
+        raise ValueError("OpenCode event part is malformed.")
+    return str(event_type), part
+
+
+def _process_opencode_event(
+    event_type: str,
+    part: dict[str, Any],
+    finish: dict[str, Any] | None,
+    text_parts: list[str],
+) -> dict[str, Any] | None:
+    if event_type == "step_start":
+        if part.get("type") != "step-start":
+            raise ValueError("OpenCode step-start event is malformed.")
+        return finish
+    if event_type == "text":
+        if part.get("type") != "text" or not isinstance(part.get("text"), str):
+            raise ValueError("OpenCode text event is malformed.")
+        text_parts.append(part["text"])
+        return finish
+    if finish is not None or part.get("type") != "step-finish":
+        raise ValueError("OpenCode step-finish event is malformed or duplicated.")
+    return part
+
+
+def _extract_opencode_tokens(finish: dict[str, Any]) -> tuple[int | None, int | None]:
+    tokens = finish.get("tokens")
+    if not isinstance(tokens, dict):
+        raise ValueError("OpenCode step-finish tokens are malformed.")
+    return (
+        _optional_nonnegative_int(tokens.get("input")),
+        _optional_nonnegative_int(tokens.get("output")),
+    )
+
+
 def parse_opencode_events(stdout: str) -> OpenCodeEventResult:
     """Parse only documented headless events and discard all other provider/session data."""
     text_parts: list[str] = []
@@ -135,36 +178,15 @@ def parse_opencode_events(stdout: str) -> OpenCodeEventResult:
     for line in stdout.splitlines():
         if not line.strip():
             continue
-        value = json.loads(line)
-        if not isinstance(value, dict):
-            raise ValueError("OpenCode event must be a JSON object.")
-        event_type = value.get("type")
-        if event_type not in _KNOWN_EVENT_TYPES:
-            raise ValueError("OpenCode emitted an unsupported event type.")
-        part = value.get("part")
-        if not isinstance(part, dict):
-            raise ValueError("OpenCode event part is malformed.")
-        if event_type == "step_start":
-            if part.get("type") != "step-start":
-                raise ValueError("OpenCode step-start event is malformed.")
-            continue
-        if event_type == "text":
-            if part.get("type") != "text" or not isinstance(part.get("text"), str):
-                raise ValueError("OpenCode text event is malformed.")
-            text_parts.append(part["text"])
-            continue
-        if finish is not None or part.get("type") != "step-finish":
-            raise ValueError("OpenCode step-finish event is malformed or duplicated.")
-        finish = part
+        event_type, part = _parse_opencode_event_line(line)
+        finish = _process_opencode_event(event_type, part, finish, text_parts)
     if finish is None or not text_parts:
         raise ValueError("OpenCode event stream is incomplete.")
-    tokens = finish.get("tokens")
-    if not isinstance(tokens, dict):
-        raise ValueError("OpenCode step-finish tokens are malformed.")
+    in_tok, out_tok = _extract_opencode_tokens(finish)
     return OpenCodeEventResult(
         text="".join(text_parts),
-        input_tokens=_optional_nonnegative_int(tokens.get("input")),
-        output_tokens=_optional_nonnegative_int(tokens.get("output")),
+        input_tokens=in_tok,
+        output_tokens=out_tok,
         estimated_cost_micros=_cost_micros(finish.get("cost")),
     )
 
