@@ -59,6 +59,47 @@ def _client_bytes(client_path: Path, server_path: Path, attempt_id: str) -> byte
     return _load_trace(client_path)
 
 
+def _validate_event_metadata(
+    event: ReferenceAgentLogEvent,
+    *,
+    attempt_id: str,
+    sequence: int,
+    previous_timestamp: datetime | None,
+    origin: str,
+) -> None:
+    """Preserve the reconciliation checks and their existing error ordering."""
+    if event.attempt_id != attempt_id or event.sequence != sequence:
+        raise ReferenceOpsReconciliationError("event identity or sequence mismatch")
+    if previous_timestamp is not None and event.timestamp < previous_timestamp:
+        raise ReferenceOpsReconciliationError("event timestamps are out of order")
+    if set(event.details) != {"provenance", "request_id"}:
+        raise ReferenceOpsReconciliationError("unexpected event detail fields")
+    if event.details["provenance"] != origin:
+        raise ReferenceOpsReconciliationError("event provenance mismatch")
+
+
+def _validate_tool_call(
+    event: ReferenceAgentLogEvent, *, pending: tuple[str, int] | None, sequence: int
+) -> tuple[str, int]:
+    if pending is not None or event.status != "started" or event.details["request_id"] is not None:
+        raise ReferenceOpsReconciliationError("overlapping or malformed client/tool call")
+    return event.name, sequence
+
+
+def _validated_tool_result(
+    event: ReferenceAgentLogEvent, *, pending: tuple[str, int] | None
+) -> tuple[str, str]:
+    if (
+        pending is None
+        or event.name != pending[0]
+        or event.status not in {"completed", "failed"}
+        or type(event.details["request_id"]) is not int
+        or event.details["request_id"] != pending[1]
+    ):
+        raise ReferenceOpsReconciliationError("unpaired or mismatched result")
+    return event.name, event.status
+
+
 def _normalized_pairs(content: bytes, *, attempt_id: str, origin: str) -> list[tuple[str, str]]:
     """Extract complete sequential calls; concurrent/interleaved cases are not attested."""
     pending: tuple[str, int] | None = None
@@ -66,33 +107,18 @@ def _normalized_pairs(content: bytes, *, attempt_id: str, origin: str) -> list[t
     previous_timestamp: datetime | None = None
     for seq, raw in enumerate(content.splitlines(), start=1):
         event = ReferenceAgentLogEvent.model_validate_json(raw)
-        if event.attempt_id != attempt_id or event.sequence != seq:
-            raise ReferenceOpsReconciliationError("event identity or sequence mismatch")
-        if previous_timestamp is not None and event.timestamp < previous_timestamp:
-            raise ReferenceOpsReconciliationError("event timestamps are out of order")
+        _validate_event_metadata(
+            event,
+            attempt_id=attempt_id,
+            sequence=seq,
+            previous_timestamp=previous_timestamp,
+            origin=origin,
+        )
         previous_timestamp = event.timestamp
-        if set(event.details) != {"provenance", "request_id"}:
-            raise ReferenceOpsReconciliationError("unexpected event detail fields")
-        if event.details["provenance"] != origin:
-            raise ReferenceOpsReconciliationError("event provenance mismatch")
         if event.event_type == "tool_call":
-            if (
-                pending is not None
-                or event.status != "started"
-                or event.details["request_id"] is not None
-            ):
-                raise ReferenceOpsReconciliationError("overlapping or malformed client/tool call")
-            pending = (event.name, seq)
+            pending = _validate_tool_call(event, pending=pending, sequence=seq)
         elif event.event_type == "tool_result":
-            if (
-                pending is None
-                or event.name != pending[0]
-                or event.status not in {"completed", "failed"}
-                or type(event.details["request_id"]) is not int
-                or event.details["request_id"] != pending[1]
-            ):
-                raise ReferenceOpsReconciliationError("unpaired or mismatched result")
-            result.append((event.name, event.status))
+            result.append(_validated_tool_result(event, pending=pending))
             pending = None
         else:
             raise ReferenceOpsReconciliationError("unexpected non-tool event")
