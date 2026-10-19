@@ -669,6 +669,76 @@ def _optional_usage(usage: object, key: str) -> int | None:
     return value
 
 
+def _parse_classifier_content(content: str) -> tuple[str, list[str]]:
+    selected = _json_object(content)
+    if set(selected) != {"response_kind", "called_tools"}:
+        raise _ModelOutputValidationError("unsupported_fields")
+    response_kind = selected.get("response_kind")
+    called_tools = selected.get("called_tools")
+    if response_kind not in _RESPONSE_KINDS or not isinstance(called_tools, list):
+        raise _ModelOutputValidationError("classifier_shape")
+    raw_tools: list[str] = []
+    for item in called_tools:
+        if not isinstance(item, str):
+            raise _ModelOutputValidationError("unknown_tool")
+        raw_tools.append(item)
+    return str(response_kind), raw_tools
+
+
+def _recover_unknown_tools(
+    *,
+    response_kind: str,
+    raw_tools: list[str],
+    catalog_names: frozenset[str],
+    catalog_values: Sequence[Mapping[str, object]],
+    prompt: str,
+    latency_ms: float,
+    input_tokens: int | None,
+    output_tokens: int | None,
+    estimated_cost_micros: int | None,
+) -> tuple[list[str], dict[str, object] | None]:
+    unknown_tools = [name for name in raw_tools if name not in catalog_names]
+    if not unknown_tools:
+        return raw_tools, None
+
+    if response_kind != "tool_calls":
+        raise _ModelOutputValidationError("unknown_tool")
+    known_tools = [name for name in raw_tools if name in catalog_names]
+    mixed_canonical_alias = (
+        len(raw_tools) == 2 and len(known_tools) == 1 and len(unknown_tools) == 1
+    )
+    if len(raw_tools) != 1 and not mixed_canonical_alias:
+        raise _ModelOutputValidationError("unknown_tool")
+    provisional: dict[str, object] = {
+        "schema_version": 1,
+        "status": "ok",
+        "response_kind": response_kind,
+        "called_tools": raw_tools,
+        "latency_ms": round(latency_ms, 3),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "estimated_cost_micros": estimated_cost_micros,
+    }
+    gated = _apply_policy_postconditions(provisional, prompt=prompt, catalog=catalog_values)
+    if gated.get("response_kind") in {"confirmation", "refusal"} and not gated.get("called_tools"):
+        return [], gated
+    recovered = _unique_direct_tool_match(prompt=prompt, catalog=catalog_values)
+    if recovered is None:
+        raise _ModelOutputValidationError("unknown_tool")
+    if known_tools and (
+        known_tools[0] != recovered or not _is_constrained_tool_alias(unknown_tools[0], recovered)
+    ):
+        raise _ModelOutputValidationError("unknown_tool")
+    return [recovered], None
+
+
+def _validate_normalized_tools(response_kind: str, normalized: Sequence[str]) -> None:
+    if len(normalized) != len(set(normalized)):
+        raise _ModelOutputValidationError("duplicate_tool")
+    if (response_kind == "tool_calls") != bool(normalized):
+        raise _ModelOutputValidationError("kind_tool_mismatch")
+
+
 def normalize_classifier_text(
     *,
     content: str,
@@ -682,60 +752,22 @@ def normalize_classifier_text(
     """Normalize one strict classifier text result without retaining provider payloads."""
     catalog_values = _catalog_values(catalog)
     catalog_names = frozenset(str(item["name"]) for item in catalog_values)
-    selected = _json_object(content)
-    if set(selected) != {"response_kind", "called_tools"}:
-        raise _ModelOutputValidationError("unsupported_fields")
-    response_kind = selected.get("response_kind")
-    called_tools = selected.get("called_tools")
-    if response_kind not in _RESPONSE_KINDS or not isinstance(called_tools, list):
-        raise _ModelOutputValidationError("classifier_shape")
-    raw_tools: list[str] = []
-    for item in called_tools:
-        if not isinstance(item, str):
-            raise _ModelOutputValidationError("unknown_tool")
-        raw_tools.append(item)
+    response_kind, raw_tools = _parse_classifier_content(content)
+    normalized, gated = _recover_unknown_tools(
+        response_kind=response_kind,
+        raw_tools=raw_tools,
+        catalog_names=catalog_names,
+        catalog_values=catalog_values,
+        prompt=prompt,
+        latency_ms=latency_ms,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        estimated_cost_micros=estimated_cost_micros,
+    )
+    if gated is not None:
+        return gated
 
-    unknown_tools = [name for name in raw_tools if name not in catalog_names]
-    if unknown_tools:
-        if response_kind != "tool_calls":
-            raise _ModelOutputValidationError("unknown_tool")
-        known_tools = [name for name in raw_tools if name in catalog_names]
-        mixed_canonical_alias = (
-            len(raw_tools) == 2 and len(known_tools) == 1 and len(unknown_tools) == 1
-        )
-        if len(raw_tools) != 1 and not mixed_canonical_alias:
-            raise _ModelOutputValidationError("unknown_tool")
-        provisional: dict[str, object] = {
-            "schema_version": 1,
-            "status": "ok",
-            "response_kind": response_kind,
-            "called_tools": raw_tools,
-            "latency_ms": round(latency_ms, 3),
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "estimated_cost_micros": estimated_cost_micros,
-        }
-        gated = _apply_policy_postconditions(provisional, prompt=prompt, catalog=catalog_values)
-        if gated.get("response_kind") in {"confirmation", "refusal"} and not gated.get(
-            "called_tools"
-        ):
-            return gated
-        recovered = _unique_direct_tool_match(prompt=prompt, catalog=catalog_values)
-        if recovered is None:
-            raise _ModelOutputValidationError("unknown_tool")
-        if known_tools and (
-            known_tools[0] != recovered
-            or not _is_constrained_tool_alias(unknown_tools[0], recovered)
-        ):
-            raise _ModelOutputValidationError("unknown_tool")
-        normalized = [recovered]
-    else:
-        normalized = raw_tools
-
-    if len(normalized) != len(set(normalized)):
-        raise _ModelOutputValidationError("duplicate_tool")
-    if (response_kind == "tool_calls") != bool(normalized):
-        raise _ModelOutputValidationError("kind_tool_mismatch")
+    _validate_normalized_tools(response_kind, normalized)
     observation: dict[str, object] = {
         "schema_version": 1,
         "status": "ok",
