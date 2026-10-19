@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..project.design_spec import (
+    DesignIntentParams,
     ProjectImportDesignSpecPayload,
     ProjectSpecPayload,
     ProjectSpecValidationPayload,
@@ -19,7 +20,7 @@ from .metadata import headless_compatible
 class ProjectDesignSpecServiceProtocol(Protocol):
     def set_design_intent(
         self,
-        intent: object = None,
+        intent: DesignIntentParams | None = None,
         **kwargs: object,
     ) -> str: ...
 
