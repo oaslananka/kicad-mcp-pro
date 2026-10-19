@@ -1438,6 +1438,124 @@ class _StreamableHttpContractMiddleware:
         self._session_ids: set[str] = set()
         self._session_order: deque[str] = deque()
 
+    async def _handle_delete(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+        headers: Mapping[str, str],
+        cfg: KiCadMCPConfig,
+    ) -> None:
+        session_id = headers.get("mcp-session-id", "")
+        delete_response_status: int | None = None
+
+        async def delete_request_send(message: Message) -> None:
+            nonlocal delete_response_status
+            if message["type"] == _HTTP_RESPONSE_START:
+                status_value = message.get("status")
+                delete_response_status = status_value if isinstance(status_value, int) else None
+            await send(message)
+
+        with otel.mcp_request_span(
+            http_method="DELETE",
+            mount_path=cfg.mount_path,
+            session_present=bool(session_id),
+        ) as request_span:
+            with structlog.contextvars.bound_contextvars(mcp_session_id=session_id or None):
+                await self.app(scope, receive, delete_request_send)
+            otel.finish_mcp_request_span(request_span, status_code=delete_response_status)
+        if session_id:
+            self._forget_session(session_id)
+            logger.info("mcp_session_destroyed", mcp_session_id=session_id)
+
+    async def _validate_post_headers(
+        self,
+        headers: Mapping[str, str],
+        body: bytes,
+        rpc_id: object | None,
+        rpc_method: str | None,
+        cfg: KiCadMCPConfig,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> bool:
+        if not _accept_header_includes(
+            headers.get("accept", ""), "application/json"
+        ) or not _accept_header_includes(headers.get("accept", ""), "text/event-stream"):
+            await _streamable_http_error_response(
+                code=-32003,
+                message=(
+                    "Bad Request: Accept header must include application/json and "
+                    "text/event-stream."
+                ),
+                rpc_id=rpc_id,
+                status_code=400,
+                scope=scope,
+                receive=receive,
+                send=send,
+            )
+            return False
+        if not _content_type_header_is(headers.get("content-type", ""), "application/json"):
+            await _streamable_http_error_response(
+                code=-32003,
+                message="Bad Request: Content-Type header must be application/json.",
+                rpc_id=rpc_id,
+                status_code=400,
+                scope=scope,
+                receive=receive,
+                send=send,
+            )
+            return False
+
+        protocol_version = headers.get("mcp-protocol-version")
+        if protocol_version and (
+            protocol_version not in SUPPORTED_PROTOCOL_VERSIONS
+            or (
+                cfg.protocol_lane == NATIVE_2026_PROTOCOL_LANE
+                and protocol_version != MCP_PROTOCOL_VERSION
+            )
+        ):
+            code, message, error_data = _unsupported_protocol_version_error(
+                protocol_version, body, cfg
+            )
+            await _streamable_http_error_response(
+                code=code,
+                message=message,
+                data=error_data,
+                rpc_id=rpc_id,
+                status_code=400,
+                scope=scope,
+                receive=receive,
+                send=send,
+            )
+            return False
+
+        session_id = headers.get("mcp-session-id", "")
+        if cfg.stateful_http and rpc_method and rpc_method != "initialize":
+            if not session_id:
+                await _streamable_http_error_response(
+                    code=-32000,
+                    message="Bad Request: Missing MCP-Session-Id header.",
+                    rpc_id=rpc_id,
+                    status_code=400,
+                    scope=scope,
+                    receive=receive,
+                    send=send,
+                )
+                return False
+            if not self._has_session(session_id):
+                await _streamable_http_error_response(
+                    code=-32001,
+                    message="Session not found for MCP-Session-Id.",
+                    rpc_id=rpc_id,
+                    status_code=404,
+                    scope=scope,
+                    receive=receive,
+                    send=send,
+                )
+                return False
+        return True
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         cfg = get_config()
         method = scope.get("method")
@@ -1447,27 +1565,7 @@ class _StreamableHttpContractMiddleware:
 
         headers = _scope_headers(scope)
         if method == "DELETE":
-            session_id = headers.get("mcp-session-id", "")
-            delete_response_status: int | None = None
-
-            async def delete_request_send(message: Message) -> None:
-                nonlocal delete_response_status
-                if message["type"] == _HTTP_RESPONSE_START:
-                    status_value = message.get("status")
-                    delete_response_status = status_value if isinstance(status_value, int) else None
-                await send(message)
-
-            with otel.mcp_request_span(
-                http_method=str(method),
-                mount_path=cfg.mount_path,
-                session_present=bool(session_id),
-            ) as request_span:
-                with structlog.contextvars.bound_contextvars(mcp_session_id=session_id or None):
-                    await self.app(scope, receive, delete_request_send)
-                otel.finish_mcp_request_span(request_span, status_code=delete_response_status)
-            if session_id:
-                self._forget_session(session_id)
-                logger.info("mcp_session_destroyed", mcp_session_id=session_id)
+            await self._handle_delete(scope, receive, send, headers, cfg)
             return
         if method != "POST":
             await self.app(scope, receive, send)
@@ -1501,93 +1599,13 @@ class _StreamableHttpContractMiddleware:
                 request_id=rpc_id,
                 mcp_session_id=headers.get("mcp-session-id") or None,
             )
-        if not _accept_header_includes(headers.get("accept", ""), "application/json"):
-            await _streamable_http_error_response(
-                code=-32003,
-                message=(
-                    "Bad Request: Accept header must include application/json and "
-                    "text/event-stream."
-                ),
-                rpc_id=rpc_id,
-                status_code=400,
-                scope=scope,
-                receive=replay_receive,
-                send=send,
-            )
-            return
-        if not _accept_header_includes(headers.get("accept", ""), "text/event-stream"):
-            await _streamable_http_error_response(
-                code=-32003,
-                message=(
-                    "Bad Request: Accept header must include application/json and "
-                    "text/event-stream."
-                ),
-                rpc_id=rpc_id,
-                status_code=400,
-                scope=scope,
-                receive=replay_receive,
-                send=send,
-            )
-            return
-        if not _content_type_header_is(headers.get("content-type", ""), "application/json"):
-            await _streamable_http_error_response(
-                code=-32003,
-                message="Bad Request: Content-Type header must be application/json.",
-                rpc_id=rpc_id,
-                status_code=400,
-                scope=scope,
-                receive=replay_receive,
-                send=send,
-            )
-            return
 
-        protocol_version = headers.get("mcp-protocol-version")
-        if protocol_version and (
-            protocol_version not in SUPPORTED_PROTOCOL_VERSIONS
-            or (
-                cfg.protocol_lane == NATIVE_2026_PROTOCOL_LANE
-                and protocol_version != MCP_PROTOCOL_VERSION
-            )
+        if not await self._validate_post_headers(
+            headers, body, rpc_id, rpc_method, cfg, scope, replay_receive, send
         ):
-            code, message, error_data = _unsupported_protocol_version_error(
-                protocol_version, body, cfg
-            )
-            await _streamable_http_error_response(
-                code=code,
-                message=message,
-                data=error_data,
-                rpc_id=rpc_id,
-                status_code=400,
-                scope=scope,
-                receive=replay_receive,
-                send=send,
-            )
             return
 
         session_id = headers.get("mcp-session-id", "")
-        if cfg.stateful_http and rpc_method and rpc_method != "initialize":
-            if not session_id:
-                await _streamable_http_error_response(
-                    code=-32000,
-                    message="Bad Request: Missing MCP-Session-Id header.",
-                    rpc_id=rpc_id,
-                    status_code=400,
-                    scope=scope,
-                    receive=replay_receive,
-                    send=send,
-                )
-                return
-            if not self._has_session(session_id):
-                await _streamable_http_error_response(
-                    code=-32001,
-                    message="Session not found for MCP-Session-Id.",
-                    rpc_id=rpc_id,
-                    status_code=404,
-                    scope=scope,
-                    receive=replay_receive,
-                    send=send,
-                )
-                return
 
         async def send_wrapper(message: Message) -> None:
             if message["type"] == _HTTP_RESPONSE_START:
