@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -31,12 +32,12 @@ class TransactionLifecycleService(Protocol):
 class PcbTransactionLifecycleDependencies:
     """PCB transaction dependencies injected by the composition root."""
 
-    service: TransactionLifecycleService
+    get_service: Callable[[], TransactionLifecycleService]
 
 
 def register(mcp: FastMCP, dependencies: PcbTransactionLifecycleDependencies) -> None:
     """Register PCB transaction lifecycle tools."""
-    service = dependencies.service
+    get_service = dependencies.get_service
 
     @mcp.tool()
     @requires_kicad_running
@@ -50,7 +51,7 @@ def register(mcp: FastMCP, dependencies: PcbTransactionLifecycleDependencies) ->
         Returns:
             Confirmation message with commit status.
         """
-        return service.begin()
+        return get_service().begin()
 
     @mcp.tool()
     @requires_kicad_running
@@ -62,7 +63,7 @@ def register(mcp: FastMCP, dependencies: PcbTransactionLifecycleDependencies) ->
         Returns:
             Confirmation message with commit status.
         """
-        return service.push()
+        return get_service().push()
 
     @mcp.tool()
     @requires_kicad_running
@@ -74,7 +75,7 @@ def register(mcp: FastMCP, dependencies: PcbTransactionLifecycleDependencies) ->
         Returns:
             Confirmation message with drop status.
         """
-        return service.drop()
+        return get_service().drop()
 
     @mcp.tool()
     @requires_kicad_running
@@ -86,9 +87,9 @@ def register(mcp: FastMCP, dependencies: PcbTransactionLifecycleDependencies) ->
         Returns:
             Confirmation message with revert status.
         """
-        return service.revert()
+        return get_service().revert()
 
     @mcp.tool()
     def pcb_get_live_edit_state() -> str:
         """Return sanitized native-live PCB transaction state as deterministic JSON."""
-        return json.dumps(service.status_payload(), sort_keys=True)
+        return json.dumps(get_service().status_payload(), sort_keys=True)

@@ -45,7 +45,7 @@ def _registered() -> FastMCP:
     server = FastMCP("pcb-transaction-lifecycle-test")
     register(
         server,
-        PcbTransactionLifecycleDependencies(service=FakeTransactionLifecycleService()),
+        PcbTransactionLifecycleDependencies(get_service=FakeTransactionLifecycleService),
     )
     return server
 
@@ -97,3 +97,43 @@ def test_registration_preserves_descriptions_metadata_and_forwarding() -> None:
     assert annotations.read_only_hint is True
     assert annotations.idempotent_hint is True
     assert getattr(annotations, "requiresKiCadRunning", None) is not True
+
+
+def test_runtime_service_reset_is_observed_by_each_transaction_tool_call() -> None:
+    """Project selection resets the singleton: adapters must not retain its old handle."""
+
+    class NamedService(FakeTransactionLifecycleService):
+        def __init__(self, label: str) -> None:
+            self.label = label
+
+        def begin(self) -> str:
+            return f"begin:{self.label}"
+
+        def push(self) -> str:
+            return f"push:{self.label}"
+
+        def drop(self) -> str:
+            return f"drop:{self.label}"
+
+        def revert(self) -> str:
+            return f"revert:{self.label}"
+
+        def status_payload(self) -> dict[str, object]:
+            return {"server_generation": self.label}
+
+    original = NamedService("before-project-selection")
+    replacement = NamedService("after-project-selection")
+    current = [original]
+    server = FastMCP("project-reset-transaction-service-test")
+    register(server, PcbTransactionLifecycleDependencies(get_service=lambda: current[0]))
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert tools["pcb_begin_commit"].fn() == "begin:before-project-selection"
+    current[0] = replacement  # kicad_set_project triggers service singleton replacement
+    assert tools["pcb_begin_commit"].fn() == "begin:after-project-selection"
+    assert tools["pcb_push_commit"].fn() == "push:after-project-selection"
+    assert tools["pcb_drop_commit"].fn() == "drop:after-project-selection"
+    assert tools["pcb_revert"].fn() == "revert:after-project-selection"
+    assert json.loads(tools["pcb_get_live_edit_state"].fn()) == {
+        "server_generation": "after-project-selection"
+    }
