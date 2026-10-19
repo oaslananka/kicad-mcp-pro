@@ -86,69 +86,129 @@ def _pinned_uv_version(root: Path) -> str | None:
     return matches[0]
 
 
+def _read_ops_server_descriptor(config_path: Path, server_name: str) -> dict[str, Any] | None:
+    """Read only a fixed local config or injected test fixture; never execute it."""
+    if config_path.is_symlink() or not config_path.is_file():
+        return None
+    try:
+        stat = config_path.stat()
+        if stat.st_size > _MAX_OPS_CONFIG_BYTES or stat.st_mode & 0o077:
+            return None
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        entry = data["mcpServers"][server_name]
+        return entry if isinstance(entry, dict) else None
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return None
+
+
+def _is_reviewed_uv_command(command: object) -> bool:
+    """Accept the installed UV executable locations, not arbitrary input paths."""
+    if not isinstance(command, str):
+        return False
+    home = Path.home()
+    allowed = (
+        home / ".local/bin/uv",
+        home / ".local/share/pipx/venvs/uv/bin/uv",
+        Path("/usr/bin/uv"),
+    )
+    return command in {str(path) for path in allowed}
+
+
+def _ops_descriptor_matches(
+    entry: dict[str, Any], expected_args: list[str], phase: ReferenceAgentPhase
+) -> bool:
+    """Reject extra launcher switches, stale sockets and wrong phase settings."""
+    env = entry.get("env")
+    if not isinstance(env, dict):
+        return False
+    return (
+        entry.get("enabled") is True
+        and entry.get("type") == "stdio"
+        and _is_reviewed_uv_command(entry.get("command"))
+        and entry.get("args") == expected_args
+        and "KICAD_API_SOCKET" not in env
+        and env.get("KICAD_MCP_PROFILE") == phase.profile
+        and env.get("KICAD_MCP_OPERATING_MODE") == phase.mode
+    )
+
+
 def _reviewed_ops_server_available(
     *, root: Path, phase_name: str, server_name: str | None, config_path: Path
 ) -> bool:
-    """Verify the local execution descriptor, not a live agent or tool call."""
+    """Check fixed-scope launcher metadata; actual tool attestation is separate."""
     if not server_name or not server_name.startswith("kicad-"):
         return False
     if any(ch not in "abcdefghijklmnopqrstuvwxyz0123456789-" for ch in server_name):
         return False
-    if config_path.is_symlink() or not config_path.is_file():
+    phase = ReferenceAgentPhase.for_name(phase_name)
+    if phase.name == "manufacturing":
         return False
-    try:
-        stat = config_path.stat()
-        if stat.st_size > _MAX_OPS_CONFIG_BYTES or stat.st_mode & 0o077:
-            return False
-        data = json.loads(config_path.read_text(encoding="utf-8"))
-        entry = data["mcpServers"][server_name]
-        if not isinstance(entry, dict):
-            return False
-        args = entry["args"]
-        env = entry["env"]
-        command = entry["command"]
-        if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
-            return False
-        if not isinstance(env, dict) or not isinstance(command, str):
-            return False
-        if any(not isinstance(k, str) or not isinstance(v, str) for k, v in env.items()):
-            return False
-        from kicad_mcp.evals.reference_agent_runner import ReferenceAgentPhase
+    version = _pinned_uv_version(root)
+    if version is None:
+        return False
+    entry = _read_ops_server_descriptor(config_path, server_name)
+    if entry is None:
+        return False
+    expected_args = [
+        "tool",
+        "run",
+        "--from",
+        f"uv=={version}",
+        "uv",
+        "run",
+        "--project",
+        str(root.resolve()),
+        "--no-dev",
+        "python",
+        "-m",
+        "kicad_mcp.evals.reference_ops_server",
+        "--phase",
+        phase.name,
+    ]
+    return _ops_descriptor_matches(entry, expected_args, phase)
 
-        phase = ReferenceAgentPhase.for_name(phase_name)
-        version = _pinned_uv_version(root)
-        if version is None:
-            return False
-        expected_args = [
-            "tool",
-            "run",
-            "--from",
-            f"uv=={version}",
-            "uv",
-            "run",
-            "--project",
-            str(root.resolve()),
-            "--no-dev",
-            "python",
-            "-m",
-            "kicad_mcp.evals.reference_ops_server",
-            "--phase",
-            phase.name,
-        ]
-        return (
-            phase.name != "manufacturing"
-            and entry.get("enabled") is True
-            and entry.get("type") == "stdio"
-            and Path(command).is_absolute()
-            and Path(command).name == "uv"
-            and Path(command).is_file()
-            and args == expected_args
-            and "KICAD_API_SOCKET" not in env
-            and env.get("KICAD_MCP_PROFILE") == phase.profile
-            and env.get("KICAD_MCP_OPERATING_MODE") == phase.mode
-        )
-    except (OSError, ValueError, TypeError, KeyError, AttributeError, IndexError):
-        return False
+
+def _reviewed_inputs(board_id: str, board_dir: Path) -> tuple[dict[str, str], set[str]]:
+    hashes: dict[str, str] = {}
+    blocking: set[str] = set()
+    for name in _INPUTS:
+        try:
+            hashes[name] = _input_sha256(board_dir / name)
+        except (OSError, ValueError):
+            blocking.add("missing_or_unreviewed_input")
+    if len(hashes) == len(_INPUTS):
+        try:
+            _assert_metadata(board_id, board_dir)
+        except (OSError, ValueError):
+            blocking.add("invalid_benchmark_metadata")
+    return hashes, blocking
+
+
+def _runtime_blockers(
+    *,
+    root: Path,
+    phase_name: str,
+    agent_runtime: AgentRuntime,
+    ops_server_name: str | None,
+    ops_config_path: Path,
+) -> set[str]:
+    blocking: set[str] = set()
+    if not _kicad_10_cli_available():
+        blocking.add("kicad_10_cli_unavailable")
+    if agent_runtime == "claude":
+        if shutil.which("claude") is None:
+            blocking.add("reviewed_agent_cli_unavailable")
+    elif agent_runtime == "chatgpt-ops":
+        if not _reviewed_ops_server_available(
+            root=root,
+            phase_name=phase_name,
+            server_name=ops_server_name,
+            config_path=ops_config_path,
+        ):
+            blocking.add("reviewed_ops_mcp_server_unavailable")
+    else:
+        raise ValueError("unsupported reviewed agent runtime")
+    return blocking
 
 
 def preflight(
@@ -166,22 +226,7 @@ def preflight(
         checkout_dir=root, board_id=board_id, attempt_number=attempt_number
     )
     phase = ReferenceAgentPhase.for_name(phase_name)
-    board_dir = workspace.prompt_path.parent
-    blocking: set[str] = set()
-    hashes: dict[str, str] = {}
-    for name in _INPUTS:
-        try:
-            hashes[name] = _input_sha256(board_dir / name)
-        except (OSError, ValueError):
-            blocking.add("missing_or_unreviewed_input")
-    if len(hashes) == len(_INPUTS):
-        try:
-            _assert_metadata(board_id, board_dir)
-        except (OSError, ValueError):
-            blocking.add("invalid_benchmark_metadata")
-
-    # Fail closed on reused attempts: do not overwrite a prior run or conceal
-    # an already-counted attempt behind an empty fresh log.
+    hashes, blocking = _reviewed_inputs(board_id, workspace.prompt_path.parent)
     attempt_dir = workspace.agent_log_path.parent
     if attempt_dir.is_symlink() or attempt_dir.exists() or workspace.scratch_dir.exists():
         blocking.add("attempt_identity_already_used")
@@ -190,27 +235,24 @@ def preflight(
         source_revision = discover_reference_source_revision(root)
     except (OSError, ReferenceAgentRunnerError):
         blocking.add("source_revision_not_reproducible")
-    if not _kicad_10_cli_available():
-        blocking.add("kicad_10_cli_unavailable")
-    if agent_runtime == "claude":
-        if shutil.which("claude") is None:
-            blocking.add("reviewed_agent_cli_unavailable")
-    elif agent_runtime == "chatgpt-ops":
-        if not _reviewed_ops_server_available(
+    blocking.update(
+        _runtime_blockers(
             root=root,
             phase_name=phase_name,
-            server_name=ops_server_name,
-            config_path=ops_config_path,
-        ):
-            blocking.add("reviewed_ops_mcp_server_unavailable")
+            agent_runtime=agent_runtime,
+            ops_server_name=ops_server_name,
+            ops_config_path=ops_config_path,
+        )
+    )
+    if blocking:
+        status = "blocked"
+    elif agent_runtime == "claude":
+        status = "ready"
     else:
-        raise ValueError("unsupported reviewed agent runtime")
-
+        status = "handoff_required"
     return {
         "schema_version": SCHEMA,
-        "status": (
-            "blocked" if blocking else "ready" if agent_runtime == "claude" else "handoff_required"
-        ),
+        "status": status,
         "board_id": board_id,
         "benchmark_version": "v1",
         "attempt_id": workspace.attempt_id,
@@ -236,7 +278,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--phase", choices=("schematic", "pcb", "manufacturing"), required=True)
     parser.add_argument("--agent-runtime", choices=("claude", "chatgpt-ops"), default="claude")
     parser.add_argument("--ops-server-name")
-    parser.add_argument("--ops-config", type=Path, default=_OPS_CONFIG)
     args = parser.parse_args(argv)
     try:
         result = preflight(
@@ -246,7 +287,6 @@ def main(argv: list[str] | None = None) -> int:
             phase_name=args.phase,
             agent_runtime=args.agent_runtime,
             ops_server_name=args.ops_server_name,
-            ops_config_path=args.ops_config,
         )
     except (ValueError, OSError):
         print(

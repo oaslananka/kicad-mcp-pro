@@ -128,9 +128,7 @@ def _write_ops_server_config(
     profile: str = "schematic_authoring",
     mode: str = "write",
 ) -> Path:
-    executable = tmp_path / "uv"
-    executable.write_text("#!/bin/sh\nexit 1\n")
-    executable.chmod(0o700)
+    executable = Path.home() / ".local/bin/uv"
     version = cli._pinned_uv_version(project)
     assert version is not None
     document = {
