@@ -562,15 +562,7 @@ def _request_field_detail_from_text(value: object) -> FailureDetail | None:
     return None
 
 
-def _provider_request_failure_detail(response: httpx.Response) -> FailureDetail:
-    """Return only an allowlisted request field from one validation response."""
-    try:
-        payload = response.json()
-    except (TypeError, ValueError):
-        return "request_unknown"
-    if not isinstance(payload, dict):
-        return "request_unknown"
-
+def _detail_location_failure_detail(payload: dict[str, Any]) -> FailureDetail | None:
     detail = payload.get("detail")
     entries = detail if isinstance(detail, list) else [detail]
     for entry in entries:
@@ -582,7 +574,10 @@ def _provider_request_failure_detail(response: httpx.Response) -> FailureDetail:
                 mapped = _request_field_detail_from_text(segment)
                 if mapped is not None:
                     return mapped
+    return None
 
+
+def _collect_diagnostic_values(payload: dict[str, Any]) -> list[object]:
     diagnostic_values: list[object] = [
         payload.get("param"),
         payload.get("parameter"),
@@ -590,6 +585,7 @@ def _provider_request_failure_detail(response: httpx.Response) -> FailureDetail:
         payload.get("message"),
         payload.get("msg"),
     ]
+    detail = payload.get("detail")
     if isinstance(detail, str):
         diagnostic_values.append(detail)
     elif isinstance(detail, dict):
@@ -610,8 +606,23 @@ def _provider_request_failure_detail(response: httpx.Response) -> FailureDetail:
         )
     elif isinstance(error, str):
         diagnostic_values.append(error)
+    return diagnostic_values
 
-    for value in diagnostic_values:
+
+def _provider_request_failure_detail(response: httpx.Response) -> FailureDetail:
+    """Return only an allowlisted request field from one validation response."""
+    try:
+        payload = response.json()
+    except (TypeError, ValueError):
+        return "request_unknown"
+    if not isinstance(payload, dict):
+        return "request_unknown"
+
+    from_loc = _detail_location_failure_detail(payload)
+    if from_loc is not None:
+        return from_loc
+
+    for value in _collect_diagnostic_values(payload):
         mapped = _request_field_detail_from_text(value)
         if mapped is not None:
             return mapped
@@ -1198,12 +1209,9 @@ def _unique_direct_tool_match(
     return best[0] if len(best) == 1 else None
 
 
-def _apply_policy_postconditions(
-    observation: Mapping[str, object],
-    *,
-    prompt: str,
-    catalog: Sequence[Mapping[str, object]],
-) -> dict[str, object]:
+def _check_preliminary_policy(
+    prompt: str, observation: Mapping[str, object], catalog: Sequence[Mapping[str, object]]
+) -> dict[str, object] | None:
     if _requires_secret_refusal(prompt) or _states_missing_or_bypassed_evidence(prompt):
         return _replace_decision(observation, response_kind="refusal")
     if _is_unscoped_mass_delete(prompt):
@@ -1227,11 +1235,20 @@ def _apply_policy_postconditions(
     present_release_approval = bool(prompt_tokens & {"approved", "approval"})
     if release_request and not present_release_approval:
         return _replace_decision(observation, response_kind="confirmation")
+    return None
 
+
+def _match_inspection_or_fallback_tool(
+    observation: Mapping[str, object],
+    *,
+    prompt: str,
+    catalog: Sequence[Mapping[str, object]],
+    release_request: bool,
+) -> str | None:
     if _selected_tools_include_mutation(observation, catalog):
         tool = _unique_inspection_tool_match(prompt=prompt, catalog=catalog)
         if tool is not None:
-            return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
+            return tool
 
     prompt_inspection_tokens = _inspection_tokens(prompt)
     positive_direct_intents = _positive_direct_intents(prompt)
@@ -1245,41 +1262,60 @@ def _apply_policy_postconditions(
     ):
         tool = _unique_inspection_tool_match(prompt=prompt, catalog=catalog)
         if tool is not None:
-            return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
+            return tool
 
-    tool = None
     if not positive_direct_intents & {"export", "generate"}:
         tool = _unique_more_specific_read_only_inspection_match(
             observation, prompt=prompt, catalog=catalog
         )
-    if tool is not None:
-        return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
+        if tool is not None:
+            return tool
 
     if not release_request:
         tool = _unique_direct_tool_match(prompt=prompt, catalog=catalog)
         if tool is not None:
-            return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
+            return tool
 
-    tool = None
     if not _is_informational_request(prompt):
-        tool = _unique_catalog_match(
+        return _unique_catalog_match(
             prompt=prompt,
             catalog=catalog,
             intents=_SUMMARY_INTENTS,
             require_object_match=True,
         )
+    return None
+
+
+def _apply_policy_postconditions(
+    observation: Mapping[str, object],
+    *,
+    prompt: str,
+    catalog: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    preliminary = _check_preliminary_policy(prompt, observation, catalog)
+    if preliminary is not None:
+        return preliminary
+
+    release_request = _is_release_action(prompt)
+    tool = _match_inspection_or_fallback_tool(
+        observation, prompt=prompt, catalog=catalog, release_request=release_request
+    )
     if tool is not None:
         return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
 
+    prompt_tokens = _normalized_tokens(prompt)
+    present_release_approval = bool(prompt_tokens & {"approved", "approval"})
     if release_request and present_release_approval:
-        tool = _unique_catalog_match(
+        release_tool = _unique_catalog_match(
             prompt=prompt,
             catalog=catalog,
             intents=_RELEASE_INTENTS,
             require_object_match=False,
         )
-        if tool is not None:
-            return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
+        if release_tool is not None:
+            return _replace_decision(
+                observation, response_kind="tool_calls", called_tools=(release_tool,)
+            )
     return dict(observation)
 
 
