@@ -156,7 +156,10 @@ def test_tool_failure_is_recorded_without_payload(tmp_path: Path) -> None:
                 lifespan_context=None,
                 protocol_version="2026-07-28",
                 method="tools/call",
-                params={"name": "sch_add_symbol", "arguments": {"secret": "do-not-log"}},
+                params={
+                    "name": "sch_add_symbol",
+                    "arguments": {"payload": "no-payload-should-appear"},
+                },
             )
 
             async def failed_call(_context: object) -> CallToolResult:
@@ -168,7 +171,7 @@ def test_tool_failure_is_recorded_without_payload(tmp_path: Path) -> None:
             trace.close()
         rows = [json.loads(line) for line in path.read_text().splitlines()]
         assert rows[-1]["status"] == "failed"
-        assert "do-not-log" not in path.read_text()
+        assert "no-payload-should-appear" not in path.read_text()
 
     asyncio.run(scenario())
 
