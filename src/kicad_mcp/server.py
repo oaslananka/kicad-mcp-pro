@@ -797,43 +797,40 @@ class KiCadFastMCP(FastMCP):
     def __init__(
         self,
         name: str | None = None,
-        *,
-        instructions: str | None = None,
-        website_url: str | None = None,
-        version: str = "",
-        auth: AuthSettings | None = None,
-        token_verifier: TokenVerifier | None = None,
-        log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO",
-        host: str = "127.0.0.1",
-        port: int = 8000,
-        streamable_http_path: str = "/mcp",
-        mount_path: str | None = None,
-        sse_path: str = "/sse",
-        message_path: str = "/messages/",
-        json_response: bool = False,
-        stateless_http: bool = False,
-        cache_hints: Mapping[CacheableMethod, CacheHint] | None = None,
-        extensions: Sequence[Extension] | None = None,
+        **kwargs: object,
     ) -> None:
+        extensions = cast(Sequence[Extension] | None, kwargs.get("extensions"))
         if extensions:
             identifiers = ", ".join(str(extension.identifier) for extension in extensions)
             raise ValueError(
                 "MCP protocol extensions are not enabled in KiCad MCP Pro; "
                 f"unsupported extension(s): {identifiers}"
             )
+        mount_path = cast(str | None, kwargs.get("mount_path"))
+        streamable_http_path = cast(str, kwargs.get("streamable_http_path", "/mcp"))
         if mount_path is not None:
             streamable_http_path = mount_path
         super().__init__(
             name=name,
-            instructions=instructions,
-            website_url=website_url,
-            version=version,
-            auth=auth,
-            token_verifier=token_verifier,
-            log_level=log_level,
-            cache_hints=cache_hints,
+            instructions=cast(str | None, kwargs.get("instructions")),
+            website_url=cast(str | None, kwargs.get("website_url")),
+            version=cast(str, kwargs.get("version", "")),
+            auth=cast(AuthSettings | None, kwargs.get("auth")),
+            token_verifier=cast(TokenVerifier | None, kwargs.get("token_verifier")),
+            log_level=cast(
+                Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+                kwargs.get("log_level", "INFO"),
+            ),
+            cache_hints=cast(Mapping[CacheableMethod, CacheHint] | None, kwargs.get("cache_hints")),
             extensions=(),
         )
+        host = cast(str, kwargs.get("host", "127.0.0.1"))
+        port = cast(int, kwargs.get("port", 8000))
+        sse_path = cast(str, kwargs.get("sse_path", "/sse"))
+        message_path = cast(str, kwargs.get("message_path", "/messages/"))
+        json_response = cast(bool, kwargs.get("json_response", False))
+        stateless_http = cast(bool, kwargs.get("stateless_http", False))
+
         self._transport_host = host
         self._transport_port = port
         self._streamable_http_path = streamable_http_path
