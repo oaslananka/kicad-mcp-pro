@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> None:
             trace = configured_trace(checkout=Path(__file__).resolve().parents[3])
             if trace is not None:
                 server.middleware.append(ReviewedOpsTraceMiddleware(trace))
-        except (ReferenceAgentRunnerError, ValueError, OSError) as exc:
+        except (ValueError, OSError) as exc:
             raise SystemExit(str(exc)) from None
     _ensure_thread_aware_stdout()
     server.run(transport="stdio")
