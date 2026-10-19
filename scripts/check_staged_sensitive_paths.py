@@ -41,7 +41,7 @@ def main() -> int:
         print("sensitive paths: required Git executable not found", file=sys.stderr)
         return 2
     completed = subprocess.run(  # nosec B603 -- fixed argv, no shell.
-        [git_binary, "diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR"],
+        ["git", "diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR"],  # noqa: S607 -- fixed Git subcommand, no shell.
         capture_output=True,
         check=False,
     )

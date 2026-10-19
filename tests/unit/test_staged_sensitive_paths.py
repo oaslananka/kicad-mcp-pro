@@ -62,7 +62,7 @@ def test_index_check_is_binary_safe_and_avoids_printing_contents(
     assert "docs/okay.md" not in output
     runner.assert_called_once()
     assert runner.call_args.args[0] == [
-        "/usr/bin/git",
+        "git",
         "diff",
         "--cached",
         "--name-only",
