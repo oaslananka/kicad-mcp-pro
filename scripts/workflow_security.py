@@ -48,14 +48,19 @@ def main() -> None:
         )
         raise SystemExit(127)
 
+    workflows_dir = (REPO_ROOT / ".github" / "workflows").resolve()
+    if not workflows_dir.is_dir():
+        print(f"Workflows directory not found: {workflows_dir}", file=sys.stderr)
+        raise SystemExit(1)
+
     command = [
         binary,
         "--offline",
         "--min-severity",
         min_severity,
-        str(REPO_ROOT / ".github" / "workflows"),
+        str(workflows_dir),
     ]
-    raise SystemExit(subprocess.run(command, check=False).returncode)
+    raise SystemExit(subprocess.run(command, check=False).returncode)  # nosec B603  # nosemgrep
 
 
 if __name__ == "__main__":
