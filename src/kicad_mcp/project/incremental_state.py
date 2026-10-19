@@ -50,6 +50,37 @@ def _source_name(name: str) -> Path:
     return relative
 
 
+def _handle_quoted_byte(byte: int, escaped: bool) -> tuple[bool, bool]:
+    """Return updated (quoted, escaped) state inside an S-expression string literal."""
+    if escaped:
+        return True, False
+    if byte == 92:
+        return True, True
+    if byte == 34:
+        return False, False
+    return True, False
+
+
+def _step_child_name(
+    byte: int,
+    child_name: bytearray,
+    whitespace: frozenset[int],
+    delimiters: frozenset[int],
+) -> tuple[bool, bool]:
+    """Process a byte while reading a depth-2 child node name.
+
+    Returns (continue_reading, is_sheet_node).
+    """
+    if byte in whitespace and not child_name:
+        return True, False
+    if byte not in delimiters:
+        child_name.append(byte)
+        if len(child_name) > 5:
+            return False, False
+        return True, False
+    return False, child_name == b"sheet"
+
+
 def _require_no_native_child_sheets(stream: BinaryIO) -> None:
     """Reject root-level KiCad sheet nodes in the IRCircuit-only cache pilot.
 
@@ -67,26 +98,16 @@ def _require_no_native_child_sheets(stream: BinaryIO) -> None:
     for chunk in iter(lambda: stream.read(65536), b""):
         for byte in chunk:
             if quoted:
-                if escaped:
-                    escaped = False
-                elif byte == 92:
-                    escaped = True
-                elif byte == 34:
-                    quoted = False
+                quoted, escaped = _handle_quoted_byte(byte, escaped)
                 continue
             if reading_child_name:
-                if byte in whitespace and not child_name:
-                    continue
-                if byte not in delimiters:
-                    child_name.append(byte)
-                    if len(child_name) > 5:
-                        reading_child_name = False
-                    continue
-                if child_name == b"sheet":
+                reading_child_name, is_sheet = _step_child_name(
+                    byte, child_name, whitespace, delimiters
+                )
+                if is_sheet:
                     raise StateRebuildRequiredError(
                         "native hierarchical sheet present; root-only graph is incomplete"
                     )
-                reading_child_name = False
             if byte == 34:
                 quoted = True
             elif byte == 40:
