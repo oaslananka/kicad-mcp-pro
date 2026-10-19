@@ -1194,37 +1194,32 @@ def _find_cycle(graph: dict[str, set[str]]) -> list[str]:
     return []
 
 
-def main() -> int:
-    errors: list[str] = _targeted_helper_definition_errors(SRC_ROOT)
-    imports_by_module: dict[str, set[str]] = {}
-
-    for module_name, path in DOMAIN_MODULES.items():
-        if not path.exists():
-            errors.append(f"Missing extracted module: {path.relative_to(REPO_ROOT)}")
-            continue
-        imports = _imports_for(module_name, path)
-        imports_by_module[module_name] = imports
-        if module_name in PURE_HELPERS:
-            for import_name in sorted(imports):
-                if import_name.startswith(FORBIDDEN_PURE_IMPORT_PREFIXES):
-                    errors.append(f"{module_name} must stay pure; forbidden import: {import_name}")
+def _validate_domain_module(module_name: str, path: Path, imports: set[str]) -> list[str]:
+    errors: list[str] = []
+    if module_name in PURE_HELPERS:
         for import_name in sorted(imports):
-            forbidden_prefixes = ADAPTER_FORBIDDEN_IMPORT_PREFIXES.get(module_name, ())
-            if import_name.startswith(forbidden_prefixes):
-                errors.append(
-                    f"{module_name} must not import its composition-root monolith: {import_name}"
-                )
+            if import_name.startswith(FORBIDDEN_PURE_IMPORT_PREFIXES):
+                errors.append(f"{module_name} must stay pure; forbidden import: {import_name}")
+    for import_name in sorted(imports):
+        forbidden_prefixes = ADAPTER_FORBIDDEN_IMPORT_PREFIXES.get(module_name, ())
+        if import_name.startswith(forbidden_prefixes):
+            errors.append(
+                f"{module_name} must not import its composition-root monolith: {import_name}"
+            )
 
-        register_limit = REGISTER_LINE_LIMITS.get(module_name)
-        if register_limit is not None:
-            register_span = _function_span(path, "register")
-            if register_span is None:
-                errors.append(f"{module_name} must define exactly one top-level register()")
-            elif register_span > register_limit:
-                errors.append(
-                    f"{module_name}.register spans {register_span} lines; limit is {register_limit}"
-                )
+    register_limit = REGISTER_LINE_LIMITS.get(module_name)
+    if register_limit is not None:
+        register_span = _function_span(path, "register")
+        if register_span is None:
+            errors.append(f"{module_name} must define exactly one top-level register()")
+        elif register_span > register_limit:
+            errors.append(
+                f"{module_name}.register spans {register_span} lines; limit is {register_limit}"
+            )
+    return errors
 
+
+def _validate_domain_cycle(imports_by_module: dict[str, set[str]]) -> list[str]:
     graph = {
         module_name: {
             target
@@ -1236,7 +1231,28 @@ def main() -> int:
     }
     cycle = _find_cycle(graph)
     if cycle:
-        errors.append("Import cycle among extracted domain modules: " + " -> ".join(cycle))
+        return ["Import cycle among extracted domain modules: " + " -> ".join(cycle)]
+    return []
+
+
+def _collect_domain_modules() -> tuple[dict[str, set[str]], list[str]]:
+    errors: list[str] = []
+    imports_by_module: dict[str, set[str]] = {}
+    for module_name, path in DOMAIN_MODULES.items():
+        if not path.exists():
+            errors.append(f"Missing extracted module: {path.relative_to(REPO_ROOT)}")
+            continue
+        imports = _imports_for(module_name, path)
+        imports_by_module[module_name] = imports
+        errors.extend(_validate_domain_module(module_name, path, imports))
+    return imports_by_module, errors
+
+
+def main() -> int:
+    errors: list[str] = _targeted_helper_definition_errors(SRC_ROOT)
+    imports_by_module, domain_errors = _collect_domain_modules()
+    errors.extend(domain_errors)
+    errors.extend(_validate_domain_cycle(imports_by_module))
 
     if errors:
         print("Architecture boundary check failed:", file=sys.stderr)
