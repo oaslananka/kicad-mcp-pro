@@ -57,6 +57,25 @@ def test_board_file_layers_infers_from_segments_vias_and_zones() -> None:
     assert all(item["type"] == "inferred" for item in layers)
 
 
+def test_board_file_layers_infers_from_footprint_and_nested_pad_layers() -> None:
+    content = """
+    (kicad_pcb (version 20260206)
+      (footprint "Resistor_SMD:R_0805"
+        (layer "B.Cu")
+        (at 10 20)
+        (property "Reference" "R1" (at 0 -1) (layer "B.SilkS"))
+        (fp_line (start 0 0) (end 1 0) (layer "B.Fab"))
+        (pad "1" smd rect (at 0 0) (size 1 1) (layers "B.Cu" "B.Mask"))
+      )
+    )
+    """
+
+    layers = _board_file_layers(content)
+
+    assert {item["name"] for item in layers} == {"B.Cu", "B.SilkS", "B.Fab", "B.Mask"}
+    assert all(item["type"] == "inferred" for item in layers)
+
+
 def test_board_file_layers_explicit_table_precedes_inference() -> None:
     content = """
     (kicad_pcb (version 20260206)
