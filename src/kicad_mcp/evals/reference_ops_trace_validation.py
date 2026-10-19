@@ -74,7 +74,7 @@ def _load_trace(path: Path) -> bytes:
         if os.name != "nt":
             parent_fd = os.open(
                 path.parent,
-                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
             )
             descriptor = os.open(path.name, flags, dir_fd=parent_fd)
         else:
