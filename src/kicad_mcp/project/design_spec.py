@@ -1029,126 +1029,145 @@ def _render_project_spec_resolution(resolution: ProjectSpecResolution) -> str:
     return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class DesignIntentParams:
+    """Encapsulates fields for updating project design intent."""
+
+    connector_refs: list[str] | None = None
+    critical_nets: list[str] | None = None
+    power_tree_refs: list[str] | None = None
+    analog_refs: list[str] | None = None
+    digital_refs: list[str] | None = None
+    sensor_cluster_refs: list[str] | None = None
+    required_sheets: list[str] | None = None
+    optional_sheets: list[str] | None = None
+    manufacturer: str | None = None
+    manufacturer_tier: str | None = None
+    functional_spacing_mm: float | None = None
+    thermal_hotspots: list[str] | None = None
+    critical_frequencies_mhz: list[float] | None = None
+    decoupling_pairs: list[dict[str, Any]] | None = None
+    rf_keepout_regions: list[dict[str, Any]] | None = None
+    power_rails: list[dict[str, Any]] | None = None
+    interfaces: list[dict[str, Any]] | None = None
+    mechanical: dict[str, Any] | None = None
+    compliance: list[dict[str, Any]] | None = None
+    cost: dict[str, Any] | None = None
+    thermal: dict[str, Any] | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectDesignSpecService:
     """Domain service for project design spec management."""
 
     def set_design_intent(
         self,
-        connector_refs: list[str] | None = None,
-        critical_nets: list[str] | None = None,
-        power_tree_refs: list[str] | None = None,
-        analog_refs: list[str] | None = None,
-        digital_refs: list[str] | None = None,
-        sensor_cluster_refs: list[str] | None = None,
-        required_sheets: list[str] | None = None,
-        optional_sheets: list[str] | None = None,
-        manufacturer: str | None = None,
-        manufacturer_tier: str | None = None,
-        functional_spacing_mm: float | None = None,
-        thermal_hotspots: list[str] | None = None,
-        critical_frequencies_mhz: list[float] | None = None,
-        decoupling_pairs: list[dict[str, Any]] | None = None,
-        rf_keepout_regions: list[dict[str, Any]] | None = None,
-        power_rails: list[dict[str, Any]] | None = None,
-        interfaces: list[dict[str, Any]] | None = None,
-        mechanical: dict[str, Any] | None = None,
-        compliance: list[dict[str, Any]] | None = None,
-        cost: dict[str, Any] | None = None,
-        thermal: dict[str, Any] | None = None,
+        intent: DesignIntentParams | None = None,
+        **kwargs: object,
     ) -> str:
+        params = intent or DesignIntentParams(**kwargs)  # type: ignore[arg-type]
         existing = load_design_intent()
         updated = ProjectDesignIntent(
             connector_refs=(
                 existing.connector_refs
-                if connector_refs is None
-                else _normalized_unique(connector_refs)
+                if params.connector_refs is None
+                else _normalized_unique(params.connector_refs)
             ),
             decoupling_pairs=(
                 existing.decoupling_pairs
-                if decoupling_pairs is None
-                else [DecouplingPairIntent.model_validate(p) for p in decoupling_pairs]
+                if params.decoupling_pairs is None
+                else [DecouplingPairIntent.model_validate(p) for p in params.decoupling_pairs]
             ),
             critical_nets=(
                 existing.critical_nets
-                if critical_nets is None
-                else _normalized_unique(critical_nets)
+                if params.critical_nets is None
+                else _normalized_unique(params.critical_nets)
             ),
             power_tree_refs=(
                 existing.power_tree_refs
-                if power_tree_refs is None
-                else _normalized_unique(power_tree_refs)
+                if params.power_tree_refs is None
+                else _normalized_unique(params.power_tree_refs)
             ),
             analog_refs=(
-                existing.analog_refs if analog_refs is None else _normalized_unique(analog_refs)
+                existing.analog_refs
+                if params.analog_refs is None
+                else _normalized_unique(params.analog_refs)
             ),
             digital_refs=(
-                existing.digital_refs if digital_refs is None else _normalized_unique(digital_refs)
+                existing.digital_refs
+                if params.digital_refs is None
+                else _normalized_unique(params.digital_refs)
             ),
             sensor_cluster_refs=(
                 existing.sensor_cluster_refs
-                if sensor_cluster_refs is None
-                else _normalized_unique(sensor_cluster_refs)
+                if params.sensor_cluster_refs is None
+                else _normalized_unique(params.sensor_cluster_refs)
             ),
             required_sheets=(
                 existing.required_sheets
-                if required_sheets is None
-                else _normalized_unique(required_sheets)
+                if params.required_sheets is None
+                else _normalized_unique(params.required_sheets)
             ),
             optional_sheets=(
                 existing.optional_sheets
-                if optional_sheets is None
-                else _normalized_unique(optional_sheets)
+                if params.optional_sheets is None
+                else _normalized_unique(params.optional_sheets)
             ),
             rf_keepout_regions=(
                 existing.rf_keepout_regions
-                if rf_keepout_regions is None
-                else [RFKeepoutIntent.model_validate(r) for r in rf_keepout_regions]
+                if params.rf_keepout_regions is None
+                else [RFKeepoutIntent.model_validate(r) for r in params.rf_keepout_regions]
             ),
-            manufacturer=(existing.manufacturer if manufacturer is None else manufacturer.strip()),
+            manufacturer=(
+                existing.manufacturer
+                if params.manufacturer is None
+                else params.manufacturer.strip()
+            ),
             manufacturer_tier=(
                 existing.manufacturer_tier
-                if manufacturer_tier is None
-                else manufacturer_tier.strip().lower()
+                if params.manufacturer_tier is None
+                else params.manufacturer_tier.strip().lower()
             ),
             functional_spacing_mm=(
                 existing.functional_spacing_mm
-                if functional_spacing_mm is None
-                else functional_spacing_mm
+                if params.functional_spacing_mm is None
+                else params.functional_spacing_mm
             ),
             thermal_hotspots=(
                 existing.thermal_hotspots
-                if thermal_hotspots is None
-                else _normalized_unique(thermal_hotspots)
+                if params.thermal_hotspots is None
+                else _normalized_unique(params.thermal_hotspots)
             ),
             critical_frequencies_mhz=(
                 existing.critical_frequencies_mhz
-                if critical_frequencies_mhz is None
-                else sorted(set(critical_frequencies_mhz))
+                if params.critical_frequencies_mhz is None
+                else sorted(set(params.critical_frequencies_mhz))
             ),
             power_rails=(
                 existing.power_rails
-                if power_rails is None
-                else [PowerRailSpec.model_validate(p) for p in power_rails]
+                if params.power_rails is None
+                else [PowerRailSpec.model_validate(p) for p in params.power_rails]
             ),
             interfaces=(
                 existing.interfaces
-                if interfaces is None
-                else [InterfaceSpec.model_validate(i) for i in interfaces]
+                if params.interfaces is None
+                else [InterfaceSpec.model_validate(i) for i in params.interfaces]
             ),
             mechanical=(
                 existing.mechanical
-                if mechanical is None
-                else MechanicalConstraint.model_validate(mechanical)
+                if params.mechanical is None
+                else MechanicalConstraint.model_validate(params.mechanical)
             ),
             compliance=(
                 existing.compliance
-                if compliance is None
-                else [ComplianceTarget.model_validate(c) for c in compliance]
+                if params.compliance is None
+                else [ComplianceTarget.model_validate(c) for c in params.compliance]
             ),
-            cost=(existing.cost if cost is None else CostTarget.model_validate(cost)),
+            cost=(existing.cost if params.cost is None else CostTarget.model_validate(params.cost)),
             thermal=(
-                existing.thermal if thermal is None else ThermalEnvelope.model_validate(thermal)
+                existing.thermal
+                if params.thermal is None
+                else ThermalEnvelope.model_validate(params.thermal)
             ),
         )
         path = save_design_intent(updated)
