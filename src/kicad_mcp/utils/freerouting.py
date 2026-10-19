@@ -197,6 +197,163 @@ class FreeRoutingRunner:
             f"save it to {target} (or next to {pcb_path.name}), then retry."
         )
 
+    def _build_docker_command(
+        self,
+        *,
+        dsn_path: Path,
+        output: Path,
+        drc_output: Path | None,
+        max_passes: int,
+        thread_count: int,
+        ignore_arg: str,
+    ) -> list[str]:
+        mount_paths = [dsn_path, output]
+        if drc_output is not None:
+            mount_paths.append(drc_output)
+        mount_root = _common_parent(mount_paths)
+        dsn_arg = _container_relpath(mount_root, dsn_path)
+        ses_arg = _container_relpath(mount_root, output)
+        drc_arg = _container_relpath(mount_root, drc_output) if drc_output is not None else None
+        command = [
+            self._docker_executable,
+            "run",
+            "--rm",
+            "-v",
+            f"{mount_root}:/work",
+            "-w",
+            "/work",
+            self._docker_image,
+            "-de",
+            dsn_arg,
+            "-do",
+            ses_arg,
+            "-mp",
+            str(max_passes),
+            "-mt",
+            str(thread_count),
+            f"--router.max_passes={max_passes}",
+        ]
+        if ignore_arg:
+            command.extend(["-inc", ignore_arg])
+        if drc_arg is not None:
+            command.extend(["-drc", drc_arg])
+        return command
+
+    def _build_jar_command(
+        self,
+        *,
+        jar_path: Path | None,
+        dsn_path: Path,
+        output: Path,
+        drc_output: Path | None,
+        max_passes: int,
+        thread_count: int,
+        ignore_arg: str,
+    ) -> list[str]:
+        if jar_path is None:
+            raise RuntimeError(
+                "FreeRouting JAR path is required when use_docker=False. "
+                "Set KICAD_MCP_FREEROUTING_JAR or pass freerouting_jar_path."
+            )
+        command = [
+            self._java_executable,
+            "-jar",
+            str(jar_path),
+            "-de",
+            str(dsn_path.resolve()),
+            "-do",
+            str(output),
+            "-mp",
+            str(max_passes),
+            "-mt",
+            str(thread_count),
+            f"--router.max_passes={max_passes}",
+        ]
+        if ignore_arg:
+            command.extend(["-inc", ignore_arg])
+        if drc_output is not None:
+            command.extend(["-drc", str(drc_output)])
+        return command
+
+    def _resolve_command_and_mode(
+        self,
+        *,
+        use_docker: bool,
+        jar_path: Path | None,
+        dsn_path: Path,
+        output: Path,
+        drc_output: Path | None,
+        max_passes: int,
+        thread_count: int,
+        ignore_arg: str,
+    ) -> tuple[str, list[str]]:
+        selected_docker = use_docker
+        if selected_docker and not _docker_available(self._docker_executable):
+            if jar_path is None:
+                raise RuntimeError(
+                    "Docker was requested for FreeRouting but was not found, and no "
+                    "FreeRouting JAR fallback is configured. Install Docker or set "
+                    "KICAD_MCP_FREEROUTING_JAR."
+                )
+            selected_docker = False
+
+        if selected_docker:
+            return "docker", self._build_docker_command(
+                dsn_path=dsn_path,
+                output=output,
+                drc_output=drc_output,
+                max_passes=max_passes,
+                thread_count=thread_count,
+                ignore_arg=ignore_arg,
+            )
+        return "jar", self._build_jar_command(
+            jar_path=jar_path,
+            dsn_path=dsn_path,
+            output=output,
+            drc_output=drc_output,
+            max_passes=max_passes,
+            thread_count=thread_count,
+            ignore_arg=ignore_arg,
+        )
+
+    def _execute_process(
+        self,
+        command: list[str],
+        mode: str,
+        dsn_path: Path,
+        timeout: float,
+    ) -> tuple[subprocess.CompletedProcess[str], float]:
+        start_time = time.perf_counter()
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                errors="replace",
+                timeout=timeout,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            missing = self._docker_executable if mode == "docker" else self._java_executable
+            raise RuntimeError(
+                f"{missing} was not found. Install the required runtime or switch "
+                f"{'use_docker' if mode == 'docker' else 'to Docker mode'}."
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            logger.warning(
+                "freerouting_timeout",
+                timeout_seconds=exc.timeout,
+                dsn=dsn_path.name,
+                stdout_tail=_tail(_sanitize_text(_coerce_process_output(exc.stdout))),
+                stderr_tail=_tail(_sanitize_text(_coerce_process_output(exc.stderr))),
+            )
+            raise RuntimeError(
+                f"FreeRouting timed out after {exc.timeout} seconds while "
+                f"processing {dsn_path.name}."
+            ) from exc
+        wall_seconds = time.perf_counter() - start_time
+        return result, wall_seconds
+
     def run_freerouting(
         self,
         dsn_path: Path,
@@ -224,104 +381,20 @@ class FreeRoutingRunner:
         if drc_output is not None:
             drc_output.parent.mkdir(parents=True, exist_ok=True)
 
-        selected_docker = use_docker
         jar_path = freerouting_jar_path or cfg.freerouting_jar
-        if selected_docker and not _docker_available(self._docker_executable):
-            if jar_path is None:
-                raise RuntimeError(
-                    "Docker was requested for FreeRouting but was not found, and no "
-                    "FreeRouting JAR fallback is configured. Install Docker or set "
-                    "KICAD_MCP_FREEROUTING_JAR."
-                )
-            selected_docker = False
+        mode, command = self._resolve_command_and_mode(
+            use_docker=use_docker,
+            jar_path=jar_path,
+            dsn_path=dsn_path,
+            output=output,
+            drc_output=drc_output,
+            max_passes=max_passes,
+            thread_count=thread_count,
+            ignore_arg=ignore_arg,
+        )
 
-        if selected_docker:
-            mount_paths = [dsn_path, output]
-            if drc_output is not None:
-                mount_paths.append(drc_output)
-            mount_root = _common_parent(mount_paths)
-            dsn_arg = _container_relpath(mount_root, dsn_path)
-            ses_arg = _container_relpath(mount_root, output)
-            drc_arg = _container_relpath(mount_root, drc_output) if drc_output is not None else None
-            command = [
-                self._docker_executable,
-                "run",
-                "--rm",
-                "-v",
-                f"{mount_root}:/work",
-                "-w",
-                "/work",
-                self._docker_image,
-                "-de",
-                dsn_arg,
-                "-do",
-                ses_arg,
-                "-mp",
-                str(max_passes),
-                "-mt",
-                str(thread_count),
-                f"--router.max_passes={max_passes}",
-            ]
-            if ignore_arg:
-                command.extend(["-inc", ignore_arg])
-            if drc_arg is not None:
-                command.extend(["-drc", drc_arg])
-            mode = "docker"
-        else:
-            if jar_path is None:
-                raise RuntimeError(
-                    "FreeRouting JAR path is required when use_docker=False. "
-                    "Set KICAD_MCP_FREEROUTING_JAR or pass freerouting_jar_path."
-                )
-            command = [
-                self._java_executable,
-                "-jar",
-                str(jar_path),
-                "-de",
-                str(dsn_path.resolve()),
-                "-do",
-                str(output),
-                "-mp",
-                str(max_passes),
-                "-mt",
-                str(thread_count),
-                f"--router.max_passes={max_passes}",
-            ]
-            if ignore_arg:
-                command.extend(["-inc", ignore_arg])
-            if drc_output is not None:
-                command.extend(["-drc", str(drc_output)])
-            mode = "jar"
-
-        start_time = time.perf_counter()
-        try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                errors="replace",
-                timeout=timeout or cfg.freerouting_timeout_sec,
-                check=False,
-            )
-        except FileNotFoundError as exc:
-            missing = self._docker_executable if selected_docker else self._java_executable
-            raise RuntimeError(
-                f"{missing} was not found. Install the required runtime or switch "
-                f"{'use_docker' if selected_docker else 'to Docker mode'}."
-            ) from exc
-        except subprocess.TimeoutExpired as exc:
-            logger.warning(
-                "freerouting_timeout",
-                timeout_seconds=exc.timeout,
-                dsn=dsn_path.name,
-                stdout_tail=_tail(_sanitize_text(_coerce_process_output(exc.stdout))),
-                stderr_tail=_tail(_sanitize_text(_coerce_process_output(exc.stderr))),
-            )
-            raise RuntimeError(
-                "FreeRouting timed out after "
-                f"{exc.timeout} seconds while processing {dsn_path.name}."
-            ) from exc
-        wall_seconds = time.perf_counter() - start_time
+        effective_timeout = timeout or cfg.freerouting_timeout_sec
+        result, wall_seconds = self._execute_process(command, mode, dsn_path, effective_timeout)
 
         sanitized_stdout = _sanitize_text(result.stdout)
         sanitized_stderr = _sanitize_text(result.stderr)
