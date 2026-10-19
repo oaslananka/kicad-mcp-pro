@@ -385,43 +385,48 @@ def _load_stackup_state() -> list[StackupLayerSpec] | None:
     return [StackupLayerSpec.model_validate(item) for item in payload]
 
 
+def _stackup_layer_from_kipy(index: int, layer: object) -> StackupLayerSpec:
+    raw_layer = getattr(layer, "layer", "")
+    if isinstance(raw_layer, int):
+        name = BoardLayer.Name(raw_layer).removeprefix("BL_")
+    else:
+        name = str(raw_layer or f"dielectric_{index}")
+    normalized_name = name.replace(".", "_")
+    thickness_nm = int(getattr(layer, "thickness", 0))
+    material = str(getattr(layer, "material_name", "") or "")
+    if not material:
+        material = "Copper" if normalized_name.endswith("_Cu") else "FR4"
+    layer_type = str(getattr(layer, "type_name", "") or getattr(layer, "type", "") or "")
+    if not layer_type:
+        layer_type = "signal" if normalized_name.endswith("_Cu") else "dielectric"
+    spec_kwargs: dict[str, Any] = {
+        "name": normalized_name if normalized_name in CANONICAL_LAYER_NAMES else name,
+        "type": layer_type,
+        "thickness_mm": nm_to_mm(thickness_nm) if thickness_nm else 0.18,
+        "material": material,
+    }
+    epsilon_r = getattr(layer, "epsilon_r", None)
+    if isinstance(epsilon_r, int | float) and epsilon_r != 0:
+        spec_kwargs["epsilon_r"] = float(epsilon_r)
+    loss_tangent = getattr(layer, "loss_tangent", None)
+    if isinstance(loss_tangent, int | float) and loss_tangent != 0:
+        spec_kwargs["loss_tangent"] = float(loss_tangent)
+    return StackupLayerSpec.model_validate(spec_kwargs)
+
+
 def _stackup_specs_from_board() -> list[StackupLayerSpec] | None:
     if not _board_is_open():
         return None
 
     stackup = get_board().get_stackup()
-    specs: list[StackupLayerSpec] = []
-    for index, layer in enumerate(getattr(stackup, "layers", [])):
-        raw_layer = getattr(layer, "layer", "")
-        if isinstance(raw_layer, int):
-            name = BoardLayer.Name(raw_layer).removeprefix("BL_")
-        else:
-            name = str(raw_layer or f"dielectric_{index}")
-        normalized_name = name.replace(".", "_")
-        thickness_nm = int(getattr(layer, "thickness", 0))
-        material = str(getattr(layer, "material_name", "") or "")
-        if not material:
-            material = "Copper" if normalized_name.endswith("_Cu") else "FR4"
-        layer_type = str(getattr(layer, "type_name", "") or getattr(layer, "type", "") or "")
-        if not layer_type:
-            layer_type = "signal" if normalized_name.endswith("_Cu") else "dielectric"
-        spec_kwargs: dict[str, Any] = {
-            "name": normalized_name if normalized_name in CANONICAL_LAYER_NAMES else name,
-            "type": layer_type,
-            "thickness_mm": nm_to_mm(thickness_nm) if thickness_nm else 0.18,
-            "material": material,
-        }
-        epsilon_r = getattr(layer, "epsilon_r", None)
-        if isinstance(epsilon_r, int | float) and epsilon_r != 0:
-            spec_kwargs["epsilon_r"] = float(epsilon_r)
-        loss_tangent = getattr(layer, "loss_tangent", None)
-        if isinstance(loss_tangent, int | float) and loss_tangent != 0:
-            spec_kwargs["loss_tangent"] = float(loss_tangent)
-        specs.append(StackupLayerSpec.model_validate(spec_kwargs))
+    specs = [
+        _stackup_layer_from_kipy(index, layer)
+        for index, layer in enumerate(getattr(stackup, "layers", []))
+    ]
     return specs or None
 
 
-def _parse_stackup_specs_from_board_text(content: str) -> list[StackupLayerSpec] | None:
+def _extract_board_stackup_block(content: str) -> str | None:
     match = re.search(r"(?m)^\s*\(setup\b", content)
     if match is None:
         return None
@@ -430,6 +435,45 @@ def _parse_stackup_specs_from_board_text(content: str) -> list[StackupLayerSpec]
     if stackup_match is None:
         return None
     stackup_block, _ = _extract_block(setup_block, stackup_match.start())
+    return stackup_block or None
+
+
+def _parse_single_stackup_layer(layer_block: str) -> StackupLayerSpec | None:
+    stripped = layer_block.lstrip()
+    quoted = re.match(r'\(layer\s+"([^"]+)"\s+(\d+)', stripped)
+    dielectric = re.match(r"\(layer\s+dielectric\s+(\d+)", stripped)
+    if quoted is not None:
+        layer_name = resolve_layer_name(quoted.group(1))
+    elif dielectric is not None:
+        layer_name = f"dielectric_{dielectric.group(1)}"
+    else:
+        return None
+
+    thickness_match = re.search(rf"\(thickness\s+({FLOAT_PATTERN})\)", layer_block)
+    if thickness_match is None:
+        return None
+
+    type_match = re.search(r'\(type\s+"([^"]+)"\)', layer_block)
+    material_match = re.search(r'\(material\s+"([^"]+)"\)', layer_block)
+    epsilon_match = re.search(rf"\(epsilon_r\s+({FLOAT_PATTERN})\)", layer_block)
+    loss_match = re.search(rf"\(loss_tangent\s+({FLOAT_PATTERN})\)", layer_block)
+    epsilon_text = epsilon_match.group(1) if epsilon_match is not None else None
+    loss_text = loss_match.group(1) if loss_match is not None else None
+
+    return StackupLayerSpec.model_validate(
+        {
+            "name": layer_name,
+            "type": type_match.group(1) if type_match else "signal",
+            "thickness_mm": float(thickness_match.group(1)),
+            "material": material_match.group(1) if material_match else "FR4",
+            "epsilon_r": float(epsilon_text) if epsilon_text is not None else None,
+            "loss_tangent": float(loss_text) if loss_text is not None else None,
+        }
+    )
+
+
+def _parse_stackup_specs_from_board_text(content: str) -> list[StackupLayerSpec] | None:
+    stackup_block = _extract_board_stackup_block(content)
     if not stackup_block:
         return None
 
@@ -444,38 +488,9 @@ def _parse_stackup_specs_from_board_text(content: str) -> list[StackupLayerSpec]
         if not layer_block:
             break
         cursor = start + length
-        stripped = layer_block.lstrip()
-        quoted = re.match(r'\(layer\s+"([^"]+)"\s+(\d+)', stripped)
-        dielectric = re.match(r"\(layer\s+dielectric\s+(\d+)", stripped)
-        if quoted is not None:
-            layer_name = resolve_layer_name(quoted.group(1))
-        elif dielectric is not None:
-            layer_name = f"dielectric_{dielectric.group(1)}"
-        else:
-            continue
-
-        type_match = re.search(r'\(type\s+"([^"]+)"\)', layer_block)
-        thickness_match = re.search(rf"\(thickness\s+({FLOAT_PATTERN})\)", layer_block)
-        if thickness_match is None:
-            continue
-        material_match = re.search(r'\(material\s+"([^"]+)"\)', layer_block)
-        epsilon_match = re.search(rf"\(epsilon_r\s+({FLOAT_PATTERN})\)", layer_block)
-        loss_match = re.search(rf"\(loss_tangent\s+({FLOAT_PATTERN})\)", layer_block)
-        epsilon_text = epsilon_match.group(1) if epsilon_match is not None else None
-        loss_text = loss_match.group(1) if loss_match is not None else None
-
-        specs.append(
-            StackupLayerSpec.model_validate(
-                {
-                    "name": layer_name,
-                    "type": type_match.group(1) if type_match else "signal",
-                    "thickness_mm": float(thickness_match.group(1)),
-                    "material": material_match.group(1) if material_match else "FR4",
-                    "epsilon_r": float(epsilon_text) if epsilon_text is not None else None,
-                    "loss_tangent": float(loss_text) if loss_text is not None else None,
-                }
-            )
-        )
+        spec = _parse_single_stackup_layer(layer_block)
+        if spec is not None:
+            specs.append(spec)
     return specs or None
 
 
@@ -1894,6 +1909,70 @@ def _board_art_rect_block(
     )
 
 
+def _validate_bitmap_board_art_inputs(
+    image_path: Path,
+    width_mm: float,
+    threshold: int,
+    max_pixels: int,
+    max_rects: int,
+) -> None:
+    if not image_path.is_file():
+        raise FileNotFoundError(f"Bitmap source does not exist: {image_path}")
+    if width_mm <= 0.0:
+        raise ValueError("width_mm must be positive.")
+    if not 0 <= threshold <= 255:
+        raise ValueError("threshold must be between 0 and 255.")
+    if max_pixels < 4:
+        raise ValueError("max_pixels must be at least 4.")
+    if max_rects < 1:
+        raise ValueError("max_rects must be at least 1.")
+
+
+class _BitmapImageLike(Protocol):
+    def getpixel(self, xy: tuple[int, int]) -> object: ...
+
+
+def _is_bitmap_pixel_active(raw_value: object, threshold: int, invert: bool) -> bool:
+    if isinstance(raw_value, int):
+        value = raw_value
+    elif isinstance(raw_value, tuple):
+        value = int(raw_value[0])
+    else:
+        value = int(cast(int, raw_value or 0))
+    return value >= threshold if invert else value <= threshold
+
+
+def _scan_bitmap_row(
+    gray: _BitmapImageLike,
+    row: int,
+    *,
+    width_px: int,
+    pixel_w: float,
+    pixel_h: float,
+    x_mm: float,
+    y_mm: float,
+    layer: str,
+    threshold: int,
+    invert: bool,
+) -> list[str]:
+    blocks: list[str] = []
+    run_start: int | None = None
+    y1 = y_mm + (row * pixel_h)
+    y2 = y1 + pixel_h
+    for col in range(width_px + 1):
+        active = False
+        if col < width_px:
+            active = _is_bitmap_pixel_active(gray.getpixel((col, row)), threshold, invert)
+        if active and run_start is None:
+            run_start = col
+        elif (not active or col == width_px) and run_start is not None:
+            x1 = x_mm + (run_start * pixel_w)
+            x2 = x_mm + (col * pixel_w)
+            blocks.append(_board_art_rect_block(x1, y1, x2, y2, layer))
+            run_start = None
+    return blocks
+
+
 def _bitmap_board_art_blocks(
     image_path: Path,
     *,
@@ -1914,16 +1993,7 @@ def _bitmap_board_art_blocks(
             "a runtime with the Pillow package available."
         ) from exc
 
-    if not image_path.is_file():
-        raise FileNotFoundError(f"Bitmap source does not exist: {image_path}")
-    if width_mm <= 0.0:
-        raise ValueError("width_mm must be positive.")
-    if not 0 <= threshold <= 255:
-        raise ValueError("threshold must be between 0 and 255.")
-    if max_pixels < 4:
-        raise ValueError("max_pixels must be at least 4.")
-    if max_rects < 1:
-        raise ValueError("max_rects must be at least 1.")
+    _validate_bitmap_board_art_inputs(image_path, width_mm, threshold, max_pixels, max_rects)
 
     with Image.open(image_path) as source:
         gray = source.convert("L")
@@ -1939,32 +2009,24 @@ def _bitmap_board_art_blocks(
         pixel_h = pixel_w
         blocks: list[str] = []
         for row in range(height_px):
-            run_start: int | None = None
-            for col in range(width_px + 1):
-                active = False
-                if col < width_px:
-                    raw_value = gray.getpixel((col, row))
-                    if isinstance(raw_value, int):
-                        value = raw_value
-                    elif isinstance(raw_value, tuple):
-                        value = int(raw_value[0])
-                    else:
-                        value = int(raw_value or 0)
-                    active = value >= threshold if invert else value <= threshold
-                if active and run_start is None:
-                    run_start = col
-                elif (not active or col == width_px) and run_start is not None:
-                    x1 = x_mm + (run_start * pixel_w)
-                    y1 = y_mm + (row * pixel_h)
-                    x2 = x_mm + (col * pixel_w)
-                    y2 = y1 + pixel_h
-                    blocks.append(_board_art_rect_block(x1, y1, x2, y2, layer))
-                    run_start = None
-                    if len(blocks) > max_rects:
-                        raise ValueError(
-                            f"Bitmap board-art import would create more than {max_rects} shapes. "
-                            "Lower max_pixels, increase threshold, or simplify the source image."
-                        )
+            row_blocks = _scan_bitmap_row(
+                gray,
+                row,
+                width_px=width_px,
+                pixel_w=pixel_w,
+                pixel_h=pixel_h,
+                x_mm=x_mm,
+                y_mm=y_mm,
+                layer=layer,
+                threshold=threshold,
+                invert=invert,
+            )
+            blocks.extend(row_blocks)
+            if len(blocks) > max_rects:
+                raise ValueError(
+                    f"Bitmap board-art import would create more than {max_rects} shapes. "
+                    "Lower max_pixels, increase threshold, or simplify the source image."
+                )
     return blocks, width_px, height_px
 
 
