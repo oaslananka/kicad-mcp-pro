@@ -8,7 +8,6 @@ from dataclasses import asdict
 from pathlib import Path
 
 from kicad_mcp.evals.reference_ops_trace_validation import (
-    ReferenceOpsTraceValidationError,
     validate_reference_ops_trace,
 )
 
@@ -23,7 +22,7 @@ def main() -> int:
         summary = validate_reference_ops_trace(
             args.trace, attempt_id=args.attempt_id, phase_name=args.phase
         )
-    except (ReferenceOpsTraceValidationError, ValueError):
+    except ValueError:
         print(json.dumps({"status": "blocked", "counts_as_task_success": False}))
         return 2
     print(json.dumps({"status": "server_trace_valid", **asdict(summary)}, sort_keys=True))

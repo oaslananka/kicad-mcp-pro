@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from kicad_mcp.evals import reference_ops_trace_validation
 from kicad_mcp.evals.reference_ops_trace import ReferenceOpsTrace
 from kicad_mcp.evals.reference_ops_trace_validation import (
     ReferenceOpsTraceValidationError,
@@ -16,9 +17,18 @@ from kicad_mcp.evals.reference_ops_trace_validation import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_private_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        reference_ops_trace_validation,
+        "_TRACE_ROOT",
+        tmp_path / ".dev-tools" / "reference-agent-runs",
+    )
+
+
 def _good_trace(tmp_path: Path) -> Path:
-    parent = tmp_path / "private"
-    parent.mkdir(mode=0o700)
+    parent = tmp_path / ".dev-tools" / "reference-agent-runs" / "attempt-004"
+    parent.mkdir(mode=0o700, parents=True)
     parent.chmod(0o700)
     path = parent / "ops-mcp-trace.jsonl"
 
@@ -156,3 +166,20 @@ def test_other_incomplete_or_untrusted_trace_conditions_fail_closed(
         path.write_text("".join(json.dumps(row) + "\n" for row in rows))
     with pytest.raises(ReferenceOpsTraceValidationError):
         validate_reference_ops_trace(path, attempt_id="attempt-004", phase_name="schematic")
+
+
+def test_trace_outside_reserved_directory_is_rejected(tmp_path: Path) -> None:
+    original = _good_trace(tmp_path)
+    foreign = tmp_path / "elsewhere" / "ops-mcp-trace.jsonl"
+    foreign.parent.mkdir()
+    foreign.write_bytes(original.read_bytes())
+    foreign.chmod(0o600)
+    with pytest.raises(ReferenceOpsTraceValidationError, match="reserved"):
+        validate_reference_ops_trace(foreign, attempt_id="attempt-004", phase_name="schematic")
+
+
+@pytest.mark.parametrize("attempt_id", [".", "..", "../escape", "other-id"])
+def test_attempt_identity_cannot_redirect_trace(tmp_path: Path, attempt_id: str) -> None:
+    path = _good_trace(tmp_path)
+    with pytest.raises(ReferenceOpsTraceValidationError):
+        validate_reference_ops_trace(path, attempt_id=attempt_id, phase_name="schematic")
