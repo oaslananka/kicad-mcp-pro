@@ -119,3 +119,167 @@ def test_kicad_cli_uses_existing_bounded_version_probe(monkeypatch: pytest.Monke
     assert cli._kicad_10_cli_available() is False
     monkeypatch.setattr(cli.shutil, "which", lambda _: None)
     assert cli._kicad_10_cli_available() is False
+
+
+def _write_ops_server_config(
+    tmp_path: Path,
+    *,
+    project: Path = ROOT,
+    profile: str = "schematic_authoring",
+    mode: str = "write",
+) -> Path:
+    executable = tmp_path / "uv"
+    executable.write_text("#!/bin/sh\nexit 1\n")
+    executable.chmod(0o700)
+    version = cli._pinned_uv_version(project)
+    assert version is not None
+    document = {
+        "mcpServers": {
+            "kicad-msi-schematic-review": {
+                "type": "stdio",
+                "command": str(executable),
+                "args": [
+                    "tool",
+                    "run",
+                    "--from",
+                    f"uv=={version}",
+                    "uv",
+                    "run",
+                    "--project",
+                    str(project),
+                    "--no-dev",
+                    "kicad-mcp-pro",
+                    "--transport",
+                    "stdio",
+                    "--profile",
+                    profile,
+                    "--mode",
+                    mode,
+                ],
+                "env": {
+                    "KICAD_MCP_PROFILE": profile,
+                    "KICAD_MCP_OPERATING_MODE": mode,
+                },
+                "enabled": True,
+            }
+        }
+    }
+    path = tmp_path / "mcp.json"
+    path.write_text(json.dumps(document))
+    path.chmod(0o600)
+    return path
+
+
+def test_chatgpt_ops_preflight_is_an_explicit_nonexecuting_handoff(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _safe_checks(monkeypatch)
+    config = _write_ops_server_config(tmp_path)
+    outcome = cli.preflight(
+        root=ROOT,
+        board_id="stm32f072-usbc",
+        attempt_number=812,
+        phase_name="schematic",
+        agent_runtime="chatgpt-ops",
+        ops_server_name="kicad-msi-schematic-review",
+        ops_config_path=config,
+    )
+    assert outcome["status"] == "handoff_required"
+    assert outcome["agent"] == "chatgpt-ops"
+    assert outcome["live_tool_attestation_required"] is True
+    assert outcome["recorded_event_log_required"] is True
+    assert outcome["executes_agent"] is False
+    assert outcome["counts_as_task_success"] is False
+    assert outcome["blocking_reasons"] == []
+    assert "claude" not in json.dumps(outcome)
+    assert str(config) not in json.dumps(outcome)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "wrong-profile",
+        "wrong-mode",
+        "foreign-source",
+        "active-socket",
+        "insecure-permissions",
+        "symlink",
+        "missing",
+        "disabled",
+        "unreviewed-command",
+        "unpinned-uv",
+        "unreviewed-extra-flags",
+    ],
+)
+def test_chatgpt_ops_preflight_rejects_unsafe_or_unpinned_servers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mutation: str
+) -> None:
+    _safe_checks(monkeypatch)
+    config = _write_ops_server_config(tmp_path)
+    data = json.loads(config.read_text())
+    entry = data["mcpServers"]["kicad-msi-schematic-review"]
+    if mutation == "wrong-profile":
+        entry["args"][entry["args"].index("--profile") + 1] = "build"
+    elif mutation == "wrong-mode":
+        entry["env"]["KICAD_MCP_OPERATING_MODE"] = "readonly"
+    elif mutation == "foreign-source":
+        entry["args"][entry["args"].index("--project") + 1] = str(tmp_path)
+    elif mutation == "active-socket":
+        entry["env"]["KICAD_API_SOCKET"] = "ipc:///tmp/kicad/api-existing.sock"
+    elif mutation == "disabled":
+        entry["enabled"] = False
+    elif mutation == "unreviewed-command":
+        entry["command"] = str(tmp_path / "mcp.json")
+    elif mutation == "unpinned-uv":
+        entry["args"][entry["args"].index("--from") + 1] = "uv==0.99.99"
+    elif mutation == "unreviewed-extra-flags":
+        entry["args"] += ["--allow-unsafe-tools"]
+    if mutation in {
+        "wrong-profile",
+        "wrong-mode",
+        "foreign-source",
+        "active-socket",
+        "disabled",
+        "unreviewed-command",
+        "unpinned-uv",
+        "unreviewed-extra-flags",
+    }:
+        config.write_text(json.dumps(data))
+    elif mutation == "insecure-permissions":
+        config.chmod(0o644)
+    elif mutation == "symlink":
+        other = tmp_path / "target.json"
+        config.rename(other)
+        config.symlink_to(other)
+    else:
+        config.unlink()
+    outcome = cli.preflight(
+        root=ROOT,
+        board_id="stm32f072-usbc",
+        attempt_number=812,
+        phase_name="schematic",
+        agent_runtime="chatgpt-ops",
+        ops_server_name="kicad-msi-schematic-review",
+        ops_config_path=config,
+    )
+    assert outcome["status"] == "blocked"
+    assert outcome["blocking_reasons"] == ["reviewed_ops_mcp_server_unavailable"]
+    assert outcome["counts_as_task_success"] is False
+
+
+def test_chatgpt_ops_manufacturing_remains_blocked_even_with_server(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _safe_checks(monkeypatch)
+    config = _write_ops_server_config(tmp_path, profile="release", mode="manufacturing")
+    outcome = cli.preflight(
+        root=ROOT,
+        board_id="stm32f072-usbc",
+        attempt_number=812,
+        phase_name="manufacturing",
+        agent_runtime="chatgpt-ops",
+        ops_server_name="kicad-msi-schematic-review",
+        ops_config_path=config,
+    )
+    assert outcome["status"] == "blocked"
+    assert "reviewed_ops_mcp_server_unavailable" in outcome["blocking_reasons"]
