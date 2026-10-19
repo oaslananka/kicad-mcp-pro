@@ -231,6 +231,42 @@ def test_cli_version_and_serve_help(sample_project: Path) -> None:
     assert "Start the MCP server explicitly" in serve_help.output
 
 
+def test_root_and_serve_share_cli_server_options(monkeypatch) -> None:
+    from kicad_mcp import server as server_module
+
+    callback_options: list[dict] = []
+    server_options: list[dict] = []
+    watch_options: list[dict] = []
+    monkeypatch.setattr(server_module, "_apply_cli_env", lambda **kw: callback_options.append(kw))
+    monkeypatch.setattr(
+        server_module, "_run_server_from_options", lambda **kw: server_options.append(kw)
+    )
+    monkeypatch.setattr(server_module, "_run_with_watch", lambda **kw: watch_options.append(kw))
+    runner = CliRunner()
+
+    root = runner.invoke(
+        server_module.app, ["--transport", "stdio", "--mode", "readonly", "--no-telemetry"]
+    )
+    assert root.exit_code == 0, root.output
+    assert callback_options[0]["transport"] == "stdio"
+    assert callback_options[0]["operating_mode"] == "readonly"
+    assert callback_options[0]["telemetry"] is False
+    assert server_options[0] == {}
+
+    serve = runner.invoke(
+        server_module.app, ["serve", "--transport", "stdio", "--mode", "readonly", "--no-telemetry"]
+    )
+    assert serve.exit_code == 0, serve.output
+    assert server_options[1]["transport"] == "stdio"
+    assert server_options[1]["operating_mode"] == "readonly"
+    assert server_options[1]["telemetry"] is False
+
+    for args in (["--watch"], ["serve", "--watch"]):
+        result = runner.invoke(server_module.app, args)
+        assert result.exit_code == 0, result.output
+    assert len(watch_options) == 2
+
+
 def test_cli_dashboard_help_exposes_mode_option(sample_project: Path) -> None:
     """The dashboard subcommand runs --help cleanly (sanity check for the added option)."""
     _ = sample_project

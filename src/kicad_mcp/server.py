@@ -18,7 +18,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Literal, TextIO, cast
+from typing import Annotated, Any, Literal, TextIO, cast
 from urllib.parse import urlparse, urlunsplit
 
 import anyio
@@ -142,6 +142,36 @@ except ImportError:
 
 # Shared user-facing values; preserve spelling and case across CLI and reports.
 _HELP_JSON_OUTPUT = "Emit machine-readable JSON."
+_HELP_TRANSPORT = "Transport: stdio, http, sse, streamable-http"
+_HELP_HOST = "HTTP bind host"
+_HELP_PORT = "HTTP bind port"
+_HELP_PROJECT_DIR = "Active KiCad project directory"
+_HELP_LOG_LEVEL = "Log level"
+_HELP_OPERATING_MODE = "Operating mode: readonly, write, manufacturing, experimental"
+_HELP_EXPERIMENTAL = "Enable experimental tools"
+
+# Reuse the same Typer metadata across the default and explicit serve entrypoints.
+_CliTransport = Annotated[str | None, typer.Option(help=option_help(_HELP_TRANSPORT))]
+_CliHost = Annotated[str | None, typer.Option(help=option_help(_HELP_HOST))]
+_CliPort = Annotated[int | None, typer.Option(help=option_help(_HELP_PORT))]
+_CliProjectDir = Annotated[str | None, typer.Option(help=option_help(_HELP_PROJECT_DIR))]
+_CliLogLevel = Annotated[str | None, typer.Option(help=option_help(_HELP_LOG_LEVEL))]
+_CliLogFormat = Annotated[str | None, typer.Option(help=option_help("Log format: text or json"))]
+_CliLogFile = Annotated[str | None, typer.Option(help=option_help("Rotating log file path"))]
+_CliProfile = Annotated[
+    str | None, typer.Option(help=f"Server profile: {', '.join(available_profiles())}")
+]
+_CliOperatingMode = Annotated[
+    str | None, typer.Option("--mode", help=option_help(_HELP_OPERATING_MODE))
+]
+_CliExperimental = Annotated[bool | None, typer.Option(help=option_help(_HELP_EXPERIMENTAL))]
+_CliTelemetry = Annotated[
+    bool | None,
+    typer.Option("--telemetry/--no-telemetry", help=option_help("Enable OpenTelemetry export")),
+]
+_CliWatch = Annotated[
+    bool, typer.Option("--watch", help=option_help("Watch source files and hot-reload on changes"))
+]
 _HTTP_RESPONSE_START = "http.response.start"
 _NOT_FOUND_LITERAL = "not found"
 _TOOL_ERROR_EVENT_NAME = "mcp.tool_error"
@@ -366,8 +396,7 @@ def _clean_tool_error(exc: BaseException) -> str:
     return message
 
 
-def _tool_error_code(message: str, *, tool_name: str = "") -> str:
-    lowered = message.casefold()
+def _classify_system_error_code(lowered: str, tool_name: str) -> str | None:
     if "operating mode" in lowered and "requires" in lowered:
         return "MODE_FORBIDDEN"
     if "timed out" in lowered or "timeout" in lowered:
@@ -386,6 +415,10 @@ def _tool_error_code(message: str, *, tool_name: str = "") -> str:
         return "CONFIGURATION_ERROR"
     if tool_name in CLI_FAILURE_TOOL_NAMES:
         return "CLI_COMMAND_FAILED"
+    return None
+
+
+def _classify_domain_error_code(lowered: str) -> str | None:
     if "connection" in lowered and ("refused" in lowered or "reset" in lowered):
         return "IPC_CONNECTION_LOST"
     if "not running" in lowered or "kicad not" in lowered:
@@ -405,11 +438,21 @@ def _tool_error_code(message: str, *, tool_name: str = "") -> str:
         return "FOOTPRINT_NOT_FOUND"
     if "net" in lowered and missing_or_not_found:
         return "NET_NOT_FOUND"
+    return None
+
+
+def _tool_error_code(message: str, *, tool_name: str = "") -> str:
+    lowered = message.casefold()
+    code = _classify_system_error_code(lowered, tool_name)
+    if code is not None:
+        return code
+    code = _classify_domain_error_code(lowered)
+    if code is not None:
+        return code
     return "TOOL_EXECUTION_FAILED"
 
 
-def _tool_error_hint(message: str) -> str:
-    lowered = message.casefold()
+def _classify_system_error_hint(lowered: str) -> str | None:
     if "operating mode" in lowered and "requires" in lowered:
         return (
             "Start kicad-mcp-pro with --mode write, --mode manufacturing, "
@@ -436,6 +479,10 @@ def _tool_error_hint(message: str) -> str:
             "Run kicad-mcp-pro tools list to see available tools, or "
             "check kicad_list_tool_categories() and kicad_get_tools_in_category()."
         )
+    return None
+
+
+def _classify_domain_error_hint(lowered: str) -> str | None:
     if "connection" in lowered and ("refused" in lowered or "reset" in lowered):
         return (
             "Start KiCad and enable the IPC API server:\n"
@@ -483,6 +530,17 @@ def _tool_error_hint(message: str) -> str:
         )
     if _NOT_FOUND_LITERAL in lowered or ("symbol" in lowered and "missing" in lowered):
         return "The requested resource was not found. Verify the name, identifier, or library path."
+    return None
+
+
+def _tool_error_hint(message: str) -> str:
+    lowered = message.casefold()
+    hint = _classify_system_error_hint(lowered)
+    if hint is not None:
+        return hint
+    hint = _classify_domain_error_hint(lowered)
+    if hint is not None:
+        return hint
     return (
         "Inspect the structured error and retry after correcting the request or project state. "
         "Run 'kicad-mcp-pro doctor' for a full diagnostic."
@@ -652,13 +710,14 @@ class _SyncServerHandle:
         return getattr(self._server, name)
 
 
-class _StaticTokenVerifier:
+class _StaticTokenVerifier(TokenVerifier):
     """Simple bearer-token verifier for local HTTP bridge deployments."""
 
     def __init__(self, expected_token: str) -> None:
         self._expected_token = expected_token
 
     async def verify_token(self, token: str) -> AccessToken | None:
+        await asyncio.sleep(0)
         if secrets.compare_digest(token, self._expected_token):
             return AccessToken(token=token, client_id="kicad-studio", scopes=["mcp"])
         return None
@@ -1772,48 +1831,42 @@ class _OriginValidationMiddleware(BaseHTTPMiddleware):
 class _DashboardAuthMiddleware(BaseHTTPMiddleware):
     """Enforce token verification on /api/* (except /api/health) and /ui* routes."""
 
+    @staticmethod
+    def _is_protected_route(path: str) -> bool:
+        is_api_or_ui = path.startswith("/api") or path.startswith("/ui") or path == "/"
+        is_health = path == "/api/health"
+        return is_api_or_ui and not is_health
+
+    @staticmethod
+    def _is_authorized(request: Request, expected_token: str, allow_query: bool) -> bool:
+        token = _bearer_token(request)
+        if token and secrets.compare_digest(token, expected_token):
+            return True
+        if allow_query:
+            query_token = request.query_params.get("token")
+            if query_token and secrets.compare_digest(query_token, expected_token):
+                return True
+        return False
+
     async def dispatch(
         self,
         request: Request,
         call_next: RequestResponseEndpoint,
     ) -> Response:
         cfg = get_config()
-        path = request.url.path
-
-        is_api_or_ui = path.startswith("/api") or path.startswith("/ui") or path == "/"
-        is_health = path == "/api/health"
-
-        if cfg.auth_token and is_api_or_ui and not is_health:
-            # Check Authorization: Bearer <token> header
-            token = _bearer_token(request)
-            authorized = False
-            if token and secrets.compare_digest(token, cfg.auth_token):
-                authorized = True
-            else:
-                # Check query parameter ?token=<token>
-                query_token = request.query_params.get("token")
-                if (
-                    cfg.allow_query_token_auth
-                    and query_token
-                    and secrets.compare_digest(query_token, cfg.auth_token)
-                ):
-                    authorized = True
-
-            if not authorized:
+        if cfg.auth_token and self._is_protected_route(request.url.path):
+            if not self._is_authorized(request, cfg.auth_token, cfg.allow_query_token_auth):
                 return JSONResponse(
                     {"error": "Unauthorized. Invalid or missing auth token."},
                     status_code=401,
                 )
 
-            # Check Origin
             origin = request.headers.get("origin")
-            if origin:
-                allowed = _is_origin_allowed(origin, cfg)
-                if not allowed:
-                    return JSONResponse(
-                        {"error": "Forbidden. Origin not allowed."},
-                        status_code=403,
-                    )
+            if origin and not _is_origin_allowed(origin, cfg):
+                return JSONResponse(
+                    {"error": "Forbidden. Origin not allowed."},
+                    status_code=403,
+                )
 
         return await call_next(request)
 
@@ -1934,18 +1987,9 @@ def _prometheus_metrics_payload() -> str:
     return "\n".join(lines)
 
 
-def _register_profile_components(
-    server: KiCadFastMCP,
-    enabled: set[str],
-    cfg: KiCadMCPConfig,
-) -> None:
-    """Register all profile-specific MCP surfaces on an already-created server."""
-    from .prompts import workflows
-    from .resources import analysis, board_state, server_info, studio_context
+def _register_conditional_tools(server: KiCadFastMCP, enabled: set[str]) -> None:
     from .tools import (
-        capability_parity,
         dfm,
-        embedded_files,
         emc_compliance,
         export,
         library,
@@ -1953,7 +1997,6 @@ def _register_profile_components(
         net_analysis,
         pcb,
         power_integrity,
-        project,
         routing,
         sch_transaction,
         schematic,
@@ -1968,13 +2011,6 @@ def _register_profile_components(
         visual_baseline,
         visual_qa,
     )
-
-    validate_callable_imports()
-
-    router.register(server)
-    project.register(server)
-    capability_parity.register(server)
-    embedded_files.register(server)
 
     if "pcb_read" in enabled or "pcb_write" in enabled:
         pcb.register(server)
@@ -1992,24 +2028,46 @@ def _register_profile_components(
         three_d_models.register(server)
     if "export" in enabled or "release_export" in enabled:
         export.register(server, include_low_level_exports="export" in enabled)
-    if "validation" in enabled:
-        validation.register(server)
-    if "dfm" in enabled:
-        dfm.register(server)
-    if "routing" in enabled:
-        routing.register(server)
-    if "power_integrity" in enabled:
-        power_integrity.register(server)
-    if "emc" in enabled:
-        emc_compliance.register(server)
-    if "signal_integrity" in enabled:
-        signal_integrity.register(server)
-    if "simulation" in enabled:
-        simulation.register(server)
-    if "version_control" in enabled:
-        version_control.register(server)
-    if "manufacturing" in enabled:
-        manufacturing.register(server)
+
+    simple_tool_map = (
+        ("validation", validation),
+        ("dfm", dfm),
+        ("routing", routing),
+        ("power_integrity", power_integrity),
+        ("emc", emc_compliance),
+        ("signal_integrity", signal_integrity),
+        ("simulation", simulation),
+        ("version_control", version_control),
+        ("manufacturing", manufacturing),
+    )
+    for category, module in simple_tool_map:
+        if category in enabled:
+            module.register(server)
+
+
+def _register_profile_components(
+    server: KiCadFastMCP,
+    enabled: set[str],
+    cfg: KiCadMCPConfig,
+) -> None:
+    """Register all profile-specific MCP surfaces on an already-created server."""
+    from .prompts import workflows
+    from .resources import analysis, board_state, server_info, studio_context
+    from .tools import (
+        capability_parity,
+        embedded_files,
+        project,
+    )
+
+    validate_callable_imports()
+
+    router.register(server)
+    project.register(server)
+    capability_parity.register(server)
+    embedded_files.register(server)
+
+    _register_conditional_tools(server, enabled)
+
     _footprint.register(server)
     _jobset.register(server)
     _symbol.register(server)
@@ -2023,6 +2081,69 @@ def _register_profile_components(
 
     if cfg.studio_watch_dir is not None:
         ensure_studio_project_watcher(cfg.studio_watch_dir)
+
+
+def _register_server_custom_routes(
+    server: KiCadFastMCP,
+    cfg: KiCadMCPConfig,
+    token_verifier: _StaticTokenVerifier | None,
+) -> None:
+    @server.custom_route("/.well-known/mcp-server", methods=["GET"], include_in_schema=False)
+    async def _well_known_mcp(_request: Request) -> JSONResponse:
+        return JSONResponse(get_wellknown_metadata())
+
+    @server.custom_route("/well-known/mcp-server", methods=["GET"], include_in_schema=False)
+    async def _well_known_mcp_compat(_request: Request) -> JSONResponse:
+        return JSONResponse(get_wellknown_metadata())
+
+    @server.custom_route(
+        "/.well-known/mcp-server/token-rotate",
+        methods=["POST"],
+        include_in_schema=False,
+    )
+    async def _rotate_token(request: Request) -> JSONResponse:
+        if token_verifier is None or not cfg.auth_token:
+            return JSONResponse({"error": "Bearer token auth is not enabled."}, status_code=404)
+        token = _bearer_token(request)
+        if await token_verifier.verify_token(token) is None:
+            return JSONResponse({"error": "Unauthorized."}, status_code=401)
+        try:
+            payload = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Request body must be JSON."}, status_code=400)
+        raw_token = payload.get("new_token") if isinstance(payload, dict) else None
+        new_token = raw_token.strip() if isinstance(raw_token, str) else ""
+        if not new_token:
+            return JSONResponse({"error": "new_token must be a non-empty string."}, status_code=400)
+        token_error = _validate_rotated_token(new_token)
+        if token_error is not None:
+            return JSONResponse({"error": token_error}, status_code=400)
+        cfg.auth_token = new_token
+        token_verifier.rotate(new_token)
+        logger.info("security_token_rotated", transport=cfg.transport, host=cfg.host)
+        return JSONResponse({"rotated": True})
+
+    if cfg.enable_metrics:
+
+        @server.custom_route("/metrics", methods=["GET"], include_in_schema=False)
+        async def _metrics(request: Request) -> PlainTextResponse | JSONResponse:
+            if not _is_loopback_host(cfg.host) and not await _request_is_authorized(
+                request, token_verifier
+            ):
+                return JSONResponse({"error": "Unauthorized."}, status_code=401)
+            return PlainTextResponse(
+                _prometheus_metrics_payload(),
+                media_type="text/plain; version=0.0.4",
+            )
+
+    if HAS_WEB:
+        for route in web_routes:
+            server.custom_route(
+                route.path,
+                methods=list(route.methods or ["GET"]),
+                include_in_schema=False,
+            )(route.endpoint)
+        logger.info("web_dashboard_routes_registered", count=len(web_routes))
 
 
 def build_server(profile: str | None = None, *, defer_registration: bool = False) -> FastMCP:
@@ -2073,69 +2194,7 @@ def build_server(profile: str | None = None, *, defer_registration: bool = False
 
     # MCP SDK v2 removed the legacy experimental Tasks runtime. Configuration
     # rejects that superseded draft fail-closed; no task handlers are registered.
-
-    @server.custom_route("/.well-known/mcp-server", methods=["GET"], include_in_schema=False)
-    async def _well_known_mcp(_request: Request) -> JSONResponse:
-        return JSONResponse(get_wellknown_metadata())
-
-    @server.custom_route("/well-known/mcp-server", methods=["GET"], include_in_schema=False)
-    async def _well_known_mcp_compat(_request: Request) -> JSONResponse:
-        return JSONResponse(get_wellknown_metadata())
-
-    @server.custom_route(
-        "/.well-known/mcp-server/token-rotate",
-        methods=["POST"],
-        include_in_schema=False,
-    )
-    async def _rotate_token(request: Request) -> JSONResponse:
-        if token_verifier is None or not cfg.auth_token:
-            return JSONResponse({"error": "Bearer token auth is not enabled."}, status_code=404)
-        token = _bearer_token(request)
-        if await token_verifier.verify_token(token) is None:
-            return JSONResponse({"error": "Unauthorized."}, status_code=401)
-        try:
-            payload = await request.json()
-        except Exception:
-            return JSONResponse({"error": "Request body must be JSON."}, status_code=400)
-        raw_token = payload.get("new_token") if isinstance(payload, dict) else None
-        new_token = raw_token.strip() if isinstance(raw_token, str) else ""
-        if not new_token:
-            return JSONResponse({"error": "new_token must be a non-empty string."}, status_code=400)
-        token_error = _validate_rotated_token(new_token)
-        if token_error is not None:
-            return JSONResponse({"error": token_error}, status_code=400)
-        cfg.auth_token = new_token
-        token_verifier.rotate(new_token)
-        logger.info("security_token_rotated", transport=cfg.transport, host=cfg.host)
-        return JSONResponse({"rotated": True})
-
-    if cfg.enable_metrics:
-
-        @server.custom_route("/metrics", methods=["GET"], include_in_schema=False)
-        async def _metrics(request: Request) -> PlainTextResponse | JSONResponse:
-            if not _is_loopback_host(cfg.host) and not await _request_is_authorized(
-                request, token_verifier
-            ):
-                return JSONResponse({"error": "Unauthorized."}, status_code=401)
-            return PlainTextResponse(
-                _prometheus_metrics_payload(),
-                media_type="text/plain; version=0.0.4",
-            )
-
-    # ------------------------------------------------------------------
-    # Web dashboard routes (API + SSE log stream)
-    # ------------------------------------------------------------------
-    if HAS_WEB:
-        for route in web_routes:
-            # Register each Starlette Route via the server's custom_route decorator.
-            # custom_route(path, methods, ...) returns a decorator; calling it with
-            # the endpoint function registers the route on the internal ASGI app.
-            server.custom_route(
-                route.path,
-                methods=list(route.methods or ["GET"]),
-                include_in_schema=False,
-            )(route.endpoint)
-        logger.info("web_dashboard_routes_registered", count=len(web_routes))
+    _register_server_custom_routes(server, cfg, token_verifier)
     # ------------------------------------------------------------------
 
     def register() -> None:
@@ -2253,6 +2312,10 @@ def _print_startup_diagnostics(cfg: KiCadMCPConfig, *, probe_runtime: bool = Tru
     _print_startup_onboarding()
 
 
+def _is_cli_provided(val: object) -> bool:
+    return val is not None and not isinstance(val, OptionInfo)
+
+
 def _apply_cli_env(
     transport: str | None = None,
     host: str | None = None,
@@ -2269,9 +2332,7 @@ def _apply_cli_env(
     cli_env = {
         "KICAD_MCP_TRANSPORT": transport,
         "KICAD_MCP_HOST": host,
-        "KICAD_MCP_PORT": (
-            str(port) if port is not None and not isinstance(port, OptionInfo) else None
-        ),
+        "KICAD_MCP_PORT": str(port) if _is_cli_provided(port) else None,
         "KICAD_MCP_LOG_LEVEL": log_level,
         "KICAD_MCP_LOG_FORMAT": log_format,
         "KICAD_MCP_LOG_FILE": log_file,
@@ -2280,13 +2341,13 @@ def _apply_cli_env(
         "KICAD_MCP_PROJECT_DIR": project_dir,
     }
     for key, value in cli_env.items():
-        if value is not None and not isinstance(value, OptionInfo):
-            os.environ[key] = value
-    if experimental is not None and not isinstance(experimental, OptionInfo):
+        if _is_cli_provided(value):
+            os.environ[key] = str(value)
+    if _is_cli_provided(experimental):
         os.environ["KICAD_MCP_ENABLE_EXPERIMENTAL_TOOLS"] = "true" if experimental else "false"
         if experimental and operating_mode is None:
             os.environ["KICAD_MCP_OPERATING_MODE"] = "experimental"
-    if telemetry is not None and not isinstance(telemetry, OptionInfo):
+    if _is_cli_provided(telemetry):
         os.environ["KICAD_MCP_TELEMETRY_ENABLED"] = "true" if telemetry else "false"
 
 
@@ -2390,32 +2451,18 @@ def _run_server_from_options(
 
 @app.callback(invoke_without_command=True)
 def main_callback(
-    transport: str | None = typer.Option(
-        None, help=option_help("Transport: stdio, http, sse, streamable-http")
-    ),
-    host: str | None = typer.Option(None, help=option_help("HTTP bind host")),
-    port: int | None = typer.Option(None, help=option_help("HTTP bind port")),
-    project_dir: str | None = typer.Option(
-        None, help=option_help("Active KiCad project directory")
-    ),
-    log_level: str | None = typer.Option(None, help=option_help("Log level")),
-    log_format: str | None = typer.Option(None, help=option_help("Log format: text or json")),
-    log_file: str | None = typer.Option(None, help=option_help("Rotating log file path")),
-    profile: str | None = typer.Option(
-        None, help=f"Server profile: {', '.join(available_profiles())}"
-    ),
-    operating_mode: str | None = typer.Option(
-        None,
-        "--mode",
-        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
-    ),
-    experimental: bool | None = typer.Option(None, help=option_help("Enable experimental tools")),
-    telemetry: bool | None = typer.Option(
-        None, "--telemetry/--no-telemetry", help=option_help("Enable OpenTelemetry export")
-    ),
-    watch: bool = typer.Option(
-        False, "--watch", help=option_help("Watch source files and hot-reload on changes")
-    ),
+    transport: _CliTransport = None,
+    host: _CliHost = None,
+    port: _CliPort = None,
+    project_dir: _CliProjectDir = None,
+    log_level: _CliLogLevel = None,
+    log_format: _CliLogFormat = None,
+    log_file: _CliLogFile = None,
+    profile: _CliProfile = None,
+    operating_mode: _CliOperatingMode = None,
+    experimental: _CliExperimental = None,
+    telemetry: _CliTelemetry = None,
+    watch: _CliWatch = False,
 ) -> None:
     """Start the KiCad MCP Pro server when no subcommand is supplied."""
     _apply_cli_env(
@@ -2454,32 +2501,18 @@ def main_callback(
 
 @app.command()
 def serve(
-    transport: str | None = typer.Option(
-        None, help=option_help("Transport: stdio, http, sse, streamable-http")
-    ),
-    host: str | None = typer.Option(None, help=option_help("HTTP bind host")),
-    port: int | None = typer.Option(None, help=option_help("HTTP bind port")),
-    project_dir: str | None = typer.Option(
-        None, help=option_help("Active KiCad project directory")
-    ),
-    log_level: str | None = typer.Option(None, help=option_help("Log level")),
-    log_format: str | None = typer.Option(None, help=option_help("Log format: text or json")),
-    log_file: str | None = typer.Option(None, help=option_help("Rotating log file path")),
-    profile: str | None = typer.Option(
-        None, help=f"Server profile: {', '.join(available_profiles())}"
-    ),
-    operating_mode: str | None = typer.Option(
-        None,
-        "--mode",
-        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
-    ),
-    experimental: bool | None = typer.Option(None, help=option_help("Enable experimental tools")),
-    telemetry: bool | None = typer.Option(
-        None, "--telemetry/--no-telemetry", help=option_help("Enable OpenTelemetry export")
-    ),
-    watch: bool = typer.Option(
-        False, "--watch", help=option_help("Watch source files and hot-reload on changes")
-    ),
+    transport: _CliTransport = None,
+    host: _CliHost = None,
+    port: _CliPort = None,
+    project_dir: _CliProjectDir = None,
+    log_level: _CliLogLevel = None,
+    log_format: _CliLogFormat = None,
+    log_file: _CliLogFile = None,
+    profile: _CliProfile = None,
+    operating_mode: _CliOperatingMode = None,
+    experimental: _CliExperimental = None,
+    telemetry: _CliTelemetry = None,
+    watch: _CliWatch = False,
 ) -> None:
     """Start the MCP server explicitly."""
     if watch:
@@ -2777,6 +2810,85 @@ def _check_status_icon(status: str) -> str:
     return "❌"
 
 
+def _init_detect_kicad() -> None:
+    typer.echo("🔍 KiCad MCP Pro Init")
+    typer.echo("─── PACKAGE ───")
+    typer.echo(f"  Version: {__version__}")
+    from .discovery import discover_kicad_cli
+
+    cli_path = discover_kicad_cli()
+    kicad_path = find_kicad_version(cli_path)
+    if kicad_path:
+        typer.echo(f"  KiCad:   {kicad_path}  ✅")
+    else:
+        typer.echo("  KiCad:   Not detected  ⚠️")
+        typer.echo("  Hint:    Install KiCad 8.0+ from https://www.kicad.org/download/")
+
+
+def _init_detect_project(project_dir: str | None) -> str:
+    resolved_project = project_dir or os.environ.get("KICAD_MCP_PROJECT_DIR", "")
+    if resolved_project:
+        pcb_files = list(Path(resolved_project).glob("*.kicad_pcb"))
+        sch_files = list(Path(resolved_project).glob("*.kicad_sch"))
+        typer.echo(f"  Project: {resolved_project}")
+        typer.echo(f"  PCB:     {len(pcb_files)} found  {'✅' if pcb_files else '⚠️'}")
+        typer.echo(f"  SCH:     {len(sch_files)} found  {'✅' if sch_files else '⚠️'}")
+    else:
+        typer.echo("  Project: Not set (optional)")
+    return resolved_project
+
+
+def _init_resolve_agent(agent: str | None) -> str:
+    from .setup import AGENTS
+
+    resolved_agent = agent or _detect_client() or "claude-code"
+    if resolved_agent not in AGENTS:
+        typer.echo(f"\n❌ Unsupported agent: {resolved_agent}")
+        typer.echo(f"   Supported: {', '.join(sorted(AGENTS))}")
+        raise typer.Exit(1)
+    typer.echo(f"\n  Agent:   {resolved_agent}")
+    return resolved_agent
+
+
+def _init_run_setup(
+    resolved_agent: str,
+    resolved_project: str,
+    mode: str,
+    write_config: bool,
+) -> None:
+    from .setup import setup_agent
+
+    try:
+        result = setup_agent(
+            resolved_agent,
+            project_dir=resolved_project or None,
+            mode=mode,
+            write=write_config,
+        )
+        if write_config and not result.startswith("✓ Config written to "):
+            typer.echo("\n  Config:  Failed — no confirmed config write", err=True)
+            raise typer.Exit(code=1)
+        typer.echo(f"\n  Config:  {'Written' if write_config else 'Generated'}")
+        typer.echo(f"  Result:  {result[:200]}")
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        typer.echo(f"\n  Config:  Failed - {exc}  ❌")
+        raise typer.Exit(1) from exc
+
+
+def _init_verify_health() -> None:
+    try:
+        report = build_health_report()
+        status_icon = "✅" if report.ok else "⚠️"
+        typer.echo(f"\n  Health:  {report.status} {status_icon}")
+        for check in report.checks:
+            icon = _check_status_icon(check.status)
+            typer.echo(f"    {icon} {check.name}: {check.message}")
+    except Exception as exc:
+        typer.echo(f"\n  Health:  Check failed - {exc}")
+
+
 @app.command()
 def init(
     interactive: bool = typer.Option(
@@ -2813,90 +2925,26 @@ def init(
         run_wizard()
         return
 
-    from .setup import AGENTS, setup_agent
-
-    # --- 1. KiCad detection ---
-    typer.echo("🔍 KiCad MCP Pro Init")
-    typer.echo("─── PACKAGE ───")
-    typer.echo(f"  Version: {__version__}")
-    from .discovery import discover_kicad_cli
-
-    cli_path = discover_kicad_cli()
-    kicad_path = find_kicad_version(cli_path)
-    if kicad_path:
-        typer.echo(f"  KiCad:   {kicad_path}  ✅")
-    else:
-        typer.echo("  KiCad:   Not detected  ⚠️")
-        typer.echo("  Hint:    Install KiCad 8.0+ from https://www.kicad.org/download/")
-
-    # --- 2. Project detection ---
-    resolved_project = project_dir or os.environ.get("KICAD_MCP_PROJECT_DIR", "")
-    if resolved_project:
-        pcb_files = list(Path(resolved_project).glob("*.kicad_pcb"))
-        sch_files = list(Path(resolved_project).glob("*.kicad_sch"))
-        typer.echo(f"  Project: {resolved_project}")
-        typer.echo(f"  PCB:     {len(pcb_files)} found  {'✅' if pcb_files else '⚠️'}")
-        typer.echo(f"  SCH:     {len(sch_files)} found  {'✅' if sch_files else '⚠️'}")
-    else:
-        typer.echo("  Project: Not set (optional)")
-
-    # --- 3. Agent selection ---
-    resolved_agent = agent or _detect_client() or "claude-code"
-    if resolved_agent not in AGENTS:
-        typer.echo(f"\n❌ Unsupported agent: {resolved_agent}")
-        typer.echo(f"   Supported: {', '.join(sorted(AGENTS))}")
-        raise typer.Exit(1)
-    typer.echo(f"\n  Agent:   {resolved_agent}")
-
-    # --- 4. Run setup ---
-    try:
-        result = setup_agent(
-            resolved_agent,
-            project_dir=resolved_project or None,
-            mode=mode,
-            write=write_config,
-        )
-        if write_config and not result.startswith("✓ Config written to "):
-            typer.echo("\n  Config:  Failed — no confirmed config write", err=True)
-            raise typer.Exit(code=1)
-        typer.echo(f"\n  Config:  {'Written' if write_config else 'Generated'}")
-        typer.echo(f"  Result:  {result[:200]}")
-    except Exception as exc:
-        typer.echo(f"\n  Config:  Failed - {exc}  ❌")
-        raise typer.Exit(1) from exc
-
-    # --- 5. Verify ---
-    try:
-        report = build_health_report()
-        status_icon = "✅" if report.ok else "⚠️"
-        typer.echo(f"\n  Health:  {report.status} {status_icon}")
-        for check in report.checks:
-            icon = _check_status_icon(check.status)
-            typer.echo(f"    {icon} {check.name}: {check.message}")
-    except Exception as exc:
-        typer.echo(f"\n  Health:  Check failed - {exc}")
+    _init_detect_kicad()
+    resolved_project = _init_detect_project(project_dir)
+    resolved_agent = _init_resolve_agent(agent)
+    _init_run_setup(resolved_agent, resolved_project, mode, write_config)
+    _init_verify_health()
 
     typer.echo("\n─── Done ───")
     typer.echo("Run 'kicad-mcp-pro status' to see the current state.")
     typer.echo("Run 'kicad-mcp-pro doctor' for full diagnostics.")
 
 
-@app.command()
-def status(
-    json_output: bool = typer.Option(False, "--json", help=option_help(_HELP_JSON_OUTPUT)),
-) -> None:
-    """Display a human-readable status dashboard."""
+def _overall_status_icon(report: DiagnosticReport) -> str:
+    if report.ok:
+        return "✅"
+    if report.status == "degraded":
+        return "⚠️"
+    return "❌"
 
-    try:
-        report = build_health_report()
-    except Exception as exc:
-        typer.echo(f"Error building status: {exc}")
-        raise typer.Exit(1) from exc
 
-    if json_output:
-        typer.echo(diagnostic_report_json(report, indent=2))
-        return
-
+def _print_status_dashboard(report: DiagnosticReport, cfg: KiCadMCPConfig) -> None:
     # ── Top section ──
     typer.echo("╔══════════════════════════════════════════╗")
     typer.echo("║       KiCad MCP Pro — Status            ║")
@@ -2904,7 +2952,6 @@ def status(
 
     # ── Server ──
     typer.echo(f"\n📦  Package:   kicad-mcp-pro v{__version__}")
-    cfg = get_config()
     typer.echo(f"  Profile:   {cfg.profile or '(default)'}")
     typer.echo(f"  Mode:      {active_operating_mode(cfg).value}")
     typer.echo(f"  Transport: {cfg.transport}")
@@ -2949,13 +2996,49 @@ def status(
         if check.hint:
             typer.echo(f"      Hint: {check.hint}")
 
-    if report.ok:
-        overall_icon = "✅"
-    elif report.status == "degraded":
-        overall_icon = "⚠️"
-    else:
-        overall_icon = "❌"
-    typer.echo(f"\n  Overall: {report.status} {overall_icon}")
+    typer.echo(f"\n  Overall: {report.status} {_overall_status_icon(report)}")
+
+
+@app.command()
+def status(
+    json_output: bool = typer.Option(False, "--json", help=option_help(_HELP_JSON_OUTPUT)),
+) -> None:
+    """Display a human-readable status dashboard."""
+    try:
+        report = build_health_report()
+    except Exception as exc:
+        typer.echo(f"Error building status: {exc}")
+        raise typer.Exit(1) from exc
+
+    if json_output:
+        typer.echo(diagnostic_report_json(report, indent=2))
+        return
+
+    _print_status_dashboard(report, get_config())
+
+
+def _tail_follow(log_path: Path, level: str) -> None:
+    try:
+        with open(log_path, encoding="utf-8") as f:
+            f.seek(0, 2)
+            while True:
+                line = f.readline()
+                if not line:
+                    time.sleep(0.1)
+                    continue
+                if not level or _log_level_match(line, level):
+                    typer.echo(line.rstrip())
+    except KeyboardInterrupt:
+        pass
+
+
+def _tail_lines(log_path: Path, lines: int, level: str) -> None:
+    with open(log_path, encoding="utf-8") as f:
+        all_lines = f.readlines()
+    tail = all_lines[-lines:] if lines < len(all_lines) else all_lines
+    for line in tail:
+        if not level or _log_level_match(line, level):
+            typer.echo(line.rstrip())
 
 
 @app.command()
@@ -2989,28 +3072,9 @@ def log(
         raise typer.Exit(1)
 
     if follow:
-        # Tail -f mode: watch for new lines
-        try:
-            with open(log_path, encoding="utf-8") as f:
-                # Seek to end
-                f.seek(0, 2)
-                while True:
-                    line = f.readline()
-                    if not line:
-                        time.sleep(0.1)
-                        continue
-                    if not level or _log_level_match(line, level):
-                        typer.echo(line.rstrip())
-        except KeyboardInterrupt:
-            pass
+        _tail_follow(log_path, level)
     else:
-        # Tail last N lines
-        with open(log_path, encoding="utf-8") as f:
-            all_lines = f.readlines()
-        tail = all_lines[-lines:] if lines < len(all_lines) else all_lines
-        for line in tail:
-            if not level or _log_level_match(line, level):
-                typer.echo(line.rstrip())
+        _tail_lines(log_path, lines, level)
 
 
 @app.command()
@@ -3027,7 +3091,7 @@ def dashboard(
     operating_mode: str | None = typer.Option(
         None,
         "--mode",
-        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
+        help=option_help(_HELP_OPERATING_MODE),
     ),
 ) -> None:
     """Start the server with the web dashboard enabled."""
@@ -3132,7 +3196,7 @@ def list_tools_command(
     operating_mode: str | None = typer.Option(
         None,
         "--mode",
-        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
+        help=option_help(_HELP_OPERATING_MODE),
     ),
 ) -> None:
     """List MCP tools available for the selected profile."""
@@ -3350,24 +3414,20 @@ def _run_with_watch(
 
 @app.command(name="inspect")
 def inspect_command(
-    transport: str | None = typer.Option(
-        None, help=option_help("Transport: stdio, http, sse, streamable-http")
-    ),
-    host: str | None = typer.Option(None, help=option_help("HTTP bind host")),
-    port: int | None = typer.Option(None, help=option_help("HTTP bind port")),
-    project_dir: str | None = typer.Option(
-        None, help=option_help("Active KiCad project directory")
-    ),
-    log_level: str | None = typer.Option(None, help=option_help("Log level")),
+    transport: str | None = typer.Option(None, help=option_help(_HELP_TRANSPORT)),
+    host: str | None = typer.Option(None, help=option_help(_HELP_HOST)),
+    port: int | None = typer.Option(None, help=option_help(_HELP_PORT)),
+    project_dir: str | None = typer.Option(None, help=option_help(_HELP_PROJECT_DIR)),
+    log_level: str | None = typer.Option(None, help=option_help(_HELP_LOG_LEVEL)),
     profile: str | None = typer.Option(
         None, help=f"Server profile: {', '.join(available_profiles())}"
     ),
     operating_mode: str | None = typer.Option(
         None,
         "--mode",
-        help=option_help("Operating mode: readonly, write, manufacturing, experimental"),
+        help=option_help(_HELP_OPERATING_MODE),
     ),
-    experimental: bool | None = typer.Option(None, help=option_help("Enable experimental tools")),
+    experimental: bool | None = typer.Option(None, help=option_help(_HELP_EXPERIMENTAL)),
 ) -> None:
     """Launch the MCP Inspector GUI for interactive tool debugging."""
     # Start server on a random port for the inspector
