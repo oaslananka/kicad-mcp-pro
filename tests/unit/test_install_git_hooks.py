@@ -26,6 +26,8 @@ class _Harness:
         common_dir: str = ".git",
         effective_hooks: str = "",
         local_hooks: str = "",
+        worktree_hooks: str = "",
+        worktree_config: str = "",
     ) -> None:
         (tmp_path / ".git").mkdir(exist_ok=True)
         monkeypatch.setattr(install_git_hooks, "ROOT", tmp_path)
@@ -35,6 +37,9 @@ class _Harness:
             ("rev-parse", "--git-common-dir"): common_dir,
             ("config", "--get", "core.hooksPath"): effective_hooks,
             ("config", "--local", "--get", "core.hooksPath"): local_hooks,
+            ("config", "--get", "extensions.worktreeConfig"): worktree_config,
+            ("config", "--global", "--get", "core.hooksPath"): "",
+            ("config", "--worktree", "--get", "core.hooksPath"): worktree_hooks,
         }
 
         def fake_git_output(arguments: list[str], *, scope_optional: bool = False) -> str:
@@ -83,7 +88,13 @@ def test_normal_clone_overrides_global_hooks_path_locally(
 
     install_git_hooks.install()
 
-    assert ["git", "config", "--local", "core.hooksPath", ".git/hooks"] in harness.calls
+    assert [
+        "git",
+        "config",
+        "--local",
+        "core.hooksPath",
+        str((install_git_hooks.ROOT / ".git" / "hooks").resolve()),
+    ] in harness.calls
     assert ["lefthook", "install", "--force"] in harness.calls
     assert ["lefthook", "check-install"] in harness.calls
     assert not any(call[:3] == ["git", "config", "--global"] for call in harness.calls)
@@ -102,6 +113,40 @@ def test_custom_repository_hooks_path_is_not_overwritten(
         install_git_hooks.install()
 
 
+def test_primary_worktree_scopes_override_without_touching_shared_git(
+    harness_factory: Callable[..., _Harness],
+) -> None:
+    harness = harness_factory(effective_hooks="/home/example/.git-hooks", worktree_config="true")
+    install_git_hooks.install()
+    expected = str((install_git_hooks.ROOT / ".git" / "hooks").resolve())
+    assert ["git", "config", "--worktree", "core.hooksPath", expected] in harness.calls
+    assert not any(call[:3] == ["git", "config", "--local"] for call in harness.calls)
+    assert ["lefthook", "install", "--force"] in harness.calls
+
+
+def test_linked_worktree_can_install_without_mutating_other_worktrees(
+    tmp_path: Path, harness_factory: Callable[..., _Harness]
+) -> None:
+    git_dir = tmp_path / "common" / "worktrees" / "topic"
+    git_dir.mkdir(parents=True)
+    harness = harness_factory(
+        git_dir=str(git_dir),
+        common_dir=str(tmp_path / "common"),
+        effective_hooks="/home/example/.git-hooks",
+        worktree_config="true",
+    )
+    install_git_hooks.install()
+    assert [
+        "git",
+        "config",
+        "--worktree",
+        "core.hooksPath",
+        str(git_dir / "hooks"),
+    ] in harness.calls
+    assert ["lefthook", "install", "--force"] in harness.calls
+    assert not any(call[:3] == ["git", "config", "--local"] for call in harness.calls)
+
+
 def test_linked_worktree_with_custom_hooks_path_fails_closed(
     tmp_path: Path,
     harness_factory: Callable[..., _Harness],
@@ -113,7 +158,26 @@ def test_linked_worktree_with_custom_hooks_path_fails_closed(
         git_dir=str(git_dir),
         common_dir=str(common_dir),
         effective_hooks="/home/example/.git-hooks",
+        worktree_config="true",
+        worktree_hooks="/another/custom/path",
     )
 
-    with pytest.raises(RuntimeError, match="linked worktree has a custom core.hooksPath"):
+    with pytest.raises(RuntimeError, match="worktree has a custom core.hooksPath"):
         install_git_hooks.install()
+
+
+def test_global_commit_msg_is_preserved_without_modifying_the_original(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "global-hooks"
+    source.mkdir()
+    original = source / "commit-msg"
+    original.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    original.chmod(0o700)
+    new_dir = tmp_path / "worktree-hooks"
+    install_git_hooks._preserve_global_commit_msg(str(source), new_dir)
+    assert (new_dir / "commit-msg").is_symlink()
+    assert (new_dir / "commit-msg").resolve() == original
+    assert original.read_text(encoding="utf-8") == "#!/bin/sh\nexit 0\n"
+    install_git_hooks._preserve_global_commit_msg(str(source), new_dir)
+    assert (new_dir / "commit-msg").resolve() == original

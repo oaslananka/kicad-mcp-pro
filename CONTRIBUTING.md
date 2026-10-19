@@ -50,6 +50,15 @@ uv sync --all-extras --frozen
 Copy `.env.example` to `.env` only when local overrides are needed. Never commit
 credentials or local environment files.
 
+## Fast Git hooks and SonarQube IDE
+
+After installing dependencies, run task hooks **in each Git worktree** used
+for commits or pushes. This verifies that the Lefthook shims are active even
+when a global core.hooksPath is configured. For the pre-commit/pre-push
+checks and SonarQube for IDE connected-mode setup, see
+[local hooks and Sonar guidance](docs/development/local-hooks-sonar.md).
+The GitHub CI SonarCloud Quality Gate remains authoritative.
+
 ## Quality Gates
 
 Run the focused checks while developing:

@@ -10,6 +10,10 @@ repos:
         stages: [pre-commit]
       - id: check-merge-conflict
         stages: [pre-commit]
+      - id: check-case-conflict
+        stages: [pre-commit]
+      - id: check-symlinks
+        stages: [pre-commit]
       - id: check-yaml
         stages: [pre-commit]
       - id: check-json

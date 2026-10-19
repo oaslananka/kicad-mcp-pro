@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess  # nosec B404 -- controlled argv-only Git/Lefthook execution.
 import sys
@@ -49,14 +50,18 @@ def _lefthook_command(*arguments: str) -> list[str]:
     return [node, str(launcher), *arguments]
 
 
-def _select_worktree_hooks_install(effective_hooks: str) -> list[str]:
-    if effective_hooks:
+def _select_worktree_hooks_install(git_dir: Path, worktree_hooks: str) -> list[str]:
+    """Scope hook configuration to this worktree; never touch global/shared Git settings."""
+    expected_dir = (git_dir / "hooks").resolve()
+    if worktree_hooks and _resolve_repo_path(worktree_hooks) != expected_dir:
         raise RuntimeError(
-            "linked worktree has a custom core.hooksPath; refusing to rewrite shared Git "
-            "configuration. Configure a worktree-specific hooks path explicitly before "
-            "installing Lefthook."
+            "worktree has a custom core.hooksPath; refusing to overwrite it. "
+            f"Current: {worktree_hooks!r}; expected: {expected_dir}"
         )
-    return _lefthook_command("install")
+    if not worktree_hooks:
+        _run(["git", "config", "--worktree", HOOKS_CONFIG_KEY, str(expected_dir)])
+        print("hooks: setting only this worktree's core.hooksPath; global settings unchanged")
+    return _lefthook_command("install", "--force")
 
 
 def _select_hooks_install(
@@ -64,9 +69,15 @@ def _select_hooks_install(
     common_dir: Path,
     effective_hooks: str,
     local_hooks: str,
+    worktree_hooks: str,
+    worktree_config_enabled: bool,
 ) -> list[str]:
-    if git_dir != common_dir:
-        return _select_worktree_hooks_install(effective_hooks)
+    if git_dir != common_dir or worktree_config_enabled:
+        if local_hooks and _resolve_repo_path(local_hooks) != (common_dir / "hooks").resolve():
+            raise RuntimeError(
+                "repository has a custom shared core.hooksPath; refusing to overwrite it."
+            )
+        return _select_worktree_hooks_install(git_dir, worktree_hooks)
 
     expected_dir = (git_dir / "hooks").resolve()
     if local_hooks:
@@ -78,11 +89,25 @@ def _select_hooks_install(
             )
         return _lefthook_command("install", "--force")
     if effective_hooks:
-        config_value = ".git/hooks" if git_dir == (ROOT / ".git").resolve() else str(expected_dir)
-        _run(["git", "config", "--local", HOOKS_CONFIG_KEY, config_value])
+        _run(["git", "config", "--local", HOOKS_CONFIG_KEY, str(expected_dir)])
         print("hooks: preserving global core.hooksPath and overriding it only for this repository")
         return _lefthook_command("install", "--force")
     return _lefthook_command("install")
+
+
+def _preserve_global_commit_msg(global_hooks: str, hooks_dir: Path) -> None:
+    """Keep an existing user commit-msg hook without changing global Git settings."""
+    if not global_hooks:
+        return
+    source = _resolve_repo_path(global_hooks) / "commit-msg"
+    dest = hooks_dir / "commit-msg"
+    if source == dest or not source.is_file() or not os.access(source, os.X_OK):
+        return
+    if dest.exists() or dest.is_symlink():
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.symlink_to(source)
+    print("hooks: preserving existing global commit-msg hook via local symlink")
 
 
 def install() -> None:
@@ -90,12 +115,33 @@ def install() -> None:
     common_dir = _resolve_repo_path(_git_output(["rev-parse", "--git-common-dir"]))
     effective_hooks = _git_output(["config", "--get", HOOKS_CONFIG_KEY], scope_optional=True)
     local_hooks = _git_output(["config", "--local", "--get", HOOKS_CONFIG_KEY], scope_optional=True)
-    command = _select_hooks_install(git_dir, common_dir, effective_hooks, local_hooks)
+    global_hooks = _git_output(
+        ["config", "--global", "--get", HOOKS_CONFIG_KEY], scope_optional=True
+    )
+    worktree_config = _git_output(
+        ["config", "--get", "extensions.worktreeConfig"], scope_optional=True
+    )
+    worktree_hooks = (
+        _git_output(["config", "--worktree", "--get", HOOKS_CONFIG_KEY], scope_optional=True)
+        if worktree_config.lower() == "true"
+        else ""
+    )
+    command = _select_hooks_install(
+        git_dir,
+        common_dir,
+        effective_hooks,
+        local_hooks,
+        worktree_hooks,
+        worktree_config.lower() == "true",
+    )
     completed = _run(command, check=False)
     sys.stdout.write(completed.stdout)
     sys.stderr.write(completed.stderr)
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
+
+    active_hooks = _git_output(["config", "--get", HOOKS_CONFIG_KEY])
+    _preserve_global_commit_msg(global_hooks, _resolve_repo_path(active_hooks))
 
     verified = _run(_lefthook_command("check-install"), check=False)
     sys.stdout.write(verified.stdout)

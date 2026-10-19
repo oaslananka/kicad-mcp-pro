@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "SonarSource.sonarlint-vscode",
+    "charliermarsh.ruff",
+    "ms-python.python",
+    "ms-python.mypy-type-checker"
+  ]
+}

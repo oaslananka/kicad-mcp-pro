@@ -243,6 +243,35 @@ def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
             )
         )
 
+    local_hook_files = {
+        "lefthook.yml",
+        ".pre-commit-config.yaml",
+        "scripts/install_git_hooks.py",
+        "scripts/check_staged_sensitive_paths.py",
+        "scripts/hook_pre_push.py",
+        "tests/unit/test_install_git_hooks.py",
+        "tests/unit/test_staged_sensitive_paths.py",
+        "tests/unit/test_hook_pre_push.py",
+        "tests/unit/test_workflow_tooling.py",
+    }
+    if any(path in local_hook_files for path in changed):
+        tests = _existing(
+            [
+                "tests/unit/test_install_git_hooks.py",
+                "tests/unit/test_staged_sensitive_paths.py",
+                "tests/unit/test_hook_pre_push.py",
+                "tests/unit/test_workflow_tooling.py",
+            ],
+            root,
+        )
+        if tests:
+            checks.append(
+                Check(
+                    "local-hook-contract-tests",
+                    [sys.executable, "-m", "pytest", "-q", *tests],
+                )
+            )
+
     if any(_is_under(path, "src-tauri") for path in changed):
         managed_cargo = (
             root / ".dev-tools" / "cargo" / "bin" / ("cargo.exe" if os.name == "nt" else "cargo")

@@ -244,3 +244,19 @@ def test_canonical_helper_changes_select_architecture_guard(tmp_path: Path) -> N
     plan = build_plan(changed_files, root=tmp_path)
 
     assert "architecture-boundaries" in _names(plan)
+
+
+def test_hook_configuration_selects_focused_contract_tests(tmp_path: Path) -> None:
+    (tmp_path / "lefthook.yml").write_text("pre-commit: {}\n", encoding="utf-8")
+    for name in (
+        "test_install_git_hooks.py",
+        "test_staged_sensitive_paths.py",
+        "test_hook_pre_push.py",
+        "test_workflow_tooling.py",
+    ):
+        path = tmp_path / "tests" / "unit" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("def test_placeholder(): pass\n", encoding="utf-8")
+    plan = build_plan(["lefthook.yml"], root=tmp_path)
+    assert [check.name for check in plan] == ["local-hook-contract-tests"]
+    assert plan[0].command[1:4] == ["-m", "pytest", "-q"]
