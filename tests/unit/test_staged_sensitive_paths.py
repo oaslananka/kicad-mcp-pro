@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import Mock
-
 import pytest
 
 from scripts import check_staged_sensitive_paths
@@ -50,22 +48,20 @@ def test_example_and_source_paths_allowed(path: str) -> None:
     assert check_staged_sensitive_paths.sensitive_reason(path) is None
 
 
-def test_index_check_is_binary_safe_and_avoids_printing_contents(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_only_sensitive_paths_are_reported(
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    runner = Mock(return_value=Mock(returncode=0, stdout=b"docs/okay.md\0keys/a.pem\0"))
-    monkeypatch.setattr(check_staged_sensitive_paths.subprocess, "run", runner)
-    monkeypatch.setattr(check_staged_sensitive_paths, "which", lambda _: "/usr/bin/git")
-    assert check_staged_sensitive_paths.main() == 1
+    assert (
+        check_staged_sensitive_paths.main(
+            ["docs/okay.md", "certificates/my key.pem", "src/package.py"]
+        )
+        == 1
+    )
     output = capsys.readouterr().err
-    assert "keys/a.pem" in output
+    assert "certificates/my key.pem" in output
     assert "docs/okay.md" not in output
-    runner.assert_called_once()
-    assert runner.call_args.args[0] == [
-        "git",
-        "diff",
-        "--cached",
-        "--name-only",
-        "-z",
-        "--diff-filter=ACMR",
-    ]
+    assert "src/package.py" not in output
+
+
+def test_safe_staged_paths_pass_without_git_or_network() -> None:
+    assert check_staged_sensitive_paths.main(["docs/okay.md", ".env.example"]) == 0

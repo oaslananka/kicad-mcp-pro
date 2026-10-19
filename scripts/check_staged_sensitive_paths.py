@@ -6,10 +6,8 @@ network access. It is a first line of defense, not a replacement for Gitleaks.
 
 from __future__ import annotations
 
-import subprocess  # nosec B404 -- controlled, fixed-argument Git invocation.
 import sys
 from pathlib import PurePosixPath
-from shutil import which
 
 _PRIVATE_NAMES = frozenset(
     {".npmrc", ".pypirc", "id_rsa", "id_ed25519", "credentials.json", "service-account.json"}
@@ -35,27 +33,10 @@ def sensitive_reason(path: str) -> str | None:
     return None
 
 
-def main() -> int:
-    git_binary = which("git")
-    if git_binary is None:
-        print("sensitive paths: required Git executable not found", file=sys.stderr)
-        return 2
-    completed = subprocess.run(  # nosec B603 -- fixed argv, no shell.
-        ["git", "diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR"],  # noqa: S607 -- fixed Git subcommand, no shell.
-        capture_output=True,
-        check=False,
-    )
-    if completed.returncode:
-        print("sensitive paths: unable to read Git index", file=sys.stderr)
-        return completed.returncode
-    blocked: list[tuple[str, str]] = []
-    for raw in completed.stdout.split(b"\0"):
-        if not raw:
-            continue
-        path = raw.decode("utf-8", errors="surrogateescape")
-        reason = sensitive_reason(path)
-        if reason:
-            blocked.append((path, reason))
+def main(staged_files: list[str] | None = None) -> int:
+    """Validate staged paths supplied by Lefthook, without spawning any process."""
+    paths = sys.argv[1:] if staged_files is None else staged_files
+    blocked = [(path, reason) for path in paths if (reason := sensitive_reason(path)) is not None]
     if blocked:
         print("Sensitive filenames staged; unstage before committing:", file=sys.stderr)
         for path, reason in blocked:

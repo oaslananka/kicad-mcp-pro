@@ -3,7 +3,7 @@ lefthook: node_modules/.bin/lefthook
 pre-commit:
   commands:
     sensitive-paths:
-      run: python3 scripts/check_staged_sensitive_paths.py
+      run: python3 scripts/check_staged_sensitive_paths.py {staged_files}
     fast:
       run: python3 scripts/run_uv.py tool run pre-commit run --hook-stage pre-commit --files {staged_files}
 

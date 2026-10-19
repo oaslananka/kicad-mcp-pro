@@ -59,7 +59,7 @@ def test_lefthook_owns_fast_pre_commit_and_targeted_pre_push() -> None:
     pre_commit = config["pre-commit"]["commands"]
     assert set(pre_commit) == {"fast", "sensitive-paths"}
     assert pre_commit["sensitive-paths"]["run"] == (
-        "python3 scripts/check_staged_sensitive_paths.py"
+        "python3 scripts/check_staged_sensitive_paths.py {staged_files}"
     )
     assert pre_commit["fast"]["run"] == (
         "python3 scripts/run_uv.py tool run pre-commit run "
