@@ -189,6 +189,31 @@ def _normalize_loop_phase(phase_deg: float) -> float:
     return normalized
 
 
+def _loop_gain_and_phase(
+    output_magnitudes: list[float],
+    feedback_magnitudes: list[float],
+    output_phases: list[float],
+    feedback_phases: list[float],
+) -> tuple[list[float], list[float]]:
+    """Calculate the loop response from aligned AC samples."""
+    gain_db: list[float] = []
+    phase_deg: list[float] = []
+    for out_mag, fb_mag, out_phase, fb_phase in zip(
+        output_magnitudes,
+        feedback_magnitudes,
+        output_phases,
+        feedback_phases,
+        strict=False,
+    ):
+        if fb_mag <= 0.0:
+            gain_db.append(float("inf"))
+        else:
+            gain_db.append(20.0 * math.log10(out_mag / fb_mag))
+        phase_deg.append(_normalize_loop_phase(out_phase - fb_phase))
+
+    return gain_db, phase_deg
+
+
 def _format_stability(result: SimulationResult, output_net: str, feedback_net: str) -> str:
     lines = _format_result_header("Stability check", result)
     traces = {trace.name.lower(): trace for trace in result.traces}
@@ -204,20 +229,12 @@ def _format_stability(result: SimulationResult, output_net: str, feedback_net: s
         lines.append("Phase data was unavailable, so phase margin could not be estimated.")
         return "\n".join(lines)
 
-    gain_db: list[float] = []
-    phase_deg: list[float] = []
-    for out_mag, fb_mag, out_phase, fb_phase in zip(
+    gain_db, phase_deg = _loop_gain_and_phase(
         output_trace.values,
         feedback_trace.values,
         output_trace.phase_values,
         feedback_trace.phase_values,
-        strict=False,
-    ):
-        if fb_mag <= 0.0:
-            gain_db.append(float("inf"))
-        else:
-            gain_db.append(20.0 * math.log10(out_mag / fb_mag))
-        phase_deg.append(_normalize_loop_phase(out_phase - fb_phase))
+    )
 
     crossover_index: int | None = None
     for index in range(1, len(gain_db)):
