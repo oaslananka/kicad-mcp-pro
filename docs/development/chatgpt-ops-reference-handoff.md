@@ -67,3 +67,24 @@ Do not enable this recorder on any shared review/build session or create an
 official attempt-004 record during a smoke test. A disposable smoke checks
 35-tool discovery, a successful version query, blocked unreviewed DRC-rule
 deletion, and four ordered events with the denied tool result as failed.
+
+## Validate a completed server trace (not a benchmark score)
+
+After stopping the isolated trace-enabled MCP host, inspect its owner-private
+metadata ledger with the read-only validator:
+
+    uv run python scripts/validate_reference_ops_trace.py \
+      --trace /absolute/isolated/attempt-dir/ops-mcp-trace.jsonl \
+      --attempt-id attempt-004 --phase schematic
+
+The validator checks canonical event schema, approved phase tool names,
+attempt identity, uninterrupted event sequence, timestamps, server-observed
+provenance and matched call/result IDs. It rejects unfinished calls,
+duplicated results, extra fields, and public or symlinked files.
+A passing result is server_trace_valid with SHA-256 digest, call counts
+and counts_as_task_success=false. Invalid or truncated evidence is
+blocked (exit code 2).
+
+This does NOT authenticate ChatGPT or prove an electrical design succeeds.
+Do not publish an official benchmark attempt from server trace alone;
+complete client transcript reconciliation and native ERC/DRC still apply.
