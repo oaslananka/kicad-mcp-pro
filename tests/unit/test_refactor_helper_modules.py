@@ -591,3 +591,117 @@ async def test_server_call_tool_kicad_not_running_error() -> None:
 
     result = await server.call_tool("failing_tool", {})
     assert result is not None
+
+
+def test_server_init_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
+    from typer.testing import CliRunner
+
+    from kicad_mcp.server import app
+
+    called = False
+
+    def fake_wizard() -> None:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr("kicad_mcp.cli_init.run_wizard", fake_wizard)
+    runner = CliRunner()
+    res = runner.invoke(app, ["init", "--interactive"])
+    assert res.exit_code == 0
+    assert called
+
+
+def test_server_status_json_and_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from typer.testing import CliRunner
+
+    from kicad_mcp.diagnostics import CheckResult
+    from kicad_mcp.server import app
+    from tests.unit.test_cli_diagnostics import _diagnostic_report
+
+    runner = CliRunner()
+    report = _diagnostic_report([CheckResult(name="chk", status="ok", message="msg")])
+    monkeypatch.setattr("kicad_mcp.server.build_health_report", lambda: report)
+    res_json = runner.invoke(app, ["status", "--json"])
+    assert res_json.exit_code == 0
+    assert '"ok": true' in res_json.output
+
+    def fail_health() -> object:
+        raise RuntimeError("Health check failure")
+
+    monkeypatch.setattr("kicad_mcp.server.build_health_report", fail_health)
+    res_fail = runner.invoke(app, ["status"])
+    assert res_fail.exit_code == 1
+    assert "Error building status" in res_fail.output
+
+
+def test_server_log_tail_follow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from typer.testing import CliRunner
+
+    from kicad_mcp.config import KiCadMCPConfig
+    from kicad_mcp.server import _tail_follow, app
+
+    log_file = tmp_path / "test.log"
+    log_file.write_text("INFO line 1\n", encoding="utf-8")
+
+    class MockFile:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def __enter__(self) -> MockFile:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        def seek(self, *args: object) -> None:
+            pass
+
+        def readline(self) -> str:
+            self.calls += 1
+            if self.calls == 1:
+                return "INFO new line\n"
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr("builtins.open", lambda *a, **kw: MockFile())
+    _tail_follow(log_file, "")
+
+    called_follow = False
+
+    def fake_tail_follow(path: Path, level: str) -> None:
+        nonlocal called_follow
+        called_follow = True
+
+    monkeypatch.setattr("kicad_mcp.server._tail_follow", fake_tail_follow)
+    cfg = KiCadMCPConfig(log_file=str(log_file))
+    monkeypatch.setattr("kicad_mcp.server.get_config", lambda: cfg)
+    runner = CliRunner()
+    res = runner.invoke(app, ["log", "--follow"])
+    assert res.exit_code == 0
+    assert called_follow
+
+
+def test_server_init_helpers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from kicad_mcp.server import (
+        _init_detect_kicad,
+        _init_detect_project,
+        _init_resolve_agent,
+        _init_run_setup,
+        _init_verify_health,
+    )
+
+    monkeypatch.setattr("kicad_mcp.discovery.discover_kicad_cli", lambda: None)
+    _init_detect_kicad()
+
+    proj = tmp_path / "my_proj"
+    proj.mkdir()
+    (proj / "board.kicad_pcb").write_text("", encoding="utf-8")
+    (proj / "board.kicad_sch").write_text("", encoding="utf-8")
+    res_p = _init_detect_project(str(proj))
+    assert res_p == str(proj)
+    _init_detect_project(None)
+
+    agent = _init_resolve_agent("claude-code")
+    assert agent == "claude-code"
+
+    _init_run_setup("claude-code", str(proj), "write", False)
+    _init_verify_health()
