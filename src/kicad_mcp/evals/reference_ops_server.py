@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import sys
+from pathlib import Path
 from typing import cast
 
 from ..config import get_config, reset_config
@@ -19,6 +20,7 @@ from .reference_agent_runner import (
     ReferenceAgentRunnerError,
     reviewed_mcp_tools,
 )
+from .reference_ops_trace import ReviewedOpsTraceMiddleware, configured_trace
 
 _PREFIX = "mcp__kicad__"
 
@@ -49,7 +51,10 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit("reviewed ChatGPT Ops server requires stdio transport")
         try:
             server = build_reference_ops_server(phase_name=args.phase)
-        except ReferenceAgentRunnerError as exc:
+            trace = configured_trace(checkout=Path(__file__).resolve().parents[3])
+            if trace is not None:
+                server.middleware.append(ReviewedOpsTraceMiddleware(trace))
+        except (ReferenceAgentRunnerError, ValueError, OSError) as exc:
             raise SystemExit(str(exc)) from None
     _ensure_thread_aware_stdout()
     server.run(transport="stdio")
