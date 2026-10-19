@@ -259,6 +259,213 @@ def _wait_for_request_slot(
     return now
 
 
+class _LiveEvaluationSession:
+    """Manages the state and execution loop for a live evaluation session."""
+
+    def __init__(
+        self,
+        cases: list[EvalCase],
+        configuration: EvalConfiguration,
+        adapter: EvalAdapter,
+        repeats: int,
+        source_revision: str,
+        thresholds: EvalThresholds,
+        tool_tiers: Mapping[str, object],
+        checkpoint: Callable[[EvaluationReport], object] | None = None,
+    ) -> None:
+        self.cases = cases
+        self.configuration = configuration
+        self.adapter = adapter
+        self.repeats = repeats
+        self.source_revision = source_revision
+        self.thresholds = thresholds
+        self.tool_tiers = tool_tiers
+        self.checkpoint = checkpoint
+
+        self.planned_observations = len(cases) * repeats
+        self.executions: list[CaseExecution] = []
+        self.execution_cases: list[EvalCase] = []
+        self.score_runs: list[list[CaseResult]] = []
+        self.total_tool_calls = 0
+        self.total_tokens = 0
+        self.total_cost_micros = 0
+        self.token_observations = 0
+        self.cost_observations = 0
+        self.budget_exhausted = False
+        self.last_request_started_at: float | None = None
+
+    def report(self, *, complete: bool) -> EvaluationReport:
+        return _build_report(
+            configuration=self.configuration,
+            source_revision=self.source_revision,
+            repeats=self.repeats,
+            executions=self.executions,
+            score_runs=self.score_runs,
+            thresholds=self.thresholds,
+            planned_observations=self.planned_observations,
+            total_tool_calls=self.total_tool_calls,
+            total_tokens=self.total_tokens,
+            total_cost_micros=self.total_cost_micros,
+            token_observations=self.token_observations,
+            cost_observations=self.cost_observations,
+            complete=complete,
+        )
+
+    def record(self, execution: CaseExecution, case: EvalCase) -> None:
+        self.executions.append(execution)
+        self.execution_cases.append(case)
+        if self.checkpoint is not None:
+            self.checkpoint(self.report(complete=False))
+
+    def invoke(self, case: EvalCase, max_attempts: int) -> tuple[AdapterObservation | None, int]:
+        attempts = 0
+        observation: AdapterObservation | None = None
+        while attempts < max_attempts:
+            attempts += 1
+            self.last_request_started_at = _wait_for_request_slot(
+                self.last_request_started_at,
+                self.configuration.limits.min_request_interval_seconds,
+            )
+            observation = self.adapter.invoke(case)
+            if observation.failure_kind in _RETRYABLE_FAILURES and attempts < max_attempts:
+                time.sleep(_retry_backoff_seconds(observation, attempts))
+                continue
+            break
+        return observation, attempts
+
+    def _check_budget(
+        self,
+        called_tools_count: int,
+        run_tokens: int | None,
+        estimated_cost_micros: int | None,
+    ) -> bool:
+        prospective_calls = self.total_tool_calls + called_tools_count
+        prospective_tokens = self.total_tokens
+        prospective_cost = self.total_cost_micros
+        if run_tokens is not None:
+            prospective_tokens += run_tokens
+        if estimated_cost_micros is not None:
+            prospective_cost += estimated_cost_micros
+
+        self.total_tool_calls = prospective_calls
+        self.total_tokens = prospective_tokens
+        self.total_cost_micros = prospective_cost
+
+        token_budget_exceeded = (
+            run_tokens is not None
+            and prospective_tokens > self.configuration.limits.max_total_tokens
+        )
+        cost_budget_exceeded = (
+            estimated_cost_micros is not None
+            and prospective_cost > self.configuration.limits.max_total_cost_micros
+        )
+        if (
+            prospective_calls > self.configuration.limits.max_total_tool_calls
+            or token_budget_exceeded
+            or cost_budget_exceeded
+        ):
+            self.budget_exhausted = True
+            return False
+        return True
+
+    def settle(
+        self,
+        case: EvalCase,
+        run_index: int,
+        observation: AdapterObservation | None,
+        attempts: int,
+    ) -> CaseExecution:
+        if observation is None:
+            return _execution_failure(case, run_index, attempts, "adapter_unavailable")
+        if observation.failure_kind is not None:
+            return _execution_failure(
+                case,
+                run_index,
+                attempts,
+                observation.failure_kind,
+                observation,
+            )
+        run = observation.run
+        if run is None:
+            return _execution_failure(case, run_index, attempts, "protocol_error", observation)
+
+        within_budget = self._check_budget(
+            len(run.called_tools),
+            run.total_tokens,
+            observation.estimated_cost_micros,
+        )
+        if not within_budget:
+            return _execution_failure(case, run_index, attempts, "budget_exceeded", observation)
+
+        if run.total_tokens is not None:
+            self.token_observations += 1
+        if observation.estimated_cost_micros is not None:
+            self.cost_observations += 1
+        score = score_case(case, run, tool_tiers=self.tool_tiers)
+        self.score_runs[run_index].append(score)
+        return CaseExecution(
+            case_id=case.id,
+            run_index=run_index,
+            attempts=attempts,
+            observation=observation,
+            score=score,
+            failure_kind=None,
+            failure_detail=None,
+        )
+
+    def run_main_passes(self) -> None:
+        attempt_limit = self.configuration.limits.max_retries + 1
+        for run_index in range(self.repeats):
+            if run_index > 0:
+                self.adapter.reset()
+            self.score_runs.append([])
+            for case in self.cases:
+                observation, attempts = self.invoke(case, attempt_limit)
+                self.record(self.settle(case, run_index, observation, attempts), case)
+                if self.budget_exhausted:
+                    break
+            if self.budget_exhausted:
+                break
+
+    def run_deferred_retries(self) -> None:
+        for _deferred_pass in range(self.configuration.limits.deferred_retry_passes):
+            pending = [
+                index
+                for index, execution in enumerate(self.executions)
+                if execution.failure_kind in _RETRYABLE_FAILURES
+            ]
+            if self.budget_exhausted or not pending:
+                break
+            if self.configuration.limits.deferred_retry_cooldown_seconds > 0:
+                time.sleep(self.configuration.limits.deferred_retry_cooldown_seconds)
+            for index in pending:
+                previous = self.executions[index]
+                case = self.execution_cases[index]
+                observation, attempts = self.invoke(case, 1)
+                self.executions[index] = self.settle(
+                    case,
+                    previous.run_index,
+                    observation,
+                    previous.attempts + attempts,
+                )
+                if self.checkpoint is not None:
+                    self.checkpoint(self.report(complete=False))
+                if self.budget_exhausted:
+                    break
+
+    def run(self) -> EvaluationReport:
+        if self.checkpoint is not None:
+            self.checkpoint(self.report(complete=False))
+
+        self.run_main_passes()
+        self.run_deferred_retries()
+
+        final_report = self.report(complete=True)
+        if self.checkpoint is not None:
+            self.checkpoint(final_report)
+        return final_report
+
+
 def execute_evaluation(
     cases: list[EvalCase],
     configuration: EvalConfiguration,
@@ -282,170 +489,17 @@ def execute_evaluation(
     if not re.fullmatch(r"[0-9a-f]{7,64}", source_revision):
         raise EvalConfigurationError("source_revision must be a lowercase hexadecimal revision.")
 
-    executions: list[CaseExecution] = []
-    score_runs: list[list[CaseResult]] = []
-    total_tool_calls = 0
-    total_tokens = 0
-    total_cost_micros = 0
-    token_observations = 0
-    cost_observations = 0
-    budget_exhausted = False
-    last_request_started_at: float | None = None
-
-    def report(*, complete: bool) -> EvaluationReport:
-        return _build_report(
-            configuration=configuration,
-            source_revision=source_revision,
-            repeats=repeats,
-            executions=executions,
-            score_runs=score_runs,
-            thresholds=thresholds,
-            planned_observations=planned_observations,
-            total_tool_calls=total_tool_calls,
-            total_tokens=total_tokens,
-            total_cost_micros=total_cost_micros,
-            token_observations=token_observations,
-            cost_observations=cost_observations,
-            complete=complete,
-        )
-
-    execution_cases: list[EvalCase] = []
-
-    def record(execution: CaseExecution, case: EvalCase) -> None:
-        executions.append(execution)
-        execution_cases.append(case)
-        if checkpoint is not None:
-            checkpoint(report(complete=False))
-
-    def invoke(case: EvalCase, max_attempts: int) -> tuple[AdapterObservation | None, int]:
-        nonlocal last_request_started_at
-        attempts = 0
-        observation: AdapterObservation | None = None
-        while attempts < max_attempts:
-            attempts += 1
-            last_request_started_at = _wait_for_request_slot(
-                last_request_started_at,
-                configuration.limits.min_request_interval_seconds,
-            )
-            observation = adapter.invoke(case)
-            if observation.failure_kind in _RETRYABLE_FAILURES and attempts < max_attempts:
-                time.sleep(_retry_backoff_seconds(observation, attempts))
-                continue
-            break
-        return observation, attempts
-
-    def settle(
-        case: EvalCase,
-        run_index: int,
-        observation: AdapterObservation | None,
-        attempts: int,
-    ) -> CaseExecution:
-        nonlocal total_tool_calls, total_tokens, total_cost_micros
-        nonlocal token_observations, cost_observations, budget_exhausted
-        if observation is None:
-            return _execution_failure(case, run_index, attempts, "adapter_unavailable")
-        if observation.failure_kind is not None:
-            return _execution_failure(
-                case,
-                run_index,
-                attempts,
-                observation.failure_kind,
-                observation,
-            )
-        run = observation.run
-        if run is None:
-            return _execution_failure(case, run_index, attempts, "protocol_error", observation)
-
-        prospective_calls = total_tool_calls + len(run.called_tools)
-        prospective_tokens = total_tokens
-        prospective_cost = total_cost_micros
-        if run.total_tokens is not None:
-            prospective_tokens += run.total_tokens
-        if observation.estimated_cost_micros is not None:
-            prospective_cost += observation.estimated_cost_micros
-        total_tool_calls = prospective_calls
-        total_tokens = prospective_tokens
-        total_cost_micros = prospective_cost
-        token_budget_exceeded = (
-            run.total_tokens is not None
-            and prospective_tokens > configuration.limits.max_total_tokens
-        )
-        cost_budget_exceeded = (
-            observation.estimated_cost_micros is not None
-            and prospective_cost > configuration.limits.max_total_cost_micros
-        )
-        if (
-            prospective_calls > configuration.limits.max_total_tool_calls
-            or token_budget_exceeded
-            or cost_budget_exceeded
-        ):
-            budget_exhausted = True
-            return _execution_failure(case, run_index, attempts, "budget_exceeded", observation)
-
-        if run.total_tokens is not None:
-            token_observations += 1
-        if observation.estimated_cost_micros is not None:
-            cost_observations += 1
-        score = score_case(case, run, tool_tiers=tool_tiers)
-        score_runs[run_index].append(score)
-        return CaseExecution(
-            case_id=case.id,
-            run_index=run_index,
-            attempts=attempts,
-            observation=observation,
-            score=score,
-            failure_kind=None,
-            failure_detail=None,
-        )
-
-    if checkpoint is not None:
-        checkpoint(report(complete=False))
-
-    attempt_limit = configuration.limits.max_retries + 1
-    for run_index in range(repeats):
-        if run_index > 0:
-            adapter.reset()
-        score_runs.append([])
-        for case in cases:
-            observation, attempts = invoke(case, attempt_limit)
-            record(settle(case, run_index, observation, attempts), case)
-            if budget_exhausted:
-                break
-        if budget_exhausted:
-            break
-
-    # Hosted trial endpoints fail in bursts that outlast the inline backoff. Revisit only
-    # observations that ended on a transient provider failure, after a cool-down, so every
-    # planned observation still has to complete and be scored under unchanged thresholds.
-    for _deferred_pass in range(configuration.limits.deferred_retry_passes):
-        pending = [
-            index
-            for index, execution in enumerate(executions)
-            if execution.failure_kind in _RETRYABLE_FAILURES
-        ]
-        if budget_exhausted or not pending:
-            break
-        if configuration.limits.deferred_retry_cooldown_seconds > 0:
-            time.sleep(configuration.limits.deferred_retry_cooldown_seconds)
-        for index in pending:
-            previous = executions[index]
-            case = execution_cases[index]
-            observation, attempts = invoke(case, 1)
-            executions[index] = settle(
-                case,
-                previous.run_index,
-                observation,
-                previous.attempts + attempts,
-            )
-            if checkpoint is not None:
-                checkpoint(report(complete=False))
-            if budget_exhausted:
-                break
-
-    final_report = report(complete=True)
-    if checkpoint is not None:
-        checkpoint(final_report)
-    return final_report
+    session = _LiveEvaluationSession(
+        cases=cases,
+        configuration=configuration,
+        adapter=adapter,
+        repeats=repeats,
+        source_revision=source_revision,
+        thresholds=thresholds,
+        tool_tiers=tool_tiers,
+        checkpoint=checkpoint,
+    )
+    return session.run()
 
 
 def write_evidence(path: str | Path, report: EvaluationReport) -> Path:
