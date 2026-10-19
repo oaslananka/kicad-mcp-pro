@@ -88,3 +88,38 @@ blocked (exit code 2).
 This does NOT authenticate ChatGPT or prove an electrical design succeeds.
 Do not publish an official benchmark attempt from server trace alone;
 complete client transcript reconciliation and native ERC/DRC still apply.
+
+## Optional client/server metadata comparison — not authenticated
+
+A separate client-observed ledger, if actually exported by an independent
+client or Ops recorder, may be supplied as an owner-private
+`ops-client-observed.jsonl` beside a previously validated
+`ops-mcp-trace.jsonl`, with the same attempt ID.
+
+Client events use the existing `pcb-reference-agent-log.v1` format,
+strictly sequential `tool_call` and `tool_result` pairs, and details:
+
+- `provenance: client_supplied_ops` (an unverified claim)
+- `request_id: null` on calls and the paired call sequence on results
+
+Only sequential calls are comparable in this initial diagnostic. The tool
+does not guess correlation when calls overlap, authenticate client identity,
+or infer ChatGPT authorship from a manually created file.
+
+```bash
+uv run python scripts/reconcile_reference_ops_events.py \
+  --server-trace /absolute/private/attempt/ops-mcp-trace.jsonl \
+  --client-events /absolute/private/attempt/ops-client-observed.jsonl \
+  --attempt-id attempt-004 --phase schematic
+```
+
+This checks path restrictions, paired records and exact tool names/outcomes.
+Mismatch yields `blocked` (exit 2). Match yields
+`client_server_matched_unattested`, always
+`counts_as_task_success=false`, and both SHA-256 digests.
+
+**Never synthesize client observations from server trace data.** The
+client-side export must be collected independently, and cryptographic
+authenticity / session continuity still need separate assurance. This
+does not write `agent-log.jsonl`, approve manufacturing, or enter the
+#729/#730 task-success denominator.
