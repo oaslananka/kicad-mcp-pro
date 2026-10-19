@@ -774,24 +774,28 @@ def _critical_nets_from_entries(entries: dict[str, dict[str, Any]]) -> list[str]
     return sorted(critical)
 
 
+_CONTRACT_CATEGORY_MAP: dict[str, str] = {
+    "mcu": "mcu",
+    "mcu_module": "mcu",
+    "sensor": "sensor",
+    "connector": "connector",
+    "regulator": "regulator",
+    "analog": "analog",
+    "memory": "digital",
+    "interface": "digital",
+}
+
+_SENSOR_TOKENS = frozenset(("BME280", "ADXL", "MPU6050", "LIS3DH"))
+_MCU_TOKENS = frozenset(("ESP32", "RP2040", "STM32", "NRF"))
+_IC_TOKENS = frozenset(("QFP", "QFN", "BGA", "SOIC", "DFN", "LGA", "MODULE", "DIP"))
+
+
 def _component_category(reference: str, entry: dict[str, Any]) -> str:
     footprint_name = str(entry.get("name", "")).strip()
     value_name = str(entry.get("value", "")).strip()
     contract = find_component_contract(footprint=footprint_name)
-    if contract is not None:
-        category = contract.category
-        if category in {"mcu", "mcu_module"}:
-            return "mcu"
-        if category == "sensor":
-            return "sensor"
-        if category == "connector":
-            return "connector"
-        if category == "regulator":
-            return "regulator"
-        if category == "analog":
-            return "analog"
-        if category in {"memory", "interface"}:
-            return "digital"
+    if contract is not None and contract.category in _CONTRACT_CATEGORY_MAP:
+        return _CONTRACT_CATEGORY_MAP[contract.category]
 
     upper_ref = reference.upper()
     upper_name = footprint_name.upper()
@@ -802,18 +806,13 @@ def _component_category(reference: str, entry: dict[str, Any]) -> str:
         return "capacitor"
     if "SENSOR" in upper_name or "SENSOR" in upper_value:
         return "sensor"
-    if any(token in upper_name for token in ("BME280", "ADXL", "MPU6050", "LIS3DH")):
+    if any(token in upper_name for token in _SENSOR_TOKENS):
         return "sensor"
-    if any(token in upper_name for token in ("ESP32", "RP2040", "STM32", "NRF")):
-        return "mcu"
-    if "MCU" in upper_value:
+    if any(token in upper_name for token in _MCU_TOKENS) or "MCU" in upper_value:
         return "mcu"
     if "REGULATOR" in upper_name or "BUCK" in upper_value or "LDO" in upper_value:
         return "regulator"
-    if upper_ref.startswith("U") and any(
-        token in upper_name
-        for token in ("QFP", "QFN", "BGA", "SOIC", "DFN", "LGA", "MODULE", "DIP")
-    ):
+    if upper_ref.startswith("U") and any(token in upper_name for token in _IC_TOKENS):
         return "ic"
     return ""
 
@@ -978,21 +977,17 @@ def validate_design_intent(intent: ProjectDesignIntent | None = None) -> list[st
     references = set(_parse_board_footprint_blocks(board_text))
     candidate = intent or resolve_design_intent().resolved
     issues: list[str] = []
-    for reference in candidate.connector_refs:
-        if reference not in references:
-            issues.append(f"Connector ref '{reference}' is not present on the PCB.")
-    for reference in candidate.power_tree_refs:
-        if reference not in references:
-            issues.append(f"Power-tree ref '{reference}' is not present on the PCB.")
-    for reference in candidate.analog_refs:
-        if reference not in references:
-            issues.append(f"Analog ref '{reference}' is not present on the PCB.")
-    for reference in candidate.digital_refs:
-        if reference not in references:
-            issues.append(f"Digital ref '{reference}' is not present on the PCB.")
-    for reference in candidate.sensor_cluster_refs:
-        if reference not in references:
-            issues.append(f"Sensor-cluster ref '{reference}' is not present on the PCB.")
+    ref_groups = (
+        (candidate.connector_refs, "Connector"),
+        (candidate.power_tree_refs, "Power-tree"),
+        (candidate.analog_refs, "Analog"),
+        (candidate.digital_refs, "Digital"),
+        (candidate.sensor_cluster_refs, "Sensor-cluster"),
+    )
+    for refs, label in ref_groups:
+        for reference in refs:
+            if reference not in references:
+                issues.append(f"{label} ref '{reference}' is not present on the PCB.")
     for pair in candidate.decoupling_pairs:
         if pair.ic_ref not in references:
             issues.append(f"Decoupling IC ref '{pair.ic_ref}' is not present on the PCB.")
