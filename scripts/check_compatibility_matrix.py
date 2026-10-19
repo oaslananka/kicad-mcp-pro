@@ -510,6 +510,36 @@ def _validate_required_shape(matrix: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _validate_kicad_supported_entry(
+    index: int, entry: object, primary: str
+) -> tuple[list[str], bool]:
+    label = f"kicad.supported[{index}]"
+    if not isinstance(entry, dict):
+        return [f"{label} must be a mapping"], False
+
+    errors: list[str] = []
+    kicad_range = entry.get("range")
+    state = entry.get("state")
+    ci_mode = entry.get("ci")
+    if not isinstance(kicad_range, str) or not kicad_range:
+        errors.append(f"{label}.range must be a non-empty string")
+    if state not in KICAD_SUPPORT_STATES:
+        errors.append(f"{label}.state must be one of {sorted(KICAD_SUPPORT_STATES)!r}")
+    if ci_mode not in KICAD_CI_MODES:
+        errors.append(f"{label}.ci must be one of {sorted(KICAD_CI_MODES)!r}")
+    if not isinstance(entry.get("notes"), str) or not entry["notes"]:
+        errors.append(f"{label}.notes must be a non-empty string")
+    if entry.get("upstreamEol") is True and state != "deprecated":
+        errors.append(f"{label} marks upstreamEol but is not deprecated")
+
+    is_primary = False
+    if kicad_range == primary:
+        is_primary = True
+        if state != "primary" or ci_mode != "required":
+            errors.append(f"{label} must be primary and required for {primary!r}")
+    return errors, is_primary
+
+
 def _validate_kicad_support_policy(matrix: dict[str, Any]) -> list[str]:
     kicad = matrix.get("kicad")
     if not isinstance(kicad, dict):
@@ -524,29 +554,119 @@ def _validate_kicad_support_policy(matrix: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     primary_entries = 0
     for index, entry in enumerate(entries):
-        label = f"kicad.supported[{index}]"
-        if not isinstance(entry, dict):
-            errors.append(f"{label} must be a mapping")
-            continue
-        kicad_range = entry.get("range")
-        state = entry.get("state")
-        ci_mode = entry.get("ci")
-        if not isinstance(kicad_range, str) or not kicad_range:
-            errors.append(f"{label}.range must be a non-empty string")
-        if state not in KICAD_SUPPORT_STATES:
-            errors.append(f"{label}.state must be one of {sorted(KICAD_SUPPORT_STATES)!r}")
-        if ci_mode not in KICAD_CI_MODES:
-            errors.append(f"{label}.ci must be one of {sorted(KICAD_CI_MODES)!r}")
-        if not isinstance(entry.get("notes"), str) or not entry["notes"]:
-            errors.append(f"{label}.notes must be a non-empty string")
-        if entry.get("upstreamEol") is True and state != "deprecated":
-            errors.append(f"{label} marks upstreamEol but is not deprecated")
-        if kicad_range == primary:
+        entry_errors, is_primary = _validate_kicad_supported_entry(index, entry, primary)
+        errors.extend(entry_errors)
+        if is_primary:
             primary_entries += 1
-            if state != "primary" or ci_mode != "required":
-                errors.append(f"{label} must be primary and required for {primary!r}")
     if primary_entries != 1:
         errors.append(f"kicad.supported must contain exactly one primary entry for {primary!r}")
+    return errors
+
+
+def _validate_root_metadata_drift(matrix: dict[str, Any], mcp_product: dict[str, Any]) -> list[str]:
+    root_pkg = _read_json(REPO_ROOT / "package.json")
+    pyproject = _pyproject()
+    server_json = _read_json(MCP_ROOT / "server.json")
+
+    expected_pairs = [
+        ("root Node range", matrix["node"]["range"], root_pkg["engines"]["node"]),
+        ("root pnpm range", matrix["pnpm"]["range"], root_pkg["engines"]["pnpm"]),
+        ("kicad-mcp-pro version", mcp_product["version"], pyproject["project"]["version"]),
+        ("kicad-mcp-pro server.json version", mcp_product["version"], server_json["version"]),
+        ("Python range", matrix["python"]["range"], pyproject["project"]["requires-python"]),
+    ]
+    errors: list[str] = []
+    for label, expected, actual in expected_pairs:
+        if expected != actual:
+            errors.append(f"{label} drift: compatibility.yaml={expected!r}, metadata={actual!r}")
+    return errors
+
+
+def _validate_vscode_extension_drift(matrix: dict[str, Any]) -> list[str]:
+    if not HAS_VSCODE_EXTENSION:
+        return []
+    extension_pkg = _read_json(REPO_ROOT / "apps/vscode-extension/package.json")
+    studio = matrix["products"]["kicad-studio"]
+    expected_pairs_vscode = [
+        ("kicad-studio version", studio["version"], extension_pkg["version"]),
+        (
+            "kicad-studio VS Code engines range",
+            matrix["vscode"]["enginesRange"],
+            extension_pkg["engines"]["vscode"],
+        ),
+        (
+            "kicad-studio Node runtime",
+            matrix["vscode"]["nodeRuntime"],
+            extension_pkg["engines"]["node"],
+        ),
+    ]
+    errors: list[str] = []
+    for label, expected, actual in expected_pairs_vscode:
+        if expected != actual:
+            errors.append(f"{label} drift: compatibility.yaml={expected!r}, metadata={actual!r}")
+
+    ts_compat = _mcp_compat_from_ts()
+    for key, expected in studio["compatibleMcpPro"].items():
+        if ts_compat.get(key) != expected:
+            errors.append(
+                f"extension MCP compatibility {key} drift: "
+                f"compatibility.yaml={expected!r}, TS={ts_compat.get(key)!r}"
+            )
+
+    extension_protocol = _extension_protocol_from_ts()
+    if extension_protocol != matrix["mcp"]["protocolVersion"]:
+        errors.append(
+            "extension MCP protocol version drift: "
+            "compatibility.yaml="
+            f"{matrix['mcp']['protocolVersion']!r}, TS={extension_protocol!r}"
+        )
+    mcp_client_source = (REPO_ROOT / "apps/vscode-extension/src/mcp/mcpClient.ts").read_text(
+        encoding="utf-8"
+    )
+    if "protocolVersion: MCP_PROTOCOL_VERSION" not in mcp_client_source:
+        errors.append("extension MCP client must initialize with MCP_PROTOCOL_VERSION")
+    return errors
+
+
+def _validate_python_embedded_drift(
+    matrix: dict[str, Any], mcp_product: dict[str, Any]
+) -> list[str]:
+    errors: list[str] = []
+    sys.path.insert(0, str(MCP_ROOT / "src"))
+    from kicad_mcp.compatibility import COMPATIBILITY_MATRIX as PY_COMPATIBILITY_MATRIX
+
+    embedded = PY_COMPATIBILITY_MATRIX
+    if embedded["mcp"]["protocolVersion"] != matrix["mcp"]["protocolVersion"]:
+        errors.append("Python compatibility protocol version drift")
+    if embedded["mcp"]["toolSchema"] != matrix["mcp"]["toolSchema"]:
+        errors.append("Python compatibility tool schema drift")
+    if embedded["kicad"]["primary"] != matrix["kicad"]["primary"]:
+        errors.append("Python compatibility primary KiCad version drift")
+    if embedded["products"]["kicad-mcp-pro"]["version"] != mcp_product["version"]:
+        errors.append("Python compatibility MCP package version drift")
+
+    wellknown_source = (MCP_ROOT / "src/kicad_mcp/wellknown.py").read_text(encoding="utf-8")
+    if "MCP_PROTOCOL_VERSION" not in wellknown_source:
+        errors.append("well-known server card must use MCP_PROTOCOL_VERSION")
+    if "compatibility_summary()" not in wellknown_source:
+        errors.append("well-known server card must embed compatibility_summary()")
+    return errors
+
+
+def _validate_mcp_tool_definitions(matrix: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    available_tools = _tool_names()
+    errors.extend(_validate_ipc_readiness(matrix, available_tools))
+    for group in ("required", "optional"):
+        for tool_name in matrix["mcpTools"][group]:
+            if tool_name not in available_tools:
+                errors.append(
+                    f"compatibility.yaml mcpTools.{group} references unknown tool {tool_name!r}"
+                )
+    for feature, detail in matrix["featureGates"].items():
+        for tool_name in detail.get("tools", []):
+            if tool_name not in available_tools:
+                errors.append(f"featureGates.{feature} references unknown tool {tool_name!r}")
     return errors
 
 
@@ -572,98 +692,11 @@ def validate_compatibility_matrix() -> list[str]:
     if errors:
         return errors
 
-    root_pkg = _read_json(REPO_ROOT / "package.json")
-    pyproject = _pyproject()
-    server_json = _read_json(MCP_ROOT / "server.json")
-
     mcp_product = matrix["products"]["kicad-mcp-pro"]
-
-    expected_pairs = [
-        ("root Node range", matrix["node"]["range"], root_pkg["engines"]["node"]),
-        ("root pnpm range", matrix["pnpm"]["range"], root_pkg["engines"]["pnpm"]),
-        ("kicad-mcp-pro version", mcp_product["version"], pyproject["project"]["version"]),
-        ("kicad-mcp-pro server.json version", mcp_product["version"], server_json["version"]),
-        ("Python range", matrix["python"]["range"], pyproject["project"]["requires-python"]),
-    ]
-    for label, expected, actual in expected_pairs:
-        if expected != actual:
-            errors.append(f"{label} drift: compatibility.yaml={expected!r}, metadata={actual!r}")
-
-    if HAS_VSCODE_EXTENSION:
-        extension_pkg = _read_json(REPO_ROOT / "apps/vscode-extension/package.json")
-        studio = matrix["products"]["kicad-studio"]
-        expected_pairs_vscode = [
-            ("kicad-studio version", studio["version"], extension_pkg["version"]),
-            (
-                "kicad-studio VS Code engines range",
-                matrix["vscode"]["enginesRange"],
-                extension_pkg["engines"]["vscode"],
-            ),
-            (
-                "kicad-studio Node runtime",
-                matrix["vscode"]["nodeRuntime"],
-                extension_pkg["engines"]["node"],
-            ),
-        ]
-        for label, expected, actual in expected_pairs_vscode:
-            if expected != actual:
-                errors.append(
-                    f"{label} drift: compatibility.yaml={expected!r}, metadata={actual!r}"
-                )
-
-        ts_compat = _mcp_compat_from_ts()
-        for key, expected in studio["compatibleMcpPro"].items():
-            if ts_compat.get(key) != expected:
-                errors.append(
-                    f"extension MCP compatibility {key} drift: "
-                    f"compatibility.yaml={expected!r}, TS={ts_compat.get(key)!r}"
-                )
-
-        extension_protocol = _extension_protocol_from_ts()
-        if extension_protocol != matrix["mcp"]["protocolVersion"]:
-            errors.append(
-                "extension MCP protocol version drift: "
-                "compatibility.yaml="
-                f"{matrix['mcp']['protocolVersion']!r}, TS={extension_protocol!r}"
-            )
-        mcp_client_source = (REPO_ROOT / "apps/vscode-extension/src/mcp/mcpClient.ts").read_text(
-            encoding="utf-8"
-        )
-        if "protocolVersion: MCP_PROTOCOL_VERSION" not in mcp_client_source:
-            errors.append("extension MCP client must initialize with MCP_PROTOCOL_VERSION")
-
-    sys.path.insert(0, str(MCP_ROOT / "src"))
-    from kicad_mcp.compatibility import COMPATIBILITY_MATRIX as PY_COMPATIBILITY_MATRIX
-
-    embedded = PY_COMPATIBILITY_MATRIX
-    if embedded["mcp"]["protocolVersion"] != matrix["mcp"]["protocolVersion"]:
-        errors.append("Python compatibility protocol version drift")
-    if embedded["mcp"]["toolSchema"] != matrix["mcp"]["toolSchema"]:
-        errors.append("Python compatibility tool schema drift")
-    if embedded["kicad"]["primary"] != matrix["kicad"]["primary"]:
-        errors.append("Python compatibility primary KiCad version drift")
-    if embedded["products"]["kicad-mcp-pro"]["version"] != mcp_product["version"]:
-        errors.append("Python compatibility MCP package version drift")
-
-    wellknown_source = (MCP_ROOT / "src/kicad_mcp/wellknown.py").read_text(encoding="utf-8")
-    if "MCP_PROTOCOL_VERSION" not in wellknown_source:
-        errors.append("well-known server card must use MCP_PROTOCOL_VERSION")
-    if "compatibility_summary()" not in wellknown_source:
-        errors.append("well-known server card must embed compatibility_summary()")
-
-    available_tools = _tool_names()
-    errors.extend(_validate_ipc_readiness(matrix, available_tools))
-    for group in ("required", "optional"):
-        for tool_name in matrix["mcpTools"][group]:
-            if tool_name not in available_tools:
-                errors.append(
-                    f"compatibility.yaml mcpTools.{group} references unknown tool {tool_name!r}"
-                )
-    for feature, detail in matrix["featureGates"].items():
-        for tool_name in detail.get("tools", []):
-            if tool_name not in available_tools:
-                errors.append(f"featureGates.{feature} references unknown tool {tool_name!r}")
-
+    errors.extend(_validate_root_metadata_drift(matrix, mcp_product))
+    errors.extend(_validate_vscode_extension_drift(matrix))
+    errors.extend(_validate_python_embedded_drift(matrix, mcp_product))
+    errors.extend(_validate_mcp_tool_definitions(matrix))
     return errors
 
 
