@@ -92,7 +92,7 @@ PROVIDER_REQUEST_FAILURE_DETAILS: frozenset[FailureDetail] = frozenset(
     }
 )
 
-_DETAILS_BY_FAILURE_KIND: dict[FailureKind, frozenset[FailureDetail]] = {
+_DETAILS_BY_FAILURE_KIND: dict[FailureKind | None, frozenset[FailureDetail]] = {
     "model_output_invalid": MODEL_OUTPUT_FAILURE_DETAILS,
     "provider_request_rejected": PROVIDER_REQUEST_FAILURE_DETAILS,
 }
