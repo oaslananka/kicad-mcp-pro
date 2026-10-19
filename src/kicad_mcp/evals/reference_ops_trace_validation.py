@@ -59,7 +59,14 @@ def _approved_trace_path(path: Path, attempt_id: str) -> Path:
 
 def _open_reserved_trace(*, root: Path, attempt_id: str, filename: str) -> int:
     """Open the reserved trace without following a replaced directory or file."""
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    # Windows CRT defaults os.open to text mode; CRLF translation changes
+    # the byte count read and falsely trips the exact-size trace check.
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
     if os.name == "nt":
         directory = root / attempt_id
         expected = directory / filename

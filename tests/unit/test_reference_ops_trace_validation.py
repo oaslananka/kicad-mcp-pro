@@ -69,6 +69,25 @@ def test_valid_real_emitted_trace_is_not_benchmark_success(tmp_path: Path) -> No
     assert summary.counts_as_task_success is False
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows CRT text-mode regression")
+def test_windows_trace_open_preserves_byte_lengths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """CRLF must not be converted to LF by Windows os.open/os.read."""
+    path = _good_trace(tmp_path)
+    real_open = os.open
+    observed_flags: list[int] = []
+
+    def record_open(filename: object, flags: int, *args: object, **kwargs: object) -> int:
+        observed_flags.append(flags)
+        return real_open(filename, flags, *args, **kwargs)
+
+    monkeypatch.setattr(reference_ops_trace_validation.os, "open", record_open)
+    summary = validate_reference_ops_trace(path, attempt_id="attempt-004", phase_name="schematic")
+    assert summary.tool_calls == 2
+    assert observed_flags and all(flag & os.O_BINARY for flag in observed_flags)
+
+
 @pytest.mark.parametrize(
     "change",
     [
