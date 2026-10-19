@@ -260,73 +260,80 @@ class BridgeState:
 # ---------------------------------------------------------------------------
 
 
+async def _process_client_line(
+    data: bytes, writer: asyncio.StreamWriter, state: BridgeState
+) -> None:
+    if len(data) > BRIDGE_MAX_MESSAGE_BYTES:
+        logger.warning(
+            "bridge_message_too_large",
+            size=len(data),
+            max_size=BRIDGE_MAX_MESSAGE_BYTES,
+        )
+        state.error_count += 1
+        writer.write((json.dumps(_message_too_large_error()) + "\n").encode("utf-8"))
+        await writer.drain()
+        return
+
+    try:
+        message = json.loads(data.decode("utf-8").strip())
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        logger.warning("bridge_invalid_json", error=str(exc))
+        state.error_count += 1
+        return
+
+    response = await _route_message(state, message)
+    if response is not None:
+        writer.write((json.dumps(response) + "\n").encode("utf-8"))
+        await writer.drain()
+
+
+async def _handle_bridge_client(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, state: BridgeState
+) -> None:
+    """Handle a single bridge client connection."""
+    peer = writer.get_extra_info("peername")
+    logger.info("bridge_client_connected", peer=peer)
+
+    try:
+        while True:
+            data = await asyncio.wait_for(reader.readline(), timeout=300.0)
+            if not data:
+                break
+            await _process_client_line(data, writer, state)
+    except (LimitOverrunError, ValueError) as exc:
+        logger.warning(
+            "bridge_message_read_error", error=str(exc), max_size=BRIDGE_MAX_MESSAGE_BYTES
+        )
+        state.error_count += 1
+        try:
+            writer.write((json.dumps(_message_too_large_error()) + "\n").encode("utf-8"))
+            await writer.drain()
+        except Exception as write_err:
+            logger.debug("bridge_message_too_large_response_failed", error=str(write_err))
+    except TimeoutError:
+        logger.info("bridge_client_timeout", peer=peer)
+    except ConnectionResetError:
+        logger.info("bridge_client_reset", peer=peer)
+    except Exception as exc:
+        logger.error("bridge_client_error", error=str(exc))
+        state.error_count += 1
+    finally:
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except Exception as close_err:
+            logger.debug("bridge_client_close_error", error=str(close_err))
+        logger.info("bridge_client_disconnected", peer=peer)
+
+
 async def _bridge_server(state: BridgeState) -> None:
     """Run the bridge TCP server that proxies to kicad-mcp-pro.
 
     Transport is newline-delimited JSON-RPC over an asyncio TCP stream — no
     WebSocket library dependency is involved despite the historical naming.
     """
-
-    async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        """Handle a single bridge client connection."""
-        peer = writer.get_extra_info("peername")
-        logger.info("bridge_client_connected", peer=peer)
-
-        try:
-            while True:
-                data = await asyncio.wait_for(reader.readline(), timeout=300.0)
-                if not data:
-                    break
-                if len(data) > BRIDGE_MAX_MESSAGE_BYTES:
-                    logger.warning(
-                        "bridge_message_too_large",
-                        size=len(data),
-                        max_size=BRIDGE_MAX_MESSAGE_BYTES,
-                    )
-                    state.error_count += 1
-                    writer.write((json.dumps(_message_too_large_error()) + "\n").encode("utf-8"))
-                    await writer.drain()
-                    continue
-
-                try:
-                    message = json.loads(data.decode("utf-8").strip())
-                except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-                    logger.warning("bridge_invalid_json", error=str(exc))
-                    state.error_count += 1
-                    continue
-
-                # Handle the message
-                response = await _route_message(state, message)
-                if response is not None:
-                    writer.write((json.dumps(response) + "\n").encode("utf-8"))
-                    await writer.drain()
-        except (LimitOverrunError, ValueError) as exc:
-            logger.warning(
-                "bridge_message_read_error", error=str(exc), max_size=BRIDGE_MAX_MESSAGE_BYTES
-            )
-            state.error_count += 1
-            try:
-                writer.write((json.dumps(_message_too_large_error()) + "\n").encode("utf-8"))
-                await writer.drain()
-            except Exception as write_err:
-                logger.debug("bridge_message_too_large_response_failed", error=str(write_err))
-        except TimeoutError:
-            logger.info("bridge_client_timeout", peer=peer)
-        except ConnectionResetError:
-            logger.info("bridge_client_reset", peer=peer)
-        except Exception as exc:
-            logger.error("bridge_client_error", error=str(exc))
-            state.error_count += 1
-        finally:
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except Exception as close_err:
-                logger.debug("bridge_client_close_error", error=str(close_err))
-            logger.info("bridge_client_disconnected", peer=peer)
-
     server = await asyncio.start_server(
-        handle_client,
+        lambda r, w: _handle_bridge_client(r, w, state),
         host="127.0.0.1",
         port=state.port,
         limit=BRIDGE_MAX_MESSAGE_BYTES + 1,
