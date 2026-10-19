@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from .capabilities import AccessTier, RuntimeRequirement
+from .capabilities import AccessTier, CapabilityRecord, RuntimeRequirement
 from .capabilities import get as get_capability
 
 ADAPTER_MATRIX_SCHEMA_VERSION = "1.0.0"
@@ -338,6 +338,102 @@ def _ipc_context_available(category: str, context: AdapterRuntimeContext) -> boo
     return True
 
 
+_SIMPLE_RUNTIMES: dict[
+    RuntimeRequirement,
+    tuple[str, AdapterBackend, str, str],
+] = {
+    RuntimeRequirement.KICAD_CLI: (
+        "cli_available",
+        AdapterBackend.KICAD_CLI,
+        "A verified kicad-cli executable is available.",
+        "The tool requires kicad-cli, which is unavailable.",
+    ),
+    RuntimeRequirement.NGSPICE: (
+        "ngspice_available",
+        AdapterBackend.NGSPICE,
+        "ngspice is available.",
+        "The tool requires ngspice, which is unavailable.",
+    ),
+    RuntimeRequirement.FREEROUTING: (
+        "freerouting_available",
+        AdapterBackend.FREEROUTING,
+        "FreeRouting is available.",
+        "The tool requires FreeRouting, which is unavailable.",
+    ),
+    RuntimeRequirement.DOCKER: (
+        "docker_available",
+        AdapterBackend.DOCKER,
+        "Docker is available.",
+        "The tool requires Docker, which is unavailable.",
+    ),
+    RuntimeRequirement.NETWORK: (
+        "network_available",
+        AdapterBackend.NETWORK,
+        "Network access is explicitly available.",
+        "The tool requires explicit network access, which is unavailable.",
+    ),
+}
+
+
+def _evaluate_ipc_runtime(
+    category: str,
+    context: AdapterRuntimeContext,
+) -> tuple[AdapterBackend, bool, str]:
+    if (
+        context.headless_ipc_available
+        and context.kicad_major is not None
+        and context.kicad_major >= 11
+    ):
+        return (
+            AdapterBackend.KICAD_11_HEADLESS_IPC,
+            True,
+            "KiCad 11+ headless IPC is reachable.",
+        )
+    if context.ipc_reachable and _ipc_context_available(category, context):
+        return (
+            AdapterBackend.KICAD_GUI_IPC,
+            True,
+            "KiCad GUI IPC is reachable with the required live document context.",
+        )
+    return (
+        AdapterBackend.UNAVAILABLE,
+        False,
+        "The tool requires KiCad IPC and no compatible live or headless context is available.",
+    )
+
+
+def _evaluate_local_runtime(
+    category: str,
+    record: CapabilityRecord,
+) -> tuple[AdapterBackend, bool, str]:
+    if category == "version_control":
+        backend = AdapterBackend.GIT
+    elif record.writes_files:
+        backend = _file_backend(category)
+    else:
+        backend = AdapterBackend.LOCAL_ENGINE
+    return backend, True, "The tool uses a deterministic repository-local adapter."
+
+
+def _resolve_runtime_backend(
+    record: CapabilityRecord,
+    category: str,
+    context: AdapterRuntimeContext,
+) -> tuple[AdapterBackend, bool, str]:
+    runtime = record.runtime
+    if runtime is RuntimeRequirement.KICAD_IPC:
+        return _evaluate_ipc_runtime(category, context)
+
+    simple = _SIMPLE_RUNTIMES.get(runtime)
+    if simple is not None:
+        attr, backend, success_reason, fail_reason = simple
+        if getattr(context, attr):
+            return backend, True, success_reason
+        return AdapterBackend.UNAVAILABLE, False, fail_reason
+
+    return _evaluate_local_runtime(category, record)
+
+
 def decision_for_tool(tool_name: str, context: AdapterRuntimeContext) -> AdapterDecision:
     """Resolve one tool adapter from declared capability and current runtime state."""
     record = get_capability(tool_name)
@@ -345,74 +441,7 @@ def decision_for_tool(tool_name: str, context: AdapterRuntimeContext) -> Adapter
         raise KeyError(f"No capability record for routed tool {tool_name!r}")
     category = _category_for_tool(tool_name)
     policy = CATEGORY_ADAPTER_POLICIES[category]
-    runtime = record.runtime
-    backend = AdapterBackend.UNAVAILABLE
-    available = False
-    reason: str
-
-    if runtime is RuntimeRequirement.KICAD_IPC:
-        if (
-            context.headless_ipc_available
-            and context.kicad_major is not None
-            and context.kicad_major >= 11
-        ):
-            backend = AdapterBackend.KICAD_11_HEADLESS_IPC
-            available = True
-            reason = "KiCad 11+ headless IPC is reachable."
-        elif context.ipc_reachable and _ipc_context_available(category, context):
-            backend = AdapterBackend.KICAD_GUI_IPC
-            available = True
-            reason = "KiCad GUI IPC is reachable with the required live document context."
-        else:
-            reason = (
-                "The tool requires KiCad IPC and no compatible live or headless context "
-                "is available."
-            )
-    elif runtime is RuntimeRequirement.KICAD_CLI:
-        if context.cli_available:
-            backend = AdapterBackend.KICAD_CLI
-            available = True
-            reason = "A verified kicad-cli executable is available."
-        else:
-            reason = "The tool requires kicad-cli, which is unavailable."
-    elif runtime is RuntimeRequirement.NGSPICE:
-        if context.ngspice_available:
-            backend = AdapterBackend.NGSPICE
-            available = True
-            reason = "ngspice is available."
-        else:
-            reason = "The tool requires ngspice, which is unavailable."
-    elif runtime is RuntimeRequirement.FREEROUTING:
-        if context.freerouting_available:
-            backend = AdapterBackend.FREEROUTING
-            available = True
-            reason = "FreeRouting is available."
-        else:
-            reason = "The tool requires FreeRouting, which is unavailable."
-    elif runtime is RuntimeRequirement.DOCKER:
-        if context.docker_available:
-            backend = AdapterBackend.DOCKER
-            available = True
-            reason = "Docker is available."
-        else:
-            reason = "The tool requires Docker, which is unavailable."
-    elif runtime is RuntimeRequirement.NETWORK:
-        if context.network_available:
-            backend = AdapterBackend.NETWORK
-            available = True
-            reason = "Network access is explicitly available."
-        else:
-            reason = "The tool requires explicit network access, which is unavailable."
-    else:
-        if category == "version_control":
-            backend = AdapterBackend.GIT
-        elif record.writes_files:
-            backend = _file_backend(category)
-        else:
-            backend = AdapterBackend.LOCAL_ENGINE
-        available = True
-        reason = "The tool uses a deterministic repository-local adapter."
-
+    backend, available, reason = _resolve_runtime_backend(record, category, context)
     fallback_chain = (*policy.preferred_backends, AdapterBackend.UNAVAILABLE)
     return AdapterDecision(
         tool_name=tool_name,
