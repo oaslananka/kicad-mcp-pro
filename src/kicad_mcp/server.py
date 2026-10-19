@@ -86,8 +86,6 @@ from .diagnostics import (
 )
 from .discovery import ensure_studio_project_watcher, find_kicad_version
 from .errors import (
-    IpcDisconnectedError,
-    KiCadConnectionTimeoutError,
     KiCadNotRunningError,
     ToolRegistrationTimeoutError,
 )
@@ -1282,7 +1280,7 @@ class KiCadFastMCP(FastMCP):
                     },
                 )
                 return result
-            except (KiCadNotRunningError, IpcDisconnectedError, KiCadConnectionTimeoutError) as exc:
+            except KiCadNotRunningError as exc:
                 status = "error"
                 error_code = exc.code
                 _error_detail["error_code"] = exc.code
@@ -2771,6 +2769,14 @@ def setup_backups(
     typer.echo(result)
 
 
+def _check_status_icon(status: str) -> str:
+    if status == "ok":
+        return "✅"
+    if status == "warn":
+        return "⚠️"
+    return "❌"
+
+
 @app.command()
 def init(
     interactive: bool = typer.Option(
@@ -2865,7 +2871,7 @@ def init(
         status_icon = "✅" if report.ok else "⚠️"
         typer.echo(f"\n  Health:  {report.status} {status_icon}")
         for check in report.checks:
-            icon = "✅" if check.status == "ok" else "⚠️" if check.status == "warn" else "❌"
+            icon = _check_status_icon(check.status)
             typer.echo(f"    {icon} {check.name}: {check.message}")
     except Exception as exc:
         typer.echo(f"\n  Health:  Check failed - {exc}")
@@ -2938,12 +2944,17 @@ def status(
     # ── Checks ──
     typer.echo(f"\n{'─── Health Checks ───'}")
     for check in report.checks:
-        icon = "✅" if check.status == "ok" else "⚠️" if check.status == "warn" else "❌"
+        icon = _check_status_icon(check.status)
         typer.echo(f"  {icon}  {check.name}: {check.message}")
         if check.hint:
             typer.echo(f"      Hint: {check.hint}")
 
-    overall_icon = "✅" if report.ok else "⚠️" if report.status == "degraded" else "❌"
+    if report.ok:
+        overall_icon = "✅"
+    elif report.status == "degraded":
+        overall_icon = "⚠️"
+    else:
+        overall_icon = "❌"
     typer.echo(f"\n  Overall: {report.status} {overall_icon}")
 
 
@@ -2988,9 +2999,7 @@ def log(
                     if not line:
                         time.sleep(0.1)
                         continue
-                    if level and _log_level_match(line, level):
-                        typer.echo(line.rstrip())
-                    elif not level:
+                    if not level or _log_level_match(line, level):
                         typer.echo(line.rstrip())
         except KeyboardInterrupt:
             pass
@@ -3000,9 +3009,7 @@ def log(
             all_lines = f.readlines()
         tail = all_lines[-lines:] if lines < len(all_lines) else all_lines
         for line in tail:
-            if level and _log_level_match(line, level):
-                typer.echo(line.rstrip())
-            elif not level:
+            if not level or _log_level_match(line, level):
                 typer.echo(line.rstrip())
 
 

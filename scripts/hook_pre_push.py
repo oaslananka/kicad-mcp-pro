@@ -76,6 +76,63 @@ def _resolve_targeted_tests(
     return targeted
 
 
+_ARCHITECTURE_PREFIXES = (
+    "src/kicad_mcp/pcb",
+    "src/kicad_mcp/schematic",
+    "src/kicad_mcp/tools",
+    "src/kicad_mcp/validation",
+    "scripts/check_architecture_boundaries.py",
+    "tests/unit/test_architecture_boundaries.py",
+    "tests/unit/test_shared_helper_architecture.py",
+)
+
+_TOOL_SURFACE_PREFIXES = (
+    "src/kicad_mcp/tools",
+    "src/kicad_mcp/server.py",
+    "src/kicad_mcp/tool_registry.py",
+    "src/kicad_mcp/tool_effect_manifest.py",
+    "contracts/tool-effect-manifest.json",
+    "packages/protocol-schemas/schemas/tool-effect-manifest.schema.json",
+    "scripts/build_tool_effect_manifest.py",
+    "scripts/check_tool_contracts.py",
+    "scripts/generate_tools_reference.py",
+)
+
+_METADATA_TRIGGERS = {
+    "pyproject.toml",
+    "package.json",
+    "server.json",
+    "compatibility.yaml",
+    "ROADMAP.md",
+    "README.md",
+    "docs/tools-reference.generated.md",
+    "scripts/sync_mcp_metadata.py",
+}
+
+_WORKFLOW_FILES = {
+    "scripts/check_github_actions_policy.py",
+    "scripts/check_workflows.py",
+    "scripts/workflow_security.py",
+}
+
+
+def _is_architecture_changed(changed: list[str]) -> bool:
+    return any(_is_under(path, prefix) for path in changed for prefix in _ARCHITECTURE_PREFIXES)
+
+
+def _is_tool_surface_changed(changed: list[str]) -> bool:
+    return any(_is_under(path, prefix) for path in changed for prefix in _TOOL_SURFACE_PREFIXES)
+
+
+def _is_workflow_changed(changed: list[str]) -> bool:
+    return any(
+        _is_under(path, ".github/workflows")
+        or path == ".github/actions-policy.json"
+        or path in _WORKFLOW_FILES
+        for path in changed
+    )
+
+
 def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
     """Return deterministic checks for the supplied repository-relative paths."""
     changed = _existing(changed_files, root)
@@ -127,20 +184,7 @@ def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
             )
         )
 
-    architecture_changed = any(
-        _is_under(path, prefix)
-        for path in changed
-        for prefix in (
-            "src/kicad_mcp/pcb",
-            "src/kicad_mcp/schematic",
-            "src/kicad_mcp/tools",
-            "src/kicad_mcp/validation",
-            "scripts/check_architecture_boundaries.py",
-            "tests/unit/test_architecture_boundaries.py",
-            "tests/unit/test_shared_helper_architecture.py",
-        )
-    )
-    if architecture_changed:
+    if _is_architecture_changed(changed):
         checks.append(
             Check(
                 "architecture-boundaries",
@@ -148,22 +192,7 @@ def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
             )
         )
 
-    tool_surface_changed = any(
-        _is_under(path, prefix)
-        for path in changed
-        for prefix in (
-            "src/kicad_mcp/tools",
-            "src/kicad_mcp/server.py",
-            "src/kicad_mcp/tool_registry.py",
-            "src/kicad_mcp/tool_effect_manifest.py",
-            "contracts/tool-effect-manifest.json",
-            "packages/protocol-schemas/schemas/tool-effect-manifest.schema.json",
-            "scripts/build_tool_effect_manifest.py",
-            "scripts/check_tool_contracts.py",
-            "scripts/generate_tools_reference.py",
-        )
-    )
-    if tool_surface_changed:
+    if _is_tool_surface_changed(changed):
         checks.extend(
             [
                 Check(
@@ -181,17 +210,7 @@ def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
             ]
         )
 
-    metadata_triggers = {
-        "pyproject.toml",
-        "package.json",
-        "server.json",
-        "compatibility.yaml",
-        "ROADMAP.md",
-        "README.md",
-        "docs/tools-reference.generated.md",
-        "scripts/sync_mcp_metadata.py",
-    }
-    if any(path in metadata_triggers for path in changed):
+    if any(path in _METADATA_TRIGGERS for path in changed):
         checks.append(
             Check(
                 "metadata-sync",
@@ -199,18 +218,7 @@ def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
             )
         )
 
-    workflow_changed = any(
-        _is_under(path, ".github/workflows")
-        or path == ".github/actions-policy.json"
-        or path
-        in {
-            "scripts/check_github_actions_policy.py",
-            "scripts/check_workflows.py",
-            "scripts/workflow_security.py",
-        }
-        for path in changed
-    )
-    if workflow_changed:
+    if _is_workflow_changed(changed):
         checks.extend(
             [
                 Check(

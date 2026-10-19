@@ -334,8 +334,14 @@ class SchematicHierarchyAuthoringService:
             placement if placement.uuid else replace(placement, uuid=self.new_uuid())
             for placement in plan.placements
         )
-        updated: SheetPinPlan = replace(plan, placements=placements)
-        return updated
+        return SheetPinPlan(
+            placements=placements,
+            size=plan.size,
+            orphans=plan.orphans,
+            conflicts=plan.conflicts,
+            overflow=plan.overflow,
+            notes=plan.notes,
+        )
 
     def _apply_sheet_pins(
         self,
@@ -429,6 +435,65 @@ class SchematicHierarchyAuthoringService:
             detail += f"; conflicting shapes (first wins): {', '.join(plan.conflicts)}"
         return detail
 
+    def _resolve_target_sheet_blocks(
+        self,
+        root_path: Path,
+        root_text: str,
+        sheet: str | None,
+    ) -> tuple[tuple[SheetBlock, ...], str | None]:
+        blocks = parse_sheet_blocks(root_text)
+        if sheet is not None:
+            blocks = tuple(block for block in blocks if block.name == sheet)
+            if not blocks:
+                skipped = next(
+                    (
+                        candidate
+                        for candidate in parse_skipped_sheet_blocks(root_text)
+                        if candidate.name == sheet
+                    ),
+                    None,
+                )
+                if skipped is not None:
+                    return (), (
+                        f"Sheet '{sheet}' is in {root_path.name} but cannot be addressed: "
+                        f"{skipped.reason}. Fix that block in KiCad and retry."
+                    )
+                return (), f"Sheet '{sheet}' was not found in {root_path.name}."
+        if not blocks:
+            return (), f"{root_path.name} has no child sheets, so there is nothing to import."
+        return blocks, None
+
+    def _plan_block_pin_import(
+        self,
+        root_path: Path,
+        block: SheetBlock,
+        grid: float,
+        grow_sheet: bool,
+    ) -> tuple[
+        list[str],
+        tuple[str, SheetPinPlan, tuple[float, float], tuple[float, float]] | None,
+    ]:
+        child_path = root_path.parent / block.filename
+        try:
+            child_text = self.read_text(child_path)
+        except OSError as exc:
+            return [f"- {block.name}: blocked, child sheet unreadable ({exc})."], None
+        plan = plan_sheet_pins(
+            parse_hierarchical_labels(child_text),
+            block,
+            grid_mm=grid,
+            grow_sheet=grow_sheet,
+        )
+        if plan.overflow:
+            return [
+                f"- {block.name}: blocked, {len(plan.overflow)} pins do not fit at the "
+                f"current size and grow_sheet is off ({', '.join(plan.overflow)})."
+            ], None
+        lines = [self._describe(block, plan)]
+        lines.extend(f"  note: {note}" for note in plan.notes)
+        item = (block.name, self._stamp_uuids(plan), block.origin, block.size)
+        return lines, item
+
     def import_sheet_pins(
         self,
         sheet: str | None,
@@ -443,55 +508,18 @@ class SchematicHierarchyAuthoringService:
             self.warn("schematic_import_sheet_pins_unreadable", error=str(exc))
             return f"Could not read the top-level schematic: {exc}"
 
-        blocks = parse_sheet_blocks(root_text)
-        if sheet is not None:
-            blocks = tuple(block for block in blocks if block.name == sheet)
-            if not blocks:
-                skipped = next(
-                    (
-                        candidate
-                        for candidate in parse_skipped_sheet_blocks(root_text)
-                        if candidate.name == sheet
-                    ),
-                    None,
-                )
-                if skipped is not None:
-                    # The sheet is in the file; it is the block that is unusable.
-                    # Saying "not found" here would send the user looking for a
-                    # name that is right there.
-                    return (
-                        f"Sheet '{sheet}' is in {root_path.name} but cannot be addressed: "
-                        f"{skipped.reason}. Fix that block in KiCad and retry."
-                    )
-                return f"Sheet '{sheet}' was not found in {root_path.name}."
-        if not blocks:
-            return f"{root_path.name} has no child sheets, so there is nothing to import."
+        blocks, err = self._resolve_target_sheet_blocks(root_path, root_text, sheet)
+        if err is not None:
+            return err
 
         grid = self.grid_mm()
         lines: list[str] = []
         pending: list[tuple[str, SheetPinPlan, tuple[float, float], tuple[float, float]]] = []
         for block in blocks:
-            child_path = root_path.parent / block.filename
-            try:
-                child_text = self.read_text(child_path)
-            except OSError as exc:
-                lines.append(f"- {block.name}: blocked, child sheet unreadable ({exc}).")
-                continue
-            plan = plan_sheet_pins(
-                parse_hierarchical_labels(child_text),
-                block,
-                grid_mm=grid,
-                grow_sheet=grow_sheet,
-            )
-            if plan.overflow:
-                lines.append(
-                    f"- {block.name}: blocked, {len(plan.overflow)} pins do not fit at the "
-                    f"current size and grow_sheet is off ({', '.join(plan.overflow)})."
-                )
-                continue
-            lines.append(self._describe(block, plan))
-            lines.extend(f"  note: {note}" for note in plan.notes)
-            pending.append((block.name, self._stamp_uuids(plan), block.origin, block.size))
+            block_lines, item = self._plan_block_pin_import(root_path, block, grid, grow_sheet)
+            lines.extend(block_lines)
+            if item is not None:
+                pending.append(item)
 
         if not pending:
             return "\n".join(["No sheet pins could be imported.", *lines])

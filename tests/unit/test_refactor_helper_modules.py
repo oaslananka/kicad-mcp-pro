@@ -287,3 +287,104 @@ def test_schematic_transfer_collects_components_and_reports_conflicts(
     assert issues == [
         "R1 has conflicting footprint assignments: Resistor_SMD:R_0603, Resistor_SMD:R_0805"
     ]
+
+
+def test_server_check_status_icon() -> None:
+    from kicad_mcp.server import _check_status_icon
+
+    assert _check_status_icon("ok") == "✅"
+    assert _check_status_icon("warn") == "⚠️"
+    assert _check_status_icon("error") == "❌"
+    assert _check_status_icon("unknown") == "❌"
+
+
+def test_discovery_recent_config_dirs(monkeypatch: pytest.MonkeyPatch) -> None:
+    import platform
+
+    from kicad_mcp.discovery import _kicad_recent_config_dirs
+
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    win_dirs = _kicad_recent_config_dirs()
+    assert len(win_dirs) == 2
+    assert any("AppData" in str(p) for p in win_dirs)
+
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+    mac_dirs = _kicad_recent_config_dirs()
+    assert len(mac_dirs) == 2
+    assert any("Library" in str(p) for p in mac_dirs)
+
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    linux_dirs = _kicad_recent_config_dirs()
+    assert len(linux_dirs) == 2
+    assert any(".config" in str(p) for p in linux_dirs)
+
+
+def test_diagnostics_evaluate_development_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    from kicad_mcp import diagnostics
+
+    # Missing tool
+    monkeypatch.setattr(diagnostics, "_development_tool_version", lambda *args: None)
+    tool_diag = diagnostics._evaluate_development_tool(
+        "kicad-cli", "live-kicad", "10.0.0", None, ["--version"]
+    )
+    assert tool_diag.status == "missing"
+    assert "Install the supported KiCad CLI" in tool_diag.remediation
+
+    # Version mismatch
+    monkeypatch.setattr(diagnostics, "_development_tool_version", lambda *args: "9.0.0")
+    tool_diag = diagnostics._evaluate_development_tool(
+        "uv", "required", "0.12.0", None, ["--version"]
+    )
+    assert tool_diag.status == "version-mismatch"
+    assert "restore the exact required tool" in tool_diag.remediation
+
+    # OK tool
+    monkeypatch.setattr(diagnostics, "_development_tool_version", lambda *args: "0.12.0")
+    tool_diag = diagnostics._evaluate_development_tool(
+        "uv", "optional", "0.12.0", None, ["--version"]
+    )
+    assert tool_diag.status == "ok"
+    assert "optional development tool" in tool_diag.remediation
+
+
+def test_diagnostics_evaluate_agent_config_entry() -> None:
+    from kicad_mcp.diagnostics import _evaluate_agent_config_entry
+
+    # Valid exists
+    res = _evaluate_agent_config_entry(
+        "claude-code", "user", {"path": "/a/b", "exists": True, "valid": True}
+    )
+    assert res.status == "ok"
+    assert "config found at /a/b" in res.message
+
+    # Invalid exists
+    res = _evaluate_agent_config_entry(
+        "claude-code",
+        "user",
+        {"path": "/a/b", "exists": True, "valid": False, "issues": ["bad token"]},
+    )
+    assert res.status == "warn"
+    assert res.hint == "bad token"
+
+    # Missing
+    res = _evaluate_agent_config_entry("codex", "repo", {"path": "/c/d", "exists": False})
+    assert res.status == "skipped"
+    assert "Run: kicad-mcp-pro setup codex --write" in res.hint
+
+
+def test_hook_pre_push_predicate_helpers() -> None:
+    from scripts.hook_pre_push import (
+        _is_architecture_changed,
+        _is_tool_surface_changed,
+        _is_workflow_changed,
+    )
+
+    assert _is_architecture_changed(["src/kicad_mcp/schematic/test.py"])
+    assert not _is_architecture_changed(["README.md"])
+
+    assert _is_tool_surface_changed(["src/kicad_mcp/tools/pcb.py"])
+    assert not _is_tool_surface_changed(["docs/other.md"])
+
+    assert _is_workflow_changed([".github/workflows/ci.yml"])
+    assert _is_workflow_changed(["scripts/check_workflows.py"])
+    assert not _is_workflow_changed(["src/kicad_mcp/server.py"])

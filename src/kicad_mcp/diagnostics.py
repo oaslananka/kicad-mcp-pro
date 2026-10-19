@@ -371,6 +371,41 @@ def _capability_mode(ipc_reachable: bool, cli_found: bool) -> DevelopmentCapabil
     return "core-only"
 
 
+def _evaluate_development_tool(
+    name: str,
+    classification: DevelopmentClassification,
+    expected: str | None,
+    executable: Path | None,
+    arguments: list[str],
+) -> DevelopmentToolDiagnostics:
+    actual = _development_tool_version(name, executable, arguments)
+    status: DevelopmentToolStatus
+    if actual is None:
+        status = "missing"
+    elif expected is not None and expected not in actual.lstrip("v"):
+        status = "version-mismatch"
+    else:
+        status = "ok"
+
+    if classification == "live-kicad":
+        remediation = "Install the supported KiCad CLI or set KICAD_MCP_KICAD_CLI."
+    elif classification == "optional":
+        remediation = "Run ./scripts/bootstrap-dev.sh to install the optional development tool."
+    else:
+        remediation = "Run ./scripts/bootstrap-dev.sh to restore the exact required tool."
+
+    resolved_executable = executable if executable is not None and executable.is_file() else None
+    return DevelopmentToolDiagnostics(
+        name=name,
+        classification=classification,
+        expected_version=expected,
+        actual_version=actual,
+        executable=str(resolved_executable) if resolved_executable is not None else None,
+        status=status,
+        remediation=remediation,
+    )
+
+
 def build_development_diagnostics(
     checkout: Path,
     *,
@@ -451,36 +486,10 @@ def build_development_diagnostics(
         ),
         ("kicad-cli", "live-kicad", contract["KICAD_CLI_VERSION"], cli_path, ["--version"]),
     ]
-    tools: list[DevelopmentToolDiagnostics] = []
-    for name, classification, expected, executable, arguments in candidates:
-        actual = _development_tool_version(name, executable, arguments)
-        status: DevelopmentToolStatus
-        if actual is None:
-            status = "missing"
-        elif expected is not None and expected not in actual.lstrip("v"):
-            status = "version-mismatch"
-        else:
-            status = "ok"
-        if classification == "live-kicad":
-            remediation = "Install the supported KiCad CLI or set KICAD_MCP_KICAD_CLI."
-        elif classification == "optional":
-            remediation = "Run ./scripts/bootstrap-dev.sh to install the optional development tool."
-        else:
-            remediation = "Run ./scripts/bootstrap-dev.sh to restore the exact required tool."
-        resolved_executable = (
-            executable if executable is not None and executable.is_file() else None
-        )
-        tools.append(
-            DevelopmentToolDiagnostics(
-                name=name,
-                classification=classification,
-                expected_version=expected,
-                actual_version=actual,
-                executable=str(resolved_executable) if resolved_executable is not None else None,
-                status=status,
-                remediation=remediation,
-            )
-        )
+    tools = [
+        _evaluate_development_tool(name, classification, expected, executable, arguments)
+        for name, classification, expected, executable, arguments in candidates
+    ]
 
     roots = [
         DevelopmentRootDiagnostics(
@@ -730,6 +739,33 @@ def diagnostic_report_json(report: DiagnosticReport, *, indent: int = 2) -> str:
     return json.dumps(payload, indent=indent)
 
 
+def _evaluate_agent_config_entry(key: str, scope: str, entry: dict[str, Any]) -> CheckResult:
+    path = entry.get("path", "")
+    exists = entry.get("exists", False)
+    valid = entry.get("valid", False)
+    issues = entry.get("issues", [])
+
+    if exists:
+        if valid:
+            return CheckResult(
+                name=f"agent_config_{key}_{scope}",
+                status="ok",
+                message=f"{key} ({scope}) config found at {path}",
+            )
+        return CheckResult(
+            name=f"agent_config_{key}_{scope}",
+            status="warn",
+            message=f"{key} ({scope}) config at {path} has issues",
+            hint="; ".join(str(i) for i in issues[:3]),
+        )
+    return CheckResult(
+        name=f"agent_config_{key}_{scope}",
+        status="skipped",
+        message=f"{key} ({scope}) config not found at {path}",
+        hint=f"Run: kicad-mcp-pro setup {key} --write",
+    )
+
+
 def _agent_config_checks() -> list[CheckResult]:
     """Check agent configuration files for kicad-mcp presence."""
     checks: list[CheckResult] = []
@@ -742,40 +778,8 @@ def _agent_config_checks() -> list[CheckResult]:
             if not configs:
                 continue
             for scope, entry in configs.items():  # type: ignore[attr-defined]
-                if not isinstance(entry, dict):
-                    continue
-                path = entry.get("path", "")
-                exists = entry.get("exists", False)
-                valid = entry.get("valid", False)
-                issues = entry.get("issues", [])
-
-                if exists:
-                    if valid:
-                        checks.append(
-                            CheckResult(
-                                name=f"agent_config_{key}_{scope}",
-                                status="ok",
-                                message=f"{key} ({scope}) config found at {path}",
-                            )
-                        )
-                    else:
-                        checks.append(
-                            CheckResult(
-                                name=f"agent_config_{key}_{scope}",
-                                status="warn",
-                                message=f"{key} ({scope}) config at {path} has issues",
-                                hint="; ".join(str(i) for i in issues[:3]),
-                            )
-                        )
-                else:
-                    checks.append(
-                        CheckResult(
-                            name=f"agent_config_{key}_{scope}",
-                            status="skipped",
-                            message=f"{key} ({scope}) config not found at {path}",
-                            hint=f"Run: kicad-mcp-pro setup {key} --write",
-                        )
-                    )
+                if isinstance(entry, dict):
+                    checks.append(_evaluate_agent_config_entry(key, scope, entry))
     except Exception as exc:
         checks.append(
             CheckResult(
@@ -797,24 +801,22 @@ def _missing_cli_message(cli_path: Path) -> str:
     return f"kicad-cli was not found at {cli_path}"
 
 
-def build_diagnostic_report(*, probe_cli: bool, probe_ipc: bool) -> DiagnosticReport:
-    """Build a diagnostics report without raising for non-fatal KiCad unavailability."""
-    cfg = get_config()
+def _probe_cli_diagnostics(
+    cli_path: Path, *, probe_cli: bool
+) -> tuple[bool, str | None, list[CheckResult]]:
     checks: list[CheckResult] = []
-    package_diagnostics, package_checks = _package_diagnostics()
-
-    cli_found = _cli_found(cfg.kicad_cli)
+    cli_found = _cli_found(cli_path)
     kicad_version: str | None = None
     if cli_found:
         checks.append(
             CheckResult(
                 name="kicad_cli",
                 status="ok",
-                message=f"kicad-cli found at {cfg.kicad_cli}",
+                message=f"kicad-cli found at {cli_path}",
             )
         )
         if probe_cli:
-            kicad_version = find_kicad_version(cfg.kicad_cli)
+            kicad_version = find_kicad_version(cli_path)
             checks.append(
                 CheckResult(
                     name="kicad_cli_version",
@@ -828,11 +830,15 @@ def build_diagnostic_report(*, probe_cli: bool, probe_ipc: bool) -> DiagnosticRe
             CheckResult(
                 name="kicad_cli",
                 status="warn",
-                message=_missing_cli_message(cfg.kicad_cli),
+                message=_missing_cli_message(cli_path),
                 hint="Set KICAD_MCP_KICAD_CLI to the path of an installed kicad-cli.",
             )
         )
+    return cli_found, kicad_version, checks
 
+
+def _probe_ipc_diagnostics(*, probe_ipc: bool) -> tuple[bool, list[CheckResult]]:
+    checks: list[CheckResult] = []
     ipc_reachable = False
     if probe_ipc:
         try:
@@ -863,6 +869,22 @@ def build_diagnostic_report(*, probe_cli: bool, probe_ipc: bool) -> DiagnosticRe
                 hint="Run doctor --json for a deeper probe.",
             )
         )
+    return ipc_reachable, checks
+
+
+def build_diagnostic_report(*, probe_cli: bool, probe_ipc: bool) -> DiagnosticReport:
+    """Build a diagnostics report without raising for non-fatal KiCad unavailability."""
+    cfg = get_config()
+    checks: list[CheckResult] = []
+    package_diagnostics, package_checks = _package_diagnostics()
+
+    cli_found, kicad_version, cli_checks = _probe_cli_diagnostics(
+        cfg.kicad_cli, probe_cli=probe_cli
+    )
+    checks.extend(cli_checks)
+
+    ipc_reachable, ipc_checks = _probe_ipc_diagnostics(probe_ipc=probe_ipc)
+    checks.extend(ipc_checks)
 
     if probe_cli:
         checks.extend(package_checks)

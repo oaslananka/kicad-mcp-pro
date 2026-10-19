@@ -25,11 +25,9 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, TypeVar
+from typing import Any
 
 from .errors import KiCadIpcTimeoutError
-
-T = TypeVar("T")
 
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_BASE_DELAY_S = 0.05
@@ -120,7 +118,54 @@ class KiCadCommandQueue:
         delay = self._base_delay_s * (2 ** max(0, attempt - 1))
         return float(min(self._max_delay_s, delay))
 
-    def execute(
+    def _record_failed_entry(
+        self,
+        *,
+        operation: str,
+        correlation_id: str,
+        idempotency_key: str | None,
+        attempts: int,
+        duration_s: float,
+        exc: Exception,
+    ) -> None:
+        self._journal.append(
+            JournalEntry(
+                operation=operation,
+                correlation_id=correlation_id,
+                idempotency_key=idempotency_key,
+                attempts=attempts,
+                status="failed",
+                duration_s=duration_s,
+                error_code=getattr(exc, "code", None),
+                error_class=type(exc).__name__,
+            )
+        )
+
+    def _prepare_retry(
+        self,
+        *,
+        operation: str,
+        correlation_id: str,
+        idempotency_key: str | None,
+        attempts: int,
+        started: float,
+    ) -> None:
+        try:
+            if self._reconnect is not None:
+                self._reconnect()
+        except Exception as reconnect_exc:  # noqa: BLE001 # journaled, then re-raised
+            self._record_failed_entry(
+                operation=operation,
+                correlation_id=correlation_id,
+                idempotency_key=idempotency_key,
+                attempts=attempts,
+                duration_s=self._time() - started,
+                exc=reconnect_exc,
+            )
+            raise
+        self._sleep(self.backoff_delay(attempts))
+
+    def execute[T](
         self,
         operation: str,
         command: Callable[[], T],
@@ -163,36 +208,21 @@ class KiCadCommandQueue:
                         and attempts <= self._max_retries
                     )
                     if can_retry:
-                        try:
-                            if self._reconnect is not None:
-                                self._reconnect()
-                        except Exception as reconnect_exc:  # noqa: BLE001 -- journaled, then re-raised
-                            self._journal.append(
-                                JournalEntry(
-                                    operation=operation,
-                                    correlation_id=correlation_id,
-                                    idempotency_key=idempotency_key,
-                                    attempts=attempts,
-                                    status="failed",
-                                    duration_s=self._time() - started,
-                                    error_code=getattr(reconnect_exc, "code", None),
-                                    error_class=type(reconnect_exc).__name__,
-                                )
-                            )
-                            raise
-                        self._sleep(self.backoff_delay(attempts))
-                        continue
-                    self._journal.append(
-                        JournalEntry(
+                        self._prepare_retry(
                             operation=operation,
                             correlation_id=correlation_id,
                             idempotency_key=idempotency_key,
                             attempts=attempts,
-                            status="failed",
-                            duration_s=self._time() - started,
-                            error_code=getattr(exc, "code", None),
-                            error_class=type(exc).__name__,
+                            started=started,
                         )
+                        continue
+                    self._record_failed_entry(
+                        operation=operation,
+                        correlation_id=correlation_id,
+                        idempotency_key=idempotency_key,
+                        attempts=attempts,
+                        duration_s=self._time() - started,
+                        exc=exc,
                     )
                     raise
                 else:
