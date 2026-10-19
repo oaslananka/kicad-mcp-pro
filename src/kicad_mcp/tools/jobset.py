@@ -109,6 +109,21 @@ def jobset_export(output_name: str = "") -> str:
     return "\n".join(lines)
 
 
+def _resolve_jobset_output_args(output: str, project_dir: Path | None) -> list[str]:
+    if not output:
+        return []
+    try:
+        if project_dir is not None:
+            from ..path_safety import resolve_under
+
+            out_path = resolve_under(project_dir, output)
+        else:
+            out_path = Path(output).expanduser().resolve()
+        return ["--output", str(out_path)]
+    except Exception as exc:
+        raise ValueError(f"Unsafe output path: {exc}") from exc
+
+
 @headless_compatible
 def jobset_run(
     project_file: str = "",
@@ -150,16 +165,7 @@ def jobset_run(
     if not jobset_path.exists():
         return f"Jobset file not found: {jobset_file}"
 
-    out_args = []
-    if output:
-        try:
-            if cfg.project_dir is not None:
-                out_path = resolve_under(cfg.project_dir, output)
-            else:
-                out_path = Path(output).expanduser().resolve()
-            out_args = ["--output", str(out_path)]
-        except Exception as exc:
-            raise ValueError(f"Unsafe output path: {exc}") from exc
+    out_args = _resolve_jobset_output_args(output, cfg.project_dir)
 
     cmd = ["jobset", "run"]
     if stop_on_error:

@@ -68,6 +68,27 @@ def fp_export(
     return f"Footprint exported to {out_file}"
 
 
+def _build_fp_export_svg_cmd(
+    out_dir: Path,
+    in_path: Path,
+    footprint: str,
+    layers: list[str] | None,
+    theme: str,
+    black_and_white: bool,
+) -> list[str]:
+    cmd = ["fp", "export", "svg", "--output", str(out_dir)]
+    if footprint:
+        cmd.extend(["--footprint", footprint])
+    if layers:
+        cmd.extend(["--layers", ",".join(layers)])
+    if theme:
+        cmd.extend(["--theme", theme])
+    if black_and_white:
+        cmd.append("--black-and-white")
+    cmd.append(str(in_path))
+    return cmd
+
+
 @headless_compatible
 def fp_export_svg(
     input_path: str,
@@ -121,22 +142,29 @@ def fp_export_svg(
         except Exception as exc:
             raise ValueError(f"Unsafe output directory: {exc}") from exc
 
-    cmd = ["fp", "export", "svg"]
-    cmd.extend(["--output", str(out_dir)])
-    if footprint:
-        cmd.extend(["--footprint", footprint])
-    if layers:
-        cmd.extend(["--layers", ",".join(layers)])
-    if theme:
-        cmd.extend(["--theme", theme])
-    if black_and_white:
-        cmd.append("--black-and-white")
-    cmd.append(str(in_path))
+    cmd = _build_fp_export_svg_cmd(out_dir, in_path, footprint, layers, theme, black_and_white)
 
     code, stdout, stderr = _run_cli(*cmd)
     if code != 0:
         return f"Footprint SVG export failed: {stderr or stdout or 'unknown error'}"
     return f"Footprint SVG exported successfully to {out_dir}"
+
+
+def _resolve_fp_upgrade_output_path(
+    output_file: str, in_path_obj: Path, project_dir: Path | None
+) -> str:
+    out_path = output_file.strip() if output_file else ""
+    if out_path:
+        try:
+            if project_dir is not None:
+                from ..path_safety import resolve_under
+
+                return str(resolve_under(project_dir, out_path))
+            return str(Path(out_path).expanduser().resolve())
+        except Exception as exc:
+            raise ValueError(f"Unsafe output path: {exc}") from exc
+    out_dir = _ensure_output_dir("upgraded")
+    return str(out_dir / in_path_obj.name)
 
 
 @headless_compatible
@@ -182,20 +210,7 @@ def fp_upgrade(
     except Exception as exc:
         raise ValueError(f"Unsafe input path: {exc}") from exc
 
-    out_path = output_file.strip() if output_file else ""
-    if out_path:
-        try:
-            if cfg.project_dir is not None:
-                from ..path_safety import resolve_under
-
-                out_path = str(resolve_under(cfg.project_dir, out_path))
-            else:
-                out_path = str(Path(out_path).expanduser().resolve())
-        except Exception as exc:
-            raise ValueError(f"Unsafe output path: {exc}") from exc
-    else:
-        out_dir = _ensure_output_dir("upgraded")
-        out_path = str(out_dir / in_path_obj.name)
+    out_path = _resolve_fp_upgrade_output_path(output_file, in_path_obj, cfg.project_dir)
 
     if dry_run:
         return (

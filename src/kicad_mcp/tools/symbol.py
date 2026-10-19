@@ -101,6 +101,30 @@ def sym_export(output_path: str = "", format: str = "svg") -> str:
     return f"Symbol exported to {out_file}"
 
 
+def _build_sym_export_svg_cmd(
+    out_dir: Path,
+    in_path: Path,
+    symbol: str,
+    theme: str,
+    black_and_white: bool,
+    include_hidden_pins: bool,
+    include_hidden_fields: bool,
+) -> list[str]:
+    cmd = ["sym", "export", "svg", "--output", str(out_dir)]
+    if symbol:
+        cmd.extend(["--symbol", symbol])
+    if theme:
+        cmd.extend(["--theme", theme])
+    if black_and_white:
+        cmd.append("--black-and-white")
+    if include_hidden_pins:
+        cmd.append("--include-hidden-pins")
+    if include_hidden_fields:
+        cmd.append("--include-hidden-fields")
+    cmd.append(str(in_path))
+    return cmd
+
+
 @headless_compatible
 def sym_export_svg(
     input_file: str,
@@ -157,19 +181,15 @@ def sym_export_svg(
         except Exception as exc:
             raise ValueError(f"Unsafe output directory: {exc}") from exc
 
-    cmd = ["sym", "export", "svg"]
-    cmd.extend(["--output", str(out_dir)])
-    if symbol:
-        cmd.extend(["--symbol", symbol])
-    if theme:
-        cmd.extend(["--theme", theme])
-    if black_and_white:
-        cmd.append("--black-and-white")
-    if include_hidden_pins:
-        cmd.append("--include-hidden-pins")
-    if include_hidden_fields:
-        cmd.append("--include-hidden-fields")
-    cmd.append(str(in_path))
+    cmd = _build_sym_export_svg_cmd(
+        out_dir,
+        in_path,
+        symbol,
+        theme,
+        black_and_white,
+        include_hidden_pins,
+        include_hidden_fields,
+    )
 
     code, stdout, stderr = _run_cli(*cmd)
     if code != 0:
