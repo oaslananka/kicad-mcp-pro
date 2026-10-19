@@ -14,6 +14,17 @@ from .schematic import parse_schematic_file
 subprocess = export_support.subprocess
 
 
+def _collect_net_nodes(block: str, net_map: dict[tuple[str, str], str]) -> None:
+    name_match = re.search(rf"\(name\s+{STRING_PATTERN}\)", block)
+    if name_match is not None:
+        net_name = name_match.group(1)
+        for node in re.finditer(
+            rf"\(node\s+\(ref\s+{STRING_PATTERN}\)\s+\(pin\s+{STRING_PATTERN}\)",
+            block,
+        ):
+            net_map[(node.group(1), node.group(2))] = net_name
+
+
 def _parse_netlist_text(content: str) -> dict[tuple[str, str], str]:
     net_map: dict[tuple[str, str], str] = {}
     cursor = 0
@@ -23,14 +34,7 @@ def _parse_netlist_text(content: str) -> dict[tuple[str, str], str]:
         ):
             block, length = _extract_block(content, cursor)
             if block:
-                name_match = re.search(rf"\(name\s+{STRING_PATTERN}\)", block)
-                if name_match is not None:
-                    net_name = name_match.group(1)
-                    for node in re.finditer(
-                        rf"\(node\s+\(ref\s+{STRING_PATTERN}\)\s+\(pin\s+{STRING_PATTERN}\)",
-                        block,
-                    ):
-                        net_map[(node.group(1), node.group(2))] = net_name
+                _collect_net_nodes(block, net_map)
                 cursor += length
                 continue
         cursor += 1
