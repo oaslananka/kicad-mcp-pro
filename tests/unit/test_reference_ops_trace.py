@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -66,7 +67,8 @@ def test_live_mcp_client_records_only_tool_metadata(
         assert [row["details"]["request_id"] for row in rows] == [None, 1]
         assert "arguments" not in path.read_text()
         assert "content" not in path.read_text()
-        assert path.stat().st_mode & 0o777 == 0o600
+        if os.name != "nt":
+            assert path.stat().st_mode & 0o777 == 0o600
     finally:
         reset_config()
 
@@ -81,13 +83,19 @@ def test_trace_is_exclusive_and_never_overwrites_existing_attempt(tmp_path: Path
 
 def test_trace_rejects_public_or_symlinked_storage(tmp_path: Path) -> None:
     path = _private_attempt(tmp_path) / "ops-mcp-trace.jsonl"
-    path.parent.chmod(0o755)
-    with pytest.raises(ValueError, match="private"):
-        ReferenceOpsTrace(path=path, attempt_id="attempt-004")
-    path.parent.chmod(0o700)
+    if os.name != "nt":
+        path.parent.chmod(0o755)
+        with pytest.raises(ValueError, match="private"):
+            ReferenceOpsTrace(path=path, attempt_id="attempt-004")
+        path.parent.chmod(0o700)
     target = tmp_path / "external"
     target.write_text("must remain intact")
-    path.symlink_to(target)
+    try:
+        path.symlink_to(target)
+    except OSError:
+        if os.name == "nt":
+            pytest.skip("Windows runner does not allow symlink creation")
+        raise
     with pytest.raises(ValueError, match="new absolute"):
         ReferenceOpsTrace(path=path, attempt_id="attempt-004")
     assert target.read_text() == "must remain intact"

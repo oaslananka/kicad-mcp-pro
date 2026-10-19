@@ -30,7 +30,11 @@ class ReferenceOpsTrace:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", attempt_id):
             raise ValueError("Ops trace attempt identity is invalid")
         parent = path.parent
-        if parent.is_symlink() or not parent.is_dir() or parent.stat().st_mode & 0o077:
+        if (
+            parent.is_symlink()
+            or not parent.is_dir()
+            or (os.name != "nt" and parent.stat().st_mode & 0o077)
+        ):
             raise ValueError("Ops trace requires a private, real parent directory")
         self.attempt_id = attempt_id
         self._sequence = 0
