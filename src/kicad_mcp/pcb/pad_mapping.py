@@ -48,11 +48,8 @@ def footprint_pads(footprint: object) -> list[object]:
         return []
 
 
-def map_pads_to_footprints(
-    pads: Iterable[object],
-    footprints: Iterable[object],
-) -> list[MappedPad]:
-    """Deduplicate board pads and enrich them with stable footprint references."""
+def _footprint_pad_references(footprints: Iterable[object]) -> dict[str, str | None]:
+    """Index the footprint reference for each official pad identifier."""
     references: dict[str, str | None] = {}
     for footprint in footprints:
         reference = footprint_reference(footprint)
@@ -64,6 +61,16 @@ def map_pads_to_footprints(
                 references[identifier] = reference
             elif references[identifier] != reference:
                 references[identifier] = None
+
+    return references
+
+
+def map_pads_to_footprints(
+    pads: Iterable[object],
+    footprints: Iterable[object],
+) -> list[MappedPad]:
+    """Deduplicate board pads and enrich them with stable footprint references."""
+    references = _footprint_pad_references(footprints)
 
     mapped: list[MappedPad] = []
     seen: set[tuple[str, str | int]] = set()

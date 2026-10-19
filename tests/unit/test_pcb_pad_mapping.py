@@ -64,3 +64,15 @@ def test_footprint_pads_reads_definition_pads_and_ignores_unsupported_surfaces()
 
     assert footprint_pads(_footprint("U1", pads)) == pads
     assert footprint_pads(SimpleNamespace()) == []
+
+
+def test_map_pads_retains_same_reference_for_duplicate_footprint_pad_ids() -> None:
+    shared = _pad("shared")
+    footprints = [
+        _footprint("U1", [_pad(None), _pad("shared")]),
+        _footprint("U1", [_pad("shared")]),
+    ]
+
+    mapped = map_pads_to_footprints([shared], footprints)
+
+    assert [(item.pad_id, item.reference) for item in mapped] == [("shared", "U1")]

@@ -243,25 +243,29 @@ def evaluate_schematic_rule(rule: SchematicRule, circuit: IRCircuit) -> QualityR
     return _rule_result(rule, "pass", "matched")
 
 
+def _evaluate_board_outline_rule(rule: BoardOutlineRule, board_text: str) -> QualityRuleResult:
+    bounds = _outline_bounds_mm(board_text)
+    if bounds is None:
+        return _rule_result(rule, "fail", "outline_missing")
+    min_x, min_y, max_x, max_y = bounds
+    width = max_x - min_x
+    height = max_y - min_y
+    in_bounds = (
+        (rule.min_width_mm is None or width >= rule.min_width_mm)
+        and (rule.max_width_mm is None or width <= rule.max_width_mm)
+        and (rule.min_height_mm is None or height >= rule.min_height_mm)
+        and (rule.max_height_mm is None or height <= rule.max_height_mm)
+    )
+    return (
+        _rule_result(rule, "pass", "matched")
+        if in_bounds
+        else _rule_result(rule, "fail", "outline_bounds_mismatch")
+    )
+
+
 def evaluate_pcb_rule(rule: PcbRule, board_text: str) -> QualityRuleResult:
     if isinstance(rule, BoardOutlineRule):
-        bounds = _outline_bounds_mm(board_text)
-        if bounds is None:
-            return _rule_result(rule, "fail", "outline_missing")
-        min_x, min_y, max_x, max_y = bounds
-        width = max_x - min_x
-        height = max_y - min_y
-        in_bounds = (
-            (rule.min_width_mm is None or width >= rule.min_width_mm)
-            and (rule.max_width_mm is None or width <= rule.max_width_mm)
-            and (rule.min_height_mm is None or height >= rule.min_height_mm)
-            and (rule.max_height_mm is None or height <= rule.max_height_mm)
-        )
-        return (
-            _rule_result(rule, "pass", "matched")
-            if in_bounds
-            else _rule_result(rule, "fail", "outline_bounds_mismatch")
-        )
+        return _evaluate_board_outline_rule(rule, board_text)
 
     footprints = _parse_board_footprint_blocks(board_text)
     if isinstance(rule, PcbFootprintRule):
