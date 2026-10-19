@@ -257,3 +257,72 @@ def test_trace_loader_rejects_content_change_during_read(
             attempt_id="attempt-004",
             filename="ops-mcp-trace.jsonl",
         )
+
+
+def test_trace_loader_blocks_public_attempt_directory(tmp_path: Path) -> None:
+    """Directory descriptor policy remains effective after initial path checks."""
+    if os.name == "nt":
+        pytest.skip("POSIX directory permissions")
+    path = _good_trace(tmp_path)
+    path.parent.chmod(0o750)
+    with pytest.raises(ReferenceOpsTraceValidationError, match="directory must be private"):
+        reference_ops_trace_validation._load_trace(
+            root=reference_ops_trace_validation._TRACE_ROOT,
+            attempt_id="attempt-004",
+            filename="ops-mcp-trace.jsonl",
+        )
+
+
+@pytest.mark.parametrize("attempt_id", ["../outside", ".", ""])
+def test_trace_loader_rejects_invalid_attempt_before_file_open(
+    tmp_path: Path, attempt_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _good_trace(tmp_path)
+
+    def forbidden_open(**kwargs: object) -> int:
+        pytest.fail(f"Untrusted path caused a file open: {kwargs}")
+
+    monkeypatch.setattr(reference_ops_trace_validation, "_open_reserved_trace", forbidden_open)
+    with pytest.raises(ReferenceOpsTraceValidationError, match="reserved"):
+        reference_ops_trace_validation._load_trace(
+            root=reference_ops_trace_validation._TRACE_ROOT,
+            attempt_id=attempt_id,
+            filename="ops-mcp-trace.jsonl",
+        )
+
+
+def test_windows_descriptor_path_requires_private_non_symlinked_location(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Exercise the Windows branch even on non-Windows test runners."""
+    from types import SimpleNamespace
+
+    path = _good_trace(tmp_path)
+    real_open = os.open
+    fake_os = SimpleNamespace(
+        name="nt",
+        O_RDONLY=os.O_RDONLY,
+        O_BINARY=getattr(os, "O_BINARY", 0),
+        O_NOFOLLOW=getattr(os, "O_NOFOLLOW", 0),
+        O_NONBLOCK=getattr(os, "O_NONBLOCK", 0),
+        open=real_open,
+    )
+    monkeypatch.setattr(reference_ops_trace_validation, "os", fake_os)
+    root = reference_ops_trace_validation._TRACE_ROOT
+    fd = reference_ops_trace_validation._open_reserved_trace(
+        root=root, attempt_id="attempt-004", filename="ops-mcp-trace.jsonl"
+    )
+    try:
+        assert os.fstat(fd).st_size == path.stat().st_size
+    finally:
+        os.close(fd)
+
+    link = path.parent / "ops-client-observed.jsonl"
+    try:
+        link.symlink_to(path)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlink creation unavailable")
+    with pytest.raises(ReferenceOpsTraceValidationError, match="reserved"):
+        reference_ops_trace_validation._open_reserved_trace(
+            root=root, attempt_id="attempt-004", filename="ops-client-observed.jsonl"
+        )
