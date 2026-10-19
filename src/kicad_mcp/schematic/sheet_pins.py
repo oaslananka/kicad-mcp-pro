@@ -567,30 +567,9 @@ def placement_on_edge(
     )
 
 
-def plan_sheet_pins(
+def _collect_desired_labels(
     labels: Sequence[tuple[str, str]],
-    sheet: SheetBlock,
-    *,
-    grid_mm: float,
-    pitch_mm: float = DEFAULT_PITCH_MM,
-    margin_mm: float = DEFAULT_MARGIN_MM,
-    text_height_mm: float = DEFAULT_TEXT_HEIGHT_MM,
-    grow_sheet: bool = True,
-) -> SheetPinPlan:
-    """Lay out every pin of one sheet symbol from its child's labels.
-
-    Inputs go on the left edge and everything else on the right, alphabetically
-    within each edge. The layout covers *all* pins, not only the new ones: KiCad
-    measures a left-edge pin from the bottom of the sheet, so growing the sheet
-    would silently move any left pin whose offset was left untouched.
-
-    Left-edge pins are placed top-down (``origin_y + margin + index * pitch``),
-    not in kicad-sch-api's bottom-relative convention that ``placement_on_edge``
-    follows. Both columns must run in the same direction -- otherwise the left
-    column would read bottom-to-top while the right reads top-to-bottom -- so
-    this function does not call ``placement_on_edge`` for its left edge. See
-    the note on ``_EDGE_GEOMETRY`` for the full picture.
-    """
+) -> tuple[dict[str, str], list[str]]:
     desired: dict[str, str] = {}
     conflicts: list[str] = []
     for raw_name, raw_shape in labels:
@@ -600,10 +579,17 @@ def plan_sheet_pins(
                 conflicts.append(raw_name)
             continue
         desired[raw_name] = shape
+    return desired, conflicts
 
-    existing = {pin.name: pin for pin in sheet.pins}
+
+def _classify_pin_entries(
+    desired: dict[str, str],
+    existing: dict[str, SheetPinRecord],
+) -> tuple[
+    list[tuple[str, str, SheetPinRecord | None, str]],
+    tuple[str, ...],
+]:
     orphans = tuple(sorted((name for name in existing if name not in desired), key=_sort_key))
-
     entries: list[tuple[str, str, SheetPinRecord | None, str]] = []
     for name in sorted(set(desired) | set(existing), key=_sort_key):
         record = existing.get(name)
@@ -619,11 +605,27 @@ def plan_sheet_pins(
             pin_type = existing[name].pin_type
             action = "keep"
         entries.append((name, pin_type, record, action))
+    return entries, orphans
 
-    left = [entry for entry in entries if entry[1] == "input"]
-    right = [entry for entry in entries if entry[1] != "input"]
 
-    origin_x, origin_y = sheet.origin
+def _calculate_sheet_dimensions(
+    sheet: SheetBlock,
+    left: list[tuple[str, str, SheetPinRecord | None, str]],
+    right: list[tuple[str, str, SheetPinRecord | None, str]],
+    *,
+    grid_mm: float,
+    pitch_mm: float,
+    margin_mm: float,
+    text_height_mm: float,
+    grow_sheet: bool,
+) -> tuple[
+    float,
+    float,
+    list[str],
+    list[str],
+    list[tuple[str, str, SheetPinRecord | None, str]],
+    list[tuple[str, str, SheetPinRecord | None, str]],
+]:
     width, height = sheet.size
     notes: list[str] = []
     overflow: list[str] = []
@@ -651,19 +653,22 @@ def plan_sheet_pins(
             [entry[0] for entry in left[capacity:]] + [entry[0] for entry in right[capacity:]],
             key=_sort_key,
         )
-        left, right = left[:capacity], right[:capacity]
+        left = left[:capacity]
+        right = right[:capacity]
 
-    if not _is_on_grid(origin_x, grid_mm):
-        notes.append(
-            f"Sheet origin x={origin_x} is not on the {grid_mm} mm grid, so its edge pins "
-            "cannot be either. Run sch_align_to_grid before wiring."
-        )
-    if pitch_mm > 0 and grid_mm > 0 and not _is_on_grid(pitch_mm / grid_mm, 1.0):
-        notes.append(
-            f"Pin pitch {pitch_mm} mm is not a multiple of the {grid_mm} mm grid; "
-            "positions were snapped individually."
-        )
+    return width, height, notes, overflow, left, right
 
+
+def _build_edge_placements(
+    left: list[tuple[str, str, SheetPinRecord | None, str]],
+    right: list[tuple[str, str, SheetPinRecord | None, str]],
+    origin_x: float,
+    origin_y: float,
+    width: float,
+    grid_mm: float,
+    pitch_mm: float,
+    margin_mm: float,
+) -> list[SheetPinPlacement]:
     placements: list[SheetPinPlacement] = []
     for edge, column in (("left", left), ("right", right)):
         x_mm = origin_x if edge == "left" else round(origin_x + width, 4)
@@ -671,8 +676,6 @@ def plan_sheet_pins(
         for index, (name, pin_type, record, action) in enumerate(column):
             y_mm = _snap(origin_y + margin_mm + index * pitch_mm, grid_mm)
             if action == "keep" and not _is_placed_at(record, x_mm, y_mm, rotation):
-                # The type matches, but this layout puts the pin somewhere else.
-                # The file is rewritten for it, so it is not "unchanged".
                 action = "move"
             placements.append(
                 SheetPinPlacement(
@@ -686,6 +689,66 @@ def plan_sheet_pins(
                     action=action,
                 )
             )
+    return placements
+
+
+def plan_sheet_pins(
+    labels: Sequence[tuple[str, str]],
+    sheet: SheetBlock,
+    *,
+    grid_mm: float,
+    pitch_mm: float = DEFAULT_PITCH_MM,
+    margin_mm: float = DEFAULT_MARGIN_MM,
+    text_height_mm: float = DEFAULT_TEXT_HEIGHT_MM,
+    grow_sheet: bool = True,
+) -> SheetPinPlan:
+    """Lay out every pin of one sheet symbol from its child's labels.
+
+    Inputs go on the left edge and everything else on the right, alphabetically
+    within each edge. The layout covers *all* pins, not only the new ones: KiCad
+    measures a left-edge pin from the bottom of the sheet, so growing the sheet
+    would silently move any left pin whose offset was left untouched.
+
+    Left-edge pins are placed top-down (``origin_y + margin + index * pitch``),
+    not in kicad-sch-api's bottom-relative convention that ``placement_on_edge``
+    follows. Both columns must run in the same direction -- otherwise the left
+    column would read bottom-to-top while the right reads top-to-bottom -- so
+    this function does not call ``placement_on_edge`` for its left edge. See
+    the note on ``_EDGE_GEOMETRY`` for the full picture.
+    """
+    desired, conflicts = _collect_desired_labels(labels)
+    existing = {pin.name: pin for pin in sheet.pins}
+    entries, orphans = _classify_pin_entries(desired, existing)
+
+    left = [entry for entry in entries if entry[1] == "input"]
+    right = [entry for entry in entries if entry[1] != "input"]
+
+    origin_x, origin_y = sheet.origin
+    width, height, notes, overflow, left, right = _calculate_sheet_dimensions(
+        sheet,
+        left,
+        right,
+        grid_mm=grid_mm,
+        pitch_mm=pitch_mm,
+        margin_mm=margin_mm,
+        text_height_mm=text_height_mm,
+        grow_sheet=grow_sheet,
+    )
+
+    if not _is_on_grid(origin_x, grid_mm):
+        notes.append(
+            f"Sheet origin x={origin_x} is not on the {grid_mm} mm grid, so its edge pins "
+            "cannot be either. Run sch_align_to_grid before wiring."
+        )
+    if pitch_mm > 0 and grid_mm > 0 and not _is_on_grid(pitch_mm / grid_mm, 1.0):
+        notes.append(
+            f"Pin pitch {pitch_mm} mm is not a multiple of the {grid_mm} mm grid; "
+            "positions were snapped individually."
+        )
+
+    placements = _build_edge_placements(
+        left, right, origin_x, origin_y, width, grid_mm, pitch_mm, margin_mm
+    )
 
     return SheetPinPlan(
         placements=tuple(placements),
