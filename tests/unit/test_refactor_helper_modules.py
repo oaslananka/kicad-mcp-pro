@@ -397,7 +397,7 @@ def test_discovery_collect_cli_help_outputs(
 
     def fail_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         _ = (args, kwargs)
-        raise subprocess.TimeoutExpired(cmd=["kicad-cli"], timeout=10)
+        raise OSError("kicad-cli timed out")
 
     monkeypatch.setattr(subprocess, "run", fail_run)
     assert _collect_cli_help_outputs(tmp_path / "kicad-cli") == []
