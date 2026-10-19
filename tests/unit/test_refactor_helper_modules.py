@@ -228,6 +228,15 @@ def test_schematic_transfer_parses_netlist_and_exports_map(
     assert exported[("J1", "A6")] == "USB_DP"
 
 
+def test_schematic_transfer_ignores_unidentified_and_non_net_blocks() -> None:
+    text = (
+        '(network (name "NOT_A_NET") (node (ref "R1") (pin "1")))'
+        '(net (code "1") (node (ref "R2") (pin "2")))'
+    )
+
+    assert schematic_transfer._parse_netlist_text(text) == {}
+
+
 def test_schematic_transfer_collects_components_and_reports_conflicts(
     sample_project: Path,
     monkeypatch: pytest.MonkeyPatch,
