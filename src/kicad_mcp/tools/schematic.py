@@ -4569,13 +4569,13 @@ def _route_avoids_pin_hinge(
 
 
 def _is_direct_route_clean(
-    direct: Sequence[tuple[float, float, float, float]],
-    obstacles: Sequence[BBox],
+    direct: list[tuple[float, float, float, float]],
+    obstacles: list[BBox],
     owners: set[int],
-    occupied: Sequence[tuple[float, float, float, float]] | None,
+    occupied: list[tuple[float, float, float, float]] | None,
     start_normal: tuple[float, float] | None,
     end_normal: tuple[float, float] | None,
-    boundary_edges: Sequence[tuple[tuple[float, float], tuple[float, float]]],
+    boundary_edges: list[tuple[bool, float, float, float]],
     clearance: float,
 ) -> bool:
     if not direct:
@@ -4594,8 +4594,8 @@ def _is_direct_route_clean(
 def _endpoint_escape_node(
     point: tuple[float, float],
     owner: BBox | None,
-    obstacles: Sequence[BBox],
-    occupied: Sequence[tuple[float, float, float, float]] | None,
+    obstacles: list[BBox],
+    occupied: list[tuple[float, float, float, float]] | None,
     grid: float,
     snap_to_grid: bool,
     normal: tuple[float, float] | None,
@@ -4610,9 +4610,9 @@ def _endpoint_escape_node(
 
 def _handle_unrouted_fallback(
     direct: list[tuple[float, float, float, float]],
-    obstacles: Sequence[BBox],
+    obstacles: list[BBox],
     owners: set[int],
-    occupied: Sequence[tuple[float, float, float, float]] | None,
+    occupied: list[tuple[float, float, float, float]] | None,
 ) -> tuple[list[tuple[float, float, float, float]], str]:
     if (
         direct
@@ -4632,7 +4632,7 @@ def _stitch_and_isolate_route(
     end_landing: tuple[float, float],
     routed: Sequence[tuple[float, float, float, float]],
     direct: list[tuple[float, float, float, float]],
-    occupied: Sequence[tuple[float, float, float, float]] | None,
+    occupied: list[tuple[float, float, float, float]] | None,
 ) -> tuple[list[tuple[float, float, float, float]], str | None]:
     full_segments: list[tuple[float, float, float, float]] = []
     full_segments.extend(_escape_stub(start, start_esc, start_landing))
@@ -5208,18 +5208,6 @@ def _plan_netlist_pin_terminals(
     return terminal_wires, terminal_powers, terminal_labels, unresolved_nets, resolution_stats
 
 
-def _plan_netlist_wires(
-    symbols: list[AddSymbolInput],
-    powers: list[PowerSymbolInput],
-    labels: list[AddLabelInput],
-    nets: list[dict[str, Any]],
-    snap_to_grid: bool,
-) -> tuple[list[dict[str, float | bool]], list[dict[str, Any]], dict[str, int]]:
-    symbol_points, symbol_pin_aliases, symbol_centers, _ = _netlist_symbol_geometry(
-        symbols, snap_to_grid
-    )
-
-
 def _collect_power_and_label_points(
     powers: Sequence[PowerSymbolInput],
     labels: Sequence[AddLabelInput],
@@ -5240,11 +5228,11 @@ def _collect_power_and_label_points(
 def _resolve_net_points(
     endpoints: Sequence[dict[str, Any]],
     net_name: str,
-    symbol_points: Mapping[str, dict[str, tuple[float, float]]],
-    symbol_pin_aliases: Mapping[str, dict[str, tuple[float, float]]],
-    symbol_centers: Mapping[str, tuple[float, float]],
-    power_points: Mapping[str, tuple[float, float]],
-    label_points: Mapping[str, tuple[float, float]],
+    symbol_points: dict[str, dict[str, tuple[float, float]]],
+    symbol_pin_aliases: dict[str, dict[str, tuple[float, float]]],
+    symbol_centers: dict[str, tuple[float, float]],
+    power_points: dict[str, tuple[float, float]],
+    label_points: dict[str, tuple[float, float]],
     resolution_stats: dict[str, int],
 ) -> tuple[list[tuple[float, float]], list[str], list[str]]:
     resolved_points: list[tuple[float, float]] = []
