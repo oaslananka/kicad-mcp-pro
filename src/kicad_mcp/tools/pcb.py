@@ -1057,6 +1057,26 @@ def _file_layer_sort_key(name: str) -> tuple[int, str]:
         return len(CANONICAL_LAYER_NAMES) + 1, name
 
 
+def _infer_layers_from_board_items(content: str) -> set[str]:
+    """Collect layer names from board entities when no layer table is present."""
+    inferred: set[str] = set()
+    for segment in _board_file_segments(content):
+        layer = str(segment.get("layer", "")).strip()
+        if layer and layer != _UNKNOWN_LABEL:
+            inferred.add(layer)
+    for via in _board_file_vias(content):
+        inferred.update(str(layer) for layer in cast(list[object], via.get("layers", [])) if layer)
+    for zone in _board_file_zones(content):
+        inferred.update(str(layer) for layer in cast(list[object], zone.get("layers", [])) if layer)
+    for entry in _parse_board_footprint_blocks(content).values():
+        layer_name = str(entry.get("layer_name", "")).strip()
+        if layer_name:
+            inferred.add(layer_name)
+        inferred.update(_footprint_layers_from_block(str(entry.get("block", ""))))
+
+    return inferred
+
+
 def _board_file_layers(content: str) -> list[dict[str, object]]:
     root_layers = re.search(r"(?m)^\s*\(layers\b", content)
     if root_layers is not None:
@@ -1073,20 +1093,7 @@ def _board_file_layers(content: str) -> list[dict[str, object]]:
         if rows:
             return rows
 
-    inferred: set[str] = set()
-    for segment in _board_file_segments(content):
-        layer = str(segment.get("layer", "")).strip()
-        if layer and layer != _UNKNOWN_LABEL:
-            inferred.add(layer)
-    for via in _board_file_vias(content):
-        inferred.update(str(layer) for layer in cast(list[object], via.get("layers", [])) if layer)
-    for zone in _board_file_zones(content):
-        inferred.update(str(layer) for layer in cast(list[object], zone.get("layers", [])) if layer)
-    for entry in _parse_board_footprint_blocks(content).values():
-        layer_name = str(entry.get("layer_name", "")).strip()
-        if layer_name:
-            inferred.add(layer_name)
-        inferred.update(_footprint_layers_from_block(str(entry.get("block", ""))))
+    inferred = _infer_layers_from_board_items(content)
 
     if not inferred:
         # Standard KiCad default 2-layer board layers

@@ -42,6 +42,37 @@ def test_board_file_layers_default_fallback() -> None:
     assert any(layer["name"] == "Edge.Cuts" for layer in layers)
 
 
+def test_board_file_layers_infers_from_segments_vias_and_zones() -> None:
+    content = """
+    (kicad_pcb (version 20260206)
+      (segment (start 0 0) (end 2 2) (layer "F.Cu") (net 1))
+      (via (at 2 2) (layers "F.Cu" "B.Cu") (net 1))
+      (zone (net 1) (layers "F.Mask" "B.Mask"))
+    )
+    """
+
+    layers = _board_file_layers(content)
+
+    assert {str(item["name"]) for item in layers} == {"F.Cu", "B.Cu", "F.Mask", "B.Mask"}
+    assert all(item["type"] == "inferred" for item in layers)
+
+
+def test_board_file_layers_explicit_table_precedes_inference() -> None:
+    content = """
+    (kicad_pcb (version 20260206)
+      (layers
+        (0 "F.Cu" signal)
+        (31 "B.Cu" signal))
+      (segment (start 0 0) (end 2 2) (layer "In1.Cu") (net 1))
+    )
+    """
+
+    assert _board_file_layers(content) == [
+        {"index": 0, "name": "F.Cu", "type": "signal"},
+        {"index": 31, "name": "B.Cu", "type": "signal"},
+    ]
+
+
 def test_file_backed_layers_uses_kicad_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     minimal_pcb = "(kicad_pcb (version 20260206))"
     dummy_diagnostics = [
