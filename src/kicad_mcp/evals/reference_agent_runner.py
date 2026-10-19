@@ -388,11 +388,7 @@ def compute_reference_project_state_digest(workspace: ReferenceAgentWorkspace) -
     return f"sha256:{tree.hexdigest()}"
 
 
-def load_reference_manufacturing_approval(
-    workspace: ReferenceAgentWorkspace, *, source_revision: str
-) -> ReferenceManufacturingApproval:
-    """Load and fail-closed validate the fixed human approval handoff."""
-    path = workspace.manufacturing_approval_path
+def _read_approval_payload(path: Path) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
         raise ReferenceAgentRunnerError("manufacturing approval evidence is missing")
     try:
@@ -401,6 +397,12 @@ def load_reference_manufacturing_approval(
         raise ReferenceAgentRunnerError("manufacturing approval evidence is invalid") from exc
     if not isinstance(payload, dict):
         raise ReferenceAgentRunnerError("manufacturing approval evidence must be an object")
+    return payload
+
+
+def _validate_approval_identity(
+    payload: dict[str, Any], workspace: ReferenceAgentWorkspace, source_revision: str
+) -> None:
     expected_identity = {
         "schema_version": "pcb-reference-manufacturing-approval.v1",
         "approval_scope": "manufacturing_release",
@@ -413,6 +415,9 @@ def load_reference_manufacturing_approval(
         if payload.get(key) != expected:
             label = "source revision" if key == "source_revision" else f"{key} identity"
             raise ReferenceAgentRunnerError(f"manufacturing approval {label} does not match")
+
+
+def _validate_approval_reviewer(payload: dict[str, Any]) -> str:
     approved_by = payload.get("approved_by")
     if not isinstance(approved_by, str) or not approved_by.strip() or len(approved_by) > 128:
         raise ReferenceAgentRunnerError("manufacturing approval reviewer is invalid")
@@ -420,6 +425,10 @@ def load_reference_manufacturing_approval(
         validate_sanitized_evidence(approved_by)
     except EvidenceSanitizationError as exc:
         raise ReferenceAgentRunnerError("manufacturing approval reviewer is invalid") from exc
+    return approved_by.strip()
+
+
+def _validate_approval_timestamp(payload: dict[str, Any]) -> datetime:
     approved_at_raw = payload.get("approved_at_utc")
     if not isinstance(approved_at_raw, str):
         raise ReferenceAgentRunnerError("manufacturing approval timestamp is invalid")
@@ -429,7 +438,12 @@ def load_reference_manufacturing_approval(
         raise ReferenceAgentRunnerError("manufacturing approval timestamp is invalid") from exc
     if approved_at.utcoffset() is None:
         raise ReferenceAgentRunnerError("manufacturing approval timestamp must be timezone-aware")
-    actual_files = _reference_project_files(workspace)
+    return approved_at
+
+
+def _validate_approved_project_files(
+    payload: dict[str, Any], actual_files: tuple[tuple[str, str], ...]
+) -> None:
     raw_files = payload.get("approved_project_files")
     if not isinstance(raw_files, list):
         raise ReferenceAgentRunnerError(_INVALID_APPROVED_PROJECT_FILES_ERROR)
@@ -448,11 +462,23 @@ def load_reference_manufacturing_approval(
         raise ReferenceAgentRunnerError(
             "manufacturing approval project state approved project files do not match"
         )
+
+
+def load_reference_manufacturing_approval(
+    workspace: ReferenceAgentWorkspace, *, source_revision: str
+) -> ReferenceManufacturingApproval:
+    """Load and fail-closed validate the fixed human approval handoff."""
+    payload = _read_approval_payload(workspace.manufacturing_approval_path)
+    _validate_approval_identity(payload, workspace, source_revision)
+    approved_by = _validate_approval_reviewer(payload)
+    approved_at = _validate_approval_timestamp(payload)
+    actual_files = _reference_project_files(workspace)
+    _validate_approved_project_files(payload, actual_files)
     actual_digest = compute_reference_project_state_digest(workspace)
     if payload.get("project_state_digest") != actual_digest:
         raise ReferenceAgentRunnerError("manufacturing approval project state does not match")
     return ReferenceManufacturingApproval(
-        approved_by=approved_by.strip(),
+        approved_by=approved_by,
         approved_at_utc=approved_at,
         source_revision=source_revision,
         project_state_digest=actual_digest,
