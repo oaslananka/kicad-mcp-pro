@@ -19,8 +19,11 @@ From a clean checkout, for an unused attempt number:
 
 The named local Ops MCP server must be enabled, permission-restricted, stdio,
 launched from this exact checkout, and use the reviewed
-schematic_authoring/write profile/mode, no-dev installation and stdio
-transport. It must not inherit a preexisting PCB Editor IPC socket.
+schematic_authoring/write profile/mode, no-dev installation and the
+phase-gated Python module in reference_ops_server. The gateway restricts both
+MCP discovery AND server-side execution to the canonical reviewed tool set.
+The underlying general purpose schematic_authoring server exposes more tools
+and is NOT a valid benchmark server. It must not inherit a preexisting PCB Editor IPC socket.
 A shared review/build server is not an isolated schematic run.
 Manufacturing is never unlocked by this path.
 

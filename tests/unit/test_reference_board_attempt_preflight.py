@@ -148,13 +148,11 @@ def _write_ops_server_config(
                     "--project",
                     str(project),
                     "--no-dev",
-                    "kicad-mcp-pro",
-                    "--transport",
-                    "stdio",
-                    "--profile",
-                    profile,
-                    "--mode",
-                    mode,
+                    "python",
+                    "-m",
+                    "kicad_mcp.evals.reference_ops_server",
+                    "--phase",
+                    "schematic",
                 ],
                 "env": {
                     "KICAD_MCP_PROFILE": profile,
@@ -219,7 +217,7 @@ def test_chatgpt_ops_preflight_rejects_unsafe_or_unpinned_servers(
     data = json.loads(config.read_text())
     entry = data["mcpServers"]["kicad-msi-schematic-review"]
     if mutation == "wrong-profile":
-        entry["args"][entry["args"].index("--profile") + 1] = "build"
+        entry["env"]["KICAD_MCP_PROFILE"] = "build"
     elif mutation == "wrong-mode":
         entry["env"]["KICAD_MCP_OPERATING_MODE"] = "readonly"
     elif mutation == "foreign-source":

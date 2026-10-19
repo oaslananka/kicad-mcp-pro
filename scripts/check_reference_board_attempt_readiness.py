@@ -129,13 +129,11 @@ def _reviewed_ops_server_available(
             "--project",
             str(root.resolve()),
             "--no-dev",
-            "kicad-mcp-pro",
-            "--transport",
-            "stdio",
-            "--profile",
-            phase.profile,
-            "--mode",
-            phase.mode,
+            "python",
+            "-m",
+            "kicad_mcp.evals.reference_ops_server",
+            "--phase",
+            phase.name,
         ]
         return (
             phase.name != "manufacturing"
