@@ -1260,7 +1260,7 @@ def _classify_empty_sheet(
 
 def _check_connectivity_group_smells(
     page_name: str,
-    groups: list[dict[str, object]],
+    groups: list[dict[str, Any]],
     failures: list[str],
 ) -> tuple[int, int]:
     label_only_groups = [
@@ -1290,8 +1290,8 @@ def _check_connectivity_group_smells(
 
 def _check_symbol_connectivity_and_contracts(
     page_name: str,
-    symbols: list[dict[str, object]],
-    groups: list[dict[str, object]],
+    symbols: list[dict[str, Any]],
+    groups: list[dict[str, Any]],
     failures: list[str],
 ) -> tuple[int, int, int]:
     matched_contracts = 0

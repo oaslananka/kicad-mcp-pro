@@ -5511,7 +5511,7 @@ def _ensure_connectivity_group(
 def _populate_connectivity_elements(
     data: dict[str, Any],
     no_connect_points: set[tuple[float, float]],
-    symbol_mirrors: dict[tuple[str, float, float], str],
+    symbol_mirrors: dict[tuple[str, int, float, float], str],
     dset: _DisjointSet,
     groups: dict[tuple[float, float], dict[str, Any]],
 ) -> None:

@@ -175,7 +175,7 @@ def sch_apply_plan(plan_id: str) -> str:
 
 
 def _find_unconnected_labels(
-    labels: tuple[txn.LabelSpec, ...],
+    labels: tuple[txn.PlannedLabel, ...],
     missing_label_identities: set[tuple[str, float, float]],
     groups: list[dict[str, Any]],
 ) -> list[str]:

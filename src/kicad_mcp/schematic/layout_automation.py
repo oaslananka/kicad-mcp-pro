@@ -222,7 +222,7 @@ class SchematicLayoutAutomationService:
             f"{': ' + ', '.join(updated) if updated else ''}."
         )
 
-    def _extract_finding_codes(self, report: dict[str, Any]) -> set[str]:
+    def _extract_finding_codes(self, report: Mapping[str, Any]) -> set[str]:
         findings = report.get("findings", [])
         codes: set[str] = set()
         if isinstance(findings, list):

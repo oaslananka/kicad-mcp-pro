@@ -149,7 +149,7 @@ def pcb_list_test_points() -> str:
 def _find_net_pad_candidates(board: object, net_name: str) -> list[dict[str, Any]]:
     """Collect accessible pads on a net as candidate test points."""
     candidates: list[dict[str, Any]] = []
-    for fp in board_footprints(board):  # type: ignore[arg-type]
+    for fp in board_footprints(board):
         for pad in fp.get_pads():  # type: ignore[attr-defined]
             if _object_net_name(pad) == net_name:
                 pos = getattr(pad, "position", None)
@@ -169,7 +169,7 @@ def _find_net_pad_candidates(board: object, net_name: str) -> list[dict[str, Any
 def _find_net_via_candidates(board: object, net_name: str) -> list[dict[str, Any]]:
     """Collect accessible vias on a net as candidate test points."""
     candidates: list[dict[str, Any]] = []
-    for via in board_vias(board):  # type: ignore[arg-type]
+    for via in board_vias(board):
         if _object_net_name(via) != net_name:
             continue
         pos = getattr(via, "position", None)

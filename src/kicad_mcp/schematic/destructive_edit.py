@@ -135,7 +135,7 @@ class SchematicDestructiveEditService:
         self,
         current_text: str,
         target_uuid: str,
-        target_signature: str,
+        target_signature: Hashable,
         wire_id: str,
     ) -> str:
         pieces: list[str] = []
