@@ -25,6 +25,7 @@ Supported families
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -848,6 +849,144 @@ def _pin_header(
 # ---------------------------------------------------------------------------
 
 
+_DO214_MAP: dict[str, str] = {
+    "SMA": "SMA",
+    "SMB": "SMB",
+    "SMC": "SMC",
+    "DO-214AB": "SMA",
+    "DO214AB": "SMA",
+    "DO-214AC": "SMB",
+    "DO214AC": "SMB",
+    "DO-214AA": "SMC",
+    "DO214AA": "SMC",
+}
+
+_DPAK_MAP: dict[str, str] = {
+    "DPAK": "DPAK",
+    "TO-252": "TO-252",
+    "TO252": "TO-252",
+    "D2PAK": "D2PAK",
+    "TO-263": "TO-263",
+    "TO263": "TO-263",
+}
+
+_SIMPLE_DENSITY_PACKAGES: dict[str, Callable[[DensityLevel], str]] = {
+    "SOT-23": _sot23,
+    "SOT-223": _sot223,
+    "SOT223": _sot223,
+    "SOT-89": _sot89,
+    "SOT89": _sot89,
+    "SOT-363": _sot363,
+    "SOT363": _sot363,
+    "SOT-26": _sot363,
+    "SOT26": _sot363,
+    "SC-70": _sc70,
+    "SC70": _sc70,
+    "SOT-323": _sc70,
+    "SOT323": _sc70,
+    "SOD-123": _sod123,
+    "SOD123": _sod123,
+    "SOD-323": _sod323,
+    "SOD323": _sod323,
+}
+
+
+def _gen_chip_passive(pkg_up: str, density: DensityLevel) -> str | None:
+    for k in _CHIP_DIMS:
+        if k.upper() == pkg_up:
+            return _chip_passive(k, density)
+    return None
+
+
+def _gen_soic_family(
+    pkg_up: str,
+    pin_count: int | None,
+    pitch_mm: float | None,
+    body_w_mm: float | None,
+    density: DensityLevel,
+) -> str:
+    if pin_count is None:
+        raise ValueError("pin_count is required for SOIC/SOP/SSOP/TSSOP packages.")
+    return _soic(
+        pin_count,
+        pitch_mm=pitch_mm or (1.27 if pkg_up == "SOIC" else 0.65),
+        body_w_mm=body_w_mm or (3.9 if pkg_up == "SOIC" else 4.4),
+        density=density,
+        family=pkg_up,
+    )
+
+
+def _gen_qfp_family(
+    pkg_up: str,
+    pin_count: int | None,
+    pitch_mm: float | None,
+    body_l_mm: float | None,
+    body_w_mm: float | None,
+    density: DensityLevel,
+) -> str:
+    if pin_count is None:
+        raise ValueError("pin_count is required for QFP/LQFP/TQFP packages.")
+    return _qfp(
+        pin_count,
+        pitch_mm=pitch_mm or 0.5,
+        body_l_mm=body_l_mm or 10.0,
+        body_w_mm=body_w_mm,
+        density=density,
+        family=pkg_up,
+    )
+
+
+def _gen_qfn_family(
+    pin_count: int | None,
+    pitch_mm: float | None,
+    body_l_mm: float | None,
+    exposed_pad_mm: float | None,
+    density: DensityLevel,
+) -> str:
+    if pin_count is None:
+        raise ValueError("pin_count is required for QFN/DFN packages.")
+    return _qfn(
+        pin_count,
+        pitch_mm=pitch_mm or 0.5,
+        body_size_mm=body_l_mm or 7.0,
+        exposed_pad_mm=exposed_pad_mm,
+        density=density,
+    )
+
+
+def _gen_bga_family(
+    pin_count: int | None,
+    rows: int,
+    pitch_mm: float | None,
+    ball_diameter_mm: float | None,
+    density: DensityLevel,
+) -> str:
+    if pin_count is None or rows is None:
+        raise ValueError("pin_count (total balls) and rows are required for BGA.")
+    cols = math.ceil(pin_count / rows)
+    return _bga(
+        rows,
+        cols,
+        pitch_mm=pitch_mm or 0.8,
+        ball_diameter_mm=ball_diameter_mm,
+        density=density,
+    )
+
+
+def _gen_pinheader_family(
+    pin_count: int | None,
+    rows: int,
+    pitch_mm: float | None,
+) -> str:
+    if pin_count is None:
+        raise ValueError("pin_count is required for PinHeader.")
+    return _pin_header(
+        pin_count,
+        rows=rows,
+        pitch_mm=pitch_mm or 2.54,
+    )
+
+
 def generate_footprint(
     package: str,
     *,
@@ -900,123 +1039,33 @@ def generate_footprint(
     """
     pkg_up = package.upper()
 
-    # Chip passives
-    if pkg_up in {k.upper() for k in _CHIP_DIMS}:
-        canonical = next(k for k in _CHIP_DIMS if k.upper() == pkg_up)
-        return _chip_passive(canonical, density)
+    chip_result = _gen_chip_passive(pkg_up, density)
+    if chip_result is not None:
+        return chip_result
 
-    if pkg_up == "SOT-23":
-        return _sot23(density)
+    if pkg_up in _SIMPLE_DENSITY_PACKAGES:
+        return _SIMPLE_DENSITY_PACKAGES[pkg_up](density)
 
-    if pkg_up in {"SOT-223", "SOT223"}:
-        return _sot223(density)
+    if pkg_up in _DO214_MAP:
+        return _do214(_DO214_MAP[pkg_up], density)
 
-    if pkg_up in {"SOT-89", "SOT89"}:
-        return _sot89(density)
-
-    if pkg_up in {"SOT-363", "SOT363", "SOT-26", "SOT26"}:
-        return _sot363(density)
-
-    if pkg_up in {"SC-70", "SC70", "SOT-323", "SOT323"}:
-        return _sc70(density)
-
-    if pkg_up in {"SOD-123", "SOD123"}:
-        return _sod123(density)
-
-    if pkg_up in {"SOD-323", "SOD323"}:
-        return _sod323(density)
-
-    if pkg_up in {
-        "SMA",
-        "SMB",
-        "SMC",
-        "DO-214AA",
-        "DO214AA",
-        "DO-214AB",
-        "DO214AB",
-        "DO-214AC",
-        "DO214AC",
-    }:
-        # Map the long DO-214 names to the short variant
-        _do214_map = {
-            "SMA": "SMA",
-            "SMB": "SMB",
-            "SMC": "SMC",
-            "DO-214AB": "SMA",
-            "DO214AB": "SMA",
-            "DO-214AC": "SMB",
-            "DO214AC": "SMB",
-            "DO-214AA": "SMC",
-            "DO214AA": "SMC",
-        }
-        return _do214(_do214_map[pkg_up], density)
-
-    if pkg_up in {"DPAK", "TO-252", "TO252", "D2PAK", "TO-263", "TO263"}:
-        # Normalise aliases
-        _dpak_map = {
-            "DPAK": "DPAK",
-            "TO-252": "TO-252",
-            "TO252": "TO-252",
-            "D2PAK": "D2PAK",
-            "TO-263": "TO-263",
-            "TO263": "TO-263",
-        }
-        return _dpak(_dpak_map[pkg_up], density)
+    if pkg_up in _DPAK_MAP:
+        return _dpak(_DPAK_MAP[pkg_up], density)
 
     if pkg_up in {"SOIC", "SOP", "SSOP", "TSSOP"}:
-        if pin_count is None:
-            raise ValueError("pin_count is required for SOIC/SOP/SSOP/TSSOP packages.")
-        return _soic(
-            pin_count,
-            pitch_mm=pitch_mm or (1.27 if pkg_up == "SOIC" else 0.65),
-            body_w_mm=body_w_mm or (3.9 if pkg_up == "SOIC" else 4.4),
-            density=density,
-            family=pkg_up,
-        )
+        return _gen_soic_family(pkg_up, pin_count, pitch_mm, body_w_mm, density)
 
     if pkg_up in {"QFP", "LQFP", "TQFP"}:
-        if pin_count is None:
-            raise ValueError("pin_count is required for QFP/LQFP/TQFP packages.")
-        return _qfp(
-            pin_count,
-            pitch_mm=pitch_mm or 0.5,
-            body_l_mm=body_l_mm or 10.0,
-            body_w_mm=body_w_mm,
-            density=density,
-            family=pkg_up,
-        )
+        return _gen_qfp_family(pkg_up, pin_count, pitch_mm, body_l_mm, body_w_mm, density)
 
     if pkg_up in {"QFN", "DFN"}:
-        if pin_count is None:
-            raise ValueError("pin_count is required for QFN/DFN packages.")
-        return _qfn(
-            pin_count,
-            pitch_mm=pitch_mm or 0.5,
-            body_size_mm=body_l_mm or 7.0,
-            exposed_pad_mm=exposed_pad_mm,
-            density=density,
-        )
+        return _gen_qfn_family(pin_count, pitch_mm, body_l_mm, exposed_pad_mm, density)
 
     if pkg_up == "BGA":
-        if pin_count is None or rows is None:
-            raise ValueError("pin_count (total balls) and rows are required for BGA.")
-        cols = math.ceil(pin_count / rows)
-        return _bga(
-            rows,
-            cols,
-            pitch_mm=pitch_mm or 0.8,
-            ball_diameter_mm=ball_diameter_mm,
-            density=density,
-        )
+        return _gen_bga_family(pin_count, rows, pitch_mm, ball_diameter_mm, density)
 
     if pkg_up == "PINHEADER":
-        if pin_count is None:
-            raise ValueError("pin_count is required for PinHeader.")
-        return _pin_header(
-            pin_count,
-            rows=rows,
-            pitch_mm=pitch_mm or 2.54,
-        )
+        return _gen_pinheader_family(pin_count, rows, pitch_mm)
 
     raise ValueError(
         f"Unsupported package family '{package}'. "
