@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -123,13 +124,18 @@ def test_rejects_inconsistent_or_untrusted_client_evidence(tmp_path: Path, mutat
     if mutation not in ("client-symlink", "open-permissions", "missing-newline"):
         client.write_text("".join(json.dumps(r) + "\n" for r in rows))
     elif mutation == "open-permissions":
+        if os.name == "nt":
+            pytest.skip("POSIX mode enforcement is not applicable on Windows")
         client.chmod(0o644)
     elif mutation == "missing-newline":
         client.write_bytes(client.read_bytes().rstrip(b"\n"))
     elif mutation == "client-symlink":
         other = client.with_name("other-log.jsonl")
         client.rename(other)
-        client.symlink_to(other)
+        try:
+            client.symlink_to(other)
+        except OSError:
+            pytest.skip("symlink creation is unavailable on this host")
     with pytest.raises(ReferenceOpsReconciliationError):
         reconcile_ops_events(server, client, attempt_id="smoke-001", phase_name="schematic")
 
