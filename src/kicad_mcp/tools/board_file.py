@@ -136,6 +136,37 @@ def _footprint_pad_net_map(block: str) -> dict[str, str]:
     return pad_map
 
 
+def _build_footprint_entry(
+    block: str,
+    cursor: int,
+    length: int,
+) -> tuple[str, dict[str, Any]] | None:
+    ref_match = re.search(rf'\(property\s+"Reference"\s+{STRING_PATTERN}', block)
+    value_match = re.search(rf'\(property\s+"Value"\s+{STRING_PATTERN}', block)
+    name_match = re.match(rf"\(footprint\s+{STRING_PATTERN}", block.lstrip())
+    if not (ref_match and name_match):
+        return None
+    root_at = _parse_root_at(block)
+    width_mm, height_mm = _bbox_from_block(block)
+    layer_match = re.search(r'\(layer\s+"([^"]+)"\)', block)
+    entry = {
+        "name": name_match.group(1),
+        "block": block,
+        "start": cursor,
+        "end": cursor + length,
+        "value": value_match.group(1) if value_match else "",
+        "x_mm": root_at[0] if root_at else None,
+        "y_mm": root_at[1] if root_at else None,
+        "rotation": root_at[2] if root_at else 0,
+        "width_mm": width_mm,
+        "height_mm": height_mm,
+        "layer_name": layer_match.group(1) if layer_match else "F.Cu",
+        "net_names": _footprint_net_names(block),
+        "pad_nets": _footprint_pad_net_map(block),
+    }
+    return ref_match.group(1), entry
+
+
 def _parse_board_footprint_blocks(content: str) -> dict[str, dict[str, Any]]:
     started = time.perf_counter()
     footprints: dict[str, dict[str, Any]] = {}
@@ -145,28 +176,10 @@ def _parse_board_footprint_blocks(content: str) -> dict[str, dict[str, Any]]:
             if content.startswith("(footprint", cursor):
                 block, length = _extract_block(content, cursor)
                 if block:
-                    ref_match = re.search(rf'\(property\s+"Reference"\s+{STRING_PATTERN}', block)
-                    value_match = re.search(rf'\(property\s+"Value"\s+{STRING_PATTERN}', block)
-                    name_match = re.match(rf"\(footprint\s+{STRING_PATTERN}", block.lstrip())
-                    if ref_match and name_match:
-                        root_at = _parse_root_at(block)
-                        width_mm, height_mm = _bbox_from_block(block)
-                        layer_match = re.search(r'\(layer\s+"([^"]+)"\)', block)
-                        footprints[ref_match.group(1)] = {
-                            "name": name_match.group(1),
-                            "block": block,
-                            "start": cursor,
-                            "end": cursor + length,
-                            "value": value_match.group(1) if value_match else "",
-                            "x_mm": root_at[0] if root_at else None,
-                            "y_mm": root_at[1] if root_at else None,
-                            "rotation": root_at[2] if root_at else 0,
-                            "width_mm": width_mm,
-                            "height_mm": height_mm,
-                            "layer_name": layer_match.group(1) if layer_match else "F.Cu",
-                            "net_names": _footprint_net_names(block),
-                            "pad_nets": _footprint_pad_net_map(block),
-                        }
+                    parsed = _build_footprint_entry(block, cursor, length)
+                    if parsed:
+                        ref, entry = parsed
+                        footprints[ref] = entry
                     cursor += length
                     continue
             cursor += 1
