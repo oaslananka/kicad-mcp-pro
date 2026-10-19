@@ -18,7 +18,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Literal, TextIO, cast
+from typing import Annotated, Any, Literal, TextIO, cast
 from urllib.parse import urlparse, urlunsplit
 
 import anyio
@@ -149,6 +149,29 @@ _HELP_PROJECT_DIR = "Active KiCad project directory"
 _HELP_LOG_LEVEL = "Log level"
 _HELP_OPERATING_MODE = "Operating mode: readonly, write, manufacturing, experimental"
 _HELP_EXPERIMENTAL = "Enable experimental tools"
+
+# Reuse the same Typer metadata across the default and explicit serve entrypoints.
+_CliTransport = Annotated[str | None, typer.Option(help=option_help(_HELP_TRANSPORT))]
+_CliHost = Annotated[str | None, typer.Option(help=option_help(_HELP_HOST))]
+_CliPort = Annotated[int | None, typer.Option(help=option_help(_HELP_PORT))]
+_CliProjectDir = Annotated[str | None, typer.Option(help=option_help(_HELP_PROJECT_DIR))]
+_CliLogLevel = Annotated[str | None, typer.Option(help=option_help(_HELP_LOG_LEVEL))]
+_CliLogFormat = Annotated[str | None, typer.Option(help=option_help("Log format: text or json"))]
+_CliLogFile = Annotated[str | None, typer.Option(help=option_help("Rotating log file path"))]
+_CliProfile = Annotated[
+    str | None, typer.Option(help=f"Server profile: {', '.join(available_profiles())}")
+]
+_CliOperatingMode = Annotated[
+    str | None, typer.Option("--mode", help=option_help(_HELP_OPERATING_MODE))
+]
+_CliExperimental = Annotated[bool | None, typer.Option(help=option_help(_HELP_EXPERIMENTAL))]
+_CliTelemetry = Annotated[
+    bool | None,
+    typer.Option("--telemetry/--no-telemetry", help=option_help("Enable OpenTelemetry export")),
+]
+_CliWatch = Annotated[
+    bool, typer.Option("--watch", help=option_help("Watch source files and hot-reload on changes"))
+]
 _HTTP_RESPONSE_START = "http.response.start"
 _NOT_FOUND_LITERAL = "not found"
 _TOOL_ERROR_EVENT_NAME = "mcp.tool_error"
@@ -2428,28 +2451,18 @@ def _run_server_from_options(
 
 @app.callback(invoke_without_command=True)
 def main_callback(
-    transport: str | None = typer.Option(None, help=option_help(_HELP_TRANSPORT)),
-    host: str | None = typer.Option(None, help=option_help(_HELP_HOST)),
-    port: int | None = typer.Option(None, help=option_help(_HELP_PORT)),
-    project_dir: str | None = typer.Option(None, help=option_help(_HELP_PROJECT_DIR)),
-    log_level: str | None = typer.Option(None, help=option_help(_HELP_LOG_LEVEL)),
-    log_format: str | None = typer.Option(None, help=option_help("Log format: text or json")),
-    log_file: str | None = typer.Option(None, help=option_help("Rotating log file path")),
-    profile: str | None = typer.Option(
-        None, help=f"Server profile: {', '.join(available_profiles())}"
-    ),
-    operating_mode: str | None = typer.Option(
-        None,
-        "--mode",
-        help=option_help(_HELP_OPERATING_MODE),
-    ),
-    experimental: bool | None = typer.Option(None, help=option_help(_HELP_EXPERIMENTAL)),
-    telemetry: bool | None = typer.Option(
-        None, "--telemetry/--no-telemetry", help=option_help("Enable OpenTelemetry export")
-    ),
-    watch: bool = typer.Option(
-        False, "--watch", help=option_help("Watch source files and hot-reload on changes")
-    ),
+    transport: _CliTransport = None,
+    host: _CliHost = None,
+    port: _CliPort = None,
+    project_dir: _CliProjectDir = None,
+    log_level: _CliLogLevel = None,
+    log_format: _CliLogFormat = None,
+    log_file: _CliLogFile = None,
+    profile: _CliProfile = None,
+    operating_mode: _CliOperatingMode = None,
+    experimental: _CliExperimental = None,
+    telemetry: _CliTelemetry = None,
+    watch: _CliWatch = False,
 ) -> None:
     """Start the KiCad MCP Pro server when no subcommand is supplied."""
     _apply_cli_env(
@@ -2488,28 +2501,18 @@ def main_callback(
 
 @app.command()
 def serve(
-    transport: str | None = typer.Option(None, help=option_help(_HELP_TRANSPORT)),
-    host: str | None = typer.Option(None, help=option_help(_HELP_HOST)),
-    port: int | None = typer.Option(None, help=option_help(_HELP_PORT)),
-    project_dir: str | None = typer.Option(None, help=option_help(_HELP_PROJECT_DIR)),
-    log_level: str | None = typer.Option(None, help=option_help(_HELP_LOG_LEVEL)),
-    log_format: str | None = typer.Option(None, help=option_help("Log format: text or json")),
-    log_file: str | None = typer.Option(None, help=option_help("Rotating log file path")),
-    profile: str | None = typer.Option(
-        None, help=f"Server profile: {', '.join(available_profiles())}"
-    ),
-    operating_mode: str | None = typer.Option(
-        None,
-        "--mode",
-        help=option_help(_HELP_OPERATING_MODE),
-    ),
-    experimental: bool | None = typer.Option(None, help=option_help(_HELP_EXPERIMENTAL)),
-    telemetry: bool | None = typer.Option(
-        None, "--telemetry/--no-telemetry", help=option_help("Enable OpenTelemetry export")
-    ),
-    watch: bool = typer.Option(
-        False, "--watch", help=option_help("Watch source files and hot-reload on changes")
-    ),
+    transport: _CliTransport = None,
+    host: _CliHost = None,
+    port: _CliPort = None,
+    project_dir: _CliProjectDir = None,
+    log_level: _CliLogLevel = None,
+    log_format: _CliLogFormat = None,
+    log_file: _CliLogFile = None,
+    profile: _CliProfile = None,
+    operating_mode: _CliOperatingMode = None,
+    experimental: _CliExperimental = None,
+    telemetry: _CliTelemetry = None,
+    watch: _CliWatch = False,
 ) -> None:
     """Start the MCP server explicitly."""
     if watch:
