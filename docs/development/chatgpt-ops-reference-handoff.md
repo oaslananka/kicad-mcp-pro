@@ -123,3 +123,40 @@ client-side export must be collected independently, and cryptographic
 authenticity / session continuity still need separate assurance. This
 does not write `agent-log.jsonl`, approve manufacturing, or enter the
 #729/#730 task-success denominator.
+
+## Independently observed Ops Gateway audit witness
+
+The VPS Ops Gateway audit store is a second, independently operated
+observation point for incoming ChatGPT tool calls, distinct from the MSI
+KiCad MCP server trace. For a one-off scoped smoke run, export only an
+actual, read-only SQLite audit snapshot filtered to the uniquely named
+device MCP server. NEVER export tool arguments, client IDs, errors,
+credentials, prompt text or tool response bodies.
+
+Export exactly these non-secret fields: id, at, tool, device, status,
+duration_ms. The gateway witness schema ops-gateway-audit-witness.v1 also
+contains its device, tool-prefix, source and capture timestamp and
+an anonymous client_count. Place it as ops-gateway-audit.json in the
+private reserved .dev-tools/reference-agent-runs/TEST/ directory with
+permissions 0600.
+
+For a private non-benchmark smoke run:
+
+    uv run python scripts/reconcile_reference_ops_gateway_audit.py \
+      --server-trace /abs/checkout/.dev-tools/reference-agent-runs/TEST/ops-mcp-trace.jsonl \
+      --gateway-audit /abs/checkout/.dev-tools/reference-agent-runs/TEST/ops-gateway-audit.json \
+      --attempt-id TEST --phase schematic \
+      --server-name kicad-msi-schematic-e2e-20261020
+
+The verifier checks the server trace first, then checks the VPS witness
+against all observed calls, ordered tool identities, device, per-call
+status, monotonic audit IDs, time and duration ranges, private file
+permissions and exact reserved paths. It rejects unrecognized fields,
+including possible secret or client-identity fields.
+
+The resulting status gateway_server_matched_unattested means independently
+observed *tool metadata agreement only*. There is no gateway-generated
+cryptographic signature or complete authenticated ChatGPT model transcript
+in this witness. Never synthesize the gateway witness from the server
+trace; never record it as a reference-board task success. Source-backed
+benchmark execution and scoring still require the rest of #1214/#730/#729.
