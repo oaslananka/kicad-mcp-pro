@@ -7,7 +7,7 @@ import json
 import math
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from html import escape
 from pathlib import Path
@@ -811,7 +811,9 @@ def _footprint_parity_outcome() -> GateOutcome:
     )
 
 
-def _evaluate_pcb_transfer_gate() -> GateOutcome:
+def _collect_pcb_transfer_prerequisites() -> (
+    tuple[set[str], dict[tuple[str, str], str], dict[str, Any]] | GateOutcome
+):
     from .board_file import _parse_board_footprint_blocks
 
     collect_schematic_components, export_schematic_net_map = _pcb_transfer_helpers()
@@ -865,48 +867,53 @@ def _evaluate_pcb_transfer_gate() -> GateOutcome:
 
     footprints = _parse_board_footprint_blocks(board_text)
     component_refs = {str(component["reference"]) for component in components}
-    missing_refs: list[str] = []
-    mismatches: list[str] = []
-    matched_pads = 0
-    total_expected_pads = 0
+    return component_refs, expected_map, footprints
 
-    for reference in sorted(component_refs):
-        expected_for_ref = sorted(
-            (pad_number, net_name)
-            for (ref, pad_number), net_name in expected_map.items()
-            if ref == reference and net_name
+
+def _check_pad_net_match(
+    reference: str,
+    pad_number: str,
+    expected_net: str,
+    actual_net: str,
+) -> tuple[bool, str | None]:
+    expected_unconnected = expected_net.startswith("unconnected-(")
+    if expected_unconnected:
+        if actual_net:
+            return False, f"{reference}.{pad_number}: PCB has '{actual_net}', expected no net."
+        return True, None
+    if not actual_net:
+        return False, f"{reference}.{pad_number}: missing net '{expected_net}' on PCB."
+    if actual_net != expected_net:
+        return (
+            False,
+            f"{reference}.{pad_number}: PCB has '{actual_net}', expected '{expected_net}'.",
         )
-        if not expected_for_ref:
-            continue
-        entry = footprints.get(reference)
-        if entry is None:
-            missing_refs.append(reference)
-            total_expected_pads += len(expected_for_ref)
-            continue
+    return True, None
 
-        actual_pad_nets = cast(dict[str, str], entry.get("pad_nets", {}))
-        for pad_number, expected_net in expected_for_ref:
-            total_expected_pads += 1
-            actual_net = actual_pad_nets.get(pad_number, "")
-            expected_unconnected = expected_net.startswith("unconnected-(")
-            if expected_unconnected:
-                if actual_net:
-                    mismatches.append(
-                        f"{reference}.{pad_number}: PCB has '{actual_net}', expected no net."
-                    )
-                    continue
-                matched_pads += 1
-                continue
-            if not actual_net:
-                mismatches.append(f"{reference}.{pad_number}: missing net '{expected_net}' on PCB.")
-                continue
-            if actual_net != expected_net:
-                mismatches.append(
-                    f"{reference}.{pad_number}: PCB has '{actual_net}', expected '{expected_net}'."
-                )
-                continue
-            matched_pads += 1
 
+def _compare_ref_pad_nets(
+    reference: str,
+    expected_for_ref: Sequence[tuple[str, str]],
+    actual_pad_nets: Mapping[str, str],
+) -> tuple[int, list[str]]:
+    matched = 0
+    mismatches: list[str] = []
+    for pad_number, expected_net in expected_for_ref:
+        actual_net = actual_pad_nets.get(pad_number, "")
+        is_match, err = _check_pad_net_match(reference, pad_number, expected_net, actual_net)
+        if is_match:
+            matched += 1
+        elif err is not None:
+            mismatches.append(err)
+    return matched, mismatches
+
+
+def _build_pcb_transfer_outcome(
+    total_expected_pads: int,
+    matched_pads: int,
+    missing_refs: list[str],
+    mismatches: list[str],
+) -> GateOutcome:
     if total_expected_pads == 0:
         return GateOutcome(
             name=_PCB_TRANSFER_GATE,
@@ -934,6 +941,42 @@ def _evaluate_pcb_transfer_gate() -> GateOutcome:
         else "Named schematic pad nets did not transfer cleanly to the PCB.",
         details=details,
     )
+
+
+def _evaluate_pcb_transfer_gate() -> GateOutcome:
+    prereqs = _collect_pcb_transfer_prerequisites()
+    if isinstance(prereqs, GateOutcome):
+        return prereqs
+
+    component_refs, expected_map, footprints = prereqs
+    missing_refs: list[str] = []
+    mismatches: list[str] = []
+    matched_pads = 0
+    total_expected_pads = 0
+
+    for reference in sorted(component_refs):
+        expected_for_ref = sorted(
+            (pad_number, net_name)
+            for (ref, pad_number), net_name in expected_map.items()
+            if ref == reference and net_name
+        )
+        if not expected_for_ref:
+            continue
+        entry = footprints.get(reference)
+        if entry is None:
+            missing_refs.append(reference)
+            total_expected_pads += len(expected_for_ref)
+            continue
+
+        actual_pad_nets = cast(dict[str, str], entry.get("pad_nets", {}))
+        total_expected_pads += len(expected_for_ref)
+        ref_matched, ref_mismatches = _compare_ref_pad_nets(
+            reference, expected_for_ref, actual_pad_nets
+        )
+        matched_pads += ref_matched
+        mismatches.extend(ref_mismatches)
+
+    return _build_pcb_transfer_outcome(total_expected_pads, matched_pads, missing_refs, mismatches)
 
 
 def _evaluate_schematic_gate() -> GateOutcome:
@@ -3721,6 +3764,26 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
         return f"Custom DRC rules exported to {target}."
 
 
+def _execute_validate_design() -> str:
+    _, drc_report, drc_error = _run_drc_report("validate_drc.json")
+    _, erc_report, erc_error = _run_erc_report("validate_erc.json")
+
+    lines = ["Design validation summary:"]
+    if drc_report is not None:
+        lines.append(
+            f"- DRC: {len(_entries(drc_report, 'violations'))} violations, "
+            f"{len(_entries(drc_report, 'unconnected_items'))} unconnected items"
+        )
+    else:
+        lines.append(f"- DRC: unavailable ({drc_error})")
+
+    if erc_report is not None:
+        lines.append(f"- ERC: {len(_erc_violations(erc_report))} violations")
+    else:
+        lines.append(f"- ERC: unavailable ({erc_error})")
+    return "\n".join(lines)
+
+
 def _register_validation_gate_tools(mcp: FastMCP) -> None:
     """Register DRC, ERC, and project quality-gate tools."""
 
@@ -3742,23 +3805,7 @@ def _register_validation_gate_tools(mcp: FastMCP) -> None:
     @headless_compatible
     def validate_design() -> str:
         """Run DRC and ERC and summarize readiness."""
-        _, drc_report, drc_error = _run_drc_report("validate_drc.json")
-        _, erc_report, erc_error = _run_erc_report("validate_erc.json")
-
-        lines = ["Design validation summary:"]
-        if drc_report is not None:
-            lines.append(
-                f"- DRC: {len(_entries(drc_report, 'violations'))} violations, "
-                f"{len(_entries(drc_report, 'unconnected_items'))} unconnected items"
-            )
-        else:
-            lines.append(f"- DRC: unavailable ({drc_error})")
-
-        if erc_report is not None:
-            lines.append(f"- ERC: {len(_erc_violations(erc_report))} violations")
-        else:
-            lines.append(f"- ERC: unavailable ({erc_error})")
-        return "\n".join(lines)
+        return _execute_validate_design()
 
     @mcp.tool()
     @headless_compatible
