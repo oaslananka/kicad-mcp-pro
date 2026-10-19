@@ -190,14 +190,18 @@ def test_open_rejects_symlink_created_after_path_approval(tmp_path: Path) -> Non
     if os.name == "nt":
         pytest.skip("O_NOFOLLOW/dir_fd unavailable on Windows")
     path = _good_trace(tmp_path)
-    approved = reference_ops_trace_validation._approved_trace_path(path, "attempt-004")
+    reference_ops_trace_validation._approved_trace_path(path, "attempt-004")
     outside = tmp_path / "untrusted-trace.jsonl"
     outside.write_bytes(path.read_bytes())
     outside.chmod(0o600)
     path.unlink()
     path.symlink_to(outside)
     with pytest.raises((OSError, ReferenceOpsTraceValidationError)):
-        reference_ops_trace_validation._load_trace(approved)
+        reference_ops_trace_validation._load_trace(
+            root=reference_ops_trace_validation._TRACE_ROOT,
+            attempt_id="attempt-004",
+            filename="ops-mcp-trace.jsonl",
+        )
 
 
 def test_trace_loader_rejects_nonregular_file(tmp_path: Path) -> None:
@@ -208,33 +212,29 @@ def test_trace_loader_rejects_nonregular_file(tmp_path: Path) -> None:
     path.unlink()
     os.mkfifo(path, mode=0o600)
     with pytest.raises(ReferenceOpsTraceValidationError, match="absent, empty or oversized"):
-        reference_ops_trace_validation._load_trace(path)
+        reference_ops_trace_validation._load_trace(
+            root=reference_ops_trace_validation._TRACE_ROOT,
+            attempt_id="attempt-004",
+            filename="ops-mcp-trace.jsonl",
+        )
 
 
 def test_trace_loader_rejects_content_change_during_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = _good_trace(tmp_path)
-    actual_fdopen = reference_ops_trace_validation.os.fdopen
+    actual_read = reference_ops_trace_validation.os.read
 
-    class ChangingReader:
-        def __init__(self, reader: object) -> None:
-            self.reader = reader
+    def changed_read(fd: int, size: int) -> bytes:
+        content = actual_read(fd, size)
+        if content:
+            path.write_bytes(content + b"{}\\n")
+        return content
 
-        def __enter__(self) -> object:
-            return self
-
-        def __exit__(self, *args: object) -> None:
-            self.reader.close()
-
-        def read(self, size: int) -> bytes:
-            content = self.reader.read(size)
-            path.write_bytes(content + b"{}\n")
-            return content
-
-    def changed_fdopen(fd: int, mode: str, *, closefd: bool = True):
-        return ChangingReader(actual_fdopen(fd, mode, closefd=closefd))
-
-    monkeypatch.setattr(reference_ops_trace_validation.os, "fdopen", changed_fdopen)
+    monkeypatch.setattr(reference_ops_trace_validation.os, "read", changed_read)
     with pytest.raises(ReferenceOpsTraceValidationError, match="changed during read"):
-        reference_ops_trace_validation._load_trace(path)
+        reference_ops_trace_validation._load_trace(
+            root=reference_ops_trace_validation._TRACE_ROOT,
+            attempt_id="attempt-004",
+            filename="ops-mcp-trace.jsonl",
+        )
