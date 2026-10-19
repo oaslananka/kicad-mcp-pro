@@ -10,7 +10,7 @@ import re
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -4028,10 +4028,9 @@ def _detect_t_intersections(
     return sorted(junctions)
 
 
-def _deduplicate_segments(
-    segments: list[tuple[float, float, float, float]],
+def _unique_non_zero_segments(
+    segments: Sequence[tuple[float, float, float, float]],
 ) -> list[tuple[float, float, float, float]]:
-    """Remove duplicate wire segments and merge collinear touching runs."""
     unique: dict[
         tuple[tuple[float, float], tuple[float, float]],
         tuple[float, float, float, float],
@@ -4044,49 +4043,76 @@ def _deduplicate_segments(
         if key not in unique:
             (sx, sy), (ex, ey) = key
             unique[key] = (sx, sy, ex, ey)
+    return list(unique.values())
 
+
+def _partition_segments(
+    segments: Iterable[tuple[float, float, float, float]],
+) -> tuple[
+    dict[float, list[tuple[float, float]]],
+    dict[float, list[tuple[float, float]]],
+    list[tuple[float, float, float, float]],
+]:
     horizontal: dict[float, list[tuple[float, float]]] = {}
     vertical: dict[float, list[tuple[float, float]]] = {}
     diagonal: list[tuple[float, float, float, float]] = []
-    for x1, y1, x2, y2 in unique.values():
+    for x1, y1, x2, y2 in segments:
         if abs(y1 - y2) <= SNAP_TOLERANCE_MM:
             horizontal.setdefault(round(y1, 4), []).append((min(x1, x2), max(x1, x2)))
         elif abs(x1 - x2) <= SNAP_TOLERANCE_MM:
             vertical.setdefault(round(x1, 4), []).append((min(y1, y2), max(y1, y2)))
         else:
             diagonal.append((x1, y1, x2, y2))
+    return horizontal, vertical, diagonal
 
+
+def _merge_1d_intervals(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    merged: list[tuple[float, float]] = []
+    if not intervals:
+        return merged
+    sorted_intervals = sorted(intervals)
+    current_start, current_end = sorted_intervals[0]
+    for start, end in sorted_intervals[1:]:
+        if start <= current_end + SNAP_TOLERANCE_MM:
+            current_end = max(current_end, end)
+        else:
+            merged.append((current_start, current_end))
+            current_start, current_end = start, end
+    merged.append((current_start, current_end))
+    return merged
+
+
+def _merge_horizontal_segments(
+    horizontal: Mapping[float, list[tuple[float, float]]],
+) -> list[tuple[float, float, float, float]]:
     merged: list[tuple[float, float, float, float]] = []
     for y, intervals in sorted(horizontal.items()):
-        current_start: float | None = None
-        current_end: float | None = None
-        for start, end in sorted(intervals):
-            if current_start is None or current_end is None:
-                current_start, current_end = start, end
-            elif start <= current_end + SNAP_TOLERANCE_MM:
-                current_end = max(current_end, end)
-            else:
-                merged.append((current_start, y, current_end, y))
-                current_start, current_end = start, end
-        if current_start is not None and current_end is not None:
-            merged.append((current_start, y, current_end, y))
-
-    for x, intervals in sorted(vertical.items()):
-        current_start = None
-        current_end = None
-        for start, end in sorted(intervals):
-            if current_start is None or current_end is None:
-                current_start, current_end = start, end
-            elif start <= current_end + SNAP_TOLERANCE_MM:
-                current_end = max(current_end, end)
-            else:
-                merged.append((x, current_start, x, current_end))
-                current_start, current_end = start, end
-        if current_start is not None and current_end is not None:
-            merged.append((x, current_start, x, current_end))
-
-    merged.extend(diagonal)
+        for start, end in _merge_1d_intervals(intervals):
+            merged.append((start, y, end, y))
     return merged
+
+
+def _merge_vertical_segments(
+    vertical: Mapping[float, list[tuple[float, float]]],
+) -> list[tuple[float, float, float, float]]:
+    merged: list[tuple[float, float, float, float]] = []
+    for x, intervals in sorted(vertical.items()):
+        for start, end in _merge_1d_intervals(intervals):
+            merged.append((x, start, x, end))
+    return merged
+
+
+def _deduplicate_segments(
+    segments: list[tuple[float, float, float, float]],
+) -> list[tuple[float, float, float, float]]:
+    """Remove duplicate wire segments and merge collinear touching runs."""
+    unique = _unique_non_zero_segments(segments)
+    horizontal, vertical, diagonal = _partition_segments(unique)
+    return [
+        *_merge_horizontal_segments(horizontal),
+        *_merge_vertical_segments(vertical),
+        *diagonal,
+    ]
 
 
 def _existing_junction_points(content: str) -> set[tuple[float, float]]:
