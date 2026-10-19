@@ -951,107 +951,96 @@ _FUNCTIONAL_ZONES: dict[str, tuple[int, int]] = {
 _ZONE_MAX_COLS = 3
 
 
+_PREFIX_CATEGORY_MAP: dict[str, str] = {
+    "J": "connector",
+    "CN": "connector",
+    "P": "connector",
+    "X": "connector",
+    "SV": "connector",
+    "TP": "testpoint",
+    "TEST": "testpoint",
+    "SW": "ui",
+    "BTN": "ui",
+    "BT": "ui",
+    "S": "ui",
+    "LED": "ui",
+    "D_LED": "ui",
+    "BZ": "ui",
+    "SP": "ui",
+    "LS": "ui",
+    "F": "protection",
+    "FU": "protection",
+    "FB": "filter",
+    "L": "filter",
+    "FL": "filter",
+    "C": "passive_cap",
+    "R": "passive_res",
+    "Q": "transistor",
+    "T": "transistor",
+    "D": "protection",
+}
+
+_MCU_KEYWORDS: tuple[str, ...] = ("ESP32", "STM32", "ATMEGA", "NRF5", "RP2", "PIC", "RF_MODULE")
+_SENSOR_KEYWORDS: tuple[str, ...] = (
+    "SENSOR",
+    "ADXL",
+    "BME",
+    "BMP",
+    "BMI",
+    "MPU",
+    "ICM",
+    "LIS",
+    "VEML",
+    "OPT",
+    "SPH",
+    "ICS",
+)
+_POWER_IC_LIB_KEYWORDS: tuple[str, ...] = (
+    "REGUL",
+    "LDO",
+    "BUCK",
+    "BOOST",
+    "AP2112",
+    "AMS",
+    "MIC55",
+    "AP3",
+    "TPS",
+    "LM",
+    "XC6",
+)
+_POWER_IC_VAL_KEYWORDS: tuple[str, ...] = (
+    "LDO",
+    "REGUL",
+    "AP2112",
+    "AMS1117",
+    "LM317",
+    "XC6",
+)
+_PROTECTION_LIB_KEYWORDS: tuple[str, ...] = ("PROTECTION", "USBLC", "PRTR", "ESD")
+
+
+def _classify_ic_symbol(lib_up: str, val_up: str) -> str:
+    if any(k in lib_up for k in _MCU_KEYWORDS):
+        return "mcu"
+    if any(k in lib_up for k in _SENSOR_KEYWORDS):
+        return "sensor"
+    if any(k in lib_up for k in _POWER_IC_LIB_KEYWORDS) or any(
+        k in val_up for k in _POWER_IC_VAL_KEYWORDS
+    ):
+        return "power_ic"
+    if any(k in lib_up for k in _PROTECTION_LIB_KEYWORDS):
+        return "protection"
+    return "ic"
+
+
 def _classify_symbol(ref: str, value: str, lib_id: str) -> str:
     """Return a functional category string for a symbol."""
     prefix = "".join(c for c in ref if c.isalpha()).upper().rstrip("0123456789")
-    lib_up = lib_id.upper()
-    val_up = value.upper()
-
-    # Connectors / headers
-    if prefix in ("J", "CN", "P", "X", "SV"):
-        return "connector"
-
-    # Test points
-    if prefix in ("TP", "TEST"):
-        return "testpoint"
-
-    # Switches / buttons
-    if prefix in ("SW", "BTN", "BT", "S"):
-        return "ui"
-
-    # LEDs (RGB, indicator)
-    if prefix in ("LED", "D_LED"):
-        return "ui"
-
-    # Buzzers
-    if prefix in ("BZ", "SP", "LS"):
-        return "ui"
-
-    # Fuses / polyfuse
-    if prefix in ("F", "FU"):
-        return "protection"
-
-    # Ferrite beads / inductors
-    if prefix in ("FB", "L", "FL"):
-        return "filter"
-
-    # Capacitors
-    if prefix == "C":
-        return "passive_cap"
-
-    # Resistors
-    if prefix == "R":
-        return "passive_res"
-
-    # Transistors
-    if prefix in ("Q", "T"):
-        return "transistor"
-
-    # Diodes — split by function
-    if prefix == "D":
-        if any(k in val_up for k in ("USBLC", "ESD", "TVS", "PRTR", "BAT", "SCHOTTKY")):
-            return "protection"
-        if any(k in val_up for k in ("1N4148", "LED")):
-            return "protection"
-        return "protection"
-
-    # ICs — further classify
+    category = _PREFIX_CATEGORY_MAP.get(prefix)
+    if category is not None:
+        return category
     if prefix == "U":
-        if any(
-            k in lib_up for k in ("ESP32", "STM32", "ATMEGA", "NRF5", "RP2", "PIC", "RF_MODULE")
-        ):
-            return "mcu"
-        if any(
-            k in lib_up
-            for k in (
-                "SENSOR",
-                "ADXL",
-                "BME",
-                "BMP",
-                "BMI",
-                "MPU",
-                "ICM",
-                "LIS",
-                "VEML",
-                "OPT",
-                "SPH",
-                "ICS",
-            )
-        ):
-            return "sensor"
-        if any(
-            k in lib_up
-            for k in (
-                "REGUL",
-                "LDO",
-                "BUCK",
-                "BOOST",
-                "AP2112",
-                "AMS",
-                "MIC55",
-                "AP3",
-                "TPS",
-                "LM",
-                "XC6",
-            )
-        ):
-            return "power_ic"
-        if any(k in val_up for k in ("LDO", "REGUL", "AP2112", "AMS1117", "LM317", "XC6")):
-            return "power_ic"
-        if any(k in lib_up for k in ("PROTECTION", "USBLC", "PRTR", "ESD")):
-            return "protection"
-        return "ic"
-
+        return _classify_ic_symbol(lib_id.upper(), value.upper())
     return "misc"
 
 
@@ -4579,6 +4568,82 @@ def _route_avoids_pin_hinge(
     return wanted_arrival is not None and travelled_arrival != wanted_arrival
 
 
+def _is_direct_route_clean(
+    direct: Sequence[tuple[float, float, float, float]],
+    obstacles: Sequence[BBox],
+    owners: set[int],
+    occupied: Sequence[tuple[float, float, float, float]] | None,
+    start_normal: tuple[float, float] | None,
+    end_normal: tuple[float, float] | None,
+    boundary_edges: Sequence[tuple[tuple[float, float], tuple[float, float]]],
+    clearance: float,
+) -> bool:
+    if not direct:
+        return False
+    if _route_hits_keepouts(direct, obstacles, owners):
+        return False
+    if _route_merges_with_occupied(direct, occupied):
+        return False
+    if _net_crossings(direct, occupied):
+        return False
+    if _route_avoids_pin_hinge(direct, start_normal, end_normal):
+        return False
+    return not any(hugs_boundary(segment, boundary_edges, clearance) for segment in direct)
+
+
+def _endpoint_escape_node(
+    point: tuple[float, float],
+    owner: BBox | None,
+    obstacles: Sequence[BBox],
+    occupied: Sequence[tuple[float, float, float, float]] | None,
+    grid: float,
+    snap_to_grid: bool,
+    normal: tuple[float, float] | None,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    landing = (
+        _escape_point(point, owner, obstacles, occupied, grid, snap_to_grid, normal)
+        if owner is not None
+        else point
+    )
+    return landing, _router_grid_node(landing, grid)
+
+
+def _handle_unrouted_fallback(
+    direct: list[tuple[float, float, float, float]],
+    obstacles: Sequence[BBox],
+    owners: set[int],
+    occupied: Sequence[tuple[float, float, float, float]] | None,
+) -> tuple[list[tuple[float, float, float, float]], str]:
+    if (
+        direct
+        and not _route_hits_keepouts(direct, obstacles, owners)
+        and not _route_merges_with_occupied(direct, occupied)
+    ):
+        return direct, "WARNING: net_crossing_unavoidable"
+    return direct, "WARNING: obstacle_bypass_failed"
+
+
+def _stitch_and_isolate_route(
+    start: tuple[float, float],
+    start_esc: tuple[float, float],
+    start_landing: tuple[float, float],
+    end: tuple[float, float],
+    end_esc: tuple[float, float],
+    end_landing: tuple[float, float],
+    routed: Sequence[tuple[float, float, float, float]],
+    direct: list[tuple[float, float, float, float]],
+    occupied: Sequence[tuple[float, float, float, float]] | None,
+) -> tuple[list[tuple[float, float, float, float]], str | None]:
+    full_segments: list[tuple[float, float, float, float]] = []
+    full_segments.extend(_escape_stub(start, start_esc, start_landing))
+    full_segments.extend(routed)
+    full_segments.extend(_escape_stub(end_esc, end, end_landing))
+    segments = _deduplicate_segments(full_segments)
+    if _route_merges_with_occupied(segments, occupied):
+        return direct, "WARNING: net_isolation_failed"
+    return segments, None
+
+
 def _route_avoiding_obstacles(
     start: tuple[float, float],
     end: tuple[float, float],
@@ -4624,38 +4689,24 @@ def _route_avoiding_obstacles(
     end_owner = _owning_bbox(end, obstacles)
     owners = {id(box) for box in (start_owner, end_owner) if box is not None}
 
-    # The direct run is taken only when it is clean on every axis.  If it merely
-    # crosses another net, A* gets to trade length and bends against that
-    # crossing: a longer run with fewer crossings is the better schematic.
-    if (
-        direct
-        and not _route_hits_keepouts(direct, obstacles, owners)
-        and not _route_merges_with_occupied(direct, occupied)
-        and not _net_crossings(direct, occupied)
-        and not _route_avoids_pin_hinge(direct, start_normal, end_normal)
-        and not any(
-            hugs_boundary(segment, boundary_edges, SchematicRouter.BOUNDARY_CLEARANCE * grid)
-            for segment in direct
-        )
+    if _is_direct_route_clean(
+        direct,
+        obstacles,
+        owners,
+        occupied,
+        start_normal,
+        end_normal,
+        boundary_edges,
+        SchematicRouter.BOUNDARY_CLEARANCE * grid,
     ):
         return direct, None
 
-    # The escape landing is snapped onto the router's own lattice, because that
-    # is the only place a stitched stub can meet the run.  Off-grid here is an
-    # open wire, not a cosmetic difference -- see ``_escape_stub``.
-    start_landing = (
-        _escape_point(start, start_owner, obstacles, occupied, grid, snap_to_grid, start_normal)
-        if start_owner is not None
-        else start
+    start_landing, start_esc = _endpoint_escape_node(
+        start, start_owner, obstacles, occupied, grid, snap_to_grid, start_normal
     )
-    start_esc = _router_grid_node(start_landing, grid)
-
-    end_landing = (
-        _escape_point(end, end_owner, obstacles, occupied, grid, snap_to_grid, end_normal)
-        if end_owner is not None
-        else end
+    end_landing, end_esc = _endpoint_escape_node(
+        end, end_owner, obstacles, occupied, grid, snap_to_grid, end_normal
     )
-    end_esc = _router_grid_node(end_landing, grid)
 
     router = SchematicRouter(
         grid_mm=grid,
@@ -4673,36 +4724,25 @@ def _route_avoiding_obstacles(
         start_esc,
         end_esc,
         max_bends=MAX_ROUTE_BENDS,
-        # A wire leaves a pin along its outward normal and arrives against the far
-        # pin's, so the two directions belong together.  The wire reaches
-        # ``end_esc`` heading back towards its pin, hence the opposite step.
         orientation=PinOrientation(
             start=_grid_step(start_normal),
             goal=_opposite_step(_grid_step(end_normal)),
         ),
     )
     if routed is None:
-        if (
-            direct
-            and not _route_hits_keepouts(direct, obstacles, owners)
-            and not _route_merges_with_occupied(direct, occupied)
-        ):
-            # The detour search gave up, but the direct run is usable -- it just
-            # has to cross other nets.  Say so rather than reporting a keepout
-            # bypass that never happened.
-            return direct, "WARNING: net_crossing_unavoidable"
-        return direct, "WARNING: obstacle_bypass_failed"
+        return _handle_unrouted_fallback(direct, obstacles, owners, occupied)
 
-    full_segments: list[tuple[float, float, float, float]] = []
-    full_segments.extend(_escape_stub(start, start_esc, start_landing))
-    full_segments.extend(routed)
-    full_segments.extend(_escape_stub(end_esc, end, end_landing))
-    segments = _deduplicate_segments(full_segments)
-    if _route_merges_with_occupied(segments, occupied):
-        # An escape stub or a stitched end landed on another net's wire.  Report
-        # it loudly rather than hand back a route that shorts two nets.
-        return direct, "WARNING: net_isolation_failed"
-    return segments, None
+    return _stitch_and_isolate_route(
+        start,
+        start_esc,
+        start_landing,
+        end,
+        end_esc,
+        end_landing,
+        routed,
+        direct,
+        occupied,
+    )
 
 
 def _resolve_net_endpoint(
@@ -5179,6 +5219,12 @@ def _plan_netlist_wires(
         symbols, snap_to_grid
     )
 
+
+def _collect_power_and_label_points(
+    powers: Sequence[PowerSymbolInput],
+    labels: Sequence[AddLabelInput],
+    snap_to_grid: bool,
+) -> tuple[dict[str, tuple[float, float]], dict[str, tuple[float, float]]]:
     power_points: dict[str, tuple[float, float]] = {}
     for power in powers:
         x, y = _snap_point(power.x_mm, power.y_mm, snap_to_grid and power.snap_to_grid)
@@ -5188,6 +5234,82 @@ def _plan_netlist_wires(
     for label in labels:
         x, y = _snap_point(label.x_mm, label.y_mm, snap_to_grid and label.snap_to_grid)
         label_points.setdefault(label.name, (x, y))
+    return power_points, label_points
+
+
+def _resolve_net_points(
+    endpoints: Sequence[dict[str, Any]],
+    net_name: str,
+    symbol_points: Mapping[str, dict[str, tuple[float, float]]],
+    symbol_pin_aliases: Mapping[str, dict[str, tuple[float, float]]],
+    symbol_centers: Mapping[str, tuple[float, float]],
+    power_points: Mapping[str, tuple[float, float]],
+    label_points: Mapping[str, tuple[float, float]],
+    resolution_stats: dict[str, int],
+) -> tuple[list[tuple[float, float]], list[str], list[str]]:
+    resolved_points: list[tuple[float, float]] = []
+    unresolved_endpoints: list[str] = []
+    unresolved_details: list[str] = []
+    for endpoint in endpoints:
+        point, reason, resolution_kind = _resolve_net_endpoint(
+            endpoint,
+            net_name,
+            symbol_points,
+            symbol_pin_aliases,
+            symbol_centers,
+            power_points,
+            label_points,
+        )
+        if point is None:
+            endpoint_text = _describe_net_endpoint(endpoint)
+            unresolved_endpoints.append(endpoint_text)
+            unresolved_details.append(f"{endpoint_text}: {reason or 'unresolved endpoint'}")
+            resolution_stats["unresolved_endpoints"] += 1
+            continue
+        resolved_points.append(point)
+        resolution_stats["resolved_endpoints"] += 1
+        if resolution_kind == "pin_alias":
+            resolution_stats["pin_alias_resolutions"] += 1
+        elif resolution_kind == "symbol_center":
+            resolution_stats["symbol_center_resolutions"] += 1
+    return resolved_points, unresolved_endpoints, unresolved_details
+
+
+def _route_net_star_topology(
+    anchor: tuple[float, float],
+    targets: Sequence[tuple[float, float]],
+    snap_to_grid: bool,
+    seen_segments: set[tuple[tuple[float, float], tuple[float, float]]],
+    routed_segments: list[dict[str, float | bool]],
+) -> None:
+    for point in targets:
+        for segment in _manhattan_segments(anchor, point, snap_to_grid):
+            key = _segment_key(segment)
+            if key in seen_segments:
+                continue
+            seen_segments.add(key)
+            routed_segments.append(
+                {
+                    "x1_mm": segment[0],
+                    "y1_mm": segment[1],
+                    "x2_mm": segment[2],
+                    "y2_mm": segment[3],
+                    "snap_to_grid": False,
+                }
+            )
+
+
+def _plan_netlist_wires(
+    symbols: list[AddSymbolInput],
+    powers: list[PowerSymbolInput],
+    labels: list[AddLabelInput],
+    nets: list[dict[str, Any]],
+    snap_to_grid: bool,
+) -> tuple[list[dict[str, float | bool]], list[dict[str, Any]], dict[str, int]]:
+    symbol_points, symbol_pin_aliases, symbol_centers, _ = _netlist_symbol_geometry(
+        symbols, snap_to_grid
+    )
+    power_points, label_points = _collect_power_and_label_points(powers, labels, snap_to_grid)
 
     routed_segments: list[dict[str, float | bool]] = []
     unresolved_nets: list[dict[str, Any]] = []
@@ -5201,31 +5323,16 @@ def _plan_netlist_wires(
     for net in nets:
         net_name = _net_name(net)
         endpoints = _endpoint_specs_for_routing(net, power_points, label_points)
-        resolved_points: list[tuple[float, float]] = []
-        unresolved_endpoints: list[str] = []
-        unresolved_details: list[str] = []
-        for endpoint in endpoints:
-            point, reason, resolution_kind = _resolve_net_endpoint(
-                endpoint,
-                net_name,
-                symbol_points,
-                symbol_pin_aliases,
-                symbol_centers,
-                power_points,
-                label_points,
-            )
-            if point is None:
-                endpoint_text = _describe_net_endpoint(endpoint)
-                unresolved_endpoints.append(endpoint_text)
-                unresolved_details.append(f"{endpoint_text}: {reason or 'unresolved endpoint'}")
-                resolution_stats["unresolved_endpoints"] += 1
-                continue
-            resolved_points.append(point)
-            resolution_stats["resolved_endpoints"] += 1
-            if resolution_kind == "pin_alias":
-                resolution_stats["pin_alias_resolutions"] += 1
-            elif resolution_kind == "symbol_center":
-                resolution_stats["symbol_center_resolutions"] += 1
+        resolved_points, unresolved_endpoints, unresolved_details = _resolve_net_points(
+            endpoints,
+            net_name,
+            symbol_points,
+            symbol_pin_aliases,
+            symbol_centers,
+            power_points,
+            label_points,
+            resolution_stats,
+        )
         if len(resolved_points) < 2:
             unresolved_nets.append(
                 {
@@ -5238,22 +5345,13 @@ def _plan_netlist_wires(
             )
             continue
 
-        anchor = resolved_points[0]
-        for point in resolved_points[1:]:
-            for segment in _manhattan_segments(anchor, point, snap_to_grid):
-                key = _segment_key(segment)
-                if key in seen_segments:
-                    continue
-                seen_segments.add(key)
-                routed_segments.append(
-                    {
-                        "x1_mm": segment[0],
-                        "y1_mm": segment[1],
-                        "x2_mm": segment[2],
-                        "y2_mm": segment[3],
-                        "snap_to_grid": False,
-                    }
-                )
+        _route_net_star_topology(
+            resolved_points[0],
+            resolved_points[1:],
+            snap_to_grid,
+            seen_segments,
+            routed_segments,
+        )
     return routed_segments, unresolved_nets, resolution_stats
 
 
