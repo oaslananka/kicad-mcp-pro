@@ -2637,7 +2637,6 @@ def _release_readiness_summary(
 
 def _render_release_readiness_text(
     *,
-    status: GateStatus,
     verdict: Verdict,
     summary: str,
     drc: ReadinessEvidencePayload,
@@ -2654,7 +2653,7 @@ def _render_release_readiness_text(
 ) -> str:
     lines = [
         f"Project release readiness: {verdict}",
-        f"- Gate status: {status}",
+        f"- Gate status: {project_gate.status}",
         f"- Summary: {summary}",
         "",
         "## Gate evidence",
@@ -2908,7 +2907,6 @@ def _build_project_release_readiness_payload(
         "treated as certification.",
     ]
     text = _render_release_readiness_text(
-        status=project_gate.status,
         verdict=verdict,
         summary=summary,
         drc=drc,

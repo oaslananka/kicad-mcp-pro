@@ -26,18 +26,23 @@ def _rules_file_path() -> Path:
     return cfg.project_dir / "design_rules.kicad_dru"
 
 
+def _advance_string_state(char: str, escaped: bool) -> tuple[bool, bool]:
+    if escaped:
+        return True, False
+    if char == "\\":
+        return True, True
+    if char == '"':
+        return False, False
+    return True, False
+
+
 def _is_balanced(content: str) -> bool:
     depth = 0
     in_string = False
     escaped = False
     for char in content:
         if in_string:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                in_string = False
+            in_string, escaped = _advance_string_state(char, escaped)
             continue
         if char == '"':
             in_string = True

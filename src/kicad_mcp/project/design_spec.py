@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -752,6 +752,17 @@ def _distance_mm(left: dict[str, Any], right: dict[str, Any]) -> float:
     return math.hypot(left_center[0] - right_center[0], left_center[1] - right_center[1])
 
 
+def _nearest_capacitor_refs(
+    target_fp: dict[str, Any],
+    capacitor_refs: Sequence[str],
+    footprints: Mapping[str, dict[str, Any]],
+) -> list[str]:
+    return sorted(
+        capacitor_refs,
+        key=lambda cap_ref: _distance_mm(target_fp, footprints[cap_ref]),
+    )[:1]
+
+
 def _critical_nets_from_entries(entries: dict[str, dict[str, Any]]) -> list[str]:
     priority_tokens = ("USB", "CLK", "ETH", "PCIE", "HDMI", "RF", "ANT", "DDR")
     critical: set[str] = set()
@@ -868,12 +879,7 @@ def _infer_design_intent_from_board() -> tuple[ProjectDesignIntent, list[str]]:
     for reference in sorted(ic_candidates):
         if not capacitor_refs:
             continue
-        nearest_caps = sorted(
-            capacitor_refs,
-            key=lambda capacitor_ref: _distance_mm(
-                footprints[reference], footprints[capacitor_ref]
-            ),
-        )[:1]
+        nearest_caps = _nearest_capacitor_refs(footprints[reference], capacitor_refs, footprints)
         if nearest_caps:
             decoupling_pairs.append(
                 {

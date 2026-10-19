@@ -335,7 +335,10 @@ def test_reference_snapshot_rejects_symlinked_generation_root(
     outside.mkdir()
     root = reference_server._reference_snapshot_root("generation-1")
     root.parent.mkdir(parents=True, exist_ok=True)
-    root.symlink_to(outside, target_is_directory=True)
+    try:
+        root.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable: {exc}")
 
     def fail_services(_root: Path) -> SimpleNamespace:
         raise AssertionError("export services must not start for a symlinked generation root")
@@ -441,8 +444,10 @@ def test_reference_snapshot_entries_reject_symlinked_artifact(
     root = tmp_path / "snapshot"
     root.mkdir()
     outside = tmp_path / "outside.txt"
-    outside.write_text("outside\n", encoding="utf-8")
-    (root / "linked.txt").symlink_to(outside)
+    try:
+        (root / "linked.txt").symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable: {exc}")
 
     with pytest.raises(ValueError, match="must not contain symlinks"):
         reference_server._snapshot_file_entries(root)

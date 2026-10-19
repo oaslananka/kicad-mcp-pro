@@ -133,6 +133,18 @@ async def test_net_inspector_maps_live_board_pads_through_footprint_definition(
 
 
 @pytest.mark.anyio
+async def test_pcb_net_inspector_nonexistent_net(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "kicad_mcp.tools.net_analysis._nets",
+        lambda: [{"name": "GND", "code": 1}, {"name": "VCC", "code": 2}],
+    )
+    server = build_server("full")
+    text = await call_tool_text(server, "pcb_net_inspector", {"net_name": "NONEXISTENT"})
+    assert "was not found in the PCB" in text
+    assert "GND" in text
+
+
+@pytest.mark.anyio
 async def test_net_inspector_file_fallback_parses_balanced_nested_footprints(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

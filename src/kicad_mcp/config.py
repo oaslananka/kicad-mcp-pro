@@ -511,24 +511,30 @@ class KiCadMCPConfig(BaseSettings):
         scheme = "https" if self.direct_tls_enabled else "http"
         return f"{scheme}://{host}:{self.port}"
 
+    def _infer_project_dir(self) -> Path | None:
+        for candidate in (self.project_file, self.pcb_file, self.sch_file):
+            if candidate is not None:
+                return candidate.parent
+        return None
+
+    def _apply_project_scan(self, project_dir: Path) -> None:
+        scan = _scan_project_dir(project_dir)
+        self.project_file = self.project_file or scan["project"]
+        self.pcb_file = self.pcb_file or scan["pcb"]
+        self.sch_file = self.sch_file or scan["schematic"]
+        for field_name in ("project_file", "pcb_file", "sch_file"):
+            path = getattr(self, field_name)
+            if path is not None:
+                setattr(self, field_name, path.expanduser().resolve())
+        self.output_dir = self.output_dir or project_dir / "output"
+
     def _refresh_paths(self) -> None:
         """Refresh derived project and library paths."""
         if self.project_dir is None:
-            for candidate in (self.project_file, self.pcb_file, self.sch_file):
-                if candidate is not None:
-                    self.project_dir = candidate.parent
-                    break
+            self.project_dir = self._infer_project_dir()
 
         if self.project_dir is not None:
-            scan = _scan_project_dir(self.project_dir)
-            self.project_file = self.project_file or scan["project"]
-            self.pcb_file = self.pcb_file or scan["pcb"]
-            self.sch_file = self.sch_file or scan["schematic"]
-            for field_name in ("project_file", "pcb_file", "sch_file"):
-                path = getattr(self, field_name)
-                if path is not None:
-                    setattr(self, field_name, path.expanduser().resolve())
-            self.output_dir = self.output_dir or self.project_dir / "output"
+            self._apply_project_scan(self.project_dir)
 
         libraries = _discover_library_paths(self.kicad_cli)
         self.symbol_library_dir = self.symbol_library_dir or libraries.get("symbols")

@@ -59,6 +59,40 @@ def _resolve_upgrade_paths(
     return in_path, out_path
 
 
+def _perform_upgrade(
+    *,
+    subcmd: str,
+    kind_label: str,
+    name_label: str,
+    default_file: Path | None,
+    input_file: str,
+    output_file: str,
+    force: bool,
+    dry_run: bool,
+) -> str:
+    resolved = _resolve_upgrade_paths(input_file, output_file, default_file, kind_label)
+    if isinstance(resolved, str):
+        return resolved
+    in_path, out_path = resolved
+
+    if dry_run:
+        return (
+            f"Dry run: Would upgrade {kind_label} file '{in_path}' "
+            f"and save to '{out_path}' (force={force})."
+        )
+
+    cmd = [subcmd, "upgrade"]
+    if force:
+        cmd.append("--force")
+    cmd.extend(["--output", out_path])
+    cmd.append(str(in_path))
+
+    code, stdout, stderr = _run_cli(*cmd)
+    if code != 0:
+        return f"{name_label} upgrade failed: {stderr or stdout or 'unknown error'}"
+    return f"{name_label} upgraded and saved to {out_path}"
+
+
 def register(mcp: FastMCP) -> None:
     """Register file-format upgrade tools."""
 
@@ -84,27 +118,16 @@ def register(mcp: FastMCP) -> None:
             Only report commands and files that would be affected.
         """
         cfg = get_config()
-        resolved = _resolve_upgrade_paths(input_file, output_file, cfg.sch_file, "schematic")
-        if isinstance(resolved, str):
-            return resolved
-        in_path, out_path = resolved
-
-        if dry_run:
-            return (
-                f"Dry run: Would upgrade schematic file '{in_path}' "
-                f"and save to '{out_path}' (force={force})."
-            )
-
-        cmd = ["sch", "upgrade"]
-        if force:
-            cmd.append("--force")
-        cmd.extend(["--output", out_path])
-        cmd.append(str(in_path))
-
-        code, stdout, stderr = _run_cli(*cmd)
-        if code != 0:
-            return f"Schematic upgrade failed: {stderr or stdout or 'unknown error'}"
-        return f"Schematic upgraded and saved to {out_path}"
+        return _perform_upgrade(
+            subcmd="sch",
+            kind_label="schematic",
+            name_label="Schematic",
+            default_file=cfg.sch_file,
+            input_file=input_file,
+            output_file=output_file,
+            force=force,
+            dry_run=dry_run,
+        )
 
     @headless_compatible
     def pcb_upgrade(
@@ -128,27 +151,16 @@ def register(mcp: FastMCP) -> None:
             Only report commands and files that would be affected.
         """
         cfg = get_config()
-        resolved = _resolve_upgrade_paths(input_file, output_file, cfg.pcb_file, "PCB")
-        if isinstance(resolved, str):
-            return resolved
-        in_path, out_path = resolved
-
-        if dry_run:
-            return (
-                f"Dry run: Would upgrade PCB file '{in_path}' "
-                f"and save to '{out_path}' (force={force})."
-            )
-
-        cmd = ["pcb", "upgrade"]
-        if force:
-            cmd.append("--force")
-        cmd.extend(["--output", out_path])
-        cmd.append(str(in_path))
-
-        code, stdout, stderr = _run_cli(*cmd)
-        if code != 0:
-            return f"PCB upgrade failed: {stderr or stdout or 'unknown error'}"
-        return f"PCB upgraded and saved to {out_path}"
+        return _perform_upgrade(
+            subcmd="pcb",
+            kind_label="PCB",
+            name_label="PCB",
+            default_file=cfg.pcb_file,
+            input_file=input_file,
+            output_file=output_file,
+            force=force,
+            dry_run=dry_run,
+        )
 
     mcp.tool()(sch_upgrade)
     mcp.tool()(pcb_upgrade)

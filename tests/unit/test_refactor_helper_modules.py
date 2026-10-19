@@ -181,6 +181,10 @@ def test_routing_rules_load_upsert_and_write(sample_project: Path) -> None:
     with pytest.raises(ValueError, match="root"):
         routing_rules._upsert_rule("not a rules file", "x", '(rule "x")')
 
+    assert routing_rules._is_balanced('(rule "test\\"name" (condition "A"))') is True
+    assert routing_rules._is_balanced('(rule "open') is False
+    assert routing_rules._is_balanced("())") is False
+
 
 def test_schematic_transfer_parses_netlist_and_exports_map(
     sample_project: Path,

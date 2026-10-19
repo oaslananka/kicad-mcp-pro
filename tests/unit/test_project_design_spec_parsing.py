@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from kicad_mcp.project.design_spec import (
@@ -282,3 +284,23 @@ root:
     stray
 """
     ) == {"root": {"child": 1}}
+
+
+def test_infer_design_intent_from_board_with_footprints(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.config import get_config
+    from kicad_mcp.project.design_spec import _infer_design_intent_from_board
+
+    pcb_file = tmp_path / "board.kicad_pcb"
+    pcb_file.write_text("(kicad_pcb)\n", encoding="utf-8")
+    monkeypatch.setattr(get_config(), "pcb_file", pcb_file)
+    monkeypatch.setattr(
+        "kicad_mcp.tools.board_file._parse_board_footprint_blocks",
+        lambda _content: {
+            "U1": {"x_mm": 10.0, "y_mm": 10.0},
+            "C1": {"x_mm": 12.0, "y_mm": 10.0},
+        },
+    )
+    _intent, notes = _infer_design_intent_from_board()
+    assert any("decoupling pair" in note for note in notes)
