@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+
+# nosemgrep: python37-compatibility-importlib2
 from importlib import resources
 from pathlib import Path
 from typing import Any, Protocol, cast

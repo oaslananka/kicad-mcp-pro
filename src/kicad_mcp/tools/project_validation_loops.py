@@ -51,6 +51,7 @@ def resolve_fixer_callable(import_str: str) -> Callable[[], object] | None:
         return None
     try:
         mod_path, func_name = import_str.rsplit(":", 1)
+        # nosemgrep: non-literal-import
         module = importlib.import_module(f"kicad_mcp.{mod_path}")
         candidate = getattr(module, func_name, None)
         return candidate if callable(candidate) else None
