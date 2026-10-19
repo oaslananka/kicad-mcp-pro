@@ -885,75 +885,98 @@ def available_profiles() -> tuple[str, ...]:
     return tuple(name for name in preferred if name in PROFILE_CATEGORIES)
 
 
+def _visible_tools_for_mcp(mcp: FastMCP, category: str) -> tuple[str, ...]:
+    info = TOOL_CATEGORIES[category]
+    allowed = getattr(mcp, "allowed_tool_names", None)
+    if not isinstance(allowed, (set, frozenset)):
+        return tuple(info["tools"])
+    return tuple(tool_name for tool_name in info["tools"] if tool_name in allowed)
+
+
+def _render_category_list(mcp: FastMCP) -> str:
+    lines = ["# KiCad MCP Pro Tool Categories", ""]
+    for category, info in TOOL_CATEGORIES.items():
+        tools = _visible_tools_for_mcp(mcp, category)
+        if not tools:
+            continue
+        lines.extend(
+            [
+                f"## `{category}`",
+                str(info["description"]),
+                f"Tools: {len(tools)}",
+                "",
+            ]
+        )
+    lines.append("Profiles:")
+    lines.extend(f"- `{profile}`" for profile in available_profiles())
+    return "\n".join(lines)
+
+
+def _resolve_router_ipc_state() -> object:
+    try:
+        from ..config import get_config
+        from ..ipc.capabilities import get_ipc_capability_state
+
+        runtime_filter_enabled = bool(get_config().filter_runtime_tools)
+        return get_ipc_capability_state() if runtime_filter_enabled else None
+    except Exception:
+        return None
+
+
+def _format_category_tool_entry(
+    tool_name: str,
+    maturity_filter: str,
+    ipc_state: object,
+) -> str | None:
+    if maturity_filter:
+        from ..capabilities import get as get_capability
+
+        capability = get_capability(tool_name)
+        if capability is None or capability.maturity.value != maturity_filter:
+            return None
+    mode_note = _mode_availability_note(tool_name)
+    runtime_note = "" if mode_note else _runtime_availability_note(tool_name, ipc_state)
+    return f"- `{_display_tool_name(tool_name)}`{mode_note}{runtime_note}"
+
+
+def _render_tools_in_category(mcp: FastMCP, category: str, maturity: str = "") -> str:
+    info = TOOL_CATEGORIES.get(category)
+    tools = _visible_tools_for_mcp(mcp, category) if info is not None else ()
+    if info is None or not tools:
+        available = ", ".join(
+            sorted(name for name in TOOL_CATEGORIES if _visible_tools_for_mcp(mcp, name))
+        )
+        return f"Unknown or unavailable category '{category}'. Available categories: {available}"
+
+    from ..operating_modes import active_operating_mode
+
+    active_mode = active_operating_mode()
+    ipc_state = _resolve_router_ipc_state()
+    lines = [
+        f"# Tools in `{category}`",
+        str(info["description"]),
+        f"Active operating mode: `{active_mode.value}`",
+        "",
+    ]
+    maturity_filter = maturity.strip().casefold()
+    for tool_name in tools:
+        entry = _format_category_tool_entry(tool_name, maturity_filter, ipc_state)
+        if entry is not None:
+            lines.append(entry)
+    if len(lines) == 4:
+        lines.append(f"No tools matched maturity='{maturity}'.")
+    return "\n".join(lines)
+
+
 def register(mcp: FastMCP) -> None:
     """Register category discovery tools."""
-
-    def visible_tools(category: str) -> tuple[str, ...]:
-        info = TOOL_CATEGORIES[category]
-        allowed = getattr(mcp, "allowed_tool_names", None)
-        if not isinstance(allowed, (set, frozenset)):
-            return tuple(info["tools"])
-        return tuple(tool_name for tool_name in info["tools"] if tool_name in allowed)
 
     @mcp.tool()
     def kicad_list_tool_categories() -> str:
         """List all available tool categories and capabilities."""
-        lines = ["# KiCad MCP Pro Tool Categories", ""]
-        for category, info in TOOL_CATEGORIES.items():
-            tools = visible_tools(category)
-            if not tools:
-                continue
-            lines.extend(
-                [
-                    f"## `{category}`",
-                    str(info["description"]),
-                    f"Tools: {len(tools)}",
-                    "",
-                ]
-            )
-        lines.append("Profiles:")
-        lines.extend(f"- `{profile}`" for profile in available_profiles())
-        return "\n".join(lines)
+        return _render_category_list(mcp)
 
     @mcp.tool()
     def kicad_get_tools_in_category(category: str, maturity: str = "") -> str:
         """Get tool names in a category, optionally filtered by maturity."""
-        info = TOOL_CATEGORIES.get(category)
-        tools = visible_tools(category) if info is not None else ()
-        if info is None or not tools:
-            available = ", ".join(sorted(name for name in TOOL_CATEGORIES if visible_tools(name)))
-            return (
-                f"Unknown or unavailable category '{category}'. Available categories: {available}"
-            )
-
-        from ..operating_modes import active_operating_mode
-
-        active_mode = active_operating_mode()
-        try:
-            from ..config import get_config
-            from ..ipc.capabilities import get_ipc_capability_state
-
-            runtime_filter_enabled = bool(get_config().filter_runtime_tools)
-            ipc_state = get_ipc_capability_state() if runtime_filter_enabled else None
-        except Exception:
-            ipc_state = None
-        lines = [
-            f"# Tools in `{category}`",
-            str(info["description"]),
-            f"Active operating mode: `{active_mode.value}`",
-            "",
-        ]
-        maturity_filter = maturity.strip().casefold()
-        for tool_name in tools:
-            if maturity_filter:
-                from ..capabilities import get as get_capability
-
-                capability = get_capability(tool_name)
-                if capability is None or capability.maturity.value != maturity_filter:
-                    continue
-            mode_note = _mode_availability_note(tool_name)
-            runtime_note = "" if mode_note else _runtime_availability_note(tool_name, ipc_state)
-            lines.append(f"- `{_display_tool_name(tool_name)}`{mode_note}{runtime_note}")
-        if len(lines) == 4:
-            lines.append(f"No tools matched maturity='{maturity}'.")
-        return "\n".join(lines)
+        return _render_tools_in_category(mcp, category, maturity)
