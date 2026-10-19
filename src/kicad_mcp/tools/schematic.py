@@ -2965,9 +2965,8 @@ def _parse_label_block(block: str) -> dict[str, Any] | None:
     }
 
 
-def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
+def _extract_symbol_records(content: str) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-
     cursor = 0
     while cursor < len(content):
         if content.startswith(_SEXPR_SYMBOL_OPEN, cursor):
@@ -2979,7 +2978,11 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
                 cursor += length
                 continue
         cursor += 1
+    return records
 
+
+def _extract_label_records(content: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
     for match in re.finditer(r"\((?:label|global_label|hierarchical_label)\b", content):
         block, _ = _extract_block(content, match.start())
         parsed = _parse_label_block(block)
@@ -2994,7 +2997,11 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
                     "rotation": parsed["rotation"],
                 }
             )
+    return records
 
+
+def _extract_wire_and_bus_records(content: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
     for wire in _extract_wires(content):
         signature = _wire_signature(
             float(wire["x1"]),
@@ -3009,7 +3016,6 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
                 "end": list(signature[1]),
             }
         )
-
     for bus in _extract_buses(content):
         signature = _wire_signature(bus["x1"], bus["y1"], bus["x2"], bus["y2"])
         records.append(
@@ -3019,7 +3025,11 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
                 "end": list(signature[1]),
             }
         )
+    return records
 
+
+def _extract_point_records(content: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
     for kind in ("junction", "no_connect"):
         for match in re.finditer(
             rf"\({kind}\s+\(at\s+([-\d.]+)\s+([-\d.]+)\)",
@@ -3032,27 +3042,37 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
                     "y": float(match.group(2)),
                 }
             )
+    return records
 
+
+def _extract_document_records(content: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
     title_block = _find_title_block(content)
     if title_block is not None:
         records.append({"kind": "document", "name": "title_block", "value": title_block[1]})
     paper_match = re.search(r"\(paper\b[^\n]*\)", content)
     if paper_match is not None:
         records.append({"kind": "document", "name": "paper", "value": paper_match.group(0)})
+    return records
 
+
+def _object_record_base_key(record: Mapping[str, Any]) -> str:
+    kind = str(record["kind"])
+    if kind == "symbol":
+        return f"symbol:{record['reference']}:unit={record['unit']}"
+    if kind == "label":
+        return f"label:{record['label_type']}:{record['name']}"
+    if kind in {"wire", "bus"}:
+        return f"{kind}:{record['start']}->{record['end']}"
+    if kind in {"junction", "no_connect"}:
+        return f"{kind}:{record['x']},{record['y']}"
+    return f"document:{record['name']}"
+
+
+def _build_indexed_object_map(records: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     for record in records:
-        kind = str(record["kind"])
-        if kind == "symbol":
-            base = f"symbol:{record['reference']}:unit={record['unit']}"
-        elif kind == "label":
-            base = f"label:{record['label_type']}:{record['name']}"
-        elif kind in {"wire", "bus"}:
-            base = f"{kind}:{record['start']}->{record['end']}"
-        elif kind in {"junction", "no_connect"}:
-            base = f"{kind}:{record['x']},{record['y']}"
-        else:
-            base = f"document:{record['name']}"
+        base = _object_record_base_key(record)
         grouped.setdefault(base, []).append(record)
 
     result: dict[str, dict[str, Any]] = {}
@@ -3062,6 +3082,17 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
             object_id = base if len(ordered) == 1 else f"{base}:occurrence={index}"
             result[object_id] = item
     return result
+
+
+def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
+    records = [
+        *_extract_symbol_records(content),
+        *_extract_label_records(content),
+        *_extract_wire_and_bus_records(content),
+        *_extract_point_records(content),
+        *_extract_document_records(content),
+    ]
+    return _build_indexed_object_map(records)
 
 
 def _schematic_object_diff(before: str, after: str) -> list[dict[str, Any]]:
