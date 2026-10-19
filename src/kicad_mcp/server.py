@@ -3319,6 +3319,65 @@ def version_command(
     typer.echo(json.dumps(payload, indent=2) if json_output else __version__)
 
 
+def _build_watch_subprocess_cmd(
+    *,
+    transport: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    project_dir: str | None = None,
+    log_level: str | None = None,
+    log_format: str | None = None,
+    log_file: str | None = None,
+    profile: str | None = None,
+    operating_mode: str | None = None,
+    experimental: bool | None = None,
+    telemetry: bool | None = None,
+) -> list[str]:
+    """Build command args for watch child subprocess."""
+    cmd = [sys.executable, "-m", "kicad_mcp.server"]
+    options: list[tuple[str, object]] = [
+        ("--transport", transport),
+        ("--host", host),
+        ("--port", port),
+        ("--project-dir", project_dir),
+        ("--log-level", log_level),
+        ("--log-format", log_format),
+        ("--log-file", log_file),
+        ("--profile", profile),
+        ("--mode", operating_mode),
+    ]
+    for flag, val in options:
+        if val and not isinstance(val, OptionInfo):
+            cmd.extend([flag, str(val)])
+    if experimental and not isinstance(experimental, OptionInfo):
+        cmd.append("--experimental")
+    if isinstance(telemetry, bool):
+        cmd.append("--telemetry" if telemetry else "--no-telemetry")
+    return cmd
+
+
+def _terminate_watch_process(proc: subprocess.Popen[bytes] | None, timeout: float = 5.0) -> None:
+    """Safely terminate a watch child process."""
+    if proc is None or proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+
+
+def _extract_py_change(
+    change_set: Iterable[tuple[object, str]],
+) -> tuple[object, str] | None:
+    """Find the first .py file change in a watchfiles changeset."""
+    return next(
+        ((c_type, path) for c_type, path in change_set if path.endswith(".py")),
+        None,
+    )
+
+
 def _run_with_watch(
     *,
     transport: str | None = None,
@@ -3352,39 +3411,22 @@ def _run_with_watch(
     log = logger.bind(package_dir=str(pkg_dir))
     log.info("hot_reload_started", path=str(pkg_dir))
 
-    # Build the command args (equivalent to the CLI invocation that started us,
-    # without --watch so the child runs a normal server).
-    # Guard each param against OptionInfo objects (leaked when main_callback is
-    # called directly from Python with defaults).
-    cmd = [sys.executable, "-m", "kicad_mcp.server"]
-    if transport and not isinstance(transport, OptionInfo):
-        cmd.extend(["--transport", transport])
-    if host and not isinstance(host, OptionInfo):
-        cmd.extend(["--host", host])
-    if port and not isinstance(port, OptionInfo):
-        cmd.extend(["--port", str(port)])
-    if project_dir and not isinstance(project_dir, OptionInfo):
-        cmd.extend(["--project-dir", project_dir])
-    if log_level and not isinstance(log_level, OptionInfo):
-        cmd.extend(["--log-level", log_level])
-    if log_format and not isinstance(log_format, OptionInfo):
-        cmd.extend(["--log-format", log_format])
-    if log_file and not isinstance(log_file, OptionInfo):
-        cmd.extend(["--log-file", log_file])
-    if profile and not isinstance(profile, OptionInfo):
-        cmd.extend(["--profile", profile])
-    if operating_mode and not isinstance(operating_mode, OptionInfo):
-        cmd.extend(["--mode", operating_mode])
-    if experimental and not isinstance(experimental, OptionInfo):
-        cmd.append("--experimental")
-    if isinstance(telemetry, bool) and telemetry:
-        cmd.extend(["--telemetry"])
-    if isinstance(telemetry, bool) and telemetry is False:
-        cmd.extend(["--no-telemetry"])
+    cmd = _build_watch_subprocess_cmd(
+        transport=transport,
+        host=host,
+        port=port,
+        project_dir=project_dir,
+        log_level=log_level,
+        log_format=log_format,
+        log_file=log_file,
+        profile=profile,
+        operating_mode=operating_mode,
+        experimental=experimental,
+        telemetry=telemetry,
+    )
 
     proc: subprocess.Popen[bytes] | None = None
     try:
-        # Start the initial subprocess
         log.info("hot_reload_spawning", cmd=cmd)
         proc = subprocess.Popen(
             cmd,
@@ -3392,39 +3434,28 @@ def _run_with_watch(
             stderr=sys.stderr,
         )
 
-        # Watch for file changes and restart on .py modification
         if watchfiles is None:
             return
         changes = watchfiles.watch(str(pkg_dir))
         for change_set in changes:
-            trigger = next(
-                ((c_type, path) for c_type, path in change_set if path.endswith(".py")),
-                None,
+            trigger = _extract_py_change(change_set)
+            if trigger is None:
+                continue
+            change_type, changed_path = trigger
+            log.info(
+                "hot_reload_restarting",
+                changed=changed_path,
+                change_type=change_type,
             )
-            if trigger is not None:
-                change_type, changed_path = trigger
-                log.info(
-                    "hot_reload_restarting",
-                    changed=changed_path,
-                    change_type=change_type,
-                )
-                if proc is not None and proc.poll() is None:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        proc.wait()
-                log.info("hot_reload_spawning", cmd=cmd)
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=sys.stdout,
-                    stderr=sys.stderr,
-                )
+            _terminate_watch_process(proc, timeout=5)
+            log.info("hot_reload_spawning", cmd=cmd)
+            proc = subprocess.Popen(
+                cmd,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+            )
     finally:
-        if proc is not None and proc.poll() is None:
-            proc.terminate()
-            proc.wait(timeout=3)
+        _terminate_watch_process(proc, timeout=3)
 
 
 @app.command(name="inspect")
