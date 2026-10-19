@@ -255,8 +255,7 @@ def _parse_max_calls(raw: Mapping[str, Any], case_id: str, *, default: int | Non
     return value
 
 
-def load_cases(path: str | Path) -> list[EvalCase]:
-    """Load and validate schema-v1 or schema-v2 eval cases from YAML."""
+def _load_raw_cases_dataset(path: str | Path) -> tuple[bool, list[object]]:
     data = yaml.safe_load(
         resolve_repo_or_temp(path, repo_root=_REPO_ROOT).read_text(encoding="utf-8")
     )
@@ -277,103 +276,119 @@ def load_cases(path: str | Path) -> list[EvalCase]:
     if not isinstance(raw_cases, list) or not raw_cases:
         raise EvalDatasetError("'cases' must be a non-empty list.")
 
+    return is_v2, raw_cases
+
+
+def _validate_case_tool_rules(
+    case_id: str,
+    expected_behavior: str,
+    expected: Sequence[str],
+    forbidden: Sequence[str],
+    allowed: Sequence[str],
+    max_calls: int | None,
+) -> None:
+    if expected_behavior == "tool_calls" and not expected:
+        raise EvalDatasetError(
+            f"Case {case_id!r} with expected_behavior 'tool_calls' "
+            "needs at least one expected tool."
+        )
+    if expected_behavior in {"answer", "confirmation", "refusal"} and expected:
+        raise EvalDatasetError(
+            f"Case {case_id!r} with expected_behavior {expected_behavior!r} "
+            "must not list expected tools."
+        )
+    overlap = set(expected) & set(forbidden)
+    if overlap:
+        raise EvalDatasetError(
+            f"Case {case_id!r} lists {sorted(overlap)} as both expected and forbidden."
+        )
+    allowed_forbidden_overlap = set(allowed) & set(forbidden)
+    if allowed_forbidden_overlap:
+        raise EvalDatasetError(
+            f"Case {case_id!r} lists {sorted(allowed_forbidden_overlap)} "
+            "as both allowed and forbidden."
+        )
+    if max_calls is not None and max_calls < len(expected):
+        raise EvalDatasetError(
+            f"Case {case_id!r} max_calls={max_calls} is lower than its expected tool count."
+        )
+
+
+def _parse_single_case(raw: object, index: int, is_v2: bool, seen: set[str]) -> EvalCase:
+    if not isinstance(raw, dict):
+        raise EvalDatasetError(f"Case #{index} must be a mapping.")
+    case_id = str(raw.get("id", "")).strip()
+    prompt = str(raw.get("prompt", "")).strip()
+    identifier = case_id or f"#{index}"
+    if not case_id:
+        raise EvalDatasetError(f"Case #{index} is missing an 'id'.")
+    if case_id in seen:
+        raise EvalDatasetError(f"Duplicate case id: {case_id!r}.")
+    seen.add(case_id)
+    if not prompt:
+        raise EvalDatasetError(f"Case {case_id!r} is missing a 'prompt'.")
+
+    category = cast(
+        EvalCategory,
+        _required_choice(
+            raw,
+            "category",
+            identifier,
+            _CATEGORIES,
+            "inspection",
+            required=is_v2,
+        ),
+    )
+    safety = cast(
+        SafetyPolicy,
+        _required_choice(
+            raw,
+            "safety",
+            identifier,
+            _SAFETY_POLICIES,
+            "read_only",
+            required=is_v2,
+        ),
+    )
+    expected_behavior = cast(
+        ResponseKind,
+        _required_choice(
+            raw,
+            "expected_behavior",
+            identifier,
+            _RESPONSE_KINDS - {"error"},
+            "tool_calls",
+            required=is_v2,
+        ),
+    )
+    expected = _tool_name_list(raw, "expected_tools", identifier)
+    forbidden = _tool_name_list(raw, "forbidden_tools", identifier)
+    allowed = _tool_name_list(raw, "allowed_tools", identifier)
+    tags = _string_list(raw, "tags", identifier)
+    max_calls = _parse_max_calls(raw, identifier, default=0 if safety == "no_tool" else None)
+
+    _validate_case_tool_rules(case_id, expected_behavior, expected, forbidden, allowed, max_calls)
+
+    return EvalCase(
+        id=case_id,
+        prompt=prompt,
+        expected_tools=expected,
+        forbidden_tools=forbidden,
+        notes=str(raw.get("notes", "")).strip(),
+        category=category,
+        safety=safety,
+        expected_behavior=expected_behavior,
+        allowed_tools=allowed,
+        max_calls=max_calls,
+        tags=tags,
+    )
+
+
+def load_cases(path: str | Path) -> list[EvalCase]:
+    """Load and validate schema-v1 or schema-v2 eval cases from YAML."""
+    is_v2, raw_cases = _load_raw_cases_dataset(path)
     seen: set[str] = set()
-    cases: list[EvalCase] = []
-    for index, raw in enumerate(raw_cases):
-        if not isinstance(raw, dict):
-            raise EvalDatasetError(f"Case #{index} must be a mapping.")
-        case_id = str(raw.get("id", "")).strip()
-        prompt = str(raw.get("prompt", "")).strip()
-        identifier = case_id or f"#{index}"
-        if not case_id:
-            raise EvalDatasetError(f"Case #{index} is missing an 'id'.")
-        if case_id in seen:
-            raise EvalDatasetError(f"Duplicate case id: {case_id!r}.")
-        seen.add(case_id)
-        if not prompt:
-            raise EvalDatasetError(f"Case {case_id!r} is missing a 'prompt'.")
-
-        category = cast(
-            EvalCategory,
-            _required_choice(
-                raw,
-                "category",
-                identifier,
-                _CATEGORIES,
-                "inspection",
-                required=is_v2,
-            ),
-        )
-        safety = cast(
-            SafetyPolicy,
-            _required_choice(
-                raw,
-                "safety",
-                identifier,
-                _SAFETY_POLICIES,
-                "read_only",
-                required=is_v2,
-            ),
-        )
-        expected_behavior = cast(
-            ResponseKind,
-            _required_choice(
-                raw,
-                "expected_behavior",
-                identifier,
-                _RESPONSE_KINDS - {"error"},
-                "tool_calls",
-                required=is_v2,
-            ),
-        )
-        expected = _tool_name_list(raw, "expected_tools", identifier)
-        forbidden = _tool_name_list(raw, "forbidden_tools", identifier)
-        allowed = _tool_name_list(raw, "allowed_tools", identifier)
-        tags = _string_list(raw, "tags", identifier)
-        max_calls = _parse_max_calls(raw, identifier, default=0 if safety == "no_tool" else None)
-
-        if expected_behavior == "tool_calls" and not expected:
-            raise EvalDatasetError(
-                f"Case {case_id!r} with expected_behavior 'tool_calls' "
-                "needs at least one expected tool."
-            )
-        if expected_behavior in {"answer", "confirmation", "refusal"} and expected:
-            raise EvalDatasetError(
-                f"Case {case_id!r} with expected_behavior {expected_behavior!r} "
-                "must not list expected tools."
-            )
-        overlap = set(expected) & set(forbidden)
-        if overlap:
-            raise EvalDatasetError(
-                f"Case {case_id!r} lists {sorted(overlap)} as both expected and forbidden."
-            )
-        allowed_forbidden_overlap = set(allowed) & set(forbidden)
-        if allowed_forbidden_overlap:
-            raise EvalDatasetError(
-                f"Case {case_id!r} lists {sorted(allowed_forbidden_overlap)} "
-                "as both allowed and forbidden."
-            )
-        if max_calls is not None and max_calls < len(expected):
-            raise EvalDatasetError(
-                f"Case {case_id!r} max_calls={max_calls} is lower than its expected tool count."
-            )
-
-        cases.append(
-            EvalCase(
-                id=case_id,
-                prompt=prompt,
-                expected_tools=expected,
-                forbidden_tools=forbidden,
-                notes=str(raw.get("notes", "")).strip(),
-                category=category,
-                safety=safety,
-                expected_behavior=expected_behavior,
-                allowed_tools=allowed,
-                max_calls=max_calls,
-                tags=tags,
-            )
-        )
-    return cases
+    return [_parse_single_case(raw, index, is_v2, seen) for index, raw in enumerate(raw_cases)]
 
 
 def _normalize_agent_output(output: AgentOutput) -> AgentRun:
