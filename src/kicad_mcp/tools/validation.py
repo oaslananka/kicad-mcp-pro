@@ -1158,6 +1158,147 @@ def _evaluate_schematic_cosmetics_gate() -> GateOutcome:
     )
 
 
+def _process_sheet_contracts(
+    top_file: Path,
+    contracts: list[dict[str, object]],
+    pages: list[tuple[str, Path]],
+    sheet_keys_by_path: dict[Path, set[str]],
+    available_sheet_keys: set[str],
+    blocked: list[str],
+    failures: list[str],
+) -> None:
+    for contract in contracts:
+        child_path = top_file.parent / str(contract["filename"])
+        sheet_keys = _sheet_contract_keys(contract)
+        sheet_keys_by_path[child_path] = sheet_keys
+        available_sheet_keys.update(sheet_keys)
+        pages.append((str(contract["name"]), child_path))
+        if not child_path.exists():
+            blocked.append(f"Child sheet '{contract['name']}' is missing: {child_path.name}.")
+            continue
+        try:
+            child_labels = _hierarchical_labels(child_path)
+        except OSError as exc:
+            blocked.append(
+                f"Child sheet '{contract['name']}' could not be read for contract checks ({exc})."
+            )
+            continue
+
+        top_pins = set(cast(list[str], contract["pins"]))
+        if top_pins != child_labels:
+            missing_on_top = sorted(child_labels - top_pins)
+            missing_in_child = sorted(top_pins - child_labels)
+            mismatch = [f"Hierarchy contract mismatch for '{contract['name']}'."]
+            if missing_on_top:
+                mismatch.append("top missing " + ", ".join(missing_on_top[:12]))
+            if missing_in_child:
+                mismatch.append("child missing " + ", ".join(missing_in_child[:12]))
+            failures.append("; ".join(mismatch))
+
+
+def _classify_empty_sheet(
+    page_keys: set[str],
+    required_sheet_keys: set[str],
+    optional_sheet_keys: set[str],
+    page_name: str,
+    failures: list[str],
+) -> tuple[int, int, int]:
+    """Return (required_empty, optional_empty, placeholder_empty)."""
+    if page_keys & required_sheet_keys:
+        failures.append(
+            f"Sheet '{page_name}' is required by design intent but contains no "
+            "symbols, labels, or wires."
+        )
+        return 1, 0, 0
+    if page_keys & optional_sheet_keys:
+        return 0, 1, 0
+    return 0, 0, 1
+
+
+def _check_connectivity_group_smells(
+    page_name: str,
+    groups: list[dict[str, object]],
+    failures: list[str],
+) -> tuple[int, int]:
+    label_only_groups = [
+        group
+        for group in groups
+        if group["names"] and not group["pins"] and len(group["points"]) == 1
+    ]
+    for group in label_only_groups[:8]:
+        failures.append(
+            f"{page_name}: unattached label/group at {group['points'][0]} -> "
+            + ", ".join(cast(list[str], group["names"])[:4])
+        )
+
+    unnamed_groups = [
+        group
+        for group in groups
+        if not group["names"] and len(group["pins"]) == 1 and not group.get("no_connect")
+    ]
+    for group in unnamed_groups[:8]:
+        pin = cast(dict[str, str], group["pins"][0])
+        failures.append(
+            f"{page_name}: unnamed single-pin group at {group['points'][0]} -> "
+            f"{pin['reference']}:{pin['pin']}"
+        )
+    return len(label_only_groups), len(unnamed_groups)
+
+
+def _check_symbol_connectivity_and_contracts(
+    page_name: str,
+    symbols: list[dict[str, object]],
+    groups: list[dict[str, object]],
+    failures: list[str],
+) -> tuple[int, int, int]:
+    matched_contracts = 0
+    isolated_symbols = 0
+    contract_violations = 0
+    for symbol in symbols:
+        footprint = str(symbol.get("footprint", "")).strip()
+        lib_id = str(symbol.get("lib_id", "")).strip()
+        if not footprint:
+            continue
+        reference = str(symbol.get("reference", "")).strip()
+        component_contract = find_component_contract(lib_id=lib_id, footprint=footprint)
+        if component_contract is not None:
+            matched_contracts += 1
+        relevant_groups = [
+            group
+            for group in groups
+            if any(
+                str(pin["reference"]) == reference
+                for pin in cast(list[dict[str, object]], group["pins"])
+            )
+        ]
+        meaningful = any(group["names"] or len(group["pins"]) > 1 for group in relevant_groups)
+        if not meaningful:
+            isolated_symbols += 1
+            failures.append(
+                f"{page_name}: {reference} has footprint '{footprint}' but no meaningful "
+                "net/power connectivity."
+            )
+        if component_contract is None:
+            continue
+        group_names_upper = {
+            str(name).upper()
+            for group in relevant_groups
+            for name in cast(list[str], group["names"])
+        }
+        missing_groups = [
+            "/".join(options)
+            for options in component_contract.required_net_groups
+            if not any(option.upper() in group_names_upper for option in options)
+        ]
+        if missing_groups:
+            contract_violations += 1
+            failures.append(
+                f"{page_name}: {reference} matched contract '{component_contract.key}' "
+                f"but is missing required nets: {', '.join(missing_groups)}."
+            )
+    return matched_contracts, isolated_symbols, contract_violations
+
+
 def _evaluate_schematic_connectivity_gate() -> GateOutcome:
     from .schematic import _build_connectivity_groups, parse_schematic_file
 
@@ -1188,33 +1329,15 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
     )
     sheet_keys_by_path: dict[Path, set[str]] = {}
     available_sheet_keys: set[str] = set()
-    for contract in contracts:
-        child_path = top_file.parent / str(contract["filename"])
-        sheet_keys = _sheet_contract_keys(contract)
-        sheet_keys_by_path[child_path] = sheet_keys
-        available_sheet_keys.update(sheet_keys)
-        pages.append((str(contract["name"]), child_path))
-        if not child_path.exists():
-            blocked.append(f"Child sheet '{contract['name']}' is missing: {child_path.name}.")
-            continue
-        try:
-            child_labels = _hierarchical_labels(child_path)
-        except OSError as exc:
-            blocked.append(
-                f"Child sheet '{contract['name']}' could not be read for contract checks ({exc})."
-            )
-            continue
-
-        top_pins = set(cast(list[str], contract["pins"]))
-        if top_pins != child_labels:
-            missing_on_top = sorted(child_labels - top_pins)
-            missing_in_child = sorted(top_pins - child_labels)
-            mismatch = [f"Hierarchy contract mismatch for '{contract['name']}'."]
-            if missing_on_top:
-                mismatch.append("top missing " + ", ".join(missing_on_top[:12]))
-            if missing_in_child:
-                mismatch.append("child missing " + ", ".join(missing_in_child[:12]))
-            failures.append("; ".join(mismatch))
+    _process_sheet_contracts(
+        top_file,
+        contracts,
+        pages,
+        sheet_keys_by_path,
+        available_sheet_keys,
+        blocked,
+        failures,
+    )
 
     required_missing_sheets = 0
     if has_sheet_contract:
@@ -1257,16 +1380,12 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
         is_child_sheet = page_name != _TOP_LEVEL_SHEET
         is_empty_sheet = symbol_count == 0 and label_count == 0 and wire_count == 0
         if has_sheet_contract and is_child_sheet and is_empty_sheet:
-            if page_keys & required_sheet_keys:
-                required_empty_sheets += 1
-                failures.append(
-                    f"Sheet '{page_name}' is required by design intent but contains no "
-                    "symbols, labels, or wires."
-                )
-            elif page_keys & optional_sheet_keys:
-                optional_empty_sheets += 1
-            else:
-                placeholder_empty_sheets += 1
+            req_e, opt_e, plc_e = _classify_empty_sheet(
+                page_keys, required_sheet_keys, optional_sheet_keys, page_name, failures
+            )
+            required_empty_sheets += req_e
+            optional_empty_sheets += opt_e
+            placeholder_empty_sheets += plc_e
 
         if wire_count == 0 and (symbol_count >= 2 or label_count >= 3):
             zero_wire_pages += 1
@@ -1274,73 +1393,16 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
                 f"{page_name}: has {symbol_count} symbol(s) and {label_count} label(s) but 0 wires."
             )
 
-        label_only_groups = [
-            group
-            for group in groups
-            if group["names"] and not group["pins"] and len(group["points"]) == 1
-        ]
-        dangling_labels += len(label_only_groups)
-        for group in label_only_groups[:8]:
-            failures.append(
-                f"{page_name}: unattached label/group at {group['points'][0]} -> "
-                + ", ".join(group["names"][:4])
-            )
+        dangling_cnt, unnamed_cnt = _check_connectivity_group_smells(page_name, groups, failures)
+        dangling_labels += dangling_cnt
+        unnamed_single_pin_groups += unnamed_cnt
 
-        unnamed_groups = [
-            group
-            for group in groups
-            if not group["names"] and len(group["pins"]) == 1 and not group.get("no_connect")
-        ]
-        unnamed_single_pin_groups += len(unnamed_groups)
-        for group in unnamed_groups[:8]:
-            pin = cast(dict[str, str], group["pins"][0])
-            failures.append(
-                f"{page_name}: unnamed single-pin group at {group['points'][0]} -> "
-                f"{pin['reference']}:{pin['pin']}"
-            )
-
-        for symbol in cast(list[dict[str, object]], data["symbols"]):
-            footprint = str(symbol.get("footprint", "")).strip()
-            lib_id = str(symbol.get("lib_id", "")).strip()
-            if not footprint:
-                continue
-            reference = str(symbol.get("reference", "")).strip()
-            component_contract = find_component_contract(lib_id=lib_id, footprint=footprint)
-            if component_contract is not None:
-                matched_component_contracts += 1
-            relevant_groups = [
-                group
-                for group in groups
-                if any(
-                    str(pin["reference"]) == reference
-                    for pin in cast(list[dict[str, object]], group["pins"])
-                )
-            ]
-            meaningful = any(group["names"] or len(group["pins"]) > 1 for group in relevant_groups)
-            if not meaningful:
-                isolated_footprint_symbols += 1
-                failures.append(
-                    f"{page_name}: {reference} has footprint '{footprint}' but no meaningful "
-                    "net/power connectivity."
-                )
-            if component_contract is None:
-                continue
-            group_names_upper = {
-                str(name).upper()
-                for group in relevant_groups
-                for name in cast(list[str], group["names"])
-            }
-            missing_groups = [
-                "/".join(options)
-                for options in component_contract.required_net_groups
-                if not any(option.upper() in group_names_upper for option in options)
-            ]
-            if missing_groups:
-                contract_violations += 1
-                failures.append(
-                    f"{page_name}: {reference} matched contract '{component_contract.key}' "
-                    f"but is missing required nets: {', '.join(missing_groups)}."
-                )
+        matched_c, isolated_s, violations_c = _check_symbol_connectivity_and_contracts(
+            page_name, cast(list[dict[str, object]], data["symbols"]), groups, failures
+        )
+        matched_component_contracts += matched_c
+        isolated_footprint_symbols += isolated_s
+        contract_violations += violations_c
 
     hierarchy_mismatches = sum("Hierarchy contract mismatch" in item for item in failures)
     details = [f"Pages analysed: {len(pages)}"]
@@ -2753,38 +2815,16 @@ def _release_evidence_risks(
     return risks
 
 
-def _build_project_release_readiness_payload(
-    *,
-    manufacturer: str | None = None,
-    tier: str | None = None,
-) -> ProjectReleaseReadinessPayload:
-    outcomes = _evaluate_project_gate(manufacturer=manufacturer, tier=tier)
-    project_gate = _project_gate_report_payload(outcomes)
-    manufacturing_outcome = next(
-        (outcome for outcome in outcomes if outcome.name == "Manufacturing"),
-        GateOutcome(
-            name="Manufacturing",
-            status="BLOCKED",
-            summary="Manufacturing profile evidence was not produced.",
-            details=[],
-        ),
-    )
-    manufacturing = _gate_outcome_payload(manufacturing_outcome)
-
-    drc_path, drc_report, drc_error = _run_drc_report("release_readiness_drc.json")
-    erc_path, erc_report, erc_error = _run_erc_report("release_readiness_erc.json")
-    drc = _readiness_evidence_from_verdict(
-        _drc_report_payload(drc_path, drc_report, drc_error, save_report=False)
-    )
-    erc = _readiness_evidence_from_verdict(
-        _erc_report_payload(erc_path, erc_report, erc_error, save_report=False)
-    )
-    bom = _release_bom_readiness()
-    artifacts = _release_artifact_evidence()
-    manifest = _release_manifest_evidence(artifacts.path)
-    waivers = _release_waiver_evidence()
-    release_evidence = _release_evidence_for_active_project()
-
+def _compute_readiness_required_failures(
+    project_gate: ProjectGateReportPayload,
+    drc: ReadinessEvidencePayload,
+    erc: ReadinessEvidencePayload,
+    bom: BomReadinessPayload,
+    artifacts: ReadinessEvidencePayload,
+    manifest: ReadinessEvidencePayload,
+    waivers: ReadinessEvidencePayload,
+    release_evidence: ProjectReleaseEvidenceResolution,
+) -> list[str]:
     required_failures: list[str] = []
     if project_gate.status != "PASS":
         required_failures.append(f"project gate is {project_gate.status}")
@@ -2798,19 +2838,28 @@ def _build_project_release_readiness_payload(
         required_failures.append("populated BOM fields unresolved")
     if not artifacts.available:
         missing_categories = cast(list[str], artifacts.metadata.get("missing_categories", []))
-        required_failures.append(
-            "release artifacts missing"
-            + (f" ({', '.join(missing_categories)})" if missing_categories else "")
-        )
+        suffix = f" ({', '.join(missing_categories)})" if missing_categories else ""
+        required_failures.append(f"release artifacts missing{suffix}")
     if not manifest.available:
         required_failures.append("release manifest missing")
     if not waivers.available:
         required_failures.append("waiver evidence unreadable")
-    release_evidence_risks = _release_evidence_risks(release_evidence)
     if release_evidence.adopted and not release_evidence.approved:
         required_failures.append("release-blocking contract evidence is stale or unresolved")
+    return required_failures
 
-    waiver_count = int(waivers.metadata.get("count", 0))
+
+def _compute_readiness_open_risks(
+    project_gate: ProjectGateReportPayload,
+    drc: ReadinessEvidencePayload,
+    erc: ReadinessEvidencePayload,
+    bom: BomReadinessPayload,
+    artifacts: ReadinessEvidencePayload,
+    manifest: ReadinessEvidencePayload,
+    waiver_count: int,
+    release_evidence: ProjectReleaseEvidenceResolution,
+    release_evidence_risks: list[str],
+) -> list[str]:
     open_risks = [
         f"Project quality gate is {project_gate.status}: {project_gate.summary}"
         for _ in [0]
@@ -2848,23 +2897,19 @@ def _build_project_release_readiness_payload(
             f"{len(release_evidence.gate.waived)} release-blocking contract waiver(s) "
             "require explicit review."
         )
+    return open_risks
 
-    if required_failures:
-        verdict: Verdict = "FAIL"
-    elif (
-        waiver_count
-        or bom.dnp_refs
-        or (release_evidence.gate is not None and release_evidence.gate.waived)
-    ):
-        verdict = "WARN"
-    else:
-        verdict = _gate_status_verdict(project_gate.status)
-    summary = _release_readiness_summary(
-        verdict,
-        required_failures=required_failures,
-        waiver_count=waiver_count,
-        dnp_refs=bom.dnp_refs,
-    )
+
+def _compute_readiness_approval_checklist(
+    drc: ReadinessEvidencePayload,
+    erc: ReadinessEvidencePayload,
+    manufacturing: GateOutcomePayload,
+    bom: BomReadinessPayload,
+    waiver_count: int,
+    artifacts: ReadinessEvidencePayload,
+    manifest: ReadinessEvidencePayload,
+    release_evidence: ProjectReleaseEvidenceResolution,
+) -> list[str]:
     approval_checklist = [
         (
             "[x]"
@@ -2901,6 +2946,85 @@ def _build_project_release_readiness_payload(
             "or explicitly waived."
         )
     approval_checklist.append("[ ] Record final human approval in the external release workflow.")
+    return approval_checklist
+
+
+def _build_project_release_readiness_payload(
+    *,
+    manufacturer: str | None = None,
+    tier: str | None = None,
+) -> ProjectReleaseReadinessPayload:
+    outcomes = _evaluate_project_gate(manufacturer=manufacturer, tier=tier)
+    project_gate = _project_gate_report_payload(outcomes)
+    manufacturing_outcome = next(
+        (outcome for outcome in outcomes if outcome.name == "Manufacturing"),
+        GateOutcome(
+            name="Manufacturing",
+            status="BLOCKED",
+            summary="Manufacturing profile evidence was not produced.",
+            details=[],
+        ),
+    )
+    manufacturing = _gate_outcome_payload(manufacturing_outcome)
+
+    drc_path, drc_report, drc_error = _run_drc_report("release_readiness_drc.json")
+    erc_path, erc_report, erc_error = _run_erc_report("release_readiness_erc.json")
+    drc = _readiness_evidence_from_verdict(
+        _drc_report_payload(drc_path, drc_report, drc_error, save_report=False)
+    )
+    erc = _readiness_evidence_from_verdict(
+        _erc_report_payload(erc_path, erc_report, erc_error, save_report=False)
+    )
+    bom = _release_bom_readiness()
+    artifacts = _release_artifact_evidence()
+    manifest = _release_manifest_evidence(artifacts.path)
+    waivers = _release_waiver_evidence()
+    release_evidence = _release_evidence_for_active_project()
+
+    required_failures = _compute_readiness_required_failures(
+        project_gate, drc, erc, bom, artifacts, manifest, waivers, release_evidence
+    )
+    release_evidence_risks = _release_evidence_risks(release_evidence)
+    waiver_count = int(waivers.metadata.get("count", 0))
+
+    open_risks = _compute_readiness_open_risks(
+        project_gate,
+        drc,
+        erc,
+        bom,
+        artifacts,
+        manifest,
+        waiver_count,
+        release_evidence,
+        release_evidence_risks,
+    )
+
+    if required_failures:
+        verdict: Verdict = "FAIL"
+    elif (
+        waiver_count
+        or bom.dnp_refs
+        or (release_evidence.gate is not None and release_evidence.gate.waived)
+    ):
+        verdict = "WARN"
+    else:
+        verdict = _gate_status_verdict(project_gate.status)
+    summary = _release_readiness_summary(
+        verdict,
+        required_failures=required_failures,
+        waiver_count=waiver_count,
+        dnp_refs=bom.dnp_refs,
+    )
+    approval_checklist = _compute_readiness_approval_checklist(
+        drc,
+        erc,
+        manufacturing,
+        bom,
+        waiver_count,
+        artifacts,
+        manifest,
+        release_evidence,
+    )
     advisory_notes = [
         "This bundle aggregates evidence for release review; it does not grant Formal sign-off.",
         "Advisory estimators and heuristics remain evidence only and must not be "
