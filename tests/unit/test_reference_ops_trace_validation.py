@@ -116,3 +116,43 @@ def test_public_or_symlinked_trace_is_rejected(tmp_path: Path) -> None:
         pytest.skip("symlink creation unavailable on this platform")
     with pytest.raises(ReferenceOpsTraceValidationError):
         validate_reference_ops_trace(link, attempt_id="attempt-004", phase_name="schematic")
+
+
+def test_manufacturing_trace_cannot_be_accepted(tmp_path: Path) -> None:
+    path = _good_trace(tmp_path)
+    with pytest.raises(ReferenceOpsTraceValidationError, match="manufacturing"):
+        validate_reference_ops_trace(path, attempt_id="attempt-004", phase_name="manufacturing")
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "truncated-last-line",
+        "too-many-events",
+        "timestamp-regression",
+        "invalid-call-status",
+        "non-tool-event",
+        "malformed-json",
+    ],
+)
+def test_other_incomplete_or_untrusted_trace_conditions_fail_closed(
+    tmp_path: Path, mutation: str
+) -> None:
+    path = _good_trace(tmp_path)
+    if mutation == "truncated-last-line":
+        path.write_bytes(path.read_bytes().rstrip(b"\n"))
+    elif mutation == "too-many-events":
+        path.write_bytes(b"{}\n" * 10001)
+    elif mutation == "malformed-json":
+        path.write_bytes(b"{not-json}\n")
+    else:
+        rows = [json.loads(row) for row in path.read_text().splitlines()]
+        if mutation == "timestamp-regression":
+            rows[2]["timestamp"] = "2000-01-01T00:00:00+00:00"
+        elif mutation == "invalid-call-status":
+            rows[0]["status"] = "completed"
+        elif mutation == "non-tool-event":
+            rows[0]["event_type"] = "agent"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    with pytest.raises(ReferenceOpsTraceValidationError):
+        validate_reference_ops_trace(path, attempt_id="attempt-004", phase_name="schematic")
