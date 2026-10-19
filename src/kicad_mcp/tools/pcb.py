@@ -4952,7 +4952,7 @@ def register(mcp: FastMCP) -> None:
     pcb_transaction_lifecycle.register(
         mcp,
         pcb_transaction_lifecycle.PcbTransactionLifecycleDependencies(
-            service=get_live_edit_service()
+            get_service=get_live_edit_service
         ),
     )
 
