@@ -8,6 +8,7 @@ from kicad_mcp.config import KiCadMCPConfig
 from kicad_mcp.ipc.capabilities import (
     REQUIRED_LIVE_EDITING_TOOLS,
     KiCadIpcCapabilityState,
+    _pcb_operation_backend,
     get_ipc_capability_state,
 )
 from kicad_mcp.ipc.client import KiCadIpcClient
@@ -168,3 +169,18 @@ def test_kicad11_requires_explicit_headless_configuration(fake_cli: Path) -> Non
     assert headless_state.headless_ipc_available is True
     assert headless_state.live_pcb_write is True
     assert headless_state.live_schematic_write is True
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "headless", "expected"),
+    [
+        ("pcb_set_design_rules", False, "hybrid-file-ipc"),
+        ("pcb_set_design_rules", True, "hybrid-file-ipc"),
+        ("pcb_route_trace", False, "kicad-ipc"),
+        ("pcb_route_trace", True, "kicad-ipc-headless"),
+    ],
+)
+def test_pcb_backend_preserves_design_rule_hybrid_contract(
+    tool_name: str, headless: bool, expected: str
+) -> None:
+    assert _pcb_operation_backend(tool_name, headless=headless) == expected

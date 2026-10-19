@@ -302,6 +302,13 @@ def _unavailable_state(
     )
 
 
+def _pcb_operation_backend(tool_name: str, *, headless: bool) -> BackendName:
+    """Preserve hybrid design-rule editing when native headless IPC is available."""
+    if tool_name == "pcb_set_design_rules":
+        return "hybrid-file-ipc"
+    return "kicad-ipc-headless" if headless else "kicad-ipc"
+
+
 def _operation_states(
     *,
     reachable: bool,
@@ -320,12 +327,7 @@ def _operation_states(
         available = headless or (
             reachable and live_pcb_context and _major_at_least(major_version, 9)
         )
-        if tool_name == "pcb_set_design_rules":
-            backend: BackendName = "hybrid-file-ipc"
-        elif headless:
-            backend = "kicad-ipc-headless"
-        else:
-            backend = "kicad-ipc"
+        backend = _pcb_operation_backend(tool_name, headless=headless)
         states[tool_name] = KiCadIpcOperationState(
             name=tool_name,
             available=available,
