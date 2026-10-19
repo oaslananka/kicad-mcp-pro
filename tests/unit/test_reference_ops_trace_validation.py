@@ -183,3 +183,58 @@ def test_attempt_identity_cannot_redirect_trace(tmp_path: Path, attempt_id: str)
     path = _good_trace(tmp_path)
     with pytest.raises(ReferenceOpsTraceValidationError):
         validate_reference_ops_trace(path, attempt_id=attempt_id, phase_name="schematic")
+
+
+def test_open_rejects_symlink_created_after_path_approval(tmp_path: Path) -> None:
+    """The read boundary must not follow a swapped-in symlink on POSIX."""
+    if os.name == "nt":
+        pytest.skip("O_NOFOLLOW/dir_fd unavailable on Windows")
+    path = _good_trace(tmp_path)
+    approved = reference_ops_trace_validation._approved_trace_path(path, "attempt-004")
+    outside = tmp_path / "untrusted-trace.jsonl"
+    outside.write_bytes(path.read_bytes())
+    outside.chmod(0o600)
+    path.unlink()
+    path.symlink_to(outside)
+    with pytest.raises((OSError, ReferenceOpsTraceValidationError)):
+        reference_ops_trace_validation._load_trace(approved)
+
+
+def test_trace_loader_rejects_nonregular_file(tmp_path: Path) -> None:
+    """Never read a device, pipe or substituted directory as JSONL evidence."""
+    if os.name == "nt":
+        pytest.skip("FIFO unavailable on Windows")
+    path = _good_trace(tmp_path)
+    path.unlink()
+    os.mkfifo(path, mode=0o600)
+    with pytest.raises(ReferenceOpsTraceValidationError, match="absent, empty or oversized"):
+        reference_ops_trace_validation._load_trace(path)
+
+
+def test_trace_loader_rejects_content_change_during_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _good_trace(tmp_path)
+    actual_fdopen = reference_ops_trace_validation.os.fdopen
+
+    class ChangingReader:
+        def __init__(self, reader: object) -> None:
+            self.reader = reader
+
+        def __enter__(self) -> object:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            self.reader.close()
+
+        def read(self, size: int) -> bytes:
+            content = self.reader.read(size)
+            path.write_bytes(content + b"{}\n")
+            return content
+
+    def changed_fdopen(fd: int, mode: str, *, closefd: bool = True):
+        return ChangingReader(actual_fdopen(fd, mode, closefd=closefd))
+
+    monkeypatch.setattr(reference_ops_trace_validation.os, "fdopen", changed_fdopen)
+    with pytest.raises(ReferenceOpsTraceValidationError, match="changed during read"):
+        reference_ops_trace_validation._load_trace(path)

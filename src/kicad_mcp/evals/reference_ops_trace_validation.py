@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import stat
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -56,19 +57,53 @@ def _approved_trace_path(path: Path, attempt_id: str) -> Path:
 
 
 def _load_trace(path: Path) -> bytes:
-    stat = path.stat()
-    if not path.is_file() or not 0 < stat.st_size <= _MAX_TRACE_BYTES:
-        raise ReferenceOpsTraceValidationError("trace is absent, empty or oversized")
-    if os.name != "nt" and stat.st_mode & 0o077:
-        raise ReferenceOpsTraceValidationError("trace must remain private")
-    content = path.read_bytes()
-    if len(content) != stat.st_size or not content.endswith(b"\n"):
-        raise ReferenceOpsTraceValidationError("trace is incomplete or changed during read")
-    if not 0 < len(content.splitlines()) <= _MAX_EVENTS:
-        raise ReferenceOpsTraceValidationError("trace event count is invalid")
-    if path.stat().st_size != len(content):
-        raise ReferenceOpsTraceValidationError("trace changed during validation")
-    return content
+    """Read one regular trace through a bounded, non-following file descriptor."""
+    if not path.is_absolute() or path.is_symlink() or path.parent.is_symlink():
+        raise ReferenceOpsTraceValidationError("trace must remain in its private directory")
+
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    # On POSIX, pin the immediate directory first so a concurrent rename or
+    # symlink swap cannot redirect the basename between validation and opening.
+    parent_fd: int | None = None
+    try:
+        if os.name != "nt":
+            parent_fd = os.open(
+                path.parent,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW,
+            )
+            descriptor = os.open(path.name, flags, dir_fd=parent_fd)
+        else:
+            descriptor = os.open(path, flags)
+    finally:
+        if parent_fd is not None:
+            os.close(parent_fd)
+
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= _MAX_TRACE_BYTES:
+            raise ReferenceOpsTraceValidationError("trace is absent, empty or oversized")
+        if os.name != "nt" and before.st_mode & 0o077:
+            raise ReferenceOpsTraceValidationError("trace must remain private")
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            content = stream.read(_MAX_TRACE_BYTES + 1)
+        after = os.fstat(descriptor)
+        if (
+            len(content) != before.st_size
+            or before.st_size != after.st_size
+            or before.st_mtime_ns != after.st_mtime_ns
+            or not content.endswith(b"\n")
+        ):
+            raise ReferenceOpsTraceValidationError("trace is incomplete or changed during read")
+        if not 0 < len(content.splitlines()) <= _MAX_EVENTS:
+            raise ReferenceOpsTraceValidationError("trace event count is invalid")
+        return content
+    finally:
+        os.close(descriptor)
 
 
 def _check_event(
