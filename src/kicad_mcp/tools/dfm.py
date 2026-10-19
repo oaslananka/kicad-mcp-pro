@@ -222,38 +222,20 @@ def _dfm_verdict_report(lines: list[str]) -> VerdictReport:
     )
 
 
-def _dfm_check_lines(
-    profile: dict[str, Any],
-    *,
-    heading: str | None = None,
-) -> list[str]:
-    rules = cast(dict[str, float | int], profile["rules"])
-    metrics = _board_metrics()
-    _, report, error = _run_drc_report("dfm_profile_check.json")
-    report_status, classification_error = drc_runner.classify_legacy_drc_result(report, error)
-    if report_status in {"unavailable", "malformed"}:
-        report = None
-    violations = report_entries(report, "violations") if report else []
-    unconnected = report_entries(report, "unconnected_items") if report else []
-    courtyard = courtyard_violations(report) if report else []
-    silk = [entry for entry in violations if "silk" in str(entry.get("description", "")).lower()]
-
-    lines = [
-        heading or "DFM profile check:",
-        f"- Profile: {profile['manufacturer']} / {profile['tier']}",
-    ]
-    checks_run = 0
+def _check_board_metrics_rules(
+    metrics: dict[str, Any],
+    rules: dict[str, float | int],
+) -> tuple[list[str], int]:
+    lines: list[str] = []
+    checks = 0
 
     copper_layers = metrics["copper_layers"]
     if copper_layers is None:
         lines.append(
-            _format_status(
-                "WARN",
-                "Copper layer count unavailable without an active board.",
-            )
+            _format_status("WARN", "Copper layer count unavailable without an active board.")
         )
     else:
-        checks_run += 1
+        checks += 1
         status = "PASS" if copper_layers <= int(rules["max_layers"]) else "FAIL"
         lines.append(
             _format_status(
@@ -265,13 +247,10 @@ def _dfm_check_lines(
     min_track_width_mm = metrics["min_track_width_mm"]
     if min_track_width_mm is None:
         lines.append(
-            _format_status(
-                "WARN",
-                "Minimum track width unavailable without an active board.",
-            )
+            _format_status("WARN", "Minimum track width unavailable without an active board.")
         )
     else:
-        checks_run += 1
+        checks += 1
         status = "PASS" if min_track_width_mm >= float(rules["min_trace_width_mm"]) else "FAIL"
         lines.append(
             _format_status(
@@ -284,13 +263,10 @@ def _dfm_check_lines(
     min_via_drill_mm = metrics["min_via_drill_mm"]
     if min_via_drill_mm is None:
         lines.append(
-            _format_status(
-                "WARN",
-                "Minimum via drill unavailable without an active board.",
-            )
+            _format_status("WARN", "Minimum via drill unavailable without an active board.")
         )
     else:
-        checks_run += 1
+        checks += 1
         status = "PASS" if min_via_drill_mm >= float(rules["min_drill_mm"]) else "FAIL"
         lines.append(
             _format_status(
@@ -300,47 +276,72 @@ def _dfm_check_lines(
             )
         )
 
+    return lines, checks
+
+
+def _check_drc_report_lines(
+    report: dict[str, Any] | None,
+    report_status: str,
+    classification_error: str | None,
+) -> tuple[list[str], int]:
     if report is None:
         if report_status == "malformed":
-            lines.append(
+            return [
                 _format_status(
                     "WARN",
                     f"DRC report malformed ({classification_error or 'unknown schema error'}).",
                 )
+            ], 0
+        return [
+            _format_status(
+                "WARN",
+                f"DRC report unavailable ({classification_error or 'unknown error'}).",
             )
-        else:
-            lines.append(
-                _format_status(
-                    "WARN",
-                    f"DRC report unavailable ({classification_error or 'unknown error'}).",
-                )
-            )
-    else:
-        checks_run += 3
-        lines.extend(
-            [
-                _format_status(
-                    "PASS" if not violations else "FAIL", f"DRC violations: {len(violations)}"
-                ),
-                _format_status(
-                    "PASS" if not unconnected else "FAIL", f"Unconnected items: {len(unconnected)}"
-                ),
-                _format_status(
-                    "PASS" if not courtyard else "WARN", f"Courtyard issues: {len(courtyard)}"
-                ),
-                _format_status("PASS" if not silk else "WARN", f"Silk overlap hints: {len(silk)}"),
-            ]
-        )
-        checks_run += 1
+        ], 0
 
-    lines.append(
+    violations = report_entries(report, "violations")
+    unconnected = report_entries(report, "unconnected_items")
+    courtyard = courtyard_violations(report)
+    silk = [entry for entry in violations if "silk" in str(entry.get("description", "")).lower()]
+
+    lines = [
+        _format_status("PASS" if not violations else "FAIL", f"DRC violations: {len(violations)}"),
+        _format_status(
+            "PASS" if not unconnected else "FAIL", f"Unconnected items: {len(unconnected)}"
+        ),
+        _format_status("PASS" if not courtyard else "WARN", f"Courtyard issues: {len(courtyard)}"),
+        _format_status("PASS" if not silk else "WARN", f"Silk overlap hints: {len(silk)}"),
+    ]
+    return lines, 4
+
+
+def _dfm_check_lines(
+    profile: dict[str, Any],
+    *,
+    heading: str | None = None,
+) -> list[str]:
+    rules = cast(dict[str, float | int], profile["rules"])
+    metrics = _board_metrics()
+    _, report, error = _run_drc_report("dfm_profile_check.json")
+    report_status, classification_error = drc_runner.classify_legacy_drc_result(report, error)
+    if report_status in {"unavailable", "malformed"}:
+        report = None
+
+    metric_lines, metric_checks = _check_board_metrics_rules(metrics, rules)
+    drc_lines, drc_checks = _check_drc_report_lines(report, report_status, classification_error)
+
+    lines = [
+        heading or "DFM profile check:",
+        f"- Profile: {profile['manufacturer']} / {profile['tier']}",
+        *metric_lines,
+        *drc_lines,
         _format_status(
             "WARN",
             "Manual review: annular ring, copper-to-edge, and silkscreen text size "
             f"against {profile['manufacturer']} {profile['tier']} fab notes.",
-        )
-    )
-    lines.insert(2, f"- Checks run: {checks_run}")
+        ),
+    ]
+    lines.insert(2, f"- Checks run: {metric_checks + drc_checks}")
     return lines
 
 
