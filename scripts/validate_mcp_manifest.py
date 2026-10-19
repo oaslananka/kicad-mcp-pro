@@ -251,42 +251,53 @@ def _validate_screenshots(meta: Mapping[str, Any]) -> list[str]:
     return errors
 
 
-def _validate_meta_objects(meta: Mapping[str, Any]) -> list[str]:
-    errors: list[str] = []
+def _validate_meta_tool_catalog(meta: Mapping[str, Any]) -> list[str]:
     tool_catalog = meta.get("toolCatalog")
     if not _is_object(tool_catalog):
-        errors.append(f"_meta.{REGISTRY_META_KEY}.toolCatalog must be an object.")
-    else:
-        if not _string(tool_catalog.get("summary")):
-            errors.append(f"_meta.{REGISTRY_META_KEY}.toolCatalog.summary is required.")
-        errors.extend(
-            _link_errors(
-                f"_meta.{REGISTRY_META_KEY}.toolCatalog.reference", tool_catalog.get("reference")
-            )
+        return [f"_meta.{REGISTRY_META_KEY}.toolCatalog must be an object."]
+    errors: list[str] = []
+    if not _string(tool_catalog.get("summary")):
+        errors.append(f"_meta.{REGISTRY_META_KEY}.toolCatalog.summary is required.")
+    errors.extend(
+        _link_errors(
+            f"_meta.{REGISTRY_META_KEY}.toolCatalog.reference", tool_catalog.get("reference")
         )
+    )
+    return errors
 
+
+def _validate_meta_maintainer(meta: Mapping[str, Any]) -> list[str]:
     maintainer = meta.get("maintainer")
     if not _is_object(maintainer):
-        errors.append(f"_meta.{REGISTRY_META_KEY}.maintainer must be an object.")
-    else:
-        if not _string(maintainer.get("name")):
-            errors.append(f"_meta.{REGISTRY_META_KEY}.maintainer.name is required.")
-        errors.extend(
-            _link_errors(f"_meta.{REGISTRY_META_KEY}.maintainer.url", maintainer.get("url"))
-        )
+        return [f"_meta.{REGISTRY_META_KEY}.maintainer must be an object."]
+    errors: list[str] = []
+    if not _string(maintainer.get("name")):
+        errors.append(f"_meta.{REGISTRY_META_KEY}.maintainer.name is required.")
+    errors.extend(_link_errors(f"_meta.{REGISTRY_META_KEY}.maintainer.url", maintainer.get("url")))
+    return errors
 
+
+def _validate_meta_server_info(meta: Mapping[str, Any]) -> list[str]:
     server_info = meta.get("serverInfo")
     if not _is_object(server_info):
-        errors.append(f"_meta.{REGISTRY_META_KEY}.serverInfo must be an object.")
-    else:
-        if server_info.get("capabilities") != SERVER_INFO_CAPABILITIES:
-            errors.append(
-                f"_meta.{REGISTRY_META_KEY}.serverInfo.capabilities must match "
-                "the server-info contract."
-            )
-        for field in ("schemaVersion", "mcpProtocolVersion", "toolSchemaVersion"):
-            if not _string(server_info.get(field)):
-                errors.append(f"_meta.{REGISTRY_META_KEY}.serverInfo.{field} is required.")
+        return [f"_meta.{REGISTRY_META_KEY}.serverInfo must be an object."]
+    errors: list[str] = []
+    if server_info.get("capabilities") != SERVER_INFO_CAPABILITIES:
+        errors.append(
+            f"_meta.{REGISTRY_META_KEY}.serverInfo.capabilities must match "
+            "the server-info contract."
+        )
+    for field in ("schemaVersion", "mcpProtocolVersion", "toolSchemaVersion"):
+        if not _string(server_info.get(field)):
+            errors.append(f"_meta.{REGISTRY_META_KEY}.serverInfo.{field} is required.")
+    return errors
+
+
+def _validate_meta_objects(meta: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    errors.extend(_validate_meta_tool_catalog(meta))
+    errors.extend(_validate_meta_maintainer(meta))
+    errors.extend(_validate_meta_server_info(meta))
     return errors
 
 
@@ -341,6 +352,37 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, Any]:
     return data
 
 
+def _validate_package_version_and_oci(
+    index: int,
+    package: Mapping[str, Any],
+    registry: str,
+    identifier: str,
+) -> list[str]:
+    errors: list[str] = []
+    is_oci = _is_oci_registry(registry, package)
+    has_version = bool(_string(package.get("version")))
+    if not is_oci and not has_version:
+        errors.append(f"packages[{index}] must define version.")
+    if is_oci and has_version:
+        errors.append(
+            f"packages[{index}] OCI packages must not define version field; "
+            "include version in identifier instead "
+            "(e.g., 'ghcr.io/owner/image:1.0.0')."
+        )
+    if is_oci:
+        if "registryBaseUrl" in package:
+            errors.append(
+                f"packages[{index}] must not define registryBaseUrl for OCI packages; "
+                "use a canonical registry/repository:tag identifier."
+            )
+        if identifier and not _is_oci_identifier(identifier):
+            errors.append(
+                f"packages[{index}] OCI identifier must be registry/repository:tag "
+                "or registry/repository@algorithm:digest."
+            )
+    return errors
+
+
 def _validate_package_entry(
     index: int,
     package: Mapping[str, Any],
@@ -352,25 +394,9 @@ def _validate_package_entry(
         errors.append(f"packages[{index}] must define registryType or registry.")
     if not identifier:
         errors.append(f"packages[{index}] must define identifier, name, or image.")
-    if not _is_oci_registry(registry, package) and not _string(package.get("version")):
-        errors.append(f"packages[{index}] must define version.")
-    if _is_oci_registry(registry, package) and _string(package.get("version")):
-        errors.append(
-            f"packages[{index}] OCI packages must not define version field; "
-            "include version in identifier instead "
-            "(e.g., 'ghcr.io/owner/image:1.0.0')."
-        )
-    if _is_oci_registry(registry, package):
-        if "registryBaseUrl" in package:
-            errors.append(
-                f"packages[{index}] must not define registryBaseUrl for OCI packages; "
-                "use a canonical registry/repository:tag identifier."
-            )
-        if identifier and not _is_oci_identifier(identifier):
-            errors.append(
-                f"packages[{index}] OCI identifier must be registry/repository:tag "
-                "or registry/repository@algorithm:digest."
-            )
+
+    errors.extend(_validate_package_version_and_oci(index, package, registry, identifier))
+
     pair = (registry, identifier)
     if registry and identifier and pair in seen:
         errors.append(f"packages[{index}] duplicates package {registry}/{identifier}.")
