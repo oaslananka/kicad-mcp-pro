@@ -166,6 +166,10 @@ def _write_ops_server_config(
     return path
 
 
+@pytest.mark.skipif(
+    __import__("os").name == "nt",
+    reason="The Ops preflight's POSIX owner-only file permission check is Linux-only",
+)
 def test_chatgpt_ops_preflight_is_an_explicit_nonexecuting_handoff(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

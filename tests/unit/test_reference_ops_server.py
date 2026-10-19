@@ -67,3 +67,63 @@ def test_wrong_profile_or_phase_refuses_server(
     reset_config()
     with pytest.raises(ReferenceAgentRunnerError):
         build_reference_ops_server(phase_name=phase)
+
+
+def test_entrypoint_starts_only_reviewed_stdio_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+    from types import SimpleNamespace
+
+    from kicad_mcp.evals import reference_ops_server as cli
+
+    observed: list[object] = []
+    fake_server = SimpleNamespace(run=lambda **kwargs: observed.append(kwargs))
+    monkeypatch.setattr(
+        cli,
+        "build_reference_ops_server",
+        lambda *, phase_name: observed.append(phase_name) or fake_server,
+    )
+    monkeypatch.setattr(cli, "_ensure_thread_aware_stdout", lambda: observed.append("stdout"))
+    monkeypatch.setattr(sys, "argv", ["reference_ops_server", "--phase", "schematic"])
+    cli.main()
+    assert observed == ["schematic", "stdout", {"transport": "stdio"}]
+
+
+def test_entrypoint_blocks_non_stdio_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    from kicad_mcp.evals import reference_ops_server as cli
+
+    monkeypatch.setenv("KICAD_MCP_TRANSPORT", "streamable-http")
+    monkeypatch.setattr(sys, "argv", ["reference_ops_server", "--phase", "schematic"])
+    with pytest.raises(SystemExit, match="requires stdio transport"):
+        cli.main()
+
+
+def test_entrypoint_blocks_mismatched_phase_without_starting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    from kicad_mcp.evals import reference_ops_server as cli
+
+    monkeypatch.setattr(sys, "argv", ["reference_ops_server", "--phase", "pcb"])
+    with pytest.raises(SystemExit, match="profile/mode mismatch"):
+        cli.main()
+
+
+def test_entrypoint_reports_runtime_gate_failure_without_starting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp.evals import reference_ops_server as cli
+
+    def reject(*, phase_name: str) -> None:
+        assert phase_name == "schematic"
+        raise ReferenceAgentRunnerError("reviewed tool inventory unavailable")
+
+    monkeypatch.setattr(cli, "build_reference_ops_server", reject)
+    with pytest.raises(SystemExit, match="reviewed tool inventory unavailable"):
+        cli.main(["--phase", "schematic"])
