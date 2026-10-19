@@ -527,7 +527,8 @@ def test_schematic_tools_table_uri_and_pin_exceptions(
     sym = {"lib_id": "Device:R", "x": 10.0, "y": 20.0, "unit": 1, "rotation": 0}
     bounds = schematic._symbol_bbox_bounds(sym)
     assert len(bounds) == 4
-    assert bounds[0] < bounds[2] and bounds[1] < bounds[3]
+    assert bounds[0] < bounds[2]
+    assert bounds[1] < bounds[3]
     assert schematic._symbol_local_extent(sym) is None
     _body, pins = schematic._symbol_body_and_pins(sym)
     assert pins == []
