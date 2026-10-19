@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from ..utils.geometry import (
@@ -479,6 +480,19 @@ def _text_overlap_finding(ref_a: str, box_a: Box, ref_b: str, box_b: Box) -> Vis
     )
 
 
+def _iter_cross_owner_text_overlaps(
+    boxes: list[tuple[str, Box]], owners: list[str]
+) -> Iterator[tuple[str, Box, str, Box]]:
+    """Yield overlapping text-box pairs in their original stable traversal order."""
+    for i, (ref_a, box_a) in enumerate(boxes):
+        for j in range(i + 1, len(boxes)):
+            if owners[i] == owners[j]:
+                continue
+            ref_b, box_b = boxes[j]
+            if box_a.overlaps(box_b):
+                yield ref_a, box_a, ref_b, box_b
+
+
 def detect_text_overlap(
     symbols: list[PlacedSymbol], labels: list[LabelItem]
 ) -> list[VisualFinding]:
@@ -501,15 +515,10 @@ def detect_text_overlap(
         boxes.append((f"label:{label.text}", label.box()))
 
     findings: list[VisualFinding] = []
-    for i in range(len(boxes)):
-        for j in range(i + 1, len(boxes)):
-            if owners[i] == owners[j]:
-                continue
-            ref_a, box_a = boxes[i]
-            ref_b, box_b = boxes[j]
-            finding = _text_overlap_finding(ref_a, box_a, ref_b, box_b)
-            if finding is not None:
-                findings.append(finding)
+    for ref_a, box_a, ref_b, box_b in _iter_cross_owner_text_overlaps(boxes, owners):
+        finding = _text_overlap_finding(ref_a, box_a, ref_b, box_b)
+        if finding is not None:
+            findings.append(finding)
     return findings
 
 
