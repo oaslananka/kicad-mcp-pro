@@ -92,6 +92,11 @@ PROVIDER_REQUEST_FAILURE_DETAILS: frozenset[FailureDetail] = frozenset(
     }
 )
 
+_DETAILS_BY_FAILURE_KIND: dict[FailureKind, frozenset[FailureDetail]] = {
+    "model_output_invalid": MODEL_OUTPUT_FAILURE_DETAILS,
+    "provider_request_rejected": PROVIDER_REQUEST_FAILURE_DETAILS,
+}
+
 _FAILURE_KINDS = frozenset(
     {
         "adapter_unavailable",
@@ -152,11 +157,8 @@ class AdapterObservation:
         if (self.run is None) == (self.failure_kind is None):
             raise ValueError("AdapterObservation needs exactly one of run or failure_kind.")
         if self.failure_detail is not None:
-            if self.failure_kind == "model_output_invalid":
-                allowed_details = MODEL_OUTPUT_FAILURE_DETAILS
-            elif self.failure_kind == "provider_request_rejected":
-                allowed_details = PROVIDER_REQUEST_FAILURE_DETAILS
-            else:
+            allowed_details = _DETAILS_BY_FAILURE_KIND.get(self.failure_kind)
+            if allowed_details is None:
                 raise ValueError(
                     "failure_detail is valid only for model output or provider request failures."
                 )
@@ -259,12 +261,7 @@ def _parse_adapter_payload(value: object) -> AdapterObservation:
         failure_detail: FailureDetail | None = None
         if "failure_detail" in raw:
             detail_raw = raw.get("failure_detail")
-            if failure_raw == "model_output_invalid":
-                allowed_details = MODEL_OUTPUT_FAILURE_DETAILS
-            elif failure_raw == "provider_request_rejected":
-                allowed_details = PROVIDER_REQUEST_FAILURE_DETAILS
-            else:
-                allowed_details = frozenset()
+            allowed_details = _DETAILS_BY_FAILURE_KIND.get(failure_raw, frozenset())
             if detail_raw not in allowed_details:
                 raise ValueError("Adapter response has an unsupported failure_detail.")
             failure_detail = cast(FailureDetail, detail_raw)
