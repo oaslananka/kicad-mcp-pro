@@ -388,3 +388,205 @@ def test_hook_pre_push_predicate_helpers() -> None:
     assert _is_workflow_changed([".github/workflows/ci.yml"])
     assert _is_workflow_changed(["scripts/check_workflows.py"])
     assert not _is_workflow_changed(["src/kicad_mcp/server.py"])
+
+
+def test_discovery_collect_cli_help_outputs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from kicad_mcp.discovery import _collect_cli_help_outputs
+
+    def fail_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        _ = (args, kwargs)
+        raise subprocess.TimeoutExpired(cmd=["kicad-cli"], timeout=10)
+
+    monkeypatch.setattr(subprocess, "run", fail_run)
+    assert _collect_cli_help_outputs(tmp_path / "kicad-cli") == []
+
+    def success_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        _ = kwargs
+        return subprocess.CompletedProcess(
+            args=list(args[0]) if isinstance(args[0], (list, tuple)) else ["kicad-cli"],
+            returncode=0,
+            stdout="help text",
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", success_run)
+    outputs = _collect_cli_help_outputs(tmp_path / "kicad-cli")
+    assert len(outputs) == 5
+    assert "help text" in outputs[0]
+
+
+def test_command_queue_prepare_retry_reconnect_failure() -> None:
+    from kicad_mcp.ipc.command_queue import KiCadCommandQueue
+
+    def failing_reconnect() -> None:
+        raise RuntimeError("network down")
+
+    queue = KiCadCommandQueue(reconnect=failing_reconnect)
+    with pytest.raises(RuntimeError, match="network down"):
+        queue._prepare_retry(
+            operation="test_op",
+            correlation_id="corr-1",
+            idempotency_key="idem-1",
+            attempts=1,
+            started=0.0,
+        )
+    history = queue.journal
+    assert len(history) == 1
+    assert history[0].status == "failed"
+
+
+def test_hierarchy_authoring_resolve_target_sheet_blocks_and_errors(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from tests.unit.test_schematic_hierarchy_authoring_service import _service
+
+    service, _, _, _, _ = _service(root_path=tmp_path / "root.kicad_sch")
+
+    blocks, err = service._resolve_target_sheet_blocks(
+        tmp_path / "root.kicad_sch", "(kicad_sch)", None
+    )
+    assert blocks == ()
+    assert "has no child sheets" in str(err)
+
+    blocks, err = service._resolve_target_sheet_blocks(
+        tmp_path / "root.kicad_sch", "(kicad_sch)", "MissingSheet"
+    )
+    assert blocks == ()
+    assert "Sheet 'MissingSheet' was not found" in str(err)
+
+    skipped_sch = '(kicad_sch (sheet (property "Sheetname" "BrokenSheet")))'
+    blocks, err = service._resolve_target_sheet_blocks(
+        tmp_path / "root.kicad_sch", skipped_sch, "BrokenSheet"
+    )
+    assert blocks == ()
+    assert "cannot be addressed" in str(err)
+
+    def fail_read(p: Path) -> str:
+        raise OSError("Read failed")
+
+    service_unreadable = replace(service, read_text=fail_read)
+    res = service_unreadable.import_sheet_pins(None, False, False)
+    assert "Could not read the top-level schematic" in res
+
+
+def test_hierarchy_authoring_plan_block_pin_import_overflow_and_errors(
+    tmp_path: Path,
+) -> None:
+    from dataclasses import replace
+
+    from tests.unit.test_schematic_hierarchy_authoring_service import _service
+    from tests.unit.test_sheet_pins_planning import _sheet
+
+    service, _, _, _, _ = _service(root_path=tmp_path / "root.kicad_sch")
+    block = _sheet(size=(5.0, 5.0))
+
+    def fail_read(p: Path) -> str:
+        raise OSError("cannot read child")
+
+    service_unreadable = replace(service, read_text=fail_read)
+    lines, item = service_unreadable._plan_block_pin_import(
+        tmp_path / "root.kicad_sch", block, 1.27, False
+    )
+    assert item is None
+    assert "child sheet unreadable" in lines[0]
+
+    labels_sch = """(kicad_sch
+      (hierarchical_label "SIG1" (shape input) (at 0 0 0))
+      (hierarchical_label "SIG2" (shape input) (at 0 0 0))
+      (hierarchical_label "SIG3" (shape input) (at 0 0 0))
+      (hierarchical_label "SIG4" (shape input) (at 0 0 0))
+      (hierarchical_label "SIG5" (shape input) (at 0 0 0))
+      (hierarchical_label "SIG6" (shape input) (at 0 0 0))
+      (hierarchical_label "SIG7" (shape input) (at 0 0 0))
+      (hierarchical_label "SIG8" (shape input) (at 0 0 0))
+    )"""
+    service_overflow = replace(service, read_text=lambda p: labels_sch)
+    lines, item = service_overflow._plan_block_pin_import(
+        tmp_path / "root.kicad_sch", block, 1.27, False
+    )
+    assert item is None
+    assert "pins do not fit at the current size" in lines[0]
+
+
+def test_schematic_tools_table_uri_and_pin_exceptions(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from kicad_mcp.tools import schematic
+
+    resolved = schematic._resolve_kicad_table_uri("${KIPRJMOD}/sym-lib-table", tmp_path)
+    assert Path(resolved) == tmp_path / "sym-lib-table"
+
+    def fake_get_pin_positions(**kwargs: object) -> dict[str, tuple[float, float]]:
+        _ = kwargs
+        raise ValueError("Invalid symbol pins")
+
+    monkeypatch.setattr(schematic, "get_pin_positions", fake_get_pin_positions)
+
+    sym = {"lib_id": "Device:R", "x": 10.0, "y": 20.0, "unit": 1, "rotation": 0}
+    bounds = schematic._symbol_bbox_bounds(sym)
+    assert len(bounds) == 4
+    assert bounds[0] < bounds[2] and bounds[1] < bounds[3]
+    assert schematic._symbol_local_extent(sym) is None
+    _body, pins = schematic._symbol_body_and_pins(sym)
+    assert pins == []
+
+
+def test_server_status_overall_icon_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+    from typer.testing import CliRunner
+
+    from kicad_mcp.diagnostics import CheckResult
+    from kicad_mcp.server import app
+    from tests.unit.test_cli_diagnostics import _diagnostic_report
+
+    runner = CliRunner()
+
+    for check_status, expected_overall in [
+        ("ok", "Overall: ok"),
+        ("warn", "Overall: degraded"),
+        ("error", "Overall: error"),
+    ]:
+        report = _diagnostic_report([CheckResult(name="chk", status=check_status, message="msg")])
+        monkeypatch.setattr("kicad_mcp.server.build_health_report", lambda r=report: r)
+        result = runner.invoke(app, ["status"])
+        assert result.exit_code == 0
+        assert expected_overall in result.output
+
+
+def test_server_log_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from typer.testing import CliRunner
+
+    from kicad_mcp.config import KiCadMCPConfig
+    from kicad_mcp.server import app
+
+    log_file = tmp_path / "test.log"
+    log_file.write_text("INFO message 1\nERROR message 2\n", encoding="utf-8")
+
+    cfg = KiCadMCPConfig(log_file=str(log_file))
+    monkeypatch.setattr("kicad_mcp.server.get_config", lambda: cfg)
+
+    runner = CliRunner()
+    res = runner.invoke(app, ["log"])
+    assert res.exit_code == 0
+    assert "INFO message 1" in res.output
+    assert "ERROR message 2" in res.output
+
+    res_err = runner.invoke(app, ["log", "--level", "error"])
+    assert res_err.exit_code == 0
+    assert "ERROR message 2" in res_err.output
+
+
+@pytest.mark.asyncio
+async def test_server_call_tool_kicad_not_running_error() -> None:
+    from kicad_mcp.errors import KiCadNotRunningError
+    from kicad_mcp.server import KiCadFastMCP
+
+    server = KiCadFastMCP("test-server")
+
+    @server.tool()
+    def failing_tool() -> str:
+        raise KiCadNotRunningError("KiCad is not running")
+
+    result = await server.call_tool("failing_tool", {})
+    assert result is not None
