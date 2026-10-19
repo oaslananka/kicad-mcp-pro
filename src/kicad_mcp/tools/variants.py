@@ -239,374 +239,385 @@ def variant_apply_to_kicad_cli_args(variant_name: str | None = None) -> list[str
     return ["--variant", selected_name]
 
 
+@headless_compatible
+def variant_list() -> str:
+    """List available design variants and basic component counts."""
+    state = _load_state()
+    payload = {
+        "default_variant": state.get("default_variant", "default"),
+        "active_variant": state.get("active_variant", "default"),
+        "variants": [
+            {
+                "name": name,
+                "component_count": len(_bom_rows(state, name)),
+            }
+            for name in _variant_names(state)
+        ],
+    }
+    return json.dumps(payload, indent=2)
+
+
+@headless_compatible
+def variant_create(name: str, base_variant: str | None = None) -> str:
+    """Create a new design variant, optionally cloning an existing variant."""
+    if not name.strip():
+        raise ValueError("Variant name must not be empty.")
+    state = _load_state()
+    variants = state.setdefault("variants", {})
+    if name in variants:
+        raise ValueError(f"Variant '{name}' already exists.")
+    source = dict(_ensure_variant(state, base_variant)) if base_variant else {"overrides": {}}
+    variants[name] = {
+        "overrides": dict(source.get("overrides", {})),
+    }
+    path = _save_state(state)
+    return f"Created design variant '{name}' in {path}."
+
+
+@headless_compatible
+def variant_set_active(name: str) -> str:
+    """Set the active design variant for the current project."""
+    state = _load_state()
+    _ensure_variant(state, name)
+    state["active_variant"] = name
+    path = _save_state(state)
+    return f"Active variant set to '{name}' in {path}."
+
+
+@headless_compatible
+def variant_set_component_override(
+    variant: str,
+    reference: str,
+    enabled: bool,
+    value: str | None = None,
+    footprint: str | None = None,
+) -> str:
+    """Override component population, value, or footprint in a variant."""
+    state = _load_state()
+    _ensure_variant(state, variant)
+    if reference not in _base_components():
+        raise ValueError(f"Reference '{reference}' was not found in the active schematic.")
+    overrides = state["variants"][variant].setdefault("overrides", {})
+    payload: dict[str, Any] = {"enabled": enabled}
+    if value is not None:
+        payload["value"] = value
+    if footprint is not None:
+        payload["footprint"] = footprint
+    overrides[reference] = payload
+    _save_state(state)
+    return f"Updated variant override for '{reference}' in variant '{variant}'."
+
+
+@headless_compatible
+def variant_diff_bom(variant_a: str, variant_b: str) -> str:
+    """Diff the effective BOM between two design variants."""
+    state = _load_state()
+    bom_a = {item["reference"]: item for item in _bom_rows(state, variant_a)}
+    bom_b = {item["reference"]: item for item in _bom_rows(state, variant_b)}
+    added = [bom_b[ref] for ref in sorted(set(bom_b) - set(bom_a))]
+    removed = [bom_a[ref] for ref in sorted(set(bom_a) - set(bom_b))]
+    changed = []
+    for reference in sorted(set(bom_a) & set(bom_b)):
+        if bom_a[reference] != bom_b[reference]:
+            changed.append(
+                {
+                    "reference": reference,
+                    "from": bom_a[reference],
+                    "to": bom_b[reference],
+                }
+            )
+    return json.dumps(
+        {
+            "variant_a": variant_a,
+            "variant_b": variant_b,
+            "added": added,
+            "removed": removed,
+            "changed": changed,
+        },
+        indent=2,
+    )
+
+
+@headless_compatible
+def variant_export_bom(variant: str, format: str = "csv") -> str:
+    """Export a variant-specific BOM into the project output directory."""
+    fmt = format.casefold()
+    if fmt not in {"csv", "json"}:
+        raise ValueError("Only csv and json BOM export formats are supported.")
+    state = _load_state()
+    _ensure_variant(state, variant)
+    cfg = get_config()
+    out_dir = cfg.ensure_output_dir("variants")
+    out_file = out_dir / f"{variant}_bom.{fmt}"
+    rows = _bom_rows(state, variant)
+    _write_bom(out_file, rows, fmt)
+    return f"Variant BOM exported to {out_file} ({len(rows)} populated component(s))."
+
+
+# ── FAZ 10.2 — Variant Extended ─────────────────────────────────────
+
+
+@headless_compatible
+def variant_clone(name: str, new_name: str) -> str:
+    """Clone an existing design variant under a new name.
+
+    Parameters
+    ----------
+    name : str
+        Source variant name.
+    new_name : str
+        Target name for the cloned variant.
+    """
+    if not new_name.strip():
+        raise ValueError("New variant name must not be empty.")
+    state = _load_state()
+    source = dict(_ensure_variant(state, name))
+    variants = cast(dict[str, dict[str, Any]], state.setdefault("variants", {}))
+    if new_name in variants:
+        raise ValueError(f"Variant '{new_name}' already exists.")
+    variants[new_name] = {
+        "overrides": dict(source.get("overrides", {})),
+    }
+    path = _save_state(state)
+    return f"Cloned variant '{name}' -> '{new_name}' in {path}."
+
+
+@headless_compatible
+def variant_delete(name: str) -> str:
+    """Delete a design variant.
+
+    Parameters
+    ----------
+    name : str
+        Variant name to delete. Cannot delete the ``default`` variant.
+    """
+    if name.strip() == "default":
+        raise ValueError("The 'default' variant cannot be deleted.")
+    state = _load_state()
+    variants = cast(dict[str, dict[str, Any]], state.setdefault("variants", {}))
+    if name not in variants:
+        raise ValueError(
+            f"Variant '{name}' not found. Existing variants: {', '.join(_variant_names(state))}"
+        )
+    del variants[name]
+    if state.get("active_variant") == name:
+        state["active_variant"] = state.get("default_variant", "default")
+    path = _save_state(state)
+    return (
+        f"Deleted variant '{name}' from {path}."
+        f" Active variant reset to '{state['active_variant']}'."
+    )
+
+
+@headless_compatible
+def variant_get_component_status(variant: str, reference: str) -> str:
+    """Get the effective status of a single component in a variant.
+
+    Parameters
+    ----------
+    variant : str
+        Variant name.
+    reference : str
+        Component reference designator (e.g. ``R1``, ``C4``).
+    """
+    state = _load_state()
+    components = _render_variant_components(state, variant)
+    if reference not in components:
+        base_names = ", ".join(sorted(components)[:30])
+        raise ValueError(
+            f"Reference '{reference}' not found in schematic components. "
+            f"Sample references: {base_names}"
+        )
+    return json.dumps(components[reference], indent=2)
+
+
+@headless_compatible
+def variant_export_schematic(variant: str, output_name: str | None = None) -> str:
+    """Export a variant-specific schematic PDF with overrides applied.
+
+    Parameters
+    ----------
+    variant : str
+        Variant name.
+    output_name : str | None
+        Output filename (defaults to ``<variant>_schematic.pdf``).
+    """
+    from .export_support import _ensure_output_dir, _get_sch_file, _run_cli_variants
+
+    state = _load_state()
+    _ensure_variant(state, variant)
+    sch_file = _get_sch_file()
+    out_dir = _ensure_output_dir("variants")
+    out_file = out_dir / (output_name or f"{variant}_schematic.pdf")
+
+    is_default = variant == state.get("default_variant", "default")
+    variant_args = [f"--variant={variant}"] if not is_default else []
+
+    code, _, stderr = _run_cli_variants(
+        [
+            [
+                "sch",
+                "export",
+                "pdf",
+                *variant_args,
+                "--output",
+                str(out_file),
+                str(sch_file),
+            ],
+            [
+                "sch",
+                "export",
+                "pdf",
+                *variant_args,
+                "--input",
+                str(sch_file),
+                "--output",
+                str(out_file),
+            ],
+        ]
+    )
+    if code != 0:
+        return f"Schematic variant export failed: {stderr or 'unknown error'}"
+    return (
+        f"Variant schematic '{variant}' exported to {out_file} ({out_file.stat().st_size} bytes)."
+    )
+
+
+@headless_compatible
+def variant_export_manufacturing_package(
+    variant: str,
+    output_name: str | None = None,
+) -> str:
+    """Export a manufacturing package for a specific variant.
+
+    Combines Gerber, drill, BOM, and pick-and-place exports with
+    the variant's overrides applied.
+
+    Parameters
+    ----------
+    variant : str
+        Variant name.
+    output_name : str | None
+        Output filename for the package manifest (defaults to
+        ``<variant>_manufacturing.json``).
+    """
+    from .export_support import (
+        _ensure_output_dir,
+        _get_pcb_file,
+        _get_sch_file,
+        _run_cli_variants,
+    )
+
+    state = _load_state()
+    _ensure_variant(state, variant)
+    get_config()
+    out_dir = _ensure_output_dir("variants")
+    manifest_path = out_dir / (output_name or f"{variant}_manufacturing.json")
+
+    is_default = variant == state.get("default_variant", "default")
+    variant_args = [f"--variant={variant}"] if not is_default else []
+    pcb_file = _get_pcb_file()
+    _get_sch_file()
+
+    artifacts: dict[str, str] = {}
+    errors: list[str] = []
+
+    # Gerber
+    gerber_dir = out_dir / f"{variant}_gerber"
+    gerber_dir.mkdir(exist_ok=True)
+    code, _, stderr = _run_cli_variants(
+        [
+            [
+                "pcb",
+                "export",
+                "gerber",
+                *variant_args,
+                "--output",
+                str(gerber_dir),
+                str(pcb_file),
+            ],
+            [
+                "pcb",
+                "export",
+                "gerber",
+                *variant_args,
+                "--input",
+                str(pcb_file),
+                "--output",
+                str(gerber_dir),
+            ],
+        ]
+    )
+    if code == 0:
+        artifacts["gerber"] = str(gerber_dir)
+    else:
+        errors.append(f"Gerber: {stderr or 'unknown error'}")
+
+    # Drill
+    drill_dir = out_dir / f"{variant}_drill"
+    drill_dir.mkdir(exist_ok=True)
+    code, _, stderr = _run_cli_variants(
+        [
+            [
+                "pcb",
+                "export",
+                "drill",
+                *variant_args,
+                "--output",
+                str(drill_dir),
+                str(pcb_file),
+            ],
+            [
+                "pcb",
+                "export",
+                "drill",
+                *variant_args,
+                "--input",
+                str(pcb_file),
+                "--output",
+                str(drill_dir),
+            ],
+        ]
+    )
+    if code == 0:
+        artifacts["drill"] = str(drill_dir)
+    else:
+        errors.append(f"Drill: {stderr or 'unknown error'}")
+
+    # BOM
+    bom_path = out_dir / f"{variant}_bom.csv"
+    rows = _bom_rows(state, variant)
+    _write_bom(bom_path, rows, "csv")
+    artifacts["bom"] = str(bom_path)
+
+    manifest = {
+        "variant": variant,
+        "artifacts": artifacts,
+        "errors": errors,
+        "component_count": len(rows),
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    lines = [f"Manufacturing package for variant '{variant}':"]
+    for key, val in artifacts.items():
+        lines.append(f"  {key}: {val}")
+    if errors:
+        lines.append("Errors:")
+        for err in errors:
+            lines.append(f"  ! {err}")
+    lines.append(f"Manifest: {manifest_path}")
+    return "\n".join(lines)
+
+
 def register(mcp: FastMCP) -> None:
     """Register design-variant tools."""
-
-    @mcp.tool()
-    @headless_compatible
-    def variant_list() -> str:
-        """List available design variants and basic component counts."""
-        state = _load_state()
-        payload = {
-            "default_variant": state.get("default_variant", "default"),
-            "active_variant": state.get("active_variant", "default"),
-            "variants": [
-                {
-                    "name": name,
-                    "component_count": len(_bom_rows(state, name)),
-                }
-                for name in _variant_names(state)
-            ],
-        }
-        return json.dumps(payload, indent=2)
-
-    @mcp.tool()
-    @headless_compatible
-    def variant_create(name: str, base_variant: str | None = None) -> str:
-        """Create a new design variant, optionally cloning an existing variant."""
-        if not name.strip():
-            raise ValueError("Variant name must not be empty.")
-        state = _load_state()
-        variants = state.setdefault("variants", {})
-        if name in variants:
-            raise ValueError(f"Variant '{name}' already exists.")
-        source = dict(_ensure_variant(state, base_variant)) if base_variant else {"overrides": {}}
-        variants[name] = {
-            "overrides": dict(source.get("overrides", {})),
-        }
-        path = _save_state(state)
-        return f"Created design variant '{name}' in {path}."
-
-    @mcp.tool()
-    @headless_compatible
-    def variant_set_active(name: str) -> str:
-        """Set the active design variant for the current project."""
-        state = _load_state()
-        _ensure_variant(state, name)
-        state["active_variant"] = name
-        path = _save_state(state)
-        return f"Active variant set to '{name}' in {path}."
-
-    @mcp.tool()
-    @headless_compatible
-    def variant_set_component_override(
-        variant: str,
-        reference: str,
-        enabled: bool,
-        value: str | None = None,
-        footprint: str | None = None,
-    ) -> str:
-        """Override component population, value, or footprint in a variant."""
-        state = _load_state()
-        _ensure_variant(state, variant)
-        if reference not in _base_components():
-            raise ValueError(f"Reference '{reference}' was not found in the active schematic.")
-        overrides = state["variants"][variant].setdefault("overrides", {})
-        payload: dict[str, Any] = {"enabled": enabled}
-        if value is not None:
-            payload["value"] = value
-        if footprint is not None:
-            payload["footprint"] = footprint
-        overrides[reference] = payload
-        _save_state(state)
-        return f"Updated variant override for '{reference}' in variant '{variant}'."
-
-    @mcp.tool()
-    @headless_compatible
-    def variant_diff_bom(variant_a: str, variant_b: str) -> str:
-        """Diff the effective BOM between two design variants."""
-        state = _load_state()
-        bom_a = {item["reference"]: item for item in _bom_rows(state, variant_a)}
-        bom_b = {item["reference"]: item for item in _bom_rows(state, variant_b)}
-        added = [bom_b[ref] for ref in sorted(set(bom_b) - set(bom_a))]
-        removed = [bom_a[ref] for ref in sorted(set(bom_a) - set(bom_b))]
-        changed = []
-        for reference in sorted(set(bom_a) & set(bom_b)):
-            if bom_a[reference] != bom_b[reference]:
-                changed.append(
-                    {
-                        "reference": reference,
-                        "from": bom_a[reference],
-                        "to": bom_b[reference],
-                    }
-                )
-        return json.dumps(
-            {
-                "variant_a": variant_a,
-                "variant_b": variant_b,
-                "added": added,
-                "removed": removed,
-                "changed": changed,
-            },
-            indent=2,
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def variant_export_bom(variant: str, format: str = "csv") -> str:
-        """Export a variant-specific BOM into the project output directory."""
-        fmt = format.casefold()
-        if fmt not in {"csv", "json"}:
-            raise ValueError("Only csv and json BOM export formats are supported.")
-        state = _load_state()
-        _ensure_variant(state, variant)
-        cfg = get_config()
-        out_dir = cfg.ensure_output_dir("variants")
-        out_file = out_dir / f"{variant}_bom.{fmt}"
-        rows = _bom_rows(state, variant)
-        _write_bom(out_file, rows, fmt)
-        return f"Variant BOM exported to {out_file} ({len(rows)} populated component(s))."
-
-    # ── FAZ 10.2 — Variant Extended ─────────────────────────────────────
-
-    @mcp.tool()
-    @headless_compatible
-    def variant_clone(name: str, new_name: str) -> str:
-        """Clone an existing design variant under a new name.
-
-        Parameters
-        ----------
-        name : str
-            Source variant name.
-        new_name : str
-            Target name for the cloned variant.
-        """
-        if not new_name.strip():
-            raise ValueError("New variant name must not be empty.")
-        state = _load_state()
-        source = dict(_ensure_variant(state, name))
-        variants = cast(dict[str, dict[str, Any]], state.setdefault("variants", {}))
-        if new_name in variants:
-            raise ValueError(f"Variant '{new_name}' already exists.")
-        variants[new_name] = {
-            "overrides": dict(source.get("overrides", {})),
-        }
-        path = _save_state(state)
-        return f"Cloned variant '{name}' -> '{new_name}' in {path}."
-
-    @mcp.tool()
-    @headless_compatible
-    def variant_delete(name: str) -> str:
-        """Delete a design variant.
-
-        Parameters
-        ----------
-        name : str
-            Variant name to delete. Cannot delete the ``default`` variant.
-        """
-        if name.strip() == "default":
-            raise ValueError("The 'default' variant cannot be deleted.")
-        state = _load_state()
-        variants = cast(dict[str, dict[str, Any]], state.setdefault("variants", {}))
-        if name not in variants:
-            raise ValueError(
-                f"Variant '{name}' not found. Existing variants: {', '.join(_variant_names(state))}"
-            )
-        del variants[name]
-        if state.get("active_variant") == name:
-            state["active_variant"] = state.get("default_variant", "default")
-        path = _save_state(state)
-        return (
-            f"Deleted variant '{name}' from {path}."
-            f" Active variant reset to '{state['active_variant']}'."
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def variant_get_component_status(variant: str, reference: str) -> str:
-        """Get the effective status of a single component in a variant.
-
-        Parameters
-        ----------
-        variant : str
-            Variant name.
-        reference : str
-            Component reference designator (e.g. ``R1``, ``C4``).
-        """
-        state = _load_state()
-        components = _render_variant_components(state, variant)
-        if reference not in components:
-            base_names = ", ".join(sorted(components)[:30])
-            raise ValueError(
-                f"Reference '{reference}' not found in schematic components. "
-                f"Sample references: {base_names}"
-            )
-        return json.dumps(components[reference], indent=2)
-
-    @mcp.tool()
-    @headless_compatible
-    def variant_export_schematic(variant: str, output_name: str | None = None) -> str:
-        """Export a variant-specific schematic PDF with overrides applied.
-
-        Parameters
-        ----------
-        variant : str
-            Variant name.
-        output_name : str | None
-            Output filename (defaults to ``<variant>_schematic.pdf``).
-        """
-        from .export_support import _ensure_output_dir, _get_sch_file, _run_cli_variants
-
-        state = _load_state()
-        _ensure_variant(state, variant)
-        sch_file = _get_sch_file()
-        out_dir = _ensure_output_dir("variants")
-        out_file = out_dir / (output_name or f"{variant}_schematic.pdf")
-
-        is_default = variant == state.get("default_variant", "default")
-        variant_args = [f"--variant={variant}"] if not is_default else []
-
-        code, _, stderr = _run_cli_variants(
-            [
-                [
-                    "sch",
-                    "export",
-                    "pdf",
-                    *variant_args,
-                    "--output",
-                    str(out_file),
-                    str(sch_file),
-                ],
-                [
-                    "sch",
-                    "export",
-                    "pdf",
-                    *variant_args,
-                    "--input",
-                    str(sch_file),
-                    "--output",
-                    str(out_file),
-                ],
-            ]
-        )
-        if code != 0:
-            return f"Schematic variant export failed: {stderr or 'unknown error'}"
-        return (
-            f"Variant schematic '{variant}' exported to {out_file} "
-            f"({out_file.stat().st_size} bytes)."
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def variant_export_manufacturing_package(
-        variant: str,
-        output_name: str | None = None,
-    ) -> str:
-        """Export a manufacturing package for a specific variant.
-
-        Combines Gerber, drill, BOM, and pick-and-place exports with
-        the variant's overrides applied.
-
-        Parameters
-        ----------
-        variant : str
-            Variant name.
-        output_name : str | None
-            Output filename for the package manifest (defaults to
-            ``<variant>_manufacturing.json``).
-        """
-        from .export_support import (
-            _ensure_output_dir,
-            _get_pcb_file,
-            _get_sch_file,
-            _run_cli_variants,
-        )
-
-        state = _load_state()
-        _ensure_variant(state, variant)
-        get_config()
-        out_dir = _ensure_output_dir("variants")
-        manifest_path = out_dir / (output_name or f"{variant}_manufacturing.json")
-
-        is_default = variant == state.get("default_variant", "default")
-        variant_args = [f"--variant={variant}"] if not is_default else []
-        pcb_file = _get_pcb_file()
-        _get_sch_file()
-
-        artifacts: dict[str, str] = {}
-        errors: list[str] = []
-
-        # Gerber
-        gerber_dir = out_dir / f"{variant}_gerber"
-        gerber_dir.mkdir(exist_ok=True)
-        code, _, stderr = _run_cli_variants(
-            [
-                [
-                    "pcb",
-                    "export",
-                    "gerber",
-                    *variant_args,
-                    "--output",
-                    str(gerber_dir),
-                    str(pcb_file),
-                ],
-                [
-                    "pcb",
-                    "export",
-                    "gerber",
-                    *variant_args,
-                    "--input",
-                    str(pcb_file),
-                    "--output",
-                    str(gerber_dir),
-                ],
-            ]
-        )
-        if code == 0:
-            artifacts["gerber"] = str(gerber_dir)
-        else:
-            errors.append(f"Gerber: {stderr or 'unknown error'}")
-
-        # Drill
-        drill_dir = out_dir / f"{variant}_drill"
-        drill_dir.mkdir(exist_ok=True)
-        code, _, stderr = _run_cli_variants(
-            [
-                [
-                    "pcb",
-                    "export",
-                    "drill",
-                    *variant_args,
-                    "--output",
-                    str(drill_dir),
-                    str(pcb_file),
-                ],
-                [
-                    "pcb",
-                    "export",
-                    "drill",
-                    *variant_args,
-                    "--input",
-                    str(pcb_file),
-                    "--output",
-                    str(drill_dir),
-                ],
-            ]
-        )
-        if code == 0:
-            artifacts["drill"] = str(drill_dir)
-        else:
-            errors.append(f"Drill: {stderr or 'unknown error'}")
-
-        # BOM
-        bom_path = out_dir / f"{variant}_bom.csv"
-        rows = _bom_rows(state, variant)
-        _write_bom(bom_path, rows, "csv")
-        artifacts["bom"] = str(bom_path)
-
-        manifest = {
-            "variant": variant,
-            "artifacts": artifacts,
-            "errors": errors,
-            "component_count": len(rows),
-        }
-        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        lines = [f"Manufacturing package for variant '{variant}':"]
-        for key, val in artifacts.items():
-            lines.append(f"  {key}: {val}")
-        if errors:
-            lines.append("Errors:")
-            for err in errors:
-                lines.append(f"  ! {err}")
-        lines.append(f"Manifest: {manifest_path}")
-        return "\n".join(lines)
+    mcp.tool()(variant_list)
+    mcp.tool()(variant_create)
+    mcp.tool()(variant_set_active)
+    mcp.tool()(variant_set_component_override)
+    mcp.tool()(variant_diff_bom)
+    mcp.tool()(variant_export_bom)
+    mcp.tool()(variant_clone)
+    mcp.tool()(variant_delete)
+    mcp.tool()(variant_get_component_status)
+    mcp.tool()(variant_export_schematic)
+    mcp.tool()(variant_export_manufacturing_package)

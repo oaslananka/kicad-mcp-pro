@@ -735,6 +735,30 @@ _CURRENCY_SYMBOLS = {"$": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "₹": 
 _PRICE_NUMBER_RE = re.compile(r"\d[\d.,'\s]*")
 
 
+def _expected_grouping_sep(prefix_currency: bool, suffix_currency: bool) -> str:
+    if prefix_currency:
+        return ","
+    if suffix_currency:
+        return "."
+    return ""
+
+
+def _detect_decimal_separator(number: str, prefix_currency: bool, suffix_currency: bool) -> str:
+    has_comma = "," in number
+    has_dot = "." in number
+    if has_comma and has_dot:
+        return "," if number.rfind(",") > number.rfind(".") else "."
+    if not has_comma and not has_dot:
+        return "."
+    sep = "," if has_comma else "."
+    integer, _, fraction = number.rpartition(sep)
+    grouping_sep = _expected_grouping_sep(prefix_currency, suffix_currency)
+    looks_grouped = len(fraction) == 3 and bool(integer.lstrip("0"))
+    if number.count(sep) > 1 or (sep == grouping_sep and looks_grouped):
+        return "." if sep == "," else ","
+    return sep
+
+
 def _parse_price_text(text: str) -> float | None:
     """Parse a localized price string such as ``"$1,234.56"`` or ``"1.234,56 €"``.
 
@@ -752,24 +776,7 @@ def _parse_price_text(text: str) -> float | None:
         return None
     prefix_currency = bool(raw[: match.start()].strip())
     suffix_currency = bool(raw[match.end() :].strip())
-    if "," in number and "." in number:
-        decimal = "," if number.rfind(",") > number.rfind(".") else "."
-    elif "," in number or "." in number:
-        sep = "," if "," in number else "."
-        integer, _, fraction = number.rpartition(sep)
-        if prefix_currency:
-            grouping_sep = ","
-        elif suffix_currency:
-            grouping_sep = "."
-        else:
-            grouping_sep = ""
-        looks_grouped = len(fraction) == 3 and integer.lstrip("0") != ""
-        if number.count(sep) > 1 or (sep == grouping_sep and looks_grouped):
-            decimal = "," if sep == "." else "."
-        else:
-            decimal = sep
-    else:
-        decimal = "."
+    decimal = _detect_decimal_separator(number, prefix_currency, suffix_currency)
     group = "." if decimal == "," else ","
     normalized = number.replace(group, "").replace(decimal, ".")
     try:

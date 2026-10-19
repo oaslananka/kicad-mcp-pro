@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -144,55 +145,67 @@ class DifferentialReport(_DifferentialModel):
         return self
 
 
+@dataclass(frozen=True)
+class DifferentialClassification:
+    """Inputs required to classify a differential comparison result."""
+
+    source_sha: str
+    lane: DifferentialLane
+    kicad_version: str
+    fixture_id: str
+    fixture_hash: str
+    operation: str
+    authority: str
+    comparison_method: str
+    native_result_hash: str | None
+    custom_result_hash: str | None
+    native_pass: bool | None = None
+    custom_pass: bool | None = None
+    authority_available: bool = True
+    infrastructure_valid: bool = True
+    reason: str | None = None
+
+
 def classify_differential_result(
-    *,
-    source_sha: str,
-    lane: DifferentialLane,
-    kicad_version: str,
-    fixture_id: str,
-    fixture_hash: str,
-    operation: str,
-    authority: str,
-    comparison_method: str,
-    native_result_hash: str | None,
-    custom_result_hash: str | None,
-    native_pass: bool | None = None,
-    custom_pass: bool | None = None,
-    authority_available: bool = True,
-    infrastructure_valid: bool = True,
-    reason: str | None = None,
+    classification: DifferentialClassification | None = None,
+    **kwargs: object,
 ) -> DifferentialResult:
     """Classify one differential without manufacturing native equivalence."""
-    if not infrastructure_valid:
+    params = classification or DifferentialClassification(**kwargs)  # type: ignore[arg-type]
+    if not params.infrastructure_valid:
         status: DifferentialStatus = "infrastructure-invalid"
-    elif not authority_available:
-        if native_result_hash is not None or native_pass is not None:
+    elif not params.authority_available:
+        if params.native_result_hash is not None or params.native_pass is not None:
             raise ValueError("Unavailable native authority cannot provide native evidence")
         status = "unavailable-authority"
     else:
-        if native_result_hash is None or custom_result_hash is None:
+        if params.native_result_hash is None or params.custom_result_hash is None:
             raise ValueError("Native and custom hashes are required when authority is available")
-        status = "match" if native_result_hash == custom_result_hash else "divergence"
+        status = "match" if params.native_result_hash == params.custom_result_hash else "divergence"
 
-    false_pass = status == "divergence" and native_pass is False and custom_pass is True
-    false_fail = status == "divergence" and native_pass is True and custom_pass is False
+    false_pass = (
+        status == "divergence" and params.native_pass is False and params.custom_pass is True
+    )
+    false_fail = (
+        status == "divergence" and params.native_pass is True and params.custom_pass is False
+    )
     return DifferentialResult(
-        source_sha=source_sha,
-        lane=lane,
-        kicad_version=kicad_version,
-        fixture_id=fixture_id,
-        fixture_hash=fixture_hash,
-        operation=operation,
-        authority=authority,
-        comparison_method=comparison_method,
+        source_sha=params.source_sha,
+        lane=params.lane,
+        kicad_version=params.kicad_version,
+        fixture_id=params.fixture_id,
+        fixture_hash=params.fixture_hash,
+        operation=params.operation,
+        authority=params.authority,
+        comparison_method=params.comparison_method,
         status=status,
-        native_result_hash=native_result_hash,
-        custom_result_hash=custom_result_hash,
-        native_pass=native_pass,
-        custom_pass=custom_pass,
+        native_result_hash=params.native_result_hash,
+        custom_result_hash=params.custom_result_hash,
+        native_pass=params.native_pass,
+        custom_pass=params.custom_pass,
         false_pass=false_pass,
         false_fail=false_fail,
-        reason=reason,
+        reason=params.reason,
     )
 
 
@@ -233,6 +246,7 @@ def render_differential_report_json(report: DifferentialReport) -> str:
 __all__ = [
     "DIFFERENTIAL_REPORT_SCHEMA_VERSION",
     "DIFFERENTIAL_RESULT_SCHEMA_VERSION",
+    "DifferentialClassification",
     "DifferentialLane",
     "DifferentialReport",
     "DifferentialResult",

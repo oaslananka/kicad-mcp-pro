@@ -416,9 +416,87 @@ def _minor_window_from_requires(python_requires: str, window: int) -> tuple[str,
     return tuple(f"{lower.major}.{lower.minor + offset}" for offset in range(window))
 
 
+def _validate_vscode_runtime_policy(
+    root: Path, matrix: dict[str, Any], snapshot: RuntimeSupportSnapshot
+) -> list[str]:
+    if not (root / "apps" / "vscode-extension").is_dir():
+        return []
+    try:
+        vscode_minimum = _parse_vscode_engine_range(snapshot.vscode_engines_range)
+    except ValueError as exc:
+        return [str(exc)]
+    if matrix["vscode"]["minimum"] != vscode_minimum.format():
+        return [
+            "VS Code minimum drift: "
+            f"compatibility.yaml={matrix['vscode']['minimum']!r}, "
+            f"engines.vscode={snapshot.vscode_engines_range!r}"
+        ]
+    return []
+
+
+def _validate_python_runtime_policy(
+    matrix: dict[str, Any], snapshot: RuntimeSupportSnapshot, policy: dict[str, Any]
+) -> list[str]:
+    errors: list[str] = []
+    try:
+        python_minimum = _parse_python_requires(snapshot.python_requires)
+    except ValueError as exc:
+        return [str(exc)]
+
+    if matrix["python"]["range"] != snapshot.python_requires:
+        errors.append(
+            "Python range drift: "
+            f"compatibility.yaml={matrix['python']['range']!r}, "
+            f"pyproject.toml={snapshot.python_requires!r}"
+        )
+    if snapshot.python_supported_minors:
+        if snapshot.python_supported_minors[0] != python_minimum.minor_key:
+            errors.append(
+                "Python supported window must start at requires-python lower bound: "
+                f"supported={snapshot.python_supported_minors!r}, "
+                f"requires-python={snapshot.python_requires!r}"
+            )
+        expected_size = int(policy.get("python", {}).get("supportedMinorWindow", 2))
+        if len(snapshot.python_supported_minors) != expected_size:
+            errors.append(
+                "Python supported window size drift: "
+                f"expected={expected_size}, actual={len(snapshot.python_supported_minors)}"
+            )
+    return errors
+
+
+def _validate_kicad_runtime_policy(snapshot: RuntimeSupportSnapshot) -> list[str]:
+    errors: list[str] = []
+    try:
+        _parse_kicad_range(snapshot.kicad_primary)
+        for supported in snapshot.kicad_supported_ranges:
+            _parse_kicad_range(supported)
+    except ValueError as exc:
+        errors.append(str(exc))
+    return errors
+
+
+def _validate_runtime_sources(policy: dict[str, Any]) -> list[str]:
+    required_sources = {
+        "vscodeStable": VSCODE_STABLE_RELEASES_URL,
+        "vscodeInsiders": VSCODE_INSIDER_RELEASES_URL,
+        "pythonReleases": PYTHON_RELEASES_URL,
+        "kicadDownloads": KICAD_LINUX_DOWNLOAD_URL,
+    }
+    sources = policy.get("sources")
+    if not isinstance(sources, dict):
+        return ["runtimePolicy.sources must be a mapping"]
+    errors: list[str] = []
+    for key, expected in required_sources.items():
+        if sources.get(key) != expected:
+            errors.append(
+                f"runtimePolicy.sources.{key} must be {expected!r}, got {sources.get(key)!r}"
+            )
+    return errors
+
+
 def validate_runtime_policy(root: Path = REPO_ROOT) -> list[str]:
     """Return local runtime policy metadata errors without remote release checks."""
-    errors: list[str] = []
     matrix = _read_yaml(root / COMPATIBILITY_FILENAME)
     extension_package = _extension_package(root)
     pyproject = _read_pyproject(root / PYPROJECT_FILENAME)
@@ -434,67 +512,11 @@ def validate_runtime_policy(root: Path = REPO_ROOT) -> list[str]:
         pyproject=pyproject,
     )
 
-    if (root / "apps" / "vscode-extension").is_dir():
-        try:
-            vscode_minimum = _parse_vscode_engine_range(snapshot.vscode_engines_range)
-        except ValueError as exc:
-            errors.append(str(exc))
-        else:
-            if matrix["vscode"]["minimum"] != vscode_minimum.format():
-                errors.append(
-                    "VS Code minimum drift: "
-                    f"compatibility.yaml={matrix['vscode']['minimum']!r}, "
-                    f"engines.vscode={snapshot.vscode_engines_range!r}"
-                )
-
-    try:
-        python_minimum = _parse_python_requires(snapshot.python_requires)
-    except ValueError as exc:
-        errors.append(str(exc))
-    else:
-        if matrix["python"]["range"] != snapshot.python_requires:
-            errors.append(
-                "Python range drift: "
-                f"compatibility.yaml={matrix['python']['range']!r}, "
-                f"pyproject.toml={snapshot.python_requires!r}"
-            )
-        if snapshot.python_supported_minors:
-            if snapshot.python_supported_minors[0] != python_minimum.minor_key:
-                errors.append(
-                    "Python supported window must start at requires-python lower bound: "
-                    f"supported={snapshot.python_supported_minors!r}, "
-                    f"requires-python={snapshot.python_requires!r}"
-                )
-            expected_size = int(policy.get("python", {}).get("supportedMinorWindow", 2))
-            if len(snapshot.python_supported_minors) != expected_size:
-                errors.append(
-                    "Python supported window size drift: "
-                    f"expected={expected_size}, actual={len(snapshot.python_supported_minors)}"
-                )
-
-    try:
-        _parse_kicad_range(snapshot.kicad_primary)
-        for supported in snapshot.kicad_supported_ranges:
-            _parse_kicad_range(supported)
-    except ValueError as exc:
-        errors.append(str(exc))
-
-    required_sources = {
-        "vscodeStable": VSCODE_STABLE_RELEASES_URL,
-        "vscodeInsiders": VSCODE_INSIDER_RELEASES_URL,
-        "pythonReleases": PYTHON_RELEASES_URL,
-        "kicadDownloads": KICAD_LINUX_DOWNLOAD_URL,
-    }
-    sources = policy.get("sources")
-    if not isinstance(sources, dict):
-        errors.append("runtimePolicy.sources must be a mapping")
-    else:
-        for key, expected in required_sources.items():
-            if sources.get(key) != expected:
-                errors.append(
-                    f"runtimePolicy.sources.{key} must be {expected!r}, got {sources.get(key)!r}"
-                )
-
+    errors: list[str] = []
+    errors.extend(_validate_vscode_runtime_policy(root, matrix, snapshot))
+    errors.extend(_validate_python_runtime_policy(matrix, snapshot, policy))
+    errors.extend(_validate_kicad_runtime_policy(snapshot))
+    errors.extend(_validate_runtime_sources(policy))
     return errors
 
 

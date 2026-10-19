@@ -10,7 +10,7 @@ import re
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -951,107 +951,96 @@ _FUNCTIONAL_ZONES: dict[str, tuple[int, int]] = {
 _ZONE_MAX_COLS = 3
 
 
+_PREFIX_CATEGORY_MAP: dict[str, str] = {
+    "J": "connector",
+    "CN": "connector",
+    "P": "connector",
+    "X": "connector",
+    "SV": "connector",
+    "TP": "testpoint",
+    "TEST": "testpoint",
+    "SW": "ui",
+    "BTN": "ui",
+    "BT": "ui",
+    "S": "ui",
+    "LED": "ui",
+    "D_LED": "ui",
+    "BZ": "ui",
+    "SP": "ui",
+    "LS": "ui",
+    "F": "protection",
+    "FU": "protection",
+    "FB": "filter",
+    "L": "filter",
+    "FL": "filter",
+    "C": "passive_cap",
+    "R": "passive_res",
+    "Q": "transistor",
+    "T": "transistor",
+    "D": "protection",
+}
+
+_MCU_KEYWORDS: tuple[str, ...] = ("ESP32", "STM32", "ATMEGA", "NRF5", "RP2", "PIC", "RF_MODULE")
+_SENSOR_KEYWORDS: tuple[str, ...] = (
+    "SENSOR",
+    "ADXL",
+    "BME",
+    "BMP",
+    "BMI",
+    "MPU",
+    "ICM",
+    "LIS",
+    "VEML",
+    "OPT",
+    "SPH",
+    "ICS",
+)
+_POWER_IC_LIB_KEYWORDS: tuple[str, ...] = (
+    "REGUL",
+    "LDO",
+    "BUCK",
+    "BOOST",
+    "AP2112",
+    "AMS",
+    "MIC55",
+    "AP3",
+    "TPS",
+    "LM",
+    "XC6",
+)
+_POWER_IC_VAL_KEYWORDS: tuple[str, ...] = (
+    "LDO",
+    "REGUL",
+    "AP2112",
+    "AMS1117",
+    "LM317",
+    "XC6",
+)
+_PROTECTION_LIB_KEYWORDS: tuple[str, ...] = ("PROTECTION", "USBLC", "PRTR", "ESD")
+
+
+def _classify_ic_symbol(lib_up: str, val_up: str) -> str:
+    if any(k in lib_up for k in _MCU_KEYWORDS):
+        return "mcu"
+    if any(k in lib_up for k in _SENSOR_KEYWORDS):
+        return "sensor"
+    if any(k in lib_up for k in _POWER_IC_LIB_KEYWORDS) or any(
+        k in val_up for k in _POWER_IC_VAL_KEYWORDS
+    ):
+        return "power_ic"
+    if any(k in lib_up for k in _PROTECTION_LIB_KEYWORDS):
+        return "protection"
+    return "ic"
+
+
 def _classify_symbol(ref: str, value: str, lib_id: str) -> str:
     """Return a functional category string for a symbol."""
     prefix = "".join(c for c in ref if c.isalpha()).upper().rstrip("0123456789")
-    lib_up = lib_id.upper()
-    val_up = value.upper()
-
-    # Connectors / headers
-    if prefix in ("J", "CN", "P", "X", "SV"):
-        return "connector"
-
-    # Test points
-    if prefix in ("TP", "TEST"):
-        return "testpoint"
-
-    # Switches / buttons
-    if prefix in ("SW", "BTN", "BT", "S"):
-        return "ui"
-
-    # LEDs (RGB, indicator)
-    if prefix in ("LED", "D_LED"):
-        return "ui"
-
-    # Buzzers
-    if prefix in ("BZ", "SP", "LS"):
-        return "ui"
-
-    # Fuses / polyfuse
-    if prefix in ("F", "FU"):
-        return "protection"
-
-    # Ferrite beads / inductors
-    if prefix in ("FB", "L", "FL"):
-        return "filter"
-
-    # Capacitors
-    if prefix == "C":
-        return "passive_cap"
-
-    # Resistors
-    if prefix == "R":
-        return "passive_res"
-
-    # Transistors
-    if prefix in ("Q", "T"):
-        return "transistor"
-
-    # Diodes — split by function
-    if prefix == "D":
-        if any(k in val_up for k in ("USBLC", "ESD", "TVS", "PRTR", "BAT", "SCHOTTKY")):
-            return "protection"
-        if any(k in val_up for k in ("1N4148", "LED")):
-            return "protection"
-        return "protection"
-
-    # ICs — further classify
+    category = _PREFIX_CATEGORY_MAP.get(prefix)
+    if category is not None:
+        return category
     if prefix == "U":
-        if any(
-            k in lib_up for k in ("ESP32", "STM32", "ATMEGA", "NRF5", "RP2", "PIC", "RF_MODULE")
-        ):
-            return "mcu"
-        if any(
-            k in lib_up
-            for k in (
-                "SENSOR",
-                "ADXL",
-                "BME",
-                "BMP",
-                "BMI",
-                "MPU",
-                "ICM",
-                "LIS",
-                "VEML",
-                "OPT",
-                "SPH",
-                "ICS",
-            )
-        ):
-            return "sensor"
-        if any(
-            k in lib_up
-            for k in (
-                "REGUL",
-                "LDO",
-                "BUCK",
-                "BOOST",
-                "AP2112",
-                "AMS",
-                "MIC55",
-                "AP3",
-                "TPS",
-                "LM",
-                "XC6",
-            )
-        ):
-            return "power_ic"
-        if any(k in val_up for k in ("LDO", "REGUL", "AP2112", "AMS1117", "LM317", "XC6")):
-            return "power_ic"
-        if any(k in lib_up for k in ("PROTECTION", "USBLC", "PRTR", "ESD")):
-            return "protection"
-        return "ic"
-
+        return _classify_ic_symbol(lib_id.upper(), value.upper())
     return "misc"
 
 
@@ -2965,9 +2954,8 @@ def _parse_label_block(block: str) -> dict[str, Any] | None:
     }
 
 
-def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
+def _extract_symbol_records(content: str) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-
     cursor = 0
     while cursor < len(content):
         if content.startswith(_SEXPR_SYMBOL_OPEN, cursor):
@@ -2979,7 +2967,11 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
                 cursor += length
                 continue
         cursor += 1
+    return records
 
+
+def _extract_label_records(content: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
     for match in re.finditer(r"\((?:label|global_label|hierarchical_label)\b", content):
         block, _ = _extract_block(content, match.start())
         parsed = _parse_label_block(block)
@@ -2994,7 +2986,11 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
                     "rotation": parsed["rotation"],
                 }
             )
+    return records
 
+
+def _extract_wire_and_bus_records(content: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
     for wire in _extract_wires(content):
         signature = _wire_signature(
             float(wire["x1"]),
@@ -3009,7 +3005,6 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
                 "end": list(signature[1]),
             }
         )
-
     for bus in _extract_buses(content):
         signature = _wire_signature(bus["x1"], bus["y1"], bus["x2"], bus["y2"])
         records.append(
@@ -3019,7 +3014,11 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
                 "end": list(signature[1]),
             }
         )
+    return records
 
+
+def _extract_point_records(content: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
     for kind in ("junction", "no_connect"):
         for match in re.finditer(
             rf"\({kind}\s+\(at\s+([-\d.]+)\s+([-\d.]+)\)",
@@ -3032,27 +3031,37 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
                     "y": float(match.group(2)),
                 }
             )
+    return records
 
+
+def _extract_document_records(content: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
     title_block = _find_title_block(content)
     if title_block is not None:
         records.append({"kind": "document", "name": "title_block", "value": title_block[1]})
     paper_match = re.search(r"\(paper\b[^\n]*\)", content)
     if paper_match is not None:
         records.append({"kind": "document", "name": "paper", "value": paper_match.group(0)})
+    return records
 
+
+def _object_record_base_key(record: Mapping[str, Any]) -> str:
+    kind = str(record["kind"])
+    if kind == "symbol":
+        return f"symbol:{record['reference']}:unit={record['unit']}"
+    if kind == "label":
+        return f"label:{record['label_type']}:{record['name']}"
+    if kind in {"wire", "bus"}:
+        return f"{kind}:{record['start']}->{record['end']}"
+    if kind in {"junction", "no_connect"}:
+        return f"{kind}:{record['x']},{record['y']}"
+    return f"document:{record['name']}"
+
+
+def _build_indexed_object_map(records: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     for record in records:
-        kind = str(record["kind"])
-        if kind == "symbol":
-            base = f"symbol:{record['reference']}:unit={record['unit']}"
-        elif kind == "label":
-            base = f"label:{record['label_type']}:{record['name']}"
-        elif kind in {"wire", "bus"}:
-            base = f"{kind}:{record['start']}->{record['end']}"
-        elif kind in {"junction", "no_connect"}:
-            base = f"{kind}:{record['x']},{record['y']}"
-        else:
-            base = f"document:{record['name']}"
+        base = _object_record_base_key(record)
         grouped.setdefault(base, []).append(record)
 
     result: dict[str, dict[str, Any]] = {}
@@ -3062,6 +3071,17 @@ def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
             object_id = base if len(ordered) == 1 else f"{base}:occurrence={index}"
             result[object_id] = item
     return result
+
+
+def _schematic_object_map(content: str) -> dict[str, dict[str, Any]]:
+    records = [
+        *_extract_symbol_records(content),
+        *_extract_label_records(content),
+        *_extract_wire_and_bus_records(content),
+        *_extract_point_records(content),
+        *_extract_document_records(content),
+    ]
+    return _build_indexed_object_map(records)
 
 
 def _schematic_object_diff(before: str, after: str) -> list[dict[str, Any]]:
@@ -4028,10 +4048,9 @@ def _detect_t_intersections(
     return sorted(junctions)
 
 
-def _deduplicate_segments(
-    segments: list[tuple[float, float, float, float]],
+def _unique_non_zero_segments(
+    segments: Sequence[tuple[float, float, float, float]],
 ) -> list[tuple[float, float, float, float]]:
-    """Remove duplicate wire segments and merge collinear touching runs."""
     unique: dict[
         tuple[tuple[float, float], tuple[float, float]],
         tuple[float, float, float, float],
@@ -4044,49 +4063,76 @@ def _deduplicate_segments(
         if key not in unique:
             (sx, sy), (ex, ey) = key
             unique[key] = (sx, sy, ex, ey)
+    return list(unique.values())
 
+
+def _partition_segments(
+    segments: Iterable[tuple[float, float, float, float]],
+) -> tuple[
+    dict[float, list[tuple[float, float]]],
+    dict[float, list[tuple[float, float]]],
+    list[tuple[float, float, float, float]],
+]:
     horizontal: dict[float, list[tuple[float, float]]] = {}
     vertical: dict[float, list[tuple[float, float]]] = {}
     diagonal: list[tuple[float, float, float, float]] = []
-    for x1, y1, x2, y2 in unique.values():
+    for x1, y1, x2, y2 in segments:
         if abs(y1 - y2) <= SNAP_TOLERANCE_MM:
             horizontal.setdefault(round(y1, 4), []).append((min(x1, x2), max(x1, x2)))
         elif abs(x1 - x2) <= SNAP_TOLERANCE_MM:
             vertical.setdefault(round(x1, 4), []).append((min(y1, y2), max(y1, y2)))
         else:
             diagonal.append((x1, y1, x2, y2))
+    return horizontal, vertical, diagonal
 
+
+def _merge_1d_intervals(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    merged: list[tuple[float, float]] = []
+    if not intervals:
+        return merged
+    sorted_intervals = sorted(intervals)
+    current_start, current_end = sorted_intervals[0]
+    for start, end in sorted_intervals[1:]:
+        if start <= current_end + SNAP_TOLERANCE_MM:
+            current_end = max(current_end, end)
+        else:
+            merged.append((current_start, current_end))
+            current_start, current_end = start, end
+    merged.append((current_start, current_end))
+    return merged
+
+
+def _merge_horizontal_segments(
+    horizontal: Mapping[float, list[tuple[float, float]]],
+) -> list[tuple[float, float, float, float]]:
     merged: list[tuple[float, float, float, float]] = []
     for y, intervals in sorted(horizontal.items()):
-        current_start: float | None = None
-        current_end: float | None = None
-        for start, end in sorted(intervals):
-            if current_start is None or current_end is None:
-                current_start, current_end = start, end
-            elif start <= current_end + SNAP_TOLERANCE_MM:
-                current_end = max(current_end, end)
-            else:
-                merged.append((current_start, y, current_end, y))
-                current_start, current_end = start, end
-        if current_start is not None and current_end is not None:
-            merged.append((current_start, y, current_end, y))
-
-    for x, intervals in sorted(vertical.items()):
-        current_start = None
-        current_end = None
-        for start, end in sorted(intervals):
-            if current_start is None or current_end is None:
-                current_start, current_end = start, end
-            elif start <= current_end + SNAP_TOLERANCE_MM:
-                current_end = max(current_end, end)
-            else:
-                merged.append((x, current_start, x, current_end))
-                current_start, current_end = start, end
-        if current_start is not None and current_end is not None:
-            merged.append((x, current_start, x, current_end))
-
-    merged.extend(diagonal)
+        for start, end in _merge_1d_intervals(intervals):
+            merged.append((start, y, end, y))
     return merged
+
+
+def _merge_vertical_segments(
+    vertical: Mapping[float, list[tuple[float, float]]],
+) -> list[tuple[float, float, float, float]]:
+    merged: list[tuple[float, float, float, float]] = []
+    for x, intervals in sorted(vertical.items()):
+        for start, end in _merge_1d_intervals(intervals):
+            merged.append((x, start, x, end))
+    return merged
+
+
+def _deduplicate_segments(
+    segments: list[tuple[float, float, float, float]],
+) -> list[tuple[float, float, float, float]]:
+    """Remove duplicate wire segments and merge collinear touching runs."""
+    unique = _unique_non_zero_segments(segments)
+    horizontal, vertical, diagonal = _partition_segments(unique)
+    return [
+        *_merge_horizontal_segments(horizontal),
+        *_merge_vertical_segments(vertical),
+        *diagonal,
+    ]
 
 
 def _existing_junction_points(content: str) -> set[tuple[float, float]]:
@@ -4522,6 +4568,82 @@ def _route_avoids_pin_hinge(
     return wanted_arrival is not None and travelled_arrival != wanted_arrival
 
 
+def _is_direct_route_clean(
+    direct: list[tuple[float, float, float, float]],
+    obstacles: list[BBox],
+    owners: set[int],
+    occupied: list[tuple[float, float, float, float]] | None,
+    start_normal: tuple[float, float] | None,
+    end_normal: tuple[float, float] | None,
+    boundary_edges: list[tuple[bool, float, float, float]],
+    clearance: float,
+) -> bool:
+    if not direct:
+        return False
+    if _route_hits_keepouts(direct, obstacles, owners):
+        return False
+    if _route_merges_with_occupied(direct, occupied):
+        return False
+    if _net_crossings(direct, occupied):
+        return False
+    if _route_avoids_pin_hinge(direct, start_normal, end_normal):
+        return False
+    return not any(hugs_boundary(segment, boundary_edges, clearance) for segment in direct)
+
+
+def _endpoint_escape_node(
+    point: tuple[float, float],
+    owner: BBox | None,
+    obstacles: list[BBox],
+    occupied: list[tuple[float, float, float, float]] | None,
+    grid: float,
+    snap_to_grid: bool,
+    normal: tuple[float, float] | None,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    landing = (
+        _escape_point(point, owner, obstacles, occupied, grid, snap_to_grid, normal)
+        if owner is not None
+        else point
+    )
+    return landing, _router_grid_node(landing, grid)
+
+
+def _handle_unrouted_fallback(
+    direct: list[tuple[float, float, float, float]],
+    obstacles: list[BBox],
+    owners: set[int],
+    occupied: list[tuple[float, float, float, float]] | None,
+) -> tuple[list[tuple[float, float, float, float]], str]:
+    if (
+        direct
+        and not _route_hits_keepouts(direct, obstacles, owners)
+        and not _route_merges_with_occupied(direct, occupied)
+    ):
+        return direct, "WARNING: net_crossing_unavoidable"
+    return direct, "WARNING: obstacle_bypass_failed"
+
+
+def _stitch_and_isolate_route(
+    start: tuple[float, float],
+    start_esc: tuple[float, float],
+    start_landing: tuple[float, float],
+    end: tuple[float, float],
+    end_esc: tuple[float, float],
+    end_landing: tuple[float, float],
+    routed: Sequence[tuple[float, float, float, float]],
+    direct: list[tuple[float, float, float, float]],
+    occupied: list[tuple[float, float, float, float]] | None,
+) -> tuple[list[tuple[float, float, float, float]], str | None]:
+    full_segments: list[tuple[float, float, float, float]] = []
+    full_segments.extend(_escape_stub(start, start_esc, start_landing))
+    full_segments.extend(routed)
+    full_segments.extend(_escape_stub(end_esc, end, end_landing))
+    segments = _deduplicate_segments(full_segments)
+    if _route_merges_with_occupied(segments, occupied):
+        return direct, "WARNING: net_isolation_failed"
+    return segments, None
+
+
 def _route_avoiding_obstacles(
     start: tuple[float, float],
     end: tuple[float, float],
@@ -4567,38 +4689,24 @@ def _route_avoiding_obstacles(
     end_owner = _owning_bbox(end, obstacles)
     owners = {id(box) for box in (start_owner, end_owner) if box is not None}
 
-    # The direct run is taken only when it is clean on every axis.  If it merely
-    # crosses another net, A* gets to trade length and bends against that
-    # crossing: a longer run with fewer crossings is the better schematic.
-    if (
-        direct
-        and not _route_hits_keepouts(direct, obstacles, owners)
-        and not _route_merges_with_occupied(direct, occupied)
-        and not _net_crossings(direct, occupied)
-        and not _route_avoids_pin_hinge(direct, start_normal, end_normal)
-        and not any(
-            hugs_boundary(segment, boundary_edges, SchematicRouter.BOUNDARY_CLEARANCE * grid)
-            for segment in direct
-        )
+    if _is_direct_route_clean(
+        direct,
+        obstacles,
+        owners,
+        occupied,
+        start_normal,
+        end_normal,
+        boundary_edges,
+        SchematicRouter.BOUNDARY_CLEARANCE * grid,
     ):
         return direct, None
 
-    # The escape landing is snapped onto the router's own lattice, because that
-    # is the only place a stitched stub can meet the run.  Off-grid here is an
-    # open wire, not a cosmetic difference -- see ``_escape_stub``.
-    start_landing = (
-        _escape_point(start, start_owner, obstacles, occupied, grid, snap_to_grid, start_normal)
-        if start_owner is not None
-        else start
+    start_landing, start_esc = _endpoint_escape_node(
+        start, start_owner, obstacles, occupied, grid, snap_to_grid, start_normal
     )
-    start_esc = _router_grid_node(start_landing, grid)
-
-    end_landing = (
-        _escape_point(end, end_owner, obstacles, occupied, grid, snap_to_grid, end_normal)
-        if end_owner is not None
-        else end
+    end_landing, end_esc = _endpoint_escape_node(
+        end, end_owner, obstacles, occupied, grid, snap_to_grid, end_normal
     )
-    end_esc = _router_grid_node(end_landing, grid)
 
     router = SchematicRouter(
         grid_mm=grid,
@@ -4616,36 +4724,25 @@ def _route_avoiding_obstacles(
         start_esc,
         end_esc,
         max_bends=MAX_ROUTE_BENDS,
-        # A wire leaves a pin along its outward normal and arrives against the far
-        # pin's, so the two directions belong together.  The wire reaches
-        # ``end_esc`` heading back towards its pin, hence the opposite step.
         orientation=PinOrientation(
             start=_grid_step(start_normal),
             goal=_opposite_step(_grid_step(end_normal)),
         ),
     )
     if routed is None:
-        if (
-            direct
-            and not _route_hits_keepouts(direct, obstacles, owners)
-            and not _route_merges_with_occupied(direct, occupied)
-        ):
-            # The detour search gave up, but the direct run is usable -- it just
-            # has to cross other nets.  Say so rather than reporting a keepout
-            # bypass that never happened.
-            return direct, "WARNING: net_crossing_unavoidable"
-        return direct, "WARNING: obstacle_bypass_failed"
+        return _handle_unrouted_fallback(direct, obstacles, owners, occupied)
 
-    full_segments: list[tuple[float, float, float, float]] = []
-    full_segments.extend(_escape_stub(start, start_esc, start_landing))
-    full_segments.extend(routed)
-    full_segments.extend(_escape_stub(end_esc, end, end_landing))
-    segments = _deduplicate_segments(full_segments)
-    if _route_merges_with_occupied(segments, occupied):
-        # An escape stub or a stitched end landed on another net's wire.  Report
-        # it loudly rather than hand back a route that shorts two nets.
-        return direct, "WARNING: net_isolation_failed"
-    return segments, None
+    return _stitch_and_isolate_route(
+        start,
+        start_esc,
+        start_landing,
+        end,
+        end_esc,
+        end_landing,
+        routed,
+        direct,
+        occupied,
+    )
 
 
 def _resolve_net_endpoint(
@@ -5111,6 +5208,85 @@ def _plan_netlist_pin_terminals(
     return terminal_wires, terminal_powers, terminal_labels, unresolved_nets, resolution_stats
 
 
+def _collect_power_and_label_points(
+    powers: Sequence[PowerSymbolInput],
+    labels: Sequence[AddLabelInput],
+    snap_to_grid: bool,
+) -> tuple[dict[str, tuple[float, float]], dict[str, tuple[float, float]]]:
+    power_points: dict[str, tuple[float, float]] = {}
+    for power in powers:
+        x, y = _snap_point(power.x_mm, power.y_mm, snap_to_grid and power.snap_to_grid)
+        power_points.setdefault(power.name.upper(), (x, y))
+
+    label_points: dict[str, tuple[float, float]] = {}
+    for label in labels:
+        x, y = _snap_point(label.x_mm, label.y_mm, snap_to_grid and label.snap_to_grid)
+        label_points.setdefault(label.name, (x, y))
+    return power_points, label_points
+
+
+def _resolve_net_points(
+    endpoints: Sequence[dict[str, Any]],
+    net_name: str,
+    symbol_points: dict[str, dict[str, tuple[float, float]]],
+    symbol_pin_aliases: dict[str, dict[str, tuple[float, float]]],
+    symbol_centers: dict[str, tuple[float, float]],
+    power_points: dict[str, tuple[float, float]],
+    label_points: dict[str, tuple[float, float]],
+    resolution_stats: dict[str, int],
+) -> tuple[list[tuple[float, float]], list[str], list[str]]:
+    resolved_points: list[tuple[float, float]] = []
+    unresolved_endpoints: list[str] = []
+    unresolved_details: list[str] = []
+    for endpoint in endpoints:
+        point, reason, resolution_kind = _resolve_net_endpoint(
+            endpoint,
+            net_name,
+            symbol_points,
+            symbol_pin_aliases,
+            symbol_centers,
+            power_points,
+            label_points,
+        )
+        if point is None:
+            endpoint_text = _describe_net_endpoint(endpoint)
+            unresolved_endpoints.append(endpoint_text)
+            unresolved_details.append(f"{endpoint_text}: {reason or 'unresolved endpoint'}")
+            resolution_stats["unresolved_endpoints"] += 1
+            continue
+        resolved_points.append(point)
+        resolution_stats["resolved_endpoints"] += 1
+        if resolution_kind == "pin_alias":
+            resolution_stats["pin_alias_resolutions"] += 1
+        elif resolution_kind == "symbol_center":
+            resolution_stats["symbol_center_resolutions"] += 1
+    return resolved_points, unresolved_endpoints, unresolved_details
+
+
+def _route_net_star_topology(
+    anchor: tuple[float, float],
+    targets: Sequence[tuple[float, float]],
+    snap_to_grid: bool,
+    seen_segments: set[tuple[tuple[float, float], tuple[float, float]]],
+    routed_segments: list[dict[str, float | bool]],
+) -> None:
+    for point in targets:
+        for segment in _manhattan_segments(anchor, point, snap_to_grid):
+            key = _segment_key(segment)
+            if key in seen_segments:
+                continue
+            seen_segments.add(key)
+            routed_segments.append(
+                {
+                    "x1_mm": segment[0],
+                    "y1_mm": segment[1],
+                    "x2_mm": segment[2],
+                    "y2_mm": segment[3],
+                    "snap_to_grid": False,
+                }
+            )
+
+
 def _plan_netlist_wires(
     symbols: list[AddSymbolInput],
     powers: list[PowerSymbolInput],
@@ -5121,16 +5297,7 @@ def _plan_netlist_wires(
     symbol_points, symbol_pin_aliases, symbol_centers, _ = _netlist_symbol_geometry(
         symbols, snap_to_grid
     )
-
-    power_points: dict[str, tuple[float, float]] = {}
-    for power in powers:
-        x, y = _snap_point(power.x_mm, power.y_mm, snap_to_grid and power.snap_to_grid)
-        power_points.setdefault(power.name.upper(), (x, y))
-
-    label_points: dict[str, tuple[float, float]] = {}
-    for label in labels:
-        x, y = _snap_point(label.x_mm, label.y_mm, snap_to_grid and label.snap_to_grid)
-        label_points.setdefault(label.name, (x, y))
+    power_points, label_points = _collect_power_and_label_points(powers, labels, snap_to_grid)
 
     routed_segments: list[dict[str, float | bool]] = []
     unresolved_nets: list[dict[str, Any]] = []
@@ -5144,31 +5311,16 @@ def _plan_netlist_wires(
     for net in nets:
         net_name = _net_name(net)
         endpoints = _endpoint_specs_for_routing(net, power_points, label_points)
-        resolved_points: list[tuple[float, float]] = []
-        unresolved_endpoints: list[str] = []
-        unresolved_details: list[str] = []
-        for endpoint in endpoints:
-            point, reason, resolution_kind = _resolve_net_endpoint(
-                endpoint,
-                net_name,
-                symbol_points,
-                symbol_pin_aliases,
-                symbol_centers,
-                power_points,
-                label_points,
-            )
-            if point is None:
-                endpoint_text = _describe_net_endpoint(endpoint)
-                unresolved_endpoints.append(endpoint_text)
-                unresolved_details.append(f"{endpoint_text}: {reason or 'unresolved endpoint'}")
-                resolution_stats["unresolved_endpoints"] += 1
-                continue
-            resolved_points.append(point)
-            resolution_stats["resolved_endpoints"] += 1
-            if resolution_kind == "pin_alias":
-                resolution_stats["pin_alias_resolutions"] += 1
-            elif resolution_kind == "symbol_center":
-                resolution_stats["symbol_center_resolutions"] += 1
+        resolved_points, unresolved_endpoints, unresolved_details = _resolve_net_points(
+            endpoints,
+            net_name,
+            symbol_points,
+            symbol_pin_aliases,
+            symbol_centers,
+            power_points,
+            label_points,
+            resolution_stats,
+        )
         if len(resolved_points) < 2:
             unresolved_nets.append(
                 {
@@ -5181,22 +5333,13 @@ def _plan_netlist_wires(
             )
             continue
 
-        anchor = resolved_points[0]
-        for point in resolved_points[1:]:
-            for segment in _manhattan_segments(anchor, point, snap_to_grid):
-                key = _segment_key(segment)
-                if key in seen_segments:
-                    continue
-                seen_segments.add(key)
-                routed_segments.append(
-                    {
-                        "x1_mm": segment[0],
-                        "y1_mm": segment[1],
-                        "x2_mm": segment[2],
-                        "y2_mm": segment[3],
-                        "snap_to_grid": False,
-                    }
-                )
+        _route_net_star_topology(
+            resolved_points[0],
+            resolved_points[1:],
+            snap_to_grid,
+            seen_segments,
+            routed_segments,
+        )
     return routed_segments, unresolved_nets, resolution_stats
 
 
@@ -5434,92 +5577,107 @@ def _is_pwr_flag(power_symbol: dict[str, Any]) -> bool:
     return "PWR_FLAG" in (symbol_name, str(power_symbol.get("value", "")))
 
 
-def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
-    data = parse_schematic_file(sch_file)
-    try:
-        content = sch_file.read_text(encoding="utf-8")
-    except OSError:
-        content = ""
-    no_connect_points = _extract_no_connects(content) if content else set()
-    symbol_mirrors = _placed_symbol_mirrors(content)
-    parent: dict[tuple[float, float], tuple[float, float]] = {}
+class _DisjointSet:
+    """Disjoint-set (union-find) data structure for 2D schematic points."""
 
-    def find(point: tuple[float, float]) -> tuple[float, float]:
-        root = parent.setdefault(point, point)
+    def __init__(self) -> None:
+        self.parent: dict[tuple[float, float], tuple[float, float]] = {}
+
+    def find(self, point: tuple[float, float]) -> tuple[float, float]:
+        root = self.parent.setdefault(point, point)
         if root != point:
-            root = find(root)
-            parent[point] = root
+            root = self.find(root)
+            self.parent[point] = root
         return root
 
-    def union(left: tuple[float, float], right: tuple[float, float]) -> None:
-        left_root = find(left)
-        right_root = find(right)
+    def union(self, left: tuple[float, float], right: tuple[float, float]) -> None:
+        left_root = self.find(left)
+        right_root = self.find(right)
         if left_root != right_root:
-            parent[right_root] = left_root
+            self.parent[right_root] = left_root
 
-    for wire in data["wires"]:
+    def attach(
+        self, point: tuple[float, float], wires: list[dict[str, Any]]
+    ) -> tuple[float, float]:
+        key = _point_key(*point)
+        if key in self.parent:
+            return self.find(key)
+        for wire in wires:
+            if _point_on_segment(key, wire):
+                anchor = _point_key(wire["x1"], wire["y1"])
+                return self.find(anchor)
+        return self.find(key)
+
+
+def _union_wires(wires: list[dict[str, Any]], dset: _DisjointSet) -> None:
+    for wire in wires:
         start = _point_key(wire["x1"], wire["y1"])
         end = _point_key(wire["x2"], wire["y2"])
-        union(start, end)
+        dset.union(start, end)
 
     # A wire endpoint landing on another wire's interior (a T-intersection)
     # is the same geometry KiCad auto-junctions into one net, but the pass
     # above only merges each wire's own two endpoints. Union those crossing
     # wires together too, or they stay as separate trees.
-    for wire in data["wires"]:
+    for wire in wires:
         for endpoint in (
             _point_key(wire["x1"], wire["y1"]),
             _point_key(wire["x2"], wire["y2"]),
         ):
-            for other in data["wires"]:
+            for other in wires:
                 if other is wire:
                     continue
                 if _point_on_segment(endpoint, other):
                     anchor = _point_key(other["x1"], other["y1"])
-                    union(endpoint, anchor)
+                    dset.union(endpoint, anchor)
 
-    def attach(point: tuple[float, float]) -> tuple[float, float]:
-        key = _point_key(*point)
-        if key in parent:
-            return find(key)
-        for wire in data["wires"]:
-            if _point_on_segment(key, wire):
-                anchor = _point_key(wire["x1"], wire["y1"])
-                return find(anchor)
-        return find(key)
 
-    groups: dict[tuple[float, float], dict[str, Any]] = {}
+def _ensure_connectivity_group(
+    point: tuple[float, float],
+    wires: list[dict[str, Any]],
+    dset: _DisjointSet,
+    groups: dict[tuple[float, float], dict[str, Any]],
+) -> dict[str, Any]:
+    root = dset.attach(point, wires)
+    return groups.setdefault(
+        root,
+        {
+            "points": set(),
+            "labels": set(),
+            "power": set(),
+            "pins": [],
+            "no_connect": False,
+        },
+    )
 
-    def ensure_group(point: tuple[float, float]) -> dict[str, Any]:
-        root = attach(point)
-        return groups.setdefault(
-            root,
-            {
-                "points": set(),
-                "labels": set(),
-                "power": set(),
-                "pins": [],
-                "no_connect": False,
-            },
-        )
 
-    for wire in data["wires"]:
-        group = ensure_group(_point_key(wire["x1"], wire["y1"]))
+def _populate_connectivity_elements(
+    data: dict[str, Any],
+    no_connect_points: set[tuple[float, float]],
+    symbol_mirrors: dict[tuple[str, int, float, float], str],
+    dset: _DisjointSet,
+    groups: dict[tuple[float, float], dict[str, Any]],
+) -> None:
+    wires = data["wires"]
+    for wire in wires:
+        group = _ensure_connectivity_group(_point_key(wire["x1"], wire["y1"]), wires, dset, groups)
         group["points"].add(_point_key(wire["x1"], wire["y1"]))
         group["points"].add(_point_key(wire["x2"], wire["y2"]))
 
     for point in no_connect_points:
-        group = ensure_group(point)
+        group = _ensure_connectivity_group(point, wires, dset, groups)
         group["points"].add(point)
         group["no_connect"] = True
 
     for label in data["labels"]:
-        group = ensure_group((float(label["x"]), float(label["y"])))
+        pt = (float(label["x"]), float(label["y"]))
+        group = _ensure_connectivity_group(pt, wires, dset, groups)
         group["points"].add(_point_key(label["x"], label["y"]))
         group["labels"].add(str(label["name"]))
 
     for power_symbol in data["power_symbols"]:
-        group = ensure_group((float(power_symbol["x"]), float(power_symbol["y"])))
+        pt = (float(power_symbol["x"]), float(power_symbol["y"]))
+        group = _ensure_connectivity_group(pt, wires, dset, groups)
         group["points"].add(_point_key(power_symbol["x"], power_symbol["y"]))
         if not _is_pwr_flag(power_symbol):
             group["power"].add(str(power_symbol["value"]))
@@ -5537,7 +5695,7 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
         )
         pin_meta = get_pin_metadata(library, symbol_name, int(symbol["unit"]))
         for pin_number, point in pin_positions.items():
-            group = ensure_group(point)
+            group = _ensure_connectivity_group(point, wires, dset, groups)
             group["points"].add(_point_key(*point))
             meta = pin_meta.get(pin_number, {})
             group["pins"].append(
@@ -5550,18 +5708,25 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
                 }
             )
 
+
+def _collapse_and_normalize_groups(
+    groups: dict[tuple[float, float], dict[str, Any]],
+    dset: _DisjointSet,
+    no_connect_points: set[tuple[float, float]],
+) -> list[dict[str, Any]]:
+    # Merge groups that share net/power names
     name_roots: dict[str, tuple[float, float]] = {}
     for root, group in groups.items():
         for name in {*group["labels"], *group["power"]}:
             if name in name_roots:
-                union(name_roots[name], root)
+                dset.union(name_roots[name], root)
             else:
                 name_roots[name] = root
 
-    collapsed_groups: dict[tuple[float, float], dict[str, Any]] = {}
+    collapsed: dict[tuple[float, float], dict[str, Any]] = {}
     for root, group in groups.items():
-        collapsed_root = find(root)
-        merged = collapsed_groups.setdefault(
+        collapsed_root = dset.find(root)
+        merged = collapsed.setdefault(
             collapsed_root,
             {
                 "points": set(),
@@ -5577,11 +5742,11 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
         merged["pins"].extend(group["pins"])
         merged["no_connect"] = bool(merged["no_connect"] or group.get("no_connect"))
 
-    normalized_groups: list[dict[str, Any]] = []
-    for group in collapsed_groups.values():
+    normalized: list[dict[str, Any]] = []
+    for group in collapsed.values():
         names = sorted({*group["labels"], *group["power"]})
         points = sorted(group["points"])
-        normalized_groups.append(
+        normalized.append(
             {
                 "names": names,
                 "points": points,
@@ -5595,13 +5760,30 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
             }
         )
     return sorted(
-        normalized_groups,
+        normalized,
         key=lambda group: (
             group["names"][0] if group["names"] else "~unnamed",
             len(group["pins"]),
             len(group["points"]),
         ),
     )
+
+
+def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
+    data = parse_schematic_file(sch_file)
+    try:
+        content = sch_file.read_text(encoding="utf-8")
+    except OSError:
+        content = ""
+    no_connect_points = _extract_no_connects(content) if content else set()
+    symbol_mirrors = _placed_symbol_mirrors(content)
+
+    dset = _DisjointSet()
+    _union_wires(data["wires"], dset)
+
+    groups: dict[tuple[float, float], dict[str, Any]] = {}
+    _populate_connectivity_elements(data, no_connect_points, symbol_mirrors, dset, groups)
+    return _collapse_and_normalize_groups(groups, dset, no_connect_points)
 
 
 def build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:

@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..project.design_spec import (
+    DesignIntentParams,
     ProjectImportDesignSpecPayload,
     ProjectSpecPayload,
     ProjectSpecValidationPayload,
@@ -19,27 +20,8 @@ from .metadata import headless_compatible
 class ProjectDesignSpecServiceProtocol(Protocol):
     def set_design_intent(
         self,
-        connector_refs: list[str] | None = None,
-        critical_nets: list[str] | None = None,
-        power_tree_refs: list[str] | None = None,
-        analog_refs: list[str] | None = None,
-        digital_refs: list[str] | None = None,
-        sensor_cluster_refs: list[str] | None = None,
-        required_sheets: list[str] | None = None,
-        optional_sheets: list[str] | None = None,
-        manufacturer: str | None = None,
-        manufacturer_tier: str | None = None,
-        functional_spacing_mm: float | None = None,
-        thermal_hotspots: list[str] | None = None,
-        critical_frequencies_mhz: list[float] | None = None,
-        decoupling_pairs: list[dict[str, Any]] | None = None,
-        rf_keepout_regions: list[dict[str, Any]] | None = None,
-        power_rails: list[dict[str, Any]] | None = None,
-        interfaces: list[dict[str, Any]] | None = None,
-        mechanical: dict[str, Any] | None = None,
-        compliance: list[dict[str, Any]] | None = None,
-        cost: dict[str, Any] | None = None,
-        thermal: dict[str, Any] | None = None,
+        intent: DesignIntentParams | None = None,
+        **kwargs: object,
     ) -> str: ...
 
     def import_design_spec(
@@ -75,7 +57,7 @@ def register(mcp: FastMCP, deps: ProjectDesignSpecDependencies) -> None:
 
     @mcp.tool()
     @headless_compatible
-    def project_set_design_intent(
+    def project_set_design_intent(  # NOSONAR - FastMCP schema requires flat parameters
         connector_refs: list[str] | None = None,
         critical_nets: list[str] | None = None,
         power_tree_refs: list[str] | None = None,

@@ -13,7 +13,7 @@ import yaml
 from ..path_safety import resolve_repo_or_temp
 from .live_adapters import MODEL_OUTPUT_FAILURE_DETAILS
 from .live_runner import validate_sanitized_evidence
-from .tool_selection import evaluate_thresholds, load_cases, load_thresholds
+from .tool_selection import EvalThresholds, evaluate_thresholds, load_cases, load_thresholds
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -79,6 +79,62 @@ def _append(classifications: dict[str, list[str]], key: str, message: str) -> No
         classifications[key].append(message)
 
 
+def _populate_failure_categories_and_keys(
+    safe: dict[str, object],
+    score: dict[str, object],
+    case_id: str,
+    read_only_ids: frozenset[str],
+) -> None:
+    categories = cast(list[str], safe["categories"])
+    forbidden = score.get("forbidden_called", [])
+    safety = score.get("safety_violations", [])
+    if (case_id in read_only_ids and safety) or forbidden:
+        categories.append("safety")
+    if score.get("passed") is False:
+        categories.append("quality")
+    for key in (
+        "called",
+        "missing_expected",
+        "forbidden_called",
+        "safety_violations",
+        "unnecessary_called",
+        "expected_behavior",
+        "actual_behavior",
+    ):
+        if key in score:
+            safe[key] = score[key]
+
+
+def _build_safe_case_failure(
+    config_id: str,
+    execution: object,
+    read_only_ids: frozenset[str],
+) -> dict[str, object] | None:
+    if not isinstance(execution, dict):
+        return None
+    score = execution.get("score")
+    failure_kind = execution.get("failure_kind")
+    if failure_kind is None and (not isinstance(score, dict) or score.get("passed") is True):
+        return None
+    case_id = str(execution.get("case_id", ""))
+    safe: dict[str, object] = {
+        "configuration_id": config_id,
+        "case_id": case_id,
+        "run_index": execution.get("run_index"),
+        "failure_kind": failure_kind,
+        "categories": [],
+    }
+    failure_detail = execution.get("failure_detail")
+    if failure_kind == "model_output_invalid" and failure_detail in MODEL_OUTPUT_FAILURE_DETAILS:
+        safe["failure_detail"] = failure_detail
+    categories = cast(list[str], safe["categories"])
+    if failure_kind is not None:
+        categories.append("infrastructure")
+    if isinstance(score, dict):
+        _populate_failure_categories_and_keys(safe, score, case_id, read_only_ids)
+    return safe
+
+
 def _safe_case_failures(
     config_id: str,
     executions: object,
@@ -88,48 +144,9 @@ def _safe_case_failures(
         return []
     failures: list[dict[str, object]] = []
     for execution in executions:
-        if not isinstance(execution, dict):
-            continue
-        score = execution.get("score")
-        failure_kind = execution.get("failure_kind")
-        if failure_kind is None and (not isinstance(score, dict) or score.get("passed") is True):
-            continue
-        case_id = str(execution.get("case_id", ""))
-        safe: dict[str, object] = {
-            "configuration_id": config_id,
-            "case_id": case_id,
-            "run_index": execution.get("run_index"),
-            "failure_kind": failure_kind,
-            "categories": [],
-        }
-        failure_detail = execution.get("failure_detail")
-        if (
-            failure_kind == "model_output_invalid"
-            and failure_detail in MODEL_OUTPUT_FAILURE_DETAILS
-        ):
-            safe["failure_detail"] = failure_detail
-        categories = cast(list[str], safe["categories"])
-        if failure_kind is not None:
-            categories.append("infrastructure")
-        if isinstance(score, dict):
-            forbidden = score.get("forbidden_called", [])
-            safety = score.get("safety_violations", [])
-            if (case_id in read_only_ids and safety) or forbidden:
-                categories.append("safety")
-            if score.get("passed") is False:
-                categories.append("quality")
-            for key in (
-                "called",
-                "missing_expected",
-                "forbidden_called",
-                "safety_violations",
-                "unnecessary_called",
-                "expected_behavior",
-                "actual_behavior",
-            ):
-                if key in score:
-                    safe[key] = score[key]
-        failures.append(safe)
+        safe = _build_safe_case_failure(config_id, execution, read_only_ids)
+        if safe is not None:
+            failures.append(safe)
     return failures
 
 
@@ -138,6 +155,226 @@ def _number(summary: Mapping[str, Any], key: str) -> float | None:
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
     return float(value)
+
+
+def _load_evidence_mapping(
+    evidence_paths: Sequence[str | Path],
+    classifications: dict[str, list[str]],
+) -> dict[str, dict[str, Any]]:
+    evidence_by_id: dict[str, dict[str, Any]] = {}
+    for raw_path in evidence_paths:
+        path = resolve_repo_or_temp(raw_path, repo_root=_REPO_ROOT)
+        try:
+            evidence = _mapping(json.loads(path.read_text(encoding="utf-8")), "Evidence")
+            validate_sanitized_evidence(evidence)
+            if evidence.get("schema_version") != 1:
+                raise ValueError("unsupported evidence schema")
+            configuration = _mapping(evidence.get("configuration"), "Evidence configuration")
+            config_id = configuration.get("id")
+            if not isinstance(config_id, str) or not config_id:
+                raise ValueError("evidence configuration id is missing")
+            if config_id in evidence_by_id:
+                raise ValueError(f"duplicate evidence for {config_id}")
+            evidence_by_id[config_id] = evidence
+        except (OSError, TypeError, ValueError) as exc:
+            _append(
+                classifications,
+                "infrastructure_failures",
+                f"invalid evidence artifact {path.name}: {type(exc).__name__}",
+            )
+    return evidence_by_id
+
+
+def _build_observed_entry(
+    configuration: Mapping[str, Any],
+    summary: Mapping[str, Any],
+    repeats: object,
+    config_evidence: Mapping[str, Any],
+) -> dict[str, object]:
+    return {
+        "host": configuration.get("host"),
+        "model": configuration.get("model"),
+        "repeats": repeats,
+        "complete": config_evidence.get("complete", True) is True,
+        "pass_rate": _number(summary, "pass_rate"),
+        "mean_recall": _number(summary, "mean_recall"),
+        "unnecessary_call_rate": _number(summary, "unnecessary_call_rate"),
+        "instability_rate": _number(summary, "instability_rate"),
+        "p95_latency_ms": _number(summary, "p95_latency_ms"),
+        "mean_tokens": _number(summary, "mean_tokens"),
+        "token_coverage": _number(summary, "token_coverage"),
+        "cost_coverage": _number(summary, "cost_coverage"),
+        "adapter_failures": summary.get("adapter_failures"),
+        "selection_failures": summary.get("selection_failures"),
+        "safety_violations": summary.get("safety_violations"),
+        "forbidden_violations": summary.get("forbidden_violations"),
+    }
+
+
+def _check_adapter_observation_failures(
+    config_id: str,
+    summary: Mapping[str, Any],
+    thresholds: EvalThresholds,
+    classifications: dict[str, list[str]],
+) -> None:
+    adapter_failures = int(summary.get("adapter_failures", 0) or 0)
+    planned = summary.get("planned_observations")
+    completed = summary.get("completed_observations")
+    adapter_tolerance = (
+        thresholds.max_adapter_failures if thresholds.max_adapter_failures is not None else 0
+    )
+    deficit_matches_adapter_failures = (
+        isinstance(planned, int)
+        and isinstance(completed, int)
+        and not isinstance(planned, bool)
+        and not isinstance(completed, bool)
+        and planned - completed == adapter_failures
+    )
+    within_adapter_tolerance = (
+        adapter_failures <= adapter_tolerance and deficit_matches_adapter_failures
+    )
+    if adapter_failures and not within_adapter_tolerance:
+        _append(
+            classifications,
+            "infrastructure_failures",
+            f"{config_id}: adapter_failures={adapter_failures}",
+        )
+    if planned != completed and not within_adapter_tolerance:
+        _append(
+            classifications,
+            "infrastructure_failures",
+            f"{config_id}: completed_observations={completed!r} planned={planned!r}",
+        )
+    if int(summary.get("selection_failures", 0) or 0):
+        _append(
+            classifications,
+            "quality_failures",
+            f"{config_id}: selection failures present",
+        )
+
+
+def _check_threshold_and_safety_failures(
+    config_id: str,
+    summary: Mapping[str, Any],
+    thresholds: EvalThresholds,
+    classifications: dict[str, list[str]],
+) -> None:
+    threshold_outcome = evaluate_thresholds(summary, thresholds)
+    for failure in threshold_outcome.failures:
+        if failure.startswith(("safety_violations", "forbidden_violations")):
+            _append(classifications, "safety_failures", f"{config_id}: {failure}")
+        elif "=None" in failure and failure.startswith(_TELEMETRY_METRIC_PREFIXES):
+            _append(classifications, "telemetry_unavailable", f"{config_id}: {failure}")
+        else:
+            _append(classifications, "quality_failures", f"{config_id}: {failure}")
+
+    safety_count = int(summary.get("safety_violations", 0) or 0)
+    forbidden_count = int(summary.get("forbidden_violations", 0) or 0)
+    if safety_count or forbidden_count:
+        _append(
+            classifications,
+            "safety_failures",
+            f"{config_id}: safety={safety_count} forbidden={forbidden_count}",
+        )
+
+
+def _check_adapter_and_threshold_failures(
+    config_id: str,
+    summary: Mapping[str, Any],
+    thresholds: EvalThresholds,
+    classifications: dict[str, list[str]],
+) -> None:
+    _check_adapter_observation_failures(config_id, summary, thresholds, classifications)
+    _check_threshold_and_safety_failures(config_id, summary, thresholds, classifications)
+
+
+def _evaluate_metric_regression(
+    config_id: str,
+    metric: str,
+    approved_value: object,
+    current_value: float | None,
+    variance: float,
+    classifications: dict[str, list[str]],
+) -> None:
+    if isinstance(approved_value, bool) or not isinstance(approved_value, int | float):
+        _append(
+            classifications,
+            "quality_failures",
+            f"{config_id}: approved {metric} unavailable",
+        )
+        return
+    if current_value is None:
+        category = (
+            "telemetry_unavailable"
+            if metric in {"p95_latency_ms", "mean_tokens"}
+            else "quality_failures"
+        )
+        _append(classifications, category, f"{config_id}: {metric} unavailable")
+        return
+    if metric in _PROVIDER_TELEMETRY_METRICS:
+        return
+    if metric in _HIGHER_IS_BETTER and current_value < float(approved_value) - variance:
+        _append(classifications, "quality_failures", f"{config_id}: {metric} regressed")
+    if metric in _LOWER_IS_BETTER and current_value > float(approved_value) + variance:
+        _append(classifications, "quality_failures", f"{config_id}: {metric} regressed")
+
+
+def _compare_config_with_baseline(
+    config_id: str,
+    configuration: Mapping[str, Any],
+    summary: Mapping[str, Any],
+    baseline_record: object,
+    thresholds: EvalThresholds,
+    classifications: dict[str, list[str]],
+) -> dict[str, object] | None:
+    if not isinstance(baseline_record, dict):
+        _append(classifications, "quality_failures", f"{config_id}: approved baseline missing")
+        return None
+    for identity_key in ("host", "model"):
+        if configuration.get(identity_key) != baseline_record.get(identity_key):
+            _append(
+                classifications,
+                "quality_failures",
+                f"{config_id}: {identity_key} differs from approved baseline",
+            )
+
+    raw_metrics = baseline_record.get("metrics")
+    if not isinstance(raw_metrics, dict):
+        _append(
+            classifications,
+            "quality_failures",
+            f"{config_id}: approved metrics unavailable",
+        )
+        return None
+    metrics = cast(dict[str, Any], raw_metrics)
+    comparison: dict[str, object] = {}
+    for metric in sorted(_HIGHER_IS_BETTER | _LOWER_IS_BETTER):
+        approved_value = metrics.get(metric)
+        current_value = _number(summary, metric)
+        variance = thresholds.permitted_variance.get(metric, 0.0)
+        comparison[metric] = {
+            "current": current_value,
+            "approved": approved_value,
+            "permitted_variance": variance,
+        }
+        _evaluate_metric_regression(
+            config_id,
+            metric,
+            approved_value,
+            current_value,
+            variance,
+            classifications,
+        )
+
+    token_required = baseline_record.get("token_metrics_required") is True
+    token_coverage = _number(summary, "token_coverage")
+    if token_required and (token_coverage is None or token_coverage < 1.0):
+        _append(
+            classifications,
+            "telemetry_unavailable",
+            f"{config_id}: token metrics unavailable",
+        )
+    return comparison
 
 
 def evaluate_release_gate(
@@ -161,28 +398,7 @@ def evaluate_release_gate(
     thresholds = load_thresholds(thresholds_path)
     cases = load_cases(cases_path)
     read_only_ids = frozenset(case.id for case in cases if case.safety == "read_only")
-    evidence_by_id: dict[str, dict[str, Any]] = {}
-
-    for raw_path in evidence_paths:
-        path = resolve_repo_or_temp(raw_path, repo_root=_REPO_ROOT)
-        try:
-            evidence = _mapping(json.loads(path.read_text(encoding="utf-8")), "Evidence")
-            validate_sanitized_evidence(evidence)
-            if evidence.get("schema_version") != 1:
-                raise ValueError("unsupported evidence schema")
-            configuration = _mapping(evidence.get("configuration"), "Evidence configuration")
-            config_id = configuration.get("id")
-            if not isinstance(config_id, str) or not config_id:
-                raise ValueError("evidence configuration id is missing")
-            if config_id in evidence_by_id:
-                raise ValueError(f"duplicate evidence for {config_id}")
-            evidence_by_id[config_id] = evidence
-        except (OSError, TypeError, ValueError) as exc:
-            _append(
-                classifications,
-                "infrastructure_failures",
-                f"invalid evidence artifact {path.name}: {type(exc).__name__}",
-            )
+    evidence_by_id = _load_evidence_mapping(evidence_paths, classifications)
 
     revisions: set[str] = set()
     comparisons: dict[str, object] = {}
@@ -223,24 +439,9 @@ def evaluate_release_gate(
                 f"{config_id}: repeats below {minimum_repeats}",
             )
 
-        observed[config_id] = {
-            "host": configuration.get("host"),
-            "model": configuration.get("model"),
-            "repeats": repeats,
-            "complete": config_evidence.get("complete", True) is True,
-            "pass_rate": _number(summary, "pass_rate"),
-            "mean_recall": _number(summary, "mean_recall"),
-            "unnecessary_call_rate": _number(summary, "unnecessary_call_rate"),
-            "instability_rate": _number(summary, "instability_rate"),
-            "p95_latency_ms": _number(summary, "p95_latency_ms"),
-            "mean_tokens": _number(summary, "mean_tokens"),
-            "token_coverage": _number(summary, "token_coverage"),
-            "cost_coverage": _number(summary, "cost_coverage"),
-            "adapter_failures": summary.get("adapter_failures"),
-            "selection_failures": summary.get("selection_failures"),
-            "safety_violations": summary.get("safety_violations"),
-            "forbidden_violations": summary.get("forbidden_violations"),
-        }
+        observed[config_id] = _build_observed_entry(
+            configuration, summary, repeats, config_evidence
+        )
 
         if config_evidence.get("complete", True) is not True:
             _append(
@@ -249,64 +450,7 @@ def evaluate_release_gate(
                 f"{config_id}: checkpoint incomplete",
             )
 
-        adapter_failures = int(summary.get("adapter_failures", 0) or 0)
-        planned = summary.get("planned_observations")
-        completed = summary.get("completed_observations")
-        adapter_tolerance = (
-            thresholds.max_adapter_failures if thresholds.max_adapter_failures is not None else 0
-        )
-        deficit_matches_adapter_failures = (
-            isinstance(planned, int)
-            and isinstance(completed, int)
-            and not isinstance(planned, bool)
-            and not isinstance(completed, bool)
-            and planned - completed == adapter_failures
-        )
-        # A handful of individually retried-out observations against a shared hosted
-        # endpoint (a timeout or truncated response) is provider noise, not a release
-        # regression, so a count within the configured tolerance is recorded on the
-        # observed configuration (below) but does not block the gate. Anything beyond
-        # that tolerance, or a deficit that adapter_failures does not fully explain,
-        # still blocks.
-        within_adapter_tolerance = (
-            adapter_failures <= adapter_tolerance and deficit_matches_adapter_failures
-        )
-        if adapter_failures and not within_adapter_tolerance:
-            _append(
-                classifications,
-                "infrastructure_failures",
-                f"{config_id}: adapter_failures={adapter_failures}",
-            )
-        if planned != completed and not within_adapter_tolerance:
-            _append(
-                classifications,
-                "infrastructure_failures",
-                f"{config_id}: completed_observations={completed!r} planned={planned!r}",
-            )
-        if int(summary.get("selection_failures", 0) or 0):
-            _append(
-                classifications,
-                "quality_failures",
-                f"{config_id}: selection failures present",
-            )
-
-        threshold_outcome = evaluate_thresholds(summary, thresholds)
-        for failure in threshold_outcome.failures:
-            if failure.startswith(("safety_violations", "forbidden_violations")):
-                _append(classifications, "safety_failures", f"{config_id}: {failure}")
-            elif "=None" in failure and failure.startswith(_TELEMETRY_METRIC_PREFIXES):
-                _append(classifications, "telemetry_unavailable", f"{config_id}: {failure}")
-            else:
-                _append(classifications, "quality_failures", f"{config_id}: {failure}")
-
-        safety_count = int(summary.get("safety_violations", 0) or 0)
-        forbidden_count = int(summary.get("forbidden_violations", 0) or 0)
-        if safety_count or forbidden_count:
-            _append(
-                classifications,
-                "safety_failures",
-                f"{config_id}: safety={safety_count} forbidden={forbidden_count}",
-            )
+        _check_adapter_and_threshold_failures(config_id, summary, thresholds, classifications)
 
         per_case.extend(
             _safe_case_failures(config_id, config_evidence.get("executions"), read_only_ids)
@@ -314,71 +458,17 @@ def evaluate_release_gate(
 
         if not baseline_approved:
             continue
-        baseline_record = baselines.get(config_id)
-        if not isinstance(baseline_record, dict):
-            _append(classifications, "quality_failures", f"{config_id}: approved baseline missing")
-            continue
-        for identity_key in ("host", "model"):
-            if configuration.get(identity_key) != baseline_record.get(identity_key):
-                _append(
-                    classifications,
-                    "quality_failures",
-                    f"{config_id}: {identity_key} differs from approved baseline",
-                )
 
-        raw_metrics = baseline_record.get("metrics")
-        if not isinstance(raw_metrics, dict):
-            _append(
-                classifications,
-                "quality_failures",
-                f"{config_id}: approved metrics unavailable",
-            )
-            continue
-        metrics = cast(dict[str, Any], raw_metrics)
-        comparison: dict[str, object] = {}
-        for metric in sorted(_HIGHER_IS_BETTER | _LOWER_IS_BETTER):
-            approved_value = metrics.get(metric)
-            current_value = _number(summary, metric)
-            variance = thresholds.permitted_variance.get(metric, 0.0)
-            comparison[metric] = {
-                "current": current_value,
-                "approved": approved_value,
-                "permitted_variance": variance,
-            }
-            if isinstance(approved_value, bool) or not isinstance(approved_value, int | float):
-                _append(
-                    classifications,
-                    "quality_failures",
-                    f"{config_id}: approved {metric} unavailable",
-                )
-                continue
-            if current_value is None:
-                category = (
-                    "telemetry_unavailable"
-                    if metric in {"p95_latency_ms", "mean_tokens"}
-                    else "quality_failures"
-                )
-                _append(classifications, category, f"{config_id}: {metric} unavailable")
-                continue
-            if metric in _PROVIDER_TELEMETRY_METRICS:
-                # Shared hosted-endpoint latency/token drift is recorded in comparisons but is
-                # not a behavioral-quality regression. Absolute telemetry ceilings, when
-                # configured in thresholds.yaml, are still enforced above by evaluate_thresholds.
-                continue
-            if metric in _HIGHER_IS_BETTER and current_value < float(approved_value) - variance:
-                _append(classifications, "quality_failures", f"{config_id}: {metric} regressed")
-            if metric in _LOWER_IS_BETTER and current_value > float(approved_value) + variance:
-                _append(classifications, "quality_failures", f"{config_id}: {metric} regressed")
-        comparisons[config_id] = comparison
-
-        token_required = baseline_record.get("token_metrics_required") is True
-        token_coverage = _number(summary, "token_coverage")
-        if token_required and (token_coverage is None or token_coverage < 1.0):
-            _append(
-                classifications,
-                "telemetry_unavailable",
-                f"{config_id}: token metrics unavailable",
-            )
+        comparison = _compare_config_with_baseline(
+            config_id,
+            configuration,
+            summary,
+            baselines.get(config_id),
+            thresholds,
+            classifications,
+        )
+        if comparison is not None:
+            comparisons[config_id] = comparison
 
     unexpected = sorted(set(evidence_by_id) - set(required))
     for config_id in unexpected:

@@ -214,6 +214,108 @@ class SchematicRenderingService:
         }
         return self._image(diff_file, metadata2)
 
+    def _check_preview_debounce(
+        self,
+        *,
+        state: dict[str, Any],
+        state_name: str,
+        signature: dict[str, Any],
+        last_signature: dict[str, Any] | None,
+        pending_signature: dict[str, Any] | None,
+        changed_files: list[str],
+        target: SchematicTargetLike,
+        files: list[Path],
+        now_ns: int,
+        debounce_ns: int,
+    ) -> SchematicRenderingResponse | None:
+        if signature == last_signature:
+            state["pending_signature"] = None
+            state["pending_observed_at_ns"] = None
+            state["updated_at_ns"] = now_ns
+            self.preview_state_write(state_name, state)
+            payload = self.preview_payload(
+                status="no_change",
+                target=target,
+                files=files,
+                signature=signature,
+                message="No schematic file changes detected since the last live-preview refresh.",
+            )
+            return self._json(payload)
+
+        if pending_signature != signature:
+            state["pending_signature"] = signature
+            state["pending_observed_at_ns"] = now_ns
+            state["updated_at_ns"] = now_ns
+            self.preview_state_write(state_name, state)
+            payload = self.preview_payload(
+                status="pending_debounce",
+                target=target,
+                files=files,
+                signature=signature,
+                changed_files=changed_files,
+                message="Change detected; waiting for debounce window before preview refresh.",
+            )
+            return self._json(payload)
+
+        observed_at = int(state.get("pending_observed_at_ns") or now_ns)
+        if now_ns - observed_at < debounce_ns:
+            payload = self.preview_payload(
+                status="pending_debounce",
+                target=target,
+                files=files,
+                signature=signature,
+                changed_files=changed_files,
+                message="Change is still inside the debounce window.",
+            )
+            return self._json(payload)
+
+        return None
+
+    def _render_preview_artifact(
+        self,
+        target_path: Path,
+        files: list[Path],
+        changed_files: list[str],
+        output_file: str | None,
+        dpi: int,
+        crop_to_content: bool,
+        include_title_block: bool,
+    ) -> tuple[dict[str, Any], Path | None]:
+        render_path = self.preview_render_path(target_path, files, changed_files)
+        data = self.parse_schematic(render_path)
+        if not self.has_renderable_content(data):
+            return {
+                "status": "empty_sheet",
+                "sheet_path": str(render_path),
+                "message": "No schematic content was available to render.",
+            }, None
+
+        try:
+            default_name = f"live-preview-{render_path.stem}.png"
+            output_path = self.safe_output_path(output_file, default_name)
+            svg_file, image_metadata = self.render_png_artifact(
+                render_path,
+                output_path,
+                dpi,
+                crop_to_content,
+                include_title_block,
+            )
+            return {
+                "status": "ok",
+                "sheet_path": str(render_path),
+                "png_path": str(output_path),
+                "svg_path": str(svg_file),
+                "dpi": dpi,
+                "include_title_block": include_title_block,
+                **image_metadata,
+            }, output_path
+        except (OSError, RuntimeError, ValueError) as exc:
+            return {
+                "status": "failed",
+                "sheet_path": str(render_path),
+                "message": str(exc),
+            }, None
+
     def live_preview(
         self,
         sheet: str | None = None,
@@ -270,89 +372,35 @@ class SchematicRenderingService:
         pending_signature = cast(dict[str, Any] | None, state.get("pending_signature"))
         changed_files = self.preview_changed_files(last_signature, signature)
 
-        if not force and signature == last_signature:
-            state["pending_signature"] = None
-            state["pending_observed_at_ns"] = None
-            state["updated_at_ns"] = now_ns
-            self.preview_state_write(state_name, state)
-            payload = self.preview_payload(
-                status="no_change",
+        if not force:
+            debounce_response = self._check_preview_debounce(
+                state=state,
+                state_name=state_name,
+                signature=signature,
+                last_signature=last_signature,
+                pending_signature=pending_signature,
+                changed_files=changed_files,
                 target=target,
                 files=files,
-                signature=signature,
-                message="No schematic file changes detected since the last live-preview refresh.",
+                now_ns=now_ns,
+                debounce_ns=debounce_ns,
             )
-            return self._json(payload)
-
-        if not force:
-            if pending_signature != signature:
-                state["pending_signature"] = signature
-                state["pending_observed_at_ns"] = now_ns
-                state["updated_at_ns"] = now_ns
-                self.preview_state_write(state_name, state)
-                payload = self.preview_payload(
-                    status="pending_debounce",
-                    target=target,
-                    files=files,
-                    signature=signature,
-                    changed_files=changed_files,
-                    message="Change detected; waiting for debounce window before preview refresh.",
-                )
-                return self._json(payload)
-            observed_at = int(state.get("pending_observed_at_ns") or now_ns)
-            if now_ns - observed_at < debounce_ns:
-                payload = self.preview_payload(
-                    status="pending_debounce",
-                    target=target,
-                    files=files,
-                    signature=signature,
-                    changed_files=changed_files,
-                    message="Change is still inside the debounce window.",
-                )
-                return self._json(payload)
+            if debounce_response is not None:
+                return debounce_response
 
         reload_result = self.reload_schematic() if reload else None
         render_metadata: dict[str, Any] | None = None
         output_path: Path | None = None
         if render:
-            render_path = self.preview_render_path(
+            render_metadata, output_path = self._render_preview_artifact(
                 target.path,
                 files,
                 changed_files,
+                output_file,
+                dpi,
+                crop_to_content,
+                include_title_block,
             )
-            data = self.parse_schematic(render_path)
-            if self.has_renderable_content(data):
-                try:
-                    default_name = f"live-preview-{render_path.stem}.png"
-                    output_path = self.safe_output_path(output_file, default_name)
-                    svg_file, image_metadata = self.render_png_artifact(
-                        render_path,
-                        output_path,
-                        dpi,
-                        crop_to_content,
-                        include_title_block,
-                    )
-                    render_metadata = {
-                        "status": "ok",
-                        "sheet_path": str(render_path),
-                        "png_path": str(output_path),
-                        "svg_path": str(svg_file),
-                        "dpi": dpi,
-                        "include_title_block": include_title_block,
-                        **image_metadata,
-                    }
-                except (OSError, RuntimeError, ValueError) as exc:
-                    render_metadata = {
-                        "status": "failed",
-                        "sheet_path": str(render_path),
-                        "message": str(exc),
-                    }
-            else:
-                render_metadata = {
-                    "status": "empty_sheet",
-                    "sheet_path": str(render_path),
-                    "message": "No schematic content was available to render.",
-                }
 
         state["last_signature"] = signature
         state["pending_signature"] = None
@@ -363,11 +411,11 @@ class SchematicRenderingService:
         state["updated_at_ns"] = now_ns
         self.preview_state_write(state_name, state)
 
-        status = "forced_rendered" if force else "changed"
-        if render_metadata and render_metadata.get("status") == "ok":
-            status = "forced_rendered" if force else "changed_rendered"
-        elif reload_result:
-            status = "forced_reloaded" if force else "changed_reloaded"
+        status = _determine_preview_status(
+            force=force,
+            render_metadata=render_metadata,
+            reload_result=reload_result,
+        )
         payload = self.preview_payload(
             status=status,
             target=target,
@@ -391,3 +439,16 @@ class SchematicRenderingService:
         ):
             return self._image(output_path, payload)
         return self._json(payload)
+
+
+def _determine_preview_status(
+    *,
+    force: bool,
+    render_metadata: dict[str, Any] | None,
+    reload_result: object | None,
+) -> str:
+    if render_metadata and render_metadata.get("status") == "ok":
+        return "forced_rendered" if force else "changed_rendered"
+    if reload_result:
+        return "forced_reloaded" if force else "changed_reloaded"
+    return "forced_rendered" if force else "changed"

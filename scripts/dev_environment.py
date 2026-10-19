@@ -264,7 +264,7 @@ def safe_extract_tar(archive: Path, destination: Path) -> None:
     """Extract a native tool archive without allowing unsafe members or paths."""
 
     destination.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(archive, "r:*") as bundle:
+    with tarfile.open(archive, "r:*") as bundle:  # nosemgrep: tarfile-extractall-traversal
         bundle.extractall(destination, filter=_safe_tar_filter)  # noqa: S202
 
 

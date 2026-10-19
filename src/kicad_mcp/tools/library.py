@@ -349,86 +349,111 @@ def _symbol_instance_references(block: str, fallback_reference: str) -> list[str
     return references or [fallback_reference]
 
 
+def _init_component_rows(
+    symbols: list[dict[str, Any]], rows_by_reference: dict[str, dict[str, str]]
+) -> None:
+    """Initialize component row templates from parsed schematic symbols."""
+    for symbol in symbols:
+        reference = str(symbol["reference"])
+        if reference.startswith("#"):
+            continue
+        rows_by_reference.setdefault(
+            reference,
+            {
+                "reference": reference,
+                "value": str(symbol["value"]),
+                "footprint": str(symbol.get("footprint", "")),
+                "lib_id": str(symbol.get("lib_id", "")),
+                "lcsc": "",
+                "mpn": "",
+                "manufacturer": "",
+                "populate": "",
+            },
+        )
+
+
+def _resolve_populate_property(block: str, existing_populate: str = "") -> str:
+    """Determine the populate status for a symbol block."""
+    populate_value = _symbol_property(block, "Populate")
+    if populate_value:
+        return populate_value
+    native_dnp = re.search(r"\(dnp\s+yes\)", block) is not None
+    dnp = _symbol_property(block, "DNP") or _symbol_property(block, "Do Not Populate")
+    if native_dnp or dnp.lower() in {"1", "true", "yes", "y", "dnp"}:
+        return "DNP"
+    exclude_from_bom = _symbol_property(block, "Exclude from BOM")
+    if exclude_from_bom.lower() in {"1", "true", "yes", "y"}:
+        return "DNP"
+    return existing_populate or "Populate"
+
+
+def _update_component_row_properties(
+    row: dict[str, str],
+    block: str,
+    lcsc_code: str,
+    mpn: str,
+    manufacturer: str,
+) -> None:
+    if lcsc_code:
+        row["lcsc"] = normalize_lcsc_code(lcsc_code)
+    if mpn:
+        row["mpn"] = mpn
+    if manufacturer:
+        row["manufacturer"] = manufacturer
+    row["populate"] = _resolve_populate_property(block, row.get("populate", ""))
+
+
+def _apply_symbol_block(block: str, rows_by_reference: dict[str, dict[str, str]]) -> None:
+    """Extract properties from a symbol S-expression block and update rows."""
+    if '(lib_id "' not in block:
+        return
+    reference = _symbol_property(block, "Reference")
+    if not reference or reference.startswith("#"):
+        return
+    template = rows_by_reference.get(reference)
+    if template is None:
+        return
+
+    instance_references = _symbol_instance_references(block, reference)
+    instance_rows: list[dict[str, str]] = []
+    for inst_ref in instance_references:
+        if inst_ref.startswith("#"):
+            continue
+        instance_rows.append(
+            rows_by_reference.setdefault(inst_ref, {**template, "reference": inst_ref})
+        )
+
+    lcsc_code = _symbol_property(block, "LCSC") or _symbol_property(block, "LCSC Part")
+    mpn = _symbol_property(block, "MPN") or _symbol_property(block, "Manufacturer Part Number")
+    manufacturer = _symbol_property(block, "Manufacturer") or _symbol_property(block, "MFR")
+
+    for row in instance_rows:
+        _update_component_row_properties(row, block, lcsc_code, mpn, manufacturer)
+
+
+def _parse_schematic_symbols_and_blocks(
+    sch_file: Path, rows_by_reference: dict[str, dict[str, str]]
+) -> None:
+    """Parse symbols and S-expression blocks for a single schematic file."""
+    parsed = get_schematic_backend().parse_schematic_file(sch_file)
+    raw_content = sch_file.read_text(encoding="utf-8", errors="ignore")
+    _init_component_rows(parsed["symbols"], rows_by_reference)
+
+    search_start = 0
+    while True:
+        block_start = raw_content.find("(symbol", search_start)
+        if block_start < 0:
+            break
+        block, consumed = _extract_block(raw_content, block_start)
+        search_start = block_start + max(consumed, 1)
+        _apply_symbol_block(block, rows_by_reference)
+
+
 def _schematic_component_rows() -> list[dict[str, str]]:
     _ = _active_schematic_file()
     rows_by_reference: dict[str, dict[str, str]] = {}
-
     for sch_file in project_schematic_files():
-        parsed = get_schematic_backend().parse_schematic_file(sch_file)
-        raw_content = sch_file.read_text(encoding="utf-8", errors="ignore")
-
-        for symbol in parsed["symbols"]:
-            reference = str(symbol["reference"])
-            if reference.startswith("#"):
-                continue
-            rows_by_reference.setdefault(
-                reference,
-                {
-                    "reference": reference,
-                    "value": str(symbol["value"]),
-                    "footprint": str(symbol.get("footprint", "")),
-                    "lib_id": str(symbol.get("lib_id", "")),
-                    "lcsc": "",
-                    "mpn": "",
-                    "manufacturer": "",
-                    "populate": "",
-                },
-            )
-
-        search_start = 0
-        while True:
-            block_start = raw_content.find("(symbol", search_start)
-            if block_start < 0:
-                break
-            block, consumed = _extract_block(raw_content, block_start)
-            search_start = block_start + max(consumed, 1)
-            if '(lib_id "' not in block:
-                continue
-
-            reference = _symbol_property(block, "Reference")
-            if not reference or reference.startswith("#"):
-                continue
-            template = rows_by_reference.get(reference)
-            if template is None:
-                continue
-
-            instance_references = _symbol_instance_references(block, reference)
-            instance_rows: list[dict[str, str]] = []
-            for instance_reference in instance_references:
-                if instance_reference.startswith("#"):
-                    continue
-                row = rows_by_reference.setdefault(
-                    instance_reference,
-                    {**template, "reference": instance_reference},
-                )
-                instance_rows.append(row)
-
-            lcsc_code = _symbol_property(block, "LCSC") or _symbol_property(block, "LCSC Part")
-            mpn = _symbol_property(block, "MPN") or _symbol_property(
-                block,
-                "Manufacturer Part Number",
-            )
-            manufacturer = _symbol_property(block, "Manufacturer") or _symbol_property(block, "MFR")
-            dnp = _symbol_property(block, "DNP") or _symbol_property(block, "Do Not Populate")
-            native_dnp = re.search(r"\(dnp\s+yes\)", block) is not None
-            exclude_from_bom = _symbol_property(block, "Exclude from BOM")
-            populate_value = _symbol_property(block, "Populate")
-
-            for row in instance_rows:
-                if lcsc_code:
-                    row["lcsc"] = normalize_lcsc_code(lcsc_code)
-                if mpn:
-                    row["mpn"] = mpn
-                if manufacturer:
-                    row["manufacturer"] = manufacturer
-                if populate_value:
-                    row["populate"] = populate_value
-                elif native_dnp or dnp.lower() in {"1", "true", "yes", "y", "dnp"}:
-                    row["populate"] = "DNP"
-                elif exclude_from_bom.lower() in {"1", "true", "yes", "y"}:
-                    row["populate"] = "DNP"
-                else:
-                    row["populate"] = row.get("populate", "Populate") or "Populate"
+        _parse_schematic_symbols_and_blocks(sch_file, rows_by_reference)
     return list(rows_by_reference.values())
 
 

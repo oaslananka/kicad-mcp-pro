@@ -206,6 +206,7 @@ def validate_callable_imports(
                 continue
             try:
                 module_path, func_name = action.callable_import.rsplit(":", 1)
+                # nosemgrep: non-literal-import
                 module = importlib.import_module(f"kicad_mcp.{module_path}")
                 candidate = getattr(module, func_name, None)
             except Exception as exc:

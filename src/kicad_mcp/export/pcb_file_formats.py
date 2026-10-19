@@ -51,6 +51,100 @@ FORMAT_SPECS: dict[str, PcbFileFormatSpec] = {
 
 
 @dataclass(frozen=True)
+class PcbExportOptions:
+    """Configurable options for single-file PCB export formats."""
+
+    force: bool = False
+    no_unspecified: bool = False
+    no_dnp: bool = False
+    variant_name: str | None = None
+    grid_origin: bool = False
+    drill_origin: bool = False
+    subst_models: bool = False
+    board_only: bool = False
+    cut_vias_in_body: bool = False
+    no_board_body: bool = False
+    no_components: bool = False
+    component_filter: str = ""
+    include_tracks: bool = False
+    include_pads: bool = False
+    include_zones: bool = False
+    include_inner_copper: bool = False
+    include_silkscreen: bool = False
+    include_soldermask: bool = False
+    fuse_shapes: bool = False
+    fill_all_vias: bool = False
+    no_extra_pad_thickness: bool = False
+    min_distance: str = ""
+    net_filter: str = ""
+    user_origin: str = ""
+    units: str = ""
+    models_dir: str = ""
+    models_relative: bool = False
+
+
+def _build_export_command(
+    spec: PcbFileFormatSpec,
+    opts: PcbExportOptions,
+    out_file: Path,
+    pcb_file: Path,
+    active_variant_args: ActiveVariantArgs,
+) -> list[str]:
+    cmd = ["pcb", "export", spec.cli_command]
+    if opts.force:
+        cmd.append("--force")
+    if opts.no_unspecified:
+        cmd.append("--no-unspecified")
+    if opts.no_dnp:
+        cmd.append("--no-dnp")
+
+    cmd.extend(active_variant_args(opts.variant_name))
+
+    flag_options = (
+        (opts.grid_origin, "--grid-origin"),
+        (opts.drill_origin, "--drill-origin"),
+        (opts.subst_models, "--subst-models"),
+        (opts.board_only, "--board-only"),
+        (opts.cut_vias_in_body, "--cut-vias-in-body"),
+        (opts.no_board_body, "--no-board-body"),
+        (opts.no_components, "--no-components"),
+    )
+    cmd.extend(flag for enabled, flag in flag_options if enabled)
+    if opts.component_filter:
+        cmd.extend(["--component-filter", opts.component_filter])
+
+    include_options = (
+        (opts.include_tracks, "--include-tracks"),
+        (opts.include_pads, "--include-pads"),
+        (opts.include_zones, "--include-zones"),
+        (opts.include_inner_copper, "--include-inner-copper"),
+        (opts.include_silkscreen, "--include-silkscreen"),
+        (opts.include_soldermask, "--include-soldermask"),
+        (opts.fuse_shapes, "--fuse-shapes"),
+        (opts.fill_all_vias, "--fill-all-vias"),
+        (opts.no_extra_pad_thickness, "--no-extra-pad-thickness"),
+    )
+    cmd.extend(flag for enabled, flag in include_options if enabled)
+
+    val_options = (
+        ("--min-distance", opts.min_distance),
+        ("--net-filter", opts.net_filter),
+        ("--user-origin", opts.user_origin),
+        ("--units", opts.units or spec.default_units),
+        ("--models-dir", opts.models_dir),
+    )
+    for opt_flag, val in val_options:
+        if val:
+            cmd.extend([opt_flag, val])
+
+    if opts.models_relative:
+        cmd.append("--models-relative")
+
+    cmd.extend(["--output", str(out_file), str(pcb_file)])
+    return cmd
+
+
+@dataclass(frozen=True)
 class ExportPcbFileFormatsService:
     """Export single-file PCB formats through injected project and CLI seams."""
 
@@ -65,35 +159,11 @@ class ExportPcbFileFormatsService:
         format_name: str,
         output_path: str = "",
         *,
-        force: bool = False,
-        no_unspecified: bool = False,
-        no_dnp: bool = False,
-        variant_name: str | None = None,
-        grid_origin: bool = False,
-        drill_origin: bool = False,
-        subst_models: bool = False,
-        board_only: bool = False,
-        cut_vias_in_body: bool = False,
-        no_board_body: bool = False,
-        no_components: bool = False,
-        component_filter: str = "",
-        include_tracks: bool = False,
-        include_pads: bool = False,
-        include_zones: bool = False,
-        include_inner_copper: bool = False,
-        include_silkscreen: bool = False,
-        include_soldermask: bool = False,
-        fuse_shapes: bool = False,
-        fill_all_vias: bool = False,
-        no_extra_pad_thickness: bool = False,
-        min_distance: str = "",
-        net_filter: str = "",
-        user_origin: str = "",
-        units: str = "",
-        models_dir: str = "",
-        models_relative: bool = False,
+        options: PcbExportOptions | None = None,
+        **kwargs: object,
     ) -> str:
         """Export one supported format while preserving the legacy CLI option order."""
+        opts = options or PcbExportOptions(**kwargs)  # type: ignore[arg-type]
         spec = FORMAT_SPECS[format_name]
         pcb_file = self.get_pcb_file()
         if not self.is_supported(format_name):
@@ -104,57 +174,7 @@ class ExportPcbFileFormatsService:
         except ValueError as exc:
             return f"Invalid output path: {exc}"
 
-        cmd = ["pcb", "export", spec.cli_command]
-        if force:
-            cmd.append("--force")
-        if no_unspecified:
-            cmd.append("--no-unspecified")
-        if no_dnp:
-            cmd.append("--no-dnp")
-
-        cmd.extend(self.active_variant_args(variant_name))
-
-        flag_options = (
-            (grid_origin, "--grid-origin"),
-            (drill_origin, "--drill-origin"),
-            (subst_models, "--subst-models"),
-            (board_only, "--board-only"),
-            (cut_vias_in_body, "--cut-vias-in-body"),
-            (no_board_body, "--no-board-body"),
-            (no_components, "--no-components"),
-        )
-        cmd.extend(flag for enabled, flag in flag_options if enabled)
-        if component_filter:
-            cmd.extend(["--component-filter", component_filter])
-
-        include_options = (
-            (include_tracks, "--include-tracks"),
-            (include_pads, "--include-pads"),
-            (include_zones, "--include-zones"),
-            (include_inner_copper, "--include-inner-copper"),
-            (include_silkscreen, "--include-silkscreen"),
-            (include_soldermask, "--include-soldermask"),
-            (fuse_shapes, "--fuse-shapes"),
-            (fill_all_vias, "--fill-all-vias"),
-            (no_extra_pad_thickness, "--no-extra-pad-thickness"),
-        )
-        cmd.extend(flag for enabled, flag in include_options if enabled)
-        if min_distance:
-            cmd.extend(["--min-distance", min_distance])
-        if net_filter:
-            cmd.extend(["--net-filter", net_filter])
-        if user_origin:
-            cmd.extend(["--user-origin", user_origin])
-
-        effective_units = units or spec.default_units
-        if effective_units:
-            cmd.extend(["--units", effective_units])
-        if models_dir:
-            cmd.extend(["--models-dir", models_dir])
-        if models_relative:
-            cmd.append("--models-relative")
-
-        cmd.extend(["--output", str(out_file), str(pcb_file)])
+        cmd = _build_export_command(spec, opts, out_file, pcb_file, self.active_variant_args)
         code, stdout, stderr = self.run_cli(*cmd)
         if code != 0:
             return f"{spec.label} export failed: {stderr or stdout or 'unknown error'}"

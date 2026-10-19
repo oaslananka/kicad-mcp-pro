@@ -797,43 +797,40 @@ class KiCadFastMCP(FastMCP):
     def __init__(
         self,
         name: str | None = None,
-        *,
-        instructions: str | None = None,
-        website_url: str | None = None,
-        version: str = "",
-        auth: AuthSettings | None = None,
-        token_verifier: TokenVerifier | None = None,
-        log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO",
-        host: str = "127.0.0.1",
-        port: int = 8000,
-        streamable_http_path: str = "/mcp",
-        mount_path: str | None = None,
-        sse_path: str = "/sse",
-        message_path: str = "/messages/",
-        json_response: bool = False,
-        stateless_http: bool = False,
-        cache_hints: Mapping[CacheableMethod, CacheHint] | None = None,
-        extensions: Sequence[Extension] | None = None,
+        **kwargs: object,
     ) -> None:
+        extensions = cast(Sequence[Extension] | None, kwargs.get("extensions"))
         if extensions:
             identifiers = ", ".join(str(extension.identifier) for extension in extensions)
             raise ValueError(
                 "MCP protocol extensions are not enabled in KiCad MCP Pro; "
                 f"unsupported extension(s): {identifiers}"
             )
+        mount_path = cast(str | None, kwargs.get("mount_path"))
+        streamable_http_path = cast(str, kwargs.get("streamable_http_path", "/mcp"))
         if mount_path is not None:
             streamable_http_path = mount_path
         super().__init__(
             name=name,
-            instructions=instructions,
-            website_url=website_url,
-            version=version,
-            auth=auth,
-            token_verifier=token_verifier,
-            log_level=log_level,
-            cache_hints=cache_hints,
+            instructions=cast(str | None, kwargs.get("instructions")),
+            website_url=cast(str | None, kwargs.get("website_url")),
+            version=cast(str, kwargs.get("version", "")),
+            auth=cast(AuthSettings | None, kwargs.get("auth")),
+            token_verifier=cast(TokenVerifier | None, kwargs.get("token_verifier")),
+            log_level=cast(
+                Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+                kwargs.get("log_level", "INFO"),
+            ),
+            cache_hints=cast(Mapping[CacheableMethod, CacheHint] | None, kwargs.get("cache_hints")),
             extensions=(),
         )
+        host = cast(str, kwargs.get("host", "127.0.0.1"))
+        port = cast(int, kwargs.get("port", 8000))
+        sse_path = cast(str, kwargs.get("sse_path", "/sse"))
+        message_path = cast(str, kwargs.get("message_path", "/messages/"))
+        json_response = cast(bool, kwargs.get("json_response", False))
+        stateless_http = cast(bool, kwargs.get("stateless_http", False))
+
         self._transport_host = host
         self._transport_port = port
         self._streamable_http_path = streamable_http_path
@@ -1438,6 +1435,124 @@ class _StreamableHttpContractMiddleware:
         self._session_ids: set[str] = set()
         self._session_order: deque[str] = deque()
 
+    async def _handle_delete(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+        headers: Mapping[str, str],
+        cfg: KiCadMCPConfig,
+    ) -> None:
+        session_id = headers.get("mcp-session-id", "")
+        delete_response_status: int | None = None
+
+        async def delete_request_send(message: Message) -> None:
+            nonlocal delete_response_status
+            if message["type"] == _HTTP_RESPONSE_START:
+                status_value = message.get("status")
+                delete_response_status = status_value if isinstance(status_value, int) else None
+            await send(message)
+
+        with otel.mcp_request_span(
+            http_method="DELETE",
+            mount_path=cfg.mount_path,
+            session_present=bool(session_id),
+        ) as request_span:
+            with structlog.contextvars.bound_contextvars(mcp_session_id=session_id or None):
+                await self.app(scope, receive, delete_request_send)
+            otel.finish_mcp_request_span(request_span, status_code=delete_response_status)
+        if session_id:
+            self._forget_session(session_id)
+            logger.info("mcp_session_destroyed", mcp_session_id=session_id)
+
+    async def _validate_post_headers(
+        self,
+        headers: Mapping[str, str],
+        body: bytes,
+        rpc_id: object | None,
+        rpc_method: str | None,
+        cfg: KiCadMCPConfig,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> bool:
+        if not _accept_header_includes(
+            headers.get("accept", ""), "application/json"
+        ) or not _accept_header_includes(headers.get("accept", ""), "text/event-stream"):
+            await _streamable_http_error_response(
+                code=-32003,
+                message=(
+                    "Bad Request: Accept header must include application/json and "
+                    "text/event-stream."
+                ),
+                rpc_id=rpc_id,
+                status_code=400,
+                scope=scope,
+                receive=receive,
+                send=send,
+            )
+            return False
+        if not _content_type_header_is(headers.get("content-type", ""), "application/json"):
+            await _streamable_http_error_response(
+                code=-32003,
+                message="Bad Request: Content-Type header must be application/json.",
+                rpc_id=rpc_id,
+                status_code=400,
+                scope=scope,
+                receive=receive,
+                send=send,
+            )
+            return False
+
+        protocol_version = headers.get("mcp-protocol-version")
+        if protocol_version and (
+            protocol_version not in SUPPORTED_PROTOCOL_VERSIONS
+            or (
+                cfg.protocol_lane == NATIVE_2026_PROTOCOL_LANE
+                and protocol_version != MCP_PROTOCOL_VERSION
+            )
+        ):
+            code, message, error_data = _unsupported_protocol_version_error(
+                protocol_version, body, cfg
+            )
+            await _streamable_http_error_response(
+                code=code,
+                message=message,
+                data=error_data,
+                rpc_id=rpc_id,
+                status_code=400,
+                scope=scope,
+                receive=receive,
+                send=send,
+            )
+            return False
+
+        session_id = headers.get("mcp-session-id", "")
+        if cfg.stateful_http and rpc_method and rpc_method != "initialize":
+            if not session_id:
+                await _streamable_http_error_response(
+                    code=-32000,
+                    message="Bad Request: Missing MCP-Session-Id header.",
+                    rpc_id=rpc_id,
+                    status_code=400,
+                    scope=scope,
+                    receive=receive,
+                    send=send,
+                )
+                return False
+            if not self._has_session(session_id):
+                await _streamable_http_error_response(
+                    code=-32001,
+                    message="Session not found for MCP-Session-Id.",
+                    rpc_id=rpc_id,
+                    status_code=404,
+                    scope=scope,
+                    receive=receive,
+                    send=send,
+                )
+                return False
+        return True
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         cfg = get_config()
         method = scope.get("method")
@@ -1447,27 +1562,7 @@ class _StreamableHttpContractMiddleware:
 
         headers = _scope_headers(scope)
         if method == "DELETE":
-            session_id = headers.get("mcp-session-id", "")
-            delete_response_status: int | None = None
-
-            async def delete_request_send(message: Message) -> None:
-                nonlocal delete_response_status
-                if message["type"] == _HTTP_RESPONSE_START:
-                    status_value = message.get("status")
-                    delete_response_status = status_value if isinstance(status_value, int) else None
-                await send(message)
-
-            with otel.mcp_request_span(
-                http_method=str(method),
-                mount_path=cfg.mount_path,
-                session_present=bool(session_id),
-            ) as request_span:
-                with structlog.contextvars.bound_contextvars(mcp_session_id=session_id or None):
-                    await self.app(scope, receive, delete_request_send)
-                otel.finish_mcp_request_span(request_span, status_code=delete_response_status)
-            if session_id:
-                self._forget_session(session_id)
-                logger.info("mcp_session_destroyed", mcp_session_id=session_id)
+            await self._handle_delete(scope, receive, send, headers, cfg)
             return
         if method != "POST":
             await self.app(scope, receive, send)
@@ -1501,93 +1596,13 @@ class _StreamableHttpContractMiddleware:
                 request_id=rpc_id,
                 mcp_session_id=headers.get("mcp-session-id") or None,
             )
-        if not _accept_header_includes(headers.get("accept", ""), "application/json"):
-            await _streamable_http_error_response(
-                code=-32003,
-                message=(
-                    "Bad Request: Accept header must include application/json and "
-                    "text/event-stream."
-                ),
-                rpc_id=rpc_id,
-                status_code=400,
-                scope=scope,
-                receive=replay_receive,
-                send=send,
-            )
-            return
-        if not _accept_header_includes(headers.get("accept", ""), "text/event-stream"):
-            await _streamable_http_error_response(
-                code=-32003,
-                message=(
-                    "Bad Request: Accept header must include application/json and "
-                    "text/event-stream."
-                ),
-                rpc_id=rpc_id,
-                status_code=400,
-                scope=scope,
-                receive=replay_receive,
-                send=send,
-            )
-            return
-        if not _content_type_header_is(headers.get("content-type", ""), "application/json"):
-            await _streamable_http_error_response(
-                code=-32003,
-                message="Bad Request: Content-Type header must be application/json.",
-                rpc_id=rpc_id,
-                status_code=400,
-                scope=scope,
-                receive=replay_receive,
-                send=send,
-            )
-            return
 
-        protocol_version = headers.get("mcp-protocol-version")
-        if protocol_version and (
-            protocol_version not in SUPPORTED_PROTOCOL_VERSIONS
-            or (
-                cfg.protocol_lane == NATIVE_2026_PROTOCOL_LANE
-                and protocol_version != MCP_PROTOCOL_VERSION
-            )
+        if not await self._validate_post_headers(
+            headers, body, rpc_id, rpc_method, cfg, scope, replay_receive, send
         ):
-            code, message, error_data = _unsupported_protocol_version_error(
-                protocol_version, body, cfg
-            )
-            await _streamable_http_error_response(
-                code=code,
-                message=message,
-                data=error_data,
-                rpc_id=rpc_id,
-                status_code=400,
-                scope=scope,
-                receive=replay_receive,
-                send=send,
-            )
             return
 
         session_id = headers.get("mcp-session-id", "")
-        if cfg.stateful_http and rpc_method and rpc_method != "initialize":
-            if not session_id:
-                await _streamable_http_error_response(
-                    code=-32000,
-                    message="Bad Request: Missing MCP-Session-Id header.",
-                    rpc_id=rpc_id,
-                    status_code=400,
-                    scope=scope,
-                    receive=replay_receive,
-                    send=send,
-                )
-                return
-            if not self._has_session(session_id):
-                await _streamable_http_error_response(
-                    code=-32001,
-                    message="Session not found for MCP-Session-Id.",
-                    rpc_id=rpc_id,
-                    status_code=404,
-                    scope=scope,
-                    receive=replay_receive,
-                    send=send,
-                )
-                return
 
         async def send_wrapper(message: Message) -> None:
             if message["type"] == _HTTP_RESPONSE_START:
@@ -3304,6 +3319,65 @@ def version_command(
     typer.echo(json.dumps(payload, indent=2) if json_output else __version__)
 
 
+def _build_watch_subprocess_cmd(
+    *,
+    transport: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    project_dir: str | None = None,
+    log_level: str | None = None,
+    log_format: str | None = None,
+    log_file: str | None = None,
+    profile: str | None = None,
+    operating_mode: str | None = None,
+    experimental: bool | None = None,
+    telemetry: bool | None = None,
+) -> list[str]:
+    """Build command args for watch child subprocess."""
+    cmd = [sys.executable, "-m", "kicad_mcp.server"]
+    options: list[tuple[str, object]] = [
+        ("--transport", transport),
+        ("--host", host),
+        ("--port", port),
+        ("--project-dir", project_dir),
+        ("--log-level", log_level),
+        ("--log-format", log_format),
+        ("--log-file", log_file),
+        ("--profile", profile),
+        ("--mode", operating_mode),
+    ]
+    for flag, val in options:
+        if val and not isinstance(val, OptionInfo):
+            cmd.extend([flag, str(val)])
+    if experimental and not isinstance(experimental, OptionInfo):
+        cmd.append("--experimental")
+    if isinstance(telemetry, bool):
+        cmd.append("--telemetry" if telemetry else "--no-telemetry")
+    return cmd
+
+
+def _terminate_watch_process(proc: subprocess.Popen[bytes] | None, timeout: float = 5.0) -> None:
+    """Safely terminate a watch child process."""
+    if proc is None or proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+
+
+def _extract_py_change(
+    change_set: Iterable[tuple[object, str]],
+) -> tuple[object, str] | None:
+    """Find the first .py file change in a watchfiles changeset."""
+    return next(
+        ((c_type, path) for c_type, path in change_set if path.endswith(".py")),
+        None,
+    )
+
+
 def _run_with_watch(
     *,
     transport: str | None = None,
@@ -3337,39 +3411,22 @@ def _run_with_watch(
     log = logger.bind(package_dir=str(pkg_dir))
     log.info("hot_reload_started", path=str(pkg_dir))
 
-    # Build the command args (equivalent to the CLI invocation that started us,
-    # without --watch so the child runs a normal server).
-    # Guard each param against OptionInfo objects (leaked when main_callback is
-    # called directly from Python with defaults).
-    cmd = [sys.executable, "-m", "kicad_mcp.server"]
-    if transport and not isinstance(transport, OptionInfo):
-        cmd.extend(["--transport", transport])
-    if host and not isinstance(host, OptionInfo):
-        cmd.extend(["--host", host])
-    if port and not isinstance(port, OptionInfo):
-        cmd.extend(["--port", str(port)])
-    if project_dir and not isinstance(project_dir, OptionInfo):
-        cmd.extend(["--project-dir", project_dir])
-    if log_level and not isinstance(log_level, OptionInfo):
-        cmd.extend(["--log-level", log_level])
-    if log_format and not isinstance(log_format, OptionInfo):
-        cmd.extend(["--log-format", log_format])
-    if log_file and not isinstance(log_file, OptionInfo):
-        cmd.extend(["--log-file", log_file])
-    if profile and not isinstance(profile, OptionInfo):
-        cmd.extend(["--profile", profile])
-    if operating_mode and not isinstance(operating_mode, OptionInfo):
-        cmd.extend(["--mode", operating_mode])
-    if experimental and not isinstance(experimental, OptionInfo):
-        cmd.append("--experimental")
-    if isinstance(telemetry, bool) and telemetry:
-        cmd.extend(["--telemetry"])
-    if isinstance(telemetry, bool) and telemetry is False:
-        cmd.extend(["--no-telemetry"])
+    cmd = _build_watch_subprocess_cmd(
+        transport=transport,
+        host=host,
+        port=port,
+        project_dir=project_dir,
+        log_level=log_level,
+        log_format=log_format,
+        log_file=log_file,
+        profile=profile,
+        operating_mode=operating_mode,
+        experimental=experimental,
+        telemetry=telemetry,
+    )
 
     proc: subprocess.Popen[bytes] | None = None
     try:
-        # Start the initial subprocess
         log.info("hot_reload_spawning", cmd=cmd)
         proc = subprocess.Popen(
             cmd,
@@ -3377,39 +3434,28 @@ def _run_with_watch(
             stderr=sys.stderr,
         )
 
-        # Watch for file changes and restart on .py modification
         if watchfiles is None:
             return
         changes = watchfiles.watch(str(pkg_dir))
         for change_set in changes:
-            trigger = next(
-                ((c_type, path) for c_type, path in change_set if path.endswith(".py")),
-                None,
+            trigger = _extract_py_change(change_set)
+            if trigger is None:
+                continue
+            change_type, changed_path = trigger
+            log.info(
+                "hot_reload_restarting",
+                changed=changed_path,
+                change_type=change_type,
             )
-            if trigger is not None:
-                change_type, changed_path = trigger
-                log.info(
-                    "hot_reload_restarting",
-                    changed=changed_path,
-                    change_type=change_type,
-                )
-                if proc is not None and proc.poll() is None:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        proc.wait()
-                log.info("hot_reload_spawning", cmd=cmd)
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=sys.stdout,
-                    stderr=sys.stderr,
-                )
+            _terminate_watch_process(proc, timeout=5)
+            log.info("hot_reload_spawning", cmd=cmd)
+            proc = subprocess.Popen(
+                cmd,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+            )
     finally:
-        if proc is not None and proc.poll() is None:
-            proc.terminate()
-            proc.wait(timeout=3)
+        _terminate_watch_process(proc, timeout=3)
 
 
 @app.command(name="inspect")

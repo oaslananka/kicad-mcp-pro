@@ -355,6 +355,65 @@ def _detect_power_rails(
     }
 
 
+_ROLE_MAP: dict[str, str] = {
+    "sda": "sda",
+    "scl": "scl",
+    "mosi": "mosi",
+    "miso": "miso",
+    "sck": "sck",
+    "cs": "cs",
+    "tx": "tx",
+    "rx": "rx",
+    "rts": "rts",
+    "cts": "cts",
+    "dp": "dp",
+    "dn": "dn",
+    "vbus": "vbus",
+    "tx_p": "tx_p",
+    "tx_n": "tx_n",
+    "rx_p": "rx_p",
+    "rx_n": "rx_n",
+    "can_h": "can_h",
+    "can_l": "can_l",
+    "d0": "data0",
+    "d1": "data1",
+    "d2": "data2",
+    "d3": "data3",
+    "clk": "clk",
+    "cmd": "cmd",
+}
+
+
+def _match_net_interface(net_name: str) -> tuple[str, str, str] | None:
+    for kind, _, suffixes in _INTERFACE_PATTERNS:
+        for suffix in suffixes:
+            if suffix in net_name:
+                idx = net_name.index(suffix)
+                prefix = net_name[:idx]
+                role_str = suffix.lstrip("._").lower()
+                role = _ROLE_MAP.get(role_str, role_str)
+                return prefix, kind, role
+    return None
+
+
+def _build_interface_entry(
+    ir: IRCircuit, prefix: str, kind: str, net_roles: dict[str, str]
+) -> IRInterface:
+    refs: set[str] = set()
+    for net_name in net_roles.values():
+        net = ir.nets.get(net_name)
+        if net is not None:
+            for ref, _ in net.connections:
+                refs.add(ref)
+    name = f"{prefix}_{kind}" if prefix else kind
+    return IRInterface(
+        name=name,
+        kind=kind,
+        net_roles=net_roles,
+        refs=tuple(sorted(refs)),
+    )
+
+
 def _detect_interfaces(ir: IRCircuit) -> None:
     """Infer protocol interfaces from net naming patterns.
 
@@ -365,72 +424,17 @@ def _detect_interfaces(ir: IRCircuit) -> None:
     kind_map: dict[str, str] = {}  # prefix -> kind
 
     for net_name in ir.nets:
-        for kind, _, suffixes in _INTERFACE_PATTERNS:
-            for suffix in suffixes:
-                if suffix in net_name:
-                    # Split on the pattern boundary to get the prefix
-                    idx = net_name.index(suffix)
-                    prefix = net_name[:idx]
+        matched = _match_net_interface(net_name)
+        if matched is not None:
+            prefix, kind, role = matched
+            if prefix not in grouped:
+                grouped[prefix] = {}
+                kind_map[prefix] = kind
+            grouped[prefix][role] = net_name
 
-                    # Determine the role from the suffix
-                    role_str = suffix.lstrip("._").lower()
-                    # Normalize common role names
-                    role_map = {
-                        "sda": "sda",
-                        "scl": "scl",
-                        "mosi": "mosi",
-                        "miso": "miso",
-                        "sck": "sck",
-                        "cs": "cs",
-                        "tx": "tx",
-                        "rx": "rx",
-                        "rts": "rts",
-                        "cts": "cts",
-                        "dp": "dp",
-                        "dn": "dn",
-                        "vbus": "vbus",
-                        "tx_p": "tx_p",
-                        "tx_n": "tx_n",
-                        "rx_p": "rx_p",
-                        "rx_n": "rx_n",
-                        "can_h": "can_h",
-                        "can_l": "can_l",
-                        "d0": "data0",
-                        "d1": "data1",
-                        "d2": "data2",
-                        "d3": "data3",
-                        "clk": "clk",
-                        "cmd": "cmd",
-                    }
-                    role = role_map.get(role_str, role_str)
-
-                    if prefix not in grouped:
-                        grouped[prefix] = {}
-                        kind_map[prefix] = kind
-                    grouped[prefix][role] = net_name
-                    break  # first matching suffix wins
-            # Only break the outer loop if we already matched
-            else:
-                continue
-            break
-
-    # Build IRInterface entries
     for prefix, net_roles in grouped.items():
-        # Collect component references involved in this interface
-        refs: set[str] = set()
-        for net_name in net_roles.values():
-            net = ir.nets.get(net_name)
-            if net is not None:
-                for ref, _ in net.connections:
-                    refs.add(ref)
-
-        name = f"{prefix}_{kind_map[prefix]}" if prefix else kind_map[prefix]
-        ir.interfaces[name] = IRInterface(
-            name=name,
-            kind=kind_map[prefix],
-            net_roles=net_roles,
-            refs=tuple(sorted(refs)),
-        )
+        entry = _build_interface_entry(ir, prefix, kind_map[prefix], net_roles)
+        ir.interfaces[entry.name] = entry
 
 
 def _populate_sheet_hierarchy(ir: IRCircuit, sch_file: Path) -> None:

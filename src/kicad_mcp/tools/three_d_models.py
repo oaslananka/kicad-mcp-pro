@@ -216,6 +216,95 @@ def _search_3d_model_files(query: str) -> list[dict[str, str]]:
     return sorted(results, key=lambda r: r["path"])[:100]
 
 
+def _append_model_to_footprint(text: str, model_block: str) -> str:
+    cleaned = _remove_3d_model_blocks(text).rstrip()
+    if cleaned.endswith(")"):
+        return cleaned[:-1].rstrip() + f"\n  {model_block}\n)"
+    return cleaned
+
+
+def _build_model_sexpr(
+    model_path: str,
+    *,
+    offset_xyz: str | None = None,
+    scale_xyz: str | None = None,
+    rotate_xyz: str | None = None,
+) -> str:
+    attrs = ""
+    if offset_xyz:
+        attrs += f"\n    (offset (xyz {_validated_xyz(offset_xyz, label='offset_xyz')}))"
+    if scale_xyz:
+        attrs += f"\n    (scale (xyz {_validated_xyz(scale_xyz, label='scale_xyz')}))"
+    if rotate_xyz:
+        attrs += f"\n    (rotate (xyz {_validated_xyz(rotate_xyz, label='rotate_xyz')}))"
+    return f"(model {_sexpr_string(model_path)}{attrs}\n  )"
+
+
+def _apply_set_3d_model_path(
+    library: str,
+    footprint: str,
+    model_path: str,
+    offset_xyz: str | None = None,
+    scale_xyz: str | None = None,
+    rotate_xyz: str | None = None,
+) -> str:
+    fp_file = _find_footprint_file(library, footprint)
+    if fp_file is None:
+        raise ValueError(
+            f"Footprint '{library}:{footprint}' not found. Check the library and footprint name."
+        )
+
+    text = _read_footprint_text(fp_file)
+    new_model = _build_model_sexpr(
+        model_path,
+        offset_xyz=offset_xyz,
+        scale_xyz=scale_xyz,
+        rotate_xyz=rotate_xyz,
+    )
+    _write_footprint_text(fp_file, _append_model_to_footprint(text, new_model))
+    return f"3D model set on '{library}:{footprint}' -> {model_path}"
+
+
+def _apply_remove_3d_model(
+    library: str,
+    footprint: str,
+    model_path: str | None = None,
+) -> str:
+    fp_file = _find_footprint_file(library, footprint)
+    if fp_file is None:
+        raise ValueError(f"Footprint '{library}:{footprint}' not found.")
+
+    text = _read_footprint_text(fp_file)
+    before_count = len(_find_3d_model_refs(text))
+    text = _remove_3d_model_blocks(text, model_path=model_path if model_path else None)
+    _write_footprint_text(fp_file, text)
+    after_count = len(_find_3d_model_refs(text))
+    removed = before_count - after_count
+    return f"Removed {removed} 3D model(s) from '{library}:{footprint}'. Remaining: {after_count}."
+
+
+def _apply_bulk_model_updates(
+    library: str,
+    matched_files: list[Path],
+    model_path: str,
+) -> str:
+    new_model = f"(model {_sexpr_string(model_path)}\n  )"
+    for fp_file in matched_files:
+        text = _read_footprint_text(fp_file)
+        _write_footprint_text(fp_file, _append_model_to_footprint(text, new_model))
+    return (
+        f"Updated {len(matched_files)} footprint(s) in library "
+        f"'{library}' with model '{model_path}'."
+    )
+
+
+def _render_3d_model_search(query: str) -> str:
+    results = _search_3d_model_files(query)
+    if not results:
+        return json.dumps({"query": query, "count": 0, "results": []}, indent=2)
+    return json.dumps({"query": query, "count": len(results), "results": results}, indent=2)
+
+
 def register(mcp: FastMCP) -> None:
     """Register 3D model management tools."""
 
@@ -246,34 +335,14 @@ def register(mcp: FastMCP) -> None:
         rotate_xyz : str | None
             Optional rotation as ``"x y z"`` in degrees.
         """
-        fp_file = _find_footprint_file(library, footprint)
-        if fp_file is None:
-            raise ValueError(
-                f"Footprint '{library}:{footprint}' not found. "
-                "Check the library and footprint name."
-            )
-
-        text = _read_footprint_text(fp_file)
-        # Build the model S-expression
-        attrs = ""
-        if offset_xyz:
-            attrs += f"\n    (offset (xyz {_validated_xyz(offset_xyz, label='offset_xyz')}))"
-        if scale_xyz:
-            attrs += f"\n    (scale (xyz {_validated_xyz(scale_xyz, label='scale_xyz')}))"
-        if rotate_xyz:
-            attrs += f"\n    (rotate (xyz {_validated_xyz(rotate_xyz, label='rotate_xyz')}))"
-
-        new_model = f"(model {_sexpr_string(model_path)}{attrs}\n  )"
-
-        # Remove any existing model reference, then insert new one before closing )
-        text = _remove_3d_model_blocks(text)
-        # Insert the new model before the final closing parenthesis
-        text = text.rstrip()
-        if text.endswith(")"):
-            text = text[:-1].rstrip() + f"\n  {new_model}\n)"
-
-        _write_footprint_text(fp_file, text)
-        return f"3D model set on '{library}:{footprint}' -> {model_path}"
+        return _apply_set_3d_model_path(
+            library,
+            footprint,
+            model_path,
+            offset_xyz=offset_xyz,
+            scale_xyz=scale_xyz,
+            rotate_xyz=rotate_xyz,
+        )
 
     @mcp.tool()
     @headless_compatible
@@ -294,21 +363,7 @@ def register(mcp: FastMCP) -> None:
             If provided, only remove the model with this exact path.
             If omitted, all 3D model references are removed.
         """
-        fp_file = _find_footprint_file(library, footprint)
-        if fp_file is None:
-            raise ValueError(f"Footprint '{library}:{footprint}' not found.")
-
-        text = _read_footprint_text(fp_file)
-        before_count = len(_find_3d_model_refs(text))
-
-        text = _remove_3d_model_blocks(text, model_path=model_path if model_path else None)
-
-        _write_footprint_text(fp_file, text)
-        after_count = len(_find_3d_model_refs(text))
-        removed = before_count - after_count
-        return (
-            f"Removed {removed} 3D model(s) from '{library}:{footprint}'. Remaining: {after_count}."
-        )
+        return _apply_remove_3d_model(library, footprint, model_path=model_path)
 
     @mcp.tool()
     @headless_compatible
@@ -334,32 +389,17 @@ def register(mcp: FastMCP) -> None:
             resolve_under(lib_dir, library_name, allow_absolute=False),
             resolve_under(lib_dir, f"{library_name}.pretty", allow_absolute=False),
         ]
-        lib_path: Path | None = None
-        for cand in lib_candidates:
-            if cand.is_dir():
-                lib_path = cand
-                break
+        lib_path = next((cand for cand in lib_candidates if cand.is_dir()), None)
         if lib_path is None:
             raise ValueError(f"Library '{library}' directory not found.")
 
         compiled = re.compile(footprint_pattern)
-        matched = [path for path in lib_path.iterdir() if path.suffix in (".kicad_mod", ".pretty")]
-        updated = 0
-        for candidate in matched:
-            if not compiled.search(candidate.stem):
-                continue
-            fp_file = resolve_under(lib_dir, candidate)
-            text = _read_footprint_text(fp_file)
-            # Remove existing models and add new one
-            text = _remove_3d_model_blocks(text)
-            new_model = f"(model {_sexpr_string(model_path)}\n  )"
-            text = text.rstrip()
-            if text.endswith(")"):
-                text = text[:-1].rstrip() + f"\n  {new_model}\n)"
-            _write_footprint_text(fp_file, text)
-            updated += 1
-
-        return f"Updated {updated} footprint(s) in library '{library}' with model '{model_path}'."
+        matched = [
+            resolve_under(lib_dir, path)
+            for path in lib_path.iterdir()
+            if path.suffix in (".kicad_mod", ".pretty") and compiled.search(path.stem)
+        ]
+        return _apply_bulk_model_updates(library, matched, model_path)
 
     @mcp.tool()
     @headless_compatible
@@ -371,7 +411,4 @@ def register(mcp: FastMCP) -> None:
         query : str
             Search term (case-insensitive, matched against path).
         """
-        results = _search_3d_model_files(query)
-        if not results:
-            return json.dumps({"query": query, "count": 0, "results": []}, indent=2)
-        return json.dumps({"query": query, "count": len(results), "results": results}, indent=2)
+        return _render_3d_model_search(query)

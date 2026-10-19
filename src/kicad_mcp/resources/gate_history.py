@@ -68,7 +68,7 @@ class GateHistory:
                     )
                     """
             )
-            db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            db.execute(f"PRAGMA user_version = {int(SCHEMA_VERSION)}")  # nosemgrep
 
     def record(self, outcome: GateOutcome, auto_fixed: int = 0) -> None:
         issue_count = 0 if outcome.status == "PASS" else max(1, len(outcome.details))

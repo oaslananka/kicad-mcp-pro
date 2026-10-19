@@ -50,26 +50,21 @@ def _numeric(summary: dict[str, Any], key: str) -> float:
     return float(value)
 
 
-def generate_approved_baseline(
-    *,
+def _load_and_validate_aggregate_report(
     aggregate_report_path: str | Path,
-    baseline_template_path: str | Path,
-    policy_path: str | Path,
-    repo_root: str | Path,
-    workflow_run_id: int,
-    approved_at: date,
-) -> dict[str, object]:
-    """Build one auditable approved baseline from sanitized aggregate evidence."""
-    if isinstance(workflow_run_id, bool) or workflow_run_id < 1:
-        raise BaselinePromotionError("workflow_run_id must be positive.")
-
+) -> tuple[Path, dict[str, Any]]:
     aggregate_path = resolve_repo_or_temp(aggregate_report_path, repo_root=_REPO_ROOT)
     try:
         report = _mapping(json.loads(aggregate_path.read_text(encoding="utf-8")), "Aggregate")
         validate_sanitized_evidence(report)
     except (OSError, TypeError, ValueError) as exc:
         raise BaselinePromotionError(f"Aggregate report is invalid: {type(exc).__name__}.") from exc
+    return aggregate_path, report
 
+
+def _load_and_validate_baseline_template(
+    baseline_template_path: str | Path,
+) -> tuple[int, list[str]]:
     template = _mapping(
         yaml.safe_load(
             resolve_repo_or_temp(baseline_template_path, repo_root=_REPO_ROOT).read_text(
@@ -90,7 +85,10 @@ def generate_approved_baseline(
     required = _string_list(template.get("required_configurations"), "Required configurations")
     if len(required) < 1 or len(required) != len(set(required)):
         raise BaselinePromotionError("Required configurations must contain at least one unique id.")
+    return minimum_repeats, required
 
+
+def _validate_aggregate_failure_classifications(report: dict[str, Any]) -> None:
     classifications = _mapping(report.get("classifications"), "Aggregate classifications")
     safety = _string_list(classifications.get("safety_failures", []), "Safety failures")
     infrastructure = _string_list(
@@ -115,62 +113,90 @@ def generate_approved_baseline(
         if not isinstance(failure, dict):
             raise BaselinePromotionError("Aggregate per_case_failures entries must be mappings.")
         categories = failure.get("categories")
-        # A per-case entry recorded only as "infrastructure" (a retried-out timeout or
-        # truncated response within the aggregate gate's configured tolerance) is
-        # provider noise, already accounted for above via infrastructure_failures.
-        # Any entry also carrying a real safety or quality signal still blocks.
         if isinstance(categories, list) and any(
             category in ("safety", "quality") for category in categories
         ):
             raise BaselinePromotionError("Per-case failures prevent baseline promotion.")
 
-    source_revision = report.get("source_revision")
+
+def _validate_source_revision(source_revision: object) -> str:
     if (
         not isinstance(source_revision, str)
         or len(source_revision) != _SHA40_LENGTH
         or any(character not in "0123456789abcdef" for character in source_revision)
     ):
         raise BaselinePromotionError("Aggregate source_revision must be a lowercase Git SHA.")
+    return source_revision
 
-    observed = _mapping(report.get("observed"), "Aggregate observed configurations")
+
+def _validate_single_configuration(
+    config_id: str,
+    raw_summary: object,
+    minimum_repeats: int,
+) -> dict[str, object]:
+    summary = _mapping(raw_summary, f"Observed configuration {config_id}")
+    host = summary.get("host")
+    model = summary.get("model")
+    if not isinstance(host, str) or not host or not isinstance(model, str) or not model:
+        raise BaselinePromotionError(f"Observed identity is incomplete for {config_id}.")
+    repeats = summary.get("repeats")
+    if isinstance(repeats, bool) or not isinstance(repeats, int) or repeats < minimum_repeats:
+        raise BaselinePromotionError(f"Observed repeats are insufficient for {config_id}.")
+    if summary.get("complete") is not True:
+        raise BaselinePromotionError(f"Observed evidence is incomplete for {config_id}.")
+    for counter in (
+        "selection_failures",
+        "safety_violations",
+        "forbidden_violations",
+    ):
+        if int(summary.get(counter, 0) or 0) != 0:
+            raise BaselinePromotionError(f"Observed {counter} prevents promotion for {config_id}.")
+    metrics = {metric: _numeric(summary, metric) for metric in _METRICS}
+    token_coverage = _numeric(summary, "token_coverage")
+    return {
+        "host": host,
+        "model": model,
+        "token_metrics_required": token_coverage >= 1.0,
+        "metrics": metrics,
+    }
+
+
+def _validate_and_build_configurations(
+    observed: dict[str, Any],
+    required: list[str],
+    minimum_repeats: int,
+) -> dict[str, object]:
     if set(observed) != set(required):
         raise BaselinePromotionError(
             "Aggregate observed data does not match required configurations."
         )
 
-    configurations: dict[str, object] = {}
-    for config_id in required:
-        summary = _mapping(observed[config_id], f"Observed configuration {config_id}")
-        host = summary.get("host")
-        model = summary.get("model")
-        if not isinstance(host, str) or not host or not isinstance(model, str) or not model:
-            raise BaselinePromotionError(f"Observed identity is incomplete for {config_id}.")
-        repeats = summary.get("repeats")
-        if isinstance(repeats, bool) or not isinstance(repeats, int) or repeats < minimum_repeats:
-            raise BaselinePromotionError(f"Observed repeats are insufficient for {config_id}.")
-        if summary.get("complete") is not True:
-            raise BaselinePromotionError(f"Observed evidence is incomplete for {config_id}.")
-        # adapter_failures is deliberately not re-checked here: the aggregate
-        # infrastructure_failures classification above already enforces the
-        # configured tolerance for retried-out provider timeouts, and re-applying a
-        # stricter zero-tolerance check here would contradict a passing gate.
-        for counter in (
-            "selection_failures",
-            "safety_violations",
-            "forbidden_violations",
-        ):
-            if int(summary.get(counter, 0) or 0) != 0:
-                raise BaselinePromotionError(
-                    f"Observed {counter} prevents promotion for {config_id}."
-                )
-        metrics = {metric: _numeric(summary, metric) for metric in _METRICS}
-        token_coverage = _numeric(summary, "token_coverage")
-        configurations[config_id] = {
-            "host": host,
-            "model": model,
-            "token_metrics_required": token_coverage >= 1.0,
-            "metrics": metrics,
-        }
+    return {
+        config_id: _validate_single_configuration(config_id, observed[config_id], minimum_repeats)
+        for config_id in required
+    }
+
+
+def generate_approved_baseline(
+    *,
+    aggregate_report_path: str | Path,
+    baseline_template_path: str | Path,
+    policy_path: str | Path,
+    repo_root: str | Path,
+    workflow_run_id: int,
+    approved_at: date,
+) -> dict[str, object]:
+    """Build one auditable approved baseline from sanitized aggregate evidence."""
+    if isinstance(workflow_run_id, bool) or workflow_run_id < 1:
+        raise BaselinePromotionError("workflow_run_id must be positive.")
+
+    aggregate_path, report = _load_and_validate_aggregate_report(aggregate_report_path)
+    minimum_repeats, required = _load_and_validate_baseline_template(baseline_template_path)
+    _validate_aggregate_failure_classifications(report)
+    source_revision = _validate_source_revision(report.get("source_revision"))
+
+    observed = _mapping(report.get("observed"), "Aggregate observed configurations")
+    configurations = _validate_and_build_configurations(observed, required, minimum_repeats)
 
     policy = load_release_policy(policy_path)
     contract_digest = compute_agent_contract_digest(repo_root, policy, ref=source_revision)

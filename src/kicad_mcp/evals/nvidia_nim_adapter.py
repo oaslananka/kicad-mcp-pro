@@ -562,15 +562,7 @@ def _request_field_detail_from_text(value: object) -> FailureDetail | None:
     return None
 
 
-def _provider_request_failure_detail(response: httpx.Response) -> FailureDetail:
-    """Return only an allowlisted request field from one validation response."""
-    try:
-        payload = response.json()
-    except (TypeError, ValueError):
-        return "request_unknown"
-    if not isinstance(payload, dict):
-        return "request_unknown"
-
+def _detail_location_failure_detail(payload: dict[str, Any]) -> FailureDetail | None:
     detail = payload.get("detail")
     entries = detail if isinstance(detail, list) else [detail]
     for entry in entries:
@@ -582,7 +574,10 @@ def _provider_request_failure_detail(response: httpx.Response) -> FailureDetail:
                 mapped = _request_field_detail_from_text(segment)
                 if mapped is not None:
                     return mapped
+    return None
 
+
+def _collect_diagnostic_values(payload: dict[str, Any]) -> list[object]:
     diagnostic_values: list[object] = [
         payload.get("param"),
         payload.get("parameter"),
@@ -590,6 +585,7 @@ def _provider_request_failure_detail(response: httpx.Response) -> FailureDetail:
         payload.get("message"),
         payload.get("msg"),
     ]
+    detail = payload.get("detail")
     if isinstance(detail, str):
         diagnostic_values.append(detail)
     elif isinstance(detail, dict):
@@ -610,8 +606,23 @@ def _provider_request_failure_detail(response: httpx.Response) -> FailureDetail:
         )
     elif isinstance(error, str):
         diagnostic_values.append(error)
+    return diagnostic_values
 
-    for value in diagnostic_values:
+
+def _provider_request_failure_detail(response: httpx.Response) -> FailureDetail:
+    """Return only an allowlisted request field from one validation response."""
+    try:
+        payload = response.json()
+    except (TypeError, ValueError):
+        return "request_unknown"
+    if not isinstance(payload, dict):
+        return "request_unknown"
+
+    from_loc = _detail_location_failure_detail(payload)
+    if from_loc is not None:
+        return from_loc
+
+    for value in _collect_diagnostic_values(payload):
         mapped = _request_field_detail_from_text(value)
         if mapped is not None:
             return mapped
@@ -658,6 +669,76 @@ def _optional_usage(usage: object, key: str) -> int | None:
     return value
 
 
+def _parse_classifier_content(content: str) -> tuple[str, list[str]]:
+    selected = _json_object(content)
+    if set(selected) != {"response_kind", "called_tools"}:
+        raise _ModelOutputValidationError("unsupported_fields")
+    response_kind = selected.get("response_kind")
+    called_tools = selected.get("called_tools")
+    if response_kind not in _RESPONSE_KINDS or not isinstance(called_tools, list):
+        raise _ModelOutputValidationError("classifier_shape")
+    raw_tools: list[str] = []
+    for item in called_tools:
+        if not isinstance(item, str):
+            raise _ModelOutputValidationError("unknown_tool")
+        raw_tools.append(item)
+    return str(response_kind), raw_tools
+
+
+def _recover_unknown_tools(
+    *,
+    response_kind: str,
+    raw_tools: list[str],
+    catalog_names: frozenset[str],
+    catalog_values: Sequence[Mapping[str, object]],
+    prompt: str,
+    latency_ms: float,
+    input_tokens: int | None,
+    output_tokens: int | None,
+    estimated_cost_micros: int | None,
+) -> tuple[list[str], dict[str, object] | None]:
+    unknown_tools = [name for name in raw_tools if name not in catalog_names]
+    if not unknown_tools:
+        return raw_tools, None
+
+    if response_kind != "tool_calls":
+        raise _ModelOutputValidationError("unknown_tool")
+    known_tools = [name for name in raw_tools if name in catalog_names]
+    mixed_canonical_alias = (
+        len(raw_tools) == 2 and len(known_tools) == 1 and len(unknown_tools) == 1
+    )
+    if len(raw_tools) != 1 and not mixed_canonical_alias:
+        raise _ModelOutputValidationError("unknown_tool")
+    provisional: dict[str, object] = {
+        "schema_version": 1,
+        "status": "ok",
+        "response_kind": response_kind,
+        "called_tools": raw_tools,
+        "latency_ms": round(latency_ms, 3),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "estimated_cost_micros": estimated_cost_micros,
+    }
+    gated = _apply_policy_postconditions(provisional, prompt=prompt, catalog=catalog_values)
+    if gated.get("response_kind") in {"confirmation", "refusal"} and not gated.get("called_tools"):
+        return [], gated
+    recovered = _unique_direct_tool_match(prompt=prompt, catalog=catalog_values)
+    if recovered is None:
+        raise _ModelOutputValidationError("unknown_tool")
+    if known_tools and (
+        known_tools[0] != recovered or not _is_constrained_tool_alias(unknown_tools[0], recovered)
+    ):
+        raise _ModelOutputValidationError("unknown_tool")
+    return [recovered], None
+
+
+def _validate_normalized_tools(response_kind: str, normalized: Sequence[str]) -> None:
+    if len(normalized) != len(set(normalized)):
+        raise _ModelOutputValidationError("duplicate_tool")
+    if (response_kind == "tool_calls") != bool(normalized):
+        raise _ModelOutputValidationError("kind_tool_mismatch")
+
+
 def normalize_classifier_text(
     *,
     content: str,
@@ -671,60 +752,22 @@ def normalize_classifier_text(
     """Normalize one strict classifier text result without retaining provider payloads."""
     catalog_values = _catalog_values(catalog)
     catalog_names = frozenset(str(item["name"]) for item in catalog_values)
-    selected = _json_object(content)
-    if set(selected) != {"response_kind", "called_tools"}:
-        raise _ModelOutputValidationError("unsupported_fields")
-    response_kind = selected.get("response_kind")
-    called_tools = selected.get("called_tools")
-    if response_kind not in _RESPONSE_KINDS or not isinstance(called_tools, list):
-        raise _ModelOutputValidationError("classifier_shape")
-    raw_tools: list[str] = []
-    for item in called_tools:
-        if not isinstance(item, str):
-            raise _ModelOutputValidationError("unknown_tool")
-        raw_tools.append(item)
+    response_kind, raw_tools = _parse_classifier_content(content)
+    normalized, gated = _recover_unknown_tools(
+        response_kind=response_kind,
+        raw_tools=raw_tools,
+        catalog_names=catalog_names,
+        catalog_values=catalog_values,
+        prompt=prompt,
+        latency_ms=latency_ms,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        estimated_cost_micros=estimated_cost_micros,
+    )
+    if gated is not None:
+        return gated
 
-    unknown_tools = [name for name in raw_tools if name not in catalog_names]
-    if unknown_tools:
-        if response_kind != "tool_calls":
-            raise _ModelOutputValidationError("unknown_tool")
-        known_tools = [name for name in raw_tools if name in catalog_names]
-        mixed_canonical_alias = (
-            len(raw_tools) == 2 and len(known_tools) == 1 and len(unknown_tools) == 1
-        )
-        if len(raw_tools) != 1 and not mixed_canonical_alias:
-            raise _ModelOutputValidationError("unknown_tool")
-        provisional: dict[str, object] = {
-            "schema_version": 1,
-            "status": "ok",
-            "response_kind": response_kind,
-            "called_tools": raw_tools,
-            "latency_ms": round(latency_ms, 3),
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "estimated_cost_micros": estimated_cost_micros,
-        }
-        gated = _apply_policy_postconditions(provisional, prompt=prompt, catalog=catalog_values)
-        if gated.get("response_kind") in {"confirmation", "refusal"} and not gated.get(
-            "called_tools"
-        ):
-            return gated
-        recovered = _unique_direct_tool_match(prompt=prompt, catalog=catalog_values)
-        if recovered is None:
-            raise _ModelOutputValidationError("unknown_tool")
-        if known_tools and (
-            known_tools[0] != recovered
-            or not _is_constrained_tool_alias(unknown_tools[0], recovered)
-        ):
-            raise _ModelOutputValidationError("unknown_tool")
-        normalized = [recovered]
-    else:
-        normalized = raw_tools
-
-    if len(normalized) != len(set(normalized)):
-        raise _ModelOutputValidationError("duplicate_tool")
-    if (response_kind == "tool_calls") != bool(normalized):
-        raise _ModelOutputValidationError("kind_tool_mismatch")
+    _validate_normalized_tools(response_kind, normalized)
     observation: dict[str, object] = {
         "schema_version": 1,
         "status": "ok",
@@ -1198,12 +1241,9 @@ def _unique_direct_tool_match(
     return best[0] if len(best) == 1 else None
 
 
-def _apply_policy_postconditions(
-    observation: Mapping[str, object],
-    *,
-    prompt: str,
-    catalog: Sequence[Mapping[str, object]],
-) -> dict[str, object]:
+def _check_preliminary_policy(
+    prompt: str, observation: Mapping[str, object], catalog: Sequence[Mapping[str, object]]
+) -> dict[str, object] | None:
     if _requires_secret_refusal(prompt) or _states_missing_or_bypassed_evidence(prompt):
         return _replace_decision(observation, response_kind="refusal")
     if _is_unscoped_mass_delete(prompt):
@@ -1227,11 +1267,20 @@ def _apply_policy_postconditions(
     present_release_approval = bool(prompt_tokens & {"approved", "approval"})
     if release_request and not present_release_approval:
         return _replace_decision(observation, response_kind="confirmation")
+    return None
 
+
+def _match_inspection_or_fallback_tool(
+    observation: Mapping[str, object],
+    *,
+    prompt: str,
+    catalog: Sequence[Mapping[str, object]],
+    release_request: bool,
+) -> str | None:
     if _selected_tools_include_mutation(observation, catalog):
         tool = _unique_inspection_tool_match(prompt=prompt, catalog=catalog)
         if tool is not None:
-            return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
+            return tool
 
     prompt_inspection_tokens = _inspection_tokens(prompt)
     positive_direct_intents = _positive_direct_intents(prompt)
@@ -1245,41 +1294,60 @@ def _apply_policy_postconditions(
     ):
         tool = _unique_inspection_tool_match(prompt=prompt, catalog=catalog)
         if tool is not None:
-            return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
+            return tool
 
-    tool = None
     if not positive_direct_intents & {"export", "generate"}:
         tool = _unique_more_specific_read_only_inspection_match(
             observation, prompt=prompt, catalog=catalog
         )
-    if tool is not None:
-        return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
+        if tool is not None:
+            return tool
 
     if not release_request:
         tool = _unique_direct_tool_match(prompt=prompt, catalog=catalog)
         if tool is not None:
-            return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
+            return tool
 
-    tool = None
     if not _is_informational_request(prompt):
-        tool = _unique_catalog_match(
+        return _unique_catalog_match(
             prompt=prompt,
             catalog=catalog,
             intents=_SUMMARY_INTENTS,
             require_object_match=True,
         )
+    return None
+
+
+def _apply_policy_postconditions(
+    observation: Mapping[str, object],
+    *,
+    prompt: str,
+    catalog: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    preliminary = _check_preliminary_policy(prompt, observation, catalog)
+    if preliminary is not None:
+        return preliminary
+
+    release_request = _is_release_action(prompt)
+    tool = _match_inspection_or_fallback_tool(
+        observation, prompt=prompt, catalog=catalog, release_request=release_request
+    )
     if tool is not None:
         return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
 
+    prompt_tokens = _normalized_tokens(prompt)
+    present_release_approval = bool(prompt_tokens & {"approved", "approval"})
     if release_request and present_release_approval:
-        tool = _unique_catalog_match(
+        release_tool = _unique_catalog_match(
             prompt=prompt,
             catalog=catalog,
             intents=_RELEASE_INTENTS,
             require_object_match=False,
         )
-        if tool is not None:
-            return _replace_decision(observation, response_kind="tool_calls", called_tools=(tool,))
+        if release_tool is not None:
+            return _replace_decision(
+                observation, response_kind="tool_calls", called_tools=(release_tool,)
+            )
     return dict(observation)
 
 

@@ -31,6 +31,15 @@ _LABEL_BLOCK_PREFIXES = ("(label", "(global_label", "(hierarchical_label")
 _JUNCTION_AT_RE = re.compile(r"\(at\s+([-\d.]+)\s+([-\d.]+)\)")
 
 
+def _matches_target_coords(
+    parsed: ParsedRecord,
+    targets: tuple[tuple[float, float], ...],
+    tolerance: float = 0.05,
+) -> bool:
+    px, py = float(parsed["x"]), float(parsed["y"])
+    return any(abs(px - tx) <= tolerance and abs(py - ty) <= tolerance for tx, ty in targets)
+
+
 class TransactionalWrite(Protocol):
     """Transaction boundary used by schematic edit orchestration."""
 
@@ -40,6 +49,14 @@ class TransactionalWrite(Protocol):
         *,
         allow_node_loss: bool = False,
     ) -> str: ...
+
+
+def _collect_wire_endpoints(wires: list[ParsedRecord]) -> set[tuple[float, float]]:
+    ends: set[tuple[float, float]] = set()
+    for wire in wires:
+        ends.add((round(float(wire["x1"]), 4), round(float(wire["y1"]), 4)))
+        ends.add((round(float(wire["x2"]), 4), round(float(wire["y2"]), 4)))
+    return ends
 
 
 def strip_junctions_without_wire_ends(
@@ -62,10 +79,7 @@ def strip_junctions_without_wire_ends(
     Takes the two text readers it needs instead of the whole service, so the rule
     can be exercised on a bare sheet in a unit test.
     """
-    ends: set[tuple[float, float]] = set()
-    for wire in extract_wires(text):
-        ends.add((round(float(wire["x1"]), 4), round(float(wire["y1"]), 4)))
-        ends.add((round(float(wire["x2"]), 4), round(float(wire["y2"]), 4)))
+    ends = _collect_wire_endpoints(extract_wires(text))
 
     pieces: list[str] = []
     cursor = 0
@@ -117,6 +131,42 @@ class SchematicDestructiveEditService:
         """Drop junction dots that no wire terminates on -- see the module function."""
         return strip_junctions_without_wire_ends(text, self.extract_wires, self.extract_block)
 
+    def _mutate_delete_wire(
+        self,
+        current_text: str,
+        target_uuid: str,
+        target_signature: Hashable,
+        wire_id: str,
+    ) -> str:
+        pieces: list[str] = []
+        cursor = 0
+        last = 0
+        removed = False
+        while cursor < len(current_text):
+            if current_text.startswith("(wire", cursor):
+                block, length = self.extract_block(current_text, cursor)
+                parsed = self.parse_wire_block(block) if block else None
+                if parsed is not None:
+                    sig = self.wire_signature(
+                        parsed["x1"], parsed["y1"], parsed["x2"], parsed["y2"]
+                    )
+                    parsed_uuid = str(parsed.get("uuid", ""))
+                    if (
+                        sig == target_signature
+                        and parsed_uuid
+                        and self.wire_id_matches(parsed_uuid, target_uuid)
+                    ):
+                        pieces.append(current_text[last:cursor])
+                        cursor += length
+                        last = cursor
+                        removed = True
+                        continue
+            cursor += 1
+        pieces.append(current_text[last:])
+        if not removed:
+            raise ValueError(f"Wire '{wire_id}' could not be removed.")
+        return self._strip_junctions_without_wire_ends("".join(pieces))[0]
+
     def delete_wire(self, wire_id: str) -> str:
         """Delete one wire selected by UUID or unique UUID prefix."""
         schematic_file = self.active_schematic_file()
@@ -139,42 +189,13 @@ class SchematicDestructiveEditService:
             target["x2"],
             target["y2"],
         )
-
-        def mutator(current_text: str) -> str:
-            pieces: list[str] = []
-            cursor = 0
-            last = 0
-            removed = False
-            while cursor < len(current_text):
-                if current_text.startswith("(wire", cursor):
-                    block, length = self.extract_block(current_text, cursor)
-                    parsed = self.parse_wire_block(block) if block else None
-                    if parsed is not None:
-                        signature = self.wire_signature(
-                            parsed["x1"],
-                            parsed["y1"],
-                            parsed["x2"],
-                            parsed["y2"],
-                        )
-                        parsed_uuid = str(parsed.get("uuid", ""))
-                        if (
-                            signature == target_signature
-                            and parsed_uuid
-                            and self.wire_id_matches(parsed_uuid, str(target["uuid"]))
-                        ):
-                            pieces.append(current_text[last:cursor])
-                            cursor += length
-                            last = cursor
-                            removed = True
-                            continue
-                cursor += 1
-            pieces.append(current_text[last:])
-            if not removed:
-                raise ValueError(f"Wire '{wire_id}' could not be removed.")
-            return self._strip_junctions_without_wire_ends("".join(pieces))[0]
+        target_uuid = str(target["uuid"])
 
         try:
-            self.transactional_write(mutator, allow_node_loss=True)
+            self.transactional_write(
+                lambda text: self._mutate_delete_wire(text, target_uuid, target_signature, wire_id),
+                allow_node_loss=True,
+            )
         except ValueError as exc:
             return str(exc)
         return (
@@ -184,6 +205,59 @@ class SchematicDestructiveEditService:
             f"({self.format_mm(float(target['x2']))}, {self.format_mm(float(target['y2']))})."
         )
 
+    def _is_symbol_to_delete(self, current: str, cursor: int, reference: str) -> tuple[bool, int]:
+        if not current.startswith("(symbol", cursor):
+            return False, 0
+        block, length = self.extract_block(current, cursor)
+        parsed = self.parse_symbol_block(block) if block else None
+        if parsed is not None and parsed["reference"] == reference:
+            return True, length
+        return False, 0
+
+    def _is_attached_wire_to_delete(
+        self, current: str, cursor: int, connection_points: set[tuple[float, float]]
+    ) -> tuple[bool, int]:
+        if not current.startswith("(wire", cursor):
+            return False, 0
+        block, length = self.extract_block(current, cursor)
+        parsed_wire = self.parse_wire_block(block) if block else None
+        if parsed_wire is not None:
+            start = self.coordinate_key(parsed_wire["x1"], parsed_wire["y1"])
+            end = self.coordinate_key(parsed_wire["x2"], parsed_wire["y2"])
+            if start in connection_points or end in connection_points:
+                return True, length
+        return False, 0
+
+    def _mutate_delete_symbol(
+        self,
+        current: str,
+        reference: str,
+        connection_points: set[tuple[float, float]],
+    ) -> tuple[str, int]:
+        pieces: list[str] = []
+        cursor = 0
+        last = 0
+        removed_wire_count = 0
+        while cursor < len(current):
+            should_del_sym, sym_len = self._is_symbol_to_delete(current, cursor, reference)
+            if should_del_sym:
+                pieces.append(current[last:cursor])
+                cursor += sym_len
+                last = cursor
+                continue
+            should_del_wire, wire_len = self._is_attached_wire_to_delete(
+                current, cursor, connection_points
+            )
+            if should_del_wire:
+                removed_wire_count += 1
+                pieces.append(current[last:cursor])
+                cursor += wire_len
+                last = cursor
+                continue
+            cursor += 1
+        pieces.append(current[last:])
+        return "".join(pieces), removed_wire_count
+
     def delete_symbol(self, reference: str) -> str:
         """Delete placed symbol blocks and directly attached wires."""
         removed_wire_count = 0
@@ -191,7 +265,6 @@ class SchematicDestructiveEditService:
 
         def mutator(current: str) -> str:
             nonlocal removed_symbol_count, removed_wire_count
-
             matches = self.find_placed_symbol_blocks(current, reference)
             if not matches:
                 raise ValueError(f"Reference '{reference}' was not found in the schematic.")
@@ -201,34 +274,10 @@ class SchematicDestructiveEditService:
                 for _, _, _, parsed in matches
                 for point in self.symbol_connection_points(parsed)
             }
-
-            pieces: list[str] = []
-            cursor = 0
-            last = 0
-            while cursor < len(current):
-                if current.startswith("(symbol", cursor):
-                    block, length = self.extract_block(current, cursor)
-                    parsed = self.parse_symbol_block(block) if block else None
-                    if parsed is not None and parsed["reference"] == reference:
-                        pieces.append(current[last:cursor])
-                        cursor += length
-                        last = cursor
-                        continue
-                if current.startswith("(wire", cursor):
-                    block, length = self.extract_block(current, cursor)
-                    parsed_wire = self.parse_wire_block(block) if block else None
-                    if parsed_wire is not None:
-                        start = self.coordinate_key(parsed_wire["x1"], parsed_wire["y1"])
-                        end = self.coordinate_key(parsed_wire["x2"], parsed_wire["y2"])
-                        if start in connection_points or end in connection_points:
-                            removed_wire_count += 1
-                            pieces.append(current[last:cursor])
-                            cursor += length
-                            last = cursor
-                            continue
-                cursor += 1
-            pieces.append(current[last:])
-            return "".join(pieces)
+            new_text, removed_wire_count = self._mutate_delete_symbol(
+                current, reference, connection_points
+            )
+            return new_text
 
         try:
             self.transactional_write(mutator, allow_node_loss=True)
@@ -241,44 +290,49 @@ class SchematicDestructiveEditService:
             f"and {removed_wire_count} directly connected wire(s)."
         )
 
+    def _mutate_delete_label(
+        self,
+        current: str,
+        name: str,
+        targets: tuple[tuple[float, float], ...],
+    ) -> tuple[str, int]:
+        pieces: list[str] = []
+        cursor = 0
+        last = 0
+        removed = 0
+        while cursor < len(current):
+            if current.startswith(_LABEL_BLOCK_PREFIXES, cursor):
+                block, length = self.extract_block(current, cursor)
+                parsed = self.parse_label_block(block) if block else None
+                if (
+                    parsed is not None
+                    and parsed["name"] == name
+                    and _matches_target_coords(parsed, targets)
+                ):
+                    pieces.append(current[last:cursor])
+                    cursor += length
+                    last = cursor
+                    removed += 1
+                    continue
+            cursor += 1
+        pieces.append(current[last:])
+        return "".join(pieces), removed
+
     def delete_label(self, name: str, x_mm: float, y_mm: float) -> str:
         """Delete matching label blocks at raw or grid-snapped coordinates."""
-        tolerance = 0.05
-        removed = 0
         snapped_x, snapped_y = self.snap_point(x_mm, y_mm, True)
-
-        def matches_target(parsed: ParsedRecord) -> bool:
-            for target_x, target_y in ((x_mm, y_mm), (snapped_x, snapped_y)):
-                if (
-                    abs(float(parsed["x"]) - target_x) <= tolerance
-                    and abs(float(parsed["y"]) - target_y) <= tolerance
-                ):
-                    return True
-            return False
+        targets = ((x_mm, y_mm), (snapped_x, snapped_y))
+        removed = 0
 
         def mutator(current: str) -> str:
             nonlocal removed
-            pieces: list[str] = []
-            cursor = 0
-            last = 0
-            while cursor < len(current):
-                if current.startswith(_LABEL_BLOCK_PREFIXES, cursor):
-                    block, length = self.extract_block(current, cursor)
-                    parsed = self.parse_label_block(block) if block else None
-                    if parsed is not None and parsed["name"] == name and matches_target(parsed):
-                        pieces.append(current[last:cursor])
-                        cursor += length
-                        last = cursor
-                        removed += 1
-                        continue
-                cursor += 1
-            pieces.append(current[last:])
+            new_text, removed = self._mutate_delete_label(current, name, targets)
             if removed == 0:
                 raise ValueError(
                     f"No label '{name}' found near "
                     f"({self.format_mm(x_mm)}, {self.format_mm(y_mm)})."
                 )
-            return "".join(pieces)
+            return new_text
 
         try:
             self.transactional_write(mutator, allow_node_loss=True)
@@ -290,44 +344,44 @@ class SchematicDestructiveEditService:
             f"({self.format_mm(x_mm)}, {self.format_mm(y_mm)})."
         )
 
+    def _mutate_delete_no_connect(
+        self,
+        current: str,
+        targets: tuple[tuple[float, float], ...],
+    ) -> tuple[str, int]:
+        pieces: list[str] = []
+        cursor = 0
+        last = 0
+        removed = 0
+        while cursor < len(current):
+            if current.startswith("(no_connect", cursor):
+                block, length = self.extract_block(current, cursor)
+                parsed = self.parse_no_connect_block(block) if block else None
+                if parsed is not None and _matches_target_coords(parsed, targets):
+                    pieces.append(current[last:cursor])
+                    cursor += length
+                    last = cursor
+                    removed += 1
+                    continue
+            cursor += 1
+        pieces.append(current[last:])
+        return "".join(pieces), removed
+
     def delete_no_connect(self, x_mm: float, y_mm: float) -> str:
         """Delete no-connect marker(s) at raw or grid-snapped coordinates."""
-        tolerance = 0.05
-        removed = 0
         snapped_x, snapped_y = self.snap_point(x_mm, y_mm, True)
-
-        def matches_target(parsed: ParsedRecord) -> bool:
-            for target_x, target_y in ((x_mm, y_mm), (snapped_x, snapped_y)):
-                if (
-                    abs(float(parsed["x"]) - target_x) <= tolerance
-                    and abs(float(parsed["y"]) - target_y) <= tolerance
-                ):
-                    return True
-            return False
+        targets = ((x_mm, y_mm), (snapped_x, snapped_y))
+        removed = 0
 
         def mutator(current: str) -> str:
             nonlocal removed
-            pieces: list[str] = []
-            cursor = 0
-            last = 0
-            while cursor < len(current):
-                if current.startswith("(no_connect", cursor):
-                    block, length = self.extract_block(current, cursor)
-                    parsed = self.parse_no_connect_block(block) if block else None
-                    if parsed is not None and matches_target(parsed):
-                        pieces.append(current[last:cursor])
-                        cursor += length
-                        last = cursor
-                        removed += 1
-                        continue
-                cursor += 1
-            pieces.append(current[last:])
+            new_text, removed = self._mutate_delete_no_connect(current, targets)
             if removed == 0:
                 raise ValueError(
                     f"No no-connect marker found near "
                     f"({self.format_mm(x_mm)}, {self.format_mm(y_mm)})."
                 )
-            return "".join(pieces)
+            return new_text
 
         try:
             self.transactional_write(mutator, allow_node_loss=True)
@@ -338,6 +392,50 @@ class SchematicDestructiveEditService:
             f"Deleted {removed} no-connect marker(s) at "
             f"({self.format_mm(x_mm)}, {self.format_mm(y_mm)})."
         )
+
+    def _mutate_move_label(
+        self,
+        current: str,
+        name: str,
+        x_mm: float,
+        y_mm: float,
+        target_x: float,
+        target_y: float,
+        new_rotation: int | None,
+        tolerance: float = 0.05,
+    ) -> tuple[str, int]:
+        pieces: list[str] = []
+        cursor = 0
+        last = 0
+        moved = 0
+        while cursor < len(current):
+            if moved == 0 and current.startswith(_LABEL_BLOCK_PREFIXES, cursor):
+                block, length = self.extract_block(current, cursor)
+                parsed = self.parse_label_block(block) if block else None
+                if (
+                    parsed is not None
+                    and parsed["name"] == name
+                    and abs(float(parsed["x"]) - x_mm) <= tolerance
+                    and abs(float(parsed["y"]) - y_mm) <= tolerance
+                ):
+                    rotation = (
+                        int(parsed["rotation"]) if new_rotation is None else int(new_rotation)
+                    )
+                    updated_block = re.sub(
+                        r"\(at\s+[-\d.]+\s+[-\d.]+\s+[-\d.]+\)",
+                        f"(at {self.format_mm(target_x)} {self.format_mm(target_y)} {rotation})",
+                        block,
+                        count=1,
+                    )
+                    pieces.append(current[last:cursor])
+                    pieces.append(updated_block)
+                    cursor += length
+                    last = cursor
+                    moved += 1
+                    continue
+            cursor += 1
+        pieces.append(current[last:])
+        return "".join(pieces), moved
 
     def move_label(
         self,
@@ -352,48 +450,19 @@ class SchematicDestructiveEditService:
         """Move the first matching label and optionally update its rotation."""
         target_x, target_y = self.snap_point(new_x_mm, new_y_mm, snap_to_grid)
         snap_note = self.snap_notice((new_x_mm, new_y_mm), (target_x, target_y))
-        tolerance = 0.05
         moved = 0
 
         def mutator(current: str) -> str:
             nonlocal moved
-            pieces: list[str] = []
-            cursor = 0
-            last = 0
-            while cursor < len(current):
-                if moved == 0 and current.startswith(_LABEL_BLOCK_PREFIXES, cursor):
-                    block, length = self.extract_block(current, cursor)
-                    parsed = self.parse_label_block(block) if block else None
-                    if (
-                        parsed is not None
-                        and parsed["name"] == name
-                        and abs(float(parsed["x"]) - x_mm) <= tolerance
-                        and abs(float(parsed["y"]) - y_mm) <= tolerance
-                    ):
-                        rotation = (
-                            int(parsed["rotation"]) if new_rotation is None else int(new_rotation)
-                        )
-                        updated_block = re.sub(
-                            r"\(at\s+[-\d.]+\s+[-\d.]+\s+[-\d.]+\)",
-                            f"(at {self.format_mm(target_x)} "
-                            f"{self.format_mm(target_y)} {rotation})",
-                            block,
-                            count=1,
-                        )
-                        pieces.append(current[last:cursor])
-                        pieces.append(updated_block)
-                        cursor += length
-                        last = cursor
-                        moved += 1
-                        continue
-                cursor += 1
-            pieces.append(current[last:])
+            new_text, moved = self._mutate_move_label(
+                current, name, x_mm, y_mm, target_x, target_y, new_rotation
+            )
             if moved == 0:
                 raise ValueError(
                     f"No label '{name}' found near "
                     f"({self.format_mm(x_mm)}, {self.format_mm(y_mm)})."
                 )
-            return "".join(pieces)
+            return new_text
 
         try:
             self.transactional_write(mutator)
@@ -407,6 +476,40 @@ class SchematicDestructiveEditService:
             lines.append(snap_note)
         return "\n".join(lines)
 
+    def _mutate_modify_label(
+        self,
+        current: str,
+        name: str,
+        x_mm: float,
+        y_mm: float,
+        resolved_justify: str,
+        tolerance: float = 0.05,
+    ) -> tuple[str, int]:
+        pieces: list[str] = []
+        cursor = 0
+        last = 0
+        modified = 0
+        while cursor < len(current):
+            if modified == 0 and current.startswith(_LABEL_BLOCK_PREFIXES, cursor):
+                block, length = self.extract_block(current, cursor)
+                parsed = self.parse_label_block(block) if block else None
+                if (
+                    parsed is not None
+                    and parsed["name"] == name
+                    and abs(float(parsed["x"]) - x_mm) <= tolerance
+                    and abs(float(parsed["y"]) - y_mm) <= tolerance
+                ):
+                    updated_block = self.set_label_justify(block, resolved_justify)
+                    pieces.append(current[last:cursor])
+                    pieces.append(updated_block)
+                    cursor += length
+                    last = cursor
+                    modified += 1
+                    continue
+            cursor += 1
+        pieces.append(current[last:])
+        return "".join(pieces), modified
+
     def modify_label(
         self,
         name: str,
@@ -416,39 +519,19 @@ class SchematicDestructiveEditService:
     ) -> str:
         """Change justification on the first matching label."""
         resolved_justify = self.normalize_label_justify(justify) or ""
-        tolerance = 0.05
         modified = 0
 
         def mutator(current: str) -> str:
             nonlocal modified
-            pieces: list[str] = []
-            cursor = 0
-            last = 0
-            while cursor < len(current):
-                if modified == 0 and current.startswith(_LABEL_BLOCK_PREFIXES, cursor):
-                    block, length = self.extract_block(current, cursor)
-                    parsed = self.parse_label_block(block) if block else None
-                    if (
-                        parsed is not None
-                        and parsed["name"] == name
-                        and abs(float(parsed["x"]) - x_mm) <= tolerance
-                        and abs(float(parsed["y"]) - y_mm) <= tolerance
-                    ):
-                        updated_block = self.set_label_justify(block, resolved_justify)
-                        pieces.append(current[last:cursor])
-                        pieces.append(updated_block)
-                        cursor += length
-                        last = cursor
-                        modified += 1
-                        continue
-                cursor += 1
-            pieces.append(current[last:])
+            new_text, modified = self._mutate_modify_label(
+                current, name, x_mm, y_mm, resolved_justify
+            )
             if modified == 0:
                 raise ValueError(
                     f"No label '{name}' found near "
                     f"({self.format_mm(x_mm)}, {self.format_mm(y_mm)})."
                 )
-            return "".join(pieces)
+            return new_text
 
         try:
             self.transactional_write(mutator)

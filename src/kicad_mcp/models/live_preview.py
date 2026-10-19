@@ -122,6 +122,104 @@ class LivePreviewManifest(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+def _compute_outcome(status: str, render_status: str, reload_confirmed: bool) -> LivePreviewOutcome:
+    if status == "pending_debounce":
+        return "pending"
+    if render_status == "ok" or status.endswith("_rendered"):
+        return "rendered"
+    if status.endswith("_reloaded"):
+        return "reloaded" if reload_confirmed else "reload_requested"
+    if render_status == "failed" or status == "error":
+        return "error"
+    if status == "fallback":
+        return "fallback"
+    if status in {"initialized", "no_change", "changed_skipped"}:
+        return "skipped"
+    return "changed"
+
+
+def _compute_reload_info(
+    payload: dict[str, Any], reload_confirmed: bool
+) -> tuple[bool, str, str, list[str]]:
+    reload_result = payload.get("reload_result")
+    reload_attempted = bool(payload.get("reload_attempted") or reload_result)
+    if reload_attempted and not reload_confirmed:
+        reload_outcome = "requested"
+    elif reload_attempted and reload_confirmed:
+        reload_outcome = "confirmed"
+    else:
+        reload_outcome = str(payload.get("reload_outcome") or "skipped")
+
+    if reload_confirmed:
+        reload_mode = "confirmed_gui_reload"
+    elif reload_attempted:
+        reload_mode = "best_effort_gui_request"
+    else:
+        reload_mode = "skipped"
+
+    upstream_blockers = [str(item) for item in payload.get("upstream_blockers", [])]
+    if reload_attempted and not reload_confirmed:
+        upstream_blockers.append(SCHEMATIC_GUI_RELOAD_UPSTREAM_BLOCKER_URL)
+
+    return reload_attempted, reload_outcome, reload_mode, upstream_blockers
+
+
+def _build_render_artifacts(render: LivePreviewRender) -> list[LivePreviewArtifact]:
+    artifacts: list[LivePreviewArtifact] = []
+    if render.png_path:
+        artifacts.append(
+            LivePreviewArtifact(
+                kind="png",
+                path=render.png_path,
+                role="rendered-preview",
+                mime_type="image/png",
+            )
+        )
+    if render.svg_path:
+        artifacts.append(
+            LivePreviewArtifact(
+                kind="svg",
+                path=render.svg_path,
+                role="source-render",
+                mime_type="image/svg+xml",
+            )
+        )
+    return artifacts
+
+
+def _determine_next_actions(outcome: LivePreviewOutcome) -> list[str]:
+    if outcome == "pending":
+        return ["Call sch_live_preview again after the debounce window settles."]
+    if outcome == "rendered":
+        return [
+            "Inspect render_artifacts before continuing.",
+            "Run ERC/DRC checks after schematic changes.",
+        ]
+    if outcome == "reload_requested":
+        return [
+            "Inspect render_artifacts when available before continuing.",
+            "Do not assume the KiCad GUI document reloaded from disk.",
+            "Run ERC/DRC checks after schematic changes.",
+        ]
+    if outcome == "reloaded":
+        return ["Verify the GUI-visible sheet and run ERC/DRC checks."]
+    if outcome == "error":
+        return ["Inspect warnings and renderer diagnostics before retrying."]
+    return ["Continue only if the structured status matches the intended workflow state."]
+
+
+def _compute_warnings(
+    payload: dict[str, Any], reload_attempted: bool, reload_confirmed: bool
+) -> list[str]:
+    warnings = [str(item) for item in payload.get("warnings", [])]
+    if reload_attempted and not reload_confirmed:
+        warnings.append(SCHEMATIC_GUI_RELOAD_BEST_EFFORT_WARNING)
+        warnings.append(SCHEMATIC_GUI_RELOAD_UNCONFIRMED_WARNING)
+    if reload_attempted and not payload.get("dirty_state_verified", False):
+        warnings.append("GUI dirty state could not be verified before reload request.")
+    return list(dict.fromkeys(warnings))
+
+
 class LivePreviewPayload(BaseModel):
     """Stable agent-facing live-preview response contract."""
 
@@ -170,20 +268,8 @@ class LivePreviewPayload(BaseModel):
         render_payload = payload.get("render") or {}
         render_status = str(render_payload.get("status", "skipped"))
         reload_confirmed = bool(payload.get("reload_confirmed", False))
-        if status == "pending_debounce":
-            outcome: LivePreviewOutcome = "pending"
-        elif render_status == "ok" or status.endswith("_rendered"):
-            outcome = "rendered"
-        elif status.endswith("_reloaded"):
-            outcome = "reloaded" if reload_confirmed else "reload_requested"
-        elif render_status == "failed" or status == "error":
-            outcome = "error"
-        elif status == "fallback":
-            outcome = "fallback"
-        elif status in {"initialized", "no_change", "changed_skipped"}:
-            outcome = "skipped"
-        else:
-            outcome = "changed"
+
+        outcome = _compute_outcome(status, render_status, reload_confirmed)
         render = LivePreviewRender(
             status=render_status if render_status in get_args(RenderStatus) else "failed",
             sheet_path=render_payload.get("sheet_path"),
@@ -200,76 +286,19 @@ class LivePreviewPayload(BaseModel):
             files=watch_files,
             changed_files=changed_files,
         )
-        reload_result = payload.get("reload_result")
-        reload_attempted = bool(payload.get("reload_attempted") or reload_result)
-        if reload_attempted and not reload_confirmed:
-            # A successful IPC send means the GUI-facing request was attempted; it
-            # does not prove that the open Eeschema document reloaded from disk.
-            reload_outcome = "requested"
-        elif reload_attempted and reload_confirmed:
-            reload_outcome = "confirmed"
-        else:
-            reload_outcome = str(payload.get("reload_outcome") or "skipped")
-        if reload_confirmed:
-            reload_mode = "confirmed_gui_reload"
-        elif reload_attempted:
-            reload_mode = "best_effort_gui_request"
-        else:
-            reload_mode = "skipped"
-        upstream_blockers = [str(item) for item in payload.get("upstream_blockers", [])]
-        if reload_attempted and not reload_confirmed:
-            upstream_blockers.append(SCHEMATIC_GUI_RELOAD_UPSTREAM_BLOCKER_URL)
-        render_artifacts: list[LivePreviewArtifact] = []
-        if render.png_path:
-            render_artifacts.append(
-                LivePreviewArtifact(
-                    kind="png",
-                    path=render.png_path,
-                    role="rendered-preview",
-                    mime_type="image/png",
-                )
-            )
-        if render.svg_path:
-            render_artifacts.append(
-                LivePreviewArtifact(
-                    kind="svg",
-                    path=render.svg_path,
-                    role="source-render",
-                    mime_type="image/svg+xml",
-                )
-            )
-        warnings = [str(item) for item in payload.get("warnings", [])]
-        if reload_attempted and not reload_confirmed:
-            warnings.append(SCHEMATIC_GUI_RELOAD_BEST_EFFORT_WARNING)
-            warnings.append(SCHEMATIC_GUI_RELOAD_UNCONFIRMED_WARNING)
-        if reload_attempted and not payload.get("dirty_state_verified", False):
-            warnings.append("GUI dirty state could not be verified before reload request.")
-        warnings = list(dict.fromkeys(warnings))
+
+        reload_attempted, reload_outcome, reload_mode, upstream_blockers = _compute_reload_info(
+            payload, reload_confirmed
+        )
+        render_artifacts = _build_render_artifacts(render)
+        warnings = _compute_warnings(payload, reload_attempted, reload_confirmed)
+
         unsafe_state = dict(payload.get("unsafe_state") or {})
         dirty_state_verified = bool(payload.get("dirty_state_verified", False))
         unsafe_state.setdefault("dirty_state_verified", dirty_state_verified)
         unsafe_state.setdefault("unsafe", False)
-        if outcome == "pending":
-            next_actions = ["Call sch_live_preview again after the debounce window settles."]
-        elif outcome == "rendered":
-            next_actions = [
-                "Inspect render_artifacts before continuing.",
-                "Run ERC/DRC checks after schematic changes.",
-            ]
-        elif outcome == "reload_requested":
-            next_actions = [
-                "Inspect render_artifacts when available before continuing.",
-                "Do not assume the KiCad GUI document reloaded from disk.",
-                "Run ERC/DRC checks after schematic changes.",
-            ]
-        elif outcome == "reloaded":
-            next_actions = ["Verify the GUI-visible sheet and run ERC/DRC checks."]
-        elif outcome == "error":
-            next_actions = ["Inspect warnings and renderer diagnostics before retrying."]
-        else:
-            next_actions = [
-                "Continue only if the structured status matches the intended workflow state."
-            ]
+
+        next_actions = _determine_next_actions(outcome)
         debounce_ms = int(payload.get("debounce_ms", 750))
         debounce_state = str(payload.get("debounce_state", "settled"))
         if debounce_state not in {"idle", "observing", "waiting", "settled"}:

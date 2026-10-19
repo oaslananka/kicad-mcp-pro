@@ -64,7 +64,7 @@ def _canonical(spec: dict[str, Any]) -> str:
 
 def compute_plan_id(spec: dict[str, Any]) -> str:
     """Return a stable, content-addressed id for ``spec``."""
-    digest = hashlib.sha1(_canonical(spec).encode("utf-8"), usedforsecurity=False).hexdigest()
+    digest = hashlib.sha256(_canonical(spec).encode("utf-8"), usedforsecurity=False).hexdigest()
     return f"plan_{digest[:12]}"
 
 

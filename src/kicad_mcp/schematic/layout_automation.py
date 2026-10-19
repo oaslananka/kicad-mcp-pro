@@ -222,6 +222,44 @@ class SchematicLayoutAutomationService:
             f"{': ' + ', '.join(updated) if updated else ''}."
         )
 
+    def _extract_finding_codes(self, report: Mapping[str, Any]) -> set[str]:
+        findings = report.get("findings", [])
+        codes: set[str] = set()
+        if isinstance(findings, list):
+            for finding in cast(list[object], findings):
+                if not isinstance(finding, dict):
+                    continue
+                code = cast(dict[str, object], finding).get("code")
+                if code is not None:
+                    codes.add(str(code))
+        return codes
+
+    def _apply_readability_pass(self, sch_file: Path, codes: set[str], actions: list[str]) -> bool:
+        changed = False
+        if {"offsheet_symbol", "offsheet_label"} & codes:
+            current_paper = self.read_sheet_paper(sch_file)
+            ladder_index = (
+                self.paper_ladder.index(current_paper) if current_paper in self.paper_ladder else 0
+            )
+            if ladder_index < len(self.paper_ladder) - 1:
+                target = self.paper_ladder[ladder_index + 1]
+                if self.resize_sheet_apply(sch_file, target):
+                    actions.append(f"grew sheet to {target}")
+                    changed = True
+        if "symbol_overlap" in codes and not self.schematic_has_connections(
+            sch_file.read_text(encoding="utf-8", errors="ignore")
+        ):
+            respaced = self.respace_symbols_apply(sch_file)
+            if respaced:
+                actions.append(f"re-spaced {len(respaced)} overlapping symbol(s)")
+                changed = True
+        if "text_overlap" in codes:
+            moved = self.autoplace_fields_apply(sch_file)
+            if moved:
+                actions.append(f"auto-placed fields on {len(moved)} symbol(s)")
+                changed = True
+        return changed
+
     def fix_readability(self, max_passes: int = 3) -> str:
         """Apply safe readability fixes until clean, stable, or pass-limited."""
         passes = max(1, max_passes)
@@ -235,15 +273,7 @@ class SchematicLayoutAutomationService:
         for pass_index in range(passes):
             report = self.run_visual_qa(sch_file.read_text(encoding="utf-8", errors="ignore"))
             status = str(report["status"])
-            findings = report["findings"]
-            codes: set[str] = set()
-            if isinstance(findings, list):
-                for finding in cast(list[object], findings):
-                    if not isinstance(finding, dict):
-                        continue
-                    code = cast(dict[str, object], finding).get("code")
-                    if code is not None:
-                        codes.add(str(code))
+            codes = self._extract_finding_codes(report)
             if initial_status is None:
                 initial_status = status
             final_status = status
@@ -253,36 +283,10 @@ class SchematicLayoutAutomationService:
             if status == "PASS":
                 break
 
-            changed = False
-            if {"offsheet_symbol", "offsheet_label"} & codes:
-                current_paper = self.read_sheet_paper(sch_file)
-                ladder_index = (
-                    self.paper_ladder.index(current_paper)
-                    if current_paper in self.paper_ladder
-                    else 0
-                )
-                if ladder_index < len(self.paper_ladder) - 1:
-                    target = self.paper_ladder[ladder_index + 1]
-                    if self.resize_sheet_apply(sch_file, target):
-                        actions.append(f"grew sheet to {target}")
-                        changed = True
-            if "symbol_overlap" in codes and not self.schematic_has_connections(
-                sch_file.read_text(encoding="utf-8", errors="ignore")
-            ):
-                respaced = self.respace_symbols_apply(sch_file)
-                if respaced:
-                    actions.append(f"re-spaced {len(respaced)} overlapping symbol(s)")
-                    changed = True
-            if "text_overlap" in codes:
-                moved = self.autoplace_fields_apply(sch_file)
-                if moved:
-                    actions.append(f"auto-placed fields on {len(moved)} symbol(s)")
-                    changed = True
-
-            if not changed:
-                remaining = codes
-                break
+            changed = self._apply_readability_pass(sch_file, codes, actions)
             remaining = codes
+            if not changed:
+                break
 
         if actions:
             self.reload_schematic()
@@ -304,6 +308,59 @@ class SchematicLayoutAutomationService:
                 + " (try sch_auto_place_functional / sch_auto_resize_sheet)."
             )
         return "\n".join(summary)
+
+    def _populate_initial_zone_occupancy(
+        self,
+        fixed_syms: list[dict[str, Any]],
+        sym_meta: dict[str, dict[str, str]],
+        zone_occupied: dict[str, set[tuple[int, int]]],
+    ) -> None:
+        for symbol in fixed_syms:
+            reference = str(symbol.get("reference", ""))
+            category = self.classify_symbol(
+                ref=reference,
+                value=sym_meta.get(reference, {}).get("value", ""),
+                lib_id=sym_meta.get(reference, {}).get("lib_id", ""),
+            )
+            x = float(symbol.get("x", symbol.get("x_mm", 0.0)) or 0.0)
+            y = float(symbol.get("y", symbol.get("y_mm", 0.0)) or 0.0)
+            col = int(
+                round((x - self.auto_layout_origin_x_mm) / self.auto_layout_column_spacing_mm)
+            )
+            row = int(round((y - self.auto_layout_origin_y_mm) / self.auto_layout_row_spacing_mm))
+            zone_occupied.setdefault(category, set()).add((col, row))
+
+    def _find_functional_cell(
+        self,
+        zone_col: int,
+        zone_row: int,
+        max_cols: int,
+        max_rows: int,
+        global_occupied: set[tuple[int, int]],
+        placed_in_zone: set[tuple[int, int]],
+        paper: str,
+    ) -> tuple[int, int, bool]:
+        """Find a cell in the functional zone or fall back to sheet free cell.
+
+        Returns (col, row, is_overflow).
+        """
+        for sub_row in range(0, max_rows):
+            for sub_col in range(0, self.zone_max_cols):
+                cand_col = zone_col + sub_col
+                cand_row = zone_row + sub_row
+                if cand_col >= max_cols or cand_row >= max_rows:
+                    continue
+                cell = (cand_col, cand_row)
+                if cell not in global_occupied and cell not in placed_in_zone:
+                    return cell[0], cell[1], False
+
+        col_f, row_f = self.next_free_cell(global_occupied, paper=paper)
+        col = int(
+            round((col_f - self.auto_layout_origin_x_mm) / self.auto_layout_column_spacing_mm)
+        )
+        row = int(round((row_f - self.auto_layout_origin_y_mm) / self.auto_layout_row_spacing_mm))
+        is_overflow = col >= max_cols or row >= max_rows
+        return col, row, is_overflow
 
     def auto_place_functional(
         self,
@@ -362,20 +419,7 @@ class SchematicLayoutAutomationService:
         anchored_preserved = [
             ref for ref in anchor_refs if ref in requested_set and schematic.components.get(ref)
         ]
-        for symbol in fixed_syms:
-            reference = str(symbol.get("reference", ""))
-            category = self.classify_symbol(
-                ref=reference,
-                value=sym_meta.get(reference, {}).get("value", ""),
-                lib_id=sym_meta.get(reference, {}).get("lib_id", ""),
-            )
-            x = float(symbol.get("x", symbol.get("x_mm", 0.0)) or 0.0)
-            y = float(symbol.get("y", symbol.get("y_mm", 0.0)) or 0.0)
-            col = int(
-                round((x - self.auto_layout_origin_x_mm) / self.auto_layout_column_spacing_mm)
-            )
-            row = int(round((y - self.auto_layout_origin_y_mm) / self.auto_layout_row_spacing_mm))
-            zone_occupied.setdefault(category, set()).add((col, row))
+        self._populate_initial_zone_occupancy(fixed_syms, sym_meta, zone_occupied)
 
         placed = 0
         overflow_count = 0
@@ -405,35 +449,17 @@ class SchematicLayoutAutomationService:
             )
 
             placed_in_zone = zone_occupied.setdefault(category, set())
-            found = False
-            col = zone_col
-            row = zone_row
-            for sub_row in range(0, max_rows):
-                for sub_col in range(0, self.zone_max_cols):
-                    cand_col = zone_col + sub_col
-                    cand_row = zone_row + sub_row
-                    if cand_col >= max_cols or cand_row >= max_rows:
-                        continue
-                    cell = (cand_col, cand_row)
-                    if cell not in global_occupied and cell not in placed_in_zone:
-                        col, row = cell
-                        found = True
-                        break
-                if found:
-                    break
-
-            if not found:
-                col_f, row_f = self.next_free_cell(global_occupied, paper=paper)
-                col = int(
-                    round(
-                        (col_f - self.auto_layout_origin_x_mm) / self.auto_layout_column_spacing_mm
-                    )
-                )
-                row = int(
-                    round((row_f - self.auto_layout_origin_y_mm) / self.auto_layout_row_spacing_mm)
-                )
-                if col >= max_cols or row >= max_rows:
-                    overflow_count += 1
+            col, row, is_overflow = self._find_functional_cell(
+                zone_col,
+                zone_row,
+                max_cols,
+                max_rows,
+                global_occupied,
+                placed_in_zone,
+                paper,
+            )
+            if is_overflow:
+                overflow_count += 1
 
             x = self.auto_layout_origin_x_mm + col * self.auto_layout_column_spacing_mm
             y = self.auto_layout_origin_y_mm + row * self.auto_layout_row_spacing_mm

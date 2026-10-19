@@ -273,6 +273,74 @@ def _decode_attestation_statement(attestation: dict[str, Any]) -> dict[str, Any]
     return statement if isinstance(statement, dict) else None
 
 
+def _matches_publisher(
+    publisher: object,
+    *,
+    expected_repo: str,
+    expected_workflow: str,
+    expected_environment: str,
+) -> bool:
+    if not isinstance(publisher, dict):
+        return False
+    return (
+        publisher.get("kind") == "GitHub"
+        and publisher.get("repository") == expected_repo
+        and publisher.get("workflow") == expected_workflow
+        and publisher.get("environment") == expected_environment
+    )
+
+
+def _statement_matches_artifact(
+    statement: dict[str, Any] | None,
+    *,
+    filename: str,
+    digest: str,
+) -> bool:
+    if statement is None or statement.get("predicateType") != PYPI_PUBLISH_ATTESTATION:
+        return False
+    subjects = statement.get("subject")
+    if not isinstance(subjects, list):
+        return False
+    for subject in subjects:
+        if not isinstance(subject, dict) or subject.get("name") != filename:
+            continue
+        subject_digest = subject.get("digest")
+        if isinstance(subject_digest, dict) and subject_digest.get("sha256") == digest:
+            return True
+    return False
+
+
+def _attestation_bundle_matches(
+    bundle: object,
+    *,
+    filename: str,
+    digest: str,
+    expected_repo: str,
+    expected_workflow: str,
+    expected_environment: str,
+) -> bool:
+    if not isinstance(bundle, dict):
+        return False
+    if not _matches_publisher(
+        bundle.get("publisher"),
+        expected_repo=expected_repo,
+        expected_workflow=expected_workflow,
+        expected_environment=expected_environment,
+    ):
+        return False
+    attestations = bundle.get("attestations")
+    if not isinstance(attestations, list):
+        return False
+    for attestation in attestations:
+        if isinstance(attestation, dict) and _statement_matches_artifact(
+            _decode_attestation_statement(attestation),
+            filename=filename,
+            digest=digest,
+        ):
+            return True
+    return False
+
+
 def _provenance_failure(
     provenance: dict[str, Any],
     *,
@@ -287,36 +355,15 @@ def _provenance_failure(
     if not isinstance(bundles, list) or not bundles:
         return f"{filename}: no attestation bundles"
     for bundle in bundles:
-        if not isinstance(bundle, dict):
-            continue
-        publisher = bundle.get("publisher")
-        if not isinstance(publisher, dict):
-            continue
-        if (
-            publisher.get("kind") != "GitHub"
-            or publisher.get("repository") != publisher_repository
-            or publisher.get("workflow") != publisher_workflow
-            or publisher.get("environment") != publisher_environment
+        if _attestation_bundle_matches(
+            bundle,
+            filename=filename,
+            digest=digest,
+            expected_repo=publisher_repository,
+            expected_workflow=publisher_workflow,
+            expected_environment=publisher_environment,
         ):
-            continue
-        attestations = bundle.get("attestations")
-        if not isinstance(attestations, list):
-            continue
-        for attestation in attestations:
-            if not isinstance(attestation, dict):
-                continue
-            statement = _decode_attestation_statement(attestation)
-            if statement is None or statement.get("predicateType") != PYPI_PUBLISH_ATTESTATION:
-                continue
-            subjects = statement.get("subject")
-            if not isinstance(subjects, list):
-                continue
-            for subject in subjects:
-                if not isinstance(subject, dict) or subject.get("name") != filename:
-                    continue
-                subject_digest = subject.get("digest")
-                if isinstance(subject_digest, dict) and subject_digest.get("sha256") == digest:
-                    return None
+            return None
     return (
         f"{filename}: no publish attestation matched GitHub publisher "
         f"{publisher_repository}/{publisher_workflow} environment={publisher_environment}"

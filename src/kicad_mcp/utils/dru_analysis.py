@@ -114,18 +114,14 @@ def _rule_constraints(rule: SExprNode) -> list[tuple[str, dict[str, float | None
     return constraints
 
 
-def analyze_rule_conflicts(root: SExprNode) -> list[RuleConflict]:
-    """Return every conflict / sanity issue in a parsed ``(rules ...)`` tree."""
-    rules = iter_rule_nodes(root)
-    conflicts: list[RuleConflict] = []
-
-    # Duplicate rule names — KiCad keeps only the last definition.
+def _check_duplicate_rule_names(rules: list[SExprNode]) -> list[RuleConflict]:
     name_counts: dict[str, int] = defaultdict(int)
     for rule in rules:
         try:
             name_counts[rule_name(rule)] += 1
         except ValueError:
             continue
+    conflicts: list[RuleConflict] = []
     for name, count in name_counts.items():
         if count > 1:
             conflicts.append(
@@ -139,8 +135,50 @@ def analyze_rule_conflicts(root: SExprNode) -> list[RuleConflict]:
                     rules=(name,),
                 )
             )
+    return conflicts
 
-    # Per-constraint structural checks and a record for cross-rule comparison.
+
+def _validate_single_constraint(
+    name: str,
+    ctype: str,
+    bounds: dict[str, float | None],
+) -> list[RuleConflict]:
+    conflicts: list[RuleConflict] = []
+    minimum, maximum = bounds.get("min"), bounds.get("max")
+    if minimum is not None and maximum is not None and minimum > maximum:
+        conflicts.append(
+            RuleConflict(
+                kind="inverted_bounds",
+                severity="error",
+                message=(
+                    f"Rule '{name}' constraint '{ctype}' has min ({minimum:g}mm) greater "
+                    f"than max ({maximum:g}mm); no value can satisfy it."
+                ),
+                rules=(name,),
+            )
+        )
+    if ctype in _DIMENSIONAL_CONSTRAINTS:
+        for key in ("min", "max", "opt"):
+            value = bounds.get(key)
+            if value is not None and value < 0:
+                conflicts.append(
+                    RuleConflict(
+                        kind="negative_dimension",
+                        severity="error",
+                        message=(
+                            f"Rule '{name}' constraint '{ctype}' has a negative {key} "
+                            f"({value:g}mm)."
+                        ),
+                        rules=(name,),
+                    )
+                )
+    return conflicts
+
+
+def _check_rule_constraint_bounds(
+    rules: list[SExprNode],
+) -> tuple[list[RuleConflict], dict[tuple[str, str], list[tuple[str, float]]]]:
+    conflicts: list[RuleConflict] = []
     scoped: dict[tuple[str, str], list[tuple[str, float]]] = defaultdict(list)
     for rule in rules:
         try:
@@ -149,38 +187,17 @@ def analyze_rule_conflicts(root: SExprNode) -> list[RuleConflict]:
             continue
         condition = _rule_condition(rule)
         for ctype, bounds in _rule_constraints(rule):
-            minimum, maximum = bounds.get("min"), bounds.get("max")
-            if minimum is not None and maximum is not None and minimum > maximum:
-                conflicts.append(
-                    RuleConflict(
-                        kind="inverted_bounds",
-                        severity="error",
-                        message=(
-                            f"Rule '{name}' constraint '{ctype}' has min ({minimum:g}mm) greater "
-                            f"than max ({maximum:g}mm); no value can satisfy it."
-                        ),
-                        rules=(name,),
-                    )
-                )
-            if ctype in _DIMENSIONAL_CONSTRAINTS:
-                for key in ("min", "max", "opt"):
-                    value = bounds.get(key)
-                    if value is not None and value < 0:
-                        conflicts.append(
-                            RuleConflict(
-                                kind="negative_dimension",
-                                severity="error",
-                                message=(
-                                    f"Rule '{name}' constraint '{ctype}' has a negative {key} "
-                                    f"({value:g}mm)."
-                                ),
-                                rules=(name,),
-                            )
-                        )
+            conflicts.extend(_validate_single_constraint(name, ctype, bounds))
+            minimum = bounds.get("min")
             if condition and minimum is not None:
                 scoped[(ctype, condition)].append((name, round(minimum, 6)))
+    return conflicts, scoped
 
-    # Two scoped rules setting different minimums for the same constraint+condition.
+
+def _check_contradictory_constraints(
+    scoped: dict[tuple[str, str], list[tuple[str, float]]],
+) -> list[RuleConflict]:
+    conflicts: list[RuleConflict] = []
     for (ctype, condition), entries in scoped.items():
         by_value: dict[float, set[str]] = defaultdict(set)
         for name, minimum in entries:
@@ -203,6 +220,15 @@ def analyze_rule_conflicts(root: SExprNode) -> list[RuleConflict]:
                     rules=involved,
                 )
             )
+    return conflicts
 
+
+def analyze_rule_conflicts(root: SExprNode) -> list[RuleConflict]:
+    """Return every conflict / sanity issue in a parsed ``(rules ...)`` tree."""
+    rules = iter_rule_nodes(root)
+    conflicts = _check_duplicate_rule_names(rules)
+    bound_conflicts, scoped = _check_rule_constraint_bounds(rules)
+    conflicts.extend(bound_conflicts)
+    conflicts.extend(_check_contradictory_constraints(scoped))
     conflicts.sort(key=RuleConflict.sort_key)
     return conflicts

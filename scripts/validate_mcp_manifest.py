@@ -214,9 +214,8 @@ def _has_command(manifest: Mapping[str, Any], packages: Sequence[Mapping[str, An
     )
 
 
-def _registry_metadata_errors(manifest: Mapping[str, Any]) -> list[str]:
+def _validate_icons(manifest: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
-
     icons = manifest.get("icons")
     if not isinstance(icons, list) or not icons:
         errors.append("icons must include at least one public registry icon.")
@@ -226,6 +225,84 @@ def _registry_metadata_errors(manifest: Mapping[str, Any]) -> list[str]:
                 errors.append(f"icons[{index}] must be an object.")
                 continue
             errors.extend(_link_errors(f"icons[{index}].src", icon.get("src")))
+    return errors
+
+
+def _validate_screenshots(meta: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    screenshots = meta.get("screenshots")
+    if not isinstance(screenshots, list) or not screenshots:
+        errors.append(f"_meta.{REGISTRY_META_KEY}.screenshots must be a non-empty list.")
+    else:
+        for index, screenshot in enumerate(screenshots):
+            if not _is_object(screenshot):
+                errors.append(f"_meta.{REGISTRY_META_KEY}.screenshots[{index}] must be an object.")
+                continue
+            if not _string(screenshot.get("caption")):
+                errors.append(
+                    f"_meta.{REGISTRY_META_KEY}.screenshots[{index}].caption "
+                    "must be a non-empty string."
+                )
+            errors.extend(
+                _link_errors(
+                    f"_meta.{REGISTRY_META_KEY}.screenshots[{index}].src", screenshot.get("src")
+                )
+            )
+    return errors
+
+
+def _validate_meta_tool_catalog(meta: Mapping[str, Any]) -> list[str]:
+    tool_catalog = meta.get("toolCatalog")
+    if not _is_object(tool_catalog):
+        return [f"_meta.{REGISTRY_META_KEY}.toolCatalog must be an object."]
+    errors: list[str] = []
+    if not _string(tool_catalog.get("summary")):
+        errors.append(f"_meta.{REGISTRY_META_KEY}.toolCatalog.summary is required.")
+    errors.extend(
+        _link_errors(
+            f"_meta.{REGISTRY_META_KEY}.toolCatalog.reference", tool_catalog.get("reference")
+        )
+    )
+    return errors
+
+
+def _validate_meta_maintainer(meta: Mapping[str, Any]) -> list[str]:
+    maintainer = meta.get("maintainer")
+    if not _is_object(maintainer):
+        return [f"_meta.{REGISTRY_META_KEY}.maintainer must be an object."]
+    errors: list[str] = []
+    if not _string(maintainer.get("name")):
+        errors.append(f"_meta.{REGISTRY_META_KEY}.maintainer.name is required.")
+    errors.extend(_link_errors(f"_meta.{REGISTRY_META_KEY}.maintainer.url", maintainer.get("url")))
+    return errors
+
+
+def _validate_meta_server_info(meta: Mapping[str, Any]) -> list[str]:
+    server_info = meta.get("serverInfo")
+    if not _is_object(server_info):
+        return [f"_meta.{REGISTRY_META_KEY}.serverInfo must be an object."]
+    errors: list[str] = []
+    if server_info.get("capabilities") != SERVER_INFO_CAPABILITIES:
+        errors.append(
+            f"_meta.{REGISTRY_META_KEY}.serverInfo.capabilities must match "
+            "the server-info contract."
+        )
+    for field in ("schemaVersion", "mcpProtocolVersion", "toolSchemaVersion"):
+        if not _string(server_info.get(field)):
+            errors.append(f"_meta.{REGISTRY_META_KEY}.serverInfo.{field} is required.")
+    return errors
+
+
+def _validate_meta_objects(meta: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    errors.extend(_validate_meta_tool_catalog(meta))
+    errors.extend(_validate_meta_maintainer(meta))
+    errors.extend(_validate_meta_server_info(meta))
+    return errors
+
+
+def _registry_metadata_errors(manifest: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = _validate_icons(manifest)
 
     meta_root = manifest.get("_meta")
     if not _is_object(meta_root) or not _is_object(meta_root.get(REGISTRY_META_KEY)):
@@ -253,46 +330,8 @@ def _registry_metadata_errors(manifest: Mapping[str, Any]) -> list[str]:
             "non-empty string list."
         )
 
-    screenshots = meta.get("screenshots")
-    if not isinstance(screenshots, list) or not screenshots:
-        errors.append(f"_meta.{REGISTRY_META_KEY}.screenshots must be a non-empty list.")
-    else:
-        for index, screenshot in enumerate(screenshots):
-            if not _is_object(screenshot):
-                errors.append(f"_meta.{REGISTRY_META_KEY}.screenshots[{index}] must be an object.")
-                continue
-            if not _string(screenshot.get("caption")):
-                errors.append(
-                    f"_meta.{REGISTRY_META_KEY}.screenshots[{index}].caption "
-                    "must be a non-empty string."
-                )
-            errors.extend(
-                _link_errors(
-                    f"_meta.{REGISTRY_META_KEY}.screenshots[{index}].src", screenshot.get("src")
-                )
-            )
-
-    tool_catalog = meta.get("toolCatalog")
-    if not _is_object(tool_catalog):
-        errors.append(f"_meta.{REGISTRY_META_KEY}.toolCatalog must be an object.")
-    else:
-        if not _string(tool_catalog.get("summary")):
-            errors.append(f"_meta.{REGISTRY_META_KEY}.toolCatalog.summary is required.")
-        errors.extend(
-            _link_errors(
-                f"_meta.{REGISTRY_META_KEY}.toolCatalog.reference", tool_catalog.get("reference")
-            )
-        )
-
-    maintainer = meta.get("maintainer")
-    if not _is_object(maintainer):
-        errors.append(f"_meta.{REGISTRY_META_KEY}.maintainer must be an object.")
-    else:
-        if not _string(maintainer.get("name")):
-            errors.append(f"_meta.{REGISTRY_META_KEY}.maintainer.name is required.")
-        errors.extend(
-            _link_errors(f"_meta.{REGISTRY_META_KEY}.maintainer.url", maintainer.get("url"))
-        )
+    errors.extend(_validate_screenshots(meta))
+    errors.extend(_validate_meta_objects(meta))
 
     for field in ("canonicalRepository", "changelog", "releaseNotes"):
         errors.extend(_link_errors(f"_meta.{REGISTRY_META_KEY}.{field}", meta.get(field)))
@@ -300,19 +339,6 @@ def _registry_metadata_errors(manifest: Mapping[str, Any]) -> list[str]:
     meta_license = _string(meta.get("license"))
     if meta_license != _string(manifest.get("license")):
         errors.append(f"_meta.{REGISTRY_META_KEY}.license must match license.")
-
-    server_info = meta.get("serverInfo")
-    if not _is_object(server_info):
-        errors.append(f"_meta.{REGISTRY_META_KEY}.serverInfo must be an object.")
-    else:
-        if server_info.get("capabilities") != SERVER_INFO_CAPABILITIES:
-            errors.append(
-                f"_meta.{REGISTRY_META_KEY}.serverInfo.capabilities must match "
-                "the server-info contract."
-            )
-        for field in ("schemaVersion", "mcpProtocolVersion", "toolSchemaVersion"):
-            if not _string(server_info.get(field)):
-                errors.append(f"_meta.{REGISTRY_META_KEY}.serverInfo.{field} is required.")
 
     return errors
 
@@ -324,6 +350,99 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ManifestValidationError(["manifest root must be a JSON object."])
     return data
+
+
+def _validate_package_version_and_oci(
+    index: int,
+    package: Mapping[str, Any],
+    registry: str,
+    identifier: str,
+) -> list[str]:
+    errors: list[str] = []
+    is_oci = _is_oci_registry(registry, package)
+    has_version = bool(_string(package.get("version")))
+    if not is_oci and not has_version:
+        errors.append(f"packages[{index}] must define version.")
+    if is_oci and has_version:
+        errors.append(
+            f"packages[{index}] OCI packages must not define version field; "
+            "include version in identifier instead "
+            "(e.g., 'ghcr.io/owner/image:1.0.0')."
+        )
+    if is_oci:
+        if "registryBaseUrl" in package:
+            errors.append(
+                f"packages[{index}] must not define registryBaseUrl for OCI packages; "
+                "use a canonical registry/repository:tag identifier."
+            )
+        if identifier and not _is_oci_identifier(identifier):
+            errors.append(
+                f"packages[{index}] OCI identifier must be registry/repository:tag "
+                "or registry/repository@algorithm:digest."
+            )
+    return errors
+
+
+def _validate_package_entry(
+    index: int,
+    package: Mapping[str, Any],
+    seen: set[tuple[str, str]],
+) -> list[str]:
+    errors: list[str] = []
+    registry, identifier = _package_identity(package)
+    if not registry:
+        errors.append(f"packages[{index}] must define registryType or registry.")
+    if not identifier:
+        errors.append(f"packages[{index}] must define identifier, name, or image.")
+
+    errors.extend(_validate_package_version_and_oci(index, package, registry, identifier))
+
+    pair = (registry, identifier)
+    if registry and identifier and pair in seen:
+        errors.append(f"packages[{index}] duplicates package {registry}/{identifier}.")
+    seen.add(pair)
+
+    transport = _transport_type(package)
+    if not transport:
+        errors.append(f"packages[{index}] must define transport.type.")
+    elif transport not in SUPPORTED_TRANSPORTS:
+        errors.append(f"packages[{index}] uses unsupported transport {transport!r}.")
+    return errors
+
+
+def _validate_packages(manifest: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    raw_packages = manifest.get("packages")
+    if not isinstance(raw_packages, list) or not raw_packages:
+        errors.append("packages must be a non-empty list.")
+        return errors
+
+    packages: list[Mapping[str, Any]] = []
+    for index, item in enumerate(raw_packages):
+        if not _is_object(item):
+            errors.append(f"packages[{index}] must be an object.")
+            continue
+        packages.append(item)
+
+    if packages and not _has_command(manifest, packages):
+        errors.append("manifest must define mcp.command or a package command.")
+
+    seen: set[tuple[str, str]] = set()
+    for index, package in enumerate(packages):
+        errors.extend(_validate_package_entry(index, package, seen))
+    return errors
+
+
+def _validate_mcp_transports(manifest: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    mcp = manifest.get("mcp")
+    if _is_object(mcp):
+        transports = mcp.get("transports")
+        if isinstance(transports, list):
+            for transport in transports:
+                if transport not in SUPPORTED_TRANSPORTS:
+                    errors.append(f"mcp.transports contains unsupported transport {transport!r}.")
+    return errors
 
 
 def validate_manifest(manifest: Mapping[str, Any]) -> list[str]:
@@ -346,66 +465,8 @@ def validate_manifest(manifest: Mapping[str, Any]) -> list[str]:
         if url_field in manifest and manifest[url_field]:
             errors.extend(_url_errors(url_field, manifest[url_field]))
 
-    raw_packages = manifest.get("packages")
-    if not isinstance(raw_packages, list) or not raw_packages:
-        errors.append("packages must be a non-empty list.")
-        packages: list[Mapping[str, Any]] = []
-    else:
-        packages = []
-        for index, item in enumerate(raw_packages):
-            if not _is_object(item):
-                errors.append(f"packages[{index}] must be an object.")
-                continue
-            packages.append(item)
-
-    if packages and not _has_command(manifest, packages):
-        errors.append("manifest must define mcp.command or a package command.")
-
-    seen: set[tuple[str, str]] = set()
-    for index, package in enumerate(packages):
-        registry, identifier = _package_identity(package)
-        if not registry:
-            errors.append(f"packages[{index}] must define registryType or registry.")
-        if not identifier:
-            errors.append(f"packages[{index}] must define identifier, name, or image.")
-        if not _is_oci_registry(registry, package) and not _string(package.get("version")):
-            errors.append(f"packages[{index}] must define version.")
-        if _is_oci_registry(registry, package) and _string(package.get("version")):
-            errors.append(
-                f"packages[{index}] OCI packages must not define version field; "
-                "include version in identifier instead "
-                "(e.g., 'ghcr.io/owner/image:1.0.0')."
-            )
-        if _is_oci_registry(registry, package):
-            if "registryBaseUrl" in package:
-                errors.append(
-                    f"packages[{index}] must not define registryBaseUrl for OCI packages; "
-                    "use a canonical registry/repository:tag identifier."
-                )
-            if identifier and not _is_oci_identifier(identifier):
-                errors.append(
-                    f"packages[{index}] OCI identifier must be registry/repository:tag "
-                    "or registry/repository@algorithm:digest."
-                )
-        pair = (registry, identifier)
-        if registry and identifier and pair in seen:
-            errors.append(f"packages[{index}] duplicates package {registry}/{identifier}.")
-        seen.add(pair)
-
-        transport = _transport_type(package)
-        if not transport:
-            errors.append(f"packages[{index}] must define transport.type.")
-        elif transport not in SUPPORTED_TRANSPORTS:
-            errors.append(f"packages[{index}] uses unsupported transport {transport!r}.")
-
-    mcp = manifest.get("mcp")
-    if _is_object(mcp):
-        transports = mcp.get("transports")
-        if isinstance(transports, list):
-            for transport in transports:
-                if transport not in SUPPORTED_TRANSPORTS:
-                    errors.append(f"mcp.transports contains unsupported transport {transport!r}.")
-
+    errors.extend(_validate_packages(manifest))
+    errors.extend(_validate_mcp_transports(manifest))
     errors.extend(_registry_metadata_errors(manifest))
 
     return errors
