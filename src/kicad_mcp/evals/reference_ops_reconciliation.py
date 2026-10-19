@@ -56,7 +56,9 @@ def _client_bytes(client_path: Path, server_path: Path, attempt_id: str) -> byte
         raise ReferenceOpsReconciliationError("client file must be in the reserved trace directory")
     if os.name != "nt" and client_path.parent.stat().st_mode & 0o077:
         raise ReferenceOpsReconciliationError("client evidence directory must be private")
-    return _load_trace(client_path)
+    return _load_trace(
+        root=_TRACE_ROOT, attempt_id=attempt_id, filename="ops-client-observed.jsonl"
+    )
 
 
 def _validate_event_metadata(
@@ -136,7 +138,9 @@ def reconcile_ops_events(
             server_path, attempt_id=attempt_id, phase_name=phase_name
         )
         client_bytes = _client_bytes(client_path, server_path, attempt_id)
-        server_bytes = _load_trace(server_path)
+        server_bytes = _load_trace(
+            root=_TRACE_ROOT, attempt_id=attempt_id, filename="ops-mcp-trace.jsonl"
+        )
         if "sha256:" + hashlib.sha256(server_bytes).hexdigest() != server_summary.digest:
             raise ReferenceOpsReconciliationError("server trace changed during reconciliation")
         server_pairs = _normalized_pairs(

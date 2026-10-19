@@ -9,9 +9,11 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import stat as stat_module
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from pydantic import ValidationError
 
@@ -55,20 +57,88 @@ def _approved_trace_path(path: Path, attempt_id: str) -> Path:
     return expected
 
 
-def _load_trace(path: Path) -> bytes:
-    stat = path.stat()
-    if not path.is_file() or not 0 < stat.st_size <= _MAX_TRACE_BYTES:
+def _open_reserved_trace(*, root: Path, attempt_id: str, filename: str) -> int:
+    """Open the reserved trace without following a replaced directory or file."""
+    # Windows CRT defaults os.open to text mode; CRLF translation changes
+    # the byte count read and falsely trips the exact-size trace check.
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    if os.name == "nt":
+        directory = root / attempt_id
+        expected = directory / filename
+        if directory.is_symlink() or expected.is_symlink():
+            raise ReferenceOpsTraceValidationError(
+                "trace must be in its reserved private directory"
+            )
+        return os.open(expected, flags)
+
+    directory_flags = flags | getattr(os, "O_DIRECTORY", 0)
+    root_fd = os.open(root, directory_flags)
+    try:
+        directory_fd = os.open(attempt_id, directory_flags, dir_fd=root_fd)
+        try:
+            if os.fstat(directory_fd).st_mode & 0o077:
+                raise ReferenceOpsTraceValidationError("trace directory must be private")
+            return os.open(filename, flags, dir_fd=directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        os.close(root_fd)
+
+
+def _read_open_trace(fd: int) -> bytes:
+    """Read a bounded regular file and detect changes on the same descriptor."""
+    before = os.fstat(fd)
+    if not stat_module.S_ISREG(before.st_mode) or not 0 < before.st_size <= _MAX_TRACE_BYTES:
         raise ReferenceOpsTraceValidationError("trace is absent, empty or oversized")
-    if os.name != "nt" and stat.st_mode & 0o077:
+    if os.name != "nt" and before.st_mode & 0o077:
         raise ReferenceOpsTraceValidationError("trace must remain private")
-    content = path.read_bytes()
-    if len(content) != stat.st_size or not content.endswith(b"\n"):
+    content = bytearray()
+    while len(content) <= _MAX_TRACE_BYTES:
+        chunk = os.read(fd, min(65536, _MAX_TRACE_BYTES + 1 - len(content)))
+        if not chunk:
+            break
+        content.extend(chunk)
+    after = os.fstat(fd)
+    if (
+        len(content) != before.st_size
+        or before.st_size != after.st_size
+        or before.st_mtime_ns != after.st_mtime_ns
+        or before.st_ino != after.st_ino
+        or not content.endswith(b"\n")
+    ):
         raise ReferenceOpsTraceValidationError("trace is incomplete or changed during read")
-    if not 0 < len(content.splitlines()) <= _MAX_EVENTS:
+    result = bytes(content)
+    if not 0 < len(result.splitlines()) <= _MAX_EVENTS:
         raise ReferenceOpsTraceValidationError("trace event count is invalid")
-    if path.stat().st_size != len(content):
-        raise ReferenceOpsTraceValidationError("trace changed during validation")
-    return content
+    return result
+
+
+def _load_trace(
+    *,
+    root: Path,
+    attempt_id: str,
+    filename: Literal["ops-mcp-trace.jsonl", "ops-client-observed.jsonl"],
+) -> bytes:
+    """Read fixed evidence only, never opening the untrusted CLI pathname."""
+    if (
+        not re.fullmatch(REFERENCE_IDENTIFIER_PATTERN, attempt_id)
+        or attempt_id in {".", ".."}
+        or not root.is_absolute()
+        or root.is_symlink()
+        or root.parent.is_symlink()
+        or filename not in {"ops-mcp-trace.jsonl", "ops-client-observed.jsonl"}
+    ):
+        raise ReferenceOpsTraceValidationError("trace must be in its reserved private directory")
+    fd = _open_reserved_trace(root=root, attempt_id=attempt_id, filename=filename)
+    try:
+        return _read_open_trace(fd)
+    finally:
+        os.close(fd)
 
 
 def _check_event(
@@ -146,8 +216,10 @@ def validate_reference_ops_trace(
     if phase.name == "manufacturing":
         raise ReferenceOpsTraceValidationError("manufacturing trace is not approved")
     try:
-        trace = _approved_trace_path(path, attempt_id)
-        content = _load_trace(trace)
+        _approved_trace_path(path, attempt_id)
+        content = _load_trace(
+            root=_TRACE_ROOT, attempt_id=attempt_id, filename="ops-mcp-trace.jsonl"
+        )
         calls, failures = _verify_events(content, attempt_id=attempt_id, phase=phase)
     except (OSError, UnicodeError, ValidationError) as exc:
         raise ReferenceOpsTraceValidationError("invalid server trace content or file") from exc
