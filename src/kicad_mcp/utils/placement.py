@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
@@ -137,6 +138,38 @@ def _hits_keepout(
     return False
 
 
+def _search_spiral(
+    x: float,
+    y: float,
+    component: PlacementComponent,
+    cfg: ForceDirectedConfig,
+    normalize: Callable[[float, float], tuple[float, float]],
+) -> tuple[float, float] | None:
+    search_step = max(cfg.grid_mm / 2.0, 0.25)
+    phase = cfg.seed % 4
+    directions = [
+        (1, 0),
+        (0, 1),
+        (-1, 0),
+        (0, -1),
+    ]
+    directions = directions[phase:] + directions[:phase]
+    for ring in range(1, 33):
+        for dx, dy in directions:
+            for offset in range(-ring, ring + 1):
+                if dx == 0:
+                    cand = normalize(x + (offset * search_step), y + (dy * ring * search_step))
+                else:
+                    cand = normalize(x + (dx * ring * search_step), y + (offset * search_step))
+                if _inside_board(*cand, component, cfg) and not _hits_keepout(
+                    *cand,
+                    component,
+                    cfg,
+                ):
+                    return cand
+    return None
+
+
 def _resolve_candidate_position(
     x: float,
     y: float,
@@ -157,32 +190,124 @@ def _resolve_candidate_position(
     if _inside_board(*candidate, component, cfg) and not _hits_keepout(*candidate, component, cfg):
         return candidate
 
-    search_step = max(cfg.grid_mm / 2.0, 0.25)
-    phase = cfg.seed % 4
-    directions = [
-        (1, 0),
-        (0, 1),
-        (-1, 0),
-        (0, -1),
-    ]
-    directions = directions[phase:] + directions[:phase]
-    for ring in range(1, 33):
-        for dx, dy in directions:
-            for offset in range(-ring, ring + 1):
-                if dx == 0:
-                    candidate = normalize(x + (offset * search_step), y + (dy * ring * search_step))
-                else:
-                    candidate = normalize(x + (dx * ring * search_step), y + (offset * search_step))
-                if _inside_board(*candidate, component, cfg) and not _hits_keepout(
-                    *candidate,
-                    component,
-                    cfg,
-                ):
-                    return candidate
+    found = _search_spiral(x, y, component, cfg, normalize)
+    if found is not None:
+        return found
 
     safe_x = min(max(component.w / 2.0, x), cfg.board_w - component.w / 2.0)
     safe_y = min(max(component.h / 2.0, y), cfg.board_h - component.h / 2.0)
     return normalize(safe_x, safe_y)
+
+
+def _build_placement_adjacency(
+    comps: list[PlacementComponent], nets: list[PlacementNet]
+) -> dict[str, list[tuple[str, float]]]:
+    adjacency: dict[str, list[tuple[str, float]]] = {c.ref: [] for c in comps}
+    for net in nets:
+        for r1 in net.refs:
+            for r2 in net.refs:
+                if r1 != r2:
+                    adjacency[r1].append((r2, net.weight))
+    return adjacency
+
+
+def _accumulate_repulsion(
+    comps: list[PlacementComponent],
+    cfg: ForceDirectedConfig,
+    fx: list[float],
+    fy: list[float],
+) -> None:
+    for i in range(len(comps)):
+        for j in range(i + 1, len(comps)):
+            dx = comps[i].x - comps[j].x
+            dy = comps[i].y - comps[j].y
+            dist = max(math.hypot(dx, dy), cfg.min_dist)
+            min_clear = (comps[i].w + comps[j].w) * 0.5 + 1.0
+            effective_k = cfg.k_repel
+            if dist < min_clear:
+                effective_k *= (min_clear / dist) ** 2
+            force = effective_k / (dist * dist)
+            nx, ny = dx / dist, dy / dist
+            fx[i] += force * nx
+            fy[i] += force * ny
+            fx[j] -= force * nx
+            fy[j] -= force * ny
+
+
+def _accumulate_attraction(
+    comps: list[PlacementComponent],
+    adjacency: dict[str, list[tuple[str, float]]],
+    ref_idx: dict[str, int],
+    cfg: ForceDirectedConfig,
+    fx: list[float],
+    fy: list[float],
+) -> None:
+    for i, comp in enumerate(comps):
+        for neighbor_ref, weight in adjacency[comp.ref]:
+            neighbor_index = ref_idx.get(neighbor_ref)
+            if neighbor_index is None:
+                continue
+            dx = comps[neighbor_index].x - comp.x
+            dy = comps[neighbor_index].y - comp.y
+            dist = max(math.hypot(dx, dy), cfg.min_dist)
+            force = cfg.k_spring * weight * dist
+            nx, ny = dx / dist, dy / dist
+            fx[i] += force * nx
+            fy[i] += force * ny
+
+
+def _accumulate_wall_forces(
+    comps: list[PlacementComponent],
+    cfg: ForceDirectedConfig,
+    fx: list[float],
+    fy: list[float],
+) -> None:
+    for i, comp in enumerate(comps):
+        if comp.x < comp.w:
+            fx[i] += cfg.k_wall / max(comp.x, 0.01)
+        right_gap = cfg.board_w - comp.x - comp.w
+        if right_gap < comp.w:
+            fx[i] -= cfg.k_wall / max(right_gap, 0.01)
+        if comp.y < comp.h:
+            fy[i] += cfg.k_wall / max(comp.y, 0.01)
+        bottom_gap = cfg.board_h - comp.y - comp.h
+        if bottom_gap < comp.h:
+            fy[i] -= cfg.k_wall / max(bottom_gap, 0.01)
+
+
+def _integrate_movement(
+    comps: list[PlacementComponent],
+    fx: list[float],
+    fy: list[float],
+    vx: list[float],
+    vy: list[float],
+    temperature: float,
+    cfg: ForceDirectedConfig,
+) -> float:
+    max_disp = 0.0
+    for i, comp in enumerate(comps):
+        if comp.fixed:
+            vx[i] = 0.0
+            vy[i] = 0.0
+            continue
+        vx[i] = (vx[i] + fx[i]) * cfg.damping
+        vy[i] = (vy[i] + fy[i]) * cfg.damping
+        speed = math.hypot(vx[i], vy[i])
+        if speed > temperature:
+            vx[i] = vx[i] / speed * temperature
+            vy[i] = vy[i] / speed * temperature
+        new_x, new_y = _resolve_candidate_position(
+            comp.x + vx[i],
+            comp.y + vy[i],
+            comp,
+            cfg,
+            snap_to_grid=False,
+        )
+        disp = math.hypot(new_x - comp.x, new_y - comp.y)
+        if disp > max_disp:
+            max_disp = disp
+        comp.x, comp.y = new_x, new_y
+    return max_disp
 
 
 def force_directed_placement(
@@ -213,7 +338,6 @@ def force_directed_placement(
     comps = [PlacementComponent(**c.__dict__) for c in components]
     ref_idx: dict[str, int] = {c.ref: i for i, c in enumerate(comps)}
 
-    # Velocity storage (for momentum)
     vx: list[float] = [0.0] * len(comps)
     vy: list[float] = [0.0] * len(comps)
     start_time = time.perf_counter()
@@ -223,105 +347,22 @@ def force_directed_placement(
     stable_count = 0
     prev_snapshot: tuple[tuple[float, float], ...] | None = None
 
-    # Build adjacency: for each component, which other components are connected?
-    adjacency: dict[str, list[tuple[str, float]]] = {c.ref: [] for c in comps}
-    for net in nets:
-        for r1 in net.refs:
-            for r2 in net.refs:
-                if r1 != r2:
-                    adjacency[r1].append((r2, net.weight))
-
-    step_size = min(cfg.board_w, cfg.board_h) * 0.05  # initial max displacement
+    adjacency = _build_placement_adjacency(comps, nets)
+    step_size = min(cfg.board_w, cfg.board_h) * 0.05
 
     for iteration in range(cfg.iterations):
         iterations_run = iteration + 1
-        # Cooling: reduce step size over time
         temperature = step_size * (1.0 - iteration / cfg.iterations) + 0.1
 
         fx: list[float] = [0.0] * len(comps)
         fy: list[float] = [0.0] * len(comps)
 
-        # --- Repulsion: all pairs ---
-        for i in range(len(comps)):
-            for j in range(i + 1, len(comps)):
-                dx = comps[i].x - comps[j].x
-                dy = comps[i].y - comps[j].y
-                dist = max(math.hypot(dx, dy), cfg.min_dist)
-                # Overlap clearance: if bounding boxes overlap, push harder
-                min_clear = (comps[i].w + comps[j].w) * 0.5 + 1.0
-                effective_k = cfg.k_repel
-                if dist < min_clear:
-                    effective_k *= (min_clear / dist) ** 2
-                force = effective_k / (dist * dist)
-                nx, ny = dx / dist, dy / dist
-                fx[i] += force * nx
-                fy[i] += force * ny
-                fx[j] -= force * nx
-                fy[j] -= force * ny
+        _accumulate_repulsion(comps, cfg, fx, fy)
+        _accumulate_attraction(comps, adjacency, ref_idx, cfg, fx, fy)
+        _accumulate_wall_forces(comps, cfg, fx, fy)
 
-        # --- Attraction: connected pairs (spring) ---
-        for i, comp in enumerate(comps):
-            for neighbor_ref, weight in adjacency[comp.ref]:
-                neighbor_index = ref_idx.get(neighbor_ref)
-                if neighbor_index is None:
-                    continue
-                dx = comps[neighbor_index].x - comp.x
-                dy = comps[neighbor_index].y - comp.y
-                dist = max(math.hypot(dx, dy), cfg.min_dist)
-                force = cfg.k_spring * weight * dist
-                nx, ny = dx / dist, dy / dist
-                fx[i] += force * nx
-                fy[i] += force * ny
+        final_max_disp = _integrate_movement(comps, fx, fy, vx, vy, temperature, cfg)
 
-        # --- Wall repulsion (soft boundary) ---
-        for i, comp in enumerate(comps):
-            # Left wall
-            if comp.x < comp.w:
-                fx[i] += cfg.k_wall / max(comp.x, 0.01)
-            # Right wall
-            right_gap = cfg.board_w - comp.x - comp.w
-            if right_gap < comp.w:
-                fx[i] -= cfg.k_wall / max(right_gap, 0.01)
-            # Top wall
-            if comp.y < comp.h:
-                fy[i] += cfg.k_wall / max(comp.y, 0.01)
-            # Bottom wall
-            bottom_gap = cfg.board_h - comp.y - comp.h
-            if bottom_gap < comp.h:
-                fy[i] -= cfg.k_wall / max(bottom_gap, 0.01)
-
-        # --- Integrate ---
-        max_disp = 0.0
-        for i, comp in enumerate(comps):
-            if comp.fixed:
-                vx[i] = 0.0
-                vy[i] = 0.0
-                continue
-            vx[i] = (vx[i] + fx[i]) * cfg.damping
-            vy[i] = (vy[i] + fy[i]) * cfg.damping
-            # Clamp displacement by temperature
-            speed = math.hypot(vx[i], vy[i])
-            if speed > temperature:
-                vx[i] = vx[i] / speed * temperature
-                vy[i] = vy[i] / speed * temperature
-            new_x, new_y = _resolve_candidate_position(
-                comp.x + vx[i],
-                comp.y + vy[i],
-                comp,
-                cfg,
-                snap_to_grid=False,
-            )
-            disp = math.hypot(new_x - comp.x, new_y - comp.y)
-            if disp > max_disp:
-                max_disp = disp
-            comp.x, comp.y = new_x, new_y
-
-        final_max_disp = max_disp
-        # Deterministic convergence stop: halt once the grid-snapped layout (the
-        # deliverable) is unchanged for ``convergence_patience`` consecutive
-        # iterations. Snapping makes this robust to the sub-grid jitter the
-        # cooling floor leaves behind, and it depends only on geometry — never on
-        # wall-clock — so the result is reproducible across machines.
         if cfg.convergence_patience > 0:
             snapshot = tuple(
                 (_snap(comp.x, cfg.grid_mm), _snap(comp.y, cfg.grid_mm)) for comp in comps
@@ -334,7 +375,7 @@ def force_directed_placement(
             else:
                 stable_count = 0
             prev_snapshot = snapshot
-        # Opt-in, off-by-default wall-clock safety valve (breaks determinism).
+
         if cfg.max_seconds > 0.0 and time.perf_counter() - start_time >= cfg.max_seconds:
             break
 
@@ -371,6 +412,26 @@ class BGABall:
     y_mm: float = 0.0
 
 
+def _calculate_bga_via_coords(
+    ball: BGABall, strategy: str, pitch_mm: float
+) -> tuple[float, float, float, float]:
+    bx, by = ball.x_mm, ball.y_mm
+    if strategy == "dog_ear":
+        col_odd = ball.col % 2
+        row_ord = ord(ball.row[0]) - ord("A")
+        row_odd = row_ord % 2
+        dx = 1.0 if (col_odd ^ row_odd) == 0 else -1.0
+        dy = 1.0 if row_odd == 0 else -1.0
+        magnitude = math.hypot(dx, dy)
+        dx /= magnitude
+        dy /= magnitude
+        offset = pitch_mm * 0.55
+        return bx + dx * offset, by + dy * offset, dx, dy
+
+    dx = 1.0 if ball.col % 2 == 0 else -1.0
+    return bx + dx * pitch_mm, by, dx, 0.0
+
+
 def generate_bga_fanout_plan(
     balls: list[BGABall],
     pitch_mm: float,
@@ -398,36 +459,14 @@ def generate_bga_fanout_plan(
 
     vias: list[dict[str, object]] = []
     for ball in balls:
-        bx, by = ball.x_mm, ball.y_mm
-
-        if strategy == "dog_ear":
-            # Diagonal escape direction depends on quadrant — use simple alternating pattern
-            # For a real layout this would be quadrant-aware; here we use a hash-based approach
-            col_odd = ball.col % 2
-            row_ord = ord(ball.row[0]) - ord("A")
-            row_odd = row_ord % 2
-            dx = 1.0 if (col_odd ^ row_odd) == 0 else -1.0
-            dy = 1.0 if row_odd == 0 else -1.0
-            # Normalize diagonal
-            magnitude = math.hypot(dx, dy)
-            dx /= magnitude
-            dy /= magnitude
-            offset = pitch_mm * 0.55
-            vx = bx + dx * offset
-            vy = by + dy * offset
-        else:  # inline
-            # Place via directly to the right/left alternating by column
-            dx = 1.0 if ball.col % 2 == 0 else -1.0
-            dy = 0.0
-            vx = bx + dx * pitch_mm
-            vy = by
+        vx, vy, dx, dy = _calculate_bga_via_coords(ball, strategy, pitch_mm)
 
         vias.append(
             {
                 "ref": f"{ball.row}{ball.col}",
                 "net": ball.net,
-                "ball_x": round(bx, 4),
-                "ball_y": round(by, 4),
+                "ball_x": round(ball.x_mm, 4),
+                "ball_y": round(ball.y_mm, 4),
                 "via_x": round(vx, 4),
                 "via_y": round(vy, 4),
                 "via_drill_mm": via_drill_mm,
