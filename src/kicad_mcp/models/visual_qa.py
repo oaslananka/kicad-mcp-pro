@@ -460,6 +460,25 @@ def detect_symbol_overlap(symbols: list[PlacedSymbol]) -> list[VisualFinding]:
     return findings
 
 
+def _text_overlap_finding(ref_a: str, box_a: Box, ref_b: str, box_b: Box) -> VisualFinding | None:
+    """Build a finding only for a visible overlap across distinct owners."""
+    if not box_a.overlaps(box_b):
+        return None
+    area = box_a.intersection_area(box_b)
+    if area < TEXT_OVERLAP_MIN_AREA_MM2:
+        return None
+    cx, cy = box_a.center
+    return VisualFinding(
+        "WARN",
+        "text_overlap",
+        f"Text '{ref_a}' overlaps '{ref_b}' (~{area:.1f} mm²). "
+        "Reposition the field or symbol so the text is legible.",
+        ref=ref_a,
+        x=cx,
+        y=cy,
+    )
+
+
 def detect_text_overlap(
     symbols: list[PlacedSymbol], labels: list[LabelItem]
 ) -> list[VisualFinding]:
@@ -488,23 +507,9 @@ def detect_text_overlap(
                 continue
             ref_a, box_a = boxes[i]
             ref_b, box_b = boxes[j]
-            if not box_a.overlaps(box_b):
-                continue
-            area = box_a.intersection_area(box_b)
-            if area < TEXT_OVERLAP_MIN_AREA_MM2:
-                continue
-            cx, cy = box_a.center
-            findings.append(
-                VisualFinding(
-                    "WARN",
-                    "text_overlap",
-                    f"Text '{ref_a}' overlaps '{ref_b}' (~{area:.1f} mm²). "
-                    "Reposition the field or symbol so the text is legible.",
-                    ref=ref_a,
-                    x=cx,
-                    y=cy,
-                )
-            )
+            finding = _text_overlap_finding(ref_a, box_a, ref_b, box_b)
+            if finding is not None:
+                findings.append(finding)
     return findings
 
 
