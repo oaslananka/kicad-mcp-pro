@@ -636,7 +636,9 @@ async def api_artifacts_file(request: Request) -> JSONResponse | FileResponse:  
         return JSONResponse({"error": str(exc)}, status_code=403)
     if not resolved.is_file():
         return JSONResponse({"error": "Artifact not found"}, status_code=404)
-    return FileResponse(resolved, media_type=media_type)
+    return FileResponse(  # nosemgrep: tainted-path-traversal-fastapi
+        resolved, media_type=media_type
+    )
 
 
 # ---------------------------------------------------------------------------
