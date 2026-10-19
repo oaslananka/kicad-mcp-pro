@@ -205,6 +205,29 @@ class SchematicDestructiveEditService:
             f"({self.format_mm(float(target['x2']))}, {self.format_mm(float(target['y2']))})."
         )
 
+    def _is_symbol_to_delete(self, current: str, cursor: int, reference: str) -> tuple[bool, int]:
+        if not current.startswith("(symbol", cursor):
+            return False, 0
+        block, length = self.extract_block(current, cursor)
+        parsed = self.parse_symbol_block(block) if block else None
+        if parsed is not None and parsed["reference"] == reference:
+            return True, length
+        return False, 0
+
+    def _is_attached_wire_to_delete(
+        self, current: str, cursor: int, connection_points: set[tuple[float, float]]
+    ) -> tuple[bool, int]:
+        if not current.startswith("(wire", cursor):
+            return False, 0
+        block, length = self.extract_block(current, cursor)
+        parsed_wire = self.parse_wire_block(block) if block else None
+        if parsed_wire is not None:
+            start = self.coordinate_key(parsed_wire["x1"], parsed_wire["y1"])
+            end = self.coordinate_key(parsed_wire["x2"], parsed_wire["y2"])
+            if start in connection_points or end in connection_points:
+                return True, length
+        return False, 0
+
     def _mutate_delete_symbol(
         self,
         current: str,
@@ -216,26 +239,21 @@ class SchematicDestructiveEditService:
         last = 0
         removed_wire_count = 0
         while cursor < len(current):
-            if current.startswith("(symbol", cursor):
-                block, length = self.extract_block(current, cursor)
-                parsed = self.parse_symbol_block(block) if block else None
-                if parsed is not None and parsed["reference"] == reference:
-                    pieces.append(current[last:cursor])
-                    cursor += length
-                    last = cursor
-                    continue
-            if current.startswith("(wire", cursor):
-                block, length = self.extract_block(current, cursor)
-                parsed_wire = self.parse_wire_block(block) if block else None
-                if parsed_wire is not None:
-                    start = self.coordinate_key(parsed_wire["x1"], parsed_wire["y1"])
-                    end = self.coordinate_key(parsed_wire["x2"], parsed_wire["y2"])
-                    if start in connection_points or end in connection_points:
-                        removed_wire_count += 1
-                        pieces.append(current[last:cursor])
-                        cursor += length
-                        last = cursor
-                        continue
+            should_del_sym, sym_len = self._is_symbol_to_delete(current, cursor, reference)
+            if should_del_sym:
+                pieces.append(current[last:cursor])
+                cursor += sym_len
+                last = cursor
+                continue
+            should_del_wire, wire_len = self._is_attached_wire_to_delete(
+                current, cursor, connection_points
+            )
+            if should_del_wire:
+                removed_wire_count += 1
+                pieces.append(current[last:cursor])
+                cursor += wire_len
+                last = cursor
+                continue
             cursor += 1
         pieces.append(current[last:])
         return "".join(pieces), removed_wire_count

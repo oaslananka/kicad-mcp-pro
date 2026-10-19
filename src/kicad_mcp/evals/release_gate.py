@@ -211,7 +211,7 @@ def _build_observed_entry(
     }
 
 
-def _check_adapter_and_threshold_failures(
+def _check_adapter_observation_failures(
     config_id: str,
     summary: Mapping[str, Any],
     thresholds: EvalThresholds,
@@ -252,6 +252,13 @@ def _check_adapter_and_threshold_failures(
             f"{config_id}: selection failures present",
         )
 
+
+def _check_threshold_and_safety_failures(
+    config_id: str,
+    summary: Mapping[str, Any],
+    thresholds: EvalThresholds,
+    classifications: dict[str, list[str]],
+) -> None:
     threshold_outcome = evaluate_thresholds(summary, thresholds)
     for failure in threshold_outcome.failures:
         if failure.startswith(("safety_violations", "forbidden_violations")):
@@ -269,6 +276,47 @@ def _check_adapter_and_threshold_failures(
             "safety_failures",
             f"{config_id}: safety={safety_count} forbidden={forbidden_count}",
         )
+
+
+def _check_adapter_and_threshold_failures(
+    config_id: str,
+    summary: Mapping[str, Any],
+    thresholds: EvalThresholds,
+    classifications: dict[str, list[str]],
+) -> None:
+    _check_adapter_observation_failures(config_id, summary, thresholds, classifications)
+    _check_threshold_and_safety_failures(config_id, summary, thresholds, classifications)
+
+
+def _evaluate_metric_regression(
+    config_id: str,
+    metric: str,
+    approved_value: object,
+    current_value: float | None,
+    variance: float,
+    classifications: dict[str, list[str]],
+) -> None:
+    if isinstance(approved_value, bool) or not isinstance(approved_value, int | float):
+        _append(
+            classifications,
+            "quality_failures",
+            f"{config_id}: approved {metric} unavailable",
+        )
+        return
+    if current_value is None:
+        category = (
+            "telemetry_unavailable"
+            if metric in {"p95_latency_ms", "mean_tokens"}
+            else "quality_failures"
+        )
+        _append(classifications, category, f"{config_id}: {metric} unavailable")
+        return
+    if metric in _PROVIDER_TELEMETRY_METRICS:
+        return
+    if metric in _HIGHER_IS_BETTER and current_value < float(approved_value) - variance:
+        _append(classifications, "quality_failures", f"{config_id}: {metric} regressed")
+    if metric in _LOWER_IS_BETTER and current_value > float(approved_value) + variance:
+        _append(classifications, "quality_failures", f"{config_id}: {metric} regressed")
 
 
 def _compare_config_with_baseline(
@@ -309,27 +357,14 @@ def _compare_config_with_baseline(
             "approved": approved_value,
             "permitted_variance": variance,
         }
-        if isinstance(approved_value, bool) or not isinstance(approved_value, int | float):
-            _append(
-                classifications,
-                "quality_failures",
-                f"{config_id}: approved {metric} unavailable",
-            )
-            continue
-        if current_value is None:
-            category = (
-                "telemetry_unavailable"
-                if metric in {"p95_latency_ms", "mean_tokens"}
-                else "quality_failures"
-            )
-            _append(classifications, category, f"{config_id}: {metric} unavailable")
-            continue
-        if metric in _PROVIDER_TELEMETRY_METRICS:
-            continue
-        if metric in _HIGHER_IS_BETTER and current_value < float(approved_value) - variance:
-            _append(classifications, "quality_failures", f"{config_id}: {metric} regressed")
-        if metric in _LOWER_IS_BETTER and current_value > float(approved_value) + variance:
-            _append(classifications, "quality_failures", f"{config_id}: {metric} regressed")
+        _evaluate_metric_regression(
+            config_id,
+            metric,
+            approved_value,
+            current_value,
+            variance,
+            classifications,
+        )
 
     token_required = baseline_record.get("token_metrics_required") is True
     token_coverage = _number(summary, "token_coverage")
