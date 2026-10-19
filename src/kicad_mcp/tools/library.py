@@ -387,6 +387,22 @@ def _resolve_populate_property(block: str, existing_populate: str = "") -> str:
     return existing_populate or "Populate"
 
 
+def _update_component_row_properties(
+    row: dict[str, str],
+    block: str,
+    lcsc_code: str,
+    mpn: str,
+    manufacturer: str,
+) -> None:
+    if lcsc_code:
+        row["lcsc"] = normalize_lcsc_code(lcsc_code)
+    if mpn:
+        row["mpn"] = mpn
+    if manufacturer:
+        row["manufacturer"] = manufacturer
+    row["populate"] = _resolve_populate_property(block, row.get("populate", ""))
+
+
 def _apply_symbol_block(block: str, rows_by_reference: dict[str, dict[str, str]]) -> None:
     """Extract properties from a symbol S-expression block and update rows."""
     if '(lib_id "' not in block:
@@ -412,13 +428,7 @@ def _apply_symbol_block(block: str, rows_by_reference: dict[str, dict[str, str]]
     manufacturer = _symbol_property(block, "Manufacturer") or _symbol_property(block, "MFR")
 
     for row in instance_rows:
-        if lcsc_code:
-            row["lcsc"] = normalize_lcsc_code(lcsc_code)
-        if mpn:
-            row["mpn"] = mpn
-        if manufacturer:
-            row["manufacturer"] = manufacturer
-        row["populate"] = _resolve_populate_property(block, row.get("populate", ""))
+        _update_component_row_properties(row, block, lcsc_code, mpn, manufacturer)
 
 
 def _parse_schematic_symbols_and_blocks(

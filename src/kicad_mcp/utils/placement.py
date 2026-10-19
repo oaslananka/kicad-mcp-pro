@@ -138,6 +138,39 @@ def _hits_keepout(
     return False
 
 
+def _spiral_side_candidate(
+    x: float,
+    y: float,
+    dx: int,
+    dy: int,
+    ring: int,
+    offset: int,
+    step: float,
+    normalize: Callable[[float, float], tuple[float, float]],
+) -> tuple[float, float]:
+    if dx == 0:
+        return normalize(x + (offset * step), y + (dy * ring * step))
+    return normalize(x + (dx * ring * step), y + (offset * step))
+
+
+def _search_spiral_side(
+    x: float,
+    y: float,
+    dx: int,
+    dy: int,
+    ring: int,
+    step: float,
+    component: PlacementComponent,
+    cfg: ForceDirectedConfig,
+    normalize: Callable[[float, float], tuple[float, float]],
+) -> tuple[float, float] | None:
+    for offset in range(-ring, ring + 1):
+        cand = _spiral_side_candidate(x, y, dx, dy, ring, offset, step, normalize)
+        if _inside_board(*cand, component, cfg) and not _hits_keepout(*cand, component, cfg):
+            return cand
+    return None
+
+
 def _search_spiral(
     x: float,
     y: float,
@@ -147,26 +180,13 @@ def _search_spiral(
 ) -> tuple[float, float] | None:
     search_step = max(cfg.grid_mm / 2.0, 0.25)
     phase = cfg.seed % 4
-    directions = [
-        (1, 0),
-        (0, 1),
-        (-1, 0),
-        (0, -1),
-    ]
-    directions = directions[phase:] + directions[:phase]
+    directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+    rotated_directions = directions[phase:] + directions[:phase]
     for ring in range(1, 33):
-        for dx, dy in directions:
-            for offset in range(-ring, ring + 1):
-                if dx == 0:
-                    cand = normalize(x + (offset * search_step), y + (dy * ring * search_step))
-                else:
-                    cand = normalize(x + (dx * ring * search_step), y + (offset * search_step))
-                if _inside_board(*cand, component, cfg) and not _hits_keepout(
-                    *cand,
-                    component,
-                    cfg,
-                ):
-                    return cand
+        for dx, dy in rotated_directions:
+            cand = _search_spiral_side(x, y, dx, dy, ring, search_step, component, cfg, normalize)
+            if cand is not None:
+                return cand
     return None
 
 
