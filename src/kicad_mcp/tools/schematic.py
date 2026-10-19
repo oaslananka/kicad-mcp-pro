@@ -5434,92 +5434,107 @@ def _is_pwr_flag(power_symbol: dict[str, Any]) -> bool:
     return "PWR_FLAG" in (symbol_name, str(power_symbol.get("value", "")))
 
 
-def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
-    data = parse_schematic_file(sch_file)
-    try:
-        content = sch_file.read_text(encoding="utf-8")
-    except OSError:
-        content = ""
-    no_connect_points = _extract_no_connects(content) if content else set()
-    symbol_mirrors = _placed_symbol_mirrors(content)
-    parent: dict[tuple[float, float], tuple[float, float]] = {}
+class _DisjointSet:
+    """Disjoint-set (union-find) data structure for 2D schematic points."""
 
-    def find(point: tuple[float, float]) -> tuple[float, float]:
-        root = parent.setdefault(point, point)
+    def __init__(self) -> None:
+        self.parent: dict[tuple[float, float], tuple[float, float]] = {}
+
+    def find(self, point: tuple[float, float]) -> tuple[float, float]:
+        root = self.parent.setdefault(point, point)
         if root != point:
-            root = find(root)
-            parent[point] = root
+            root = self.find(root)
+            self.parent[point] = root
         return root
 
-    def union(left: tuple[float, float], right: tuple[float, float]) -> None:
-        left_root = find(left)
-        right_root = find(right)
+    def union(self, left: tuple[float, float], right: tuple[float, float]) -> None:
+        left_root = self.find(left)
+        right_root = self.find(right)
         if left_root != right_root:
-            parent[right_root] = left_root
+            self.parent[right_root] = left_root
 
-    for wire in data["wires"]:
+    def attach(
+        self, point: tuple[float, float], wires: list[dict[str, Any]]
+    ) -> tuple[float, float]:
+        key = _point_key(*point)
+        if key in self.parent:
+            return self.find(key)
+        for wire in wires:
+            if _point_on_segment(key, wire):
+                anchor = _point_key(wire["x1"], wire["y1"])
+                return self.find(anchor)
+        return self.find(key)
+
+
+def _union_wires(wires: list[dict[str, Any]], dset: _DisjointSet) -> None:
+    for wire in wires:
         start = _point_key(wire["x1"], wire["y1"])
         end = _point_key(wire["x2"], wire["y2"])
-        union(start, end)
+        dset.union(start, end)
 
     # A wire endpoint landing on another wire's interior (a T-intersection)
     # is the same geometry KiCad auto-junctions into one net, but the pass
     # above only merges each wire's own two endpoints. Union those crossing
     # wires together too, or they stay as separate trees.
-    for wire in data["wires"]:
+    for wire in wires:
         for endpoint in (
             _point_key(wire["x1"], wire["y1"]),
             _point_key(wire["x2"], wire["y2"]),
         ):
-            for other in data["wires"]:
+            for other in wires:
                 if other is wire:
                     continue
                 if _point_on_segment(endpoint, other):
                     anchor = _point_key(other["x1"], other["y1"])
-                    union(endpoint, anchor)
+                    dset.union(endpoint, anchor)
 
-    def attach(point: tuple[float, float]) -> tuple[float, float]:
-        key = _point_key(*point)
-        if key in parent:
-            return find(key)
-        for wire in data["wires"]:
-            if _point_on_segment(key, wire):
-                anchor = _point_key(wire["x1"], wire["y1"])
-                return find(anchor)
-        return find(key)
 
-    groups: dict[tuple[float, float], dict[str, Any]] = {}
+def _ensure_connectivity_group(
+    point: tuple[float, float],
+    wires: list[dict[str, Any]],
+    dset: _DisjointSet,
+    groups: dict[tuple[float, float], dict[str, Any]],
+) -> dict[str, Any]:
+    root = dset.attach(point, wires)
+    return groups.setdefault(
+        root,
+        {
+            "points": set(),
+            "labels": set(),
+            "power": set(),
+            "pins": [],
+            "no_connect": False,
+        },
+    )
 
-    def ensure_group(point: tuple[float, float]) -> dict[str, Any]:
-        root = attach(point)
-        return groups.setdefault(
-            root,
-            {
-                "points": set(),
-                "labels": set(),
-                "power": set(),
-                "pins": [],
-                "no_connect": False,
-            },
-        )
 
-    for wire in data["wires"]:
-        group = ensure_group(_point_key(wire["x1"], wire["y1"]))
+def _populate_connectivity_elements(
+    data: dict[str, Any],
+    no_connect_points: set[tuple[float, float]],
+    symbol_mirrors: dict[tuple[str, float, float], str],
+    dset: _DisjointSet,
+    groups: dict[tuple[float, float], dict[str, Any]],
+) -> None:
+    wires = data["wires"]
+    for wire in wires:
+        group = _ensure_connectivity_group(_point_key(wire["x1"], wire["y1"]), wires, dset, groups)
         group["points"].add(_point_key(wire["x1"], wire["y1"]))
         group["points"].add(_point_key(wire["x2"], wire["y2"]))
 
     for point in no_connect_points:
-        group = ensure_group(point)
+        group = _ensure_connectivity_group(point, wires, dset, groups)
         group["points"].add(point)
         group["no_connect"] = True
 
     for label in data["labels"]:
-        group = ensure_group((float(label["x"]), float(label["y"])))
+        pt = (float(label["x"]), float(label["y"]))
+        group = _ensure_connectivity_group(pt, wires, dset, groups)
         group["points"].add(_point_key(label["x"], label["y"]))
         group["labels"].add(str(label["name"]))
 
     for power_symbol in data["power_symbols"]:
-        group = ensure_group((float(power_symbol["x"]), float(power_symbol["y"])))
+        pt = (float(power_symbol["x"]), float(power_symbol["y"]))
+        group = _ensure_connectivity_group(pt, wires, dset, groups)
         group["points"].add(_point_key(power_symbol["x"], power_symbol["y"]))
         if not _is_pwr_flag(power_symbol):
             group["power"].add(str(power_symbol["value"]))
@@ -5537,7 +5552,7 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
         )
         pin_meta = get_pin_metadata(library, symbol_name, int(symbol["unit"]))
         for pin_number, point in pin_positions.items():
-            group = ensure_group(point)
+            group = _ensure_connectivity_group(point, wires, dset, groups)
             group["points"].add(_point_key(*point))
             meta = pin_meta.get(pin_number, {})
             group["pins"].append(
@@ -5550,18 +5565,25 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
                 }
             )
 
+
+def _collapse_and_normalize_groups(
+    groups: dict[tuple[float, float], dict[str, Any]],
+    dset: _DisjointSet,
+    no_connect_points: set[tuple[float, float]],
+) -> list[dict[str, Any]]:
+    # Merge groups that share net/power names
     name_roots: dict[str, tuple[float, float]] = {}
     for root, group in groups.items():
         for name in {*group["labels"], *group["power"]}:
             if name in name_roots:
-                union(name_roots[name], root)
+                dset.union(name_roots[name], root)
             else:
                 name_roots[name] = root
 
-    collapsed_groups: dict[tuple[float, float], dict[str, Any]] = {}
+    collapsed: dict[tuple[float, float], dict[str, Any]] = {}
     for root, group in groups.items():
-        collapsed_root = find(root)
-        merged = collapsed_groups.setdefault(
+        collapsed_root = dset.find(root)
+        merged = collapsed.setdefault(
             collapsed_root,
             {
                 "points": set(),
@@ -5577,11 +5599,11 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
         merged["pins"].extend(group["pins"])
         merged["no_connect"] = bool(merged["no_connect"] or group.get("no_connect"))
 
-    normalized_groups: list[dict[str, Any]] = []
-    for group in collapsed_groups.values():
+    normalized: list[dict[str, Any]] = []
+    for group in collapsed.values():
         names = sorted({*group["labels"], *group["power"]})
         points = sorted(group["points"])
-        normalized_groups.append(
+        normalized.append(
             {
                 "names": names,
                 "points": points,
@@ -5595,13 +5617,30 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
             }
         )
     return sorted(
-        normalized_groups,
+        normalized,
         key=lambda group: (
             group["names"][0] if group["names"] else "~unnamed",
             len(group["pins"]),
             len(group["points"]),
         ),
     )
+
+
+def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
+    data = parse_schematic_file(sch_file)
+    try:
+        content = sch_file.read_text(encoding="utf-8")
+    except OSError:
+        content = ""
+    no_connect_points = _extract_no_connects(content) if content else set()
+    symbol_mirrors = _placed_symbol_mirrors(content)
+
+    dset = _DisjointSet()
+    _union_wires(data["wires"], dset)
+
+    groups: dict[tuple[float, float], dict[str, Any]] = {}
+    _populate_connectivity_elements(data, no_connect_points, symbol_mirrors, dset, groups)
+    return _collapse_and_normalize_groups(groups, dset, no_connect_points)
 
 
 def build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
