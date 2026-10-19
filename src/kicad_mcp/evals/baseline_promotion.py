@@ -129,6 +129,38 @@ def _validate_source_revision(source_revision: object) -> str:
     return source_revision
 
 
+def _validate_single_configuration(
+    config_id: str,
+    raw_summary: object,
+    minimum_repeats: int,
+) -> dict[str, object]:
+    summary = _mapping(raw_summary, f"Observed configuration {config_id}")
+    host = summary.get("host")
+    model = summary.get("model")
+    if not isinstance(host, str) or not host or not isinstance(model, str) or not model:
+        raise BaselinePromotionError(f"Observed identity is incomplete for {config_id}.")
+    repeats = summary.get("repeats")
+    if isinstance(repeats, bool) or not isinstance(repeats, int) or repeats < minimum_repeats:
+        raise BaselinePromotionError(f"Observed repeats are insufficient for {config_id}.")
+    if summary.get("complete") is not True:
+        raise BaselinePromotionError(f"Observed evidence is incomplete for {config_id}.")
+    for counter in (
+        "selection_failures",
+        "safety_violations",
+        "forbidden_violations",
+    ):
+        if int(summary.get(counter, 0) or 0) != 0:
+            raise BaselinePromotionError(f"Observed {counter} prevents promotion for {config_id}.")
+    metrics = {metric: _numeric(summary, metric) for metric in _METRICS}
+    token_coverage = _numeric(summary, "token_coverage")
+    return {
+        "host": host,
+        "model": model,
+        "token_metrics_required": token_coverage >= 1.0,
+        "metrics": metrics,
+    }
+
+
 def _validate_and_build_configurations(
     observed: dict[str, Any],
     required: list[str],
@@ -139,36 +171,10 @@ def _validate_and_build_configurations(
             "Aggregate observed data does not match required configurations."
         )
 
-    configurations: dict[str, object] = {}
-    for config_id in required:
-        summary = _mapping(observed[config_id], f"Observed configuration {config_id}")
-        host = summary.get("host")
-        model = summary.get("model")
-        if not isinstance(host, str) or not host or not isinstance(model, str) or not model:
-            raise BaselinePromotionError(f"Observed identity is incomplete for {config_id}.")
-        repeats = summary.get("repeats")
-        if isinstance(repeats, bool) or not isinstance(repeats, int) or repeats < minimum_repeats:
-            raise BaselinePromotionError(f"Observed repeats are insufficient for {config_id}.")
-        if summary.get("complete") is not True:
-            raise BaselinePromotionError(f"Observed evidence is incomplete for {config_id}.")
-        for counter in (
-            "selection_failures",
-            "safety_violations",
-            "forbidden_violations",
-        ):
-            if int(summary.get(counter, 0) or 0) != 0:
-                raise BaselinePromotionError(
-                    f"Observed {counter} prevents promotion for {config_id}."
-                )
-        metrics = {metric: _numeric(summary, metric) for metric in _METRICS}
-        token_coverage = _numeric(summary, "token_coverage")
-        configurations[config_id] = {
-            "host": host,
-            "model": model,
-            "token_metrics_required": token_coverage >= 1.0,
-            "metrics": metrics,
-        }
-    return configurations
+    return {
+        config_id: _validate_single_configuration(config_id, observed[config_id], minimum_repeats)
+        for config_id in required
+    }
 
 
 def generate_approved_baseline(
