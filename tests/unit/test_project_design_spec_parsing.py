@@ -366,3 +366,19 @@ def test_validate_design_intent_checks_references_on_existing_board(
     assert validate_design_intent(ProjectDesignIntent(connector_refs=["J1", "U1"])) == [
         "Connector ref 'J1' is not present on the PCB."
     ]
+
+
+def test_design_spec_rendering_preserves_rail_and_interface_order() -> None:
+    from kicad_mcp.models.intent import InterfaceSpec, PowerRailSpec
+
+    intent = ProjectDesignIntent(
+        power_rails=[PowerRailSpec(name="+3V3", voltage_v=3.3, current_max_a=1.0, source_ref="U1")],
+        interfaces=[
+            InterfaceSpec(kind="usb2", impedance_target_ohm=90.0, differential=True),
+            InterfaceSpec(kind="i2c"),
+        ],
+    )
+    rendered = _render_design_intent(intent)
+    assert "- Power rails: 1\n  +3V3: 3.3V / 1.0A via U1" in rendered
+    assert "- Interfaces: 2\n  usb2  90.0ohm diff\n  i2c" in rendered
+    assert rendered.index("- Power rails:") < rendered.index("- Interfaces:")

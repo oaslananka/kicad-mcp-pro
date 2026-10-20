@@ -778,14 +778,20 @@ def _render_design_intent_components(intent: ProjectDesignIntent) -> list[str]:
                 f"  {rail.name}: {rail.voltage_v}V / {rail.current_max_a}A"
                 + (f" via {rail.source_ref}" if rail.source_ref else "")
             )
-    if intent.interfaces:
-        lines.append(f"- Interfaces: {len(intent.interfaces)}")
-        for iface in intent.interfaces[:10]:
-            impedance = ""
-            if iface.impedance_target_ohm is not None:
-                diff_suffix = " diff" if iface.differential else ""
-                impedance = f"  {iface.impedance_target_ohm}ohm{diff_suffix}"
-            lines.append(f"  {iface.kind}{impedance}")
+    lines.extend(_render_interface_summary(intent))
+    return lines
+
+
+def _render_interface_summary(intent: ProjectDesignIntent) -> list[str]:
+    if not intent.interfaces:
+        return []
+    lines = [f"- Interfaces: {len(intent.interfaces)}"]
+    for iface in intent.interfaces[:10]:
+        impedance = ""
+        if iface.impedance_target_ohm is not None:
+            diff_suffix = " diff" if iface.differential else ""
+            impedance = f"  {iface.impedance_target_ohm}ohm{diff_suffix}"
+        lines.append(f"  {iface.kind}{impedance}")
     return lines
 
 
