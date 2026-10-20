@@ -215,3 +215,19 @@ def test_modified_server_trace_refuses_gateway_confirmation(evidence: tuple[Path
     server.write_text(server.read_text().replace("kicad_get_version", "drc_rule_delete", 1))
     with pytest.raises(ReferenceOpsGatewayAuditError):
         _reconcile(evidence)
+
+
+def test_gateway_witness_parser_rejects_malformed_json_directly() -> None:
+    with pytest.raises(ReferenceOpsGatewayAuditError, match="invalid Gateway witness JSON"):
+        reference_ops_gateway_audit._witness_rows(b"{malformed", _SERVER)
+
+
+def test_gateway_match_rejects_tool_call_count_mismatch_directly() -> None:
+    with pytest.raises(ReferenceOpsGatewayAuditError, match="Gateway/server call counts differ"):
+        reference_ops_gateway_audit._match_gateway_server_events(
+            rows=[],
+            calls=[],
+            results=[],
+            pairs=[("kicad_get_version", "completed")],
+            server_name=_SERVER,
+        )
