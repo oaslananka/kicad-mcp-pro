@@ -226,6 +226,19 @@ def _evaluate_drc_json(
     return None, error
 
 
+def _run_variant_safe(
+    run_cli_variants: RunCliVariants,
+    variant: list[str],
+) -> tuple[int, str] | str:
+    try:
+        return_code, _stdout, stderr = run_cli_variants([variant])
+        return return_code, stderr
+    except subprocess.TimeoutExpired:
+        return 124, "The kicad-cli command timed out."
+    except (FileNotFoundError, OSError) as exc:
+        return str(exc)
+
+
 def run_drc_report(
     report_name: str,
     *,
@@ -281,16 +294,11 @@ def run_drc_report(
                 f"Could not prepare DRC report path: {exc}",
             )
 
-        try:
-            return_code, _stdout, stderr = run_cli_variants([variant])
-        except FileNotFoundError as exc:
-            return DrcRunResult(report_path, "unavailable", None, None, "", str(exc))
-        except subprocess.TimeoutExpired:
-            return_code = 124
-            stderr = "The kicad-cli command timed out."
-        except OSError as exc:
-            return DrcRunResult(report_path, "unavailable", None, None, "", str(exc))
+        executed = _run_variant_safe(run_cli_variants, variant)
+        if isinstance(executed, str):
+            return DrcRunResult(report_path, "unavailable", None, None, "", executed)
 
+        return_code, stderr = executed
         normalized_stderr = stderr.strip()
         last_return_code = return_code
         last_stderr = normalized_stderr

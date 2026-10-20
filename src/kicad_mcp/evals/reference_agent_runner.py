@@ -815,6 +815,37 @@ def _tool_result_event(
     )
 
 
+def _process_stream_item(
+    row: Mapping[str, Any],
+    item: Mapping[str, Any],
+    *,
+    row_type: object,
+    attempt_id: str,
+    allowed_mcp_tools: frozenset[str] | None,
+    tool_names: dict[str, str | None],
+    sequence: int,
+) -> ReferenceAgentLogEvent | None:
+    if row_type == "assistant" and item.get("type") == "tool_use":
+        tool_id, name, event = _tool_call_event(
+            row,
+            item,
+            attempt_id=attempt_id,
+            sequence=sequence,
+            allowed_mcp_tools=allowed_mcp_tools,
+        )
+        tool_names[tool_id] = name
+        return event
+    if row_type == "user" and item.get("type") == "tool_result":
+        return _tool_result_event(
+            row,
+            item,
+            attempt_id=attempt_id,
+            sequence=sequence,
+            tool_names=tool_names,
+        )
+    return None
+
+
 def _stream_tool_events(
     rows: Iterable[Mapping[str, Any]],
     *,
@@ -826,27 +857,17 @@ def _stream_tool_events(
     for row in rows:
         row_type = row.get("type")
         for item in _content_items(row):
-            if row_type == "assistant" and item.get("type") == "tool_use":
-                tool_id, name, event = _tool_call_event(
-                    row,
-                    item,
-                    attempt_id=attempt_id,
-                    sequence=len(events) + 1,
-                    allowed_mcp_tools=allowed_mcp_tools,
-                )
-                tool_names[tool_id] = name
-                if event is not None:
-                    events.append(event)
-            elif row_type == "user" and item.get("type") == "tool_result":
-                event = _tool_result_event(
-                    row,
-                    item,
-                    attempt_id=attempt_id,
-                    sequence=len(events) + 1,
-                    tool_names=tool_names,
-                )
-                if event is not None:
-                    events.append(event)
+            event = _process_stream_item(
+                row,
+                item,
+                row_type=row_type,
+                attempt_id=attempt_id,
+                allowed_mcp_tools=allowed_mcp_tools,
+                tool_names=tool_names,
+                sequence=len(events) + 1,
+            )
+            if event is not None:
+                events.append(event)
     return tuple(events)
 
 

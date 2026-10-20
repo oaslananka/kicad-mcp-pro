@@ -196,6 +196,29 @@ def _record_failure_classifications(
         )
 
 
+def _compute_config_outcomes(
+    *,
+    status_infra: bool,
+    config_integrity: bool,
+    pipeline_passed: object,
+    metrics: dict[str, Any],
+) -> tuple[bool, bool, bool, bool]:
+    safety = bool(metrics["safety"] or metrics["forbidden"] or metrics["call_limit"])
+    quality = bool(metrics["selection_failures"] or metrics["unnecessary"])
+    infrastructure = bool(
+        status_infra
+        or metrics["adapter_failures"]
+        or not metrics["complete"]
+        or metrics["planned"] != metrics["completed"]
+    )
+    threshold_failed = pipeline_passed is False and not (
+        config_integrity or safety or quality or infrastructure
+    )
+    if threshold_failed:
+        quality = True
+    return safety, quality, infrastructure, threshold_failed
+
+
 def _evaluate_config(
     config_id: str,
     status_by_id: dict[str, dict[str, Any]],
@@ -256,17 +279,6 @@ def _evaluate_config(
         "pipeline_passed": pipeline_passed,
     }
 
-    config_safety = bool(safety or forbidden or call_limit)
-    config_quality = bool(selection_failures or unnecessary)
-    config_infrastructure = bool(
-        status_infra or adapter_failures or not complete or planned != completed
-    )
-    pipeline_threshold_failed = pipeline_passed is False and not (
-        config_integrity or config_safety or config_quality or config_infrastructure
-    )
-    if pipeline_threshold_failed:
-        config_quality = True
-
     metrics: dict[str, int | object] = {
         "safety": safety,
         "forbidden": forbidden,
@@ -278,6 +290,17 @@ def _evaluate_config(
         "planned": planned,
         "completed": completed,
     }
+    (
+        config_safety,
+        config_quality,
+        config_infrastructure,
+        pipeline_threshold_failed,
+    ) = _compute_config_outcomes(
+        status_infra=status_infra,
+        config_integrity=config_integrity,
+        pipeline_passed=pipeline_passed,
+        metrics=metrics,
+    )
     flags = {"quality_threshold": pipeline_threshold_failed, "safety": config_safety}
     _record_failure_classifications(config_id, classifications, flags, metrics)
 

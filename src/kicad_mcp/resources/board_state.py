@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 from kipy.proto.board.board_types_pb2 import BoardLayer
 from mcp.server.mcpserver import MCPServer as FastMCP
@@ -195,41 +196,69 @@ def _design_intent_json() -> str:
     return load_design_intent().model_dump_json(indent=2)
 
 
+def _format_board_summary() -> str:
+    try:
+        board = get_board()
+        tracks = board_tracks(board)
+        footprints = board_footprints(board)
+        vias = board_vias(board)
+        nets = board_nets_filtered(board, netclass_filter=None)
+    except KiCadConnectionError as exc:
+        return f"KiCad is not connected: {exc}"
+    except BoardAccessError as exc:
+        return f"Board data is unavailable: {exc}"
+    return (
+        f"Board summary\n"
+        f"- Tracks: {len(tracks)}\n"
+        f"- Vias: {len(vias)}\n"
+        f"- Footprints: {len(footprints)}\n"
+        f"- Nets: {len(nets)}"
+    )
+
+
+def _format_board_netlist() -> str:
+    cfg = get_config()
+    try:
+        board = get_board()
+    except KiCadConnectionError as exc:
+        return f"KiCad is not connected: {exc}"
+
+    data = board.get_as_string()
+    if len(data) > cfg.max_text_response_chars:
+        return f"{data[: cfg.max_text_response_chars]}\n... [truncated]"
+    return data
+
+
+def _format_placement_quality_resource() -> str:
+    from ..tools.validation import _format_placement_score, _placement_analysis
+
+    try:
+        analysis, blocked = _placement_analysis()
+        if blocked is not None:
+            return "\n".join(
+                [
+                    "Placement score: BLOCKED",
+                    f"- {blocked.summary}",
+                    *[f"- {detail}" for detail in blocked.details],
+                ]
+            )
+        if analysis is None:
+            return "Placement score: BLOCKED\n- Placement analysis returned no data."
+        return _format_placement_score(analysis)
+    except Exception as exc:
+        return f"Placement score: BLOCKED\n- Could not evaluate this resource: {exc}"
+
+
 def _register_board_resources(mcp: FastMCP) -> None:
     @mcp.resource("kicad://board/summary")
     def board_summary_resource() -> str:
         """Live PCB board summary."""
-        try:
-            board = get_board()
-            tracks = board_tracks(board)
-            footprints = board_footprints(board)
-            vias = board_vias(board)
-            nets = board_nets_filtered(board, netclass_filter=None)
-        except KiCadConnectionError as exc:
-            return f"KiCad is not connected: {exc}"
-        except BoardAccessError as exc:
-            return f"Board data is unavailable: {exc}"
-        return (
-            f"Board summary\n"
-            f"- Tracks: {len(tracks)}\n"
-            f"- Vias: {len(vias)}\n"
-            f"- Footprints: {len(footprints)}\n"
-            f"- Nets: {len(nets)}"
-        )
+        return _format_board_summary()
 
     @mcp.resource("kicad://board/netlist")
     def board_netlist_resource() -> str:
         """Current board S-expression, bounded for safety."""
-        cfg = get_config()
-        try:
-            board = get_board()
-        except KiCadConnectionError as exc:
-            return f"KiCad is not connected: {exc}"
-
-        data = board.get_as_string()
-        if len(data) > cfg.max_text_response_chars:
-            return f"{data[: cfg.max_text_response_chars]}\n... [truncated]"
-        return data
+        return _format_board_netlist()
 
     @mcp.resource("kicad://board/layer_coverage")
     def board_layer_coverage_resource() -> str:
@@ -242,23 +271,7 @@ def _register_board_resources(mcp: FastMCP) -> None:
     @mcp.resource("kicad://board/placement_quality")
     def board_placement_quality_resource() -> str:
         """Latest placement score and hard-fail placement findings."""
-        from ..tools.validation import _format_placement_score, _placement_analysis
-
-        try:
-            analysis, blocked = _placement_analysis()
-            if blocked is not None:
-                return "\n".join(
-                    [
-                        "Placement score: BLOCKED",
-                        f"- {blocked.summary}",
-                        *[f"- {detail}" for detail in blocked.details],
-                    ]
-                )
-            if analysis is None:
-                return "Placement score: BLOCKED\n- Placement analysis returned no data."
-            return _format_placement_score(analysis)
-        except Exception as exc:
-            return f"Placement score: BLOCKED\n- Could not evaluate this resource: {exc}"
+        return _format_placement_quality_resource()
 
 
 def _register_project_resources(mcp: FastMCP) -> None:
@@ -342,6 +355,63 @@ def _register_project_resources(mcp: FastMCP) -> None:
             return f"Project fix queue\n- BLOCKED: {exc}"
 
 
+def _format_violation_lines(violations: list[dict[str, Any]]) -> list[str]:
+    lines: list[str] = []
+    if violations:
+        for v in violations[:20]:
+            msg = str(v.get("message", v.get("msg", "")))
+            if msg:
+                lines.append(f"  - {msg}")
+        if len(violations) > 20:
+            lines.append(f"  ... and {len(violations) - 20} more violations")
+    return lines
+
+
+def _format_drc_latest_resource() -> str:
+    try:
+        from ..tools.validation import _run_drc_report
+
+        path, report, error = _run_drc_report("drc_report.json")
+        if report is None:
+            msg = error or "Run run_drc(save_report=True) to generate a report."
+            return f"DRC: No recent report\n- {msg}"
+        violations = report_entries(report, "violations")
+        unconnected = report_entries(report, "unconnected_items")
+        courtyard = courtyard_violations(report)
+        lines = [
+            "DRC latest results:",
+            f"- Violations: {len(violations)}",
+            f"- Unconnected items: {len(unconnected)}",
+            f"- Courtyard issues: {len(courtyard)}",
+            f"- Report file: {path}",
+            *_format_violation_lines(violations),
+        ]
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"DRC latest: BLOCKED\n- {exc}"
+
+
+def _format_erc_latest_resource() -> str:
+    try:
+        from ..tools.validation import _run_erc_report
+
+        path, report, error = _run_erc_report("erc_report.json")
+        if report is None:
+            msg = error or "Run run_erc(save_report=True) to generate a report."
+            return f"ERC: No recent report\n- {msg}"
+        violations_raw = report.get("violations")
+        violations = list(violations_raw) if isinstance(violations_raw, list) else []
+        lines = [
+            "ERC latest results:",
+            f"- Violations: {len(violations)}",
+            f"- Report file: {path}",
+            *_format_violation_lines(violations),
+        ]
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"ERC latest: BLOCKED\n- {exc}"
+
+
 def _register_gate_resources(mcp: FastMCP) -> None:
     @mcp.resource("kicad://schematic/connectivity")
     def schematic_connectivity_resource() -> str:
@@ -366,61 +436,12 @@ def _register_gate_resources(mcp: FastMCP) -> None:
     @mcp.resource("kicad://drc/latest")
     def drc_latest_resource() -> str:
         """Latest DRC (design rule check) results from the most recent kicad-cli run."""
-        try:
-            from ..tools.validation import _run_drc_report
-
-            path, report, error = _run_drc_report("drc_report.json")
-            if report is None:
-                msg = error or "Run run_drc(save_report=True) to generate a report."
-                return f"DRC: No recent report\n- {msg}"
-            violations = report_entries(report, "violations")
-            unconnected = report_entries(report, "unconnected_items")
-            courtyard = courtyard_violations(report)
-            lines = [
-                "DRC latest results:",
-                f"- Violations: {len(violations)}",
-                f"- Unconnected items: {len(unconnected)}",
-                f"- Courtyard issues: {len(courtyard)}",
-                f"- Report file: {path}",
-            ]
-            if violations:
-                for v in violations[:20]:
-                    msg = str(v.get("message", v.get("msg", "")))
-                    if msg:
-                        lines.append(f"  - {msg}")
-                if len(violations) > 20:
-                    lines.append(f"  ... and {len(violations) - 20} more violations")
-            return "\n".join(lines)
-        except Exception as exc:
-            return f"DRC latest: BLOCKED\n- {exc}"
+        return _format_drc_latest_resource()
 
     @mcp.resource("kicad://erc/latest")
     def erc_latest_resource() -> str:
         """Latest ERC (electrical rule check) results from the most recent kicad-cli run."""
-        try:
-            from ..tools.validation import _run_erc_report
-
-            path, report, error = _run_erc_report("erc_report.json")
-            if report is None:
-                msg = error or "Run run_erc(save_report=True) to generate a report."
-                return f"ERC: No recent report\n- {msg}"
-            violations_raw = report.get("violations")
-            violations = list(violations_raw) if isinstance(violations_raw, list) else []
-            lines = [
-                "ERC latest results:",
-                f"- Violations: {len(violations)}",
-                f"- Report file: {path}",
-            ]
-            if violations:
-                for v in violations[:20]:
-                    msg = str(v.get("message", v.get("msg", "")))
-                    if msg:
-                        lines.append(f"  - {msg}")
-                if len(violations) > 20:
-                    lines.append(f"  ... and {len(violations) - 20} more violations")
-            return "\n".join(lines)
-        except Exception as exc:
-            return f"ERC latest: BLOCKED\n- {exc}"
+        return _format_erc_latest_resource()
 
 
 def _register_manufacturing_resources(mcp: FastMCP) -> None:

@@ -734,6 +734,14 @@ def _off_grid(value: float, grid_mm: float) -> bool:
     return abs(value - nearest) > GRID_SNAP_TOLERANCE_MM
 
 
+def _point_off_grid(x: float, y: float, grid_mm: float) -> bool:
+    return _off_grid(x, grid_mm) or _off_grid(y, grid_mm)
+
+
+def _wire_off_grid(wire: WireSegment, grid_mm: float) -> bool:
+    return _point_off_grid(wire.x1, wire.y1, grid_mm) or _point_off_grid(wire.x2, wire.y2, grid_mm)
+
+
 def _collect_off_grid_anchors(
     symbols: list[PlacedSymbol],
     labels: list[LabelItem],
@@ -743,21 +751,16 @@ def _collect_off_grid_anchors(
 ) -> list[tuple[str, float, float]]:
     offenders: list[tuple[str, float, float]] = []
     for symbol in symbols:
-        if _off_grid(symbol.x, grid_mm) or _off_grid(symbol.y, grid_mm):
+        if _point_off_grid(symbol.x, symbol.y, grid_mm):
             offenders.append((symbol.reference or symbol.lib_id or "symbol", symbol.x, symbol.y))
     for label in labels:
-        if _off_grid(label.x, grid_mm) or _off_grid(label.y, grid_mm):
+        if _point_off_grid(label.x, label.y, grid_mm):
             offenders.append((f"label:{label.text}", label.x, label.y))
     for wire in wires:
-        if (
-            _off_grid(wire.x1, grid_mm)
-            or _off_grid(wire.y1, grid_mm)
-            or _off_grid(wire.x2, grid_mm)
-            or _off_grid(wire.y2, grid_mm)
-        ):
+        if _wire_off_grid(wire, grid_mm):
             offenders.append(("wire", wire.x1, wire.y1))
     for jx, jy in junctions:
-        if _off_grid(jx, grid_mm) or _off_grid(jy, grid_mm):
+        if _point_off_grid(jx, jy, grid_mm):
             offenders.append(("junction", jx, jy))
     return offenders
 
