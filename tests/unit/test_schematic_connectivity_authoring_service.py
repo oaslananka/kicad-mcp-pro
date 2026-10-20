@@ -715,13 +715,11 @@ def test_resolve_pin_point_and_candidate_branches(tmp_path: Path) -> None:
         ref="#PWR1",
         ox=0.0,
         oy=0.0,
-        library="power",
-        symbol_name="GND",
-        is_power_symbol=True,
         is_power_symbol_ref=True,
         unresolved_lib_id=None,
     )
-    assert pt is None and err == "#PWR1.2: symbol type not supported for pin '2'"
+    assert pt is None
+    assert err == "#PWR1.2: symbol type not supported for pin '2'"
 
     pt, pp, err = harness.service._resolve_pin_point(
         point=None,
@@ -731,13 +729,12 @@ def test_resolve_pin_point_and_candidate_branches(tmp_path: Path) -> None:
         ref="GND1",
         ox=10.0,
         oy=20.0,
-        library="power",
-        symbol_name="GND",
-        is_power_symbol=True,
         is_power_symbol_ref=False,
         unresolved_lib_id=None,
     )
-    assert pt == (10.0, 20.0) and pp == {"1": (10.0, 20.0)} and err is None
+    assert pt == (10.0, 20.0)
+    assert pp == {"1": (10.0, 20.0)}
+    assert err is None
 
     pt, _pp, err = harness.service._resolve_pin_point(
         point=None,
@@ -747,13 +744,11 @@ def test_resolve_pin_point_and_candidate_branches(tmp_path: Path) -> None:
         ref="PWR1",
         ox=0.0,
         oy=0.0,
-        library="power",
-        symbol_name="CUSTOM",
-        is_power_symbol=True,
         is_power_symbol_ref=False,
         unresolved_lib_id=None,
     )
-    assert pt is None and "has no resolvable pin geometry" in str(err)
+    assert pt is None
+    assert "has no resolvable pin geometry" in str(err)
 
     pt, _pp, err = harness.service._resolve_pin_point(
         point=None,
@@ -763,10 +758,8 @@ def test_resolve_pin_point_and_candidate_branches(tmp_path: Path) -> None:
         ref="R1",
         ox=0.0,
         oy=0.0,
-        library="Device",
-        symbol_name="R",
-        is_power_symbol=False,
         is_power_symbol_ref=False,
         unresolved_lib_id=None,
     )
-    assert pt is None and err == "R1.99: pin not found"
+    assert pt is None
+    assert err == "R1.99: pin not found"

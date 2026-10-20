@@ -35,7 +35,8 @@ def test_invariant_sexpr_escape_unescape_roundtrip(text: str) -> None:
 def test_invariant_sexpr_string_is_quoted(text: str) -> None:
     """_sexpr_string must always produce a double-quoted string with no unescaped inner quotes."""
     quoted = _sexpr_string(text)
-    assert quoted.startswith('"') and quoted.endswith('"')
+    assert quoted.startswith('"')
+    assert quoted.endswith('"')
     assert len(quoted) >= 2
 
 

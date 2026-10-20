@@ -36,7 +36,6 @@ def get_git_info() -> dict[str, str]:
 
 
 def collect_evidence(
-    artifacts_dir: Path | None = None,
     output_base: Path | None = None,
 ) -> Path:
     """Collect test summaries and write standard reports."""

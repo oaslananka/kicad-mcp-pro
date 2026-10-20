@@ -37,7 +37,7 @@ def scan_semgrep() -> dict[str, object]:
     if not bin_path:
         return {"tool": "semgrep", "status": "SKIPPED", "reason": "semgrep not installed"}
 
-    code, data = run_command_json([bin_path, "--config", "p/security-audit", "src/", "--json"])
+    _, data = run_command_json([bin_path, "--config", "p/security-audit", "src/", "--json"])
     results_list = data.get("results", []) if isinstance(data, dict) else []
     errors = [f for f in results_list if f.get("extra", {}).get("severity") == "ERROR"]
     warnings = [f for f in results_list if f.get("extra", {}).get("severity") != "ERROR"]
@@ -59,7 +59,7 @@ def scan_osv() -> dict[str, object]:
     if not bin_path:
         return {"tool": "osv-scanner", "status": "SKIPPED", "reason": "osv-scanner not installed"}
 
-    code, data = run_command_json(
+    _, data = run_command_json(
         [
             bin_path,
             "scan",
@@ -87,7 +87,7 @@ def scan_trivy() -> dict[str, object]:
     if not bin_path:
         return {"tool": "trivy", "status": "SKIPPED", "reason": "trivy not installed"}
 
-    code, data = run_command_json(
+    _, data = run_command_json(
         [
             bin_path,
             "fs",

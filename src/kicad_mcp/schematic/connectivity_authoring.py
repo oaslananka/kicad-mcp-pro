@@ -216,9 +216,6 @@ class SchematicConnectivityAuthoringService:
         ref: str,
         ox: float,
         oy: float,
-        library: str,
-        symbol_name: str,
-        is_power_symbol: bool,
         is_power_symbol_ref: bool,
         unresolved_lib_id: str | None,
     ) -> tuple[tuple[float, float] | None, PinPositions, str | None]:
@@ -235,8 +232,8 @@ class SchematicConnectivityAuthoringService:
                     f"unresolved lib_id '{unresolved_lib_id or lib_id}'"
                 ),
             )
-        library, symbol_name = lib_id.split(":", 1)
-        is_power_symbol = library == "power" or ref.startswith("#PWR")
+        sym_library, sym_name = lib_id.split(":", 1)
+        sym_is_power = sym_library == "power" or ref.startswith("#PWR")
 
         if is_power_symbol_ref:
             if pin != "1":
@@ -248,14 +245,14 @@ class SchematicConnectivityAuthoringService:
             return (ox, oy), {"1": (ox, oy)}, None
 
         if (
-            is_power_symbol
+            sym_is_power
             and pin == "1"
-            and self.is_origin_pin_power_symbol(symbol_name, str(sym.get("value", "")))
+            and self.is_origin_pin_power_symbol(sym_name, str(sym.get("value", "")))
         ):
             pt = (round(ox, 4), round(oy, 4))
             return pt, {"1": pt}, None
 
-        if is_power_symbol and not pin_positions:
+        if sym_is_power and not pin_positions:
             return (
                 None,
                 pin_positions,
@@ -412,9 +409,9 @@ class SchematicConnectivityAuthoringService:
                 sym,
                 point,
                 pin_positions,
-                library,
-                symbol_name,
-                is_power_symbol,
+                _library,
+                _symbol_name,
+                _is_power_symbol,
                 unresolved_lib_id,
             ) = self._find_pin_in_candidates(candidates, pin, ref)
             ox, oy = float(sym.get("x", 0.0)), float(sym.get("y", 0.0))
@@ -426,9 +423,6 @@ class SchematicConnectivityAuthoringService:
                 ref=ref,
                 ox=ox,
                 oy=oy,
-                library=library,
-                symbol_name=symbol_name,
-                is_power_symbol=is_power_symbol,
                 is_power_symbol_ref=(placed_kind.get(ref) == "power_symbol"),
                 unresolved_lib_id=unresolved_lib_id,
             )

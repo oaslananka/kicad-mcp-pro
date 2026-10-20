@@ -453,7 +453,8 @@ def test_smoke_assurance_validation_branches(tmp_path: Path) -> None:
     skip, fail = smoke_assurance._evaluate_config_status(
         "alpha", {"state": "completed", "runner_exit_code": 99}, True, classifs
     )
-    assert skip is True and fail is False
+    assert skip is True
+    assert fail is False
     assert any("unsupported runner exit code 99" in item for item in classifs["integrity_failures"])
 
     # 4. _record_failure_classifications with unnecessary calls

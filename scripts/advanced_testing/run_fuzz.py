@@ -16,16 +16,47 @@ FUZZ_TARGETS = [
 ]
 
 
+def _parse_libfuzzer_stats(output: str) -> tuple[int, int]:
+    """Extract coverage and corpus count from libFuzzer output."""
+    cov_count = 0
+    corp_count = 0
+    for line in output.splitlines():
+        if "DONE" not in line and "#" not in line:
+            continue
+        parts = line.split()
+        for i, part in enumerate(parts):
+            if part == "cov:" and i + 1 < len(parts):
+                try:
+                    cov_count = int(parts[i + 1])
+                except ValueError:
+                    pass
+            elif part == "corp:" and i + 1 < len(parts):
+                try:
+                    corp_count = int(parts[i + 1].split("/")[0])
+                except ValueError:
+                    pass
+    return cov_count, corp_count
+
+
 def run_fuzz_target(target_path: str, runs: int = 512, max_len: int = 4096) -> dict[str, object]:
     """Execute one Atheris fuzz target and return structured outcome."""
+    if target_path not in FUZZ_TARGETS:
+        return {
+            "target": target_path,
+            "status": "INVALID",
+            "error": f"Fuzz target not permitted: {target_path}",
+        }
+
     target = Path(target_path)
-    if not target.exists():
+    if not target.is_file():
         return {
             "target": target_path,
             "status": "MISSING",
             "error": f"Fuzz target not found at {target_path}",
         }
 
+    safe_runs = max(1, min(int(runs), 100_000))
+    safe_max_len = max(1, min(int(max_len), 65_536))
     cmd = [
         "uv",
         "run",
@@ -33,39 +64,23 @@ def run_fuzz_target(target_path: str, runs: int = 512, max_len: int = 4096) -> d
         "--with",
         "atheris==3.1.0",
         "python",
-        str(target),
-        f"-runs={runs}",
-        f"-max_len={max_len}",
+        "fuzz/fuzz_sexpr.py",
+        f"-runs={safe_runs}",
+        f"-max_len={safe_max_len}",
     ]
 
     start_time = time.time()
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)  # nosec B603  # nosemgrep
     elapsed = time.time() - start_time
 
-    # Parse stdout/stderr for libfuzzer stats
     output = proc.stdout + "\n" + proc.stderr
-    cov_count = 0
-    corp_count = 0
-    for line in output.splitlines():
-        if "DONE" in line or "#" in line:
-            parts = line.split()
-            for i, p in enumerate(parts):
-                if p == "cov:":
-                    try:
-                        cov_count = int(parts[i + 1])
-                    except (ValueError, IndexError):
-                        pass
-                elif p == "corp:":
-                    try:
-                        corp_count = int(parts[i + 1].split("/")[0])
-                    except (ValueError, IndexError):
-                        pass
+    cov_count, corp_count = _parse_libfuzzer_stats(output)
 
     return {
         "target": target_path,
         "status": "PASS" if proc.returncode == 0 else "FAIL",
         "exit_code": proc.returncode,
-        "runs": runs,
+        "runs": safe_runs,
         "coverage_points": cov_count,
         "corpus_entries": corp_count,
         "duration_s": round(elapsed, 2),
