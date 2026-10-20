@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess  # nosec B404
 import time
 from pathlib import Path
@@ -15,27 +16,35 @@ FUZZ_TARGETS = [
     "fuzz/fuzz_sexpr.py",
 ]
 
+_COV_RE = re.compile(r"\bcov:\s*(\d+)")
+_CORP_RE = re.compile(r"\bcorp:\s*(\d+)")
+
+RUNS_OPTIONS: dict[int, str] = {
+    64: "-runs=64",
+    128: "-runs=128",
+    256: "-runs=256",
+    512: "-runs=512",
+    1024: "-runs=1024",
+    2048: "-runs=2048",
+    4096: "-runs=4096",
+}
+
+MAX_LEN_OPTIONS: dict[int, str] = {
+    512: "-max_len=512",
+    1024: "-max_len=1024",
+    2048: "-max_len=2048",
+    4096: "-max_len=4096",
+    8192: "-max_len=8192",
+}
+
 
 def _parse_libfuzzer_stats(output: str) -> tuple[int, int]:
     """Extract coverage and corpus count from libFuzzer output."""
-    cov_count = 0
-    corp_count = 0
-    for line in output.splitlines():
-        if "DONE" not in line and "#" not in line:
-            continue
-        parts = line.split()
-        for i, part in enumerate(parts):
-            if part == "cov:" and i + 1 < len(parts):
-                try:
-                    cov_count = int(parts[i + 1])
-                except ValueError:
-                    pass
-            elif part == "corp:" and i + 1 < len(parts):
-                try:
-                    corp_count = int(parts[i + 1].split("/")[0])
-                except ValueError:
-                    pass
-    return cov_count, corp_count
+    cov_matches = _COV_RE.findall(output)
+    corp_matches = _CORP_RE.findall(output)
+    cov = int(cov_matches[-1]) if cov_matches else 0
+    corp = int(corp_matches[-1]) if corp_matches else 0
+    return cov, corp
 
 
 def run_fuzz_target(target_path: str, runs: int = 512, max_len: int = 4096) -> dict[str, object]:
@@ -55,8 +64,18 @@ def run_fuzz_target(target_path: str, runs: int = 512, max_len: int = 4096) -> d
             "error": f"Fuzz target not found at {target_path}",
         }
 
-    safe_runs = max(1, min(int(runs), 100_000))
-    safe_max_len = max(1, min(int(max_len), 65_536))
+    runs_flag = "-runs=512"
+    for r, flag in RUNS_OPTIONS.items():
+        if runs == r:
+            runs_flag = flag
+            break
+
+    len_flag = "-max_len=4096"
+    for m, flag in MAX_LEN_OPTIONS.items():
+        if max_len == m:
+            len_flag = flag
+            break
+
     cmd = [
         "uv",
         "run",
@@ -65,8 +84,8 @@ def run_fuzz_target(target_path: str, runs: int = 512, max_len: int = 4096) -> d
         "atheris==3.1.0",
         "python",
         "fuzz/fuzz_sexpr.py",
-        f"-runs={safe_runs}",
-        f"-max_len={safe_max_len}",
+        runs_flag,
+        len_flag,
     ]
 
     start_time = time.time()
@@ -80,7 +99,7 @@ def run_fuzz_target(target_path: str, runs: int = 512, max_len: int = 4096) -> d
         "target": target_path,
         "status": "PASS" if proc.returncode == 0 else "FAIL",
         "exit_code": proc.returncode,
-        "runs": safe_runs,
+        "runs": runs,
         "coverage_points": cov_count,
         "corpus_entries": corp_count,
         "duration_s": round(elapsed, 2),
@@ -90,8 +109,20 @@ def run_fuzz_target(target_path: str, runs: int = 512, max_len: int = 4096) -> d
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="KiCad MCP Pro Fuzz Runner")
-    parser.add_argument("--runs", type=int, default=512, help="Number of fuzzing runs per target")
-    parser.add_argument("--max-len", type=int, default=4096, help="Max input length in bytes")
+    parser.add_argument(
+        "--runs",
+        type=int,
+        choices=[64, 128, 256, 512, 1024, 2048, 4096],
+        default=512,
+        help="Number of fuzzing runs per target",
+    )
+    parser.add_argument(
+        "--max-len",
+        type=int,
+        choices=[512, 1024, 2048, 4096, 8192],
+        default=4096,
+        help="Max input length in bytes",
+    )
     parser.add_argument("--output", type=Path, default=None, help="JSON output destination")
     args = parser.parse_args()
 
