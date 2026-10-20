@@ -385,22 +385,39 @@ def _load_stackup_state() -> list[StackupLayerSpec] | None:
     return [StackupLayerSpec.model_validate(item) for item in payload]
 
 
-def _stackup_layer_from_kipy(index: int, layer: object) -> StackupLayerSpec:
-    raw_layer = getattr(layer, "layer", "")
+def _stackup_layer_material(normalized_name: str, raw_material: object) -> str:
+    material = str(raw_material or "")
+    if material:
+        return material
+    return "Copper" if normalized_name.endswith("_Cu") else "FR4"
+
+
+def _stackup_layer_type(normalized_name: str, raw_type: object) -> str:
+    layer_type = str(raw_type or "")
+    if layer_type:
+        return layer_type
+    return "signal" if normalized_name.endswith("_Cu") else "dielectric"
+
+
+def _stackup_layer_name(index: int, raw_layer: object) -> tuple[str, str]:
     if isinstance(raw_layer, int):
         name = BoardLayer.Name(raw_layer).removeprefix("BL_")
     else:
         name = str(raw_layer or f"dielectric_{index}")
     normalized_name = name.replace(".", "_")
+    final_name = normalized_name if normalized_name in CANONICAL_LAYER_NAMES else name
+    return name, final_name
+
+
+def _stackup_layer_from_kipy(index: int, layer: object) -> StackupLayerSpec:
+    name, final_name = _stackup_layer_name(index, getattr(layer, "layer", ""))
+    normalized_name = name.replace(".", "_")
     thickness_nm = int(getattr(layer, "thickness", 0))
-    material = str(getattr(layer, "material_name", "") or "")
-    if not material:
-        material = "Copper" if normalized_name.endswith("_Cu") else "FR4"
-    layer_type = str(getattr(layer, "type_name", "") or getattr(layer, "type", "") or "")
-    if not layer_type:
-        layer_type = "signal" if normalized_name.endswith("_Cu") else "dielectric"
+    material = _stackup_layer_material(normalized_name, getattr(layer, "material_name", ""))
+    raw_type = getattr(layer, "type_name", "") or getattr(layer, "type", "")
+    layer_type = _stackup_layer_type(normalized_name, raw_type)
     spec_kwargs: dict[str, Any] = {
-        "name": normalized_name if normalized_name in CANONICAL_LAYER_NAMES else name,
+        "name": final_name,
         "type": layer_type,
         "thickness_mm": nm_to_mm(thickness_nm) if thickness_nm else 0.18,
         "material": material,

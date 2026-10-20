@@ -116,38 +116,65 @@ def _compact_component_text(item: ComponentRecord) -> str:
     )
 
 
+def _resistor_value_variants(normalized: str) -> set[str]:
+    variants = {normalized}
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)(r|k|m|ohm)?", normalized)
+    if not match:
+        return variants
+    number = float(match.group(1))
+    suffix = match.group(2) or "ohm"
+    multiplier = {"r": 1.0, "ohm": 1.0, "k": 1_000.0, "m": 1_000_000.0}[suffix]
+    ohms = number * multiplier
+    if suffix == "k":
+        variants.add(f"{number:g}k")
+        variants.add(f"{number:g}kohm")
+    elif suffix == "m":
+        variants.add(f"{number:g}m")
+        variants.add(f"{number:g}mohm")
+    else:
+        variants.add(f"{number:g}r")
+        variants.add(f"{number:g}ohm")
+    variants.add(f"{ohms:g}")
+    variants.add(f"{ohms:g}ohm")
+    return variants
+
+
+def _capacitor_value_variants(normalized: str) -> set[str]:
+    variants = {normalized}
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)([pnuµm])?f", normalized)
+    if not match:
+        return variants
+    number = float(match.group(1))
+    suffix = (match.group(2) or "").replace("µ", "u")
+    variants.add(f"{number:g}{suffix}f")
+    if suffix == "n":
+        variants.add(f"{number / 1000:g}uf")
+    elif suffix == "u":
+        variants.add(f"{number * 1000:g}nf")
+    return variants
+
+
 def _passive_value_variants(value: str, kind: str) -> tuple[str, ...]:
     normalized = value.strip().casefold().replace(" ", "").replace("µ", "u").replace("ω", "ohm")
-    variants = {normalized}
     if kind == "resistor":
-        match = re.fullmatch(r"(\d+(?:\.\d+)?)(r|k|m|ohm)?", normalized)
-        if match:
-            number = float(match.group(1))
-            suffix = match.group(2) or "ohm"
-            multiplier = {"r": 1.0, "ohm": 1.0, "k": 1_000.0, "m": 1_000_000.0}[suffix]
-            ohms = number * multiplier
-            if suffix == "k":
-                variants.add(f"{number:g}k")
-                variants.add(f"{number:g}kohm")
-            elif suffix == "m":
-                variants.add(f"{number:g}m")
-                variants.add(f"{number:g}mohm")
-            else:
-                variants.add(f"{number:g}r")
-                variants.add(f"{number:g}ohm")
-            variants.add(f"{ohms:g}")
-            variants.add(f"{ohms:g}ohm")
+        variants = _resistor_value_variants(normalized)
     else:
-        match = re.fullmatch(r"(\d+(?:\.\d+)?)([pnuµm])?f", normalized)
-        if match:
-            number = float(match.group(1))
-            suffix = (match.group(2) or "").replace("µ", "u")
-            variants.add(f"{number:g}{suffix}f")
-            if suffix == "n":
-                variants.add(f"{number / 1000:g}uf")
-            elif suffix == "u":
-                variants.add(f"{number * 1000:g}nf")
+        variants = _capacitor_value_variants(normalized)
     return tuple(sorted(variants, key=len, reverse=True))
+
+
+def _match_voltage_token(text: str, start: int, end: int, decimal: re.Pattern[str]) -> str | None:
+    fraction = decimal.match(text, end)
+    if fraction is not None:
+        end = fraction.end()
+    cursor = end
+    while cursor < len(text) and text[cursor].isspace():
+        cursor += 1
+    if cursor >= len(text) or text[cursor] != "v":
+        return None
+    if cursor + 1 < len(text) and (text[cursor + 1].isalnum() or text[cursor + 1] == "_"):
+        return None
+    return text[start : cursor + 1].replace(" ", "")
 
 
 def _find_passive_voltage(text: str) -> str | None:
@@ -157,17 +184,9 @@ def _find_passive_voltage(text: str) -> str | None:
         start, end = number.span()
         if start and (text[start - 1].isalnum() or text[start - 1] == "_"):
             continue
-        fraction = decimal.match(text, end)
-        if fraction is not None:
-            end = fraction.end()
-        cursor = end
-        while cursor < len(text) and text[cursor].isspace():
-            cursor += 1
-        if cursor >= len(text) or text[cursor] != "v":
-            continue
-        if cursor + 1 < len(text) and (text[cursor + 1].isalnum() or text[cursor + 1] == "_"):
-            continue
-        return text[start : cursor + 1].replace(" ", "")
+        token = _match_voltage_token(text, start, end, decimal)
+        if token is not None:
+            return token
     return None
 
 
@@ -210,6 +229,40 @@ def _parse_passive_parametric_query(
     )
 
 
+def _score_passive_candidate(
+    item: ComponentRecord,
+    query: PassiveParametricQuery,
+) -> tuple[tuple[int, float, int, str], list[str]]:
+    text = _compact_component_text(item)
+    points = 0
+    reasons: list[str] = []
+    if any(variant in text for variant in query.variants):
+        points += 80
+        reasons.append(f"value≈{query.value}")
+    if query.package and query.package.casefold() in item.package.casefold():
+        points += 30
+        reasons.append(f"package={query.package}")
+    if query.tolerance and query.tolerance.casefold() in text:
+        points += 10
+        reasons.append(f"tolerance={query.tolerance}")
+    if query.voltage and query.voltage.casefold() in text:
+        points += 10
+        reasons.append(f"voltage={query.voltage}")
+    if item.is_basic:
+        points += 3
+        reasons.append("basic")
+    if item.is_preferred:
+        points += 2
+        reasons.append("preferred")
+    key = (
+        -points,
+        item.price if item.price is not None else float("inf"),
+        -item.stock,
+        item.mpn,
+    )
+    return key, reasons or ["catalog fallback"]
+
+
 def _rank_passive_parametric_results(
     results: list[ComponentRecord],
     query: PassiveParametricQuery | None,
@@ -220,34 +273,9 @@ def _rank_passive_parametric_results(
     evidence: dict[str, list[str]] = {}
 
     def score(item: ComponentRecord) -> tuple[int, float, int, str]:
-        text = _compact_component_text(item)
-        points = 0
-        reasons: list[str] = []
-        if any(variant in text for variant in query.variants):
-            points += 80
-            reasons.append(f"value≈{query.value}")
-        if query.package and query.package.casefold() in item.package.casefold():
-            points += 30
-            reasons.append(f"package={query.package}")
-        if query.tolerance and query.tolerance.casefold() in text:
-            points += 10
-            reasons.append(f"tolerance={query.tolerance}")
-        if query.voltage and query.voltage.casefold() in text:
-            points += 10
-            reasons.append(f"voltage={query.voltage}")
-        if item.is_basic:
-            points += 3
-            reasons.append("basic")
-        if item.is_preferred:
-            points += 2
-            reasons.append("preferred")
-        evidence[item.lcsc_code or item.mpn] = reasons or ["catalog fallback"]
-        return (
-            -points,
-            item.price if item.price is not None else float("inf"),
-            -item.stock,
-            item.mpn,
-        )
+        key, reasons = _score_passive_candidate(item, query)
+        evidence[item.lcsc_code or item.mpn] = reasons
+        return key
 
     return sorted(results, key=score), evidence
 

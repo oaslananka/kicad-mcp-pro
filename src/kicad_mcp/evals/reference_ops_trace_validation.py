@@ -13,7 +13,7 @@ import stat as stat_module
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import ValidationError
 
@@ -23,6 +23,8 @@ from .reference_corpus import REFERENCE_IDENTIFIER_PATTERN, ReferenceAgentLogEve
 _MAX_TRACE_BYTES = 2_000_000
 _MAX_EVENTS = 10_000
 _TRACE_ROOT = Path(__file__).resolve().parents[3] / ".dev-tools/reference-agent-runs"
+_TRACE_FILENAME: Final = "ops-mcp-trace.jsonl"
+_ERR_RESERVED_DIRECTORY: Final = "trace must be in its reserved private directory"
 
 
 class ReferenceOpsTraceValidationError(ValueError):
@@ -43,7 +45,7 @@ def _approved_trace_path(path: Path, attempt_id: str) -> Path:
     """Resolve only the reserved trace location, never an arbitrary CLI path."""
     if not re.fullmatch(REFERENCE_IDENTIFIER_PATTERN, attempt_id) or attempt_id in {".", ".."}:
         raise ReferenceOpsTraceValidationError("invalid reference attempt identifier")
-    expected = _TRACE_ROOT / attempt_id / "ops-mcp-trace.jsonl"
+    expected = _TRACE_ROOT / attempt_id / _TRACE_FILENAME
     if (
         not path.is_absolute()
         or path != expected
@@ -51,7 +53,7 @@ def _approved_trace_path(path: Path, attempt_id: str) -> Path:
         or path.parent.is_symlink()
         or _TRACE_ROOT.is_symlink()
     ):
-        raise ReferenceOpsTraceValidationError("trace must be in its reserved private directory")
+        raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
     if expected.resolve().parent != (_TRACE_ROOT / attempt_id).resolve():
         raise ReferenceOpsTraceValidationError("trace directory escaped its reservation")
     return expected
@@ -71,9 +73,7 @@ def _open_reserved_trace(*, root: Path, attempt_id: str, filename: str) -> int:
         directory = root / attempt_id
         expected = directory / filename
         if directory.is_symlink() or expected.is_symlink():
-            raise ReferenceOpsTraceValidationError(
-                "trace must be in its reserved private directory"
-            )
+            raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
         return os.open(expected, flags)
 
     directory_flags = flags | getattr(os, "O_DIRECTORY", 0)
@@ -131,10 +131,9 @@ def _load_trace(
         or not root.is_absolute()
         or root.is_symlink()
         or root.parent.is_symlink()
-        or filename
-        not in {"ops-mcp-trace.jsonl", "ops-client-observed.jsonl", "ops-gateway-audit.json"}
+        or filename not in {_TRACE_FILENAME, "ops-client-observed.jsonl", "ops-gateway-audit.json"}
     ):
-        raise ReferenceOpsTraceValidationError("trace must be in its reserved private directory")
+        raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
     fd = _open_reserved_trace(root=root, attempt_id=attempt_id, filename=filename)
     try:
         return _read_open_trace(fd)
@@ -218,9 +217,7 @@ def validate_reference_ops_trace(
         raise ReferenceOpsTraceValidationError("manufacturing trace is not approved")
     try:
         _approved_trace_path(path, attempt_id)
-        content = _load_trace(
-            root=_TRACE_ROOT, attempt_id=attempt_id, filename="ops-mcp-trace.jsonl"
-        )
+        content = _load_trace(root=_TRACE_ROOT, attempt_id=attempt_id, filename=_TRACE_FILENAME)
         calls, failures = _verify_events(content, attempt_id=attempt_id, phase=phase)
     except (OSError, UnicodeError, ValidationError) as exc:
         raise ReferenceOpsTraceValidationError("invalid server trace content or file") from exc
