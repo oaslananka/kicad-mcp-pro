@@ -60,4 +60,5 @@ jobs:
         with:
           name: advanced-qa-evidence
           path: artifacts/advanced-testing/
+          retention-days: 14
           if-no-files-found: ignore
