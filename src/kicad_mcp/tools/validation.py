@@ -2131,11 +2131,9 @@ class _PlacementEvaluator:
                 )
         return hs_grouping_violations, return_path_warnings, checked_hs_interfaces
 
-    def _evaluate_mechanical(self) -> tuple[list[str], list[str]]:
-        mount_hole_violations: list[str] = []
-        connector_edge_spec_violations: list[str] = []
-        mech = self.intent.mechanical
-        for hole in mech.mount_holes:
+    def _evaluate_mount_holes(self) -> list[str]:
+        violations: list[str] = []
+        for hole in self.intent.mechanical.mount_holes:
             clearance_mm = max(hole.diameter_mm, 2.0)
             for reference, entry in self.footprints.items():
                 center = _entry_center(entry)
@@ -2147,33 +2145,41 @@ class _PlacementEvaluator:
                     float(entry.get("height_mm", 0.0)) / 2,
                 )
                 if dist < clearance_mm + footprint_radius:
-                    mount_hole_violations.append(
+                    violations.append(
                         f"'{reference}' is {dist:.1f} mm from mount hole at "
                         f"({hole.x_mm:.1f}, {hole.y_mm:.1f}) — clearance {clearance_mm:.1f} mm "
                         f"required."
                     )
-        for edge_spec in mech.connector_placement:
+        return violations
+
+    def _dist_to_edge(self, cx: float, cy: float, edge: str) -> float:
+        if edge == "top":
+            return abs(cy - self.min_y)
+        if edge == "bottom":
+            return abs(cy - self.max_y)
+        if edge == "left":
+            return abs(cx - self.min_x)
+        return abs(cx - self.max_x)
+
+    def _evaluate_connector_edge_specs(self) -> list[str]:
+        violations: list[str] = []
+        for edge_spec in self.intent.mechanical.connector_placement:
             edge_entry = self.footprints.get(edge_spec.ref)
             if edge_entry is None:
                 continue
             center = _entry_center(edge_entry)
             if center is None:
                 continue
-            cx, cy = center
-            if edge_spec.edge == "top":
-                dist_to_edge = abs(cy - self.min_y)
-            elif edge_spec.edge == "bottom":
-                dist_to_edge = abs(cy - self.max_y)
-            elif edge_spec.edge == "left":
-                dist_to_edge = abs(cx - self.min_x)
-            else:
-                dist_to_edge = abs(cx - self.max_x)
+            dist_to_edge = self._dist_to_edge(center[0], center[1], edge_spec.edge)
             if dist_to_edge > edge_spec.margin_mm:
-                connector_edge_spec_violations.append(
+                violations.append(
                     f"Connector '{edge_spec.ref}' is {dist_to_edge:.1f} mm from the "
                     f"{edge_spec.edge} edge (limit {edge_spec.margin_mm:.1f} mm)."
                 )
-        return mount_hole_violations, connector_edge_spec_violations
+        return violations
+
+    def _evaluate_mechanical(self) -> tuple[list[str], list[str]]:
+        return self._evaluate_mount_holes(), self._evaluate_connector_edge_specs()
 
     def _calculate_score(
         self,
@@ -3964,14 +3970,7 @@ def _project_release_readiness_impl(
     return payload
 
 
-def _register_individual_gate_tools(mcp: FastMCP) -> None:
-    @mcp.tool()
-    @headless_compatible
-    def run_drc(save_report: bool = False) -> VerdictReport:
-        """Return full DRC report with PCB violations, unconnected items, and courtyard issues."""
-        path, report, error = _run_drc_report("drc_report.json")
-        return _drc_report_payload(path, report, error, save_report=save_report)
-
+def _register_schematic_gate_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     @headless_compatible
     def run_erc(save_report: bool = False) -> VerdictReport:
@@ -3981,21 +3980,9 @@ def _register_individual_gate_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @headless_compatible
-    def validate_design() -> str:
-        """Run DRC and ERC and summarize readiness."""
-        return _execute_validate_design()
-
-    @mcp.tool()
-    @headless_compatible
     def schematic_quality_gate() -> VerdictReport:
         """Evaluate whether the schematic is clean enough to proceed."""
         return _gate_report(_evaluate_schematic_gate())
-
-    @mcp.tool()
-    @headless_compatible
-    def pcb_quality_gate() -> VerdictReport:
-        """Evaluate whether the PCB is physically clean enough to proceed."""
-        return _gate_report(_evaluate_pcb_gate())
 
     @mcp.tool()
     @headless_compatible
@@ -4014,6 +4001,27 @@ def _register_individual_gate_tools(mcp: FastMCP) -> None:
         ``run_erc()`` rather than replacing it.
         """
         return _gate_report(_evaluate_schematic_design_rule_gate())
+
+
+def _register_pcb_gate_tools(mcp: FastMCP) -> None:
+    @mcp.tool()
+    @headless_compatible
+    def run_drc(save_report: bool = False) -> VerdictReport:
+        """Return full DRC report with PCB violations, unconnected items, and courtyard issues."""
+        path, report, error = _run_drc_report("drc_report.json")
+        return _drc_report_payload(path, report, error, save_report=save_report)
+
+    @mcp.tool()
+    @headless_compatible
+    def validate_design() -> str:
+        """Run DRC and ERC and summarize readiness."""
+        return _execute_validate_design()
+
+    @mcp.tool()
+    @headless_compatible
+    def pcb_quality_gate() -> VerdictReport:
+        """Evaluate whether the PCB is physically clean enough to proceed."""
+        return _gate_report(_evaluate_pcb_gate())
 
     @mcp.tool()
     @headless_compatible
@@ -4157,7 +4165,8 @@ def _register_project_bundle_gate_tools(mcp: FastMCP) -> None:
 
 def _register_validation_gate_tools(mcp: FastMCP) -> None:
     """Register DRC, ERC, and project quality-gate tools."""
-    _register_individual_gate_tools(mcp)
+    _register_schematic_gate_tools(mcp)
+    _register_pcb_gate_tools(mcp)
     _register_project_bundle_gate_tools(mcp)
 
 

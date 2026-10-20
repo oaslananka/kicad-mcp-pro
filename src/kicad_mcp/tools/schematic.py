@@ -3768,6 +3768,29 @@ def get_pin_positions(
     return pins
 
 
+def _load_symbol_blocks_for_unit(
+    library: str,
+    symbol_name: str,
+    unit: int,
+    sch_dir: Path | None,
+) -> list[str] | None:
+    sym_file = _symbol_library_file(library)
+    if sym_file is None and sch_dir is not None:
+        fallback = sch_dir / "symbols" / f"{library}.kicad_sym"
+        if fallback.exists():
+            sym_file = fallback
+    if sym_file is None:
+        return None
+    content = sym_file.read_text(encoding="utf-8", errors="ignore")
+    blocks = _collect_symbol_blocks(content, symbol_name)
+    if not blocks:
+        return None
+    available_units = _available_units_from_blocks(blocks)
+    if available_units and unit not in available_units:
+        return None
+    return blocks
+
+
 def get_pin_metadata(
     library: str,
     symbol_name: str,
@@ -3784,19 +3807,8 @@ def get_pin_metadata(
     ``sch_dir`` is an optional fallback directory; if the library is not found
     via the global config, the function also checks ``<sch_dir>/symbols/``.
     """
-    sym_file = _symbol_library_file(library)
-    if sym_file is None and sch_dir is not None:
-        fallback = sch_dir / "symbols" / f"{library}.kicad_sym"
-        if fallback.exists():
-            sym_file = fallback
-    if sym_file is None:
-        return {}
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
-    if not blocks:
-        return {}
-    available_units = _available_units_from_blocks(blocks)
-    if available_units and unit not in available_units:
+    blocks = _load_symbol_blocks_for_unit(library, symbol_name, unit, sch_dir)
+    if blocks is None:
         return {}
 
     meta: dict[str, dict[str, str]] = {}
@@ -3820,6 +3832,50 @@ def get_pin_metadata(
             for record in _extract_pin_records(child_block):
                 _record(record)
     return meta
+
+
+def _degenerate_stub_direction(
+    px: float,
+    py: float,
+    ox: float,
+    oy: float,
+    x_span: float,
+    y_span: float,
+    edge_tol: float,
+) -> tuple[float, float] | None:
+    if x_span <= edge_tol and y_span > edge_tol:
+        if abs(ox - px) <= edge_tol:
+            return (0.0, (1.0 if py >= oy else -1.0))
+        return ((1.0 if px >= ox else -1.0), 0.0)
+    if y_span <= edge_tol and x_span > edge_tol:
+        if abs(oy - py) <= edge_tol:
+            return ((1.0 if px >= ox else -1.0), 0.0)
+        return (0.0, (1.0 if py >= oy else -1.0))
+    return None
+
+
+def _edge_stub_direction(
+    px: float,
+    py: float,
+    min_x: float,
+    max_x: float,
+    min_y: float,
+    max_y: float,
+    x_span: float,
+    y_span: float,
+    edge_tol: float,
+) -> tuple[float, float] | None:
+    if x_span > edge_tol:
+        if abs(px - min_x) <= edge_tol:
+            return (-1.0, 0.0)
+        if abs(px - max_x) <= edge_tol:
+            return (1.0, 0.0)
+    if y_span > edge_tol:
+        if abs(py - min_y) <= edge_tol:
+            return (0.0, -1.0)
+        if abs(py - max_y) <= edge_tol:
+            return (0.0, 1.0)
+    return None
 
 
 def _pin_label_stub_direction(
@@ -3852,39 +3908,15 @@ def _pin_label_stub_direction(
         ys = [y for _, y in points]
         min_x, max_x = min(xs), max(xs)
         min_y, max_y = min(ys), max(ys)
-        # Pin coordinates are rounded to 1e-4 mm by get_pin_positions().  Use a
-        # small tolerance so grid/rotation floating point noise cannot flip a
-        # true edge pin into the origin fallback.
         edge_tol = 1e-3
         x_span = max_x - min_x
         y_span = max_y - min_y
-        # A degenerate one-dimensional pin layout has no second axis to read the
-        # outward direction from, so the body center decides it: a pin always
-        # points away from the body.  When the center lies ON the row/column the
-        # part is a two-terminal device (R, C, D, SW, LED) whose pins point ALONG
-        # the axis; the stub must follow the axis or the terminal label renders at
-        # rotation 90/270 and reads unreadably.  When the center is OFF the axis
-        # the pins are a connector edge pointing perpendicular to it, and the stub
-        # must stay perpendicular so parallel stubs clear the pin stack instead of
-        # running through neighbouring pins and shorting nets.
-        if x_span <= edge_tol and y_span > edge_tol:
-            if abs(ox - px) <= edge_tol:
-                return (0.0, (1.0 if py >= oy else -1.0))
-            return ((1.0 if px >= ox else -1.0), 0.0)
-        if y_span <= edge_tol and x_span > edge_tol:
-            if abs(oy - py) <= edge_tol:
-                return ((1.0 if px >= ox else -1.0), 0.0)
-            return (0.0, (1.0 if py >= oy else -1.0))
-        if x_span > edge_tol:
-            if abs(px - min_x) <= edge_tol:
-                return (-1.0, 0.0)
-            if abs(px - max_x) <= edge_tol:
-                return (1.0, 0.0)
-        if y_span > edge_tol:
-            if abs(py - min_y) <= edge_tol:
-                return (0.0, -1.0)
-            if abs(py - max_y) <= edge_tol:
-                return (0.0, 1.0)
+        if degen := _degenerate_stub_direction(px, py, ox, oy, x_span, y_span, edge_tol):
+            return degen
+        if edge := _edge_stub_direction(
+            px, py, min_x, max_x, min_y, max_y, x_span, y_span, edge_tol
+        ):
+            return edge
 
     dx, dy = px - ox, py - oy
     if abs(dx) >= abs(dy):
@@ -6156,7 +6188,7 @@ def _duplicate_uuids(content: str) -> set[str]:
     return duplicates
 
 
-def _validate_schematic_text(content: str) -> None:
+def _is_balanced_sexpr(content: str) -> bool:
     depth = 0
     in_string = False
     escaped = False
@@ -6175,8 +6207,12 @@ def _validate_schematic_text(content: str) -> None:
         elif char == ")":
             depth -= 1
             if depth < 0:
-                break
-    if depth != 0 or in_string:
+                return False
+    return depth == 0 and not in_string
+
+
+def _validate_schematic_text(content: str) -> None:
+    if not _is_balanced_sexpr(content):
         raise ValueError("Refusing to write an invalid schematic with unbalanced parentheses.")
     if re.search(r'\(paper\s+"User"\s*\)', content):
         raise ValueError(
