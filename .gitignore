@@ -59,6 +59,11 @@ TEMP/
 # User config file created by kicad-mcp-pro setup wizard
 .mcp.json
 
+# Testing and mutation artifacts
+mutants/
+.mutmut-cache/
+.codacy/
+
 # Tauri / Rust build artifacts
 src-tauri/target/
 src-tauri/gen/
