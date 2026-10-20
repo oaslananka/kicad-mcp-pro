@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from ..errors import SchematicRoutingUnsafeError
 from ..models.schematic import RouteWireBetweenPinsInput
 from .references import power_reference_from_uuid
 
@@ -495,6 +496,15 @@ class SchematicConnectivityAuthoringService:
         if not segments:
             return (
                 f"{payload.ref1}:{payload.pin1} and {payload.ref2}:{payload.pin2} already overlap."
+            )
+        # A failed search may return its direct, potentially shorting fallback.
+        # Only the explicitly reviewed perpendicular-crossing warning permits a
+        # write; all other warnings must leave the schematic unchanged.
+        if routing_warning and routing_warning != "WARNING: net_crossing_unavoidable":
+            raise SchematicRoutingUnsafeError(
+                f"Route refused between {payload.ref1}:{payload.pin1} and "
+                f"{payload.ref2}:{payload.pin2}: {routing_warning}. "
+                "No schematic changes were made."
             )
 
         def mutator(current: str) -> str:
