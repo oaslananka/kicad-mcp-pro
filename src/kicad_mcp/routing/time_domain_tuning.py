@@ -66,6 +66,75 @@ def build_time_domain_rule(
     return rule_name, rule_body
 
 
+def _resolve_layer_profile_settings(
+    profiles: dict[str, dict[str, object]], layer: str | None
+) -> tuple[float, float]:
+    propagation_speed_factor = 0.5
+    profile_impedance_ohm = 50.0
+    if not layer:
+        return propagation_speed_factor, profile_impedance_ohm
+
+    matching = next(
+        (
+            item
+            for item in profiles.values()
+            if str(item.get("layer", "")).casefold() == layer.casefold()
+        ),
+        None,
+    )
+    if matching is not None:
+        raw_factor = matching.get(
+            "propagation_speed_factor",
+            propagation_speed_factor,
+        )
+        if isinstance(raw_factor, int | float):
+            propagation_speed_factor = float(raw_factor)
+        raw_impedance = matching.get(
+            "trace_impedance_ohm",
+            profile_impedance_ohm,
+        )
+        if isinstance(raw_impedance, int | float):
+            profile_impedance_ohm = float(raw_impedance)
+    return propagation_speed_factor, profile_impedance_ohm
+
+
+def _compute_tuning_geometry(
+    layer: str | None,
+    target_delay_ps: float,
+    tolerance_ps: float,
+    speed_factor: float,
+    impedance_ohm: float,
+    stackup_provider: StackupContextProvider,
+) -> tuple[float, float, float | None]:
+    if layer:
+        try:
+            trace_type, height_mm, er, copper_oz = stackup_provider(layer)
+            solved_width_mm = solve_width_for_impedance(
+                impedance_ohm,
+                height_mm,
+                er,
+                trace_type=trace_type,
+                copper_oz=copper_oz,
+            )
+            _, effective_er = trace_impedance(
+                solved_width_mm,
+                height_mm,
+                er,
+                trace_type=trace_type,
+                copper_oz=copper_oz,
+            )
+            delay_ps_per_mm = propagation_delay_ps_per_mm(effective_er)
+            target_mm = target_delay_ps / delay_ps_per_mm
+            tolerance_mm = tolerance_ps / delay_ps_per_mm
+            return target_mm, tolerance_mm, effective_er
+        except ValueError:
+            pass
+
+    target_mm = delay_to_length_mm(target_delay_ps, speed_factor)
+    tolerance_mm = delay_to_length_mm(tolerance_ps, speed_factor)
+    return target_mm, tolerance_mm, None
+
+
 @dataclass(frozen=True)
 class RoutingTimeDomainTuningService:
     """Write time-domain tuning constraints without depending on FastMCP."""
@@ -86,71 +155,15 @@ class RoutingTimeDomainTuningService:
             return _WILDCARD_UNSUPPORTED
 
         profiles = load_tuning_profiles(self.get_project_dir())
-        propagation_speed_factor = 0.5
-        profile_impedance_ohm = 50.0
-        effective_er: float | None = None
-
-        if layer:
-            matching = next(
-                (
-                    item
-                    for item in profiles.values()
-                    if str(item.get("layer", "")).casefold() == layer.casefold()
-                ),
-                None,
-            )
-            if matching is not None:
-                raw_factor = matching.get(
-                    "propagation_speed_factor",
-                    propagation_speed_factor,
-                )
-                if isinstance(raw_factor, int | float):
-                    propagation_speed_factor = float(raw_factor)
-                raw_impedance = matching.get(
-                    "trace_impedance_ohm",
-                    profile_impedance_ohm,
-                )
-                if isinstance(raw_impedance, int | float):
-                    profile_impedance_ohm = float(raw_impedance)
-
-        if layer:
-            try:
-                trace_type, height_mm, er, copper_oz = self.stackup_context_for_layer(layer)
-                solved_width_mm = solve_width_for_impedance(
-                    profile_impedance_ohm,
-                    height_mm,
-                    er,
-                    trace_type=trace_type,
-                    copper_oz=copper_oz,
-                )
-                _, effective_er = trace_impedance(
-                    solved_width_mm,
-                    height_mm,
-                    er,
-                    trace_type=trace_type,
-                    copper_oz=copper_oz,
-                )
-                delay_ps_per_mm = propagation_delay_ps_per_mm(effective_er)
-                target_mm = target_delay_ps / delay_ps_per_mm
-                tolerance_mm = tolerance_ps / delay_ps_per_mm
-            except ValueError:
-                target_mm = delay_to_length_mm(
-                    target_delay_ps,
-                    propagation_speed_factor,
-                )
-                tolerance_mm = delay_to_length_mm(
-                    tolerance_ps,
-                    propagation_speed_factor,
-                )
-        else:
-            target_mm = delay_to_length_mm(
-                target_delay_ps,
-                propagation_speed_factor,
-            )
-            tolerance_mm = delay_to_length_mm(
-                tolerance_ps,
-                propagation_speed_factor,
-            )
+        speed_factor, impedance_ohm = _resolve_layer_profile_settings(profiles, layer)
+        target_mm, tolerance_mm, effective_er = _compute_tuning_geometry(
+            layer,
+            target_delay_ps,
+            tolerance_ps,
+            speed_factor,
+            impedance_ohm,
+            self.stackup_context_for_layer,
+        )
 
         current_length = self.current_track_length_for_pattern_mm(net_or_group)
         required_extension = target_mm - current_length

@@ -699,6 +699,39 @@ def _available_sheet_names(root_schematic: Path) -> list[str]:
     return [name for name, _ in _iter_child_sheet_paths(root_schematic)]
 
 
+def _resolve_target_by_file(sheet_file: str, project_root: Path, root: Path) -> _SchematicTarget:
+    target = resolve_under(project_root, sheet_file).resolve()
+    if target.suffix != ".kicad_sch":
+        raise ValueError("sheet_file must point to a .kicad_sch file.")
+    if not target.exists():
+        raise ValueError(f"Target schematic file does not exist: {target}")
+    return _SchematicTarget(
+        path=target,
+        is_root=target == root,
+        description="root" if target == root else "child",
+    )
+
+
+def _resolve_target_by_name(sheet: str, project_root: Path, root: Path) -> _SchematicTarget:
+    discovered = _iter_child_sheet_paths(root)
+    matches = [
+        (name, path.resolve())
+        for name, path in discovered
+        if name == sheet or name.rsplit("/", 1)[-1] == sheet
+    ]
+    if not matches:
+        available = ", ".join(_available_sheet_names(root)) or "(none)"
+        raise ValueError(f"Sheet '{sheet}' was not found. Available sheets: {available}")
+    if len(matches) > 1:
+        available = ", ".join(name for name, _ in matches)
+        raise ValueError(f"Sheet '{sheet}' is ambiguous. Matching sheets: {available}")
+    name, target = matches[0]
+    if not target.exists():
+        raise ValueError(f"Sheet '{name}' points to missing file: {target}")
+    resolve_under(project_root, target)
+    return _SchematicTarget(path=target, is_root=target == root, description=name)
+
+
 def _resolve_schematic_target(
     sheet: str | None = None,
     sheet_file: str | None = None,
@@ -712,36 +745,9 @@ def _resolve_schematic_target(
     project_root = (cfg.project_dir or root.parent).resolve()
 
     if sheet_file:
-        target = resolve_under(project_root, sheet_file).resolve()
-        if target.suffix != ".kicad_sch":
-            raise ValueError("sheet_file must point to a .kicad_sch file.")
-        if not target.exists():
-            raise ValueError(f"Target schematic file does not exist: {target}")
-        return _SchematicTarget(
-            path=target,
-            is_root=target == root,
-            description="root" if target == root else "child",
-        )
-
+        return _resolve_target_by_file(sheet_file, project_root, root)
     if sheet:
-        discovered = _iter_child_sheet_paths(root)
-        matches = [
-            (name, path.resolve())
-            for name, path in discovered
-            if name == sheet or name.rsplit("/", 1)[-1] == sheet
-        ]
-        if not matches:
-            available = ", ".join(_available_sheet_names(root)) or "(none)"
-            raise ValueError(f"Sheet '{sheet}' was not found. Available sheets: {available}")
-        if len(matches) > 1:
-            available = ", ".join(name for name, _ in matches)
-            raise ValueError(f"Sheet '{sheet}' is ambiguous. Matching sheets: {available}")
-        name, target = matches[0]
-        if not target.exists():
-            raise ValueError(f"Sheet '{name}' points to missing file: {target}")
-        resolve_under(project_root, target)
-        return _SchematicTarget(path=target, is_root=target == root, description=name)
-
+        return _resolve_target_by_name(sheet, project_root, root)
     return _SchematicTarget(path=root, is_root=True, description="root")
 
 

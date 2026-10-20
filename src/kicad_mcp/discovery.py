@@ -205,6 +205,49 @@ def _collect_cli_help_outputs(cli_path: Path) -> list[str]:
     return help_outputs
 
 
+def _parse_cli_capabilities_from_blob(
+    version: str | None, blob: str, tokens: set[str]
+) -> CliCapabilities:
+    def has(*patterns: str) -> bool:
+        return any(p in blob or p in tokens for p in patterns)
+
+    gerber_command = "gerbers" if "gerbers" in tokens else "gerber"
+    position_command = "positions" if "positions" in tokens else "pos"
+
+    return CliCapabilities(
+        version=version,
+        gerber_command=gerber_command,
+        position_command=position_command,
+        supports_ipc2581="ipc2581" in blob,
+        supports_odb_export=has("odb++", "odb"),
+        supports_svg=has(" export svg", " svg "),
+        supports_dxf=has(" export dxf", " dxf "),
+        supports_step=has(" export step", " step "),
+        supports_stepz=has("stpz", "stepz"),
+        supports_xao="xao" in tokens,
+        supports_render=" render " in blob,
+        supports_3d_pdf=has("3dpdf", "3d pdf"),
+        supports_spice_netlist="spice" in blob,
+        supports_specctra_export=has("specctra", " dsn "),
+        supports_specctra_import=has("specctra", " ses "),
+        supports_allegro_import="allegro" in blob,
+        supports_pads_import="pads" in blob,
+        supports_geda_import="geda" in blob,
+        supports_cli_variant="--variant" in blob,
+        supports_brep=has(" brep ", "brep"),
+        supports_glb=has(" glb ", "glb"),
+        supports_gencad="gencad" in tokens,
+        supports_ipc_d356=has("d356", "ipc-d356"),
+        supports_ply=has(" ply ", "ply"),
+        supports_stl=has(" stl ", "stl"),
+        supports_u3d="u3d" in tokens,
+        supports_vrml="vrml" in tokens,
+        supports_ps=has(" ps ", "postscript"),
+        supports_drc_severity_all=has("--severity-all", "severity-all"),
+        supports_drc_exit_code_violations=has("--exit-code-violations", "exit-code-violations"),
+    )
+
+
 def get_cli_capabilities(cli_path: Path) -> CliCapabilities:
     """Inspect the local CLI and cache supported commands."""
     cache_key = _cli_capabilities_cache_key(cli_path)
@@ -221,42 +264,7 @@ def get_cli_capabilities(cli_path: Path) -> CliCapabilities:
     help_outputs = _collect_cli_help_outputs(cli_path)
     blob = "\n".join(help_outputs).lower()
     tokens = set(re.findall(r"[a-z0-9_-]+", blob))
-    gerber_command = "gerbers" if "gerbers" in tokens else "gerber"
-    position_command = "positions" if "positions" in tokens else "pos"
-
-    capabilities = CliCapabilities(
-        version=version,
-        gerber_command=gerber_command,
-        position_command=position_command,
-        supports_ipc2581="ipc2581" in blob,
-        supports_odb_export="odb++" in blob or "odb" in tokens,
-        supports_svg=" export svg" in blob or " svg " in blob,
-        supports_dxf=" export dxf" in blob or " dxf " in blob,
-        supports_step=" export step" in blob or " step " in blob,
-        supports_stepz="stpz" in tokens or "stepz" in tokens,
-        supports_xao="xao" in tokens,
-        supports_render=" render " in blob,
-        supports_3d_pdf="3dpdf" in blob or "3d pdf" in blob,
-        supports_spice_netlist="spice" in blob,
-        supports_specctra_export="specctra" in blob or " dsn " in blob,
-        supports_specctra_import="specctra" in blob or " ses " in blob,
-        supports_allegro_import="allegro" in blob,
-        supports_pads_import="pads" in blob,
-        supports_geda_import="geda" in blob,
-        supports_cli_variant="--variant" in blob,
-        supports_brep=" brep " in blob or "brep" in tokens,
-        supports_glb=" glb " in blob or "glb" in tokens,
-        supports_gencad="gencad" in tokens,
-        supports_ipc_d356="d356" in tokens or "ipc-d356" in blob,
-        supports_ply=" ply " in blob or "ply" in tokens,
-        supports_stl=" stl " in blob or "stl" in tokens,
-        supports_u3d="u3d" in tokens,
-        supports_vrml="vrml" in tokens,
-        supports_ps=" ps " in blob or "postscript" in blob,
-        supports_drc_severity_all="--severity-all" in blob or "severity-all" in blob,
-        supports_drc_exit_code_violations="--exit-code-violations" in blob
-        or "exit-code-violations" in blob,
-    )
+    capabilities = _parse_cli_capabilities_from_blob(version, blob, tokens)
     _CLI_CAPABILITIES_CACHE[cache_key] = capabilities
     return capabilities
 

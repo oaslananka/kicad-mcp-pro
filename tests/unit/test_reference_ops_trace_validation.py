@@ -85,7 +85,8 @@ def test_windows_trace_open_preserves_byte_lengths(
     monkeypatch.setattr(reference_ops_trace_validation.os, "open", record_open)
     summary = validate_reference_ops_trace(path, attempt_id="attempt-004", phase_name="schematic")
     assert summary.tool_calls == 2
-    assert observed_flags and all(flag & os.O_BINARY for flag in observed_flags)
+    assert observed_flags
+    assert all(flag & os.O_BINARY for flag in observed_flags)
 
 
 @pytest.mark.parametrize(

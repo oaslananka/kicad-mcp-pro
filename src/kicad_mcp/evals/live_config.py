@@ -209,24 +209,9 @@ def _parse_limits(value: object, record_id: str) -> RunLimits:
     )
 
 
-def _parse_configuration(raw_value: object, base_dir: Path, index: int) -> EvalConfiguration:
-    raw = _mapping(raw_value, f"Configuration entry #{index}")
-    record_id = str(raw.get("id", "")).strip() or f"#{index}"
-    unknown = sorted(set(raw) - _CONFIGURATION_KEYS)
-    if unknown:
-        raise EvalConfigurationError(
-            f"Configuration {record_id!r} has unsupported fields: {unknown}."
-        )
-
-    identifier = _non_empty_string(raw, "id", record_id)
-    host = _non_empty_string(raw, "host", identifier)
-    model = _non_empty_string(raw, "model", identifier)
-    adapter_raw = _non_empty_string(raw, "adapter", identifier)
-    if adapter_raw not in {"replay", "subprocess"}:
-        raise EvalConfigurationError(
-            f"Configuration {identifier!r} adapter must be replay or subprocess."
-        )
-    adapter = cast(AdapterKind, adapter_raw)
+def _parse_command_and_env(
+    raw: dict[str, Any], identifier: str
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
     command = _string_list(raw, "command", identifier)
     if any(_COMMAND_SECRET.search(argument) for argument in command):
         raise EvalConfigurationError(
@@ -238,16 +223,27 @@ def _parse_configuration(raw_value: object, base_dir: Path, index: int) -> EvalC
             raise EvalConfigurationError(
                 f"Configuration {identifier!r} has invalid environment name {name!r}."
             )
+    return command, required_env
 
-    trace_path: Path | None = None
+
+def _parse_trace_path(raw: dict[str, Any], identifier: str, base_dir: Path) -> Path | None:
     trace_raw = raw.get("trace_path")
-    if trace_raw is not None:
-        if not isinstance(trace_raw, str) or not trace_raw.strip():
-            raise EvalConfigurationError(
-                f"Configuration {identifier!r} field trace_path must be a non-empty string."
-            )
-        trace_path = (base_dir / trace_raw.strip()).resolve()
+    if trace_raw is None:
+        return None
+    if not isinstance(trace_raw, str) or not trace_raw.strip():
+        raise EvalConfigurationError(
+            f"Configuration {identifier!r} field trace_path must be a non-empty string."
+        )
+    return (base_dir / trace_raw.strip()).resolve()
 
+
+def _validate_adapter_consistency(
+    adapter: AdapterKind,
+    identifier: str,
+    command: tuple[str, ...],
+    required_env: tuple[str, ...],
+    trace_path: Path | None,
+) -> None:
     if adapter == "replay":
         if trace_path is None:
             raise EvalConfigurationError(
@@ -266,6 +262,29 @@ def _parse_configuration(raw_value: object, base_dir: Path, index: int) -> EvalC
             raise EvalConfigurationError(
                 f"Configuration {identifier!r} subprocess adapter must not declare trace_path."
             )
+
+
+def _parse_configuration(raw_value: object, base_dir: Path, index: int) -> EvalConfiguration:
+    raw = _mapping(raw_value, f"Configuration entry #{index}")
+    record_id = str(raw.get("id", "")).strip() or f"#{index}"
+    unknown = sorted(set(raw) - _CONFIGURATION_KEYS)
+    if unknown:
+        raise EvalConfigurationError(
+            f"Configuration {record_id!r} has unsupported fields: {unknown}."
+        )
+
+    identifier = _non_empty_string(raw, "id", record_id)
+    host = _non_empty_string(raw, "host", identifier)
+    model = _non_empty_string(raw, "model", identifier)
+    adapter_raw = _non_empty_string(raw, "adapter", identifier)
+    if adapter_raw not in {"replay", "subprocess"}:
+        raise EvalConfigurationError(
+            f"Configuration {identifier!r} adapter must be replay or subprocess."
+        )
+    adapter = cast(AdapterKind, adapter_raw)
+    command, required_env = _parse_command_and_env(raw, identifier)
+    trace_path = _parse_trace_path(raw, identifier, base_dir)
+    _validate_adapter_consistency(adapter, identifier, command, required_env, trace_path)
 
     return EvalConfiguration(
         id=identifier,

@@ -78,17 +78,41 @@ def _tool_requires_kicad_ipc(tool_name: str) -> bool:
     return bool(capability and capability.runtime is RuntimeRequirement.KICAD_IPC)
 
 
-def _runtime_availability_note(tool_name: str, ipc_state: object | None) -> str:
-    if ipc_state is None or not _tool_requires_kicad_ipc(tool_name):
-        return ""
+def _lookup_tool_capability_tier(tool_name: str) -> object:
+    from ..capabilities import AccessTier
+
     try:
-        from ..capabilities import AccessTier
         from ..capabilities import get as get_capability
 
         capability = get_capability(tool_name)
+        if capability is not None:
+            return capability.tier
     except Exception:
+        return AccessTier.WRITE
+    return AccessTier.WRITE
+
+
+def _check_ipc_domain_requirement(
+    tool_name: str, tier: object, ipc_state: object
+) -> tuple[bool, str]:
+    from ..capabilities import AccessTier
+
+    is_read = tier is AccessTier.READ
+    if tool_name.startswith("pcb_"):
+        attr = "live_pcb_read" if is_read else "live_pcb_write"
+        req = "live PCB read" if is_read else "live PCB write"
+    elif tool_name.startswith("sch_"):
+        attr = "live_schematic_read" if is_read else "live_schematic_write"
+        req = "live schematic read" if is_read else "live schematic write"
+    else:
+        attr = "reachable"
+        req = "KiCad IPC connection"
+    return bool(getattr(ipc_state, attr, False)), req
+
+
+def _runtime_availability_note(tool_name: str, ipc_state: object | None) -> str:
+    if ipc_state is None or not _tool_requires_kicad_ipc(tool_name):
         return ""
-    tier = capability.tier if capability is not None else AccessTier.WRITE
 
     operations = getattr(ipc_state, "operations", {})
     if tool_name in operations:
@@ -100,24 +124,8 @@ def _runtime_availability_note(tool_name: str, ipc_state: object | None) -> str:
             str(reason) if reason else "KiCad IPC operation is unavailable"
         )
 
-    if tool_name.startswith("pcb_"):
-        available = (
-            getattr(ipc_state, "live_pcb_read", False)
-            if tier is AccessTier.READ
-            else getattr(ipc_state, "live_pcb_write", False)
-        )
-        requirement = "live PCB read" if tier is AccessTier.READ else "live PCB write"
-    elif tool_name.startswith("sch_"):
-        available = (
-            getattr(ipc_state, "live_schematic_read", False)
-            if tier is AccessTier.READ
-            else getattr(ipc_state, "live_schematic_write", False)
-        )
-        requirement = "live schematic read" if tier is AccessTier.READ else "live schematic write"
-    else:
-        available = getattr(ipc_state, "reachable", False)
-        requirement = "KiCad IPC connection"
-
+    tier = _lookup_tool_capability_tier(tool_name)
+    available, requirement = _check_ipc_domain_requirement(tool_name, tier, ipc_state)
     if available:
         return ""
     return f" — unavailable at runtime; requires {requirement}"

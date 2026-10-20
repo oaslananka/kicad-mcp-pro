@@ -418,17 +418,19 @@ def _classify_system_error_code(lowered: str, tool_name: str) -> str | None:
     return None
 
 
-def _classify_domain_error_code(lowered: str) -> str | None:
-    if "connection" in lowered and ("refused" in lowered or "reset" in lowered):
-        return "IPC_CONNECTION_LOST"
-    if "not running" in lowered or "kicad not" in lowered:
-        return "KICAD_NOT_RUNNING"
-    if "no board" in lowered or "no pcb" in lowered or "board not open" in lowered:
-        return "BOARD_NOT_OPEN"
-    if "validation" in lowered or "invalid" in lowered:
-        return "TOOL_VALIDATION_ERROR"
-    if "permission" in lowered or "denied" in lowered or "not allowed" in lowered:
-        return "PERMISSION_DENIED"
+def _is_ipc_connection_error(lowered: str) -> bool:
+    return "connection" in lowered and ("refused" in lowered or "reset" in lowered)
+
+
+def _is_board_not_open_error(lowered: str) -> bool:
+    return any(p in lowered for p in ("no board", "no pcb", "board not open"))
+
+
+def _is_permission_error(lowered: str) -> bool:
+    return any(p in lowered for p in ("permission", "denied", "not allowed"))
+
+
+def _classify_not_found_code(lowered: str) -> str | None:
     missing_or_not_found = _NOT_FOUND_LITERAL in lowered or "missing" in lowered
     if _NOT_FOUND_LITERAL in lowered:
         return "NOT_FOUND"
@@ -439,6 +441,20 @@ def _classify_domain_error_code(lowered: str) -> str | None:
     if "net" in lowered and missing_or_not_found:
         return "NET_NOT_FOUND"
     return None
+
+
+def _classify_domain_error_code(lowered: str) -> str | None:
+    if _is_ipc_connection_error(lowered):
+        return "IPC_CONNECTION_LOST"
+    if "not running" in lowered or "kicad not" in lowered:
+        return "KICAD_NOT_RUNNING"
+    if _is_board_not_open_error(lowered):
+        return "BOARD_NOT_OPEN"
+    if "validation" in lowered or "invalid" in lowered:
+        return "TOOL_VALIDATION_ERROR"
+    if _is_permission_error(lowered):
+        return "PERMISSION_DENIED"
+    return _classify_not_found_code(lowered)
 
 
 def _tool_error_code(message: str, *, tool_name: str = "") -> str:
@@ -482,37 +498,7 @@ def _classify_system_error_hint(lowered: str) -> str | None:
     return None
 
 
-def _classify_domain_error_hint(lowered: str) -> str | None:
-    if "connection" in lowered and ("refused" in lowered or "reset" in lowered):
-        return (
-            "Start KiCad and enable the IPC API server:\n"
-            "  1. Open KiCad\n"
-            "  2. Preferences → IPC\n"
-            "  3. Enable 'Start IPC server on port 12345'\n"
-            "  4. Restart KiCad"
-        )
-    if "not running" in lowered or "kicad not" in lowered:
-        return (
-            "Ensure KiCad is running with the IPC API enabled.\n"
-            "Run 'kicad-mcp-pro status' to check KiCad availability."
-        )
-    if "no board" in lowered or "board not open" in lowered:
-        return (
-            "Open a PCB file in KiCad or set the project first:\n"
-            "  kicad-mcp-pro --project-dir /path/to/project\n"
-            "Or call kicad_set_project() from the client."
-        )
-    if "validation" in lowered or "invalid" in lowered:
-        return (
-            "Correct the tool arguments and retry.\n"
-            "Check the input schema with 'kicad-mcp-pro tools list'."
-        )
-    if "permission" in lowered or "denied" in lowered or "not allowed" in lowered:
-        return (
-            "The current operating mode does not permit this tool.\n"
-            "Use --mode=write, --mode=manufacturing,\n"
-            "or --mode=experimental with appropriate access."
-        )
+def _classify_not_found_hint(lowered: str) -> str | None:
     missing_or_not_found = _NOT_FOUND_LITERAL in lowered or "missing" in lowered
     if "symbol" in lowered and missing_or_not_found:
         return (
@@ -531,6 +517,40 @@ def _classify_domain_error_hint(lowered: str) -> str | None:
     if _NOT_FOUND_LITERAL in lowered or ("symbol" in lowered and "missing" in lowered):
         return "The requested resource was not found. Verify the name, identifier, or library path."
     return None
+
+
+def _classify_domain_error_hint(lowered: str) -> str | None:
+    if _is_ipc_connection_error(lowered):
+        return (
+            "Start KiCad and enable the IPC API server:\n"
+            "  1. Open KiCad\n"
+            "  2. Preferences → IPC\n"
+            "  3. Enable 'Start IPC server on port 12345'\n"
+            "  4. Restart KiCad"
+        )
+    if "not running" in lowered or "kicad not" in lowered:
+        return (
+            "Ensure KiCad is running with the IPC API enabled.\n"
+            "Run 'kicad-mcp-pro status' to check KiCad availability."
+        )
+    if _is_board_not_open_error(lowered):
+        return (
+            "Open a PCB file in KiCad or set the project first:\n"
+            "  kicad-mcp-pro --project-dir /path/to/project\n"
+            "Or call kicad_set_project() from the client."
+        )
+    if "validation" in lowered or "invalid" in lowered:
+        return (
+            "Correct the tool arguments and retry.\n"
+            "Check the input schema with 'kicad-mcp-pro tools list'."
+        )
+    if _is_permission_error(lowered):
+        return (
+            "The current operating mode does not permit this tool.\n"
+            "Use --mode=write, --mode=manufacturing,\n"
+            "or --mode=experimental with appropriate access."
+        )
+    return _classify_not_found_hint(lowered)
 
 
 def _tool_error_hint(message: str) -> str:
@@ -2098,6 +2118,33 @@ def _register_profile_components(
         ensure_studio_project_watcher(cfg.studio_watch_dir)
 
 
+async def _handle_token_rotation(
+    request: Request,
+    cfg: KiCadMCPConfig,
+    token_verifier: _StaticTokenVerifier | None,
+) -> JSONResponse:
+    if token_verifier is None or not cfg.auth_token:
+        return JSONResponse({"error": "Bearer token auth is not enabled."}, status_code=404)
+    token = _bearer_token(request)
+    if await token_verifier.verify_token(token) is None:
+        return JSONResponse({"error": "Unauthorized."}, status_code=401)
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Request body must be JSON."}, status_code=400)
+    raw_token = payload.get("new_token") if isinstance(payload, dict) else None
+    new_token = raw_token.strip() if isinstance(raw_token, str) else ""
+    if not new_token:
+        return JSONResponse({"error": "new_token must be a non-empty string."}, status_code=400)
+    token_error = _validate_rotated_token(new_token)
+    if token_error is not None:
+        return JSONResponse({"error": token_error}, status_code=400)
+    cfg.auth_token = new_token
+    token_verifier.rotate(new_token)
+    logger.info("security_token_rotated", transport=cfg.transport, host=cfg.host)
+    return JSONResponse({"rotated": True})
+
+
 def _register_server_custom_routes(
     server: KiCadFastMCP,
     cfg: KiCadMCPConfig,
@@ -2117,26 +2164,7 @@ def _register_server_custom_routes(
         include_in_schema=False,
     )
     async def _rotate_token(request: Request) -> JSONResponse:
-        if token_verifier is None or not cfg.auth_token:
-            return JSONResponse({"error": "Bearer token auth is not enabled."}, status_code=404)
-        token = _bearer_token(request)
-        if await token_verifier.verify_token(token) is None:
-            return JSONResponse({"error": "Unauthorized."}, status_code=401)
-        try:
-            payload = await request.json()
-        except Exception:
-            return JSONResponse({"error": "Request body must be JSON."}, status_code=400)
-        raw_token = payload.get("new_token") if isinstance(payload, dict) else None
-        new_token = raw_token.strip() if isinstance(raw_token, str) else ""
-        if not new_token:
-            return JSONResponse({"error": "new_token must be a non-empty string."}, status_code=400)
-        token_error = _validate_rotated_token(new_token)
-        if token_error is not None:
-            return JSONResponse({"error": token_error}, status_code=400)
-        cfg.auth_token = new_token
-        token_verifier.rotate(new_token)
-        logger.info("security_token_rotated", transport=cfg.transport, host=cfg.host)
-        return JSONResponse({"rotated": True})
+        return await _handle_token_rotation(request, cfg, token_verifier)
 
     if cfg.enable_metrics:
 
