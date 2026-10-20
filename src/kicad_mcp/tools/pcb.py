@@ -3854,6 +3854,236 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
         )
 
 
+def _auto_place_by_schematic_impl(payload: AutoPlaceBySchematicInput) -> str:
+    if refusal := _guard_file_based_board_edit("auto-placement", payload.allow_open_board):
+        return refusal
+
+    components, issues = _collect_schematic_components()
+    if issues:
+        return "Auto-placement aborted:\n" + "\n".join(f"- {issue}" for issue in issues)
+    if not components:
+        return "No schematic symbols were found to place."
+
+    board_file = _get_pcb_file_for_sync()
+    board_content = _normalize_board_content(
+        board_file.read_text(encoding="utf-8", errors="ignore")
+    )
+    existing = _parse_board_footprint_blocks(board_content)
+    component_refs = {str(component["reference"]) for component in components}
+    occupied = _collect_occupied_boxes(existing, exclude_refs=component_refs)
+    positions = _strategy_board_positions(components, payload, occupied)
+
+    additions: list[str] = []
+    replacements: dict[str, str] = {}
+    missing_refs: list[str] = []
+    moved_existing = 0
+
+    for component in components:
+        reference = str(component["reference"])
+        x_mm, y_mm = positions[reference]
+        rotation = int(component["rotation"])
+        if reference in existing:
+            replacements[reference] = _replace_root_at(
+                str(existing[reference]["block"]),
+                x_mm=x_mm,
+                y_mm=y_mm,
+                rotation=rotation,
+            )
+            moved_existing += 1
+            continue
+        if not payload.sync_missing:
+            missing_refs.append(reference)
+            continue
+        additions.append(
+            _render_board_footprint_block(
+                str(component["footprint"]),
+                reference=reference,
+                value=str(component["value"]),
+                x_mm=x_mm,
+                y_mm=y_mm,
+                rotation=rotation,
+                pad_nets={},
+            )
+        )
+
+    if replacements or additions:
+        _transactional_board_write(
+            lambda current: _replace_board_blocks(current, replacements, additions)
+        )
+
+    lines = [
+        f"Auto-placement strategy: {payload.strategy}",
+        f"Existing footprints moved: {moved_existing}",
+        f"Missing footprints added: {len(additions)}",
+    ]
+    if missing_refs:
+        lines.append("Missing schematic references left untouched:")
+        lines.extend(f"- {reference}" for reference in missing_refs[:20])
+        if len(missing_refs) > 20:
+            lines.append(f"... and {len(missing_refs) - 20} more")
+        lines.append("Rerun with sync_missing=True to add them automatically.")
+    if replacements or additions:
+        lines.append(_finalize_file_based_board_edit(payload.allow_open_board))
+    return "\n".join(lines)
+
+
+def _place_decoupling_caps_impl(payload: PlaceDecouplingCapsInput) -> str:
+    if refusal := _guard_file_based_board_edit(
+        "decoupling capacitor placement", payload.allow_open_board
+    ):
+        return refusal
+
+    board_file = _get_pcb_file_for_sync()
+    board_content = _normalize_board_content(
+        board_file.read_text(encoding="utf-8", errors="ignore")
+    )
+    existing = _parse_board_footprint_blocks(board_content)
+    if payload.ic_ref not in existing:
+        return f"Footprint '{payload.ic_ref}' was not found on the PCB file."
+
+    missing_caps = [reference for reference in payload.cap_refs if reference not in existing]
+    if missing_caps:
+        return (
+            "Decoupling placement aborted because some capacitor references are missing:\n"
+            + "\n".join(f"- {reference}" for reference in missing_caps)
+        )
+
+    ic_entry = existing[payload.ic_ref]
+    ic_x_mm = float(ic_entry["x_mm"] or 0.0)
+    ic_y_mm = float(ic_entry["y_mm"] or 0.0)
+    ic_height_mm = float(ic_entry["height_mm"])
+    ordered_caps = [existing[reference] for reference in payload.cap_refs]
+    pitch_mm = max(float(entry["width_mm"]) for entry in ordered_caps) + payload.grid_mm
+    base_x_mm = ic_x_mm - (((len(payload.cap_refs) - 1) * pitch_mm) / 2)
+    occupied = _collect_occupied_boxes(existing, exclude_refs=set(payload.cap_refs))
+
+    replacements: dict[str, str] = {}
+    placement_report: list[str] = []
+    moved = 0
+    for index, reference in enumerate(payload.cap_refs):
+        entry = existing[reference]
+        rule = _decoupling_rule_for_value(str(entry["value"]), payload.max_distance_mm)
+        rule_max_distance_mm = float(cast(float | int | str, rule["max_dist_mm"]))
+        width_mm = float(entry["width_mm"])
+        height_mm = float(entry["height_mm"])
+        preferred_y_mm = (
+            ic_y_mm - ((ic_height_mm / 2) + rule_max_distance_mm)
+            if payload.side == "same"
+            else ic_y_mm + ((ic_height_mm / 2) + rule_max_distance_mm)
+        )
+        resolved_x_mm, resolved_y_mm = _find_open_position(
+            base_x_mm + (index * pitch_mm),
+            preferred_y_mm,
+            width_mm,
+            height_mm,
+            SyncPcbFromSchematicInput(grid_mm=payload.grid_mm),
+            occupied,
+        )
+        replacements[reference] = _replace_root_at(
+            str(entry["block"]),
+            x_mm=resolved_x_mm,
+            y_mm=resolved_y_mm,
+            rotation=int(entry["rotation"]),
+        )
+        occupied.append(
+            {
+                "x_mm": resolved_x_mm,
+                "y_mm": resolved_y_mm,
+                "width_mm": width_mm,
+                "height_mm": height_mm,
+            }
+        )
+        moved += 1
+        distance_mm = math.dist((resolved_x_mm, resolved_y_mm), (ic_x_mm, ic_y_mm))
+        status_mark = "OK" if distance_mm <= rule_max_distance_mm + ic_height_mm else "WARN"
+        placement_report.append(
+            f"{reference} placed {distance_mm:.1f}mm from {payload.ic_ref} "
+            f"({str(entry['value'])}, {status_mark})"
+        )
+
+    _transactional_board_write(lambda current: _replace_board_blocks(current, replacements, []))
+
+    lines = [
+        f"Placed {moved} decoupling capacitor(s) near {payload.ic_ref}.",
+        f"Preferred placement band: {payload.side}.",
+    ]
+    lines.extend(placement_report)
+    if payload.side == "opposite":
+        lines.append(
+            "Note: file-based placement keeps the current copper side; "
+            "only the preferred placement band changes."
+        )
+    lines.append(_finalize_file_based_board_edit(payload.allow_open_board))
+    return "\n".join(lines)
+
+
+def _group_by_function_impl(payload: GroupFootprintsInput) -> str:
+    if refusal := _guard_file_based_board_edit("functional grouping", payload.allow_open_board):
+        return refusal
+
+    board_file = _get_pcb_file_for_sync()
+    board_content = _normalize_board_content(
+        board_file.read_text(encoding="utf-8", errors="ignore")
+    )
+    existing = _parse_board_footprint_blocks(board_content)
+    refs_in_groups = {
+        reference for group_refs in payload.groups.values() for reference in group_refs
+    }
+    replacements: dict[str, str] = {}
+    missing_refs: list[str] = []
+    moved = 0
+
+    occupied = _collect_occupied_boxes(existing, exclude_refs=refs_in_groups)
+    for group_index, (_group_name, references) in enumerate(payload.groups.items()):
+        group_x_mm = payload.origin_x_mm + (group_index * payload.group_spacing_mm)
+        cursor_y_mm = payload.origin_y_mm
+        for reference in references:
+            entry = existing.get(reference)
+            if entry is None:
+                missing_refs.append(reference)
+                continue
+            width_mm = float(entry["width_mm"])
+            height_mm = float(entry["height_mm"])
+            resolved_x_mm, resolved_y_mm = _find_open_position(
+                group_x_mm,
+                cursor_y_mm,
+                width_mm,
+                height_mm,
+                SyncPcbFromSchematicInput(grid_mm=payload.grid_mm),
+                occupied,
+            )
+            replacements[reference] = _replace_root_at(
+                str(entry["block"]),
+                x_mm=resolved_x_mm,
+                y_mm=resolved_y_mm,
+                rotation=int(entry["rotation"]),
+            )
+            occupied.append(
+                {
+                    "x_mm": resolved_x_mm,
+                    "y_mm": resolved_y_mm,
+                    "width_mm": width_mm,
+                    "height_mm": height_mm,
+                }
+            )
+            cursor_y_mm = resolved_y_mm + height_mm + payload.item_spacing_mm
+            moved += 1
+
+    if not replacements:
+        return "No existing footprints were moved by functional grouping."
+
+    _transactional_board_write(lambda current: _replace_board_blocks(current, replacements, []))
+    lines = [
+        f"Functional groups placed: {len(payload.groups)}",
+        f"Footprints moved: {moved}",
+    ]
+    if missing_refs:
+        lines.append("Missing references:")
+        lines.extend(f"- {reference}" for reference in missing_refs[:20])
+    lines.append(_finalize_file_based_board_edit(payload.allow_open_board))
+    return "\n".join(lines)
+
+
 def _register_placement_automation_tools(mcp: FastMCP) -> None:
     """Register deterministic placement automation tools."""
 
@@ -3880,76 +4110,7 @@ def _register_placement_automation_tools(mcp: FastMCP) -> None:
             allow_open_board=allow_open_board,
             sync_missing=sync_missing,
         )
-        if refusal := _guard_file_based_board_edit("auto-placement", payload.allow_open_board):
-            return refusal
-
-        components, issues = _collect_schematic_components()
-        if issues:
-            return "Auto-placement aborted:\n" + "\n".join(f"- {issue}" for issue in issues)
-        if not components:
-            return "No schematic symbols were found to place."
-
-        board_file = _get_pcb_file_for_sync()
-        board_content = _normalize_board_content(
-            board_file.read_text(encoding="utf-8", errors="ignore")
-        )
-        existing = _parse_board_footprint_blocks(board_content)
-        component_refs = {str(component["reference"]) for component in components}
-        occupied = _collect_occupied_boxes(existing, exclude_refs=component_refs)
-        positions = _strategy_board_positions(components, payload, occupied)
-
-        additions: list[str] = []
-        replacements: dict[str, str] = {}
-        missing_refs: list[str] = []
-        moved_existing = 0
-
-        for component in components:
-            reference = str(component["reference"])
-            x_mm, y_mm = positions[reference]
-            rotation = int(component["rotation"])
-            if reference in existing:
-                replacements[reference] = _replace_root_at(
-                    str(existing[reference]["block"]),
-                    x_mm=x_mm,
-                    y_mm=y_mm,
-                    rotation=rotation,
-                )
-                moved_existing += 1
-                continue
-            if not payload.sync_missing:
-                missing_refs.append(reference)
-                continue
-            additions.append(
-                _render_board_footprint_block(
-                    str(component["footprint"]),
-                    reference=reference,
-                    value=str(component["value"]),
-                    x_mm=x_mm,
-                    y_mm=y_mm,
-                    rotation=rotation,
-                    pad_nets={},
-                )
-            )
-
-        if replacements or additions:
-            _transactional_board_write(
-                lambda current: _replace_board_blocks(current, replacements, additions)
-            )
-
-        lines = [
-            f"Auto-placement strategy: {payload.strategy}",
-            f"Existing footprints moved: {moved_existing}",
-            f"Missing footprints added: {len(additions)}",
-        ]
-        if missing_refs:
-            lines.append("Missing schematic references left untouched:")
-            lines.extend(f"- {reference}" for reference in missing_refs[:20])
-            if len(missing_refs) > 20:
-                lines.append(f"... and {len(missing_refs) - 20} more")
-            lines.append("Rerun with sync_missing=True to add them automatically.")
-        if replacements or additions:
-            lines.append(_finalize_file_based_board_edit(payload.allow_open_board))
-        return "\n".join(lines)
+        return _auto_place_by_schematic_impl(payload)
 
     @mcp.tool()
     @headless_compatible
@@ -3970,93 +4131,7 @@ def _register_placement_automation_tools(mcp: FastMCP) -> None:
             grid_mm=grid_mm,
             allow_open_board=allow_open_board,
         )
-        if refusal := _guard_file_based_board_edit(
-            "decoupling capacitor placement", payload.allow_open_board
-        ):
-            return refusal
-
-        board_file = _get_pcb_file_for_sync()
-        board_content = _normalize_board_content(
-            board_file.read_text(encoding="utf-8", errors="ignore")
-        )
-        existing = _parse_board_footprint_blocks(board_content)
-        if payload.ic_ref not in existing:
-            return f"Footprint '{payload.ic_ref}' was not found on the PCB file."
-
-        missing_caps = [reference for reference in payload.cap_refs if reference not in existing]
-        if missing_caps:
-            return (
-                "Decoupling placement aborted because some capacitor references are missing:\n"
-                + "\n".join(f"- {reference}" for reference in missing_caps)
-            )
-
-        ic_entry = existing[payload.ic_ref]
-        ic_x_mm = float(ic_entry["x_mm"] or 0.0)
-        ic_y_mm = float(ic_entry["y_mm"] or 0.0)
-        ic_height_mm = float(ic_entry["height_mm"])
-        ordered_caps = [existing[reference] for reference in payload.cap_refs]
-        pitch_mm = max(float(entry["width_mm"]) for entry in ordered_caps) + payload.grid_mm
-        base_x_mm = ic_x_mm - (((len(payload.cap_refs) - 1) * pitch_mm) / 2)
-        occupied = _collect_occupied_boxes(existing, exclude_refs=set(payload.cap_refs))
-
-        replacements: dict[str, str] = {}
-        placement_report: list[str] = []
-        moved = 0
-        for index, reference in enumerate(payload.cap_refs):
-            entry = existing[reference]
-            rule = _decoupling_rule_for_value(str(entry["value"]), payload.max_distance_mm)
-            rule_max_distance_mm = float(cast(float | int | str, rule["max_dist_mm"]))
-            width_mm = float(entry["width_mm"])
-            height_mm = float(entry["height_mm"])
-            preferred_y_mm = (
-                ic_y_mm - ((ic_height_mm / 2) + rule_max_distance_mm)
-                if payload.side == "same"
-                else ic_y_mm + ((ic_height_mm / 2) + rule_max_distance_mm)
-            )
-            resolved_x_mm, resolved_y_mm = _find_open_position(
-                base_x_mm + (index * pitch_mm),
-                preferred_y_mm,
-                width_mm,
-                height_mm,
-                SyncPcbFromSchematicInput(grid_mm=payload.grid_mm),
-                occupied,
-            )
-            replacements[reference] = _replace_root_at(
-                str(entry["block"]),
-                x_mm=resolved_x_mm,
-                y_mm=resolved_y_mm,
-                rotation=int(entry["rotation"]),
-            )
-            occupied.append(
-                {
-                    "x_mm": resolved_x_mm,
-                    "y_mm": resolved_y_mm,
-                    "width_mm": width_mm,
-                    "height_mm": height_mm,
-                }
-            )
-            moved += 1
-            distance_mm = math.dist((resolved_x_mm, resolved_y_mm), (ic_x_mm, ic_y_mm))
-            status_mark = "OK" if distance_mm <= rule_max_distance_mm + ic_height_mm else "WARN"
-            placement_report.append(
-                f"{reference} placed {distance_mm:.1f}mm from {payload.ic_ref} "
-                f"({str(entry['value'])}, {status_mark})"
-            )
-
-        _transactional_board_write(lambda current: _replace_board_blocks(current, replacements, []))
-
-        lines = [
-            f"Placed {moved} decoupling capacitor(s) near {payload.ic_ref}.",
-            f"Preferred placement band: {payload.side}.",
-        ]
-        lines.extend(placement_report)
-        if payload.side == "opposite":
-            lines.append(
-                "Note: file-based placement keeps the current copper side; "
-                "only the preferred placement band changes."
-            )
-        lines.append(_finalize_file_based_board_edit(payload.allow_open_board))
-        return "\n".join(lines)
+        return _place_decoupling_caps_impl(payload)
 
     @mcp.tool()
     @headless_compatible
@@ -4079,70 +4154,7 @@ def _register_placement_automation_tools(mcp: FastMCP) -> None:
             grid_mm=grid_mm,
             allow_open_board=allow_open_board,
         )
-        if refusal := _guard_file_based_board_edit("functional grouping", payload.allow_open_board):
-            return refusal
-
-        board_file = _get_pcb_file_for_sync()
-        board_content = _normalize_board_content(
-            board_file.read_text(encoding="utf-8", errors="ignore")
-        )
-        existing = _parse_board_footprint_blocks(board_content)
-        refs_in_groups = {
-            reference for group_refs in payload.groups.values() for reference in group_refs
-        }
-        replacements: dict[str, str] = {}
-        missing_refs: list[str] = []
-        moved = 0
-
-        occupied = _collect_occupied_boxes(existing, exclude_refs=refs_in_groups)
-        for group_index, (_group_name, references) in enumerate(payload.groups.items()):
-            group_x_mm = payload.origin_x_mm + (group_index * payload.group_spacing_mm)
-            cursor_y_mm = payload.origin_y_mm
-            for reference in references:
-                entry = existing.get(reference)
-                if entry is None:
-                    missing_refs.append(reference)
-                    continue
-                width_mm = float(entry["width_mm"])
-                height_mm = float(entry["height_mm"])
-                resolved_x_mm, resolved_y_mm = _find_open_position(
-                    group_x_mm,
-                    cursor_y_mm,
-                    width_mm,
-                    height_mm,
-                    SyncPcbFromSchematicInput(grid_mm=payload.grid_mm),
-                    occupied,
-                )
-                replacements[reference] = _replace_root_at(
-                    str(entry["block"]),
-                    x_mm=resolved_x_mm,
-                    y_mm=resolved_y_mm,
-                    rotation=int(entry["rotation"]),
-                )
-                occupied.append(
-                    {
-                        "x_mm": resolved_x_mm,
-                        "y_mm": resolved_y_mm,
-                        "width_mm": width_mm,
-                        "height_mm": height_mm,
-                    }
-                )
-                cursor_y_mm = resolved_y_mm + height_mm + payload.item_spacing_mm
-                moved += 1
-
-        if not replacements:
-            return "No existing footprints were moved by functional grouping."
-
-        _transactional_board_write(lambda current: _replace_board_blocks(current, replacements, []))
-        lines = [
-            f"Functional groups placed: {len(payload.groups)}",
-            f"Footprints moved: {moved}",
-        ]
-        if missing_refs:
-            lines.append("Missing references:")
-            lines.extend(f"- {reference}" for reference in missing_refs[:20])
-        lines.append(_finalize_file_based_board_edit(payload.allow_open_board))
-        return "\n".join(lines)
+        return _group_by_function_impl(payload)
 
 
 def _register_zone_authoring_tools(mcp: FastMCP) -> None:

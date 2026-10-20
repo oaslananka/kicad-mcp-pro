@@ -493,6 +493,27 @@ class SchematicRouter:
             return None
         return self.bundle_step_discount if offset == self.BUNDLE_PITCH else 1.0
 
+    def _is_step_refused(
+        self,
+        current: tuple[int, int],
+        nxt: tuple[int, int],
+        turning: bool,
+    ) -> bool:
+        if self._blocked(nxt, self._start_node, self._end_node):
+            return True
+        if turning and current not in self._exempt and self._occupied_kind(current) == 1:
+            return True
+        if nxt not in self._exempt and self._occupied_kind(nxt) == 2:
+            return True
+        if self._edge_overlaps_occupied(current, nxt):
+            return True
+        return self._hugs_boundary(current, nxt)
+
+    def _arrival_penalty(self, nxt: tuple[int, int], direction: tuple[int, int]) -> float:
+        if nxt == self._end_node and self._goal_dir is not None and direction != self._goal_dir:
+            return 3.0
+        return 0.0
+
     def _step_cost(
         self,
         current: tuple[int, int],
@@ -509,51 +530,20 @@ class SchematicRouter:
         make KiCad union two nets into a silent short, so they are refused; a
         perpendicular crossing is legal and merely priced.
         """
-        if self._blocked(nxt, self._start_node, self._end_node):
-            return None
         turning = previous_dir is not None and previous_dir != direction
-        # A turn makes ``current`` a vertex of the path.  A vertex on a foreign
-        # wire is an endpoint-on-wire contact, which KiCad unions.
-        if turning and current not in self._exempt and self._occupied_kind(current) == 1:
-            return None
-        # A foreign wire's own endpoint must never be stood on, even in a straight
-        # through-move: that endpoint would lie on our run.
-        if nxt not in self._exempt and self._occupied_kind(nxt) == 2:
-            return None
-        if self._edge_overlaps_occupied(current, nxt):
-            return None
-        # A drawn boundary is not solid -- the route has to cross one to reach a
-        # pin inside it -- but travelling along one is refused: the wire would
-        # read as the block's own border rather than as a connection.
-        if self._hugs_boundary(current, nxt):
+        if self._is_step_refused(current, nxt, turning):
             return None
         next_bends = bends + (1 if turning else 0)
         if next_bends > self._max_bends:
             return None
-        move_cost = 1.0 + (3.0 if turning else 0.0)
-        # Running alongside existing wire is the sheet's own idiom -- a bundle is
-        # what a reader follows -- so a step at the canonical pitch is discounted,
-        # and a step closer than that is refused outright.  Checked even on a
-        # turning move: the first step of a run is where it either joins a bundle
-        # or crowds one.
         multiplier = self._bundle_multiplier(nxt, direction)
         if multiplier is None:
             return None
+        move_cost = 1.0 + (3.0 if turning else 0.0)
         if not turning:
             move_cost *= multiplier
-        # A crossing is charged wherever it happens, turning move or straight.
-        # It was once charged only on straight moves, on the assumption that a
-        # turn onto a foreign wire had already been refused -- but a turn is
-        # precisely where a route crosses one: stepping through to the far side of
-        # a wire it was running beside.  Leaving that move free made a two-bend
-        # detour cheaper than a one-bend crossing, so the search bought an extra
-        # corner to dodge a toll it still had to pay.
         move_cost += self.crossing_penalty * self._crossings_at(nxt)
-        if nxt == self._end_node and self._goal_dir is not None and direction != self._goal_dir:
-            # The search stops here, so this turn would otherwise be free:
-            # arriving across the grain of the final stub costs a real bend in the
-            # finished wire and has to be paid for.
-            move_cost += 3.0
+        move_cost += self._arrival_penalty(nxt, direction)
         return move_cost, next_bends
 
     @staticmethod

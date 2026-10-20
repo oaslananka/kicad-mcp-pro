@@ -1615,6 +1615,16 @@ class _StreamableHttpContractMiddleware:
             await self.app(scope, receive, send)
             return
 
+        await self._handle_post(scope, receive, send, headers, cfg)
+
+    async def _handle_post(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+        headers: Mapping[str, str],
+        cfg: KiCadMCPConfig,
+    ) -> None:
         body, replay_receive = await _buffer_request_body(receive)
 
         rpc_id, rpc_method = _json_rpc_metadata(body)
@@ -1628,7 +1638,7 @@ class _StreamableHttpContractMiddleware:
                 post_response_status = status_value if isinstance(status_value, int) else None
             await original_send(message)
 
-        send = post_request_send
+        send_proc = post_request_send
         if rpc_method == "initialize" and cfg.protocol_lane == "stable":
             logger.info(
                 "mcp_transport_initialize",
@@ -1637,7 +1647,7 @@ class _StreamableHttpContractMiddleware:
             )
 
         if not await self._validate_post_headers(
-            headers, body, rpc_id, rpc_method, cfg, scope, replay_receive, send
+            headers, body, rpc_id, rpc_method, cfg, scope, replay_receive, send_proc
         ):
             return
 
@@ -1653,10 +1663,10 @@ class _StreamableHttpContractMiddleware:
                         request_id=rpc_id,
                         mcp_session_id=response_session_id,
                     )
-            await send(message)
+            await send_proc(message)
 
         with otel.mcp_request_span(
-            http_method=str(method),
+            http_method="POST",
             mount_path=cfg.mount_path,
             session_present=bool(session_id),
         ) as request_span:

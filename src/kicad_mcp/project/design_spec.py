@@ -801,6 +801,28 @@ _MCU_TOKENS = frozenset(("ESP32", "RP2040", "STM32", "NRF"))
 _IC_TOKENS = frozenset(("QFP", "QFN", "BGA", "SOIC", "DFN", "LGA", "MODULE", "DIP"))
 
 
+def _matches_connector(upper_ref: str, upper_name: str) -> bool:
+    return upper_ref.startswith("J") or "CONNECTOR" in upper_name or "USB" in upper_name
+
+
+def _matches_sensor(upper_name: str, upper_value: str) -> bool:
+    if "SENSOR" in upper_name or "SENSOR" in upper_value:
+        return True
+    return any(token in upper_name for token in _SENSOR_TOKENS)
+
+
+def _matches_mcu(upper_name: str, upper_value: str) -> bool:
+    return "MCU" in upper_value or any(token in upper_name for token in _MCU_TOKENS)
+
+
+def _matches_regulator(upper_name: str, upper_value: str) -> bool:
+    return "REGULATOR" in upper_name or "BUCK" in upper_value or "LDO" in upper_value
+
+
+def _matches_ic(upper_ref: str, upper_name: str) -> bool:
+    return upper_ref.startswith("U") and any(token in upper_name for token in _IC_TOKENS)
+
+
 def _component_category(reference: str, entry: dict[str, Any]) -> str:
     footprint_name = str(entry.get("name", "")).strip()
     value_name = str(entry.get("value", "")).strip()
@@ -811,19 +833,17 @@ def _component_category(reference: str, entry: dict[str, Any]) -> str:
     upper_ref = reference.upper()
     upper_name = footprint_name.upper()
     upper_value = value_name.upper()
-    if upper_ref.startswith("J") or "CONNECTOR" in upper_name or "USB" in upper_name:
+    if _matches_connector(upper_ref, upper_name):
         return "connector"
     if upper_ref.startswith("C") or "CAPACITOR" in upper_name:
         return "capacitor"
-    if "SENSOR" in upper_name or "SENSOR" in upper_value:
+    if _matches_sensor(upper_name, upper_value):
         return "sensor"
-    if any(token in upper_name for token in _SENSOR_TOKENS):
-        return "sensor"
-    if any(token in upper_name for token in _MCU_TOKENS) or "MCU" in upper_value:
+    if _matches_mcu(upper_name, upper_value):
         return "mcu"
-    if "REGULATOR" in upper_name or "BUCK" in upper_value or "LDO" in upper_value:
+    if _matches_regulator(upper_name, upper_value):
         return "regulator"
-    if upper_ref.startswith("U") and any(token in upper_name for token in _IC_TOKENS):
+    if _matches_ic(upper_ref, upper_name):
         return "ic"
     return ""
 
