@@ -187,7 +187,7 @@ class SchematicWriteUnsafeError(KiCadMcpError):
 
 
 class SchematicRoutingUnsafeError(KiCadMcpError):
-    """A wire route cannot be safely committed without merging unrelated nets."""
+    """A wire route was refused because its fallback path is unsafe."""
 
     code = "SCHEMATIC_ROUTING_UNSAFE"
     hint = "Route another way or use local net labels; no wire was written."
