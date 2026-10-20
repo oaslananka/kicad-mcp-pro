@@ -325,13 +325,10 @@ async def test_inherited_thvd1450_symbol_matches_native_kicad_library(tmp_path: 
     assert '(property "Manufacturer" "Texas Instruments"' in schematic.read_text(encoding="utf-8")
 
     erc_report = tmp_path / "inherited-symbol-erc.rpt"
-    completed = subprocess.run(
-        [kicad_cli, "sch", "erc", "-o", str(erc_report), str(schematic)],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
+    # Reuse the existing bounded, shell-free native KiCad CLI smoke runner.
+    from tests.integration.test_kicad_cli_smoke import _run_kicad_cli
+
+    completed = _run_kicad_cli(Path(kicad_cli), "sch", "erc", "-o", str(erc_report), str(schematic))
     # A one-symbol schematic intentionally has other unconnected/power ERC errors.
     assert completed.returncode in (0, 5), completed.stderr
     report = erc_report.read_text(encoding="utf-8")
