@@ -218,6 +218,88 @@ def _rollup(findings: list[Finding]) -> str:
     return "PASS"
 
 
+def _verify_pin_pad_alignment(pin_numbers: set[str], pad_numbers: set[str]) -> list[Finding]:
+    findings: list[Finding] = []
+    if len(pin_numbers) == len(pad_numbers):
+        findings.append(
+            Finding(
+                "PASS",
+                "pin_pad_count",
+                f"Pin count matches pad count ({len(pin_numbers)}).",
+            )
+        )
+    else:
+        findings.append(
+            Finding(
+                "FAIL",
+                "pin_pad_count",
+                f"Symbol has {len(pin_numbers)} pins but footprint has "
+                f"{len(pad_numbers)} connectable pads.",
+            )
+        )
+
+    only_pins = sorted(pin_numbers - pad_numbers)
+    only_pads = sorted(pad_numbers - pin_numbers)
+    if not only_pins and not only_pads:
+        findings.append(
+            Finding("PASS", "pin_pad_numbers", "Pin numbers match pad numbers exactly.")
+        )
+    else:
+        if only_pins:
+            findings.append(
+                Finding(
+                    "FAIL",
+                    "pin_pad_numbers",
+                    f"Pins with no matching pad: {', '.join(only_pins)}.",
+                )
+            )
+        if only_pads:
+            findings.append(
+                Finding(
+                    "WARN",
+                    "pin_pad_numbers",
+                    f"Pads with no matching pin: {', '.join(only_pads)}.",
+                )
+            )
+    return findings
+
+
+def _verify_metadata_and_model(
+    footprint: FootprintShape,
+    known_contract_category: str,
+    datasheet: str,
+) -> list[Finding]:
+    findings: list[Finding] = []
+    if footprint.has_3d_model:
+        findings.append(Finding("PASS", "model_3d", "Footprint references a 3D model."))
+    else:
+        findings.append(
+            Finding("WARN", "model_3d", "Footprint does not reference a 3D model (advisory).")
+        )
+
+    if known_contract_category:
+        findings.append(
+            Finding(
+                "PASS",
+                "known_contract",
+                f"Recognized as a '{known_contract_category}' component with a known "
+                "connectivity contract.",
+            )
+        )
+
+    if datasheet:
+        findings.append(Finding("INFO", "datasheet", f"Datasheet evidence available: {datasheet}"))
+    else:
+        findings.append(
+            Finding(
+                "INFO",
+                "datasheet",
+                "No datasheet property on the symbol (advisory; not auto-filled).",
+            )
+        )
+    return findings
+
+
 def verify_contract(
     *,
     reference: str,
@@ -251,47 +333,7 @@ def verify_contract(
         )
 
     if pin_numbers and pad_numbers:
-        if len(pin_numbers) == len(pad_numbers):
-            findings.append(
-                Finding(
-                    "PASS",
-                    "pin_pad_count",
-                    f"Pin count matches pad count ({len(pin_numbers)}).",
-                )
-            )
-        else:
-            findings.append(
-                Finding(
-                    "FAIL",
-                    "pin_pad_count",
-                    f"Symbol has {len(pin_numbers)} pins but footprint has "
-                    f"{len(pad_numbers)} connectable pads.",
-                )
-            )
-
-        only_pins = sorted(pin_numbers - pad_numbers)
-        only_pads = sorted(pad_numbers - pin_numbers)
-        if not only_pins and not only_pads:
-            findings.append(
-                Finding("PASS", "pin_pad_numbers", "Pin numbers match pad numbers exactly.")
-            )
-        else:
-            if only_pins:
-                findings.append(
-                    Finding(
-                        "FAIL",
-                        "pin_pad_numbers",
-                        f"Pins with no matching pad: {', '.join(only_pins)}.",
-                    )
-                )
-            if only_pads:
-                findings.append(
-                    Finding(
-                        "WARN",
-                        "pin_pad_numbers",
-                        f"Pads with no matching pin: {', '.join(only_pads)}.",
-                    )
-                )
+        findings.extend(_verify_pin_pad_alignment(pin_numbers, pad_numbers))
 
     findings.extend(
         [
@@ -300,34 +342,7 @@ def verify_contract(
             _completeness_finding("silkscreen", footprint.has_silkscreen),
         ]
     )
-
-    if footprint.has_3d_model:
-        findings.append(Finding("PASS", "model_3d", "Footprint references a 3D model."))
-    else:
-        findings.append(
-            Finding("WARN", "model_3d", "Footprint does not reference a 3D model (advisory).")
-        )
-
-    if known_contract_category:
-        findings.append(
-            Finding(
-                "PASS",
-                "known_contract",
-                f"Recognized as a '{known_contract_category}' component with a known "
-                "connectivity contract.",
-            )
-        )
-
-    if datasheet:
-        findings.append(Finding("INFO", "datasheet", f"Datasheet evidence available: {datasheet}"))
-    else:
-        findings.append(
-            Finding(
-                "INFO",
-                "datasheet",
-                "No datasheet property on the symbol (advisory; not auto-filled).",
-            )
-        )
+    findings.extend(_verify_metadata_and_model(footprint, known_contract_category, datasheet))
 
     return ContractReport(
         reference=reference,

@@ -14,6 +14,36 @@ type SExprValue = SExprAtom | SExprNode
 _SAFE_ATOM = re.compile(r"^[A-Za-z0-9_+./:-]+$")
 
 
+def _consume_string_token(content: str, start: int) -> tuple[str, int]:
+    cursor = start + 1
+    escaped = False
+    buffer: list[str] = []
+    while cursor < len(content):
+        current = content[cursor]
+        if escaped:
+            buffer.append(current)
+            escaped = False
+        elif current == "\\":
+            escaped = True
+        elif current == '"':
+            return "".join(buffer), cursor + 1
+        else:
+            buffer.append(current)
+        cursor += 1
+    raise ValueError("Unterminated string literal in .kicad_dru content.")
+
+
+def _consume_atom_token(content: str, start: int) -> tuple[str, int]:
+    cursor = start
+    while (
+        cursor < len(content)
+        and not content[cursor].isspace()
+        and content[cursor] not in {"(", ")"}
+    ):
+        cursor += 1
+    return content[start:cursor], cursor
+
+
 def _tokenize(content: str) -> list[str]:
     tokens: list[str] = []
     index = 0
@@ -21,45 +51,15 @@ def _tokenize(content: str) -> list[str]:
         char = content[index]
         if char.isspace():
             index += 1
-            continue
-        if char in {"(", ")"}:
+        elif char in {"(", ")"}:
             tokens.append(char)
             index += 1
-            continue
-        if char == '"':
-            cursor = index + 1
-            escaped = False
-            buffer: list[str] = []
-            while cursor < len(content):
-                current = content[cursor]
-                if escaped:
-                    buffer.append(current)
-                    escaped = False
-                elif current == "\\":
-                    escaped = True
-                elif current == '"':
-                    tokens.append("".join(buffer))
-                    index = cursor + 1
-                    break
-                else:
-                    buffer.append(current)
-                cursor += 1
-            else:
-                raise ValueError("Unterminated string literal in .kicad_dru content.")
-            continue
-        cursor = index
-        while (
-            cursor < len(content)
-            and not content[cursor].isspace()
-            and content[cursor]
-            not in {
-                "(",
-                ")",
-            }
-        ):
-            cursor += 1
-        tokens.append(content[index:cursor])
-        index = cursor
+        elif char == '"':
+            token, index = _consume_string_token(content, index)
+            tokens.append(token)
+        else:
+            token, index = _consume_atom_token(content, index)
+            tokens.append(token)
     return tokens
 
 

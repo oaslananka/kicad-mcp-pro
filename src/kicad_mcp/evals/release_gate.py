@@ -377,6 +377,81 @@ def _compare_config_with_baseline(
     return comparison
 
 
+def _evaluate_single_config_evidence(
+    config_id: str,
+    config_evidence: dict[str, Any] | None,
+    minimum_repeats: int,
+    baseline_approved: bool,
+    baseline_entry: object,
+    thresholds: EvalThresholds,
+    read_only_ids: frozenset[str],
+    revisions: set[str],
+    classifications: dict[str, list[str]],
+    observed: dict[str, object],
+    comparisons: dict[str, object],
+    per_case: list[dict[str, object]],
+) -> None:
+    if config_evidence is None:
+        _append(classifications, "infrastructure_failures", f"{config_id}: evidence missing")
+        return
+    try:
+        configuration = _mapping(config_evidence.get("configuration"), "Evidence configuration")
+        summary = _mapping(config_evidence.get("summary"), "Evidence summary")
+    except ValueError:
+        _append(
+            classifications,
+            "infrastructure_failures",
+            f"{config_id}: malformed configuration or summary",
+        )
+        return
+
+    source_revision = config_evidence.get("source_revision")
+    if isinstance(source_revision, str):
+        revisions.add(source_revision)
+    else:
+        _append(
+            classifications,
+            "infrastructure_failures",
+            f"{config_id}: source revision missing",
+        )
+    repeats = config_evidence.get("repeats")
+    if isinstance(repeats, bool) or not isinstance(repeats, int) or repeats < minimum_repeats:
+        _append(
+            classifications,
+            "infrastructure_failures",
+            f"{config_id}: repeats below {minimum_repeats}",
+        )
+
+    observed[config_id] = _build_observed_entry(configuration, summary, repeats, config_evidence)
+
+    if config_evidence.get("complete", True) is not True:
+        _append(
+            classifications,
+            "infrastructure_failures",
+            f"{config_id}: checkpoint incomplete",
+        )
+
+    _check_adapter_and_threshold_failures(config_id, summary, thresholds, classifications)
+
+    per_case.extend(
+        _safe_case_failures(config_id, config_evidence.get("executions"), read_only_ids)
+    )
+
+    if not baseline_approved:
+        return
+
+    comparison = _compare_config_with_baseline(
+        config_id,
+        configuration,
+        summary,
+        baseline_entry,
+        thresholds,
+        classifications,
+    )
+    if comparison is not None:
+        comparisons[config_id] = comparison
+
+
 def evaluate_release_gate(
     evidence_paths: Sequence[str | Path],
     *,
@@ -407,68 +482,20 @@ def evaluate_release_gate(
     minimum_repeats = int(baseline["minimum_repeats"])
 
     for config_id in required:
-        config_evidence = evidence_by_id.get(config_id)
-        if config_evidence is None:
-            _append(classifications, "infrastructure_failures", f"{config_id}: evidence missing")
-            continue
-        try:
-            configuration = _mapping(config_evidence.get("configuration"), "Evidence configuration")
-            summary = _mapping(config_evidence.get("summary"), "Evidence summary")
-        except ValueError:
-            _append(
-                classifications,
-                "infrastructure_failures",
-                f"{config_id}: malformed configuration or summary",
-            )
-            continue
-
-        source_revision = config_evidence.get("source_revision")
-        if isinstance(source_revision, str):
-            revisions.add(source_revision)
-        else:
-            _append(
-                classifications,
-                "infrastructure_failures",
-                f"{config_id}: source revision missing",
-            )
-        repeats = config_evidence.get("repeats")
-        if isinstance(repeats, bool) or not isinstance(repeats, int) or repeats < minimum_repeats:
-            _append(
-                classifications,
-                "infrastructure_failures",
-                f"{config_id}: repeats below {minimum_repeats}",
-            )
-
-        observed[config_id] = _build_observed_entry(
-            configuration, summary, repeats, config_evidence
+        _evaluate_single_config_evidence(
+            config_id=config_id,
+            config_evidence=evidence_by_id.get(config_id),
+            minimum_repeats=minimum_repeats,
+            baseline_approved=baseline_approved,
+            baseline_entry=baselines.get(config_id),
+            thresholds=thresholds,
+            read_only_ids=read_only_ids,
+            revisions=revisions,
+            classifications=classifications,
+            observed=observed,
+            comparisons=comparisons,
+            per_case=per_case,
         )
-
-        if config_evidence.get("complete", True) is not True:
-            _append(
-                classifications,
-                "infrastructure_failures",
-                f"{config_id}: checkpoint incomplete",
-            )
-
-        _check_adapter_and_threshold_failures(config_id, summary, thresholds, classifications)
-
-        per_case.extend(
-            _safe_case_failures(config_id, config_evidence.get("executions"), read_only_ids)
-        )
-
-        if not baseline_approved:
-            continue
-
-        comparison = _compare_config_with_baseline(
-            config_id,
-            configuration,
-            summary,
-            baselines.get(config_id),
-            thresholds,
-            classifications,
-        )
-        if comparison is not None:
-            comparisons[config_id] = comparison
 
     unexpected = sorted(set(evidence_by_id) - set(required))
     for config_id in unexpected:

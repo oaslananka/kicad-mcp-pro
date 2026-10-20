@@ -1484,6 +1484,36 @@ def _footprint_pad_numbers_from_assignment(assignment: str) -> list[str]:
     return pad_numbers
 
 
+def _inspect_component_pad_nets(
+    reference: str,
+    pad_numbers: list[str],
+    net_map: dict[tuple[str, str], str],
+) -> tuple[int, int, str | None]:
+    named = 0
+    unresolved = 0
+    for pad_number in pad_numbers:
+        if net_map.get((reference, pad_number)):
+            named += 1
+        else:
+            unresolved += 1
+    unresolved_ref = (
+        f"{reference} ({unresolved}/{len(pad_numbers)} pad(s) without net names)"
+        if unresolved
+        else None
+    )
+    return named, unresolved, unresolved_ref
+
+
+def _determine_pad_net_quality(total_pads: int, named_pads: int, coverage_pct: float) -> str:
+    if total_pads == 0:
+        return "UNKNOWN"
+    if named_pads == total_pads:
+        return "CLEAN"
+    if coverage_pct >= 50.0:
+        return "DEGRADED"
+    return "POOR"
+
+
 def _schematic_pad_net_summary(
     components: list[dict[str, Any]],
     net_map: dict[tuple[str, str], str],
@@ -1498,30 +1528,19 @@ def _schematic_pad_net_summary(
         pad_numbers = _footprint_pad_numbers_from_assignment(str(component["footprint"]))
         if not pad_numbers:
             continue
-        unresolved_count = 0
-        for pad_number in pad_numbers:
-            total_pads += 1
-            if net_map.get((reference, pad_number)):
-                named_pads += 1
-            else:
-                unresolved_count += 1
-        if unresolved_count == 0:
+        c_named, c_unresolved, unresolved_ref = _inspect_component_pad_nets(
+            reference, pad_numbers, net_map
+        )
+        total_pads += len(pad_numbers)
+        named_pads += c_named
+        if c_unresolved == 0:
             fully_named_refs += 1
         else:
             partial_refs += 1
-        if unresolved_count:
-            unresolved_refs.append(
-                f"{reference} ({unresolved_count}/{len(pad_numbers)} pad(s) without net names)"
-            )
+        if unresolved_ref is not None:
+            unresolved_refs.append(unresolved_ref)
     coverage_pct = round((named_pads / total_pads) * 100, 1) if total_pads else 100.0
-    if total_pads == 0:
-        quality = "UNKNOWN"
-    elif named_pads == total_pads:
-        quality = "CLEAN"
-    elif coverage_pct >= 50.0:
-        quality = "DEGRADED"
-    else:
-        quality = "POOR"
+    quality = _determine_pad_net_quality(total_pads, named_pads, coverage_pct)
     return {
         "total_pads": total_pads,
         "named_pads": named_pads,

@@ -57,11 +57,8 @@ class IRDiff:
 # ---------------------------------------------------------------------------
 
 
-def circuit_diff(before: IRCircuit, after: IRCircuit) -> list[IRDiff]:
-    """Compare two ``IRCircuit`` states and return the list of changes."""
+def _diff_components(before: IRCircuit, after: IRCircuit) -> list[IRDiff]:
     changes: list[IRDiff] = []
-
-    # -- Components ---------------------------------------------------------
     before_refs = set(before.components)
     after_refs = set(after.components)
 
@@ -100,8 +97,11 @@ def circuit_diff(before: IRCircuit, after: IRCircuit) -> list[IRDiff]:
                     after=a,
                 )
             )
+    return changes
 
-    # -- Nets ---------------------------------------------------------------
+
+def _diff_nets(before: IRCircuit, after: IRCircuit) -> list[IRDiff]:
+    changes: list[IRDiff] = []
     before_net_names = set(before.nets)
     after_net_names = set(after.nets)
 
@@ -146,8 +146,11 @@ def circuit_diff(before: IRCircuit, after: IRCircuit) -> list[IRDiff]:
                     before=(ref, pin),
                 )
             )
+    return changes
 
-    # -- Power rails --------------------------------------------------------
+
+def _diff_power_rails(before: IRCircuit, after: IRCircuit) -> list[IRDiff]:
+    changes: list[IRDiff] = []
     before_rails = set(before.power_rails)
     after_rails = set(after.power_rails)
 
@@ -182,8 +185,11 @@ def circuit_diff(before: IRCircuit, after: IRCircuit) -> list[IRDiff]:
                     after=a_rail,
                 )
             )
+    return changes
 
-    # -- Interfaces ---------------------------------------------------------
+
+def _diff_interfaces(before: IRCircuit, after: IRCircuit) -> list[IRDiff]:
+    changes: list[IRDiff] = []
     before_ifaces = set(before.interfaces)
     after_ifaces = set(after.interfaces)
 
@@ -218,8 +224,17 @@ def circuit_diff(before: IRCircuit, after: IRCircuit) -> list[IRDiff]:
                     after=a_iface,
                 )
             )
-
     return changes
+
+
+def circuit_diff(before: IRCircuit, after: IRCircuit) -> list[IRDiff]:
+    """Compare two ``IRCircuit`` states and return the list of changes."""
+    return [
+        *_diff_components(before, after),
+        *_diff_nets(before, after),
+        *_diff_power_rails(before, after),
+        *_diff_interfaces(before, after),
+    ]
 
 
 def render_diff(diff: IRDiff) -> str:
