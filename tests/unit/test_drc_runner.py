@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess  # nosec B404
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -353,13 +354,11 @@ def test_architecture_checker_tracks_canonical_drc_runner() -> None:
 
 
 def test_run_drc_report_timeout_and_oserror(tmp_path: Path) -> None:
-    import subprocess
-
     pcb_file = tmp_path / "board.kicad_pcb"
     pcb_file.write_text("(kicad_pcb)", encoding="utf-8")
 
     def timeout_variants(_variants: list[list[str]]) -> tuple[int, str, str]:
-        raise subprocess.TimeoutExpired(cmd=["kicad-cli"], timeout=10)
+        raise subprocess.TimeoutExpired("kicad-cli", 10)
 
     res_timeout = run_drc_report(
         "drc.json",
