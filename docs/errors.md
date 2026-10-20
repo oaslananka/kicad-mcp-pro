@@ -36,6 +36,7 @@ for where errors are defined.
 | `EXTERNAL_TOOL_UNAVAILABLE` | no | none | — | A required external executable is unavailable. Install it or configure its path explicitly. |
 | `SERVER_INITIALIZING` | yes | timeout | 2000 | Tool registration is still in progress (deferred startup). Retry in a moment. |
 | `SCHEMATIC_WRITE_UNSAFE` | no | none | — | A schematic write would have dropped structure (e.g. a global label); the original was restored and the write refused rather than silently corrupting the file. |
+| `SCHEMATIC_ROUTING_UNSAFE` | no | none | — | The proposed wire route could not be verified as safe. No wire was written; choose another route or use local net labels before retrying. |
 | `MANUAL_STEP_REQUIRED` | yes | state | — | A workflow needs a one-time KiCad GUI step (e.g. applying a routed Specctra SES). Perform the described step, then retry. |
 | `INTERNAL_ERROR` | no | none | — | An unexpected, non-domain exception was masked to a stable shape. Run `doctor` and retry with corrected configuration. |
 | `CONFIGURATION_ERROR` | no | none | — | Malformed KiCad MCP configuration (raised by CLI/diagnostic commands). Fix the configuration and retry. |

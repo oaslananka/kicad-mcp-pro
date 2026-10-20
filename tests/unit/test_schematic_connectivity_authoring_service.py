@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from kicad_mcp.errors import SchematicRoutingUnsafeError
 from kicad_mcp.schematic.connectivity_authoring import (
     BoundingBoxLike,
     SchematicConnectivityAuthoringService,
@@ -473,24 +474,53 @@ def test_route_wire_between_pins_reports_overlap_without_write(tmp_path: Path) -
     assert harness.writes == []
 
 
-def test_route_wire_between_pins_writes_segments_and_warning(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "warning",
+    [
+        "WARNING: obstacle_bypass_failed",
+        "WARNING: net_isolation_failed",
+        "WARNING: unexpected_route_failure",
+    ],
+)
+def test_route_wire_between_pins_refuses_unsafe_fallback_without_write(
+    tmp_path: Path, warning: str
+) -> None:
     harness = _harness(
         tmp_path,
         parsed={"symbols": [_symbol("U1"), _symbol("R1")], "power_symbols": []},
         pin_positions={("Device", "R"): {"1": (1.0, 1.0), "2": (5.0, 5.0)}},
         route_segments=[(1.0, 1.0, 5.0, 1.0), (5.0, 1.0, 5.0, 5.0)],
-        route_warning="WARNING: obstacle_bypass_failed",
+        route_warning=warning,
     )
 
-    result = harness.service.route_wire_between_pins("U1", "1", "R1", "2", snap_to_grid=False)
+    original = (tmp_path / "board.kicad_sch").read_bytes()
+    with pytest.raises(SchematicRoutingUnsafeError) as error:
+        harness.service.route_wire_between_pins("U1", "1", "R1", "2")
 
-    assert result == (
-        "Reloaded\nRouted 2 wire segment(s) between U1:1 and R1:2.\nWARNING: obstacle_bypass_failed"
+    assert str(error.value) == (
+        f"Route refused between U1:1 and R1:2: {warning}. No schematic changes were made."
     )
+    assert error.value.to_payload()["code"] == "SCHEMATIC_ROUTING_UNSAFE"
+    assert error.value.to_payload()["retryable"] is False
+    assert harness.writes == []
+    assert (tmp_path / "board.kicad_sch").read_bytes() == original
+
+
+def test_route_wire_between_pins_allows_reviewed_crossing_warning(tmp_path: Path) -> None:
+    harness = _harness(
+        tmp_path,
+        parsed={"symbols": [_symbol("U1"), _symbol("R1")], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (1.0, 1.0), "2": (5.0, 5.0)}},
+        route_segments=[(1.0, 1.0, 5.0, 1.0), (5.0, 1.0, 5.0, 5.0)],
+        route_warning="WARNING: net_crossing_unavoidable",
+    )
+
+    result = harness.service.route_wire_between_pins("U1", "1", "R1", "2")
+
+    assert "Routed 2 wire segment(s)" in result
+    assert "WARNING: net_crossing_unavoidable" in result
     assert len(harness.writes) == 1
-    assert harness.writes[0][0] is None
     assert "WIRE(1.0,1.0->5.0,1.0)" in harness.writes[0][1]
-    assert "WIRE(5.0,1.0->5.0,5.0)" in harness.writes[0][1]
 
 
 def test_add_missing_junctions_runs_fixer_before_reload(tmp_path: Path) -> None:

@@ -186,6 +186,14 @@ class SchematicWriteUnsafeError(KiCadMcpError):
     retryable = False
 
 
+class SchematicRoutingUnsafeError(KiCadMcpError):
+    """A wire route was refused because its fallback path is unsafe."""
+
+    code = "SCHEMATIC_ROUTING_UNSAFE"
+    hint = "Route another way or use local net labels; no wire was written."
+    retryable = False
+
+
 def error_payload(exc: BaseException) -> ErrorPayload:
     """Map an arbitrary exception to the stable error payload shape."""
     if isinstance(exc, KiCadMcpError):
