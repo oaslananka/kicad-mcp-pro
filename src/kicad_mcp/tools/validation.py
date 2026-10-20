@@ -1747,6 +1747,24 @@ def _manhattan_mst_length(points: list[tuple[float, float]]) -> float:
     return total
 
 
+@dataclass(frozen=True)
+class _PlacementScoreInputs:
+    overlaps: list[str]
+    outside: list[str]
+    connector_edge_violations: list[str]
+    decoupling_distance_violations: list[str]
+    keepout_violations: list[str]
+    power_tree_violations: list[str]
+    sensor_cluster_violations: list[str]
+    analog_digital_violations: list[str]
+    warnings: list[str]
+    thermal_proximity_sum: float
+    critical_net_proxy_density: float
+    hs_grouping_violations: list[str]
+    mount_hole_violations: list[str]
+    connector_edge_spec_violations: list[str]
+
+
 class _PlacementEvaluator:
     """Evaluate PCB placement quality, design intent rules, and mechanical constraints."""
 
@@ -2181,39 +2199,22 @@ class _PlacementEvaluator:
     def _evaluate_mechanical(self) -> tuple[list[str], list[str]]:
         return self._evaluate_mount_holes(), self._evaluate_connector_edge_specs()
 
-    def _calculate_score(
-        self,
-        *,
-        overlaps: list[str],
-        outside: list[str],
-        connector_edge_violations: list[str],
-        decoupling_distance_violations: list[str],
-        keepout_violations: list[str],
-        power_tree_violations: list[str],
-        sensor_cluster_violations: list[str],
-        analog_digital_violations: list[str],
-        warnings: list[str],
-        thermal_proximity_sum: float,
-        critical_net_proxy_density: float,
-        hs_grouping_violations: list[str],
-        mount_hole_violations: list[str],
-        connector_edge_spec_violations: list[str],
-    ) -> int:
+    def _calculate_score(self, inputs: _PlacementScoreInputs) -> int:
         score = 100
-        score -= min(len(overlaps) * 20, 40)
-        score -= min(len(outside) * 20, 40)
-        score -= min(len(connector_edge_violations) * 15, 30)
-        score -= min(len(decoupling_distance_violations) * 15, 30)
-        score -= min(len(keepout_violations) * 15, 30)
-        score -= min(len(power_tree_violations) * 15, 30)
-        score -= min(len(sensor_cluster_violations) * 15, 30)
-        score -= min(len(analog_digital_violations) * 15, 30)
-        score -= min(len(warnings) * 5, 20)
-        score -= min(int(round(thermal_proximity_sum * 10.0)), 10)
-        score -= min(int(critical_net_proxy_density // 20), 10)
-        score -= min(len(hs_grouping_violations) * 10, 20)
-        score -= min(len(mount_hole_violations) * 10, 20)
-        score -= min(len(connector_edge_spec_violations) * 10, 20)
+        score -= min(len(inputs.overlaps) * 20, 40)
+        score -= min(len(inputs.outside) * 20, 40)
+        score -= min(len(inputs.connector_edge_violations) * 15, 30)
+        score -= min(len(inputs.decoupling_distance_violations) * 15, 30)
+        score -= min(len(inputs.keepout_violations) * 15, 30)
+        score -= min(len(inputs.power_tree_violations) * 15, 30)
+        score -= min(len(inputs.sensor_cluster_violations) * 15, 30)
+        score -= min(len(inputs.analog_digital_violations) * 15, 30)
+        score -= min(len(inputs.warnings) * 5, 20)
+        score -= min(int(round(inputs.thermal_proximity_sum * 10.0)), 10)
+        score -= min(int(inputs.critical_net_proxy_density // 20), 10)
+        score -= min(len(inputs.hs_grouping_violations) * 10, 20)
+        score -= min(len(inputs.mount_hole_violations) * 10, 20)
+        score -= min(len(inputs.connector_edge_spec_violations) * 10, 20)
         return max(score, 0)
 
     def evaluate(self) -> PlacementAnalysis:
@@ -2254,20 +2255,22 @@ class _PlacementEvaluator:
         warnings.extend(return_path_warnings)
 
         score = self._calculate_score(
-            overlaps=overlaps,
-            outside=outside,
-            connector_edge_violations=connector_edge_violations,
-            decoupling_distance_violations=decoupling_distance_violations,
-            keepout_violations=keepout_violations,
-            power_tree_violations=power_tree_violations,
-            sensor_cluster_violations=sensor_cluster_violations,
-            analog_digital_violations=analog_digital_violations,
-            warnings=warnings,
-            thermal_proximity_sum=thermal_proximity_sum,
-            critical_net_proxy_density=critical_net_proxy_density,
-            hs_grouping_violations=hs_grouping_violations,
-            mount_hole_violations=mount_hole_violations,
-            connector_edge_spec_violations=connector_edge_spec_violations,
+            _PlacementScoreInputs(
+                overlaps=overlaps,
+                outside=outside,
+                connector_edge_violations=connector_edge_violations,
+                decoupling_distance_violations=decoupling_distance_violations,
+                keepout_violations=keepout_violations,
+                power_tree_violations=power_tree_violations,
+                sensor_cluster_violations=sensor_cluster_violations,
+                analog_digital_violations=analog_digital_violations,
+                warnings=warnings,
+                thermal_proximity_sum=thermal_proximity_sum,
+                critical_net_proxy_density=critical_net_proxy_density,
+                hs_grouping_violations=hs_grouping_violations,
+                mount_hole_violations=mount_hole_violations,
+                connector_edge_spec_violations=connector_edge_spec_violations,
+            )
         )
 
         return PlacementAnalysis(

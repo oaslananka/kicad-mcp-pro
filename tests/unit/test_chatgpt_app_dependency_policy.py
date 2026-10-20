@@ -14,7 +14,8 @@ def test_chatgpt_app_express5_dependency_policy() -> None:
     # Keep Express 5 and package-lock synchronized across reviewed updates;
     # do not freeze the test to the previous dependency release.
     express = package["dependencies"]["express"]
-    assert express.startswith("5.") and express.count(".") == 2
+    assert express.startswith("5.")
+    assert express.count(".") == 2
     assert all(part.isdigit() for part in express.split("."))
     assert package["overrides"] == {
         "@hono/node-server": "2.0.11",
