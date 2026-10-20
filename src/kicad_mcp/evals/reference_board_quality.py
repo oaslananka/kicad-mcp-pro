@@ -13,7 +13,12 @@ from ..ir.from_kicad import parse_schematic
 from ..tools.board_file import _parse_board_footprint_blocks
 from ..tools.dfm import _outline_bounds_mm
 from .evidence_sanitization import validate_sanitized_evidence
-from .task_outcomes import AttemptRecord, parse_attempt_record, parse_benchmark_contract
+from .task_outcomes import (
+    AttemptRecord,
+    BenchmarkContract,
+    parse_attempt_record,
+    parse_benchmark_contract,
+)
 
 QUALITY_SCHEMA_VERSION: Literal["pcb-reference-board-quality.v1"] = "pcb-reference-board-quality.v1"
 QUALITY_SCORE_SCHEMA_VERSION: Literal["pcb-reference-board-quality-score.v1"] = (
@@ -363,6 +368,75 @@ def _build_quality_score(
     )
 
 
+def _matches_board_identity(
+    attempt: AttemptRecord,
+    benchmark: BenchmarkContract,
+    quality: BoardQualityContract,
+    root: Path,
+    attempt_id: str,
+) -> bool:
+    return (
+        attempt.attempt_id == attempt_id
+        and quality.board_id == root.parent.name
+        and quality.benchmark_version == root.name
+        and attempt.benchmark_id == benchmark.benchmark_id
+        and attempt.benchmark_version == benchmark.benchmark_version
+        and quality.benchmark_version == benchmark.benchmark_version
+    )
+
+
+def _load_attempt_circuit(
+    attempt_dir: Path,
+    rules: tuple[QualityRule, ...],
+) -> IRCircuit | None:
+    schematic_path = attempt_dir / "schematic.kicad_sch"
+    needs_schematic = any(
+        isinstance(rule, (SchematicComponentRule, SchematicNetRule)) for rule in rules
+    )
+    if needs_schematic and schematic_path.is_file() and not schematic_path.is_symlink():
+        try:
+            return parse_schematic(schematic_path, load_pin_metadata=False)
+        except (OSError, RuntimeError, ValueError):
+            return None
+    return None
+
+
+def _load_attempt_board_text(
+    attempt_dir: Path,
+    rules: tuple[QualityRule, ...],
+) -> str | None:
+    board_path = attempt_dir / "board.kicad_pcb"
+    needs_board = any(
+        isinstance(rule, (PcbFootprintRule, PcbNetRule, BoardOutlineRule)) for rule in rules
+    )
+    if needs_board and board_path.is_file() and not board_path.is_symlink():
+        try:
+            return board_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return None
+    return None
+
+
+def _evaluate_single_quality_rule(
+    rule: QualityRule,
+    circuit: IRCircuit | None,
+    board_text: str | None,
+    attempt: AttemptRecord,
+    attempt_dir: Path,
+) -> QualityRuleResult:
+    if isinstance(rule, (SchematicComponentRule, SchematicNetRule)):
+        if circuit is None:
+            return _failed_result(rule, "evidence_missing")
+        return evaluate_schematic_rule(rule, circuit)
+    if isinstance(rule, (PcbFootprintRule, PcbNetRule, BoardOutlineRule)):
+        if board_text is None:
+            return _failed_result(rule, "evidence_missing")
+        return evaluate_pcb_rule(rule, board_text)
+    if isinstance(rule, AttemptValidationRule):
+        return evaluate_attempt_rule(rule, attempt)
+    return evaluate_artifact_rule(rule, attempt_dir)
+
+
 def score_reference_board_attempt(bundle_root: Path, attempt_id: str) -> BoardQualityScore:
     if re.fullmatch(QUALITY_IDENTIFIER_PATTERN, attempt_id) is None:
         raise ValueError("attempt id must be canonical")
@@ -372,61 +446,18 @@ def score_reference_board_attempt(bundle_root: Path, attempt_id: str) -> BoardQu
     benchmark = parse_benchmark_contract(_load_json_mapping(root / "benchmark.json"))
     quality = parse_quality_contract(_load_json_mapping(root / "quality-gates.json"))
 
-    identity_matches = (
-        attempt.attempt_id == attempt_id
-        and quality.board_id == root.parent.name
-        and quality.benchmark_version == root.name
-        and attempt.benchmark_id == benchmark.benchmark_id
-        and attempt.benchmark_version == benchmark.benchmark_version
-        and quality.benchmark_version == benchmark.benchmark_version
-    )
-    if not identity_matches:
+    if not _matches_board_identity(attempt, benchmark, quality, root, attempt_id):
         return _build_quality_score(
             quality,
             attempt,
             [_failed_result(rule, "evidence_identity_mismatch") for rule in quality.rules],
         )
 
-    schematic_path = attempt_dir / "schematic.kicad_sch"
-    board_path = attempt_dir / "board.kicad_pcb"
-    needs_schematic = any(
-        isinstance(rule, (SchematicComponentRule, SchematicNetRule)) for rule in quality.rules
-    )
-    needs_board = any(
-        isinstance(rule, (PcbFootprintRule, PcbNetRule, BoardOutlineRule)) for rule in quality.rules
-    )
+    circuit = _load_attempt_circuit(attempt_dir, quality.rules)
+    board_text = _load_attempt_board_text(attempt_dir, quality.rules)
 
-    circuit: IRCircuit | None = None
-    if needs_schematic and schematic_path.is_file() and not schematic_path.is_symlink():
-        try:
-            circuit = parse_schematic(schematic_path, load_pin_metadata=False)
-        except (OSError, RuntimeError, ValueError):
-            circuit = None
-
-    board_text: str | None = None
-    if needs_board and board_path.is_file() and not board_path.is_symlink():
-        try:
-            board_text = board_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
-            board_text = None
-
-    results: list[QualityRuleResult] = []
-    for rule in quality.rules:
-        if isinstance(rule, (SchematicComponentRule, SchematicNetRule)):
-            result = (
-                _failed_result(rule, "evidence_missing")
-                if circuit is None
-                else evaluate_schematic_rule(rule, circuit)
-            )
-        elif isinstance(rule, (PcbFootprintRule, PcbNetRule, BoardOutlineRule)):
-            result = (
-                _failed_result(rule, "evidence_missing")
-                if board_text is None
-                else evaluate_pcb_rule(rule, board_text)
-            )
-        elif isinstance(rule, AttemptValidationRule):
-            result = evaluate_attempt_rule(rule, attempt)
-        else:
-            result = evaluate_artifact_rule(rule, attempt_dir)
-        results.append(result)
+    results = [
+        _evaluate_single_quality_rule(rule, circuit, board_text, attempt, attempt_dir)
+        for rule in quality.rules
+    ]
     return _build_quality_score(quality, attempt, results)

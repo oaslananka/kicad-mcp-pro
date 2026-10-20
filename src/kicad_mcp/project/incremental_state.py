@@ -266,6 +266,72 @@ class ChangeJournalEntry:
         }
 
 
+def _validate_document_header(
+    document: object, root: Path, project_key: str, compatibility_key: str
+) -> None:
+    if not isinstance(document, dict):
+        raise ValueError("not an object")
+    if (
+        document.get("schema_version") != STATE_SCHEMA_VERSION
+        or document.get("graph_schema_version") != ENGINEERING_GRAPH_SCHEMA_VERSION
+        or document.get("project_key") != project_key
+        or document.get("compatibility_key") != compatibility_key
+        or document.get("root_identity") != _root_identity(root)
+        or not compatibility_key.strip()
+    ):
+        raise ValueError("incompatible project or state schema")
+
+
+def _load_verified_graph(
+    graph_document: object, project_key: str, native_sources: tuple[str, ...]
+) -> EngineeringGraph:
+    if (
+        not isinstance(graph_document, dict)
+        or graph_document.get("schema_version") != ENGINEERING_GRAPH_SCHEMA_VERSION
+    ):
+        raise ValueError("incompatible cached Engineering Graph schema")
+    graph = EngineeringGraph.from_document(graph_document)
+    if graph.project_key != project_key:
+        raise ValueError("Engineering Graph project identity mismatch")
+    project_entity = graph.entities.get(
+        canonical_entity_id(project_key, GraphEntityKind.PROJECT, "project")
+    )
+    if project_entity is None:
+        raise ValueError("missing Engineering Graph project entity")
+    _require_single_sheet_scope(native_sources, project_entity.attributes.get("sheet_hierarchy"))
+    return graph
+
+
+def _validate_state_metadata_and_hashes(
+    document: dict[str, object],
+    root: Path,
+    graph: EngineeringGraph,
+    native_sources: tuple[str, ...],
+) -> None:
+    stored_sources = document["source_hashes"]
+    stored_entities = document["entity_hashes"]
+    generation = document["generation"]
+    journal = document["journal"]
+    derived = document["derived_dependencies"]
+    if (
+        not isinstance(stored_sources, dict)
+        or not isinstance(stored_entities, dict)
+        or not isinstance(generation, int)
+        or isinstance(generation, bool)
+        or generation < 0
+        or not isinstance(journal, list)
+        or len(journal) > MAX_CHANGE_JOURNAL
+        or not isinstance(derived, dict)
+    ):
+        raise ValueError("invalid state metadata")
+    if set(stored_sources) != set(native_sources):
+        raise ValueError("tracked source list changed")
+    if source_digests(root, native_sources) != stored_sources:
+        raise ValueError("unrecognized native change")
+    if _entity_hashes(graph) != stored_entities:
+        raise ValueError("cached entity digest mismatch")
+
+
 @dataclass(slots=True)
 class PersistentProjectState:
     root: Path
@@ -453,56 +519,16 @@ class PersistentProjectState:
         path = _state_path(root, state_path)
         try:
             document = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(document, dict):
-                raise ValueError("not an object")
-            if (
-                document.get("schema_version") != STATE_SCHEMA_VERSION
-                or document.get("graph_schema_version") != ENGINEERING_GRAPH_SCHEMA_VERSION
-                or document.get("project_key") != project_key
-                or document.get("compatibility_key") != compatibility_key
-                or document.get("root_identity") != _root_identity(root)
-                or not compatibility_key.strip()
-            ):
-                raise ValueError("incompatible project or state schema")
-            graph_document = document["graph"]
-            if (
-                not isinstance(graph_document, dict)
-                or graph_document.get("schema_version") != ENGINEERING_GRAPH_SCHEMA_VERSION
-            ):
-                raise ValueError("incompatible cached Engineering Graph schema")
-            graph = EngineeringGraph.from_document(graph_document)
-            if graph.project_key != project_key:
-                raise ValueError("Engineering Graph project identity mismatch")
-            project_entity = graph.entities.get(
-                canonical_entity_id(project_key, GraphEntityKind.PROJECT, "project")
-            )
-            if project_entity is None:
-                raise ValueError("missing Engineering Graph project entity")
-            _require_single_sheet_scope(
-                native_sources, project_entity.attributes.get("sheet_hierarchy")
-            )
+            _validate_document_header(document, root, project_key, compatibility_key)
+            graph = _load_verified_graph(document["graph"], project_key, native_sources)
+            _validate_state_metadata_and_hashes(document, root, graph, native_sources)
+
             stored_sources = document["source_hashes"]
             stored_entities = document["entity_hashes"]
             generation = document["generation"]
             journal = document["journal"]
             derived = document["derived_dependencies"]
-            if (
-                not isinstance(stored_sources, dict)
-                or not isinstance(stored_entities, dict)
-                or not isinstance(generation, int)
-                or isinstance(generation, bool)
-                or generation < 0
-                or not isinstance(journal, list)
-                or len(journal) > MAX_CHANGE_JOURNAL
-                or not isinstance(derived, dict)
-            ):
-                raise ValueError("invalid state metadata")
-            if set(stored_sources) != set(native_sources):
-                raise ValueError("tracked source list changed")
-            if source_digests(root, native_sources) != stored_sources:
-                raise ValueError("unrecognized native change")
-            if _entity_hashes(graph) != stored_entities:
-                raise ValueError("cached entity digest mismatch")
+
             records = _validate_stored_journal(journal, generation, stored_sources, stored_entities)
             _validate_derived_dependencies(derived, stored_entities)
             return cls(

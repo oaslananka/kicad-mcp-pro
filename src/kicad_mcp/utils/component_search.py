@@ -442,17 +442,19 @@ _NEXAR_SEARCH_QUERY = (
 _nexar_limiter = RateLimiter(max_calls=5, period_seconds=1.0)
 
 
-def _record_from_nexar(part: dict[str, Any]) -> ComponentRecord:
-    manufacturer = str((part.get("manufacturer") or {}).get("name", ""))
-    price: float | None = None
+def _extract_nexar_price(part: dict[str, Any]) -> float | None:
     median = part.get("medianPrice1000")
     if isinstance(median, dict) and median.get("price") is not None:
-        price = float(median["price"])
+        return float(median["price"])
+    return None
+
+
+def _extract_nexar_specs(specs: list[dict[str, Any]]) -> tuple[str, str, str, str]:
     package = ""
     lifecycle = ""
     rohs = ""
     datasheet_url = ""
-    for spec in part.get("specs") or []:
+    for spec in specs:
         attribute = str((spec.get("attribute") or {}).get("name", "")).casefold()
         value = str(spec.get("displayValue", ""))
         if not package and attribute in ("case/package", "package", "case / package"):
@@ -463,6 +465,13 @@ def _record_from_nexar(part: dict[str, Any]) -> ComponentRecord:
             rohs = value
         elif not datasheet_url and "datasheet" in attribute and value.startswith("http"):
             datasheet_url = value
+    return package, lifecycle, rohs, datasheet_url
+
+
+def _record_from_nexar(part: dict[str, Any]) -> ComponentRecord:
+    manufacturer = str((part.get("manufacturer") or {}).get("name", ""))
+    price = _extract_nexar_price(part)
+    package, lifecycle, rohs, datasheet_url = _extract_nexar_specs(part.get("specs") or [])
     # Nexar supply API may also provide a bestDatasheet URL at the part level.
     if not datasheet_url:
         datasheet_url = str(part.get("bestDatasheet", part.get("datasheet", "")))

@@ -734,20 +734,13 @@ def _off_grid(value: float, grid_mm: float) -> bool:
     return abs(value - nearest) > GRID_SNAP_TOLERANCE_MM
 
 
-def detect_grid_misalignment(
+def _collect_off_grid_anchors(
     symbols: list[PlacedSymbol],
     labels: list[LabelItem],
     wires: list[WireSegment],
     junctions: list[tuple[float, float]],
-    grid_mm: float = COSMETIC_GRID_MM,
-) -> list[VisualFinding]:
-    """Flag symbol/label/wire/junction anchors that are not on the drawing grid.
-
-    Off-grid anchors are the single most common source of the "connects in the
-    netlist but the wire visibly misses the pin" defect and of ragged, hand-shifted
-    layouts. Reports a bounded list of concrete examples plus a rolled-up count.
-    """
-
+    grid_mm: float,
+) -> list[tuple[str, float, float]]:
     offenders: list[tuple[str, float, float]] = []
     for symbol in symbols:
         if _off_grid(symbol.x, grid_mm) or _off_grid(symbol.y, grid_mm):
@@ -766,10 +759,13 @@ def detect_grid_misalignment(
     for jx, jy in junctions:
         if _off_grid(jx, grid_mm) or _off_grid(jy, grid_mm):
             offenders.append(("junction", jx, jy))
+    return offenders
 
-    if not offenders:
-        return []
 
+def _format_grid_findings(
+    offenders: list[tuple[str, float, float]],
+    grid_mm: float,
+) -> list[VisualFinding]:
     findings: list[VisualFinding] = []
     for ref, x, y in offenders[:MAX_ITEMIZED_EXAMPLES]:
         findings.append(
@@ -792,6 +788,25 @@ def detect_grid_misalignment(
             )
         )
     return findings
+
+
+def detect_grid_misalignment(
+    symbols: list[PlacedSymbol],
+    labels: list[LabelItem],
+    wires: list[WireSegment],
+    junctions: list[tuple[float, float]],
+    grid_mm: float = COSMETIC_GRID_MM,
+) -> list[VisualFinding]:
+    """Flag symbol/label/wire/junction anchors that are not on the drawing grid.
+
+    Off-grid anchors are the single most common source of the "connects in the
+    netlist but the wire visibly misses the pin" defect and of ragged, hand-shifted
+    layouts. Reports a bounded list of concrete examples plus a rolled-up count.
+    """
+    offenders = _collect_off_grid_anchors(symbols, labels, wires, junctions, grid_mm)
+    if not offenders:
+        return []
+    return _format_grid_findings(offenders, grid_mm)
 
 
 def detect_diagonal_wires(wires: list[WireSegment]) -> list[VisualFinding]:

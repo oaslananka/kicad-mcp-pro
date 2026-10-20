@@ -1341,9 +1341,80 @@ def _check_symbol_connectivity_and_contracts(
     return matched_contracts, isolated_symbols, contract_violations
 
 
-def _evaluate_schematic_connectivity_gate() -> GateOutcome:
+@dataclass
+class _ConnectivityGateCounters:
+    required_empty_sheets: int = 0
+    optional_empty_sheets: int = 0
+    placeholder_empty_sheets: int = 0
+    zero_wire_pages: int = 0
+    dangling_labels: int = 0
+    unnamed_single_pin_groups: int = 0
+    matched_component_contracts: int = 0
+    isolated_footprint_symbols: int = 0
+    contract_violations: int = 0
+
+
+def _analyze_single_page_connectivity(
+    page_name: str,
+    page_path: Path,
+    counters: _ConnectivityGateCounters,
+    *,
+    sheet_keys_by_path: dict[Path, set[str]],
+    has_sheet_contract: bool,
+    required_sheet_keys: set[str],
+    optional_sheet_keys: set[str],
+    blocked: list[str],
+    failures: list[str],
+    page_summaries: list[str],
+) -> None:
     from .schematic import _build_connectivity_groups, parse_schematic_file
 
+    if not page_path.exists():
+        return
+    try:
+        data = parse_schematic_file(page_path)
+        groups = _build_connectivity_groups(page_path)
+    except (OSError, RuntimeError, ValueError) as exc:
+        blocked.append(f"{page_name}: connectivity data was unavailable ({exc}).")
+        return
+
+    symbol_count = len(data["symbols"]) + len(data["power_symbols"])
+    label_count = len(data["labels"])
+    wire_count = len(data["wires"])
+    page_summaries.append(
+        f"{page_name}: {symbol_count} symbol(s), {label_count} label(s), {wire_count} wire(s)"
+    )
+
+    page_keys = sheet_keys_by_path.get(page_path, set())
+    is_child_sheet = page_name != _TOP_LEVEL_SHEET
+    is_empty_sheet = symbol_count == 0 and label_count == 0 and wire_count == 0
+    if has_sheet_contract and is_child_sheet and is_empty_sheet:
+        req_e, opt_e, plc_e = _classify_empty_sheet(
+            page_keys, required_sheet_keys, optional_sheet_keys, page_name, failures
+        )
+        counters.required_empty_sheets += req_e
+        counters.optional_empty_sheets += opt_e
+        counters.placeholder_empty_sheets += plc_e
+
+    if wire_count == 0 and (symbol_count >= 2 or label_count >= 3):
+        counters.zero_wire_pages += 1
+        failures.append(
+            f"{page_name}: has {symbol_count} symbol(s) and {label_count} label(s) but 0 wires."
+        )
+
+    dangling_cnt, unnamed_cnt = _check_connectivity_group_smells(page_name, groups, failures)
+    counters.dangling_labels += dangling_cnt
+    counters.unnamed_single_pin_groups += unnamed_cnt
+
+    matched_c, isolated_s, violations_c = _check_symbol_connectivity_and_contracts(
+        page_name, cast(list[dict[str, object]], data["symbols"]), groups, failures
+    )
+    counters.matched_component_contracts += matched_c
+    counters.isolated_footprint_symbols += isolated_s
+    counters.contract_violations += violations_c
+
+
+def _evaluate_schematic_connectivity_gate() -> GateOutcome:
     try:
         top_file = _get_sch_file()
     except ValueError as exc:
@@ -1391,82 +1462,42 @@ def _evaluate_schematic_connectivity_gate() -> GateOutcome:
                     f"Required sheet '{sheet}' is not present in the schematic hierarchy."
                 )
 
-    dangling_labels = 0
-    zero_wire_pages = 0
-    unnamed_single_pin_groups = 0
-    isolated_footprint_symbols = 0
-    matched_component_contracts = 0
-    contract_violations = 0
-    required_empty_sheets = 0
-    optional_empty_sheets = 0
-    placeholder_empty_sheets = 0
-
+    counters = _ConnectivityGateCounters()
     for page_name, page_path in pages:
-        if not page_path.exists():
-            continue
-        try:
-            data = parse_schematic_file(page_path)
-            groups = _build_connectivity_groups(page_path)
-        except (OSError, RuntimeError, ValueError) as exc:
-            blocked.append(f"{page_name}: connectivity data was unavailable ({exc}).")
-            continue
-
-        symbol_count = len(data["symbols"]) + len(data["power_symbols"])
-        label_count = len(data["labels"])
-        wire_count = len(data["wires"])
-        page_summaries.append(
-            f"{page_name}: {symbol_count} symbol(s), {label_count} label(s), {wire_count} wire(s)"
+        _analyze_single_page_connectivity(
+            page_name,
+            page_path,
+            counters,
+            sheet_keys_by_path=sheet_keys_by_path,
+            has_sheet_contract=has_sheet_contract,
+            required_sheet_keys=required_sheet_keys,
+            optional_sheet_keys=optional_sheet_keys,
+            blocked=blocked,
+            failures=failures,
+            page_summaries=page_summaries,
         )
-
-        page_keys = sheet_keys_by_path.get(page_path, set())
-        is_child_sheet = page_name != _TOP_LEVEL_SHEET
-        is_empty_sheet = symbol_count == 0 and label_count == 0 and wire_count == 0
-        if has_sheet_contract and is_child_sheet and is_empty_sheet:
-            req_e, opt_e, plc_e = _classify_empty_sheet(
-                page_keys, required_sheet_keys, optional_sheet_keys, page_name, failures
-            )
-            required_empty_sheets += req_e
-            optional_empty_sheets += opt_e
-            placeholder_empty_sheets += plc_e
-
-        if wire_count == 0 and (symbol_count >= 2 or label_count >= 3):
-            zero_wire_pages += 1
-            failures.append(
-                f"{page_name}: has {symbol_count} symbol(s) and {label_count} label(s) but 0 wires."
-            )
-
-        dangling_cnt, unnamed_cnt = _check_connectivity_group_smells(page_name, groups, failures)
-        dangling_labels += dangling_cnt
-        unnamed_single_pin_groups += unnamed_cnt
-
-        matched_c, isolated_s, violations_c = _check_symbol_connectivity_and_contracts(
-            page_name, cast(list[dict[str, object]], data["symbols"]), groups, failures
-        )
-        matched_component_contracts += matched_c
-        isolated_footprint_symbols += isolated_s
-        contract_violations += violations_c
 
     hierarchy_mismatches = sum("Hierarchy contract mismatch" in item for item in failures)
     details = [f"Pages analysed: {len(pages)}"]
     details.extend(page_summaries[:12])
     details.extend(
         [
-            f"Dangling label groups: {dangling_labels}",
-            f"Zero-wire pages: {zero_wire_pages}",
-            f"Unnamed single-pin groups: {unnamed_single_pin_groups}",
-            f"Isolated footprint symbols: {isolated_footprint_symbols}",
+            f"Dangling label groups: {counters.dangling_labels}",
+            f"Zero-wire pages: {counters.zero_wire_pages}",
+            f"Unnamed single-pin groups: {counters.unnamed_single_pin_groups}",
+            f"Isolated footprint symbols: {counters.isolated_footprint_symbols}",
             f"Hierarchy contract mismatches: {hierarchy_mismatches}",
-            f"Matched component contracts: {matched_component_contracts}",
-            f"Component contract violations: {contract_violations}",
+            f"Matched component contracts: {counters.matched_component_contracts}",
+            f"Component contract violations: {counters.contract_violations}",
         ]
     )
     if has_sheet_contract:
         details.extend(
             [
                 f"Required missing sheets: {required_missing_sheets}",
-                f"Required empty sheets: {required_empty_sheets}",
-                f"Optional empty sheets: {optional_empty_sheets}",
-                f"Placeholder empty sheets: {placeholder_empty_sheets}",
+                f"Required empty sheets: {counters.required_empty_sheets}",
+                f"Optional empty sheets: {counters.optional_empty_sheets}",
+                f"Placeholder empty sheets: {counters.placeholder_empty_sheets}",
             ]
         )
     if blocked:

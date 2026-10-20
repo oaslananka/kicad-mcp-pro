@@ -56,11 +56,7 @@ class DifferentialResult(_DifferentialModel):
     false_fail: bool = False
     reason: str | None = None
 
-    @model_validator(mode="after")
-    def _validate_semantic_consistency(self) -> Self:
-        if self.false_pass and self.false_fail:
-            raise ValueError("false_pass and false_fail cannot both be true")
-
+    def _validate_hashes_and_reason(self) -> None:
         if self.status in {"match", "divergence"}:
             if self.native_result_hash is None or self.custom_result_hash is None:
                 raise ValueError(f"{self.status} requires native and custom result hashes")
@@ -72,11 +68,7 @@ class DifferentialResult(_DifferentialModel):
         elif not self.reason:
             raise ValueError(f"{self.status} requires a reason")
 
-        if self.status == "unavailable-authority" and (
-            self.native_result_hash is not None or self.native_pass is not None
-        ):
-            raise ValueError("unavailable-authority cannot carry native authority evidence")
-
+    def _validate_divergence_flags(self) -> None:
         expected_false_pass = (
             self.status == "divergence" and self.native_pass is False and self.custom_pass is True
         )
@@ -87,6 +79,21 @@ class DifferentialResult(_DifferentialModel):
             raise ValueError("false_pass must reflect native FAIL versus custom PASS")
         if self.false_fail != expected_false_fail:
             raise ValueError("false_fail must reflect native PASS versus custom FAIL")
+
+    @model_validator(mode="after")
+    def _validate_semantic_consistency(self) -> Self:
+        if self.false_pass and self.false_fail:
+            raise ValueError("false_pass and false_fail cannot both be true")
+
+        self._validate_hashes_and_reason()
+
+        if self.status == "unavailable-authority" and (
+            self.native_result_hash is not None or self.native_pass is not None
+        ):
+            raise ValueError("unavailable-authority cannot carry native authority evidence")
+
+        self._validate_divergence_flags()
+
         if self.status == "match" and (
             self.native_pass is not None
             and self.custom_pass is not None

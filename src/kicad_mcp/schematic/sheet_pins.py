@@ -198,6 +198,54 @@ def parse_hierarchical_labels(text: str) -> tuple[tuple[str, str], ...]:
     return tuple(labels)
 
 
+def _parse_sheet_pin(
+    text: str, child_start: int, child_end: int
+) -> tuple[SheetPinRecord, tuple[int, int], tuple[int, int]] | None:
+    head = _PIN_HEAD_RE.match(text, child_start)
+    if head is None:
+        return None
+    uuid_match = _UUID_RE.search(text, child_start, child_end)
+    at_match = _PIN_AT_RE.search(text, child_start, child_end)
+    pin = SheetPinRecord(
+        name=_unescape(head.group(1)),
+        pin_type=head.group(2),
+        x_mm=float(at_match.group(1)) if at_match else 0.0,
+        y_mm=float(at_match.group(2)) if at_match else 0.0,
+        rotation=int(float(at_match.group(3))) if at_match else 0,
+        uuid=uuid_match.group(1) if uuid_match else "",
+    )
+    span = _line_span(text, child_start, child_end)
+    at_span = at_match.span() if at_match else (child_start, child_start)
+    return pin, span, at_span
+
+
+def _validate_sheet_completeness(
+    name: str,
+    origin: tuple[float, float] | None,
+    at_span: tuple[int, int] | None,
+    size: tuple[float, float] | None,
+    size_span: tuple[int, int] | None,
+) -> str | None:
+    if (
+        name
+        and origin is not None
+        and at_span is not None
+        and size is not None
+        and size_span is not None
+    ):
+        return None
+    missing = [
+        label
+        for label, present in (
+            ('a "Sheetname" property', bool(name)),
+            ("a readable (at x y) position", origin is not None),
+            ("a readable (size w h)", size is not None and size_span is not None),
+        )
+        if not present
+    ]
+    return f"it has no {' and no '.join(missing)}"
+
+
 def _scan_sheet_blocks(text: str) -> Iterator[SheetBlock | SkippedSheetBlock]:
     """Yield one result per ``(sheet ...)`` match: an addressable block or a skip."""
     for match in _SHEET_RE.finditer(text):
@@ -234,48 +282,34 @@ def _scan_sheet_blocks(text: str) -> Iterator[SheetBlock | SkippedSheetBlock]:
                     size_span = (child_start, child_end)
             elif tag == "property":
                 property_match = _PROPERTY_RE.match(text, child_start)
-                if property_match is None:
-                    continue
-                key = _unescape(property_match.group(1))
-                value = _unescape(property_match.group(2))
-                if key == "Sheetname":
-                    name = value
-                elif key == "Sheetfile":
-                    filename = value
+                if property_match is not None:
+                    key = _unescape(property_match.group(1))
+                    value = _unescape(property_match.group(2))
+                    if key == "Sheetname":
+                        name = value
+                    elif key == "Sheetfile":
+                        filename = value
             elif tag == "pin":
-                head = _PIN_HEAD_RE.match(text, child_start)
-                if head is None:
-                    continue
-                uuid_match = _UUID_RE.search(text, child_start, child_end)
-                at_match = _PIN_AT_RE.search(text, child_start, child_end)
-                pins.append(
-                    SheetPinRecord(
-                        name=_unescape(head.group(1)),
-                        pin_type=head.group(2),
-                        x_mm=float(at_match.group(1)) if at_match else 0.0,
-                        y_mm=float(at_match.group(2)) if at_match else 0.0,
-                        rotation=int(float(at_match.group(3))) if at_match else 0,
-                        uuid=uuid_match.group(1) if uuid_match else "",
-                    )
-                )
-                pin_spans.append(_line_span(text, child_start, child_end))
-                pin_at_spans.append(at_match.span() if at_match else (child_start, child_start))
+                pin_data = _parse_sheet_pin(text, child_start, child_end)
+                if pin_data is not None:
+                    pin, span, p_at_span = pin_data
+                    pins.append(pin)
+                    pin_spans.append(span)
+                    pin_at_spans.append(p_at_span)
             elif tag == "instances" and instances_start is None:
                 instances_start = child_start
 
-        if not name or origin is None or at_span is None or size is None or size_span is None:
-            missing = [
-                label
-                for label, present in (
-                    ('a "Sheetname" property', bool(name)),
-                    ("a readable (at x y) position", origin is not None),
-                    ("a readable (size w h)", size is not None and size_span is not None),
-                )
-                if not present
-            ]
+        skip_reason = _validate_sheet_completeness(name, origin, at_span, size, size_span)
+        if (
+            skip_reason is not None
+            or origin is None
+            or size is None
+            or size_span is None
+            or at_span is None
+        ):
             yield SkippedSheetBlock(
                 name=name,
-                reason=f"it has no {' and no '.join(missing)}",
+                reason=skip_reason or "incomplete sheet block",
                 start=start,
             )
             continue

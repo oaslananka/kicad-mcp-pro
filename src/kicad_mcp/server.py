@@ -603,33 +603,52 @@ def _result_text(result: object) -> str:
     return str(result)
 
 
+_FIRST_LINE_FAILURE_PREFIXES = (
+    "invalid output path:",
+    "could not ",
+    "failed to ",
+    "template tools require ",
+    "kikit panelization timed out",
+    "manufacturing evidence",
+    "manufacturing reference approval",
+)
+
+
+def _is_manufacturing_block_message(tool_name: str, lowered: str) -> bool:
+    if tool_name != "export_manufacturing_package":
+        return False
+    return (
+        lowered.startswith("manufacturing export blocked")
+        or "hard-blocked" in lowered
+        or "project quality gate: fail" in lowered
+    )
+
+
+def _is_cli_failure_message(tool_name: str, lowered: str) -> bool:
+    if tool_name not in CLI_FAILURE_TOOL_NAMES:
+        return False
+    return any(p in lowered for p in (" failed:", " failed.", " is unavailable:"))
+
+
+def _is_generic_first_line_failure(first_line: str) -> bool:
+    if not first_line:
+        return False
+    return (
+        " failed:" in first_line
+        or first_line.endswith(" failed.")
+        or " is unavailable:" in first_line
+        or first_line.startswith(_FIRST_LINE_FAILURE_PREFIXES)
+    )
+
+
 def _tool_failure_message(tool_name: str, result: object) -> str | None:
     text = _result_text(result).strip()
     lowered = text.casefold()
     first_line = lowered.splitlines()[0] if lowered else ""
-    if tool_name == "export_manufacturing_package" and lowered.startswith(
-        "manufacturing export blocked"
-    ):
-        return text
-    if tool_name == "export_manufacturing_package" and (
-        "hard-blocked" in lowered or "project quality gate: fail" in lowered
-    ):
-        return text
-    if tool_name in CLI_FAILURE_TOOL_NAMES and (
-        " failed:" in lowered or " failed." in lowered or " is unavailable:" in lowered
-    ):
-        return text
     if (
-        " failed:" in first_line
-        or first_line.endswith(" failed.")
-        or " is unavailable:" in first_line
-        or first_line.startswith("invalid output path:")
-        or first_line.startswith("could not ")
-        or first_line.startswith("failed to ")
-        or first_line.startswith("template tools require ")
-        or first_line.startswith("kikit panelization timed out")
-        or first_line.startswith("manufacturing evidence")
-        or first_line.startswith("manufacturing reference approval")
+        _is_manufacturing_block_message(tool_name, lowered)
+        or _is_cli_failure_message(tool_name, lowered)
+        or _is_generic_first_line_failure(first_line)
     ):
         return text
     return None
