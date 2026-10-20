@@ -392,3 +392,26 @@ def test_release_evidence_service_approves_hv_with_dru(tmp_path: Path) -> None:
     hv_gate = _gate(payload, "hv_safety")
     assert hv_gate["passed"] is True
     assert "HV design rules found in isolation.kicad_dru." in str(hv_gate.get("detail"))
+
+
+def test_run_cli_drc_and_erc_handle_unlink_os_error(tmp_path: Path) -> None:
+    module = _module()
+    pcb = tmp_path / "board.kicad_pcb"
+    pcb.touch()
+    sch = tmp_path / "board.kicad_sch"
+    sch.touch()
+
+    def unlinking_runner(*args: str) -> tuple[int, str, str]:
+        Path(args[3]).unlink(missing_ok=True)
+        return 0, "", ""
+
+    passed, violations, unconnected, err = module._run_cli_drc(unlinking_runner, pcb)
+    assert passed is False
+    assert violations == -1
+    assert unconnected == -1
+    assert err == "DRC exited with code 0"
+
+    erc_passed, erc_violations, erc_err = module._run_cli_erc(unlinking_runner, sch)
+    assert erc_passed is False
+    assert erc_violations == -1
+    assert erc_err == "ERC exited with code 0"

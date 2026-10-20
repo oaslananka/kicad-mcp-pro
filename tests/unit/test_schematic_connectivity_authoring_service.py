@@ -684,3 +684,89 @@ def test_add_pin_labels_rejects_invalid_shape_values(tmp_path: Path, shape: obje
         )
 
     assert harness.writes == []
+
+
+def test_resolve_pin_point_and_candidate_branches(tmp_path: Path) -> None:
+    harness = _harness(
+        tmp_path,
+        parsed={
+            "uuid": "root",
+            "symbols": [
+                {"reference": "U1", "lib_id": "malformed_no_colon", "x": 0.0, "y": 0.0, "unit": 1}
+            ],
+            "power_symbols": [],
+        },
+        pin_positions={},
+        power_net=lambda name: False,
+    )
+    res_lib = harness.service.add_pin_labels([{"reference": "U1", "pin": "1", "net": "SIG"}])
+    assert "symbol type not supported: unresolved lib_id 'malformed_no_colon'" in res_lib
+
+    res_unit = harness.service.add_pin_labels(
+        [{"reference": "U1", "pin": "1", "net": "SIG", "unit": 99}]
+    )
+    assert "unit 99 not found" in res_unit
+
+    pt, _pp, err = harness.service._resolve_pin_point(
+        point=None,
+        pin_positions={},
+        sym={"lib_id": "power:GND"},
+        pin="2",
+        ref="#PWR1",
+        ox=0.0,
+        oy=0.0,
+        library="power",
+        symbol_name="GND",
+        is_power_symbol=True,
+        is_power_symbol_ref=True,
+        unresolved_lib_id=None,
+    )
+    assert pt is None and err == "#PWR1.2: symbol type not supported for pin '2'"
+
+    pt, pp, err = harness.service._resolve_pin_point(
+        point=None,
+        pin_positions={},
+        sym={"lib_id": "power:GND", "value": "GND"},
+        pin="1",
+        ref="GND1",
+        ox=10.0,
+        oy=20.0,
+        library="power",
+        symbol_name="GND",
+        is_power_symbol=True,
+        is_power_symbol_ref=False,
+        unresolved_lib_id=None,
+    )
+    assert pt == (10.0, 20.0) and pp == {"1": (10.0, 20.0)} and err is None
+
+    pt, _pp, err = harness.service._resolve_pin_point(
+        point=None,
+        pin_positions={},
+        sym={"lib_id": "power:CUSTOM", "value": "CUSTOM"},
+        pin="2",
+        ref="PWR1",
+        ox=0.0,
+        oy=0.0,
+        library="power",
+        symbol_name="CUSTOM",
+        is_power_symbol=True,
+        is_power_symbol_ref=False,
+        unresolved_lib_id=None,
+    )
+    assert pt is None and "has no resolvable pin geometry" in str(err)
+
+    pt, _pp, err = harness.service._resolve_pin_point(
+        point=None,
+        pin_positions={},
+        sym={"lib_id": "Device:R", "value": "R"},
+        pin="99",
+        ref="R1",
+        ox=0.0,
+        oy=0.0,
+        library="Device",
+        symbol_name="R",
+        is_power_symbol=False,
+        is_power_symbol_ref=False,
+        unresolved_lib_id=None,
+    )
+    assert pt is None and err == "R1.99: pin not found"
