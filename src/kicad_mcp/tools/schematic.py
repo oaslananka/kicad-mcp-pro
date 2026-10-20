@@ -3476,13 +3476,24 @@ def _flatten_extends_symbol(library: str, symbol_name: str, blocks: list[str]) -
     # Qualify the top-level symbol name with the library prefix and derived name.
     if base_name:
         flat = flat.replace(f'(symbol "{base_name}"', f'(symbol "{library}:{symbol_name}"', 1)
-    # Override inherited properties (Value, Footprint, Datasheet, ...) with the
-    # derived symbol's own values so the flattened symbol matches KiCad's library.
-    base_props = _symbol_property_blocks(base)
-    for prop_name, derived_prop in _symbol_property_blocks(blocks[-1]).items():
-        base_prop = base_props.get(prop_name)
-        if base_prop and base_prop in flat:
-            flat = flat.replace(base_prop, derived_prop, 1)
+    # Apply inherited overrides in chain order, including properties introduced
+    # by intermediate or leaf symbols (for example THVD1450D's Manufacturer).
+    # Dropping them makes KiCad report lib_symbol_mismatch for valid parts.
+    for derived in blocks[1:]:
+        for prop_name, derived_prop in _symbol_property_blocks(derived).items():
+            inherited_prop = _symbol_property_blocks(flat).get(prop_name)
+            if inherited_prop:
+                flat = flat.replace(inherited_prop, derived_prop, 1)
+                continue
+            # Place a new property before the first child graphic unit. Putting
+            # it inside a child block would mutate the symbol's geometry/pins.
+            match = re.search(r'(?m)^([ \t]*)\(symbol "[^"\n]+_[0-9]+_[0-9]+"', flat)
+            if match:
+                insertion = match.start()
+                flat = flat[:insertion] + match.group(1) + derived_prop + "\n" + flat[insertion:]
+            else:
+                insertion = flat.rfind(")")
+                flat = flat[:insertion] + "\n\t\t" + derived_prop + "\n\t" + flat[insertion:]
     return flat
 
 
