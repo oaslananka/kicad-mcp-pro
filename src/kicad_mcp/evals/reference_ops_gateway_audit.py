@@ -17,7 +17,6 @@ from typing import Any
 from .reference_corpus import ReferenceAgentLogEvent
 from .reference_ops_reconciliation import _normalized_pairs
 from .reference_ops_trace_validation import (
-    ReferenceOpsTraceValidationError,
     _load_trace,
     validate_reference_ops_trace,
 )
@@ -48,7 +47,7 @@ class GatewayAuditReconciliationSummary:
 def _witness_rows(content: bytes, server_name: str) -> list[dict[str, Any]]:
     try:
         payload = json.loads(content)
-    except (ValueError, UnicodeError) as exc:
+    except ValueError as exc:
         raise ReferenceOpsGatewayAuditError("invalid Gateway witness JSON") from exc
     prefix = f"pc.msi.mcp.{server_name}."
     if (
@@ -107,6 +106,30 @@ def _witness_rows(content: bytes, server_name: str) -> list[dict[str, Any]]:
     return rows
 
 
+def _match_gateway_server_events(
+    *,
+    rows: list[dict[str, Any]],
+    calls: list[ReferenceAgentLogEvent],
+    results: list[ReferenceAgentLogEvent],
+    pairs: list[tuple[str, str]],
+    server_name: str,
+) -> None:
+    """Compare gateway timing/order against independent server observations."""
+    if len(rows) != len(pairs) or len(results) != len(pairs) or len(calls) != len(pairs):
+        raise ReferenceOpsGatewayAuditError("Gateway/server call counts differ")
+    prefix = f"pc.msi.mcp.{server_name}."
+    for audit, call, result, (name, state) in zip(rows, calls, results, pairs, strict=True):
+        if audit["tool"].removeprefix(prefix) != name:
+            raise ReferenceOpsGatewayAuditError("Gateway/server tool order differs")
+        if audit["status"] != "ok" and state != "failed":
+            raise ReferenceOpsGatewayAuditError("Gateway failure disagrees with server")
+        duration = (result.timestamp - call.timestamp).total_seconds() * 1000
+        if duration < 0 or abs(audit["duration_ms"] - duration) > _MAX_DURATION_SKEW_MS:
+            raise ReferenceOpsGatewayAuditError("Gateway/server call durations differ")
+        if abs(audit["at"] - result.timestamp.timestamp()) > _MAX_CLOCK_SKEW_SECONDS:
+            raise ReferenceOpsGatewayAuditError("Gateway/server call times differ")
+
+
 def reconcile_gateway_audit(
     server_path: Path,
     gateway_path: Path,
@@ -140,23 +163,11 @@ def reconcile_gateway_audit(
         results = [event for event in events if event.event_type == "tool_result"]
         calls = [event for event in events if event.event_type == "tool_call"]
         rows = _witness_rows(gateway_bytes, server_name)
-        if (
-            len(rows) != summary.tool_calls
-            or len(results) != len(pairs)
-            or len(calls) != len(pairs)
-        ):
+        if len(rows) != summary.tool_calls:
             raise ReferenceOpsGatewayAuditError("Gateway/server call counts differ")
-        prefix = f"pc.msi.mcp.{server_name}."
-        for audit, call, result, (name, state) in zip(rows, calls, results, pairs, strict=True):
-            if audit["tool"].removeprefix(prefix) != name:
-                raise ReferenceOpsGatewayAuditError("Gateway/server tool order differs")
-            if audit["status"] != "ok" and state != "failed":
-                raise ReferenceOpsGatewayAuditError("Gateway failure disagrees with server")
-            duration = (result.timestamp - call.timestamp).total_seconds() * 1000
-            if duration < 0 or abs(audit["duration_ms"] - duration) > _MAX_DURATION_SKEW_MS:
-                raise ReferenceOpsGatewayAuditError("Gateway/server call durations differ")
-            if abs(audit["at"] - result.timestamp.timestamp()) > _MAX_CLOCK_SKEW_SECONDS:
-                raise ReferenceOpsGatewayAuditError("Gateway/server call times differ")
+        _match_gateway_server_events(
+            rows=rows, calls=calls, results=results, pairs=pairs, server_name=server_name
+        )
         return GatewayAuditReconciliationSummary(
             status="gateway_server_matched_unattested",
             attempt_id=attempt_id,
@@ -167,7 +178,7 @@ def reconcile_gateway_audit(
             gateway_log_digest="sha256:" + hashlib.sha256(gateway_bytes).hexdigest(),
             server_log_digest=summary.digest,
         )
-    except (OSError, UnicodeError, ReferenceOpsTraceValidationError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         if isinstance(exc, ReferenceOpsGatewayAuditError):
             raise
         raise ReferenceOpsGatewayAuditError(
