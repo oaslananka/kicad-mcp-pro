@@ -121,7 +121,7 @@ def _match_gateway_server_events(
     for audit, call, result, (name, state) in zip(rows, calls, results, pairs, strict=True):
         if audit["tool"].removeprefix(prefix) != name:
             raise ReferenceOpsGatewayAuditError("Gateway/server tool order differs")
-        if audit["status"] != "ok" and state != "failed":
+        if (audit["status"] == "ok") != (state == "completed"):
             raise ReferenceOpsGatewayAuditError("Gateway failure disagrees with server")
         duration = (result.timestamp - call.timestamp).total_seconds() * 1000
         if duration < 0 or abs(audit["duration_ms"] - duration) > _MAX_DURATION_SKEW_MS:
