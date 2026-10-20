@@ -44,26 +44,25 @@ class GatewayAuditReconciliationSummary:
     counts_as_task_success: bool = False
 
 
-def _witness_rows(content: bytes, server_name: str) -> list[dict[str, Any]]:
-    try:
-        payload = json.loads(content)
-    except ValueError as exc:
-        raise ReferenceOpsGatewayAuditError("invalid Gateway witness JSON") from exc
-    prefix = f"pc.msi.mcp.{server_name}."
+_EXPECTED_WITNESS_FIELDS = {
+    "schema_version",
+    "source",
+    "observed_on",
+    "device",
+    "tool_prefix",
+    "capture_utc",
+    "client_count",
+    "rows",
+}
+_EXPECTED_ROW_FIELDS = {"id", "at", "tool", "device", "status", "duration_ms"}
+_ALLOWED_STATUSES = {"ok", "error", "refused", "timeout", "offline"}
+
+
+def _validate_witness_header(payload: object, prefix: str) -> None:
+    if not isinstance(payload, dict) or set(payload) != _EXPECTED_WITNESS_FIELDS:
+        raise ReferenceOpsGatewayAuditError("Gateway witness schema or source mismatch")
     if (
-        not isinstance(payload, dict)
-        or set(payload)
-        != {
-            "schema_version",
-            "source",
-            "observed_on",
-            "device",
-            "tool_prefix",
-            "capture_utc",
-            "client_count",
-            "rows",
-        }
-        or payload["schema_version"] != "ops-gateway-audit-witness.v1"
+        payload["schema_version"] != "ops-gateway-audit-witness.v1"
         or payload["source"] != "ops-gateway-sqlite-readonly"
         or payload["observed_on"] != "vps"
         or payload["device"] != "msi"
@@ -79,27 +78,42 @@ def _witness_rows(content: bytes, server_name: str) -> list[dict[str, Any]]:
             raise ValueError("missing timezone")
     except ValueError as exc:
         raise ReferenceOpsGatewayAuditError("invalid Gateway capture timestamp") from exc
+
+
+def _is_valid_witness_row(row: object, prefix: str, previous_id: int, previous_time: int) -> bool:
+    if not isinstance(row, dict) or set(row) != _EXPECTED_ROW_FIELDS:
+        return False
+    if (
+        type(row["id"]) is not int
+        or type(row["at"]) is not int
+        or type(row["duration_ms"]) is not int
+    ):
+        return False
+    if row["id"] <= previous_id or row["at"] < previous_time or row["duration_ms"] < 0:
+        return False
+    if (
+        row["device"] != "msi"
+        or not isinstance(row["status"], str)
+        or not isinstance(row["tool"], str)
+    ):
+        return False
+    return row["tool"].startswith(prefix) and row["status"] in _ALLOWED_STATUSES
+
+
+def _witness_rows(content: bytes, server_name: str) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(content)
+    except ValueError as exc:
+        raise ReferenceOpsGatewayAuditError("invalid Gateway witness JSON") from exc
+    prefix = f"pc.msi.mcp.{server_name}."
+    _validate_witness_header(payload, prefix)
     rows = payload["rows"]
     if not isinstance(rows, list) or not rows:
         raise ReferenceOpsGatewayAuditError("Gateway witness has no tool calls")
     previous_id = 0
     previous_time = 0
     for row in rows:
-        if (
-            not isinstance(row, dict)
-            or set(row) != {"id", "at", "tool", "device", "status", "duration_ms"}
-            or type(row["id"]) is not int
-            or type(row["at"]) is not int
-            or type(row["duration_ms"]) is not int
-            or row["id"] <= previous_id
-            or row["at"] < previous_time
-            or row["duration_ms"] < 0
-            or row["device"] != "msi"
-            or not isinstance(row["status"], str)
-            or not isinstance(row["tool"], str)
-            or not row["tool"].startswith(prefix)
-            or row["status"] not in {"ok", "error", "refused", "timeout", "offline"}
-        ):
+        if not _is_valid_witness_row(row, prefix, previous_id, previous_time):
             raise ReferenceOpsGatewayAuditError("Gateway audit rows are invalid or unordered")
         previous_id = row["id"]
         previous_time = row["at"]

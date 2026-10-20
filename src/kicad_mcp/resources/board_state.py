@@ -195,9 +195,7 @@ def _design_intent_json() -> str:
     return load_design_intent().model_dump_json(indent=2)
 
 
-def register(mcp: FastMCP) -> None:
-    """Register board state resources."""
-
+def _register_board_resources(mcp: FastMCP) -> None:
     @mcp.resource("kicad://board/summary")
     def board_summary_resource() -> str:
         """Live PCB board summary."""
@@ -219,6 +217,51 @@ def register(mcp: FastMCP) -> None:
             f"- Nets: {len(nets)}"
         )
 
+    @mcp.resource("kicad://board/netlist")
+    def board_netlist_resource() -> str:
+        """Current board S-expression, bounded for safety."""
+        cfg = get_config()
+        try:
+            board = get_board()
+        except KiCadConnectionError as exc:
+            return f"KiCad is not connected: {exc}"
+
+        data = board.get_as_string()
+        if len(data) > cfg.max_text_response_chars:
+            return f"{data[: cfg.max_text_response_chars]}\n... [truncated]"
+        return data
+
+    @mcp.resource("kicad://board/layer_coverage")
+    def board_layer_coverage_resource() -> str:
+        """JSON per-layer copper coverage proxy from zone presence."""
+        try:
+            return _layer_coverage_json()
+        except Exception as exc:
+            return _blocked_json("kicad://board/layer_coverage", exc)
+
+    @mcp.resource("kicad://board/placement_quality")
+    def board_placement_quality_resource() -> str:
+        """Latest placement score and hard-fail placement findings."""
+        from ..tools.validation import _format_placement_score, _placement_analysis
+
+        try:
+            analysis, blocked = _placement_analysis()
+            if blocked is not None:
+                return "\n".join(
+                    [
+                        "Placement score: BLOCKED",
+                        f"- {blocked.summary}",
+                        *[f"- {detail}" for detail in blocked.details],
+                    ]
+                )
+            if analysis is None:
+                return "Placement score: BLOCKED\n- Placement analysis returned no data."
+            return _format_placement_score(analysis)
+        except Exception as exc:
+            return f"Placement score: BLOCKED\n- Could not evaluate this resource: {exc}"
+
+
+def _register_project_resources(mcp: FastMCP) -> None:
     @mcp.resource("kicad://project/info")
     def project_info_resource() -> str:
         """Current project configuration."""
@@ -272,20 +315,6 @@ def register(mcp: FastMCP) -> None:
         except Exception as exc:
             return _blocked_resource("Project next action", exc)
 
-    @mcp.resource("kicad://board/netlist")
-    def board_netlist_resource() -> str:
-        """Current board S-expression, bounded for safety."""
-        cfg = get_config()
-        try:
-            board = get_board()
-        except KiCadConnectionError as exc:
-            return f"KiCad is not connected: {exc}"
-
-        data = board.get_as_string()
-        if len(data) > cfg.max_text_response_chars:
-            return f"{data[: cfg.max_text_response_chars]}\n... [truncated]"
-        return data
-
     @mcp.resource("kicad://project/quality_gate")
     def project_quality_gate_resource() -> str:
         """Latest full project quality gate report."""
@@ -312,6 +341,8 @@ def register(mcp: FastMCP) -> None:
         except Exception as exc:
             return f"Project fix queue\n- BLOCKED: {exc}"
 
+
+def _register_gate_resources(mcp: FastMCP) -> None:
     @mcp.resource("kicad://schematic/connectivity")
     def schematic_connectivity_resource() -> str:
         """Latest schematic connectivity gate report."""
@@ -322,14 +353,6 @@ def register(mcp: FastMCP) -> None:
         except Exception as exc:
             return _blocked_resource("Schematic connectivity quality gate", exc)
 
-    @mcp.resource("kicad://board/layer_coverage")
-    def board_layer_coverage_resource() -> str:
-        """JSON per-layer copper coverage proxy from zone presence."""
-        try:
-            return _layer_coverage_json()
-        except Exception as exc:
-            return _blocked_json("kicad://board/layer_coverage", exc)
-
     @mcp.resource("kicad://gate/{gate_name}")
     def named_gate_resource(gate_name: str) -> str:
         """Read a specific gate report by name."""
@@ -339,27 +362,6 @@ def register(mcp: FastMCP) -> None:
             return render_gate_by_name(gate_name)
         except Exception as exc:
             return _blocked_resource(f"Gate '{gate_name}'", exc)
-
-    @mcp.resource("kicad://board/placement_quality")
-    def board_placement_quality_resource() -> str:
-        """Latest placement score and hard-fail placement findings."""
-        from ..tools.validation import _format_placement_score, _placement_analysis
-
-        try:
-            analysis, blocked = _placement_analysis()
-            if blocked is not None:
-                return "\n".join(
-                    [
-                        "Placement score: BLOCKED",
-                        f"- {blocked.summary}",
-                        *[f"- {detail}" for detail in blocked.details],
-                    ]
-                )
-            if analysis is None:
-                return "Placement score: BLOCKED\n- Placement analysis returned no data."
-            return _format_placement_score(analysis)
-        except Exception as exc:
-            return f"Placement score: BLOCKED\n- Could not evaluate this resource: {exc}"
 
     @mcp.resource("kicad://drc/latest")
     def drc_latest_resource() -> str:
@@ -420,6 +422,8 @@ def register(mcp: FastMCP) -> None:
         except Exception as exc:
             return f"ERC latest: BLOCKED\n- {exc}"
 
+
+def _register_manufacturing_resources(mcp: FastMCP) -> None:
     @mcp.resource("kicad://manufacturing/checklist")
     def manufacturing_checklist_resource() -> str:
         """Manufacturing release checklist for fab-ready handoff."""
@@ -459,3 +463,11 @@ def register(mcp: FastMCP) -> None:
             )
         except Exception as exc:
             return f"Manufacturing checklist: BLOCKED\n- {exc}"
+
+
+def register(mcp: FastMCP) -> None:
+    """Register board state resources."""
+    _register_board_resources(mcp)
+    _register_project_resources(mcp)
+    _register_gate_resources(mcp)
+    _register_manufacturing_resources(mcp)

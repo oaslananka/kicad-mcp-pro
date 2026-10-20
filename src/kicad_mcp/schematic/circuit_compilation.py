@@ -153,34 +153,7 @@ class SchematicCircuitCompilationService:
             terminalized=not unsafe_routed_wires,
         )
 
-    def build(
-        self,
-        symbols: list[dict[str, Any]] | None = None,
-        wires: list[dict[str, Any]] | None = None,
-        labels: list[dict[str, Any]] | None = None,
-        power_symbols: list[dict[str, Any]] | None = None,
-        nets: list[dict[str, Any]] | None = None,
-        snap_to_grid: bool = True,
-        auto_layout: bool = False,
-        unsafe_routed_wires: bool = False,
-        max_paper: str = "A3",
-    ) -> str:
-        """Build and replace the active schematic from structured circuit inputs."""
-        schematic_file = self.active_schematic_file()
-        removed_symbols, removed_labels, backup_path = self.snapshot_before_replace(schematic_file)
-        start_paper = self.read_sheet_paper(schematic_file)
-        prepared = self.prepare_inputs(
-            symbols=symbols,
-            wires=wires,
-            labels=labels,
-            power_symbols=power_symbols,
-            nets=nets,
-            snap_to_grid=snap_to_grid,
-            auto_layout=auto_layout,
-            unsafe_routed_wires=unsafe_routed_wires,
-            paper=start_paper,
-            max_paper=max_paper,
-        )
+    def _check_unresolved_nets(self, prepared: PreparedCircuitInputs) -> None:
         if prepared.unresolved_nets:
             self.warn_unresolved(
                 {
@@ -207,46 +180,44 @@ class SchematicCircuitCompilationService:
                 f"Alias matches: {prepared.resolution_stats['pin_alias_resolutions']}."
             )
 
-        paper_declaration = self.read_sheet_paper_declaration(schematic_file)
-        if (
-            auto_layout
-            and prepared.chosen_paper != start_paper
-            and prepared.chosen_paper in self.paper_sizes
-        ):
-            paper_declaration = f'(paper "{prepared.chosen_paper}")'
-        root_uuid = self.new_uuid()
-        project_name = self.project_name()
+    def _collect_lib_symbols_section(self, prepared: PreparedCircuitInputs) -> str:
         library_definitions: set[str] = set()
         library_content: list[str] = []
-        elements: list[str] = []
-
         for symbol in prepared.symbols:
             key = f"{symbol.library}:{symbol.symbol_name}"
             if key not in library_definitions:
-                library_definition = self.load_lib_symbol(symbol.library, symbol.symbol_name)
-                if library_definition is not None:
-                    library_content.append(library_definition)
+                lib_def = self.load_lib_symbol(symbol.library, symbol.symbol_name)
+                if lib_def is not None:
+                    library_content.append(lib_def)
                 library_definitions.add(key)
-
         for power in prepared.powers:
             key = f"power:{power.name}"
             if key not in library_definitions:
-                library_definition = self.load_lib_symbol("power", power.name)
-                if library_definition is not None:
-                    library_content.append(library_definition)
+                lib_def = self.load_lib_symbol("power", power.name)
+                if lib_def is not None:
+                    library_content.append(lib_def)
                 library_definitions.add(key)
+        library_section = "\t(lib_symbols\n"
+        for lib_def in library_content:
+            library_section += "\n".join("\t" + line for line in lib_def.splitlines()) + "\n"
+        library_section += "\t)"
+        return library_section
 
+    def _collect_schematic_elements(
+        self,
+        prepared: PreparedCircuitInputs,
+        snap_to_grid: bool,
+        project_name: str,
+        root_uuid: str,
+    ) -> list[str]:
+        elements: list[str] = []
         for symbol in prepared.symbols:
-            symbol_x, symbol_y = self.snap_point(
-                symbol.x_mm,
-                symbol.y_mm,
-                snap_to_grid and symbol.snap_to_grid,
-            )
+            sx, sy = self.snap_point(symbol.x_mm, symbol.y_mm, snap_to_grid and symbol.snap_to_grid)
             elements.append(
                 self.place_symbol_block(
                     lib_id=f"{symbol.library}:{symbol.symbol_name}",
-                    x=symbol_x,
-                    y=symbol_y,
+                    x=sx,
+                    y=sy,
                     reference=symbol.reference,
                     value=symbol.value,
                     footprint=symbol.footprint,
@@ -257,18 +228,13 @@ class SchematicCircuitCompilationService:
                     properties=symbol.properties,
                 )
             )
-
         for index, power in enumerate(prepared.powers, start=1):
-            power_x, power_y = self.snap_point(
-                power.x_mm,
-                power.y_mm,
-                snap_to_grid and power.snap_to_grid,
-            )
+            px, py = self.snap_point(power.x_mm, power.y_mm, snap_to_grid and power.snap_to_grid)
             elements.append(
                 self.place_symbol_block(
                     lib_id=f"power:{power.name}",
-                    x=power_x,
-                    y=power_y,
+                    x=px,
+                    y=py,
                     reference=f"#PWR{index:03d}",
                     value=power.name,
                     rotation=power.rotation,
@@ -276,7 +242,6 @@ class SchematicCircuitCompilationService:
                     root_uuid=root_uuid,
                 )
             )
-
         for wire in prepared.wires:
             elements.append(
                 self.wire_block(
@@ -289,54 +254,32 @@ class SchematicCircuitCompilationService:
                     )
                 )
             )
-
         for label in prepared.labels:
-            label_x, label_y = self.snap_point(
-                label.x_mm,
-                label.y_mm,
-                snap_to_grid and label.snap_to_grid,
-            )
+            lx, ly = self.snap_point(label.x_mm, label.y_mm, snap_to_grid and label.snap_to_grid)
             elements.append(
                 self.label_block(
                     label.name,
-                    label_x,
-                    label_y,
+                    lx,
+                    ly,
                     label.rotation,
                     global_label=label.global_label,
                     shape=label.shape,
                     kind=label.kind,
                 )
             )
+        return elements
 
-        library_section = "\t(lib_symbols\n"
-        for library_definition in library_content:
-            library_section += (
-                "\n".join("\t" + line for line in library_definition.splitlines()) + "\n"
-            )
-        library_section += "\t)"
-        content = (
-            "(kicad_sch\n"
-            f"\t(version {GENERATED_SEXPR_DIALECT_VERSION})\n"
-            '\t(generator "kicad-mcp-pro")\n'
-            f'\t(uuid "{root_uuid}")\n'
-            f"\t{paper_declaration}\n"
-            f"{library_section}\n"
-            + "\n".join(elements)
-            + (
-                "\n\t(sheet_instances\n"
-                '\t\t(path "/"\n'
-                '\t\t\t(page "1")\n'
-                "\t\t)\n"
-                "\t)\n"
-                "\t(embedded_fonts no)\n"
-                ")\n"
-            )
-        )
-        content = self.normalize_connectivity(content)
-        self.validate_schematic_text(content)
-        self.transactional_write(content, schematic_file, True)
-        format_upgrade = self.upgrade_schematic(schematic_file)
-        result = self.reload_schematic()
+    def _compile_build_notes(
+        self,
+        *,
+        prepared: PreparedCircuitInputs,
+        removed_symbols: int,
+        removed_labels: int,
+        backup_path: Path | None,
+        format_upgrade: GeneratedFormatUpgradeResult,
+        auto_layout: bool,
+        unsafe_routed_wires: bool,
+    ) -> list[str]:
         written_symbols = len(prepared.symbols) + len(prepared.powers)
         written_labels = len(prepared.labels)
         summary = (
@@ -374,6 +317,82 @@ class SchematicCircuitCompilationService:
                     f"terminalized safely and were left unconnected: {names}{more}. "
                     "Use sch_analyze_net_compilation() for per-endpoint details."
                 )
+        return notes
+
+    def build(
+        self,
+        symbols: list[dict[str, Any]] | None = None,
+        wires: list[dict[str, Any]] | None = None,
+        labels: list[dict[str, Any]] | None = None,
+        power_symbols: list[dict[str, Any]] | None = None,
+        nets: list[dict[str, Any]] | None = None,
+        snap_to_grid: bool = True,
+        auto_layout: bool = False,
+        unsafe_routed_wires: bool = False,
+        max_paper: str = "A3",
+    ) -> str:
+        """Build and replace the active schematic from structured circuit inputs."""
+        schematic_file = self.active_schematic_file()
+        removed_symbols, removed_labels, backup_path = self.snapshot_before_replace(schematic_file)
+        start_paper = self.read_sheet_paper(schematic_file)
+        prepared = self.prepare_inputs(
+            symbols=symbols,
+            wires=wires,
+            labels=labels,
+            power_symbols=power_symbols,
+            nets=nets,
+            snap_to_grid=snap_to_grid,
+            auto_layout=auto_layout,
+            unsafe_routed_wires=unsafe_routed_wires,
+            paper=start_paper,
+            max_paper=max_paper,
+        )
+        self._check_unresolved_nets(prepared)
+
+        paper_declaration = self.read_sheet_paper_declaration(schematic_file)
+        if (
+            auto_layout
+            and prepared.chosen_paper != start_paper
+            and prepared.chosen_paper in self.paper_sizes
+        ):
+            paper_declaration = f'(paper "{prepared.chosen_paper}")'
+        root_uuid = self.new_uuid()
+        project_name = self.project_name()
+        library_section = self._collect_lib_symbols_section(prepared)
+        elements = self._collect_schematic_elements(prepared, snap_to_grid, project_name, root_uuid)
+
+        content = (
+            "(kicad_sch\n"
+            f"\t(version {GENERATED_SEXPR_DIALECT_VERSION})\n"
+            '\t(generator "kicad-mcp-pro")\n'
+            f'\t(uuid "{root_uuid}")\n'
+            f"\t{paper_declaration}\n"
+            f"{library_section}\n"
+            + "\n".join(elements)
+            + (
+                "\n\t(sheet_instances\n"
+                '\t\t(path "/"\n'
+                '\t\t\t(page "1")\n'
+                "\t\t)\n"
+                "\t)\n"
+                "\t(embedded_fonts no)\n"
+                ")\n"
+            )
+        )
+        content = self.normalize_connectivity(content)
+        self.validate_schematic_text(content)
+        self.transactional_write(content, schematic_file, True)
+        format_upgrade = self.upgrade_schematic(schematic_file)
+        result = self.reload_schematic()
+        notes = self._compile_build_notes(
+            prepared=prepared,
+            removed_symbols=removed_symbols,
+            removed_labels=removed_labels,
+            backup_path=backup_path,
+            format_upgrade=format_upgrade,
+            auto_layout=auto_layout,
+            unsafe_routed_wires=unsafe_routed_wires,
+        )
         if notes:
             return result + "\n" + "\n".join(notes)
         return result

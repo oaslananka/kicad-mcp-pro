@@ -3576,6 +3576,151 @@ def _register_board_mutation_tools(mcp: FastMCP) -> None:
         )
 
 
+def _validate_pcb_sync_preconditions(
+    payload: SyncPcbFromSchematicInput,
+) -> tuple[list[dict[str, Any]] | None, str | None, str]:
+    if _board_is_open() and not payload.allow_open_board:
+        return (
+            None,
+            "Refusing file-based PCB sync while a board is open in KiCad. "
+            "Close the board first, or rerun with allow_open_board=True if you want "
+            "KiCad to reload the updated file from disk.",
+            "",
+        )
+    if blocking_lines := _pcb_sync_gate_failures(force=payload.force):
+        return None, "\n".join(blocking_lines), ""
+    force_note = "Pre-sync gate was overridden by force=True." if payload.force else ""
+    components, issues = _collect_schematic_components()
+    if issues:
+        return None, "PCB sync aborted:\n" + "\n".join(f"- {issue}" for issue in issues), force_note
+    if not components:
+        return None, "No schematic symbols were found to sync.", force_note
+    missing_assignments = [
+        component["reference"]
+        for component in components
+        if not str(component["footprint"]).strip()
+    ]
+    if missing_assignments:
+        msg = (
+            "PCB sync aborted because some schematic symbols are missing "
+            "footprint assignments:\n"
+            + "\n".join(f"- {reference}" for reference in missing_assignments)
+        )
+        return None, msg, force_note
+    return components, None, force_note
+
+
+def _build_sync_additions(
+    components_to_add: list[dict[str, Any]],
+    placements: dict[str, tuple[float, float]],
+    net_map: dict[tuple[str, str], str],
+) -> list[str]:
+    additions: list[str] = []
+    for component in components_to_add:
+        reference = str(component["reference"])
+        x_mm, y_mm = placements[reference]
+        pad_nets = {pin: name for (ref, pin), name in net_map.items() if ref == reference and name}
+        additions.append(
+            _render_board_footprint_block(
+                str(component["footprint"]),
+                reference=reference,
+                value=str(component["value"]),
+                x_mm=x_mm,
+                y_mm=y_mm,
+                rotation=int(component["rotation"]),
+                pad_nets=pad_nets,
+                properties=cast(dict[str, str], component["properties"]),
+            )
+        )
+    return additions
+
+
+def _build_sync_replacements(
+    mismatched_references: list[str],
+    components_by_reference: dict[str, dict[str, Any]],
+    existing: dict[str, dict[str, Any]],
+    net_map: dict[tuple[str, str], str],
+    payload: SyncPcbFromSchematicInput,
+) -> dict[str, str]:
+    replacements: dict[str, str] = {}
+    for reference in mismatched_references:
+        component = components_by_reference[reference]
+        existing_entry = existing[reference]
+        x_mm = (
+            float(existing_entry["x_mm"])
+            if existing_entry["x_mm"] is not None
+            else payload.origin_x_mm
+        )
+        y_mm = (
+            float(existing_entry["y_mm"])
+            if existing_entry["y_mm"] is not None
+            else payload.origin_y_mm
+        )
+        pad_nets = {pin: name for (ref, pin), name in net_map.items() if ref == reference and name}
+        replacements[reference] = _render_board_footprint_block(
+            str(component["footprint"]),
+            reference=reference,
+            value=str(component["value"]),
+            x_mm=x_mm,
+            y_mm=y_mm,
+            rotation=int(existing_entry["rotation"]),
+            pad_nets=pad_nets,
+            properties=cast(dict[str, str], component["properties"]),
+        )
+    return replacements
+
+
+def _format_pcb_sync_report(
+    *,
+    components: list[dict[str, Any]],
+    existing: dict[str, dict[str, Any]],
+    additions: list[str],
+    replacements: dict[str, str],
+    pad_summary: dict[str, Any],
+    mismatches: list[str],
+    payload: SyncPcbFromSchematicInput,
+    net_note: str,
+    force_note: str,
+    auto_place_note: str,
+    reload_note: str,
+) -> str:
+    lines = [
+        f"Schematic components considered: {len(components)}",
+        f"Existing PCB footprints kept: {len(existing) - len(replacements)}",
+        f"New footprints added: {len(additions)}",
+        f"Mismatched footprints replaced: {len(replacements)}",
+        f"Total pads considered: {pad_summary['total_pads']}",
+        f"Pads with named nets: {pad_summary['named_pads']}",
+        f"Pads left as <no net>: {pad_summary['no_net_pads']}",
+        f"Transfer quality: {pad_summary['quality']} ({pad_summary['coverage_pct']}% pad coverage)",
+        f"Fully net-mapped refs: {pad_summary['fully_named_refs']}",
+        f"Partially net-mapped refs: {pad_summary['partial_refs']}",
+    ]
+    unresolved_refs = cast(list[str], pad_summary["unresolved_refs"])
+    lines.append(
+        "Refs with unresolved pad nets: "
+        + (", ".join(unresolved_refs[:12]) if unresolved_refs else _NONE_LABEL)
+    )
+    if len(unresolved_refs) > 12:
+        lines.append(f"... and {len(unresolved_refs) - 12} more")
+    if mismatches:
+        lines.append("Existing footprint mismatches:")
+        lines.extend(f"- {mismatch}" for mismatch in mismatches[:20])
+        if len(mismatches) > 20:
+            lines.append(f"... and {len(mismatches) - 20} more")
+        if not payload.replace_mismatched:
+            lines.append("Rerun with replace_mismatched=True to replace those footprints in place.")
+    if net_note:
+        lines.append(net_note)
+    if force_note:
+        lines.append(force_note)
+    if auto_place_note:
+        lines.append(auto_place_note)
+    if reload_note:
+        lines.append(reload_note)
+    return "\n".join(lines)
+
+
 def _register_schematic_sync_tools(mcp: FastMCP) -> None:
     """Register schematic-to-PCB synchronization tools."""
 
@@ -3613,35 +3758,9 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
             force=force,
             auto_place=auto_place,
         )
-        if _board_is_open() and not payload.allow_open_board:
-            return (
-                "Refusing file-based PCB sync while a board is open in KiCad. "
-                "Close the board first, or rerun with allow_open_board=True if you want "
-                "KiCad to reload the updated file from disk."
-            )
-        force_note = ""
-        if blocking_lines := _pcb_sync_gate_failures(force=payload.force):
-            return "\n".join(blocking_lines)
-        if payload.force:
-            force_note = "Pre-sync gate was overridden by force=True."
-
-        components, issues = _collect_schematic_components()
-        if issues:
-            return "PCB sync aborted:\n" + "\n".join(f"- {issue}" for issue in issues)
-        if not components:
-            return "No schematic symbols were found to sync."
-
-        missing_assignments = [
-            component["reference"]
-            for component in components
-            if not str(component["footprint"]).strip()
-        ]
-        if missing_assignments:
-            return (
-                "PCB sync aborted because some schematic symbols are missing "
-                "footprint assignments:\n"
-                + "\n".join(f"- {reference}" for reference in missing_assignments)
-            )
+        components, abort_reason, force_note = _validate_pcb_sync_preconditions(payload)
+        if abort_reason is not None or components is None:
+            return abort_reason or ""
 
         board_file = _get_pcb_file_for_sync()
         board_content = _normalize_board_content(
@@ -3675,8 +3794,6 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
             net_map, net_note = _export_schematic_net_map()
         pad_summary = _schematic_pad_net_summary(components, net_map)
 
-        additions: list[str] = []
-        replacements: dict[str, str] = {}
         occupied_boxes = [
             {
                 "x_mm": float(entry["x_mm"]),
@@ -3691,53 +3808,16 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
             component for component in components if str(component["reference"]) not in existing
         ]
         placements = _planned_board_positions(components_to_add, payload, occupied_boxes)
-
-        for component in components_to_add:
-            reference = str(component["reference"])
-            x_mm, y_mm = placements[reference]
-            pad_nets = {
-                pin: name for (ref, pin), name in net_map.items() if ref == reference and name
-            }
-            additions.append(
-                _render_board_footprint_block(
-                    str(component["footprint"]),
-                    reference=reference,
-                    value=str(component["value"]),
-                    x_mm=x_mm,
-                    y_mm=y_mm,
-                    rotation=int(component["rotation"]),
-                    pad_nets=pad_nets,
-                    properties=cast(dict[str, str], component["properties"]),
-                )
-            )
-
+        additions = _build_sync_additions(components_to_add, placements, net_map)
+        replacements: dict[str, str] = {}
         if payload.replace_mismatched:
-            for reference in mismatched_references:
-                component = components_by_reference[reference]
-                existing_entry = existing[reference]
-                x_mm = (
-                    float(existing_entry["x_mm"])
-                    if existing_entry["x_mm"] is not None
-                    else payload.origin_x_mm
-                )
-                y_mm = (
-                    float(existing_entry["y_mm"])
-                    if existing_entry["y_mm"] is not None
-                    else payload.origin_y_mm
-                )
-                pad_nets = {
-                    pin: name for (ref, pin), name in net_map.items() if ref == reference and name
-                }
-                replacements[reference] = _render_board_footprint_block(
-                    str(component["footprint"]),
-                    reference=reference,
-                    value=str(component["value"]),
-                    x_mm=x_mm,
-                    y_mm=y_mm,
-                    rotation=int(existing_entry["rotation"]),
-                    pad_nets=pad_nets,
-                    properties=cast(dict[str, str], component["properties"]),
-                )
+            replacements = _build_sync_replacements(
+                mismatched_references,
+                components_by_reference,
+                existing,
+                net_map,
+                payload,
+            )
 
         if not additions and not mismatches:
             return "The PCB already contains all schematic footprint assignments."
@@ -3751,53 +3831,27 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
         if (additions or replacements) and payload.auto_place:
             auto_place_note = _auto_place_force_directed_board_file(grid_mm=1.0)
 
+        reload_note = ""
         if additions or replacements:
             reload_note = (
                 _reload_board_after_file_sync()
                 if payload.allow_open_board
                 else _MANUAL_BOARD_RELOAD_MESSAGE
             )
-        else:
-            reload_note = ""
 
-        lines = [
-            f"Schematic components considered: {len(components)}",
-            f"Existing PCB footprints kept: {len(existing) - len(replacements)}",
-            f"New footprints added: {len(additions)}",
-            f"Mismatched footprints replaced: {len(replacements)}",
-            f"Total pads considered: {pad_summary['total_pads']}",
-            f"Pads with named nets: {pad_summary['named_pads']}",
-            f"Pads left as <no net>: {pad_summary['no_net_pads']}",
-            "Transfer quality: "
-            f"{pad_summary['quality']} ({pad_summary['coverage_pct']}% pad coverage)",
-            f"Fully net-mapped refs: {pad_summary['fully_named_refs']}",
-            f"Partially net-mapped refs: {pad_summary['partial_refs']}",
-        ]
-        unresolved_refs = cast(list[str], pad_summary["unresolved_refs"])
-        lines.append(
-            "Refs with unresolved pad nets: "
-            + (", ".join(unresolved_refs[:12]) if unresolved_refs else _NONE_LABEL)
+        return _format_pcb_sync_report(
+            components=components,
+            existing=existing,
+            additions=additions,
+            replacements=replacements,
+            pad_summary=pad_summary,
+            mismatches=mismatches,
+            payload=payload,
+            net_note=net_note,
+            force_note=force_note,
+            auto_place_note=auto_place_note,
+            reload_note=reload_note,
         )
-        if len(unresolved_refs) > 12:
-            lines.append(f"... and {len(unresolved_refs) - 12} more")
-        if mismatches:
-            lines.append("Existing footprint mismatches:")
-            lines.extend(f"- {mismatch}" for mismatch in mismatches[:20])
-            if len(mismatches) > 20:
-                lines.append(f"... and {len(mismatches) - 20} more")
-            if not payload.replace_mismatched:
-                lines.append(
-                    "Rerun with replace_mismatched=True to replace those footprints in place."
-                )
-        if net_note:
-            lines.append(net_note)
-        if force_note:
-            lines.append(force_note)
-        if auto_place_note:
-            lines.append(auto_place_note)
-        if reload_note:
-            lines.append(reload_note)
-        return "\n".join(lines)
 
 
 def _register_placement_automation_tools(mcp: FastMCP) -> None:

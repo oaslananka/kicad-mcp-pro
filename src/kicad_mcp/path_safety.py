@@ -11,15 +11,21 @@ from .errors import UnsafePathError
 
 def normalize_workspace_root(path: str | Path | None, *, fallback: Path) -> Path:
     """Return an absolute workspace root."""
-    if path is None or path == "":
-        return fallback.expanduser().resolve()
-    return Path(path).expanduser().resolve()
+    try:
+        if path is None or path == "":
+            return fallback.expanduser().resolve()
+        return Path(path).expanduser().resolve()
+    except RuntimeError as exc:
+        raise UnsafePathError(f"Invalid workspace path: {exc}") from exc
 
 
 def assert_within(root: Path, path: Path) -> None:
     """Raise when ``path`` is outside ``root`` after resolution."""
-    resolved_root = root.expanduser().resolve()
-    resolved_path = path.expanduser().resolve()
+    try:
+        resolved_root = root.expanduser().resolve()
+        resolved_path = path.expanduser().resolve()
+    except RuntimeError as exc:
+        raise UnsafePathError(f"Invalid path user expansion: {exc}") from exc
     try:
         resolved_path.relative_to(resolved_root)
     except ValueError as exc:
@@ -31,7 +37,10 @@ def assert_within(root: Path, path: Path) -> None:
 def resolve_under(root: Path, raw_path: str | Path, *, allow_absolute: bool = True) -> Path:
     """Resolve ``raw_path`` under ``root`` and block traversal outside it."""
     reject_foreign_windows_path(raw_path)
-    candidate = Path(raw_path).expanduser()
+    try:
+        candidate = Path(raw_path).expanduser()
+    except RuntimeError as exc:
+        raise UnsafePathError(f"Invalid path user expansion: {exc}") from exc
     if candidate.is_absolute():
         if not allow_absolute:
             raise UnsafePathError("Absolute paths are not allowed.")
@@ -50,7 +59,10 @@ def resolve_repo_or_temp(raw_path: str | Path, *, repo_root: Path) -> Path:
     host filesystem locations supplied through agent-controlled arguments.
     """
     reject_foreign_windows_path(raw_path)
-    resolved = Path(raw_path).expanduser().resolve()
+    try:
+        resolved = Path(raw_path).expanduser().resolve()
+    except RuntimeError as exc:
+        raise UnsafePathError(f"Invalid path user expansion: {exc}") from exc
     approved_roots = (repo_root.expanduser().resolve(), Path(tempfile.gettempdir()).resolve())
     if any(resolved.is_relative_to(root) for root in approved_roots):
         return resolved

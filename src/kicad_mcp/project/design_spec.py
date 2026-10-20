@@ -233,26 +233,31 @@ def _import_yaml_lines(text: str) -> list[tuple[int, str]]:
     return rows
 
 
-def _parse_simple_yaml(text: str) -> object:
-    """Parse a conservative YAML subset used for machine-readable spec blocks."""
+class _SimpleYamlParser:
+    """Conservative YAML subset parser for machine-readable spec blocks."""
 
-    rows = _import_yaml_lines(text)
-    if not rows:
-        return {}
+    def __init__(self, rows: list[tuple[int, str]]) -> None:
+        self.rows = rows
 
-    def parse_block(index: int, indent: int) -> tuple[Any, int]:
-        if index >= len(rows):
+    def parse(self) -> object:
+        if not self.rows:
+            return {}
+        parsed, index = self.parse_block(0, self.rows[0][0])
+        if index < len(self.rows):
+            raise ValueError("Unsupported YAML layout in design-spec block.")
+        return parsed
+
+    def parse_block(self, index: int, indent: int) -> tuple[Any, int]:
+        if index >= len(self.rows) or self.rows[index][0] < indent:
             return {}, index
-        if rows[index][0] < indent:
-            return {}, index
-        if rows[index][1].startswith("- "):
-            return parse_list(index, rows[index][0])
-        return parse_dict(index, rows[index][0])
+        if self.rows[index][1].startswith("- "):
+            return self.parse_list(index, self.rows[index][0])
+        return self.parse_dict(index, self.rows[index][0])
 
-    def parse_dict(index: int, indent: int) -> tuple[dict[str, Any], int]:
+    def parse_dict(self, index: int, indent: int) -> tuple[dict[str, Any], int]:
         mapping: dict[str, Any] = {}
-        while index < len(rows):
-            current_indent, content = rows[index]
+        while index < len(self.rows):
+            current_indent, content = self.rows[index]
             if current_indent < indent:
                 break
             if current_indent > indent:
@@ -269,52 +274,58 @@ def _parse_simple_yaml(text: str) -> object:
             index += 1
             if raw_value:
                 mapping[key] = _parse_import_scalar(raw_value)
-            elif index < len(rows) and rows[index][0] > current_indent:
-                child, index = parse_block(index, rows[index][0])
+            elif index < len(self.rows) and self.rows[index][0] > current_indent:
+                child, index = self.parse_block(index, self.rows[index][0])
                 mapping[key] = child
             else:
                 mapping[key] = None
         return mapping, index
 
-    def parse_list(index: int, indent: int) -> tuple[list[Any], int]:
+    def _parse_list_dict_item(
+        self, item_text: str, index: int, current_indent: int
+    ) -> tuple[dict[str, Any], int]:
+        key, raw_value = item_text.split(":", 1)
+        item: dict[str, Any] = {}
+        stripped_val = raw_value.strip()
+        if stripped_val:
+            item[key.strip()] = _parse_import_scalar(stripped_val)
+        elif index < len(self.rows) and self.rows[index][0] > current_indent:
+            child, index = self.parse_block(index, self.rows[index][0])
+            item[key.strip()] = child
+        else:
+            item[key.strip()] = None
+        if index < len(self.rows) and self.rows[index][0] > current_indent:
+            continuation, index = self.parse_dict(index, self.rows[index][0])
+            item.update(continuation)
+        return item, index
+
+    def parse_list(self, index: int, indent: int) -> tuple[list[Any], int]:
         values: list[Any] = []
-        while index < len(rows):
-            current_indent, content = rows[index]
-            if current_indent < indent:
-                break
-            if current_indent > indent or not content.startswith("- "):
+        while index < len(self.rows):
+            current_indent, content = self.rows[index]
+            if current_indent < indent or current_indent > indent or not content.startswith("- "):
                 break
             item_text = content[2:].strip()
             index += 1
             if not item_text:
-                if index < len(rows) and rows[index][0] > current_indent:
-                    child, index = parse_block(index, rows[index][0])
+                if index < len(self.rows) and self.rows[index][0] > current_indent:
+                    child, index = self.parse_block(index, self.rows[index][0])
                     values.append(child)
                 else:
                     values.append(None)
                 continue
             if ":" in item_text and not item_text.startswith(("'", '"', "[", "{")):
-                key, raw_value = item_text.split(":", 1)
-                item: dict[str, Any] = {}
-                if raw_value.strip():
-                    item[key.strip()] = _parse_import_scalar(raw_value.strip())
-                elif index < len(rows) and rows[index][0] > current_indent:
-                    child, index = parse_block(index, rows[index][0])
-                    item[key.strip()] = child
-                else:
-                    item[key.strip()] = None
-                if index < len(rows) and rows[index][0] > current_indent:
-                    continuation, index = parse_dict(index, rows[index][0])
-                    item.update(continuation)
+                item, index = self._parse_list_dict_item(item_text, index, current_indent)
                 values.append(item)
             else:
                 values.append(_parse_import_scalar(item_text))
         return values, index
 
-    parsed, index = parse_block(0, rows[0][0])
-    if index < len(rows):
-        raise ValueError("Unsupported YAML layout in design-spec block.")
-    return parsed
+
+def _parse_simple_yaml(text: str) -> object:
+    """Parse a conservative YAML subset used for machine-readable spec blocks."""
+    rows = _import_yaml_lines(text)
+    return _SimpleYamlParser(rows).parse()
 
 
 def _extract_structured_spec_block(markdown: str) -> tuple[dict[str, Any], str]:
