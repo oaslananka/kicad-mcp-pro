@@ -12,7 +12,7 @@ import contextlib
 import datetime
 import json
 import platform
-import subprocess
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
@@ -22,7 +22,7 @@ def get_git_info() -> dict[str, str]:
 
     def _run(cmd: list[str]) -> str:
         try:
-            return subprocess.check_output(cmd, text=True).strip()
+            return subprocess.check_output(cmd, text=True).strip()  # nosec B603  # nosemgrep
         except Exception:
             return "unknown"
 

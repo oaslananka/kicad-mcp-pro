@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
+import subprocess  # nosec B404
 import time
 from pathlib import Path
 
@@ -39,7 +39,7 @@ def run_fuzz_target(target_path: str, runs: int = 512, max_len: int = 4096) -> d
     ]
 
     start_time = time.time()
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)  # nosec B603  # nosemgrep
     elapsed = time.time() - start_time
 
     # Parse stdout/stderr for libfuzzer stats

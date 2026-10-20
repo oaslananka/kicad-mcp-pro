@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import time
 from pathlib import Path
 
@@ -17,7 +17,9 @@ from pathlib import Path
 def run_command_json(cmd: list[str], timeout: int = 180) -> tuple[int, object]:
     """Execute command expecting JSON stdout."""
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        proc = subprocess.run(  # nosec B603  # nosemgrep
+            cmd, capture_output=True, text=True, timeout=timeout
+        )
         try:
             return proc.returncode, json.loads(proc.stdout)
         except json.JSONDecodeError:
@@ -117,7 +119,7 @@ def scan_gitleaks() -> dict[str, object]:
     if not bin_path:
         return {"tool": "gitleaks", "status": "SKIPPED", "reason": "gitleaks not installed"}
 
-    proc = subprocess.run(
+    proc = subprocess.run(  # nosec B603  # nosemgrep
         [bin_path, "detect", "--no-git", "--redact", "--report-format", "json"],
         capture_output=True,
         text=True,

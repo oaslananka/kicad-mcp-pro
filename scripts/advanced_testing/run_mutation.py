@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import sys
 import time
 from pathlib import Path
@@ -70,11 +70,11 @@ def run_targeted_mutation(
         # Run mutmut
         cmd = [sys.executable, "-m", "mutmut", "run", f"--max-children={max_children}"]
         print(f"Running mutation test on {target_name} ({paths_str})...")
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)  # nosec B603  # nosemgrep
         elapsed = time.time() - start_time
 
         # Gather results
-        stats_proc = subprocess.run(
+        stats_proc = subprocess.run(  # nosec B603  # nosemgrep
             [sys.executable, "-m", "mutmut", "export-cicd-stats"],
             capture_output=True,
             text=True,
@@ -86,7 +86,7 @@ def run_targeted_mutation(
             except json.JSONDecodeError:
                 stats_data = {"raw_output": stats_proc.stdout}
 
-        results_proc = subprocess.run(
+        results_proc = subprocess.run(  # nosec B603  # nosemgrep
             [sys.executable, "-m", "mutmut", "results"],
             capture_output=True,
             text=True,

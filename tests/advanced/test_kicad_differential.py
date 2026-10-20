@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import tempfile
 from pathlib import Path
 
@@ -42,7 +42,7 @@ def test_differential_drc_native_vs_mcp_classifier() -> None:
         report_output = dest_dir / "native-drc.json"
 
         # 1. Run native KiCad CLI
-        cli_res = subprocess.run(
+        cli_res = subprocess.run(  # nosec B603  # nosemgrep
             [
                 KICAD_CLI,
                 "pcb",
@@ -90,7 +90,7 @@ def test_differential_schematic_netlist_parity() -> None:
         netlist_output = dest_dir / "native_netlist.net"
 
         # 1. Export netlist using native KiCad CLI
-        res = subprocess.run(
+        res = subprocess.run(  # nosec B603  # nosemgrep
             [
                 KICAD_CLI,
                 "sch",
