@@ -335,5 +335,6 @@ async def test_inherited_thvd1450_symbol_matches_native_kicad_library(tmp_path: 
     # A one-symbol schematic intentionally has other unconnected/power ERC errors.
     assert completed.returncode in (0, 5), completed.stderr
     report = erc_report.read_text(encoding="utf-8")
+    assert "[lib_symbol_issues]" not in report  # the reference library must load
     assert "[lib_symbol_mismatch]" not in report
     assert "[pin_not_connected]" in report

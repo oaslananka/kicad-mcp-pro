@@ -11,6 +11,7 @@ def test_flatten_inherited_symbol_retains_new_properties_from_every_level() -> N
     )"""
     intermediate = """(symbol "Middle"
         (extends "Base")
+        (property "Reference" "TP" (at 0 0 0))
         (property "Value" "Middle" (at 0 2.54 0))
         (property "Manufacturer" "Example Corp" (at 0 0 0))
     )"""
@@ -26,6 +27,7 @@ def test_flatten_inherited_symbol_retains_new_properties_from_every_level() -> N
     assert '(symbol "Child_0_1"' in result
     assert "(extends " not in result
     props = _symbol_property_blocks(result)
+    assert '"TP"' in props["Reference"]
     assert '"Child"' in props["Value"]
     assert '"Example Corp"' in props["Manufacturer"]
     assert '"CHILD-8"' in props["Part Number"]

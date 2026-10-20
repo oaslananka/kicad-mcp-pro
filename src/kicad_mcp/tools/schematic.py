@@ -3476,25 +3476,25 @@ def _flatten_extends_symbol(library: str, symbol_name: str, blocks: list[str]) -
     # Qualify the top-level symbol name with the library prefix and derived name.
     if base_name:
         flat = flat.replace(f'(symbol "{base_name}"', f'(symbol "{library}:{symbol_name}"', 1)
-    # Apply inherited overrides in chain order, including properties introduced
-    # by intermediate or leaf symbols (for example THVD1450D's Manufacturer).
-    # Dropping them makes KiCad report lib_symbol_mismatch for valid parts.
+    # Keep values introduced or overridden at every level of the inheritance chain.
     for derived in blocks[1:]:
         for prop_name, derived_prop in _symbol_property_blocks(derived).items():
-            inherited_prop = _symbol_property_blocks(flat).get(prop_name)
-            if inherited_prop:
-                flat = flat.replace(inherited_prop, derived_prop, 1)
-                continue
-            # Place a new property before the first child graphic unit. Putting
-            # it inside a child block would mutate the symbol's geometry/pins.
-            match = re.search(r'(?m)^([ \t]*)\(symbol "[^"\n]+_[0-9]+_[0-9]+"', flat)
-            if match:
-                insertion = match.start()
-                flat = flat[:insertion] + match.group(1) + derived_prop + "\n" + flat[insertion:]
-            else:
-                insertion = flat.rfind(")")
-                flat = flat[:insertion] + "\n\t\t" + derived_prop + "\n\t" + flat[insertion:]
+            flat = _merge_inherited_symbol_property(flat, prop_name, derived_prop)
     return flat
+
+
+def _merge_inherited_symbol_property(flat: str, name: str, property_block: str) -> str:
+    """Replace one inherited property or append it outside child geometry units."""
+    inherited = _symbol_property_blocks(flat).get(name)
+    if inherited:
+        return flat.replace(inherited, property_block, 1)
+    # Insert before the first child graphic unit; never put a property inside it.
+    match = re.search(r'(?m)^([ \t]*)\(symbol "[^"\n]+_\d+_\d+"', flat)
+    if match:
+        at = match.start()
+        return flat[:at] + match.group(1) + property_block + "\n" + flat[at:]
+    at = flat.rfind(")")
+    return flat[:at] + "\n\t\t" + property_block + "\n\t" + flat[at:]
 
 
 def _symbol_property_blocks(block: str) -> dict[str, str]:
