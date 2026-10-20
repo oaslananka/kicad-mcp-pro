@@ -300,6 +300,32 @@ def _entry_location(entry: dict[str, object], fallback: str) -> str:
     return fallback
 
 
+def _extract_report_entry_metadata(entry: dict[str, object]) -> dict[str, object]:
+    metadata: dict[str, object] = {}
+    if sheet_path := entry.get("sheet_path"):
+        metadata["sheet_path"] = str(sheet_path)
+
+    keys = ("ref", "pin", "net", "uuid", "position")
+    plural = {
+        "ref": "refs",
+        "pin": "pins",
+        "net": "nets",
+        "uuid": "uuids",
+        "position": "positions",
+    }
+    buckets: dict[str, list[object]] = {p: [] for p in plural.values()}
+
+    for item in cast(list[dict[str, object]], entry.get("items", [])):
+        for key in keys:
+            if val := item.get(key):
+                buckets[plural[key]].append(str(val) if key != "position" else val)
+
+    for k, v in buckets.items():
+        if v:
+            metadata[k] = v
+    return metadata
+
+
 def _report_entry_finding(
     source: str,
     entry: dict[str, object],
@@ -311,34 +337,7 @@ def _report_entry_finding(
     description = str(entry.get("description") or entry.get("message") or issue_type)
     severity = normalize_report_severity(entry.get("severity", default_severity))
     location = _entry_location(entry, source)
-
-    metadata: dict[str, object] = {}
-    if sheet_path := entry.get("sheet_path"):
-        metadata["sheet_path"] = str(sheet_path)
-
-    refs, pins, nets, uuids, positions = [], [], [], [], []
-    for item in cast(list[dict[str, object]], entry.get("items", [])):
-        if ref := item.get("ref"):
-            refs.append(str(ref))
-        if pin := item.get("pin"):
-            pins.append(str(pin))
-        if net := item.get("net"):
-            nets.append(str(net))
-        if uuid := item.get("uuid"):
-            uuids.append(str(uuid))
-        if position := item.get("position"):
-            positions.append(position)
-
-    if refs:
-        metadata["refs"] = refs
-    if pins:
-        metadata["pins"] = pins
-    if nets:
-        metadata["nets"] = nets
-    if uuids:
-        metadata["uuids"] = uuids
-    if positions:
-        metadata["positions"] = positions
+    metadata = _extract_report_entry_metadata(entry)
 
     return Finding(
         id=stable_finding_id(source, issue_type, location, description),
@@ -3283,6 +3282,42 @@ def _point_key(point: tuple[float, float], precision: int = 3) -> tuple[float, f
     return (round(point[0], precision), round(point[1], precision))
 
 
+def _index_segments_by_endpoint(
+    segments: list[_PcbTrackSegment],
+    min_segment_length_mm: float,
+) -> dict[tuple[str, str, tuple[float, float]], list[_PcbTrackSegment]]:
+    by_point: dict[tuple[str, str, tuple[float, float]], list[_PcbTrackSegment]] = {}
+    for segment in segments:
+        if not segment.net or _segment_length_mm(segment) < min_segment_length_mm:
+            continue
+        for point in (segment.start, segment.end):
+            key = (segment.net, segment.layer, _point_key(point))
+            by_point.setdefault(key, []).append(segment)
+    return by_point
+
+
+def _find_corner_findings_at_point(
+    key: tuple[str, str, tuple[float, float]],
+    connected: list[_PcbTrackSegment],
+    seen: set[tuple[int, int, tuple[str, str, tuple[float, float]]]],
+) -> list[str]:
+    findings: list[str] = []
+    for left_index, left in enumerate(connected):
+        for right in connected[left_index + 1 :]:
+            axes = {_segment_axis(left), _segment_axis(right)}
+            if axes != {"horizontal", "vertical"}:
+                continue
+            pair_key = (id(left), id(right), key)
+            if pair_key in seen:
+                continue
+            seen.add(pair_key)
+            net, layer, point = key
+            findings.append(
+                f"{net} on {layer} has a 90° corner at ({point[0]:.3f}, {point[1]:.3f})"
+            )
+    return findings
+
+
 def _route_90_degree_corners(
     segments: list[_PcbTrackSegment],
     *,
@@ -3294,32 +3329,12 @@ def _route_90_degree_corners(
     meet at an endpoint. Pad-entry stubs shorter than ``min_segment_length_mm``
     are ignored to avoid noisy reports around QFN/THT pin escapes.
     """
-    by_point: dict[tuple[str, str, tuple[float, float]], list[_PcbTrackSegment]] = {}
-    for segment in segments:
-        if not segment.net or _segment_length_mm(segment) < min_segment_length_mm:
-            continue
-        for point in (segment.start, segment.end):
-            key = (segment.net, segment.layer, _point_key(point))
-            by_point.setdefault(key, []).append(segment)
-
+    by_point = _index_segments_by_endpoint(segments, min_segment_length_mm)
     findings: list[str] = []
     seen: set[tuple[int, int, tuple[str, str, tuple[float, float]]]] = set()
     for key, connected in by_point.items():
-        if len(connected) < 2:
-            continue
-        for left_index, left in enumerate(connected):
-            for right in connected[left_index + 1 :]:
-                axes = {_segment_axis(left), _segment_axis(right)}
-                if axes != {"horizontal", "vertical"}:
-                    continue
-                pair_key = (id(left), id(right), key)
-                if pair_key in seen:
-                    continue
-                seen.add(pair_key)
-                net, layer, point = key
-                findings.append(
-                    f"{net} on {layer} has a 90° corner at ({point[0]:.3f}, {point[1]:.3f})"
-                )
+        if len(connected) >= 2:
+            findings.extend(_find_corner_findings_at_point(key, connected, seen))
     return sorted(findings)
 
 
