@@ -199,10 +199,11 @@ def test_server_name_and_reserved_paths_are_not_user_selectable(
 ) -> None:
     with pytest.raises(ReferenceOpsGatewayAuditError):
         _reconcile(evidence, server_name="../../etc")
+    other_path = evidence[1].with_name("audit-other.json")
     with pytest.raises(ReferenceOpsGatewayAuditError):
         reconcile_gateway_audit(
             evidence[0],
-            evidence[1].with_name("audit-other.json"),
+            other_path,
             attempt_id=_ATTEMPT,
             phase_name="schematic",
             server_name=_SERVER,
