@@ -62,3 +62,29 @@ After merge, re-query OpenSSF Scorecard alert #53 against default-branch evidenc
 ## Historical evidence
 
 The pre-remediation seven-warning inventory and original bounded disposition remain preserved in Git history and `docs/evidence/rustsec-gtk3-unic-audit-2026-09-09.json`.
+
+## Additional advisory drift — 2026-10-20
+
+The 2026-10-05 evidence above is a dated GTK3/rust-unic snapshot, not the current
+complete warning inventory. A fresh pinned `cargo-audit 0.22.2` scan of
+`main@d12e91f1` reports **0 vulnerability-kind findings and 5 warning-kind findings**.
+The original two GTK3-transitive advisories remain unchanged. Three newly published
+**informational / unmaintained** advisories from the Linux DBus single-instance
+dependency chain are now recorded separately in the strict reviewed baseline:
+
+- `RUSTSEC-2026-0370` — `zvariant 5.15.0` (unmaintained);
+- `RUSTSEC-2026-0371` — `zbus_names 4.3.4` (unmaintained);
+- `RUSTSEC-2026-0372` — `zvariant_derive 5.15.0` (unmaintained).
+
+`cargo tree --locked --offline -i` traces these through
+`tauri-plugin-single-instance 2.5.2 -> zbus 5.19.0`. Stable
+`tauri-plugin-single-instance` still depends on `zbus ^5.9`; a dependency-only
+version bump has **not** been shown to remove these advisories safely. RustSec
+identifies these as *unmaintained crates* consolidated into `zbus 6`, not
+exploitable vulnerability reports. Revisit on a supported stable Tauri plugin
+migration and then requalify Linux DBus single-instance behavior and the
+Linux/macOS/Windows GUI matrix. See issue #779 for the dated investigation.
+
+The baseline continues to require an **exact match** of advisory ID, package,
+version, category and pinned scanner version. There are no advisory exclusions,
+ignore rules, CI relaxations, or forced unstable dependency migrations.

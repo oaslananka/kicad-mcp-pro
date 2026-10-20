@@ -19,6 +19,33 @@
       "rationale": "Transitive through Tauri GTK3. The affected glib::VariantStrIter API is not referenced directly by src-tauri/src; RustSec patches this advisory in glib >=0.20, outside the current upstream GTK3 stack.",
       "revisit": "Re-evaluate if VariantStrIter becomes reachable in application code or when upstream Tauri supports glib >=0.20 / GTK4.",
       "source": "https://rustsec.org/advisories/RUSTSEC-2024-0429"
+    },
+    {
+      "id": "RUSTSEC-2026-0370",
+      "package": "zvariant",
+      "version": "5.15.0",
+      "category": "unmaintained",
+      "rationale": "Transitive via tauri-plugin-single-instance 2.5.2 -> zbus 5.19.0. The standalone zvariant package is now unmaintained; no exploitable vulnerability is asserted.",
+      "revisit": "Revisit when a supported stable tauri-plugin-single-instance release adopts zbus 6 wire APIs (or another supported maintained replacement); qualify single-instance Linux DBus and cross-platform GUI behavior.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2026-0370"
+    },
+    {
+      "id": "RUSTSEC-2026-0371",
+      "package": "zbus_names",
+      "version": "4.3.4",
+      "category": "unmaintained",
+      "rationale": "Transitive via tauri-plugin-single-instance 2.5.2 -> zbus 5.19.0. zbus_names is an unmaintained standalone crate now consolidated into zbus 6.",
+      "revisit": "Revisit when supported stable Tauri plugin dependencies move to zbus 6 name APIs; test DBus name registration, second-instance behavior and Linux/macOS/Windows GUI checks.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2026-0371"
+    },
+    {
+      "id": "RUSTSEC-2026-0372",
+      "package": "zvariant_derive",
+      "version": "5.15.0",
+      "category": "unmaintained",
+      "rationale": "Transitive through zvariant 5.15.0 in the zbus 5.19.0 single-instance graph. The separate derive crate is unmaintained; zbus 6 provides the macros.",
+      "revisit": "Revisit when the upstream stable single-instance dependency graph moves away from zvariant 5 to zbus 6; verify code generation and cross-platform GUI behavior.",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2026-0372"
     }
   ]
 }
