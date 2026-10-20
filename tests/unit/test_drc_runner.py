@@ -350,3 +350,41 @@ def test_architecture_checker_tracks_canonical_drc_runner() -> None:
 
     assert "kicad_mcp.validation.drc_runner" in boundaries.DOMAIN_MODULES
     assert "kicad_mcp.validation.drc_runner" in boundaries.PURE_HELPERS
+
+
+def test_run_drc_report_timeout_and_oserror(tmp_path: Path) -> None:
+    import subprocess
+
+    pcb_file = tmp_path / "board.kicad_pcb"
+    pcb_file.write_text("(kicad_pcb)", encoding="utf-8")
+
+    def timeout_variants(_variants: list[list[str]]) -> tuple[int, str, str]:
+        raise subprocess.TimeoutExpired(cmd=["kicad-cli"], timeout=10)
+
+    res_timeout = run_drc_report(
+        "drc.json",
+        pcb_file=pcb_file,
+        output_dir=tmp_path,
+        run_cli_variants=timeout_variants,
+        capabilities=SimpleNamespace(
+            supports_drc_severity_all=False,
+            supports_drc_exit_code_violations=False,
+        ),
+    )
+    assert res_timeout.return_code == 124
+
+    def oserror_variants(_variants: list[list[str]]) -> tuple[int, str, str]:
+        raise OSError("Permission denied")
+
+    res_os = run_drc_report(
+        "drc.json",
+        pcb_file=pcb_file,
+        output_dir=tmp_path,
+        run_cli_variants=oserror_variants,
+        capabilities=SimpleNamespace(
+            supports_drc_severity_all=False,
+            supports_drc_exit_code_violations=False,
+        ),
+    )
+    assert res_os.status == "unavailable"
+    assert "Permission denied" in res_os.error

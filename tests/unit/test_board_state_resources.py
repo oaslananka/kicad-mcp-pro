@@ -302,3 +302,77 @@ def test_board_summary_resource_reports_collection_access_failure(monkeypatch) -
 
     assert "Board data is unavailable" in result
     assert "Could not read board vias via get_vias" in result
+
+
+def test_drc_and_erc_latest_resources(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._run_drc_report",
+        lambda report_name: (
+            tmp_path / "drc.json",
+            {
+                "violations": [{"message": "Clearance violation"}],
+                "unconnected_items": [{"message": "Unconnected net"}],
+            },
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._run_erc_report",
+        lambda report_name: (
+            tmp_path / "erc.json",
+            {
+                "violations": [{"message": "Pin not connected"}],
+            },
+            None,
+        ),
+    )
+    mcp = FakeMCP()
+    board_state.register(mcp)
+
+    drc_out = mcp.resources["kicad://drc/latest"]()
+    assert "Violations: 1" in drc_out
+    assert "Unconnected items: 1" in drc_out
+    assert "Clearance violation" in drc_out
+
+    erc_out = mcp.resources["kicad://erc/latest"]()
+    assert "Violations: 1" in erc_out
+    assert "Pin not connected" in erc_out
+
+
+def test_drc_and_erc_latest_no_report(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._run_drc_report",
+        lambda report_name: (None, None, "No recent DRC run."),
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._run_erc_report",
+        lambda report_name: (None, None, "No recent ERC run."),
+    )
+    mcp = FakeMCP()
+    board_state.register(mcp)
+
+    assert "No recent report" in mcp.resources["kicad://drc/latest"]()
+    assert "No recent report" in mcp.resources["kicad://erc/latest"]()
+
+
+def test_drc_and_erc_latest_exception(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._run_drc_report",
+        lambda report_name: (_ for _ in ()).throw(RuntimeError("drc error")),
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._run_erc_report",
+        lambda report_name: (_ for _ in ()).throw(RuntimeError("erc error")),
+    )
+    mcp = FakeMCP()
+    board_state.register(mcp)
+
+    assert "DRC latest: BLOCKED" in mcp.resources["kicad://drc/latest"]()
+    assert "ERC latest: BLOCKED" in mcp.resources["kicad://erc/latest"]()
+
+
+def test_format_violation_lines_overflow() -> None:
+    violations = [{"message": f"Violation {i}"} for i in range(25)]
+    lines = board_state._format_violation_lines(violations)
+    assert len(lines) == 21
+    assert "... and 5 more violations" in lines[-1]

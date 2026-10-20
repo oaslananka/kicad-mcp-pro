@@ -23,12 +23,13 @@ def _stream_rows() -> list[dict[str, object]]:
                 "role": "assistant",
                 "model": "claude-sonnet-5",
                 "content": [
+                    {"type": "text", "text": "Thinking about the query"},
                     {
                         "type": "tool_use",
                         "id": "tool-1",
                         "name": "ToolSearch",
                         "input": {"query": "secret raw query"},
-                    }
+                    },
                 ],
             },
         },

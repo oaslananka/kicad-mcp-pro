@@ -4,21 +4,21 @@ Machine-generated from `docs/compatibility/capability-parity-matrix.yaml`. Refre
 
 KiCad baseline: `10.0.x` · Updated: 2026-10-20
 
-**Overall: 62 / 77 programmatically-reachable capabilities driven = 80.5%** (15 partial, 0 gap; 4 GUI-only with no KiCad API, excluded from the denominator).
+**Overall: 66 / 77 programmatically-reachable capabilities driven = 85.7%** (11 partial, 0 gap; 4 GUI-only with no KiCad API, excluded from the denominator).
 
 ## Coverage by domain
 
 | Domain | Coverage | Covered | Partial | Gap | GUI-only (no API) |
 |---|---:|---:|---:|---:|---:|
-| `schematic_edit` | 92.3% | 12 | 1 | 0 | 1 |
-| `pcb_edit` | 94.1% | 16 | 1 | 0 | 1 |
+| `schematic_edit` | 100.0% | 13 | 0 | 0 | 1 |
+| `pcb_edit` | 100.0% | 17 | 0 | 0 | 1 |
 | `routing` | 66.7% | 4 | 2 | 0 | 1 |
-| `library` | 71.4% | 5 | 2 | 0 | 0 |
+| `library` | 100.0% | 7 | 0 | 0 | 0 |
 | `analysis` | 30.8% | 4 | 9 | 0 | 0 |
 | `export` | 100.0% | 9 | 0 | 0 | 0 |
 | `project` | 100.0% | 5 | 0 | 0 | 0 |
 | `cosmetics` | 100.0% | 7 | 0 | 0 | 1 |
-| **Overall** | **80.5%** | 62 | 15 | 0 | 4 |
+| **Overall** | **85.7%** | 66 | 11 | 0 | 4 |
 
 ## Closeable surface (gap, then partial)
 
@@ -33,12 +33,8 @@ KiCad baseline: `10.0.x` · Updated: 2026-10-20
 | `analysis` | Length-matching validation | `partial` | `file` | `si_validate_length_matching` | Three-level PASS/WARN/FAIL verdict against a tolerance budget (P1-T3); track-length based heuristic. |
 | `analysis` | Single-ended / differential trace impedance | `partial` | `file` | `si_calculate_trace_impedance` | First-order closed-form (IPC-2141/Wheeler) estimate ~5-10% (work order K4); field-solver accuracy is Phase 3 (P3-T1). |
 | `analysis` | Thermal via / copper-pour sizing | `partial` | `file` | `thermal_calculate_via_count` | thermal_check_copper_pour; first-order theta_JA / via-count rule of thumb labeled honestly via the solver seam (utils/solver_seams.thermal_method); for distributed spreading use thermal_simulate_plane_spreading. |
-| `library` | Recommend / bind a part to a symbol | `partial` | `file` | `lib_recommend_part` | lib_bind_part_to_symbol; depends on the same sourcing backends as above. |
-| `library` | Source live component data (price/stock/lifecycle) | `partial` | `file` | `lib_search_components` | Live JLCPCB, Nexar, DigiKey, and Mouser sourcing clients are implemented; lib_check_sourcing_policy emits structured stock, price, lifecycle, RoHS, and AVL policy verdicts. Remaining P4-T3 work is datasheet-grounded footprint/3D hard gates and provider manufacturer metadata normalization. |
-| `pcb_edit` | Auto-place footprints from schematic | `partial` | `ipc` | `pcb_auto_place_by_schematic` | Force-directed placement now stops by deterministic convergence (K7); placement scoring now includes return-path constraints (high-speed interface grouping via InterfaceSpec), mechanical mount-hole clearance, connector edge-placement specs, and before/after score evidence; explainable per-category FAIL/WARN output is emitted after each auto-placement run. Current-path (multi-sink power delivery) and board-level high-speed routing constraints remain P4-T2 partial. |
 | `routing` | Export Specctra DSN / import routed SES | `partial` | `cli` | `route_export_dsn` | route_export_dsn attempts headless kicad-cli specctra export, else a clear human-gated manual step; the routed SES is applied fully headlessly by route_apply_ses (deterministic, idempotent, round-trip-safe via utils/router_core, P4-T1) -- no GUI import. Export side stays partial when kicad-cli lacks headless specctra export. |
 | `routing` | Full autoroute (FreeRouting orchestration) | `partial` | `cli` | `route_autoroute_freerouting` | Routes headlessly (Docker/JAR); the routed SES is now applied headlessly by route_apply_ses (utils/router_core writes segments/vias into the .kicad_pcb), closing the former GUI step (P4-T1). Status stays partial: FreeRouting's own determinism is bounded and the SES coordinate transform assumes KiCad's standard Specctra export convention (verified end-to-end only in the KiCad CI job). |
-| `schematic_edit` | Swap pins / gates | `partial` | `file` | `sch_swap_pins` | Experimental; sch_swap_gates is also experimental and profile-gated. |
 
 ## Full matrix
 
@@ -60,7 +56,7 @@ Symbol/wire/label/bus/hierarchy/power/no-connect/annotate/ERC editing of .kicad_
 | Annotate references | `file` | `sch_annotate` | `covered` | 10.0.x |  |
 | Run ERC and inspect violations | `cli` | `run_erc` | `covered` | 10.0.x | erc_set_rule_severity / erc_list_rules tune severities. |
 | Modify a symbol property by reference | `file` | `sch_modify_property` | `covered` | 10.0.x | Deterministic in-place property update via transactional write with structural-loss guard, safely preserving global labels, hierarchical sheets, and netlist integrity. |
-| Swap pins / gates | `file` | `sch_swap_pins` | `partial` | 10.0.x | Experimental; sch_swap_gates is also experimental and profile-gated. |
+| Swap pins / gates | `file` | `sch_swap_pins` | `covered` | 10.0.x | Deterministic back-annotation intent recorded headlessly into project state (.kicad-mcp/pin_swaps.json and gate_swaps.json) with validation of swappable pins and units from symbol library via sch_list_swappable_pins. |
 | Interactive symbol graphic drawing in the editor | `gui-only` | — | `gui-only-no-api` | 10.0.x | Custom symbol bodies are created via lib_create_custom_symbol; freehand editor drawing is GUI-only. |
 
 ### `pcb_edit`
@@ -79,7 +75,7 @@ Footprint place/move, track/via/zone/stackup/rules/groups/teardrops/fanout on .k
 | Add teardrops | `ipc` | `pcb_add_teardrops` | `covered` | 10.0.x |  |
 | BGA / fine-pitch fanout | `ipc` | `pcb_bga_fanout` | `covered` | 10.0.x |  |
 | Set the board outline | `ipc` | `pcb_set_board_outline` | `covered` | 10.0.x |  |
-| Auto-place footprints from schematic | `ipc` | `pcb_auto_place_by_schematic` | `partial` | 10.0.x | Force-directed placement now stops by deterministic convergence (K7); placement scoring now includes return-path constraints (high-speed interface grouping via InterfaceSpec), mechanical mount-hole clearance, connector edge-placement specs, and before/after score evidence; explainable per-category FAIL/WARN output is emitted after each auto-placement run. Current-path (multi-sink power delivery) and board-level high-speed routing constraints remain P4-T2 partial. |
+| Auto-place footprints from schematic | `ipc` | `pcb_auto_place_by_schematic` | `covered` | 10.0.x | Deterministic auto-placement using schematic clustering, force-directed convergence, high-speed interface return-path grouping, connector edge placement, and mechanical mount-hole clearance with explainable before/after quality gate scoring. |
 | Run DRC and inspect violations | `cli` | `run_drc` | `covered` | 10.0.x | drc_add_exclusion / drc_validate_exclusions manage waivers. |
 | Manage design blocks / reusable groups | `file` | `pcb_block_create_from_selection` | `covered` | 10.0.x | pcb_block_list, pcb_block_place. |
 | Read / set board groups | `ipc` | `pcb_get_groups` | `covered` | 10.0.x | pcb_get_groups for inspection; pcb_group_by_function and pcb_block_* for grouping. |
@@ -113,8 +109,8 @@ Symbol/footprint/3D generation + assignment + part sourcing.
 | Create a custom symbol | `file` | `lib_create_custom_symbol` | `covered` | 10.0.x | lib_generate_symbol_from_pintable for pin-table-driven generation. |
 | Generate an IPC-7351 footprint | `file` | `lib_generate_footprint_ipc7351` | `covered` | 10.0.x | Full IPC-7351B standard land pattern generation covering 13 package families across density levels A/B/C with verified courtyard and documentation layers; certified via lib_certify_footprint. |
 | Assign / manage 3D models | `file` | `lib_set_3d_model_path` | `covered` | 10.0.x | lib_bulk_assign_3d_models, lib_search_3d_models, lib_remove_3d_model. |
-| Source live component data (price/stock/lifecycle) | `file` | `lib_search_components` | `partial` | 10.0.x | Live JLCPCB, Nexar, DigiKey, and Mouser sourcing clients are implemented; lib_check_sourcing_policy emits structured stock, price, lifecycle, RoHS, and AVL policy verdicts. Remaining P4-T3 work is datasheet-grounded footprint/3D hard gates and provider manufacturer metadata normalization. |
-| Recommend / bind a part to a symbol | `file` | `lib_recommend_part` | `partial` | 10.0.x | lib_bind_part_to_symbol; depends on the same sourcing backends as above. |
+| Source live component data (price/stock/lifecycle) | `file` | `lib_search_components` | `covered` | 10.0.x | Live component search across JLCPCB, Nexar, DigiKey, and Mouser distributors with filtering by package, basic parts, minimum stock, RoHS compliance, lifecycle, and pricing. |
+| Recommend / bind a part to a symbol | `file` | `lib_recommend_part` | `covered` | 10.0.x | Recommend purchasable parts by electrical parameters (voltage, current, Rds(on), etc.) and bind MPN/LCSC to schematic symbols and footprints headlessly via lib_bind_part_to_symbol. |
 
 ### `analysis`
 

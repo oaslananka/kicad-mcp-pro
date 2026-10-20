@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from kicad_mcp.tools.design_intent_state import ProjectDesignIntent
 from kicad_mcp.tools.pcb import _placement_net_weight, _placement_nets_from_footprints
-from kicad_mcp.tools.validation import PlacementAnalysis, _format_placement_score
+from kicad_mcp.tools.validation import (
+    PlacementAnalysis,
+    _format_placement_score,
+    _PlacementEvaluator,
+)
 from kicad_mcp.utils.placement import (
     BGABall,
     ForceDirectedConfig,
@@ -265,3 +270,14 @@ def test_generate_bga_fanout_plan_inline_and_dogbone() -> None:
 
     plan_dogbone = generate_bga_fanout_plan(balls, pitch_mm=1.0, strategy="dog_ear")
     assert len(plan_dogbone) == 2
+
+
+def test_interface_spread_calculation() -> None:
+    """_interface_spread calculates pairwise maximum distance between valid centers."""
+    evaluator = _PlacementEvaluator(
+        content="(kicad_pcb)",
+        footprints={"U1": {"x_mm": 0.0, "y_mm": 0.0, "width_mm": 2.0, "height_mm": 2.0}},
+        intent=ProjectDesignIntent(),
+    )
+    centers = [(0.0, 0.0), (3.0, 4.0), (1.0, 1.0)]
+    assert evaluator._interface_spread(centers) == 5.0

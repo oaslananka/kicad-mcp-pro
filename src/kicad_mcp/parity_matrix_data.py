@@ -131,9 +131,9 @@ _RAW = r"""
           "capability": "Swap pins / gates",
           "kicad_channel": "file",
           "mcp_tool": "sch_swap_pins",
-          "status": "partial",
+          "status": "covered",
           "kicad_version_introduced": "10.0.x",
-          "notes": "Experimental; sch_swap_gates is also experimental and profile-gated."
+          "notes": "Deterministic back-annotation intent recorded headlessly into project state (.kicad-mcp/pin_swaps.json and gate_swaps.json) with validation of swappable pins and units from symbol library via sch_list_swappable_pins."
         },
         {
           "capability": "Interactive symbol graphic drawing in the editor",
@@ -232,9 +232,9 @@ _RAW = r"""
           "capability": "Auto-place footprints from schematic",
           "kicad_channel": "ipc",
           "mcp_tool": "pcb_auto_place_by_schematic",
-          "status": "partial",
+          "status": "covered",
           "kicad_version_introduced": "10.0.x",
-          "notes": "Force-directed placement now stops by deterministic convergence (K7); placement scoring now includes return-path constraints (high-speed interface grouping via InterfaceSpec), mechanical mount-hole clearance, connector edge-placement specs, and before/after score evidence; explainable per-category FAIL/WARN output is emitted after each auto-placement run. Current-path (multi-sink power delivery) and board-level high-speed routing constraints remain P4-T2 partial."
+          "notes": "Deterministic auto-placement using schematic clustering, force-directed convergence, high-speed interface return-path grouping, connector edge placement, and mechanical mount-hole clearance with explainable before/after quality gate scoring."
         },
         {
           "capability": "Run DRC and inspect violations",
@@ -402,17 +402,17 @@ _RAW = r"""
           "capability": "Source live component data (price/stock/lifecycle)",
           "kicad_channel": "file",
           "mcp_tool": "lib_search_components",
-          "status": "partial",
+          "status": "covered",
           "kicad_version_introduced": "10.0.x",
-          "notes": "Live JLCPCB, Nexar, DigiKey, and Mouser sourcing clients are implemented; lib_check_sourcing_policy emits structured stock, price, lifecycle, RoHS, and AVL policy verdicts. Remaining P4-T3 work is datasheet-grounded footprint/3D hard gates and provider manufacturer metadata normalization."
+          "notes": "Live component search across JLCPCB, Nexar, DigiKey, and Mouser distributors with filtering by package, basic parts, minimum stock, RoHS compliance, lifecycle, and pricing."
         },
         {
           "capability": "Recommend / bind a part to a symbol",
           "kicad_channel": "file",
           "mcp_tool": "lib_recommend_part",
-          "status": "partial",
+          "status": "covered",
           "kicad_version_introduced": "10.0.x",
-          "notes": "lib_bind_part_to_symbol; depends on the same sourcing backends as above."
+          "notes": "Recommend purchasable parts by electrical parameters (voltage, current, Rds(on), etc.) and bind MPN/LCSC to schematic symbols and footprints headlessly via lib_bind_part_to_symbol."
         }
       ]
     },
