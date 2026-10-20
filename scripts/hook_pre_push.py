@@ -251,6 +251,13 @@ def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
             )
         )
 
+    checks.extend(_platform_and_hook_checks(changed, root=root))
+
+    return checks
+
+
+def _platform_and_hook_checks(changed: list[str], *, root: Path) -> list[Check]:
+    checks: list[Check] = []
     local_hook_files = {
         "lefthook.yml",
         ".pre-commit-config.yaml",

@@ -1037,24 +1037,7 @@ def _targeted_helper_definition_errors(
         LEGACY_HELPER_REPLACEMENTS if legacy_replacements is None else legacy_replacements
     )
     target_names = set(owners) | set(replacements)
-    definitions: dict[str, list[tuple[Path, int]]] = {name: [] for name in target_names}
-    errors: list[str] = []
-
-    for path in sorted(source_root.rglob("*.py")):
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        except SyntaxError as exc:
-            errors.append(
-                f"Could not inspect targeted shared helpers in "
-                f"{_source_location(source_root, path, exc.lineno or 1)}: {exc.msg}."
-            )
-            continue
-        for node in tree.body:
-            if (
-                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-                and node.name in target_names
-            ):
-                definitions[node.name].append((path, node.lineno))
+    definitions, errors = _collect_targeted_helper_definitions(source_root, target_names)
 
     for helper_name, owner in sorted(owners.items()):
         found = definitions.get(helper_name, [])
@@ -1085,6 +1068,31 @@ def _targeted_helper_definition_errors(
         )
 
     return errors
+
+
+def _collect_targeted_helper_definitions(
+    source_root: Path, target_names: set[str]
+) -> tuple[dict[str, list[tuple[Path, int]]], list[str]]:
+    definitions: dict[str, list[tuple[Path, int]]] = {name: [] for name in target_names}
+    errors: list[str] = []
+
+    for path in sorted(source_root.rglob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except SyntaxError as exc:
+            errors.append(
+                f"Could not inspect targeted shared helpers in "
+                f"{_source_location(source_root, path, exc.lineno or 1)}: {exc.msg}."
+            )
+            continue
+        for node in tree.body:
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name in target_names
+            ):
+                definitions[node.name].append((path, node.lineno))
+
+    return definitions, errors
 
 
 def _module_package(module_name: str) -> str:

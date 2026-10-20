@@ -431,37 +431,17 @@ def verify_pypi_provenance(
     expected = _read_checksums(checksum_file)
     last_errors = ["PyPI provenance was not available"]
     for attempt in range(1, retries + 1):
-        errors: list[str] = []
         try:
-            for filename, digest in expected.items():
-                provenance_payload = _published_pypi_provenance(
-                    repository, package, version, filename
-                )
-                failure = _provenance_failure(
-                    provenance_payload,
-                    filename=filename,
-                    digest=digest,
-                    publisher_repository=publisher_repository,
-                    publisher_workflow=publisher_workflow,
-                    publisher_environment=publisher_environment,
-                )
-                if failure:
-                    errors.append(failure)
-                    continue
-                if artifact_dir is not None:
-                    artifact_path = artifact_dir / filename
-                    if not artifact_path.is_file():
-                        errors.append(f"{filename}: local artifact is missing from {artifact_dir}")
-                        continue
-                    crypto_failure = _cryptographic_provenance_failure(
-                        provenance_payload,
-                        artifact_path=artifact_path,
-                        publisher_repository=publisher_repository,
-                        publisher_workflow=publisher_workflow,
-                        publisher_environment=publisher_environment,
-                    )
-                    if crypto_failure:
-                        errors.append(crypto_failure)
+            errors = _pypi_provenance_attempt_errors(
+                expected,
+                repository=repository,
+                package=package,
+                version=version,
+                publisher_repository=publisher_repository,
+                publisher_workflow=publisher_workflow,
+                publisher_environment=publisher_environment,
+                artifact_dir=artifact_dir,
+            )
         except (OSError, ValueError) as exc:
             errors = [str(exc)]
         if not errors:
@@ -472,6 +452,48 @@ def verify_pypi_provenance(
     raise SystemExit(
         "Published PyPI provenance verification failed:\n- " + "\n- ".join(last_errors)
     )
+
+
+def _pypi_provenance_attempt_errors(
+    expected: dict[str, str],
+    *,
+    repository: str,
+    package: str,
+    version: str,
+    publisher_repository: str,
+    publisher_workflow: str,
+    publisher_environment: str,
+    artifact_dir: Path | None,
+) -> list[str]:
+    errors: list[str] = []
+    for filename, digest in expected.items():
+        provenance_payload = _published_pypi_provenance(repository, package, version, filename)
+        failure = _provenance_failure(
+            provenance_payload,
+            filename=filename,
+            digest=digest,
+            publisher_repository=publisher_repository,
+            publisher_workflow=publisher_workflow,
+            publisher_environment=publisher_environment,
+        )
+        if failure:
+            errors.append(failure)
+            continue
+        if artifact_dir is not None:
+            artifact_path = artifact_dir / filename
+            if not artifact_path.is_file():
+                errors.append(f"{filename}: local artifact is missing from {artifact_dir}")
+                continue
+            crypto_failure = _cryptographic_provenance_failure(
+                provenance_payload,
+                artifact_path=artifact_path,
+                publisher_repository=publisher_repository,
+                publisher_workflow=publisher_workflow,
+                publisher_environment=publisher_environment,
+            )
+            if crypto_failure:
+                errors.append(crypto_failure)
+    return errors
 
 
 def main() -> int:

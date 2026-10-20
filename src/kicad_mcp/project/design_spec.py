@@ -203,18 +203,30 @@ def _parse_import_scalar(value: str) -> object:
     if lowered in {"null", "none", "~"}:
         return None
     if cleaned.startswith("[") and cleaned.endswith("]"):
-        try:
-            return json.loads(cleaned)
-        except json.JSONDecodeError:
-            inner = cleaned[1:-1].strip()
-            if not inner:
-                return []
-            return [_parse_import_scalar(part) for part in inner.split(",")]
+        return _parse_import_list(cleaned)
     if cleaned.startswith("{") and cleaned.endswith("}"):
-        try:
-            return json.loads(cleaned)
-        except json.JSONDecodeError:
-            return cleaned
+        return _parse_import_mapping(cleaned)
+    return _parse_import_number(cleaned)
+
+
+def _parse_import_list(cleaned: str) -> object:
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        inner = cleaned[1:-1].strip()
+        if not inner:
+            return []
+        return [_parse_import_scalar(part) for part in inner.split(",")]
+
+
+def _parse_import_mapping(cleaned: str) -> object:
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        return cleaned
+
+
+def _parse_import_number(cleaned: str) -> object:
     try:
         if any(token in cleaned for token in (".", "e", "E")):
             return float(cleaned)
@@ -339,29 +351,43 @@ def _extract_structured_spec_block(markdown: str) -> tuple[dict[str, Any], str]:
     if isinstance(parsed, dict):
         return parsed, "json"
 
-    if stripped.startswith("---"):
-        lines = stripped.splitlines()
-        for index, line in enumerate(lines[1:], start=1):
-            if line.strip() == "---":
-                block = "\n".join(lines[1:index])
-                parsed_yaml = _parse_simple_yaml(block)
-                if isinstance(parsed_yaml, dict):
-                    return parsed_yaml, "frontmatter"
-                break
+    frontmatter = _extract_yaml_frontmatter(stripped)
+    if frontmatter is not None:
+        return frontmatter, "frontmatter"
 
-    fence = re.search(r"```(?:json|ya?ml)\s*+(.*?)```", markdown, re.IGNORECASE | re.DOTALL)
-    if fence is not None:
-        block = fence.group(1).strip()
-        try:
-            parsed_fence = json.loads(block)
-        except json.JSONDecodeError:
-            parsed_fence = _parse_simple_yaml(block)
-        if isinstance(parsed_fence, dict):
-            return parsed_fence, "fenced"
+    fenced = _extract_fenced_spec(markdown)
+    if fenced is not None:
+        return fenced, "fenced"
 
     raise ValueError(
         "No structured design spec found. Provide JSON or YAML frontmatter/fenced block."
     )
+
+
+def _extract_yaml_frontmatter(stripped: str) -> dict[str, Any] | None:
+    if not stripped.startswith("---"):
+        return None
+    lines = stripped.splitlines()
+    for index, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            block = "\n".join(lines[1:index])
+            parsed_yaml = _parse_simple_yaml(block)
+            if isinstance(parsed_yaml, dict):
+                return parsed_yaml
+            break
+    return None
+
+
+def _extract_fenced_spec(markdown: str) -> dict[str, Any] | None:
+    fence = re.search(r"```(?:json|ya?ml)\s*+(.*?)```", markdown, re.IGNORECASE | re.DOTALL)
+    if fence is None:
+        return None
+    block = fence.group(1).strip()
+    try:
+        parsed_fence = json.loads(block)
+    except json.JSONDecodeError:
+        parsed_fence = _parse_simple_yaml(block)
+    return parsed_fence if isinstance(parsed_fence, dict) else None
 
 
 def _select_design_intent_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -442,14 +468,24 @@ def _import_spec_missing_fields(intent_payload: dict[str, Any]) -> list[str]:
     missing: list[str] = []
     if not intent_payload.get("required_sheets"):
         missing.append("required_sheets")
-    mechanical = intent_payload.get("mechanical")
+    missing.extend(_missing_mechanical_fields(intent_payload.get("mechanical")))
+    missing.extend(_missing_power_rail_fields(intent_payload.get("power_rails") or []))
+    return missing
+
+
+def _missing_mechanical_fields(mechanical: object) -> list[str]:
     if not isinstance(mechanical, dict):
-        missing.extend(["mechanical.board_width_mm", "mechanical.board_height_mm"])
-    else:
-        for field in ("board_width_mm", "board_height_mm"):
-            if mechanical.get(field) in (None, "") or _is_placeholder_value(mechanical.get(field)):
-                missing.append(f"mechanical.{field}")
-    for index, rail in enumerate(intent_payload.get("power_rails") or []):
+        return ["mechanical.board_width_mm", "mechanical.board_height_mm"]
+    missing = []
+    for field in ("board_width_mm", "board_height_mm"):
+        if mechanical.get(field) in (None, "") or _is_placeholder_value(mechanical.get(field)):
+            missing.append(f"mechanical.{field}")
+    return missing
+
+
+def _missing_power_rail_fields(rails: Iterable[object]) -> list[str]:
+    missing = []
+    for index, rail in enumerate(rails):
         if not isinstance(rail, dict):
             missing.append(f"power_rails[{index}]")
             continue
@@ -719,6 +755,22 @@ def _render_design_intent(intent: ProjectDesignIntent) -> str:
             f"size=({region.w_mm:.2f} x {region.h_mm:.2f}) mm"
         )
 
+    lines.extend(_render_design_intent_components(intent))
+    if intent.compliance:
+        lines.append("- Compliance: " + ", ".join(c.kind for c in intent.compliance))
+    if intent.cost.unit_cost_usd_max is not None:
+        lines.append(f"- Cost target: <${intent.cost.unit_cost_usd_max:.2f}/unit")
+    if intent.mechanical.max_height_mm is not None:
+        lines.append(f"- Max height: {intent.mechanical.max_height_mm:.1f} mm")
+    lines.append(
+        f"- Thermal: {intent.thermal.ambient_c}°C ambient, "
+        f"max {intent.thermal.max_component_c}°C component"
+    )
+    return "\n".join(lines)
+
+
+def _render_design_intent_components(intent: ProjectDesignIntent) -> list[str]:
+    lines: list[str] = []
     if intent.power_rails:
         lines.append(f"- Power rails: {len(intent.power_rails)}")
         for rail in intent.power_rails[:12]:
@@ -734,17 +786,7 @@ def _render_design_intent(intent: ProjectDesignIntent) -> str:
                 diff_suffix = " diff" if iface.differential else ""
                 impedance = f"  {iface.impedance_target_ohm}ohm{diff_suffix}"
             lines.append(f"  {iface.kind}{impedance}")
-    if intent.compliance:
-        lines.append("- Compliance: " + ", ".join(c.kind for c in intent.compliance))
-    if intent.cost.unit_cost_usd_max is not None:
-        lines.append(f"- Cost target: <${intent.cost.unit_cost_usd_max:.2f}/unit")
-    if intent.mechanical.max_height_mm is not None:
-        lines.append(f"- Max height: {intent.mechanical.max_height_mm:.1f} mm")
-    lines.append(
-        f"- Thermal: {intent.thermal.ambient_c}°C ambient, "
-        f"max {intent.thermal.max_component_c}°C component"
-    )
-    return "\n".join(lines)
+    return lines
 
 
 def _entry_center(entry: dict[str, Any]) -> tuple[float, float] | None:
@@ -1007,6 +1049,10 @@ def validate_design_intent(intent: ProjectDesignIntent | None = None) -> list[st
 
     references = set(_parse_board_footprint_blocks(board_text))
     candidate = intent or resolve_design_intent().resolved
+    return _missing_board_refs(candidate, references)
+
+
+def _missing_board_refs(candidate: ProjectDesignIntent, references: set[str]) -> list[str]:
     issues: list[str] = []
     ref_groups = (
         (candidate.connector_refs, "Connector"),

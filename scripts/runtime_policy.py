@@ -681,6 +681,15 @@ def detect_runtime_drift(
             )
         )
 
+    findings.extend(_kicad_runtime_drift_findings(snapshot=snapshot, current=current))
+
+    return findings
+
+
+def _kicad_runtime_drift_findings(
+    *, snapshot: RuntimeSupportSnapshot, current: DriftSourceVersions
+) -> list[RuntimePolicyFinding]:
+    findings: list[RuntimePolicyFinding] = []
     if current.kicad_stable != "unavailable":
         kicad_current = _parse_version(current.kicad_stable)
         kicad_primary = _parse_kicad_range(snapshot.kicad_primary)

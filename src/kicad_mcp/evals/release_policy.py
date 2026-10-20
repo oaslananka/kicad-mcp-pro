@@ -210,39 +210,13 @@ def load_baseline_metadata(path: str | Path) -> BaselineMetadata:
     aggregate_sha256: str | None = None
 
     if approved:
-        approved_at_raw = raw.get("approved_at")
-        if not isinstance(approved_at_raw, str):
-            raise ReleasePolicyError("Approved baseline approved_at must be an ISO date.")
-        try:
-            approved_at = date.fromisoformat(approved_at_raw)
-        except ValueError as exc:
-            raise ReleasePolicyError("Approved baseline approved_at must be an ISO date.") from exc
-
-        source_revision_raw = raw.get("source_revision")
-        if not isinstance(source_revision_raw, str) or not _SHA40.fullmatch(source_revision_raw):
-            raise ReleasePolicyError(
-                "Approved baseline source_revision must be a lowercase Git SHA."
-            )
-        source_revision = source_revision_raw
-
-        digest_raw = raw.get("agent_contract_digest")
-        if not isinstance(digest_raw, str) or not _SHA256.fullmatch(digest_raw):
-            raise ReleasePolicyError(
-                "Approved baseline agent_contract_digest must be a lowercase SHA-256."
-            )
-        contract_digest = digest_raw
-
-        evidence = _mapping(raw.get("evidence"), "Approved baseline evidence")
-        run_id = evidence.get("workflow_run_id")
-        if isinstance(run_id, bool) or not isinstance(run_id, int) or run_id < 1:
-            raise ReleasePolicyError("Approved baseline evidence workflow_run_id must be positive.")
-        workflow_run_id = run_id
-        aggregate_raw = evidence.get("aggregate_sha256")
-        if not isinstance(aggregate_raw, str) or not _SHA256.fullmatch(aggregate_raw):
-            raise ReleasePolicyError(
-                "Approved baseline evidence aggregate_sha256 must be a lowercase SHA-256."
-            )
-        aggregate_sha256 = aggregate_raw
+        (
+            approved_at,
+            source_revision,
+            contract_digest,
+            workflow_run_id,
+            aggregate_sha256,
+        ) = _approved_baseline_fields(raw)
 
     return BaselineMetadata(
         approved=approved,
@@ -253,6 +227,42 @@ def load_baseline_metadata(path: str | Path) -> BaselineMetadata:
         aggregate_sha256=aggregate_sha256,
         required_configurations=required,
     )
+
+
+def _approved_baseline_fields(raw: dict[str, Any]) -> tuple[date, str, str, int, str]:
+    approved_at_raw = raw.get("approved_at")
+    if not isinstance(approved_at_raw, str):
+        raise ReleasePolicyError("Approved baseline approved_at must be an ISO date.")
+    try:
+        approved_at = date.fromisoformat(approved_at_raw)
+    except ValueError as exc:
+        raise ReleasePolicyError("Approved baseline approved_at must be an ISO date.") from exc
+
+    source_revision_raw = raw.get("source_revision")
+    if not isinstance(source_revision_raw, str) or not _SHA40.fullmatch(source_revision_raw):
+        raise ReleasePolicyError("Approved baseline source_revision must be a lowercase Git SHA.")
+    source_revision = source_revision_raw
+
+    digest_raw = raw.get("agent_contract_digest")
+    if not isinstance(digest_raw, str) or not _SHA256.fullmatch(digest_raw):
+        raise ReleasePolicyError(
+            "Approved baseline agent_contract_digest must be a lowercase SHA-256."
+        )
+    contract_digest = digest_raw
+
+    evidence = _mapping(raw.get("evidence"), "Approved baseline evidence")
+    run_id = evidence.get("workflow_run_id")
+    if isinstance(run_id, bool) or not isinstance(run_id, int) or run_id < 1:
+        raise ReleasePolicyError("Approved baseline evidence workflow_run_id must be positive.")
+    workflow_run_id = run_id
+    aggregate_raw = evidence.get("aggregate_sha256")
+    if not isinstance(aggregate_raw, str) or not _SHA256.fullmatch(aggregate_raw):
+        raise ReleasePolicyError(
+            "Approved baseline evidence aggregate_sha256 must be a lowercase SHA-256."
+        )
+    aggregate_sha256 = aggregate_raw
+
+    return approved_at, source_revision, contract_digest, workflow_run_id, aggregate_sha256
 
 
 def _git(repo_root: Path, *arguments: str, text: bool = True) -> str | bytes:
