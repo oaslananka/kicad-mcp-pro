@@ -59,6 +59,64 @@ tasks:
     cmds:
       - corepack pnpm run test
 
+  test:advanced:
+    desc: Run the full advanced testing suite (property, differential, concurrency, faults, mcp)
+    cmds:
+      - corepack pnpm run test:advanced
+
+  test:property:
+    desc: Run Hypothesis property-based invariants and stateful model tests
+    cmds:
+      - corepack pnpm run test:advanced:property
+
+  test:differential:
+    desc: Run native KiCad CLI differential tests
+    cmds:
+      - corepack pnpm run test:advanced:differential
+
+  test:concurrency:
+    desc: Run concurrency, race condition, and serialization tests
+    cmds:
+      - corepack pnpm run test:advanced:concurrency
+
+  test:faults:
+    desc: Run fault injection, chaos, and error resilience tests
+    cmds:
+      - corepack pnpm run test:advanced:faults
+
+  test:mcp:advanced:
+    desc: Run FastMCP protocol compliance and schema validation tests
+    cmds:
+      - corepack pnpm run test:advanced:mcp
+
+  test:mutation:
+    desc: Run targeted mutmut mutation testing on high-risk modules
+    cmds:
+      - corepack pnpm run test:advanced:mutation
+
+  test:fuzz:
+    desc: Run Atheris coverage-guided fuzz testing
+    cmds:
+      - corepack pnpm run test:advanced:fuzz
+
+  test:memory:
+    desc: Run memory consumption and leak detection profiling
+    cmds:
+      - corepack pnpm run test:advanced:memory
+
+  test:load:
+    desc: Run load, throughput, and latency distribution benchmark
+    cmds:
+      - corepack pnpm run test:advanced:load
+
+  test:advanced:all:
+    desc: Execute all advanced test layers and collect commit-indexed evidence
+    cmds:
+      - task: test:advanced
+      - task: test:memory
+      - task: test:load
+      - corepack pnpm run test:advanced:report
+
   security:
     desc: Run enforced security checks
     cmds:

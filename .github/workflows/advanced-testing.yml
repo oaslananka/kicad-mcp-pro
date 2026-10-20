@@ -1,0 +1,63 @@
+name: Advanced QA & Testing
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/advanced/**"
+      - "scripts/advanced_testing/**"
+      - ".github/workflows/advanced-testing.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/advanced/**"
+      - "scripts/advanced_testing/**"
+      - ".github/workflows/advanced-testing.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: advanced-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  advanced-qa:
+    if: github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          enable-cache: true
+          prune-cache: true
+          version-file: uv.toml
+
+      - name: Run Advanced Testing Pytest Suite
+        run: uv run --all-extras pytest tests/advanced/ -v
+
+      - name: Run Memory & Leak Profiling
+        run: uv run --all-extras python scripts/advanced_testing/run_memory_profile.py --iterations 30 --output artifacts/advanced-testing/current/memory-profile.json
+
+      - name: Run API Load Benchmark
+        run: uv run --all-extras python scripts/advanced_testing/run_load_test.py --vus 10 --requests 100 --output artifacts/advanced-testing/current/performance-benchmarks.json
+
+      - name: Collect QA Evidence & Generate Report
+        run: uv run --all-extras python scripts/advanced_testing/report_collector.py
+
+      - name: Upload Advanced QA Evidence Artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: advanced-qa-evidence
+          path: artifacts/advanced-testing/
+          if-no-files-found: ignore
