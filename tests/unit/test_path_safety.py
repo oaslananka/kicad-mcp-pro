@@ -368,3 +368,27 @@ def test_apply_project_rejects_active_file_symlink_escape_without_workspace_root
         cfg.project_dir_is_explicit,
     )
     assert after == before
+
+
+def test_path_safety_runtime_error_branches(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from kicad_mcp.path_safety import (
+        assert_within,
+        normalize_workspace_root,
+        resolve_repo_or_temp,
+        resolve_under,
+    )
+
+    with patch.object(Path, "expanduser", side_effect=RuntimeError("simulated expansion error")):
+        with pytest.raises(UnsafePathError, match="Invalid workspace path"):
+            normalize_workspace_root("some/path", fallback=tmp_path)
+
+        with pytest.raises(UnsafePathError, match="Invalid path user expansion"):
+            assert_within(tmp_path, tmp_path / "foo")
+
+        with pytest.raises(UnsafePathError, match="Invalid path user expansion"):
+            resolve_under(tmp_path, "foo")
+
+        with pytest.raises(UnsafePathError, match="Invalid path user expansion"):
+            resolve_repo_or_temp("foo", repo_root=tmp_path)

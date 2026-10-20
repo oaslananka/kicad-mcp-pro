@@ -327,3 +327,68 @@ def test_release_evidence_service_reports_missing_pcb_and_schematic(tmp_path: Pa
     assert drc["error"] == "No PCB file configured."
     assert erc["error"] == "No schematic file configured."
     assert payload["verdict"] == "release_blocked"
+
+
+def test_release_evidence_service_reports_drc_and_erc_violations_without_error(
+    tmp_path: Path,
+) -> None:
+    module = _module()
+    context = _context(tmp_path)
+
+    def violation_runner(*args: str) -> tuple[int, str, str]:
+        if args[:2] == ("pcb", "drc"):
+            output_idx = args.index("--output") + 1
+            output_path = Path(args[output_idx])
+            output_path.write_text(
+                json.dumps({"violations": [{"id": 1}], "unconnected_items": []}),
+                encoding="utf-8",
+            )
+            return 0, "", ""
+        if args[:2] == ("sch", "erc"):
+            output_idx = args.index("--output") + 1
+            output_path = Path(args[output_idx])
+            output_path.write_text(
+                json.dumps({"violations": [{"id": 101}]}),
+                encoding="utf-8",
+            )
+            return 0, "", ""
+        raise AssertionError(args)
+
+    service = module.ReleaseEvidenceService(run_cli=violation_runner)
+    payload = json.loads(
+        service.create_evidence(
+            context=context,
+            waive_missing_artifacts=True,
+            dry_run=True,
+        )
+    )
+
+    drc = _gate(payload, "drc")
+    erc = _gate(payload, "erc")
+    assert drc["passed"] is False
+    assert drc["violations"] == 1
+    assert erc["passed"] is False
+    assert erc["violations"] == 1
+    assert any("DRC failed: 1 violation(s)" in r for r in payload["blocking_reasons"])
+    assert any("ERC failed: 1 violation(s)" in r for r in payload["blocking_reasons"])
+
+
+def test_release_evidence_service_approves_hv_with_dru(tmp_path: Path) -> None:
+    module = _module()
+    context = _context(tmp_path)
+    dru_file = context.project_dir / "isolation.kicad_dru"
+    dru_file.write_text('(rule "HV_Clearance" (clearance 3.0mm))', encoding="utf-8")
+
+    service = module.ReleaseEvidenceService(run_cli=_successful_runner)
+    payload = json.loads(
+        service.create_evidence(
+            context=context,
+            product_domain="hazardous_mains",
+            voltage_v=400.0,
+            dry_run=True,
+        )
+    )
+
+    hv_gate = _gate(payload, "hv_safety")
+    assert hv_gate["passed"] is True
+    assert "HV design rules found in isolation.kicad_dru." in str(hv_gate.get("detail"))

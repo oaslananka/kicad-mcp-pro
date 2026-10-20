@@ -904,3 +904,30 @@ def test_source_disappears_during_read_is_rejected(
         patch.setattr(module.Path, "stat", disappear_on_final_identity)
         with pytest.raises(StateRebuildRequiredError, match="disappeared"):
             source_digests(project, SOURCES)
+
+
+def test_incremental_state_validation_helper_branches(tmp_path: Path) -> None:
+    from kicad_mcp.project import incremental_state as module
+
+    # 1. line 273: document not a dict
+    with pytest.raises(ValueError, match="not an object"):
+        module._validate_document_header("string-not-dict", tmp_path, "k", "c")
+
+    # 2. line 295: graph.project_key mismatch
+    graph = module.EngineeringGraph(project_key="project-1")
+    graph_doc = graph.to_document()
+    with pytest.raises(ValueError, match="Engineering Graph project identity mismatch"):
+        module._load_verified_graph(graph_doc, "project-2", ())
+
+    # 3. line 328: tracked source list changed
+    meta_doc = {
+        "source_hashes": {"main.kicad_sch": "h1"},
+        "entity_hashes": {},
+        "generation": 0,
+        "journal": [],
+        "derived_dependencies": {},
+    }
+    with pytest.raises(ValueError, match="tracked source list changed"):
+        module._validate_state_metadata_and_hashes(
+            meta_doc, tmp_path, graph, ("main.kicad_sch", "other.kicad_sch")
+        )

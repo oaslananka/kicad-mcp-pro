@@ -376,3 +376,141 @@ def test_smoke_assurance_writer_uses_fixed_repository_artifact_path(
 
     assert output == (tmp_path / "artifacts/live-model-smoke-assurance/report.json").resolve()
     assert json.loads(output.read_text(encoding="utf-8")) == {"passed": True}
+
+
+def test_smoke_assurance_validation_branches(tmp_path: Path) -> None:
+    # 1. _validate_status_record
+    with pytest.raises(ValueError, match="unexpected or missing status configuration"):
+        smoke_assurance._validate_status_record(
+            {"configuration_id": "unknown"}, ("alpha",), {}, "rev"
+        )
+    with pytest.raises(ValueError, match="duplicate status"):
+        smoke_assurance._validate_status_record(
+            {"configuration_id": "alpha"}, ("alpha",), {"alpha": {}}, "rev"
+        )
+    with pytest.raises(ValueError, match="status source revision mismatch"):
+        smoke_assurance._validate_status_record(
+            {"configuration_id": "alpha", "source_revision": "other"}, ("alpha",), {}, "rev"
+        )
+    with pytest.raises(ValueError, match="running status must not have an exit code"):
+        smoke_assurance._validate_status_record(
+            {
+                "configuration_id": "alpha",
+                "source_revision": "rev",
+                "state": "running",
+                "runner_exit_code": 0,
+            },
+            ("alpha",),
+            {},
+            "rev",
+        )
+    with pytest.raises(ValueError, match="completed status needs an integer exit code"):
+        smoke_assurance._validate_status_record(
+            {
+                "configuration_id": "alpha",
+                "source_revision": "rev",
+                "state": "completed",
+                "runner_exit_code": "bad",
+            },
+            ("alpha",),
+            {},
+            "rev",
+        )
+    with pytest.raises(ValueError, match="unsupported status state"):
+        smoke_assurance._validate_status_record(
+            {"configuration_id": "alpha", "source_revision": "rev", "state": "invalid"},
+            ("alpha",),
+            {},
+            "rev",
+        )
+
+    # 2. _validate_evidence_record
+    with pytest.raises(ValueError, match="unsupported evidence schema"):
+        smoke_assurance._validate_evidence_record(
+            {"schema_version": 99, "summary": {}, "configuration": {}}, ("alpha",), {}, "rev"
+        )
+    with pytest.raises(ValueError, match="configuration id missing"):
+        smoke_assurance._validate_evidence_record(
+            {"schema_version": 1, "configuration": {}, "summary": {}}, ("alpha",), {}, "rev"
+        )
+    with pytest.raises(ValueError, match="unexpected configuration"):
+        smoke_assurance._validate_evidence_record(
+            {"schema_version": 1, "configuration": {"id": "other"}, "summary": {}},
+            ("alpha",),
+            {},
+            "rev",
+        )
+    with pytest.raises(ValueError, match="duplicate configuration"):
+        smoke_assurance._validate_evidence_record(
+            {"schema_version": 1, "configuration": {"id": "alpha"}, "summary": {}},
+            ("alpha",),
+            {"alpha": {}},
+            "rev",
+        )
+
+    # 3. _evaluate_config_status with exit code 99 (not in {0, 1})
+    classifs: dict[str, list[str]] = {"integrity_failures": []}
+    skip, fail = smoke_assurance._evaluate_config_status(
+        "alpha", {"state": "completed", "runner_exit_code": 99}, True, classifs
+    )
+    assert skip is True and fail is False
+    assert any("unsupported runner exit code 99" in item for item in classifs["integrity_failures"])
+
+    # 4. _record_failure_classifications with unnecessary calls
+    classifs_fail: dict[str, list[str]] = {"quality_failures": []}
+    smoke_assurance._record_failure_classifications(
+        "alpha",
+        classifs_fail,
+        {"quality_threshold": False, "safety": False},
+        {
+            "selection_failures": 0,
+            "unnecessary": 2,
+            "adapter_failures": 0,
+            "complete": True,
+            "planned": 1,
+            "completed": 1,
+        },
+    )
+    assert any("unnecessary calls present" in item for item in classifs_fail["quality_failures"])
+
+    # 5. _evaluate_config with malformed config or summary
+    eval_classifs: dict[str, list[str]] = {"integrity_failures": []}
+    observed: dict[str, object] = {}
+    res = smoke_assurance._evaluate_config(
+        "alpha",
+        {},
+        {"alpha": {"summary": "not-a-dict", "configuration": {}}},
+        False,
+        eval_classifs,
+        observed,
+    )
+    assert res is False
+    assert any(
+        "malformed configuration or summary" in item for item in eval_classifs["integrity_failures"]
+    )
+
+    # 6. _evaluate_config with non-boolean pipeline_passed
+    eval_classifs2: dict[str, list[str]] = {"integrity_failures": []}
+    observed2: dict[str, object] = {}
+    smoke_assurance._evaluate_config(
+        "alpha",
+        {},
+        {
+            "alpha": {
+                "summary": {
+                    "pipeline_passed": "not-a-bool",
+                    "planned_observations": 1,
+                    "completed_observations": 1,
+                },
+                "configuration": {"host": "test-host", "model": "test-model"},
+                "complete": True,
+            }
+        },
+        False,
+        eval_classifs2,
+        observed2,
+    )
+    assert any(
+        "pipeline result missing or invalid" in item
+        for item in eval_classifs2["integrity_failures"]
+    )
