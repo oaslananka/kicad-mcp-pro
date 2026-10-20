@@ -9,21 +9,10 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel
 
+from ..validation.gates import GateOutcomeLike as GateOutcomeLike
+from ..validation.gates import combined_status as _combined_status
+
 ProjectSpecSource = Literal["project_spec", "legacy_design_intent", "none"]
-
-
-class GateOutcomeLike(Protocol):
-    @property
-    def name(self) -> str: ...
-
-    @property
-    def status(self) -> str: ...
-
-    @property
-    def summary(self) -> str: ...
-
-    @property
-    def details(self) -> list[str]: ...
 
 
 class FixerActionLike(Protocol):
@@ -84,19 +73,6 @@ class DesignReportPayload(BaseModel):
     compliance_count: int = 0
     has_mechanical_constraint: bool = False
     next_tool: str = ""
-
-
-def _combined_status(outcomes: Sequence[GateOutcomeLike]) -> str:
-    statuses = {outcome.status for outcome in outcomes}
-    if "EMPTY" in statuses:
-        return "EMPTY"
-    if "BLOCKED" in statuses:
-        return "BLOCKED"
-    if "FAIL" in statuses:
-        return "FAIL"
-    if "WARN" in statuses:
-        return "WARN"
-    return "PASS"
 
 
 @dataclass(frozen=True, slots=True)

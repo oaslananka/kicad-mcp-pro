@@ -2,7 +2,7 @@ const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const testRoot = path.resolve(__dirname, "..", "dist-test", "test");
+const testRoot = path.resolve("dist-test", "test");
 
 function collectTests(directory) {
   const files = [];

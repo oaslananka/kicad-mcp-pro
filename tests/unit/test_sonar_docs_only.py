@@ -23,7 +23,7 @@ from scripts.check_sonar_docs_only import is_docs_only_diff, main
         (["README.md"], False),
         (["sonar-project.properties"], False),
         ([".github/workflows/sonarcloud.yml"], False),
-        (["src/kicad_mcp/providers/dispatch.py"], False),
+        (["src/kicad_mcp/project/workflow.py"], False),
         (["tests/unit/test_sonar_docs_only.py"], False),
         (["docs/evidence/file.json", "src/kicad_mcp/server.py"], False),
         (["docs/evidence/file.json", "uv.lock"], False),

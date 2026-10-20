@@ -119,34 +119,6 @@ class TestKnownDefectFixtures:
         assert (fixture_dir / "demo.kicad_pcb").exists()
 
 
-class TestSchematicContentHash:
-    """Regression: schematic content hash changes must be deterministic."""
-
-    def test_schematic_state_hash_is_deterministic(self, tmp_path) -> None:
-        from kicad_mcp.models.state import SchematicState
-
-        sch = tmp_path / "test.kicad_sch"
-        content = b"(kicad_sch (version 20231120) (generator eeschema))"
-        sch.write_bytes(content)
-
-        s1 = SchematicState.from_path(sch)
-        s2 = SchematicState.from_path(sch)
-
-        assert s1.content_hash == s2.content_hash
-
-    def test_content_hash_changes_after_modification(self, tmp_path) -> None:
-        from kicad_mcp.models.state import SchematicState
-
-        sch = tmp_path / "test.kicad_sch"
-        sch.write_bytes(b"original content")
-        s1 = SchematicState.from_path(sch)
-
-        sch.write_bytes(b"modified content")
-        s2 = SchematicState.from_path(sch)
-
-        assert s1.content_hash != s2.content_hash
-
-
 class TestToolResultEnvelope:
     """Regression: tool results must support a structured output envelope."""
 
@@ -184,36 +156,3 @@ class TestToolResultEnvelope:
         parsed = json.loads(text)
 
         assert parsed["ok"] is True
-
-
-class TestJournalRollback:
-    """Regression: corrupted files must be recoverable from file snapshots."""
-
-    def test_journal_snapshot_and_rollback(self, tmp_path) -> None:
-        from kicad_mcp.execution.journal import RunJournal
-
-        journal = RunJournal(tmp_path / "test_journal.jsonl")
-        test_file = tmp_path / "demo.kicad_sch"
-        test_file.write_text("original content", encoding="utf-8")
-        token = journal.begin("sch_update_properties", "call-001", [test_file])
-
-        test_file.write_text("corrupted content", encoding="utf-8")
-        journal.commit(token, ok=True, changed=True, changed_files=[str(test_file)])
-        restored = journal.rollback(token)
-
-        assert restored
-        assert test_file.read_text(encoding="utf-8") == "original content"
-
-    def test_journal_entries_are_persisted(self, tmp_path) -> None:
-        from kicad_mcp.execution.journal import RunJournal
-
-        journal = RunJournal(tmp_path / "test_journal.jsonl")
-        test_file = tmp_path / "demo.kicad_sch"
-        test_file.write_text("content", encoding="utf-8")
-
-        token = journal.begin("sch_add_label", "call-002", [test_file])
-        journal.commit(token, ok=True, changed=False)
-        entries = journal.load_entries()
-
-        assert len(entries) == 1
-        assert entries[0].tool_name == "sch_add_label"

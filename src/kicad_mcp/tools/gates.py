@@ -1,31 +1,13 @@
-"""Shared validation gate data structures."""
+"""Compatibility exports for the shared validation gate domain."""
 
-from __future__ import annotations
+from ..validation.gates import (
+    GateOutcome as GateOutcome,
+)
+from ..validation.gates import (
+    GateStatus as GateStatus,
+)
+from ..validation.gates import (
+    combined_status as _combined_status,
+)
 
-from dataclasses import dataclass, field
-from typing import Literal
-
-GateStatus = Literal["PASS", "FAIL", "BLOCKED", "EMPTY", "WARN"]
-
-
-@dataclass(slots=True)
-class GateOutcome:
-    """Structured status for a validation gate."""
-
-    name: str
-    status: GateStatus
-    summary: str
-    details: list[str] = field(default_factory=list)
-
-
-def _combined_status(outcomes: list[GateOutcome]) -> GateStatus:
-    statuses = {outcome.status for outcome in outcomes}
-    if "EMPTY" in statuses:
-        return "EMPTY"
-    if "BLOCKED" in statuses:
-        return "BLOCKED"
-    if "FAIL" in statuses:
-        return "FAIL"
-    if "WARN" in statuses:
-        return "WARN"
-    return "PASS"
+__all__ = ["GateOutcome", "GateStatus", "_combined_status"]

@@ -57,7 +57,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-components = ["gql>=3.5.0", "httpx>=0.27.0"]
+components = ["httpx>=0.27.0"]
 dev = [
   "actionlint-py==1.7.12.24",
   "watchfiles>=1.0.0",

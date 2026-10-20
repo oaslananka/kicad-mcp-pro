@@ -27,13 +27,13 @@
     "pnpm": ">=11.0.0 <12"
   },
   "scripts": {
-    "format": "prettier --ignore-unknown --no-error-on-unmatched-pattern --write package.json README.md tsconfig*.json scripts/*.cjs src/**/*.ts test/**/*.ts schemas/**/*.json",
-    "format:check": "prettier --ignore-unknown --no-error-on-unmatched-pattern --check package.json README.md tsconfig*.json scripts/*.cjs src/**/*.ts test/**/*.ts schemas/**/*.json",
+    "format": "prettier --ignore-unknown --no-error-on-unmatched-pattern --write package.json README.md tsconfig*.json src/**/*.ts test/**/*.ts schemas/**/*.json",
+    "format:check": "prettier --ignore-unknown --no-error-on-unmatched-pattern --check package.json README.md tsconfig*.json src/**/*.ts test/**/*.ts schemas/**/*.json",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit && pnpm run build && tsc -p tsconfig.test.json --noEmit",
     "build": "tsc -p tsconfig.json",
     "build:test": "tsc -p tsconfig.test.json",
-    "test": "pnpm run build && pnpm run build:test && node scripts/run-tests.cjs",
+    "test": "pnpm run build && pnpm run build:test && node ../../scripts/run-package-tests.cjs",
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build"
   },
   "dependencies": {

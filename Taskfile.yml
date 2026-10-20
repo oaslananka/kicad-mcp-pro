@@ -278,9 +278,9 @@ tasks:
         silent: false
 
   icons:tauri:
-    desc: Regenerate Tauri placeholder icon files
+    desc: Regenerate Tauri icons from the canonical SVG
     cmds:
-      - uv run python scripts/generate_tauri_icons.py
+      - task: icons:generate
 
   icons:generate:
     desc: Regenerate tray and Tauri icon assets

@@ -8,21 +8,8 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field
 
-
-class GateOutcomeLike(Protocol):
-    """Structural gate outcome consumed by validation loops."""
-
-    @property
-    def name(self) -> str: ...
-
-    @property
-    def status(self) -> str: ...
-
-    @property
-    def summary(self) -> str: ...
-
-    @property
-    def details(self) -> list[str]: ...
+from ..validation.gates import GateOutcomeLike as GateOutcomeLike
+from ..validation.gates import combined_status as _combined_status
 
 
 class FixerActionLike(Protocol):
@@ -67,19 +54,6 @@ class AutoFixLoopPayload(BaseModel):
 SampleGuidance = Callable[[GateOutcomeLike], Awaitable[str]]
 ProgressReporter = Callable[[float, float, str], Awaitable[None]]
 CallableResolver = Callable[[str], Callable[[], object] | None]
-
-
-def _combined_status(outcomes: Sequence[GateOutcomeLike]) -> str:
-    statuses = {outcome.status for outcome in outcomes}
-    if "EMPTY" in statuses:
-        return "EMPTY"
-    if "BLOCKED" in statuses:
-        return "BLOCKED"
-    if "FAIL" in statuses:
-        return "FAIL"
-    if "WARN" in statuses:
-        return "WARN"
-    return "PASS"
 
 
 @dataclass(frozen=True, slots=True)

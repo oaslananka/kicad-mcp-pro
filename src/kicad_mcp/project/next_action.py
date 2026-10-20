@@ -4,27 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Protocol
 
 from pydantic import BaseModel, Field
 
 from ..models.verdict import Finding, SuggestedFix, Verdict, stable_finding_id
+from ..validation.gates import GateOutcomeLike as GateOutcomeLike
 
 _NEXT_ACTION_HEADING = "Project next action:"
-
-
-class GateOutcomeLike(Protocol):
-    @property
-    def name(self) -> str: ...
-
-    @property
-    def status(self) -> str: ...
-
-    @property
-    def summary(self) -> str: ...
-
-    @property
-    def details(self) -> list[str]: ...
 
 
 class ProjectNextActionPayload(BaseModel):

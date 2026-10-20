@@ -35,16 +35,6 @@ from .signal_integrity import (
     TraceWidthForImpedanceInput,
 )
 from .simulation import ACAnalysisInput, DCSweepInput, OperatingPointInput, TransientAnalysisInput
-from .state import (
-    AgentRunState,
-    BoardState,
-    CapabilityState,
-    ManufacturingState,
-    ProjectState,
-    SchematicState,
-    VerificationState,
-    WorkspaceState,
-)
 from .tool_result import ArtifactRef, StateDelta, ToolResult
 from .verdict import FailureMode, Finding, SuggestedFix, Verdict, VerdictReport, stable_finding_id
 
@@ -57,10 +47,7 @@ __all__ = [
     "AddTrackInput",
     "AddViaInput",
     "AddWireInput",
-    "AgentRunState",
     "ArtifactRef",
-    "BoardState",
-    "CapabilityState",
     "CopperWeightCheckInput",
     "CreepageCheckInput",
     "DecouplingRecommendationInput",
@@ -80,10 +67,7 @@ __all__ = [
     "LivePreviewRender",
     "LivePreviewSafety",
     "LivePreviewWatch",
-    "ManufacturingState",
     "OperatingPointInput",
-    "ProjectState",
-    "SchematicState",
     "SetStackupInput",
     "SuggestedFix",
     "StackupInput",
@@ -95,8 +79,6 @@ __all__ = [
     "TransientAnalysisInput",
     "Verdict",
     "VerdictReport",
-    "VerificationState",
     "VoltageDropInput",
-    "WorkspaceState",
     "stable_finding_id",
 ]

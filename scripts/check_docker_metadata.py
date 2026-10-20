@@ -86,8 +86,8 @@ def _check_base_dockerfile_markers(
 def _check_dockerfile_runtime(dockerfile: str, errors: list[str]) -> None:
     if "python:3.14.5-alpine3.22@sha256:" not in dockerfile:
         errors.append("Dockerfile must use the pinned Python 3.14.5 Alpine base")
-    if "python:3.14.7-slim@sha256:" not in dockerfile:
-        errors.append("Dockerfile must use the pinned Python 3.14.7 slim base for KiCad 10 stages")
+    if "python:3.14.8-slim@sha256:" not in dockerfile:
+        errors.append("Dockerfile must use the pinned Python 3.14.8 slim base for KiCad 10 stages")
     if (
         "ENV PYTHONDONTWRITEBYTECODE=1" not in dockerfile
         or "KICAD_MCP_HOST=0.0.0.0" not in dockerfile

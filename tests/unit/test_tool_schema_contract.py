@@ -372,7 +372,7 @@ def test_tool_annotations_present_in_listing() -> None:
 
     for tool in tools:
         assert tool.annotations is not None, (
-            f"{tool.name}: annotations is None. Set via tool_contract or infer_tool_annotations."
+            f"{tool.name}: annotations is None. Set via infer_tool_annotations."
         )
 
 

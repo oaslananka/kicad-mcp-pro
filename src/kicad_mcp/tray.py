@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -63,36 +64,14 @@ _STATUS_COLORS: dict[str, tuple[int, int, int]] = {
 
 
 def _create_icon(status: str = "stopped") -> Image.Image:
-    """Create a 64x64 tray icon (KiCad-style MCP logo)."""
+    """Load the brand icon and overlay the current server status."""
     if not _HAS_PIL or Image is None or ImageDraw is None:
         msg = "PIL (Pillow) is required for icon generation"
         raise ImportError(msg)
-    size = 64
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    asset = Path(__file__).with_name("tray_assets") / "icon_64.png"
+    with Image.open(asset) as base:
+        img = base.convert("RGBA")
     draw = ImageDraw.Draw(img)
-
-    # Draw a rounded rectangle with circuit-board accent
-    margin = 4
-    draw.rounded_rectangle(
-        [margin, margin, size - margin, size - margin],
-        radius=8,
-        fill=(13, 17, 23),
-        outline=(88, 166, 255),
-        width=2,
-    )
-
-    # Draw "K M" text (simplified circuit-like shape)
-    cx, cy = size // 2, size // 2
-    # Left vertical (K)
-    draw.line([(cx - 12, cy - 12), (cx - 12, cy + 12)], fill=(88, 166, 255), width=3)
-    draw.line([(cx - 12, cy), (cx + 4, cy - 12)], fill="white", width=2)
-    draw.line([(cx - 12, cy), (cx + 4, cy + 12)], fill="white", width=2)
-    # Right (M)
-    draw.line([(cx + 4, cy - 12), (cx + 4, cy + 12)], fill=(88, 166, 255), width=3)
-
-    # Connection dots (like circuit nodes)
-    draw.ellipse([(cx - 15, cy - 15), (cx - 9, cy - 9)], fill=(63, 185, 80))
-    draw.ellipse([(cx + 1, cy + 7), (cx + 7, cy + 13)], fill=(63, 185, 80))
     status_color = _STATUS_COLORS.get(status, _STATUS_COLORS["stopped"])
     draw.ellipse([46, 46, 62, 62], fill=(*status_color, 255), outline=(255, 255, 255, 220))
 
