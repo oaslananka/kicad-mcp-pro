@@ -38,7 +38,7 @@
 </p>
 
 <!-- parity-coverage-badge:start -->
-[![KiCad programmatic parity](https://img.shields.io/badge/KiCad_programmatic_parity-76.6%25-green)](docs/compatibility/capability-parity.generated.md)
+[![KiCad programmatic parity](https://img.shields.io/badge/KiCad_programmatic_parity-80.5%25-green)](docs/compatibility/capability-parity.generated.md)
 <!-- parity-coverage-badge:end -->
 
 <p>
