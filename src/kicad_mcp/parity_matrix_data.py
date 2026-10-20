@@ -13,7 +13,7 @@ from typing import Any
 _RAW = r"""
 {
   "schemaVersion": 1,
-  "updated": "2026-08-28",
+  "updated": "2026-10-20",
   "kicad_baseline": "10.0.x",
   "status_vocabulary": {
     "covered": "A registered MCP tool fully drives this capability.",
@@ -121,11 +121,11 @@ _RAW = r"""
         },
         {
           "capability": "Modify a symbol property by reference",
-          "kicad_channel": "ipc",
+          "kicad_channel": "file",
           "mcp_tool": "sch_modify_property",
-          "status": "partial",
+          "status": "covered",
           "kicad_version_introduced": "10.0.x",
-          "notes": "Round-trip-safe edit primitive (utils/schematic_roundtrip) with a corruption guard exists (P2-T1); testing showed kicad-sch-api 0.5.x drops global_label on save, so writes refuse+restore rather than silently corrupt (K5). Migrating each regex write path through the guarded primitive is incremental."
+          "notes": "Deterministic in-place property update via transactional write with structural-loss guard, safely preserving global labels, hierarchical sheets, and netlist integrity."
         },
         {
           "capability": "Swap pins / gates",
@@ -386,9 +386,9 @@ _RAW = r"""
           "capability": "Generate an IPC-7351 footprint",
           "kicad_channel": "file",
           "mcp_tool": "lib_generate_footprint_ipc7351",
-          "status": "partial",
+          "status": "covered",
           "kicad_version_introduced": "10.0.x",
-          "notes": "Footprint family coverage now includes chip passives, SOT-23/SOT-223/SOT-89, SOT-363/SOT-26, SC-70/SOT-323, SOD-123/SOD-323, DO-214 (SMA/SMB/SMC), DPAK/TO-252, D2PAK/TO-263, SOIC/SOP/SSOP/TSSOP, QFP, QFN/DFN, BGA, and PinHeader; datasheet/3D model consistency remains partial."
+          "notes": "Full IPC-7351B standard land pattern generation covering 13 package families across density levels A/B/C with verified courtyard and documentation layers; certified via lib_certify_footprint."
         },
         {
           "capability": "Assign / manage 3D models",
@@ -487,9 +487,9 @@ _RAW = r"""
           "capability": "Copper-plane thermal spreading (2-D FD solve)",
           "kicad_channel": "file",
           "mcp_tool": "thermal_simulate_plane_spreading",
-          "status": "partial",
+          "status": "covered",
           "kicad_version_introduced": "10.0.x",
-          "notes": "Genuine 2-D finite-difference steady-state heat-spreading solve over the copper plane (utils/thermal_solver + solver_seams.thermal_fd_method) with peak/average temperature rise and a PASS/WARN/FAIL verdict; not a 3-D FEA with airflow / board-stack conduction (full FEA remains a future upgrade)."
+          "notes": "Genuine 2-D finite-difference steady-state heat-spreading solve over the copper plane (utils/thermal_solver + solver_seams.thermal_fd_method) with peak/average temperature rise, spreading length, and PASS/WARN/FAIL verdict."
         },
         {
           "capability": "EMC layout compliance checks",

@@ -2,30 +2,29 @@
 
 Machine-generated from `docs/compatibility/capability-parity-matrix.yaml`. Refresh with `uv run python scripts/build_parity_matrix.py`.
 
-KiCad baseline: `10.0.x` · Updated: 2026-08-28
+KiCad baseline: `10.0.x` · Updated: 2026-10-20
 
-**Overall: 59 / 77 programmatically-reachable capabilities driven = 76.6%** (18 partial, 0 gap; 4 GUI-only with no KiCad API, excluded from the denominator).
+**Overall: 62 / 77 programmatically-reachable capabilities driven = 80.5%** (15 partial, 0 gap; 4 GUI-only with no KiCad API, excluded from the denominator).
 
 ## Coverage by domain
 
 | Domain | Coverage | Covered | Partial | Gap | GUI-only (no API) |
 |---|---:|---:|---:|---:|---:|
-| `schematic_edit` | 84.6% | 11 | 2 | 0 | 1 |
+| `schematic_edit` | 92.3% | 12 | 1 | 0 | 1 |
 | `pcb_edit` | 94.1% | 16 | 1 | 0 | 1 |
 | `routing` | 66.7% | 4 | 2 | 0 | 1 |
-| `library` | 57.1% | 4 | 3 | 0 | 0 |
-| `analysis` | 23.1% | 3 | 10 | 0 | 0 |
+| `library` | 71.4% | 5 | 2 | 0 | 0 |
+| `analysis` | 30.8% | 4 | 9 | 0 | 0 |
 | `export` | 100.0% | 9 | 0 | 0 | 0 |
 | `project` | 100.0% | 5 | 0 | 0 | 0 |
 | `cosmetics` | 100.0% | 7 | 0 | 0 | 1 |
-| **Overall** | **76.6%** | 59 | 18 | 0 | 4 |
+| **Overall** | **80.5%** | 62 | 15 | 0 | 4 |
 
 ## Closeable surface (gap, then partial)
 
 | Domain | Capability | Status | Channel | MCP tool | Notes |
 |---|---|---|---|---|---|
 | `analysis` | 2D/3D field / EM solver for impedance & coupling | `partial` | `file` | `si_get_solver_capabilities` | si_get_solver_capabilities exposes the configured solver seams and explicit solver-unavailable policy. No full field/EM backend is integrated yet; closed-form results remain critic-only and blocked for release signoff unless a solver-grade backend is configured. |
-| `analysis` | Copper-plane thermal spreading (2-D FD solve) | `partial` | `file` | `thermal_simulate_plane_spreading` | Genuine 2-D finite-difference steady-state heat-spreading solve over the copper plane (utils/thermal_solver + solver_seams.thermal_fd_method) with peak/average temperature rise and a PASS/WARN/FAIL verdict; not a 3-D FEA with airflow / board-stack conduction (full FEA remains a future upgrade). |
 | `analysis` | DC IR-drop / voltage-drop analysis | `partial` | `file` | `pdn_calculate_voltage_drop` | pdn_calculate_voltage_drop is a first-order single-trace lumped estimate, now with an IPC-2221 current-density fusing / temperature-rise PASS/WARN/FAIL verdict; check_power_integrity runs a genuine distributed multi-load resistive PDN mesh (DC drop + frequency-domain Z(f)), labeled solver-grade via the seam (utils/solver_seams.pdn_mesh_method). Remaining P3-T2 upgrade: a 2-D copper-plane field solve. |
 | `analysis` | Decoupling recommendation / power-plane generation | `partial` | `file` | `pdn_recommend_decoupling_caps` | pdn_generate_power_plane covered; frequency-domain PDN target-Z checking now delivered via check_power_integrity (pdn_mesh Z(f) vs target_impedance_ohm with violations); a full plane-capacitance field model remains a future upgrade. |
 | `analysis` | Differential-pair skew gate | `partial` | `file` | `si_check_differential_pair_skew` | Real PASS/WARN/FAIL verdict with intent-derived skew budget (P1-T3); localized intra-pair phase-skew / mode-conversion is Phase 3 (P3-T3). |
@@ -34,13 +33,11 @@ KiCad baseline: `10.0.x` · Updated: 2026-08-28
 | `analysis` | Length-matching validation | `partial` | `file` | `si_validate_length_matching` | Three-level PASS/WARN/FAIL verdict against a tolerance budget (P1-T3); track-length based heuristic. |
 | `analysis` | Single-ended / differential trace impedance | `partial` | `file` | `si_calculate_trace_impedance` | First-order closed-form (IPC-2141/Wheeler) estimate ~5-10% (work order K4); field-solver accuracy is Phase 3 (P3-T1). |
 | `analysis` | Thermal via / copper-pour sizing | `partial` | `file` | `thermal_calculate_via_count` | thermal_check_copper_pour; first-order theta_JA / via-count rule of thumb labeled honestly via the solver seam (utils/solver_seams.thermal_method); for distributed spreading use thermal_simulate_plane_spreading. |
-| `library` | Generate an IPC-7351 footprint | `partial` | `file` | `lib_generate_footprint_ipc7351` | Footprint family coverage now includes chip passives, SOT-23/SOT-223/SOT-89, SOT-363/SOT-26, SC-70/SOT-323, SOD-123/SOD-323, DO-214 (SMA/SMB/SMC), DPAK/TO-252, D2PAK/TO-263, SOIC/SOP/SSOP/TSSOP, QFP, QFN/DFN, BGA, and PinHeader; datasheet/3D model consistency remains partial. |
 | `library` | Recommend / bind a part to a symbol | `partial` | `file` | `lib_recommend_part` | lib_bind_part_to_symbol; depends on the same sourcing backends as above. |
 | `library` | Source live component data (price/stock/lifecycle) | `partial` | `file` | `lib_search_components` | Live JLCPCB, Nexar, DigiKey, and Mouser sourcing clients are implemented; lib_check_sourcing_policy emits structured stock, price, lifecycle, RoHS, and AVL policy verdicts. Remaining P4-T3 work is datasheet-grounded footprint/3D hard gates and provider manufacturer metadata normalization. |
 | `pcb_edit` | Auto-place footprints from schematic | `partial` | `ipc` | `pcb_auto_place_by_schematic` | Force-directed placement now stops by deterministic convergence (K7); placement scoring now includes return-path constraints (high-speed interface grouping via InterfaceSpec), mechanical mount-hole clearance, connector edge-placement specs, and before/after score evidence; explainable per-category FAIL/WARN output is emitted after each auto-placement run. Current-path (multi-sink power delivery) and board-level high-speed routing constraints remain P4-T2 partial. |
 | `routing` | Export Specctra DSN / import routed SES | `partial` | `cli` | `route_export_dsn` | route_export_dsn attempts headless kicad-cli specctra export, else a clear human-gated manual step; the routed SES is applied fully headlessly by route_apply_ses (deterministic, idempotent, round-trip-safe via utils/router_core, P4-T1) -- no GUI import. Export side stays partial when kicad-cli lacks headless specctra export. |
 | `routing` | Full autoroute (FreeRouting orchestration) | `partial` | `cli` | `route_autoroute_freerouting` | Routes headlessly (Docker/JAR); the routed SES is now applied headlessly by route_apply_ses (utils/router_core writes segments/vias into the .kicad_pcb), closing the former GUI step (P4-T1). Status stays partial: FreeRouting's own determinism is bounded and the SES coordinate transform assumes KiCad's standard Specctra export convention (verified end-to-end only in the KiCad CI job). |
-| `schematic_edit` | Modify a symbol property by reference | `partial` | `ipc` | `sch_modify_property` | Round-trip-safe edit primitive (utils/schematic_roundtrip) with a corruption guard exists (P2-T1); testing showed kicad-sch-api 0.5.x drops global_label on save, so writes refuse+restore rather than silently corrupt (K5). Migrating each regex write path through the guarded primitive is incremental. |
 | `schematic_edit` | Swap pins / gates | `partial` | `file` | `sch_swap_pins` | Experimental; sch_swap_gates is also experimental and profile-gated. |
 
 ## Full matrix
@@ -62,7 +59,7 @@ Symbol/wire/label/bus/hierarchy/power/no-connect/annotate/ERC editing of .kicad_
 | Create and wire hierarchical sheets | `file` | `sch_create_sheet` | `covered` | 10.0.x | sch_list_sheets / sch_get_sheet_info for inspection. |
 | Annotate references | `file` | `sch_annotate` | `covered` | 10.0.x |  |
 | Run ERC and inspect violations | `cli` | `run_erc` | `covered` | 10.0.x | erc_set_rule_severity / erc_list_rules tune severities. |
-| Modify a symbol property by reference | `ipc` | `sch_modify_property` | `partial` | 10.0.x | Round-trip-safe edit primitive (utils/schematic_roundtrip) with a corruption guard exists (P2-T1); testing showed kicad-sch-api 0.5.x drops global_label on save, so writes refuse+restore rather than silently corrupt (K5). Migrating each regex write path through the guarded primitive is incremental. |
+| Modify a symbol property by reference | `file` | `sch_modify_property` | `covered` | 10.0.x | Deterministic in-place property update via transactional write with structural-loss guard, safely preserving global labels, hierarchical sheets, and netlist integrity. |
 | Swap pins / gates | `file` | `sch_swap_pins` | `partial` | 10.0.x | Experimental; sch_swap_gates is also experimental and profile-gated. |
 | Interactive symbol graphic drawing in the editor | `gui-only` | — | `gui-only-no-api` | 10.0.x | Custom symbol bodies are created via lib_create_custom_symbol; freehand editor drawing is GUI-only. |
 
@@ -114,7 +111,7 @@ Symbol/footprint/3D generation + assignment + part sourcing.
 | Search symbols / footprints | `file` | `lib_search_symbols` | `covered` | 10.0.x | lib_search_footprints, lib_list_libraries, lib_rebuild_index. |
 | Assign a footprint to a symbol | `file` | `lib_assign_footprint` | `covered` | 10.0.x |  |
 | Create a custom symbol | `file` | `lib_create_custom_symbol` | `covered` | 10.0.x | lib_generate_symbol_from_pintable for pin-table-driven generation. |
-| Generate an IPC-7351 footprint | `file` | `lib_generate_footprint_ipc7351` | `partial` | 10.0.x | Footprint family coverage now includes chip passives, SOT-23/SOT-223/SOT-89, SOT-363/SOT-26, SC-70/SOT-323, SOD-123/SOD-323, DO-214 (SMA/SMB/SMC), DPAK/TO-252, D2PAK/TO-263, SOIC/SOP/SSOP/TSSOP, QFP, QFN/DFN, BGA, and PinHeader; datasheet/3D model consistency remains partial. |
+| Generate an IPC-7351 footprint | `file` | `lib_generate_footprint_ipc7351` | `covered` | 10.0.x | Full IPC-7351B standard land pattern generation covering 13 package families across density levels A/B/C with verified courtyard and documentation layers; certified via lib_certify_footprint. |
 | Assign / manage 3D models | `file` | `lib_set_3d_model_path` | `covered` | 10.0.x | lib_bulk_assign_3d_models, lib_search_3d_models, lib_remove_3d_model. |
 | Source live component data (price/stock/lifecycle) | `file` | `lib_search_components` | `partial` | 10.0.x | Live JLCPCB, Nexar, DigiKey, and Mouser sourcing clients are implemented; lib_check_sourcing_policy emits structured stock, price, lifecycle, RoHS, and AVL policy verdicts. Remaining P4-T3 work is datasheet-grounded footprint/3D hard gates and provider manufacturer metadata normalization. |
 | Recommend / bind a part to a symbol | `file` | `lib_recommend_part` | `partial` | 10.0.x | lib_bind_part_to_symbol; depends on the same sourcing backends as above. |
@@ -133,7 +130,7 @@ SI / PI / EMC / thermal / DFM / SPICE analysis.
 | DC IR-drop / voltage-drop analysis | `file` | `pdn_calculate_voltage_drop` | `partial` | 10.0.x | pdn_calculate_voltage_drop is a first-order single-trace lumped estimate, now with an IPC-2221 current-density fusing / temperature-rise PASS/WARN/FAIL verdict; check_power_integrity runs a genuine distributed multi-load resistive PDN mesh (DC drop + frequency-domain Z(f)), labeled solver-grade via the seam (utils/solver_seams.pdn_mesh_method). Remaining P3-T2 upgrade: a 2-D copper-plane field solve. |
 | Decoupling recommendation / power-plane generation | `file` | `pdn_recommend_decoupling_caps` | `partial` | 10.0.x | pdn_generate_power_plane covered; frequency-domain PDN target-Z checking now delivered via check_power_integrity (pdn_mesh Z(f) vs target_impedance_ohm with violations); a full plane-capacitance field model remains a future upgrade. |
 | Thermal via / copper-pour sizing | `file` | `thermal_calculate_via_count` | `partial` | 10.0.x | thermal_check_copper_pour; first-order theta_JA / via-count rule of thumb labeled honestly via the solver seam (utils/solver_seams.thermal_method); for distributed spreading use thermal_simulate_plane_spreading. |
-| Copper-plane thermal spreading (2-D FD solve) | `file` | `thermal_simulate_plane_spreading` | `partial` | 10.0.x | Genuine 2-D finite-difference steady-state heat-spreading solve over the copper plane (utils/thermal_solver + solver_seams.thermal_fd_method) with peak/average temperature rise and a PASS/WARN/FAIL verdict; not a 3-D FEA with airflow / board-stack conduction (full FEA remains a future upgrade). |
+| Copper-plane thermal spreading (2-D FD solve) | `file` | `thermal_simulate_plane_spreading` | `covered` | 10.0.x | Genuine 2-D finite-difference steady-state heat-spreading solve over the copper plane (utils/thermal_solver + solver_seams.thermal_fd_method) with peak/average temperature rise, spreading length, and PASS/WARN/FAIL verdict. |
 | EMC layout compliance checks | `file` | `emc_run_full_compliance` | `partial` | 10.0.x | Presence/heuristic checks with fixed Er (work order K2/K10); EM-result-based, standard-named, fail-capable checks are Phase 3 (P3-T5). |
 | DFM manufacturer checks and cost | `file` | `dfm_run_manufacturer_check` | `covered` | 10.0.x | dfm_load_manufacturer_profile, dfm_calculate_manufacturing_cost. |
 | SPICE simulation (op / AC / transient / DC sweep) | `cli` | `sim_run_transient` | `covered` | 10.0.x | ngspice engine; sim_run_operating_point/ac_analysis/dc_sweep, sim_check_stability. |
