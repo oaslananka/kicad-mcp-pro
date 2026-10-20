@@ -3452,6 +3452,10 @@ def load_lib_symbol(library: str, symbol_name: str) -> str | None:
 def _flatten_extends_symbol(library: str, symbol_name: str, blocks: list[str]) -> str:
     """Collapse an ``(extends ...)`` chain into one self-contained symbol.
 
+    ``blocks`` must be nonempty and ordered from oldest ancestor to leaf; an
+    empty list raises ``IndexError``. Top-level properties introduced at each
+    derived level are retained, with later definitions taking precedence.
+
     KiCad does not keep the extends relationship when it caches a symbol inside a
     schematic: it copies the base symbol's graphic child units into the derived
     symbol and renames them to the derived symbol's prefix. We reproduce that so
@@ -3484,7 +3488,12 @@ def _flatten_extends_symbol(library: str, symbol_name: str, blocks: list[str]) -
 
 
 def _merge_inherited_symbol_property(flat: str, name: str, property_block: str) -> str:
-    """Replace one inherited property or append it outside child geometry units."""
+    """Return ``flat`` with the top-level property ``name`` replaced or inserted.
+
+    ``property_block`` is the complete ``(property ...)`` expression. Missing
+    properties are inserted before the first child geometry unit, or before the
+    symbol's closing parenthesis when no such unit is found.
+    """
     inherited = _symbol_property_blocks(flat).get(name)
     if inherited:
         return flat.replace(inherited, property_block, 1)
