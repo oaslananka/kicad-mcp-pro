@@ -231,3 +231,20 @@ def test_gateway_match_rejects_tool_call_count_mismatch_directly() -> None:
             pairs=[("kicad_get_version", "completed")],
             server_name=_SERVER,
         )
+
+
+def test_rejects_gateway_success_when_server_reports_failure(
+    evidence: tuple[Path, Path],
+) -> None:
+    """A successful Gateway transport must not mask a failed MCP tool result."""
+    server, _witness = evidence
+    events = [json.loads(line) for line in server.read_text(encoding="utf-8").splitlines()]
+    first_result = next(event for event in events if event["event_type"] == "tool_result")
+    first_result["status"] = "failed"
+    server.write_text(
+        "\n".join(json.dumps(event, sort_keys=True) for event in events) + "\n",
+        encoding="utf-8",
+    )
+    # The independent gateway still reports both calls as 'ok'.
+    with pytest.raises(ReferenceOpsGatewayAuditError, match="Gateway failure disagrees"):
+        _reconcile(evidence)
