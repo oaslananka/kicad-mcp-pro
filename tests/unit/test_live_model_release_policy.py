@@ -1042,3 +1042,48 @@ def test_release_noop_import_guard_fails_closed_when_git_blob_unavailable(
     assert not module._only_verified_nonfunctional_release_diff(
         tmp_path, policy, base_ref="base", head_ref="HEAD"
     )
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid", "message"),
+    [
+        ("approved_at", "not-a-date", "approved_at"),
+        ("source_revision", "not-a-sha", "source_revision"),
+        ("agent_contract_digest", "not-a-digest", "agent_contract_digest"),
+        ("workflow_run_id", True, "workflow_run_id"),
+        ("aggregate_sha256", "not-a-digest", "aggregate_sha256"),
+    ],
+)
+def test_approved_baseline_metadata_rejects_invalid_audit_fields(
+    tmp_path: Path, field: str, invalid: object, message: str
+) -> None:
+    baseline_path = _baseline(
+        tmp_path / "approved.yaml",
+        approved=True,
+        approved_at="2026-06-01",
+        source_revision="a" * 40,
+        agent_contract_digest="b" * 64,
+    )
+    data = yaml.safe_load(baseline_path.read_text(encoding="utf-8"))
+    container = data["evidence"] if field in {"workflow_run_id", "aggregate_sha256"} else data
+    container[field] = invalid
+    baseline_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    with pytest.raises(ReleasePolicyError, match=message):
+        load_baseline_metadata(baseline_path)
+
+
+def test_approved_baseline_metadata_preserves_audit_identifiers(tmp_path: Path) -> None:
+    baseline_path = _baseline(
+        tmp_path / "approved.yaml",
+        approved=True,
+        approved_at="2026-06-01",
+        source_revision="a" * 40,
+        agent_contract_digest="b" * 64,
+    )
+    metadata = load_baseline_metadata(baseline_path)
+    assert metadata.approved is True
+    assert metadata.approved_at == date(2026, 6, 1)
+    assert metadata.source_revision == "a" * 40
+    assert metadata.agent_contract_digest == "b" * 64
+    assert metadata.workflow_run_id == 123
+    assert metadata.aggregate_sha256 == "a" * 64

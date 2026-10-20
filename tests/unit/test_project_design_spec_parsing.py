@@ -320,3 +320,49 @@ def test_parse_simple_yaml_empty_list_item_and_nested_block() -> None:
     parser = _SimpleYamlParser([(0, "- "), (2, "nested: 42"), (0, "- ")])
     parsed = parser.parse()
     assert parsed == [{"nested": 42}, None]
+
+
+def test_import_helpers_preserve_empty_fallback_and_missing_mechanical_contract() -> None:
+    from kicad_mcp.project.design_spec import _extract_yaml_frontmatter
+
+    # An invalid JSON list still uses the conservative YAML-like fallback.
+    assert _parse_import_scalar("[ ]") == []
+    assert _parse_import_scalar("[\u00a0]") == []  # Non-JSON whitespace fallback.
+    # A valid YAML list is not a supported mapping-shaped frontmatter block.
+    assert _extract_yaml_frontmatter("---\n- item\n---\n") is None
+    assert _import_spec_missing_fields({"required_sheets": ["Main"], "mechanical": None}) == [
+        "mechanical.board_width_mm",
+        "mechanical.board_height_mm",
+    ]
+
+
+def test_design_spec_rendering_preserves_optional_compliance_and_cost() -> None:
+    from kicad_mcp.models.intent import ComplianceTarget, CostTarget
+
+    rendered = _render_design_intent(
+        ProjectDesignIntent(
+            compliance=[ComplianceTarget(kind="ce_emc")],
+            cost=CostTarget(unit_cost_usd_max=12.5),
+        )
+    )
+    assert "- Compliance: ce_emc" in rendered
+    assert "- Cost target: <$12.50/unit" in rendered
+    assert rendered.index("- Compliance:") < rendered.index("- Cost target:")
+
+
+def test_validate_design_intent_checks_references_on_existing_board(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.config import get_config
+    from kicad_mcp.project.design_spec import validate_design_intent
+
+    board = tmp_path / "board.kicad_pcb"
+    board.write_text("(kicad_pcb)\n", encoding="utf-8")
+    monkeypatch.setattr(get_config(), "pcb_file", board)
+    monkeypatch.setattr(
+        "kicad_mcp.tools.board_file._parse_board_footprint_blocks",
+        lambda _content: {"U1": {"x_mm": 1.0, "y_mm": 2.0}},
+    )
+    assert validate_design_intent(ProjectDesignIntent(connector_refs=["J1", "U1"])) == [
+        "Connector ref 'J1' is not present on the PCB."
+    ]
