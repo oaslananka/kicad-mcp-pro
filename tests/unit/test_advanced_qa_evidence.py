@@ -100,8 +100,7 @@ def test_enforced_load_failure_still_writes_evidence(
         run_load_test,
         "run_load_benchmark",
         lambda **_args: {
-            "pass_criteria_met": False,
-            "error_rate_percent": 0,
+            **_benchmark("lightweight", False)["benchmark"],
             "throughput_rps": 1,
             "latencies_ms": {"p50": 5, "p95": 500, "p99": 600, "max": 600},
         },
