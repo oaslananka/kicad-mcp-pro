@@ -154,6 +154,199 @@ def _now_utc() -> datetime:
     return datetime.now(UTC)
 
 
+def _evaluate_artifact_gate(
+    artifact_dir: Path,
+    release_files: list[Path],
+    waive_missing_artifacts: bool,
+) -> tuple[dict[str, Any], list[str]]:
+    coverage = artifact_coverage(artifact_dir, files=release_files)
+    found_artifacts = [name for name, matches in coverage.items() if matches]
+    missing_artifacts = [name for name, matches in coverage.items() if not matches]
+
+    artifact_passed = not missing_artifacts or waive_missing_artifacts
+    gate = {
+        "gate": "artifact_coverage",
+        "passed": artifact_passed,
+        "found": found_artifacts,
+        "missing": missing_artifacts,
+        "waived": waive_missing_artifacts and bool(missing_artifacts),
+    }
+    blocking: list[str] = []
+    if not artifact_passed:
+        blocking.append(
+            f"Missing required artifacts: {', '.join(missing_artifacts)}. "
+            "Run export_manufacturing_package() first."
+        )
+    return gate, blocking
+
+
+def _run_cli_drc(
+    run_cli: CliRunner,
+    pcb_file: Path,
+) -> tuple[bool, int, int, str | None]:
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False, dir=pcb_file.parent) as tmp:
+        tmp_path = tmp.name
+    try:
+        code, stdout, stderr = run_cli(
+            "pcb",
+            "drc",
+            "--output",
+            tmp_path,
+            "--format",
+            "json",
+            "--schematic-parity",
+            str(pcb_file),
+        )
+        if code == 0 and os.path.exists(tmp_path):
+            report = json.loads(Path(tmp_path).read_text(encoding="utf-8"))
+            violations = report.get("violations", [])
+            unconnected = report.get("unconnected_items", [])
+            drc_violations = len(violations) if isinstance(violations, list) else 0
+            drc_unconnected = len(unconnected) if isinstance(unconnected, list) else 0
+            drc_passed = drc_violations == 0 and drc_unconnected == 0
+            return drc_passed, drc_violations, drc_unconnected, None
+        return False, -1, -1, stderr or stdout or f"DRC exited with code {code}"
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+def _evaluate_drc_gate(
+    run_cli: CliRunner,
+    pcb_file: Path | None,
+) -> tuple[dict[str, Any], list[str]]:
+    drc_passed = False
+    drc_violations = -1
+    drc_unconnected = -1
+    drc_error: str | None = None
+    try:
+        if pcb_file and pcb_file.exists():
+            drc_passed, drc_violations, drc_unconnected, drc_error = _run_cli_drc(run_cli, pcb_file)
+        else:
+            drc_error = "No PCB file configured."
+    except Exception as exc:  # preserve fail-closed release evidence behavior
+        drc_error = str(exc)
+
+    gate = {
+        "gate": "drc",
+        "passed": drc_passed,
+        "violations": drc_violations,
+        "unconnected_items": drc_unconnected,
+        "error": drc_error,
+    }
+    blocking: list[str] = []
+    if not drc_passed:
+        if drc_error:
+            blocking.append(f"DRC could not run: {drc_error}")
+        else:
+            blocking.append(
+                f"DRC failed: {drc_violations} violation(s), {drc_unconnected} unconnected item(s)."
+            )
+    return gate, blocking
+
+
+def _run_cli_erc(
+    run_cli: CliRunner,
+    sch_file: Path,
+) -> tuple[bool, int, str | None]:
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False, dir=sch_file.parent) as tmp:
+        tmp_path = tmp.name
+    try:
+        code, stdout, stderr = run_cli(
+            "sch",
+            "erc",
+            "--output",
+            tmp_path,
+            "--format",
+            "json",
+            str(sch_file),
+        )
+        if code == 0 and os.path.exists(tmp_path):
+            report = json.loads(Path(tmp_path).read_text(encoding="utf-8"))
+            violations = report.get("violations", [])
+            erc_violations = len(violations) if isinstance(violations, list) else 0
+            erc_passed = erc_violations == 0
+            return erc_passed, erc_violations, None
+        return False, -1, stderr or stdout or f"ERC exited with code {code}"
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+def _evaluate_erc_gate(
+    run_cli: CliRunner,
+    sch_file: Path | None,
+) -> tuple[dict[str, Any], list[str]]:
+    erc_passed = False
+    erc_violations = -1
+    erc_error: str | None = None
+    try:
+        if sch_file and sch_file.exists():
+            erc_passed, erc_violations, erc_error = _run_cli_erc(run_cli, sch_file)
+        else:
+            erc_error = "No schematic file configured."
+    except Exception as exc:  # preserve fail-closed release evidence behavior
+        erc_error = str(exc)
+
+    gate = {
+        "gate": "erc",
+        "passed": erc_passed,
+        "violations": erc_violations,
+        "error": erc_error,
+    }
+    blocking: list[str] = []
+    if not erc_passed:
+        if erc_error:
+            blocking.append(f"ERC could not run: {erc_error}")
+        else:
+            blocking.append(f"ERC failed: {erc_violations} violation(s).")
+    return gate, blocking
+
+
+def _evaluate_hv_safety_gate(
+    project_dir: Path | None,
+    is_hv: bool,
+    voltage_v: float,
+    effective_domain: str,
+) -> tuple[dict[str, Any], list[str]]:
+    hv_gate_applicable = is_hv
+    hv_gate_passed = True
+    hv_gate_detail = "Not applicable (SELV domain)."
+    if hv_gate_applicable:
+        dru_files = list(project_dir.glob("*.kicad_dru")) if project_dir else []
+        hv_dru: Path | None = None
+        for dru in dru_files:
+            text = dru.read_text(encoding="utf-8", errors="ignore")
+            if "creepage" in text.lower() or "clearance" in text.lower():
+                hv_dru = dru
+                break
+        if hv_dru:
+            hv_gate_detail = f"HV design rules found in {hv_dru.name}."
+        else:
+            hv_gate_passed = False
+            hv_gate_detail = (
+                f"No .kicad_dru with creepage/clearance rules found for "
+                f"{voltage_v:.0f} V {effective_domain} design. "
+                "Run generate_board_constraints() to create HV safety rules."
+            )
+    gate = {
+        "gate": "hv_safety",
+        "applicable": hv_gate_applicable,
+        "passed": hv_gate_passed,
+        "detail": hv_gate_detail,
+        "voltage_v": voltage_v,
+        "domain": effective_domain,
+    }
+    blocking: list[str] = []
+    if hv_gate_applicable and not hv_gate_passed:
+        blocking.append(hv_gate_detail)
+    return gate, blocking
+
+
 @dataclass(frozen=True)
 class ReleaseEvidenceService:
     """Evaluate manufacturing release gates independently of FastMCP transport."""
@@ -182,166 +375,26 @@ class ReleaseEvidenceService:
         blocking: list[str] = []
 
         release_files = find_release_files(artifact_dir) if artifact_dir.exists() else []
-        coverage = artifact_coverage(artifact_dir, files=release_files)
-        found_artifacts = [name for name, matches in coverage.items() if matches]
-        missing_artifacts = [name for name, matches in coverage.items() if not matches]
 
-        artifact_passed = not missing_artifacts or waive_missing_artifacts
-        gates.append(
-            {
-                "gate": "artifact_coverage",
-                "passed": artifact_passed,
-                "found": found_artifacts,
-                "missing": missing_artifacts,
-                "waived": waive_missing_artifacts and bool(missing_artifacts),
-            }
+        artifact_gate, artifact_blocking = _evaluate_artifact_gate(
+            artifact_dir, release_files, waive_missing_artifacts
         )
-        if not artifact_passed:
-            blocking.append(
-                f"Missing required artifacts: {', '.join(missing_artifacts)}. "
-                "Run export_manufacturing_package() first."
-            )
+        gates.append(artifact_gate)
+        blocking.extend(artifact_blocking)
 
-        drc_passed = False
-        drc_violations = -1
-        drc_unconnected = -1
-        drc_error: str | None = None
-        try:
-            if context.pcb_file and context.pcb_file.exists():
-                with tempfile.NamedTemporaryFile(
-                    suffix=".json", delete=False, dir=context.pcb_file.parent
-                ) as tmp:
-                    tmp_path = tmp.name
-                try:
-                    code, stdout, stderr = self.run_cli(
-                        "pcb",
-                        "drc",
-                        "--output",
-                        tmp_path,
-                        "--format",
-                        "json",
-                        "--schematic-parity",
-                        str(context.pcb_file),
-                    )
-                    if code == 0 and os.path.exists(tmp_path):
-                        report = json.loads(Path(tmp_path).read_text(encoding="utf-8"))
-                        violations = report.get("violations", [])
-                        unconnected = report.get("unconnected_items", [])
-                        drc_violations = len(violations) if isinstance(violations, list) else 0
-                        drc_unconnected = len(unconnected) if isinstance(unconnected, list) else 0
-                        drc_passed = drc_violations == 0 and drc_unconnected == 0
-                    else:
-                        drc_error = stderr or stdout or f"DRC exited with code {code}"
-                finally:
-                    try:
-                        os.unlink(tmp_path)
-                    except OSError:
-                        pass
-            else:
-                drc_error = "No PCB file configured."
-        except Exception as exc:  # preserve fail-closed release evidence behavior
-            drc_error = str(exc)
+        drc_gate, drc_blocking = _evaluate_drc_gate(self.run_cli, context.pcb_file)
+        gates.append(drc_gate)
+        blocking.extend(drc_blocking)
 
-        gates.append(
-            {
-                "gate": "drc",
-                "passed": drc_passed,
-                "violations": drc_violations,
-                "unconnected_items": drc_unconnected,
-                "error": drc_error,
-            }
+        erc_gate, erc_blocking = _evaluate_erc_gate(self.run_cli, context.sch_file)
+        gates.append(erc_gate)
+        blocking.extend(erc_blocking)
+
+        hv_gate, hv_blocking = _evaluate_hv_safety_gate(
+            context.project_dir, is_hv, voltage_v, effective_domain
         )
-        if not drc_passed:
-            if drc_error:
-                blocking.append(f"DRC could not run: {drc_error}")
-            else:
-                blocking.append(
-                    f"DRC failed: {drc_violations} violation(s),"
-                    f" {drc_unconnected} unconnected item(s)."
-                )
-
-        erc_passed = False
-        erc_violations = -1
-        erc_error: str | None = None
-        try:
-            if context.sch_file and context.sch_file.exists():
-                with tempfile.NamedTemporaryFile(
-                    suffix=".json", delete=False, dir=context.sch_file.parent
-                ) as tmp:
-                    tmp_path = tmp.name
-                try:
-                    code, stdout, stderr = self.run_cli(
-                        "sch",
-                        "erc",
-                        "--output",
-                        tmp_path,
-                        "--format",
-                        "json",
-                        str(context.sch_file),
-                    )
-                    if code == 0 and os.path.exists(tmp_path):
-                        report = json.loads(Path(tmp_path).read_text(encoding="utf-8"))
-                        violations = report.get("violations", [])
-                        erc_violations = len(violations) if isinstance(violations, list) else 0
-                        erc_passed = erc_violations == 0
-                    else:
-                        erc_error = stderr or stdout or f"ERC exited with code {code}"
-                finally:
-                    try:
-                        os.unlink(tmp_path)
-                    except OSError:
-                        pass
-            else:
-                erc_error = "No schematic file configured."
-        except Exception as exc:  # preserve fail-closed release evidence behavior
-            erc_error = str(exc)
-
-        gates.append(
-            {
-                "gate": "erc",
-                "passed": erc_passed,
-                "violations": erc_violations,
-                "error": erc_error,
-            }
-        )
-        if not erc_passed:
-            if erc_error:
-                blocking.append(f"ERC could not run: {erc_error}")
-            else:
-                blocking.append(f"ERC failed: {erc_violations} violation(s).")
-
-        hv_gate_applicable = is_hv
-        hv_gate_passed = True
-        hv_gate_detail = "Not applicable (SELV domain)."
-        if hv_gate_applicable:
-            dru_files = list(context.project_dir.glob("*.kicad_dru")) if context.project_dir else []
-            hv_dru: Path | None = None
-            for dru in dru_files:
-                text = dru.read_text(encoding="utf-8", errors="ignore")
-                if "creepage" in text.lower() or "clearance" in text.lower():
-                    hv_dru = dru
-                    break
-            if hv_dru:
-                hv_gate_detail = f"HV design rules found in {hv_dru.name}."
-            else:
-                hv_gate_passed = False
-                hv_gate_detail = (
-                    f"No .kicad_dru with creepage/clearance rules found for "
-                    f"{voltage_v:.0f} V {effective_domain} design. "
-                    "Run generate_board_constraints() to create HV safety rules."
-                )
-        gates.append(
-            {
-                "gate": "hv_safety",
-                "applicable": hv_gate_applicable,
-                "passed": hv_gate_passed,
-                "detail": hv_gate_detail,
-                "voltage_v": voltage_v,
-                "domain": effective_domain,
-            }
-        )
-        if hv_gate_applicable and not hv_gate_passed:
-            blocking.append(hv_gate_detail)
+        gates.append(hv_gate)
+        blocking.extend(hv_blocking)
 
         verdict = "release_approved" if not blocking else "release_blocked"
         file_hashes = build_release_file_hashes(release_files, relative_to=artifact_dir)

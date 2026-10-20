@@ -4787,6 +4787,45 @@ def _route_avoiding_obstacles(
     )
 
 
+def _resolve_symbol_pin(
+    reference: str,
+    pin: str,
+    symbol_points: dict[str, dict[str, tuple[float, float]]],
+    symbol_pin_aliases: dict[str, dict[str, tuple[float, float]]],
+) -> tuple[tuple[float, float] | None, str | None, str]:
+    if pin in symbol_points.get(reference, {}):
+        return symbol_points[reference][pin], None, "pin_number"
+    alias_positions = symbol_pin_aliases.get(reference, {})
+    if pin in alias_positions:
+        return alias_positions[pin], None, "pin_alias"
+    normalized_pin = _normalize_pin_alias(pin)
+    if normalized_pin and normalized_pin in alias_positions:
+        return alias_positions[normalized_pin], None, "pin_alias"
+    return (
+        None,
+        f"pin '{pin}' was not found on symbol '{reference}'",
+        "missing_pin",
+    )
+
+
+def _resolve_reference_endpoint(
+    reference: str,
+    endpoint: dict[str, Any],
+    symbol_points: dict[str, dict[str, tuple[float, float]]],
+    symbol_pin_aliases: dict[str, dict[str, tuple[float, float]]],
+    symbol_centers: dict[str, tuple[float, float]],
+) -> tuple[tuple[float, float] | None, str | None, str]:
+    if reference not in symbol_centers:
+        return None, f"reference '{reference}' was not found", "missing_reference"
+    pin = _endpoint_pin(endpoint)
+    if pin is not None:
+        return _resolve_symbol_pin(reference, pin, symbol_points, symbol_pin_aliases)
+    point = symbol_centers.get(reference)
+    if point is None:
+        return None, f"reference '{reference}' has no resolved placement", "missing_reference"
+    return point, None, "symbol_center"
+
+
 def _resolve_net_endpoint(
     endpoint: dict[str, Any],
     net_name: str,
@@ -4798,27 +4837,13 @@ def _resolve_net_endpoint(
 ) -> tuple[tuple[float, float] | None, str | None, str]:
     reference = _endpoint_reference(endpoint)
     if reference is not None:
-        pin = _endpoint_pin(endpoint)
-        if reference not in symbol_centers:
-            return None, f"reference '{reference}' was not found", "missing_reference"
-        if pin is not None:
-            if pin in symbol_points.get(reference, {}):
-                return symbol_points[reference][pin], None, "pin_number"
-            alias_positions = symbol_pin_aliases.get(reference, {})
-            if pin in alias_positions:
-                return alias_positions[pin], None, "pin_alias"
-            normalized_pin = _normalize_pin_alias(pin)
-            if normalized_pin and normalized_pin in alias_positions:
-                return alias_positions[normalized_pin], None, "pin_alias"
-            return (
-                None,
-                f"pin '{pin}' was not found on symbol '{reference}'",
-                "missing_pin",
-            )
-        point = symbol_centers.get(reference)
-        if point is None:
-            return None, f"reference '{reference}' has no resolved placement", "missing_reference"
-        return point, None, "symbol_center"
+        return _resolve_reference_endpoint(
+            reference,
+            endpoint,
+            symbol_points,
+            symbol_pin_aliases,
+            symbol_centers,
+        )
 
     power = _endpoint_power(endpoint)
     if power is not None:

@@ -3914,9 +3914,57 @@ def _execute_validate_design() -> str:
     return "\n".join(lines)
 
 
-def _register_validation_gate_tools(mcp: FastMCP) -> None:
-    """Register DRC, ERC, and project quality-gate tools."""
+def _pcb_score_placement_impl() -> str:
+    analysis, blocked = _placement_analysis()
+    if blocked is not None:
+        return "\n".join(
+            [
+                "Placement score: BLOCKED",
+                f"- {blocked.summary}",
+                *[f"- {detail}" for detail in blocked.details],
+            ]
+        )
+    if analysis is None:
+        raise RuntimeError(_MISSING_PLACEMENT_ANALYSIS)
+    return _format_placement_score(analysis)
 
+
+def _project_signoff_report_impl(manufacturer: str, tier: str) -> str:
+    from .project import load_design_intent
+    from .signoff import build_signoff_report, render_signoff_report
+
+    outcomes = _evaluate_project_gate(manufacturer=manufacturer or None, tier=tier or None)
+    intent = load_design_intent()
+    release_evidence = _release_evidence_for_active_project()
+    report = build_signoff_report(
+        intent.model_dump(),
+        outcomes,
+        _signoff_provenance(intent),
+        release_evidence if release_evidence.adopted else None,
+    )
+    return render_signoff_report(report)
+
+
+def _project_release_readiness_impl(
+    manufacturer: str,
+    tier: str,
+    output_path: str,
+    export_format: str,
+) -> ProjectReleaseReadinessPayload:
+    payload = _build_project_release_readiness_payload(
+        manufacturer=manufacturer or None,
+        tier=tier or None,
+    )
+    if output_path:
+        payload.exported_report_path = _export_release_readiness_report(
+            payload,
+            output_path=output_path,
+            export_format=export_format,
+        )
+    return payload
+
+
+def _register_individual_gate_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     @headless_compatible
     def run_drc(save_report: bool = False) -> VerdictReport:
@@ -4005,6 +4053,8 @@ def _register_validation_gate_tools(mcp: FastMCP) -> None:
             )
         )
 
+
+def _register_project_bundle_gate_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     @headless_compatible
     def project_professional_release_gate(
@@ -4025,18 +4075,7 @@ def _register_validation_gate_tools(mcp: FastMCP) -> None:
     @headless_compatible
     def pcb_score_placement() -> str:
         """Score PCB placement quality and explain both hard failures and softer warnings."""
-        analysis, blocked = _placement_analysis()
-        if blocked is not None:
-            return "\n".join(
-                [
-                    "Placement score: BLOCKED",
-                    f"- {blocked.summary}",
-                    *[f"- {detail}" for detail in blocked.details],
-                ]
-            )
-        if analysis is None:
-            raise RuntimeError(_MISSING_PLACEMENT_ANALYSIS)
-        return _format_placement_score(analysis)
+        return _pcb_score_placement_impl()
 
     @mcp.tool()
     @headless_compatible
@@ -4089,19 +4128,7 @@ def _register_validation_gate_tools(mcp: FastMCP) -> None:
         silent PASS. ``export_manufacturing_package`` is hard-gated on the same
         underlying project gate, so a PASS here means the package will export.
         """
-        from .project import load_design_intent
-        from .signoff import build_signoff_report, render_signoff_report
-
-        outcomes = _evaluate_project_gate(manufacturer=manufacturer or None, tier=tier or None)
-        intent = load_design_intent()
-        release_evidence = _release_evidence_for_active_project()
-        report = build_signoff_report(
-            intent.model_dump(),
-            outcomes,
-            _signoff_provenance(intent),
-            release_evidence if release_evidence.adopted else None,
-        )
-        return render_signoff_report(report)
+        return _project_signoff_report_impl(manufacturer=manufacturer, tier=tier)
 
     @mcp.tool()
     @headless_compatible
@@ -4120,18 +4147,18 @@ def _register_validation_gate_tools(mcp: FastMCP) -> None:
         When ``output_path`` is provided, the bundle is also written as JSON,
         Markdown, HTML, or a print-friendly HTML report (``pdf-ready``).
         """
-
-        payload = _build_project_release_readiness_payload(
-            manufacturer=manufacturer or None,
-            tier=tier or None,
+        return _project_release_readiness_impl(
+            manufacturer=manufacturer,
+            tier=tier,
+            output_path=output_path,
+            export_format=export_format,
         )
-        if output_path:
-            payload.exported_report_path = _export_release_readiness_report(
-                payload,
-                output_path=output_path,
-                export_format=export_format,
-            )
-        return payload
+
+
+def _register_validation_gate_tools(mcp: FastMCP) -> None:
+    """Register DRC, ERC, and project quality-gate tools."""
+    _register_individual_gate_tools(mcp)
+    _register_project_bundle_gate_tools(mcp)
 
 
 def _register_targeted_validation_tools(mcp: FastMCP) -> None:
