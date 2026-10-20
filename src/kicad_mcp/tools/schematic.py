@@ -1652,29 +1652,13 @@ def _next_free_block(
             col, row = 0, row + 1
 
 
-def _apply_netlist_auto_layout(
-    symbols: list[dict[str, Any]],
-    power_symbols: list[dict[str, Any]],
-    labels: list[dict[str, Any]],
-    nets: list[dict[str, Any]],
-    *,
-    paper: str = "A4",
-    max_paper: str | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], str]:
-    laid_out_symbols = [dict(item) for item in symbols]
-    laid_out_powers = [dict(item) for item in power_symbols]
-    laid_out_labels = [dict(item) for item in labels]
-    refs = [str(symbol["reference"]) for symbol in laid_out_symbols if symbol.get("reference")]
-    ordered_refs = _order_refs_by_connectivity(refs, nets)
-
-    cell_w = NETLIST_LAYOUT_COLUMN_SPACING_MM
-    cell_h = NETLIST_LAYOUT_ROW_SPACING_MM
-    sym_by_ref = {str(s.get("reference", "")): s for s in laid_out_symbols if s.get("reference")}
-
-    # Size-aware: each symbol reserves a grid block sized to its real pin extent
-    # plus a margin for terminal stubs/labels, so a large multi-pin part (and its
-    # label fan-out) cannot land on top of a neighbour. Footprints are computed
-    # once and reused for sheet sizing and placement.
+def _compute_netlist_paper(
+    sym_by_ref: dict[str, dict[str, Any]],
+    paper: str,
+    max_paper: str | None,
+    cell_w: float,
+    cell_h: float,
+) -> tuple[dict[str, tuple[int, int]], dict[str, tuple[float, float, float, float] | None], str]:
     footprints: dict[str, tuple[int, int]] = {}
     offsets: dict[str, tuple[float, float, float, float] | None] = {}
     for reference, symbol in sym_by_ref.items():
@@ -1693,8 +1677,18 @@ def _apply_netlist_auto_layout(
         cell_w=cell_w,
         cell_h=cell_h,
     )
+    return footprints, offsets, chosen_paper
 
-    # Use occupancy grid to avoid symbol collisions in netlist layout too.
+
+def _position_netlist_symbols(
+    laid_out_symbols: list[dict[str, Any]],
+    ordered_refs: list[str],
+    footprints: dict[str, tuple[int, int]],
+    offsets: dict[str, tuple[float, float, float, float] | None],
+    chosen_paper: str,
+    cell_w: float,
+    cell_h: float,
+) -> dict[str, tuple[float, float]]:
     netlist_occupied: set[tuple[int, int]] = set()
     for symbol in laid_out_symbols:
         if _has_point(symbol):
@@ -1715,7 +1709,6 @@ def _apply_netlist_auto_layout(
         extent = offsets.get(reference)
         if extent is not None:
             min_dx, min_dy, _, _ = extent
-            # Seat the body inside the block with a half-margin gutter for labels.
             raw_x = cell_x - min_dx + _NETLIST_LABEL_MARGIN_W_MM / 2.0
             raw_y = cell_y - min_dy + _NETLIST_LABEL_MARGIN_H_MM / 2.0
             generated_positions[reference] = _snap_point(raw_x, raw_y, True)
@@ -1731,16 +1724,23 @@ def _apply_netlist_auto_layout(
             else:
                 x, y = _next_free_cell(
                     netlist_occupied,
-                    cell_w=NETLIST_LAYOUT_COLUMN_SPACING_MM,
-                    cell_h=NETLIST_LAYOUT_ROW_SPACING_MM,
+                    cell_w=cell_w,
+                    cell_h=cell_h,
                     paper=chosen_paper,
                 )
             _set_point(symbol, x, y)
         point = (_coord_value(symbol, "x"), _coord_value(symbol, "y"))
         if point[0] is not None and point[1] is not None and reference:
             symbol_positions[reference] = (point[0], point[1])
+    return symbol_positions
 
-    known_refs = set(symbol_positions)
+
+def _position_netlist_powers(
+    laid_out_powers: list[dict[str, Any]],
+    nets: list[dict[str, Any]],
+    known_refs: set[str],
+    symbol_positions: dict[str, tuple[float, float]],
+) -> None:
     for index, power_symbol in enumerate(laid_out_powers):
         if _has_point(power_symbol):
             continue
@@ -1771,6 +1771,13 @@ def _apply_netlist_auto_layout(
             )
         _set_point(power_symbol, x, y)
 
+
+def _position_netlist_labels(
+    laid_out_labels: list[dict[str, Any]],
+    nets: list[dict[str, Any]],
+    known_refs: set[str],
+    symbol_positions: dict[str, tuple[float, float]],
+) -> None:
     for index, label in enumerate(laid_out_labels):
         if _has_point(label):
             continue
@@ -1787,6 +1794,35 @@ def _apply_netlist_auto_layout(
             x = center[0]
             y = center[1] + NETLIST_LABEL_OFFSET_MM
         _set_point(label, x, y)
+
+
+def _apply_netlist_auto_layout(
+    symbols: list[dict[str, Any]],
+    power_symbols: list[dict[str, Any]],
+    labels: list[dict[str, Any]],
+    nets: list[dict[str, Any]],
+    *,
+    paper: str = "A4",
+    max_paper: str | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], str]:
+    laid_out_symbols = [dict(item) for item in symbols]
+    laid_out_powers = [dict(item) for item in power_symbols]
+    laid_out_labels = [dict(item) for item in labels]
+    refs = [str(symbol["reference"]) for symbol in laid_out_symbols if symbol.get("reference")]
+    ordered_refs = _order_refs_by_connectivity(refs, nets)
+    sym_by_ref = {str(s.get("reference", "")): s for s in laid_out_symbols if s.get("reference")}
+
+    cell_w = NETLIST_LAYOUT_COLUMN_SPACING_MM
+    cell_h = NETLIST_LAYOUT_ROW_SPACING_MM
+    footprints, offsets, chosen_paper = _compute_netlist_paper(
+        sym_by_ref, paper, max_paper, cell_w, cell_h
+    )
+    symbol_positions = _position_netlist_symbols(
+        laid_out_symbols, ordered_refs, footprints, offsets, chosen_paper, cell_w, cell_h
+    )
+    known_refs = set(symbol_positions)
+    _position_netlist_powers(laid_out_powers, nets, known_refs, symbol_positions)
+    _position_netlist_labels(laid_out_labels, nets, known_refs, symbol_positions)
 
     return laid_out_symbols, laid_out_powers, laid_out_labels, chosen_paper
 
