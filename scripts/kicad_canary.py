@@ -885,18 +885,10 @@ def _restore_writable_dirs(paths: list[Path]) -> None:
 
 
 def _run_step(cli: Path, step: CanaryStep, artifacts: Path) -> dict[str, object]:
-    if step.skip_reason is not None:
-        return {
-            "name": step.name,
-            "fixture": step.fixture,
-            "returncode": None,
-            "expectsViolations": step.expects_violations,
-            "expectsFailure": step.expects_failure,
-            "outputs": [str(path.relative_to(artifacts)) for path in step.outputs],
-            "ok": True,
-            "skipped": True,
-            "reason": step.skip_reason,
-        }
+    skipped = _skip_step_result(step, artifacts)
+    if skipped is not None:
+        return skipped
+
     if step.readonly_dirs and os.name == "nt":
         return {
             "name": step.name,
@@ -968,11 +960,41 @@ def _run_step(cli: Path, step: CanaryStep, artifacts: Path) -> dict[str, object]
         "outputs": [str(path.relative_to(artifacts)) for path in step.outputs],
         "ok": step_ok,
     }
-    if missing_tokens:
-        step_result["missingTokens"] = missing_tokens
+    return _finish_step_result(
+        step_result, missing_markers=missing_tokens, capability_skip=capability_skip, error=error
+    )
+
+
+def _skip_step_result(step: CanaryStep, artifacts: Path) -> dict[str, object] | None:
+    """Preserve the canary skip payloads before attempting native commands."""
+    if step.skip_reason is not None:
+        return {
+            "name": step.name,
+            "fixture": step.fixture,
+            "returncode": None,
+            "expectsViolations": step.expects_violations,
+            "expectsFailure": step.expects_failure,
+            "outputs": [str(path.relative_to(artifacts)) for path in step.outputs],
+            "ok": True,
+            "skipped": True,
+            "reason": step.skip_reason,
+        }
+    return None
+
+
+def _finish_step_result(
+    step_result: dict[str, object],
+    *,
+    missing_markers: list[str],
+    capability_skip: bool,
+    error: str | None,
+) -> dict[str, object]:
+    """Attach optional canary diagnostics without changing output keys."""
+    if missing_markers:
+        step_result["missingTokens"] = missing_markers
     if capability_skip:
         step_result["skipped"] = True
-        step_result["reason"] = f"Optional capability not advertised: {', '.join(missing_tokens)}"
+        step_result["reason"] = f"Optional capability not advertised: {', '.join(missing_markers)}"
     if error is not None:
         step_result["error"] = error
     return step_result
@@ -1300,52 +1322,16 @@ def _assert_version_matches_range(version_result: dict[str, object], kicad_range
         raise RuntimeError(error)
 
 
-def run_canary(artifacts: Path, kicad_range: str) -> int:
-    """Run the KiCad CLI canary plan and write reports and logs to artifacts."""
-    artifacts = approved_runtime_path(artifacts)
-    compatibility = _read_compatibility_matrix()
-    artifacts.mkdir(parents=True, exist_ok=True)
-    try:
-        cli = _resolve_cli()
-    except FileNotFoundError as exc:
-        results: list[dict[str, object]] = [
-            {
-                "name": "resolve-cli",
-                "fixture": "environment",
-                "ok": False,
-                "error": str(exc),
-            }
-        ]
-        summary = {
-            "kicadRange": kicad_range,
-            "kicadCli": None,
-            "manufacturingExports": supports_feature_gate(
-                compatibility,
-                "manufacturingExports",
-                kicad_range,
-            ),
-            "results": results,
-            "failingFixtures": ["environment"],
-        }
-        _write_text(
-            artifacts / CANARY_SUMMARY_FILENAME,
-            json.dumps(summary, indent=2, sort_keys=True) + "\n",
-        )
-        _write_text(artifacts / "failing-fixtures.txt", "environment\n")
-        print(str(exc), file=sys.stderr)
-        return 1
-
-    _reset_manufacturing_outputs(artifacts)
-    steps = _command_plan(artifacts, compatibility, kicad_range)
-    results = [_run_step(cli, step, artifacts) for step in steps]
-    version = next(result for result in results if result["name"] == "version")
-    version["stdout"] = str(artifacts / "logs" / "version.stdout.log")
-    version["stderr"] = str(artifacts / "logs" / "version.stderr.log")
-    version_error = _version_range_error(version, kicad_range)
-    if version_error is not None:
-        version["ok"] = False
-        version["error"] = version_error
-
+def _collect_canary_differentials(
+    *,
+    artifacts: Path,
+    compatibility: dict[str, Any],
+    kicad_range: str,
+    version: dict[str, object],
+    version_error: str | None,
+    results: list[dict[str, object]],
+) -> list[DifferentialResult]:
+    """Collect native-versus-derived canary evidence in its original execution order."""
     differential_results: list[DifferentialResult] = []
     kicad_version = _kicad_version_from_result(version)
     connectivity_step = next(
@@ -1424,6 +1410,64 @@ def run_canary(artifacts: Path, kicad_range: str) -> int:
 
     if differential_results:
         _write_differential_summary(artifacts, differential_results)
+
+    return differential_results
+
+
+def run_canary(artifacts: Path, kicad_range: str) -> int:
+    """Run the KiCad CLI canary plan and write reports and logs to artifacts."""
+    artifacts = approved_runtime_path(artifacts)
+    compatibility = _read_compatibility_matrix()
+    artifacts.mkdir(parents=True, exist_ok=True)
+    try:
+        cli = _resolve_cli()
+    except FileNotFoundError as exc:
+        results: list[dict[str, object]] = [
+            {
+                "name": "resolve-cli",
+                "fixture": "environment",
+                "ok": False,
+                "error": str(exc),
+            }
+        ]
+        summary = {
+            "kicadRange": kicad_range,
+            "kicadCli": None,
+            "manufacturingExports": supports_feature_gate(
+                compatibility,
+                "manufacturingExports",
+                kicad_range,
+            ),
+            "results": results,
+            "failingFixtures": ["environment"],
+        }
+        _write_text(
+            artifacts / CANARY_SUMMARY_FILENAME,
+            json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        )
+        _write_text(artifacts / "failing-fixtures.txt", "environment\n")
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    _reset_manufacturing_outputs(artifacts)
+    steps = _command_plan(artifacts, compatibility, kicad_range)
+    results = [_run_step(cli, step, artifacts) for step in steps]
+    version = next(result for result in results if result["name"] == "version")
+    version["stdout"] = str(artifacts / "logs" / "version.stdout.log")
+    version["stderr"] = str(artifacts / "logs" / "version.stderr.log")
+    version_error = _version_range_error(version, kicad_range)
+    if version_error is not None:
+        version["ok"] = False
+        version["error"] = version_error
+
+    differential_results = _collect_canary_differentials(
+        artifacts=artifacts,
+        compatibility=compatibility,
+        kicad_range=kicad_range,
+        version=version,
+        version_error=version_error,
+        results=results,
+    )
 
     failing_fixture_set = {str(result["fixture"]) for result in results if not bool(result["ok"])}
     failing_fixture_set.update(
