@@ -17,6 +17,33 @@ From a clean checkout, for an unused attempt number:
       --agent-runtime chatgpt-ops \
       --ops-server-name kicad-msi-schematic-review
 
+## Live tool-surface attestation (read-only; no attempt)
+
+After the offline check reports `handoff_required`, verify the **exact actual
+MCP tool inventory**, not just the server configuration:
+
+```sh
+uv run python scripts/attest_reference_ops_tool_surface.py \
+  --board-id stm32f072-usbc --attempt-number 4 --phase schematic \
+  --ops-server-name kicad-msi-schematic-review
+```
+
+The command repeats the source/input/runtime preflight, revalidates the pinned
+Ops launch descriptor immediately before invoking it, starts only an MCP
+`initialize` plus `tools/list` session with a bounded timeout, and compares
+all returned names against the exact reviewed phase allowlist. Missing, extra,
+duplicated tools or an unreachable server yield `status=blocked` and exit 2.
+Its matching result remains `handoff_required` with
+`tool_surface_attested=true`, `executes_agent=false`,
+`attempt_reserved=false` and `counts_as_task_success=false`.
+
+This does not run an agent, reserve an ID, produce a client/session log or
+attest later changes to the server. The actual benchmark still requires
+independently captured paired client/server observations and all native
+validation and cost/permission gates described below. Run from the **same
+reviewed checkout** that the Ops descriptor points to; a different source tree
+must fail closed rather than inheriting a shared server.
+
 The named local Ops MCP server must be enabled, permission-restricted, stdio,
 launched from this exact checkout, and use the reviewed
 schematic_authoring/write profile/mode, no-dev installation and the
