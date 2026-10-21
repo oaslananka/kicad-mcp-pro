@@ -237,6 +237,8 @@ jobs:
               "menuRead": False,
               "visibleWindow": False,
               "toolsMenu": False,
+              "symbolFieldsMenuItem": False,
+              "bomDialogOpened": False,
           }
           proc = None
           try:
@@ -281,6 +283,32 @@ jobs:
                           result["toolsMenu"] = "Tools" in checked.stdout
                   if result["visibleWindow"] and result["toolsMenu"]:
                       break
+              if result["visibleWindow"] and result["toolsMenu"]:
+                  items = subprocess.run(
+                      ["osascript", "-e",
+                       'tell application "System Events" to tell process "eeschema" to get name of every menu item of menu 1 of menu bar item "Tools" of menu bar 1'],
+                      capture_output=True, text=True, timeout=12, check=False,
+                  )
+                  if items.returncode == 0:
+                      print("Schematic GUI Tools items:", items.stdout.strip()[:1300])
+                      result["symbolFieldsMenuItem"] = "Symbol Fields" in items.stdout
+                  if result["symbolFieldsMenuItem"]:
+                      click = subprocess.run(
+                          ["osascript", "-e",
+                           'tell application "System Events" to tell process "eeschema" to click (first menu item of menu 1 of menu bar item "Tools" of menu bar 1 whose name contains "Symbol Fields")'],
+                          capture_output=True, text=True, timeout=12, check=False,
+                      )
+                      print("Schematic GUI symbol-field click:", "PASS" if click.returncode == 0 else "UNAVAILABLE")
+                      if click.returncode == 0:
+                          time.sleep(3)
+                          dialog = subprocess.run(
+                              ["osascript", "-e",
+                               'tell application "System Events" to tell process "eeschema" to get name of every window'],
+                              capture_output=True, text=True, timeout=10, check=False,
+                          )
+                          if dialog.returncode == 0:
+                              print("Schematic GUI window labels:", dialog.stdout.strip()[:700])
+                              result["bomDialogOpened"] = "Symbol Fields" in dialog.stdout
           except (OSError, subprocess.SubprocessError):
               pass
           finally:
