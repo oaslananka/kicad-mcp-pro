@@ -35,6 +35,34 @@ def test_native_and_custom_outline_geometry_normalize_at_native_precision() -> N
     assert geometry_signature_hash(native) == geometry_signature_hash(custom)
 
 
+def test_native_json_ignores_localized_report_labels_and_preserves_geometry_hash() -> None:
+    # A Turkish Windows KiCad installation localizes the text labels, while
+    # --format json emits stable board.width/board.height field names.
+    native_json = (
+        '{"metadata":{"board_name":"clean-led-kicad10"},'
+        '"board":{"has_outline":true,"width":"100.0000 mm",'
+        '"height":"60.0000 mm"},"pads":{"delik_içinden":0}}'
+    )
+    assert normalize_native_board_stats(native_json) == ("100.0000", "60.0000")
+    assert geometry_signature_hash(normalize_native_board_stats(native_json)) == (
+        geometry_signature_hash(normalize_native_board_stats(NATIVE_STATS))
+    )
+
+
+def test_native_json_rejects_invalid_or_ambiguous_board_dimensions() -> None:
+    reports = (
+        '{"board":{"has_outline":true,"width":"100 mm","height":"60 in"}}',
+        '{"board":{"has_outline":false,"width":"100 mm","height":"60 mm"}}',
+        '{"board":{"has_outline":true,"width":"100 mm","width":"101 mm","height":"60 mm"}}',
+        '{"board":{"has_outline":true,"width":"0 mm","height":"60 mm"}}',
+        '{"board":{"has_outline":true,"width":100,"height":"60 mm"}}',
+        '{"board":{"has_outline":true,"width":"100 mm","height":"60 mm"}',
+    )
+    for report in reports:
+        with pytest.raises(ValueError):
+            normalize_native_board_stats(report)
+
+
 def test_geometry_classifier_detects_seeded_width_divergence() -> None:
     result = classify_geometry_differential(
         source_sha=SOURCE_SHA,

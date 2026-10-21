@@ -249,6 +249,9 @@ def test_command_plan_covers_oaslana_38_export_surface(tmp_path: Path) -> None:
     ]:
         assert name in steps
 
+    assert "--format" in steps["board-stats"].args
+    assert steps["board-stats"].args[steps["board-stats"].args.index("--format") + 1] == "json"
+    assert "board-stats.json" in str(steps["board-stats"].outputs[0])
     assert steps["path-with-spaces-board-stats"].fixture == "paths-with-spaces"
     assert steps["unicode-path-board-stats"].fixture == "unicode-path-çöğü"
     assert steps["read-only-output-failure"].expects_failure is True
@@ -743,15 +746,10 @@ def _write_geometry_differential_inputs(tmp_path: Path) -> tuple[Path, Path]:
         ")\n",
         encoding="utf-8",
     )
-    native = artifacts / "reports" / "board-stats.txt"
+    native = artifacts / "reports" / "board-stats.json"
     native.parent.mkdir(parents=True)
     native.write_text(
-        "PCB statistics report\n"
-        "=====================\n"
-        "Board\n-----\n"
-        "- Width: 100.0000 mm\n"
-        "- Height: 60.0000 mm\n"
-        "- Area: 6000.00 mm²\n",
+        '{"board":{"has_outline":true,"width":"100.0000 mm","height":"60.0000 mm"}}',
         encoding="utf-8",
     )
     return artifacts, fixture
@@ -765,7 +763,7 @@ def test_geometry_differential_matches_native_board_stats(tmp_path: Path, monkey
         kicad_range="10.0.x",
         kicad_version="10.0.6",
         fixture_id="geometry-fixture",
-        native_stats=artifacts / "reports" / "board-stats.txt",
+        native_stats=artifacts / "reports" / "board-stats.json",
         fixture=fixture,
     )
 
@@ -780,14 +778,14 @@ def test_geometry_differential_missing_native_artifact_is_unavailable_authority(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     artifacts, fixture = _write_geometry_differential_inputs(tmp_path)
-    (artifacts / "reports" / "board-stats.txt").unlink()
+    (artifacts / "reports" / "board-stats.json").unlink()
     monkeypatch.setattr(kicad_canary, "_source_sha", lambda: "a" * 40)
 
     result = kicad_canary._write_geometry_differential_result(
         kicad_range="10.0.x",
         kicad_version="10.0.6",
         fixture_id="geometry-fixture",
-        native_stats=artifacts / "reports" / "board-stats.txt",
+        native_stats=artifacts / "reports" / "board-stats.json",
         fixture=fixture,
     )
 
@@ -807,7 +805,7 @@ def test_geometry_differential_failed_native_step_is_unavailable_even_with_artif
         kicad_range="10.0.x",
         kicad_version="10.0.6",
         fixture_id="geometry-fixture",
-        native_stats=artifacts / "reports" / "board-stats.txt",
+        native_stats=artifacts / "reports" / "board-stats.json",
         fixture=fixture,
         native_authority_available=False,
     )
@@ -833,7 +831,7 @@ def test_geometry_differential_parser_failure_is_infrastructure_invalid(
         kicad_range="10.0.x",
         kicad_version="10.0.6",
         fixture_id="geometry-fixture",
-        native_stats=artifacts / "reports" / "board-stats.txt",
+        native_stats=artifacts / "reports" / "board-stats.json",
         fixture=fixture,
     )
 

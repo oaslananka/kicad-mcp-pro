@@ -51,7 +51,7 @@ UNICODE_PATH_FIXTURE = "unicode-path-çöğü"
 SCHEMATIC_FILE_SUFFIX = ".kicad_sch"
 PCB_FILE_SUFFIX = ".kicad_pcb"
 PCB_EXPORT_LAYERS = "F.Cu,B.Cu,Edge.Cuts"
-BOARD_STATS_FILENAME = "board-stats.txt"
+BOARD_STATS_FILENAME = "board-stats.json"
 
 # Names and filenames persisted in native canary artifacts.
 KICAD_10_RANGE = "10.0.x"
@@ -554,6 +554,8 @@ def _command_plan(
                 "pcb",
                 "export",
                 "stats",
+                "--format",
+                "json",
                 "--output",
                 str(reports / BOARD_STATS_FILENAME),
                 str(clean_board),
