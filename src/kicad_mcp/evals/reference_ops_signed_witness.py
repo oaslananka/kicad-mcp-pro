@@ -7,7 +7,6 @@ It never claims a uniquely attested ChatGPT conversation or PCB task success.
 from __future__ import annotations
 
 import base64
-import binascii
 import hashlib
 import json
 import os
@@ -87,7 +86,9 @@ def _unique_dict(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 
 def _valid_int(value: object, minimum: int = 0) -> bool:
-    return type(value) is int and value >= minimum
+    if type(value) is not int:
+        return False
+    return value >= minimum
 
 
 def _header(payload: object, *, nonce: str, target: str, key_id: str) -> None:
@@ -137,8 +138,39 @@ def _verify_signature(payload: dict[str, Any], public_key: str, trusted_key_id: 
         # JS JSON.stringify owns the wire contract; preserve input insertion order.
         signed_bytes = json.dumps(unsigned, ensure_ascii=False, separators=(",", ":")).encode()
         key.verify(raw_signature, signed_bytes)
-    except (ValueError, TypeError, binascii.Error, InvalidSignature) as exc:
+    except (ValueError, TypeError, InvalidSignature) as exc:
         raise SignedOpsWitnessError("invalid Gateway signature or trusted key") from exc
+
+
+def _validated_witness_event(
+    entry: object,
+    *,
+    target: str,
+    previous_id: int,
+    previous_time: int,
+    start_time: int,
+    end_time: int,
+) -> dict[str, Any]:
+    if not isinstance(entry, dict):
+        raise SignedOpsWitnessError("invalid witness event fields")
+    if set(cast(dict[str, object], entry)) != set(_EVENT_FIELDS):
+        raise SignedOpsWitnessError("invalid witness event fields")
+    event = cast(dict[str, Any], entry)
+    if (
+        not _valid_int(event["id"])
+        or not _valid_int(event["at"])
+        or not _valid_int(event["durationMs"])
+        or event["id"] <= previous_id
+        or event["at"] < previous_time
+        or event["at"] < start_time
+        or event["at"] > end_time
+        or not isinstance(event["callId"], str)
+        or not _HEX32.fullmatch(event["callId"])
+        or not isinstance(event["tool"], str)
+        or not event["tool"].startswith(target + ".")
+    ):
+        raise SignedOpsWitnessError("invalid witness event order or scope")
+    return event
 
 
 def _pairs(payload: dict[str, Any], target: str) -> list[tuple[str, str, int, int, int]]:
@@ -147,31 +179,24 @@ def _pairs(payload: dict[str, Any], target: str) -> list[tuple[str, str, int, in
     previous_id = -1
     previous_time = payload["startedAt"]
     seen_call_ids: set[str] = set()
-    for first, last in zip(events[::2], events[1::2], strict=True):
-        for event in (first, last):
-            if not isinstance(event, dict):
-                raise SignedOpsWitnessError("invalid witness event fields")
-            if set(cast(dict[str, object], event).keys()) != set(_EVENT_FIELDS):
-                raise SignedOpsWitnessError("invalid witness event fields")
-            event = cast(dict[str, Any], event)
-            if (
-                not _valid_int(event["id"])
-                or not _valid_int(event["at"])
-                or not _valid_int(event["durationMs"])
-                or event["id"] <= previous_id
-                or event["at"] < previous_time
-                or event["at"] < payload["startedAt"]
-                or event["at"] > payload["endedAt"]
-                or not isinstance(event["callId"], str)
-                or not _HEX32.fullmatch(event["callId"])
-                or not isinstance(event["tool"], str)
-                or not event["tool"].startswith(target + ".")
-            ):
-                raise SignedOpsWitnessError("invalid witness event order or scope")
-            previous_id = event["id"]
-            previous_time = event["at"]
-        first = cast(dict[str, Any], first)
-        last = cast(dict[str, Any], last)
+    for first_raw, last_raw in zip(events[::2], events[1::2], strict=True):
+        first = _validated_witness_event(
+            first_raw,
+            target=target,
+            previous_id=previous_id,
+            previous_time=previous_time,
+            start_time=payload["startedAt"],
+            end_time=payload["endedAt"],
+        )
+        last = _validated_witness_event(
+            last_raw,
+            target=target,
+            previous_id=first["id"],
+            previous_time=first["at"],
+            start_time=payload["startedAt"],
+            end_time=payload["endedAt"],
+        )
+        previous_id, previous_time = last["id"], last["at"]
         if (
             first["phase"] != "call"
             or first["status"] != "pending"
@@ -369,7 +394,7 @@ def reconcile_signed_ops_witness(
             gateway_log_digest="sha256:" + gateway_digest,
             server_log_digest=summary.digest,
         )
-    except (OSError, UnicodeError, TypeError, ValueError) as exc:
+    except (OSError, TypeError, ValueError) as exc:
         if isinstance(exc, SignedOpsWitnessError):
             raise
         raise SignedOpsWitnessError("signed witness or server trace is invalid") from exc
