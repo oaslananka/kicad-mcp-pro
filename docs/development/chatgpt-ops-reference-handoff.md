@@ -15,7 +15,8 @@ From a clean checkout, for an unused attempt number:
     uv run python scripts/check_reference_board_attempt_readiness.py \
       --board-id stm32f072-usbc --attempt-number 4 --phase schematic \
       --agent-runtime chatgpt-ops \
-      --ops-server-name kicad-msi-schematic-review
+      --ops-server-name kicad-msi-schematic-review \
+  --approved-source-revision <owner-approved-40-character-Git-SHA>
 
 ## Live tool-surface attestation (read-only; no attempt)
 
@@ -25,8 +26,18 @@ MCP tool inventory**, not just the server configuration:
 ```sh
 uv run python scripts/attest_reference_ops_tool_surface.py \
   --board-id stm32f072-usbc --attempt-number 4 --phase schematic \
-  --ops-server-name kicad-msi-schematic-review
+  --ops-server-name kicad-msi-schematic-review \
+  --approved-source-revision <owner-approved-40-character-Git-SHA>
 ```
+
+The source SHA must be approved independently of the local checkout
+(for example, from the explicitly reviewed/merged GitHub commit).
+Do **not** populate this argument by blindly accepting `git rev-parse HEAD`
+from the same source being tested. An absent, malformed or differing SHA
+blocks `chatgpt-ops` readiness with `source_revision_not_reviewed`; a
+checkout whose identity cannot be resolved still blocks with
+`source_revision_not_reproducible`. This is an **exact per-revision
+pin**, not a hardcoded value embedded in code that would go stale on merge.
 
 The command repeats the source/input/runtime preflight, revalidates the pinned
 Ops launch descriptor immediately before invoking it, starts only an MCP
@@ -49,6 +60,14 @@ launched from this exact checkout, and use the reviewed
 schematic_authoring/write profile/mode, no-dev installation and the
 phase-gated Python module in reference_ops_server. The gateway restricts both
 MCP discovery AND server-side execution to the canonical reviewed tool set.
+The schematic phase now exposes the deliberately narrow
+`sch_get_wires` + `sch_delete_wire` recovery pair. First inspect wire UUIDs,
+then delete only the explicitly selected segment, check
+`sch_get_connectivity_graph`, and rerun ERC; neither a successful deletion
+nor a lower ERC count alone proves that USB D+/D− remain separated. Broad
+symbol deletion is still excluded from this benchmark phase. A server pinned
+to the older 35-tool phase must fail exact-source preflight when used with
+this expanded 37-tool reviewed revision.
 The underlying general purpose schematic_authoring server exposes more tools
 and is NOT a valid benchmark server. It must not inherit a preexisting PCB Editor IPC socket.
 A shared review/build server is not an isolated schematic run.
@@ -92,7 +111,7 @@ unknown until native readback; do not infer rollback.
 
 Do not enable this recorder on any shared review/build session or create an
 official attempt-004 record during a smoke test. A disposable smoke checks
-35-tool discovery, a successful version query, blocked unreviewed DRC-rule
+37-tool discovery, a successful version query, blocked unreviewed DRC-rule
 deletion, and four ordered events with the denied tool result as failed.
 
 ## Validate a completed server trace (not a benchmark score)

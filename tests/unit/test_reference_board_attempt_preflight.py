@@ -38,6 +38,56 @@ def test_readiness_has_stable_reviewed_inputs_and_no_side_effects(
     assert "/home/" not in json.dumps(result)
 
 
+def test_chatgpt_ops_requires_independent_exact_sha_pin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _safe_checks(monkeypatch)
+    monkeypatch.setattr(cli, "_runtime_blockers", lambda **_: set())
+
+    common = dict(
+        root=ROOT,
+        board_id="stm32f072-usbc",
+        attempt_number=955,
+        phase_name="schematic",
+        agent_runtime="chatgpt-ops",
+        ops_server_name="kicad-msi-schematic-review",
+    )
+    approved = cli.preflight(**common, approved_source_revision="a" * 40)
+    assert approved["status"] == "handoff_required"
+    assert approved["blocking_reasons"] == []
+    assert approved["source_revision"] == "a" * 40
+    assert approved["counts_as_task_success"] is False
+
+    for supplied in (None, "b" * 40, "A" * 40, "abc", "../a" * 10):
+        refused = cli.preflight(**common, approved_source_revision=supplied)
+        assert refused["status"] == "blocked"
+        assert "source_revision_not_reviewed" in refused["blocking_reasons"]
+
+
+def test_missing_source_retains_existing_failure_reason_with_sha_pin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _safe_checks(monkeypatch)
+    monkeypatch.setattr(cli, "_runtime_blockers", lambda **_: set())
+    monkeypatch.setattr(
+        cli,
+        "discover_reference_source_revision",
+        lambda _: (_ for _ in ()).throw(cli.ReferenceAgentRunnerError("invalid source")),
+    )
+    outcome = cli.preflight(
+        root=ROOT,
+        board_id="stm32f072-usbc",
+        attempt_number=955,
+        phase_name="schematic",
+        agent_runtime="chatgpt-ops",
+        ops_server_name="kicad-msi-schematic-review",
+        approved_source_revision="a" * 40,
+    )
+    assert outcome["status"] == "blocked"
+    assert "source_revision_not_reproducible" in outcome["blocking_reasons"]
+    assert "invalid source" not in json.dumps(outcome)
+
+
 def test_absent_host_and_source_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     _safe_checks(monkeypatch)
     monkeypatch.setattr(cli.shutil, "which", lambda _: None)
@@ -183,6 +233,7 @@ def test_chatgpt_ops_preflight_is_an_explicit_nonexecuting_handoff(
         agent_runtime="chatgpt-ops",
         ops_server_name="kicad-msi-schematic-review",
         ops_config_path=config,
+        approved_source_revision="a" * 40,
     )
     assert outcome["status"] == "handoff_required"
     assert outcome["agent"] == "chatgpt-ops"
@@ -261,6 +312,7 @@ def test_chatgpt_ops_preflight_rejects_unsafe_or_unpinned_servers(
         agent_runtime="chatgpt-ops",
         ops_server_name="kicad-msi-schematic-review",
         ops_config_path=config,
+        approved_source_revision="a" * 40,
     )
     assert outcome["status"] == "blocked"
     assert outcome["blocking_reasons"] == ["reviewed_ops_mcp_server_unavailable"]
@@ -280,6 +332,7 @@ def test_chatgpt_ops_manufacturing_remains_blocked_even_with_server(
         agent_runtime="chatgpt-ops",
         ops_server_name="kicad-msi-schematic-review",
         ops_config_path=config,
+        approved_source_revision="a" * 40,
     )
     assert outcome["status"] == "blocked"
     assert "reviewed_ops_mcp_server_unavailable" in outcome["blocking_reasons"]
