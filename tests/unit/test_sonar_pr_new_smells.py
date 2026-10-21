@@ -28,7 +28,6 @@ def test_cli_consumes_exact_stdin_report(
 ) -> None:
     monkeypatch.setattr("sys.argv", ["sonar-gate", "--pull-request", "1390"])
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_response("0"))))
-    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_response("0"))))
     assert main() == 0
     assert "0 new Code Smells" in capsys.readouterr().out
 
@@ -97,5 +96,6 @@ def test_cli_blocks_unavailable_analysis(monkeypatch: pytest.MonkeyPatch) -> Non
 
 @pytest.mark.parametrize("number", [0, -1])
 def test_invalid_pr_number_fails(number: int) -> None:
+    valid_report = _response("0")
     with pytest.raises(ValueError):
-        check_pr_new_smells(number, _response("0"))
+        check_pr_new_smells(number, valid_report)
