@@ -291,11 +291,11 @@ jobs:
                   )
                   if items.returncode == 0:
                       print("Schematic GUI Tools items:", items.stdout.strip()[:1300])
-                      result["symbolFieldsMenuItem"] = "Symbol Fields" in items.stdout
+                      result["symbolFieldsMenuItem"] = "Generate Bill of Materials" in items.stdout
                   if result["symbolFieldsMenuItem"]:
                       click = subprocess.run(
                           ["osascript", "-e",
-                           'tell application "System Events" to tell process "eeschema" to click (first menu item of menu 1 of menu bar item "Tools" of menu bar 1 whose name contains "Symbol Fields")'],
+                           'tell application "System Events" to tell process "eeschema" to click (first menu item of menu 1 of menu bar item "Tools" of menu bar 1 whose name contains "Generate Bill of Materials")'],
                           capture_output=True, text=True, timeout=12, check=False,
                       )
                       print("Schematic GUI symbol-field click:", "PASS" if click.returncode == 0 else "UNAVAILABLE")
@@ -309,6 +309,38 @@ jobs:
                           if dialog.returncode == 0:
                               print("Schematic GUI window labels:", dialog.stdout.strip()[:700])
                               result["bomDialogOpened"] = "Symbol Fields" in dialog.stdout
+                              if result["bomDialogOpened"]:
+                                  inspect_script = """
+                                  tell application "System Events"
+                                    tell process "eeschema"
+                                      set elementsFound to entire contents of window "Symbol Fields Table"
+                                      set output to ""
+                                      set n to 0
+                                      repeat with elementFound in elementsFound
+                                        if n > 90 then exit repeat
+                                        try
+                                          set elementRole to role of elementFound as text
+                                          if elementRole is in {"AXTextField", "AXTextArea", "AXButton", "AXRadioButton", "AXTabGroup", "AXCheckBox", "AXStaticText"} then
+                                            set elementName to name of elementFound as text
+                                            set elementValue to ""
+                                            try
+                                              set elementValue to value of elementFound as text
+                                            end try
+                                            set output to output & elementRole & "|" & elementName & "|" & elementValue & ";"
+                                            set n to n + 1
+                                          end if
+                                        end try
+                                      end repeat
+                                      return output
+                                    end tell
+                                  end tell
+                                  """
+                                  inspected = subprocess.run(
+                                      ["osascript", "-e", inspect_script],
+                                      capture_output=True, text=True, timeout=30, check=False,
+                                  )
+                                  print("Schematic GUI dialog elements:",
+                                        inspected.stdout.strip()[:2500] if inspected.returncode == 0 else "UNAVAILABLE")
           except (OSError, subprocess.SubprocessError):
               pass
           finally:
