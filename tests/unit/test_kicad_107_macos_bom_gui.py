@@ -1,6 +1,7 @@
 """macOS GUI gate must only pass exact native AX observations and integrity."""
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -109,7 +110,7 @@ def test_bom_edit_is_real_keyboard_interaction_not_ax_value_override(
     assert "click elementFound" in observed[0]
     assert 'keystroke "a" using {command down}' in observed[0]
     assert 'keystroke "BOM_CANCEL_NOT_PERSISTED_107.csv"' in observed[0]
-    assert "set value of elementFound" in observed[0]
+    assert "set value of elementFound" not in observed[0]
     assert "set focused of elementFound to true" in observed[0]
     assert 'if (value of elementFound as text) is "BOM_CANCEL_NOT_PERSISTED_107.csv"' in observed[0]
     assert "FIELD_NOT_UPDATED|focused=" in observed[0]
@@ -210,3 +211,53 @@ def test_bom_edit_uses_same_materialized_ax_collection_as_read(
     assert len(scripts) == 1
     assert 'set elementsFound to entire contents of window "Symbol Fields Table"' in scripts[0]
     assert "repeat with elementFound in elementsFound" in scripts[0]
+
+
+def test_bom_modal_retries_transient_ax_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queries = iter(
+        [
+            RuntimeError("transient"),
+            "No modal yet",
+            "Symbol Fields Table",
+        ]
+    )
+    seen: list[str] = []
+
+    def fake(_script: str, *, stage: str) -> str:
+        seen.append(stage)
+        if stage == "windows":
+            nxt = next(queries)
+            if isinstance(nxt, BaseException):
+                raise nxt
+            return nxt
+        return ""
+
+    monkeypatch.setattr(gui, "_osa", fake)
+    monkeypatch.setattr(gui.time, "sleep", lambda _seconds: None)
+    gui._open_bom()
+    assert seen.count("windows") == 3
+
+
+def test_bom_cancel_retries_transient_ax_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queries = iter(
+        [subprocess.TimeoutExpired("osascript", 1), "Symbol Fields Table", "Schematic Editor"]
+    )
+    seen: list[str] = []
+
+    def fake(_script: str, *, stage: str) -> str:
+        seen.append(stage)
+        if stage == "cancel":
+            return "CANCEL_CLICKED"
+        nxt = next(queries)
+        if isinstance(nxt, BaseException):
+            raise nxt
+        return nxt
+
+    monkeypatch.setattr(gui, "_osa", fake)
+    monkeypatch.setattr(gui.time, "sleep", lambda _seconds: None)
+    gui._cancel()
+    assert seen.count("windows") == 3

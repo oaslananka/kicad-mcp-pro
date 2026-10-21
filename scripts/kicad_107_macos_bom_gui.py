@@ -121,7 +121,11 @@ def _open_bom() -> None:
     )
     for _ in range(15):
         time.sleep(1)
-        if "Symbol Fields Table" in _editor_windows():
+        try:
+            windows = _editor_windows()
+        except (RuntimeError, subprocess.TimeoutExpired):
+            continue
+        if "Symbol Fields Table" in windows:
             return
     raise RuntimeError("native-bom-modal-unavailable")
 
@@ -169,19 +173,10 @@ def _edit_output(old_value: str) -> str:
               if theValue starts with "BOM_SAVED_B_" then
                 set prefixCount to prefixCount + 1
                 set wasFocused to false
-                set valueSet to false
                 try
                   set focused of elementFound to true
                   set wasFocused to focused of elementFound
                 end try
-                try
-                  set value of elementFound to "{REPLACEMENT}"
-                  set valueSet to true
-                end try
-                delay 0.3
-                if (value of elementFound as text) is "{REPLACEMENT}" then
-                  return "{REPLACEMENT}"
-                end if
                 try
                   click elementFound
                   set focused of elementFound to true
@@ -194,8 +189,7 @@ def _edit_output(old_value: str) -> str:
                     return "{REPLACEMENT}"
                   end if
                 end try
-                set editResult to "FIELD_NOT_UPDATED|focused=" & (wasFocused as text)
-                return editResult & "|setter=" & (valueSet as text)
+                return "FIELD_NOT_UPDATED|focused=" & (wasFocused as text)
               end if
             end if
           end try
@@ -263,7 +257,11 @@ def _cancel() -> None:
         raise RuntimeError("native-bom-cancel-control-unavailable")
     for _ in range(10):
         time.sleep(1)
-        if "Symbol Fields Table" not in _editor_windows():
+        try:
+            windows = _editor_windows()
+        except (RuntimeError, subprocess.TimeoutExpired):
+            continue
+        if "Symbol Fields Table" not in windows:
             return
     raise RuntimeError("native-bom-cancel-did-not-close")
 
