@@ -356,3 +356,143 @@ def test_nonce_ledger_win32_mode_fallback_preserves_symlink_guards(
     assert (ledger / (_NONCE + ".json")).exists()
     with pytest.raises(SignedOpsWitnessError):
         reconcile(evidence)
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        ("non-object", "unexpected signed witness schema"),
+        ("non-object-event", "invalid witness event fields"),
+        ("event-missing-field", "invalid witness event fields"),
+        ("event-extra-field", "invalid witness event fields"),
+        ("different-paired-tool", "Gateway/server tool ordering differs"),
+        ("server-outcome-disagrees", "Gateway/server outcomes disagree"),
+        ("server-clock-skew", "Gateway/server timestamps or duration differ"),
+        ("gateway-server-count-mismatch", "Gateway/server tool-call counts disagree"),
+    ],
+)
+def test_authenticated_adversarial_event_shapes_and_reconciliation(
+    evidence,
+    case: str,
+    expected: str,
+) -> None:
+    """A valid Ed25519 signature does not make dishonest runtime claims valid."""
+    _server, gateway, _pub, _kid, original, sign = evidence
+    payload = copy.deepcopy(original)
+    if case == "non-object":
+        gateway.write_text("[]\n")
+    elif case == "non-object-event":
+        payload["events"][0] = "not-a-dictionary"
+    elif case == "event-missing-field":
+        payload["events"][0].pop("durationMs")
+    elif case == "event-extra-field":
+        payload["events"][0]["unexpected_field"] = "not permitted"
+    elif case == "different-paired-tool":
+        for event in payload["events"]:
+            event["tool"] = f"pc.msi.mcp.{_SERVER}.lib_search_symbols"
+    elif case == "server-outcome-disagrees":
+        payload["events"][1]["status"] = "error"
+    elif case == "server-clock-skew":
+        # Keep internal Gateway event order and run envelope valid.
+        for event in payload["events"]:
+            event["at"] += 31_000
+        payload["endedAt"] += 32_000
+    elif case == "gateway-server-count-mismatch":
+        follow_call, follow_result = copy.deepcopy(payload["events"])
+        follow_call["id"] = 5
+        follow_call["callId"] = "d" * 32
+        follow_call["at"] = payload["events"][1]["at"] + 1
+        follow_result["id"] = 6
+        follow_result["callId"] = "d" * 32
+        follow_result["at"] = follow_call["at"] + 1
+        payload["endedAt"] = follow_result["at"] + 1
+        payload["events"].extend([follow_call, follow_result])
+    if case != "non-object":
+        sign(payload)
+    with pytest.raises(SignedOpsWitnessError, match=expected):
+        reconcile(evidence)
+
+
+def test_pinned_signer_rejects_wrong_key_alg_and_bad_sig_shape(evidence) -> None:
+    """Independent key pin and Ed25519 signature encoding both fail closed."""
+    import hashlib
+
+    from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_private_key
+
+    _server, _gateway, pub, kid, original, _sign = evidence
+    verify = reference_ops_signed_witness._verify_signature
+    with pytest.raises(SignedOpsWitnessError, match="pinned signing key"):
+        verify({**original, "signature": "?" * 86}, pub, "not-hex")
+    ec_public = (
+        generate_private_key(SECP256R1())
+        .public_key()
+        .public_bytes(
+            Encoding.DER,
+            PublicFormat.SubjectPublicKeyInfo,
+        )
+    )
+    with pytest.raises(SignedOpsWitnessError, match="invalid Gateway signature"):
+        verify(
+            {**original, "signature": "A" * 86},
+            base64.b64encode(ec_public).decode(),
+            hashlib.sha256(ec_public).hexdigest(),
+        )
+    with pytest.raises(SignedOpsWitnessError, match="invalid Gateway signature"):
+        verify({**original, "signature": "not-base64!"}, pub, kid)
+
+
+def test_private_replay_registry_symlink_or_wrong_permissions_block(evidence) -> None:
+    server, _gateway, *_ = evidence
+    registry = server.parent.parent / ".signed-witness-nonce-ledger"
+    registry.mkdir(mode=0o700)
+    registry.chmod(0o755)
+    if reference_ops_signed_witness.os.name != "nt":
+        with pytest.raises(SignedOpsWitnessError, match="not private"):
+            reconcile(evidence)
+    registry.rmdir()
+    outside = server.parent.parent / "outside-private"
+    outside.mkdir(mode=0o700)
+    registry.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(SignedOpsWitnessError, match="symlinked"):
+        reconcile(evidence)
+
+
+def test_run_replay_marker_symlink_is_refused(evidence) -> None:
+    server, _gateway, *_ = evidence
+    marker = server.parent / "signed-witness-consumed.json"
+    marker.symlink_to(server)
+    with pytest.raises(SignedOpsWitnessError, match="symlink"):
+        reconcile(evidence)
+
+
+def test_nonce_registry_claim_errors_are_fail_closed(
+    evidence,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed exclusive claim cannot be counted as a verified run."""
+    from pathlib import Path
+
+    server, _gateway, *_ = evidence
+    registry = server.parent.parent / ".signed-witness-nonce-ledger"
+    original_mkdir = Path.mkdir
+
+    def refuse_global_dir(path: Path, *args: object, **kwargs: object) -> None:
+        if path == registry:
+            raise PermissionError("simulated registry IO error")
+        original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", refuse_global_dir)
+    with pytest.raises(SignedOpsWitnessError, match="cannot create private nonce registry"):
+        reconcile(evidence, consume_nonce=True)
+
+
+def test_exclusive_nonce_file_claim_refuses_collision(evidence) -> None:
+    server, _gateway, *_ = evidence
+    marker = server.parent / "signed-witness-consumed.json"
+    marker.write_text("already claimed")
+    with pytest.raises(SignedOpsWitnessError, match="cannot lock ledger"):
+        reference_ops_signed_witness._write_exclusive_ledger(
+            marker,
+            _NONCE,
+            "a" * 64,
+        )
