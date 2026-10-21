@@ -206,3 +206,56 @@ cryptographic signature or complete authenticated ChatGPT model transcript
 in this witness. Never synthesize the gateway witness from the server
 trace; never record it as a reference-board task success. Source-backed
 benchmark execution and scoring still require the rest of #1214/#730/#729.
+
+## Signed Gateway-to-KiCad server trace reconciliation (non-scored)
+
+Use the maintained `scripts/reconcile_reference_ops_signed_witness.py` verifier
+only after **both** a real Ops Gateway `ops-mcp-witness.v1` export and an
+independently started, opt-in `ops-mcp-trace.jsonl` server trace exist.
+Store the exact exported JSON (not rewritten, reformatted or invented metadata)
+as `signed-gateway-witness.json` alongside the private `ops-mcp-trace.jsonl`
+under an exclusive `.dev-tools/reference-agent-runs/<run-id>/` directory.
+The server must have been started with `KICAD_MCP_REFERENCE_ATTEMPT_ID` and
+`KICAD_MCP_REFERENCE_TRACE_PATH` **before** the ChatGPT invocation.
+Neither recorder may copy events from the other.
+
+The reviewer must obtain the Ed25519 SPKI and its SHA-256 key ID **from a
+trusted independent Gateway/operator channel**, not exclusively from the
+signed export. Both are mandatory parameters; omitting either fails closed.
+Example (values must be separately reviewed for each production signer):
+
+```sh
+python -m scripts.reconcile_reference_ops_signed_witness \
+  --server-trace "$PRIVATE_RUN/ops-mcp-trace.jsonl" \
+  --signed-gateway-witness "$PRIVATE_RUN/signed-gateway-witness.json" \
+  --attempt-id "$RUN_ID" --phase schematic \
+  --server-name kicad-msi-signed-trace-v37 \
+  --nonce "$VERIFIED_RUN_NONCE" \
+  --trusted-public-key-spki "$INDEPENDENTLY_PINNED_BASE64_SPKI" \
+  --trusted-key-id "$INDEPENDENTLY_PINNED_SHA256" \
+  --consume-nonce
+```
+
+The verifier delegates **all** native server trace identity/allowlist/permission
+checks to `validate_reference_ops_trace`, then enforces the signed envelope's
+exact schema, signature, nonce/target/key pin, ordered call/result pairs, terminal
+statuses and independent server/clock/duration alignment. It refuses unknown
+fields, incomplete/reordered/interleaved or mismatching calls and symlinked or
+non-private evidence. `--consume-nonce` writes 0600 replay markers with
+exclusive creation in the private run directory **and** a 0700 per-checkout
+nonce registry; later validations of the same nonce are refused even if another
+run directory is used in that checkout. Never copy/remove ledgers to reset an
+accepted run. Cross-checkout/cross-device reuse requires a separately managed
+canonical benchmark consumption ledger; this local guard is not global authority.
+Without `--consume-nonce`, the command performs a non-mutating verification
+and does not constitute final benchmark acceptance.
+
+A valid result is
+`signed_gateway_server_matched_non_scored`, with
+`counts_as_task_success=false` and
+`unique_chatgpt_conversation_attested=false`. Gateway OAuth authenticates
+the **client**, not an individual ChatGPT conversation. This command cannot
+reserve or score an official attempt, replace real schematic/PCB work,
+waive ERC/DRC/manufacturing restrictions or authorize a paid provider model.
+Existing unsigned Gateway audits remain
+`gateway_server_matched_unattested` and retain their old verifier.

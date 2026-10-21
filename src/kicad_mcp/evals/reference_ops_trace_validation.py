@@ -122,7 +122,12 @@ def _load_trace(
     *,
     root: Path,
     attempt_id: str,
-    filename: Literal["ops-mcp-trace.jsonl", "ops-client-observed.jsonl", "ops-gateway-audit.json"],
+    filename: Literal[
+        "ops-mcp-trace.jsonl",
+        "ops-client-observed.jsonl",
+        "ops-gateway-audit.json",
+        "signed-gateway-witness.json",
+    ],
 ) -> bytes:
     """Read fixed evidence only, never opening the untrusted CLI pathname."""
     if (
@@ -131,7 +136,13 @@ def _load_trace(
         or not root.is_absolute()
         or root.is_symlink()
         or root.parent.is_symlink()
-        or filename not in {_TRACE_FILENAME, "ops-client-observed.jsonl", "ops-gateway-audit.json"}
+        or filename
+        not in {
+            _TRACE_FILENAME,
+            "ops-client-observed.jsonl",
+            "ops-gateway-audit.json",
+            "signed-gateway-witness.json",
+        }
     ):
         raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
     fd = _open_reserved_trace(root=root, attempt_id=attempt_id, filename=filename)
