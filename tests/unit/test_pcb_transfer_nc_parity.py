@@ -22,9 +22,7 @@ def test_valid_generated_no_connect_pads_match(expected: str, actual: str) -> No
     ["GND", "unconnected-(J2-OTHER-Pad7)", "unconnected-(U3-NC-Pad4)"],
 )
 def test_no_connect_pad_rejects_unsafe_or_misidentified_net(incorrect: str) -> None:
-    passed, reason = _check_pad_net_match(
-        "J2", "8", "unconnected-(J2-NC/TDI-Pad8)", incorrect
-    )
+    passed, reason = _check_pad_net_match("J2", "8", "unconnected-(J2-NC/TDI-Pad8)", incorrect)
     assert not passed
     assert reason is not None and "expected unconnected net" in reason
 
