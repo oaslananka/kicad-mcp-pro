@@ -12,7 +12,7 @@ import sys
 from typing import cast
 
 
-def _new_code_smells(data: object) -> int:
+def _unique_smell_measure(data: object) -> dict[str, object]:
     if not isinstance(data, dict):
         raise ValueError("SonarCloud analysis response is not a JSON object")
     component = cast(dict[str, object], data).get("component")
@@ -29,8 +29,11 @@ def _new_code_smells(data: object) -> int:
                 matched.append(entry)
     if len(matched) != 1:
         raise ValueError("SonarCloud new_code_smells metric missing or ambiguous")
-    measure = matched[0]
-    # SonarCloud currently uses "periods"; newer SonarQube may use "period".
+    return matched[0]
+
+
+def _single_new_code_period(measure: dict[str, object]) -> dict[str, object]:
+    # SonarCloud uses "periods"; some other installations use "period".
     if ("period" in measure) == ("periods" in measure):
         raise ValueError("SonarCloud new-code period missing or ambiguous")
     if "period" in measure:
@@ -42,7 +45,12 @@ def _new_code_smells(data: object) -> int:
         period = cast(list[object], periods)[0]
     if not isinstance(period, dict):
         raise ValueError("SonarCloud new-code period is not a JSON object")
-    value = cast(dict[str, object], period).get("value")
+    return cast(dict[str, object], period)
+
+
+def _new_code_smells(data: object) -> int:
+    period = _single_new_code_period(_unique_smell_measure(data))
+    value = period.get("value")
     if not isinstance(value, str) or not value.isdecimal():
         raise ValueError("SonarCloud new Code Smell count invalid")
     return int(value)

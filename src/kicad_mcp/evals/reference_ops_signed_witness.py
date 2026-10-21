@@ -86,11 +86,10 @@ def _unique_dict(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 
 def _valid_int(value: object, minimum: int = 0) -> bool:
-    # isinstance narrows both Python and Sonar's static type analysis; bool
-    # must still be excluded explicitly because bool subclasses int.
-    if not isinstance(value, int) or isinstance(value, bool):
+    # Signed JSON integers must be exactly Python int: reject bool and subclasses.
+    if type(value) is not int:
         return False
-    return value >= minimum
+    return int(value) >= minimum
 
 
 def _header(payload: object, *, nonce: str, target: str, key_id: str) -> None:

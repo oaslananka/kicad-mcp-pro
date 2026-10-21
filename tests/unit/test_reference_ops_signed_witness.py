@@ -504,6 +504,7 @@ def test_exclusive_nonce_file_claim_refuses_collision(evidence) -> None:
         (False, False),
         (True, False),
         ("12", False),
+        (type("IntSubclass", (int,), {})(1), False),
         (-1, False),
         (0, True),
         (4, True),
