@@ -134,3 +134,24 @@ def test_second_config_read_must_remain_reviewed(
     result = cli.attest(**_args(tmp_path))
     assert result["status"] == "blocked"
     assert result["blocking_reasons"] == ["reviewed_ops_mcp_server_unavailable"]
+
+
+@pytest.mark.parametrize(
+    "unsafe_name",
+    ["KICAD_API_SOCKET", "KICAD_MCP_REFERENCE_TRACE_PATH", "KICAD_MCP_REFERENCE_ATTEMPT_ID"],
+)
+def test_live_inventory_must_reject_trace_or_socket_enabled_launchers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, unsafe_name: str
+) -> None:
+    _mock_preflight(monkeypatch)
+    monkeypatch.setattr(
+        cli, "_read_ops_server_descriptor", lambda *_: {"env": {unsafe_name: "active"}}
+    )
+
+    async def collector(_: object) -> list[str]:
+        raise AssertionError("tool listing must not start a recording/IPC session")
+
+    monkeypatch.setattr(cli, "list_live_tools", collector)
+    result = cli.attest(**_args(tmp_path))
+    assert result["status"] == "blocked"
+    assert result["blocking_reasons"] == ["reviewed_ops_mcp_server_unavailable"]

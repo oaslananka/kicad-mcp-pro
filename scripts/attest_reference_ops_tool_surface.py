@@ -24,6 +24,9 @@ from scripts.check_reference_board_attempt_readiness import (
 )
 
 SCHEMA = "reference-ops-tool-attestation.v1"
+_FORBIDDEN_ENV = frozenset(
+    {"KICAD_API_SOCKET", "KICAD_MCP_REFERENCE_TRACE_PATH", "KICAD_MCP_REFERENCE_ATTEMPT_ID"}
+)
 
 
 def compare_tools(observed: list[str], reviewed: set[str]) -> dict[str, object]:
@@ -47,17 +50,10 @@ async def list_live_tools(entry: dict[str, Any]) -> list[str]:
     from mcp import ClientSession
     from mcp.client.stdio import StdioServerParameters, stdio_client
 
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if key
-        not in {
-            "KICAD_API_SOCKET",
-            "KICAD_MCP_REFERENCE_TRACE_PATH",
-            "KICAD_MCP_REFERENCE_ATTEMPT_ID",
-        }
-    }
+    env = {key: value for key, value in os.environ.items() if key not in _FORBIDDEN_ENV}
     env.update(entry["env"])
+    for key in _FORBIDDEN_ENV:
+        env.pop(key, None)
     params = StdioServerParameters(command=entry["command"], args=entry["args"], env=env)
     async with asyncio.timeout(40):
         async with stdio_client(params) as stream:
@@ -114,7 +110,12 @@ def attest(
         "--phase",
         phase.name,
     ]
-    if entry is None or version is None or not _ops_descriptor_matches(entry, reviewed_args, phase):
+    if (
+        entry is None
+        or version is None
+        or any(key in entry["env"] for key in _FORBIDDEN_ENV)
+        or not _ops_descriptor_matches(entry, reviewed_args, phase)
+    ):
         report.update(status="blocked", blocking_reasons=["reviewed_ops_mcp_server_unavailable"])
         return report
     try:
