@@ -129,29 +129,47 @@ def _edit_output(old_value: str) -> str:
     tell application "System Events"
       tell process "eeschema"
         set frontmost to true
+        set wasFound to false
         repeat with elementFound in (entire contents of window "Symbol Fields Table")
           try
             if role of elementFound is "AXTextField" then
               if (value of elementFound as text) is "{old_value}" then
+                set wasFound to true
+                set wasFocused to false
+                set valueSet to false
+                try
+                  set focused of elementFound to true
+                  set wasFocused to focused of elementFound
+                end try
                 try
                   set value of elementFound to "{REPLACEMENT}"
+                  set valueSet to true
                 end try
                 delay 0.3
                 if (value of elementFound as text) is "{REPLACEMENT}" then
-                  return value of elementFound as text
+                  return "{REPLACEMENT}"
                 end if
-                click elementFound
-                keystroke "a" using {{command down}}
-                keystroke "{REPLACEMENT}"
-                delay 0.5
-                return value of elementFound as text
+                try
+                  click elementFound
+                  set focused of elementFound to true
+                  set wasFocused to focused of elementFound
+                  keystroke "a" using {{command down}}
+                  keystroke "{REPLACEMENT}"
+                  key code 48
+                  delay 0.4
+                  if (value of elementFound as text) is "{REPLACEMENT}" then
+                    return "{REPLACEMENT}"
+                  end if
+                end try
+                set editResult to "FIELD_NOT_UPDATED|focused=" & (wasFocused as text)
+                return editResult & "|setter=" & (valueSet as text)
               end if
             end if
           end try
         end repeat
       end tell
     end tell
-    return "NO_EDITED_FIELD"
+    return "FIELD_NOT_FOUND"
     """
     return _osa(script, stage="edit-output")
 
@@ -256,6 +274,7 @@ def _run(executable: Path) -> dict[str, object]:
             raise RuntimeError("cross-project-b-saved-filename-mismatch")
         edited = _edit_output(observed_b)
         if edited != REPLACEMENT:
+            print("macOS BOM edit accessibility:", edited[:100], flush=True)
             raise RuntimeError("native-bom-edit-control-not-updated")
         if _read_output() != REPLACEMENT:
             raise RuntimeError("native-bom-edit-value-not-retained")

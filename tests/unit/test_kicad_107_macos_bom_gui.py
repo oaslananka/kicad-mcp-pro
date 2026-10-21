@@ -110,7 +110,9 @@ def test_bom_edit_is_real_keyboard_interaction_not_ax_value_override(
     assert 'keystroke "a" using {command down}' in observed[0]
     assert 'keystroke "BOM_CANCEL_NOT_PERSISTED_107.csv"' in observed[0]
     assert "set value of elementFound" in observed[0]
+    assert "set focused of elementFound to true" in observed[0]
     assert 'if (value of elementFound as text) is "BOM_CANCEL_NOT_PERSISTED_107.csv"' in observed[0]
+    assert "FIELD_NOT_UPDATED|focused=" in observed[0]
 
 
 def test_cancel_uses_explicit_native_cancel_button_not_escape(
