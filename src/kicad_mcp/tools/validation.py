@@ -1847,21 +1847,40 @@ class _PlacementEvaluator:
         ]
         overlaps: list[str] = []
         outside: list[str] = []
+
+        def bounds(entry: dict[str, Any]) -> tuple[float, float, float, float]:
+            measured = entry.get("courtyard_bounds_mm")
+            if measured is not None:
+                return cast(tuple[float, float, float, float], measured)
+            # Legacy fallback for footprints without supported courtyard graphics.
+            x = float(entry["x_mm"])
+            y = float(entry["y_mm"])
+            half_w = float(entry["width_mm"]) / 2
+            half_h = float(entry["height_mm"]) / 2
+            return x - half_w, y - half_h, x + half_w, y + half_h
+
         items = sorted(self.footprints.items())
         for index, (left_ref, left_entry) in enumerate(items):
             if left_entry["x_mm"] is None or left_entry["y_mm"] is None:
                 continue
-            left_x = float(left_entry["x_mm"])
-            left_y = float(left_entry["y_mm"])
-            left_w = float(left_entry["width_mm"])
-            left_h = float(left_entry["height_mm"])
-            if self._is_outside_frame(left_x, left_y, left_w, left_h):
-                outside.append(left_ref)
-            overlaps.extend(
-                self._collect_pair_overlaps(
-                    index, left_ref, (left_x, left_y, left_w, left_h), items
-                )
-            )
+            lx0, ly0, lx1, ly1 = bounds(left_entry)
+            if lx0 < self.min_x or lx1 > self.max_x or ly0 < self.min_y or ly1 > self.max_y:
+                name = str(left_entry.get("name", ""))
+                if left_ref.startswith("J") and (
+                    name.startswith("Connector") or name.startswith("TerminalBlock")
+                ):
+                    self.warnings.append(
+                        f"Connector '{left_ref}' courtyard crosses board edge; "
+                        "verify intentional shell/plug overhang and mating."
+                    )
+                else:
+                    outside.append(left_ref)
+            for right_ref, right_entry in items[index + 1 :]:
+                if right_entry["x_mm"] is None or right_entry["y_mm"] is None:
+                    continue
+                rx0, ry0, rx1, ry1 = bounds(right_entry)
+                if lx0 < rx1 and rx0 < lx1 and ly0 < ry1 and ry0 < ly1:
+                    overlaps.append(f"{left_ref}/{right_ref}")
         return missing_position, overlaps, outside
 
     def _evaluate_connectors(self) -> tuple[list[str], int]:
