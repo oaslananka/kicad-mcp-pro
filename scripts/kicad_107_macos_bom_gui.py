@@ -133,6 +133,13 @@ def _edit_output(old_value: str) -> str:
           try
             if role of elementFound is "AXTextField" then
               if (value of elementFound as text) is "{old_value}" then
+                try
+                  set value of elementFound to "{REPLACEMENT}"
+                end try
+                delay 0.3
+                if (value of elementFound as text) is "{REPLACEMENT}" then
+                  return value of elementFound as text
+                end if
                 click elementFound
                 keystroke "a" using {{command down}}
                 keystroke "{REPLACEMENT}"
