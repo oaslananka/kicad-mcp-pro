@@ -162,6 +162,28 @@ def _read_output() -> str:
     return output
 
 
+def _refocus_bom_modal() -> None:
+    # Only after a failed keyboard edit: raise the exact native BOM modal
+    # before retrying its fixture-scoped field, never setting AXValue.
+    _osa(
+        'tell application "System Events" to tell process "eeschema" '
+        'to set frontmost to true',
+        stage="refocus-bom",
+    )
+    _osa(
+        """
+        tell application "System Events"
+          tell process "eeschema"
+            try
+              perform action "AXRaise" of window "Symbol Fields Table"
+            end try
+          end tell
+        end tell
+        """,
+        stage="raise-bom",
+    )
+
+
 def _edit_output(old_value: str) -> str:
     # The fixture-generated strings match a restrictive regex; no user input is interpolated.
     if not fixture.SAVED_NAME.fullmatch(old_value):
@@ -220,6 +242,9 @@ def _edit_output(old_value: str) -> str:
             if outcome == REPLACEMENT or not outcome.startswith("FIELD_NOT_UPDATED|"):
                 return outcome
         if attempt != 2:
+            # Recover the modal's foreground state rather than blindly
+            # sending further keystrokes to a possibly unfocused field.
+            _refocus_bom_modal()
             time.sleep(0.5)
     return outcome
 

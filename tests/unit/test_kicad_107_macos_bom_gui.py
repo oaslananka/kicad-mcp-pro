@@ -89,7 +89,7 @@ def test_all_macos_ax_helpers_specify_safe_diagnostic_stage() -> None:
         for n in ast.walk(tree)
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "_osa"
     ]
-    assert len(calls) == 6
+    assert len(calls) == 8
     assert all(any(k.arg == "stage" for k in call.keywords) for call in calls)
 
 
@@ -122,9 +122,11 @@ def test_bom_keyboard_edit_retries_transient_modal_focus(
     responses = iter(["FIELD_NOT_UPDATED|focused=false", gui.REPLACEMENT])
 
     def fake(script: str, *, stage: str) -> str:
-        assert stage == "edit-output"
-        observed.append(script)
-        return next(responses)
+        if stage == "edit-output":
+            observed.append(script)
+            return next(responses)
+        assert stage in {"refocus-bom", "raise-bom"}
+        return ""
 
     monkeypatch.setattr(gui, "_osa", fake)
     monkeypatch.setattr(gui.time, "sleep", lambda _seconds: None)
@@ -140,9 +142,11 @@ def test_bom_keyboard_edit_fails_closed_when_focus_never_works(
     attempts: list[str] = []
 
     def no_focus(script: str, *, stage: str) -> str:
-        assert stage == "edit-output"
-        attempts.append(script)
-        return "FIELD_NOT_UPDATED|focused=false"
+        if stage == "edit-output":
+            attempts.append(script)
+            return "FIELD_NOT_UPDATED|focused=false"
+        assert stage in {"refocus-bom", "raise-bom"}
+        return ""
 
     monkeypatch.setattr(gui, "_osa", no_focus)
     monkeypatch.setattr(gui.time, "sleep", lambda _seconds: None)
