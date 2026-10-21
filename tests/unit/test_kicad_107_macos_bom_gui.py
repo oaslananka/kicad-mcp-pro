@@ -145,3 +145,20 @@ def test_cancel_fails_closed_when_named_button_missing(
     monkeypatch.setattr(gui, "_osa", lambda _script, *, stage: "CANCEL_CONTROL_NOT_FOUND")
     with pytest.raises(RuntimeError, match="native-bom-cancel-control-unavailable"):
         gui._cancel()
+
+
+def test_bom_edit_targets_unique_project_b_sentinel_not_variable_ax_equality(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scripts: list[str] = []
+
+    def fake(script: str, *, stage: str) -> str:
+        scripts.append(script)
+        return gui.REPLACEMENT
+
+    monkeypatch.setattr(gui, "_osa", fake)
+    assert gui._edit_output("BOM_SAVED_B_aaaaaaaaaaaa.csv") == gui.REPLACEMENT
+    assert len(scripts) == 1
+    assert 'theValue starts with "BOM_SAVED_B_"' in scripts[0]
+    assert "set frontmost to true" not in scripts[0]
+    assert "FIELD_NOT_FOUND|textFields=" in scripts[0]

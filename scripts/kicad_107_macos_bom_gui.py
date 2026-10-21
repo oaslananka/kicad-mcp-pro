@@ -128,13 +128,15 @@ def _edit_output(old_value: str) -> str:
     script = f"""
     tell application "System Events"
       tell process "eeschema"
-        set frontmost to true
-        set wasFound to false
+        set fieldCount to 0
+        set prefixCount to 0
         repeat with elementFound in (entire contents of window "Symbol Fields Table")
           try
             if role of elementFound is "AXTextField" then
-              if (value of elementFound as text) is "{old_value}" then
-                set wasFound to true
+              set fieldCount to fieldCount + 1
+              set theValue to value of elementFound as text
+              if theValue starts with "BOM_SAVED_B_" then
+                set prefixCount to prefixCount + 1
                 set wasFocused to false
                 set valueSet to false
                 try
@@ -169,7 +171,8 @@ def _edit_output(old_value: str) -> str:
         end repeat
       end tell
     end tell
-    return "FIELD_NOT_FOUND"
+    set resultText to "FIELD_NOT_FOUND|textFields=" & (fieldCount as text)
+    return resultText & "|matchingPrefix=" & (prefixCount as text)
     """
     return _osa(script, stage="edit-output")
 
