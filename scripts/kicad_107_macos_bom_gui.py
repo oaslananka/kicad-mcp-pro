@@ -150,10 +150,23 @@ def _edit_output(old_value: str) -> str:
 
 
 def _cancel() -> None:
-    _osa(
-        'tell application "System Events" to tell process "eeschema" to key code 53',
-        stage="cancel",
-    )
+    cancel_script = """
+    tell application "System Events"
+      tell process "eeschema"
+        repeat with elementFound in (entire contents of window "Symbol Fields Table")
+          try
+            if role of elementFound is "AXButton" and name of elementFound is "Cancel" then
+              click elementFound
+              return "CANCEL_CLICKED"
+            end if
+          end try
+        end repeat
+      end tell
+    end tell
+    return "CANCEL_CONTROL_NOT_FOUND"
+    """
+    if _osa(cancel_script, stage="cancel") != "CANCEL_CLICKED":
+        raise RuntimeError("native-bom-cancel-control-unavailable")
     for _ in range(10):
         time.sleep(1)
         if "Symbol Fields Table" not in _editor_windows():

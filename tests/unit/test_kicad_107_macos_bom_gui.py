@@ -110,3 +110,33 @@ def test_bom_edit_is_real_keyboard_interaction_not_ax_value_override(
     assert 'keystroke "a" using {command down}' in observed[0]
     assert 'keystroke "BOM_CANCEL_NOT_PERSISTED_107.csv"' in observed[0]
     assert "set value of elementFound" not in observed[0]
+
+
+def test_cancel_uses_explicit_native_cancel_button_not_escape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[str] = []
+
+    def command(script: str, *, stage: str) -> str:
+        seen.append(script)
+        if stage == "cancel":
+            return "CANCEL_CLICKED"
+        if stage == "windows":
+            return "PortableBom107B - Schematic Editor"
+        pytest.fail("unexpected AX stage")
+
+    monkeypatch.setattr(gui, "_osa", command)
+    monkeypatch.setattr(gui.time, "sleep", lambda _seconds: None)
+    gui._cancel()
+    assert len(seen) == 2
+    assert 'role of elementFound is "AXButton"' in seen[0]
+    assert 'name of elementFound is "Cancel"' in seen[0]
+    assert "key code 53" not in seen[0]
+
+
+def test_cancel_fails_closed_when_named_button_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gui, "_osa", lambda _script, *, stage: "CANCEL_CONTROL_NOT_FOUND")
+    with pytest.raises(RuntimeError, match="native-bom-cancel-control-unavailable"):
+        gui._cancel()
