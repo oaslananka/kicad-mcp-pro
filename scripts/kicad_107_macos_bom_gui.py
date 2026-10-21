@@ -186,6 +186,7 @@ def _edit_output(old_value: str) -> str:
                 end try
                 try
                   click elementFound
+                  delay 0.2
                   set focused of elementFound to true
                   set wasFocused to focused of elementFound
                   keystroke "a" using {{command down}}
@@ -206,7 +207,21 @@ def _edit_output(old_value: str) -> str:
     set resultText to "FIELD_NOT_FOUND|textFields=" & (fieldCount as text)
     return resultText & "|matchingPrefix=" & (prefixCount as text)
     """
-    return _osa(script, stage="edit-output")
+    # Native focus can lag behind the BOM modal. Retry keyboard interaction
+    # briefly, but never qualify the gate without exact readback of the edit.
+    outcome = "FIELD_NOT_UPDATED|focused=false"
+    for attempt in range(3):
+        try:
+            outcome = _osa(script, stage="edit-output")
+        except (RuntimeError, subprocess.TimeoutExpired):
+            if attempt == 2:
+                raise
+        else:
+            if outcome == REPLACEMENT or not outcome.startswith("FIELD_NOT_UPDATED|"):
+                return outcome
+        if attempt != 2:
+            time.sleep(0.5)
+    return outcome
 
 
 def _cancel() -> None:

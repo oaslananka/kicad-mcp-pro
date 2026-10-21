@@ -115,6 +115,41 @@ def test_bom_edit_is_real_keyboard_interaction_not_ax_value_override(
     assert "FIELD_NOT_UPDATED|focused=" in observed[0]
 
 
+def test_bom_keyboard_edit_retries_transient_modal_focus(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[str] = []
+    responses = iter(["FIELD_NOT_UPDATED|focused=false", gui.REPLACEMENT])
+
+    def fake(script: str, *, stage: str) -> str:
+        assert stage == "edit-output"
+        observed.append(script)
+        return next(responses)
+
+    monkeypatch.setattr(gui, "_osa", fake)
+    monkeypatch.setattr(gui.time, "sleep", lambda _seconds: None)
+    assert gui._edit_output("BOM_SAVED_B_aaaaaaaaaaaa.csv") == gui.REPLACEMENT
+    assert len(observed) == 2
+    assert "set frontmost to true" not in observed[0]
+    assert 'keystroke "BOM_CANCEL_NOT_PERSISTED_107.csv"' in observed[0]
+
+
+def test_bom_keyboard_edit_fails_closed_when_focus_never_works(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts: list[str] = []
+
+    def no_focus(script: str, *, stage: str) -> str:
+        assert stage == "edit-output"
+        attempts.append(script)
+        return "FIELD_NOT_UPDATED|focused=false"
+
+    monkeypatch.setattr(gui, "_osa", no_focus)
+    monkeypatch.setattr(gui.time, "sleep", lambda _seconds: None)
+    assert gui._edit_output("BOM_SAVED_B_aaaaaaaaaaaa.csv") == "FIELD_NOT_UPDATED|focused=false"
+    assert len(attempts) == 3
+
+
 def test_cancel_uses_explicit_native_cancel_button_not_escape(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
