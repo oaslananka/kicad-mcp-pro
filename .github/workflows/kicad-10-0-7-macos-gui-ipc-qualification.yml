@@ -188,178 +188,6 @@ jobs:
       - name: Frozen project Python dependencies
         run: uv sync --all-extras --frozen
 
-      - name: Probe KiCad Schematic Editor UI via permitted macOS accessibility
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PYSCHEM'
-          import json
-          import os
-          import subprocess
-          import sys
-          import tempfile
-          import time
-          from pathlib import Path
-
-          helper = Path("scripts/kicad_107_bom_portable.py")
-          prepared = subprocess.run(
-              [sys.executable, str(helper), "prepare"],
-              check=True, capture_output=True, text=True, timeout=20,
-          )
-          data = json.loads(prepared.stdout)
-          workspace = Path(tempfile.gettempdir()) / (
-              "kicad-107-bom-operator-" + data["sessionId"]
-          )
-          project = workspace / "PortableBom107A" / "PortableBom107A.kicad_sch"
-          cmd = [os.environ["KICAD_MAC_EESCHEMA"], str(project)]
-          access_scripts = {
-              "frontmostSet": 'tell application "System Events" to tell process "eeschema" to set frontmost to true',
-              "windowRead": 'tell application "System Events" to tell process "eeschema" to count windows',
-              "menuRead": 'tell application "System Events" to tell process "eeschema" to name of every menu bar item of menu bar 1',
-          }
-          presence_script = """
-          tell application "System Events"
-            set n1 to count of (every application process whose name contains "Schematic")
-            set n2 to count of (every application process whose name contains "eeschema")
-            set n3 to count of (every application process whose name contains "KiCad")
-            return (n1 as text) & "|" & (n2 as text) & "|" & (n3 as text)
-          end tell
-          """
-          result = {
-              "processLaunched": False,
-              "binaryStillRunning": False,
-              "schematicProcessDetected": False,
-              "eeschemaProcessDetected": False,
-              "kicadProcessDetected": False,
-              "axResponse": False,
-              "frontmostSet": False,
-              "windowRead": False,
-              "menuRead": False,
-              "visibleWindow": False,
-              "toolsMenu": False,
-              "symbolFieldsMenuItem": False,
-              "bomDialogOpened": False,
-          }
-          proc = None
-          try:
-              proc = subprocess.Popen(
-                  cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                  start_new_session=True,
-              )
-              result["processLaunched"] = True
-              for _ in range(12):
-                  time.sleep(2)
-                  result["binaryStillRunning"] = proc.poll() is None
-                  try:
-                      presence = subprocess.run(
-                          ["osascript", "-e", presence_script], capture_output=True,
-                          text=True, timeout=8, check=False,
-                      )
-                      if presence.returncode == 0:
-                          n1, n2, n3 = [int(x) for x in presence.stdout.strip().split("|")]
-                          result["schematicProcessDetected"] = n1 > 0
-                          result["eeschemaProcessDetected"] = n2 > 0
-                          result["kicadProcessDetected"] = n3 > 0
-                  except (ValueError, OSError, subprocess.TimeoutExpired):
-                      pass
-                  for kind, script in access_scripts.items():
-                      try:
-                          checked = subprocess.run(
-                              ["osascript", "-e", script],
-                              capture_output=True, text=True, timeout=8, check=False,
-                          )
-                      except (OSError, subprocess.TimeoutExpired):
-                          continue
-                      if checked.returncode != 0:
-                          continue
-                      result["axResponse"] = True
-                      result[kind] = True
-                      if kind == "windowRead":
-                          try:
-                              result["visibleWindow"] = int(checked.stdout.strip()) > 0
-                          except ValueError:
-                              result["windowRead"] = False
-                      elif kind == "menuRead":
-                          result["toolsMenu"] = "Tools" in checked.stdout
-                  if result["visibleWindow"] and result["toolsMenu"]:
-                      break
-              if result["visibleWindow"] and result["toolsMenu"]:
-                  items = subprocess.run(
-                      ["osascript", "-e",
-                       'tell application "System Events" to tell process "eeschema" to get name of every menu item of menu 1 of menu bar item "Tools" of menu bar 1'],
-                      capture_output=True, text=True, timeout=12, check=False,
-                  )
-                  if items.returncode == 0:
-                      print("Schematic GUI Tools items:", items.stdout.strip()[:1300])
-                      result["symbolFieldsMenuItem"] = "Generate Bill of Materials" in items.stdout
-                  if result["symbolFieldsMenuItem"]:
-                      click = subprocess.run(
-                          ["osascript", "-e",
-                           'tell application "System Events" to tell process "eeschema" to click (first menu item of menu 1 of menu bar item "Tools" of menu bar 1 whose name contains "Generate Bill of Materials")'],
-                          capture_output=True, text=True, timeout=12, check=False,
-                      )
-                      print("Schematic GUI symbol-field click:", "PASS" if click.returncode == 0 else "UNAVAILABLE")
-                      if click.returncode == 0:
-                          time.sleep(3)
-                          dialog = subprocess.run(
-                              ["osascript", "-e",
-                               'tell application "System Events" to tell process "eeschema" to get name of every window'],
-                              capture_output=True, text=True, timeout=10, check=False,
-                          )
-                          if dialog.returncode == 0:
-                              print("Schematic GUI window labels:", dialog.stdout.strip()[:700])
-                              result["bomDialogOpened"] = "Symbol Fields" in dialog.stdout
-                              if result["bomDialogOpened"]:
-                                  inspect_script = """
-                                  tell application "System Events"
-                                    tell process "eeschema"
-                                      set elementsFound to entire contents of window "Symbol Fields Table"
-                                      set output to ""
-                                      set n to 0
-                                      repeat with elementFound in elementsFound
-                                        if n > 90 then exit repeat
-                                        try
-                                          set elementRole to role of elementFound as text
-                                          if elementRole is in {"AXTextField", "AXTextArea", "AXButton", "AXRadioButton", "AXTabGroup", "AXCheckBox", "AXStaticText"} then
-                                            set elementName to name of elementFound as text
-                                            set elementValue to ""
-                                            try
-                                              set elementValue to value of elementFound as text
-                                            end try
-                                            set output to output & elementRole & "|" & elementName & "|" & elementValue & ";"
-                                            set n to n + 1
-                                          end if
-                                        end try
-                                      end repeat
-                                      return output
-                                    end tell
-                                  end tell
-                                  """
-                                  inspected = subprocess.run(
-                                      ["osascript", "-e", inspect_script],
-                                      capture_output=True, text=True, timeout=30, check=False,
-                                  )
-                                  print("Schematic GUI dialog elements:",
-                                        inspected.stdout.strip()[:2500] if inspected.returncode == 0 else "UNAVAILABLE")
-          except (OSError, subprocess.SubprocessError):
-              pass
-          finally:
-              if proc is not None and proc.poll() is None:
-                  proc.terminate()
-                  try:
-                      proc.wait(timeout=10)
-                  except subprocess.TimeoutExpired:
-                      proc.kill()
-                      proc.wait(timeout=5)
-
-          # Only whitelisted bounded booleans, no arbitrary UI/window details.
-          for name, passed in result.items():
-              print(f"Schematic GUI preflight {name}: {'PASS' if passed else 'UNAVAILABLE'}")
-          Path("artifacts/kicad-10-0-7-macos/schematic-ui-preflight.json").write_text(
-              json.dumps(result, sort_keys=True) + "\n", encoding="utf-8"
-          )
-          PYSCHEM
-
       - name: Install exact PCM Companion payload into disposable IPC profile
         shell: bash
         run: |
@@ -502,12 +330,20 @@ jobs:
           test "$native_rc" -eq 0 && test "$gui_rc" -eq 0
           test "$(python3 -c 'import json;print(json.load(open("artifacts/kicad-10-0-7-macos/summary.json"))["verdict"])')" = pass
 
+      - name: Require real macOS 10.0.7 Schematic Editor BOM Cancel acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --all-extras --frozen python -m scripts.kicad_107_macos_bom_gui             --output artifacts/kicad-10-0-7-macos/bom-gui.json
+
       - name: Upload only bounded summary (never raw GUI logs)
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: kicad-10-0-7-macos-native-gui-ipc
-          path: artifacts/kicad-10-0-7-macos/summary.json
+          path: |
+            artifacts/kicad-10-0-7-macos/summary.json
+            artifacts/kicad-10-0-7-macos/bom-gui.json
           if-no-files-found: error
           retention-days: 7
 

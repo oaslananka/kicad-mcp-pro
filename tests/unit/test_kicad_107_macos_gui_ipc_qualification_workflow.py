@@ -127,3 +127,19 @@ def test_gui_and_cli_both_mandatory_with_sanitized_evidence_only() -> None:
         )[0]
     )
     assert "retention-days: 7" in source
+
+
+def test_schematic_bom_real_gui_gate_is_mandatory_and_bounded() -> None:
+    data = _workflow()
+    steps = data["jobs"]["macos-107-native-gui-ipc"]["steps"]
+    names = [step.get("name") for step in steps]
+    native = names.index("Run native CLI and real KiCad PCB Editor GUI-IPC canaries")
+    bom = names.index("Require real macOS 10.0.7 Schematic Editor BOM Cancel acceptance")
+    upload = names.index("Upload only bounded summary (never raw GUI logs)")
+    assert native < bom < upload
+    assert "continue-on-error" not in steps[bom]
+    assert "scripts.kicad_107_macos_bom_gui" in steps[bom]["run"]
+    paths = steps[upload]["with"]["path"]
+    assert "artifacts/kicad-10-0-7-macos/summary.json" in paths
+    assert "artifacts/kicad-10-0-7-macos/bom-gui.json" in paths
+    assert "internal/" not in paths
