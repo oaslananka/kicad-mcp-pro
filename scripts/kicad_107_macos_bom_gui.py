@@ -10,7 +10,7 @@ import argparse
 import json
 import os
 import re
-import subprocess
+import subprocess  # nosec B404 - fixed osascript and verified signed KiCad only
 import sys
 import time
 from collections.abc import Iterator
@@ -24,7 +24,8 @@ REPLACEMENT = fixture.CANCELLED_NAME
 
 
 def _osa(script: str, *, stage: str) -> str:
-    result = subprocess.run(
+    # Commands use a fixed Apple-provided binary and fixture-scoped AX scripts.
+    result = subprocess.run(  # nosec B603
         ["/usr/bin/osascript", "-e", script],
         capture_output=True,
         text=True,
@@ -45,10 +46,39 @@ def _editor_windows() -> str:
 
 @contextmanager
 def _editor(executable: Path, project: Path) -> Iterator[None]:
-    if not executable.is_file() or not project.is_file():
-        raise RuntimeError("native-editor-or-fixture-missing")
-    process = subprocess.Popen(
-        [str(executable), str(project)],
+    # The workflow verifies the official DMG's hash and code signature before
+    # publishing KICAD_MAC_MOUNT and the selected eeschema path.
+    mount_env = os.environ.get("KICAD_MAC_MOUNT")
+    if not mount_env:
+        raise RuntimeError("signed-kicad-mount-not-provided")
+    mount = Path(mount_env).resolve(strict=True)
+    binary = executable.resolve(strict=True)
+    if (
+        binary.name != "eeschema"
+        or not binary.is_relative_to(mount)
+        or not binary.is_file()
+        or not os.access(binary, os.X_OK)
+    ):
+        raise RuntimeError("native-editor-outside-signed-mount")
+    # Only fixture-owned, randomized temp projects can be launched.
+    session_root = project.parent.parent
+    session = session_root.name.removeprefix("kicad-107-bom-operator-")
+    try:
+        expected_root = fixture._session_workspace(session)
+    except fixture.FixtureError as exc:
+        raise RuntimeError("native-editor-untrusted-project") from exc
+    if (
+        session_root.is_symlink()
+        or session_root.resolve(strict=True) != expected_root.resolve(strict=True)
+        or project.parent.name not in fixture.PROJECTS
+        or project.name != f"{project.parent.name}.kicad_sch"
+        or not project.is_file()
+        or project.is_symlink()
+    ):
+        raise RuntimeError("native-editor-untrusted-project")
+    # No shell, no external user path, and a verified executable in the signed DMG.
+    process = subprocess.Popen(  # nosec B603  # nosemgrep
+        [str(binary), str(project)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
@@ -130,7 +160,8 @@ def _edit_output(old_value: str) -> str:
       tell process "eeschema"
         set fieldCount to 0
         set prefixCount to 0
-        repeat with elementFound in (entire contents of window "Symbol Fields Table")
+        set elementsFound to entire contents of window "Symbol Fields Table"
+        repeat with elementFound in elementsFound
           try
             if role of elementFound is "AXTextField" then
               set fieldCount to fieldCount + 1
@@ -250,7 +281,8 @@ def _run(executable: Path) -> dict[str, object]:
         print(f"macOS BOM stage: initialize-{name}", flush=True)
         project = workspace / name / f"{name}.kicad_sch"
         with _editor(executable, project):
-            pass
+            if "Schematic Editor" not in _editor_windows():
+                raise RuntimeError("native-initialization-window-lost")
     print("macOS BOM stage: seal-baseline", flush=True)
     try:
         verified = fixture.verify(workspace)

@@ -162,3 +162,51 @@ def test_bom_edit_targets_unique_project_b_sentinel_not_variable_ax_equality(
     assert 'theValue starts with "BOM_SAVED_B_"' in scripts[0]
     assert "set frontmost to true" not in scripts[0]
     assert "FIELD_NOT_FOUND|textFields=" in scripts[0]
+
+
+def test_macos_editor_refuses_binary_outside_signed_mount(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "signed-mount"
+    root.mkdir()
+    outside = tmp_path / "eeschema"
+    outside.write_text("not a KiCad binary")
+    outside.chmod(0o755)
+    monkeypatch.setenv("KICAD_MAC_MOUNT", str(root))
+    with pytest.raises(RuntimeError, match="native-editor-outside-signed-mount"):
+        with gui._editor(outside, tmp_path / "fixture.kicad_sch"):
+            pytest.fail("unsigned executable must never launch")
+
+
+def test_macos_editor_refuses_arbitrary_project_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "signed-mount"
+    root.mkdir()
+    binary = root / "eeschema"
+    binary.write_text("mock trusted executable")
+    binary.chmod(0o755)
+    project = tmp_path / "PortableBom107A" / "PortableBom107A.kicad_sch"
+    project.parent.mkdir()
+    project.write_text("dummy fixture")
+    monkeypatch.setenv("KICAD_MAC_MOUNT", str(root))
+    with pytest.raises(RuntimeError, match="native-editor-untrusted-project"):
+        with gui._editor(binary, project):
+            pytest.fail("arbitrary project must never launch")
+
+
+def test_bom_edit_uses_same_materialized_ax_collection_as_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scripts: list[str] = []
+
+    def fake(script: str, *, stage: str) -> str:
+        assert stage == "edit-output"
+        scripts.append(script)
+        return gui.REPLACEMENT
+
+    monkeypatch.setattr(gui, "_osa", fake)
+    gui._edit_output("BOM_SAVED_B_aaaaaaaaaaaa.csv")
+    assert len(scripts) == 1
+    assert 'set elementsFound to entire contents of window "Symbol Fields Table"' in scripts[0]
+    assert "repeat with elementFound in elementsFound" in scripts[0]
