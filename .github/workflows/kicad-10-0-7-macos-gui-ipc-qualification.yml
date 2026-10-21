@@ -28,6 +28,41 @@ jobs:
           enable-cache: true
           prune-cache: true
 
+      - name: Check hosted macOS GUI accessibility without changing permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYACCESS'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          # Non-mutating preflight. Never attempt to bypass macOS TCC.
+          checks = {
+              "trusted": ["swift", "-e", "import ApplicationServices; print(AXIsProcessTrusted())"],
+              "finderAX": [
+                  "osascript", "-e",
+                  'tell application "System Events" to tell application process "Finder" to count windows',
+              ],
+          }
+          results = {}
+          for name, cmd in checks.items():
+              try:
+                  p = subprocess.run(cmd, capture_output=True, text=True, timeout=45, check=False)
+                  result = p.returncode == 0
+                  if name == "trusted":
+                      result = result and p.stdout.strip().lower() == "true"
+                  results[name] = result
+              except (OSError, subprocess.TimeoutExpired):
+                  results[name] = False
+              print(f"macOS accessibility preflight {name}: {'PASS' if results[name] else 'UNAVAILABLE'}")
+          Path("artifacts/kicad-10-0-7-macos").mkdir(parents=True, exist_ok=True)
+          Path("artifacts/kicad-10-0-7-macos/accessibility-preflight.json").write_text(
+              json.dumps(results, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          # Keep the established PCB IPC qualification unchanged.
+          PYACCESS
+
       - name: Prepare bounded fail-closed evidence
         env:
           SOURCE_REVISION: ${{ github.sha }}
