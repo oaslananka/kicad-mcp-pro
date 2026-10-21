@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import ssl
 from unittest.mock import patch
 
 import pytest
@@ -19,34 +18,32 @@ def _response(value: str) -> dict:
     }
 
 
-def test_zero_new_smells_authenticates_only_to_fixed_sonar_host() -> None:
+def test_zero_new_smells_uses_only_public_fixed_https_endpoint() -> None:
     class FakeResponse:
-        status = 200
-
         def read(self) -> bytes:
             return json.dumps(_response("0")).encode()
 
-    class FakeConnection:
-        def __init__(self, host: str, *, timeout: int, context: ssl.SSLContext) -> None:
-            assert host == "sonarcloud.io"
-            assert timeout == 25
-            assert context.verify_mode == ssl.CERT_REQUIRED
-            assert context.check_hostname
+        def geturl(self) -> str:
+            return "https://sonarcloud.io/api/measures/component?" + (
+                "component=oaslananka_kicad-mcp-pro&pullRequest=1390&metricKeys=new_code_smells"
+            )
 
-        def request(self, method: str, path: str, *, headers: dict) -> None:
-            assert method == "GET"
-            assert "pullRequest=1390" in path
-            assert "metricKeys=new_code_smells" in path
-            assert headers["Authorization"].startswith("Basic ")
+        def __enter__(self) -> FakeResponse:
+            return self
 
-        def getresponse(self) -> FakeResponse:
-            return FakeResponse()
-
-        def close(self) -> None:
+        def __exit__(self, *args: object) -> None:
             pass
 
-    with patch("scripts.check_sonar_pr_new_smells.HTTPSConnection", FakeConnection):
-        assert check_pr_new_smells(1390, token="".join(("EXAMPLE", "_UNIT_TEST"))) == 0
+    def respond(request: object, *, timeout: int) -> FakeResponse:
+        assert timeout == 25
+        assert request.full_url.startswith("https://sonarcloud.io/api/measures/component?")
+        assert "pullRequest=1390" in request.full_url
+        assert "metricKeys=new_code_smells" in request.full_url
+        assert "Authorization" not in request.headers
+        return FakeResponse()
+
+    with patch("scripts.check_sonar_pr_new_smells.urlopen", side_effect=respond):
+        assert check_pr_new_smells(1390) == 0
 
 
 def test_sonarqube_single_period_response_is_supported() -> None:
@@ -109,7 +106,7 @@ def test_cli_blocks_unavailable_analysis(monkeypatch: pytest.MonkeyPatch) -> Non
     assert main() == 2
 
 
-@pytest.mark.parametrize("number,token", [(0, "value"), (1, ""), (-1, "value")])
-def test_invalid_credentials_and_number_fail(number: int, token: str) -> None:
+@pytest.mark.parametrize("number", [0, -1])
+def test_invalid_pr_number_fails(number: int) -> None:
     with pytest.raises(ValueError):
-        check_pr_new_smells(number, token=token)
+        check_pr_new_smells(number)

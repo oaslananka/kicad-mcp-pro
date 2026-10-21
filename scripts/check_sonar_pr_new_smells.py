@@ -8,14 +8,11 @@ Main branch historical maintainability debt is not a release blocker.
 from __future__ import annotations
 
 import argparse
-import base64
 import json
-import os
-import ssl
 import sys
-from http.client import HTTPSConnection
 from typing import cast
 from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 _PROJECT_KEY = "oaslananka_kicad-mcp-pro"
 
@@ -58,27 +55,19 @@ def _new_code_smells(data: object) -> int:
     return int(value)
 
 
-def check_pr_new_smells(pr_number: int, *, token: str) -> int:
-    if pr_number <= 0 or not token:
-        raise ValueError("SonarCloud PR number and API token required")
+def check_pr_new_smells(pr_number: int) -> int:
+    if pr_number <= 0:
+        raise ValueError("valid PR number required")
     query = urlencode(
         {"component": _PROJECT_KEY, "pullRequest": pr_number, "metricKeys": "new_code_smells"}
     )
-    credentials = base64.b64encode((token + ":").encode()).decode()
-    # Fixed HTTPS host, no redirects: never forward CI's SonarCloud secret elsewhere.
-    connection = HTTPSConnection("sonarcloud.io", timeout=25, context=ssl.create_default_context())
-    try:
-        connection.request(
-            "GET",
-            f"/api/measures/component?{query}",
-            headers={"Authorization": f"Basic {credentials}", "Accept": "application/json"},
-        )
-        response = connection.getresponse()
-        if response.status != 200:
-            raise ValueError(f"SonarCloud analysis response HTTP {response.status}")
+    # Public-project measure: no CI secrets are transmitted by this check.
+    url = f"https://sonarcloud.io/api/measures/component?{query}"
+    request = Request(url, headers={"Accept": "application/json"})  # noqa: S310 - fixed HTTPS host
+    with urlopen(request, timeout=25) as response:  # noqa: S310 - fixed HTTPS host
+        if response.geturl() != url:
+            raise ValueError("unexpected SonarCloud response origin")
         return _new_code_smells(json.load(response))
-    finally:
-        connection.close()
 
 
 def main() -> int:
@@ -86,7 +75,7 @@ def main() -> int:
     parser.add_argument("--pull-request", type=int, required=True)
     args = parser.parse_args()
     try:
-        count = check_pr_new_smells(args.pull_request, token=os.environ.get("SONAR_TOKEN", ""))
+        count = check_pr_new_smells(args.pull_request)
     except (OSError, ValueError) as exc:
         print(
             "SonarCloud PR Code Smell gate FAILED "

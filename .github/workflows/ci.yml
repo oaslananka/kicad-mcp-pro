@@ -576,7 +576,6 @@ jobs:
           steps.sonar-mode.outputs.run_analysis == 'true' &&
           github.event_name == 'pull_request'
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: python3 scripts/check_sonar_pr_new_smells.py --pull-request "$PR_NUMBER"
 
