@@ -37,10 +37,19 @@ def _new_code_smells(data: object) -> int:
                 matched.append(entry)
     if len(matched) != 1:
         raise ValueError("SonarCloud new_code_smells metric missing or ambiguous")
-    periods = matched[0].get("periods")
-    if not isinstance(periods, list) or len(cast(list[object], periods)) != 1:
+    # SonarCloud presently returns "periods" for this project. Some newer
+    # SonarQube versions use "period"; reject ambiguous responses rather than
+    # silently treating a missing result as zero.
+    measure = matched[0]
+    if ("period" in measure) == ("periods" in measure):
         raise ValueError("SonarCloud new-code period missing or ambiguous")
-    period = cast(list[object], periods)[0]
+    if "period" in measure:
+        period = measure["period"]
+    else:
+        periods = measure["periods"]
+        if not isinstance(periods, list) or len(cast(list[object], periods)) != 1:
+            raise ValueError("SonarCloud new-code period missing or ambiguous")
+        period = cast(list[object], periods)[0]
     if not isinstance(period, dict):
         raise ValueError("SonarCloud new-code period is not a JSON object")
     value = cast(dict[str, object], period).get("value")

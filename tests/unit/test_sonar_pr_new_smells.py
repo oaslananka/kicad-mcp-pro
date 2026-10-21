@@ -49,6 +49,18 @@ def test_zero_new_smells_authenticates_only_to_fixed_sonar_host() -> None:
         assert check_pr_new_smells(1390, token="".join(("EXAMPLE", "_UNIT_TEST"))) == 0
 
 
+def test_sonarqube_single_period_response_is_supported() -> None:
+    result = {"component": {"measures": [{"metric": "new_code_smells", "period": {"value": "0"}}]}}
+    assert _new_code_smells(result) == 0
+
+
+def test_mixed_period_shapes_fail_closed() -> None:
+    mixed = _response("0")
+    mixed["component"]["measures"][0]["period"] = {"value": "0"}
+    with pytest.raises(ValueError, match="ambiguous"):
+        _new_code_smells(mixed)
+
+
 @pytest.mark.parametrize("value", ["1", "5", "16"])
 def test_nonzero_new_smells_detected(value: str) -> None:
     assert _new_code_smells(_response(value)) == int(value)
