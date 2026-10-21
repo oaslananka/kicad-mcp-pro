@@ -74,7 +74,7 @@ dev = [
   "mkdocstrings[python]>=0.25.0",
   "mutmut>=3.0.0",
   "mypy>=1.10.0",
-  "Pillow>=12.2.0,<13.0.0",
+  "Pillow>=13.0.0,<14.0.0",
   "pypdf==6.20.0",
   "properdocs>=1.6.7",
   "pytest>=8.2.0",
