@@ -122,17 +122,19 @@ jobs:
           codesign -dv --verbose=2 "$app" 2>&1 | grep -Ei '^Authority=.*KiCad' >/dev/null
           cli=$(find "$app" -name kicad-cli -print -quit)
           pcb=$(find "$mount_dir" -name pcbnew -print -quit)
+          eeschema=$(find "$mount_dir" -name eeschema -print -quit)
           symbol=$(find "$mount_dir" -name Device.kicad_sym -print -quit)
           # The DMG also includes demo-project sym-lib-table files. Never
           # select the first recursive match: it can silently bind an
           # unrelated demo's global library table to our isolated profile.
           template="$app/Contents/SharedSupport/template/sym-lib-table"
-          test -x "$cli" && test -x "$pcb" && test -s "$symbol" && test -s "$template"
+          test -x "$cli" && test -x "$pcb" && test -x "$eeschema" && test -s "$symbol" && test -s "$template"
           test "$("$cli" version)" = '10.0.7'
           printf '%s\n' \
             "KICAD_MAC_MOUNT=$mount_dir" \
             "KICAD_MAC_CLI=$cli" \
             "KICAD_MAC_PCB=$pcb" \
+            "KICAD_MAC_EESCHEMA=$eeschema" \
             "KICAD_MAC_TEMPLATE=$(dirname "$template")" \
             "KICAD_MAC_SYMBOLS=$(dirname "$symbol")" >> "$GITHUB_ENV"
           python3 - <<'PY'
@@ -185,6 +187,90 @@ jobs:
 
       - name: Frozen project Python dependencies
         run: uv sync --all-extras --frozen
+
+      - name: Probe KiCad Schematic Editor UI via permitted macOS accessibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYSCHEM'
+          import json
+          import os
+          import subprocess
+          import sys
+          import tempfile
+          import time
+          from pathlib import Path
+
+          helper = Path("scripts/kicad_107_bom_portable.py")
+          prepared = subprocess.run(
+              [sys.executable, str(helper), "prepare"],
+              check=True, capture_output=True, text=True, timeout=20,
+          )
+          data = json.loads(prepared.stdout)
+          workspace = Path(tempfile.gettempdir()) / (
+              "kicad-107-bom-operator-" + data["sessionId"]
+          )
+          project = workspace / "PortableBom107A" / "PortableBom107A.kicad_sch"
+          cmd = [os.environ["KICAD_MAC_EESCHEMA"], str(project)]
+          script = """
+          tell application "System Events"
+            set matches to (every application process whose name contains "Schematic")
+            if (count of matches) is 0 then
+              set matches to (every application process whose name contains "eeschema")
+            end if
+            if (count of matches) is 0 then error "schematic-editor-not-detected"
+            tell item 1 of matches
+              set n to count of windows
+              set menus to name of every menu bar item of menu bar 1
+              return (n as text) & "|" & (menus as text)
+            end tell
+          end tell
+          """
+          result = {"processLaunched": False, "visibleWindow": False, "toolsMenu": False}
+          proc = None
+          try:
+              proc = subprocess.Popen(
+                  cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                  start_new_session=True,
+              )
+              result["processLaunched"] = True
+              for _ in range(12):
+                  time.sleep(2)
+                  try:
+                      checked = subprocess.run(
+                          ["osascript", "-e", script], capture_output=True,
+                          text=True, timeout=8, check=False,
+                      )
+                  except subprocess.TimeoutExpired:
+                      continue
+                  if checked.returncode != 0:
+                      continue
+                  try:
+                      count, menu_names = checked.stdout.strip().split("|", 1)
+                      result["visibleWindow"] = int(count) > 0
+                      result["toolsMenu"] = "Tools" in menu_names
+                  except (ValueError, TypeError):
+                      continue
+                  if result["visibleWindow"] and result["toolsMenu"]:
+                      break
+          except (OSError, subprocess.SubprocessError):
+              pass
+          finally:
+              if proc is not None and proc.poll() is None:
+                  proc.terminate()
+                  try:
+                      proc.wait(timeout=10)
+                  except subprocess.TimeoutExpired:
+                      proc.kill()
+                      proc.wait(timeout=5)
+
+          # Only whitelisted bounded booleans, no arbitrary UI/window details.
+          for name, passed in result.items():
+              print(f"Schematic GUI preflight {name}: {'PASS' if passed else 'UNAVAILABLE'}")
+          Path("artifacts/kicad-10-0-7-macos/schematic-ui-preflight.json").write_text(
+              json.dumps(result, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PYSCHEM
 
       - name: Install exact PCM Companion payload into disposable IPC profile
         shell: bash
