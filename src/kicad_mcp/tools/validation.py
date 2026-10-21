@@ -1839,6 +1839,54 @@ class _PlacementEvaluator:
                 overlaps.append(f"{left_ref}/{right_ref}")
         return overlaps
 
+    @staticmethod
+    def _courtyard_bounds(entry: dict[str, Any]) -> tuple[float, float, float, float]:
+        measured = entry.get("courtyard_bounds_mm")
+        if measured is not None:
+            return cast(tuple[float, float, float, float], measured)
+        # Legacy fallback for footprints without supported courtyard graphics.
+        x = float(entry["x_mm"])
+        y = float(entry["y_mm"])
+        half_w = float(entry["width_mm"]) / 2
+        half_h = float(entry["height_mm"]) / 2
+        return x - half_w, y - half_h, x + half_w, y + half_h
+
+    def _classify_outside_courtyard(
+        self,
+        reference: str,
+        entry: dict[str, Any],
+        box: tuple[float, float, float, float],
+        outside: list[str],
+    ) -> None:
+        lx0, ly0, lx1, ly1 = box
+        if not (lx0 < self.min_x or lx1 > self.max_x or ly0 < self.min_y or ly1 > self.max_y):
+            return
+        name = str(entry.get("name", ""))
+        if reference.startswith("J") and name.startswith(("Connector", "TerminalBlock")):
+            self.warnings.append(
+                f"Connector '{reference}' courtyard crosses board edge; "
+                "verify intentional shell/plug overhang and mating."
+            )
+        else:
+            outside.append(reference)
+
+    @classmethod
+    def _courtyard_overlaps_with_later(
+        cls,
+        reference: str,
+        left_box: tuple[float, float, float, float],
+        later: list[tuple[str, dict[str, Any]]],
+    ) -> list[str]:
+        lx0, ly0, lx1, ly1 = left_box
+        overlaps: list[str] = []
+        for right_ref, right_entry in later:
+            if right_entry["x_mm"] is None or right_entry["y_mm"] is None:
+                continue
+            rx0, ry0, rx1, ry1 = cls._courtyard_bounds(right_entry)
+            if lx0 < rx1 and rx0 < lx1 and ly0 < ry1 and ry0 < ly1:
+                overlaps.append(f"{reference}/{right_ref}")
+        return overlaps
+
     def _evaluate_geometry_and_overlaps(self) -> tuple[list[str], list[str], list[str]]:
         missing_position = [
             reference
@@ -1847,40 +1895,13 @@ class _PlacementEvaluator:
         ]
         overlaps: list[str] = []
         outside: list[str] = []
-
-        def bounds(entry: dict[str, Any]) -> tuple[float, float, float, float]:
-            measured = entry.get("courtyard_bounds_mm")
-            if measured is not None:
-                return cast(tuple[float, float, float, float], measured)
-            # Legacy fallback for footprints without supported courtyard graphics.
-            x = float(entry["x_mm"])
-            y = float(entry["y_mm"])
-            half_w = float(entry["width_mm"]) / 2
-            half_h = float(entry["height_mm"]) / 2
-            return x - half_w, y - half_h, x + half_w, y + half_h
-
         items = sorted(self.footprints.items())
         for index, (left_ref, left_entry) in enumerate(items):
             if left_entry["x_mm"] is None or left_entry["y_mm"] is None:
                 continue
-            lx0, ly0, lx1, ly1 = bounds(left_entry)
-            if lx0 < self.min_x or lx1 > self.max_x or ly0 < self.min_y or ly1 > self.max_y:
-                name = str(left_entry.get("name", ""))
-                if left_ref.startswith("J") and (
-                    name.startswith("Connector") or name.startswith("TerminalBlock")
-                ):
-                    self.warnings.append(
-                        f"Connector '{left_ref}' courtyard crosses board edge; "
-                        "verify intentional shell/plug overhang and mating."
-                    )
-                else:
-                    outside.append(left_ref)
-            for right_ref, right_entry in items[index + 1 :]:
-                if right_entry["x_mm"] is None or right_entry["y_mm"] is None:
-                    continue
-                rx0, ry0, rx1, ry1 = bounds(right_entry)
-                if lx0 < rx1 and rx0 < lx1 and ly0 < ry1 and ry0 < ly1:
-                    overlaps.append(f"{left_ref}/{right_ref}")
+            box = self._courtyard_bounds(left_entry)
+            self._classify_outside_courtyard(left_ref, left_entry, box, outside)
+            overlaps.extend(self._courtyard_overlaps_with_later(left_ref, box, items[index + 1 :]))
         return missing_position, overlaps, outside
 
     def _evaluate_connectors(self) -> tuple[list[str], int]:
