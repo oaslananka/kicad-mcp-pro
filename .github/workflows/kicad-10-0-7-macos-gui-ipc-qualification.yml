@@ -226,7 +226,24 @@ jobs:
             end tell
           end tell
           """
-          result = {"processLaunched": False, "visibleWindow": False, "toolsMenu": False}
+          presence_script = """
+          tell application "System Events"
+            set n1 to count of (every application process whose name contains "Schematic")
+            set n2 to count of (every application process whose name contains "eeschema")
+            set n3 to count of (every application process whose name contains "KiCad")
+            return (n1 as text) & "|" & (n2 as text) & "|" & (n3 as text)
+          end tell
+          """
+          result = {
+              "processLaunched": False,
+              "binaryStillRunning": False,
+              "schematicProcessDetected": False,
+              "eeschemaProcessDetected": False,
+              "kicadProcessDetected": False,
+              "axResponse": False,
+              "visibleWindow": False,
+              "toolsMenu": False,
+          }
           proc = None
           try:
               proc = subprocess.Popen(
@@ -236,6 +253,19 @@ jobs:
               result["processLaunched"] = True
               for _ in range(12):
                   time.sleep(2)
+                  result["binaryStillRunning"] = proc.poll() is None
+                  try:
+                      presence = subprocess.run(
+                          ["osascript", "-e", presence_script], capture_output=True,
+                          text=True, timeout=8, check=False,
+                      )
+                      if presence.returncode == 0:
+                          n1, n2, n3 = [int(x) for x in presence.stdout.strip().split("|")]
+                          result["schematicProcessDetected"] = n1 > 0
+                          result["eeschemaProcessDetected"] = n2 > 0
+                          result["kicadProcessDetected"] = n3 > 0
+                  except (ValueError, OSError, subprocess.TimeoutExpired):
+                      pass
                   try:
                       checked = subprocess.run(
                           ["osascript", "-e", script], capture_output=True,
@@ -245,6 +275,7 @@ jobs:
                       continue
                   if checked.returncode != 0:
                       continue
+                  result["axResponse"] = True
                   try:
                       count, menu_names = checked.stdout.strip().split("|", 1)
                       result["visibleWindow"] = int(count) > 0
