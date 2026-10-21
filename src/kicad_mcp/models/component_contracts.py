@@ -62,7 +62,7 @@ COMPONENT_CONTRACTS: tuple[ComponentContract, ...] = (
         category="connector",
         lib_ids=("Connector:USB_C_Receptacle_USB2.0_16P",),
         footprint_patterns=("Connector_USB:USB_C_Receptacle*",),
-        required_net_groups=(("GND",), ("+5V", "VBUS")),
+        required_net_groups=(("GND",), ("+5V", "VBUS", "USB_VBUS", "/USB_VBUS")),
         notes="USB-C receptacles should at least provide GND and VBUS.",
     ),
     ComponentContract(
@@ -71,8 +71,8 @@ COMPONENT_CONTRACTS: tuple[ComponentContract, ...] = (
         lib_ids=("Regulator_Linear:AP2112K-3.3",),
         required_net_groups=(
             ("GND",),
-            ("+5V", "VBUS"),
-            (_POWER_RAIL_3V3, "+3V3", "3V3", "3V3_ANA"),
+            ("+5V", "VBUS", "USB_VBUS", "/USB_VBUS"),
+            (_POWER_RAIL_3V3, "+3V3", "3V3", "/3V3", "3V3_ANA"),
         ),
         notes="AP2112 3.3 V regulators should expose ground, input, and output rails.",
     ),

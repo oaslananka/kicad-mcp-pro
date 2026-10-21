@@ -10,6 +10,9 @@ from kicad_mcp.tools.validation import _check_pad_net_match, _compare_ref_pad_ne
     [
         ("unconnected-(J1-SBU1-PadA8)", "unconnected-(J1-SBU1-PadA8)"),
         ("unconnected-(J2-NC/TDI-Pad8)", "unconnected-(J2-NC{slash}TDI-Pad8)"),
+        ("unconnected-(J2-NC{slash}TDI-Pad8)", "unconnected-(J2-NC{slash}TDI-Pad8)"),
+        ("unconnected-(J2-NC{slash}TDI-Pad8)", "unconnected-(J2-NC/TDI-Pad8)"),
+        ("unconnected-(J2-SWO{slash}TDO-Pad6)", "unconnected-(J2-SWO{slash}TDO-Pad6)"),
         ("unconnected-(U3-NC-Pad4)", ""),
     ],
 )
