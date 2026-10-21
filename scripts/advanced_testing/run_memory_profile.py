@@ -94,7 +94,9 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.output:
-        args.output.unlink(missing_ok=True)
+        # Fail closed: stale success must never survive a crashed producer.
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text('{"status": "INCOMPLETE"}\n', encoding="utf-8")
 
     print("Profiling schematic parsing...")
     sch_res = profile_schematic_parsing(iterations=args.iterations)

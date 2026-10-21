@@ -116,10 +116,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.output:
+        # Fail closed: do not re-use a previous successful benchmark if this run crashes.
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text('{"status": "INCOMPLETE"}\n', encoding="utf-8")
     if args.vus < 1 or args.requests < 1:
         parser.error("--vus and --requests must be positive")
-    if args.output:
-        args.output.unlink(missing_ok=True)
     print(f"Starting {args.profile} load test: {args.vus} VUs, {args.requests} requests...")
     results = run_load_benchmark(vus=args.vus, total_requests=args.requests, profile=args.profile)
     print(

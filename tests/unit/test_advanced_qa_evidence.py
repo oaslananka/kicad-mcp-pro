@@ -215,7 +215,7 @@ def test_failed_load_producer_clears_stale_evidence(
     )
     with pytest.raises(RuntimeError, match="producer failed"):
         run_load_test.main()
-    assert not output.exists()
+    assert json.loads(output.read_text(encoding="utf-8")) == {"status": "INCOMPLETE"}
 
 
 def test_failed_memory_producer_clears_stale_evidence(
@@ -235,7 +235,7 @@ def test_failed_memory_producer_clears_stale_evidence(
     )
     with pytest.raises(RuntimeError, match="producer failed"):
         run_memory_profile.main()
-    assert not output.exists()
+    assert json.loads(output.read_text(encoding="utf-8")) == {"status": "INCOMPLETE"}
 
 
 @pytest.mark.parametrize(
