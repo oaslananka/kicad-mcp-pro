@@ -1866,9 +1866,7 @@ class _PlacementEvaluator:
             lx0, ly0, lx1, ly1 = bounds(left_entry)
             if lx0 < self.min_x or lx1 > self.max_x or ly0 < self.min_y or ly1 > self.max_y:
                 name = str(left_entry.get("name", ""))
-                if left_ref.startswith("J") and (
-                    name.startswith("Connector") or name.startswith("TerminalBlock")
-                ):
+                if left_ref.startswith("J") and (name.startswith(("Connector", "TerminalBlock"))):
                     self.warnings.append(
                         f"Connector '{left_ref}' courtyard crosses board edge; "
                         "verify intentional shell/plug overhang and mating."
