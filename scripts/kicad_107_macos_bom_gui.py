@@ -166,8 +166,7 @@ def _refocus_bom_modal() -> None:
     # Only after a failed keyboard edit: raise the exact native BOM modal
     # before retrying its fixture-scoped field, never setting AXValue.
     _osa(
-        'tell application "System Events" to tell process "eeschema" '
-        'to set frontmost to true',
+        'tell application "System Events" to tell process "eeschema" to set frontmost to true',
         stage="refocus-bom",
     )
     _osa(
