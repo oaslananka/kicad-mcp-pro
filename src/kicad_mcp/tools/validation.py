@@ -1284,7 +1284,10 @@ def _check_connectivity_group_smells(
     unnamed_groups = [
         group
         for group in groups
-        if not group["names"] and len(group["pins"]) == 1 and not group.get("no_connect")
+        if not group["names"]
+        and len(group["pins"]) == 1
+        and not group.get("no_connect")
+        and str(group["pins"][0].get("etype", "")).lower() != "no_connect"
     ]
     for group in unnamed_groups[:8]:
         pin = cast(dict[str, str], group["pins"][0])
