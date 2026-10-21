@@ -82,7 +82,9 @@ def _validated_editor_binary(executable: Path, project: Path) -> Path:
 def _editor(executable: Path, project: Path) -> Iterator[None]:
     binary = _validated_editor_binary(executable, project)
     # No shell, no external user path, and a verified executable in the signed DMG.
-    process = subprocess.Popen(  # nosec B603  # nosemgrep
+    # Codacy/Bandit B603: both argv paths are checked by _validated_editor_binary.
+    # nosemgrep
+    process = subprocess.Popen(  # nosec B603
         [str(binary), str(project)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

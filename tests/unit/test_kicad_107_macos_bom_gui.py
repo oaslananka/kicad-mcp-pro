@@ -1,7 +1,6 @@
 """macOS GUI gate must only pass exact native AX observations and integrity."""
 
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -244,7 +243,7 @@ def test_bom_cancel_retries_transient_ax_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     queries = iter(
-        [subprocess.TimeoutExpired("osascript", 1), "Symbol Fields Table", "Schematic Editor"]
+        [gui.subprocess.TimeoutExpired("osascript", 1), "Symbol Fields Table", "Schematic Editor"]
     )
     seen: list[str] = []
 
