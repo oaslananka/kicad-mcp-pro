@@ -71,6 +71,7 @@ def attest(
     phase_name: str,
     server_name: str,
     config_path: Path = _OPS_CONFIG,
+    approved_source_revision: str | None = None,
 ) -> dict[str, object]:
     result = preflight(
         root=root,
@@ -80,6 +81,7 @@ def attest(
         agent_runtime="chatgpt-ops",
         ops_server_name=server_name,
         ops_config_path=config_path,
+        approved_source_revision=approved_source_revision,
     )
     report: dict[str, object] = {
         **result,
@@ -143,6 +145,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--attempt-number", type=int, required=True, choices=range(1, 1000))
     parser.add_argument("--phase", choices=("schematic", "pcb"), required=True)
     parser.add_argument("--ops-server-name", required=True)
+    parser.add_argument(
+        "--approved-source-revision",
+        required=True,
+        help="Exactly the owner-reviewed 40-hex Git commit SHA",
+    )
     args = parser.parse_args(argv)
     try:
         report = attest(
@@ -151,6 +158,7 @@ def main(argv: list[str] | None = None) -> int:
             attempt_number=args.attempt_number,
             phase_name=args.phase,
             server_name=args.ops_server_name,
+            approved_source_revision=args.approved_source_revision,
         )
     except (ValueError, OSError):
         report = {

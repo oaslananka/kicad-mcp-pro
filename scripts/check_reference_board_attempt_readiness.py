@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -220,6 +221,7 @@ def preflight(
     agent_runtime: AgentRuntime = "claude",
     ops_server_name: str | None = None,
     ops_config_path: Path = _OPS_CONFIG,
+    approved_source_revision: str | None = None,
 ) -> dict[str, Any]:
     """Return machine-readable, sanitized readiness; never write an artifact."""
     workspace = ReferenceAgentWorkspace.for_reviewed_attempt(
@@ -235,6 +237,20 @@ def preflight(
         source_revision = discover_reference_source_revision(root)
     except (OSError, ReferenceAgentRunnerError):
         blocking.add("source_revision_not_reproducible")
+    # An attester executing from the same checkout cannot establish which
+    # revision the owner independently reviewed. Require an explicit SHA pin
+    # for ChatGPT–Ops handoff, and fail closed on an absent/stale/malformed pin.
+    # This is intentionally NOT hardcoded to a commit (main/merge evolves).
+    if (
+        agent_runtime == "chatgpt-ops"
+        and source_revision is not None
+        and (
+            approved_source_revision is None
+            or re.fullmatch(r"[0-9a-f]{40}", approved_source_revision) is None
+            or source_revision != approved_source_revision
+        )
+    ):
+        blocking.add("source_revision_not_reviewed")
     blocking.update(
         _runtime_blockers(
             root=root,
@@ -278,6 +294,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--phase", choices=("schematic", "pcb", "manufacturing"), required=True)
     parser.add_argument("--agent-runtime", choices=("claude", "chatgpt-ops"), default="claude")
     parser.add_argument("--ops-server-name")
+    parser.add_argument(
+        "--approved-source-revision",
+        help=(
+            "Exact 40-hex source SHA independently approved by the owner (required for ChatGPT–Ops)"
+        ),
+    )
     args = parser.parse_args(argv)
     try:
         result = preflight(
@@ -287,6 +309,7 @@ def main(argv: list[str] | None = None) -> int:
             phase_name=args.phase,
             agent_runtime=args.agent_runtime,
             ops_server_name=args.ops_server_name,
+            approved_source_revision=args.approved_source_revision,
         )
     except (ValueError, OSError):
         print(

@@ -15,7 +15,8 @@ From a clean checkout, for an unused attempt number:
     uv run python scripts/check_reference_board_attempt_readiness.py \
       --board-id stm32f072-usbc --attempt-number 4 --phase schematic \
       --agent-runtime chatgpt-ops \
-      --ops-server-name kicad-msi-schematic-review
+      --ops-server-name kicad-msi-schematic-review \
+  --approved-source-revision <owner-approved-40-character-Git-SHA>
 
 ## Live tool-surface attestation (read-only; no attempt)
 
@@ -25,8 +26,18 @@ MCP tool inventory**, not just the server configuration:
 ```sh
 uv run python scripts/attest_reference_ops_tool_surface.py \
   --board-id stm32f072-usbc --attempt-number 4 --phase schematic \
-  --ops-server-name kicad-msi-schematic-review
+  --ops-server-name kicad-msi-schematic-review \
+  --approved-source-revision <owner-approved-40-character-Git-SHA>
 ```
+
+The source SHA must be approved independently of the local checkout
+(for example, from the explicitly reviewed/merged GitHub commit).
+Do **not** populate this argument by blindly accepting `git rev-parse HEAD`
+from the same source being tested. An absent, malformed or differing SHA
+blocks `chatgpt-ops` readiness with `source_revision_not_reviewed`; a
+checkout whose identity cannot be resolved still blocks with
+`source_revision_not_reproducible`. This is an **exact per-revision
+pin**, not a hardcoded value embedded in code that would go stale on merge.
 
 The command repeats the source/input/runtime preflight, revalidates the pinned
 Ops launch descriptor immediately before invoking it, starts only an MCP
