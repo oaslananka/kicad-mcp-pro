@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import io
 import json
-from unittest.mock import patch
 
 import pytest
 
@@ -18,32 +18,19 @@ def _response(value: str) -> dict:
     }
 
 
-def test_zero_new_smells_uses_only_public_fixed_https_endpoint() -> None:
-    class FakeResponse:
-        def read(self) -> bytes:
-            return json.dumps(_response("0")).encode()
+def test_zero_new_smells_accepts_public_report_without_network() -> None:
+    assert check_pr_new_smells(1390, _response("0")) == 0
 
-        def geturl(self) -> str:
-            return "https://sonarcloud.io/api/measures/component?" + (
-                "component=oaslananka_kicad-mcp-pro&pullRequest=1390&metricKeys=new_code_smells"
-            )
 
-        def __enter__(self) -> FakeResponse:
-            return self
-
-        def __exit__(self, *args: object) -> None:
-            pass
-
-    def respond(request: object, *, timeout: int) -> FakeResponse:
-        assert timeout == 25
-        assert request.full_url.startswith("https://sonarcloud.io/api/measures/component?")
-        assert "pullRequest=1390" in request.full_url
-        assert "metricKeys=new_code_smells" in request.full_url
-        assert "Authorization" not in request.headers
-        return FakeResponse()
-
-    with patch("scripts.check_sonar_pr_new_smells.urlopen", side_effect=respond):
-        assert check_pr_new_smells(1390) == 0
+def test_cli_consumes_exact_stdin_report(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("sys.argv", ["sonar-gate", "--pull-request", "1390"])
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_response("0"))))
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_response("0"))))
+    assert main() == 0
+    assert "0 new Code Smells" in capsys.readouterr().out
 
 
 def test_sonarqube_single_period_response_is_supported() -> None:
@@ -91,6 +78,7 @@ def test_cli_blocks_new_smells(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("sys.argv", ["sonar-gate", "--pull-request", "1390"])
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_response("0"))))
     monkeypatch.setattr("scripts.check_sonar_pr_new_smells.check_pr_new_smells", lambda *a, **kw: 5)
     assert main() == 1
     assert "zero required" in capsys.readouterr().err
@@ -98,6 +86,7 @@ def test_cli_blocks_new_smells(
 
 def test_cli_blocks_unavailable_analysis(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.argv", ["sonar-gate", "--pull-request", "1390"])
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_response("0"))))
 
     def fail(*args: object, **kwargs: object) -> int:
         raise ValueError("unknown analysis")
@@ -109,4 +98,4 @@ def test_cli_blocks_unavailable_analysis(monkeypatch: pytest.MonkeyPatch) -> Non
 @pytest.mark.parametrize("number", [0, -1])
 def test_invalid_pr_number_fails(number: int) -> None:
     with pytest.raises(ValueError):
-        check_pr_new_smells(number)
+        check_pr_new_smells(number, _response("0"))

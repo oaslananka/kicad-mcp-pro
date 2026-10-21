@@ -1,8 +1,7 @@
-"""Fail a same-repository PR if its completed SonarCloud analysis finds new Code Smells.
+"""Fail when SonarCloud's completed PR analysis reports any new Code Smells.
 
-Run after the required SonarCloud scan's qualitygate.wait=true step. A project
-maintainability rating of A is not equivalent to zero new Code Smells.
-Main branch historical maintainability debt is not a release blocker.
+CI fetches public JSON with curl (HTTPS-only, redirects forbidden), then pipes
+it to this *network-free* parser. Main's historical issue backlog is excluded.
 """
 
 from __future__ import annotations
@@ -11,10 +10,6 @@ import argparse
 import json
 import sys
 from typing import cast
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
-
-_PROJECT_KEY = "oaslananka_kicad-mcp-pro"
 
 
 def _new_code_smells(data: object) -> int:
@@ -34,10 +29,8 @@ def _new_code_smells(data: object) -> int:
                 matched.append(entry)
     if len(matched) != 1:
         raise ValueError("SonarCloud new_code_smells metric missing or ambiguous")
-    # SonarCloud presently returns "periods" for this project. Some newer
-    # SonarQube versions use "period"; reject ambiguous responses rather than
-    # silently treating a missing result as zero.
     measure = matched[0]
+    # SonarCloud currently uses "periods"; newer SonarQube may use "period".
     if ("period" in measure) == ("periods" in measure):
         raise ValueError("SonarCloud new-code period missing or ambiguous")
     if "period" in measure:
@@ -51,23 +44,14 @@ def _new_code_smells(data: object) -> int:
         raise ValueError("SonarCloud new-code period is not a JSON object")
     value = cast(dict[str, object], period).get("value")
     if not isinstance(value, str) or not value.isdecimal():
-        raise ValueError("SonarCloud new Code Smell count is invalid")
+        raise ValueError("SonarCloud new Code Smell count invalid")
     return int(value)
 
 
-def check_pr_new_smells(pr_number: int) -> int:
+def check_pr_new_smells(pr_number: int, report: object) -> int:
     if pr_number <= 0:
-        raise ValueError("valid PR number required")
-    query = urlencode(
-        {"component": _PROJECT_KEY, "pullRequest": pr_number, "metricKeys": "new_code_smells"}
-    )
-    # Public-project measure: no CI secrets are transmitted by this check.
-    url = f"https://sonarcloud.io/api/measures/component?{query}"
-    request = Request(url, headers={"Accept": "application/json"})  # noqa: S310 - fixed HTTPS host
-    with urlopen(request, timeout=25) as response:  # noqa: S310 - fixed HTTPS host
-        if response.geturl() != url:
-            raise ValueError("unexpected SonarCloud response origin")
-        return _new_code_smells(json.load(response))
+        raise ValueError("valid SonarCloud pull request number required")
+    return _new_code_smells(report)
 
 
 def main() -> int:
@@ -75,18 +59,17 @@ def main() -> int:
     parser.add_argument("--pull-request", type=int, required=True)
     args = parser.parse_args()
     try:
-        count = check_pr_new_smells(args.pull_request)
-    except (OSError, ValueError) as exc:
+        count = check_pr_new_smells(args.pull_request, json.load(sys.stdin))
+    except (ValueError, OSError) as exc:
         print(
-            "SonarCloud PR Code Smell gate FAILED "
-            f"(cannot verify latest analysis): {type(exc).__name__}",
+            f"SonarCloud new Code Smell gate FAILED (invalid analysis): {type(exc).__name__}",
             file=sys.stderr,
         )
         return 2
     if count:
         print(f"SonarCloud PR has {count} new Code Smell(s); zero required.", file=sys.stderr)
         return 1
-    print("SonarCloud PR: 0 new Code Smells (PASS)")
+    print(f"SonarCloud PR #{args.pull_request}: 0 new Code Smells (PASS)")
     return 0
 
 

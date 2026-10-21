@@ -577,7 +577,15 @@ jobs:
           github.event_name == 'pull_request'
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: python3 scripts/check_sonar_pr_new_smells.py --pull-request "$PR_NUMBER"
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] && (( PR_NUMBER > 0 ))
+          # Public HTTPS-only endpoint; no token, redirects or local-file schemes.
+          curl --fail --silent --show-error --proto '=https' --max-redirs 0 \
+            --connect-timeout 10 --max-time 25 \
+            "https://sonarcloud.io/api/measures/component?component=oaslananka_kicad-mcp-pro&pullRequest=$PR_NUMBER&metricKeys=new_code_smells" \
+            | python3 scripts/check_sonar_pr_new_smells.py --pull-request "$PR_NUMBER"
 
   mcp-2026-compat:
     name: MCP 2026 Compatibility
