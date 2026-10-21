@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -22,7 +23,7 @@ TARGET = "10.0.7"
 REPLACEMENT = fixture.CANCELLED_NAME
 
 
-def _osa(script: str) -> str:
+def _osa(script: str, *, stage: str) -> str:
     result = subprocess.run(
         ["/usr/bin/osascript", "-e", script],
         capture_output=True,
@@ -31,7 +32,7 @@ def _osa(script: str) -> str:
         check=False,
     )
     if result.returncode:
-        raise RuntimeError("macos-ax-command-failed")
+        raise RuntimeError(f"macos-ax-{stage}-failed")
     return result.stdout.strip()
 
 
@@ -81,7 +82,8 @@ def _open_bom() -> None:
     _osa(
         'tell application "System Events" to tell process "eeschema" '
         'to click (first menu item of menu 1 of menu bar item "Tools" '
-        'of menu bar 1 whose name contains "Generate Bill of Materials")'
+        'of menu bar 1 whose name contains "Generate Bill of Materials")',
+        stage="open-bom",
     )
     for _ in range(15):
         time.sleep(1)
@@ -109,7 +111,7 @@ def _read_output() -> str:
     end tell
     return "NO_BOM_OUTPUT_FIELD"
     """
-    output = _osa(script)
+    output = _osa(script, stage="read-output")
     if not (output.startswith("BOM_SAVED_") or output == REPLACEMENT):
         raise RuntimeError("native-bom-output-field-unavailable")
     return output
@@ -143,7 +145,7 @@ def _edit_output(old_value: str) -> str:
     end tell
     return "NO_EDITED_FIELD"
     """
-    return _osa(script)
+    return _osa(script, stage="edit-output")
 
 
 def _cancel() -> None:
@@ -156,6 +158,7 @@ def _cancel() -> None:
 
 
 def _run(executable: Path) -> dict[str, object]:
+    print("macOS BOM stage: prepare", flush=True)
     prepared = fixture.prepare()
     session = prepared["sessionId"]
     workspace = fixture._session_workspace(session)
@@ -164,9 +167,11 @@ def _run(executable: Path) -> dict[str, object]:
     # Establish a baseline BEFORE touching BOM. KiCad may normalize project
     # settings on first GUI launch. Never re-arm after the actual UI test.
     for name in fixture.PROJECTS:
+        print(f"macOS BOM stage: initialize-{name}", flush=True)
         project = workspace / name / f"{name}.kicad_sch"
         with _editor(executable, project):
             pass
+    print("macOS BOM stage: seal-baseline", flush=True)
     try:
         verified = fixture.verify(workspace)
     except fixture.FixtureError as exc:
@@ -177,12 +182,14 @@ def _run(executable: Path) -> dict[str, object]:
     if not verified["integrityVerified"]:
         raise RuntimeError("pre-gui-baseline-unverified")
 
+    print("macOS BOM stage: A-gui", flush=True)
     with _editor(executable, workspace / "PortableBom107A/PortableBom107A.kicad_sch"):
         _open_bom()
         observed_a = _read_output()
         if observed_a != a_saved:
             raise RuntimeError("cross-project-a-saved-filename-mismatch")
         _cancel()
+    print("macOS BOM stage: B-gui", flush=True)
     with _editor(executable, workspace / "PortableBom107B/PortableBom107B.kicad_sch"):
         _open_bom()
         observed_b = _read_output()
@@ -197,6 +204,7 @@ def _run(executable: Path) -> dict[str, object]:
         if reopened_b != b_saved:
             raise RuntimeError("native-bom-cancel-persisted-unexpectedly")
         _cancel()
+    print("macOS BOM stage: verify-post-cancel", flush=True)
     integrity = fixture.verify(
         workspace,
         observed_a=observed_a,
@@ -256,7 +264,10 @@ def main(argv: list[str] | None = None) -> int:
         summary["verdict"] = "pass"
     except Exception as exc:
         report["status"] = "fail"
-        report["reason"] = type(exc).__name__
+        reason = str(exc)
+        report["reason"] = (
+            reason if re.fullmatch(r"[a-z0-9][a-z0-9-]{2,100}", reason) else type(exc).__name__
+        )
         summary["verdict"] = "fail"
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")

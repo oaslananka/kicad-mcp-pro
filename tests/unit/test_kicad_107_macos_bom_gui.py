@@ -9,7 +9,7 @@ from scripts import kicad_107_macos_bom_gui as gui
 
 
 def test_missing_live_ax_output_is_not_qualified(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(gui, "_osa", lambda _script: "NO_BOM_OUTPUT_FIELD")
+    monkeypatch.setattr(gui, "_osa", lambda _script, **_opts: "NO_BOM_OUTPUT_FIELD")
     with pytest.raises(RuntimeError, match="native-bom-output-field-unavailable"):
         gui._read_output()
 
@@ -18,7 +18,7 @@ def test_untrusted_edit_field_is_rejected_before_automation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        gui, "_osa", lambda _script: pytest.fail("must not invoke GUI for invalid input")
+        gui, "_osa", lambda _script, **_opts: pytest.fail("must not invoke GUI for invalid input")
     )
     with pytest.raises(RuntimeError, match="native-bom-saved-value-invalid"):
         gui._edit_output("../../confidential")
