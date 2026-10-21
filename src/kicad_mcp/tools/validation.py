@@ -2281,7 +2281,7 @@ class _PlacementEvaluator:
             block, _ = _extract_block(self.content, found.start())
             if block and '(layer "Edge.Cuts")' in block:
                 primitives.append(found.group().removeprefix("("))
-        return primitives == ["gr_rect"]
+        return primitives == ["gr_rect"] and self.max_x > self.min_x and self.max_y > self.min_y
 
     def _evaluate_connector_edge_specs(self) -> list[str]:
         violations: list[str] = []

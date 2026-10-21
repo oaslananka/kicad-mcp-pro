@@ -129,3 +129,32 @@ def test_mating_contract_round_trips_without_unknown_fields() -> None:
     intent = ProjectDesignIntent(mechanical=MechanicalConstraint(connector_mating=[_spec()]))
     restored = ProjectDesignIntent.model_validate_json(intent.model_dump_json())
     assert restored.mechanical.connector_mating == [_spec()]
+
+
+def test_mating_datum_uses_finite_edge_segment_distance_at_corners() -> None:
+    # After the 270-degree rotation, the local datum offset is (-6.1, +2.975).
+    # Thus (5.7, -3.375) locates the datum at (-0.4, -0.4). Separate
+    # horizontal/vertical tolerance checks could both pass, but the actual
+    # nearest segment distance is sqrt(0.4^2 + 0.4^2) > 0.5 mm.
+    report = _analysis(270, 5.7, -3.375)
+    assert any("mating datum is 0.566 mm" in msg for msg in report.hard_failures)
+
+
+def test_mating_datum_within_finite_edge_tolerance_at_corner_passes() -> None:
+    # Datum (0.3, -0.4) is 0.5 mm from left-edge endpoint (0, 0).
+    report = _analysis(270, 6.4, -3.375)
+    assert not any("mating datum is" in msg for msg in report.connector_edge_spec_violations)
+
+
+@pytest.mark.parametrize(("width", "height"), [(0, 36), (60, 0), (0, 0)])
+def test_degenerate_rectangular_edge_cuts_is_rejected(width: int, height: int) -> None:
+    content = _board(270, 6.1, 13.5).replace(
+        "(end 60 36) (stroke (width 0.05)",
+        f"(end {width} {height}) (stroke (width 0.05)",
+    )
+    report = _PlacementEvaluator(
+        content,
+        _parse_board_footprint_blocks(content),
+        ProjectDesignIntent(mechanical=MechanicalConstraint(connector_mating=[_spec()])),
+    ).evaluate()
+    assert any("rectangular Edge.Cuts" in msg for msg in report.hard_failures)

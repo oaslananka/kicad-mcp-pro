@@ -72,7 +72,10 @@ def evaluate_connector_mating(
             f"{tag}: mating direction points {angle_error:.1f} degrees away from "
             f"{spec.edge} outward normal (limit {spec.max_direction_error_deg:.1f})."
         )
-    distance = abs(datum_coord - edge_position)
+    # The nearest point belongs to the *finite* side of Edge.Cuts, not
+    # the infinite supporting line. At corners both offsets contribute.
+    edge_extension_mm = max(lower - tangential, 0.0, tangential - upper)
+    distance = math.hypot(datum_coord - edge_position, edge_extension_mm)
     if distance > spec.max_datum_error_mm + 1e-7:
         problems.append(
             f"{tag}: mating datum is {distance:.3f} mm from {spec.edge} Edge.Cuts "
