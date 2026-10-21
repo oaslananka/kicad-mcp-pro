@@ -8,6 +8,7 @@ on:
     paths:
       - "scripts/ci/install_kicad_10_0_6_appimage.sh"
       - "scripts/kicad_canary.py"
+      - "scripts/ci/install_kicad_10_0_7_noble.sh"
       - "scripts/kicad11_headless_canary.py"
       - "src/kicad_mcp/evals/semantic_differential.py"
       - "src/kicad_mcp/evals/connectivity_differential.py"
@@ -44,6 +45,7 @@ on:
     paths:
       - "scripts/ci/install_kicad_10_0_6_appimage.sh"
       - "scripts/kicad_canary.py"
+      - "scripts/ci/install_kicad_10_0_7_noble.sh"
       - "scripts/kicad11_headless_canary.py"
       - "src/kicad_mcp/evals/semantic_differential.py"
       - "src/kicad_mcp/evals/connectivity_differential.py"
@@ -84,7 +86,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  kicad-10-0-7-primary-canary:
+    name: KiCad 10.0.7 primary canary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          enable-cache: true
+          prune-cache: true
+          version-file: uv.toml
+
+      - name: Install current stable KiCad 10.0.7 CLI
+        run: bash scripts/ci/install_kicad_10_0_7_noble.sh
+
+      - name: Install Python dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Run native KiCad 10.0.7 canary and semantic comparisons
+        run: |
+          set -euo pipefail
+          test "$(kicad-cli version)" = "10.0.7"
+          uv run --all-extras python scripts/kicad_canary.py run \
+            --artifacts artifacts/kicad-10-0-7 \
+            --kicad-range 10.0.x
+
+      - name: Upload KiCad 10.0.7 canary evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: kicad-10-0-7-primary-canary
+          path: artifacts/kicad-10-0-7
+          if-no-files-found: warn
+          retention-days: 14
+
   kicad-10-0-6-canary:
+    # Retain the old exact Jammy regression on scheduled/manual/main runs;
+    # do not spend PR time rebuilding a historical environment.
+    if: github.event_name != 'pull_request'
     name: KiCad 10.0.6 canary
     runs-on: ubuntu-22.04
     timeout-minutes: 45
