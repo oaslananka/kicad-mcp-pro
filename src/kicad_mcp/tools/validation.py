@@ -877,9 +877,17 @@ def _check_pad_net_match(
 ) -> tuple[bool, str | None]:
     expected_unconnected = expected_net.startswith("unconnected-(")
     if expected_unconnected:
-        if actual_net:
-            return False, f"{reference}.{pad_number}: PCB has '{actual_net}', expected no net."
-        return True, None
+        # KiCad can retain a generated unconnected-(...) net on the PCB pad.
+        # The PCB sexpr escapes slashes inside these names as {slash}, while
+        # the schematic netlist exports the literal slash. Both spellings
+        # describe the same deliberately unconnected pin.
+        if not actual_net or actual_net.replace("{slash}", "/") == expected_net:
+            return True, None
+        return (
+            False,
+            f"{reference}.{pad_number}: PCB has '{actual_net}', "
+            f"expected unconnected net '{expected_net}' or no net.",
+        )
     if not actual_net:
         return False, f"{reference}.{pad_number}: missing net '{expected_net}' on PCB."
     if actual_net != expected_net:
