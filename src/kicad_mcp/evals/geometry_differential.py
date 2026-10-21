@@ -44,40 +44,46 @@ def _canonical_mm(value: GeometryScalar) -> str:
     return format(decimal, ".4f")
 
 
+def _normalize_native_json_stats(stats_text: str) -> GeometrySignature:
+    """Validate structured native JSON dimensions without localized labels."""
+
+    # The native report labels are localized, but --format json uses stable
+    # board.width and board.height keys across KiCad interface languages.
+    def unique_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        fields: dict[str, object] = {}
+        for key, value in pairs:
+            if key in fields:
+                raise ValueError(f"Duplicate native board statistics field: {key}")
+            fields[key] = value
+        return fields
+
+    report = json.loads(stats_text, object_pairs_hook=unique_fields)
+    if not isinstance(report, dict):
+        raise ValueError("Native board statistics JSON must be an object")
+    board = report.get("board")
+    if not isinstance(board, dict) or board.get("has_outline") is not True:
+        raise ValueError("Native board statistics require a valid board outline")
+    values_mm: list[str] = []
+    for name in ("width", "height"):
+        raw = board.get(name)
+        if not isinstance(raw, str):
+            raise ValueError(f"Native board statistics require a {name} in millimetres")
+        # KiCad can render JSON dimension strings using the system's
+        # decimal separator. Never interpret mixed separators as thousands.
+        match = re.fullmatch(
+            r"\s*(?P<value>[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+))\s+mm\s*",
+            raw,
+        )
+        if match is None:
+            raise ValueError(f"Native board statistics require a {name} in millimetres")
+        values_mm.append(_canonical_mm(match.group("value").replace(",", ".")))
+    return values_mm[0], values_mm[1]
+
+
 def normalize_native_board_stats(stats_text: str) -> GeometrySignature:
     """Normalize native JSON statistics or legacy English-language text reports."""
-    if stats_text.lstrip().startswith("{"):
-        # The native report labels are localized, but --format json uses stable
-        # board.width and board.height keys across KiCad interface languages.
-        def unique_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
-            fields: dict[str, object] = {}
-            for key, value in pairs:
-                if key in fields:
-                    raise ValueError(f"Duplicate native board statistics field: {key}")
-                fields[key] = value
-            return fields
-
-        report = json.loads(stats_text, object_pairs_hook=unique_fields)
-        if not isinstance(report, dict):
-            raise ValueError("Native board statistics JSON must be an object")
-        board = report.get("board")
-        if not isinstance(board, dict) or board.get("has_outline") is not True:
-            raise ValueError("Native board statistics require a valid board outline")
-        values_mm: list[str] = []
-        for name in ("width", "height"):
-            raw = board.get(name)
-            if not isinstance(raw, str):
-                raise ValueError(f"Native board statistics require a {name} in millimetres")
-            # KiCad can render JSON dimension strings using the system's
-            # decimal separator. Never interpret mixed separators as thousands.
-            match = re.fullmatch(
-                r"\s*(?P<value>[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+))\s+mm\s*",
-                raw,
-            )
-            if match is None:
-                raise ValueError(f"Native board statistics require a {name} in millimetres")
-            values_mm.append(_canonical_mm(match.group("value").replace(",", ".")))
-        return values_mm[0], values_mm[1]
+    if stats_text.lstrip().startswith(("{", "[")):
+        return _normalize_native_json_stats(stats_text)
 
     values: dict[str, list[str]] = {"Width": [], "Height": []}
     for match in _NATIVE_FACT.finditer(stats_text):

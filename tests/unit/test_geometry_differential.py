@@ -70,6 +70,7 @@ def test_native_json_accepts_single_locale_decimal_separator(width: str, height:
 
 def test_native_json_rejects_invalid_or_ambiguous_board_dimensions() -> None:
     reports = (
+        "[]",
         '{"board":{"has_outline":true,"width":"100 mm","height":"60 in"}}',
         '{"board":{"has_outline":true,"width":"100.000,0 mm","height":"60 mm"}}',
         '{"board":{"has_outline":true,"width":"100,000.0 mm","height":"60 mm"}}',
