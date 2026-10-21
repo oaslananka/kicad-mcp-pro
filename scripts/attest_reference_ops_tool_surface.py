@@ -55,12 +55,14 @@ async def list_live_tools(entry: dict[str, Any]) -> list[str]:
     for key in _FORBIDDEN_ENV:
         env.pop(key, None)
     params = StdioServerParameters(command=entry["command"], args=entry["args"], env=env)
-    async with asyncio.timeout(40):
-        async with stdio_client(params) as stream:
-            async with ClientSession(*stream) as session:
-                await session.initialize()
-                result = await session.list_tools()
-                return [tool.name for tool in result.tools]
+    async with (
+        asyncio.timeout(40),
+        stdio_client(params) as stream,
+        ClientSession(*stream) as session,
+    ):
+        await session.initialize()
+        result = await session.list_tools()
+        return [tool.name for tool in result.tools]
 
 
 def attest(

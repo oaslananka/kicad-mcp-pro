@@ -27,14 +27,16 @@ def test_valid_generated_no_connect_pads_match(expected: str, actual: str) -> No
 def test_no_connect_pad_rejects_unsafe_or_misidentified_net(incorrect: str) -> None:
     passed, reason = _check_pad_net_match("J2", "8", "unconnected-(J2-NC/TDI-Pad8)", incorrect)
     assert not passed
-    assert reason is not None and "expected unconnected net" in reason
+    assert reason is not None
+    assert "expected unconnected net" in reason
 
 
 def test_named_copper_nets_still_require_exact_match() -> None:
     assert _check_pad_net_match("U1", "8", "GND", "GND") == (True, None)
     passed, reason = _check_pad_net_match("U1", "8", "GND", "/3V3")
     assert not passed
-    assert reason is not None and "expected 'GND'" in reason
+    assert reason is not None
+    assert "expected 'GND'" in reason
 
 
 def test_transfer_coverage_counts_generated_no_connect_pads() -> None:

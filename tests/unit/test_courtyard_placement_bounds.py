@@ -85,7 +85,8 @@ def test_connector_overhang_is_review_warning_not_automatic_fabrication_failure(
     result, warnings = _evaluate({"J1": _footprint((18, 6, 23, 10), name="Connector_USB:Test")})
     assert result == ([], [], [])
     assert len(warnings) == 1
-    assert "J1" in warnings[0] and "overhang" in warnings[0]
+    assert "J1" in warnings[0]
+    assert "overhang" in warnings[0]
 
 
 def test_non_connector_outside_board_remains_a_hard_failure() -> None:
