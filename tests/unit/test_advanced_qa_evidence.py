@@ -194,6 +194,8 @@ def test_workflow_preserves_qa_evidence_and_summary_after_failed_gate() -> None:
     assert "Advanced QA report was not generated." in publisher
     assert named_steps["Upload Advanced QA Evidence Artifacts"]["if"] == "always()"
     assert "--enforce" in named_steps["Run Lightweight API Load Benchmark (required)"]["run"]
+    assert named_steps["Run KiCad Runtime Benchmark (diagnostic)"]["continue-on-error"] is True
+    assert "continue-on-error" not in named_steps["Run Lightweight API Load Benchmark (required)"]
 
 
 def test_failed_load_producer_clears_stale_evidence(

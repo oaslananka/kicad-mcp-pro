@@ -54,6 +54,7 @@ jobs:
 
       - name: Run KiCad Runtime Benchmark (diagnostic)
         if: ${{ !cancelled() }}
+        continue-on-error: true
         run: uv run --all-extras python scripts/advanced_testing/run_load_test.py --vus 10 --requests 100 --profile runtime --output artifacts/advanced-testing/current/runtime-benchmarks.json
 
       - name: Collect QA Evidence & Generate Report
