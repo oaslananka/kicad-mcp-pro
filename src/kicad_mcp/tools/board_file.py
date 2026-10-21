@@ -136,56 +136,64 @@ def _footprint_pad_net_map(block: str) -> dict[str, str]:
     return pad_map
 
 
-def _absolute_courtyard_bounds_mm(
-    block: str,
-    root_at: tuple[float, float, int] | None,
-) -> tuple[float, float, float, float] | None:
-    """Conservatively locate a footprint courtyard in board coordinates.
-
-    KiCad footprint geometry is expressed relative to its pad-origin, which
-    need not be at the courtyard center. Respect both this offset and its
-    footprint rotation instead of centering a width/height box on pad 1.
-    Unknown courtyard primitives defer to the legacy approximation.
-    """
-    if root_at is None:
+def _courtyard_shape_points(
+    primitive: str,
+    item: str,
+    shape_pattern: re.Pattern[str],
+) -> list[tuple[float, float]] | None:
+    """Return only *conservatively* supported local courtyard geometry."""
+    if primitive in {"fp_arc", "fp_poly"}:
         return None
+    coords = [(float(x), float(y)) for x, y in shape_pattern.findall(item)]
+    if primitive == "fp_circle":
+        center = re.search(rf"\(center\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\)", item)
+        if center is None or len(coords) != 1:
+            return None
+        cx, cy = float(center.group(1)), float(center.group(2))
+        radius = math.hypot(coords[0][0] - cx, coords[0][1] - cy)
+        return [
+            (cx - radius, cy - radius),
+            (cx - radius, cy + radius),
+            (cx + radius, cy - radius),
+            (cx + radius, cy + radius),
+        ]
+    if len(coords) != 2:
+        return None
+    if primitive == "fp_rect":
+        (x0, y0), (x1, y1) = coords
+        return [(x0, y0), (x0, y1), (x1, y0), (x1, y1)]
+    return coords
 
-    local_points: list[tuple[float, float]] = []
+
+def _local_courtyard_points(block: str) -> list[tuple[float, float]] | None:
+    """Abort to legacy fallback if a courtyard primitive cannot be bounded."""
     shape_pattern = re.compile(rf"\((?:start|end)\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\)")
+    points: list[tuple[float, float]] = []
     for primitive in ("fp_line", "fp_rect", "fp_circle", "fp_arc", "fp_poly"):
         for item in _iter_blocks(block, primitive):
             if not re.search(r'\(layer\s+"[FB]\.CrtYd"\)', item):
                 continue
-            if primitive in {"fp_arc", "fp_poly"}:
-                return None  # Avoid underestimating unfamiliar curved geometry.
-            coords = [(float(x), float(y)) for x, y in shape_pattern.findall(item)]
-            if primitive == "fp_circle":
-                center = re.search(rf"\(center\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\)", item)
-                if center is None or len(coords) != 1:
-                    return None
-                cx, cy = float(center.group(1)), float(center.group(2))
-                radius = math.hypot(coords[0][0] - cx, coords[0][1] - cy)
-                local_points.extend(
-                    (
-                        (cx - radius, cy - radius),
-                        (cx - radius, cy + radius),
-                        (cx + radius, cy - radius),
-                        (cx + radius, cy + radius),
-                    )
-                )
-            elif primitive == "fp_rect":
-                if len(coords) != 2:
-                    return None
-                (x0, y0), (x1, y1) = coords
-                local_points.extend(((x0, y0), (x0, y1), (x1, y0), (x1, y1)))
-            else:
-                if len(coords) != 2:
-                    return None
-                local_points.extend(coords)
+            item_points = _courtyard_shape_points(primitive, item, shape_pattern)
+            if item_points is None:
+                return None
+            points.extend(item_points)
+    return points or None
 
-    if not local_points:
+
+def _absolute_courtyard_bounds_mm(
+    block: str,
+    root_at: tuple[float, float, int] | None,
+) -> tuple[float, float, float, float] | None:
+    """Conservatively locate footprint courtyard in board coordinates.
+
+    The pad-origin may not be the courtyard center. Preserve offset, rotation,
+    unsupported-primitive fallback and KiCad's board-axis convention.
+    """
+    if root_at is None:
         return None
-
+    local_points = _local_courtyard_points(block)
+    if local_points is None:
+        return None
     px, py, degrees = root_at
     theta = math.radians(degrees)
     cos_t, sin_t = math.cos(theta), math.sin(theta)
