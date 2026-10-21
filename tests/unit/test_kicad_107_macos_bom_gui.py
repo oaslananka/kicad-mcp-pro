@@ -77,3 +77,17 @@ def test_mac_bom_gate_only_qualifies_after_native_observations(
     assert report["status"] == "pass"
     assert summary["macosBomGuiQualified"] is True
     assert summary["verdict"] == "pass"
+
+
+def test_all_macos_ax_helpers_specify_safe_diagnostic_stage() -> None:
+    import ast
+
+    source = Path(gui.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    calls = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "_osa"
+    ]
+    assert len(calls) == 6
+    assert all(any(k.arg == "stage" for k in call.keywords) for call in calls)

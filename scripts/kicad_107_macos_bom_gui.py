@@ -38,7 +38,8 @@ def _osa(script: str, *, stage: str) -> str:
 
 def _editor_windows() -> str:
     return _osa(
-        'tell application "System Events" to tell process "eeschema" to get name of every window'
+        'tell application "System Events" to tell process "eeschema" to get name of every window',
+        stage="windows",
     )
 
 
@@ -78,7 +79,10 @@ def _editor(executable: Path, project: Path) -> Iterator[None]:
 
 
 def _open_bom() -> None:
-    _osa('tell application "System Events" to tell process "eeschema" to set frontmost to true')
+    _osa(
+        'tell application "System Events" to tell process "eeschema" to set frontmost to true',
+        stage="focus",
+    )
     _osa(
         'tell application "System Events" to tell process "eeschema" '
         'to click (first menu item of menu 1 of menu bar item "Tools" '
@@ -149,7 +153,10 @@ def _edit_output(old_value: str) -> str:
 
 
 def _cancel() -> None:
-    _osa('tell application "System Events" to tell process "eeschema" to key code 53')
+    _osa(
+        'tell application "System Events" to tell process "eeschema" to key code 53',
+        stage="cancel",
+    )
     for _ in range(10):
         time.sleep(1)
         if "Symbol Fields Table" not in _editor_windows():
