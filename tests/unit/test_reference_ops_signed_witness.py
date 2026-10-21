@@ -317,3 +317,42 @@ def test_repeated_call_id_in_distinct_pairs_rejected(evidence) -> None:
     sign(payload)
     with pytest.raises(SignedOpsWitnessError, match="duplicate Gateway call ID"):
         reconcile(evidence)
+
+
+def test_signed_json_document_without_trailing_newline_is_valid(evidence) -> None:
+    _server, gateway, *_ = evidence
+    gateway.write_bytes(gateway.read_bytes().rstrip(b"\n"))
+    assert reconcile(evidence).tool_calls == 1
+
+
+@pytest.mark.parametrize("attempt_id", ["../outside", "/outside-absolute", ".", "..", "x/y", ""])
+def test_attempt_id_path_escape_is_typed_block(evidence, attempt_id: str) -> None:
+    server, gateway, public, kid, *_ = evidence
+    with pytest.raises(SignedOpsWitnessError):
+        reconcile_signed_ops_witness(
+            server,
+            gateway,
+            attempt_id=attempt_id,
+            phase_name="schematic",
+            server_name=_SERVER,
+            nonce=_NONCE,
+            trusted_public_key_spki=public,
+            trusted_key_id=kid,
+        )
+
+
+def test_nonce_ledger_win32_mode_fallback_preserves_symlink_guards(
+    evidence,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server, gateway, public, kid, *_ = evidence
+    root = server.parent.parent
+    ledger = root / ".signed-witness-nonce-ledger"
+    ledger.mkdir(mode=0o700)
+    ledger.chmod(0o755)
+    # Simulate Windows (without mutating global os.name or pathlib internals).
+    monkeypatch.setattr(reference_ops_signed_witness, "_not_private", lambda path: False)
+    assert reconcile(evidence, consume_nonce=True).tool_calls == 1
+    assert (ledger / (_NONCE + ".json")).exists()
+    with pytest.raises(SignedOpsWitnessError):
+        reconcile(evidence)

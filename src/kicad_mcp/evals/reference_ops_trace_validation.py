@@ -90,7 +90,7 @@ def _open_reserved_trace(*, root: Path, attempt_id: str, filename: str) -> int:
         os.close(root_fd)
 
 
-def _read_open_trace(fd: int) -> bytes:
+def _read_open_trace(fd: int, *, require_jsonl: bool = True) -> bytes:
     """Read a bounded regular file and detect changes on the same descriptor."""
     before = os.fstat(fd)
     if not stat_module.S_ISREG(before.st_mode) or not 0 < before.st_size <= _MAX_TRACE_BYTES:
@@ -109,11 +109,11 @@ def _read_open_trace(fd: int) -> bytes:
         or before.st_size != after.st_size
         or before.st_mtime_ns != after.st_mtime_ns
         or before.st_ino != after.st_ino
-        or not content.endswith(b"\n")
+        or (require_jsonl and not content.endswith(b"\n"))
     ):
         raise ReferenceOpsTraceValidationError("trace is incomplete or changed during read")
     result = bytes(content)
-    if not 0 < len(result.splitlines()) <= _MAX_EVENTS:
+    if require_jsonl and not 0 < len(result.splitlines()) <= _MAX_EVENTS:
         raise ReferenceOpsTraceValidationError("trace event count is invalid")
     return result
 
@@ -147,7 +147,7 @@ def _load_trace(
         raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
     fd = _open_reserved_trace(root=root, attempt_id=attempt_id, filename=filename)
     try:
-        return _read_open_trace(fd)
+        return _read_open_trace(fd, require_jsonl=filename != "signed-gateway-witness.json")
     finally:
         os.close(fd)
 

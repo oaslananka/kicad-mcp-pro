@@ -20,7 +20,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 
-from .reference_corpus import ReferenceAgentLogEvent
+from .reference_corpus import REFERENCE_IDENTIFIER_PATTERN, ReferenceAgentLogEvent
 from .reference_ops_gateway_audit import (  # pyright: ignore[reportPrivateUsage]
     _MAX_DURATION_SKEW_MS,  # pyright: ignore[reportPrivateUsage]
     _VALID_SERVER_NAME,  # pyright: ignore[reportPrivateUsage]
@@ -242,12 +242,16 @@ def _match_server(
     return failed
 
 
+def _not_private(path: Path) -> bool:
+    return os.name != "nt" and bool(path.stat().st_mode & 0o077)
+
+
 def _reject_replay(directory: Path, nonce: str) -> None:
     global_ledger = directory.parent / _GLOBAL_CONSUMED_DIRECTORY
     if global_ledger.is_symlink():
         raise SignedOpsWitnessError("global nonce ledger cannot be symlinked")
     if global_ledger.exists():
-        if not global_ledger.is_dir() or global_ledger.stat().st_mode & 0o077:
+        if not global_ledger.is_dir() or _not_private(global_ledger):
             raise SignedOpsWitnessError("global nonce ledger is not private")
         reused = global_ledger / (nonce + ".json")
         if reused.is_symlink() or reused.exists():
@@ -290,7 +294,7 @@ def _consume(directory: Path, nonce: str, gateway_digest: str) -> None:
         global_ledger.mkdir(mode=0o700, exist_ok=True)
     except OSError as exc:
         raise SignedOpsWitnessError("cannot create private nonce registry") from exc
-    if global_ledger.is_symlink() or global_ledger.stat().st_mode & 0o077:
+    if global_ledger.is_symlink() or _not_private(global_ledger):
         raise SignedOpsWitnessError("global nonce registry is not private")
     # Claim across distinct attempt directories in this single checkout first.
     _write_exclusive_ledger(global_ledger / (nonce + ".json"), nonce, gateway_digest)
@@ -316,14 +320,16 @@ def reconcile_signed_ops_witness(
     """
     if not _VALID_SERVER_NAME.fullmatch(server_name) or not _HEX32.fullmatch(nonce):
         raise SignedOpsWitnessError("invalid server scope or nonce")
+    if not re.fullmatch(REFERENCE_IDENTIFIER_PATTERN, attempt_id) or attempt_id in {".", ".."}:
+        raise SignedOpsWitnessError("invalid reference attempt identifier")
     directory = _TRACE_ROOT / attempt_id
     if (
         server_path != directory / "ops-mcp-trace.jsonl"
         or gateway_path != directory / _GATEWAY_FILENAME
     ):
         raise SignedOpsWitnessError("evidence files must be in reserved attempt directory")
-    _reject_replay(directory, nonce)
     try:
+        _reject_replay(directory, nonce)
         summary = validate_reference_ops_trace(
             server_path,
             attempt_id=attempt_id,
