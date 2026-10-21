@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 import yaml
 
-from scripts.advanced_testing import report_collector, run_load_test
+from scripts.advanced_testing import report_collector, run_load_test, run_memory_profile
 
 
 def _evidence(base: Path, name: str, data: object) -> None:
@@ -194,3 +194,43 @@ def test_workflow_preserves_qa_evidence_and_summary_after_failed_gate() -> None:
     assert "Advanced QA report was not generated." in publisher
     assert named_steps["Upload Advanced QA Evidence Artifacts"]["if"] == "always()"
     assert "--enforce" in named_steps["Run Lightweight API Load Benchmark (required)"]["run"]
+
+
+def test_failed_load_producer_clears_stale_evidence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    output = tmp_path / "previous-benchmark.json"
+    output.write_text('{"benchmark":{"pass_criteria_met":true}}', encoding="utf-8")
+    monkeypatch.setattr(
+        run_load_test,
+        "run_load_benchmark",
+        lambda **_args: (_ for _ in ()).throw(RuntimeError("producer failed")),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["run_load_test.py", "--output", str(output)],
+    )
+    with pytest.raises(RuntimeError, match="producer failed"):
+        run_load_test.main()
+    assert not output.exists()
+
+
+def test_failed_memory_producer_clears_stale_evidence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    output = tmp_path / "previous-memory-profile.json"
+    output.write_text('{"all_clean":true}', encoding="utf-8")
+    monkeypatch.setattr(
+        run_memory_profile,
+        "profile_schematic_parsing",
+        lambda **_args: (_ for _ in ()).throw(RuntimeError("producer failed")),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["run_memory_profile.py", "--output", str(output)],
+    )
+    with pytest.raises(RuntimeError, match="producer failed"):
+        run_memory_profile.main()
+    assert not output.exists()

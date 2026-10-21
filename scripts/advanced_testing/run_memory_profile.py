@@ -93,6 +93,9 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
 
+    if args.output:
+        args.output.unlink(missing_ok=True)
+
     print("Profiling schematic parsing...")
     sch_res = profile_schematic_parsing(iterations=args.iterations)
     print(f"Schematic: peak {sch_res.get('peak_ram_mb')} MB, leak={sch_res.get('leak_detected')}")
