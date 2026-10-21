@@ -568,6 +568,17 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The A maintainability rating alone can pass with several new smells.
+      # Fail *only* same-repository PRs with new findings; do not make existing
+      # main-branch maintainability debt block production release publishing.
+      - name: Require zero new SonarCloud PR Code Smells
+        if: >-
+          steps.sonar-mode.outputs.run_analysis == 'true' &&
+          github.event_name == 'pull_request'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 scripts/check_sonar_pr_new_smells.py --pull-request "$PR_NUMBER"
 
   mcp-2026-compat:
     name: MCP 2026 Compatibility
