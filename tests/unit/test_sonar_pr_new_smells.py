@@ -158,10 +158,12 @@ def test_invalid_pr_number_fails(number: int) -> None:
 
 
 def test_confirmed_git_head_is_required_even_when_zero_smells() -> None:
+    report = _response("0")
+    stale = _metadata(_OTHER_SHA)
     with pytest.raises(ValueError, match="does not match"):
-        _check(1390, _response("0"), before=_metadata(_OTHER_SHA))
+        _check(1390, report, before=stale)
     with pytest.raises(ValueError, match="changed while"):
-        _check(1390, _response("0"), after=_metadata(_OTHER_SHA))
+        _check(1390, report, after=stale)
 
 
 def test_correct_revision_nonzero_smells_still_refused() -> None:
@@ -191,17 +193,21 @@ def test_missing_or_ambiguous_pr_identity_fails_closed(record: object) -> None:
 
 
 def test_rejects_stale_sonar_analysis_for_specific_git_sha() -> None:
+    report = _response("0")
+    stale = _metadata(_OTHER_SHA)
     with pytest.raises(ValueError, match="does not match"):
-        _check(1390, _response("0"), before=_metadata(_OTHER_SHA))
+        _check(1390, report, before=stale)
 
 
 @pytest.mark.parametrize("sha", ["bad", "A" * 40, "c" * 39, "z" * 40])
 def test_expected_sha_must_be_exact_lowercase_full_hash(sha: str) -> None:
+    report = _response("0")
+    metadata = _metadata()
     with pytest.raises(ValueError, match="valid PR number and exact"):
         check_pr_new_smells(
             1390,
-            _response("0"),
+            report,
             expected_sha=sha,
-            before=_metadata(),
-            after=_metadata(),
+            before=metadata,
+            after=metadata,
         )
