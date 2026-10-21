@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 from scripts.advanced_testing import report_collector, run_load_test
 
@@ -175,3 +176,21 @@ def test_collector_cli_exits_nonzero_when_required_evidence_missing(
     with pytest.raises(SystemExit, match="Required Advanced QA evidence failed"):
         report_collector.main()
     assert (tmp_path / "aaaaaaa" / "summary.json").is_file()
+
+
+def test_workflow_preserves_qa_evidence_and_summary_after_failed_gate() -> None:
+    workflow = Path(__file__).resolve().parents[2] / ".github/workflows/advanced-testing.yml"
+    steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]["advanced-qa"]["steps"]
+    named_steps = {step["name"]: step for step in steps if "name" in step}
+    expected_condition = "${{ !cancelled() }}"
+    for name in (
+        "Run KiCad Runtime Benchmark (diagnostic)",
+        "Collect QA Evidence & Generate Report",
+        "Publish Advanced QA Evidence Summary",
+    ):
+        assert named_steps[name]["if"] == expected_condition
+    publisher = named_steps["Publish Advanced QA Evidence Summary"]["run"]
+    assert 'if [ -f "$report" ]; then' in publisher
+    assert "Advanced QA report was not generated." in publisher
+    assert named_steps["Upload Advanced QA Evidence Artifacts"]["if"] == "always()"
+    assert "--enforce" in named_steps["Run Lightweight API Load Benchmark (required)"]["run"]
