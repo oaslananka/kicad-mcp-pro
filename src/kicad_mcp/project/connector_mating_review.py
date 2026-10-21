@@ -25,6 +25,13 @@ def _rotated(x: float, y: float, angle_deg: float) -> tuple[float, float]:
     return x * math.cos(a) + y * math.sin(a), -x * math.sin(a) + y * math.cos(a)
 
 
+def _finite_float(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    result = float(value)
+    return result if math.isfinite(result) else None
+
+
 def evaluate_connector_mating(
     spec: ConnectorMatingSpec,
     entry: Mapping[str, object] | None,
@@ -42,11 +49,13 @@ def evaluate_connector_mating(
         return [f"{tag}: footprint mismatch: expected {spec.footprint_id!r}."]
     if entry.get("layer_name") != "F.Cu":
         return [f"{tag}: back-side/mirrored footprints are unsupported in the v1 mating check."]
-    px, py, rotation = entry.get("x_mm"), entry.get("y_mm"), entry.get("rotation")
-    if any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in (px, py, rotation)):
+    px = _finite_float(entry.get("x_mm"))
+    py = _finite_float(entry.get("y_mm"))
+    rotation = _finite_float(entry.get("rotation"))
+    if px is None or py is None or rotation is None:
         return [f"{tag}: position or rotation is unavailable/invalid."]
     x_off, y_off = _rotated(spec.datum_x_mm, spec.datum_y_mm, float(rotation))
-    x_mm, y_mm = float(px) + x_off, float(py) + y_off
+    x_mm, y_mm = px + x_off, py + y_off
     normal_local = _NORMALS[spec.normal_local]
     nx, ny = _rotated(*normal_local, float(rotation))
     desired_x, desired_y = _NORMALS[spec.edge]

@@ -2274,7 +2274,7 @@ class _PlacementEvaluator:
 
     def _has_rectangular_outline(self) -> bool:
         """Mechanical intent needs one actual rectangle, not inferred PCB bounds."""
-        from .board_file import _extract_block
+        from ..utils.sexpr import _extract_block
 
         primitives: list[str] = []
         for found in re.finditer(r"\(gr_(?:rect|line|arc|circle|poly|curve)\b", self.content):
