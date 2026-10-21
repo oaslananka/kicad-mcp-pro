@@ -128,7 +128,9 @@ def attest(
         report["tool_surface_attested"] = measured["matched"]
         if not measured["matched"]:
             report.update(status="blocked", blocking_reasons=["reviewed_ops_tool_surface_mismatch"])
-    except Exception:
+    except Exception as exc:
+        # Only emit the exception class; messages may contain private paths or credentials.
+        print(f"live attestation failed: {type(exc).__name__}", file=sys.stderr)
         report.update(
             status="blocked", blocking_reasons=["reviewed_ops_live_attestation_unavailable"]
         )

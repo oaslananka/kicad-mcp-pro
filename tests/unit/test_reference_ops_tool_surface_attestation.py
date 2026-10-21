@@ -104,7 +104,7 @@ def test_preflight_block_never_calls_mcp(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
 
 def test_unavailable_server_or_runtime_blocks(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _mock_preflight(monkeypatch)
     monkeypatch.setattr(cli, "_read_ops_server_descriptor", lambda *_: None)
@@ -119,6 +119,9 @@ def test_unavailable_server_or_runtime_blocks(
     failed = cli.attest(**_args(tmp_path))
     assert failed["blocking_reasons"] == ["reviewed_ops_live_attestation_unavailable"]
     assert "host unavailable" not in str(failed)
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == "live attestation failed: OSError\n"
 
 
 def test_second_config_read_must_remain_reviewed(
