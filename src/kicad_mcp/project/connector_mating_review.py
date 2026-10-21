@@ -1,0 +1,74 @@
+"""Deterministic rectangular-board connector-mating reviewer.
+
+No KiCad runtime and no mutations. Passing this bounded check proves only
+2-D specified mating-datum alignment, NOT plug volume, 3-D mating, EMC or DFM.
+"""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Mapping
+
+from ..models.intent import ConnectorMatingSpec
+
+_NORMALS: dict[str, tuple[float, float]] = {
+    "left": (-1.0, 0.0),
+    "right": (1.0, 0.0),
+    "top": (0.0, -1.0),
+    "bottom": (0.0, 1.0),
+}
+
+
+def _rotated(x: float, y: float, angle_deg: float) -> tuple[float, float]:
+    """KiCad footprint local-to-board rotation (+degrees counterclockwise)."""
+    a = math.radians(angle_deg)
+    return x * math.cos(a) + y * math.sin(a), -x * math.sin(a) + y * math.cos(a)
+
+
+def evaluate_connector_mating(
+    spec: ConnectorMatingSpec,
+    entry: Mapping[str, object] | None,
+    frame: tuple[float, float, float, float],
+    *,
+    rectangular_outline_verified: bool,
+) -> list[str]:
+    """Return hard failures; never return an unproven alignment as passing."""
+    tag = f"Connector '{spec.ref}'"
+    if not rectangular_outline_verified:
+        return [f"{tag}: a single rectangular Edge.Cuts outline is required for this v1 2-D check."]
+    if entry is None:
+        return [f"{tag}: mating-intent footprint is missing from the PCB."]
+    if entry.get("name") != spec.footprint_id:
+        return [f"{tag}: footprint mismatch: expected {spec.footprint_id!r}."]
+    if entry.get("layer_name") != "F.Cu":
+        return [f"{tag}: back-side/mirrored footprints are unsupported in the v1 mating check."]
+    px, py, rotation = entry.get("x_mm"), entry.get("y_mm"), entry.get("rotation")
+    if any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in (px, py, rotation)):
+        return [f"{tag}: position or rotation is unavailable/invalid."]
+    x_off, y_off = _rotated(spec.datum_x_mm, spec.datum_y_mm, float(rotation))
+    x_mm, y_mm = float(px) + x_off, float(py) + y_off
+    normal_local = _NORMALS[spec.normal_local]
+    nx, ny = _rotated(*normal_local, float(rotation))
+    desired_x, desired_y = _NORMALS[spec.edge]
+    dot = max(-1.0, min(1.0, nx * desired_x + ny * desired_y))
+    angle_error = math.degrees(math.acos(dot))
+    x0, y0, x1, y1 = frame
+    edge_position = {"left": x0, "right": x1, "top": y0, "bottom": y1}[spec.edge]
+    datum_coord = y_mm if spec.edge in {"top", "bottom"} else x_mm
+    tangential = x_mm if spec.edge in {"top", "bottom"} else y_mm
+    lower, upper = (x0, x1) if spec.edge in {"top", "bottom"} else (y0, y1)
+    problems: list[str] = []
+    if angle_error > spec.max_direction_error_deg + 1e-7:
+        problems.append(
+            f"{tag}: mating direction points {angle_error:.1f} degrees away from "
+            f"{spec.edge} outward normal (limit {spec.max_direction_error_deg:.1f})."
+        )
+    distance = abs(datum_coord - edge_position)
+    if distance > spec.max_datum_error_mm + 1e-7:
+        problems.append(
+            f"{tag}: mating datum is {distance:.3f} mm from {spec.edge} Edge.Cuts "
+            f"(limit {spec.max_datum_error_mm:.3f} mm)."
+        )
+    if not lower - spec.max_datum_error_mm <= tangential <= upper + spec.max_datum_error_mm:
+        problems.append(f"{tag}: mating datum lies outside the specified edge segment.")
+    return problems
