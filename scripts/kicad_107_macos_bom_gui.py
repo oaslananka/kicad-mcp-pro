@@ -133,13 +133,10 @@ def _edit_output(old_value: str) -> str:
           try
             if role of elementFound is "AXTextField" then
               if (value of elementFound as text) is "{old_value}" then
-                try
-                  set value of elementFound to "{REPLACEMENT}"
-                on error
-                  click elementFound
-                  keystroke "a" using {{command down}}
-                  keystroke "{REPLACEMENT}"
-                end try
+                click elementFound
+                keystroke "a" using {{command down}}
+                keystroke "{REPLACEMENT}"
+                delay 0.5
                 return value of elementFound as text
               end if
             end if
@@ -203,8 +200,10 @@ def _run(executable: Path) -> dict[str, object]:
         if observed_b != b_saved or observed_b == observed_a:
             raise RuntimeError("cross-project-b-saved-filename-mismatch")
         edited = _edit_output(observed_b)
-        if edited != REPLACEMENT or _read_output() != REPLACEMENT:
-            raise RuntimeError("native-bom-field-edit-failed")
+        if edited != REPLACEMENT:
+            raise RuntimeError("native-bom-edit-control-not-updated")
+        if _read_output() != REPLACEMENT:
+            raise RuntimeError("native-bom-edit-value-not-retained")
         _cancel()
         _open_bom()
         reopened_b = _read_output()

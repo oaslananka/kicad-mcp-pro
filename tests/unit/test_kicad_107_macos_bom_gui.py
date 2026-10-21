@@ -91,3 +91,22 @@ def test_all_macos_ax_helpers_specify_safe_diagnostic_stage() -> None:
     ]
     assert len(calls) == 6
     assert all(any(k.arg == "stage" for k in call.keywords) for call in calls)
+
+
+def test_bom_edit_is_real_keyboard_interaction_not_ax_value_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[str] = []
+
+    def check(script: str, *, stage: str) -> str:
+        assert stage == "edit-output"
+        observed.append(script)
+        return gui.REPLACEMENT
+
+    monkeypatch.setattr(gui, "_osa", check)
+    assert gui._edit_output("BOM_SAVED_B_aaaaaaaaaaaa.csv") == gui.REPLACEMENT
+    assert len(observed) == 1
+    assert "click elementFound" in observed[0]
+    assert 'keystroke "a" using {command down}' in observed[0]
+    assert 'keystroke "BOM_CANCEL_NOT_PERSISTED_107.csv"' in observed[0]
+    assert "set value of elementFound" not in observed[0]
