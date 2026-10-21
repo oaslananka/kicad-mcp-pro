@@ -11,6 +11,7 @@ import argparse
 import base64
 import json
 import os
+import ssl
 import sys
 from http.client import HTTPSConnection
 from typing import cast
@@ -56,7 +57,7 @@ def check_pr_new_smells(pr_number: int, *, token: str) -> int:
     )
     credentials = base64.b64encode((token + ":").encode()).decode()
     # Fixed HTTPS host, no redirects: never forward CI's SonarCloud secret elsewhere.
-    connection = HTTPSConnection("sonarcloud.io", timeout=25)
+    connection = HTTPSConnection("sonarcloud.io", timeout=25, context=ssl.create_default_context())
     try:
         connection.request(
             "GET",

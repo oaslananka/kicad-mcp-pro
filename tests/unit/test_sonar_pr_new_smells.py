@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import ssl
 from unittest.mock import patch
 
 import pytest
@@ -26,9 +27,11 @@ def test_zero_new_smells_authenticates_only_to_fixed_sonar_host() -> None:
             return json.dumps(_response("0")).encode()
 
     class FakeConnection:
-        def __init__(self, host: str, *, timeout: int) -> None:
+        def __init__(self, host: str, *, timeout: int, context: ssl.SSLContext) -> None:
             assert host == "sonarcloud.io"
             assert timeout == 25
+            assert context.verify_mode == ssl.CERT_REQUIRED
+            assert context.check_hostname
 
         def request(self, method: str, path: str, *, headers: dict) -> None:
             assert method == "GET"
