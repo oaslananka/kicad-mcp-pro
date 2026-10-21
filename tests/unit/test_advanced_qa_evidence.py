@@ -236,3 +236,54 @@ def test_failed_memory_producer_clears_stale_evidence(
     with pytest.raises(RuntimeError, match="producer failed"):
         run_memory_profile.main()
     assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("url", "status_code", "payload", "expected"),
+    [
+        ("/api/info", 200, {}, True),
+        ("/api/info", 503, {}, False),
+        ("/api/health", 200, {"ok": True}, True),
+        ("/api/status", 200, {"health": {"ok": True}}, True),
+    ],
+)
+def test_request_result_distinguishes_transport_and_readiness(
+    url: str, status_code: int, payload: object, expected: bool
+) -> None:
+    class Response:
+        def __init__(self) -> None:
+            self.status_code = status_code
+
+        def json(self) -> object:
+            return payload
+
+    class Client:
+        def get(self, _url: str) -> Response:
+            return Response()
+
+    latency, succeeded = run_load_test._request_result(Client(), url)  # type: ignore[arg-type]
+    assert latency >= 0.0
+    assert succeeded is expected
+
+
+def test_request_result_converts_transport_exception_to_failure() -> None:
+    class OfflineClient:
+        def get(self, _url: str) -> None:
+            raise ConnectionError("KiCad connection unavailable")
+
+    latency, succeeded = run_load_test._request_result(  # type: ignore[arg-type]
+        OfflineClient(), "/api/health"
+    )
+    assert latency >= 0.0
+    assert succeeded is False
+
+
+def test_evidence_benchmark_rejects_missing_benchmark_object() -> None:
+    assert report_collector._benchmark_ok({"benchmark": False}, "lightweight") is False
+
+
+def test_load_cli_rejects_invalid_workload(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["run_load_test.py", "--vus", "0"])
+    with pytest.raises(SystemExit) as invalid:
+        run_load_test.main()
+    assert invalid.value.code == 2

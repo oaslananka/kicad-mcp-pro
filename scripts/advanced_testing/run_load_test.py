@@ -12,6 +12,7 @@ import json
 import statistics
 import time
 from pathlib import Path
+from typing import cast
 
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
@@ -24,6 +25,24 @@ _PROFILES = {
     "lightweight": ("/api/info", "/api/metrics"),
     "runtime": ("/api/status", "/api/health", "/api/info", "/api/metrics"),
 }
+
+
+def _request_result(client: TestClient, url: str) -> tuple[float, bool]:
+    """Measure transport plus KiCad readiness instead of just HTTP status."""
+    req_start = time.perf_counter()
+    try:
+        resp = client.get(url)
+        elapsed_ms = (time.perf_counter() - req_start) * 1000.0
+        if resp.status_code != 200:
+            return elapsed_ms, False
+        if url == "/api/health":
+            return elapsed_ms, resp.json().get("ok") is True
+        if url == "/api/status":
+            return elapsed_ms, resp.json().get("health", {}).get("ok") is True
+        return elapsed_ms, True
+    except Exception:
+        elapsed_ms = (time.perf_counter() - req_start) * 1000.0
+        return elapsed_ms, False
 
 
 def run_load_benchmark(
@@ -42,20 +61,7 @@ def run_load_benchmark(
     start_wall_time = time.time()
 
     def worker_task(req_id: int) -> tuple[float, bool]:
-        url = endpoints[req_id % len(endpoints)]
-        req_start = time.perf_counter()
-        try:
-            resp = client.get(url)
-            elapsed_ms = (time.perf_counter() - req_start) * 1000.0
-            is_success = resp.status_code == 200
-            if is_success and url == "/api/health":
-                is_success = resp.json().get("ok") is True
-            if is_success and url == "/api/status":
-                is_success = resp.json().get("health", {}).get("ok") is True
-            return elapsed_ms, is_success
-        except Exception:
-            elapsed_ms = (time.perf_counter() - req_start) * 1000.0
-            return elapsed_ms, False
+        return _request_result(client, endpoints[req_id % len(endpoints)])
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=vus) as executor:
         futures = [executor.submit(worker_task, i) for i in range(total_requests)]
@@ -120,7 +126,7 @@ def main() -> None:
         f"Throughput: {results['throughput_rps']} RPS | "
         f"Error Rate: {results['error_rate_percent']}%"
     )
-    lat = results["latencies_ms"]
+    lat = cast("dict[str, float]", results["latencies_ms"])
     print(
         f"Latencies (ms): p50={lat['p50']} | p95={lat['p95']} | p99={lat['p99']} | max={lat['max']}"
     )

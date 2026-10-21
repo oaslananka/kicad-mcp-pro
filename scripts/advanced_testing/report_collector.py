@@ -15,9 +15,18 @@ import shutil
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
+from typing import TypedDict
 
 
-def get_git_info() -> dict[str, str]:
+class GitInfo(TypedDict):
+    commit_sha: str
+    short_sha: str
+    branch: str
+    dirty: bool
+    commit_date: str
+
+
+def get_git_info() -> GitInfo:
     """Retrieve current git commit SHA, branch, and tree status."""
 
     def _run(cmd: list[str]) -> str:
@@ -35,6 +44,54 @@ def get_git_info() -> dict[str, str]:
     }
 
 
+def _load_evidence(base: Path, target_dir: Path) -> dict[str, object]:
+    """Copy present, valid JSON evidence into the directory for this commit."""
+    categories: dict[str, object] = {}
+    for name in ("memory-profile", "performance-benchmarks", "runtime-benchmarks"):
+        source = base / "current" / f"{name}.json"
+        if not source.is_file():
+            continue
+        try:
+            data = json.loads(source.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            categories[name] = None
+            continue
+        categories[name] = data
+        shutil.copyfile(source, target_dir / source.name)
+    return categories
+
+
+def _memory_profile_ok(memory: object) -> bool:
+    """Attest only explicit, nonempty leak-free memory profiles."""
+    if not isinstance(memory, dict) or memory.get("all_clean") is not True:
+        return False
+    profiles = memory.get("profiles", [])
+    return bool(profiles) and all(
+        isinstance(p, dict) and p.get("leak_detected") is False and "error" not in p
+        for p in profiles
+    )
+
+
+def _benchmark_ok(payload: object, profile: str) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    result = payload.get("benchmark")
+    if not isinstance(result, dict):
+        return False
+    latencies = result.get("latencies_ms")
+    return (
+        result.get("profile") == profile
+        and result.get("pass_criteria_met") is True
+        and type(result.get("total_requests")) is int
+        and result["total_requests"] > 0
+        and type(result.get("error_rate_percent")) in (int, float)
+        and result["error_rate_percent"] < 1.0
+        and isinstance(latencies, dict)
+        and type(latencies.get("p95")) in (int, float)
+        and latencies["p95"] < 200.0
+    )
+
+
 def collect_evidence(
     output_base: Path | None = None,
 ) -> Path:
@@ -48,63 +105,25 @@ def collect_evidence(
     target_dir.mkdir(parents=True, exist_ok=True)
 
     # The runners write into current/; reports are immutable per commit SHA.
-    # Never label absent, invalid, or failing evidence as PASS.
-    categories: dict[str, object] = {}
-    for name in ("memory-profile", "performance-benchmarks", "runtime-benchmarks"):
-        source = base / "current" / f"{name}.json"
-        if not source.is_file():
-            continue
-        try:
-            data = json.loads(source.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            categories[name] = None
-            continue
-        categories[name] = data
-        shutil.copyfile(source, target_dir / source.name)
-
-    def benchmark_ok(payload: object, profile: str) -> bool:
-        if not isinstance(payload, dict):
-            return False
-        result = payload.get("benchmark")
-        if not isinstance(result, dict):
-            return False
-        latencies = result.get("latencies_ms")
-        return (
-            result.get("profile") == profile
-            and result.get("pass_criteria_met") is True
-            and type(result.get("total_requests")) is int
-            and result["total_requests"] > 0
-            and type(result.get("error_rate_percent")) in (int, float)
-            and result["error_rate_percent"] < 1.0
-            and isinstance(latencies, dict)
-            and type(latencies.get("p95")) in (int, float)
-            and latencies["p95"] < 200.0
-        )
+    categories = _load_evidence(base, target_dir)
 
     memory = categories.get("memory-profile")
     api = categories.get("performance-benchmarks")
     runtime = categories.get("runtime-benchmarks")
-    memory_status = (
-        "PASS"
-        if isinstance(memory, dict)
-        and memory.get("all_clean") is True
-        and all(
-            isinstance(p, dict) and p.get("leak_detected") is False and "error" not in p
-            for p in memory.get("profiles", [])
-        )
-        and bool(memory.get("profiles"))
-        else "FAIL"
-    )
-    api_status = "PASS" if benchmark_ok(api, "lightweight") else "FAIL"
-    runtime_status = "PASS" if benchmark_ok(runtime, "runtime") else "WARN"
+    memory_status = "PASS" if _memory_profile_ok(memory) else "FAIL"
+    api_status = "PASS" if _benchmark_ok(api, "lightweight") else "FAIL"
+    runtime_status = "PASS" if _benchmark_ok(runtime, "runtime") else "WARN"
     layers = {
         "Memory & Leak Profiling": memory_status,
         "Lightweight API Benchmark (required)": api_status,
         "KiCad Runtime Benchmark (diagnostic)": runtime_status,
     }
-    status = (
-        "FAIL" if "FAIL" in layers.values() else "WARN" if "WARN" in layers.values() else "PASS"
-    )
+    if "FAIL" in layers.values():
+        status = "FAIL"
+    elif "WARN" in layers.values():
+        status = "WARN"
+    else:
+        status = "PASS"
 
     timestamp = datetime.datetime.now(datetime.UTC).isoformat()
 
