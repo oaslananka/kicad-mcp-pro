@@ -86,7 +86,9 @@ def _unique_dict(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 
 def _valid_int(value: object, minimum: int = 0) -> bool:
-    if type(value) is not int:
+    # isinstance narrows both Python and Sonar's static type analysis; bool
+    # must still be excluded explicitly because bool subclasses int.
+    if not isinstance(value, int) or isinstance(value, bool):
         return False
     return value >= minimum
 

@@ -495,3 +495,22 @@ def test_exclusive_nonce_file_claim_refuses_collision(evidence) -> None:
             _NONCE,
             "a" * 64,
         )
+
+
+@pytest.mark.parametrize(
+    ("candidate", "expected"),
+    [
+        (None, False),
+        (False, False),
+        (True, False),
+        ("12", False),
+        (-1, False),
+        (0, True),
+        (4, True),
+    ],
+)
+def test_witness_integer_validation_excludes_boolean_and_other_types(
+    candidate: object,
+    expected: bool,
+) -> None:
+    assert reference_ops_signed_witness._valid_int(candidate) is expected
