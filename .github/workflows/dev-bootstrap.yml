@@ -101,6 +101,8 @@ jobs:
 
   kicad-canary:
     name: Bootstrapped KiCad 10.0.6 canary
+    # Historical Jammy reproducibility remains manually available, not PR blocking.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:

@@ -79,6 +79,31 @@ missing required context would leave an otherwise valid pull request blocked.
 The action itself reports success when a pull request has no dependency-graph
 delta.
 
+### Primary Linux KiCad 10.0.7 native PR canary (current stable)
+
+The `KiCad Live E2E` workflow contains `kicad-10-0-7-primary-canary`
+for relevant PR changes, on Ubuntu 24.04. It validates the exact official stable
+**10.0.7** CLI, symbols and footprints *before* the native 32-step CLI canary
+and semantic comparisons. The installer uses the KiCad 10 release PPA,
+fail-closed APT index refresh, and rejects KiCad or library candidates from
+any other version. The PPA remains an external availability dependency; an
+outage **fails explicitly**, never masquerades as a source-code regression or
+allows fallback to Ubuntu's older distro KiCad.
+
+The historical Ubuntu 22.04 **10.0.6** KiCad Live E2E canary remains available
+on main pushes, scheduled runs and manual dispatch, but **skips PR events**.
+The 10.0.6 development-bootstrap canary is manual only. This prevents repair
+of an obsolete version-specific CI environment from blocking current-stable
+engineering changes. Neither of these optional jobs is a release approval or
+a bypass of compatibility policy.
+
+This change does **not** silently promote `kicad.latestVerified` or the
+existing feature-parity baseline. Those require their own exact-source,
+platform-scoped patch/IPC/GUI evidence and explicit acceptance. The new
+primary canary is a non-required PR check until branch protection is separately
+reviewed and changed; its CI result must not be represented as a required
+branch protection condition without that operation.
+
 ### Windows 10.0.7 bounded native qualification (non-required)
 
 `kicad-10-0-7-windows-qualification.yml` runs the **native CLI** suite on
