@@ -424,7 +424,7 @@ def test_reviewed_mcp_tools_follow_profile_and_mode_boundaries() -> None:
     pcb = reviewed_mcp_tools(ReferenceAgentPhase.for_name("pcb"))
     release = reviewed_mcp_tools(ReferenceAgentPhase.for_name("manufacturing"))
 
-    assert len(schematic) == 35
+    assert len(schematic) == 37
     assert {
         "mcp__kicad__sch_add_symbol",
         "mcp__kicad__lib_search_symbols",

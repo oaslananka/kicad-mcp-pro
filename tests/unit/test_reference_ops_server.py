@@ -35,10 +35,15 @@ def test_schematic_tools_are_exact_reviewed_allowlist_in_both_layers() -> None:
         for name in reviewed_mcp_tools(ReferenceAgentPhase.for_name("schematic"))
     }
     names = {tool.name for tool in server.list_tools_sync()}
-    assert len(exact) == 35
+    assert len(exact) == 37
     assert names == exact
     assert server.allowed_tool_names == exact
     assert server.execution_tool_names == exact
+    assert {"sch_get_wires", "sch_delete_wire"} <= names
+    # Recovery access is intentionally narrow: no broad symbol deletion
+    # or bypass of the reviewed phase API.
+    assert "sch_delete_symbol" not in names
+    assert "sch_move_symbol" not in names
     assert "drc_rule_delete" not in names
 
 

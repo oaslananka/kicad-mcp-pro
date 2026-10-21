@@ -243,6 +243,8 @@ _SCHEMATIC_EXECUTION_TOOLS = (
     "sch_add_symbol",
     "sch_add_wire",
     "sch_route_wire_between_pins",
+    "sch_get_wires",
+    "sch_delete_wire",
     "sch_add_label",
     "sch_add_global_label",
     "sch_add_power_symbol",
