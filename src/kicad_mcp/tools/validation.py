@@ -878,10 +878,12 @@ def _check_pad_net_match(
     expected_unconnected = expected_net.startswith("unconnected-(")
     if expected_unconnected:
         # KiCad can retain a generated unconnected-(...) net on the PCB pad.
-        # The PCB sexpr escapes slashes inside these names as {slash}, while
-        # the schematic netlist exports the literal slash. Both spellings
-        # describe the same deliberately unconnected pin.
-        if not actual_net or actual_net.replace("{slash}", "/") == expected_net:
+        # Schematic and PCB exporters may each escape '/' as '{slash}' in
+        # generated no-connect names; normalize both before comparing.
+        # Never treat a named real net as an intentional no-connect.
+        if not actual_net or actual_net.replace("{slash}", "/") == expected_net.replace(
+            "{slash}", "/"
+        ):
             return True, None
         return (
             False,
