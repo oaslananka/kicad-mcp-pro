@@ -44,8 +44,7 @@ def _editor_windows() -> str:
     )
 
 
-@contextmanager
-def _editor(executable: Path, project: Path) -> Iterator[None]:
+def _validated_editor_binary(executable: Path, project: Path) -> Path:
     # The workflow verifies the official DMG's hash and code signature before
     # publishing KICAD_MAC_MOUNT and the selected eeschema path.
     mount_env = os.environ.get("KICAD_MAC_MOUNT")
@@ -76,6 +75,12 @@ def _editor(executable: Path, project: Path) -> Iterator[None]:
         or project.is_symlink()
     ):
         raise RuntimeError("native-editor-untrusted-project")
+    return binary
+
+
+@contextmanager
+def _editor(executable: Path, project: Path) -> Iterator[None]:
+    binary = _validated_editor_binary(executable, project)
     # No shell, no external user path, and a verified executable in the signed DMG.
     process = subprocess.Popen(  # nosec B603  # nosemgrep
         [str(binary), str(project)],
