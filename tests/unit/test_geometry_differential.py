@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 import kicad_mcp.evals.geometry_differential as geometry
@@ -49,9 +51,29 @@ def test_native_json_ignores_localized_report_labels_and_preserves_geometry_hash
     )
 
 
+@pytest.mark.parametrize(
+    ("width", "height"),
+    [
+        ("100,0000 mm", "60,0000 mm"),
+        ("100.0000 mm", "60,0000 mm"),
+        ("100,0000 mm", "60.0000 mm"),
+    ],
+)
+def test_native_json_accepts_single_locale_decimal_separator(width: str, height: str) -> None:
+    report = json.dumps({"board": {"has_outline": True, "width": width, "height": height}})
+    normalized = normalize_native_board_stats(report)
+    assert normalized == ("100.0000", "60.0000")
+    assert geometry_signature_hash(normalized) == geometry_signature_hash(
+        normalize_native_board_stats(NATIVE_STATS)
+    )
+
+
 def test_native_json_rejects_invalid_or_ambiguous_board_dimensions() -> None:
     reports = (
         '{"board":{"has_outline":true,"width":"100 mm","height":"60 in"}}',
+        '{"board":{"has_outline":true,"width":"100.000,0 mm","height":"60 mm"}}',
+        '{"board":{"has_outline":true,"width":"100,000.0 mm","height":"60 mm"}}',
+        '{"board":{"has_outline":true,"width":"1,234,567 mm","height":"60 mm"}}',
         '{"board":{"has_outline":false,"width":"100 mm","height":"60 mm"}}',
         '{"board":{"has_outline":true,"width":"100 mm","width":"101 mm","height":"60 mm"}}',
         '{"board":{"has_outline":true,"width":"0 mm","height":"60 mm"}}',

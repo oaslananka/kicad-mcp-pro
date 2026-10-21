@@ -68,10 +68,15 @@ def normalize_native_board_stats(stats_text: str) -> GeometrySignature:
             raw = board.get(name)
             if not isinstance(raw, str):
                 raise ValueError(f"Native board statistics require a {name} in millimetres")
-            match = re.fullmatch(r"\s*(?P<value>[+-]?(?:\d+(?:\.\d*)?|\.\d+))\s+mm\s*", raw)
+            # KiCad can render JSON dimension strings using the system's
+            # decimal separator. Never interpret mixed separators as thousands.
+            match = re.fullmatch(
+                r"\s*(?P<value>[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+))\s+mm\s*",
+                raw,
+            )
             if match is None:
                 raise ValueError(f"Native board statistics require a {name} in millimetres")
-            values_mm.append(_canonical_mm(match.group("value")))
+            values_mm.append(_canonical_mm(match.group("value").replace(",", ".")))
         return values_mm[0], values_mm[1]
 
     values: dict[str, list[str]] = {"Width": [], "Height": []}
