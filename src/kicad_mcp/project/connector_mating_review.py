@@ -47,8 +47,11 @@ def evaluate_connector_mating(
         return [f"{tag}: mating-intent footprint is missing from the PCB."]
     if entry.get("name") != spec.footprint_id:
         return [f"{tag}: footprint mismatch: expected {spec.footprint_id!r}."]
-    if entry.get("layer_name") != "F.Cu":
-        return [f"{tag}: back-side/mirrored footprints are unsupported in the v1 mating check."]
+    if entry.get("layer_name") != "F.Cu" or entry.get("layer_name_explicit") is not True:
+        return [
+            f"{tag}: explicit front-copper footprint layer is required; "
+            "missing, back-side or mirrored layers are not approved."
+        ]
     px = _finite_float(entry.get("x_mm"))
     py = _finite_float(entry.get("y_mm"))
     rotation = _finite_float(entry.get("rotation"))

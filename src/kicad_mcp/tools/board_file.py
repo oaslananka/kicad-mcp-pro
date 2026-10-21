@@ -206,6 +206,24 @@ def _absolute_courtyard_bounds_mm(
     )
 
 
+def _explicit_footprint_layer(block: str, after_name: int) -> str | None:
+    """Read only the footprint's direct (layer ...) child, not nested graphics.
+
+    Other consumers retain their historical F.Cu fallback, but engineering
+    approval must know whether the actual root layer was declared.
+    """
+    cursor = after_name
+    while (child_start := block.find("(", cursor)) >= 0:
+        child, length = _extract_block(block, child_start)
+        if not length:
+            return None
+        layer = re.fullmatch(r'\(layer\s+"([^"]+)"\)', child.strip())
+        if layer is not None:
+            return layer.group(1)
+        cursor = child_start + length
+    return None
+
+
 def _build_footprint_entry(
     block: str,
     cursor: int,
@@ -218,7 +236,7 @@ def _build_footprint_entry(
         return None
     root_at = _parse_root_at(block)
     width_mm, height_mm = _bbox_from_block(block)
-    layer_match = re.search(r'\(layer\s+"([^"]+)"\)', block)
+    explicit_layer = _explicit_footprint_layer(block, name_match.end())
     entry = {
         "name": name_match.group(1),
         "block": block,
@@ -231,7 +249,8 @@ def _build_footprint_entry(
         "width_mm": width_mm,
         "height_mm": height_mm,
         "courtyard_bounds_mm": _absolute_courtyard_bounds_mm(block, root_at),
-        "layer_name": layer_match.group(1) if layer_match else "F.Cu",
+        "layer_name": explicit_layer if explicit_layer is not None else "F.Cu",
+        "layer_name_explicit": explicit_layer is not None,
         "net_names": _footprint_net_names(block),
         "pad_nets": _footprint_pad_net_map(block),
     }

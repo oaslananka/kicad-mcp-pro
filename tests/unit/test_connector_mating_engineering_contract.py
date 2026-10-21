@@ -117,7 +117,7 @@ def test_connector_mating_explicit_side_must_be_front_copper() -> None:
     entries["J1"]["layer_name"] = "B.Cu"
     intent = ProjectDesignIntent(mechanical=MechanicalConstraint(connector_mating=[_spec()]))
     report = _PlacementEvaluator(content, entries, intent).evaluate()
-    assert any("back-side/mirrored" in msg for msg in report.hard_failures)
+    assert any("front-copper footprint layer" in msg for msg in report.hard_failures)
 
 
 def test_datum_on_edge_line_extension_is_not_valid() -> None:
@@ -158,3 +158,40 @@ def test_degenerate_rectangular_edge_cuts_is_rejected(width: int, height: int) -
         ProjectDesignIntent(mechanical=MechanicalConstraint(connector_mating=[_spec()])),
     ).evaluate()
     assert any("rectangular Edge.Cuts" in msg for msg in report.hard_failures)
+
+
+def test_missing_root_footprint_layer_never_passes_mating_acceptance() -> None:
+    content = _board(270, 6.1, 13.5)
+    root = f'(footprint "{J1}" (layer "F.Cu")'
+    assert root in content
+    content = content.replace(root, f'(footprint "{J1}"', 1)
+    entries = _parse_board_footprint_blocks(content)
+    assert entries["J1"]["layer_name"] == "F.Cu"  # historical fallback
+    assert entries["J1"]["layer_name_explicit"] is False
+    intent = ProjectDesignIntent(mechanical=MechanicalConstraint(connector_mating=[_spec()]))
+    report = _PlacementEvaluator(content, entries, intent).evaluate()
+    assert any("explicit front-copper" in msg for msg in report.hard_failures)
+
+
+def test_nested_graphics_fcu_layer_does_not_spoof_root_footprint_layer() -> None:
+    content = _board(270, 6.1, 13.5)
+    root = f'(footprint "{J1}" (layer "F.Cu")'
+    assert root in content
+    content = content.replace(root, f'(footprint "{J1}"', 1)
+    content = content.replace(
+        '(pad "1" smd rect',
+        '(fp_line (start 0 0) (end 2 0) (layer "F.Cu")) (pad "1" smd rect',
+        1,
+    )
+    entries = _parse_board_footprint_blocks(content)
+    assert entries["J1"]["layer_name_explicit"] is False
+    intent = ProjectDesignIntent(mechanical=MechanicalConstraint(connector_mating=[_spec()]))
+    report = _PlacementEvaluator(content, entries, intent).evaluate()
+    assert any("explicit front-copper" in msg for msg in report.hard_failures)
+
+
+def test_real_front_layer_parsing_remains_explicit() -> None:
+    content = _board(270, 6.1, 13.5)
+    entry = _parse_board_footprint_blocks(content)["J1"]
+    assert entry["layer_name"] == "F.Cu"
+    assert entry["layer_name_explicit"] is True
