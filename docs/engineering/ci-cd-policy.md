@@ -82,13 +82,23 @@ delta.
 ### Primary Linux KiCad 10.0.7 native PR canary (current stable)
 
 The `KiCad Live E2E` workflow contains `kicad-10-0-7-primary-canary`
-for relevant PR changes, on Ubuntu 24.04. It validates the exact official stable
-**10.0.7** CLI, symbols and footprints *before* the native 32-step CLI canary
-and semantic comparisons. The installer uses the KiCad 10 release PPA,
-fail-closed APT index refresh, and rejects KiCad or library candidates from
-any other version. The PPA remains an external availability dependency; an
-outage **fails explicitly**, never masquerades as a source-code regression or
-allows fallback to Ubuntu's older distro KiCad.
+for relevant PR changes, on Ubuntu 24.04. It validates an **exact SHA-256
+pinned KiCad 10.0.7 lite AppImage** plus a separate SHA-256 verified KiCad
+10.0.7 symbol-library source archive, packed with KiCad's own CMake tooling,
+before the **32-step native CLI canary** and semantic comparisons. The installer
+checks both the tarball and extracted AppImage digests before executing code,
+requires the exact CLI version, and exports the scoped CLI/symbol paths for
+native tools and the schematic parser. The libraries are required because the
+bundled KiCad archive contains unpacked `.kicad_symdir` symbols while the
+repository's schematic parser reads packed `.kicad_sym` libraries.
+
+Both tarball hashes are based on explicitly reviewed downloaded bytes. They
+are fixed, not dynamically scraped. This is **content integrity**, not
+independent vendor signature verification or universal supply-chain approval.
+The artifacts originate from the KiCad mirrors and upstream symbol GitLab
+repository, rather than the intermittently unavailable Launchpad PPA. A
+checksum mismatch, unavailable download, missing asset, or wrong CLI version
+fails closed; there is no fallback to another KiCad version.
 
 The historical Ubuntu 22.04 **10.0.6** KiCad Live E2E canary remains available
 on main pushes, scheduled runs and manual dispatch, but **skips PR events**.
