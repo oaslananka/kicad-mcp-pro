@@ -34,7 +34,7 @@ def test_download_archive_and_executable_have_independent_pinned_sha256() -> Non
     hashes = dict(re.findall(r"readonly (archive_sha256|appimage_sha256)='([a-f0-9]{64})'", source))
     assert set(hashes) == {"archive_sha256", "appimage_sha256"}
     assert hashes["archive_sha256"] != hashes["appimage_sha256"]
-    assert source.count("sha256sum --check --status") == 2
+    assert source.count("sha256sum --check --status") == 3
     assert "base_url='https://mirrors.mit.edu/kicad/appimage/stable'" in source
     assert "--proto '=https'" in source
 
@@ -56,3 +56,18 @@ def test_version_and_native_footprint_assets_are_checked_before_ci_export() -> N
     assert "Resistor_SMD.pretty" in source
     assert source.index('"$($cli version)"') < source.index('>> "$GITHUB_PATH"')
     assert "KICAD_CANARY_KICAD_CLI" in source
+    assert "KICAD_SYMBOL_DIR" in source
+    assert "KICAD10_SYMBOL_DIR" in source
+
+
+def test_exact_kicad_10_0_6_symbol_commit_and_official_packer_are_required() -> None:
+    source = SCRIPT.read_text()
+    assert "7800d91437ce44e2ed0928f2ad31a287457b8a68" in source
+    assert "f7384548a683c34076d82469c56bb0eb0ffdb7c50774d87af8463fddb80e152e" in source
+    assert "https://gitlab.com/kicad/libraries/kicad-symbols/-/archive/" in source
+    assert "--target pack_symbols" in source
+    assert "-DKICAD_PACK_SYM_LIBRARIES=ON" in source
+    assert source.index('"$symbols_archive_sha256"') < source.index(
+        "tar --no-same-owner --no-same-permissions -xzf"
+    )
+    assert source.index("--target pack_symbols") < source.index("KICAD_SYMBOL_DIR=%s")

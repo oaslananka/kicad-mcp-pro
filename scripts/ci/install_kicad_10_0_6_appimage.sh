@@ -7,6 +7,10 @@ readonly appimage_name='kicad-10.0.6-x86_64-lite.AppImage'
 readonly archive_sha256='8c789e36644856cff30a66801692881582b9ca7c7475699494e614ce1bcb1f9c'
 readonly appimage_sha256='806e949cb357f9f0a05c3298c36eecb2b06d79c0a36e12c99f75aad9c89f0792'
 readonly base_url='https://mirrors.mit.edu/kicad/appimage/stable'
+readonly symbols_commit='7800d91437ce44e2ed0928f2ad31a287457b8a68'
+readonly symbols_archive_sha256='f7384548a683c34076d82469c56bb0eb0ffdb7c50774d87af8463fddb80e152e'
+readonly symbols_archive="kicad-symbols-${symbols_commit}.tar.gz"
+readonly symbols_url="https://gitlab.com/kicad/libraries/kicad-symbols/-/archive/${symbols_commit}/${symbols_archive}"
 readonly install_root="${RUNNER_TEMP:?RUNNER_TEMP is required}/kicad-10-0-6-appimage"
 
 mkdir -p "$install_root/bin"
@@ -47,6 +51,33 @@ if [[ ! -x "$appdir/AppRun" || ! -d "$appdir/usr/share/kicad/symbols/Device.kica
   exit 1
 fi
 
+# KiCad 10 ships the official symbols in unpacked .kicad_symdir form.
+# The existing kicad-sch-api symbol cache expects packed .kicad_sym files.
+# Use the official symbols tag and its unmodified upstream CMake packer,
+# rather than substituting old symbols or writing a divergent converter.
+symbols_tar="$install_root/$symbols_archive"
+if [[ -n "${KICAD10_SYMBOL_ARCHIVE_SOURCE_FILE:-}" ]]; then
+  cp -- "$KICAD10_SYMBOL_ARCHIVE_SOURCE_FILE" "$symbols_tar"
+else
+  curl --fail --location --retry 3 --retry-delay 2 \
+    --connect-timeout 15 --max-time 180 --proto '=https' --tlsv1.2 \
+    --output "$symbols_tar" "$symbols_url"
+fi
+printf '%s  %s\n' "$symbols_archive_sha256" "$symbols_tar" | sha256sum --check --status || {
+  echo 'Pinned KiCad 10.0.6 symbols SHA-256 mismatch; refusing to build.' >&2
+  exit 1
+}
+mkdir -p "$install_root/symbols-src"
+tar --no-same-owner --no-same-permissions -xzf "$symbols_tar" -C "$install_root/symbols-src"
+symbols_root="$install_root/symbols-src/kicad-symbols-$symbols_commit"
+cmake -S "$symbols_root" -B "$install_root/symbols-build" -DKICAD_PACK_SYM_LIBRARIES=ON
+cmake --build "$install_root/symbols-build" --target pack_symbols --parallel 2
+symbols_dir="$install_root/symbols-build/packed"
+if [[ ! -s "$symbols_dir/Device.kicad_sym" || ! -s "$symbols_dir/Connector.kicad_sym" ]]; then
+  echo 'Packing the version-pinned KiCad 10.0.6 symbol libraries failed.' >&2
+  exit 1
+fi
+
 cat > "$install_root/bin/kicad-cli" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -65,5 +96,7 @@ if [[ -n "${GITHUB_PATH:-}" ]]; then
 fi
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   printf 'KICAD_CANARY_KICAD_CLI=%s\n' "$cli" >> "$GITHUB_ENV"
+  printf 'KICAD_SYMBOL_DIR=%s\n' "$symbols_dir" >> "$GITHUB_ENV"
+  printf 'KICAD10_SYMBOL_DIR=%s\n' "$symbols_dir" >> "$GITHUB_ENV"
 fi
 printf 'Verified pinned KiCad 10.0.6 CLI: %s\n' "$cli"
