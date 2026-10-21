@@ -12,35 +12,56 @@ import json
 import statistics
 import time
 from pathlib import Path
+from typing import cast
 
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
 from kicad_mcp.web.routes import web_routes
 
+# The local GitHub runner has no KiCad IPC server. Keep its fast, hermetic
+# API endpoints separate from diagnostics that probe live KiCad capabilities.
+_PROFILES = {
+    "lightweight": ("/api/info", "/api/metrics"),
+    "runtime": ("/api/status", "/api/health", "/api/info", "/api/metrics"),
+}
 
-def run_load_benchmark(vus: int = 10, total_requests: int = 200) -> dict[str, object]:
+
+def _request_result(client: TestClient, url: str) -> tuple[float, bool]:
+    """Measure transport plus KiCad readiness instead of just HTTP status."""
+    req_start = time.perf_counter()
+    try:
+        resp = client.get(url)
+        elapsed_ms = (time.perf_counter() - req_start) * 1000.0
+        if resp.status_code != 200:
+            return elapsed_ms, False
+        if url == "/api/health":
+            return elapsed_ms, resp.json().get("ok") is True
+        if url == "/api/status":
+            return elapsed_ms, resp.json().get("health", {}).get("ok") is True
+        return elapsed_ms, True
+    except Exception:
+        elapsed_ms = (time.perf_counter() - req_start) * 1000.0
+        return elapsed_ms, False
+
+
+def run_load_benchmark(
+    vus: int = 10, total_requests: int = 200, *, profile: str = "runtime"
+) -> dict[str, object]:
     """Execute load test using Starlette TestClient across worker threads."""
+    if vus < 1 or total_requests < 1:
+        raise ValueError("vus and total_requests must be positive")
+    endpoints = _PROFILES[profile]
     app = Starlette(routes=web_routes)
     client = TestClient(app, raise_server_exceptions=False)
 
     latencies: list[float] = []
     errors: int = 0
-    endpoints = ["/api/status", "/api/health", "/api/info", "/api/metrics"]
 
     start_wall_time = time.time()
 
     def worker_task(req_id: int) -> tuple[float, bool]:
-        url = endpoints[req_id % len(endpoints)]
-        req_start = time.perf_counter()
-        try:
-            resp = client.get(url)
-            elapsed_ms = (time.perf_counter() - req_start) * 1000.0
-            is_success = resp.status_code == 200
-            return elapsed_ms, is_success
-        except Exception:
-            elapsed_ms = (time.perf_counter() - req_start) * 1000.0
-            return elapsed_ms, False
+        return _request_result(client, endpoints[req_id % len(endpoints)])
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=vus) as executor:
         futures = [executor.submit(worker_task, i) for i in range(total_requests)]
@@ -63,6 +84,8 @@ def run_load_benchmark(vus: int = 10, total_requests: int = 200) -> dict[str, ob
     error_rate_pct = round((errors / total_requests) * 100, 2)
 
     return {
+        "profile": profile,
+        "endpoints": list(endpoints),
         "virtual_users": vus,
         "total_requests": total_requests,
         "successful_requests": total_requests - errors,
@@ -87,15 +110,25 @@ def main() -> None:
     parser.add_argument("--vus", type=int, default=10, help="Number of concurrent virtual users")
     parser.add_argument("--requests", type=int, default=200, help="Total requests to dispatch")
     parser.add_argument("--output", type=Path, default=None, help="Output JSON path")
+    parser.add_argument("--profile", choices=tuple(_PROFILES), default="runtime")
+    parser.add_argument(
+        "--enforce", action="store_true", help="Exit nonzero when the measured SLA fails"
+    )
     args = parser.parse_args()
 
-    print(f"Starting load test: {args.vus} VUs, {args.requests} total requests...")
-    results = run_load_benchmark(vus=args.vus, total_requests=args.requests)
+    if args.output:
+        # Fail closed: do not re-use a previous successful benchmark if this run crashes.
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text('{"status": "INCOMPLETE"}\n', encoding="utf-8")
+    if args.vus < 1 or args.requests < 1:
+        parser.error("--vus and --requests must be positive")
+    print(f"Starting {args.profile} load test: {args.vus} VUs, {args.requests} requests...")
+    results = run_load_benchmark(vus=args.vus, total_requests=args.requests, profile=args.profile)
     print(
         f"Throughput: {results['throughput_rps']} RPS | "
         f"Error Rate: {results['error_rate_percent']}%"
     )
-    lat = results["latencies_ms"]
+    lat = cast("dict[str, float]", results["latencies_ms"])
     print(
         f"Latencies (ms): p50={lat['p50']} | p95={lat['p95']} | p99={lat['p99']} | max={lat['max']}"
     )
@@ -112,6 +145,9 @@ def main() -> None:
         print(f"Load benchmark saved to {args.output}")
     else:
         print(json.dumps(summary, indent=2))
+
+    if args.enforce and not results["pass_criteria_met"]:
+        raise SystemExit("Load benchmark failed required latency/error criteria")
 
 
 if __name__ == "__main__":

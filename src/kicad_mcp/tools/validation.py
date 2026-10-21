@@ -877,9 +877,19 @@ def _check_pad_net_match(
 ) -> tuple[bool, str | None]:
     expected_unconnected = expected_net.startswith("unconnected-(")
     if expected_unconnected:
-        if actual_net:
-            return False, f"{reference}.{pad_number}: PCB has '{actual_net}', expected no net."
-        return True, None
+        # KiCad can retain a generated unconnected-(...) net on the PCB pad.
+        # Schematic and PCB exporters may each escape '/' as '{slash}' in
+        # generated no-connect names; normalize both before comparing.
+        # Never treat a named real net as an intentional no-connect.
+        if not actual_net or actual_net.replace("{slash}", "/") == expected_net.replace(
+            "{slash}", "/"
+        ):
+            return True, None
+        return (
+            False,
+            f"{reference}.{pad_number}: PCB has '{actual_net}', "
+            f"expected unconnected net '{expected_net}' or no net.",
+        )
     if not actual_net:
         return False, f"{reference}.{pad_number}: missing net '{expected_net}' on PCB."
     if actual_net != expected_net:
@@ -1276,7 +1286,10 @@ def _check_connectivity_group_smells(
     unnamed_groups = [
         group
         for group in groups
-        if not group["names"] and len(group["pins"]) == 1 and not group.get("no_connect")
+        if not group["names"]
+        and len(group["pins"]) == 1
+        and not group.get("no_connect")
+        and str(group["pins"][0].get("etype", "")).lower() != "no_connect"
     ]
     for group in unnamed_groups[:8]:
         pin = cast(dict[str, str], group["pins"][0])
@@ -1834,21 +1847,40 @@ class _PlacementEvaluator:
         ]
         overlaps: list[str] = []
         outside: list[str] = []
+
+        def bounds(entry: dict[str, Any]) -> tuple[float, float, float, float]:
+            measured = entry.get("courtyard_bounds_mm")
+            if measured is not None:
+                return cast(tuple[float, float, float, float], measured)
+            # Legacy fallback for footprints without supported courtyard graphics.
+            x = float(entry["x_mm"])
+            y = float(entry["y_mm"])
+            half_w = float(entry["width_mm"]) / 2
+            half_h = float(entry["height_mm"]) / 2
+            return x - half_w, y - half_h, x + half_w, y + half_h
+
         items = sorted(self.footprints.items())
         for index, (left_ref, left_entry) in enumerate(items):
             if left_entry["x_mm"] is None or left_entry["y_mm"] is None:
                 continue
-            left_x = float(left_entry["x_mm"])
-            left_y = float(left_entry["y_mm"])
-            left_w = float(left_entry["width_mm"])
-            left_h = float(left_entry["height_mm"])
-            if self._is_outside_frame(left_x, left_y, left_w, left_h):
-                outside.append(left_ref)
-            overlaps.extend(
-                self._collect_pair_overlaps(
-                    index, left_ref, (left_x, left_y, left_w, left_h), items
-                )
-            )
+            lx0, ly0, lx1, ly1 = bounds(left_entry)
+            if lx0 < self.min_x or lx1 > self.max_x or ly0 < self.min_y or ly1 > self.max_y:
+                name = str(left_entry.get("name", ""))
+                if left_ref.startswith("J") and (
+                    name.startswith("Connector") or name.startswith("TerminalBlock")
+                ):
+                    self.warnings.append(
+                        f"Connector '{left_ref}' courtyard crosses board edge; "
+                        "verify intentional shell/plug overhang and mating."
+                    )
+                else:
+                    outside.append(left_ref)
+            for right_ref, right_entry in items[index + 1 :]:
+                if right_entry["x_mm"] is None or right_entry["y_mm"] is None:
+                    continue
+                rx0, ry0, rx1, ry1 = bounds(right_entry)
+                if lx0 < rx1 and rx0 < lx1 and ly0 < ry1 and ry0 < ly1:
+                    overlaps.append(f"{left_ref}/{right_ref}")
         return missing_position, overlaps, outside
 
     def _evaluate_connectors(self) -> tuple[list[str], int]:

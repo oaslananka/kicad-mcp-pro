@@ -49,13 +49,30 @@ jobs:
       - name: Run Memory & Leak Profiling
         run: uv run --all-extras python scripts/advanced_testing/run_memory_profile.py --iterations 30 --output artifacts/advanced-testing/current/memory-profile.json
 
-      - name: Run API Load Benchmark
-        run: uv run --all-extras python scripts/advanced_testing/run_load_test.py --vus 10 --requests 100 --output artifacts/advanced-testing/current/performance-benchmarks.json
+      - name: Run Lightweight API Load Benchmark (required)
+        run: uv run --all-extras python scripts/advanced_testing/run_load_test.py --vus 10 --requests 100 --profile lightweight --enforce --output artifacts/advanced-testing/current/performance-benchmarks.json
+
+      - name: Run KiCad Runtime Benchmark (diagnostic)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: uv run --all-extras python scripts/advanced_testing/run_load_test.py --vus 10 --requests 100 --profile runtime --output artifacts/advanced-testing/current/runtime-benchmarks.json
 
       - name: Collect QA Evidence & Generate Report
+        if: ${{ !cancelled() }}
         run: uv run --all-extras python scripts/advanced_testing/report_collector.py
 
+      - name: Publish Advanced QA Evidence Summary
+        if: ${{ !cancelled() }}
+        run: |
+          report="artifacts/advanced-testing/$(git rev-parse --short HEAD)/report.md"
+          if [ -f "$report" ]; then
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Advanced QA report was not generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload Advanced QA Evidence Artifacts
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: advanced-qa-evidence

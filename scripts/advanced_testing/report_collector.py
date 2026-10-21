@@ -8,16 +8,25 @@ artifacts/advanced-testing/<commit-sha>/.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import datetime
 import json
 import platform
+import shutil
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
+from typing import TypedDict
 
 
-def get_git_info() -> dict[str, str]:
+class GitInfo(TypedDict):
+    commit_sha: str
+    short_sha: str
+    branch: str
+    dirty: bool
+    commit_date: str
+
+
+def get_git_info() -> GitInfo:
     """Retrieve current git commit SHA, branch, and tree status."""
 
     def _run(cmd: list[str]) -> str:
@@ -35,6 +44,54 @@ def get_git_info() -> dict[str, str]:
     }
 
 
+def _load_evidence(base: Path, target_dir: Path) -> dict[str, object]:
+    """Copy present, valid JSON evidence into the directory for this commit."""
+    categories: dict[str, object] = {}
+    for name in ("memory-profile", "performance-benchmarks", "runtime-benchmarks"):
+        source = base / "current" / f"{name}.json"
+        if not source.is_file():
+            continue
+        try:
+            data = json.loads(source.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            categories[name] = None
+            continue
+        categories[name] = data
+        shutil.copyfile(source, target_dir / source.name)
+    return categories
+
+
+def _memory_profile_ok(memory: object) -> bool:
+    """Attest only explicit, nonempty leak-free memory profiles."""
+    if not isinstance(memory, dict) or memory.get("all_clean") is not True:
+        return False
+    profiles = memory.get("profiles", [])
+    return bool(profiles) and all(
+        isinstance(p, dict) and p.get("leak_detected") is False and "error" not in p
+        for p in profiles
+    )
+
+
+def _benchmark_ok(payload: object, profile: str) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    result = payload.get("benchmark")
+    if not isinstance(result, dict):
+        return False
+    latencies = result.get("latencies_ms")
+    return (
+        result.get("profile") == profile
+        and result.get("pass_criteria_met") is True
+        and type(result.get("total_requests")) is int
+        and result["total_requests"] > 0
+        and type(result.get("error_rate_percent")) in (int, float)
+        and result["error_rate_percent"] < 1.0
+        and isinstance(latencies, dict)
+        and type(latencies.get("p95")) in (int, float)
+        and latencies["p95"] < 200.0
+    )
+
+
 def collect_evidence(
     output_base: Path | None = None,
 ) -> Path:
@@ -47,14 +104,26 @@ def collect_evidence(
     target_dir = base / short_sha
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # Ingest existing json files in target_dir if available
-    categories: dict[str, object] = {}
-    for json_file in target_dir.glob("*.json"):
-        if json_file.name == "summary.json":
-            continue
-        with contextlib.suppress(Exception):
-            data = json.loads(json_file.read_text(encoding="utf-8"))
-            categories[json_file.stem] = data
+    # The runners write into current/; reports are immutable per commit SHA.
+    categories = _load_evidence(base, target_dir)
+
+    memory = categories.get("memory-profile")
+    api = categories.get("performance-benchmarks")
+    runtime = categories.get("runtime-benchmarks")
+    memory_status = "PASS" if _memory_profile_ok(memory) else "FAIL"
+    api_status = "PASS" if _benchmark_ok(api, "lightweight") else "FAIL"
+    runtime_status = "PASS" if _benchmark_ok(runtime, "runtime") else "WARN"
+    layers = {
+        "Memory & Leak Profiling": memory_status,
+        "Lightweight API Benchmark (required)": api_status,
+        "KiCad Runtime Benchmark (diagnostic)": runtime_status,
+    }
+    if "FAIL" in layers.values():
+        status = "FAIL"
+    elif "WARN" in layers.values():
+        status = "WARN"
+    else:
+        status = "PASS"
 
     timestamp = datetime.datetime.now(datetime.UTC).isoformat()
 
@@ -67,45 +136,32 @@ def collect_evidence(
             "machine": platform.machine(),
         },
         "evidence_categories": list(categories.keys()),
-        "status": "PASS",
+        "status": status,
+        "layers": layers,
     }
 
     # Write summary.json
     summary_path = target_dir / "summary.json"
     summary_path.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
 
-    # Generate Markdown report
+    # Only attest checks for which this collector actually has evidence.
+    rows = "\n".join(f"| {name} | {state} |" for name, state in layers.items())
     report_md = f"""# KiCad MCP Pro — Advanced QA Evidence Report
 
 **Commit SHA:** `{commit_sha}` (`{short_sha}`)
 **Branch:** `{git_info["branch"]}` (Dirty: `{git_info["dirty"]}`)
 **Timestamp:** `{timestamp}`
-**Host:** `{platform.platform()}` | Python `{sys.version.split()[0]}`
+**Overall evidence status:** **{status}**
 
----
+| Measured Layer | Status |
+|---|---|
+{rows}
 
-## Executive Summary
+The runtime benchmark is diagnostic because hosted runners have no live KiCad IPC.
+A WARN is not a passing runtime benchmark. Other Advanced QA checks are only
+attested by their own CI steps; they are not marked PASS by this report.
 
-| Test Layer | Status | Key Artifact |
-|---|---|---|
-| **Property & Invariants (Hypothesis)** | PASS | `tests/advanced/test_hypothesis_invariants.py` |
-| **Stateful Lifecycle (Model-Based)** | PASS | `tests/advanced/test_stateful_lifecycle.py` |
-| **Differential Testing (KiCad 10 CLI)** | PASS | `tests/advanced/test_kicad_differential.py` |
-| **Concurrency & Race Conditions** | PASS | `tests/advanced/test_concurrency_race.py` |
-| **Fault Injection & Chaos** | PASS | `tests/advanced/test_fault_injection.py` |
-| **MCP Protocol Compliance** | PASS | `tests/advanced/test_mcp_protocol_advanced.py` |
-| **Mutation Testing (mutmut)** | INGESTED | `mutation-report.json` |
-| **Fuzz Testing (Atheris)** | INGESTED | `fuzz-coverage.json` |
-| **Memory & Leak Profiling** | INGESTED | `memory-profile.json` |
-| **Security Audit (Semgrep/OSV/Trivy)** | INGESTED | `security-audit.json` |
-| **Load & Stress Benchmark** | INGESTED | `performance-benchmarks.json` |
-
----
-
-## Artifact Index
-
-All machine-readable evidence is persisted at:
-`artifacts/advanced-testing/{short_sha}/`
+Evidence files: `artifacts/advanced-testing/{short_sha}/`.
 """
 
     report_path = target_dir / "report.md"
@@ -119,7 +175,10 @@ def main() -> None:
     parser.add_argument("--output-base", type=Path, default=Path("artifacts/advanced-testing"))
     args = parser.parse_args()
 
-    collect_evidence(output_base=args.output_base)
+    target = collect_evidence(output_base=args.output_base)
+    summary = json.loads((target / "summary.json").read_text(encoding="utf-8"))
+    if summary["status"] == "FAIL":
+        raise SystemExit("Required Advanced QA evidence failed or is missing")
 
 
 if __name__ == "__main__":
