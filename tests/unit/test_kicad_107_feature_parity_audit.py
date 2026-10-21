@@ -84,13 +84,16 @@ def test_both_jammy_legacy_jobs_explicitly_fail_on_version_drift() -> None:
     ):
         job = _workflow(name)["jobs"][job_name]
         assert job["runs-on"] == "ubuntu-22.04"
-        installer = next(
-            step["run"] for step in job["steps"] if "add-apt-repository" in step.get("run", "")
+        installer_step = next(
+            step for step in job["steps"] if step.get("name", "").startswith("Install KiCad 10")
         )
-        assert "ppa:kicad/kicad-10.0-releases" in installer
-        assert 'test "$(kicad-cli version)" = "10.0.6"' in installer
-        assert "10.0.7" not in installer
+        assert installer_step["run"] == "bash scripts/ci/install_kicad_10_0_6_appimage.sh"
         assert job.get("continue-on-error") is not True
+    installer = (ROOT / "scripts/ci/install_kicad_10_0_6_appimage.sh").read_text()
+    assert "if [[ \"$($cli version)\" != '10.0.6' ]]" in installer
+    assert "readonly archive_sha256=" in installer
+    assert "readonly appimage_sha256=" in installer
+    assert "10.0.7" not in installer
 
 
 def test_real_automatic_windows_source_is_not_legacy_or_gui_evidence() -> None:

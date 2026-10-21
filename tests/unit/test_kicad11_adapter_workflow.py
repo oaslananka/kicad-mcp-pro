@@ -35,9 +35,11 @@ def test_stable_kicad_workflow_pins_10_0_6_canary() -> None:
 
     assert "kicad-10-0-6-canary:" in workflow
     assert "KiCad 10.0.6 canary" in workflow
-    assert 'test "$(kicad-cli version)" = "10.0.6"' in workflow
-    assert "kicad-symbols" in workflow
-    assert "test -f /usr/share/kicad/symbols/Device.kicad_sym" in workflow
+    assert "run: bash scripts/ci/install_kicad_10_0_6_appimage.sh" in workflow
+    installer = (ROOT / "scripts/ci/install_kicad_10_0_6_appimage.sh").read_text()
+    assert "if [[ \"$($cli version)\" != '10.0.6' ]]" in installer
+    assert "Device.kicad_symdir" in installer
+    assert "KICAD_MCP_SYMBOL_LIBRARY_DIR" in installer
     assert "artifacts/kicad-10-0-6" in workflow
     assert "kicad-10-0-5-canary:" not in workflow
 
