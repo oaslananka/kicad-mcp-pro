@@ -25,6 +25,7 @@ from ..models.component_contracts import find_component_contract
 from ..models.verdict import Finding, SuggestedFix, Verdict, VerdictReport, stable_finding_id
 from ..path_safety import resolve_under
 from ..pcb.board_access import BoardAccessError, board_footprints
+from ..project.connector_mating_review import evaluate_connector_mating
 from ..project.release_evidence_store import (
     ProjectReleaseEvidenceResolution,
     resolve_project_release_evidence,
@@ -2271,6 +2272,17 @@ class _PlacementEvaluator:
             return abs(cx - self.min_x)
         return abs(cx - self.max_x)
 
+    def _has_rectangular_outline(self) -> bool:
+        """Mechanical intent needs one actual rectangle, not inferred PCB bounds."""
+        from ..utils.sexpr import _extract_block
+
+        primitives: list[str] = []
+        for found in re.finditer(r"\(gr_(?:rect|line|arc|circle|poly|curve)\b", self.content):
+            block, _ = _extract_block(self.content, found.start())
+            if block and '(layer "Edge.Cuts")' in block:
+                primitives.append(found.group().removeprefix("("))
+        return primitives == ["gr_rect"] and self.max_x > self.min_x and self.max_y > self.min_y
+
     def _evaluate_connector_edge_specs(self) -> list[str]:
         violations: list[str] = []
         for edge_spec in self.intent.mechanical.connector_placement:
@@ -2285,6 +2297,17 @@ class _PlacementEvaluator:
                 violations.append(
                     f"Connector '{edge_spec.ref}' is {dist_to_edge:.1f} mm from the "
                     f"{edge_spec.edge} edge (limit {edge_spec.margin_mm:.1f} mm)."
+                )
+        if self.intent.mechanical.connector_mating:
+            rectangular = self._has_rectangular_outline()
+            for spec in self.intent.mechanical.connector_mating:
+                violations.extend(
+                    evaluate_connector_mating(
+                        spec,
+                        self.footprints.get(spec.ref),
+                        self.frame,
+                        rectangular_outline_verified=rectangular,
+                    )
                 )
         return violations
 

@@ -161,6 +161,24 @@ class ConnectorEdgePlacement(BaseModel):
     )
 
 
+class ConnectorMatingSpec(BaseModel):
+    """Explicit footprint-local mating datum and direction for edge connectors.
+
+    Units are mm in KiCad footprint coordinates. A design engineer must
+    verify these values against a real footprint drawing/datasheet; we do
+    not infer them from connector reference or center-to-edge proximity.
+    """
+
+    ref: str = Field(min_length=1, max_length=50)
+    footprint_id: str = Field(min_length=3, max_length=200)
+    edge: Literal["top", "bottom", "left", "right"]
+    datum_x_mm: float = Field(allow_inf_nan=False)
+    datum_y_mm: float = Field(allow_inf_nan=False)
+    normal_local: Literal["top", "bottom", "left", "right"]
+    max_datum_error_mm: float = Field(default=0.5, ge=0.0, le=10.0, allow_inf_nan=False)
+    max_direction_error_deg: float = Field(default=10.0, ge=0.0, le=45.0, allow_inf_nan=False)
+
+
 class MechanicalConstraint(BaseModel):
     """Board-level mechanical design constraints.
 
@@ -181,6 +199,11 @@ class MechanicalConstraint(BaseModel):
     )
     mount_holes: list[MountHoleSpec] = Field(default_factory=list, max_length=20)
     connector_placement: list[ConnectorEdgePlacement] = Field(default_factory=list, max_length=50)
+    connector_mating: list[ConnectorMatingSpec] = Field(
+        default_factory=list,
+        max_length=50,
+        description="Explicit mating plane + outward normal checks; absent means not assessed.",
+    )
     max_height_mm: float | None = Field(
         default=None,
         gt=0.0,
