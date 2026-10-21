@@ -431,12 +431,11 @@ def test_pinned_signer_rejects_wrong_key_alg_and_bad_sig_shape(evidence) -> None
             PublicFormat.SubjectPublicKeyInfo,
         )
     )
+    ec_public_b64 = base64.b64encode(ec_public).decode()
+    ec_public_key_id = hashlib.sha256(ec_public).hexdigest()
+    invalid_signature_payload = {**original, "signature": "A" * 86}
     with pytest.raises(SignedOpsWitnessError, match="invalid Gateway signature"):
-        verify(
-            {**original, "signature": "A" * 86},
-            base64.b64encode(ec_public).decode(),
-            hashlib.sha256(ec_public).hexdigest(),
-        )
+        verify(invalid_signature_payload, ec_public_b64, ec_public_key_id)
     with pytest.raises(SignedOpsWitnessError, match="invalid Gateway signature"):
         verify({**original, "signature": "not-base64!"}, pub, kid)
 
@@ -496,3 +495,23 @@ def test_exclusive_nonce_file_claim_refuses_collision(evidence) -> None:
             _NONCE,
             "a" * 64,
         )
+
+
+@pytest.mark.parametrize(
+    ("candidate", "expected"),
+    [
+        (None, False),
+        (False, False),
+        (True, False),
+        ("12", False),
+        (type("IntSubclass", (int,), {})(1), False),
+        (-1, False),
+        (0, True),
+        (4, True),
+    ],
+)
+def test_witness_integer_validation_excludes_boolean_and_other_types(
+    candidate: object,
+    expected: bool,
+) -> None:
+    assert reference_ops_signed_witness._valid_int(candidate) is expected

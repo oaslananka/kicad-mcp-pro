@@ -568,6 +568,40 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The A maintainability rating alone can pass with several new smells.
+      # Fail *only* same-repository PRs with new findings; do not make existing
+      # main-branch maintainability debt block production release publishing.
+      - name: Require zero new SonarCloud PR Code Smells
+        if: >-
+          steps.sonar-mode.outputs.run_analysis == 'true' &&
+          github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] && (( PR_NUMBER > 0 ))
+          [[ "$EXPECTED_HEAD_SHA" =~ ^[a-f0-9]{40}$ ]]
+          # Bind Sonar's public PR revision to this exact GitHub head. Read
+          # snapshots on both sides of the measure fetch to reject stale or
+          # concurrently replaced PR analyses; no CI credentials transmitted.
+          before="$(mktemp)"
+          measure="$(mktemp)"
+          after="$(mktemp)"
+          trap 'rm -f "$before" "$measure" "$after"' EXIT
+          curl --fail --silent --show-error --proto '=https' --max-redirs 0 \
+            --connect-timeout 10 --max-time 25 \
+            "https://sonarcloud.io/api/project_pull_requests/list?project=oaslananka_kicad-mcp-pro" -o "$before"
+          curl --fail --silent --show-error --proto '=https' --max-redirs 0 \
+            --connect-timeout 10 --max-time 25 \
+            "https://sonarcloud.io/api/measures/component?component=oaslananka_kicad-mcp-pro&pullRequest=$PR_NUMBER&metricKeys=new_code_smells" -o "$measure"
+          curl --fail --silent --show-error --proto '=https' --max-redirs 0 \
+            --connect-timeout 10 --max-time 25 \
+            "https://sonarcloud.io/api/project_pull_requests/list?project=oaslananka_kicad-mcp-pro" -o "$after"
+          python3 scripts/check_sonar_pr_new_smells.py \
+            --pull-request "$PR_NUMBER" --expected-sha "$EXPECTED_HEAD_SHA" \
+            --before "$before" --after "$after" < "$measure"
 
   mcp-2026-compat:
     name: MCP 2026 Compatibility
