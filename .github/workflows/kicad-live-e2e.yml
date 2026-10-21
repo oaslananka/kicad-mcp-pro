@@ -6,6 +6,7 @@ on:
     - cron: "23 3 * * 1"
   pull_request:
     paths:
+      - "scripts/ci/install_kicad_10_0_6_appimage.sh"
       - "scripts/kicad_canary.py"
       - "scripts/kicad11_headless_canary.py"
       - "src/kicad_mcp/evals/semantic_differential.py"
@@ -41,6 +42,7 @@ on:
   push:
     branches: [main]
     paths:
+      - "scripts/ci/install_kicad_10_0_6_appimage.sh"
       - "scripts/kicad_canary.py"
       - "scripts/kicad11_headless_canary.py"
       - "src/kicad_mcp/evals/semantic_differential.py"

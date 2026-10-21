@@ -11,6 +11,7 @@ on:
       - pyproject.toml
       - uv.lock
       - Taskfile.yml
+      - scripts/ci/install_kicad_10_0_6_appimage.sh
       - scripts/bootstrap-dev.sh
       - scripts/dev-toolchain.env
       - scripts/dev_environment.py
@@ -30,6 +31,7 @@ on:
       - pyproject.toml
       - uv.lock
       - Taskfile.yml
+      - scripts/ci/install_kicad_10_0_6_appimage.sh
       - scripts/bootstrap-dev.sh
       - scripts/dev-toolchain.env
       - scripts/dev_environment.py

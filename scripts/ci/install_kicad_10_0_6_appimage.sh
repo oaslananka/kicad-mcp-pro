@@ -97,6 +97,9 @@ fi
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   printf 'KICAD_CANARY_KICAD_CLI=%s\n' "$cli" >> "$GITHUB_ENV"
   printf 'KICAD_SYMBOL_DIR=%s\n' "$symbols_dir" >> "$GITHUB_ENV"
+  # The internal schematic connectivity comparator uses KiCadMCPConfig,
+  # not kicad-sch-api's separate KICAD_SYMBOL_DIR discovery mechanism.
+  printf 'KICAD_MCP_SYMBOL_LIBRARY_DIR=%s\n' "$symbols_dir" >> "$GITHUB_ENV"
   printf 'KICAD10_SYMBOL_DIR=%s\n' "$symbols_dir" >> "$GITHUB_ENV"
 fi
 printf 'Verified pinned KiCad 10.0.6 CLI: %s\n' "$cli"

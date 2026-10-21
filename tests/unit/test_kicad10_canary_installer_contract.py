@@ -29,6 +29,14 @@ def test_workflows_use_the_same_pinned_installer() -> None:
         assert "sudo" not in steps[0]["run"]
 
 
+def test_installer_only_changes_trigger_both_canary_workflows() -> None:
+    for name, _ in WORKFLOWS:
+        workflow = yaml.safe_load((ROOT / ".github/workflows" / name).read_text())
+        triggers = workflow.get("on", workflow.get(True))
+        for event in ("pull_request", "push"):
+            assert "scripts/ci/install_kicad_10_0_6_appimage.sh" in triggers[event]["paths"]
+
+
 def test_download_archive_and_executable_have_independent_pinned_sha256() -> None:
     source = SCRIPT.read_text()
     hashes = dict(re.findall(r"readonly (archive_sha256|appimage_sha256)='([a-f0-9]{64})'", source))
@@ -58,6 +66,7 @@ def test_version_and_native_footprint_assets_are_checked_before_ci_export() -> N
     assert "KICAD_CANARY_KICAD_CLI" in source
     assert "KICAD_SYMBOL_DIR" in source
     assert "KICAD10_SYMBOL_DIR" in source
+    assert "KICAD_MCP_SYMBOL_LIBRARY_DIR" in source
 
 
 def test_exact_kicad_10_0_6_symbol_commit_and_official_packer_are_required() -> None:
