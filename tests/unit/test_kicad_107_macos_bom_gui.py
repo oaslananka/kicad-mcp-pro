@@ -130,7 +130,9 @@ def test_cancel_uses_explicit_native_cancel_button_not_escape(
     gui._cancel()
     assert len(seen) == 2
     assert 'role of elementFound is "AXButton"' in seen[0]
-    assert 'name of elementFound is "Cancel"' in seen[0]
+    assert 'theName is "Cancel"' in seen[0]
+    assert 'theDescription is "Cancel"' in seen[0]
+    assert 'button "Cancel" of window "Symbol Fields Table"' in seen[0]
     assert "key code 53" not in seen[0]
 
 

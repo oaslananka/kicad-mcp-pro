@@ -153,19 +153,54 @@ def _cancel() -> None:
     cancel_script = """
     tell application "System Events"
       tell process "eeschema"
+        try
+          click button "Cancel" of window "Symbol Fields Table"
+          return "CANCEL_CLICKED"
+        end try
+        set buttonsFound to 0
+        set hasClose to false
+        set hasOK to false
         repeat with elementFound in (entire contents of window "Symbol Fields Table")
           try
-            if role of elementFound is "AXButton" and name of elementFound is "Cancel" then
-              click elementFound
-              return "CANCEL_CLICKED"
+            if role of elementFound is "AXButton" then
+              set buttonsFound to buttonsFound + 1
+              set theName to ""
+              set theDescription to ""
+              set theTitle to ""
+              try
+                set theName to name of elementFound as text
+              end try
+              try
+                set theDescription to description of elementFound as text
+              end try
+              try
+                set theTitle to value of attribute "AXTitle" of elementFound as text
+              end try
+              if theName is "Close" or theDescription is "Close" then set hasClose to true
+              if theName is "OK" or theDescription is "OK" then set hasOK to true
+              if theName is "Cancel" or theDescription is "Cancel" or theTitle is "Cancel" then
+                try
+                  click elementFound
+                  return "CANCEL_CLICKED"
+                on error
+                  return "CANCEL_CLICK_FAILED"
+                end try
+              end if
             end if
           end try
         end repeat
+        set summaryResult to "CANCEL_CONTROL_NOT_FOUND|buttons=" & (buttonsFound as text)
+        set summaryResult to summaryResult & "|close=" & (hasClose as text)
+        return summaryResult & "|ok=" & (hasOK as text)
       end tell
     end tell
-    return "CANCEL_CONTROL_NOT_FOUND"
     """
-    if _osa(cancel_script, stage="cancel") != "CANCEL_CLICKED":
+    outcome = _osa(cancel_script, stage="cancel")
+    if outcome != "CANCEL_CLICKED":
+        # Only bounded button counts and whitelisted labels; never raw UI text.
+        print("macOS BOM Cancel accessibility:", outcome[:110], flush=True)
+        if outcome == "CANCEL_CLICK_FAILED":
+            raise RuntimeError("native-bom-cancel-click-failed")
         raise RuntimeError("native-bom-cancel-control-unavailable")
     for _ in range(10):
         time.sleep(1)
