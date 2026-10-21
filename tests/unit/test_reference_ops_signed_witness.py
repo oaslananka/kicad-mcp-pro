@@ -301,3 +301,19 @@ def test_cli_reports_only_non_scored_success_and_replay_block(
     assert cli.main() == 2
     failure = json.loads(capsys.readouterr().out)
     assert failure == {"status": "blocked", "counts_as_task_success": False}
+
+
+def test_repeated_call_id_in_distinct_pairs_rejected(evidence) -> None:
+    server, gateway, public, kid, original, sign = evidence
+    payload = copy.deepcopy(original)
+    next_call = copy.deepcopy(payload["events"][0])
+    next_result = copy.deepcopy(payload["events"][1])
+    next_call["id"] = 5
+    next_result["id"] = 6
+    next_call["at"] = payload["events"][1]["at"] + 1
+    next_result["at"] = next_call["at"] + 1
+    payload["endedAt"] = next_result["at"] + 100
+    payload["events"].extend((next_call, next_result))
+    sign(payload)
+    with pytest.raises(SignedOpsWitnessError, match="duplicate Gateway call ID"):
+        reconcile(evidence)

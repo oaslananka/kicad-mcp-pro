@@ -146,6 +146,7 @@ def _pairs(payload: dict[str, Any], target: str) -> list[tuple[str, str, int, in
     result: list[tuple[str, str, int, int, int]] = []
     previous_id = -1
     previous_time = payload["startedAt"]
+    seen_call_ids: set[str] = set()
     for first, last in zip(events[::2], events[1::2], strict=True):
         for event in (first, last):
             if not isinstance(event, dict):
@@ -182,6 +183,9 @@ def _pairs(payload: dict[str, Any], target: str) -> list[tuple[str, str, int, in
             or last["durationMs"] > _MAX_RUN_MS
         ):
             raise SignedOpsWitnessError("unpaired, unauthorized or incomplete witness")
+        if first["callId"] in seen_call_ids:
+            raise SignedOpsWitnessError("duplicate Gateway call ID")
+        seen_call_ids.add(first["callId"])
         result.append(
             (
                 first["tool"].removeprefix(target + "."),
