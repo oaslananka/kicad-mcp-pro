@@ -1195,12 +1195,19 @@ def _board_summary_report(
         ),
         metadata={
             "source": source,
-            "tracks": tracks,
-            "vias": vias,
-            "footprints": footprints,
-            "zones": zones,
-            "nets": nets,
-            "shapes": shapes,
+            "available": not unavailable,
+            **(
+                {}
+                if unavailable
+                else {
+                    "tracks": tracks,
+                    "vias": vias,
+                    "footprints": footprints,
+                    "zones": zones,
+                    "nets": nets,
+                    "shapes": shapes,
+                }
+            ),
         },
     )
 

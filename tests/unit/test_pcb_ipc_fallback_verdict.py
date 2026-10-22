@@ -34,6 +34,9 @@ def test_board_summary_unavailable_reports_setup_not_pcb_design(
     assert report.findings[0].suggested_fix is None
     assert "kicad_set_project(project_dir=" in report.remediation
     assert "no configured .kicad_pcb file" in report.text
+    assert report.metadata == {"source": "file-backed", "available": False}
+    assert "footprints" not in report.metadata
+    assert "nets" not in report.metadata
 
 
 def test_file_backed_summary_reports_source_and_environment_warning(
@@ -48,6 +51,9 @@ def test_file_backed_summary_reports_source_and_environment_warning(
 
     assert report.verdict == "WARN"
     assert report.metadata["source"] == "file-backed"
+    assert report.metadata["available"] is True
+    assert report.metadata["footprints"] == 0
+    assert report.metadata["nets"] == 0
     assert report.failure_mode == "environment"
     assert report.retryable is True
     assert report.findings[0].failure_mode == "environment"
