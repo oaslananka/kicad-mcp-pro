@@ -41,16 +41,20 @@ def _source() -> str:
     return HEADER + SYMBOL + TAIL
 
 
-def test_refuses_loss_of_global_label_title_comment_and_text_justify(tmp_path: Path) -> None:
+def test_selective_movement_preserves_lost_label_title_and_justification(tmp_path: Path) -> None:
     file = tmp_path / "probe.kicad_sch"
     source = _source()
     file.write_text(source)
     broken = source.replace('(global_label "VBAT" (at 1 2 0) (effects (font (size 1 1))))', "")
     broken = broken.replace('(comment 1 "assembly note")', "")
     broken = broken.replace(" (justify left bottom)", "")
-    with pytest.raises(SchematicWriteUnsafeError):
-        guarded_kicad_api_save(StubSerializer(broken), file, moved_references=["R1"])
-    assert file.read_text() == source
+    broken = broken.replace("(at 12 14 90)", "(at 30 31 90)")
+    assert guarded_kicad_api_save(StubSerializer(broken), file, moved_references=["R1"])
+    saved = file.read_text()
+    assert '(global_label "VBAT"' in saved
+    assert '(comment 1 "assembly note")' in saved
+    assert "(justify left bottom)" in saved
+    assert "(at 30.000000 31.000000 90)" in saved
 
 
 def test_ignores_numeric_int_to_float_reformatting_without_touching_source(tmp_path: Path) -> None:
@@ -58,8 +62,8 @@ def test_ignores_numeric_int_to_float_reformatting_without_touching_source(tmp_p
     source = _source()
     file.write_text(source)
     proposed = source.replace("(at 12 14 90)", "(at 12.0 14.0 90.0)")
-    assert guarded_kicad_api_save(StubSerializer(proposed), file, moved_references=["R1"])
-    assert "(at 12.0 14.0 90.0)" in file.read_text()
+    assert not guarded_kicad_api_save(StubSerializer(proposed), file, moved_references=["R1"])
+    assert file.read_text() == source
 
 
 def test_moved_symbol_location_is_the_only_allowed_existing_change(tmp_path: Path) -> None:
@@ -68,7 +72,7 @@ def test_moved_symbol_location_is_the_only_allowed_existing_change(tmp_path: Pat
     file.write_text(source)
     moved = source.replace("(at 12 14 90)", "(at 30 31 90)")
     assert guarded_kicad_api_save(StubSerializer(moved), file, moved_references=["R1"])
-    assert "(at 30 31 90)" in file.read_text()
+    assert "(at 30.000000 31.000000 90)" in file.read_text()
     assert '(global_label "VBAT"' in file.read_text()
 
 
@@ -126,3 +130,76 @@ def test_concurrent_change_is_not_overwritten(tmp_path: Path) -> None:
     with pytest.raises(SchematicWriteUnsafeError, match="changed during serialization"):
         guarded_kicad_api_save(ConcurrentWriter(source), file)
     assert "ChangedExternally" in file.read_text()
+
+
+def test_selective_move_rejects_nonexistent_reference(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    source = _source()
+    file.write_text(source)
+    with pytest.raises(SchematicWriteUnsafeError, match="reference is missing"):
+        guarded_kicad_api_save(StubSerializer(source), file, moved_references=["R404"])
+    assert file.read_text() == source
+
+
+def test_selective_move_rejects_changed_uuid(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    source = _source()
+    file.write_text(source)
+    output = source.replace(
+        "11111111-1111-4111-8111-111111111111",
+        "33333333-3333-4333-8333-333333333333",
+    )
+    with pytest.raises(SchematicWriteUnsafeError, match="identity changed"):
+        guarded_kicad_api_save(StubSerializer(output), file, moved_references=["R1"])
+    assert file.read_text() == source
+
+
+def test_selective_move_refuses_duplicate_reference_nodes(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    source = _source().replace(
+        '(sheet_instances (path "/" (page "1")))',
+        SYMBOL + '(sheet_instances (path "/" (page "1")))',
+    )
+    file.write_text(source)
+    with pytest.raises(SchematicWriteUnsafeError, match="Duplicate symbol reference"):
+        guarded_kicad_api_save(
+            StubSerializer(source.replace("(at 12 14 90)", "(at 31 32 90)")),
+            file,
+            moved_references=["R1"],
+        )
+    assert file.read_text() == source
+
+
+def test_selective_move_preserves_quoted_fake_symbol(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    fake = '(symbol (lib_id "Bad") (property "Reference" "R404") (at 1 1 0))'
+    source = _source().replace(
+        "(sheet_instances",
+        f'(text "{fake.replace(chr(34), chr(92) + chr(34))}")\n(sheet_instances',
+    )
+    file.write_text(source)
+    changed = source.replace("(at 12 14 90)", "(at 20 21 90)")
+    assert guarded_kicad_api_save(StubSerializer(changed), file, moved_references=["R1"])
+    assert fake.replace('"', '\\"') in file.read_text()
+
+
+def test_staged_move_does_not_rewrite_unrelated_symbol_position(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    other = (
+        SYMBOL.replace('"R1"', '"R2"')
+        .replace(
+            "11111111-1111-4111-8111-111111111111",
+            "44444444-4444-4444-8444-444444444444",
+        )
+        .replace("(at 12 14 90)", "(at 40 40 90)")
+    )
+    source = _source().replace("(sheet_instances", other + "(sheet_instances")
+    file.write_text(source)
+    staged = source.replace("(at 12 14 90)", "(at 20 20 90)").replace(
+        "(at 40 40 90)", "(at 99 99 90)"
+    )
+    assert guarded_kicad_api_save(StubSerializer(staged), file, moved_references=["R1"])
+    saved = file.read_text()
+    assert "(at 20.000000 20.000000 90)" in saved
+    assert "(at 40 40 90)" in saved
+    assert "(at 99 99 90)" not in saved

@@ -256,19 +256,28 @@ class SchematicHierarchyAuthoringService:
             )
             guarded_kicad_api_save(schematic, top_schematic_path, added_sheet_name=name)
         except Exception as exc:
-            # Decide from actual root bytes, not from a flag set after replace().
-            if top_schematic_path.exists() and top_schematic_path.read_bytes() == before_root:
-                if (
-                    created_child is not None
-                    and child_path.exists()
-                    and child_path.read_bytes() == created_child
-                ):
-                    child_path.unlink()
-                for folder in created_dirs:
-                    try:
-                        folder.rmdir()
-                    except OSError:
-                        pass
+            # Cleanup is best-effort. Never obscure the original write/guard
+            # failure with a Windows file lock or a filesystem permission error.
+            try:
+                if top_schematic_path.exists() and top_schematic_path.read_bytes() == before_root:
+                    if (
+                        created_child is not None
+                        and child_path.exists()
+                        and child_path.read_bytes() == created_child
+                    ):
+                        child_path.unlink()
+                    for folder in created_dirs:
+                        try:
+                            folder.rmdir()
+                        except OSError:
+                            pass
+            except OSError as cleanup_error:
+                self.warn(
+                    "schematic_create_sheet_cleanup_failed",
+                    name=name,
+                    filename=str(child_path),
+                    error=str(cleanup_error),
+                )
             self.warn(
                 "schematic_create_sheet_failed",
                 name=name,

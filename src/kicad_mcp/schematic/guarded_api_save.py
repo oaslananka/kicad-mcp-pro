@@ -8,6 +8,7 @@ title-block comments, text justification, and opaque future fields.
 from __future__ import annotations
 
 import os
+import re
 import stat
 import tempfile
 from collections import Counter
@@ -21,7 +22,7 @@ from ..errors import SchematicWriteUnsafeError
 
 
 class _CanSave(Protocol):
-    def save(self, path: Path, *, preserve_format: bool) -> object: ...
+    def save(self, path: Path, /, *, preserve_format: bool) -> object: ...
 
 
 def _kind(node: object) -> str:
@@ -131,6 +132,114 @@ def _safe_comparison(
     return before != after
 
 
+def _root_children_spans(source: str) -> list[tuple[str, int, int]]:
+    """Return root-child text offsets without interpreting quoted text as nodes."""
+    depth = 0
+    start = -1
+    quoted = False
+    escaped = False
+    found: list[tuple[str, int, int]] = []
+    for index, char in enumerate(source):
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+            continue
+        if char == '"':
+            quoted = True
+        elif char == "(":
+            if depth == 1:
+                start = index
+            depth += 1
+        elif char == ")":
+            if depth == 2 and start >= 0:
+                match = re.match(r"[a-zA-Z0-9_-]+", source[start + 1 :])
+                found.append((match.group(0) if match else "", start, index + 1))
+                start = -1
+            depth -= 1
+    if depth != 0 or quoted:
+        raise SchematicWriteUnsafeError("Unbalanced schematic while locating symbol nodes")
+    return found
+
+
+def _direct_position(node: list[object]) -> tuple[float, float, float]:
+    positions = [child for child in node[1:] if isinstance(child, list) and _kind(child) == "at"]
+    if len(positions) != 1 or len(positions[0]) != 4:
+        raise SchematicWriteUnsafeError("Expected exactly one direct symbol position")
+    return (float(positions[0][1]), float(positions[0][2]), float(positions[0][3]))
+
+
+def _merge_only_symbol_positions(original: str, serialized: str, moved_references: set[str]) -> str:
+    """Take ONLY requested symbol X/Y values from a lossy library serializer.
+
+    All source bytes other than top-level symbol coordinates are preserved.
+    Never promote unrelated rewritten fields (including KiCad 10 metadata).
+    """
+    before = {
+        _symbol_reference(node): node for node in _parse_nodes(original) if _kind(node) == "symbol"
+    }
+    after = {
+        _symbol_reference(node): node
+        for node in _parse_nodes(serialized)
+        if _kind(node) == "symbol"
+    }
+    if not moved_references.issubset(before.keys() & after.keys()):
+        raise SchematicWriteUnsafeError("Requested symbol reference is missing from staged save")
+    for ref in moved_references:
+        if ref is None:
+            raise SchematicWriteUnsafeError("Missing symbol reference")
+        old_symbol, staged_symbol = before[ref], after[ref]
+        old_xy = _direct_position(old_symbol)
+        new_xy = _direct_position(staged_symbol)
+        if old_xy[2] != new_xy[2]:
+            raise SchematicWriteUnsafeError("Staged serializer unexpectedly rotated a symbol")
+        for tag in ("lib_id", "uuid"):
+            values_a = [c for c in old_symbol[1:] if isinstance(c, list) and _kind(c) == tag]
+            values_b = [c for c in staged_symbol[1:] if isinstance(c, list) and _kind(c) == tag]
+            if values_a != values_b:
+                raise SchematicWriteUnsafeError("Staged symbol identity changed")
+
+    updated = original
+    patches: list[tuple[int, int, str]] = []
+    seen: set[str] = set()
+    for tag, start, end in _root_children_spans(original):
+        if tag != "symbol":
+            continue
+        raw = original[start:end]
+        parsed = loads(raw)
+        reference = _symbol_reference(parsed)
+        if reference not in moved_references:
+            continue
+        if reference in seen:
+            raise SchematicWriteUnsafeError("Duplicate symbol reference in source schematic")
+        seen.add(reference)
+        children = [(name, a, b) for name, a, b in _root_children_spans(raw) if name == "at"]
+        if len(children) != 1:
+            raise SchematicWriteUnsafeError("Cannot identify one direct symbol position")
+        _, pos_start, pos_end = children[0]
+        old_position = raw[pos_start:pos_end]
+        m = re.fullmatch(
+            r"(\(at\s+)([-+\d.]+)(\s+)([-+\d.]+)(\s+[-+\d.]+\s*\))",
+            old_position,
+        )
+        if m is None:
+            raise SchematicWriteUnsafeError("Unexpected KiCad symbol coordinate format")
+        new_xy = _direct_position(after[reference])
+        if new_xy[:2] == _direct_position(before[reference])[:2]:
+            continue
+        new_pos = f"{m.group(1)}{new_xy[0]:.6f}{m.group(3)}{new_xy[1]:.6f}{m.group(5)}"
+        patches.append((start + pos_start, start + pos_end, new_pos))
+    if seen != moved_references:
+        raise SchematicWriteUnsafeError("Some symbols were not found in source text")
+    for start, end, new in reversed(patches):
+        updated = updated[:start] + new + updated[end:]
+    _safe_comparison(original, updated, moved_references=moved_references)
+    return updated
+
+
 def guarded_kicad_api_save(
     schematic: _CanSave,
     path: Path,
@@ -143,27 +252,43 @@ def guarded_kicad_api_save(
     Return False when no file change is needed. Never write the source when
     a label, text justification, title metadata or other structure is lost.
     """
-    target = path.resolve()
-    original = target.read_bytes()
-    fd, stage_name = tempfile.mkstemp(prefix=".kicad-safe-", suffix=".kicad_sch", dir=target.parent)
-    os.close(fd)
-    stage = Path(stage_name)
-    try:
-        schematic.save(stage, preserve_format=True)
-        proposed = stage.read_bytes()
-        changed = _safe_comparison(
-            original.decode("utf-8"),
-            proposed.decode("utf-8"),
-            moved_references=moved_references,
-            added_sheet_name=added_sheet_name,
+    # Coordinate with the existing transactional tools using their shared lock.
+    # Lazy import avoids a module initialization cycle through the schematic API.
+    from ..tools.schematic import _SCHEMATIC_WRITE_LOCK
+
+    with _SCHEMATIC_WRITE_LOCK:
+        target = path.resolve()
+        original = target.read_bytes()
+        fd, stage_name = tempfile.mkstemp(
+            prefix=".kicad-safe-", suffix=".kicad_sch", dir=target.parent
         )
-        if target.read_bytes() != original:
-            raise SchematicWriteUnsafeError(
-                "Refusing staged save: the target changed during serialization."
+        os.close(fd)
+        stage = Path(stage_name)
+        try:
+            schematic.save(stage, preserve_format=True)
+            serialized = stage.read_text(encoding="utf-8")
+            source = original.decode("utf-8")
+            moved = set(moved_references)
+            if moved and added_sheet_name is None:
+                # kicad-sch-api drops KiCad 10 fields during serialize. Do not
+                # trust its whole-file output: transfer requested XY values only.
+                candidate = _merge_only_symbol_positions(source, serialized, moved)
+            else:
+                candidate = serialized
+            changed = _safe_comparison(
+                source,
+                candidate,
+                moved_references=moved,
+                added_sheet_name=added_sheet_name,
             )
-        if changed:
-            os.chmod(stage, stat.S_IMODE(target.stat().st_mode))
-            stage.replace(target)
-        return changed
-    finally:
-        stage.unlink(missing_ok=True)
+            if target.read_bytes() != original:
+                raise SchematicWriteUnsafeError(
+                    "Refusing staged save: the target changed during serialization."
+                )
+            if changed:
+                stage.write_text(candidate, encoding="utf-8")
+                os.chmod(stage, stat.S_IMODE(target.stat().st_mode))
+                stage.replace(target)
+            return changed
+        finally:
+            stage.unlink(missing_ok=True)
