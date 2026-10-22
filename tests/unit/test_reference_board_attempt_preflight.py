@@ -344,3 +344,83 @@ def test_chatgpt_ops_manufacturing_remains_blocked_even_with_server(
     )
     assert outcome["status"] == "blocked"
     assert "reviewed_ops_mcp_server_unavailable" in outcome["blocking_reasons"]
+
+
+def test_live_gui_stage_two_rejects_not_ready_without_reserving_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _safe_checks(monkeypatch)
+    observed: list[tuple[str | None, str | None]] = []
+
+    def blocked_gui(*, ipc_socket: str | None, expected_board_name: str | None):
+        observed.append((ipc_socket, expected_board_name))
+        return {"gui_ready": False, "blocking_reasons": ["kicad_gui_not_ready"]}
+
+    monkeypatch.setattr(cli, "probe_live_gui", blocked_gui)
+    result = cli.preflight(
+        root=ROOT,
+        board_id="stm32f072-usbc",
+        attempt_number=972,
+        phase_name="pcb",
+        require_live_gui=True,
+        live_gui_socket="ipc:///tmp/private-kicad/api.sock",
+        expected_live_board_name="fixture.kicad_pcb",
+    )
+    assert result["status"] == "blocked"
+    assert result["live_gui_attestation_requested"] is True
+    assert result["live_gui_attested"] is False
+    assert "kicad_gui_not_ready" in result["blocking_reasons"]
+    assert observed == [("ipc:///tmp/private-kicad/api.sock", "fixture.kicad_pcb")]
+    assert result["counts_as_task_success"] is False
+    live_socket_path = observed[0][0]
+    assert live_socket_path not in json.dumps(result)
+
+
+def test_live_gui_stage_two_positive_and_default_offline_separation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _safe_checks(monkeypatch)
+    calls: list[int] = []
+
+    def ready(**_: object) -> dict[str, object]:
+        calls.append(1)
+        return {"gui_ready": True, "blocking_reasons": []}
+
+    monkeypatch.setattr(cli, "probe_live_gui", ready)
+    default = cli.preflight(
+        root=ROOT, board_id="stm32f072-usbc", attempt_number=972, phase_name="pcb"
+    )
+    assert default["status"] == "ready"
+    assert default["live_gui_attestation_requested"] is False
+    assert default["live_gui_attested"] is False
+    assert calls == []
+
+    stage_two = cli.preflight(
+        root=ROOT,
+        board_id="stm32f072-usbc",
+        attempt_number=972,
+        phase_name="pcb",
+        require_live_gui=True,
+        live_gui_socket="ipc:///tmp/private-kicad/api.sock",
+        expected_live_board_name="fixture.kicad_pcb",
+    )
+    assert stage_two["status"] == "ready"
+    assert stage_two["live_gui_attested"] is True
+    assert calls == [1]
+
+
+def test_live_gui_gate_not_permitted_for_schematic(monkeypatch: pytest.MonkeyPatch) -> None:
+    _safe_checks(monkeypatch)
+    monkeypatch.setattr(
+        cli, "probe_live_gui", lambda **_: (_ for _ in ()).throw(AssertionError("wrong phase"))
+    )
+    result = cli.preflight(
+        root=ROOT,
+        board_id="stm32f072-usbc",
+        attempt_number=972,
+        phase_name="schematic",
+        require_live_gui=True,
+    )
+    assert result["status"] == "blocked"
+    assert result["blocking_reasons"] == ["live_gui_gate_requires_pcb_phase"]
+    assert result["live_gui_attested"] is False
