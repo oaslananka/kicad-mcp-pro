@@ -15,13 +15,13 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Protocol
 
-from sexpdata import Symbol, loads
+from sexpdata import Symbol, loads  # type: ignore[import-untyped]
 
 from ..errors import SchematicWriteUnsafeError
 
 
 class _CanSave(Protocol):
-    def save(self, path: Path, *, preserve_format: bool = True) -> object: ...
+    def save(self, path: Path, *, preserve_format: bool) -> object: ...
 
 
 def _kind(node: object) -> str:
@@ -44,7 +44,12 @@ def _canonical(value: object) -> object:
 
 def _symbol_reference(node: list[object]) -> str | None:
     for child in node[1:]:
-        if _kind(child) == "property" and len(child) > 2 and child[1] == "Reference":
+        if (
+            isinstance(child, list)
+            and _kind(child) == "property"
+            and len(child) > 2
+            and child[1] == "Reference"
+        ):
             return str(child[2])
     return None
 
@@ -82,7 +87,12 @@ def _parse_nodes(content: str) -> list[list[object]]:
 
 def _sheet_name(node: list[object]) -> str | None:
     for child in node[1:]:
-        if _kind(child) == "property" and len(child) > 2 and child[1] == "Sheetname":
+        if (
+            isinstance(child, list)
+            and _kind(child) == "property"
+            and len(child) > 2
+            and child[1] == "Sheetname"
+        ):
             return str(child[2])
     return None
 
