@@ -773,9 +773,13 @@ def test_resolve_pin_point_and_candidate_branches(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("foreign", "warning"),
     [
-        ((5.0, 0.0, 5.0, 3.0), None),
-        ((5.0, 0.0, 5.0, 3.0), "WARNING: net_crossing_unavoidable"),
-        ((2.0, 1.0, 4.0, 1.0), None),
+        pytest.param((3.0, 3.0, 5.0, 3.0), None, id="foreign-endpoint-to-route-interior"),
+        pytest.param(
+            (5.0, 1.0, 7.0, 1.0),
+            "WARNING: net_crossing_unavoidable",
+            id="foreign-endpoint-touches-route-bend",
+        ),
+        pytest.param((2.0, 1.0, 4.0, 1.0), None, id="collinear-overlap"),
     ],
 )
 def test_route_refuses_unrelated_net_merge_despite_router_claim(
