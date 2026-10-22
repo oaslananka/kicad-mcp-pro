@@ -130,6 +130,11 @@
         "id-token",
         "security-events"
       ]
+    },
+    "uv-dependency-submission.yml": {
+      "submit-uv-lock": [
+        "contents"
+      ]
     }
   },
   "required_codeowner_rules": [
