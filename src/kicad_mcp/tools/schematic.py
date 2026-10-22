@@ -2436,34 +2436,70 @@ def _extract_buses(content: str) -> list[dict[str, float]]:
     return buses
 
 
+def _nonquoted_parentheses(content: str) -> Iterable[tuple[int, str]]:
+    """Yield parentheses only when outside escaped KiCad string values."""
+    in_string = False
+    escaped = False
+    for index, char in enumerate(content):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char in "()":
+            yield index, char
+
+
+def _top_level_sexpr_blocks(content: str) -> list[tuple[str, int, int]]:
+    """Locate KiCad root children, never quoted text posing as a wire."""
+    blocks: list[tuple[str, int, int]] = []
+    depth = 0
+    child_start = -1
+    child_name = ""
+    for index, paren in _nonquoted_parentheses(content):
+        if paren == "(":
+            if depth == 1:
+                child_start = index
+                name_match = re.match(r"[a-zA-Z0-9_-]+", content[index + 1 :])
+                child_name = name_match.group(0) if name_match else ""
+            depth += 1
+        else:
+            if depth == 2 and child_start >= 0:
+                blocks.append((child_name, child_start, index + 1))
+                child_start = -1
+            depth -= 1
+    return blocks
+
+
 def _extract_wires(content: str) -> list[dict[str, Any]]:
     wires: list[dict[str, Any]] = []
-    cursor = 0
-    while cursor < len(content):
-        if content.startswith("(wire", cursor):
-            block, length = _extract_block(content, cursor)
-            if block:
-                pts_match = re.search(
-                    (
-                        r"\(pts\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s+"
-                        r"\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s*\)"
-                    ),
-                    block,
-                )
-                if pts_match is not None:
-                    wire_record: dict[str, Any] = {
-                        "x1": float(pts_match.group(1)),
-                        "y1": float(pts_match.group(2)),
-                        "x2": float(pts_match.group(3)),
-                        "y2": float(pts_match.group(4)),
-                    }
-                    uuid_match = re.search(r'\(uuid\s+"([^"]+)"\)', block)
-                    if uuid_match is not None:
-                        wire_record["uuid"] = uuid_match.group(1)
-                    wires.append(wire_record)
-                cursor += length
-                continue
-        cursor += 1
+    for name, start, end in _top_level_sexpr_blocks(content):
+        if name != "wire":
+            continue
+        block = content[start:end]
+        pts_match = re.search(
+            (
+                r"\(pts\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s+"
+                r"\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s*\)"
+            ),
+            block,
+        )
+        if pts_match is None:
+            continue
+        wire_record: dict[str, Any] = {
+            "x1": float(pts_match.group(1)),
+            "y1": float(pts_match.group(2)),
+            "x2": float(pts_match.group(3)),
+            "y2": float(pts_match.group(4)),
+        }
+        uuid_match = re.search(r'\(uuid\s+"([^"]+)"\)', block)
+        if uuid_match is not None:
+            wire_record["uuid"] = uuid_match.group(1)
+        wires.append(wire_record)
     return wires
 
 
@@ -2866,19 +2902,30 @@ def _get_symbol_bboxes(sexpr_content: str) -> list[BBox]:
     return bboxes
 
 
+def _is_degenerate_wire_segment(segment: tuple[float, float, float, float]) -> bool:
+    x1, y1, x2, y2 = segment
+    return abs(x1 - x2) <= SNAP_TOLERANCE_MM and abs(y1 - y2) <= SNAP_TOLERANCE_MM
+
+
 def _remove_wire_blocks(content: str) -> str:
+    """Remove normalizable root wires, preserving zero-length native wire nodes."""
+    spans: list[tuple[int, int]] = []
+    for name, start, end in _top_level_sexpr_blocks(content):
+        if name != "wire":
+            continue
+        parsed = _parse_wire_block(content[start:end])
+        if parsed is None:
+            continue
+        coords = (parsed["x1"], parsed["y1"], parsed["x2"], parsed["y2"])
+        if not _is_degenerate_wire_segment(coords):
+            spans.append((start, end))
+    if not spans:
+        return content
     pieces: list[str] = []
-    cursor = 0
     last = 0
-    while cursor < len(content):
-        if content.startswith("(wire", cursor):
-            block, length = _extract_block(content, cursor)
-            if block and _parse_wire_block(block) is not None:
-                pieces.append(content[last:cursor])
-                cursor += length
-                last = cursor
-                continue
-        cursor += 1
+    for start, end in spans:
+        pieces.append(content[last:start])
+        last = end
     pieces.append(content[last:])
     return "".join(pieces)
 
@@ -2890,8 +2937,7 @@ def _normalize_schematic_wire_connectivity(content: str) -> str:
     deduped: list[tuple[float, float, float, float]] = []
     seen: set[tuple[tuple[float, float], tuple[float, float]]] = set()
     for segment in segments:
-        x1, y1, x2, y2 = segment
-        if abs(x1 - x2) <= SNAP_TOLERANCE_MM and abs(y1 - y2) <= SNAP_TOLERANCE_MM:
+        if _is_degenerate_wire_segment(segment):
             continue
         key = _segment_key(segment)
         if key in seen:
@@ -2910,10 +2956,37 @@ def _normalize_schematic_wire_connectivity(content: str) -> str:
         uuid_map[_segment_key(segment)] = wire["uuid"]
 
     updated = _remove_wire_blocks(content)
-    for segment in deduped:
-        uid = uuid_map.get(_segment_key(segment))
-        updated = _append_before_sheet_instances(updated, wire_block(*segment, uuid_str=uid))
-    return _insert_junctions_for_batch(updated, _detect_t_intersections(deduped))
+    normalized_blocks = [
+        wire_block(*segment, uuid_str=uuid_map.get(_segment_key(segment))) for segment in deduped
+    ]
+    updated = _append_before_sheet_instances(updated, "\n".join(normalized_blocks))
+    updated = _insert_junctions_for_batch(updated, _detect_t_intersections(deduped))
+
+    # The normalizer may deduplicate wire nodes and add T-junctions, but it
+    # must not change covered geometry or any non-wire/non-junction root node.
+    # This is also enforced when sch_build_circuit opts into allow_node_loss.
+    non_wire_before = [
+        content[start:end]
+        for name, start, end in _top_level_sexpr_blocks(content)
+        if name not in {"wire", "junction"}
+    ]
+    non_wire_after = [
+        updated[start:end]
+        for name, start, end in _top_level_sexpr_blocks(updated)
+        if name not in {"wire", "junction"}
+    ]
+    if non_wire_before != non_wire_after or {
+        _segment_key(segment) for segment in segments if not _is_degenerate_wire_segment(segment)
+    } != {
+        _segment_key(segment)
+        for segment in _wire_segments_from_content(updated)
+        if not _is_degenerate_wire_segment(segment)
+    }:
+        raise SchematicWriteUnsafeError(
+            "Refusing schematic wire normalization: it would change "
+            "non-wire content or covered wire geometry."
+        )
+    return updated
 
 
 def _extract_labels(content: str) -> list[dict[str, Any]]:
@@ -6383,11 +6456,12 @@ def _transactional_write_to_schematic_file(
     with _SCHEMATIC_WRITE_LOCK:
         sch_file = sch_file.resolve()
         current = sch_file.read_text(encoding="utf-8")
-        updated = _normalize_schematic_wire_connectivity(mutator(current))
-        _validate_schematic_text(updated)
+        mutated = mutator(current)
         _guard_schematic_structural_loss(
-            sch_file, current, updated, allow_node_loss=allow_node_loss
+            sch_file, current, mutated, allow_node_loss=allow_node_loss
         )
+        updated = _normalize_schematic_wire_connectivity(mutated)
+        _validate_schematic_text(updated)
         with NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=sch_file.parent) as handle:
             handle.write(updated)
             temp_path = Path(handle.name)
