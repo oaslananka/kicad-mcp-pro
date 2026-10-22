@@ -253,6 +253,8 @@ def test_chatgpt_ops_preflight_is_an_explicit_nonexecuting_handoff(
         "wrong-mode",
         "foreign-source",
         "active-socket",
+        "alternate-socket",
+        "ambient-token",
         "insecure-permissions",
         "symlink",
         "missing",
@@ -277,6 +279,10 @@ def test_chatgpt_ops_preflight_rejects_unsafe_or_unpinned_servers(
         entry["args"][entry["args"].index("--project") + 1] = str(tmp_path)
     elif mutation == "active-socket":
         entry["env"]["KICAD_API_SOCKET"] = "ipc:///tmp/kicad/api-existing.sock"
+    elif mutation == "alternate-socket":
+        entry["env"]["KICAD_MCP_KICAD_SOCKET_PATH"] = "ipc:///tmp/kicad/api-existing.sock"
+    elif mutation == "ambient-token":
+        entry["env"]["KICAD_MCP_KICAD_TOKEN"] = str(tmp_path)
     elif mutation == "disabled":
         entry["enabled"] = False
     elif mutation == "unreviewed-command":
@@ -290,6 +296,8 @@ def test_chatgpt_ops_preflight_rejects_unsafe_or_unpinned_servers(
         "wrong-mode",
         "foreign-source",
         "active-socket",
+        "alternate-socket",
+        "ambient-token",
         "disabled",
         "unreviewed-command",
         "unpinned-uv",

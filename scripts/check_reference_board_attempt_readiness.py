@@ -128,7 +128,15 @@ def _ops_descriptor_matches(
         and entry.get("type") == "stdio"
         and _is_reviewed_uv_command(entry.get("command"))
         and entry.get("args") == expected_args
-        and "KICAD_API_SOCKET" not in env
+        and not any(
+            key in env
+            for key in (
+                "KICAD_API_SOCKET",
+                "KICAD_MCP_KICAD_SOCKET_PATH",
+                "KICAD_API_TOKEN",
+                "KICAD_MCP_KICAD_TOKEN",
+            )
+        )
         and env.get("KICAD_MCP_PROFILE") == phase.profile
         and env.get("KICAD_MCP_OPERATING_MODE") == phase.mode
     )

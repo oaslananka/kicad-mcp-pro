@@ -83,7 +83,21 @@ def test_entrypoint_starts_only_reviewed_stdio_server(
     from kicad_mcp.evals import reference_ops_server as cli
 
     observed: list[object] = []
-    fake_server = SimpleNamespace(run=lambda **kwargs: observed.append(kwargs))
+
+    def guarded_run(**kwargs: object) -> None:
+        import os
+        from pathlib import Path
+
+        private = os.environ.get("KICAD_MCP_KICAD_SOCKET_PATH")
+        assert private is not None
+        assert private.startswith("ipc://")
+        endpoint = Path(private.removeprefix("ipc://"))
+        assert endpoint.parent.is_dir()
+        assert not endpoint.exists()
+        assert endpoint.parent.name.startswith("kicad-reference-no-ambient-ipc-")
+        observed.append(kwargs)
+
+    fake_server = SimpleNamespace(run=guarded_run)
     monkeypatch.setattr(
         cli,
         "build_reference_ops_server",
@@ -108,7 +122,7 @@ def test_entrypoint_blocks_non_stdio_transport(
         cli.main()
 
 
-def test_entrypoint_blocks_mismatched_phase_without_starting(
+def test_entrypoint_rejects_pcb_phase_before_live_gui_attachment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import sys
@@ -116,7 +130,7 @@ def test_entrypoint_blocks_mismatched_phase_without_starting(
     from kicad_mcp.evals import reference_ops_server as cli
 
     monkeypatch.setattr(sys, "argv", ["reference_ops_server", "--phase", "pcb"])
-    with pytest.raises(SystemExit, match="profile/mode mismatch"):
+    with pytest.raises(SystemExit, match="separately attested isolated IPC transport"):
         cli.main()
 
 
@@ -132,3 +146,46 @@ def test_entrypoint_reports_runtime_gate_failure_without_starting(
     monkeypatch.setattr(cli, "build_reference_ops_server", reject)
     with pytest.raises(SystemExit, match="reviewed tool inventory unavailable"):
         cli.main(["--phase", "schematic"])
+
+
+@pytest.mark.parametrize(
+    "forbidden",
+    ("KICAD_API_SOCKET", "KICAD_MCP_KICAD_SOCKET_PATH", "KICAD_API_TOKEN", "KICAD_MCP_KICAD_TOKEN"),
+)
+def test_reference_entrypoint_refuses_inherited_ipc_credentials(
+    monkeypatch: pytest.MonkeyPatch, forbidden: str
+) -> None:
+    from kicad_mcp.evals import reference_ops_server as cli
+
+    monkeypatch.setenv(forbidden, "unsafe-ambient")
+    with pytest.raises(SystemExit, match="forbids inherited KiCad IPC credentials"):
+        cli.main(["--phase", "schematic"])
+
+
+def test_reference_pcb_phase_never_implicitly_attaches_live_gui() -> None:
+    from kicad_mcp.evals import reference_ops_server as cli
+
+    with pytest.raises(SystemExit, match="separately attested isolated IPC transport"):
+        cli.main(["--phase", "pcb"])
+
+
+def test_guarded_runtime_never_autodiscovers_host_socket() -> None:
+    import os
+    from pathlib import Path
+
+    from kicad_mcp.config import get_config, reset_config
+    from kicad_mcp.evals import reference_ops_server as cli
+
+    with cli._guard_reference_runtime_ipc("schematic"):
+        reset_config()
+        cfg = get_config()
+        endpoint = str(cfg.kicad_socket_path)
+        assert endpoint.startswith("ipc://")
+        private = Path(endpoint.removeprefix("ipc://"))
+        assert private.parent.name.startswith("kicad-reference-no-ambient-ipc-")
+        assert private.parent.is_dir()
+        assert not private.exists()
+        # A settings refresh must not silently revert to KiPy's default socket.
+        reset_config()
+        assert str(get_config().kicad_socket_path) == endpoint
+    assert "KICAD_MCP_KICAD_SOCKET_PATH" not in os.environ

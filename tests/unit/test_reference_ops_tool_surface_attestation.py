@@ -141,7 +141,14 @@ def test_second_config_read_must_remain_reviewed(
 
 @pytest.mark.parametrize(
     "unsafe_name",
-    ["KICAD_API_SOCKET", "KICAD_MCP_REFERENCE_TRACE_PATH", "KICAD_MCP_REFERENCE_ATTEMPT_ID"],
+    [
+        "KICAD_API_SOCKET",
+        "KICAD_MCP_KICAD_SOCKET_PATH",
+        "KICAD_API_TOKEN",
+        "KICAD_MCP_KICAD_TOKEN",
+        "KICAD_MCP_REFERENCE_TRACE_PATH",
+        "KICAD_MCP_REFERENCE_ATTEMPT_ID",
+    ],
 )
 def test_live_inventory_must_reject_trace_or_socket_enabled_launchers(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, unsafe_name: str
