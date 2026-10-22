@@ -134,13 +134,10 @@ def _safe_comparison(
     return before != after
 
 
-def _root_children_spans(source: str) -> list[tuple[str, int, int]]:
-    """Return root-child text offsets without interpreting quoted text as nodes."""
-    depth = 0
-    start = -1
+def _unquoted_parentheses(source: str) -> Iterable[tuple[int, str]]:
+    """Yield only structural parentheses; escaped quoted content stays opaque."""
     quoted = False
     escaped = False
-    found: list[tuple[str, int, int]] = []
     for index, char in enumerate(source):
         if quoted:
             if escaped:
@@ -149,20 +146,31 @@ def _root_children_spans(source: str) -> list[tuple[str, int, int]]:
                 escaped = True
             elif char == '"':
                 quoted = False
-            continue
-        if char == '"':
+        elif char == '"':
             quoted = True
-        elif char == "(":
+        elif char in "()":
+            yield index, char
+    if quoted:
+        raise SchematicWriteUnsafeError("Unbalanced quoted schematic text")
+
+
+def _root_children_spans(source: str) -> list[tuple[str, int, int]]:
+    """Return root-child text offsets without interpreting quoted text as nodes."""
+    depth = 0
+    start = -1
+    found: list[tuple[str, int, int]] = []
+    for index, paren in _unquoted_parentheses(source):
+        if paren == "(":
             if depth == 1:
                 start = index
             depth += 1
-        elif char == ")":
+        else:
             if depth == 2 and start >= 0:
                 match = _TAG_RE.match(source, start + 1)
                 found.append((match.group(0) if match else "", start, index + 1))
                 start = -1
             depth -= 1
-    if depth != 0 or quoted:
+    if depth != 0:
         raise SchematicWriteUnsafeError("Unbalanced schematic while locating symbol nodes")
     return found
 
@@ -201,15 +209,16 @@ def _mapped_symbols(content: str) -> dict[tuple[str | None, int], list[object]]:
     return symbols
 
 
-def _merge_only_symbol_positions(original: str, serialized: str, moved_references: set[str]) -> str:
-    """Take ONLY requested symbol X/Y values from a lossy library serializer.
-
-    All source bytes other than top-level symbol coordinates are preserved.
-    Never promote unrelated rewritten fields (including KiCad 10 metadata).
-    """
+def _validated_moved_units(
+    original: str, serialized: str, moved_references: set[str]
+) -> tuple[
+    dict[tuple[str | None, int], list[object]],
+    dict[tuple[str | None, int], list[object]],
+    set[tuple[str | None, int]],
+]:
     before = _mapped_symbols(original)
     after = _mapped_symbols(serialized)
-    if not moved_references.issubset({ref for ref, _unit in before}):
+    if not moved_references.issubset({identity[0] for identity in before}):
         raise SchematicWriteUnsafeError("Requested symbol reference is missing from source")
     requested = {key for key in before if key[0] in moved_references}
     if not requested.issubset(after):
@@ -218,50 +227,85 @@ def _merge_only_symbol_positions(original: str, serialized: str, moved_reference
         )
     for identity in requested:
         old_symbol, staged_symbol = before[identity], after[identity]
-        old_xy = _direct_position(old_symbol)
-        new_xy = _direct_position(staged_symbol)
-        if old_xy[2] != new_xy[2]:
+        if _direct_position(old_symbol)[2] != _direct_position(staged_symbol)[2]:
             raise SchematicWriteUnsafeError("Staged serializer unexpectedly rotated a symbol")
         for tag in ("lib_id", "uuid"):
-            values_a = [c for c in old_symbol[1:] if isinstance(c, list) and _kind(c) == tag]
-            values_b = [c for c in staged_symbol[1:] if isinstance(c, list) and _kind(c) == tag]
-            if values_a != values_b:
+            old_values = [
+                child for child in old_symbol[1:] if isinstance(child, list) and _kind(child) == tag
+            ]
+            staged_values = [
+                child
+                for child in staged_symbol[1:]
+                if isinstance(child, list) and _kind(child) == tag
+            ]
+            if old_values != staged_values:
                 raise SchematicWriteUnsafeError("Staged symbol identity changed")
+    return before, after, requested
 
-    updated = original
+
+def _coordinate_patch(raw: str, x: float, y: float) -> tuple[int, int, str]:
+    positions = [(start, end) for name, start, end in _root_children_spans(raw) if name == "at"]
+    if len(positions) != 1:
+        raise SchematicWriteUnsafeError("Cannot identify one direct symbol position")
+    start, end = positions[0]
+    match = re.fullmatch(
+        r"(\(at\s+)([-+\d.]+)(\s+)([-+\d.]+)(\s+[-+\d.]+\s*\))",
+        raw[start:end],
+    )
+    if match is None:
+        raise SchematicWriteUnsafeError("Unexpected KiCad symbol coordinate format")
+    return start, end, f"{match.group(1)}{x:.6f}{match.group(3)}{y:.6f}{match.group(5)}"
+
+
+def _collect_position_patches(
+    original: str,
+    before: dict[tuple[str | None, int], list[object]],
+    after: dict[tuple[str | None, int], list[object]],
+    requested: set[tuple[str | None, int]],
+) -> list[tuple[int, int, str]]:
     patches: list[tuple[int, int, str]] = []
     seen: set[tuple[str | None, int]] = set()
     for tag, start, end in _root_children_spans(original):
         if tag != "symbol":
             continue
         raw = original[start:end]
-        parsed = loads(raw)
-        identity = _symbol_identity(parsed)
+        identity = _symbol_identity(loads(raw))
         if identity not in requested:
             continue
         seen.add(identity)
-        children = [(name, a, b) for name, a, b in _root_children_spans(raw) if name == "at"]
-        if len(children) != 1:
-            raise SchematicWriteUnsafeError("Cannot identify one direct symbol position")
-        _, pos_start, pos_end = children[0]
-        old_position = raw[pos_start:pos_end]
-        m = re.fullmatch(
-            r"(\(at\s+)([-+\d.]+)(\s+)([-+\d.]+)(\s+[-+\d.]+\s*\))",
-            old_position,
-        )
-        if m is None:
-            raise SchematicWriteUnsafeError("Unexpected KiCad symbol coordinate format")
         new_xy = _direct_position(after[identity])
-        if new_xy[:2] == _direct_position(before[identity])[:2]:
-            continue
-        new_pos = f"{m.group(1)}{new_xy[0]:.6f}{m.group(3)}{new_xy[1]:.6f}{m.group(5)}"
-        patches.append((start + pos_start, start + pos_end, new_pos))
+        if new_xy[:2] != _direct_position(before[identity])[:2]:
+            local_start, local_end, replacement = _coordinate_patch(raw, *new_xy[:2])
+            patches.append((start + local_start, start + local_end, replacement))
     if seen != requested:
         raise SchematicWriteUnsafeError("Some symbol units were not found in source text")
-    for start, end, new in reversed(patches):
-        updated = updated[:start] + new + updated[end:]
+    return patches
+
+
+def _merge_only_symbol_positions(original: str, serialized: str, moved_references: set[str]) -> str:
+    """Transfer only requested symbol X/Y; preserve all other original bytes."""
+    before, after, requested = _validated_moved_units(original, serialized, moved_references)
+    patches = _collect_position_patches(original, before, after, requested)
+    updated = original
+    for start, end, replacement in reversed(patches):
+        updated = updated[:start] + replacement + updated[end:]
     _safe_comparison(original, updated, moved_references=moved_references)
     return updated
+
+
+def _create_validated_stage(target: Path, candidate: bytes, original_mode: int) -> Path:
+    """Create new, non-reopened staging inode; no user path enters its write API."""
+    fd, name = tempfile.mkstemp(prefix=".kicad-validated-", suffix=".kicad_sch", dir=target.parent)
+    stage = Path(name)
+    try:
+        with os.fdopen(fd, "wb") as destination:
+            destination.write(candidate)
+            destination.flush()
+        os.chmod(stage, original_mode)
+        return stage
+    except BaseException:
+        stage.unlink(missing_ok=True)
+        raise
 
 
 def guarded_kicad_api_save(
@@ -310,9 +354,18 @@ def guarded_kicad_api_save(
                     "Refusing staged save: the target changed during serialization."
                 )
             if changed:
-                stage.write_bytes(candidate.encode("utf-8"))
-                os.chmod(stage, stat.S_IMODE(target.stat().st_mode))
-                stage.replace(target)
+                validated = _create_validated_stage(
+                    target, candidate.encode("utf-8"), stat.S_IMODE(target.stat().st_mode)
+                )
+                try:
+                    # Never trust the serializer's original temporary path for
+                    # writes: only the protected mkstemp file descriptor owns
+                    # the complete, structurally validated replacement bytes.
+                    if target.read_bytes() != original:
+                        raise SchematicWriteUnsafeError("Target changed before atomic replacement")
+                    validated.replace(target)
+                finally:
+                    validated.unlink(missing_ok=True)
             return changed
         finally:
             stage.unlink(missing_ok=True)

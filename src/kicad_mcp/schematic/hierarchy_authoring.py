@@ -167,6 +167,88 @@ class SchematicHierarchyAuthoringService:
         kind = "root" if target.is_root else "child"
         return f"Target schematic ({kind}): {target.path}"
 
+    @staticmethod
+    def _new_sheet_directories(child_path: Path) -> list[Path]:
+        """List only directories not present before starting the operation."""
+        created_dirs: list[Path] = []
+        missing_parent = child_path.parent
+        while not missing_parent.exists():
+            created_dirs.append(missing_parent)
+            if missing_parent == missing_parent.parent:
+                break
+            missing_parent = missing_parent.parent
+        return created_dirs
+
+    def _rollback_new_child_sheet(
+        self,
+        *,
+        name: str,
+        child_path: Path,
+        root: Path,
+        original: bytes,
+        created_child: bytes | None,
+        created_dirs: list[Path],
+    ) -> None:
+        """Best effort rollback: do not mask the original unsafe-save error."""
+        try:
+            if root.exists() and root.read_bytes() == original:
+                if (
+                    created_child is not None
+                    and child_path.exists()
+                    and child_path.read_bytes() == created_child
+                ):
+                    child_path.unlink()
+                for folder in created_dirs:
+                    try:
+                        folder.rmdir()
+                    except OSError:
+                        pass
+        except OSError as cleanup_error:
+            self.warn(
+                "schematic_create_sheet_cleanup_failed",
+                name=name,
+                filename=str(child_path),
+                error=str(cleanup_error),
+            )
+
+    def _stage_new_child_sheet(
+        self,
+        name: str,
+        child_path: Path,
+        root: Path,
+        xy: tuple[float, float],
+        schematic: RootSchematic,
+        create_schematic: Callable[[str], ChildSchematic],
+        created_dirs: list[Path],
+        before_root: bytes,
+    ) -> None:
+        created_child: bytes | None = None
+        try:
+            for folder in reversed(created_dirs):
+                folder.mkdir(exist_ok=True)
+            if not child_path.exists():
+                child_schematic = create_schematic(name)
+                child_schematic.save(child_path, preserve_format=True)
+                created_child = child_path.read_bytes()
+            schematic.add_sheet(
+                name,
+                str(child_path.relative_to(root.parent)).replace("\\", "/"),
+                xy,
+                self.default_sheet_size,
+                project_name=self.project_name(),
+            )
+            guarded_kicad_api_save(schematic, root, added_sheet_name=name)
+        except Exception:
+            self._rollback_new_child_sheet(
+                name=name,
+                child_path=child_path,
+                root=root,
+                original=before_root,
+                created_child=created_child,
+                created_dirs=created_dirs,
+            )
+            raise
+
     def create_sheet(
         self,
         name: str,
@@ -222,14 +304,7 @@ class SchematicHierarchyAuthoringService:
             return f"Could not create child sheet '{name}': {exc}"
 
         # Track only new files/directories, so failures do not delete user data.
-        created_dirs: list[Path] = []
-        missing_parent = child_path.parent
-        while not missing_parent.exists():
-            created_dirs.append(missing_parent)
-            if missing_parent == missing_parent.parent:
-                break
-            missing_parent = missing_parent.parent
-        created_child: bytes | None = None
+        created_dirs = self._new_sheet_directories(child_path)
         try:
             before_root = top_schematic_path.read_bytes()
         except OSError as exc:
@@ -240,44 +315,19 @@ class SchematicHierarchyAuthoringService:
                 error=str(exc),
             )
             return f"Could not create child sheet '{name}': {exc}"
+
         try:
-            for folder in reversed(created_dirs):
-                folder.mkdir(exist_ok=True)
-            if not child_path.exists():
-                child_schematic = create_schematic(name)
-                child_schematic.save(child_path, preserve_format=True)
-                created_child = child_path.read_bytes()
-            schematic.add_sheet(
+            self._stage_new_child_sheet(
                 name,
-                str(child_path.relative_to(top_schematic_path.parent)).replace("\\", "/"),
+                child_path,
+                top_schematic_path,
                 (sheet_x, sheet_y),
-                self.default_sheet_size,
-                project_name=self.project_name(),
+                schematic,
+                create_schematic,
+                created_dirs,
+                before_root,
             )
-            guarded_kicad_api_save(schematic, top_schematic_path, added_sheet_name=name)
         except Exception as exc:
-            # Cleanup is best-effort. Never obscure the original write/guard
-            # failure with a Windows file lock or a filesystem permission error.
-            try:
-                if top_schematic_path.exists() and top_schematic_path.read_bytes() == before_root:
-                    if (
-                        created_child is not None
-                        and child_path.exists()
-                        and child_path.read_bytes() == created_child
-                    ):
-                        child_path.unlink()
-                    for folder in created_dirs:
-                        try:
-                            folder.rmdir()
-                        except OSError:
-                            pass
-            except OSError as cleanup_error:
-                self.warn(
-                    "schematic_create_sheet_cleanup_failed",
-                    name=name,
-                    filename=str(child_path),
-                    error=str(cleanup_error),
-                )
             self.warn(
                 "schematic_create_sheet_failed",
                 name=name,
