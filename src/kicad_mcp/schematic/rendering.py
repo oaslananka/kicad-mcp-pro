@@ -7,7 +7,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Protocol, TypeGuard, cast
 
 _INVALID_DPI_MESSAGE = "dpi must be between 72 and 600."
 
@@ -431,14 +431,21 @@ class SchematicRenderingService:
                 else "Preview refreshed without forcing a KiCad GUI reload."
             ),
         )
-        if (
-            output_path is not None
-            and output_path.exists()
-            and render_metadata
-            and render_metadata.get("status") == "ok"
-        ):
+        if _has_rendered_preview(output_path, render_metadata):
             return self._image(output_path, payload)
         return self._json(payload)
+
+
+def _has_rendered_preview(
+    output_path: Path | None, render_metadata: dict[str, Any] | None
+) -> TypeGuard[Path]:
+    """Only an existing successful PNG is safe to attach as a preview image."""
+    return bool(
+        output_path is not None
+        and output_path.exists()
+        and render_metadata
+        and render_metadata.get("status") == "ok"
+    )
 
 
 def _determine_preview_status(

@@ -10,6 +10,19 @@ from typing import Any, TextIO
 YamlLoader = Callable[[TextIO], Any]
 
 
+def _part_selection_lines(search: dict[str, object], resolved: dict[str, object]) -> list[str]:
+    """Build the selection plan without altering placeholder substitution order."""
+    if not search:
+        return ["- Use lib_search_components() or lib_recommend_part() for each symbol."]
+    lines: list[str] = []
+    for role, query_template in search.items():
+        query = str(query_template)
+        for key, value in resolved.items():
+            query = query.replace(f"{{{key}}}", str(value))
+        lines.append(f"- **{role}**: `lib_recommend_part(category={query!r})`")
+    return lines
+
+
 @dataclass(frozen=True)
 class SchematicTemplateInstantiationService:
     """Render action plans for bundled subcircuit templates."""
@@ -88,14 +101,7 @@ class SchematicTemplateInstantiationService:
             lines.append(f"- `{net['name']}` — {net.get('type', 'signal')}{note}")
 
         lines += ["", "## Step 3: Part Selection"]
-        if search:
-            for role, query_template in search.items():
-                query = str(query_template)
-                for key, value in resolved.items():
-                    query = query.replace(f"{{{key}}}", str(value))
-                lines.append(f"- **{role}**: `lib_recommend_part(category={query!r})`")
-        else:
-            lines.append("- Use lib_search_components() or lib_recommend_part() for each symbol.")
+        lines.extend(_part_selection_lines(search, resolved))
 
         lines += [
             "",

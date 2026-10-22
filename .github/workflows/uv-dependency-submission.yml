@@ -33,7 +33,7 @@ jobs:
             --sha "$GITHUB_SHA" \
             --ref "$GITHUB_REF" \
             --job-id "$GITHUB_RUN_ID" \
-            --output "$RUNNER_TEMP/uv-dependency-snapshot.json"
+            > "$RUNNER_TEMP/uv-dependency-snapshot.json"
 
       - name: Submit to GitHub dependency graph
         shell: bash

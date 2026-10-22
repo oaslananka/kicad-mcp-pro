@@ -235,7 +235,7 @@ def _run_variant_safe(
         return return_code, stderr
     except subprocess.TimeoutExpired:
         return 124, "The kicad-cli command timed out."
-    except (FileNotFoundError, OSError) as exc:
+    except OSError as exc:
         return str(exc)
 
 
