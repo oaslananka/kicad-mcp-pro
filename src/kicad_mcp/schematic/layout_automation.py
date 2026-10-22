@@ -8,7 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
+from ..errors import SchematicWriteUnsafeError
 from ..models.schematic import AutoPlaceSymbolsInput
+from .guarded_api_save import guarded_kicad_api_save
 
 
 class ComponentLike(Protocol):
@@ -175,8 +177,16 @@ class SchematicLayoutAutomationService:
             component.move(snapped_x, snapped_y)
             placed += 1
 
+        if placed == 0:
+            missing_suffix = f" Missing: {', '.join(missing)}." if missing else ""
+            return self.with_diagnostics(
+                f"No matching symbols were placed.{missing_suffix}", sch_file
+            )
+
         try:
-            schematic.save(sch_file, preserve_format=True)
+            guarded_kicad_api_save(schematic, sch_file, moved_references=requested_set)
+        except SchematicWriteUnsafeError:
+            raise
         except Exception as exc:
             self.warn(
                 "schematic_auto_place_save_failed",
@@ -474,8 +484,16 @@ class SchematicLayoutAutomationService:
             placed_in_zone.add((col, row))
             zone_counts[category] = zone_counts.get(category, 0) + 1
 
+        if placed == 0:
+            missing_suffix = f" Missing refs: {', '.join(missing)}." if missing else ""
+            return self.with_diagnostics(
+                f"No matching functional symbols were placed.{missing_suffix}", sch_file
+            )
+
         try:
-            schematic.save(sch_file, preserve_format=True)
+            guarded_kicad_api_save(schematic, sch_file, moved_references=requested_set - anchor_set)
+        except SchematicWriteUnsafeError:
+            raise
         except Exception as exc:
             return f"Could not save functional placement changes: {exc}"
 

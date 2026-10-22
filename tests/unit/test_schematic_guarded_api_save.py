@@ -1,0 +1,128 @@
+"""Issue #1370: kicad-sch-api must not write away labels or unknown metadata."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from kicad_mcp.errors import SchematicWriteUnsafeError
+from kicad_mcp.schematic.guarded_api_save import guarded_kicad_api_save
+
+HEADER = """(kicad_sch
+ (version 20260306) (generator "eeschema")
+ (title_block (title "probe") (comment 1 "assembly note"))
+ (global_label "VBAT" (at 1 2 0) (effects (font (size 1 1))))
+ (text "Battery input" (at 2 2 0) (effects (font (size 1 1)) (justify left bottom)))
+ """
+TAIL = '(sheet_instances (path "/" (page "1")))\n)\n'
+SYMBOL = """(symbol (lib_id "Device:R") (at 12 14 90)
+ (property "Reference" "R1" (at 12 14 0))
+ (property "Value" "10k" (at 12 15 0))
+ (uuid "11111111-1111-4111-8111-111111111111"))
+"""
+SHEET = """(sheet (at 20 20) (size 30 20)
+ (property "Sheetname" "Child" (at 20 20 0))
+ (property "Sheetfile" "child.kicad_sch" (at 20 21 0))
+ (uuid "22222222-2222-4222-8222-222222222222"))
+"""
+
+
+class StubSerializer:
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+    def save(self, path: Path, *, preserve_format: bool = True) -> None:
+        assert preserve_format
+        path.write_text(self.content, encoding="utf-8")
+
+
+def _source() -> str:
+    return HEADER + SYMBOL + TAIL
+
+
+def test_refuses_loss_of_global_label_title_comment_and_text_justify(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    source = _source()
+    file.write_text(source)
+    broken = source.replace('(global_label "VBAT" (at 1 2 0) (effects (font (size 1 1))))', "")
+    broken = broken.replace('(comment 1 "assembly note")', "")
+    broken = broken.replace(" (justify left bottom)", "")
+    with pytest.raises(SchematicWriteUnsafeError):
+        guarded_kicad_api_save(StubSerializer(broken), file, moved_references=["R1"])
+    assert file.read_text() == source
+
+
+def test_ignores_numeric_int_to_float_reformatting_without_touching_source(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    source = _source()
+    file.write_text(source)
+    proposed = source.replace("(at 12 14 90)", "(at 12.0 14.0 90.0)")
+    assert guarded_kicad_api_save(StubSerializer(proposed), file, moved_references=["R1"])
+    assert "(at 12.0 14.0 90.0)" in file.read_text()
+
+
+def test_moved_symbol_location_is_the_only_allowed_existing_change(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    source = _source()
+    file.write_text(source)
+    moved = source.replace("(at 12 14 90)", "(at 30 31 90)")
+    assert guarded_kicad_api_save(StubSerializer(moved), file, moved_references=["R1"])
+    assert "(at 30 31 90)" in file.read_text()
+    assert '(global_label "VBAT"' in file.read_text()
+
+
+def test_refuses_unrequested_angle_change(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    source = _source()
+    file.write_text(source)
+    changed = source.replace("(at 12 14 90)", "(at 30 31 180)")
+    with pytest.raises(SchematicWriteUnsafeError):
+        guarded_kicad_api_save(StubSerializer(changed), file, moved_references=["R1"])
+    assert file.read_text() == source
+
+
+def test_accepts_only_one_named_sheet(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    source = _source()
+    file.write_text(source)
+    proposed = source.replace("(sheet_instances", SHEET + "(sheet_instances")
+    assert guarded_kicad_api_save(StubSerializer(proposed), file, added_sheet_name="Child")
+    assert 'Sheetname" "Child"' in file.read_text()
+
+
+def test_rejects_other_sheet_even_when_one_expected(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    source = _source()
+    file.write_text(source)
+    with pytest.raises(SchematicWriteUnsafeError):
+        guarded_kicad_api_save(
+            StubSerializer(source.replace("(sheet_instances", SHEET + "(sheet_instances")),
+            file,
+            added_sheet_name="Wrong",
+        )
+    assert file.read_text() == source
+
+
+def test_true_noop_does_not_replace_file(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    source = _source()
+    file.write_text(source)
+    before = file.stat().st_ino
+    assert not guarded_kicad_api_save(StubSerializer(source), file)
+    assert file.stat().st_ino == before
+
+
+def test_concurrent_change_is_not_overwritten(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    source = _source()
+    file.write_text(source)
+
+    class ConcurrentWriter(StubSerializer):
+        def save(self, path: Path, *, preserve_format: bool = True) -> None:
+            super().save(path, preserve_format=preserve_format)
+            file.write_text(source.replace('"VBAT"', '"ChangedExternally"'))
+
+    with pytest.raises(SchematicWriteUnsafeError, match="changed during serialization"):
+        guarded_kicad_api_save(ConcurrentWriter(source), file)
+    assert "ChangedExternally" in file.read_text()

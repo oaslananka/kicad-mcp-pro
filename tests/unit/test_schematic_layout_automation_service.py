@@ -13,6 +13,17 @@ from kicad_mcp.schematic.layout_automation import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _mock_staged_save_for_service_doubles(monkeypatch: pytest.MonkeyPatch) -> None:
+    # This file tests the layout service's scheduling/diagnostics with a fake
+    # serializer that does not write bytes. Real staged guards are tested
+    # independently in test_schematic_guarded_api_save.py.
+    monkeypatch.setattr(
+        "kicad_mcp.schematic.layout_automation.guarded_kicad_api_save",
+        lambda schematic, path, **kwargs: schematic.save(path, preserve_format=True),
+    )
+
+
 @dataclass(frozen=True)
 class FakeDesignIntent:
     functional_spacing_mm: float
@@ -428,3 +439,47 @@ def test_auto_place_symbols_accepts_all_existing_strategies(tmp_path: Path, stra
 
     assert f"using the {strategy} strategy" in result
     assert component.moves
+
+
+def test_no_matching_auto_place_does_not_save_or_replace_source(tmp_path: Path) -> None:
+    file = tmp_path / "protected.kicad_sch"
+    original = '(kicad_sch (global_label "VBAT") (title_block (comment 1 "keep")))'
+    file.write_text(original)
+    inode = file.stat().st_ino
+    loaded = FakeSchematic({})
+    service = _service(
+        file,
+        loaded=loaded,
+        parsed={"symbols": [{"reference": "R1"}], "power_symbols": []},
+    )
+    assert "No matching symbols were placed" in service.auto_place_symbols(["NOT_PRESENT"])
+    assert file.read_text() == original
+    assert file.stat().st_ino == inode
+    assert loaded.saved == []
+
+
+def test_unsafe_auto_place_save_raises_typed_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.errors import SchematicWriteUnsafeError
+
+    file = tmp_path / "protected.kicad_sch"
+    source = '(kicad_sch (global_label "VBAT"))'
+    file.write_text(source)
+
+    def reject(*args: object, **kwargs: object) -> None:
+        raise SchematicWriteUnsafeError("loss of global_label")
+
+    monkeypatch.setattr(
+        "kicad_mcp.schematic.layout_automation.guarded_kicad_api_save",
+        reject,
+    )
+    loaded = FakeSchematic({"R1": FakeComponent()})
+    service = _service(
+        file,
+        loaded=loaded,
+        parsed={"symbols": [{"reference": "R1"}], "power_symbols": []},
+    )
+    with pytest.raises(SchematicWriteUnsafeError, match="global_label"):
+        service.auto_place_symbols(["R1"])
+    assert file.read_text() == source
