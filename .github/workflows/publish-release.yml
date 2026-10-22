@@ -56,7 +56,25 @@ jobs:
           # This exact SHA must be the merge commit of a reviewed Release
           # Please PR. Merely changing a version file in a normal PR is NOT
           # authority to publish. No untrusted PR files or artifacts are read.
-          merged_pr_json="$(gh api "repos/${REPOSITORY_NAME}/commits/${CI_HEAD_SHA}/pulls?per_page=100")"
+          # A transient empty/truncated GitHub API response must not turn a
+          # successful ordinary-main merge into red CI. Retry metadata reads,
+          # but *never* authorize a publish from an unverified API response.
+          # Exhausted retries fail closed, before minting any release token.
+          merged_pr_json=""
+          for attempt in 1 2 3; do
+            if candidate="$(gh api "repos/${REPOSITORY_NAME}/commits/${CI_HEAD_SHA}/pulls?per_page=100")" &&
+               jq -e 'type == "array"' <<< "$candidate" > /dev/null; then
+              merged_pr_json="$candidate"
+              break
+            fi
+            if [[ "$attempt" -lt 3 ]]; then
+              sleep 2
+            fi
+          done
+          if [[ -z "$merged_pr_json" ]]; then
+            echo '::error::Cannot verify reviewed release provenance; publication denied.'
+            exit 1
+          fi
           if ! jq -e --arg sha "$CI_HEAD_SHA" --arg repo "$REPOSITORY_NAME" '
                 [.[] | select(
                   .state == "closed" and .merged_at != null and

@@ -5,8 +5,13 @@ Production publication is never exercised by this test module.
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2] / ".github" / "workflows"
@@ -80,7 +85,10 @@ def test_publish_requires_exact_reviewed_release_merge_before_minting_token() ->
     assert ".merge_commit_sha == $sha" in shell
     assert ".head.repo.full_name == $repo" in shell
     assert '.base.ref == "main" and .base.repo.full_name == $repo' in shell
-    assert 'merged_pr_json="$(gh api ' in shell
+    assert 'candidate="$(gh api ' in shell
+    assert "jq -e 'type == \"array\"'" in shell
+    assert "for attempt in 1 2 3" in shell
+    assert "publication denied" in shell
     assert "if ! jq -e" in shell  # ordinary main merges must be a no-op, not red CI.
     assert "approved=false" in shell
     assert "approved=true" in shell
@@ -134,3 +142,119 @@ def test_release_attestation_documentation_distinguishes_publisher_and_sbom() ->
     assert "--publisher-environment pypi" in documentation
     assert "**not** SLSA build" in documentation
     assert "python -m sigstore verify identity " + chr(92) not in documentation
+
+
+@pytest.mark.parametrize(
+    ("first_response", "later_response", "expected_exit"),
+    [
+        ("invalid-json", "[]", 0),
+        ("api-failure", "[]", 0),
+        ("[]", "[]", 0),
+        ("invalid-json", "invalid-json", 1),
+        ("{}", "{}", 1),
+    ],
+)
+def test_release_provenance_gate_retries_api_failures_but_never_authorizes_unverified_data(
+    tmp_path: Path,
+    first_response: str,
+    later_response: str,
+    expected_exit: int,
+) -> None:
+    """Execute the actual Actions gate shell; stub only the GitHub network CLI."""
+    command = _workflow("publish-release.yml")["jobs"]["authorize"]["steps"][0]["run"]
+    gh = tmp_path / "gh"
+    gh.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        '[[ "$1" == "api" ]]\n'
+        'file="$MOCK_GH_COUNT"\n'
+        'if [[ -f "$file" ]]; then count=$(cat "$file"); else count=0; fi\n'
+        'count=$((count + 1)); echo "$count" > "$file"\n'
+        'if [[ "$count" == 1 ]]; then data="$MOCK_FIRST"; else data="$MOCK_LATER"; fi\n'
+        'if [[ "$data" == "api-failure" ]]; then exit 1; fi\n'
+        'printf "%s\n" "$data"\n'
+    )
+    gh.chmod(0o755)
+    output = tmp_path / "output"
+    environment = {
+        **os.environ,
+        "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+        "GITHUB_OUTPUT": str(output),
+        "EVENT_NAME": "push",
+        "REPOSITORY_NAME": "oaslananka/kicad-mcp-pro",
+        "CI_HEAD_SHA": "f" * 40,
+        "MOCK_FIRST": first_response,
+        "MOCK_LATER": later_response,
+        "MOCK_GH_COUNT": str(tmp_path / "attempts"),
+    }
+    shell = shutil.which("bash")
+    if shell is None:
+        pytest.skip("Bash is not installed on this platform")
+    result = subprocess.run(
+        [shell, "-e", "-o", "pipefail", "-c", command],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert (result.returncode == 0) is (expected_exit == 0)
+    assert "approved=false" in output.read_text()
+    assert "approved=true" not in output.read_text()
+    assert int((tmp_path / "attempts").read_text()) <= 3
+    if expected_exit != 0:
+        assert "publication denied" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("branch", "expected_approval"),
+    [
+        ("release-please--branches--main", True),
+        ("fix/ordinary-feature", False),
+    ],
+)
+def test_release_gate_authorizes_only_exact_reviewed_release_merge(
+    tmp_path: Path, branch: str, expected_approval: bool
+) -> None:
+    """Exercise the actual shell without minting credentials or publishing."""
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("Bash is not installed on this platform")
+    repo = "oaslananka/kicad-mcp-pro"
+    sha = "a" * 40
+    payload = json.dumps(
+        [
+            {
+                "state": "closed",
+                "merged_at": "2026-10-22T12:00:00Z",
+                "merge_commit_sha": sha,
+                "head": {"ref": branch, "repo": {"full_name": repo}},
+                "base": {"ref": "main", "repo": {"full_name": repo}},
+            }
+        ]
+    )
+    # This stub echoes fixed public merge metadata; it cannot access the network.
+    command = tmp_path / "gh"
+    command.write_text('#!/bin/sh\nprintf "%s\n" "$MOCK_MERGED_PR_JSON"\n')
+    command.chmod(0o755)
+    output = tmp_path / "gate-output"
+    environment = {
+        **os.environ,
+        "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+        "GITHUB_OUTPUT": str(output),
+        "EVENT_NAME": "push",
+        "REPOSITORY_NAME": repo,
+        "CI_HEAD_SHA": sha,
+        "MOCK_MERGED_PR_JSON": payload,
+    }
+    script = _workflow("publish-release.yml")["jobs"]["authorize"]["steps"][0]["run"]
+    result = subprocess.run(
+        [bash, "-e", "-o", "pipefail", "-c", script],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    assert ("approved=true" in output.read_text()) is expected_approval
