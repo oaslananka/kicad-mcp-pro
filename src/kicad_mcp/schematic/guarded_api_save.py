@@ -20,6 +20,8 @@ from sexpdata import Symbol, loads  # type: ignore[import-untyped]
 
 from ..errors import SchematicWriteUnsafeError
 
+_TAG_RE = re.compile(r"[a-zA-Z0-9_-]+")
+
 
 class _CanSave(Protocol):
     def save(self, path: Path, /, *, preserve_format: bool) -> object: ...
@@ -156,7 +158,7 @@ def _root_children_spans(source: str) -> list[tuple[str, int, int]]:
             depth += 1
         elif char == ")":
             if depth == 2 and start >= 0:
-                match = re.match(r"[a-zA-Z0-9_-]+", source[start + 1 :])
+                match = _TAG_RE.match(source, start + 1)
                 found.append((match.group(0) if match else "", start, index + 1))
                 start = -1
             depth -= 1
@@ -172,26 +174,50 @@ def _direct_position(node: list[object]) -> tuple[float, float, float]:
     return (float(positions[0][1]), float(positions[0][2]), float(positions[0][3]))
 
 
+def _symbol_identity(node: list[object]) -> tuple[str | None, int]:
+    """A ref has distinct movable roots when the symbol has multiple units."""
+    units = [
+        child[1]
+        for child in node[1:]
+        if isinstance(child, list) and _kind(child) == "unit" and len(child) == 2
+    ]
+    if len(units) > 1:
+        raise SchematicWriteUnsafeError("Symbol has multiple unit identifiers")
+    unit = units[0] if units else 1
+    if not isinstance(unit, int) or isinstance(unit, bool) or unit < 1:
+        raise SchematicWriteUnsafeError("Invalid symbol unit identifier")
+    return _symbol_reference(node), unit
+
+
+def _mapped_symbols(content: str) -> dict[tuple[str | None, int], list[object]]:
+    symbols: dict[tuple[str | None, int], list[object]] = {}
+    for node in _parse_nodes(content):
+        if _kind(node) != "symbol":
+            continue
+        identity = _symbol_identity(node)
+        if identity in symbols:
+            raise SchematicWriteUnsafeError("Duplicate symbol reference and unit")
+        symbols[identity] = node
+    return symbols
+
+
 def _merge_only_symbol_positions(original: str, serialized: str, moved_references: set[str]) -> str:
     """Take ONLY requested symbol X/Y values from a lossy library serializer.
 
     All source bytes other than top-level symbol coordinates are preserved.
     Never promote unrelated rewritten fields (including KiCad 10 metadata).
     """
-    before = {
-        _symbol_reference(node): node for node in _parse_nodes(original) if _kind(node) == "symbol"
-    }
-    after = {
-        _symbol_reference(node): node
-        for node in _parse_nodes(serialized)
-        if _kind(node) == "symbol"
-    }
-    if not moved_references.issubset(before.keys() & after.keys()):
-        raise SchematicWriteUnsafeError("Requested symbol reference is missing from staged save")
-    for ref in moved_references:
-        if ref is None:
-            raise SchematicWriteUnsafeError("Missing symbol reference")
-        old_symbol, staged_symbol = before[ref], after[ref]
+    before = _mapped_symbols(original)
+    after = _mapped_symbols(serialized)
+    if not moved_references.issubset({ref for ref, _unit in before}):
+        raise SchematicWriteUnsafeError("Requested symbol reference is missing from source")
+    requested = {key for key in before if key[0] in moved_references}
+    if not requested.issubset(after):
+        raise SchematicWriteUnsafeError(
+            "Requested symbol reference or unit is missing from staged save"
+        )
+    for identity in requested:
+        old_symbol, staged_symbol = before[identity], after[identity]
         old_xy = _direct_position(old_symbol)
         new_xy = _direct_position(staged_symbol)
         if old_xy[2] != new_xy[2]:
@@ -204,18 +230,16 @@ def _merge_only_symbol_positions(original: str, serialized: str, moved_reference
 
     updated = original
     patches: list[tuple[int, int, str]] = []
-    seen: set[str] = set()
+    seen: set[tuple[str | None, int]] = set()
     for tag, start, end in _root_children_spans(original):
         if tag != "symbol":
             continue
         raw = original[start:end]
         parsed = loads(raw)
-        reference = _symbol_reference(parsed)
-        if reference not in moved_references:
+        identity = _symbol_identity(parsed)
+        if identity not in requested:
             continue
-        if reference in seen:
-            raise SchematicWriteUnsafeError("Duplicate symbol reference in source schematic")
-        seen.add(reference)
+        seen.add(identity)
         children = [(name, a, b) for name, a, b in _root_children_spans(raw) if name == "at"]
         if len(children) != 1:
             raise SchematicWriteUnsafeError("Cannot identify one direct symbol position")
@@ -227,13 +251,13 @@ def _merge_only_symbol_positions(original: str, serialized: str, moved_reference
         )
         if m is None:
             raise SchematicWriteUnsafeError("Unexpected KiCad symbol coordinate format")
-        new_xy = _direct_position(after[reference])
-        if new_xy[:2] == _direct_position(before[reference])[:2]:
+        new_xy = _direct_position(after[identity])
+        if new_xy[:2] == _direct_position(before[identity])[:2]:
             continue
         new_pos = f"{m.group(1)}{new_xy[0]:.6f}{m.group(3)}{new_xy[1]:.6f}{m.group(5)}"
         patches.append((start + pos_start, start + pos_end, new_pos))
-    if seen != moved_references:
-        raise SchematicWriteUnsafeError("Some symbols were not found in source text")
+    if seen != requested:
+        raise SchematicWriteUnsafeError("Some symbol units were not found in source text")
     for start, end, new in reversed(patches):
         updated = updated[:start] + new + updated[end:]
     _safe_comparison(original, updated, moved_references=moved_references)

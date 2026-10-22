@@ -203,3 +203,124 @@ def test_staged_move_does_not_rewrite_unrelated_symbol_position(tmp_path: Path) 
     assert "(at 20.000000 20.000000 90)" in saved
     assert "(at 40 40 90)" in saved
     assert "(at 99 99 90)" not in saved
+
+
+def _unit_source() -> tuple[str, str, str]:
+    one = SYMBOL.replace('(lib_id "Device:R")', '(lib_id "Device:R") (unit 1)')
+    two = (
+        SYMBOL.replace('(lib_id "Device:R")', '(lib_id "Device:R") (unit 2)')
+        .replace("(at 12 14 90)", "(at 51 53 90)")
+        .replace("11111111-1111-4111-8111-111111111111", "99999999-9999-4999-8999-999999999999")
+    )
+    return HEADER + one + two + TAIL, one, two
+
+
+def test_multiunit_symbol_only_transfers_changed_unit_coordinates(tmp_path: Path) -> None:
+    """Both physical units share R1, but have distinct positions and UUIDs."""
+    source, one, two = _unit_source()
+    file = tmp_path / "multiunit.kicad_sch"
+    file.write_text(source)
+    staged = source.replace(
+        one,
+        one.replace("(at 12 14 90)", "(at 30 32 90)"),
+    ).replace('(comment 1 "assembly note")', "")
+    assert guarded_kicad_api_save(StubSerializer(staged), file, moved_references=["R1"])
+    saved = file.read_text()
+    assert "(unit 1)" in saved and "(unit 2)" in saved
+    assert "(at 30.000000 32.000000 90)" in saved
+    assert two in saved
+    assert '(comment 1 "assembly note")' in saved
+    assert '(global_label "VBAT"' in saved
+
+
+def test_multiunit_symbol_can_move_both_units_independently(tmp_path: Path) -> None:
+    source, _one, _two = _unit_source()
+    file = tmp_path / "multiunit.kicad_sch"
+    file.write_text(source)
+    staged = source.replace("(at 12 14 90)", "(at 30 32 90)").replace(
+        "(at 51 53 90)", "(at 60 63 90)"
+    )
+    assert guarded_kicad_api_save(StubSerializer(staged), file, moved_references=["R1"])
+    saved = file.read_text()
+    assert "(at 30.000000 32.000000 90)" in saved
+    assert "(at 60.000000 63.000000 90)" in saved
+
+
+def test_multiunit_symbol_rejects_missing_serialized_unit(tmp_path: Path) -> None:
+    source, _one, two = _unit_source()
+    file = tmp_path / "multiunit.kicad_sch"
+    file.write_text(source)
+    with pytest.raises(SchematicWriteUnsafeError, match="unit is missing"):
+        guarded_kicad_api_save(
+            StubSerializer(source.replace(two, "")), file, moved_references=["R1"]
+        )
+    assert file.read_text() == source
+
+
+@pytest.mark.parametrize("unit", ["0", "-1", '"two"', "1.5"])
+def test_multiunit_symbol_rejects_invalid_unit(tmp_path: Path, unit: str) -> None:
+    source, one, _two = _unit_source()
+    file = tmp_path / "multiunit.kicad_sch"
+    mutated = source.replace(one, one.replace("(unit 1)", f"(unit {unit})"))
+    file.write_text(mutated)
+    with pytest.raises(SchematicWriteUnsafeError, match="Invalid symbol unit"):
+        guarded_kicad_api_save(StubSerializer(mutated), file, moved_references=["R1"])
+    assert file.read_text() == mutated
+
+
+def test_multiunit_symbol_rejects_duplicate_unit(tmp_path: Path) -> None:
+    source, _one, two = _unit_source()
+    source = source.replace(two, two.replace("(unit 2)", "(unit 1)"))
+    file = tmp_path / "multiunit.kicad_sch"
+    file.write_text(source)
+    with pytest.raises(SchematicWriteUnsafeError, match="Duplicate symbol reference and unit"):
+        guarded_kicad_api_save(StubSerializer(source), file, moved_references=["R1"])
+    assert file.read_text() == source
+
+
+def test_unsafe_schematic_root_is_rejected_before_replacement(tmp_path: Path) -> None:
+    file = tmp_path / "invalid.kicad_sch"
+    original = "(kicad_sch (version 20260306))"
+    file.write_text(original)
+    with pytest.raises(SchematicWriteUnsafeError, match="Missing KiCad schematic root"):
+        guarded_kicad_api_save(StubSerializer("(different (version 20260306))"), file)
+    assert file.read_text() == original
+
+
+def test_unsafe_unbalanced_staged_content_is_rejected(tmp_path: Path) -> None:
+    file = tmp_path / "invalid.kicad_sch"
+    original = _source()
+    file.write_text(original)
+    with pytest.raises(SchematicWriteUnsafeError, match="parse staged"):
+        guarded_kicad_api_save(StubSerializer("(kicad_sch (symbol"), file)
+    assert file.read_text() == original
+
+
+def test_added_sheet_without_sheetname_is_rejected(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    source = _source()
+    file.write_text(source)
+    unnamed = source.replace("(sheet_instances", "(sheet (at 2 3) (size 5 5))\n(sheet_instances")
+    with pytest.raises(SchematicWriteUnsafeError, match="number or name"):
+        guarded_kicad_api_save(StubSerializer(unnamed), file, added_sheet_name="Child")
+    assert file.read_text() == source
+
+
+def test_added_duplicate_named_sheets_are_rejected(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    source = _source()
+    file.write_text(source)
+    duplicate = source.replace("(sheet_instances", SHEET + SHEET + "(sheet_instances")
+    with pytest.raises(SchematicWriteUnsafeError, match="number or name"):
+        guarded_kicad_api_save(StubSerializer(duplicate), file, added_sheet_name="Child")
+    assert file.read_text() == source
+
+
+def test_missing_requested_symbol_position_is_rejected(tmp_path: Path) -> None:
+    file = tmp_path / "probe.kicad_sch"
+    source = _source()
+    file.write_text(source)
+    without_position = source.replace("(at 12 14 90)", "")
+    with pytest.raises(SchematicWriteUnsafeError, match="exactly one direct symbol position"):
+        guarded_kicad_api_save(StubSerializer(without_position), file, moved_references=["R1"])
+    assert file.read_text() == source
