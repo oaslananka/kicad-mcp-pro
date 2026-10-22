@@ -7,8 +7,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from kicad_mcp.schematic.hierarchy_authoring import SchematicHierarchyAuthoringService
 from kicad_mcp.schematic.sheet_pins import parse_sheet_blocks
+
+
+@pytest.fixture(autouse=True)
+def _mock_staged_save_for_hierarchy_doubles(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Existing service tests use a deliberately file-free fake serializer.
+    monkeypatch.setattr(
+        "kicad_mcp.schematic.hierarchy_authoring.guarded_kicad_api_save",
+        lambda schematic, path, **kwargs: schematic.save(path, preserve_format=True),
+    )
 
 
 def _fake_wire_block(x1: float, y1: float, x2: float, y2: float) -> str:
@@ -109,6 +120,8 @@ def _service(
     _TransactionRecorder,
     list[tuple[str, dict[str, Any]]],
 ]:
+    if not root_path.exists():
+        root_path.write_text("(kicad_sch)", encoding="utf-8")
     root_schematic = root or _RootSchematic()
     child_schematic = child or _ChildSchematic()
     tx = transaction or _TransactionRecorder()
@@ -358,6 +371,8 @@ def _fake_append_before_sheet_instances(current: str, block: str) -> str:
 
 
 def _pin_service(store: _TextStore, root: Path) -> SchematicHierarchyAuthoringService:
+    if not root.exists():
+        root.write_text("(kicad_sch)", encoding="utf-8")
     counter = iter(f"uuid-{index}" for index in range(1000))
     return SchematicHierarchyAuthoringService(
         active_schematic_file=lambda: root,
@@ -1481,3 +1496,42 @@ def test_delete_sheet_reports_a_missing_name(tmp_path: Path) -> None:
 
     assert "was not found" in report
     assert store.writes == []
+
+
+def test_create_sheet_unsafe_root_save_removes_only_new_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.errors import SchematicWriteUnsafeError
+    from kicad_mcp.schematic.guarded_api_save import guarded_kicad_api_save
+
+    # Use the production guard rather than the in-memory fake used elsewhere.
+    monkeypatch.setattr(
+        "kicad_mcp.schematic.hierarchy_authoring.guarded_kicad_api_save",
+        guarded_kicad_api_save,
+    )
+    root_path = tmp_path / "root.kicad_sch"
+    original = (
+        '(kicad_sch (version 20260306) (generator "eeschema") '
+        '(global_label "VBAT" (at 1 2 0)) '
+        '(title_block (comment 1 "retain")) (sheet_instances))'
+    )
+    root_path.write_text(original)
+
+    class DestructiveSave(_RootSchematic):
+        def save(self, path: Path, preserve_format: bool = True) -> None:
+            super().save(path, preserve_format=preserve_format)
+            path.write_text(
+                original.replace('(global_label "VBAT" (at 1 2 0))', "")
+                + '(sheet (property "Sheetname" "Child"))',
+                encoding="utf-8",
+            )
+
+    root = DestructiveSave()
+    service, _, child, _tx, _warnings = _service(root_path=root_path, root=root)
+
+    with pytest.raises(SchematicWriteUnsafeError):
+        service.create_sheet("Child", "fresh/new", 5.0, 5.0, False)
+
+    assert root_path.read_text() == original
+    assert not (tmp_path / "fresh").exists()
+    assert child.saved == [(tmp_path / "fresh" / "new.kicad_sch", True)]

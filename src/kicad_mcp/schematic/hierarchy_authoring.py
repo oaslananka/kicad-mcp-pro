@@ -7,6 +7,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
+from ..errors import SchematicWriteUnsafeError
+from .guarded_api_save import guarded_kicad_api_save
 from .sheet_pins import (
     EDGES,
     PIN_TYPES,
@@ -165,6 +167,88 @@ class SchematicHierarchyAuthoringService:
         kind = "root" if target.is_root else "child"
         return f"Target schematic ({kind}): {target.path}"
 
+    @staticmethod
+    def _new_sheet_directories(child_path: Path) -> list[Path]:
+        """List only directories not present before starting the operation."""
+        created_dirs: list[Path] = []
+        missing_parent = child_path.parent
+        while not missing_parent.exists():
+            created_dirs.append(missing_parent)
+            if missing_parent == missing_parent.parent:
+                break
+            missing_parent = missing_parent.parent
+        return created_dirs
+
+    def _rollback_new_child_sheet(
+        self,
+        *,
+        name: str,
+        child_path: Path,
+        root: Path,
+        original: bytes,
+        created_child: bytes | None,
+        created_dirs: list[Path],
+    ) -> None:
+        """Best effort rollback: do not mask the original unsafe-save error."""
+        try:
+            if root.exists() and root.read_bytes() == original:
+                if (
+                    created_child is not None
+                    and child_path.exists()
+                    and child_path.read_bytes() == created_child
+                ):
+                    child_path.unlink()
+                for folder in created_dirs:
+                    try:
+                        folder.rmdir()
+                    except OSError:
+                        pass
+        except OSError as cleanup_error:
+            self.warn(
+                "schematic_create_sheet_cleanup_failed",
+                name=name,
+                filename=str(child_path),
+                error=str(cleanup_error),
+            )
+
+    def _stage_new_child_sheet(
+        self,
+        name: str,
+        child_path: Path,
+        root: Path,
+        xy: tuple[float, float],
+        schematic: RootSchematic,
+        create_schematic: Callable[[str], ChildSchematic],
+        created_dirs: list[Path],
+        before_root: bytes,
+    ) -> None:
+        created_child: bytes | None = None
+        try:
+            for folder in reversed(created_dirs):
+                folder.mkdir(exist_ok=True)
+            if not child_path.exists():
+                child_schematic = create_schematic(name)
+                child_schematic.save(child_path, preserve_format=True)
+                created_child = child_path.read_bytes()
+            schematic.add_sheet(
+                name,
+                str(child_path.relative_to(root.parent)).replace("\\", "/"),
+                xy,
+                self.default_sheet_size,
+                project_name=self.project_name(),
+            )
+            guarded_kicad_api_save(schematic, root, added_sheet_name=name)
+        except Exception:
+            self._rollback_new_child_sheet(
+                name=name,
+                child_path=child_path,
+                root=root,
+                original=before_root,
+                created_child=created_child,
+                created_dirs=created_dirs,
+            )
+            raise
+
     def create_sheet(
         self,
         name: str,
@@ -198,7 +282,7 @@ class SchematicHierarchyAuthoringService:
         if not child_name.endswith(".kicad_sch"):
             child_name = f"{child_name}.kicad_sch"
         child_path = top_schematic_path.parent / child_name
-        child_path.parent.mkdir(parents=True, exist_ok=True)
+
         try:
             schematic = self.load_schematic(top_schematic_path)
             if schematic.sheets.get_sheet_by_name(name) is not None:
@@ -210,17 +294,6 @@ class SchematicHierarchyAuthoringService:
                         "sch_import_sheet_pins to add pins to it."
                     )
                 return already
-            if not child_path.exists():
-                child_schematic = create_schematic(name)
-                child_schematic.save(child_path, preserve_format=True)
-            schematic.add_sheet(
-                name,
-                str(child_path.relative_to(top_schematic_path.parent)).replace("\\", "/"),
-                (sheet_x, sheet_y),
-                self.default_sheet_size,
-                project_name=self.project_name(),
-            )
-            schematic.save(top_schematic_path, preserve_format=True)
         except Exception as exc:
             self.warn(
                 "schematic_create_sheet_failed",
@@ -228,6 +301,41 @@ class SchematicHierarchyAuthoringService:
                 filename=str(child_path),
                 error=str(exc),
             )
+            return f"Could not create child sheet '{name}': {exc}"
+
+        # Track only new files/directories, so failures do not delete user data.
+        created_dirs = self._new_sheet_directories(child_path)
+        try:
+            before_root = top_schematic_path.read_bytes()
+        except OSError as exc:
+            self.warn(
+                "schematic_create_sheet_failed",
+                name=name,
+                filename=str(child_path),
+                error=str(exc),
+            )
+            return f"Could not create child sheet '{name}': {exc}"
+
+        try:
+            self._stage_new_child_sheet(
+                name,
+                child_path,
+                top_schematic_path,
+                (sheet_x, sheet_y),
+                schematic,
+                create_schematic,
+                created_dirs,
+                before_root,
+            )
+        except Exception as exc:
+            self.warn(
+                "schematic_create_sheet_failed",
+                name=name,
+                filename=str(child_path),
+                error=str(exc),
+            )
+            if isinstance(exc, SchematicWriteUnsafeError):
+                raise
             return f"Could not create child sheet '{name}': {exc}"
 
         pin_detail = (

@@ -8,7 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
+from ..errors import SchematicWriteUnsafeError
 from ..models.schematic import AutoPlaceSymbolsInput
+from .guarded_api_save import guarded_kicad_api_save
 
 
 class ComponentLike(Protocol):
@@ -118,6 +120,7 @@ class SchematicLayoutAutomationService:
         occupied = self.estimate_occupied_cells(fixed_syms)
 
         placed = 0
+        moved_refs: set[str] = set()
         missing: list[str] = []
         radius_mm = self.auto_layout_column_spacing_mm * 2
         center_x = self.auto_layout_origin_x_mm + self.auto_layout_column_spacing_mm
@@ -174,9 +177,18 @@ class SchematicLayoutAutomationService:
             snapped_x, snapped_y = self.snap_point(x, y, True)
             component.move(snapped_x, snapped_y)
             placed += 1
+            moved_refs.add(reference)
+
+        if placed == 0:
+            missing_suffix = f" Missing: {', '.join(missing)}." if missing else ""
+            return self.with_diagnostics(
+                f"No matching symbols were placed.{missing_suffix}", sch_file
+            )
 
         try:
-            schematic.save(sch_file, preserve_format=True)
+            guarded_kicad_api_save(schematic, sch_file, moved_references=moved_refs)
+        except SchematicWriteUnsafeError:
+            raise
         except Exception as exc:
             self.warn(
                 "schematic_auto_place_save_failed",
@@ -422,6 +434,7 @@ class SchematicLayoutAutomationService:
         self._populate_initial_zone_occupancy(fixed_syms, sym_meta, zone_occupied)
 
         placed = 0
+        moved_refs: set[str] = set()
         overflow_count = 0
         missing: list[str] = []
         zone_counts: dict[str, int] = {}
@@ -467,6 +480,7 @@ class SchematicLayoutAutomationService:
 
             component.move(snapped_x, snapped_y)
             placed += 1
+            moved_refs.add(reference)
 
             for dc in (-1, 0, 1):
                 for dr in (-1, 0, 1):
@@ -474,8 +488,16 @@ class SchematicLayoutAutomationService:
             placed_in_zone.add((col, row))
             zone_counts[category] = zone_counts.get(category, 0) + 1
 
+        if placed == 0:
+            missing_suffix = f" Missing refs: {', '.join(missing)}." if missing else ""
+            return self.with_diagnostics(
+                f"No matching functional symbols were placed.{missing_suffix}", sch_file
+            )
+
         try:
-            schematic.save(sch_file, preserve_format=True)
+            guarded_kicad_api_save(schematic, sch_file, moved_references=moved_refs)
+        except SchematicWriteUnsafeError:
+            raise
         except Exception as exc:
             return f"Could not save functional placement changes: {exc}"
 
