@@ -22,6 +22,7 @@ def test_chatgpt_app_express5_dependency_policy() -> None:
         "hono": "4.13.13",
         "fast-uri": "3.1.8",
         "qs": "6.16.0",
+        "ip-address": "10.7.4",
     }
     assert lock["packages"][""]["dependencies"]["express"] == express
     assert lock["packages"]["node_modules/express"]["version"] == express
