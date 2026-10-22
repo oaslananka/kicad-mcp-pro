@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
+from collections.abc import Iterator
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import pytest
@@ -12,16 +15,26 @@ from kipy.errors import ApiError, ApiStatusCode
 
 from scripts import check_reference_live_gui_readiness as gate
 
-
-def _socket(tmp_path: Path) -> tuple[socket.socket, str]:
-    name = tmp_path / "private.sock"
-    server = socket.socket(socket.AF_UNIX)
-    server.bind(str(name))
-    return server, "ipc://" + str(name)
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX Unix socket readiness gate")
 
 
-def test_available_private_socket_with_confirmed_board_is_ready(tmp_path: Path) -> None:
-    listener, endpoint = _socket(tmp_path)
+@pytest.fixture
+def ipc_socket() -> Iterator[tuple[socket.socket, str]]:
+    # Avoid Unix sockaddr path-length limits in deeply nested CI pytest temp roots.
+    with TemporaryDirectory(prefix="kicad-ipc-") as directory:
+        name = Path(directory) / "api.sock"
+        server = socket.socket(socket.AF_UNIX)
+        try:
+            server.bind(str(name))
+            yield server, "ipc://" + str(name)
+        finally:
+            server.close()
+
+
+def test_available_private_socket_with_confirmed_board_is_ready(
+    ipc_socket: tuple[socket.socket, str],
+) -> None:
+    listener, endpoint = ipc_socket
     seen: list[tuple[str, int]] = []
 
     class Client:
@@ -48,11 +61,13 @@ def test_available_private_socket_with_confirmed_board_is_ready(tmp_path: Path) 
     assert r["counts_as_task_success"] is False
     assert r["executes_agent"] is False
     assert r["attempt_reserved"] is False
-    assert str(tmp_path) not in json.dumps(r)
+    assert endpoint not in json.dumps(r)
 
 
-def test_real_socket_with_kicad_first_run_modal_is_blocked(tmp_path: Path) -> None:
-    listener, endpoint = _socket(tmp_path)
+def test_real_socket_with_kicad_first_run_modal_is_blocked(
+    ipc_socket: tuple[socket.socket, str],
+) -> None:
+    listener, endpoint = ipc_socket
 
     class Client:
         def get_version(self):
@@ -82,9 +97,9 @@ def test_real_socket_with_kicad_first_run_modal_is_blocked(tmp_path: Path) -> No
     ],
 )
 def test_bounded_read_only_probe_rejects_unusable_gui(
-    tmp_path: Path, mode: str, reason: str
+    ipc_socket: tuple[socket.socket, str], mode: str, reason: str
 ) -> None:
-    listener, endpoint = _socket(tmp_path)
+    listener, endpoint = ipc_socket
 
     class Client:
         def get_version(self):
@@ -109,11 +124,11 @@ def test_bounded_read_only_probe_rejects_unusable_gui(
 
 
 def test_no_socket_or_unreviewed_symlink_is_rejected_without_client_invocation(
-    tmp_path: Path,
+    tmp_path: Path, ipc_socket: tuple[socket.socket, str]
 ) -> None:
     linked = tmp_path / "alias.sock"
-    listener, endpoint = _socket(tmp_path)
-    linked.symlink_to(tmp_path / "private.sock")
+    listener, endpoint = ipc_socket
+    linked.symlink_to(Path(endpoint.removeprefix("ipc://")))
 
     def fail(**_: object):
         raise AssertionError("must fail before IPC access")
@@ -135,8 +150,10 @@ def test_no_socket_or_unreviewed_symlink_is_rejected_without_client_invocation(
     assert endpoint.startswith("ipc:///")
 
 
-def test_expected_board_identity_is_mandatory(tmp_path: Path) -> None:
-    listener, endpoint = _socket(tmp_path)
+def test_expected_board_identity_is_mandatory(
+    ipc_socket: tuple[socket.socket, str],
+) -> None:
+    listener, endpoint = ipc_socket
     try:
         for name in (None, "", "../../private.kicad_pcb", "other.sch", "a/b.kicad_pcb"):
             r = gate.probe_live_gui(
@@ -147,8 +164,10 @@ def test_expected_board_identity_is_mandatory(tmp_path: Path) -> None:
         listener.close()
 
 
-def test_gui_becomes_not_ready_during_board_read(tmp_path: Path) -> None:
-    listener, endpoint = _socket(tmp_path)
+def test_gui_becomes_not_ready_during_board_read(
+    ipc_socket: tuple[socket.socket, str],
+) -> None:
+    listener, endpoint = ipc_socket
 
     class Client:
         def get_version(self):
