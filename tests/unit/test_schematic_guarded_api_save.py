@@ -324,3 +324,16 @@ def test_missing_requested_symbol_position_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(SchematicWriteUnsafeError, match="exactly one direct symbol position"):
         guarded_kicad_api_save(StubSerializer(without_position), file, moved_references=["R1"])
     assert file.read_text() == source
+
+
+def test_selective_move_preserves_original_crlf_bytes(tmp_path: Path) -> None:
+    file = tmp_path / "windows.kicad_sch"
+    source = _source().replace("\n", "\r\n")
+    original = source.encode("utf-8")
+    file.write_bytes(original)
+    staged = source.replace("(at 12 14 90)", "(at 30 31 90)")
+    assert guarded_kicad_api_save(StubSerializer(staged), file, moved_references=["R1"])
+    saved = file.read_bytes()
+    expected = original.replace(b"(at 12 14 90)", b"(at 30.000000 31.000000 90)")
+    assert saved == expected
+    assert b"\r\r\n" not in saved

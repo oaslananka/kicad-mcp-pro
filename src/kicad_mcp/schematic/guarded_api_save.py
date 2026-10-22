@@ -290,7 +290,7 @@ def guarded_kicad_api_save(
         stage = Path(stage_name)
         try:
             schematic.save(stage, preserve_format=True)
-            serialized = stage.read_text(encoding="utf-8")
+            serialized = stage.read_bytes().decode("utf-8")
             source = original.decode("utf-8")
             moved = set(moved_references)
             if moved and added_sheet_name is None:
@@ -310,7 +310,7 @@ def guarded_kicad_api_save(
                     "Refusing staged save: the target changed during serialization."
                 )
             if changed:
-                stage.write_text(candidate, encoding="utf-8")
+                stage.write_bytes(candidate.encode("utf-8"))
                 os.chmod(stage, stat.S_IMODE(target.stat().st_mode))
                 stage.replace(target)
             return changed

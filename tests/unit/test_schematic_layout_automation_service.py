@@ -483,3 +483,60 @@ def test_unsafe_auto_place_save_raises_typed_error(
     with pytest.raises(SchematicWriteUnsafeError, match="global_label"):
         service.auto_place_symbols(["R1"])
     assert file.read_text() == source
+
+
+def test_partial_auto_placement_guards_only_actual_moved_references(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    schematic_file = tmp_path / "board.kicad_sch"
+    loaded = FakeSchematic({"R1": FakeComponent()})
+    captured: list[set[str]] = []
+
+    def capture_guard(schematic: FakeSchematic, path: Path, *, moved_references: set[str]) -> None:
+        captured.append(set(moved_references))
+        schematic.save(path, preserve_format=True)
+
+    monkeypatch.setattr(
+        "kicad_mcp.schematic.layout_automation.guarded_kicad_api_save", capture_guard
+    )
+    service = _service(
+        schematic_file,
+        loaded=loaded,
+        parsed={"symbols": [{"reference": "R1"}], "power_symbols": []},
+    )
+    result = service.auto_place_symbols(["R1", "R404"], "grid")
+    assert "Auto-placed 1" in result
+    assert "Missing: R404." in result
+    assert captured == [{"R1"}]
+
+
+def test_partial_functional_placement_guards_only_moved_not_missing_or_anchor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    schematic_file = tmp_path / "functional.kicad_sch"
+    loaded = FakeSchematic({"R1": FakeComponent(), "J1": FakeComponent()})
+    captured: list[set[str]] = []
+
+    def capture_guard(schematic: FakeSchematic, path: Path, *, moved_references: set[str]) -> None:
+        captured.append(set(moved_references))
+        schematic.save(path, preserve_format=True)
+
+    monkeypatch.setattr(
+        "kicad_mcp.schematic.layout_automation.guarded_kicad_api_save", capture_guard
+    )
+    service = _service(
+        schematic_file,
+        loaded=loaded,
+        parsed={
+            "symbols": [
+                {"reference": "R1", "value": "10k", "lib_id": "Device:R"},
+                {"reference": "J1", "value": "Conn", "lib_id": "Connector:Conn_01x02"},
+            ],
+            "power_symbols": [],
+        },
+        normalized_anchors=["J1"],
+    )
+    result = service.auto_place_functional(["R1", "J1", "R404"], anchor_ref="J1")
+    assert "Missing refs: R404." in result
+    assert "Anchored refs preserved: J1." in result
+    assert captured == [{"R1"}]

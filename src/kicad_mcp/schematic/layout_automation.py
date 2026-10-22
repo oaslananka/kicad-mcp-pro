@@ -120,6 +120,7 @@ class SchematicLayoutAutomationService:
         occupied = self.estimate_occupied_cells(fixed_syms)
 
         placed = 0
+        moved_refs: set[str] = set()
         missing: list[str] = []
         radius_mm = self.auto_layout_column_spacing_mm * 2
         center_x = self.auto_layout_origin_x_mm + self.auto_layout_column_spacing_mm
@@ -176,6 +177,7 @@ class SchematicLayoutAutomationService:
             snapped_x, snapped_y = self.snap_point(x, y, True)
             component.move(snapped_x, snapped_y)
             placed += 1
+            moved_refs.add(reference)
 
         if placed == 0:
             missing_suffix = f" Missing: {', '.join(missing)}." if missing else ""
@@ -184,7 +186,7 @@ class SchematicLayoutAutomationService:
             )
 
         try:
-            guarded_kicad_api_save(schematic, sch_file, moved_references=requested_set)
+            guarded_kicad_api_save(schematic, sch_file, moved_references=moved_refs)
         except SchematicWriteUnsafeError:
             raise
         except Exception as exc:
@@ -432,6 +434,7 @@ class SchematicLayoutAutomationService:
         self._populate_initial_zone_occupancy(fixed_syms, sym_meta, zone_occupied)
 
         placed = 0
+        moved_refs: set[str] = set()
         overflow_count = 0
         missing: list[str] = []
         zone_counts: dict[str, int] = {}
@@ -477,6 +480,7 @@ class SchematicLayoutAutomationService:
 
             component.move(snapped_x, snapped_y)
             placed += 1
+            moved_refs.add(reference)
 
             for dc in (-1, 0, 1):
                 for dr in (-1, 0, 1):
@@ -491,7 +495,7 @@ class SchematicLayoutAutomationService:
             )
 
         try:
-            guarded_kicad_api_save(schematic, sch_file, moved_references=requested_set - anchor_set)
+            guarded_kicad_api_save(schematic, sch_file, moved_references=moved_refs)
         except SchematicWriteUnsafeError:
             raise
         except Exception as exc:
