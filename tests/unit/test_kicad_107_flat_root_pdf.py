@@ -113,7 +113,7 @@ def test_audited_runner_executes_version_then_isolated_two_root_pdf(monkeypatch)
 
 def test_workflow_uses_locked_pypdf_and_preserves_gui_manual_boundary() -> None:
     project = (ROOT / "pyproject.toml").read_text()
-    assert '"pypdf==6.20.0"' in project
+    assert '"pypdf==6.21.1"' in project
     workflow = yaml.safe_load(
         (ROOT / ".github/workflows/kicad-10-0-7-windows-qualification.yml").read_text()
     )
