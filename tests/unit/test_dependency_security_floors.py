@@ -17,14 +17,26 @@ def test_gitpython_security_floor_is_patched() -> None:
     uv_lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
 
     vcs_dependencies = pyproject["project"]["optional-dependencies"]["vcs"]
-    assert any("gitpython>=3.1.62" in dependency.lower() for dependency in vcs_dependencies)
+    assert any("gitpython>=3.2.1" in dependency.lower() for dependency in vcs_dependencies)
 
     locked = next(
         package["version"]
         for package in uv_lock["package"]
         if package["name"].lower() == "gitpython"
     )
-    assert Version(locked) >= Version("3.1.62")
+    assert Version(locked) >= Version("3.2.1")
+
+
+def test_opentelemetry_api_security_floor_uses_patched_family() -> None:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+
+    dependencies = pyproject["project"]["dependencies"]
+    for package in ("opentelemetry-sdk", "opentelemetry-exporter-otlp"):
+        assert any(f"{package}>=1.45.1" in item.lower() for item in dependencies)
+    versions = {package["name"]: package["version"] for package in lock["package"]}
+    for package in ("opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp"):
+        assert Version(versions[package]) >= Version("1.45.1")
 
 
 def test_cryptography_security_floor_is_patched() -> None:
@@ -100,7 +112,7 @@ def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
         "node_modules/hono": "4.13.13",
         "node_modules/fast-uri": "3.1.8",
         "node_modules/qs": "6.16.0",
-        "node_modules/ip-address": "10.4.0",
+        "node_modules/ip-address": "10.7.4",
     }
     for path, minimum in patched.items():
         assert Version(lock["packages"][path]["version"]) >= Version(minimum)

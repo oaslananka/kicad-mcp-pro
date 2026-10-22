@@ -42,8 +42,8 @@ dependencies = [
   "kicad-sch-api>=0.5.0,<0.6",
   "kicad-python>=0.6,<0.8",
   "mcp[cli]>=2.2.0,<3.0.0",
-  "opentelemetry-exporter-otlp>=1.42.1,<2.0.0",
-  "opentelemetry-sdk>=1.42.1,<2.0.0",
+  "opentelemetry-exporter-otlp>=1.45.1,<2.0.0",
+  "opentelemetry-sdk>=1.45.1,<2.0.0",
   "packaging>=24.0,<27.0",
   "pydantic>=2.7.0",
   "pydantic-settings>=2.14.2",
@@ -76,7 +76,7 @@ dev = [
   "mutmut>=3.0.0",
   "mypy>=1.10.0",
   "Pillow>=13.0.0,<14.0.0",
-  "pypdf==6.20.0",
+  "pypdf==6.21.1",
   "properdocs>=1.6.7",
   "pytest>=8.2.0",
   "pytest-asyncio>=0.25.0",
@@ -98,7 +98,7 @@ http = ["httpx>=0.27.0", "uvicorn[standard]>=0.30.0"]
 tray = ["pystray>=0.19.5", "Pillow>=10.0.0"]
 simulation = ["numpy>=1.26.0"]
 vcs = [
-    "gitpython>=3.1.62,<4.0.0",
+    "gitpython>=3.2.1,<4.0.0",
 ]
 
 [project.scripts]
