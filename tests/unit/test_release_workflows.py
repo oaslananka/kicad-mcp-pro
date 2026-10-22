@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -121,10 +122,23 @@ def test_npm_publishers_use_oidc_without_long_lived_tokens() -> None:
 def test_release_automation_uses_short_lived_github_app_token() -> None:
     release = _read(".github/workflows/release-please.yml")
     audit = _read(".github/workflows/repository-settings-audit.yml")
-    action = "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1"
+    publish = _read(".github/workflows/publish-release.yml")
+    action_pattern = re.compile(
+        r"^\s*uses:\s*actions/create-github-app-token@([0-9a-f]{40})\s*$", re.M
+    )
+    pinned_shas = []
+
+    for workflow in (release, audit, publish):
+        pins = action_pattern.findall(workflow)
+        _require(len(pins) == 1, "GitHub App token action must use exactly one full SHA pin")
+        pinned_shas.extend(pins)
+
+    _require(
+        len(set(pinned_shas)) == 1,
+        "Release, audit, and publish workflows must use the same GitHub App action SHA",
+    )
 
     for workflow in (release, audit):
-        _require(action in workflow, "GitHub App token action must be SHA pinned")
         _require(
             "vars.OASLANANKA_OPS_APP_CLIENT_ID" in workflow,
             "GitHub App client ID must come from a repository variable",
