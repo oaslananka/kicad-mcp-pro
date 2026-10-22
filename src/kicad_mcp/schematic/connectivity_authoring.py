@@ -9,7 +9,7 @@ from typing import Any, Protocol
 
 from ..errors import SchematicRoutingUnsafeError
 from ..models.schematic import RouteWireBetweenPinsInput
-from ..utils.schematic_router import segments_merge
+from ..utils.schematic_router import point_on_segment, segments_merge
 from .references import power_reference_from_uuid
 
 
@@ -69,6 +69,45 @@ LABEL_KIND_TO_BLOCK_KIND: dict[str, str] = {
 def _no_module_boundaries(_content: str) -> list[BoundingBoxLike]:
     """No drawn boundaries to clear -- the default for callers predating the rule."""
     return []
+
+
+def _named_nets_at_pin(point: tuple[float, float], data: ParsedSchematic) -> set[str]:
+    """Identify labels on the complete pre-existing wire network at a pin.
+
+    KiCad connects collinear wire joins and T-junction endpoints, but not
+    bare perpendicular crossings. The router must never join two separately
+    named networks just because both happen to be its requested endpoints.
+    """
+    segments: list[WireSegment] = [
+        (float(w["x1"]), float(w["y1"]), float(w["x2"]), float(w["y2"]))
+        for w in data.get("wires", [])
+    ]
+    reached = {index for index, wire in enumerate(segments) if point_on_segment(point, wire)}
+    frontier = list(reached)
+    while frontier:
+        current = segments[frontier.pop()]
+        for index, wire in enumerate(segments):
+            if index not in reached and segments_merge(current, wire):
+                reached.add(index)
+                frontier.append(index)
+
+    selected = [segments[index] for index in reached]
+
+    def on_net(other_point: tuple[float, float]) -> bool:
+        return (
+            abs(other_point[0] - point[0]) <= 1e-6 and abs(other_point[1] - point[1]) <= 1e-6
+        ) or any(point_on_segment(other_point, wire) for wire in selected)
+
+    names: set[str] = set()
+    for label in data.get("labels", []):
+        position = (float(label["x"]), float(label["y"]))
+        if on_net(position):
+            names.add(str(label["name"]))
+    for symbol in data.get("power_symbols", []):
+        position = (float(symbol["x"]), float(symbol["y"]))
+        if on_net(position):
+            names.add(str(symbol.get("value") or symbol.get("name") or ""))
+    return {name for name in names if name}
 
 
 @dataclass(frozen=True)
@@ -578,6 +617,16 @@ class SchematicConnectivityAuthoringService:
         end_normal = self.get_pin_outward_normals(
             second_library, second_symbol, int(second["rotation"]), int(second["unit"])
         ).get(payload.pin2)
+
+        first_names = _named_nets_at_pin(start, data)
+        second_names = _named_nets_at_pin(end, data)
+        if first_names and second_names and first_names.isdisjoint(second_names):
+            raise SchematicRoutingUnsafeError(
+                f"Route refused between {payload.ref1}:{payload.pin1} and "
+                f"{payload.ref2}:{payload.pin2}: conflicting_named_nets "
+                f"({sorted(first_names)} != {sorted(second_names)}). "
+                "No schematic changes were made."
+            )
 
         content = self.active_schematic_file().read_text(encoding="utf-8", errors="ignore")
         obstacles = self.get_symbol_bboxes(content)

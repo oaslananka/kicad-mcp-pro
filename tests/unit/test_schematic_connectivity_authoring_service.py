@@ -831,3 +831,71 @@ def test_route_refuses_stale_topology_at_transaction_boundary(tmp_path: Path) ->
         harness.service.route_wire_between_pins("U1", "1", "R1", "2")
     assert harness.writes == []
     assert target.read_bytes() == original
+
+
+def test_route_refuses_existing_differently_named_usb_nets_without_write(
+    tmp_path: Path,
+) -> None:
+    """Reproduce USB D+ / D- coalescence across separate labeled branches."""
+    harness = _harness(
+        tmp_path,
+        parsed={
+            "symbols": [_symbol("J1"), _symbol("U2")],
+            "power_symbols": [],
+            "wires": [
+                {"x1": 1.0, "y1": 1.0, "x2": 3.0, "y2": 1.0},
+                {"x1": 5.0, "y1": 5.0, "x2": 7.0, "y2": 5.0},
+            ],
+            "labels": [
+                {"name": "USB_DP", "x": 3.0, "y": 1.0},
+                {"name": "USB_DM", "x": 7.0, "y": 5.0},
+            ],
+        },
+        pin_positions={("Device", "R"): {"1": (1.0, 1.0), "2": (5.0, 5.0)}},
+        route_segments=[(1.0, 1.0, 5.0, 1.0), (5.0, 1.0, 5.0, 5.0)],
+    )
+    original = (tmp_path / "board.kicad_sch").read_bytes()
+    with pytest.raises(SchematicRoutingUnsafeError, match="conflicting_named_nets"):
+        harness.service.route_wire_between_pins("J1", "1", "U2", "2")
+    assert harness.writes == []
+    assert (tmp_path / "board.kicad_sch").read_bytes() == original
+
+
+def test_route_allows_two_branches_with_same_explicit_net_name(tmp_path: Path) -> None:
+    harness = _harness(
+        tmp_path,
+        parsed={
+            "symbols": [_symbol("J1"), _symbol("U2")],
+            "power_symbols": [],
+            "wires": [
+                {"x1": 1.0, "y1": 1.0, "x2": 3.0, "y2": 1.0},
+                {"x1": 5.0, "y1": 5.0, "x2": 7.0, "y2": 5.0},
+            ],
+            "labels": [
+                {"name": "USB_DP", "x": 3.0, "y": 1.0},
+                {"name": "USB_DP", "x": 7.0, "y": 5.0},
+            ],
+        },
+        pin_positions={("Device", "R"): {"1": (1.0, 1.0), "2": (5.0, 5.0)}},
+        route_segments=[(1.0, 1.0, 5.0, 1.0), (5.0, 1.0, 5.0, 5.0)],
+    )
+    result = harness.service.route_wire_between_pins("J1", "1", "U2", "2")
+    assert "Routed 2 wire segment(s)" in result
+    assert len(harness.writes) == 1
+
+
+def test_named_net_trace_does_not_connect_bare_crossings() -> None:
+    from kicad_mcp.schematic.connectivity_authoring import _named_nets_at_pin
+
+    sample = {
+        "wires": [
+            {"x1": 1.0, "y1": 2.0, "x2": 5.0, "y2": 2.0},
+            {"x1": 3.0, "y1": 0.0, "x2": 3.0, "y2": 4.0},
+        ],
+        "labels": [
+            {"name": "USB_DP", "x": 1.0, "y": 2.0},
+            {"name": "USB_DM", "x": 3.0, "y": 0.0},
+        ],
+    }
+    assert _named_nets_at_pin((5.0, 2.0), sample) == {"USB_DP"}
+    assert _named_nets_at_pin((3.0, 4.0), sample) == {"USB_DM"}
