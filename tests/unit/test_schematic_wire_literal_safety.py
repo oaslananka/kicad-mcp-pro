@@ -105,3 +105,40 @@ def test_exact_duplicate_real_wires_normalize_without_changing_coverage() -> Non
     result = s._normalize_schematic_wire_connectivity(schematic(REAL, duplicate))
     assert len(s._extract_wires(result)) == 1
     assert s._wire_segments_from_content(result) == [(0.0, 0.0, 10.0, 0.0)]
+
+
+def test_normalizer_preserves_degenerate_wire_with_nonzero_wire() -> None:
+    zero = '(wire (pts (xy 22 22) (xy 22 22)) (uuid "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))'
+    source = schematic(REAL, zero, quoted_text(PHANTOM))
+    result = s._normalize_schematic_wire_connectivity(source)
+    assert zero in result
+    assert quoted_text(PHANTOM) in result
+    assert len(s._extract_wires(result)) == 2
+
+
+def test_nearly_degenerate_both_axes_is_preserved_while_deduplicating() -> None:
+    tol = s.SNAP_TOLERANCE_MM
+    almost = (
+        f"(wire (pts (xy 22 22) (xy {22 + tol * 0.8:.9f} "
+        f'{22 + tol * 0.8:.9f})) (uuid "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"))'
+    )
+    source = schematic(REAL, almost)
+    result = s._normalize_schematic_wire_connectivity(source)
+    assert almost in result
+
+
+def test_large_root_wire_batch_no_unbounded_repeated_insert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_append = s._append_before_sheet_instances
+    insertions: list[str] = []
+
+    def counted(content: str, block: str) -> str:
+        insertions.append(block)
+        return real_append(content, block)
+
+    monkeypatch.setattr(s, "_append_before_sheet_instances", counted)
+    source = schematic(*(f"(wire (pts (xy {i} 0) (xy {i} 1)))" for i in range(150)))
+    output = s._normalize_schematic_wire_connectivity(source)
+    assert len(s._extract_wires(output)) == 150
+    assert len(insertions) == 1

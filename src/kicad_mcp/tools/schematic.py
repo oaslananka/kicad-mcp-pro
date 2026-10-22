@@ -2902,13 +2902,23 @@ def _get_symbol_bboxes(sexpr_content: str) -> list[BBox]:
     return bboxes
 
 
+def _is_degenerate_wire_segment(segment: tuple[float, float, float, float]) -> bool:
+    x1, y1, x2, y2 = segment
+    return abs(x1 - x2) <= SNAP_TOLERANCE_MM and abs(y1 - y2) <= SNAP_TOLERANCE_MM
+
+
 def _remove_wire_blocks(content: str) -> str:
-    """Remove only actual root-level wires, never tokens in quoted values."""
-    spans = [
-        (start, end)
-        for name, start, end in _top_level_sexpr_blocks(content)
-        if name == "wire" and _parse_wire_block(content[start:end]) is not None
-    ]
+    """Remove normalizable root wires, preserving zero-length native wire nodes."""
+    spans: list[tuple[int, int]] = []
+    for name, start, end in _top_level_sexpr_blocks(content):
+        if name != "wire":
+            continue
+        parsed = _parse_wire_block(content[start:end])
+        if parsed is None:
+            continue
+        coords = (parsed["x1"], parsed["y1"], parsed["x2"], parsed["y2"])
+        if not _is_degenerate_wire_segment(coords):
+            spans.append((start, end))
     if not spans:
         return content
     pieces: list[str] = []
@@ -2927,8 +2937,7 @@ def _normalize_schematic_wire_connectivity(content: str) -> str:
     deduped: list[tuple[float, float, float, float]] = []
     seen: set[tuple[tuple[float, float], tuple[float, float]]] = set()
     for segment in segments:
-        x1, y1, x2, y2 = segment
-        if abs(x1 - x2) <= SNAP_TOLERANCE_MM and abs(y1 - y2) <= SNAP_TOLERANCE_MM:
+        if _is_degenerate_wire_segment(segment):
             continue
         key = _segment_key(segment)
         if key in seen:
@@ -2947,9 +2956,10 @@ def _normalize_schematic_wire_connectivity(content: str) -> str:
         uuid_map[_segment_key(segment)] = wire["uuid"]
 
     updated = _remove_wire_blocks(content)
-    for segment in deduped:
-        uid = uuid_map.get(_segment_key(segment))
-        updated = _append_before_sheet_instances(updated, wire_block(*segment, uuid_str=uid))
+    normalized_blocks = [
+        wire_block(*segment, uuid_str=uuid_map.get(_segment_key(segment))) for segment in deduped
+    ]
+    updated = _append_before_sheet_instances(updated, "\n".join(normalized_blocks))
     updated = _insert_junctions_for_batch(updated, _detect_t_intersections(deduped))
 
     # The normalizer may deduplicate wire nodes and add T-junctions, but it
@@ -2966,13 +2976,11 @@ def _normalize_schematic_wire_connectivity(content: str) -> str:
         if name not in {"wire", "junction"}
     ]
     if non_wire_before != non_wire_after or {
-        _segment_key(segment)
-        for segment in segments
-        if math.dist(segment[:2], segment[2:]) > SNAP_TOLERANCE_MM
+        _segment_key(segment) for segment in segments if not _is_degenerate_wire_segment(segment)
     } != {
         _segment_key(segment)
         for segment in _wire_segments_from_content(updated)
-        if math.dist(segment[:2], segment[2:]) > SNAP_TOLERANCE_MM
+        if not _is_degenerate_wire_segment(segment)
     }:
         raise SchematicWriteUnsafeError(
             "Refusing schematic wire normalization: it would change "
