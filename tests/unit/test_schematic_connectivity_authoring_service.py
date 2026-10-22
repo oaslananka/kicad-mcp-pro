@@ -956,3 +956,22 @@ def test_route_refuses_parse_time_file_modification(tmp_path: Path) -> None:
         harness.service.route_wire_between_pins("U1", "1", "R1", "2")
     assert harness.writes == []
     assert target.read_bytes() != original
+
+
+def test_route_accepts_unchanged_windows_crlf_file_without_false_race(tmp_path: Path) -> None:
+    """Text-based mutation adapters normalize CRLF on Windows, bytes do not."""
+    harness = _harness(
+        tmp_path,
+        parsed={"symbols": [_symbol("U1"), _symbol("R1")], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (1.0, 1.0), "2": (5.0, 5.0)}},
+        route_segments=[(1.0, 1.0, 5.0, 1.0), (5.0, 1.0, 5.0, 5.0)],
+    )
+    target = tmp_path / "board.kicad_sch"
+    original = target.read_bytes().replace(b"\n", b"\r\n")
+    target.write_bytes(original)
+
+    result = harness.service.route_wire_between_pins("U1", "1", "R1", "2")
+
+    assert "Routed 2 wire segment(s)" in result
+    assert len(harness.writes) == 1
+    assert target.read_bytes() == original
