@@ -164,7 +164,7 @@ async def test_pcb_placement_quality_gate_fails_connector_distance(
 
 
 @pytest.mark.anyio
-async def test_pcb_placement_quality_gate_fails_decoupling_distance(
+async def test_pcb_placement_quality_gate_warns_on_centroid_only_decoupling_distance(
     sample_project: Path,
     mock_kicad,
 ) -> None:
@@ -184,8 +184,10 @@ async def test_pcb_placement_quality_gate_fails_decoupling_distance(
 
     gate = await call_tool_text(server, "pcb_placement_quality_gate", {})
 
-    assert "Placement quality gate: FAIL" in gate
+    assert "Placement quality gate: WARN" in gate
     assert "nearest decoupling cap is" in gate
+    assert "footprint-center proxy" in gate
+    assert "power-pad geometry unavailable" in gate
 
 
 @pytest.mark.anyio

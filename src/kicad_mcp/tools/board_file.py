@@ -123,6 +123,43 @@ def _footprint_net_names(block: str) -> list[str]:
     return sorted(names)
 
 
+def _footprint_pad_positions_mm(
+    block: str,
+    origin: tuple[float, float, int] | None,
+    footprint_layer: str | None,
+) -> list[dict[str, Any]]:
+    """Return measured front-layer pad centers and names in board coordinates.
+
+    Restrict the calculation to known F.Cu geometry: the backside's mirror
+    convention must not be mistaken for a qualified absolute position.
+    """
+    if origin is None or footprint_layer != "F.Cu":
+        return []
+    x0, y0, rotation = origin
+    radians = math.radians(rotation)
+    cosine, sine = math.cos(radians), math.sin(radians)
+    pads: list[dict[str, Any]] = []
+    for pad in _iter_blocks(block, "pad"):
+        name_match = re.match(rf"\(pad\s+{STRING_PATTERN}", pad.lstrip())
+        location = re.search(
+            rf"\(at\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})(?:\s+{FLOAT_PATTERN})?\)",
+            pad,
+        )
+        net_match = re.search(rf"\(net(?:\s+\d+)?\s+{STRING_PATTERN}\)", pad)
+        if name_match is None or location is None or net_match is None:
+            continue
+        lx, ly = float(location.group(1)), float(location.group(2))
+        pads.append(
+            {
+                "number": name_match.group(1),
+                "net": net_match.group(1),
+                "x_mm": x0 + lx * cosine + ly * sine,
+                "y_mm": y0 - lx * sine + ly * cosine,
+            }
+        )
+    return pads
+
+
 def _footprint_pad_net_map(block: str) -> dict[str, str]:
     pad_map: dict[str, str] = {}
     for pad_block in _iter_blocks(block, "pad"):
@@ -253,6 +290,7 @@ def _build_footprint_entry(
         "layer_name_explicit": explicit_layer is not None,
         "net_names": _footprint_net_names(block),
         "pad_nets": _footprint_pad_net_map(block),
+        "pad_positions_mm": _footprint_pad_positions_mm(block, root_at, explicit_layer),
     }
     return ref_match.group(1), entry
 

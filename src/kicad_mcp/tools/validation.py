@@ -1926,13 +1926,48 @@ class _PlacementEvaluator:
                 )
         return connector_edge_violations, checked_connectors
 
+    @staticmethod
+    def _matching_supply_pad_distance(
+        ic_entry: dict[str, Any], cap_entry: dict[str, Any]
+    ) -> float | None:
+        """Measure a same-net power pad pair; ground-only matches are excluded."""
+        ic_pads = ic_entry.get("pad_positions_mm", ())
+        cap_pads = cap_entry.get("pad_positions_mm", ())
+        matches: list[float] = []
+        for left in ic_pads:
+            net = str(left["net"]).lstrip("/").upper()
+            if (
+                not net
+                or "GND" in net
+                or "VSS" in net
+                or net.startswith("UNCONNECTED-(")
+                or not (
+                    net.startswith(("+", "V"))
+                    or "VBUS" in net
+                    or re.match(r"^\d+(?:V\d+)?(?:_|$)", net)
+                )
+            ):
+                continue
+            for right in cap_pads:
+                if net != str(right["net"]).lstrip("/").upper():
+                    continue
+                matches.append(
+                    math.hypot(
+                        float(left["x_mm"]) - float(right["x_mm"]),
+                        float(left["y_mm"]) - float(right["y_mm"]),
+                    )
+                )
+        return min(matches) if matches else None
+
     def _evaluate_decoupling_pair(
         self,
         pair: DecouplingPairIntent,
         ic_entry: dict[str, Any],
     ) -> list[str]:
+        """Fail for missing capacitors, but never fail on a centroid-only proxy."""
         violations: list[str] = []
         cap_distances: list[float] = []
+        matched_pad_distances: list[float] = []
         missing_caps: list[str] = []
         for cap_ref in pair.cap_refs:
             cap_entry = self.footprints.get(cap_ref)
@@ -1945,15 +1980,27 @@ class _PlacementEvaluator:
                     float(ic_entry["y_mm"]) - float(cap_entry["y_mm"]),
                 )
             )
+            pad_distance = self._matching_supply_pad_distance(ic_entry, cap_entry)
+            if pad_distance is not None:
+                matched_pad_distances.append(pad_distance)
         if missing_caps:
             violations.append(
                 f"{pair.ic_ref}: missing or unresolved decoupling caps -> "
                 + ", ".join(missing_caps[:12])
             )
-        if cap_distances and min(cap_distances) > pair.max_distance_mm:
-            violations.append(
-                f"{pair.ic_ref}: nearest decoupling cap is {min(cap_distances):.2f} mm away "
-                f"(limit {pair.max_distance_mm:.2f} mm)."
+        if matched_pad_distances:
+            nearest = min(matched_pad_distances)
+            if nearest > pair.max_distance_mm:
+                self.warnings.append(
+                    f"{pair.ic_ref}: nearest same-supply-net power-pad to decoupling-pad "
+                    f"distance is {nearest:.2f} mm (intent limit {pair.max_distance_mm:.2f} mm); "
+                    "physical copper path, return loop and device guidance require review."
+                )
+        elif cap_distances and min(cap_distances) > pair.max_distance_mm:
+            self.warnings.append(
+                f"{pair.ic_ref}: nearest decoupling cap is {min(cap_distances):.2f} mm "
+                f"by footprint-center proxy (intent limit {pair.max_distance_mm:.2f} mm); "
+                "power-pad geometry unavailable, cannot infer the decoupling loop."
             )
         return violations
 
@@ -2489,7 +2536,9 @@ def _evaluate_pcb_placement_gate() -> GateOutcome:
     if analysis is None:
         raise RuntimeError(_MISSING_PLACEMENT_ANALYSIS)
 
-    status: GateStatus = "PASS" if not analysis.hard_failures else "FAIL"
+    status: GateStatus = (
+        "FAIL" if analysis.hard_failures else "WARN" if analysis.warnings else "PASS"
+    )
     details = [
         f"Footprints analysed: {analysis.footprint_count}",
         f"Board frame: {analysis.board_width_mm:.2f} x {analysis.board_height_mm:.2f} mm",
@@ -2512,9 +2561,13 @@ def _evaluate_pcb_placement_gate() -> GateOutcome:
     return GateOutcome(
         name="Placement",
         status=status,
-        summary="Footprint placement is geometrically and contextually sane."
-        if status == "PASS"
-        else "Footprint placement still violates hard physical or intent-aware checks.",
+        summary=(
+            "Footprint placement still violates hard physical or intent-aware checks."
+            if status == "FAIL"
+            else "Placement measurements require manual review; no hard failure was proven."
+            if status == "WARN"
+            else "Footprint placement is geometrically and contextually sane."
+        ),
         details=details,
     )
 
