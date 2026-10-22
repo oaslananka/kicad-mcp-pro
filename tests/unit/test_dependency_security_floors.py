@@ -12,6 +12,14 @@ ROOT = Path(__file__).resolve().parents[2]
 APP = ROOT / "integrations" / "chatgpt-app" / "apps-sdk"
 
 
+def _assert_all_locked_versions_patched(packages: list[dict], name: str, minimum: str) -> None:
+    versions = [
+        package["version"] for package in packages if package["name"].lower() == name.lower()
+    ]
+    assert versions, f"{name} must exist in the resolved lock"
+    assert all(Version(version) >= Version(minimum) for version in versions), name
+
+
 def test_gitpython_security_floor_is_patched() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     uv_lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
@@ -19,12 +27,7 @@ def test_gitpython_security_floor_is_patched() -> None:
     vcs_dependencies = pyproject["project"]["optional-dependencies"]["vcs"]
     assert any("gitpython>=3.2.1" in dependency.lower() for dependency in vcs_dependencies)
 
-    locked = next(
-        package["version"]
-        for package in uv_lock["package"]
-        if package["name"].lower() == "gitpython"
-    )
-    assert Version(locked) >= Version("3.2.1")
+    _assert_all_locked_versions_patched(uv_lock["package"], "gitpython", "3.2.1")
 
 
 def test_opentelemetry_api_security_floor_uses_patched_family() -> None:
@@ -34,9 +37,36 @@ def test_opentelemetry_api_security_floor_uses_patched_family() -> None:
     dependencies = pyproject["project"]["dependencies"]
     for package in ("opentelemetry-sdk", "opentelemetry-exporter-otlp"):
         assert any(f"{package}>=1.45.1" in item.lower() for item in dependencies)
-    versions = {package["name"]: package["version"] for package in lock["package"]}
     for package in ("opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp"):
-        assert Version(versions[package]) >= Version("1.45.1")
+        _assert_all_locked_versions_patched(lock["package"], package, "1.45.1")
+
+
+def test_pypdf_security_floor_blocks_six_dependabot_regressions() -> None:
+    """PDF resource-exhaustion advisories require >=6.21.0; JPEG >=6.21.1.
+
+    GHSA-6vvc-x485-93v7, GHSA-f54x-cmq8-qg57, GHSA-cgf9-327m-v77c,
+    GHSA-5hx5-vpf9-5wcv, GHSA-qfv9-64jg-mh7p, GHSA-9mx8-4j7g-633p.
+    """
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    uv_lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+
+    dev_dependencies = pyproject["project"]["optional-dependencies"]["dev"]
+    assert "pypdf==6.21.1" in dev_dependencies
+    _assert_all_locked_versions_patched(uv_lock["package"], "pypdf", "6.21.1")
+
+
+def test_opentelemetry_otlp_exporters_share_patched_runtime_floor() -> None:
+    """No exporter subpackage may pull vulnerable opentelemetry-api back in."""
+    uv_lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    for name in (
+        "opentelemetry-api",
+        "opentelemetry-sdk",
+        "opentelemetry-exporter-otlp",
+        "opentelemetry-exporter-otlp-proto-common",
+        "opentelemetry-exporter-otlp-proto-grpc",
+        "opentelemetry-exporter-otlp-proto-http",
+    ):
+        _assert_all_locked_versions_patched(uv_lock["package"], name, "1.45.1")
 
 
 def test_cryptography_security_floor_is_patched() -> None:
