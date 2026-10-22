@@ -89,7 +89,8 @@ def test_entrypoint_starts_only_reviewed_stdio_server(
         from pathlib import Path
 
         private = os.environ.get("KICAD_MCP_KICAD_SOCKET_PATH")
-        assert private and private.startswith("ipc://")
+        assert private is not None
+        assert private.startswith("ipc://")
         endpoint = Path(private.removeprefix("ipc://"))
         assert endpoint.parent.is_dir()
         assert not endpoint.exists()

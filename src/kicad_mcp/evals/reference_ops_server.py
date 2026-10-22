@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None) -> None:
                     server.middleware.append(ReviewedOpsTraceMiddleware(trace))
             _ensure_thread_aware_stdout()
             server.run(transport="stdio")
-    except (ValueError, OSError, ReferenceAgentRunnerError) as exc:
+    except (ValueError, OSError) as exc:
         raise SystemExit(str(exc)) from None
 
 
