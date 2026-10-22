@@ -154,6 +154,12 @@ def _unquoted_parentheses(source: str) -> Iterable[tuple[int, str]]:
         raise SchematicWriteUnsafeError("Unbalanced quoted schematic text")
 
 
+def _root_child_span(source: str, start: int, end: int) -> tuple[str, int, int]:
+    """Describe one complete direct child without reparsing its contents."""
+    match = _TAG_RE.match(source, start + 1)
+    return (match.group(0) if match else "", start, end)
+
+
 def _root_children_spans(source: str) -> list[tuple[str, int, int]]:
     """Return root-child text offsets without interpreting quoted text as nodes."""
     depth = 0
@@ -166,8 +172,7 @@ def _root_children_spans(source: str) -> list[tuple[str, int, int]]:
             depth += 1
         else:
             if depth == 2 and start >= 0:
-                match = _TAG_RE.match(source, start + 1)
-                found.append((match.group(0) if match else "", start, index + 1))
+                found.append(_root_child_span(source, start, index + 1))
                 start = -1
             depth -= 1
     if depth != 0:
