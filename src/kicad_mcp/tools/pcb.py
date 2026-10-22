@@ -35,6 +35,7 @@ from pydantic import Field
 
 from ..config import get_config
 from ..connection import KiCadConnectionError, get_board
+from ..errors import KiCadNotRunningError
 from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION, upgrade_generated_file
 from ..library_resolution import footprint_file as _footprint_file
 from ..models.common import _FootprintLike, _PadLike
@@ -1175,12 +1176,23 @@ def _board_summary_report(
     findings: list[Finding] | None = None,
 ) -> VerdictReport:
     resolved_findings = findings or []
+    unavailable = any(finding.severity == "error" for finding in resolved_findings)
     return VerdictReport(
         text=text,
-        summary=f"Board summary from {source}: {footprints} footprint(s), {nets} net(s).",
+        summary=(
+            "Board summary unavailable: neither live IPC nor a valid board file can be read."
+            if unavailable
+            else f"Board summary from {source}: {footprints} footprint(s), {nets} net(s)."
+        ),
         verdict=VerdictReport.verdict_for([finding.severity for finding in resolved_findings]),
+        failure_mode=resolved_findings[0].failure_mode if resolved_findings else "none",
+        retryable=any(finding.retryable for finding in resolved_findings),
         findings=resolved_findings,
-        next_action="Use pcb_get_tracks(), pcb_get_footprints(), or run_drc() for details.",
+        next_action=(
+            "Repair KiCad IPC connectivity or configure a valid .kicad_pcb project."
+            if unavailable
+            else "Use pcb_get_tracks(), pcb_get_footprints(), or run_drc() for details."
+        ),
         metadata={
             "source": source,
             "tracks": tracks,
@@ -1196,6 +1208,10 @@ def _board_summary_report(
 def _file_backed_board_summary(ipc_error: BaseException) -> VerdictReport:
     loaded = _load_file_backed_board(ipc_error)
     if isinstance(loaded, str):
+        # An unreachable IPC session is an environment failure, not evidence
+        # that the PCB is invalid. A missing configured board without an IPC
+        # disconnect instead needs configuration repair, not blind retries.
+        disconnected = isinstance(ipc_error, KiCadNotRunningError)
         return _board_summary_report(
             text=loaded,
             source="file-backed",
@@ -1205,7 +1221,12 @@ def _file_backed_board_summary(ipc_error: BaseException) -> VerdictReport:
                     severity="error",
                     location=str(_configured_board_file() or ""),
                     description=loaded.splitlines()[0],
-                    suggested_fix=SuggestedFix(tool="kicad_set_project", args={}),
+                    failure_mode="environment" if disconnected else "configuration",
+                    retryable=disconnected,
+                    remediation=(
+                        "Reconnect the configured KiCad IPC endpoint or select an existing "
+                        ".kicad_pcb project with kicad_set_project(project_dir=...)."
+                    ),
                 )
             ],
         )
@@ -1244,6 +1265,9 @@ def _file_backed_board_summary(ipc_error: BaseException) -> VerdictReport:
                 severity="warning",
                 location=str(board_file),
                 description="Live KiCad IPC is unavailable; using file-backed board parser.",
+                failure_mode="environment",
+                retryable=True,
+                remediation="Reconnect the KiCad IPC endpoint before relying on live-board state.",
                 suggested_fix=SuggestedFix(tool="kicad_get_version", args={}),
             )
         ],
