@@ -899,3 +899,32 @@ def test_named_net_trace_does_not_connect_bare_crossings() -> None:
     }
     assert _named_nets_at_pin((5.0, 2.0), sample) == {"USB_DP"}
     assert _named_nets_at_pin((3.0, 4.0), sample) == {"USB_DM"}
+
+
+def test_named_net_trace_follows_joined_wire_chain() -> None:
+    from kicad_mcp.schematic.connectivity_authoring import _named_nets_at_pin
+
+    sample = {
+        "wires": [
+            {"x1": 1.0, "y1": 1.0, "x2": 3.0, "y2": 1.0},
+            {"x1": 3.0, "y1": 1.0, "x2": 5.0, "y2": 1.0},
+        ],
+        "labels": [{"name": "USB_DP", "x": 5.0, "y": 1.0}],
+        "power_symbols": [],
+    }
+    assert _named_nets_at_pin((1.0, 1.0), sample) == {"USB_DP"}
+
+
+def test_named_net_trace_respects_power_symbol_names() -> None:
+    from kicad_mcp.schematic.connectivity_authoring import _named_nets_at_pin
+
+    sample = {
+        "wires": [{"x1": 1.0, "y1": 1.0, "x2": 3.0, "y2": 1.0}],
+        "labels": [],
+        "power_symbols": [
+            {"x": 3.0, "y": 1.0, "value": "GND"},
+            {"x": 20.0, "y": 20.0, "value": "3V3"},
+        ],
+    }
+    assert _named_nets_at_pin((1.0, 1.0), sample) == {"GND"}
+    assert _named_nets_at_pin((20.0, 20.0), sample) == {"3V3"}
