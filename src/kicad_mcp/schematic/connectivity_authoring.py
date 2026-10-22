@@ -566,7 +566,16 @@ class SchematicConnectivityAuthoringService:
             pin2=pin2,
             snap_to_grid=snap_to_grid,
         )
-        data = self.parse_schematic(self.active_schematic_file())
+        # Read once before parsing: all pin positions, net classes and route
+        # geometry must be derived from the same source revision.
+        source_path = self.active_schematic_file()
+        source_bytes = source_path.read_bytes()
+        data = self.parse_schematic(source_path)
+        if source_path.read_bytes() != source_bytes:
+            raise SchematicRoutingUnsafeError(
+                "Route refused: schematic changed during parsing. No schematic changes were made."
+            )
+        content = source_bytes.decode("utf-8")
         # Power symbols are addressable routing endpoints too.  They live in a
         # separate list because they are excluded from BOM/annotation/placement,
         # not because they cannot carry a wire -- and a pin's own ground stub is
@@ -628,7 +637,6 @@ class SchematicConnectivityAuthoringService:
                 "No schematic changes were made."
             )
 
-        content = self.active_schematic_file().read_text(encoding="utf-8", errors="ignore")
         obstacles = self.get_symbol_bboxes(content)
         boundaries = self.get_module_boundaries(content)
         # Wires that already belong to another net are what this route must not

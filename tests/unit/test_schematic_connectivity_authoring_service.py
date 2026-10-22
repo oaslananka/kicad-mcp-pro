@@ -932,3 +932,27 @@ def test_named_net_trace_respects_power_symbol_names() -> None:
     }
     assert _named_nets_at_pin((1.0, 1.0), sample) == {"GND"}
     assert _named_nets_at_pin((20.0, 20.0), sample) == {"3V3"}
+
+
+def test_route_refuses_parse_time_file_modification(tmp_path: Path) -> None:
+    """Never route on pre-read bytes mixed with pin positions from newer text."""
+    harness = _harness(
+        tmp_path,
+        parsed={"symbols": [_symbol("U1"), _symbol("R1")], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (1.0, 1.0), "2": (5.0, 5.0)}},
+        route_segments=[(1.0, 1.0, 5.0, 1.0), (5.0, 1.0, 5.0, 5.0)],
+    )
+    target = tmp_path / "board.kicad_sch"
+    original = target.read_bytes()
+    actual = harness.service.parse_schematic
+
+    def racing_parse(path: Path) -> dict[str, Any]:
+        parsed = actual(path)
+        path.write_bytes(original.replace(b"(sheet_instances)", b'(sheet_instances (path "/"))'))
+        return parsed
+
+    object.__setattr__(harness.service, "parse_schematic", racing_parse)
+    with pytest.raises(SchematicRoutingUnsafeError, match="changed during parsing"):
+        harness.service.route_wire_between_pins("U1", "1", "R1", "2")
+    assert harness.writes == []
+    assert target.read_bytes() != original
