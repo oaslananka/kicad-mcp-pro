@@ -2436,19 +2436,10 @@ def _extract_buses(content: str) -> list[dict[str, float]]:
     return buses
 
 
-def _top_level_sexpr_blocks(content: str) -> list[tuple[str, int, int]]:
-    """Locate root children without matching tokens inside quoted values.
-
-    KiCad S-expression string values may contain parenthesized text, escaped
-    quotes, or even complete apparent wire records.  A regex that scans for
-    "(wire" anywhere can turn such text into live electrical connections.
-    """
-    blocks: list[tuple[str, int, int]] = []
-    depth = 0
+def _nonquoted_parentheses(content: str) -> Iterable[tuple[int, str]]:
+    """Yield parentheses only when outside escaped KiCad string values."""
     in_string = False
     escaped = False
-    child_start = -1
-    child_name = ""
     for index, char in enumerate(content):
         if in_string:
             if escaped:
@@ -2457,18 +2448,26 @@ def _top_level_sexpr_blocks(content: str) -> list[tuple[str, int, int]]:
                 escaped = True
             elif char == '"':
                 in_string = False
-            continue
-        if char == '"':
+        elif char == '"':
             in_string = True
-        elif char == "(":
+        elif char in "()":
+            yield index, char
+
+
+def _top_level_sexpr_blocks(content: str) -> list[tuple[str, int, int]]:
+    """Locate KiCad root children, never quoted text posing as a wire."""
+    blocks: list[tuple[str, int, int]] = []
+    depth = 0
+    child_start = -1
+    child_name = ""
+    for index, paren in _nonquoted_parentheses(content):
+        if paren == "(":
             if depth == 1:
                 child_start = index
-                end = index + 1
-                while end < len(content) and (content[end].isalnum() or content[end] in "_-"):
-                    end += 1
-                child_name = content[index + 1 : end]
+                name_match = re.match(r"[a-zA-Z0-9_-]+", content[index + 1 :])
+                child_name = name_match.group(0) if name_match else ""
             depth += 1
-        elif char == ")":
+        else:
             if depth == 2 and child_start >= 0:
                 blocks.append((child_name, child_start, index + 1))
                 child_start = -1
