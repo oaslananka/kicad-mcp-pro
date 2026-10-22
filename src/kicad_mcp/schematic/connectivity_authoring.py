@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from ..errors import SchematicRoutingUnsafeError
 from ..models.schematic import RouteWireBetweenPinsInput
+from ..utils.schematic_router import segments_merge
 from .references import power_reference_from_uuid
 
 
@@ -600,17 +601,35 @@ class SchematicConnectivityAuthoringService:
             return (
                 f"{payload.ref1}:{payload.pin1} and {payload.ref2}:{payload.pin2} already overlap."
             )
-        # A failed search may return its direct, potentially shorting fallback.
-        # Only the explicitly reviewed perpendicular-crossing warning permits a
-        # write; all other warnings must leave the schematic unchanged.
+        # The planner is advisory. Recheck proposed geometry independently,
+        # including fallback routes, before any mutation can be committed.
         if routing_warning and routing_warning != "WARNING: net_crossing_unavoidable":
             raise SchematicRoutingUnsafeError(
                 f"Route refused between {payload.ref1}:{payload.pin1} and "
                 f"{payload.ref2}:{payload.pin2}: {routing_warning}. "
                 "No schematic changes were made."
             )
+        if any(segments_merge(segment, other) for segment in segments for other in occupied):
+            raise SchematicRoutingUnsafeError(
+                f"Route refused between {payload.ref1}:{payload.pin1} and "
+                f"{payload.ref2}:{payload.pin2}: net_isolation_failed. "
+                "No schematic changes were made."
+            )
+        if routing_warning == "WARNING: net_crossing_unavoidable" and not crossings:
+            raise SchematicRoutingUnsafeError(
+                f"Route refused between {payload.ref1}:{payload.pin1} and "
+                f"{payload.ref2}:{payload.pin2}: unverified_crossing_fallback. "
+                "No schematic changes were made."
+            )
 
         def mutator(current: str) -> str:
+            # A plan derived from stale topology must not write into a schematic
+            # that another MCP tool or KiCad editor changed in the meantime.
+            if current != content:
+                raise SchematicRoutingUnsafeError(
+                    "Route refused: schematic changed during planning. "
+                    "No schematic changes were made."
+                )
             updated = current
             for segment in segments:
                 updated = self.append_before_sheet_instances(

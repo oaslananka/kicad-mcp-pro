@@ -12,6 +12,7 @@ from kicad_mcp.schematic.connectivity_authoring import (
     BoundingBoxLike,
     SchematicConnectivityAuthoringService,
 )
+from kicad_mcp.utils.schematic_router import perpendicular_crossing
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ def _harness(
     aliases: dict[tuple[str, str], dict[str, tuple[float, float]]] | None = None,
     route_segments: list[tuple[float, float, float, float]] | None = None,
     route_warning: str | None = None,
+    foreign_segments: list[tuple[float, float, float, float]] | None = None,
     power_net: Callable[[str], bool] | None = None,
     power_lib: str | None = '(symbol "power:3V3")',
 ) -> ServiceHarness:
@@ -179,8 +181,10 @@ def _harness(
         active_schematic_file=lambda: target.path,
         split_lib_id=split_lib_id,
         get_symbol_bboxes=lambda content: [FakeBoundingBox()],
-        foreign_wire_segments=lambda content, anchors: [],
-        count_net_crossings=lambda segments, occupied: 0,
+        foreign_wire_segments=lambda content, anchors: list(foreign_segments or []),
+        count_net_crossings=lambda segments, occupied: sum(
+            perpendicular_crossing(segment, other) for segment in segments for other in occupied
+        ),
         get_pin_outward_normals=lambda library, symbol, rotation, unit: {},  # noqa: ARG005
         route_avoiding_obstacles=route,
         run_auto_add_missing_junctions=lambda: "Inserted 2 missing junction(s).",
@@ -513,6 +517,7 @@ def test_route_wire_between_pins_allows_reviewed_crossing_warning(tmp_path: Path
         pin_positions={("Device", "R"): {"1": (1.0, 1.0), "2": (5.0, 5.0)}},
         route_segments=[(1.0, 1.0, 5.0, 1.0), (5.0, 1.0, 5.0, 5.0)],
         route_warning="WARNING: net_crossing_unavoidable",
+        foreign_segments=[(3.0, 0.0, 3.0, 2.0)],
     )
 
     result = harness.service.route_wire_between_pins("U1", "1", "R1", "2")
@@ -763,3 +768,66 @@ def test_resolve_pin_point_and_candidate_branches(tmp_path: Path) -> None:
     )
     assert pt is None
     assert err == "R1.99: pin not found"
+
+
+@pytest.mark.parametrize(
+    ("foreign", "warning"),
+    [
+        ((5.0, 0.0, 5.0, 3.0), None),
+        ((5.0, 0.0, 5.0, 3.0), "WARNING: net_crossing_unavoidable"),
+        ((2.0, 1.0, 4.0, 1.0), None),
+    ],
+)
+def test_route_refuses_unrelated_net_merge_despite_router_claim(
+    tmp_path: Path, foreign: tuple[float, float, float, float], warning: str | None
+) -> None:
+    """No T-junction, endpoint landing or collinear overlap may be committed."""
+    harness = _harness(
+        tmp_path,
+        parsed={"symbols": [_symbol("U1"), _symbol("R1")], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (1.0, 1.0), "2": (5.0, 5.0)}},
+        route_segments=[(1.0, 1.0, 5.0, 1.0), (5.0, 1.0, 5.0, 5.0)],
+        foreign_segments=[foreign],
+        route_warning=warning,
+    )
+    original = (tmp_path / "board.kicad_sch").read_bytes()
+    with pytest.raises(SchematicRoutingUnsafeError, match="net_isolation_failed"):
+        harness.service.route_wire_between_pins("U1", "1", "R1", "2")
+    assert harness.writes == []
+    assert (tmp_path / "board.kicad_sch").read_bytes() == original
+
+
+def test_route_refuses_unverified_crossing_warning(tmp_path: Path) -> None:
+    harness = _harness(
+        tmp_path,
+        parsed={"symbols": [_symbol("U1"), _symbol("R1")], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (1.0, 1.0), "2": (5.0, 5.0)}},
+        route_segments=[(1.0, 1.0, 5.0, 1.0), (5.0, 1.0, 5.0, 5.0)],
+        route_warning="WARNING: net_crossing_unavoidable",
+    )
+    original = (tmp_path / "board.kicad_sch").read_bytes()
+    with pytest.raises(SchematicRoutingUnsafeError, match="unverified_crossing_fallback"):
+        harness.service.route_wire_between_pins("U1", "1", "R1", "2")
+    assert harness.writes == []
+    assert (tmp_path / "board.kicad_sch").read_bytes() == original
+
+
+def test_route_refuses_stale_topology_at_transaction_boundary(tmp_path: Path) -> None:
+    harness = _harness(
+        tmp_path,
+        parsed={"symbols": [_symbol("U1"), _symbol("R1")], "power_symbols": []},
+        pin_positions={("Device", "R"): {"1": (1.0, 1.0), "2": (5.0, 5.0)}},
+        route_segments=[(1.0, 1.0, 5.0, 1.0), (5.0, 1.0, 5.0, 5.0)],
+    )
+    target = tmp_path / "board.kicad_sch"
+    original = target.read_bytes()
+
+    def concurrent_write(mutator: Callable[[str], str], _path: Path | None) -> str:
+        changed = original.decode().replace("(sheet_instances)", '(sheet_instances (path "/"))')
+        return mutator(changed)
+
+    object.__setattr__(harness.service, "transactional_write", concurrent_write)
+    with pytest.raises(SchematicRoutingUnsafeError, match="changed during planning"):
+        harness.service.route_wire_between_pins("U1", "1", "R1", "2")
+    assert harness.writes == []
+    assert target.read_bytes() == original
