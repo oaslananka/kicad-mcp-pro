@@ -25,7 +25,14 @@ from scripts.check_reference_board_attempt_readiness import (
 
 SCHEMA = "reference-ops-tool-attestation.v1"
 _FORBIDDEN_ENV = frozenset(
-    {"KICAD_API_SOCKET", "KICAD_MCP_REFERENCE_TRACE_PATH", "KICAD_MCP_REFERENCE_ATTEMPT_ID"}
+    {
+        "KICAD_API_SOCKET",
+        "KICAD_MCP_KICAD_SOCKET_PATH",
+        "KICAD_API_TOKEN",
+        "KICAD_MCP_KICAD_TOKEN",
+        "KICAD_MCP_REFERENCE_TRACE_PATH",
+        "KICAD_MCP_REFERENCE_ATTEMPT_ID",
+    }
 )
 
 
