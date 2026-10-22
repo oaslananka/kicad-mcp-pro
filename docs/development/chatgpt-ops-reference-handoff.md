@@ -259,3 +259,57 @@ reserve or score an official attempt, replace real schematic/PCB work,
 waive ERC/DRC/manufacturing restrictions or authorize a paid provider model.
 Existing unsigned Gateway audits remain
 `gateway_server_matched_unattested` and retain their old verifier.
+
+## Stage-two live KiCad GUI readiness (read-only; PCB phase only)
+
+The offline source/runtime preflight and the MCP tool-list attestation intentionally
+**do not prove a running KiCad GUI can answer IPC**. They also do not inspect or
+mutate an arbitrary user's active board. Once an **isolated** PCB Editor is
+started and its expected fixture board is open, require this additional gate
+**before any PCB-phase live mutation or a scored design attempt**:
+
+```sh
+uv run python scripts/check_reference_board_attempt_readiness.py \
+  --board-id stm32f072-usbc --attempt-number 4 --phase pcb \
+  --agent-runtime chatgpt-ops --ops-server-name REVIEWED_PRIVATE_PCB_SERVER \
+  --approved-source-revision REVIEWED_40_HEX_SHA \
+  --require-live-gui \
+  --ipc-socket ipc:///absolute/private/tmp/kicad/api.sock \
+  --expected-live-board-name isolated-reference.kicad_pcb
+```
+
+For a direct, phase-independent diagnostic, run:
+
+```sh
+uv run python scripts/check_reference_live_gui_readiness.py \
+  --ipc-socket ipc:///absolute/private/tmp/kicad/api.sock \
+  --expected-board-name isolated-reference.kicad_pcb
+```
+
+Both commands are read-only, use a bounded 3-second IPC client timeout and
+require an actual `get_version()` and `get_board()` response, KiCad 10,
+and the expected board identity. The stage-two gate is **opt-in and applies
+only to an already-launched isolated PCB phase**; it must not block initial
+schematic phases, which legitimately start without a GUI. The standard offline
+`ready` or `handoff_required` response **never claims** live GUI readiness:
+`live_gui_attested=false` unless stage two was explicitly requested and passed.
+
+A private IPC socket may exist while KiCad is stalled behind its first-start
+**“Welcome to KiCad 10.0”** setup wizard or another modal. The native API
+returns `AS_NOT_READY`, which this gate classifies as
+`kicad_gui_not_ready` with `status=blocked` and exit 2. The operator must
+complete any wizard **in that private GUI session** and rerun the check; do not
+force global GUI restarts, switch another user's open board, or mark the attempt
+as a design failure. Missing/stale sockets, IPC errors, incompatible GUI
+versions and wrong board identities also fail closed with reason codes and
+without exporting host paths or error details.
+
+The readiness probe checks the currently selected board identity but does **not** independently certify operating-system/GUI isolation. Use a separate reviewed sandbox/session control for that requirement.
+
+A successful ready result is permission to **continue eligibility review**,
+not proof of a successful agent-run reference board, a scored attempt or an
+approved physical manufacturing release. The exact same live session must be
+verified again if the socket, editor, board or fixture changes. Independent
+KiCad `pcbnew` binding availability is a separate verification prerequisite
+for tools that rely on native reopen checks; a Python MCP virtualenv need not
+contain system-only `pcbnew` when the independent verifier uses `/usr/bin/python3`.

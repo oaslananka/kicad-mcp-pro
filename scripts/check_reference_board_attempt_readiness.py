@@ -23,6 +23,7 @@ from kicad_mcp.evals.reference_agent_runner import (
     ReferenceAgentWorkspace,
     discover_reference_source_revision,
 )
+from scripts.check_reference_live_gui_readiness import probe_live_gui
 
 ROOT = Path(__file__).resolve().parents[1]
 BOARD_IDS = ("esp32-c6-usbc", "stm32f072-usbc", "rp2350-usbc")
@@ -222,6 +223,9 @@ def preflight(
     ops_server_name: str | None = None,
     ops_config_path: Path = _OPS_CONFIG,
     approved_source_revision: str | None = None,
+    require_live_gui: bool = False,
+    live_gui_socket: str | None = None,
+    expected_live_board_name: str | None = None,
 ) -> dict[str, Any]:
     """Return machine-readable, sanitized readiness; never write an artifact."""
     workspace = ReferenceAgentWorkspace.for_reviewed_attempt(
@@ -260,6 +264,21 @@ def preflight(
             ops_config_path=ops_config_path,
         )
     )
+    # Optional stage-two gate, only for an already-launched isolated PCB GUI.
+    # It must not run in the default offline preflight: schematic clean starts
+    # and ChatGPT–Ops inventory attestation intentionally have no GUI yet.
+    live_gui_attested = False
+    if require_live_gui:
+        if phase.name != "pcb":
+            blocking.add("live_gui_gate_requires_pcb_phase")
+        else:
+            measured = probe_live_gui(
+                ipc_socket=live_gui_socket,
+                expected_board_name=expected_live_board_name,
+            )
+            live_gui_attested = measured["gui_ready"] is True
+            if not live_gui_attested:
+                blocking.update(measured["blocking_reasons"])
     if blocking:
         status = "blocked"
     elif agent_runtime == "claude":
@@ -278,6 +297,8 @@ def preflight(
         "agent": agent_runtime,
         "mcp_server": ops_server_name if agent_runtime == "chatgpt-ops" else None,
         "live_tool_attestation_required": agent_runtime == "chatgpt-ops",
+        "live_gui_attestation_requested": require_live_gui,
+        "live_gui_attested": live_gui_attested,
         "recorded_event_log_required": agent_runtime == "chatgpt-ops",
         "source_revision": source_revision,
         "reviewed_input_sha256": dict(sorted(hashes.items())),
@@ -295,6 +316,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--agent-runtime", choices=("claude", "chatgpt-ops"), default="claude")
     parser.add_argument("--ops-server-name")
     parser.add_argument(
+        "--require-live-gui",
+        action="store_true",
+        help="Stage-two read-only KiCad 10 IPC/board-readiness gate (PCB phase only)",
+    )
+    parser.add_argument("--ipc-socket", help="Exact isolated KiCad IPC Unix socket URI")
+    parser.add_argument(
+        "--expected-live-board-name", help="Exact live .kicad_pcb basename to match"
+    )
+    parser.add_argument(
         "--approved-source-revision",
         help=(
             "Exact 40-hex source SHA independently approved by the owner (required for ChatGPT–Ops)"
@@ -310,6 +340,9 @@ def main(argv: list[str] | None = None) -> int:
             agent_runtime=args.agent_runtime,
             ops_server_name=args.ops_server_name,
             approved_source_revision=args.approved_source_revision,
+            require_live_gui=args.require_live_gui,
+            live_gui_socket=args.ipc_socket,
+            expected_live_board_name=args.expected_live_board_name,
         )
     except (ValueError, OSError):
         print(
