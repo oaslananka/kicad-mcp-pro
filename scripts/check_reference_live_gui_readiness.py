@@ -19,6 +19,32 @@ from typing import Any
 SCHEMA = "reference-live-gui-readiness.v1"
 
 
+def _is_existing_socket(ipc_socket: str | None) -> bool:
+    """Reject unknown, missing and symlinked IPC addresses before connecting."""
+    if (
+        not isinstance(ipc_socket, str)
+        or not ipc_socket.startswith("ipc:///")
+        or len(ipc_socket) > 4096
+    ):
+        return False
+    path = Path(ipc_socket.removeprefix("ipc://"))
+    try:
+        return not path.is_symlink() and stat.S_ISSOCK(path.lstat().st_mode)
+    except OSError:
+        return False
+
+
+def _ipc_failure_reason(exc: Exception) -> str:
+    """Use the stable protobuf status, never exception text or private paths."""
+    try:
+        from kipy.errors import ApiError, ApiStatusCode
+    except ImportError:
+        return "kicad_gui_ipc_unavailable"
+    if isinstance(exc, ApiError) and exc.code == ApiStatusCode.AS_NOT_READY:
+        return "kicad_gui_not_ready"
+    return "kicad_gui_ipc_unavailable"
+
+
 def probe_live_gui(
     *,
     ipc_socket: str | None,
@@ -45,17 +71,7 @@ def probe_live_gui(
         r"[A-Za-z0-9_.-]+\.kicad_pcb", expected_board_name
     ):
         return block("expected_board_identity_missing")
-    if (
-        not isinstance(ipc_socket, str)
-        or not ipc_socket.startswith("ipc:///")
-        or len(ipc_socket) > 4096
-    ):
-        return block("private_ipc_socket_missing")
-    path = Path(ipc_socket.removeprefix("ipc://"))
-    try:
-        if path.is_symlink() or not stat.S_ISSOCK(path.lstat().st_mode):
-            return block("private_ipc_socket_missing")
-    except OSError:
+    if not _is_existing_socket(ipc_socket):
         return block("private_ipc_socket_missing")
 
     if client_factory is None:
@@ -74,15 +90,7 @@ def probe_live_gui(
         if str(getattr(board, "name", "")) != expected_board_name:
             return block("live_board_identity_mismatch")
     except Exception as exc:
-        # Classify the stable KiCad protobuf error code, never parse or print
-        # exception text (which can leak local paths or user project names).
-        try:
-            from kipy.errors import ApiError, ApiStatusCode
-        except ImportError:
-            return block("kicad_gui_ipc_unavailable")
-        if isinstance(exc, ApiError) and exc.code == ApiStatusCode.AS_NOT_READY:
-            return block("kicad_gui_not_ready")
-        return block("kicad_gui_ipc_unavailable")
+        return block(_ipc_failure_reason(exc))
     result.update(status="ready", gui_ready=True)
     return result
 

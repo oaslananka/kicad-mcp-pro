@@ -213,6 +213,20 @@ def _runtime_blockers(
     return blocking
 
 
+def _live_gui_gate(
+    *, required: bool, phase_name: str, socket: str | None, expected_board: str | None
+) -> tuple[bool, set[str]]:
+    """Report optional PCB GUI readiness without changing offline preflight."""
+    if not required:
+        return False, set()
+    if phase_name != "pcb":
+        return False, {"live_gui_gate_requires_pcb_phase"}
+    measured = probe_live_gui(ipc_socket=socket, expected_board_name=expected_board)
+    if measured["gui_ready"] is True:
+        return True, set()
+    return False, set(measured["blocking_reasons"])
+
+
 def preflight(
     *,
     root: Path,
@@ -267,18 +281,13 @@ def preflight(
     # Optional stage-two gate, only for an already-launched isolated PCB GUI.
     # It must not run in the default offline preflight: schematic clean starts
     # and ChatGPT–Ops inventory attestation intentionally have no GUI yet.
-    live_gui_attested = False
-    if require_live_gui:
-        if phase.name != "pcb":
-            blocking.add("live_gui_gate_requires_pcb_phase")
-        else:
-            measured = probe_live_gui(
-                ipc_socket=live_gui_socket,
-                expected_board_name=expected_live_board_name,
-            )
-            live_gui_attested = measured["gui_ready"] is True
-            if not live_gui_attested:
-                blocking.update(measured["blocking_reasons"])
+    live_gui_attested, gui_blockers = _live_gui_gate(
+        required=require_live_gui,
+        phase_name=phase.name,
+        socket=live_gui_socket,
+        expected_board=expected_live_board_name,
+    )
+    blocking.update(gui_blockers)
     if blocking:
         status = "blocked"
     elif agent_runtime == "claude":
