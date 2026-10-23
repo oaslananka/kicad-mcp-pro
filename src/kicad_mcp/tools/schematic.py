@@ -4055,6 +4055,34 @@ def _pin_label_stub_direction(
     return _origin_pin_label_stub_direction(px, py, ox, oy)
 
 
+def _merge_symbol_block_pin_aliases(
+    aliases: dict[str, tuple[float, float]],
+    block: str,
+    unit: int,
+    sym_x: float,
+    sym_y: float,
+    rotation: int,
+    mirror: str,
+) -> None:
+    """Merge direct and eligible child-unit aliases, preserving first-wins order."""
+    for alias, point in _pin_alias_positions(
+        _strip_child_symbol_blocks(block), sym_x, sym_y, rotation, mirror
+    ).items():
+        aliases.setdefault(alias, point)
+
+    block_name = _symbol_block_name(block)
+    if block_name is None:
+        return
+    unit_prefixes = (f"{block_name}_{unit}_", f"{block_name}_0_")
+    for child_name, child_block in _extract_child_symbol_blocks(block):
+        if not child_name.startswith(unit_prefixes):
+            continue
+        for alias, point in _pin_alias_positions(
+            child_block, sym_x, sym_y, rotation, mirror
+        ).items():
+            aliases.setdefault(alias, point)
+
+
 def get_pin_alias_positions(
     library: str,
     symbol_name: str,
@@ -4082,32 +4110,7 @@ def get_pin_alias_positions(
     # in another.
     aliases: dict[str, tuple[float, float]] = {}
     for block in blocks:
-        for alias, point in _pin_alias_positions(
-            _strip_child_symbol_blocks(block),
-            sym_x,
-            sym_y,
-            rotation,
-            mirror,
-        ).items():
-            aliases.setdefault(alias, point)
-
-        block_name = _symbol_block_name(block)
-        if block_name is None:
-            continue
-        # Match the requested unit and unit 0 (pins common to all units, where
-        # single-unit easyeda2kicad imports place every pin).
-        unit_prefixes = (f"{block_name}_{unit}_", f"{block_name}_0_")
-        for child_name, child_block in _extract_child_symbol_blocks(block):
-            if not child_name.startswith(unit_prefixes):
-                continue
-            for alias, point in _pin_alias_positions(
-                child_block,
-                sym_x,
-                sym_y,
-                rotation,
-                mirror,
-            ).items():
-                aliases.setdefault(alias, point)
+        _merge_symbol_block_pin_aliases(aliases, block, unit, sym_x, sym_y, rotation, mirror)
 
     return aliases
 
