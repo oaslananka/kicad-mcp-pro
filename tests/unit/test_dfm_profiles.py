@@ -73,6 +73,21 @@ def test_jlcpcb_pth_2layer_guard_reports_unverified_not_pass() -> None:
     assert "written CAM" in lines[0]
 
 
+def test_jlcpcb_missing_two_layer_pth_spec_fails_closed_with_explicit_warning() -> None:
+    from kicad_mcp.tools.dfm import _check_jlcpcb_pth_2layer_process_lines
+
+    rules = dict(_load_profile("JLCPCB", "standard")["rules"])
+    rules.pop("min_pth_annular_ring_2layer_1oz_mm")
+    lines = _check_jlcpcb_pth_2layer_process_lines(
+        manufacturer="JLCPCB", rules=rules, copper_layers=2
+    )
+    assert len(lines) == 1
+    assert lines[0].startswith("- WARN:")
+    assert "minimum is not configured" in lines[0]
+    assert "written CAM acceptance" in lines[0]
+    assert not any(line.startswith("- PASS:") for line in lines)
+
+
 def test_other_layer_count_does_not_assert_two_layer_pth_acceptance() -> None:
     from kicad_mcp.tools.dfm import _check_jlcpcb_pth_2layer_process_lines
 
