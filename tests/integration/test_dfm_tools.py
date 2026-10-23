@@ -67,8 +67,9 @@ async def test_dfm_profile_load_run_and_cost(
     assert "PASS: Minimum track width 0.200 mm >= 0.127 mm" in report
     assert "PASS: Minimum via drill 0.300 mm >= 0.300 mm" in report
     assert "WARN: JLCPCB 2-layer/1-oz PTH annular ring absolute minimum 0.180 mm" in report
-    assert "Individual footprint PTH pads and plated slots are not measured" in report
+    assert "noncircular PTH, plated slots and finished hole tolerances are not measured" in report
     assert "actual copper weight is not checked" in report
+    assert "Partial source-board PTH preflight: 0 circular pads measured" in report
     assert "Manufacturing cost estimate:" in cost
     assert "Board size: 50.00 x 40.00 mm" in cost
     assert "Quantity: 10" in cost
@@ -105,3 +106,60 @@ async def test_legacy_dfm_validation_uses_profile_backend(
     assert "Profile: JLCPCB / standard" in jlcpcb
     assert "DFM check (generic profile):" in generic
     assert "Profile: PCBWay / standard" in generic
+
+
+@pytest.mark.anyio
+async def test_manufacturer_dfm_flags_saved_board_nominal_underwidth_pth(
+    sample_project, mock_board, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mock_board.get_enabled_layers.return_value = [BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu]
+    mock_board.get_tracks.return_value = []
+    mock_board.get_vias.return_value = []
+    board_text = (
+        "(kicad_pcb (version 20250216) "
+        '(footprint "Connector_USB:Test" (layer "F.Cu") '
+        '(property "Reference" "J1") '
+        '(pad "1" thru_hole circle (at 0 0) (size 0.65 0.65) (drill 0.4) '
+        '(layers "*.Cu" "*.Mask"))'
+        '(pad "2" thru_hole oval (size 1.2 2) (drill oval 0.6 1.4))'
+        "))"
+    )
+    (sample_project / "demo.kicad_pcb").write_text(board_text, encoding="utf-8")
+    monkeypatch.setattr(
+        "kicad_mcp.tools.dfm._run_drc_report",
+        lambda _name: (
+            sample_project / "report.json",
+            {"violations": [], "unconnected_items": [], "items_not_passing_courtyard": []},
+            None,
+        ),
+    )
+    server = build_server("manufacturing")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    report = await call_tool_text(server, "dfm_run_manufacturer_check", {})
+    assert "FAIL: JLCPCB nominal circular PTH J1 pad 1: nominal ring 0.125 mm" in report
+    assert "1 circular pads measured, 1 unmeasured PTH shapes/plated slots" in report
+    assert "written CAM signoff" in report
+
+
+@pytest.mark.anyio
+async def test_manufacturer_dfm_missing_saved_pcb_reports_unverified_geometry(
+    sample_project, mock_board, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mock_board.get_enabled_layers.return_value = [BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu]
+    monkeypatch.setattr(
+        "kicad_mcp.tools.dfm._run_drc_report",
+        lambda _name: (
+            sample_project / "report.json",
+            {"violations": [], "unconnected_items": [], "items_not_passing_courtyard": []},
+            None,
+        ),
+    )
+    server = build_server("manufacturing")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    monkeypatch.setattr(
+        "kicad_mcp.tools.dfm._get_pcb_file", lambda: sample_project / "absent.kicad_pcb"
+    )
+    report = await call_tool_text(server, "dfm_run_manufacturer_check", {})
+    assert "Saved PCB PTH geometry unavailable" in report
+    assert "individual pads/slots remain unverified" in report
+    assert "written CAM" in report

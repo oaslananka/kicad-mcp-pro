@@ -73,6 +73,24 @@ Expected: `PASS`. If not, stop and fix the reported blocking issues, then re-run
 `pcb_transfer_quality_gate()` confirms named schematic pad nets survived sync; run
 `run_drc()` / `run_erc()` for detailed reports.
 
+### JLCPCB two-layer PTH preflight (partial, read-only)
+
+For an active two-copper-layer board and the bundled `JLCPCB/standard`
+profile, run `dfm_run_manufacturer_check()` before sign-off. The conservative
+source-board preflight measures the **nominal** ring of centered circular
+through-hole pads with round drills. A 0.65-mm copper diameter and 0.40-mm
+drill has a nominal ring of **0.125 mm** and is reported as a **FAIL** against
+the published **0.180-mm** 2-layer/1-oz PTH process minimum. Noncircular or
+custom pads and plated/oval drill slots are counted as **unmeasured**.
+
+Even a board with no detected undersized simple pads retains an actionable
+**WARN**, not fabrication approval. The tool does **not** verify actual copper
+weight, finished hole dimensions, registration, plating, soldermask dams,
+pad-to-pad spacing or vendor CAM capabilities. A missing saved PCB file also
+retains a WARN. Collect written manufacturer acceptance and separately verify
+these constraints before considering a production order. Do not widen USB-C
+pads to fix ring clearance without rechecking adjacent-net spacing.
+
 ## 6. Produce the manufacturing sign-off
 
 Bind every declared design-intent requirement to a passing check, with provenance.

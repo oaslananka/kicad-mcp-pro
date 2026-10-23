@@ -25,6 +25,7 @@ from ..validation import drc_runner
 from ..validation.drc_report import courtyard_violations, report_entries
 from .export_support import _ensure_output_dir, _get_pcb_file, _run_cli_variants
 from .metadata import headless_compatible
+from .pth_annular_audit import audit_pth_annular_ring_lines
 
 logger = structlog.get_logger(__name__)
 DEFAULT_PROFILE = ("JLCPCB", "standard")
@@ -323,10 +324,10 @@ def _check_jlcpcb_pth_2layer_process_lines(
     rules: dict[str, float | int],
     copper_layers: int | None,
 ) -> list[str]:
-    """State unverified 2L PTH fabrication limits, never invent a pad scan.
+    """Require fab approval even when a partial nominal round-pad scan runs.
 
-    Existing board metrics inspect *via* drill/diameter and native KiCad DRC,
-    not all footprint PTH copper lands or finished drilled-slot tolerances.
+    Native metrics include vias and DRC, not individual finished PTH geometry.
+    A separate source-only nominal circular-pad audit may follow when available.
     """
     if manufacturer.upper() != "JLCPCB" or copper_layers != 2:
         return []
@@ -347,10 +348,10 @@ def _check_jlcpcb_pth_2layer_process_lines(
             f"{float(minimum):.3f} mm"
             + (f", recommended {float(preferred):.3f} mm" if preferred is not None else "")
             + "; published values apply to 1-oz copper (actual copper weight "
-            "is not checked). Individual footprint PTH pads and plated slots "
-            "are not measured by this DFM profile check. Verify the selected "
-            "copper weight, physical land and hole geometry, and obtain written "
-            "CAM signoff before fabrication.",
+            "is not checked). A separate source-board scan may measure simple "
+            "nominal circular PTH rings only; noncircular PTH, plated slots and "
+            "finished hole tolerances are not measured. Verify copper weight, "
+            "real land/hole geometry and obtain written CAM signoff before fabrication.",
         )
     ]
 
@@ -376,6 +377,26 @@ def _dfm_check_lines(
         if metrics["copper_layers"] is not None
         else None,
     )
+
+    # Source-only circular PTH scan; no claim that the installed KiCad board,
+    # fabricated copper weight or CAM finished drill tolerances are qualified.
+    if str(profile["manufacturer"]).upper() == "JLCPCB" and metrics["copper_layers"] == 2:
+        minimum = rules.get("min_pth_annular_ring_2layer_1oz_mm")
+        if minimum is not None:
+            try:
+                pth_process_lines.extend(
+                    audit_pth_annular_ring_lines(
+                        _get_pcb_file().read_text(encoding="utf-8"), float(minimum)
+                    )
+                )
+            except (OSError, ValueError):
+                pth_process_lines.append(
+                    _format_status(
+                        "WARN",
+                        "Saved PCB PTH geometry unavailable; "
+                        "individual pads/slots remain unverified for written CAM approval.",
+                    )
+                )
 
     lines = [
         heading or "DFM profile check:",
