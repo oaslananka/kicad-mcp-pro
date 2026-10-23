@@ -32,6 +32,8 @@ def test_107_promoted_scope_keeps_unpublished_features_blocked() -> None:
     review = parity["candidatePatchReview"]
     assert matrix["kicad"]["latestVerified"] == parity["baseline"] == "10.0.7"
     assert parity["documentation"] == "docs/compatibility/kicad-10-0-7-feature-parity.md"
+    assert parity["sources"]["releaseNotes"].endswith("/2026/10/KiCad-10.0.7-Release/")
+    assert parity["sources"]["releaseTag"].endswith("/releases/tag/10.0.7")
     assert review["version"] == "10.0.7"
     assert review["status"] == "reviewed-with-blocked-optional-capabilities"
     assert review["globalPromotionApproved"] is True

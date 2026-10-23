@@ -2,7 +2,7 @@
 
 This page is the human-readable view of
 [`compatibility.yaml`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/compatibility.yaml) `kicad10FeatureParity`. It
-tracks KiCad 10.0.6 parity separately from the current KiCad 11 readiness plan
+tracks KiCad 10.0.7 parity separately from the current KiCad 11 readiness plan
 so release gates stay focused on the stable KiCad line.
 
 **Scope and decision (2026-10-23):** Version 10.0.7 is the latest verified
@@ -149,25 +149,28 @@ matrix appears on this page.
 
 ## Source Verification
 
-Checked on 2026-09-04:
+Checked on 2026-10-23 against the qualified KiCad 10.0.7 native and
+actual-editor workflows:
 
-- [KiCad 10.0.6 release notes](https://www.kicad.org/blog/2026/08/KiCad-10.0.6-Release/)
-- [KiCad 10.0.6 GitHub release tag](https://github.com/KiCad/kicad-source-mirror/releases/tag/10.0.6)
+- [KiCad 10.0.7 release notes](https://www.kicad.org/blog/2026/10/KiCad-10.0.7-Release/)
+- [KiCad 10.0.7 GitHub release tag](https://github.com/KiCad/kicad-source-mirror/releases/tag/10.0.7)
 - [KiCad 10.0 CLI reference](https://docs.kicad.org/10.0/en/cli/cli.html)
 - [KiCad 10.0 PCB Editor reference](https://docs.kicad.org/10.0/en/pcbnew/pcbnew.html)
 - [KiCad PCB Python bindings deprecation notice](https://dev-docs.kicad.org/en/apis-and-binding/pcbnew/)
-- [KiCad nightly and release candidate guidance](https://www.kicad.org/help/nightlies-and-rcs/)
+- [Stable official Python binding package](https://pypi.org/project/kicad-python/)
+- [Exact-source Windows/macOS/Ubuntu GUI and CLI artifact matrix](../evidence/kicad-10-0-7/2026-10-23-platform-checkpoint.md)
 
-KiCad 10.0.6 is a bugfix release over 10.0.5. Its changelog's only CLI-relevant
-entry is using per-variant field values in multi-variant BOM export; it also
-fixes two GUI-side Allegro import issues (reference-field collisions, netlist
-room-name sanitization). Neither the changelog nor `kicad-cli pcb import
---help` claims new CLI-level Allegro format support, so the `allegro` importer
-feature id above remains `blocked` pending contrary evidence from the required
-canary.
+The installed **10.0.7** CLI was queried directly using
+`kicad-cli pcb import --help`; its advertised format hints include `auto`,
+`pads`, `altium`, `eagle`, `cadstar`, `fabmaster`, `pcad` and `solidworks`,
+but **not** `allegro`. Allegro 24.x/25.x import improvements in the
+upstream PCB Editor do not constitute a product CLI import capability.
+The product's CLI Allegro feature therefore remains **blocked**. The
+existing GUI-side Allegro fixes in **10.0.6** are recorded only in the
+[historical 10.0.6 parity snapshot](kicad-10-0-6-feature-parity.md).
 
 The `kicad-10-0-3-regressions` fixture remains intentionally named for the
 patch release that introduced those snapshots. It is carried forward as a
-regression corpus under the 10.0.6 primary baseline rather than renamed, so
-historic fixture provenance stays stable while the canary lane verifies the
-installed 10.0.6 CLI.
+historical regression corpus under the current 10.0.7 supported-surface
+baseline without renaming its original snapshots. The legacy Ubuntu 22.04
+canary separately tests its preserved 10.0.6 binary.

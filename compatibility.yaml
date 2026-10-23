@@ -147,8 +147,8 @@ kicad10FeatureParity:
     - blocked
     - future
   sources:
-    releaseNotes: https://www.kicad.org/blog/2026/08/KiCad-10.0.6-Release/
-    releaseTag: https://github.com/KiCad/kicad-source-mirror/releases/tag/10.0.6
+    releaseNotes: https://www.kicad.org/blog/2026/10/KiCad-10.0.7-Release/
+    releaseTag: https://github.com/KiCad/kicad-source-mirror/releases/tag/10.0.7
     cliReference: https://docs.kicad.org/10.0/en/cli/cli.html
     pcbEditorReference: https://docs.kicad.org/10.0/en/pcbnew/pcbnew.html
     pcbnewDeprecation: https://dev-docs.kicad.org/en/apis-and-binding/pcbnew/
@@ -176,9 +176,9 @@ kicad10FeatureParity:
           - fixture:kicad-10-0-3-regressions
           - >-
             command:kicad-cli pcb import --help does not advertise allegro in
-            KiCad 10.0.6
+            KiCad 10.0.7
         notes: >-
-          KiCad 10.0.6 still documents GUI Allegro import, but the stable CLI
+          KiCad 10.0.7 still documents GUI Allegro import, but the stable CLI
           surface is not available.
       cadstar:
         status: supported
@@ -447,7 +447,7 @@ kicad10FeatureParity:
         notes: Server-info schema and generated docs are release-gated.
       empty_project_read_tools:
         status: partial
-        nativeSurface: Empty KiCad 10.0.6 project files
+        nativeSurface: Empty KiCad 10.x project files
         productSurface: File-backed MCP read tools and quality gates
         issue: https://github.com/oaslananka/kicad-mcp-pro/issues/41
         evidence:
@@ -507,7 +507,7 @@ kicad10FeatureParity:
         - path:docs/adr/0006-mcp-2026-stateless-compatibility-lane.md
         - command:corepack pnpm run test:kicad-cli-contract:future
       notes: >-
-        KiCad 11 is intentionally separate from the KiCad 10.0.6
+        KiCad 11 is intentionally separate from the KiCad 10.0.7
         release-blocking baseline.
     nightly_canary:
       status: supported
