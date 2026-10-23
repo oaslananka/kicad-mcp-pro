@@ -32,6 +32,34 @@ def _finite_float(value: object) -> float | None:
     return result if math.isfinite(result) else None
 
 
+def _mating_datum_tolerance_problems(
+    spec: ConnectorMatingSpec, tag: str, distance: float
+) -> list[str]:
+    """Conservative 2-D declared tolerance budget, never 3-D approval."""
+    problems: list[str] = []
+    component_tolerance = spec.datum_component_tolerance_mm
+    profile_tolerance = spec.board_edge_tolerance_mm
+    if component_tolerance is not None or profile_tolerance is not None:
+        if component_tolerance is None or profile_tolerance is None:
+            problems.append(
+                f"{tag}: incomplete mating tolerance budget; declare both "
+                "component and board-edge uncertainties."
+            )
+        else:
+            # Triangle inequality: bounded 2-D datum-to-edge error can grow by
+            # at most the sum of the declared scalar position uncertainties.
+            # This is intentionally not 3-D connector/enclosure verification.
+            worst_case_mm = distance + component_tolerance + profile_tolerance
+            if worst_case_mm > spec.max_datum_error_mm + 1e-7:
+                problems.append(
+                    f"{tag}: worst-case mating datum offset {worst_case_mm:.3f} mm "
+                    f"exceeds {spec.max_datum_error_mm:.3f} mm limit "
+                    f"(nominal {distance:.3f} + component {component_tolerance:.3f} "
+                    f"+ board-edge {profile_tolerance:.3f} mm)."
+                )
+    return problems
+
+
 def evaluate_connector_mating(
     spec: ConnectorMatingSpec,
     entry: Mapping[str, object] | None,
@@ -86,24 +114,5 @@ def evaluate_connector_mating(
         )
     if not lower - spec.max_datum_error_mm <= tangential <= upper + spec.max_datum_error_mm:
         problems.append(f"{tag}: mating datum lies outside the specified edge segment.")
-    component_tolerance = spec.datum_component_tolerance_mm
-    profile_tolerance = spec.board_edge_tolerance_mm
-    if component_tolerance is not None or profile_tolerance is not None:
-        if component_tolerance is None or profile_tolerance is None:
-            problems.append(
-                f"{tag}: incomplete mating tolerance budget; declare both "
-                "component and board-edge uncertainties."
-            )
-        else:
-            # Triangle inequality: bounded 2-D datum-to-edge error can grow by
-            # at most the sum of the declared scalar position uncertainties.
-            # This is intentionally not 3-D connector/enclosure verification.
-            worst_case_mm = distance + component_tolerance + profile_tolerance
-            if worst_case_mm > spec.max_datum_error_mm + 1e-7:
-                problems.append(
-                    f"{tag}: worst-case mating datum offset {worst_case_mm:.3f} mm "
-                    f"exceeds {spec.max_datum_error_mm:.3f} mm limit "
-                    f"(nominal {distance:.3f} + component {component_tolerance:.3f} "
-                    f"+ board-edge {profile_tolerance:.3f} mm)."
-                )
+    problems.extend(_mating_datum_tolerance_problems(spec, tag, distance))
     return problems
