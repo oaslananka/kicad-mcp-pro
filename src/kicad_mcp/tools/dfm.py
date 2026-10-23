@@ -317,6 +317,42 @@ def _check_drc_report_lines(
     return lines, 4
 
 
+def _check_jlcpcb_pth_2layer_process_lines(
+    *,
+    manufacturer: str,
+    rules: dict[str, float | int],
+    copper_layers: int | None,
+) -> list[str]:
+    """State unverified 2L PTH fabrication limits, never invent a pad scan.
+
+    Existing board metrics inspect *via* drill/diameter and native KiCad DRC,
+    not all footprint PTH copper lands or finished drilled-slot tolerances.
+    """
+    if manufacturer.upper() != "JLCPCB" or copper_layers != 2:
+        return []
+    minimum = rules.get("min_pth_annular_ring_2layer_1oz_mm")
+    if minimum is None:
+        return [
+            _format_status(
+                "WARN",
+                "JLCPCB 2-layer/1-oz PTH minimum is not configured; "
+                "individual PTH annular lands require written CAM acceptance.",
+            )
+        ]
+    preferred = rules.get("recommended_pth_annular_ring_2layer_1oz_mm")
+    return [
+        _format_status(
+            "WARN",
+            f"JLCPCB 2-layer/1-oz PTH annular ring absolute minimum "
+            f"{float(minimum):.3f} mm"
+            + (f", recommended {float(preferred):.3f} mm" if preferred is not None else "")
+            + "; individual footprint PTH pads and plated slots are not measured "
+            "by this DFM profile check. Verify physical land and hole geometry "
+            "and obtain written CAM signoff before fabrication.",
+        )
+    ]
+
+
 def _dfm_check_lines(
     profile: dict[str, Any],
     *,
@@ -331,12 +367,20 @@ def _dfm_check_lines(
 
     metric_lines, metric_checks = _check_board_metrics_rules(metrics, rules)
     drc_lines, drc_checks = _check_drc_report_lines(report, report_status, classification_error)
+    pth_process_lines = _check_jlcpcb_pth_2layer_process_lines(
+        manufacturer=str(profile["manufacturer"]),
+        rules=rules,
+        copper_layers=int(metrics["copper_layers"])
+        if metrics["copper_layers"] is not None
+        else None,
+    )
 
     lines = [
         heading or "DFM profile check:",
         f"- Profile: {profile['manufacturer']} / {profile['tier']}",
         *metric_lines,
         *drc_lines,
+        *pth_process_lines,
         _format_status(
             "WARN",
             "Manual review: annular ring, copper-to-edge, and silkscreen text size "
