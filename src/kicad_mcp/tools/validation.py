@@ -736,7 +736,7 @@ def _board_footprint_references() -> tuple[set[str], str, str | None]:
     from .board_file import _parse_board_footprint_blocks
 
     try:
-        board_text = _get_pcb_file().read_text(encoding="utf-8", errors="ignore")
+        board_text = _get_pcb_file().read_text(encoding="utf-8")
     except (OSError, ValueError) as exc:
         return set(), "file", str(exc)
     return set(_parse_board_footprint_blocks(board_text)), "file", None
