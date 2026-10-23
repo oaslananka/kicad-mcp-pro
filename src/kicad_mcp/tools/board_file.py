@@ -17,6 +17,35 @@ FLOAT_PATTERN = r"-?\d+(?:\.\d+)?"
 STRING_PATTERN = r'"((?:\\.|[^"\\])*)"'
 
 
+def _consume_quoted_board_character(char: str, escaped: bool) -> tuple[bool, bool]:
+    """Advance the quoted string state; escaped quotes never end a string."""
+    if escaped:
+        return True, False
+    if char == "\\":
+        return True, True
+    return char != '"', False
+
+
+def _validate_board_text(content: str) -> None:
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in content:
+        if in_string:
+            in_string, escaped = _consume_quoted_board_character(char, escaped)
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                break
+    if depth != 0 or in_string:
+        raise ValueError("Refusing to write an invalid PCB file with unbalanced parentheses.")
+
+
 def _default_board_text() -> str:
     return (
         "(kicad_pcb\n"

@@ -125,6 +125,7 @@ from .board_file import (
     _normalize_board_content,
     _parse_board_footprint_blocks,
     _placement_boxes_overlap,
+    _validate_board_text,
 )
 from .export_support import _run_cli, _run_cli_variants
 from .metadata import headless_compatible, requires_kicad_running
@@ -740,35 +741,6 @@ def _verify_footprint_layer(
 def _format_selection_id(item: object) -> str:
     item_id = getattr(getattr(item, "id", None), "value", "")
     return str(item_id)[:8] + ("..." if item_id else "")
-
-
-def _consume_quoted_board_character(char: str, escaped: bool) -> tuple[bool, bool]:
-    """Advance the quoted string state; escaped quotes never end a string."""
-    if escaped:
-        return True, False
-    if char == "\\":
-        return True, True
-    return char != '"', False
-
-
-def _validate_board_text(content: str) -> None:
-    depth = 0
-    in_string = False
-    escaped = False
-    for char in content:
-        if in_string:
-            in_string, escaped = _consume_quoted_board_character(char, escaped)
-            continue
-        if char == '"':
-            in_string = True
-        elif char == "(":
-            depth += 1
-        elif char == ")":
-            depth -= 1
-            if depth < 0:
-                break
-    if depth != 0 or in_string:
-        raise ValueError("Refusing to write an invalid PCB file with unbalanced parentheses.")
 
 
 def _get_pcb_file_for_sync() -> Path:
