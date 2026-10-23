@@ -110,6 +110,17 @@ def test_parse_labels_reads_real_justify_override() -> None:
     assert left_box.x_max > left_box.x_min
 
 
+def test_parse_labels_preserves_font_size_and_invalid_zero_fallback() -> None:
+    sch = """(kicad_sch
+        (label "SMALL" (at 10 10 0) (effects (font (size 0.75 0.75))))
+        (global_label "DEFAULT" (shape input) (at 20 20 0)
+          (effects (font (size 0 0)) (justify right))))"""
+    labels = {label.text: label for label in parse_labels(sch)}
+    assert labels["SMALL"].font_mm == 0.75
+    assert labels["DEFAULT"].font_mm == 1.27
+    assert labels["DEFAULT"].justify == frozenset({"right"})
+
+
 def test_detect_label_collisions_flags_overlap() -> None:
     findings = detect_label_collisions(parse_labels(DEFECT_SCH))
     assert len(findings) == 1

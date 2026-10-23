@@ -80,6 +80,14 @@ def test_force_directed_placement_converges_before_iteration_ceiling() -> None:
     assert [(c.ref, c.x, c.y) for c in placed] == [(c.ref, c.x, c.y) for c in second]
 
 
+def test_force_directed_placement_patience_zero_uses_iteration_ceiling() -> None:
+    cfg = ForceDirectedConfig(iterations=7, convergence_patience=0)
+    stats: dict[str, object] = {}
+    force_directed_placement([PlacementComponent(ref="R1", x=15, y=10)], [], cfg, stats=stats)
+    assert stats["converged"] is False
+    assert stats["iterations_run"] == 7
+
+
 def test_force_directed_placement_output_independent_of_wall_clock_budget() -> None:
     # A slow and a fast machine must produce the same board: once the layout has
     # converged the wall-clock safety valve never fires, so the result cannot
