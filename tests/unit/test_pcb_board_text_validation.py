@@ -12,6 +12,7 @@ from kicad_mcp.tools.pcb import _validate_board_text
     [
         "(kicad_pcb)",
         '(kicad_pcb (gr_text "( not a real opening bracket )"))',
+        '(kicad_pcb (gr_text "( unmatched parenthesis"))',
         r'(kicad_pcb (gr_text "escaped \"quote\" and ( )"))',
         r'(kicad_pcb (gr_text "double backslash \\"))',
         "",  # Preserve existing syntactic-only validator semantics.

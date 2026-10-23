@@ -3820,6 +3820,19 @@ def _available_units_from_blocks(blocks: list[str]) -> set[int]:
     return units
 
 
+def _child_pin_definitions_for_unit(block: str, unit: int) -> dict[str, tuple[float, float]]:
+    """Collect requested unit pins, including the KiCad shared unit-zero pins."""
+    block_name = _symbol_block_name(block)
+    if block_name is None:
+        return {}
+    unit_prefixes = (f"{block_name}_{unit}_", f"{block_name}_0_")
+    pins: dict[str, tuple[float, float]] = {}
+    for child_name, child_block in _extract_child_symbol_blocks(block):
+        if child_name.startswith(unit_prefixes):
+            pins.update(_extract_pin_definitions(child_block))
+    return pins
+
+
 def get_pin_positions(
     library: str,
     symbol_name: str,
@@ -3851,18 +3864,9 @@ def get_pin_positions(
         for pin_number, (px, py) in direct_pins.items():
             pins[pin_number] = _place_pin(px, py, sym_x, sym_y, rotation, mirror)
 
-        block_name = _symbol_block_name(block)
-        if block_name is None:
-            continue
-        # Match the requested unit and unit 0 (pins common to all units, where
-        # single-unit easyeda2kicad imports place every pin).
-        unit_prefixes = (f"{block_name}_{unit}_", f"{block_name}_0_")
-        for child_name, child_block in _extract_child_symbol_blocks(block):
-            if not child_name.startswith(unit_prefixes):
-                continue
-            for pin_number, (px, py) in _extract_pin_definitions(child_block).items():
-                # KiCad's pin (at x y angle) coordinate is the electrical connection point.
-                pins[pin_number] = _place_pin(px, py, sym_x, sym_y, rotation, mirror)
+        for pin_number, (px, py) in _child_pin_definitions_for_unit(block, unit).items():
+            # KiCad's pin (at x y angle) coordinate is the electrical connection point.
+            pins[pin_number] = _place_pin(px, py, sym_x, sym_y, rotation, mirror)
     return pins
 
 
