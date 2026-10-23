@@ -330,6 +330,17 @@ def _integrate_movement(
     return max_disp
 
 
+def _update_convergence_snapshot(
+    comps: list[PlacementComponent],
+    grid_mm: float,
+    previous: tuple[tuple[float, float], ...] | None,
+    stable_count: int,
+) -> tuple[tuple[tuple[float, float], ...], int]:
+    """Count identical snapped layouts without depending on elapsed time."""
+    snapshot = tuple((_snap(c.x, grid_mm), _snap(c.y, grid_mm)) for c in comps)
+    return snapshot, stable_count + 1 if snapshot == previous else 0
+
+
 def force_directed_placement(
     components: list[PlacementComponent],
     nets: list[PlacementNet],
@@ -384,17 +395,12 @@ def force_directed_placement(
         final_max_disp = _integrate_movement(comps, fx, fy, vx, vy, temperature, cfg)
 
         if cfg.convergence_patience > 0:
-            snapshot = tuple(
-                (_snap(comp.x, cfg.grid_mm), _snap(comp.y, cfg.grid_mm)) for comp in comps
+            prev_snapshot, stable_count = _update_convergence_snapshot(
+                comps, cfg.grid_mm, prev_snapshot, stable_count
             )
-            if snapshot == prev_snapshot:
-                stable_count += 1
-                if stable_count >= cfg.convergence_patience:
-                    converged = True
-                    break
-            else:
-                stable_count = 0
-            prev_snapshot = snapshot
+            if stable_count >= cfg.convergence_patience:
+                converged = True
+                break
 
         if cfg.max_seconds > 0.0 and time.perf_counter() - start_time >= cfg.max_seconds:
             break
