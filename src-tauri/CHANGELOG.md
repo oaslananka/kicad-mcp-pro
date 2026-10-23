@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.4.0](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v4.3.0...kicad-mcp-gui-v4.4.0) (2026-10-23)
+
+
+### Bug Fixes
+
+* **quality:** resolve idioms, regex simplifications, and cleanups ([#1299](https://github.com/oaslananka/kicad-mcp-pro/issues/1299)) ([fece559](https://github.com/oaslananka/kicad-mcp-pro/commit/fece5599b153886a7bb24f5a1a5a652faa29bb1d))
+* **quality:** resolve production code smells and nested conditionals ([#1297](https://github.com/oaslananka/kicad-mcp-pro/issues/1297)) ([42fd070](https://github.com/oaslananka/kicad-mcp-pro/commit/42fd070e565fb98f06dfb4de5977cd72627510e9))
+
 ## [4.3.0](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v4.2.0...kicad-mcp-gui-v4.3.0) (2026-10-11)
 
 
