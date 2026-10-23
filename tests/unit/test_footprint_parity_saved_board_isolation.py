@@ -67,3 +67,21 @@ def test_parity_rejects_invalid_utf8_in_saved_board(
     assert references == set()
     assert source == "file"
     assert error and "utf-8" in error.lower()
+
+
+def test_parity_rejects_unbalanced_saved_board_without_ipc_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pcb = _saved_board(tmp_path, "R1")
+    # The footprint block is intact, but the enclosing PCB is incomplete.
+    pcb.write_text(pcb.read_text(encoding="utf-8").rstrip()[:-1], encoding="utf-8")
+    monkeypatch.setattr(validation, "_get_pcb_file", lambda: pcb)
+
+    def unrelated_active_board() -> None:
+        raise AssertionError("Do not consult unrelated IPC after corrupt PCB text")
+
+    monkeypatch.setattr(validation, "get_board", unrelated_active_board, raising=False)
+    references, source, error = validation._board_footprint_references()
+    assert references == set()
+    assert source == "file"
+    assert error and "unbalanced parentheses" in error

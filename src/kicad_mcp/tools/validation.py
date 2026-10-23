@@ -734,9 +734,11 @@ def _gate_outcome_payload(outcome: GateOutcome) -> GateOutcomePayload:
 def _board_footprint_references() -> tuple[set[str], str, str | None]:
     """Compare the saved project PCB, never a potentially unrelated active GUI board."""
     from .board_file import _parse_board_footprint_blocks
+    from .pcb import _validate_board_text
 
     try:
         board_text = _get_pcb_file().read_text(encoding="utf-8")
+        _validate_board_text(board_text)
     except (OSError, ValueError) as exc:
         return set(), "file", str(exc)
     return set(_parse_board_footprint_blocks(board_text)), "file", None
