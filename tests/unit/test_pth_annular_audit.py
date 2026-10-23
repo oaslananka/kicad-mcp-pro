@@ -64,8 +64,9 @@ def test_unsupported_without_any_round_pad_still_warns() -> None:
 
 @pytest.mark.parametrize("invalid", [0.0, -0.2, float("nan"), float("inf")])
 def test_invalid_minimum_is_not_accepted(invalid: float) -> None:
+    board = _board(_round("1", 0.65, 0.4))
     with pytest.raises(ValueError):
-        audit_pth_annular_ring_lines(_board(_round("1", 0.65, 0.4)), invalid)
+        audit_pth_annular_ring_lines(board, invalid)
 
 
 def test_more_than_twenty_violating_pads_are_bounded_with_total_count() -> None:
