@@ -346,9 +346,11 @@ def _check_jlcpcb_pth_2layer_process_lines(
             f"JLCPCB 2-layer/1-oz PTH annular ring absolute minimum "
             f"{float(minimum):.3f} mm"
             + (f", recommended {float(preferred):.3f} mm" if preferred is not None else "")
-            + "; individual footprint PTH pads and plated slots are not measured "
-            "by this DFM profile check. Verify physical land and hole geometry "
-            "and obtain written CAM signoff before fabrication.",
+            + "; published values apply to 1-oz copper (actual copper weight "
+            "is not checked). Individual footprint PTH pads and plated slots "
+            "are not measured by this DFM profile check. Verify the selected "
+            "copper weight, physical land and hole geometry, and obtain written "
+            "CAM signoff before fabrication.",
         )
     ]
 

@@ -67,7 +67,8 @@ async def test_dfm_profile_load_run_and_cost(
     assert "PASS: Minimum track width 0.200 mm >= 0.127 mm" in report
     assert "PASS: Minimum via drill 0.300 mm >= 0.300 mm" in report
     assert "WARN: JLCPCB 2-layer/1-oz PTH annular ring absolute minimum 0.180 mm" in report
-    assert "individual footprint PTH pads and plated slots are not measured" in report
+    assert "Individual footprint PTH pads and plated slots are not measured" in report
+    assert "actual copper weight is not checked" in report
     assert "Manufacturing cost estimate:" in cost
     assert "Board size: 50.00 x 40.00 mm" in cost
     assert "Quantity: 10" in cost

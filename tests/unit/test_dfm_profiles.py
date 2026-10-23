@@ -69,6 +69,7 @@ def test_jlcpcb_pth_2layer_guard_reports_unverified_not_pass() -> None:
     assert lines[0].startswith("- WARN:")
     assert "0.180 mm" in lines[0]
     assert "not measured" in lines[0].lower()
+    assert "actual copper weight is not checked" in lines[0]
     assert "written CAM" in lines[0]
 
 
