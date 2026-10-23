@@ -18,13 +18,10 @@ from pydantic import BaseModel, Field
 
 from .. import __version__
 from ..config import get_config
-from ..connection import KiCadConnectionError, get_board
 from ..discovery import get_cli_capabilities
-from ..models.common import _FootprintLike
 from ..models.component_contracts import find_component_contract
 from ..models.verdict import Finding, SuggestedFix, Verdict, VerdictReport, stable_finding_id
 from ..path_safety import resolve_under
-from ..pcb.board_access import BoardAccessError, board_footprints
 from ..project.connector_mating_review import evaluate_connector_mating
 from ..project.release_evidence_store import (
     ProjectReleaseEvidenceResolution,
@@ -735,27 +732,14 @@ def _gate_outcome_payload(outcome: GateOutcome) -> GateOutcomePayload:
 
 
 def _board_footprint_references() -> tuple[set[str], str, str | None]:
-    try:
-        return (
-            {
-                footprint.reference_field.text.value
-                for footprint in cast(
-                    list[_FootprintLike],
-                    board_footprints(get_board()),
-                )
-                if footprint.reference_field.text.value
-            },
-            "IPC",
-            None,
-        )
-    except (KiCadConnectionError, BoardAccessError, OSError):
-        from .board_file import _parse_board_footprint_blocks
+    """Compare the saved project PCB, never a potentially unrelated active GUI board."""
+    from .board_file import _parse_board_footprint_blocks
 
-        try:
-            board_text = _get_pcb_file().read_text(encoding="utf-8", errors="ignore")
-        except OSError as exc:
-            return set(), "file", str(exc)
-        return set(_parse_board_footprint_blocks(board_text)), "file", None
+    try:
+        board_text = _get_pcb_file().read_text(encoding="utf-8", errors="ignore")
+    except (OSError, ValueError) as exc:
+        return set(), "file", str(exc)
+    return set(_parse_board_footprint_blocks(board_text)), "file", None
 
 
 def _footprint_parity_outcome() -> GateOutcome:

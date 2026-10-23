@@ -90,7 +90,6 @@ def empty_project_server(
         return 0, "", ""
 
     monkeypatch.setattr("kicad_mcp.tools.pcb.get_board", no_live_board)
-    monkeypatch.setattr("kicad_mcp.tools.validation.get_board", no_live_board)
     monkeypatch.setattr("kicad_mcp.tools.validation._run_cli_variants", fake_cli_report)
 
     server = build_server("full")

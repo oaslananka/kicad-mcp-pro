@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 from mcp.types import ImageContent
 
-from kicad_mcp.connection import KiCadConnectionError
 from kicad_mcp.discovery import CliCapabilities
 from kicad_mcp.server import build_server
 from kicad_mcp.tools.export import LOW_LEVEL_EXPORT_NOTICE
@@ -811,7 +810,7 @@ async def test_export_manufacturing_package_hard_blocks_on_failed_project_gate(
 
 
 @pytest.mark.anyio
-async def test_validate_footprints_vs_schematic_uses_file_fallback(
+async def test_validate_footprints_vs_schematic_uses_project_pcb_file(
     sample_project,
     monkeypatch,
 ) -> None:
@@ -852,11 +851,6 @@ async def test_validate_footprints_vs_schematic_uses_file_fallback(
         encoding="utf-8",
     )
 
-    def raise_no_ipc():
-        raise KiCadConnectionError("no board")
-
-    monkeypatch.setattr("kicad_mcp.tools.validation.get_board", raise_no_ipc)
-
     server = build_server("manufacturing")
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
 
@@ -895,10 +889,6 @@ async def test_validate_footprints_vs_schematic_consolidates_flat_siblings(
         footprint = "Resistor_SMD:R_0805" if reference == "R1" else "Capacitor_SMD:C_0805"
         return {"symbols": [{"reference": reference, "footprint": footprint}]}
 
-    def raise_no_ipc():
-        raise KiCadConnectionError("no board")
-
-    monkeypatch.setattr("kicad_mcp.tools.validation.get_board", raise_no_ipc)
     monkeypatch.setattr("kicad_mcp.tools.schematic.parse_schematic_file", fake_parse)
 
     server = build_server("manufacturing")
@@ -1101,7 +1091,7 @@ async def test_export_svg_uses_multi_mode_directory_output(sample_project, monke
 
 
 @pytest.mark.anyio
-async def test_validate_footprints_vs_schematic_uses_file_fallback_when_collection_unavailable(
+async def test_validate_footprints_vs_schematic_uses_saved_pcb_file(
     sample_project,
     monkeypatch,
 ) -> None:
@@ -1113,10 +1103,6 @@ async def test_validate_footprints_vs_schematic_uses_file_fallback_when_collecti
         '(kicad_pcb (footprint "Resistor_SMD:R_0805" '
         '(property "Reference" "R1" (at 0 0 0) (layer "F.SilkS"))))\n',
         encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        "kicad_mcp.tools.validation.get_board",
-        lambda: object(),
     )
 
     server = build_server("manufacturing")
