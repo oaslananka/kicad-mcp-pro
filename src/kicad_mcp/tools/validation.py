@@ -740,7 +740,7 @@ def _board_footprint_references() -> tuple[set[str], str, str | None]:
         board_text = _get_pcb_file().read_text(encoding="utf-8")
         _validate_board_text(board_text)
         document = board_text.strip()
-        if not re.match(r"\(kicad_pcb(?=\s|\))", document):
+        if not re.match(r"\(kicad_pcb(?=[\s)])", document):
             raise ValueError("The configured file is not a KiCad PCB document.")
         _, root_length = _extract_block(document, 0)
         if root_length != len(document):

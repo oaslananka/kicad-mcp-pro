@@ -49,7 +49,8 @@ def test_parity_fails_closed_if_configured_board_disappears(
     references, source, error = validation._board_footprint_references()
     assert references == set()
     assert source == "file"
-    assert error and "not-present.kicad_pcb" in error
+    assert error is not None
+    assert "not-present.kicad_pcb" in error
 
 
 def test_parity_rejects_invalid_utf8_in_saved_board(
@@ -66,7 +67,8 @@ def test_parity_rejects_invalid_utf8_in_saved_board(
     references, source, error = validation._board_footprint_references()
     assert references == set()
     assert source == "file"
-    assert error and "utf-8" in error.lower()
+    assert error is not None
+    assert "utf-8" in error.lower()
 
 
 def test_parity_rejects_unbalanced_saved_board_without_ipc_fallback(
@@ -84,7 +86,8 @@ def test_parity_rejects_unbalanced_saved_board_without_ipc_fallback(
     references, source, error = validation._board_footprint_references()
     assert references == set()
     assert source == "file"
-    assert error and "unbalanced parentheses" in error
+    assert error is not None
+    assert "unbalanced parentheses" in error
 
 
 @pytest.mark.parametrize(
@@ -116,4 +119,6 @@ def test_parity_rejects_validly_balanced_non_pcb_documents(
     references, source, error = validation._board_footprint_references()
     assert references == set()
     assert source == "file"
-    assert error and ("not a KiCad PCB" in error or "one root" in error)
+    assert error is not None
+    expected = "one root" if corruption == "extra_root" else "not a KiCad PCB"
+    assert expected in error
