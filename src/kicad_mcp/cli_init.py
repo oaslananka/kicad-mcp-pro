@@ -306,6 +306,27 @@ def _select_transport_interactive(console: Console, yes: bool) -> tuple[str, int
     return transport, port
 
 
+def _match_client_choice(
+    choice: str, clients: list[str], display_map: dict[str, str]
+) -> tuple[str, str] | None:
+    """Resolve a numeric, internal, or displayed client name without fallback."""
+    try:
+        idx = int(choice) - 1
+        if 0 <= idx < len(clients):
+            client = clients[idx]
+            return client, display_map.get(client, client)
+    except ValueError:
+        pass
+
+    if choice in clients:
+        return choice, display_map.get(choice, choice)
+    if choice in display_map.values():
+        for client, display in display_map.items():
+            if display.lower() == choice.lower():
+                return client, display
+    return None
+
+
 def _select_client_interactive(
     console: Console,
     yes: bool,
@@ -335,21 +356,9 @@ def _select_client_interactive(
     if choice == str(len(clients) + 1) or choice.lower() in ("skip", "none", ""):
         return CLIENT_NONE, CLIENT_SKIPPED_DISPLAY
 
-    try:
-        idx = int(choice) - 1
-        if 0 <= idx < len(clients):
-            c = clients[idx]
-            return c, display_map.get(c, c)
-    except ValueError:
-        pass
-
-    # Direct name match
-    if choice in clients:
-        return choice, display_map.get(choice, choice)
-    if choice in display_map.values():
-        for c, d in display_map.items():
-            if d.lower() == choice.lower():
-                return c, d
+    selected = _match_client_choice(choice, clients, display_map)
+    if selected is not None:
+        return selected
 
     # Fallback
     console.print("  [yellow]Invalid choice, using default.[/yellow]")

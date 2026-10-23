@@ -75,13 +75,20 @@ class ContractReport:
         }
 
 
+def _is_unescaped_quote(text: str, index: int, start: int) -> bool:
+    """An even number of preceding backslashes makes the quote a delimiter."""
+    back = index - 1
+    while back >= start and text[back] == "\\":
+        back -= 1
+    return (index - back - 1) % 2 == 0
+
+
 def extract_balanced_block(text: str, start: int) -> str:
     """Return the balanced ``(...)`` s-expression beginning at ``start``.
 
     String literals are respected so that parentheses inside quoted values do
     not unbalance the scan.
     """
-
     depth = 0
     in_string = False
     index = start
@@ -89,15 +96,7 @@ def extract_balanced_block(text: str, start: int) -> str:
     while index < length:
         char = text[index]
         if char == '"':
-            # A quote only delimits a string if it is not itself escaped. Count the
-            # run of preceding backslashes: an even count means the quote is live
-            # (e.g. ``\\"`` is an escaped backslash followed by a real quote).
-            backslashes = 0
-            back = index - 1
-            while back >= start and text[back] == "\\":
-                backslashes += 1
-                back -= 1
-            if backslashes % 2 == 0:
+            if _is_unescaped_quote(text, index, start):
                 in_string = not in_string
         elif not in_string:
             if char == "(":

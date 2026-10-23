@@ -660,14 +660,7 @@ def _rule_usbc_cc_resistors(nets: Sequence[NetView]) -> list[Finding]:
     return findings
 
 
-def _rule_ethernet_diff_pairs(nets: Sequence[NetView]) -> list[Finding]:
-    """Flag an Ethernet/MDI differential lane wired with only one polarity half.
-
-    Each lane base (e.g. ``TX``, ``MDI0``, ``TRD1``) must carry both a P and an N
-    half. When only one polarity is present across the design, the complement is
-    missing or mis-named. Single-ended UART ``TX``/``RX`` carry no polarity and so
-    are never considered. Fires once per incomplete lane.
-    """
+def _collect_ethernet_lanes(nets: Sequence[NetView]) -> dict[str, dict[str, Any]]:
     lanes: dict[str, dict[str, Any]] = {}
     for net in nets:
         for name in _net_names(net):
@@ -681,6 +674,19 @@ def _rule_ethernet_diff_pairs(nets: Sequence[NetView]) -> list[Finding]:
             for ref in _net_refs(net, _IC_RE) + _net_refs(net, _CONNECTOR_RE):
                 if ref not in lane["refs"]:
                     lane["refs"].append(ref)
+
+    return lanes
+
+
+def _rule_ethernet_diff_pairs(nets: Sequence[NetView]) -> list[Finding]:
+    """Flag an Ethernet/MDI differential lane wired with only one polarity half.
+
+    Each lane base (e.g. ``TX``, ``MDI0``, ``TRD1``) must carry both a P and an N
+    half. When only one polarity is present across the design, the complement is
+    missing or mis-named. Single-ended UART ``TX``/``RX`` carry no polarity and so
+    are never considered. Fires once per incomplete lane.
+    """
+    lanes = _collect_ethernet_lanes(nets)
 
     findings: list[Finding] = []
     for base in sorted(lanes):

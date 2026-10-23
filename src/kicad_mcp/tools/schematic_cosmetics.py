@@ -225,6 +225,26 @@ def _symbol_reference(block: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _collect_snapped_label_changes(
+    content: str,
+    repls: list[tuple[int, int, str]],
+    changes: list[dict[str, Any]],
+) -> None:
+    """Collect label-anchor updates while preserving original span ordering."""
+    for start, end, block in _iter_blocks(content, _LABEL_HEAD_RE):
+        match = _AT3_RE.search(block)
+        if match is None:
+            continue
+        x, y = float(match.group(1)), float(match.group(2))
+        sx, sy = _snap_schematic_coord(x), _snap_schematic_coord(y)
+        if (sx, sy) == (x, y):
+            continue
+        new_at = f"(at {_fmt_mm(sx)} {_fmt_mm(sy)} {match.group(3)})"
+        new_block = block[: match.start()] + new_at + block[match.end() :]
+        repls.append((start, end, new_block))
+        changes.append({"kind": "label", "from": [x, y], "to": [sx, sy]})
+
+
 def _mutate_align_to_grid(content: str) -> tuple[str, list[dict[str, Any]]]:
     """Snap symbol origins, label anchors, wire ends and junctions onto the grid.
 
@@ -255,18 +275,7 @@ def _mutate_align_to_grid(content: str) -> tuple[str, list[dict[str, Any]]]:
             }
         )
 
-    for start, end, block in _iter_blocks(content, _LABEL_HEAD_RE):
-        match = _AT3_RE.search(block)
-        if match is None:
-            continue
-        x, y = float(match.group(1)), float(match.group(2))
-        sx, sy = _snap_schematic_coord(x), _snap_schematic_coord(y)
-        if (sx, sy) == (x, y):
-            continue
-        new_at = f"(at {_fmt_mm(sx)} {_fmt_mm(sy)} {match.group(3)})"
-        new_block = block[: match.start()] + new_at + block[match.end() :]
-        repls.append((start, end, new_block))
-        changes.append({"kind": "label", "from": [x, y], "to": [sx, sy]})
+    _collect_snapped_label_changes(content, repls, changes)
 
     for start, end, block in _iter_blocks(content, _JUNCTION_HEAD_RE):
         match = _AT2_RE.search(block)
