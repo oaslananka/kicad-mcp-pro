@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from kicad_mcp.utils.router_core import (
     apply_ses_to_pcb,
     parse_net_numbers,
@@ -84,13 +86,46 @@ def test_apply_ses_is_idempotent_on_re_application() -> None:
     assert twice.count("(via ") == 1
 
 
-def test_nets_absent_from_the_pcb_table_are_skipped() -> None:
-    # A board that only declares GND drops the VCC routing rather than emitting (net None).
+def test_missing_ses_net_refuses_entire_import_instead_of_partial_routing() -> None:
+    # The SES contains both GND and VCC. Previously the importer silently
+    # wrote GND tracks while dropping every VCC track and reporting success.
     pcb_gnd_only = '(kicad_pcb\n\t(version 20250216)\n\t(net 1 "GND")\n)\n'
-    out, _ = apply_ses_to_pcb(pcb_gnd_only, _SES)
-    assert "(net 1)" in out
-    assert out.count("(segment ") == 2  # only the two GND segments
-    assert "(net 2)" not in out
+    with pytest.raises(ValueError, match="missing from the PCB net table: 'VCC'"):
+        apply_ses_to_pcb(pcb_gnd_only, _SES)
+
+
+def test_missing_via_only_net_refuses_import_without_inventing_copper() -> None:
+    via_only = (
+        "(session t.dsn (routes (resolution um 10) (network_out "
+        '(net "GHOST" (via "Via[0-1]_600:300_um" 11000 -5000)))))'
+    )
+    with pytest.raises(ValueError, match="GHOST"):
+        apply_ses_to_pcb(_PCB, via_only)
+
+
+def test_unnamed_net_zero_refuses_import_even_if_table_declares_net_zero() -> None:
+    unassigned = (
+        "(session t.dsn (routes (resolution um 10) (network_out "
+        '(net "" (wire (path F.Cu 250 2500 -5000 11000 -5000))))))'
+    )
+    with pytest.raises(ValueError, match="missing from the PCB net table"):
+        apply_ses_to_pcb(_PCB, unassigned)
+
+
+def test_render_helper_cannot_silently_drop_unknown_net() -> None:
+    route = parse_ses(_SES)
+    with pytest.raises(ValueError, match="missing from the PCB net table: 'VCC'"):
+        render_pcb_items(route, {"GND": 1})
+
+
+def test_modern_kicad_named_only_nets_fail_closed_before_numeric_write() -> None:
+    modern = (
+        "(kicad_pcb (version 20250216)"
+        '(footprint "Example" (pad "1" smd rect (at 0 0) (size 1 1) '
+        '(layers "F.Cu") (net "GND"))))'
+    )
+    with pytest.raises(ValueError, match="named-only net encoding"):
+        apply_ses_to_pcb(modern, _SES)
 
 
 def test_empty_route_leaves_the_board_unchanged() -> None:
