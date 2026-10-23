@@ -205,7 +205,9 @@ def test_position_netlist_powers_preserves_gnd_and_rail_placement() -> None:
     assert all(_has_point(power) for power in powers)
     assert float(powers[0]["y_mm"]) > 50.0
     assert float(powers[1]["y_mm"]) < 50.0
-    assert (powers[2]["x_mm"], powers[2]["y_mm"]) == _netlist_layout_point(2)
+    expected_orphan_position = _netlist_layout_point(2)
+    actual_orphan_position = (powers[2]["x_mm"], powers[2]["y_mm"])
+    assert actual_orphan_position == expected_orphan_position
 
 
 def test_generated_netlist_symbol_position_preserves_offset_and_grid_snap() -> None:
