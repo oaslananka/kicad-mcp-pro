@@ -2,6 +2,12 @@
 
 Issue: [#1181](https://github.com/oaslananka/kicad-mcp-pro/issues/1181).
 
+**Latest exact-main checkpoint (2026-10-23):** [Windows, macOS, Ubuntu,
+native GUI/IPC and real-board evidence on `main@3978af87`](2026-10-23-platform-checkpoint.md).
+All named hosted GUI workflows were independently checked against their
+bounded artifacts; the global 10.0.6 feature-parity baseline has **not**
+been promoted. Earlier source-bound evidence is retained below.
+
 **Current-source checkpoint (2026-10-11):** Windows official signed installer
 native and real GUI/IPC acceptance, isolated Linux native requalification,
 physical Windows maintained-board copy/hash checks, and the remaining global
