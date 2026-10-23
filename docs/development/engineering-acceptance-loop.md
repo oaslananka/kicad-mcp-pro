@@ -36,6 +36,8 @@ Verify the orientation against the datasheet and the physical plug opening.
         "datum_y_mm": 6.1,
         "normal_local": "bottom",
         "max_datum_error_mm": 0.5,
+        "datum_component_tolerance_mm": 0.1,
+        "board_edge_tolerance_mm": 0.2,
         "max_direction_error_deg": 10
       }
     ]
@@ -90,6 +92,24 @@ unsaved changes**; it is not a scoped rollback tool.
 A lost connection during a mutation produces an **unknown state**, not proof of
 no write: check saved hash, session, transaction status and journal before retry.
 Do not weaken clearance/DRC/DFM thresholds to improve apparent success.
+
+### 2-D datum tolerance budget (not manufacturing acceptance)
+
+For a supplier-documented component datum tolerance and a fabricator's
+board-edge profile tolerance, supply **both** optional nonnegative fields
+`datum_component_tolerance_mm` and `board_edge_tolerance_mm`. Once either is
+present, the other becomes mandatory. The reviewer conservatively requires
+`nominal datum-to-edge distance + component tolerance + board-edge tolerance`
+not to exceed `max_datum_error_mm`. For example, **0.400 + 0.100 + 0.200 =
+0.700 mm**, so a 0.500-mm 2-D limit correctly fails even if the nominal check
+passes. Omission of both preserves the legacy **nominal-only** result; it
+**does not mean unspecified tolerances are zero or manufacturing-approved**.
+
+The budget excludes PCB placement/solder variation, manufacturer-qualified
+native STEP mating registration, housing/cable/ferrule/tool swept volume,
+connector torque support and enclosure tolerances. Those still require
+separate, explicit evidence and written manufacturing signoff. Never infer
+full mechanical PASS solely from this 2-D tool.
 
 ## 4. Small tests on every relevant change; full benchmark selectively
 

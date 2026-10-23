@@ -195,3 +195,63 @@ def test_real_front_layer_parsing_remains_explicit() -> None:
     entry = _parse_board_footprint_blocks(content)["J1"]
     assert entry["layer_name"] == "F.Cu"
     assert entry["layer_name_explicit"] is True
+
+
+def test_mating_nominal_fit_fails_declared_worst_case_tolerance_budget() -> None:
+    # Nominal J3-style datum 0.400 mm inboard would pass a 0.500-mm
+    # threshold. A declared 0.100-mm part plus 0.200-mm profile tolerance
+    # consumes an additional 0.300 mm of conservative worst-case margin.
+    content = _board(270, 6.5, 13.5)
+    entries = _parse_board_footprint_blocks(content)
+    nominal = ProjectDesignIntent(mechanical=MechanicalConstraint(connector_mating=[_spec()]))
+    budgeted = ProjectDesignIntent(
+        mechanical=MechanicalConstraint(
+            connector_mating=[
+                _spec(
+                    datum_component_tolerance_mm=0.1,
+                    board_edge_tolerance_mm=0.2,
+                )
+            ]
+        )
+    )
+    nominal_result = _PlacementEvaluator(content, entries, nominal).evaluate()
+    budgeted_result = _PlacementEvaluator(content, entries, budgeted).evaluate()
+    assert nominal_result.connector_edge_spec_violations == []
+    assert any(
+        "worst-case mating datum" in msg and "0.700 mm" in msg
+        for msg in budgeted_result.hard_failures
+    )
+
+
+def test_declared_tolerance_budget_on_boundary_is_accepted() -> None:
+    content = _board(270, 6.5, 13.5)
+    intent = ProjectDesignIntent(
+        mechanical=MechanicalConstraint(
+            connector_mating=[_spec(datum_component_tolerance_mm=0.1, board_edge_tolerance_mm=0.0)]
+        )
+    )
+    report = _PlacementEvaluator(content, _parse_board_footprint_blocks(content), intent).evaluate()
+    assert report.connector_edge_spec_violations == []
+
+
+@pytest.mark.parametrize(
+    "missing_field", ["datum_component_tolerance_mm", "board_edge_tolerance_mm"]
+)
+def test_partially_declared_tolerance_budget_fails_closed(missing_field: str) -> None:
+    data: dict[str, object] = {
+        "datum_component_tolerance_mm": 0.1,
+        "board_edge_tolerance_mm": 0.2,
+    }
+    del data[missing_field]
+    content = _board(270, 6.5, 13.5)
+    intent = ProjectDesignIntent(mechanical=MechanicalConstraint(connector_mating=[_spec(**data)]))
+    report = _PlacementEvaluator(content, _parse_board_footprint_blocks(content), intent).evaluate()
+    assert any("incomplete mating tolerance budget" in m for m in report.hard_failures)
+
+
+@pytest.mark.parametrize("invalid", [-0.1, float("nan"), float("inf")])
+def test_mating_tolerance_budget_rejects_bad_numbers(invalid: float) -> None:
+    with pytest.raises(ValidationError):
+        _spec(datum_component_tolerance_mm=invalid)
+    with pytest.raises(ValidationError):
+        _spec(board_edge_tolerance_mm=invalid)

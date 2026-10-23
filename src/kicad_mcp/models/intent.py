@@ -176,6 +176,15 @@ class ConnectorMatingSpec(BaseModel):
     datum_y_mm: float = Field(allow_inf_nan=False)
     normal_local: Literal["top", "bottom", "left", "right"]
     max_datum_error_mm: float = Field(default=0.5, ge=0.0, le=10.0, allow_inf_nan=False)
+    # Optional conservative 2-D tolerance budget; if either is supplied both
+    # must be specified. Omission preserves historical nominal-only checks.
+    # Neither these numbers nor nominal fit constitute 3-D mating approval.
+    datum_component_tolerance_mm: float | None = Field(
+        default=None, ge=0.0, le=10.0, allow_inf_nan=False
+    )
+    board_edge_tolerance_mm: float | None = Field(
+        default=None, ge=0.0, le=10.0, allow_inf_nan=False
+    )
     max_direction_error_deg: float = Field(default=10.0, ge=0.0, le=45.0, allow_inf_nan=False)
 
 
