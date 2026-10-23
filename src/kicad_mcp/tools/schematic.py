@@ -1680,6 +1680,20 @@ def _compute_netlist_paper(
     return footprints, offsets, chosen_paper
 
 
+def _generated_netlist_symbol_position(
+    cell_x: float,
+    cell_y: float,
+    extent: tuple[float, float, float, float] | None,
+) -> tuple[float, float]:
+    """Account for the symbol's own extent when choosing a grid-cell anchor."""
+    if extent is None:
+        return cell_x, cell_y
+    min_dx, min_dy, _, _ = extent
+    raw_x = cell_x - min_dx + _NETLIST_LABEL_MARGIN_W_MM / 2.0
+    raw_y = cell_y - min_dy + _NETLIST_LABEL_MARGIN_H_MM / 2.0
+    return _snap_point(raw_x, raw_y, True)
+
+
 def _position_netlist_symbols(
     laid_out_symbols: list[dict[str, Any]],
     ordered_refs: list[str],
@@ -1706,14 +1720,9 @@ def _position_netlist_symbols(
         )
         cell_x = AUTO_LAYOUT_ORIGIN_X_MM + col * cell_w
         cell_y = AUTO_LAYOUT_ORIGIN_Y_MM + row * cell_h
-        extent = offsets.get(reference)
-        if extent is not None:
-            min_dx, min_dy, _, _ = extent
-            raw_x = cell_x - min_dx + _NETLIST_LABEL_MARGIN_W_MM / 2.0
-            raw_y = cell_y - min_dy + _NETLIST_LABEL_MARGIN_H_MM / 2.0
-            generated_positions[reference] = _snap_point(raw_x, raw_y, True)
-        else:
-            generated_positions[reference] = (cell_x, cell_y)
+        generated_positions[reference] = _generated_netlist_symbol_position(
+            cell_x, cell_y, offsets.get(reference)
+        )
 
     symbol_positions: dict[str, tuple[float, float]] = {}
     for symbol in laid_out_symbols:
