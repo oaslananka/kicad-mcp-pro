@@ -2543,6 +2543,15 @@ def _format_placement_score(analysis: PlacementAnalysis) -> str:
     return "\n".join(lines)
 
 
+def _placement_gate_verdict(analysis: PlacementAnalysis) -> tuple[GateStatus, str]:
+    """Give measured hard failures priority over advisory placement warnings."""
+    if analysis.hard_failures:
+        return "FAIL", "Footprint placement still violates hard physical or intent-aware checks."
+    if analysis.warnings:
+        return "WARN", "Placement measurements require manual review; no hard failure was proven."
+    return "PASS", "Footprint placement is geometrically and contextually sane."
+
+
 def _evaluate_pcb_placement_gate() -> GateOutcome:
     analysis, blocked = _placement_analysis()
     if blocked is not None:
@@ -2550,9 +2559,7 @@ def _evaluate_pcb_placement_gate() -> GateOutcome:
     if analysis is None:
         raise RuntimeError(_MISSING_PLACEMENT_ANALYSIS)
 
-    status: GateStatus = (
-        "FAIL" if analysis.hard_failures else "WARN" if analysis.warnings else "PASS"
-    )
+    status, summary = _placement_gate_verdict(analysis)
     details = [
         f"Footprints analysed: {analysis.footprint_count}",
         f"Board frame: {analysis.board_width_mm:.2f} x {analysis.board_height_mm:.2f} mm",
@@ -2575,13 +2582,7 @@ def _evaluate_pcb_placement_gate() -> GateOutcome:
     return GateOutcome(
         name="Placement",
         status=status,
-        summary=(
-            "Footprint placement still violates hard physical or intent-aware checks."
-            if status == "FAIL"
-            else "Placement measurements require manual review; no hard failure was proven."
-            if status == "WARN"
-            else "Footprint placement is geometrically and contextually sane."
-        ),
+        summary=summary,
         details=details,
     )
 
