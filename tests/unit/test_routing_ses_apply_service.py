@@ -135,3 +135,34 @@ def test_apply_preserves_read_failure(tmp_path: Path) -> None:
     assert result.ok is False
     assert result.errors
     assert result.errors[0].startswith("Could not read the SES: ")
+
+
+def test_apply_refuses_partial_ses_when_net_not_on_board(tmp_path: Path) -> None:
+    """No transactional write may occur if any named SES route is missing."""
+    ses = SES.replace(
+        "network_out ", 'network_out (net "MISSING" (wire (path F.Cu 250 2500 -7000 11000 -7000))) '
+    )
+    _write_ses(tmp_path, ses)
+    service, writes = _service(tmp_path)
+
+    result = service.apply()
+
+    assert result.ok is False
+    assert result.changed is False
+    assert writes == []
+    assert "MISSING" in result.errors[0]
+    assert "No routing was applied" in result.errors[0]
+
+
+def test_apply_refuses_named_only_kicad_pcb_instead_of_a_fake_success(tmp_path: Path) -> None:
+    """Modern KiCad named-net boards must not receive legacy numeric copper."""
+    _write_ses(tmp_path)
+    modern = '(kicad_pcb (version 20250216) (pad "1" smd rect (net "GND")))'
+    service, writes = _service(tmp_path, current=modern)
+
+    result = service.apply()
+
+    assert not result.ok
+    assert not result.changed
+    assert not writes
+    assert "named-only net encoding" in result.errors[0]

@@ -232,6 +232,41 @@ async def test_route_apply_ses_applies_routing_headlessly(sample_project: Path) 
 
 
 @pytest.mark.anyio
+async def test_route_apply_ses_refuses_partial_net_import_without_mutating_board(
+    sample_project: Path,
+) -> None:
+    """One foreign SES net must abort even when an earlier valid route exists."""
+    from hashlib import sha256
+
+    pcb = sample_project / "demo.kicad_pcb"
+    pcb.write_text(
+        '(kicad_pcb (version 20250216) (net 1 "GND"))',
+        encoding="utf-8",
+    )
+    original = sha256(pcb.read_bytes()).hexdigest()
+    ses = sample_project / "output" / "routing" / "board.ses"
+    ses.parent.mkdir(parents=True, exist_ok=True)
+    ses.write_text(
+        "(session t.dsn (routes (resolution um 10) (network_out "
+        '(net "GND" (wire (path F.Cu 250 2500 -5000 11000 -5000))) '
+        '(net "NON_EXISTENT" (wire (path F.Cu 250 3000 -5000 11000 -5000))))))',
+        encoding="utf-8",
+    )
+    server = build_server("pcb")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    result = await call_tool_payload(
+        server, "route_apply_ses", {"ses_path": "output/routing/board.ses"}
+    )
+
+    assert result["ok"] is False
+    assert result["changed"] is False
+    assert "NON_EXISTENT" in " ".join(result["errors"])
+    assert "No routing was applied" in " ".join(result["errors"])
+    assert sha256(pcb.read_bytes()).hexdigest() == original
+
+
+@pytest.mark.anyio
 async def test_route_apply_ses_reports_empty_session(sample_project: Path) -> None:
     """An SES with no routing fails cleanly rather than claiming a change."""
     (sample_project / "demo.kicad_pcb").write_text(
