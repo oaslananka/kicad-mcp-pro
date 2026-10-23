@@ -85,3 +85,35 @@ def test_parity_rejects_unbalanced_saved_board_without_ipc_fallback(
     assert references == set()
     assert source == "file"
     assert error and "unbalanced parentheses" in error
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "wrong_root",
+        "root_prefix",
+        "extra_root",
+    ],
+)
+def test_parity_rejects_validly_balanced_non_pcb_documents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, corruption: str
+) -> None:
+    pcb = _saved_board(tmp_path, "R1")
+    document = pcb.read_text(encoding="utf-8")
+    if corruption == "wrong_root":
+        document = document.replace("(kicad_pcb", "(schematic", 1)
+    elif corruption == "root_prefix":
+        document = document.replace("(kicad_pcb", "(kicad_pcb_fake", 1)
+    else:
+        document += "\n(other_document)\n"
+    pcb.write_text(document, encoding="utf-8")
+    monkeypatch.setattr(validation, "_get_pcb_file", lambda: pcb)
+
+    def unrelated_active_board() -> None:
+        raise AssertionError("Never consult an unrelated GUI board for an invalid PCB")
+
+    monkeypatch.setattr(validation, "get_board", unrelated_active_board, raising=False)
+    references, source, error = validation._board_footprint_references()
+    assert references == set()
+    assert source == "file"
+    assert error and ("not a KiCad PCB" in error or "one root" in error)

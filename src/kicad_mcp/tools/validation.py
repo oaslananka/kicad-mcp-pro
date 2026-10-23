@@ -733,11 +733,18 @@ def _gate_outcome_payload(outcome: GateOutcome) -> GateOutcomePayload:
 
 def _board_footprint_references() -> tuple[set[str], str, str | None]:
     """Compare the saved project PCB, never a potentially unrelated active GUI board."""
+    from ..utils.sexpr import _extract_block
     from .board_file import _parse_board_footprint_blocks, _validate_board_text
 
     try:
         board_text = _get_pcb_file().read_text(encoding="utf-8")
         _validate_board_text(board_text)
+        document = board_text.strip()
+        if not re.match(r"\(kicad_pcb(?=\s|\))", document):
+            raise ValueError("The configured file is not a KiCad PCB document.")
+        _, root_length = _extract_block(document, 0)
+        if root_length != len(document):
+            raise ValueError("The configured PCB must contain exactly one root expression.")
     except (OSError, ValueError) as exc:
         return set(), "file", str(exc)
     return set(_parse_board_footprint_blocks(board_text)), "file", None
