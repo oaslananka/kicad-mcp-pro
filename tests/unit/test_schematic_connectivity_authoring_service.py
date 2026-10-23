@@ -967,7 +967,8 @@ def test_route_accepts_unchanged_windows_crlf_file_without_false_race(tmp_path: 
         route_segments=[(1.0, 1.0, 5.0, 1.0), (5.0, 1.0, 5.0, 5.0)],
     )
     target = tmp_path / "board.kicad_sch"
-    original = target.read_bytes().replace(b"\n", b"\r\n")
+    original = target.read_text(encoding="utf-8").replace("\n", "\r\n").encode("utf-8")
+    assert b"\r\r\n" not in original
     target.write_bytes(original)
 
     result = harness.service.route_wire_between_pins("U1", "1", "R1", "2")
