@@ -113,8 +113,9 @@ def test_unnamed_net_zero_refuses_import_even_if_table_declares_net_zero() -> No
 
 
 def test_render_helper_cannot_silently_drop_unknown_net() -> None:
+    route = parse_ses(_SES)
     with pytest.raises(ValueError, match="missing from the PCB net table: 'VCC'"):
-        render_pcb_items(parse_ses(_SES), {"GND": 1})
+        render_pcb_items(route, {"GND": 1})
 
 
 def test_modern_kicad_named_only_nets_fail_closed_before_numeric_write() -> None:
