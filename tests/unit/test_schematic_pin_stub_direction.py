@@ -40,3 +40,10 @@ def test_two_terminal_part_whose_center_is_on_the_column_stubs_along_the_column(
 
     assert _pin_label_stub_direction((10.0, 15.08), (10.0, 12.54), all_points) == (0.0, 1.0)
     assert _pin_label_stub_direction((10.0, 10.0), (10.0, 12.54), all_points) == (0.0, -1.0)
+
+
+def test_pin_label_stub_direction_keeps_origin_fallback_for_interior_points() -> None:
+    # No outer pins: the historical origin-based direction resolves ties horizontally.
+    assert _pin_label_stub_direction((5.0, 5.0), (0.0, 0.0), []) == (1.0, 0.0)
+    assert _pin_label_stub_direction((-5.0, 2.0), (0.0, 0.0), []) == (-1.0, 0.0)
+    assert _pin_label_stub_direction((1.0, -5.0), (0.0, 0.0), []) == (0.0, -1.0)

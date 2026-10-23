@@ -3994,6 +3994,16 @@ def _edge_stub_direction(
     return None
 
 
+def _origin_pin_label_stub_direction(
+    px: float, py: float, ox: float, oy: float
+) -> tuple[float, float]:
+    """Preserve the original dominant-axis fallback for interior symbol pins."""
+    dx, dy = px - ox, py - oy
+    if abs(dx) >= abs(dy):
+        return ((1.0 if dx >= 0 else -1.0), 0.0)
+    return (0.0, (1.0 if dy >= 0 else -1.0))
+
+
 def _pin_label_stub_direction(
     pin_point: tuple[float, float],
     symbol_origin: tuple[float, float],
@@ -4034,10 +4044,7 @@ def _pin_label_stub_direction(
         ):
             return edge
 
-    dx, dy = px - ox, py - oy
-    if abs(dx) >= abs(dy):
-        return ((1.0 if dx >= 0 else -1.0), 0.0)
-    return (0.0, (1.0 if dy >= 0 else -1.0))
+    return _origin_pin_label_stub_direction(px, py, ox, oy)
 
 
 def get_pin_alias_positions(
