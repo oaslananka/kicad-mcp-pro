@@ -742,19 +742,24 @@ def _format_selection_id(item: object) -> str:
     return str(item_id)[:8] + ("..." if item_id else "")
 
 
+def _consume_quoted_board_character(char: str, escaped: bool) -> tuple[bool, bool]:
+    """Advance the quoted string state; escaped quotes never end a string."""
+    if escaped:
+        return True, False
+    if char == "\\":
+        return True, True
+    return char != '"', False
+
+
 def _validate_board_text(content: str) -> None:
     depth = 0
     in_string = False
     escaped = False
     for char in content:
         if in_string:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                in_string = False
-        elif char == '"':
+            in_string, escaped = _consume_quoted_board_character(char, escaped)
+            continue
+        if char == '"':
             in_string = True
         elif char == "(":
             depth += 1
