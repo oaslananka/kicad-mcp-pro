@@ -1990,6 +1990,20 @@ def _replace_or_insert_title_line(block: str, pattern: re.Pattern[str], line: st
     return f"{block[:insert_at]}\n\t\t{line}{block[insert_at:]}"
 
 
+def _new_title_block_text(updates: dict[str, str]) -> str:
+    """Construct the missing title block without altering field or comment ordering."""
+    lines = ["\t(title_block"]
+    for key in ("title", "date", "rev", "company"):
+        if key in updates:
+            lines.append(f"\t\t({key} {_sexpr_string(updates[key])})")
+    for index in range(1, 5):
+        key = f"comment{index}"
+        if key in updates:
+            lines.append(f"\t\t(comment {index} {_sexpr_string(updates[key])})")
+    lines.append("\t)")
+    return "\n".join(lines)
+
+
 def _apply_title_block_updates(content: str, updates: dict[str, str]) -> str:
     field_patterns = {
         "title": re.compile(rf"\(title\s+{_STRING_PATTERN}\)"),
@@ -2004,16 +2018,7 @@ def _apply_title_block_updates(content: str, updates: dict[str, str]) -> str:
 
     found = _find_title_block(content)
     if found is None:
-        lines = ["\t(title_block"]
-        for key in ("title", "date", "rev", "company"):
-            if key in updates:
-                lines.append(f"\t\t({key} {_sexpr_string(updates[key])})")
-        for index in range(1, 5):
-            key = f"comment{index}"
-            if key in updates:
-                lines.append(f"\t\t(comment {index} {_sexpr_string(updates[key])})")
-        lines.append("\t)")
-        block = "\n".join(lines)
+        block = _new_title_block_text(updates)
         paper_match = re.search(r"(\n\s*\(paper\b[^\n]*\)\n)", content)
         if paper_match:
             return content[: paper_match.end()] + block + "\n" + content[paper_match.end() :]
