@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from ..errors import SchematicRoutingUnsafeError
 from ..models.schematic import RouteWireBetweenPinsInput
+from ..utils.schematic_router import point_on_segment, segments_merge
 from .references import power_reference_from_uuid
 
 
@@ -68,6 +69,84 @@ LABEL_KIND_TO_BLOCK_KIND: dict[str, str] = {
 def _no_module_boundaries(_content: str) -> list[BoundingBoxLike]:
     """No drawn boundaries to clear -- the default for callers predating the rule."""
     return []
+
+
+def _wire_network_at_pin(point: tuple[float, float], data: ParsedSchematic) -> list[WireSegment]:
+    """Reach all KiCad-joined wire segments, but not bare crossovers."""
+    segments: list[WireSegment] = [
+        (float(w["x1"]), float(w["y1"]), float(w["x2"]), float(w["y2"]))
+        for w in data.get("wires", [])
+    ]
+    reached = {index for index, wire in enumerate(segments) if point_on_segment(point, wire)}
+    frontier = list(reached)
+    while frontier:
+        current = segments[frontier.pop()]
+        for index, wire in enumerate(segments):
+            if index not in reached and segments_merge(current, wire):
+                reached.add(index)
+                frontier.append(index)
+    return [segments[index] for index in reached]
+
+
+def _named_nets_at_pin(point: tuple[float, float], data: ParsedSchematic) -> set[str]:
+    """Identify labels on the complete pre-existing wire network at a pin."""
+    selected = _wire_network_at_pin(point, data)
+
+    def on_net(other_point: tuple[float, float]) -> bool:
+        return (
+            abs(other_point[0] - point[0]) <= 1e-6 and abs(other_point[1] - point[1]) <= 1e-6
+        ) or any(point_on_segment(other_point, wire) for wire in selected)
+
+    names: set[str] = set()
+    for label in data.get("labels", []):
+        position = (float(label["x"]), float(label["y"]))
+        if on_net(position):
+            names.add(str(label["name"]))
+    for symbol in data.get("power_symbols", []):
+        position = (float(symbol["x"]), float(symbol["y"]))
+        if on_net(position):
+            names.add(str(symbol.get("value") or symbol.get("name") or ""))
+    return {name for name in names if name}
+
+
+def _assert_named_net_separation(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    data: ParsedSchematic,
+    payload: RouteWireBetweenPinsInput,
+) -> None:
+    first_names = _named_nets_at_pin(start, data)
+    second_names = _named_nets_at_pin(end, data)
+    if first_names and second_names and first_names.isdisjoint(second_names):
+        raise SchematicRoutingUnsafeError(
+            f"Route refused between {payload.ref1}:{payload.pin1} and "
+            f"{payload.ref2}:{payload.pin2}: conflicting_named_nets "
+            f"({sorted(first_names)} != {sorted(second_names)}). "
+            "No schematic changes were made."
+        )
+
+
+def _assert_route_geometry_safe(
+    segments: list[WireSegment],
+    occupied: list[WireSegment],
+    routing_warning: str | None,
+    crossings: int,
+    payload: RouteWireBetweenPinsInput,
+) -> None:
+    """Reject planner fallbacks and independently detect cross-net unions."""
+    reason: str | None = None
+    if routing_warning and routing_warning != "WARNING: net_crossing_unavoidable":
+        reason = routing_warning
+    elif any(segments_merge(segment, other) for segment in segments for other in occupied):
+        reason = "net_isolation_failed"
+    elif routing_warning == "WARNING: net_crossing_unavoidable" and not crossings:
+        reason = "unverified_crossing_fallback"
+    if reason:
+        raise SchematicRoutingUnsafeError(
+            f"Route refused between {payload.ref1}:{payload.pin1} and "
+            f"{payload.ref2}:{payload.pin2}: {reason}. "
+            "No schematic changes were made."
+        )
 
 
 @dataclass(frozen=True)
@@ -526,7 +605,16 @@ class SchematicConnectivityAuthoringService:
             pin2=pin2,
             snap_to_grid=snap_to_grid,
         )
-        data = self.parse_schematic(self.active_schematic_file())
+        # Read once before parsing: all pin positions, net classes and route
+        # geometry must be derived from the same source revision.
+        source_path = self.active_schematic_file()
+        source_bytes = source_path.read_bytes()
+        data = self.parse_schematic(source_path)
+        if source_path.read_bytes() != source_bytes:
+            raise SchematicRoutingUnsafeError(
+                "Route refused: schematic changed during parsing. No schematic changes were made."
+            )
+        content = source_bytes.decode("utf-8")
         # Power symbols are addressable routing endpoints too.  They live in a
         # separate list because they are excluded from BOM/annotation/placement,
         # not because they cannot carry a wire -- and a pin's own ground stub is
@@ -578,7 +666,8 @@ class SchematicConnectivityAuthoringService:
             second_library, second_symbol, int(second["rotation"]), int(second["unit"])
         ).get(payload.pin2)
 
-        content = self.active_schematic_file().read_text(encoding="utf-8", errors="ignore")
+        _assert_named_net_separation(start, end, data, payload)
+
         obstacles = self.get_symbol_bboxes(content)
         boundaries = self.get_module_boundaries(content)
         # Wires that already belong to another net are what this route must not
@@ -600,17 +689,18 @@ class SchematicConnectivityAuthoringService:
             return (
                 f"{payload.ref1}:{payload.pin1} and {payload.ref2}:{payload.pin2} already overlap."
             )
-        # A failed search may return its direct, potentially shorting fallback.
-        # Only the explicitly reviewed perpendicular-crossing warning permits a
-        # write; all other warnings must leave the schematic unchanged.
-        if routing_warning and routing_warning != "WARNING: net_crossing_unavoidable":
-            raise SchematicRoutingUnsafeError(
-                f"Route refused between {payload.ref1}:{payload.pin1} and "
-                f"{payload.ref2}:{payload.pin2}: {routing_warning}. "
-                "No schematic changes were made."
-            )
+        _assert_route_geometry_safe(segments, occupied, routing_warning, crossings, payload)
 
         def mutator(current: str) -> str:
+            # A plan derived from stale topology must not write into a schematic
+            # that another MCP tool or KiCad editor changed in the meantime.
+            if source_path.read_bytes() != source_bytes or current.replace(
+                "\r\n", "\n"
+            ) != content.replace("\r\n", "\n"):
+                raise SchematicRoutingUnsafeError(
+                    "Route refused: schematic changed during planning. "
+                    "No schematic changes were made."
+                )
             updated = current
             for segment in segments:
                 updated = self.append_before_sheet_instances(
