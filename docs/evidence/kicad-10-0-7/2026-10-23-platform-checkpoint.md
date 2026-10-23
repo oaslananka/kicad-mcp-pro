@@ -17,7 +17,14 @@ This checkpoint distinguishes genuine native command-line, live GUI/IPC, and rea
 
 The deliberately faulty `clean-led-kicad10` fixture is identified by PCB SHA-256 `7460ea575de1083ebebec0efba2c8560c186e5a81c3cd2e37c775eea03927aa2` and schematic SHA-256 `99687419c11831ccae6776c5e7face48697e7587e7ea09ee210a675afb6b7b69`. Neither source file changed during the independent Windows native check. The Windows-hosted native canary's signed official installer digest in its artifact is `ce3881b6a9188eb34ac1ebaaec7651149e8a025206410addfb11a1a9656ecf95`.
 
-## Promotion decision: hold, not an implicit support claim
+## Historical pre-promotion hold (collected before subsequent review)
+
+**Historical context:** The below decision was recorded before the separate
+[10.0.7 reviewed supported-surface parity baseline](../../compatibility/kicad-10-0-7-feature-parity.md)
+was proposed. It explains why the evidence-only PR #1431 did not itself change
+compatibility pins. Consult the current compatibility matrix for the latest
+supported-surface version; no subsequent change retroactively certifies
+unpublished expanded IPC wrappers, Jammy 10.0.7 or manufacturing.
 
 - `compatibility.yaml` still explicitly says `kicad.latestVerified: 10.0.6` and `kicad10FeatureParity.baseline: 10.0.6`, and the [reviewed 10.0.6 feature-parity baseline](../../compatibility/kicad-10-0-6-feature-parity.md) remains the project's normative baseline. The repository's compatibility checker requires these values to agree. Updating one number without the other and without a reviewed parity baseline would be inaccurate.
 - The required current-stable Ubuntu 24.04 lane and separate Windows official-installer native qualification are proven. The separate Ubuntu 22.04/10.0.6 legacy lane must be preserved; Ubuntu 22.04 is not qualified for native KiCad 10.0.7. A Chocolatey default-package lane should not be silently assumed to provide 10.0.7.

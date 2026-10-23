@@ -1,9 +1,9 @@
 schemaVersion: 1
-updated: '2026-09-04'
+updated: '2026-10-23'
 source: https://github.com/oaslananka/kicad-mcp-pro
 kicad:
   primary: 10.0.x
-  latestVerified: 10.0.6
+  latestVerified: 10.0.7
   supported:
     - range: 10.0.x
       state: primary
@@ -92,24 +92,24 @@ kicad:
         cliFormat: solidworks
         evidence: KiCad 10 CLI import help advertises the format.
 kicad10FeatureParity:
-  reviewed: '2026-09-04'
-  baseline: 10.0.6
+  reviewed: '2026-10-23'
+  baseline: 10.0.7
   primaryIssue: https://github.com/oaslananka/kicad-mcp-pro/issues/427
-  documentation: docs/compatibility/kicad-10-0-6-feature-parity.md
-  # A separate patch review must not overwrite the 10.0.6 feature-parity baseline.
-  # This is an evidence index and a queue of targeted semantic regressions,
-  # not a claim that every 10.0.7 native/editor feature is qualified.
+  documentation: docs/compatibility/kicad-10-0-7-feature-parity.md
+  # The reviewed 10.0.6 baseline is retained as a historical document.
+  # 10.0.7 scope is bounded to tested existing product surfaces: unshipped
+  # expanded IPC wrappers and unsupported CLI Allegro imports remain blocked.
   candidatePatchReview:
     version: 10.0.7
-    reviewed: '2026-10-12'
-    status: bounded-not-promoted
-    globalPromotionApproved: false
+    reviewed: '2026-10-23'
+    status: reviewed-with-blocked-optional-capabilities
+    globalPromotionApproved: true
     issue: https://github.com/oaslananka/kicad-mcp-pro/issues/1181
     audit: docs/evidence/kicad-10-0-7/2026-10-12-feature-parity-audit.md
     upstreamReleaseNotes: https://www.kicad.org/blog/2026/10/KiCad-10.0.7-Release/
     windowsNativeAutomatic:
-      mainRevision: 6b4474d1c02889a61e16a1eedccd9e6973d63056
-      run: https://github.com/oaslananka/kicad-mcp-pro/actions/runs/38176395461
+      mainRevision: 3978af8710ca1b117f0a037f103d873ef5ab6564
+      run: https://github.com/oaslananka/kicad-mcp-pro/actions/runs/39900817488
       canarySteps: 32
       semanticMatches: 5
       semanticTotal: 5
@@ -123,6 +123,16 @@ kicad10FeatureParity:
         Preserve the previously qualified Jammy lane while the official
         10.0.7 Jammy PPA build remains blocked by the observed libgit2 error;
         Ubuntu 24.04 10.0.7 evidence must not be treated as Jammy evidence.
+    qualificationEvidence:
+      platformMatrix: docs/evidence/kicad-10-0-7/2026-10-23-platform-checkpoint.md
+      windowsGuiRun: https://github.com/oaslananka/kicad-mcp-pro/actions/runs/39960284615
+      macosGuiRun: https://github.com/oaslananka/kicad-mcp-pro/actions/runs/39960288521
+      ubuntuPrimaryRun: https://github.com/oaslananka/kicad-mcp-pro/actions/runs/39900817676
+      chocolateyPackage: https://community.chocolatey.org/packages/kicad/10.0.7
+      chocolateyApprovedDate: '2026-10-16'
+      officialWindowsInstallerSha256: ce3881b6a9188eb34ac1ebaaec7651149e8a025206410addfb11a1a9656ecf95
+      expandedIpcWrappers: blocked-pending-stable-kicad-python-0.9.0
+      allegroCliImporter: blocked-unsupported-format
     targetedRegressionGaps:
       - erc-json-unit-scale
       - multi-root-schematic-plot
@@ -380,6 +390,20 @@ kicad10FeatureParity:
         notes: >-
           IPC is the supported live-editor direction for KiCad 10 and KiCad 11
           readiness.
+      ipc_107_expanded_objects:
+        status: blocked
+        issue: https://github.com/oaslananka/kicad-mcp-pro/issues/1181
+        nativeSurface: KiCad 10.0.7 IPC tables, reference points and embedded files
+        productSurface: Not exposed through MCP until stable official Python wrappers are available and live roundtrip tests pass
+        evidence:
+          - path:scripts/kicad_107_ipc_binding_gate.py
+          - path:tests/unit/test_kicad_107_ipc_binding_gate.py
+          - source:https://pypi.org/project/kicad-python/
+        notes: >-
+          The official stable kicad-python package is 0.8.0, while newly
+          documented wrappers need 0.9.0 or later; this repo pins 0.7.1.
+          Existing tested live IPC remains supported, but these new objects
+          fail closed and have not passed real GUI roundtrips.
       swig_pcbnew_direct_dependency:
         status: blocked
         nativeSurface: Deprecated SWIG pcbnew Python bindings

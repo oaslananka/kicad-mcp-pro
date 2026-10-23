@@ -109,7 +109,7 @@ def test_legacy_import_wrappers_preserve_block_and_result_wording(tmp_path: Path
     )
 
     assert service.import_allegro("legacy.brd") == (
-        "blocked: KiCad CLI does not support allegro import in 10.0.6"
+        "blocked: KiCad CLI import --format allegro is not a supported product capability"
     )
     assert service.import_pads("legacy.brd") == "pads import failed: unsupported"
     assert service.import_geda("legacy.brd") == "geda import failed: unsupported"

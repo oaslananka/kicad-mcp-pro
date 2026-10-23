@@ -13,7 +13,7 @@ The npm tarball **does not bundle** KiCad, Python, or the MCP server.
   with `uvx` on `PATH`.
 - **Python >=3.13** for the Python package; uv may provision the runtime.
 - **KiCad 10.0.x** is the primary supported line; latest verified patch:
-  **10.0.6**. Put the KiCad CLI on `PATH` for file-backed ERC/DRC and
+  **10.0.7**. Put the KiCad CLI on `PATH` for file-backed ERC/DRC and
   manufacturing exports.
   See [compatibility policy](https://github.com/oaslananka/kicad-mcp-pro/blob/main/compatibility.yaml).
 

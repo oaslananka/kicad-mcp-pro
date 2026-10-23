@@ -26,15 +26,15 @@ def _workflow(name: str) -> dict:
     return yaml.safe_load((ROOT / ".github/workflows" / name).read_text(encoding="utf-8"))
 
 
-def test_candidate_is_bounded_and_never_relabels_the_supported_baseline() -> None:
+def test_107_promoted_scope_keeps_unpublished_features_blocked() -> None:
     matrix = _matrix()
     parity = matrix["kicad10FeatureParity"]
     review = parity["candidatePatchReview"]
-    assert matrix["kicad"]["latestVerified"] == parity["baseline"] == "10.0.6"
-    assert parity["documentation"] == "docs/compatibility/kicad-10-0-6-feature-parity.md"
+    assert matrix["kicad"]["latestVerified"] == parity["baseline"] == "10.0.7"
+    assert parity["documentation"] == "docs/compatibility/kicad-10-0-7-feature-parity.md"
     assert review["version"] == "10.0.7"
-    assert review["status"] == "bounded-not-promoted"
-    assert review["globalPromotionApproved"] is False
+    assert review["status"] == "reviewed-with-blocked-optional-capabilities"
+    assert review["globalPromotionApproved"] is True
     assert review["issue"] == "https://github.com/oaslananka/kicad-mcp-pro/issues/1181"
     assert review["audit"] == AUDIT.relative_to(ROOT).as_posix()
     assert AUDIT.is_file()
@@ -42,6 +42,18 @@ def test_candidate_is_bounded_and_never_relabels_the_supported_baseline() -> Non
     assert len(review["targetedRegressionGaps"]) == len(EXPECTED_GAPS)
     assert set(review["targetedRegressionGaps"]) == EXPECTED_GAPS
     assert parity["surfaces"]["importers"]["allegro"]["status"] == "blocked"
+    expanded = parity["surfaces"]["ipc"]["ipc_107_expanded_objects"]
+    assert expanded["status"] == "blocked"
+    assert "path:scripts/kicad_107_ipc_binding_gate.py" in expanded["evidence"]
+    evidence = review["qualificationEvidence"]
+    assert evidence["expandedIpcWrappers"].startswith("blocked-")
+    assert evidence["allegroCliImporter"].startswith("blocked-")
+    assert evidence["windowsGuiRun"].endswith("/39960284615")
+    assert evidence["macosGuiRun"].endswith("/39960288521")
+    assert evidence["chocolateyPackage"].endswith("/10.0.7")
+    assert evidence["officialWindowsInstallerSha256"] == (
+        "ce3881b6a9188eb34ac1ebaaec7651149e8a025206410addfb11a1a9656ecf95"
+    )
 
 
 def test_audit_accounts_for_every_targeted_upstream_gap_without_claiming_pass() -> None:
@@ -99,8 +111,8 @@ def test_both_jammy_legacy_jobs_explicitly_fail_on_version_drift() -> None:
 def test_real_automatic_windows_source_is_not_legacy_or_gui_evidence() -> None:
     review = _matrix()["kicad10FeatureParity"]["candidatePatchReview"]
     native = review["windowsNativeAutomatic"]
-    assert native["mainRevision"] == "6b4474d1c02889a61e16a1eedccd9e6973d63056"
-    assert native["run"].endswith("/38176395461")
+    assert native["mainRevision"] == "3978af8710ca1b117f0a037f103d873ef5ab6564"
+    assert native["run"].endswith("/39900817488")
     assert native["canarySteps"] == 32
     assert native["semanticMatches"] == native["semanticTotal"] == 5
     native_workflow = _workflow("kicad-10-0-7-windows-qualification.yml")
@@ -122,4 +134,8 @@ def test_legacy_and_candidate_documentation_are_cross_linked() -> None:
     assert name in parity_doc
     assert "ubuntu-22.04" in baseline
     assert "10.0.6" in baseline
+    current = (ROOT / "docs/compatibility/kicad-10-0-7-feature-parity.md").read_text()
+    assert "0.9.0" in current
+    assert "blocked" in current
+    assert "3978af8710ca1b117f0a037f103d873ef5ab6564" in current
     assert "10.0.7" in baseline

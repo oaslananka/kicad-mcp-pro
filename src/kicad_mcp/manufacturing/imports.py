@@ -66,7 +66,9 @@ class ManufacturingImportService:
         report_file: str = "",
     ) -> str:
         if import_format.strip().casefold() == "allegro":
-            return "blocked: KiCad CLI does not support allegro import in 10.0.6"
+            return (
+                "blocked: KiCad CLI import --format allegro is not a supported product capability"
+            )
 
         try:
             in_path = self.resolve_path(input_file)
@@ -99,7 +101,7 @@ class ManufacturingImportService:
 
     def import_allegro(self, allegro_brd_path: str, output_dir: str = "") -> str:
         _ = allegro_brd_path, output_dir
-        return "blocked: KiCad CLI does not support allegro import in 10.0.6"
+        return "blocked: KiCad CLI import --format allegro is not a supported product capability"
 
     def import_pads(self, pads_pcb_path: str, output_dir: str = "") -> str:
         result = self.import_board(

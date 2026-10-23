@@ -71,8 +71,8 @@ def test_107_installer_uses_version_matched_official_symbol_packer() -> None:
 
 
 def test_primary_gate_does_not_change_historical_compatibility_evidence() -> None:
-    # This MR is a CI priority adjustment, not a fabrication or release gate.
+    # The global patch baseline is promoted, but the Jammy 10.0.6 lane remains pinned.
     matrix = yaml.safe_load((ROOT / "compatibility.yaml").read_text())
-    assert matrix["kicad"]["latestVerified"] == "10.0.6"
-    assert matrix["kicad10FeatureParity"]["baseline"] == "10.0.6"
+    assert matrix["kicad"]["latestVerified"] == "10.0.7"
+    assert matrix["kicad10FeatureParity"]["baseline"] == "10.0.7"
     assert matrix["kicad10FeatureParity"]["candidatePatchReview"]["version"] == "10.0.7"

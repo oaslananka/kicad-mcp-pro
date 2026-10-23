@@ -1,5 +1,11 @@
 # KiCad 10.0.6 Baseline
 
+> **Historical 10.0.6 compatibility checkpoint.** Since 2026-10-23,
+> the globally verified supported-surface patch is **10.0.7**, as documented
+> in [its separately reviewed feature-parity baseline](../compatibility/kicad-10-0-7-feature-parity.md).
+> This historical evidence and the Ubuntu 22.04 / 10.0.6 legacy canary remain
+> intact; statements below describe the historical 10.0.6 checkpoint.
+
 **Reviewed:** 2026-09-04
 
 KiCad MCP Pro treats KiCad 10.0.6 as the **last verified compatible**

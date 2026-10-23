@@ -1,5 +1,10 @@
 # KiCad 10.0.6 Feature Parity
 
+> **Historical parity snapshot, retained for traceability.** The current
+> reviewed supported-surface baseline is
+> [KiCad 10.0.7](kicad-10-0-7-feature-parity.md). The sections below describe
+> the **earlier** 10.0.6 release decision and are not current version pins.
+
 This page is the human-readable view of
 [`compatibility.yaml`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/compatibility.yaml) `kicad10FeatureParity`. It
 tracks KiCad 10.0.6 parity separately from the current KiCad 11 readiness plan
