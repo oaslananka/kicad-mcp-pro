@@ -14,6 +14,26 @@ from ..utils.impedance import (
 )
 
 
+def _impedance_summary_suffix(impedance: object, differential: bool) -> str:
+    """Format the existing diff-pair versus single-ended interface annotation."""
+    if impedance and differential:
+        return f", {impedance}ohm diff"
+    if impedance:
+        return f", {impedance}ohm SE"
+    return ""
+
+
+def _stackup_layer_count(max_freq_ghz: float, has_differential: bool, has_highspeed: bool) -> int:
+    """Preserve the frequency and differential routing layer thresholds."""
+    if not has_highspeed and not has_differential:
+        return 2
+    if max_freq_ghz < 1.0:
+        return 4
+    if max_freq_ghz < 5.0:
+        return 4 if not has_highspeed else 6
+    return 8
+
+
 @dataclass(frozen=True)
 class SignalIntegrityStackupSynthesisService:
     """Synthesize stackup recommendations from interface requirements."""
@@ -122,12 +142,7 @@ class SignalIntegrityStackupSynthesisService:
                 has_differential = True
             if freq >= 1.0:
                 has_highspeed = True
-            if impedance and diff:
-                imp_suffix = f", {impedance}ohm diff"
-            elif impedance:
-                imp_suffix = f", {impedance}ohm SE"
-            else:
-                imp_suffix = ""
+            imp_suffix = _impedance_summary_suffix(impedance, diff)
             iface_summaries.append(f"  {kind}: {freq:.2f} GHz{imp_suffix}")
 
         # Override material if frequency mandates it
@@ -143,14 +158,7 @@ class SignalIntegrityStackupSynthesisService:
         mat_name, er, loss_tan, mat_desc = get_dielectric(material_key)
 
         # Determine layer count
-        if not has_highspeed and not has_differential:
-            layer_count = 2
-        elif max_freq_ghz < 1.0:
-            layer_count = 4
-        elif max_freq_ghz < 5.0:
-            layer_count = 4 if not has_highspeed else 6
-        else:
-            layer_count = 8
+        layer_count = _stackup_layer_count(max_freq_ghz, has_differential, has_highspeed)
 
         # Calculate outer dielectric thickness for 50ohm microstrip (1 oz Cu)
         outer_h_mm = 0.18  # starting guess
