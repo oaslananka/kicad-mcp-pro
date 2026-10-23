@@ -1735,6 +1735,16 @@ def _position_netlist_symbols(
     return symbol_positions
 
 
+def _net_matches_power_symbol(net: dict[str, Any], name: str) -> bool:
+    """Match a power symbol by net name or an explicit endpoint's power identity."""
+    net_name = _net_name(net)
+    endpoints = _net_endpoints(net)
+    return net_name.upper() == name.upper() or any(
+        (power := _endpoint_power(endpoint)) and power.upper() == name.upper()
+        for endpoint in endpoints
+    )
+
+
 def _position_netlist_powers(
     laid_out_powers: list[dict[str, Any]],
     nets: list[dict[str, Any]],
@@ -1747,12 +1757,7 @@ def _position_netlist_powers(
         name = str(power_symbol.get("name", ""))
         power_connected_refs: list[str] = []
         for net in nets:
-            net_name = _net_name(net)
-            endpoints = _net_endpoints(net)
-            if net_name.upper() == name.upper() or any(
-                (power := _endpoint_power(endpoint)) and power.upper() == name.upper()
-                for endpoint in endpoints
-            ):
+            if _net_matches_power_symbol(net, name):
                 power_connected_refs.extend(_refs_for_net(net, known_refs))
         center = _average_position(power_connected_refs, symbol_positions)
         if center is None:

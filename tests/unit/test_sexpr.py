@@ -30,6 +30,7 @@ from kicad_mcp.tools.schematic import (
     _keepout_occupied_cells,
     _manhattan_segments,
     _net_endpoints,
+    _net_matches_power_symbol,
     _net_name,
     _netlist_layout_point,
     _normalize_anchor_refs,
@@ -39,6 +40,7 @@ from kicad_mcp.tools.schematic import (
     _order_refs_by_connectivity,
     _parse_symbol_block,
     _point_near_existing,
+    _position_netlist_powers,
     _refs_for_net,
     _remove_wire_blocks,
     _resolve_net_endpoint,
@@ -178,6 +180,31 @@ def test_schematic_classification_and_grid_helpers_cover_edge_cases() -> None:
     assert _point_near_existing(90.0, 90.0, [{"reference": "U1", "x": 50.8, "y": 50.8}]) is None
     assert _normalize_anchor_refs([" U1 ", "U1", "", "C1"]) == ["U1", "C1"]
     assert _functional_zone_origin("connector", max_cols=4, max_rows=4, spacing_mm=30.0) == (0, 0)
+
+
+def test_netlist_power_matching_preserves_name_and_endpoint_forms() -> None:
+    assert _net_matches_power_symbol({"name": "vcc", "endpoints": []}, "VCC")
+    assert _net_matches_power_symbol(
+        {"name": "SIGNAL", "endpoints": [{"reference": "U1"}, {"power": "gnd"}]}, "GND"
+    )
+    assert _net_matches_power_symbol(
+        {"name": "SIGNAL", "endpoints": [{"type": "power", "name": "GND"}]}, "gnd"
+    )
+    assert not _net_matches_power_symbol({"name": "SIGNAL", "endpoints": [{"power": "VCC"}]}, "GND")
+
+
+def test_position_netlist_powers_preserves_gnd_and_rail_placement() -> None:
+    powers = [{"name": "GND"}, {"name": "+3V3"}, {"name": "ORPHAN"}]
+    nets = [
+        {"name": "GROUND", "endpoints": ["U1.1", {"power": "GND"}]},
+        {"name": "+3v3", "endpoints": ["U1.2", "U2.2"]},
+    ]
+    positions = {"U1": (40.0, 50.0), "U2": (60.0, 70.0)}
+    _position_netlist_powers(powers, nets, {"U1", "U2"}, positions)
+    assert all(_has_point(power) for power in powers)
+    assert float(powers[0]["y_mm"]) > 50.0
+    assert float(powers[1]["y_mm"]) < 50.0
+    assert (powers[2]["x_mm"], powers[2]["y_mm"]) == _netlist_layout_point(2)
 
 
 def test_schematic_netlist_helpers_layout_missing_terminals() -> None:
