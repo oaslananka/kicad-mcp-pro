@@ -39,6 +39,7 @@ from ..utils.dru import (
     parse_dru,
     upsert_rule,
 )
+from ..utils.schematic_rules import rail_voltage
 from ..validation import drc_runner
 from ..validation.drc_report import (
     courtyard_violations,
@@ -1942,9 +1943,22 @@ class _PlacementEvaluator:
                 or "VSS" in net
                 or net.startswith("UNCONNECTED-(")
                 or not (
-                    net.startswith(("+", "V"))
-                    or "VBUS" in net
-                    or re.match(r"^\d+(?:V\d+)?(?:_|$)", net)
+                    (rail_voltage(net) or 0) > 0
+                    or net
+                    in {
+                        "VBUS",
+                        "USB_VBUS",
+                        "VBAT",
+                        "VDD",
+                        "VCC",
+                        "VDDA",
+                        "VCORE",
+                        "VIN",
+                        "VREF",
+                        "VCCIO",
+                        "AVDD",
+                        "DVDD",
+                    }
                 )
             ):
                 continue
@@ -1996,7 +2010,7 @@ class _PlacementEvaluator:
                     f"distance is {nearest:.2f} mm (intent limit {pair.max_distance_mm:.2f} mm); "
                     "physical copper path, return loop and device guidance require review."
                 )
-        elif cap_distances and min(cap_distances) > pair.max_distance_mm:
+        elif cap_distances:
             self.warnings.append(
                 f"{pair.ic_ref}: nearest decoupling cap is {min(cap_distances):.2f} mm "
                 f"by footprint-center proxy (intent limit {pair.max_distance_mm:.2f} mm); "

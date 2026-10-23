@@ -244,7 +244,7 @@ async def test_pcb_placement_quality_gate_passes_clean_intent_aware_board(
             name="Package_QFP:TQFP-48",
             width_mm=6.0,
             height_mm=6.0,
-            net_name="USB_DP",
+            net_name="/3V3",
         ),
         _footprint_block(
             "C1",
@@ -254,6 +254,7 @@ async def test_pcb_placement_quality_gate_passes_clean_intent_aware_board(
             name="Capacitor_SMD:C_0603",
             width_mm=2.0,
             height_mm=1.2,
+            net_name="3V3",
         ),
     )
     server = build_server("full")

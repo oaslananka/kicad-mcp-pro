@@ -104,3 +104,28 @@ def test_data_net_matching_does_not_qualify_as_supply_decoupling() -> None:
     assert report.hard_failures == []
     assert any("footprint-center proxy" in warning for warning in report.warnings)
     assert not any("same-supply-net" in warning for warning in report.warnings)
+
+
+@pytest.mark.parametrize("rail", ["5V", "12V", "5V0", "+3V3"])
+def test_named_voltage_rail_is_measured_as_supply_pad(rail: str) -> None:
+    footprints = _footprint("U1", 10, 10, 0, [("1", 0, 0, rail)])
+    footprints += _footprint("C1", 30, 10, 0, [("1", 0, 0, rail)])
+    report, _ = _evaluate(footprints)
+    assert report.hard_failures == []
+    assert any("same-supply-net power-pad" in warning for warning in report.warnings)
+    assert not any("footprint-center proxy" in warning for warning in report.warnings)
+
+
+def test_vref_enable_is_not_treated_as_decoupling_supply() -> None:
+    footprints = _footprint("U1", 10, 10, 0, [("1", 0, 0, "VREF_EN")])
+    footprints += _footprint("C1", 30, 10, 0, [("1", 0, 0, "VREF_EN")])
+    report, _ = _evaluate(footprints)
+    assert report.hard_failures == []
+    assert any("footprint-center proxy" in warning for warning in report.warnings)
+
+
+def test_missing_qualified_pad_measurement_warns_even_when_centers_are_near() -> None:
+    footprints = _footprint("U1", 10, 10, 0, [("1", 0, 0, "USB_DP")])
+    footprints += _footprint("C1", 11, 10, 0, [("1", 0, 0, "USB_DP")])
+    report, _ = _evaluate(footprints)
+    assert any("footprint-center proxy" in warning for warning in report.warnings)
