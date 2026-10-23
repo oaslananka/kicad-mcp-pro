@@ -75,6 +75,7 @@ def test_more_than_twenty_violating_pads_are_bounded_with_total_count() -> None:
     assert sum(line.startswith("- FAIL:") for line in lines) == 21
     assert any("3 more below-minimum" in line for line in lines)
     assert any("23 below" in line for line in lines)
+    assert any("J1: 23" in line for line in lines)
 
 
 def test_unidentified_footprint_reference_is_explicitly_unknown() -> None:

@@ -42,6 +42,7 @@ def audit_pth_annular_ring_lines(board_text: str, minimum_mm: float) -> list[str
     if not math.isfinite(minimum_mm) or minimum_mm <= 0:
         raise ValueError("PTH annular minimum must be finite and positive.")
     inspected, unmeasured, below = 0, 0, []
+    below_by_reference: dict[str, int] = {}
     for footprint in _iter_blocks(board_text, "footprint"):
         reference = _REF.search(footprint)
         ref = reference.group(1) if reference else "unknown-reference"
@@ -56,6 +57,7 @@ def audit_pth_annular_ring_lines(board_text: str, minimum_mm: float) -> list[str
                 continue
             inspected += 1
             if ring < minimum_mm - 1e-7:
+                below_by_reference[ref] = below_by_reference.get(ref, 0) + 1
                 below.append(
                     f"{ref} pad {number}: nominal ring {ring:.3f} mm < "
                     f"{minimum_mm:.3f} mm 2-layer/1-oz minimum"
@@ -63,6 +65,11 @@ def audit_pth_annular_ring_lines(board_text: str, minimum_mm: float) -> list[str
     lines = [f"- FAIL: JLCPCB nominal circular PTH {item}." for item in below[:20]]
     if len(below) > 20:
         lines.append(f"- FAIL: {len(below) - 20} more below-minimum nominal circular PTH pads.")
+    if below_by_reference:
+        count_summary = ", ".join(
+            f"{ref}: {count}" for ref, count in sorted(below_by_reference.items())
+        )
+        lines.append(f"- WARN: Below-minimum nominal PTH counts by footprint: {count_summary}.")
     lines.append(
         f"- WARN: Partial source-board PTH preflight: {inspected} circular pads measured, "
         f"{unmeasured} unmeasured PTH shapes/plated slots; {len(below)} below the "
