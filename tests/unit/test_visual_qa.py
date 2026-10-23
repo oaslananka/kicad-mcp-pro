@@ -121,6 +121,14 @@ def test_parse_labels_preserves_font_size_and_invalid_zero_fallback() -> None:
     assert labels["DEFAULT"].justify == frozenset({"right"})
 
 
+def test_parse_labels_invalid_font_token_uses_default() -> None:
+    # Corrupt numeric font metadata should not prevent reading the label.
+    sch = '(kicad_sch (label "BAD_FONT" (at 10 20 0) (effects (font (size 1.2.3 1.2.3)))))'
+    labels = parse_labels(sch)
+    assert len(labels) == 1
+    assert labels[0].font_mm == 1.27
+
+
 def test_detect_label_collisions_flags_overlap() -> None:
     findings = detect_label_collisions(parse_labels(DEFECT_SCH))
     assert len(findings) == 1
