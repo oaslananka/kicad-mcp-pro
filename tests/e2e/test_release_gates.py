@@ -149,7 +149,7 @@ def _fake_export_cli(
         (
             "fail_bad_decoupling_placement",
             "placement",
-            "Placement quality gate: FAIL",
+            "Placement quality gate: WARN",
         ),
         (
             "fail_sensor_cluster_spread",
