@@ -1694,6 +1694,21 @@ def _generated_netlist_symbol_position(
     return _snap_point(raw_x, raw_y, True)
 
 
+def _existing_netlist_occupied_cells(
+    laid_out_symbols: list[dict[str, Any]], cell_w: float, cell_h: float
+) -> set[tuple[int, int]]:
+    """Reserve positions already occupied by user-positioned schematic symbols."""
+    occupied: set[tuple[int, int]] = set()
+    for symbol in laid_out_symbols:
+        if _has_point(symbol):
+            sx = _coord_value(symbol, "x") or 0.0
+            sy = _coord_value(symbol, "y") or 0.0
+            col = int(round((sx - AUTO_LAYOUT_ORIGIN_X_MM) / cell_w))
+            row = int(round((sy - AUTO_LAYOUT_ORIGIN_Y_MM) / cell_h))
+            occupied.add((col, row))
+    return occupied
+
+
 def _position_netlist_symbols(
     laid_out_symbols: list[dict[str, Any]],
     ordered_refs: list[str],
@@ -1703,14 +1718,7 @@ def _position_netlist_symbols(
     cell_w: float,
     cell_h: float,
 ) -> dict[str, tuple[float, float]]:
-    netlist_occupied: set[tuple[int, int]] = set()
-    for symbol in laid_out_symbols:
-        if _has_point(symbol):
-            sx = _coord_value(symbol, "x") or 0.0
-            sy = _coord_value(symbol, "y") or 0.0
-            col = int(round((sx - AUTO_LAYOUT_ORIGIN_X_MM) / cell_w))
-            row = int(round((sy - AUTO_LAYOUT_ORIGIN_Y_MM) / cell_h))
-            netlist_occupied.add((col, row))
+    netlist_occupied = _existing_netlist_occupied_cells(laid_out_symbols, cell_w, cell_h)
 
     generated_positions: dict[str, tuple[float, float]] = {}
     for reference in ordered_refs:
