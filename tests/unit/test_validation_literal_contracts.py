@@ -65,6 +65,63 @@ def test_design_rule_gate_preserves_top_level_and_success_label(
     )
 
 
+@pytest.mark.parametrize(
+    ("hard_failures", "warnings", "expected_status", "expected_summary"),
+    [
+        (
+            ["footprint outside board"],
+            ["thermal proximity"],
+            "FAIL",
+            "Footprint placement still violates hard physical or intent-aware checks.",
+        ),
+        (
+            [],
+            ["thermal proximity"],
+            "WARN",
+            "Placement measurements require manual review; no hard failure was proven.",
+        ),
+        (
+            [],
+            [],
+            "PASS",
+            "Footprint placement is geometrically and contextually sane.",
+        ),
+    ],
+)
+def test_placement_gate_preserves_verdict_priority_and_detail_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    hard_failures: list[str],
+    warnings: list[str],
+    expected_status: str,
+    expected_summary: str,
+) -> None:
+    analysis = validation.PlacementAnalysis(
+        footprint_count=4,
+        board_width_mm=40.0,
+        board_height_mm=30.0,
+        board_area_mm2=1200.0,
+        footprint_area_mm2=40.0,
+        density_pct=3.3,
+        score=90,
+        hard_failures=hard_failures,
+        warnings=warnings,
+    )
+    monkeypatch.setattr(validation, "_placement_analysis", lambda: (analysis, None))
+    outcome = validation._evaluate_pcb_placement_gate()
+    assert (outcome.name, outcome.status, outcome.summary) == (
+        "Placement",
+        expected_status,
+        expected_summary,
+    )
+    assert f"Placement score: {analysis.score}/100" in outcome.details
+    expected_findings = [
+        *(f"FAIL: {item}" for item in hard_failures),
+        *(f"WARN: {item}" for item in warnings),
+    ]
+    if expected_findings:
+        assert outcome.details[-len(expected_findings) :] == expected_findings
+
+
 class _ToolRecorder:
     def __init__(self) -> None:
         self.tools: dict[str, Callable[..., object]] = {}
