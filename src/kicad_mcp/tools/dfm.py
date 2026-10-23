@@ -363,7 +363,12 @@ def _dfm_check_lines(
 ) -> list[str]:
     rules = cast(dict[str, float | int], profile["rules"])
     metrics = _board_metrics()
-    _, report, error = _run_drc_report("dfm_profile_check.json")
+    try:
+        _, report, error = _run_drc_report("dfm_profile_check.json")
+    except (ValueError, OSError):
+        # A missing/unreadable project board cannot be a DFM PASS. Keep the
+        # saved-PTH review reachable and report unavailable native DRC.
+        report, error = None, "saved PCB source unavailable"
     report_status, classification_error = drc_runner.classify_legacy_drc_result(report, error)
     if report_status in {"unavailable", "malformed"}:
         report = None

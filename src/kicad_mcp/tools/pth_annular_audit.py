@@ -28,9 +28,16 @@ def _nominal_circular_ring_mm(pad: str, shape: str) -> float | None:
     x, y, hole = float(size.group(1)), float(size.group(2)), float(drill.group(1))
     if not all(math.isfinite(value) and value > 0 for value in (x, y, hole)):
         return None
-    if not math.isclose(x, y, abs_tol=1e-7) or hole >= x:
+    if not math.isclose(x, y, abs_tol=1e-7):
         return None
     return (min(x, y) - hole) / 2
+
+
+def _formatted_nominal_ring_comparison(ring: float, minimum_mm: float) -> str:
+    # Keep ordinary reports concise but never print an apparent "0.180 < 0.180"
+    # near a strict manufacturing threshold.
+    precision = 7 if f"{ring:.3f}" == f"{minimum_mm:.3f}" else 3
+    return f"{ring:.{precision}f} mm < {minimum_mm:.{precision}f} mm"
 
 
 def audit_pth_annular_ring_lines(board_text: str, minimum_mm: float) -> list[str]:
@@ -59,8 +66,9 @@ def audit_pth_annular_ring_lines(board_text: str, minimum_mm: float) -> list[str
             if ring < minimum_mm - 1e-7:
                 below_by_reference[ref] = below_by_reference.get(ref, 0) + 1
                 below.append(
-                    f"{ref} pad {number}: nominal ring {ring:.3f} mm < "
-                    f"{minimum_mm:.3f} mm 2-layer/1-oz minimum"
+                    f"{ref} pad {number}: nominal ring "
+                    f"{_formatted_nominal_ring_comparison(ring, minimum_mm)} "
+                    "2-layer/1-oz minimum"
                 )
     lines = [f"- FAIL: JLCPCB nominal circular PTH {item}." for item in below[:20]]
     if len(below) > 20:

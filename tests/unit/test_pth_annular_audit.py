@@ -82,3 +82,20 @@ def test_unidentified_footprint_reference_is_explicitly_unknown() -> None:
     board = '(kicad_pcb (footprint "Test" ' + _round("1", 0.65, 0.4) + "))"
     lines = audit_pth_annular_ring_lines(board, 0.18)
     assert any("unknown-reference pad 1" in line for line in lines)
+
+
+def test_hole_at_or_above_pad_diameter_is_definite_nominal_fail() -> None:
+    lines = audit_pth_annular_ring_lines(
+        _board(_round("equal", 0.65, 0.65), _round("larger", 0.65, 0.7)), 0.18
+    )
+    assert any("J1 pad equal: nominal ring 0.000 mm" in line for line in lines)
+    assert any("J1 pad larger: nominal ring -0.025 mm" in line for line in lines)
+    assert any("2 circular pads measured" in line and "2 below" in line for line in lines)
+
+
+def test_threshold_precision_does_not_print_apparent_equal_comparison() -> None:
+    # Nominal ring 0.1799 is strictly less than 0.180, despite identical
+    # three-decimal representations.
+    lines = audit_pth_annular_ring_lines(_board(_round("1", 0.7598, 0.4)), 0.18)
+    assert any("0.1799000 mm < 0.1800000 mm" in line for line in lines)
+    assert not any("0.180 mm < 0.180 mm" in line for line in lines)

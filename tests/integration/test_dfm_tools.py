@@ -163,3 +163,24 @@ async def test_manufacturer_dfm_missing_saved_pcb_reports_unverified_geometry(
     assert "Saved PCB PTH geometry unavailable" in report
     assert "individual pads/slots remain unverified" in report
     assert "written CAM" in report
+
+
+@pytest.mark.anyio
+async def test_dfm_missing_pcb_source_cannot_bypass_drc_or_saved_pad_warnings(
+    sample_project, mock_board, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mock_board.get_enabled_layers.return_value = [BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu]
+    server = build_server("manufacturing")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    # Unlike the previous stubbed integration case, DRC itself must fail
+    # because the saved PCB is missing; this used to escape as ValueError.
+    def missing_pcb() -> None:
+        raise ValueError("saved project PCB is absent")
+
+    monkeypatch.setattr("kicad_mcp.tools.dfm._get_pcb_file", missing_pcb)
+    report = await call_tool_text(server, "dfm_run_manufacturer_check", {})
+    assert "DRC report unavailable" in report
+    assert "Saved PCB PTH geometry unavailable" in report
+    assert "written CAM" in report
+    assert "DFM profile check" in report
