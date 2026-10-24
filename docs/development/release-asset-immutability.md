@@ -427,3 +427,38 @@ owner must separately run the authenticated draft-byte inventory verifier,
 check all attestation and registry evidence, and establish serialized writer
 authority before any final publication. No existing workflow is automatically
 rewired and the nine allowlisted legacy mutations are unchanged.
+
+## Combined owner-and-draft readiness handoff (read-only; stacked behind #1462)
+
+The experimental script scripts/check_draft_release_owner_readiness.py composes
+three independent checks, without mutating remote state: the pinned
+per-family role contract, the authenticated active publish-release.yml
+owner-run identity, and a live draft inventory downloaded from GitHub by
+each verified numeric asset ID into an isolated temporary directory.
+The shared staging reader now rejects the complete remote asset metadata
+snapshot before starting any download; unknown late entries cannot trigger
+partial downloads. The downloaded bytes, GitHub asset state, size and any GitHub SHA-256 digest
+are checked against the independently pinned manifest. It verifies the active
+owner run and matching draft/tag identity a second time after the downloads,
+so a detected mid-verification publication or owner change fails closed.
+
+Run this from a trusted active owner job, with protected owner inputs:
+
+    python -m scripts.check_draft_release_owner_readiness \
+      --manifest "$MANIFEST" --manifest-sha256 "$OWNER_PIN" \
+      --repo "$REPO" --release-id "$NUMERIC_RELEASE_ID" \
+      --tag "$TAG" --source-commit "$SOURCE_SHA" \
+      --owner-run-id "$GITHUB_RUN_ID" \
+      --owner-run-attempt "$GITHUB_RUN_ATTEMPT" \
+      --owner-head-sha "$GITHUB_SHA"
+
+Only gh api GET and authenticated asset download operations are used by
+this command. A successful result reports exact asset role and read-back
+integrity plus owner identity. It explicitly reports false for
+exclusiveWriterVerified, registriesVerified, attestationsVerified, and
+publicationAuthorized. Repeated reads cannot prove lock ownership or prevent
+races after the final read. The owner must acquire/reuse a single workflow-level
+concurrency group across the complete lifecycle (including former family
+writers), independently check registry/attestation provenance and authorize a
+final publish transaction. This gate is deliberately not called from
+production workflows yet; no real draft E2E acceptance is claimed.

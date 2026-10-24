@@ -158,7 +158,10 @@ def _downloaded_snapshot(
             raise ValueError("invalid or duplicate GitHub draft asset ID")
         seen_names.add(name)
         seen_ids.add(asset_id)
-        client.download_asset(repo, asset_id, destination / name)
+    # Fail closed on the entire metadata snapshot before transferring bytes.
+    # A malicious or partial late entry must not cause earlier downloads.
+    for asset in assets:
+        client.download_asset(repo, asset["id"], destination / asset["name"])
 
 
 def _reconcile_snapshot(
