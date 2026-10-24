@@ -18,7 +18,7 @@ RUN if [ -n "${KICAD_APPIMAGE_URL}" ]; then \
     fi; \
     mkdir -p /opt/kicad-appimage
 
-FROM python:3.14.5-alpine3.22@sha256:6b91e66ab2a880ce9ca5a1b91c70f45963ff71ff68268df056336e1a657d5efd AS builder
+FROM python:3.14.9-alpine3.23@sha256:a3d4eff2e4a3de12d9709b3e80cee788109d7292955972a83f5fff81b06c2e95 AS builder
 ENV UV_NO_CACHE=1
 COPY --from=uv-bin /uv /usr/local/bin/uv
 WORKDIR /build
@@ -37,7 +37,7 @@ COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src/ src/
 RUN uv sync --frozen --extra http --extra simulation --extra freerouting
 
-FROM python:3.14.5-alpine3.22@sha256:6b91e66ab2a880ce9ca5a1b91c70f45963ff71ff68268df056336e1a657d5efd AS runtime
+FROM python:3.14.9-alpine3.23@sha256:a3d4eff2e4a3de12d9709b3e80cee788109d7292955972a83f5fff81b06c2e95 AS runtime
 ARG KICAD_MCP_VERSION=0.0.0
 ARG VCS_REF=unknown
 ARG KICAD_CLI_APK_PACKAGE=

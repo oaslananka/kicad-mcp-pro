@@ -84,8 +84,8 @@ def _check_base_dockerfile_markers(
 
 
 def _check_dockerfile_runtime(dockerfile: str, errors: list[str]) -> None:
-    if "python:3.14.5-alpine3.22@sha256:" not in dockerfile:
-        errors.append("Dockerfile must use the pinned Python 3.14.5 Alpine base")
+    if "python:3.14.9-alpine3.23@sha256:" not in dockerfile:
+        errors.append("Dockerfile must use the pinned Python 3.14.9 Alpine 3.23 base")
     # Both named KiCad 10 stages must use the same digest. One valid FROM
     # must not mask an unpinned or stale peer stage.
     kicad10_images = re.findall(
