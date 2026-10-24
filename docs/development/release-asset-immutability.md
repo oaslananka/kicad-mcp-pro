@@ -298,3 +298,54 @@ entry when it migrates. The ratchet reports an entry as stale until then.
   inventory.
 - No claim is made that the draft-first design has been exercised. That
   requires live release evidence from a real release run.
+
+## Existing-draft asset staging (experimental; no production wiring)
+
+The new script scripts/stage_draft_release_assets.py is a narrowly scoped
+staging coordinator for **an already-created draft**. It is **not** integrated
+with the current publishers. It never creates a tag or Release, changes Release
+metadata, or publishes a draft.
+
+Default execution is **read-only**:
+
+1. Validate an independently SHA-256-pinned approved manifest against local
+   build outputs, plus repository, numeric Release ID and reviewed source SHA.
+2. Retrieve the exact draft by numeric ID via authenticated GitHub API; dereference
+   lightweight/annotated tag refs and verify that the tag points to the source.
+3. Download each existing asset through its numeric GitHub asset ID into a fresh
+   temporary directory and verify name, state, size and SHA-256 against the pin.
+4. Report the exact preserveExisting and uploadMissingOnly lists. If nothing
+   is missing, run the full prepublication inventory acceptance gate.
+
+Example, using an **isolated existing test draft**, not an existing published
+production Release:
+
+~~~bash
+uv run python -m scripts.check_draft_release_inventory manifest \
+  --assets-dir "$APPROVED_ASSETS" --tag "$TEST_TAG" \
+  --source-commit "$REVIEWED_SOURCE_SHA" --output "$PINNED_MANIFEST"
+# Pin the printed manifest SHA-256 independently in a trusted CI output.
+uv run python -m scripts.stage_draft_release_assets \
+  --repo "$REPO" --release-id "$EXISTING_DRAFT_RELEASE_ID" \
+  --tag "$TEST_TAG" --source-commit "$REVIEWED_SOURCE_SHA" \
+  --approved-assets "$APPROVED_ASSETS" --manifest "$PINNED_MANIFEST" \
+  --manifest-sha256 "$TRUSTED_MANIFEST_SHA256"
+~~~
+
+After **human-reviewed evidence, exclusive per-release orchestration and
+explicit operator authorization**, the same command can be invoked with
+--execute-uploads plus --confirm-repository and --confirm-release-id matching
+the exact repo and numeric ID. This separately rechecks draft identity and
+existing assets, uploads only missing approved files through gh release upload
+**without --clobber**, downloads them independently and applies the full
+prepublication inventory verifier. A failed/partial upload leaves the Release
+a draft, so an authorized retry must revalidate the pinned artifacts.
+
+GitHub operations are **not atomic** with concurrent publication. Production
+callers must hold an exclusive per-release lock and prevent other publishers
+from modifying the draft. This tool has **no publication mode**. A separate
+reviewed finalization step must verify all family-specific registry evidence,
+attestations and the draft-to-published transition before it is wired into
+production. The existing nine allowlisted postpublication mutations in seven
+workflows remain. These additions alone do **not** justify enabling immutable
+Releases.
