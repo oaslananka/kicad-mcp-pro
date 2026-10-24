@@ -16,7 +16,8 @@ def test_osv_weekly_inventory_is_pinned_and_uploads_all_findings() -> None:
     assert data["permissions"]["contents"] == "read"
     assert data["permissions"]["actions"] == "read"
     assert data["concurrency"]["cancel-in-progress"] is False
-    assert data[True]["schedule"] and data[True]["workflow_dispatch"] is None
+    assert data[True]["schedule"]
+    assert data[True]["workflow_dispatch"] is None
     job = data["jobs"]["osv-full-inventory"]
     assert job["permissions"] == {
         "contents": "read",
