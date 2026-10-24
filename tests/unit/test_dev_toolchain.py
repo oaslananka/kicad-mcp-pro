@@ -16,7 +16,7 @@ def test_toolchain_contract_is_exact_and_cross_file_consistent() -> None:
     assert contract.python_version == "3.13.17"
     assert contract.uv_version == "0.13.5"
     assert contract.node_version == "24.11.0"
-    assert contract.pnpm_version == "11.5.0"
+    assert contract.pnpm_version == "11.28.6"
     assert contract.task_version == "3.52.0"
     assert contract.rustup_version == "1.29.0"
     assert contract.rust_toolchain == "1.97.1"

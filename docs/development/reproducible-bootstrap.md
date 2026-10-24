@@ -29,7 +29,7 @@ The first command installs the exact versions committed in
 - Python 3.13.17
 - uv and uvx 0.13.5
 - Node.js 24.11.0
-- pnpm 11.5.0
+- pnpm 11.28.6
 - Task 3.52.0
 - rustup 1.29.0
 - Rust, Cargo, and rustfmt 1.97.1

@@ -35,7 +35,7 @@ def test_bootstrap_plan_is_repository_scoped_and_exact() -> None:
     assert plan.install_optional is True
     assert plan.versions == {
         "node": "24.11.0",
-        "pnpm": "11.5.0",
+        "pnpm": "11.28.6",
         "python": "3.13.17",
         "rust": "1.97.1",
         "rustup": "1.29.0",
@@ -311,7 +311,7 @@ def test_ci_quality_gate_commands_use_prepared_pnpm_and_cover_acceptance() -> No
         "test:unit",
         "package:check",
     ]
-    expected_pnpm = ROOT / ".dev-tools" / "pnpm" / "11.5.0" / "bin" / "pnpm"
+    expected_pnpm = ROOT / ".dev-tools" / "pnpm" / "11.28.6" / "bin" / "pnpm"
     assert all(Path(command[0]) == expected_pnpm for command in commands)
 
 

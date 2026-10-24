@@ -21,7 +21,7 @@
     "schemas/",
     "README.md"
   ],
-  "packageManager": "pnpm@11.5.0",
+  "packageManager": "pnpm@11.28.6",
   "engines": {
     "node": ">=24.11.0 <25",
     "pnpm": ">=11.0.0 <12"
