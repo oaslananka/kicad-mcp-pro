@@ -146,3 +146,14 @@ def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
     }
     for path, minimum in patched.items():
         assert Version(lock["packages"][path]["version"]) >= Version(minimum)
+
+
+def test_fastmcp_runtime_locked_to_patched_security_floor() -> None:
+    """Both reported fastmcp advisories require 4.1.2 or newer.
+
+    GHSA-7xgj-8392-5q4r and GHSA-vqqp-x5qm-5qp4 affect the slim
+    implementation and its public fastmcp wrapper.
+    """
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    for name in ("fastmcp", "fastmcp-slim"):
+        _assert_all_locked_versions_patched(lock["package"], name, "4.1.2")
