@@ -19,8 +19,8 @@ called uv). Other managers cover npm, GitHub Actions, Dockerfile,
 Docker Compose, and Cargo. The proposed policy limits concurrent PRs to two,
 new PRs to one per hour and ordinary release age to five days.
 GitHub vulnerability-alert remediation does not inherit the ordinary wait.
-Lockfile maintenance is scheduled, but globally disabled until pilot cutover.
-Major upgrades require manual Dependency Dashboard approval.
+Lockfile maintenance is separately disabled pending review of its release-age exception; the schedule is documented but not active.
+Minor and patch updates are kept separate. Major upgrades require manual Dependency Dashboard approval.
 
 The new Mergify renovate-pilot-safe queue requires every existing
 safe-dependencies CI check plus a real renovate[bot] author, renovate/ branch,

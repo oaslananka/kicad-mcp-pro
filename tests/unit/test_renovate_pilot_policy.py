@@ -40,6 +40,7 @@ def test_pilot_disabled_dependabot_preserved() -> None:
     assert config["platformAutomerge"] is False
     assert config["prConcurrentLimit"] <= 2
     assert config["prHourlyLimit"] <= 1
+    assert config["separateMinorPatch"] is True
     assert (ROOT / ".github/dependabot.yml").is_file()
     assert set(config["enabledManagers"]) >= {"pep621", "npm", "cargo"}
 
@@ -48,6 +49,7 @@ def test_security_major_lockfile_policy() -> None:
     config = _config()
     assert config["vulnerabilityAlerts"]["enabled"] is True
     assert config["vulnerabilityAlerts"]["minimumReleaseAge"] is None
+    assert config["lockFileMaintenance"]["enabled"] is False
     assert config["lockFileMaintenance"]["automerge"] is False
     major = next(rule for rule in config["packageRules"] if "major" in rule["matchUpdateTypes"])
     assert major["dependencyDashboardApproval"] is True

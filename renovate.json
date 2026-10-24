@@ -9,6 +9,7 @@
   "minimumReleaseAge": "5 days",
   "prConcurrentLimit": 2,
   "prHourlyLimit": 1,
+  "separateMinorPatch": true,
   "rebaseWhen": "behind-base-branch",
   "automerge": false,
   "platformAutomerge": false,
@@ -19,7 +20,7 @@
     "dependencyDashboardApproval": false
   },
   "lockFileMaintenance": {
-    "enabled": true,
+    "enabled": false,
     "schedule": ["before 4am on monday"],
     "automerge": false
   },
