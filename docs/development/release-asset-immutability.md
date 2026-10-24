@@ -398,3 +398,32 @@ independently attested by the Release or workflow-run REST responses.
 
 Reference: https://docs.github.com/en/rest/actions/workflow-runs
 and https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency
+
+## Exact stable release-family inventory gate (implemented; not wired)
+
+The read-only family gate validates mandatory asset **roles**, rather than
+allowing an otherwise internally consistent manifest to omit an entire
+producer family. Supported stable tags are mcp-server-v*, mcp-npm-v*,
+protocol-schemas-v* and kicad-mcp-gui-v* with exact numeric semver.
+The approved manifest must be SHA-256-pinned **outside its artifact folder**
+by a trusted owner job, and must bind the protected tag and source commit.
+
+The reviewed roles match workflow outputs and the published v4.4.0 release
+inventory observed on 2026-10-25. The protocol-schemas list derives from
+its workflow; no protocol-schemas-v4.4.0 GitHub Release was present.
+Missing, duplicate, cross-version, malformed or extra assets are rejected.
+Prerelease names and future format changes require explicit review.
+
+Usage (read-only):
+
+    python -m scripts.check_release_family_inventory \
+      --manifest "$MANIFEST" --manifest-sha256 "$OWNER_PIN" \
+      --tag "$TAG" --source-commit "$SOURCE_SHA"
+
+This gate only verifies role coverage **inside the manifest**. Its JSON
+explicitly denies live draft asset integrity, registry verification, signed
+attestations, exclusive writer locks and permission to publish. The future
+owner must separately run the authenticated draft-byte inventory verifier,
+check all attestation and registry evidence, and establish serialized writer
+authority before any final publication. No existing workflow is automatically
+rewired and the nine allowlisted legacy mutations are unchanged.
