@@ -406,7 +406,7 @@ def test_development_diagnostics_classify_required_optional_and_live_tools(
         "cargo": "cargo 1.97.1",
         "node": "v24.11.0",
         "pnpm": "11.5.0",
-        "python": "Python 3.13.12",
+        "python": "Python 3.13.17",
         "rustc": "rustc 1.97.1",
         "task": "Task version: v3.52.0",
         "uv": "uv 0.10.8",

@@ -1517,7 +1517,7 @@ def test_development_bootstrap_workflow_proves_clean_host_and_kicad_canary() -> 
     assert 'echo "HOME=$clean_home" >> "$GITHUB_ENV"' in workflow
     assert "./scripts/bootstrap-dev.sh --core-only --ci --json" in workflow
     assert "python3 -m json.tool" in workflow
-    assert "Python 3.13.12" in workflow
+    assert "Python 3.13.17" in workflow
     assert 'test "$(uv --version | awk \'{print $2}\')" = "0.13.5"' in workflow
     assert 'test "$(uvx --version | awk \'{print $2}\')" = "0.13.5"' in workflow
     assert "v24.11.0" in workflow

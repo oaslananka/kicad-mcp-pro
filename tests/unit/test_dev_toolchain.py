@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_toolchain_contract_is_exact_and_cross_file_consistent() -> None:
     contract = load_toolchain_contract(ROOT)
 
-    assert contract.python_version == "3.13.12"
+    assert contract.python_version == "3.13.17"
     assert contract.uv_version == "0.13.5"
     assert contract.node_version == "24.11.0"
     assert contract.pnpm_version == "11.5.0"

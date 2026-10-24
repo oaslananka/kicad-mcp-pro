@@ -83,7 +83,7 @@ jobs:
         run: |
           set -euo pipefail
           source .dev-env.sh
-          test "$(python --version)" = "Python 3.13.12"
+          test "$(python --version)" = "Python 3.13.17"
           test "$(uv --version | awk '{print $2}')" = "0.13.5"
           test "$(uvx --version | awk '{print $2}')" = "0.13.5"
           test "$(node --version)" = "v24.11.0"

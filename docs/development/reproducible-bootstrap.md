@@ -26,7 +26,7 @@ pnpm run dev:doctor -- --ci
 The first command installs the exact versions committed in
 `scripts/dev-toolchain.env`:
 
-- Python 3.13.12
+- Python 3.13.17
 - uv and uvx 0.13.5
 - Node.js 24.11.0
 - pnpm 11.5.0

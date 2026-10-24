@@ -36,7 +36,7 @@ def test_bootstrap_plan_is_repository_scoped_and_exact() -> None:
     assert plan.versions == {
         "node": "24.11.0",
         "pnpm": "11.5.0",
-        "python": "3.13.12",
+        "python": "3.13.17",
         "rust": "1.97.1",
         "rustup": "1.29.0",
         "task": "3.52.0",
@@ -116,7 +116,7 @@ def test_bootstrap_cli_plan_and_missing_check_are_machine_readable(tmp_path: Pat
         check=True,
     )
     payload = json.loads(plan.stdout)
-    assert payload["versions"]["python"] == "3.13.12"
+    assert payload["versions"]["python"] == "3.13.17"
     assert payload["installOptional"] is True
 
     check = subprocess.run(
