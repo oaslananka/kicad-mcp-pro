@@ -276,12 +276,12 @@ def test_unapproved_absolute_path_is_rejected() -> None:
     from scripts.check_draft_release_inventory import digest
 
     with pytest.raises(ValueError, match="outside approved automation roots"):
-        digest(Path("/etc/hosts"))
+        digest(Path.home().parent / "unapproved-release-fixture.txt")
 
 
 def test_unapproved_asset_directory_is_rejected() -> None:
     with pytest.raises(ValueError, match="outside approved automation roots"):
-        manifest_for(Path("/etc"), TAG, SOURCE)
+        manifest_for(Path.home().parent / "unapproved-release-fixture", TAG, SOURCE)
 
 
 def test_trusted_manifest_is_hashed_and_parsed_from_single_read(
