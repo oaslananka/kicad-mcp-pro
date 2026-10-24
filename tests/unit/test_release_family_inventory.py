@@ -173,6 +173,36 @@ def test_protocol_schemas_must_have_reviewed_package_name(tmp_path: Path) -> Non
         verify_family(**case)
 
 
+@pytest.mark.parametrize(
+    "installer",
+    [
+        "linux_KiCad-MCP-Pro-4.4.0-1.x86_64.rpm",
+        "linux_KiCad-MCP-Pro_4.4.0_amd64.AppImage",
+        "linux_KiCad-MCP-Pro_4.4.0_amd64.deb",
+        "macos_KiCad-MCP-Pro_4.4.0_aarch64.dmg",
+        "windows_KiCad-MCP-Pro_4.4.0_x64-setup.exe",
+        "windows_KiCad-MCP-Pro_4.4.0_x64_en-US.msi",
+    ],
+)
+@pytest.mark.parametrize("foreign_version", ["14.4.0", "4.4.01", "4.4.0a"])
+def test_gui_installer_foreign_version_near_miss_rejected(
+    tmp_path: Path, installer: str, foreign_version: str
+) -> None:
+    case = _case(tmp_path, "kicad-mcp-gui-v4.4.0")
+    wrong = installer.replace("4.4.0", foreign_version)
+
+    def replace_installer(document: dict[str, Any]) -> None:
+        for item in document["assets"]:
+            if item["name"] == installer:
+                item["name"] = wrong
+                return
+        raise AssertionError("fixture installer missing")
+
+    _change(case, replace_installer)
+    with pytest.raises(ValueError, match="unexpected"):
+        verify_family(**case)
+
+
 def test_manifest_pin_must_be_external(tmp_path: Path) -> None:
     case = _case(tmp_path, "mcp-server-v4.4.0")
     case["manifest_sha256"] = "0" * 64

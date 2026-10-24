@@ -53,12 +53,12 @@ def _roles(family: str, version: str) -> dict[str, str]:
         }
     if family == "kicad-mcp-gui":
         return {
-            "deb": rf"linux_.+{v}.+\.deb",
-            "rpm": rf"linux_.+{v}.+\.rpm",
-            "appimage": rf"linux_.+{v}.+\.AppImage",
-            "dmg": rf"macos_.+{v}.+\.dmg",
-            "msi": rf"windows_.+{v}.+\.msi",
-            "exe": rf"windows_.+{v}.+\.exe",
+            "deb": rf"linux_[A-Za-z0-9_-]+_{v}_[A-Za-z0-9_-]+\.deb",
+            "rpm": rf"linux_[A-Za-z0-9_-]+-{v}-\d+\.[A-Za-z0-9_.-]+\.rpm",
+            "appimage": rf"linux_[A-Za-z0-9_-]+_{v}_[A-Za-z0-9_-]+\.AppImage",
+            "dmg": rf"macos_[A-Za-z0-9_-]+_{v}_[A-Za-z0-9_-]+\.dmg",
+            "msi": rf"windows_[A-Za-z0-9_-]+_{v}_[A-Za-z0-9_-]+\.msi",
+            "exe": rf"windows_[A-Za-z0-9_-]+_{v}_[A-Za-z0-9_-]+\.exe",
             "hashes": r"kicad-mcp-pro-gui-SHA256SUMS\.txt",
             "sbom": r"kicad-mcp-pro-gui-sbom\.cdx\.json",
             "evidence": r"kicad-mcp-pro-gui-release-evidence\.json",
@@ -88,7 +88,9 @@ def verify_family(
             or _SHA256.fullmatch(asset["sha256"]) is None
         ):
             raise ValueError(f"invalid pinned asset size or digest: {name}")
-        matched = [role for role, pattern in roles.items() if re.fullmatch(pattern, name)]
+        matched = [
+            role for role, pattern in roles.items() if re.fullmatch(pattern, name, flags=re.ASCII)
+        ]
         if len(matched) != 1 or matched[0] in found:
             raise ValueError(f"unexpected or duplicate release family asset: {name}")
         found[matched[0]] = name
