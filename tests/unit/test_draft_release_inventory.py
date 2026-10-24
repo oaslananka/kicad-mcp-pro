@@ -27,7 +27,8 @@ def _case(tmp_path: Path) -> dict[str, Any]:
         "tag_name": TAG,
         "draft": True,
         "published_at": None,
-        "html_url": f"https://github.com/{REPO}/releases/tag/{TAG}",
+        "id": 42,
+        "url": f"https://api.github.com/repos/{REPO}/releases/42",
         "assets": [
             {
                 "name": a["name"],
@@ -61,8 +62,22 @@ def test_complete_draft_inventory_is_accepted(tmp_path: Path) -> None:
         ("published_at", "2026-10-24T01:00:00Z", "publication timestamp"),
         ("tag_name", "mcp-server-v4.3.0", "incorrect tag"),
         (
-            "html_url",
-            "https://github.com/attacker/kicad-mcp-pro/releases/tag/mcp-server-v4.4.0",
+            "url",
+            "https://api.github.com/repos/attacker/kicad-mcp-pro/releases/42",
+            "repository",
+        ),
+        ("id", 0, "repository"),
+        ("id", True, "repository"),
+        ("id", "42", "repository"),
+        ("id", 43, "repository"),
+        (
+            "url",
+            "https://api.github.com/repos/oaslananka/kicad-mcp-pro/releases/tag/mcp-server-v4.4.0",
+            "repository",
+        ),
+        (
+            "url",
+            "https://api.github.com/repos/oaslananka/kicad-mcp-pro/releases/42?other=true",
             "repository",
         ),
     ],

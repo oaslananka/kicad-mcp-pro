@@ -121,7 +121,12 @@ def _draft_release(
         raise ValueError("release is missing, published or has incorrect tag")
     if release.get("published_at") is not None:
         raise ValueError("draft release has a publication timestamp")
-    if release.get("html_url") != f"https://github.com/{repository}/releases/tag/{tag}":
+    release_id = release.get("id")
+    if (
+        type(release_id) is not int
+        or release_id <= 0
+        or release.get("url") != f"https://api.github.com/repos/{repository}/releases/{release_id}"
+    ):
         raise ValueError("release does not belong to the expected repository")
     return release
 
