@@ -16,7 +16,7 @@ from typing import Any
 from scripts.check_draft_release_inventory import _asset_inventory, _trusted_manifest
 
 _TAG = re.compile(
-    r"^(mcp-server|mcp-npm|protocol-schemas|kicad-mcp-gui)-v([0-9]+\.[0-9]+\.[0-9]+)$"
+    r"^(mcp-server|mcp-npm|protocol-schemas|kicad-mcp-gui)-v(\d+\.\d+\.\d+)$", re.ASCII
 )
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -117,7 +117,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = verify_family(args.manifest, args.manifest_sha256, args.tag, args.source_commit)
-    except (ValueError, OSError, json.JSONDecodeError) as exc:
+    except (ValueError, OSError) as exc:
         parser.exit(2, f"release family inventory: FAIL: {exc}\n")
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
