@@ -236,7 +236,7 @@ documentation before migration.
    release creator but sets `"draft": true` in `release-please-config.json`.
    Release Please does not push a tag for a draft release by default. The
    pinned `googleapis/release-please-action@45996ed1…` must therefore also
-   support `force-tag-creation` (*unverified*), or the tag must be created by
+   support `force-tag-creation` (verified in the upstream schema), or the tag must be created by
    a separate, reviewed step at the same commit. Tags stay protected by
    `.github/rulesets/release-tags.json`.
 2. **Attach to the draft.** Each family becomes a reusable workflow
@@ -271,24 +271,38 @@ documentation before migration.
 **Ratchet during migration.** The checker does not yet understand this design,
 so migrating a family is not just a matter of deleting allowlist entries:
 
-- The Release Please step in `publish-release.yml` stays classified as a
-  published `create_release` even with `"draft": true`, because the checker
-  does not read `release-please-config.json`. Its entry is not retired
-  automatically.
+- The Release Please create step now reads its checked-in manifest config.
+  Classification is draft-only when each release-producing package declares
+  or inherits BOTH draft=true and force-tag-creation=true. Missing, invalid,
+  dynamic, escaped or symlinked-outside configuration is treated as published.
+  The production config still does not enable either setting, so its legacy
+  release-creation mutation remains allowlisted.
+
 - A `workflow_call` callee that attaches to a draft made by its caller is
   classified as targeting a published release, because draft state is tracked
   only within one job. A compliant upload without `--clobber` is reported as a
   new mutation, and the old `clobber: true` entry is reported as stale.
 
-So the first migration change must extend the checker, with tests, to accept a
-declared draft target. For example, read `draft` from
-`release-please-config.json` for the Release Please step, and add a reviewed
-policy field (such as `target: draft`) for callee steps that attach only to a
-caller-provided draft and never use `--clobber`. Do not add ordinary
-`release_asset_mutations` entries for compliant steps. Those entries mean
-"mutates a published release" and would hide what the migration has
-achieved. Once a declared-draft mechanism exists, delete each family's old
+The first migration tranche now supports tag-safe Release Please
+draft classification, but deliberately does NOT exempt generic callee
+uploads to drafts created in a different job or workflow. Such uploads still
+look published without a verified protected release ID, explicit source/tag
+identity, independent inventory checks and single-writer orchestration. A
+future reviewed target contract must prove all of those preconditions before
+any production allowlist entries can be retired. Any draft asset upload using
+the clobber option is rejected by this ratchet even within a single job.
+
+Once a declared-draft mechanism exists, delete each family's old
 entry when it migrates. The ratchet reports an entry as stale until then.
+
+The upstream Release Please manifest documentation explicitly supports
+both draft and force-tag-creation for safe tag creation. This is static
+classification only, not a live release lifecycle test:
+https://github.com/googleapis/release-please/blob/main/docs/manifest-releaser.md
+
+The production publisher and all nine legacy post-publication mutation
+allowlist entries are unchanged. No releases, tags or registry artifacts were
+created or modified.
 
 ## Non-goals
 

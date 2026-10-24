@@ -304,7 +304,47 @@ def _truthy(value: object) -> bool:
     return str(value).strip().lower() == "true"
 
 
-def _classify_action(step: Mapping[str, object]) -> _Match | None:
+def _release_please_is_draft(root: Path, inputs: Mapping[str, object]) -> bool:
+    """Accept draft classification only with a complete, tag-safe manifest config.
+
+    No policy exception comes from comments, PR inputs or arbitrary paths:
+    every release-producing package must explicitly inherit/declare draft
+    AND immediate tag creation. Unknown config always remains published.
+    """
+    raw_file = inputs.get("config-file", "release-please-config.json")
+    if not isinstance(raw_file, str) or not raw_file:
+        return False
+    path = Path(raw_file)
+    if path.is_absolute() or any(part in {".", ".."} for part in path.parts):
+        return False
+    try:
+        resolved_root = root.resolve(strict=True)
+        resolved = (resolved_root / path).resolve(strict=True)
+        resolved.relative_to(resolved_root)
+        config = json.loads(resolved.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    if not isinstance(config, dict):
+        return False
+    packages = config.get("packages")
+    if not isinstance(packages, dict) or not packages:
+        return False
+    for package in packages.values():
+        if not isinstance(package, dict):
+            return False
+        if package.get("skip-github-release", config.get("skip-github-release")) is True:
+            continue
+        if package.get("draft", config.get("draft")) is not True:
+            return False
+        if package.get("force-tag-creation", config.get("force-tag-creation")) is not True:
+            return False
+    return any(
+        package.get("skip-github-release", config.get("skip-github-release")) is not True
+        for package in packages.values()
+    )
+
+
+def _classify_action(step: Mapping[str, object], *, root: Path | None = None) -> _Match | None:
     uses = step.get("uses")
     if not isinstance(uses, str):
         return None
@@ -316,7 +356,8 @@ def _classify_action(step: Mapping[str, object]) -> _Match | None:
     if action == "googleapis/release-please-action":
         if _truthy(inputs.get("skip-github-release", False)):
             return None
-        return _Match("create_release", False, None, uses)
+        draft = _release_please_is_draft(root, inputs) if root is not None else False
+        return _Match("create_release", False, draft, uses)
     draft = _truthy(inputs.get("draft", False))
     return _Match("create_release", False, draft, uses)
 
@@ -329,9 +370,9 @@ def _step_label(step: Mapping[str, object], index: int) -> str:
     return f"#{index}"
 
 
-def _step_matches(step: Mapping[str, object]) -> list[_Match]:
+def _step_matches(step: Mapping[str, object], root: Path | None = None) -> list[_Match]:
     matches: list[_Match] = []
-    action_match = _classify_action(step)
+    action_match = _classify_action(step, root=root)
     if action_match is not None:
         matches.append(action_match)
     run = step.get("run")
@@ -343,7 +384,9 @@ def _step_matches(step: Mapping[str, object]) -> list[_Match]:
     return matches
 
 
-def _job_inventory(workflow: str, job: str, steps: Iterable[object]) -> list[ReleaseMutation]:
+def _job_inventory(
+    workflow: str, job: str, steps: Iterable[object], root: Path | None = None
+) -> list[ReleaseMutation]:
     """Record every release write in a job, in order, with its draft/published target.
 
     The draft window opens only on a ``--draft`` create in this job. It stays
@@ -360,7 +403,7 @@ def _job_inventory(workflow: str, job: str, steps: Iterable[object]) -> list[Rel
         if not isinstance(step, dict):
             continue
         label = _step_label(step, index)
-        for match in _step_matches(step):
+        for match in _step_matches(step, root):
             draft = bool(match.draft)
             if match.kind == "create_release":
                 target = "draft" if draft else "published"
@@ -408,7 +451,7 @@ def inventory(root: Path) -> list[ReleaseMutation]:
                 continue
             steps = job.get("steps")
             if isinstance(steps, list):
-                entries.extend(_job_inventory(path.name, str(job_name), steps))
+                entries.extend(_job_inventory(path.name, str(job_name), steps, root))
     return entries
 
 
@@ -476,6 +519,11 @@ def validate(entries: Iterable[ReleaseMutation], allowlist: object) -> list[str]
     matched: dict[_Key, int] = {}
     for entry in entries:
         if entry.target_state != "published":
+            if entry.kind == "upload_asset" and entry.clobber:
+                errors.append(
+                    f"{entry.location}: draft asset uploads must never use --clobber "
+                    f"({ISSUE}); preserve existing assets or fail closed."
+                )
             continue
         if entry.key in allowed:
             matched[entry.key] = matched.get(entry.key, 0) + 1
