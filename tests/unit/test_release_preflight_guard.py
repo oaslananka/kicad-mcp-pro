@@ -458,6 +458,7 @@ def test_mergify_only_autoqueues_safe_grouped_dependabot_updates() -> None:
 
     assert [rule["name"] for rule in config["queue_rules"]] == [
         "safe-dependencies",
+        "renovate-pilot-safe",
         "maintainer",
     ]
     queue = config["queue_rules"][0]
@@ -478,7 +479,7 @@ def test_mergify_only_autoqueues_safe_grouped_dependabot_updates() -> None:
     }
     assert required_conditions <= queue_strings
 
-    assert len(config["pull_request_rules"]) == 1
+    assert len(config["pull_request_rules"]) == 2
     rule = config["pull_request_rules"][0]
     assert rule["actions"] == {"queue": {"name": "safe-dependencies"}}
     assert required_conditions <= set(rule["conditions"])
@@ -534,7 +535,7 @@ def test_mergify_merge_conditions_mirror_repository_ruleset_required_checks() ->
     assert required_contexts
 
     mergify = yaml.safe_load((ROOT / ".mergify.yml").read_text(encoding="utf-8"))
-    for name in ("safe-dependencies", "maintainer"):
+    for name in ("safe-dependencies", "renovate-pilot-safe", "maintainer"):
         queue = next(rule for rule in mergify["queue_rules"] if rule["name"] == name)
         explicit_check_conditions = {
             condition.removeprefix("check-success = ")
