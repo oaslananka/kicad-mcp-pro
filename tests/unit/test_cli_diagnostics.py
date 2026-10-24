@@ -404,7 +404,7 @@ def test_development_diagnostics_classify_required_optional_and_live_tools(
     )
     versions = {
         "cargo": "cargo 1.97.1",
-        "node": "v24.11.0",
+        "node": "v24.22.1",
         "pnpm": "11.28.6",
         "python": "Python 3.13.17",
         "rustc": "rustc 1.97.1",
@@ -475,7 +475,7 @@ def test_development_contract_ignores_non_assignment_lines(tmp_path: Path) -> No
         "not-an-assignment\n"
         "PYTHON_VERSION=3.13.12\n"
         "UV_VERSION=0.10.8\n"
-        "NODE_VERSION=24.11.0\n"
+        "NODE_VERSION=24.22.1\n"
         "PNPM_VERSION=11.5.0\n"
         "TASK_VERSION=3.52.0\n"
         "RUST_TOOLCHAIN=1.97.1\n"

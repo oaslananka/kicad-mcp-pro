@@ -86,7 +86,7 @@ jobs:
           test "$(python --version)" = "Python 3.13.17"
           test "$(uv --version | awk '{print $2}')" = "0.13.5"
           test "$(uvx --version | awk '{print $2}')" = "0.13.5"
-          test "$(node --version)" = "v24.11.0"
+          test "$(node --version)" = "v24.22.1"
           test "$(pnpm --version)" = "11.28.6"
           python scripts/dev_environment.py --doctor --json --ci \
             > artifacts/dev-bootstrap/doctor.json

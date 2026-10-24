@@ -34,7 +34,7 @@ def test_bootstrap_plan_is_repository_scoped_and_exact() -> None:
     assert plan.root == ROOT
     assert plan.install_optional is True
     assert plan.versions == {
-        "node": "24.11.0",
+        "node": "24.22.1",
         "pnpm": "11.28.6",
         "python": "3.13.17",
         "rust": "1.97.1",
@@ -235,7 +235,7 @@ def test_safe_extract_tar_rejects_special_files(tmp_path: Path) -> None:
 
 def test_node_install_preserves_archive_symlinks(tmp_path: Path, monkeypatch) -> None:
     source_root = tmp_path / "archive-root"
-    node_root = source_root / "node-v24.11.0-linux-x64"
+    node_root = source_root / "node-v24.22.1-linux-x64"
     (node_root / "bin").mkdir(parents=True)
     cli = node_root / "lib" / "node_modules" / "npm" / "bin" / "npm-cli.js"
     cli.parent.mkdir(parents=True)
