@@ -17,10 +17,10 @@ def test_dockerfile_runtime_accepts_current_pinned_python_base() -> None:
     assert errors == []
 
 
-@pytest.mark.parametrize("replacement", ["3.14.7-slim@sha256:", "3.14.8-slim:"])
+@pytest.mark.parametrize("replacement", ["3.14.7-slim@sha256:", "3.14.9-slim:"])
 def test_dockerfile_runtime_rejects_stale_or_unpinned_python_base(replacement: str) -> None:
     dockerfile = (docker.PACKAGE_ROOT / "Dockerfile").read_text(encoding="utf-8")
-    dockerfile = dockerfile.replace("3.14.8-slim@sha256:", replacement)
+    dockerfile = dockerfile.replace("3.14.9-slim@sha256:", replacement)
     errors: list[str] = []
 
     docker._check_dockerfile_runtime(dockerfile, errors)
