@@ -25,17 +25,42 @@ def test_osv_weekly_inventory_is_pinned_and_uploads_all_findings() -> None:
         "security-events": "write",
     }
     assert job["if"] == "github.repository == 'oaslananka/kicad-mcp-pro'"
-    assert job["uses"] == (
-        "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@"
-        "b1d267aea5211fa648d9d442fa64b90dbdcbdd36"
+    assert job["runs-on"] == "ubuntu-24.04"
+    steps = {step["name"]: step for step in job["steps"]}
+    checkout = steps["Checkout source for reproducible inventory"]
+    assert checkout["uses"] == "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+    assert checkout["with"]["persist-credentials"] is False
+
+    scan = steps["Scan all repository lockfiles with pinned OSV-Scanner 2.7.0"]
+    assert scan["uses"] == (
+        "google/osv-scanner-action/osv-scanner-action@0a65f82af05cd58cf587827b0bb0489548c18346"
     )
-    options = job["with"]
-    assert options["runs-on"] == "ubuntu-24.04"
-    assert options["scan-args"].strip().splitlines() == ["-r", "./"]
-    assert options["upload-sarif"] is True
-    # Known five upstream advisories remain visible, but the weekly reporting
-    # run is non-gating. Required RustSec PR audit stays strict.
-    assert options["fail-on-vuln"] is False
+    assert scan["continue-on-error"] is True
+    assert scan["with"]["scan-args"].strip().splitlines() == [
+        "--output=results.json",
+        "--format=json",
+        "-r",
+        "./",
+    ]
+    check = steps["Reject scanner failures without a result document"]
+    assert check["if"] == "steps.scan.outcome == 'failure'"
+    assert "[[ ! -s results.json ]]" in check["run"]
+
+    reporter = steps["Produce SARIF without hiding reviewed Rust findings"]
+    assert reporter["uses"] == (
+        "google/osv-scanner-action/osv-reporter-action@0a65f82af05cd58cf587827b0bb0489548c18346"
+    )
+    assert "--fail-on-vuln=false" in reporter["with"]["scan-args"]
+    assert "--new=results.json" in reporter["with"]["scan-args"]
+    assert "--output=results.sarif" in reporter["with"]["scan-args"]
+    artifact = steps["Store auditable OSV SARIF for 5 days"]
+    assert artifact["uses"] == ("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a")
+    assert artifact["with"]["if-no-files-found"] == "error"
+    upload = steps["Publish every finding in GitHub Code Scanning"]
+    assert upload["uses"] == (
+        "github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63"
+    )
+    assert upload["with"]["sarif_file"] == "results.sarif"
     assert not (ROOT / "osv-scanner.toml").exists()
     assert not (ROOT / "src-tauri/osv-scanner.toml").exists()
 

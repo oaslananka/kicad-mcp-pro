@@ -48,8 +48,12 @@ qualification before changing the production lock.
 
 ## Automated visibility
 
-The OSV Full Dependency Inventory workflow uses a **commit-pinned** official
-OSV-Scanner v2.7.0 reusable workflow on a weekly schedule and on demand.
+The OSV Full Dependency Inventory workflow uses the official **commit-pinned**
+OSV-Scanner v2.7.0 scan and reporter Actions as explicit job steps on a weekly
+schedule and on demand. The first merged reusable-workflow implementation
+(#1451) could not create any GitHub Actions job (startup_failure, run
+40103785911); the direct-step implementation isolates and avoids that
+reusable workflow job-graph construction path.
 It scans **all** repository-supported ecosystems, publishes SARIF into
 GitHub Code Scanning, and does **not** configure any OSV ignore rules.
 

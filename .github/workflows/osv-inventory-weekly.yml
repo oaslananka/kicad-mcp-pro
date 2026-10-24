@@ -1,7 +1,8 @@
 name: OSV Full Dependency Inventory
 
-# OSV scans all ecosystems without ignore rules; RustSec CI stays fail-closed
-# against its exact five-entry reviewed baseline.
+# Inventory-only across all lockfiles. The existing RustSec CI baseline is
+# strict and rejects unexpected Rust advisories; this workflow never ignores
+# or suppresses OSV findings.
 on:
   schedule:
     - cron: "47 7 * * 4"
@@ -18,20 +19,58 @@ concurrency:
 jobs:
   osv-full-inventory:
     if: github.repository == 'oaslananka/kicad-mcp-pro'
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: read
       security-events: write
-    # Pinned v2.7.0 release tag target commit.
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36
-    with:
-      runs-on: ubuntu-24.04
-      scan-args: |
-        -r
-        ./
-      checkout-submodules: false
-      upload-sarif: true
-      # Observability-only scheduled job: known upstream issues stay visible
-      # through SARIF without permanently failing the weekly run.
-      # Unexpected RustSec drift already FAILS the separate required CI gate.
-      fail-on-vuln: false
+    steps:
+      - name: Checkout source for reproducible inventory
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Scan all repository lockfiles with pinned OSV-Scanner 2.7.0
+        id: scan
+        uses: google/osv-scanner-action/osv-scanner-action@0a65f82af05cd58cf587827b0bb0489548c18346
+        env:
+          GOTOOLCHAIN: auto
+        with:
+          scan-args: |
+            --output=results.json
+            --format=json
+            -r
+            ./
+        continue-on-error: true
+
+      - name: Reject scanner failures without a result document
+        if: steps.scan.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -s results.json ]]; then
+            echo "::error::OSV scan exited without writing an inventory; do not report an empty scan."
+            exit 1
+          fi
+
+      - name: Produce SARIF without hiding reviewed Rust findings
+        uses: google/osv-scanner-action/osv-reporter-action@0a65f82af05cd58cf587827b0bb0489548c18346
+        with:
+          scan-args: |
+            --output=results.sarif
+            --new=results.json
+            --gh-annotations=false
+            --fail-on-vuln=false
+
+      - name: Store auditable OSV SARIF for 5 days
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: osv-full-inventory-sarif
+          path: results.sarif
+          if-no-files-found: error
+          retention-days: 5
+
+      - name: Publish every finding in GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63
+        with:
+          sarif_file: results.sarif
