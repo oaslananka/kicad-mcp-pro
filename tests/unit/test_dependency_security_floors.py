@@ -123,9 +123,9 @@ def test_root_pnpm_lock_uses_patched_fast_uri() -> None:
     lock = (ROOT / "pnpm-lock.yaml").read_text(encoding="utf-8")
     versions = {Version(value) for value in re.findall(r"fast-uri@(\d+\.\d+\.\d+)", lock)}
 
-    assert workspace["overrides"]["fast-uri"] == "3.1.8"  # nosec B101
+    assert workspace["overrides"]["fast-uri"] == "3.1.9"  # nosec B101
     assert versions
-    assert min(versions) >= Version("3.1.8")  # nosec B101
+    assert min(versions) >= Version("3.1.9")  # nosec B101
 
 
 def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
@@ -134,13 +134,13 @@ def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
 
     assert package["overrides"]["@hono/node-server"] == "2.1.3"
     assert package["overrides"]["hono"] == "4.13.13"
-    assert package["overrides"]["fast-uri"] == "3.1.8"  # nosec B101
+    assert package["overrides"]["fast-uri"] == "3.1.9"  # nosec B101
     assert package["overrides"]["qs"] == "6.16.0"
 
     patched = {
         "node_modules/@hono/node-server": "2.1.3",
         "node_modules/hono": "4.13.13",
-        "node_modules/fast-uri": "3.1.8",
+        "node_modules/fast-uri": "3.1.9",
         "node_modules/qs": "6.16.0",
         "node_modules/ip-address": "10.7.4",
     }
