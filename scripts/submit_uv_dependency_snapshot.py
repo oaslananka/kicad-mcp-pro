@@ -29,49 +29,61 @@ def _name_from_key(key: str) -> str:
     return key.partition("@")[0]
 
 
+def _is_pypi_package(package: dict[str, Any]) -> bool:
+    registry: object = package.get("source", {}).get("registry", "")
+    return isinstance(registry, str) and registry.startswith(PYPI_REGISTRY)
+
+
+def _indexed_pypi_versions(packages: list[dict[str, Any]]) -> dict[str, set[str]]:
+    by_name: dict[str, set[str]] = defaultdict(set)
+    for package in packages:
+        if not _is_pypi_package(package):
+            continue
+        name = _pypi_name(package["name"])
+        version = package["version"]
+        if version in by_name[name]:
+            raise ValueError("Duplicate PyPI name/version resolution in uv.lock")
+        by_name[name].add(version)
+    return by_name
+
+
+def _locked_variant_key(
+    versions_by_name: dict[str, set[str]], name: str, version: str | None
+) -> str:
+    available = versions_by_name.get(name, set())
+    if not available:
+        return name
+    if len(available) == 1:
+        if version is not None and version not in available:
+            raise ValueError("Dependency version does not match lockfile")
+        return name
+    if version is None or version not in available:
+        raise ValueError("Ambiguous dependency requires explicit locked version")
+    return f"{name}@{version}"
+
+
 def _locked_package_graph(
     packages: list[dict[str, Any]],
 ) -> tuple[dict[str, str], dict[str, set[str]]]:
-    """Retain every PyPI resolution variant with its exact PURL.
+    """Keep all Python/platform-specific versions as distinct dependency PURLs.
 
-    uv.lock may resolve different package versions on different Python
-    versions/platforms. The GitHub dependency graph must never drop a
-    variant or silently pick one version for an ambiguous edge.
+    A dependency that can resolve to several versions must carry an explicit
+    lockfile version. Never silently pick one variant.
     """
-    by_name: dict[str, set[str]] = defaultdict(set)
-    for package in packages:
-        if package.get("source", {}).get("registry", "").startswith(PYPI_REGISTRY):
-            name = _pypi_name(package["name"])
-            version = package["version"]
-            if version in by_name[name]:
-                raise ValueError("Duplicate PyPI name/version resolution in uv.lock")
-            by_name[name].add(version)
-
-    def key(name: str, version: str | None = None) -> str:
-        available = by_name[name]
-        if not available:
-            return name
-        if len(available) == 1:
-            if version is not None and version not in available:
-                raise ValueError("Dependency version does not match lockfile")
-            return name
-        if version is None or version not in available:
-            raise ValueError("Ambiguous dependency requires explicit locked version")
-        return f"{name}@{version}"
-
+    by_name = _indexed_pypi_versions(packages)
     versions: dict[str, str] = {}
     children: dict[str, set[str]] = defaultdict(set)
     for package in packages:
         name = _pypi_name(package["name"])
-        registry = package.get("source", {}).get("registry", "").startswith(PYPI_REGISTRY)
-        parent = key(name, package["version"] if registry else None)
+        registry = _is_pypi_package(package)
+        parent = _locked_variant_key(by_name, name, package["version"] if registry else None)
         if registry:
             versions[parent] = package["version"]
         children[parent].update(
-            key(_pypi_name(dep["name"]), dep.get("version"))
+            _locked_variant_key(by_name, _pypi_name(dep["name"]), dep.get("version"))
             for dep in package.get("dependencies", [])
         )
-    if len(versions) != sum(len(v) for v in by_name.values()):
+    if len(versions) != sum(len(items) for items in by_name.values()):
         raise ValueError("Incomplete PyPI package resolution")
     return versions, children
 
