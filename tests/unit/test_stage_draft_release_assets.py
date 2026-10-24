@@ -38,7 +38,8 @@ class FakeGitHub:
         self.publish_on: int | None = None
 
     def release(self, repo: str, release_id: int) -> dict[str, Any]:
-        assert repo == REPO and release_id == self.id
+        assert repo == REPO
+        assert release_id == self.id
         self.release_calls += 1
         if self.publish_on == self.release_calls:
             self.published = True
@@ -66,7 +67,8 @@ class FakeGitHub:
         }
 
     def tag_commit(self, repo: str, tag: str) -> str:
-        assert repo == REPO and tag == TAG
+        assert repo == REPO
+        assert tag == TAG
         self.tag_calls += 1
         return self.commit_sha
 
@@ -80,7 +82,8 @@ class FakeGitHub:
         destination.write_bytes(payload)
 
     def upload_asset(self, repo: str, release_id: int, path: Path) -> None:
-        assert repo == REPO and release_id == self.id
+        assert repo == REPO
+        assert release_id == self.id
         self.upload_calls.append(path.name)
         if self.stop_upload:
             raise ValueError("simulated GitHub transport rejection")
@@ -346,7 +349,7 @@ def test_github_cli_upload_never_clobbers(monkeypatch: pytest.MonkeyPatch, tmp_p
     client = GitHubCLI()
     client.upload_asset(REPO, 42, tmp_path / "A.whl")
     assert len(commands) == 1
-    assert commands[0][:3] == ["/usr/bin/gh", "api", "-X"]
+    assert commands[0][:3] == [str(Path("/usr/bin/gh").resolve()), "api", "-X"]
     assert commands[0][-1] == (
         f"https://uploads.github.com/repos/{REPO}/releases/42/assets?name=A.whl"
     )
@@ -392,8 +395,9 @@ def test_non_object_api_response_fails(monkeypatch: pytest.MonkeyPatch, content:
     from scripts import stage_draft_release_assets as module
 
     monkeypatch.setattr(module.GitHubCLI, "_run", staticmethod(lambda _: content))
+    client = GitHubCLI()
     with pytest.raises(ValueError, match="JSON object"):
-        GitHubCLI().release(REPO, 42)
+        client.release(REPO, 42)
 
 
 def test_cli_failed_exit_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -403,15 +407,17 @@ def test_cli_failed_exit_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("scripts.stage_draft_release_assets.subprocess.run", broken)
     monkeypatch.setattr("scripts.stage_draft_release_assets.shutil.which", lambda _: "/usr/bin/gh")
+    client = GitHubCLI()
     with pytest.raises(ValueError, match="exit 1"):
-        GitHubCLI().release(REPO, 42)
+        client.release(REPO, 42)
 
 
 def test_missing_github_cli_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("scripts.stage_draft_release_assets.shutil.which", lambda _: None)
+    client = GitHubCLI()
     with pytest.raises(ValueError, match="not installed"):
-        GitHubCLI().release(REPO, 42)
+        client.release(REPO, 42)
 
 
 def test_asset_download_streams_to_new_file(
@@ -433,8 +439,9 @@ def test_asset_download_streams_to_new_file(
     assert target.read_bytes() == b"approved bytes"
     assert commands[0][-1] == f"repos/{REPO}/releases/assets/101"
     assert "--clobber" not in commands[0]
+    existing_client = GitHubCLI()
     with pytest.raises(FileExistsError):
-        GitHubCLI().download_asset(REPO, 101, target)
+        existing_client.download_asset(REPO, 101, target)
 
 
 def test_download_error_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -444,16 +451,19 @@ def test_download_error_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr("scripts.stage_draft_release_assets.subprocess.run", fake_run)
     monkeypatch.setattr("scripts.stage_draft_release_assets.shutil.which", lambda _: "/usr/bin/gh")
+    missing_path = tmp_path / "missing.bin"
+    client = GitHubCLI()
     with pytest.raises(ValueError, match="download failed"):
-        GitHubCLI().download_asset(REPO, 101, tmp_path / "missing.bin")
+        client.download_asset(REPO, 101, missing_path)
 
 
 def test_broken_tag_ref_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     from scripts import stage_draft_release_assets as module
 
     monkeypatch.setattr(module.GitHubCLI, "_json", lambda _, route: {"object": None})
+    client = GitHubCLI()
     with pytest.raises(ValueError, match="invalid protected tag reference"):
-        GitHubCLI().tag_commit(REPO, TAG)
+        client.tag_commit(REPO, TAG)
 
 
 def test_recursive_tag_loop_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -462,8 +472,9 @@ def test_recursive_tag_loop_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         module.GitHubCLI, "_json", lambda _, route: {"object": {"sha": SHA, "type": "tag"}}
     )
+    client = GitHubCLI()
     with pytest.raises(ValueError, match="maximum depth"):
-        GitHubCLI().tag_commit(REPO, TAG)
+        client.tag_commit(REPO, TAG)
 
 
 def test_upload_failure_is_not_retried_automatically(
@@ -494,8 +505,9 @@ def test_api_upload_requires_valid_ack(
 
     monkeypatch.setattr(module.GitHubCLI, "_run", staticmethod(lambda _: response))
     path = tmp_path / "A.whl"
+    client = GitHubCLI()
     with pytest.raises(ValueError, match="did not confirm"):
-        GitHubCLI().upload_asset(REPO, 42, path)
+        client.upload_asset(REPO, 42, path)
 
 
 def test_api_asset_name_is_url_encoded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
