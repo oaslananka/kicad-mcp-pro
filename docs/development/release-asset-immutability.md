@@ -197,6 +197,34 @@ Release was tested and correctly rejected; a locally synthesized draft
 snapshot of those same nine GUI assets passed. **No real draft publication
 acceptance is claimed.**
 
+## Partial draft retry planner (implemented, not yet wired)
+
+The read-only script scripts/plan_draft_release_retry.py handles interrupted
+draft uploads without assuming that retries are safe. It requires a reviewed,
+independently pinned manifest from scripts.check_draft_release_inventory,
+a protected tag SHA, a real draft release's JSON, the complete approved
+build outputs and **freshly downloaded copies of every existing draft asset**.
+
+Invoke from the repository root with python -m scripts.plan_draft_release_retry.
+Inputs: --approved-assets, --downloaded-existing, --manifest,
+--manifest-sha256, --release-json, --repo, --tag, --source-commit,
+and --tag-commit. The command returns a machine-readable
+list of preserveExisting and uploadMissingOnly. It never uploads, deletes,
+replaces or publishes an asset.
+
+If any existing asset differs from the protected manifest, is not downloaded,
+has an invalid GitHub state/digest, or belongs to a published/foreign release,
+the planner **fails closed**. Approved local build outputs must also match
+the pinned manifest exactly; a nondeterministic retry build cannot silently
+replace an existing release asset. A complete draft returns
+readyForFinalInventoryCheck: true but still requires the final inventory
+verifier, registry verification, attestations, and explicit publish authority.
+
+The planner was tested on an offline synthetic partial-draft representation
+of v4.4.0 GUI: the matching macOS DMG was preserved and eight missing files
+were listed without any write; the actual published release was rejected.
+**No real draft lifecycle or repository immutability acceptance is claimed.**
+
 ## Proposed draft-first orchestration (design only)
 
 The design below covers the remaining acceptance criteria of #1179. It is not
