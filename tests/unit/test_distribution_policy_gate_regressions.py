@@ -1,5 +1,6 @@
 """Preserve strict release and workflow security diagnostics after decomposition."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -17,15 +18,16 @@ def test_dockerfile_runtime_accepts_current_pinned_python_base() -> None:
     assert errors == []
 
 
-@pytest.mark.parametrize("replacement", ["3.14.7-slim@sha256:", "3.14.9-slim:"])
+@pytest.mark.parametrize("replacement", ["3.14.7-slim@sha256:" + "a" * 64, "3.14.9-slim"])
 def test_dockerfile_runtime_rejects_stale_or_unpinned_python_base(replacement: str) -> None:
     dockerfile = (docker.PACKAGE_ROOT / "Dockerfile").read_text(encoding="utf-8")
-    dockerfile = dockerfile.replace("3.14.9-slim@sha256:", replacement)
+    dockerfile, replaced = re.subn(r"3\.14\.9-slim@sha256:[0-9a-f]{64}", replacement, dockerfile)
+    assert replaced == 2
     errors: list[str] = []
 
     docker._check_dockerfile_runtime(dockerfile, errors)
 
-    assert "Dockerfile must use the pinned Python 3.14.8 slim base for KiCad 10 stages" in errors
+    assert "Dockerfile must use the pinned Python 3.14.9 slim base for KiCad 10 stages" in errors
 
 
 def test_dockerfile_guard_accumulates_all_missing_pins(monkeypatch) -> None:
