@@ -15,10 +15,14 @@ def test_osv_weekly_inventory_is_pinned_and_uploads_all_findings() -> None:
     data = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     assert data["permissions"]["contents"] == "read"
     assert data["permissions"]["actions"] == "read"
-    assert data["permissions"]["security-events"] == "write"
     assert data["concurrency"]["cancel-in-progress"] is False
     assert data[True]["schedule"] and data[True]["workflow_dispatch"] is None
     job = data["jobs"]["osv-full-inventory"]
+    assert job["permissions"] == {
+        "contents": "read",
+        "actions": "read",
+        "security-events": "write",
+    }
     assert job["if"] == "github.repository == 'oaslananka/kicad-mcp-pro'"
     assert job["uses"] == (
         "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@"
@@ -52,3 +56,11 @@ def test_existing_rustsec_baseline_is_still_exact_and_not_ignored() -> None:
     ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "scripts/check_rustsec_audit.py" in ci
     assert ".github/security/rustsec-baseline.json" in ci
+
+
+def test_osv_action_has_a_single_explicit_approved_repository() -> None:
+    policy = json.loads((ROOT / ".github/actions-policy.json").read_text(encoding="utf-8"))
+    assert "google/osv-scanner-action" in policy["allowed_action_repositories"]
+    assert policy["workflow_write_permissions"]["osv-inventory-weekly.yml"] == {
+        "osv-full-inventory": ["security-events"],
+    }

@@ -23,6 +23,7 @@
     "docker/setup-buildx-action",
     "docker/setup-qemu-action",
     "dorny/paths-filter",
+    "google/osv-scanner-action",
     "googleapis/release-please-action",
     "ossf/scorecard-action",
     "peaceiris/actions-gh-pages",
@@ -65,6 +66,11 @@
         "attestations",
         "contents",
         "id-token"
+      ]
+    },
+    "osv-inventory-weekly.yml": {
+      "osv-full-inventory": [
+        "security-events"
       ]
     },
     "publish-kicad-pcm.yml": {
