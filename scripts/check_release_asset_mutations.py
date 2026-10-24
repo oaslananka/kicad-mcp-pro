@@ -306,48 +306,56 @@ def _truthy(value: object) -> bool:
     return str(value).strip().lower() == "true"
 
 
-def _release_please_is_draft(root: Path, inputs: Mapping[str, object]) -> bool:
-    """Accept draft classification only with a complete, tag-safe manifest config.
-
-    No policy exception comes from comments, PR inputs or arbitrary paths:
-    every release-producing package must explicitly inherit/declare draft
-    AND immediate tag creation. Unknown config always remains published.
-    """
-    # A remote repo/branch or explicit release-type may use a different
-    # configuration than this checkout. Do not infer draft safety.
-    for alternative in ("repo-url", "target-branch", "release-type"):
-        if inputs.get(alternative) not in (None, ""):
-            return False
-    raw_file = inputs.get("config-file", "release-please-config.json")
-    if not isinstance(raw_file, str) or not raw_file:
-        return False
-    path = Path(raw_file)
+def _release_please_config(root: Path, inputs: Mapping[str, object]) -> dict[str, object] | None:
+    """Read only the trusted checkout manifest, never a remote/unknown source."""
+    # The action may select another repository, branch or release strategy:
+    # local config cannot certify what that invocation will actually use.
+    if any(
+        inputs.get(name) not in (None, "") for name in ("repo-url", "target-branch", "release-type")
+    ):
+        return None
+    raw = inputs.get("config-file", "release-please-config.json")
+    if not isinstance(raw, str) or not raw:
+        return None
+    path = Path(raw)
     if path.is_absolute() or any(part in {".", ".."} for part in path.parts):
-        return False
+        return None
     try:
-        resolved_root = root.resolve(strict=True)
-        resolved = (resolved_root / path).resolve(strict=True)
-        resolved.relative_to(resolved_root)
-        config = json.loads(resolved.read_text(encoding="utf-8"))
-    except (OSError, ValueError, json.JSONDecodeError):
+        repo = root.resolve(strict=True)
+        local = (repo / path).resolve(strict=True)
+        local.relative_to(repo)
+        config = json.loads(local.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return config if isinstance(config, dict) else None
+
+
+def _release_package_is_draft(package: object, config: Mapping[str, object]) -> bool:
+    if not isinstance(package, dict):
         return False
-    if not isinstance(config, dict):
+    if package.get("skip-github-release", config.get("skip-github-release")) is True:
+        return True
+    return (
+        package.get("draft", config.get("draft")) is True
+        and package.get("force-tag-creation", config.get("force-tag-creation")) is True
+    )
+
+
+def _release_please_is_draft(root: Path, inputs: Mapping[str, object]) -> bool:
+    """Recognize only a fully tag-safe, all-packages draft configuration."""
+    config = _release_please_config(root, inputs)
+    if config is None:
         return False
     packages = config.get("packages")
     if not isinstance(packages, dict) or not packages:
         return False
-    for package in packages.values():
-        if not isinstance(package, dict):
-            return False
-        if package.get("skip-github-release", config.get("skip-github-release")) is True:
-            continue
-        if package.get("draft", config.get("draft")) is not True:
-            return False
-        if package.get("force-tag-creation", config.get("force-tag-creation")) is not True:
-            return False
-    return any(
-        package.get("skip-github-release", config.get("skip-github-release")) is not True
+    creates_release = any(
+        isinstance(package, dict)
+        and package.get("skip-github-release", config.get("skip-github-release")) is not True
         for package in packages.values()
+    )
+    return creates_release and all(
+        _release_package_is_draft(package, config) for package in packages.values()
     )
 
 
@@ -395,6 +403,28 @@ def _literal_release_tag(tag: str | None) -> bool:
     return tag is not None and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", tag) is not None
 
 
+def _draft_target(match: _Match, draft_tag: str | None) -> tuple[str, str | None]:
+    if match.kind == "create_release":
+        draft = bool(match.draft)
+        tag = match.tag if draft and _literal_release_tag(match.tag) else None
+        return ("draft" if draft else "published", tag)
+    if (
+        draft_tag
+        and match.tag == draft_tag
+        and match.kind
+        in {
+            "upload_asset",
+            "edit_release",
+            "delete_asset",
+        }
+    ):
+        if match.kind == "edit_release" and match.draft is False:
+            return "draft", None
+        return "draft", draft_tag
+    # Cross-tag, expression, API write, or another release resets ownership.
+    return "published", None
+
+
 def _job_inventory(
     workflow: str, job: str, steps: Iterable[object], root: Path | None = None
 ) -> list[ReleaseMutation]:
@@ -416,27 +446,7 @@ def _job_inventory(
         label = _step_label(step, index)
         for match in _step_matches(step, root):
             draft = bool(match.draft)
-            if match.kind == "create_release":
-                target = "draft" if draft else "published"
-                # A manifest release might create several tags. Unknown or
-                # variable tags do not authorize later asset changes.
-                draft_tag = match.tag if draft and _literal_release_tag(match.tag) else None
-            elif (
-                draft_tag
-                and match.tag == draft_tag
-                and match.kind
-                in {
-                    "upload_asset",
-                    "edit_release",
-                    "delete_asset",
-                }
-            ):
-                target = "draft"
-                if match.kind == "edit_release" and match.draft is False:
-                    draft_tag = None
-            else:
-                target = "published"
-                draft_tag = None
+            target, draft_tag = _draft_target(match, draft_tag)
             entry = ReleaseMutation(
                 workflow=workflow,
                 job=job,
