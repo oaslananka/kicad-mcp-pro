@@ -154,6 +154,48 @@ Known limits: the checker parses shell text. Review these cases by hand:
 
 The check is a ratchet, not a proof.
 
+## Draft inventory prepublication gate (implemented, not yet wired)
+
+The script scripts/check_draft_release_inventory.py provides a **read-only,
+fail-closed** acceptance primitive for #1179. It does not create or publish
+releases and **does not make the current published-first workflows compatible**
+with immutable Releases. It is invoked by tests and explicit read-only checks
+only.
+
+The future orchestrator must produce a trusted inventory manifest from its
+approved build outputs, pin that manifest's SHA-256 **outside the draft asset
+directory**, attach the files to a draft without clobbering, download all draft
+assets, and independently retrieve the draft's JSON and the protected tag's
+dereferenced commit SHA. For example:
+
+~~~bash
+python scripts/check_draft_release_inventory.py manifest \
+  --assets-dir assembled-assets --tag "$TAG" \
+  --source-commit "$SOURCE_SHA" --output /tmp/release-manifest.json
+# Capture the printed manifest_sha256 into a trusted, immutable CI output.
+gh api "repos/$REPO/releases/tags/$TAG" > /tmp/release.json
+gh release download "$TAG" --repo "$REPO" --dir downloaded-assets
+TAG_SHA="$(git rev-parse "refs/tags/$TAG^{commit}")"
+python scripts/check_draft_release_inventory.py verify \
+  --assets-dir downloaded-assets \
+  --manifest /tmp/release-manifest.json \
+  --manifest-sha256 "$TRUSTED_MANIFEST_SHA256" \
+  --release-json /tmp/release.json --repo "$REPO" --tag "$TAG" \
+  --source-commit "$SOURCE_SHA" --tag-commit "$TAG_SHA"
+~~~
+
+The verifier rejects non-draft/previously published releases, wrong repository,
+tag or source commit, missing/extra/duplicate assets, symlinks, empty assets,
+changed sizes, and mismatched SHA-256 values. When GitHub supplies an asset
+digest, that must match too. A completed verification **does not itself
+authorize publication**: the caller still needs reviewed release provenance,
+approved registries, per-family tests and attestations, and a trusted
+single-writer publish transaction. Workflow and tag identities must come
+from protected CI inputs, not a PR-provided string. A published v4.4.0
+Release was tested and correctly rejected; a locally synthesized draft
+snapshot of those same nine GUI assets passed. **No real draft publication
+acceptance is claimed.**
+
 ## Proposed draft-first orchestration (design only)
 
 The design below covers the remaining acceptance criteria of #1179. It is not

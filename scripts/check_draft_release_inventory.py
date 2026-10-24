@@ -1,0 +1,189 @@
+"""Fail-closed, read-only draft Release inventory gate for #1179.
+
+The manifest is generated from approved build outputs, then its SHA-256 is
+passed independently to this verifier. The caller must fetch release JSON and
+assets from GitHub and resolve the protected tag to its exact commit.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+from pathlib import Path
+from typing import Any
+
+_SHA = re.compile(r"^[0-9a-f]{64}$")
+_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+
+def digest(path: Path) -> str:
+    sha = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            sha.update(chunk)
+    return sha.hexdigest()
+
+
+def _files(directory: Path) -> dict[str, Path]:
+    if not directory.is_dir() or directory.is_symlink():
+        raise ValueError("artifact directory must be a real directory")
+    paths = list(directory.iterdir())
+    if not paths:
+        raise ValueError("artifact directory is empty")
+    files = {}
+    for path in paths:
+        if (
+            path.is_symlink()
+            or not path.is_file()
+            or path.name in {".", ".."}
+            or any(char in path.name for char in "\r\n")
+            or path.stat().st_size == 0
+        ):
+            raise ValueError(f"unsupported, empty or linked release asset: {path.name}")
+        files[path.name] = path
+    return files
+
+
+def manifest_for(directory: Path, tag: str, source_commit: str) -> dict[str, Any]:
+    if not _COMMIT.fullmatch(source_commit):
+        raise ValueError("source commit must be an exact SHA-1")
+    if not tag or "/" in tag or "\\" in tag or tag.startswith("-"):
+        raise ValueError("invalid release tag")
+    return {
+        "schemaVersion": 1,
+        "releaseTag": tag,
+        "sourceCommit": source_commit,
+        "assets": [
+            {"name": name, "size": path.stat().st_size, "sha256": digest(path)}
+            for name, path in sorted(_files(directory).items())
+        ],
+    }
+
+
+def _asset_inventory(assets: object) -> dict[str, dict[str, Any]]:
+    if not isinstance(assets, list) or not assets:
+        raise ValueError("release asset inventory is missing or empty")
+    result: dict[str, dict[str, Any]] = {}
+    for asset in assets:
+        if not isinstance(asset, dict):
+            raise ValueError("invalid asset metadata")
+        name = asset.get("name")
+        if (
+            not isinstance(name, str)
+            or not name
+            or Path(name).name != name
+            or "/" in name
+            or "\\" in name
+            or any(char in name for char in "\r\n")
+            or name in result
+        ):
+            raise ValueError(f"invalid or duplicate asset name: {name}")
+        result[name] = asset
+    return result
+
+
+def verify(
+    *,
+    directory: Path,
+    manifest_path: Path,
+    manifest_sha256: str,
+    release: dict[str, Any],
+    repository: str,
+    tag: str,
+    source_commit: str,
+    tag_commit: str,
+) -> None:
+    if manifest_path.is_symlink():
+        raise ValueError("trusted manifest may not be a symlink")
+    if not _SHA.fullmatch(manifest_sha256) or digest(manifest_path) != manifest_sha256:
+        raise ValueError("trusted manifest SHA-256 mismatch")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schemaVersion") != 1:
+        raise ValueError("unsupported inventory manifest schema")
+    if not _REPOSITORY.fullmatch(repository):
+        raise ValueError("invalid repository identity")
+    if not _COMMIT.fullmatch(tag_commit) or tag_commit != source_commit:
+        raise ValueError("protected release tag does not resolve to expected source")
+    if release.get("tag_name") != tag or release.get("draft") is not True:
+        raise ValueError("release is missing, published or has incorrect tag")
+    if release.get("published_at") is not None:
+        raise ValueError("draft release has a publication timestamp")
+    if release.get("html_url") != f"https://github.com/{repository}/releases/tag/{tag}":
+        raise ValueError("release does not belong to the expected repository")
+    if manifest.get("releaseTag") != tag or manifest.get("sourceCommit") != source_commit:
+        raise ValueError("manifest source or release tag mismatch")
+    expected = _asset_inventory(manifest.get("assets"))
+    actual = _asset_inventory(release.get("assets"))
+    files = _files(directory)
+    if set(expected) != set(actual) or set(expected) != set(files):
+        raise ValueError("draft release assets differ from trusted manifest")
+    for name, item in expected.items():
+        size, sha = item.get("size"), item.get("sha256")
+        if (
+            type(size) is not int
+            or size <= 0
+            or not isinstance(sha, str)
+            or not _SHA.fullmatch(sha)
+        ):
+            raise ValueError(f"invalid trusted asset metadata: {name}")
+        if files[name].stat().st_size != size or digest(files[name]) != sha:
+            raise ValueError(f"downloaded draft asset does not match manifest: {name}")
+        remote = actual[name]
+        if remote.get("size") != size or remote.get("state", "uploaded") != "uploaded":
+            raise ValueError(f"draft asset size or upload state mismatch: {name}")
+        if remote.get("digest") not in (None, f"sha256:{sha}"):
+            raise ValueError(f"GitHub draft asset digest mismatch: {name}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+    prepare = sub.add_parser("manifest", help="prepare inventory from reviewed build outputs")
+    prepare.add_argument("--assets-dir", required=True, type=Path)
+    prepare.add_argument("--tag", required=True)
+    prepare.add_argument("--source-commit", required=True)
+    prepare.add_argument("--output", required=True, type=Path)
+    check = sub.add_parser("verify", help="check a GitHub draft before publication")
+    check.add_argument("--assets-dir", required=True, type=Path)
+    check.add_argument("--manifest", required=True, type=Path)
+    check.add_argument("--manifest-sha256", required=True)
+    check.add_argument("--release-json", required=True, type=Path)
+    check.add_argument("--repo", required=True)
+    check.add_argument("--tag", required=True)
+    check.add_argument("--source-commit", required=True)
+    check.add_argument("--tag-commit", required=True)
+    args = parser.parse_args()
+    try:
+        if args.command == "manifest":
+            payload = manifest_for(args.assets_dir, args.tag, args.source_commit)
+            args.output.write_text(
+                json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+            )
+            print(
+                json.dumps(
+                    {"manifest_sha256": digest(args.output), "asset_count": len(payload["assets"])}
+                )
+            )
+        else:
+            release = json.loads(args.release_json.read_text(encoding="utf-8"))
+            verify(
+                directory=args.assets_dir,
+                manifest_path=args.manifest,
+                manifest_sha256=args.manifest_sha256,
+                release=release,
+                repository=args.repo,
+                tag=args.tag,
+                source_commit=args.source_commit,
+                tag_commit=args.tag_commit,
+            )
+            print("draft Release inventory: PASS")
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        parser.exit(2, f"draft Release inventory: FAIL: {exc}\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
