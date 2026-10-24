@@ -126,9 +126,9 @@ def test_dockerfile_runtime_rejects_mismatched_kicad10_digests() -> None:
 def test_dockerfile_guard_accumulates_all_missing_pins(monkeypatch) -> None:
     monkeypatch.setattr(docker, "_read", lambda path: "FROM python:untrusted\n")
     errors: list[str] = []
-    docker._check_dockerfile(errors, "0.12.19")
+    docker._check_dockerfile(errors, "0.13.5")
     assert "Dockerfile must pin Docker base images by digest" in errors
-    assert "Dockerfile must pin ARG UV_VERSION=0.12.19" in errors
+    assert "Dockerfile must pin ARG UV_VERSION=0.13.5" in errors
     assert "Dockerfile must install runtime dependencies with hash enforcement" in errors
     assert "Dockerfile must create the non-root runtime user with Alpine tools" in errors
 
