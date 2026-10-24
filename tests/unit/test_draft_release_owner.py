@@ -45,17 +45,20 @@ class FakeOwnerClient:
 
     def workflow_run(self, repo: str, run_id: int) -> dict[str, Any]:
         self.calls.append("run")
-        assert repo == REPO and run_id == RUN
+        assert repo == REPO
+        assert run_id == RUN
         return copy.deepcopy(self.run_data)
 
     def release(self, repo: str, release_id: int) -> dict[str, Any]:
         self.calls.append("release")
-        assert repo == REPO and release_id == RELEASE
+        assert repo == REPO
+        assert release_id == RELEASE
         return copy.deepcopy(self.release_data)
 
     def tag_commit(self, repo: str, tag: str) -> str:
         self.calls.append("tag")
-        assert repo == REPO and tag == TAG
+        assert repo == REPO
+        assert tag == TAG
         return self.tag_sha
 
 
@@ -107,8 +110,9 @@ def test_valid_read_only_owner_preflight() -> None:
 def test_invalid_owner_run_fails_before_release_access(field: str, value: object) -> None:
     client = FakeOwnerClient()
     client.run_data[field] = value
+    args = _args()
     with pytest.raises(ValueError, match="workflow run"):
-        verify_owner(client, **_args())
+        verify_owner(client, **args)
     assert client.calls == ["run"]
 
 
@@ -126,22 +130,25 @@ def test_invalid_owner_run_fails_before_release_access(field: str, value: object
 def test_invalid_release_identity_fails_closed(field: str, value: object) -> None:
     client = FakeOwnerClient()
     client.release_data[field] = value
+    args = _args()
     with pytest.raises(ValueError, match="release|Release"):
-        verify_owner(client, **_args())
+        verify_owner(client, **args)
 
 
 def test_unrelated_main_workflow_cannot_adopt_other_draft() -> None:
     client = FakeOwnerClient()
+    args = {**_args(), "owner_head_sha": "b" * 40}
     with pytest.raises(ValueError, match="owner main commit"):
-        verify_owner(client, **{**_args(), "owner_head_sha": "b" * 40})
+        verify_owner(client, **args)
     assert client.calls == []
 
 
 def test_tag_changed_fails_closed() -> None:
     client = FakeOwnerClient()
     client.tag_sha = "b" * 40
+    args = _args()
     with pytest.raises(ValueError, match="tag"):
-        verify_owner(client, **_args())
+        verify_owner(client, **args)
 
 
 @pytest.mark.parametrize(
