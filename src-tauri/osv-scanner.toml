@@ -1,0 +1,24 @@
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+ignoreUntil = 2027-01-25
+reason = "Tauri/wry GTK3 zinciri (glib 0.18); VariantStrIter kullanılmıyor, upstream GTK4 geçişi bekleniyor"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+ignoreUntil = 2027-01-25
+reason = "Unmaintained; glib-macros/gtk3-macros build-time bağımlılığı"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0370"
+ignoreUntil = 2027-01-25
+reason = "zvariant unmaintained; tauri-plugin-single-instance -> zbus 5, upstream zbus 6 bekleniyor"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0371"
+ignoreUntil = 2027-01-25
+reason = "zbus_names unmaintained; aynı zincir"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0372"
+ignoreUntil = 2027-01-25
+reason = "zvariant_derive unmaintained; aynı zincir"
