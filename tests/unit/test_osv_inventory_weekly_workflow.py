@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 import yaml
@@ -39,6 +40,7 @@ def test_osv_weekly_inventory_is_pinned_and_uploads_all_findings() -> None:
     assert scan["with"]["scan-args"].strip().splitlines() == [
         "--output=results.json",
         "--format=json",
+        "--config=.github/security/osv-full-inventory.toml",
         "-r",
         "./",
     ]
@@ -61,8 +63,14 @@ def test_osv_weekly_inventory_is_pinned_and_uploads_all_findings() -> None:
         "github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63"
     )
     assert upload["with"]["sarif_file"] == "results.sarif"
+    # Independent override must be empty, so the weekly inventory continues
+    # reporting everything even when a scoped Cargo scanner config has
+    # time-limited local exceptions.
     assert not (ROOT / "osv-scanner.toml").exists()
-    assert not (ROOT / "src-tauri/osv-scanner.toml").exists()
+    config = ROOT / ".github/security/osv-full-inventory.toml"
+    assert config.exists()
+    assert tomllib.loads(config.read_text(encoding="utf-8")) == {}
+    assert (ROOT / "src-tauri/osv-scanner.toml").exists()
 
 
 def test_existing_rustsec_baseline_is_still_exact_and_not_ignored() -> None:

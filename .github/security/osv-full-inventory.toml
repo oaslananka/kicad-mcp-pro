@@ -1,0 +1,3 @@
+# Deliberately empty: security monitoring reports ALL known vulnerabilities.
+# The weekly job passes --config to override scoped osv-scanner.toml files.
+# Add no ignored IDs, package exclusions or vulnerability suppression rules.

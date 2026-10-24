@@ -39,6 +39,7 @@ jobs:
           scan-args: |
             --output=results.json
             --format=json
+            --config=.github/security/osv-full-inventory.toml
             -r
             ./
         continue-on-error: true
