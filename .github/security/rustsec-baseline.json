@@ -25,7 +25,7 @@
       "package": "zvariant",
       "version": "5.15.0",
       "category": "unmaintained",
-      "rationale": "Transitive via tauri-plugin-single-instance 2.5.2 -> zbus 5.19.0. The standalone zvariant package is now unmaintained; no exploitable vulnerability is asserted.",
+      "rationale": "Transitive via tauri-plugin-single-instance 2.5.4 -> zbus 5.19.0. The standalone zvariant package is now unmaintained; no exploitable vulnerability is asserted.",
       "revisit": "Revisit when a supported stable tauri-plugin-single-instance release adopts zbus 6 wire APIs (or another supported maintained replacement); qualify single-instance Linux DBus and cross-platform GUI behavior.",
       "source": "https://rustsec.org/advisories/RUSTSEC-2026-0370"
     },
@@ -34,7 +34,7 @@
       "package": "zbus_names",
       "version": "4.3.4",
       "category": "unmaintained",
-      "rationale": "Transitive via tauri-plugin-single-instance 2.5.2 -> zbus 5.19.0. zbus_names is an unmaintained standalone crate now consolidated into zbus 6.",
+      "rationale": "Transitive via tauri-plugin-single-instance 2.5.4 -> zbus 5.19.0. zbus_names is an unmaintained standalone crate now consolidated into zbus 6.",
       "revisit": "Revisit when supported stable Tauri plugin dependencies move to zbus 6 name APIs; test DBus name registration, second-instance behavior and Linux/macOS/Windows GUI checks.",
       "source": "https://rustsec.org/advisories/RUSTSEC-2026-0371"
     },

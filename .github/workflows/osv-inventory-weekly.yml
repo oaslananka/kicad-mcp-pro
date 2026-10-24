@@ -1,0 +1,34 @@
+name: OSV Full Dependency Inventory
+
+# OSV scans all ecosystems without ignore rules; RustSec CI stays fail-closed
+# against its exact five-entry reviewed baseline.
+on:
+  schedule:
+    - cron: "47 7 * * 4"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+concurrency:
+  group: osv-full-inventory-weekly-main
+  cancel-in-progress: false
+
+jobs:
+  osv-full-inventory:
+    if: github.repository == 'oaslananka/kicad-mcp-pro'
+    # Pinned v2.7.0 release tag target commit.
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36
+    with:
+      runs-on: ubuntu-24.04
+      scan-args: |
+        -r
+        ./
+      checkout-submodules: false
+      upload-sarif: true
+      # Observability-only scheduled job: known upstream issues stay visible
+      # through SARIF without permanently failing the weekly run.
+      # Unexpected RustSec drift already FAILS the separate required CI gate.
+      fail-on-vuln: false
