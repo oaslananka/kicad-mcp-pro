@@ -99,9 +99,10 @@ def _trusted_manifest(path: Path, expected_sha: str) -> dict[str, Any]:
     if path.is_symlink():
         raise ValueError("trusted manifest may not be a symlink")
     path = approved_runtime_path(path)
-    if not _SHA.fullmatch(expected_sha) or digest(path) != expected_sha:
+    payload = path.read_bytes()
+    if not _SHA.fullmatch(expected_sha) or hashlib.sha256(payload).hexdigest() != expected_sha:
         raise ValueError("trusted manifest SHA-256 mismatch")
-    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest = json.loads(payload)
     if not isinstance(manifest, dict) or manifest.get("schemaVersion") != 1:
         raise ValueError("unsupported inventory manifest schema")
     return manifest

@@ -282,3 +282,29 @@ def test_unapproved_absolute_path_is_rejected() -> None:
 def test_unapproved_asset_directory_is_rejected() -> None:
     with pytest.raises(ValueError, match="outside approved automation roots"):
         manifest_for(Path("/etc"), TAG, SOURCE)
+
+
+def test_trusted_manifest_is_hashed_and_parsed_from_single_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _case(tmp_path)
+    original = Path.read_bytes
+    manifest = case["manifest_path"]
+    reads = []
+
+    def read_once(path: Path) -> bytes:
+        if path == manifest:
+            reads.append(path)
+        return original(path)
+
+    original_text = Path.read_text
+
+    def reject_reread(path: Path, *args: object, **kwargs: object) -> str:
+        if path == manifest:
+            raise AssertionError("manifest was reopened after digest comparison")
+        return original_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_bytes", read_once)
+    monkeypatch.setattr(Path, "read_text", reject_reread)
+    verify(**case)
+    assert reads == [manifest]
