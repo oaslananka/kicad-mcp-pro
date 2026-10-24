@@ -262,3 +262,23 @@ def test_invalid_repository_rejected(tmp_path: Path) -> None:
     case["repository"] = "too-many/components/repo"
     with pytest.raises(ValueError, match="invalid repository"):
         verify(**case)
+
+
+@pytest.mark.parametrize("payload", [None, [], "invalid", 42, False])
+def test_release_metadata_must_be_json_object(tmp_path: Path, payload: object) -> None:
+    case = _case(tmp_path)
+    case["release"] = payload
+    with pytest.raises(ValueError, match="release metadata must be a JSON object"):
+        verify(**case)
+
+
+def test_unapproved_absolute_path_is_rejected() -> None:
+    from scripts.check_draft_release_inventory import digest
+
+    with pytest.raises(ValueError, match="outside approved automation roots"):
+        digest(Path("/etc/hosts"))
+
+
+def test_unapproved_asset_directory_is_rejected() -> None:
+    with pytest.raises(ValueError, match="outside approved automation roots"):
+        manifest_for(Path("/etc"), TAG, SOURCE)

@@ -169,14 +169,15 @@ assets, and independently retrieve the draft's JSON and the protected tag's
 dereferenced commit SHA. For example:
 
 ~~~bash
-python scripts/check_draft_release_inventory.py manifest \
+python -m scripts.check_draft_release_inventory manifest \
   --assets-dir assembled-assets --tag "$TAG" \
   --source-commit "$SOURCE_SHA" --output /tmp/release-manifest.json
 # Capture the printed manifest_sha256 into a trusted, immutable CI output.
-gh api "repos/$REPO/releases/tags/$TAG" > /tmp/release.json
-gh release download "$TAG" --repo "$REPO" --dir downloaded-assets
+gh api "repos/$REPO/releases/$RELEASE_ID" > /tmp/release.json
+# Download each authenticated draft asset by .assets[].id into downloaded-assets.
+# Validate names before writing; tag-based download may exclude drafts.
 TAG_SHA="$(git rev-parse "refs/tags/$TAG^{commit}")"
-python scripts/check_draft_release_inventory.py verify \
+python -m scripts.check_draft_release_inventory verify \
   --assets-dir downloaded-assets \
   --manifest /tmp/release-manifest.json \
   --manifest-sha256 "$TRUSTED_MANIFEST_SHA256" \

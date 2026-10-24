@@ -14,12 +14,15 @@ import re
 from pathlib import Path
 from typing import Any
 
+from scripts.runtime_path_safety import approved_runtime_path
+
 _SHA = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 def digest(path: Path) -> str:
+    path = approved_runtime_path(path)
     sha = hashlib.sha256()
     with path.open("rb") as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
@@ -28,7 +31,10 @@ def digest(path: Path) -> str:
 
 
 def _files(directory: Path) -> dict[str, Path]:
-    if not directory.is_dir() or directory.is_symlink():
+    if directory.is_symlink():
+        raise ValueError("artifact directory may not be a symlink")
+    directory = approved_runtime_path(directory)
+    if not directory.is_dir():
         raise ValueError("artifact directory must be a real directory")
     paths = list(directory.iterdir())
     if not paths:
@@ -63,6 +69,18 @@ def manifest_for(directory: Path, tag: str, source_commit: str) -> dict[str, Any
     }
 
 
+def _valid_asset_name(name: object, seen: dict[str, dict[str, Any]]) -> bool:
+    return (
+        isinstance(name, str)
+        and bool(name)
+        and Path(name).name == name
+        and "/" not in name
+        and "\\" not in name
+        and not any(char in name for char in "\r\n")
+        and name not in seen
+    )
+
+
 def _asset_inventory(assets: object) -> dict[str, dict[str, Any]]:
     if not isinstance(assets, list) or not assets:
         raise ValueError("release asset inventory is missing or empty")
@@ -71,15 +89,7 @@ def _asset_inventory(assets: object) -> dict[str, dict[str, Any]]:
         if not isinstance(asset, dict):
             raise ValueError("invalid asset metadata")
         name = asset.get("name")
-        if (
-            not isinstance(name, str)
-            or not name
-            or Path(name).name != name
-            or "/" in name
-            or "\\" in name
-            or any(char in name for char in "\r\n")
-            or name in result
-        ):
+        if not isinstance(name, str) or not _valid_asset_name(name, result):
             raise ValueError(f"invalid or duplicate asset name: {name}")
         result[name] = asset
     return result
@@ -90,7 +100,7 @@ def verify(
     directory: Path,
     manifest_path: Path,
     manifest_sha256: str,
-    release: dict[str, Any],
+    release: object,
     repository: str,
     tag: str,
     source_commit: str,
@@ -98,6 +108,7 @@ def verify(
 ) -> None:
     if manifest_path.is_symlink():
         raise ValueError("trusted manifest may not be a symlink")
+    manifest_path = approved_runtime_path(manifest_path)
     if not _SHA.fullmatch(manifest_sha256) or digest(manifest_path) != manifest_sha256:
         raise ValueError("trusted manifest SHA-256 mismatch")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -107,6 +118,8 @@ def verify(
         raise ValueError("invalid repository identity")
     if not _COMMIT.fullmatch(tag_commit) or tag_commit != source_commit:
         raise ValueError("protected release tag does not resolve to expected source")
+    if not isinstance(release, dict):
+        raise ValueError("release metadata must be a JSON object")
     if release.get("tag_name") != tag or release.get("draft") is not True:
         raise ValueError("release is missing, published or has incorrect tag")
     if release.get("published_at") is not None:
@@ -159,16 +172,18 @@ def main() -> int:
     try:
         if args.command == "manifest":
             payload = manifest_for(args.assets_dir, args.tag, args.source_commit)
-            args.output.write_text(
+            output = approved_runtime_path(args.output)
+            output.write_text(
                 json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8"
             )
             print(
                 json.dumps(
-                    {"manifest_sha256": digest(args.output), "asset_count": len(payload["assets"])}
+                    {"manifest_sha256": digest(output), "asset_count": len(payload["assets"])}
                 )
             )
         else:
-            release = json.loads(args.release_json.read_text(encoding="utf-8"))
+            release_json = approved_runtime_path(args.release_json)
+            release = json.loads(release_json.read_text(encoding="utf-8"))
             verify(
                 directory=args.assets_dir,
                 manifest_path=args.manifest,
@@ -180,7 +195,7 @@ def main() -> int:
                 tag_commit=args.tag_commit,
             )
             print("draft Release inventory: PASS")
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError) as exc:
         parser.exit(2, f"draft Release inventory: FAIL: {exc}\n")
     return 0
 
