@@ -73,7 +73,7 @@ def test_doc_names_every_release_workflow(workflow: str) -> None:
         "repository immutability setting is not changed",
         "release-creation mutation remains allowlisted",
         "force-tag-creation",
-        "Draft state is tracked only within one job.",
+        "literal tag",
     ],
 )
 def test_doc_mentions_required_concepts(phrase: str) -> None:

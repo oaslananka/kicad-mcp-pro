@@ -147,10 +147,13 @@ Known limits: the checker parses shell text. Review these cases by hand:
 - Commands are matched by kind and count, not by their full text. Changing the
   arguments of an allowlisted command (for example the asset list) is not
   flagged.
-- Draft state is tracked only within one job. A draft created in another job,
-  another workflow or by Release Please (`release-please-config.json`, which
-  the checker does not read) is treated as published. See the migration note
-  below.
+- Draft inference is limited to a same-job draft create with a known
+  **literal tag**. Only following operations that use the exact same tag
+  qualify as draft writes; dynamic expressions, unrelated tags, unknown
+  API writes, Release Please multi-family creates, and cross-job uploads
+  never inherit the draft state. The checker reads a repository-contained
+  Release Please manifest for initial creation classification only when all
+  produced releases are demonstrably draft and immediately tagged.
 
 The check is a ratchet, not a proof.
 

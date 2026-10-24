@@ -256,6 +256,7 @@ class _Match:
     clobber: bool
     draft: bool | None
     command: str
+    tag: str | None = None
 
 
 def _classify_segment(segment: str) -> _Match | None:
@@ -268,7 +269,8 @@ def _classify_segment(segment: str) -> _Match | None:
         if kind is None:
             return None
         rest = tokens[3:]
-        return _Match(kind, "--clobber" in rest, _draft_flag(rest), segment)
+        tag = rest[0] if rest and not rest[0].startswith("-") else None
+        return _Match(kind, "--clobber" in rest, _draft_flag(rest), segment, tag)
     if program == "gh" and tokens[1] == "api":
         rest = tokens[2:]
         if not any("releases" in token for token in rest):
@@ -311,6 +313,11 @@ def _release_please_is_draft(root: Path, inputs: Mapping[str, object]) -> bool:
     every release-producing package must explicitly inherit/declare draft
     AND immediate tag creation. Unknown config always remains published.
     """
+    # A remote repo/branch or explicit release-type may use a different
+    # configuration than this checkout. Do not infer draft safety.
+    for alternative in ("repo-url", "target-branch", "release-type"):
+        if inputs.get(alternative) not in (None, ""):
+            return False
     raw_file = inputs.get("config-file", "release-please-config.json")
     if not isinstance(raw_file, str) or not raw_file:
         return False
@@ -384,21 +391,25 @@ def _step_matches(step: Mapping[str, object], root: Path | None = None) -> list[
     return matches
 
 
+def _literal_release_tag(tag: str | None) -> bool:
+    return tag is not None and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", tag) is not None
+
+
 def _job_inventory(
     workflow: str, job: str, steps: Iterable[object], root: Path | None = None
 ) -> list[ReleaseMutation]:
     """Record every release write in a job, in order, with its draft/published target.
 
-    The draft window opens only on a ``--draft`` create in this job. It stays
-    open for uploads, asset deletions and edits that keep the draft, and closes
-    (fail closed) on ``--draft=false`` and on any other write whose effect on
-    the draft state is not positively known, such as ``gh api``/``curl``
-    writes. Every command is recorded, so repeated commands in one step are
-    counted rather than collapsed.
+    A draft window is allowed only for a literal tag passed to a draft
+    creation command. Following asset operations must use exactly that same
+    literal tag. Unknown tags, other release targets, API writes, and
+    publication close the inferred draft window. Every matched command is
+    recorded individually.
+
     """
 
     entries: list[ReleaseMutation] = []
-    draft_open = False
+    draft_tag: str | None = None
     for index, step in enumerate(steps, start=1):
         if not isinstance(step, dict):
             continue
@@ -407,16 +418,25 @@ def _job_inventory(
             draft = bool(match.draft)
             if match.kind == "create_release":
                 target = "draft" if draft else "published"
-                draft_open = draft
-            elif draft_open:
+                # A manifest release might create several tags. Unknown or
+                # variable tags do not authorize later asset changes.
+                draft_tag = match.tag if draft and _literal_release_tag(match.tag) else None
+            elif (
+                draft_tag
+                and match.tag == draft_tag
+                and match.kind
+                in {
+                    "upload_asset",
+                    "edit_release",
+                    "delete_asset",
+                }
+            ):
                 target = "draft"
-                if match.kind == "edit_release":
-                    if match.draft is False:
-                        draft_open = False
-                elif match.kind not in {"upload_asset", "delete_asset"}:
-                    draft_open = False
+                if match.kind == "edit_release" and match.draft is False:
+                    draft_tag = None
             else:
                 target = "published"
+                draft_tag = None
             entry = ReleaseMutation(
                 workflow=workflow,
                 job=job,
