@@ -120,7 +120,7 @@ _WRAPPER_VALUE_OPTIONS = {
 }
 # Wrappers with required positional arguments before the command (``timeout DURATION``).
 _WRAPPER_POSITIONALS = {"timeout": 1}
-_ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_]\w*=", re.ASCII)
 _SEPARATORS = re.compile(r"\n|&&|\|\||;|\||\$\(|`")
 _GHA_EXPRESSION = re.compile(r"\$\{\{.*?\}\}")
 _SUBSTITUTION = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
@@ -129,7 +129,7 @@ _SUBSTITUTION_PLACEHOLDER = "__SUBST__"
 _WRITE_METHODS = {"POST", "PATCH", "PUT", "DELETE"}
 _GH_API_BODY_FLAGS = {"-f", "-F", "--field", "--raw-field", "--input"}
 _CURL_BODY_FLAGS = {"-d", "--data", "--data-binary", "--data-raw", "-F", "--form", "-T"}
-_ISSUE_REF = re.compile(r"^#[1-9][0-9]*$")
+_ISSUE_REF = re.compile(r"^#[1-9]\d*$", re.ASCII)
 
 
 @dataclass(frozen=True)
