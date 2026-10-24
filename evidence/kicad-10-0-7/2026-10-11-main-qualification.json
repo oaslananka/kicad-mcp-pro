@@ -1,0 +1,89 @@
+{
+  "date": "2026-10-11",
+  "globalPromotionApproved": false,
+  "kicadVersion": "10.0.7",
+  "latestVerifiedRetained": "10.0.6",
+  "linuxNative": {
+    "canarySteps": 32,
+    "expectedNegativeExitCode": 5,
+    "failingFixtures": 0,
+    "runner": "physical-ubuntu-x64",
+    "semanticMatches": 5,
+    "semanticTotal": 5,
+    "sourceTreeClean": true,
+    "unexpectedDifferentials": 0
+  },
+  "linuxWindowsDiagnosticParity": {
+    "claimsCleanBoard": false,
+    "drcUnconnectedCountBoth": 4,
+    "drcViolationCountBoth": 17,
+    "fixture": "clean-led-kicad10",
+    "violationExitCode": 5
+  },
+  "macOsCurrent": {
+    "actualEditorTests": 2,
+    "failures": 0,
+    "guiExit": 0,
+    "nativeExit": 0,
+    "nativeFailures": 0,
+    "nativeSteps": 32,
+    "runId": 38170872908,
+    "runner": "macos-15",
+    "semanticMatches": 5,
+    "semanticTotal": 5,
+    "signedInstallerVerification": "valid",
+    "skips": 0,
+    "unexpectedDifferentials": 0,
+    "verdict": "pass",
+    "verifiedKiCadVersion": "10.0.7"
+  },
+  "macOsHistoricalEvidence": {
+    "previousResult": "pass",
+    "recordedSourceRevision": "d0ce717cee95630f0a7d8f65a3f725005a82a48f",
+    "runId": 38093783089,
+    "sourceRevisionIsCurrent": false
+  },
+  "outstandingGlobalPromotionGates": [
+    "main-windows-chocolatey-10.0.7-package-not-confirmed",
+    "ubuntu-22.04-stable-ppa-10.0.7-build-blocked-by-libgit2",
+    "feature-parity-baseline-and-required-canary-version-not-migrated",
+    "real-agent-authored-manufacturing-benchmark-remains-unqualified"
+  ],
+  "schemaVersion": "kicad-107-main-qualification-checkpoint.v1",
+  "sourceRevision": "ee60c037a25187b6d2487b45d085781c6986f25b",
+  "status": "bounded-10.0.7-evidence-not-global-support-promotion",
+  "windowsGuiIpc": {
+    "actualEditorTests": 2,
+    "failures": 0,
+    "runId": 38170399571,
+    "runner": "windows-2025",
+    "skips": 0,
+    "verdict": "pass"
+  },
+  "windowsNative": {
+    "allowedSkips": 2,
+    "canarySteps": 32,
+    "divergences": 0,
+    "failingFixtures": 0,
+    "falseFailures": 0,
+    "falsePasses": 0,
+    "installerSha256": "ce3881b6a9188eb34ac1ebaaec7651149e8a025206410addfb11a1a9656ecf95",
+    "installerSignature": "Valid",
+    "runId": 38170396646,
+    "runner": "windows-2025",
+    "semanticMatches": 5,
+    "semanticTotal": 5
+  },
+  "windowsPhysicalFixtureRegression": {
+    "cliOperations": 19,
+    "drillExportFixtures": 2,
+    "fixtureCount": 6,
+    "gerberExportFixtures": 2,
+    "hostClass": "physical-windows-x64",
+    "manufacturingSuccessApproved": false,
+    "nativeNetlistExports": 5,
+    "noProviderCalls": true,
+    "sourceFilesHashed": 21,
+    "sourceMutations": 0
+  }
+}

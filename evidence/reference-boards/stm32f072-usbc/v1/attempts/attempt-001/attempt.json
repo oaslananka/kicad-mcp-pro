@@ -1,0 +1,59 @@
+{
+  "agent": "claude-code-2.1.258",
+  "attempt_id": "attempt-001",
+  "benchmark_id": "stm32f072-usbc-reference-board",
+  "benchmark_version": "v1",
+  "classification": "provider_failure",
+  "failure_category": "provider",
+  "failure_reason_code": "provider_rate_limit",
+  "kicad_version": "10.0.6",
+  "manual_repair": false,
+  "manufacturing": {
+    "comparison": "not_run",
+    "generation_completed": false,
+    "regeneration_completed": false,
+    "required": true
+  },
+  "mcp_profile": "schematic_authoring",
+  "model": "claude-sonnet-5",
+  "mutations": [],
+  "operating_mode": "write",
+  "provider": "unknown",
+  "retry_count": 0,
+  "schema_version": "pcb-task-outcome.v1",
+  "source_revision": "d38e1af764abf7cda2762e9994679edc1b4cccdc",
+  "stages": [
+    {
+      "outcome": "failed",
+      "stage": "requirements"
+    }
+  ],
+  "start_state": "clean",
+  "starting_state_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "task_class": "reference-board",
+  "task_contract_version": "v1",
+  "task_id": "clean-start-autonomous-build",
+  "timing": {
+    "ended_at": "2026-09-04T01:11:22.529294Z",
+    "started_at": "2026-09-04T01:11:16.054882Z"
+  },
+  "toolchain_contract": "dev-toolchain-v1:sha256:65d3c1702df9017631d9fb7787004de270964e332412e41fa3a73abd4238933c",
+  "validations": [
+    {
+      "disposition": "blocking",
+      "execution_attempted": false,
+      "execution_completed": false,
+      "kind": "erc",
+      "required": true,
+      "result_consumed": false
+    },
+    {
+      "disposition": "blocking",
+      "execution_attempted": false,
+      "execution_completed": false,
+      "kind": "drc",
+      "required": true,
+      "result_consumed": false
+    }
+  ]
+}
