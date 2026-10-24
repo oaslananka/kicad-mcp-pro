@@ -18,10 +18,10 @@ def test_chatgpt_app_express5_dependency_policy() -> None:
     assert express.count(".") == 2
     assert all(part.isdigit() for part in express.split("."))
     assert package["overrides"] == {
-        "@hono/node-server": "2.1.3",
+        "@hono/node-server": "2.1.5",
         "hono": "4.13.13",
         "fast-uri": "3.1.9",
-        "qs": "6.16.0",
+        "qs": "6.16.1",
         "ip-address": "10.7.4",
     }
     assert lock["packages"][""]["dependencies"]["express"] == express

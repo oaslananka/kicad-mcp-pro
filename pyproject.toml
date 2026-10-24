@@ -60,7 +60,7 @@ dependencies = [
 [project.optional-dependencies]
 components = ["httpx>=0.27.0"]
 dev = [
-  "actionlint-py==1.7.12.24",
+  "actionlint-py==1.7.12.25",
   "watchfiles>=1.0.0",
   "bandit>=1.7.9",
   "cairosvg>=2.9.1,<3.0.0",

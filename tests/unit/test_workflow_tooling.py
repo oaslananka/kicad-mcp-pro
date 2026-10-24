@@ -32,7 +32,7 @@ def test_actionlint_is_a_locked_python_dev_tool() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     checker = (ROOT / "scripts" / "check_workflows.py").read_text(encoding="utf-8")
 
-    assert '"actionlint-py==1.7.12.24"' in pyproject
+    assert '"actionlint-py==1.7.12.25"' in pyproject
     assert '"shellcheck-py==0.11.0.1"' in pyproject
     assert 'ACTIONLINT_COMMAND = ["actionlint"]' in checker
     assert "kicadstudio" not in checker
