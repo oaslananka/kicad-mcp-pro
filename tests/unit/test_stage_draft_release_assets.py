@@ -5,9 +5,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, BinaryIO, cast
 
 import pytest
@@ -275,11 +275,9 @@ def test_cli_requires_exact_write_confirmation(
 def test_github_cli_upload_never_clobbers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     commands: list[list[str]] = []
 
-    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        from subprocess import CompletedProcess
-
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
         commands.append(args)
-        return CompletedProcess(args, 0, stdout=b"", stderr=b"")
+        return SimpleNamespace(args=args, returncode=0, stdout=b"", stderr=b"")
 
     monkeypatch.setattr("scripts.stage_draft_release_assets.subprocess.run", fake_run)
     monkeypatch.setattr("scripts.stage_draft_release_assets.shutil.which", lambda _: "/usr/bin/gh")
@@ -334,8 +332,8 @@ def test_non_object_api_response_fails(monkeypatch: pytest.MonkeyPatch, content:
 
 def test_cli_failed_exit_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
 
-    def broken(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        return subprocess.CompletedProcess(args, 1, stdout=b"", stderr=b"failed")
+    def broken(args: list[str], **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(args=args, returncode=1, stdout=b"", stderr=b"failed")
 
     monkeypatch.setattr("scripts.stage_draft_release_assets.subprocess.run", broken)
     monkeypatch.setattr("scripts.stage_draft_release_assets.shutil.which", lambda _: "/usr/bin/gh")
@@ -356,11 +354,11 @@ def test_asset_download_streams_to_new_file(
 
     commands: list[list[str]] = []
 
-    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
         commands.append(args)
         output = cast(BinaryIO, kwargs["stdout"])
         output.write(b"approved bytes")
-        return subprocess.CompletedProcess(args, 0, stdout=b"", stderr=b"")
+        return SimpleNamespace(args=args, returncode=0, stdout=b"", stderr=b"")
 
     monkeypatch.setattr("scripts.stage_draft_release_assets.subprocess.run", fake_run)
     monkeypatch.setattr("scripts.stage_draft_release_assets.shutil.which", lambda _: "/usr/bin/gh")
@@ -375,8 +373,8 @@ def test_asset_download_streams_to_new_file(
 
 def test_download_error_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
-    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        return subprocess.CompletedProcess(args, 2, stdout=b"", stderr=b"")
+    def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(args=args, returncode=2, stdout=b"", stderr=b"")
 
     monkeypatch.setattr("scripts.stage_draft_release_assets.subprocess.run", fake_run)
     monkeypatch.setattr("scripts.stage_draft_release_assets.shutil.which", lambda _: "/usr/bin/gh")

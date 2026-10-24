@@ -11,7 +11,7 @@ import argparse
 import json
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 - fixed gh CLI invocation; never uses a shell
 import tempfile
 from pathlib import Path
 from typing import Any, Protocol
@@ -43,7 +43,9 @@ class GitHubCLI:
 
     @staticmethod
     def _run(arguments: list[str]) -> bytes:
-        result = subprocess.run([GitHubCLI._gh(), *arguments], capture_output=True, check=False)
+        result = subprocess.run(  # nosec B603 - gh absolute path, argv list, shell disabled
+            [GitHubCLI._gh(), *arguments], capture_output=True, check=False
+        )
         if result.returncode:
             raise ValueError(f"GitHub CLI operation failed (exit {result.returncode})")
         return result.stdout
@@ -74,7 +76,7 @@ class GitHubCLI:
 
     def download_asset(self, repo: str, asset_id: int, destination: Path) -> None:
         with destination.open("xb") as output:
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603 - fixed gh executable, no shell
                 [
                     self._gh(),
                     "api",
