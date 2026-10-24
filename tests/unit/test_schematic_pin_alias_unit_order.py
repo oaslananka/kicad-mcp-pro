@@ -25,6 +25,7 @@ def test_pin_aliases_include_common_pins_and_exclude_other_units(
     f.write_text(fixture, encoding="utf-8")
     monkeypatch.setattr(schematic, "_symbol_library_file", lambda _lib: f)
     aliases = schematic.get_pin_alias_positions("Device", "Multi", 50, 50, unit=unit)
-    assert "99" in aliases and "COMMON" in aliases
+    assert "99" in aliases
+    assert "COMMON" in aliases
     assert f"UNIT{unit}" in aliases
     assert f"UNIT{3 - unit}" not in aliases

@@ -10,6 +10,8 @@ import pytest
 
 from scripts.check_github_actions_policy import load_policy
 from scripts.check_release_asset_mutations import (
+    _ENV_ASSIGNMENT,
+    _ISSUE_REF,
     ReleaseMutation,
     inventory,
     main,
@@ -671,3 +673,35 @@ def test_unrecognised_draft_value_closes_the_draft_window(tmp_path: Path, publis
     assert entries[-1].kind == "upload_asset"
     assert entries[-1].target_state == "published"
     assert len(validate(entries, [])) == 1
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("FOO=", True),
+        ("_X9=value", True),
+        ("X9=1", True),
+        ("9X=value", False),
+        ("É=value", False),
+        ("X٧=value", False),
+        ("X６=value", False),
+    ],
+)
+def test_wrapper_environment_assignment_remains_ascii_only(value: str, expected: bool) -> None:
+    assert (_ENV_ASSIGNMENT.match(value) is not None) is expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("#1179", True),
+        ("#1", True),
+        ("#0", False),
+        ("#01", False),
+        ("#١", False),
+        ("#1٧", False),
+        ("#1６", False),
+    ],
+)
+def test_policy_issue_reference_remains_ascii_only(value: str, expected: bool) -> None:
+    assert (_ISSUE_REF.fullmatch(value) is not None) is expected
