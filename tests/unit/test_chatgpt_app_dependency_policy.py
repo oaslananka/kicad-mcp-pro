@@ -26,5 +26,15 @@ def test_chatgpt_app_express5_dependency_policy() -> None:
     }
     assert lock["packages"][""]["dependencies"]["express"] == express
     assert lock["packages"]["node_modules/express"]["version"] == express
-    assert lock["packages"]["node_modules/body-parser"]["version"] == "2.3.0"
+    # Dependabot can upgrade this compatible transitive dependency independently.
+    # Enforce the Express 5 declared semver floor and major version rather than
+    # pinning a previous lockfile value (see dependency PR #1443).
+    body_parser_range = lock["packages"]["node_modules/express"]["dependencies"]["body-parser"]
+    body_parser_version = lock["packages"]["node_modules/body-parser"]["version"]
+    assert body_parser_range.startswith("^2.")
+    lower_bound = tuple(int(part) for part in body_parser_range[1:].split("."))
+    installed = tuple(int(part) for part in body_parser_version.split("."))
+    assert len(lower_bound) == len(installed) == 3
+    assert installed[0] == lower_bound[0] == 2
+    assert installed >= lower_bound
     assert "node_modules/@modelcontextprotocol/sdk/node_modules/body-parser" not in lock["packages"]
