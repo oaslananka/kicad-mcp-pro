@@ -95,25 +95,21 @@ def _asset_inventory(assets: object) -> dict[str, dict[str, Any]]:
     return result
 
 
-def verify(
-    *,
-    directory: Path,
-    manifest_path: Path,
-    manifest_sha256: str,
-    release: object,
-    repository: str,
-    tag: str,
-    source_commit: str,
-    tag_commit: str,
-) -> None:
-    if manifest_path.is_symlink():
+def _trusted_manifest(path: Path, expected_sha: str) -> dict[str, Any]:
+    if path.is_symlink():
         raise ValueError("trusted manifest may not be a symlink")
-    manifest_path = approved_runtime_path(manifest_path)
-    if not _SHA.fullmatch(manifest_sha256) or digest(manifest_path) != manifest_sha256:
+    path = approved_runtime_path(path)
+    if not _SHA.fullmatch(expected_sha) or digest(path) != expected_sha:
         raise ValueError("trusted manifest SHA-256 mismatch")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("schemaVersion") != 1:
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or manifest.get("schemaVersion") != 1:
         raise ValueError("unsupported inventory manifest schema")
+    return manifest
+
+
+def _draft_release(
+    release: object, repository: str, tag: str, source_commit: str, tag_commit: str
+) -> dict[str, Any]:
     if not _REPOSITORY.fullmatch(repository):
         raise ValueError("invalid repository identity")
     if not _COMMIT.fullmatch(tag_commit) or tag_commit != source_commit:
@@ -126,29 +122,47 @@ def verify(
         raise ValueError("draft release has a publication timestamp")
     if release.get("html_url") != f"https://github.com/{repository}/releases/tag/{tag}":
         raise ValueError("release does not belong to the expected repository")
-    if manifest.get("releaseTag") != tag or manifest.get("sourceCommit") != source_commit:
-        raise ValueError("manifest source or release tag mismatch")
+    return release
+
+
+def _verify_asset(name: str, item: dict[str, Any], remote: dict[str, Any], path: Path) -> None:
+    size, sha = item.get("size"), item.get("sha256")
+    if type(size) is not int or size <= 0 or not isinstance(sha, str) or not _SHA.fullmatch(sha):
+        raise ValueError(f"invalid trusted asset metadata: {name}")
+    if path.stat().st_size != size or digest(path) != sha:
+        raise ValueError(f"downloaded draft asset does not match manifest: {name}")
+    if remote.get("size") != size or remote.get("state", "uploaded") != "uploaded":
+        raise ValueError(f"draft asset size or upload state mismatch: {name}")
+    if remote.get("digest") not in (None, f"sha256:{sha}"):
+        raise ValueError(f"GitHub draft asset digest mismatch: {name}")
+
+
+def _verify_inventory(directory: Path, manifest: dict[str, Any], release: dict[str, Any]) -> None:
     expected = _asset_inventory(manifest.get("assets"))
     actual = _asset_inventory(release.get("assets"))
     files = _files(directory)
     if set(expected) != set(actual) or set(expected) != set(files):
         raise ValueError("draft release assets differ from trusted manifest")
     for name, item in expected.items():
-        size, sha = item.get("size"), item.get("sha256")
-        if (
-            type(size) is not int
-            or size <= 0
-            or not isinstance(sha, str)
-            or not _SHA.fullmatch(sha)
-        ):
-            raise ValueError(f"invalid trusted asset metadata: {name}")
-        if files[name].stat().st_size != size or digest(files[name]) != sha:
-            raise ValueError(f"downloaded draft asset does not match manifest: {name}")
-        remote = actual[name]
-        if remote.get("size") != size or remote.get("state", "uploaded") != "uploaded":
-            raise ValueError(f"draft asset size or upload state mismatch: {name}")
-        if remote.get("digest") not in (None, f"sha256:{sha}"):
-            raise ValueError(f"GitHub draft asset digest mismatch: {name}")
+        _verify_asset(name, item, actual[name], files[name])
+
+
+def verify(
+    *,
+    directory: Path,
+    manifest_path: Path,
+    manifest_sha256: str,
+    release: object,
+    repository: str,
+    tag: str,
+    source_commit: str,
+    tag_commit: str,
+) -> None:
+    manifest = _trusted_manifest(manifest_path, manifest_sha256)
+    draft = _draft_release(release, repository, tag, source_commit, tag_commit)
+    if manifest.get("releaseTag") != tag or manifest.get("sourceCommit") != source_commit:
+        raise ValueError("manifest source or release tag mismatch")
+    _verify_inventory(directory, manifest, draft)
 
 
 def main() -> int:
