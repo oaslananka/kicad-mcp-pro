@@ -336,8 +336,8 @@ After **human-reviewed evidence, exclusive per-release orchestration and
 explicit operator authorization**, the same command can be invoked with
 --execute-uploads plus --confirm-repository and --confirm-release-id matching
 the exact repo and numeric ID. This separately rechecks draft identity and
-existing assets, uploads only missing approved files through gh release upload
-**without --clobber**, downloads them independently and applies the full
+existing assets, uploads only missing approved files through the authenticated **numeric
+release-ID asset upload API** (no tag lookup or asset replacement), downloads them independently and applies the full
 prepublication inventory verifier. A failed/partial upload leaves the Release
 a draft, so an authorized retry must revalidate the pinned artifacts.
 

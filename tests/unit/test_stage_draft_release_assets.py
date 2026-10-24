@@ -79,8 +79,8 @@ class FakeGitHub:
             payload = b"malformed bytes"
         destination.write_bytes(payload)
 
-    def upload_asset(self, repo: str, tag: str, path: Path) -> None:
-        assert repo == REPO and tag == TAG
+    def upload_asset(self, repo: str, release_id: int, path: Path) -> None:
+        assert repo == REPO and release_id == self.id
         self.upload_calls.append(path.name)
         if self.stop_upload:
             raise ValueError("simulated GitHub transport rejection")
@@ -267,9 +267,70 @@ def test_cli_requires_exact_write_confirmation(
             "--execute-uploads",
         ],
     )
+
+    def must_not_stage(*args: object, **kwargs: object) -> dict[str, object]:
+        raise AssertionError("stage must not run without matching confirmations")
+
+    monkeypatch.setattr(module, "stage", must_not_stage)
     with pytest.raises(SystemExit) as error:
         module.main()
     assert error.value.code == 2
+
+
+def test_cli_matching_confirmations_allow_upload_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from scripts import stage_draft_release_assets as module
+
+    approved = tmp_path / "approved"
+    pinned = tmp_path / "pinned.json"
+    calls: list[dict[str, object]] = []
+
+    def fake_stage(client: object, **kwargs: object) -> dict[str, object]:
+        calls.append(kwargs)
+        return {"readyForFinalInventoryCheck": True}
+
+    monkeypatch.setattr(module, "stage", fake_stage)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "stage_draft_release_assets",
+            "--repo",
+            REPO,
+            "--release-id",
+            "42",
+            "--tag",
+            TAG,
+            "--source-commit",
+            SHA,
+            "--approved-assets",
+            str(approved),
+            "--manifest",
+            str(pinned),
+            "--manifest-sha256",
+            "a" * 64,
+            "--execute-uploads",
+            "--confirm-repository",
+            REPO,
+            "--confirm-release-id",
+            "42",
+        ],
+    )
+    assert module.main() == 0
+    assert calls == [
+        {
+            "repo": REPO,
+            "release_id": 42,
+            "tag": TAG,
+            "source_commit": SHA,
+            "approved_dir": approved,
+            "manifest_path": pinned,
+            "manifest_sha256": "a" * 64,
+            "execute_uploads": True,
+        }
+    ]
+    assert json.loads(capsys.readouterr().out)["readyForFinalInventoryCheck"]
 
 
 def test_github_cli_upload_never_clobbers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -277,15 +338,20 @@ def test_github_cli_upload_never_clobbers(monkeypatch: pytest.MonkeyPatch, tmp_p
 
     def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
         commands.append(args)
-        return SimpleNamespace(args=args, returncode=0, stdout=b"", stderr=b"")
+        payload = b'{"id":101,"name":"A.whl","state":"uploaded"}'
+        return SimpleNamespace(args=args, returncode=0, stdout=payload, stderr=b"")
 
     monkeypatch.setattr("scripts.stage_draft_release_assets.subprocess.run", fake_run)
     monkeypatch.setattr("scripts.stage_draft_release_assets.shutil.which", lambda _: "/usr/bin/gh")
     client = GitHubCLI()
-    client.upload_asset(REPO, TAG, tmp_path / "A.whl")
+    client.upload_asset(REPO, 42, tmp_path / "A.whl")
     assert len(commands) == 1
-    assert commands[0][:3] == ["/usr/bin/gh", "release", "upload"]
+    assert commands[0][:3] == ["/usr/bin/gh", "api", "-X"]
+    assert commands[0][-1] == (
+        f"https://uploads.github.com/repos/{REPO}/releases/42/assets?name=A.whl"
+    )
     assert "--clobber" not in commands[0]
+    assert "--input" in commands[0]
 
 
 @pytest.mark.parametrize("kind", ["commit", "tag", "blob", "malformed"])
@@ -408,3 +474,40 @@ def test_upload_failure_is_not_retried_automatically(
     with pytest.raises(ValueError, match="transport"):
         stage(client, **args, execute_uploads=True)
     assert client.upload_calls == ["A.whl"]
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        b"null",
+        b"[]",
+        b'{"id":0,"name":"A.whl","state":"uploaded"}',
+        b'{"id":true,"name":"A.whl","state":"uploaded"}',
+        b'{"id":101,"name":"other.whl","state":"uploaded"}',
+        b'{"id":101,"name":"A.whl","state":"starter"}',
+    ],
+)
+def test_api_upload_requires_valid_ack(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, response: bytes
+) -> None:
+    from scripts import stage_draft_release_assets as module
+
+    monkeypatch.setattr(module.GitHubCLI, "_run", staticmethod(lambda _: response))
+    path = tmp_path / "A.whl"
+    with pytest.raises(ValueError, match="did not confirm"):
+        GitHubCLI().upload_asset(REPO, 42, path)
+
+
+def test_api_asset_name_is_url_encoded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from scripts import stage_draft_release_assets as module
+
+    arguments: list[list[str]] = []
+
+    def fake_run(args: list[str]) -> bytes:
+        arguments.append(args)
+        return b'{"id":10,"name":"my asset #1.whl","state":"uploaded"}'
+
+    monkeypatch.setattr(module.GitHubCLI, "_run", staticmethod(fake_run))
+    path = tmp_path / "my asset #1.whl"
+    GitHubCLI().upload_asset(REPO, 42, path)
+    assert arguments[0][-1].endswith("/releases/42/assets?name=my%20asset%20%231.whl")

@@ -1,7 +1,7 @@
 """Safely reconcile an existing GitHub draft Release without publishing it (#1179).
 
 The default is read-only. --execute-uploads requires explicit release identity
-confirmation and uploads *missing* assets without --clobber. This program does
+confirmation and uploads *missing* assets by numeric ID (never clobbering). This program does
 not create releases, edit release metadata, change tags, or publish drafts.
 """
 
@@ -15,6 +15,7 @@ import subprocess  # nosec B404 - fixed gh CLI invocation; never uses a shell
 import tempfile
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import quote
 
 from scripts.check_draft_release_inventory import digest, verify
 from scripts.plan_draft_release_retry import _approved_manifest, _draft_metadata, plan
@@ -30,7 +31,7 @@ class DraftClient(Protocol):
 
     def download_asset(self, repo: str, asset_id: int, destination: Path) -> None: ...
 
-    def upload_asset(self, repo: str, tag: str, path: Path) -> None: ...
+    def upload_asset(self, repo: str, release_id: int, path: Path) -> None: ...
 
 
 class GitHubCLI:
@@ -93,8 +94,35 @@ class GitHubCLI:
         if result.returncode:
             raise ValueError(f"GitHub draft asset download failed (exit {result.returncode})")
 
-    def upload_asset(self, repo: str, tag: str, path: Path) -> None:
-        self._run(["release", "upload", tag, str(path), "--repo", repo])
+    def upload_asset(self, repo: str, release_id: int, path: Path) -> None:
+        # Use the independently verified *numeric release ID*, never a tag lookup.
+        # The upload API responds 422 to a name collision and never clobbers.
+        url = (
+            f"https://uploads.github.com/repos/{repo}/releases/{release_id}/assets"
+            f"?name={quote(path.name, safe='')}"
+        )
+        response = json.loads(
+            self._run(
+                [
+                    "api",
+                    "-X",
+                    "POST",
+                    "-H",
+                    "Content-Type: application/octet-stream",
+                    "--input",
+                    str(path),
+                    url,
+                ]
+            )
+        )
+        if (
+            not isinstance(response, dict)
+            or type(response.get("id")) is not int
+            or response["id"] <= 0
+            or response.get("name") != path.name
+            or response.get("state") != "uploaded"
+        ):
+            raise ValueError("GitHub asset upload did not confirm expected file")
 
 
 def _valid_inputs(repo: str, release_id: int, tag: str, source_commit: str) -> None:
@@ -231,7 +259,7 @@ def stage(
             or digest(path) != item["sha256"]
         ):
             raise ValueError("approved asset changed before upload")
-        client.upload_asset(repo, tag, path)
+        client.upload_asset(repo, release_id, path)
     _, final = _reconcile_snapshot(
         client,
         repo=repo,
