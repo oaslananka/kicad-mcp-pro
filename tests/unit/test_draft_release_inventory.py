@@ -275,13 +275,15 @@ def test_release_metadata_must_be_json_object(tmp_path: Path, payload: object) -
 def test_unapproved_absolute_path_is_rejected() -> None:
     from scripts.check_draft_release_inventory import digest
 
+    outside_path = Path.home().parent / "unapproved-release-fixture.txt"
     with pytest.raises(ValueError, match="outside approved automation roots"):
-        digest(Path.home().parent / "unapproved-release-fixture.txt")
+        digest(outside_path)
 
 
 def test_unapproved_asset_directory_is_rejected() -> None:
+    outside_directory = Path.home().parent / "unapproved-release-fixture"
     with pytest.raises(ValueError, match="outside approved automation roots"):
-        manifest_for(Path.home().parent / "unapproved-release-fixture", TAG, SOURCE)
+        manifest_for(outside_directory, TAG, SOURCE)
 
 
 def test_trusted_manifest_is_hashed_and_parsed_from_single_read(
