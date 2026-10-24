@@ -366,3 +366,35 @@ attestations and the draft-to-published transition before it is wired into
 production. The existing nine allowlisted postpublication mutations in seven
 workflows remain. These additions alone do **not** justify enabling immutable
 Releases.
+
+## Owner-run identity preflight for cross-workflow drafts (read-only)
+
+`scripts/check_draft_release_owner.py` adds an offline-testable,
+**read-only** GitHub API identity boundary for the proposed owner-driven
+orchestrator. It is not connected to production publishing and has no write
+flag. It accepts a numeric Release ID, protected tag and reviewed source
+commit, plus an expected owner workflow run ID, retry attempt and main SHA.
+It independently reads the GitHub Actions run, the Release by numeric ID,
+and the protected tag ref (including annotated-tag dereference). The
+owner run main commit must be the **same commit** as the approved tag target;
+a merely active unrelated workflow run cannot adopt an old draft. It rejects
+foreign repositories, PR/fork/other workflow origins, stale run attempts,
+non-main or completed owner runs, published Releases, and changed tags.
+Only an **active manual dispatch of `publish-release.yml` on main** can
+qualify; current production release dispatches and workflows are unchanged.
+
+**Identity is not a lock.** A validated owner run could still race with
+another writer or a late publication. The result intentionally reports
+`exclusiveWriterVerified: false` and `publicationAuthorized: false`.
+Do not promote this output to a write authority, use it as an exception in
+`check_release_asset_mutations.py`, or retire any of the nine legacy
+entries. An eventual single owner workflow must serialize the *entire*
+draft-to-publish lifecycle, with the same protected concurrency domain
+for all owner-triggered writes; callees must be invoked synchronously
+under that run and must recheck live draft identity immediately before
+uploads. Avoid starting independent writers or attempting an unsafe
+`--clobber` recovery. GitHub's Actions concurrency settings are not
+independently attested by the Release or workflow-run REST responses.
+
+Reference: https://docs.github.com/en/rest/actions/workflow-runs
+and https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency
