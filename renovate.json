@@ -1,0 +1,48 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "DISABLED PILOT. Dependabot remains the sole active update PR producer until the cutover is explicitly approved.",
+  "enabled": false,
+  "extends": ["config:recommended"],
+  "dependencyDashboard": true,
+  "timezone": "Europe/Istanbul",
+  "schedule": ["after 3am and before 7am on monday"],
+  "minimumReleaseAge": "5 days",
+  "prConcurrentLimit": 2,
+  "prHourlyLimit": 1,
+  "separateMinorPatch": true,
+  "rebaseWhen": "behind-base-branch",
+  "automerge": false,
+  "platformAutomerge": false,
+  "enabledManagers": ["pep621", "npm", "github-actions", "dockerfile", "docker-compose", "cargo"],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "minimumReleaseAge": null,
+    "dependencyDashboardApproval": false
+  },
+  "lockFileMaintenance": {
+    "enabled": false,
+    "schedule": ["before 4am on monday"],
+    "automerge": false
+  },
+  "packageRules": [
+    {
+      "description": "Patch updates are candidates for a separately approved protected Mergify queue, not automatic merges.",
+      "matchUpdateTypes": ["patch"],
+      "labels": ["dependencies", "renovate-patch"],
+      "automerge": false
+    },
+    {
+      "description": "Minor updates need CI and explicit review during pilot.",
+      "matchUpdateTypes": ["minor"],
+      "labels": ["dependencies", "renovate-minor"],
+      "automerge": false
+    },
+    {
+      "description": "Breaking upgrades need Dependency Dashboard permission before creating any PR.",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
+      "labels": ["dependencies", "renovate-major"],
+      "automerge": false
+    }
+  ]
+}
