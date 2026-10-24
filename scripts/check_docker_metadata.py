@@ -86,7 +86,19 @@ def _check_base_dockerfile_markers(
 def _check_dockerfile_runtime(dockerfile: str, errors: list[str]) -> None:
     if "python:3.14.5-alpine3.22@sha256:" not in dockerfile:
         errors.append("Dockerfile must use the pinned Python 3.14.5 Alpine base")
-    if "python:3.14.9-slim@sha256:" not in dockerfile:
+    # Both named KiCad 10 stages must use the same digest. One valid FROM
+    # must not mask an unpinned or stale peer stage.
+    kicad10_images = re.findall(
+        r"^FROM python:3\.14\.9-slim@sha256:([0-9a-f]{64}) "
+        r"AS (builder-kicad10|runtime-kicad10)$",
+        dockerfile,
+        flags=re.MULTILINE,
+    )
+    if (
+        len(kicad10_images) != 2
+        or {stage for _, stage in kicad10_images} != {"builder-kicad10", "runtime-kicad10"}
+        or len({digest for digest, _ in kicad10_images}) != 1
+    ):
         errors.append("Dockerfile must use the pinned Python 3.14.9 slim base for KiCad 10 stages")
     if (
         "ENV PYTHONDONTWRITEBYTECODE=1" not in dockerfile
