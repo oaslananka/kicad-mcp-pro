@@ -43,7 +43,8 @@ class GitHubCLI:
 
     @staticmethod
     def _run(arguments: list[str]) -> bytes:
-        result = subprocess.run(  # nosec B603 - gh absolute path, argv list, shell disabled
+        # Trusted gh path is absolute; argv is passed directly without shell expansion.
+        result = subprocess.run(  # nosec B603  # nosemgrep
             [GitHubCLI._gh(), *arguments], capture_output=True, check=False
         )
         if result.returncode:
@@ -76,7 +77,8 @@ class GitHubCLI:
 
     def download_asset(self, repo: str, asset_id: int, destination: Path) -> None:
         with destination.open("xb") as output:
-            result = subprocess.run(  # nosec B603 - fixed gh executable, no shell
+            # The only executable is trusted gh; user strings stay argv elements.
+            result = subprocess.run(  # nosec B603  # nosemgrep
                 [
                     self._gh(),
                     "api",
