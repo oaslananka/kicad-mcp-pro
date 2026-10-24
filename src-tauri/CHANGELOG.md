@@ -1,5 +1,14 @@
 # Changelog
 
+## [4.4.0](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v4.3.0...kicad-mcp-gui-v4.4.0) (2026-10-24)
+
+
+### Bug Fixes
+
+* **quality:** resolve idioms, regex simplifications, and cleanups ([#1299](https://github.com/oaslananka/kicad-mcp-pro/issues/1299)) ([fece559](https://github.com/oaslananka/kicad-mcp-pro/commit/fece5599b153886a7bb24f5a1a5a652faa29bb1d))
+* **quality:** resolve production code smells and nested conditionals ([#1297](https://github.com/oaslananka/kicad-mcp-pro/issues/1297)) ([42fd070](https://github.com/oaslananka/kicad-mcp-pro/commit/42fd070e565fb98f06dfb4de5977cd72627510e9))
+* **security:** patch Tokio RustSec-2026-0386 in Tauri lockfile ([#1439](https://github.com/oaslananka/kicad-mcp-pro/issues/1439)) ([38d086e](https://github.com/oaslananka/kicad-mcp-pro/commit/38d086eca91f85e430c0415932a967118142151f))
+
 ## [4.3.0](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v4.2.0...kicad-mcp-gui-v4.3.0) (2026-10-11)
 
 

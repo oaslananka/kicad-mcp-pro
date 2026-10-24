@@ -96,9 +96,6 @@ kicad10FeatureParity:
   baseline: 10.0.7
   primaryIssue: https://github.com/oaslananka/kicad-mcp-pro/issues/427
   documentation: docs/compatibility/kicad-10-0-7-feature-parity.md
-  # The reviewed 10.0.6 baseline is retained as a historical document.
-  # 10.0.7 scope is bounded to tested existing product surfaces: unshipped
-  # expanded IPC wrappers and unsupported CLI Allegro imports remain blocked.
   candidatePatchReview:
     version: 10.0.7
     reviewed: '2026-10-23'
@@ -120,9 +117,9 @@ kicad10FeatureParity:
         - .github/workflows/kicad-live-e2e.yml
         - .github/workflows/dev-bootstrap.yml
       reason: >-
-        Preserve the previously qualified Jammy lane while the official
-        10.0.7 Jammy PPA build remains blocked by the observed libgit2 error;
-        Ubuntu 24.04 10.0.7 evidence must not be treated as Jammy evidence.
+        Preserve the previously qualified Jammy lane while the official 10.0.7
+        Jammy PPA build remains blocked by the observed libgit2 error; Ubuntu
+        24.04 10.0.7 evidence must not be treated as Jammy evidence.
     qualificationEvidence:
       platformMatrix: docs/evidence/kicad-10-0-7/2026-10-23-platform-checkpoint.md
       windowsGuiRun: https://github.com/oaslananka/kicad-mcp-pro/actions/runs/39960284615
@@ -394,7 +391,9 @@ kicad10FeatureParity:
         status: blocked
         issue: https://github.com/oaslananka/kicad-mcp-pro/issues/1181
         nativeSurface: KiCad 10.0.7 IPC tables, reference points and embedded files
-        productSurface: Not exposed through MCP until stable official Python wrappers are available and live roundtrip tests pass
+        productSurface: >-
+          Not exposed through MCP until stable official Python wrappers are
+          available and live roundtrip tests pass
         evidence:
           - path:scripts/kicad_107_ipc_binding_gate.py
           - path:tests/unit/test_kicad_107_ipc_binding_gate.py
@@ -402,8 +401,8 @@ kicad10FeatureParity:
         notes: >-
           The official stable kicad-python package is 0.8.0, while newly
           documented wrappers need 0.9.0 or later; this repo pins 0.7.1.
-          Existing tested live IPC remains supported, but these new objects
-          fail closed and have not passed real GUI roundtrips.
+          Existing tested live IPC remains supported, but these new objects fail
+          closed and have not passed real GUI roundtrips.
       swig_pcbnew_direct_dependency:
         status: blocked
         nativeSurface: Deprecated SWIG pcbnew Python bindings
@@ -708,7 +707,7 @@ mcp:
 products:
   kicad-mcp-pro:
     packagePath: pyproject.toml
-    version: 4.3.0
+    version: 4.4.0
     compatibleExtension:
       required: '>=1.0.0 <2.0.0'
       testedAgainst: 1.0.0

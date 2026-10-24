@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.4.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-npm-v4.3.0...mcp-npm-v4.4.0) (2026-10-24)
+
+
+### Features
+
+* **compat:** qualify KiCad 10.0.7 with explicit IPC exceptions ([#1432](https://github.com/oaslananka/kicad-mcp-pro/issues/1432)) ([c2f2fe7](https://github.com/oaslananka/kicad-mcp-pro/commit/c2f2fe7d10ca609b5265cff6873086c824ed18a0))
+
 ## [4.3.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-npm-v4.2.0...mcp-npm-v4.3.0) (2026-10-11)
 
 
