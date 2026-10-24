@@ -41,8 +41,8 @@ def test_opentelemetry_api_security_floor_uses_patched_family() -> None:
         _assert_all_locked_versions_patched(lock["package"], package, "1.45.1")
 
 
-def test_pypdf_security_floor_blocks_six_dependabot_regressions() -> None:
-    """PDF resource-exhaustion advisories require >=6.21.0; JPEG >=6.21.1.
+def test_pypdf_security_floor_blocks_known_dependabot_regressions() -> None:
+    """PDF resource-exhaustion advisories require >=6.21.2 as of 2026-10-24.
 
     GHSA-6vvc-x485-93v7, GHSA-f54x-cmq8-qg57, GHSA-cgf9-327m-v77c,
     GHSA-5hx5-vpf9-5wcv, GHSA-qfv9-64jg-mh7p, GHSA-9mx8-4j7g-633p.
@@ -51,8 +51,8 @@ def test_pypdf_security_floor_blocks_six_dependabot_regressions() -> None:
     uv_lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
 
     dev_dependencies = pyproject["project"]["optional-dependencies"]["dev"]
-    assert "pypdf==6.21.1" in dev_dependencies
-    _assert_all_locked_versions_patched(uv_lock["package"], "pypdf", "6.21.1")
+    assert "pypdf==6.21.2" in dev_dependencies
+    _assert_all_locked_versions_patched(uv_lock["package"], "pypdf", "6.21.2")
 
 
 def test_opentelemetry_otlp_exporters_share_patched_runtime_floor() -> None:
@@ -123,9 +123,9 @@ def test_root_pnpm_lock_uses_patched_fast_uri() -> None:
     lock = (ROOT / "pnpm-lock.yaml").read_text(encoding="utf-8")
     versions = {Version(value) for value in re.findall(r"fast-uri@(\d+\.\d+\.\d+)", lock)}
 
-    assert workspace["overrides"]["fast-uri"] == "3.1.8"  # nosec B101
+    assert workspace["overrides"]["fast-uri"] == "3.1.9"  # nosec B101
     assert versions
-    assert min(versions) >= Version("3.1.8")  # nosec B101
+    assert min(versions) >= Version("3.1.9")  # nosec B101
 
 
 def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
@@ -134,13 +134,13 @@ def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
 
     assert package["overrides"]["@hono/node-server"] == "2.1.3"
     assert package["overrides"]["hono"] == "4.13.13"
-    assert package["overrides"]["fast-uri"] == "3.1.8"  # nosec B101
+    assert package["overrides"]["fast-uri"] == "3.1.9"  # nosec B101
     assert package["overrides"]["qs"] == "6.16.0"
 
     patched = {
         "node_modules/@hono/node-server": "2.1.3",
         "node_modules/hono": "4.13.13",
-        "node_modules/fast-uri": "3.1.8",
+        "node_modules/fast-uri": "3.1.9",
         "node_modules/qs": "6.16.0",
         "node_modules/ip-address": "10.7.4",
     }
