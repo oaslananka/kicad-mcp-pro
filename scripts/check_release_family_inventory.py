@@ -53,12 +53,12 @@ def _roles(family: str, version: str) -> dict[str, str]:
         }
     if family == "kicad-mcp-gui":
         return {
-            "deb": rf"linux_[A-Za-z0-9_-]+_{v}_[A-Za-z0-9_-]+\.deb",
-            "rpm": rf"linux_[A-Za-z0-9_-]+-{v}-\d+\.[A-Za-z0-9_.-]+\.rpm",
-            "appimage": rf"linux_[A-Za-z0-9_-]+_{v}_[A-Za-z0-9_-]+\.AppImage",
-            "dmg": rf"macos_[A-Za-z0-9_-]+_{v}_[A-Za-z0-9_-]+\.dmg",
-            "msi": rf"windows_[A-Za-z0-9_-]+_{v}_[A-Za-z0-9_-]+\.msi",
-            "exe": rf"windows_[A-Za-z0-9_-]+_{v}_[A-Za-z0-9_-]+\.exe",
+            "deb": rf"linux_KiCad-MCP-Pro_{v}_amd64\.deb",
+            "rpm": rf"linux_KiCad-MCP-Pro-{v}-1\.x86_64\.rpm",
+            "appimage": rf"linux_KiCad-MCP-Pro_{v}_amd64\.AppImage",
+            "dmg": rf"macos_KiCad-MCP-Pro_{v}_aarch64\.dmg",
+            "msi": rf"windows_KiCad-MCP-Pro_{v}_x64_en-US\.msi",
+            "exe": rf"windows_KiCad-MCP-Pro_{v}_x64-setup\.exe",
             "hashes": r"kicad-mcp-pro-gui-SHA256SUMS\.txt",
             "sbom": r"kicad-mcp-pro-gui-sbom\.cdx\.json",
             "evidence": r"kicad-mcp-pro-gui-release-evidence\.json",

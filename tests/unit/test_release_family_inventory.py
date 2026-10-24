@@ -203,6 +203,39 @@ def test_gui_installer_foreign_version_near_miss_rejected(
         verify_family(**case)
 
 
+@pytest.mark.parametrize(
+    "unreviewed",
+    [
+        "linux_KiCad-MCP-Foreign_4.4.0_amd64.deb",
+        "linux_KiCad-MCP-Pro_4.4.0_arm64.deb",
+        "linux_KiCad-MCP-Foreign-4.4.0-1.x86_64.rpm",
+        "linux_KiCad-MCP-Pro-4.4.0-2.x86_64.rpm",
+        "linux_KiCad-MCP-Pro_4.4.0_arm64.AppImage",
+        "macos_KiCad-MCP-Foreign_4.4.0_aarch64.dmg",
+        "macos_KiCad-MCP-Pro_4.4.0_x64.dmg",
+        "windows_KiCad-MCP-Pro_4.4.0_arm64_en-US.msi",
+        "windows_KiCad-MCP-Pro_4.4.0_x64-setup-fake.exe",
+        "windows_KiCad-MCP-Foreign_4.4.0_x64-setup.exe",
+    ],
+)
+def test_unreviewed_gui_product_architecture_or_format_fails_closed(
+    tmp_path: Path, unreviewed: str
+) -> None:
+    case = _case(tmp_path, "kicad-mcp-gui-v4.4.0")
+
+    def foreign(document: dict[str, Any]) -> None:
+        suffix = unreviewed.rsplit(".", maxsplit=1)[-1]
+        for asset in document["assets"]:
+            if asset["name"].endswith("." + suffix):
+                asset["name"] = unreviewed
+                return
+        raise AssertionError("fixture asset missing")
+
+    _change(case, foreign)
+    with pytest.raises(ValueError, match="unexpected"):
+        verify_family(**case)
+
+
 def test_manifest_pin_must_be_external(tmp_path: Path) -> None:
     case = _case(tmp_path, "mcp-server-v4.4.0")
     case["manifest_sha256"] = "0" * 64
