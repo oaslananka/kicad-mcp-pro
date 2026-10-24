@@ -37,6 +37,43 @@ def test_dockerfile_runtime_rejects_stale_or_unpinned_alpine_base(
     assert "Dockerfile must use the pinned Python 3.14.9 Alpine 3.23 base" in errors
 
 
+@pytest.mark.parametrize("stage", ["builder", "runtime"])
+@pytest.mark.parametrize(
+    "replacement",
+    ["3.14.5-alpine3.22@sha256:" + "a" * 64, "3.14.9-alpine3.23"],
+)
+def test_dockerfile_runtime_rejects_single_unpinned_alpine_stage(
+    stage: str, replacement: str
+) -> None:
+    dockerfile = (docker.PACKAGE_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    dockerfile, replaced = re.subn(
+        rf"3\.14\.9-alpine3\.23@sha256:[0-9a-f]{{64}}(?= AS {stage}$)",
+        replacement,
+        dockerfile,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    assert replaced == 1
+    errors: list[str] = []
+    docker._check_dockerfile_runtime(dockerfile, errors)
+    assert "Dockerfile must use the pinned Python 3.14.9 Alpine 3.23 base" in errors
+
+
+def test_dockerfile_runtime_rejects_alpine_digest_mismatch() -> None:
+    dockerfile = (docker.PACKAGE_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    dockerfile, replaced = re.subn(
+        r"(?<=sha256:)[0-9a-f]{64}(?= AS runtime$)",
+        "c" * 64,
+        dockerfile,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    assert replaced == 1
+    errors: list[str] = []
+    docker._check_dockerfile_runtime(dockerfile, errors)
+    assert "Dockerfile must use the pinned Python 3.14.9 Alpine 3.23 base" in errors
+
+
 @pytest.mark.parametrize("replacement", ["3.14.7-slim@sha256:" + "a" * 64, "3.14.9-slim"])
 def test_dockerfile_runtime_rejects_stale_or_unpinned_python_base(replacement: str) -> None:
     dockerfile = (docker.PACKAGE_ROOT / "Dockerfile").read_text(encoding="utf-8")
