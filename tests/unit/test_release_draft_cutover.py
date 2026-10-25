@@ -160,7 +160,6 @@ def test_safe_loader_exposes_github_on_keyword_as_bool() -> None:
     assert yaml.safe_load("on:\n  push:\n") == {True: {"push": None}}
 
 
-
 @pytest.mark.parametrize(
     "event_map",
     [
