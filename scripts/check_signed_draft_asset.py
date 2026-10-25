@@ -91,12 +91,29 @@ def verify_signed_asset(
     source_commit: str,
     kind: str,
     source_ref: str = "refs/heads/main",
+    producer_run_id: int | None = None,
+    producer_run_attempt: int | None = None,
 ) -> dict[str, object]:
     match = _VERSION.fullmatch(tag)
     if match is None or _SHA.fullmatch(source_commit) is None or kind not in _SIGNERS:
         raise ValueError("unapproved signed package identity")
     if source_ref not in {"refs/heads/main", f"refs/tags/{tag}"}:
         raise ValueError("signed package source ref must match main or the exact approved tag")
+    if (producer_run_id is None) != (producer_run_attempt is None):
+        raise ValueError("producer run ID and attempt must be provided together")
+    if producer_run_id is not None and (
+        type(producer_run_id) is not int
+        or producer_run_id <= 0
+        or type(producer_run_attempt) is not int
+        or producer_run_attempt <= 0
+    ):
+        raise ValueError("invalid producer run ID or attempt")
+    expected_invocation = (
+        f"https://github.com/{REPOSITORY}/actions/runs/"
+        f"{producer_run_id}/attempts/{producer_run_attempt}"
+        if producer_run_id is not None
+        else None
+    )
     version = match.group(1)
     allowed = _expected(version)["python_dist" if kind == "python" else kind]
     allowed_packages = {n for n in allowed if n.endswith((".whl", ".tar.gz", ".mcpb", ".zip"))}
@@ -116,6 +133,7 @@ def verify_signed_asset(
     if not isinstance(signed, list) or not signed:
         raise ValueError("no cryptographically verified GitHub attestations")
     match_count = 0
+    run_binding_count = 0
     for entry in signed:
         if not isinstance(entry, dict):
             raise ValueError("malformed verified attestation")
@@ -127,6 +145,24 @@ def verify_signed_asset(
             raise ValueError("missing attestation statement")
         if statement.get("predicateType") != _PREDICATE:
             raise ValueError("unexpected signed provenance predicate")
+        if expected_invocation is not None:
+            predicate = statement.get("predicate")
+            run_details = predicate.get("runDetails") if isinstance(predicate, dict) else None
+            metadata = run_details.get("metadata") if isinstance(run_details, dict) else None
+            signature = result.get("signature")
+            certificate = signature.get("certificate") if isinstance(signature, dict) else None
+            statement_invocation = (
+                metadata.get("invocationId") if isinstance(metadata, dict) else None
+            )
+            certificate_invocation = (
+                certificate.get("runInvocationURI") if isinstance(certificate, dict) else None
+            )
+            run_matches = (
+                statement_invocation == expected_invocation
+                and certificate_invocation == expected_invocation
+            )
+        else:
+            run_matches = False
         subjects = statement.get("subject")
         if not isinstance(subjects, list):
             raise ValueError("signed provenance has no subjects")
@@ -138,8 +174,12 @@ def verify_signed_asset(
                 and subject["digest"].get("sha256") == artifact_digest
             ):
                 match_count += 1
+                if run_matches:
+                    run_binding_count += 1
     if match_count == 0:
         raise ValueError("verified signatures do not cover the expected package digest")
+    if expected_invocation is not None and run_binding_count == 0:
+        raise ValueError("signed SLSA invocation does not match exact producer run and attempt")
     # Ensure the verified package did not change while fetching signed evidence.
     check = _sha256(path)
     if check != artifact_digest:
@@ -154,6 +194,9 @@ def verify_signed_asset(
         "sourceRef": source_ref,
         "verifiedMatchingAttestationCount": match_count,
         "signedAttestationVerified": True,
+        "producerRunInvocationVerified": expected_invocation is not None,
+        "producerRunId": producer_run_id,
+        "producerRunAttempt": producer_run_attempt,
         "producerJobBindingVerified": False,
         "registryReceiptVerified": False,
         "publicationAuthorized": False,
@@ -171,6 +214,8 @@ def main() -> int:
         default="refs/heads/main",
         help="Signed source ref: refs/heads/main or refs/tags/<exact tag>",
     )
+    p.add_argument("--producer-run-id", type=int)
+    p.add_argument("--producer-run-attempt", type=int)
     args = p.parse_args()
     try:
         result = verify_signed_asset(
@@ -180,6 +225,8 @@ def main() -> int:
             source_commit=args.source_commit,
             kind=args.kind,
             source_ref=args.source_ref,
+            producer_run_id=args.producer_run_id,
+            producer_run_attempt=args.producer_run_attempt,
         )
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         p.exit(2, f"signed draft package attestation: FAIL: {exc}\n")

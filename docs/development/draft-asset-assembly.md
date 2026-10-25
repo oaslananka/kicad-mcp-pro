@@ -163,6 +163,43 @@ provenance cannot pass the stricter SLSA gate, even when its existing
 cryptographic source provenance; update/review the producer's attestation
 contract first if necessary. No live signed package acceptance is yet claimed.
 
+### Cryptographic SLSA producer-run identity (real v4.4.0 acceptance)
+
+GitHub's **verified** `https://slsa.dev/provenance/v1` JSON includes two
+independent statements of the producing workflow invocation: the predicate
+`runDetails.metadata.invocationId` and the Sigstore certificate's
+`runInvocationURI`. The read-only `check_signed_draft_asset` command
+can now require that **both** identify the exact independently approved
+`producer_run_id` and `producer_run_attempt`:
+
+```bash
+python -m scripts.check_signed_draft_asset   --kind mcpb   --package "$EXTRACTED/mcpb/kicad-mcp-pro-4.5.0.mcpb"   --tag mcp-server-v4.5.0   --source-commit "$REVIEWED_MAIN_SHA"   --source-ref refs/heads/main   --producer-run-id "$APPROVED_PRODUCER_RUN_ID"   --producer-run-attempt "$APPROVED_PRODUCER_RUN_ATTEMPT"
+```
+
+These two flags must be provided together. The expected run and attempt IDs
+must come from the separately validated owner plan, **not** be inferred from
+untrusted package contents. Even if multiple valid attestations exist for
+the same artifact, the check rejects the package unless at least one
+cryptographically verified subject matches the actual package digest and
+**both** invocation URIs match the expected run/attempt. Supplying no run
+ID keeps the standalone historical signature check but explicitly returns
+`producerRunInvocationVerified=false`. The owner must require `true`.
+
+**Real live test:** the already-published v4.4.0 MCPB (SHA-256
+`7e429e76cac30f95cce7b11ce86dced32ef0f2f57bbe3446b0795c8f505da3f3`)
+was downloaded read-only from GitHub and verified online with exact tag,
+signer, source SHA `285be423edd2d16c799f4cb20b60858a4a729010`
+and producing run `40050705072` attempt `1`. **PASS**. The
+same signed artifact with run attempt `2` was **rejected**. The actual
+signed predicate and certificate independently contained
+`https://github.com/oaslananka/kicad-mcp-pro/actions/runs/40050705072/attempts/1`.
+
+This adds **cryptographic linkage to the workflow run/attempt**, not proof
+of the particular producer **job**, identity/approval of an owner plan,
+registry receipt, exclusive writer or readiness to make a Release public.
+Those remain separate required gates. No new attestation, tag or Release
+was created by this test.
+
 These checks still do **not** prove registry receipts, GitHub artifact-to-job
 binding, the exclusive writer lock, actual draft Release upload/read-back or
 authority to switch releases public. A single automatic owner must connect
