@@ -22,22 +22,10 @@ REPOSITORY = "oaslananka/kicad-mcp-pro"
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ARTIFACT_WORKFLOWS: dict[str, set[str]] = {
-    "python-dist": {
-        ".github/workflows/publish-python.yml",
-        ".github/workflows/publish-release.yml",
-    },
-    "python-release-evidence": {
-        ".github/workflows/publish-python.yml",
-        ".github/workflows/publish-release.yml",
-    },
-    "mcpb-release-evidence": {
-        ".github/workflows/publish-mcpb.yml",
-        ".github/workflows/publish-release.yml",
-    },
-    "kicad-pcm-release-evidence": {
-        ".github/workflows/publish-kicad-pcm.yml",
-        ".github/workflows/publish-release.yml",
-    },
+    "python-dist": {".github/workflows/publish-python.yml"},
+    "python-release-evidence": {".github/workflows/publish-python.yml"},
+    "mcpb-release-evidence": {".github/workflows/publish-mcpb.yml"},
+    "kicad-pcm-release-evidence": {".github/workflows/publish-kicad-pcm.yml"},
 }
 
 

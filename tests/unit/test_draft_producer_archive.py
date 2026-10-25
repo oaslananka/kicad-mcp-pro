@@ -9,7 +9,11 @@ from typing import Any
 
 import pytest
 
-from scripts.check_draft_producer_archive import REPOSITORY, verify_archive
+from scripts.check_draft_producer_archive import (
+    _ARTIFACT_WORKFLOWS,
+    REPOSITORY,
+    verify_archive,
+)
 
 SHA = "a" * 40
 RUN_ID = 991122
@@ -28,7 +32,7 @@ class FakeClient:
             "url": f"https://api.github.com/repos/{REPOSITORY}/actions/runs/{RUN_ID}",
             "repository": {"id": REPO_ID, "full_name": REPOSITORY},
             "head_repository": {"id": REPO_ID, "full_name": REPOSITORY},
-            "path": ".github/workflows/publish-release.yml",
+            "path": next(iter(_ARTIFACT_WORKFLOWS[role])),
             "event": "workflow_dispatch",
             "head_branch": "main",
             "head_sha": SHA,
@@ -146,6 +150,13 @@ def test_artifact_workflow_linkage_rejected(tmp_path: Path, field: str, value: o
     client, kwargs = _case(tmp_path)
     client.art["workflow_run"][field] = value
     with pytest.raises(ValueError, match="different workflow run"):
+        verify_archive(client, **kwargs)
+
+
+def test_release_owner_workflow_cannot_masquerade_as_family_producer(tmp_path: Path) -> None:
+    client, kwargs = _case(tmp_path, "mcpb-release-evidence")
+    client.run["path"] = ".github/workflows/publish-release.yml"
+    with pytest.raises(ValueError, match="approved completed main producer"):
         verify_archive(client, **kwargs)
 
 

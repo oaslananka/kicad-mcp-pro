@@ -82,3 +82,89 @@ must use separately reviewed per-job evidence instead of weakening this gate.
 The check never authorizes a publish or performs GitHub writes. It also
 does not independently authorize the input `--run-id`/`--artifact-id` values:
 the single owner must freeze them from a separately trusted plan.
+
+## Exact producer-job readiness (separate from artifact ZIP)
+
+Before approving a completed producer workflow's output, confirm the exact
+job ID and run attempt with a separate read-only GitHub Actions job API check:
+
+```bash
+python -m scripts.check_draft_producer_job \
+  --repo oaslananka/kicad-mcp-pro \
+  --role mcpb-release-evidence \
+  --run-id "$APPROVED_PRODUCER_RUN_ID" \
+  --run-attempt "$APPROVED_PRODUCER_RUN_ATTEMPT" \
+  --job-id "$APPROVED_PRODUCER_JOB_ID" \
+  --source-commit "$REVIEWED_MAIN_SHA"
+```
+
+This rechecks the protected repository, workflow path, successful main
+workflow-dispatch run/attempt, exact expected build job, successful attestation
+step, and artifact upload step in the correct sequence. The job collection must
+be complete rather than silently trusting a truncated first page. The archive
+validator now refuses release-owner workflow paths in place of the **actual
+per-family producer path**, even if an otherwise plausible archive was uploaded.
+
+A successful Actions job is only **job metadata evidence**. GitHub artifact
+metadata does not directly cryptographically link the archive to a particular
+job within the run. The output therefore explicitly returns
+`artifactProducedByThisJobVerified=false`, and never authorizes publication.
+
+## Safely extract a previously verified ZIP
+
+After `check_draft_producer_archive`, use the extraction gate instead of
+unfiltered `unzip` or `zipfile.extractall`:
+
+```bash
+python -m scripts.extract_draft_producer_zip \
+  --role mcpb-release-evidence \
+  --tag mcp-server-v4.5.0 \
+  --run-id "$APPROVED_PRODUCER_RUN_ID" \
+  --run-attempt "$APPROVED_PRODUCER_RUN_ATTEMPT" \
+  --artifact-id "$APPROVED_MCPB_ARTIFACT_ID" \
+  --head-sha "$REVIEWED_MAIN_SHA" \
+  --downloaded-zip "$DOWNLOADS/mcpb-release-evidence.zip" \
+  --output "$EXTRACTED/mcpb"
+```
+
+Extraction **rechecks** GitHub ZIP digest and metadata, requires the exact
+flat filename set for that package version, rejects unsafe paths, symlinks,
+encrypted/empty members, duplicates and excessive decompression sizes/ratios.
+After CRC-checked extraction it rehashes the original ZIP and atomically
+creates a *new* output directory. No file gets executed, published or
+uploaded by the extractor.
+
+## Signed package acceptance
+
+On each extracted distributable (both Python wheel/sdist, MCPB and PCM ZIP),
+invoke the cryptographic GitHub attestation verifier:
+
+```bash
+python -m scripts.check_signed_draft_asset \
+  --kind mcpb \
+  --package "$EXTRACTED/mcpb/kicad-mcp-pro-4.5.0.mcpb" \
+  --tag mcp-server-v4.5.0 \
+  --source-commit "$REVIEWED_MAIN_SHA"
+```
+
+The gate requires a **successful** `gh attestation verify` with the exact
+`--repo`, individual allowed `--signer-workflow`, `--source-ref
+refs/heads/main`, `--source-digest`, SLSA provenance predicate and JSON
+statement subject digest/name matching the actual package bytes. Empty or
+mismatched cryptographic verification results fail. This is not a local
+signature verifier: **GitHub CLI performs cryptographic verification**, and
+its online verification must be tested on a real signed producer package
+before enabling any publication.
+
+**Important incompatibility to resolve during live acceptance:** a
+producer emitting *only* a CycloneDX SBOM attestation rather than SLSA
+provenance cannot pass the stricter SLSA gate, even when its existing
+`actions/attest` step succeeds. Never silently equate SBOM generation with
+cryptographic source provenance; update/review the producer's attestation
+contract first if necessary. No live signed package acceptance is yet claimed.
+
+These checks still do **not** prove registry receipts, GitHub artifact-to-job
+binding, the exclusive writer lock, actual draft Release upload/read-back or
+authority to switch releases public. A single automatic owner must connect
+them and validate every independent result before the atomic draft-first
+cutover is reviewed. The current published-first flow remains untouched.
