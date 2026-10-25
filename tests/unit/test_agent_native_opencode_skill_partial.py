@@ -59,7 +59,19 @@ def test_native_host_skills_are_bounded_to_actual_public_project_files() -> None
 
 def test_native_skill_discovery_never_claims_mcp_or_release_attestation() -> None:
     report = _record()
-    assert report["hostMcpServerDiscovery"] == "not-run"
+    assert report["hostMcpServerDiscovery"] == "connected"
+    assert report["nativeMcpConnectionProbe"] == {
+        "command": "opencode mcp list --pure",
+        "exitCode": 0,
+        "hostReportedStatus": "connected",
+        "serverLaunch": "isolated-locked-source-executable",
+        "serverSourceRevision": report["sourceRevision"],
+        "serverTransport": "stdio",
+        "serverOperatingMode": "readonly",
+        "serverProfile": "default",
+        "lockedInstall": "uv sync --locked --no-dev",
+        "rawOutputRetained": False,
+    }
     assert report["nativeHostMcpToolCall"] == "not-run"
     assert report["readonlyWriteToolAbsence"] == "not-run"
     assert report["modelInferenceExecuted"] is False

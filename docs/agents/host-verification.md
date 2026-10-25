@@ -86,8 +86,16 @@ ephemeral output's SHA-256. Raw output was deleted with the temporary checkout.
 The isolated XDG paths and `--pure` option do not independently establish
 complete isolation from every host-global discovery source.
 
-**Boundary:** this is *real native-host Skill discovery*, but it is **not**
-evidence of OpenCode's MCP server connection, host-originated
+A separate temporary Windows checkout of the **same exact source revision**
+was installed with `uv sync --locked --no-dev`, then OpenCode 1.18.31 ran
+`opencode mcp list --pure` against an explicit local stdio MCP configuration
+using `readonly/default` settings. The native CLI exited **0** and reported
+the isolated source-built `kicad` server as **Connected**. The installation,
+MCP configuration and stdout/stderr were removed afterward; host credentials
+and user projects were not used for this probe.
+
+**Boundary:** this records *real native-host Skill discovery and native MCP
+connection health*, but **not** an OpenCode host-originated
 `kicad_get_server_info` call, read-only mutation-tool absence or provider
 compatibility. No model inference was requested. The strict native smoke
 validator rejects the partial record; all catalog `smokeStatus` entries remain

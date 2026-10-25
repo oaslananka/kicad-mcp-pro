@@ -27,10 +27,22 @@
     "stderrBytes": 0,
     "rawOutputRetained": false
   },
-  "hostMcpServerDiscovery": "not-run",
+  "hostMcpServerDiscovery": "connected",
   "nativeHostMcpToolCall": "not-run",
   "readonlyWriteToolAbsence": "not-run",
   "modelInferenceExecuted": false,
   "catalogPromotionAuthorized": false,
-  "fullNativeHostSmokeAttested": false
+  "fullNativeHostSmokeAttested": false,
+  "nativeMcpConnectionProbe": {
+    "command": "opencode mcp list --pure",
+    "exitCode": 0,
+    "hostReportedStatus": "connected",
+    "serverLaunch": "isolated-locked-source-executable",
+    "serverSourceRevision": "1afde5d027d15c309cae77827ff6d1d68adbf9fb",
+    "serverTransport": "stdio",
+    "serverOperatingMode": "readonly",
+    "serverProfile": "default",
+    "lockedInstall": "uv sync --locked --no-dev",
+    "rawOutputRetained": false
+  }
 }
