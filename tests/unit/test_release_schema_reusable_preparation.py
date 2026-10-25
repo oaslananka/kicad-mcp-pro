@@ -33,6 +33,7 @@ def test_schema_prep_has_exact_inputs_and_preserves_legacy_events() -> None:
     assert "workflow_dispatch" in events
     condition = config["jobs"]["publish"]["if"]
     assert "github.ref == 'refs/heads/main'" in condition
+    assert "github.repository == 'oaslananka/kicad-mcp-pro'" in condition
     assert "inputs.source_commit != ''" in condition
     assert "inputs.source_commit == ''" in condition
 
