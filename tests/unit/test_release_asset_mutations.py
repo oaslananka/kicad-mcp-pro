@@ -342,6 +342,52 @@ def test_read_only_release_commands_ignored(tmp_path: Path, run: str) -> None:
     assert inventory(tmp_path) == []
 
 
+@pytest.mark.parametrize(
+    "run",
+    [
+        "gh api repos/org/repo/releases -ftag_name=v1",
+        "gh api repos/org/repo/releases -Ftag_name=v1",
+        "gh api repos/org/repo/releases --field=tag_name=v1",
+        "gh api repos/org/repo/releases --raw-field=tag_name=v1",
+        "gh api repos/org/repo/releases --input=payload.json",
+        "curl https://api.github.com/repos/org/repo/releases -dtag_name=v1",
+        "curl https://api.github.com/repos/org/repo/releases --data=tag_name=v1",
+        "curl https://api.github.com/repos/org/repo/releases --data-raw=tag_name=v1",
+        "curl https://api.github.com/repos/org/repo/releases --data-binary=@payload.json",
+        "curl https://api.github.com/repos/org/repo/releases -Ftag_name=v1",
+        "curl https://api.github.com/repos/org/repo/releases -Tpayload.json",
+    ],
+)
+def test_inlined_api_body_arguments_cannot_hide_published_release_write(
+    tmp_path: Path, run: str
+) -> None:
+    _write_workflow(tmp_path, _single_step_workflow(run))
+
+    entries = inventory(tmp_path)
+
+    assert len(entries) == 1
+    assert entries[0].kind == "api_write"
+    assert entries[0].target_state == "published"
+    assert len(validate(entries, [])) == 1
+
+
+@pytest.mark.parametrize(
+    "run",
+    [
+        "gh api repos/org/repo/releases -XGET --input=payload.json",
+        "curl https://api.github.com/repos/org/repo/releases -X GET --data-raw=payload",
+        "gh api repos/org/repo/issues --field=title=notice",
+        "curl https://example.org/data --data-raw=payload",
+    ],
+)
+def test_api_flag_changes_do_not_misclassify_read_only_or_non_release_calls(
+    tmp_path: Path, run: str
+) -> None:
+    _write_workflow(tmp_path, _single_step_workflow(run))
+
+    assert inventory(tmp_path) == []
+
+
 def test_allowlisted_mutation_passes(tmp_path: Path) -> None:
     _write_workflow(tmp_path, _single_step_workflow('gh release upload "$TAG" x --clobber'))
 

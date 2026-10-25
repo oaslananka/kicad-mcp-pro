@@ -235,6 +235,18 @@ def _flag_value(tokens: list[str], short: str | None, long: str) -> str | None:
     return None
 
 
+def _has_payload_flag(tokens: list[str], flags: set[str]) -> bool:
+    """Detect separate and attached CLI payload arguments without prefix confusion."""
+    short = {flag for flag in flags if flag.startswith("-") and not flag.startswith("--")}
+    long = {flag for flag in flags if flag.startswith("--")}
+    return any(
+        token in flags
+        or any(token.startswith(f"{flag}=") for flag in long)
+        or any(token.startswith(flag) and len(token) > len(flag) for flag in short)
+        for token in tokens
+    )
+
+
 def _draft_flag(tokens: list[str]) -> bool | None:
     """Return True for ``--draft``/``--draft=true``, None when absent, else False.
 
@@ -277,7 +289,7 @@ def _classify_segment(segment: str) -> _Match | None:
             return None
         method = _flag_value(rest, "-X", "--method")
         if method is None:
-            method = "POST" if any(token in _GH_API_BODY_FLAGS for token in rest) else "GET"
+            method = "POST" if _has_payload_flag(rest, _GH_API_BODY_FLAGS) else "GET"
         if method.upper() in _WRITE_METHODS:
             return _Match("api_write", False, None, segment)
         return None
@@ -287,7 +299,7 @@ def _classify_segment(segment: str) -> _Match | None:
             return _Match("upload_asset", False, None, segment)
         if any("/releases" in token for token in rest):
             method = _flag_value(rest, "-X", "--request")
-            if method is None and any(token in _CURL_BODY_FLAGS for token in rest):
+            if method is None and _has_payload_flag(rest, _CURL_BODY_FLAGS):
                 method = "POST"
             if method is not None and method.upper() in _WRITE_METHODS:
                 return _Match("api_write", False, None, segment)
