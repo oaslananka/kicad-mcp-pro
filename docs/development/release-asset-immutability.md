@@ -240,9 +240,13 @@ were listed without any write; the actual published release was rejected.
 activated **partway through** a release. The current published-first mode remains
 unchanged. If any Release Please package switches to `draft: true`, the policy
 check requires draft and `force-tag-creation` for every release-producing package,
-owner-invoked `workflow_call` publishers instead of direct tag-push /
-`release: published` writers, and retirement of the existing published-release
-mutation allowlist. The check is enforced by the existing GitHub Actions policy
+owner-invoked `workflow_call` publishers instead of autonomous
+`push`, `release`, `schedule`, `workflow_run` or `repository_dispatch`
+writers. Only `workflow_call`, `workflow_dispatch` and PR validation events
+remain permitted for migrated publishers. The check also requires retirement
+of the existing published-release mutation allowlist, using exactly the same
+effective policy supplied to the GitHub Actions checker (including overrides).
+The check is enforced by the existing GitHub Actions policy
 job; it adds no new services, manual release steps, or runtime calls.
 
 These conditions are **necessary, not sufficient** to publish: source/tag

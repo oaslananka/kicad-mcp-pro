@@ -36,7 +36,7 @@ def _events(workflow: Path) -> dict[str, Any]:
     return events
 
 
-def validate_cutover(root: Path) -> list[str]:
+def validate_cutover(root: Path, policy: dict[str, Any] | None = None) -> list[str]:
     """Reject a partial draft-first switch without changing release state."""
     try:
         config = json.loads((root / "release-please-config.json").read_text(encoding="utf-8"))
@@ -80,25 +80,27 @@ def validate_cutover(root: Path) -> list[str]:
             continue
         if "workflow_call" not in events:
             errors.append(f"{filename}: draft-first publishers require workflow_call")
-        if "release" in events:
-            errors.append(
-                f"{filename}: remove autonomous release event publication before draft cutover"
-            )
-        push = events.get("push")
-        if isinstance(push, dict) and "tags" in push:
-            errors.append(
-                f"{filename}: remove autonomous tag-push publication before draft cutover"
-            )
+        # Only owner-invoked calls/recovery or PR validation are allowed.
+        # Even branch-only push or an empty push mapping can trigger on a tag.
+        allowed_events = {"workflow_call", "workflow_dispatch", "pull_request"}
+        for event in sorted(set(events) - allowed_events):
+            errors.append(f"{filename}: remove autonomous {event} trigger before draft cutover")
 
-    try:
-        policy = json.loads((root / ".github" / "actions-policy.json").read_text(encoding="utf-8"))
-        old_mutations = policy.get("release_asset_mutations", [])
-    except (OSError, ValueError, AttributeError) as exc:
-        errors.append(f"draft cutover cannot read release mutation policy: {exc}")
-    else:
-        if old_mutations:
-            errors.append(
-                "draft cutover requires retiring all 9 legacy published-release mutation allowances"
+    if policy is None:
+        try:
+            policy = json.loads(
+                (root / ".github" / "actions-policy.json").read_text(encoding="utf-8")
             )
+        except (OSError, ValueError) as exc:
+            errors.append(f"draft cutover cannot read release mutation policy: {exc}")
+            return errors
+    if not isinstance(policy, dict):
+        errors.append("draft cutover: release mutation policy must be an object")
+    elif not isinstance(policy.get("release_asset_mutations", []), list):
+        errors.append("draft cutover: release_asset_mutations must be a list")
+    elif policy.get("release_asset_mutations"):
+        errors.append(
+            "draft cutover requires retiring all legacy published-release mutation allowances"
+        )
 
     return errors

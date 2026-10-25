@@ -251,7 +251,7 @@ def validate_repository(root: Path, policy: dict[str, object]) -> list[str]:
         )
 
     # #1179: require an atomic draft-first switch across every release family.
-    errors.extend(validate_cutover(root))
+    errors.extend(validate_cutover(root, policy))
 
     # #1179: ratchet steps that mutate an already-published GitHub Release.
     errors.extend(
