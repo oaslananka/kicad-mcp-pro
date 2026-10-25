@@ -34,6 +34,7 @@ def test_pcm_source_bound_reusable_inputs_with_legacy_triggers_retained() -> Non
     assert "workflow_dispatch" in events
     gate = data["jobs"]["publish"]["if"]
     assert "github.ref == 'refs/heads/main'" in gate
+    assert "github.repository == 'oaslananka/kicad-mcp-pro'" in gate
     assert "inputs.source_commit != ''" in gate
     assert "inputs.source_commit == ''" in gate
 
