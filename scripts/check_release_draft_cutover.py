@@ -36,6 +36,43 @@ def _events(workflow: Path) -> dict[str, Any]:
     return events
 
 
+def _publisher_trigger_errors(root: Path) -> list[str]:
+    """Require one explicit draft owner instead of automatic publisher events."""
+    errors: list[str] = []
+    allowed_events = {"workflow_call", "workflow_dispatch", "pull_request"}
+    for filename in _PUBLISHERS:
+        path = root / ".github" / "workflows" / filename
+        try:
+            events = _events(path)
+        except (OSError, ValueError) as exc:
+            errors.append(str(exc))
+            continue
+        if "workflow_call" not in events:
+            errors.append(f"{filename}: draft-first publishers require workflow_call")
+        for event in sorted(set(events) - allowed_events):
+            errors.append(f"{filename}: remove autonomous {event} trigger before draft cutover")
+    return errors
+
+
+def _legacy_mutation_errors(root: Path, policy: dict[str, Any] | None) -> list[str]:
+    """Use the same effective release mutation allowlist as the policy validator."""
+    if policy is None:
+        try:
+            policy = json.loads(
+                (root / ".github" / "actions-policy.json").read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError) as exc:
+            return [f"draft cutover cannot read release mutation policy: {exc}"]
+    if not isinstance(policy, dict):
+        return ["draft cutover: release mutation policy must be an object"]
+    mutations = policy.get("release_asset_mutations", [])
+    if not isinstance(mutations, list):
+        return ["draft cutover: release_asset_mutations must be a list"]
+    if mutations:
+        return ["draft cutover requires retiring all legacy published-release mutation allowances"]
+    return []
+
+
 def validate_cutover(root: Path, policy: dict[str, Any] | None = None) -> list[str]:
     """Reject a partial draft-first switch without changing release state."""
     try:
@@ -71,36 +108,7 @@ def validate_cutover(root: Path, policy: dict[str, Any] | None = None) -> list[s
             "for every release-producing package, with no mixed-mode releases"
         )
 
-    for filename in _PUBLISHERS:
-        path = root / ".github" / "workflows" / filename
-        try:
-            events = _events(path)
-        except (OSError, ValueError) as exc:
-            errors.append(str(exc))
-            continue
-        if "workflow_call" not in events:
-            errors.append(f"{filename}: draft-first publishers require workflow_call")
-        # Only owner-invoked calls/recovery or PR validation are allowed.
-        # Even branch-only push or an empty push mapping can trigger on a tag.
-        allowed_events = {"workflow_call", "workflow_dispatch", "pull_request"}
-        for event in sorted(set(events) - allowed_events):
-            errors.append(f"{filename}: remove autonomous {event} trigger before draft cutover")
-
-    if policy is None:
-        try:
-            policy = json.loads(
-                (root / ".github" / "actions-policy.json").read_text(encoding="utf-8")
-            )
-        except (OSError, ValueError) as exc:
-            errors.append(f"draft cutover cannot read release mutation policy: {exc}")
-            return errors
-    if not isinstance(policy, dict):
-        errors.append("draft cutover: release mutation policy must be an object")
-    elif not isinstance(policy.get("release_asset_mutations", []), list):
-        errors.append("draft cutover: release_asset_mutations must be a list")
-    elif policy.get("release_asset_mutations"):
-        errors.append(
-            "draft cutover requires retiring all legacy published-release mutation allowances"
-        )
+    errors.extend(_publisher_trigger_errors(root))
+    errors.extend(_legacy_mutation_errors(root, policy))
 
     return errors
