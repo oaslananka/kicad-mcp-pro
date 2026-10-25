@@ -43,7 +43,7 @@ def test_native_host_skills_are_bounded_to_actual_public_project_files() -> None
     discovery = report["skillDiscovery"]
     assert discovery["hostReportedSkillCount"] >= 7
     assert discovery["allSevenDiscovered"] is True
-    assert discovery["allOriginsInsideSourceCheckout"] is True
+    assert discovery["allProjectSkillOriginsInsideSourceCheckout"] is True
     assert set(discovery["expectedProjectSkills"]) == EXPECTED_SKILLS
     for name, relative in discovery["expectedProjectSkills"].items():
         assert relative in {

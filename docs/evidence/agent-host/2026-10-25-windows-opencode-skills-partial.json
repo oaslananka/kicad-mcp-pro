@@ -22,7 +22,7 @@
       "wired-subcircuit-design": ".opencode/skills/wired-subcircuit-design/SKILL.md"
     },
     "allSevenDiscovered": true,
-    "allOriginsInsideSourceCheckout": true,
+    "allProjectSkillOriginsInsideSourceCheckout": true,
     "stdoutSha256": "71ad8831a46832e7116e767c687dc59c153902cd882f2047f213d365230d7113",
     "stderrBytes": 0,
     "rawOutputRetained": false
