@@ -51,7 +51,8 @@ def test_native_host_skills_are_bounded_to_actual_public_project_files() -> None
             f".agents/skills/{name}/SKILL.md",
         }
         source = ROOT / relative
-        assert source.is_file() and not source.is_symlink()
+        assert source.is_file()
+        assert not source.is_symlink()
     assert re.fullmatch(r"[0-9a-f]{64}", discovery["stdoutSha256"])
     assert discovery["stderrBytes"] == 0
     assert discovery["rawOutputRetained"] is False
