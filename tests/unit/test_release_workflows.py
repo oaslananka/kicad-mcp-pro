@@ -83,10 +83,13 @@ def test_protocol_schema_manual_backfill_is_version_bound_to_release_tag() -> No
     workflow = _read(".github/workflows/publish-protocol-schemas.yml")
 
     assert "Existing published protocol-schemas release tag to republish/backfill." in workflow
+    # Owner-invoked preparation uses tag, legacy release/backfill keeps release_tag.
     assert (
-        "ref: ${{ github.event_name == 'release' && "
-        "github.event.release.tag_name || inputs.release_tag }}"
+        "ref: " + chr(36) + "{{ inputs.tag || (github.event_name == 'release' && "
+        "github.event.release.tag_name || inputs.release_tag) }}"
     ) in workflow
+    assert "startsWith(inputs.release_tag, 'protocol-schemas-v')" in workflow
+    assert "startsWith(github.event.release.tag_name, 'protocol-schemas-v')" in workflow
     assert 'version="${RELEASE_TAG#protocol-schemas-v}"' in workflow
     assert "packages/protocol-schemas/package.json" in workflow
     assert 'test "$version" = "$package_version"' in workflow
