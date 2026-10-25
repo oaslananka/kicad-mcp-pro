@@ -27,9 +27,29 @@ _PUBLISHERS = (
 )
 
 
+class _UniqueMappingLoader(yaml.SafeLoader):
+    """Preserve safe YAML construction while rejecting duplicate mappings."""
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict:
+        self.flatten_mapping(node)
+        keys: set[Any] = set()
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in keys:
+                raise ValueError(f"duplicate YAML mapping key: {key!r}")
+            keys.add(key)
+        return super().construct_mapping(node, deep=deep)
+
+
 def _events(workflow: Path) -> dict[str, Any]:
     # PyYAML's YAML 1.1 resolver parses GitHub's 'on' key as boolean True.
-    document = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+    loader = _UniqueMappingLoader(workflow.read_text(encoding="utf-8"))
+    try:
+        document = loader.get_single_data()
+    finally:
+        loader.dispose()
+    if isinstance(document, dict) and True in document and "on" in document:
+        raise ValueError("duplicate GitHub workflow on event mapping")
     events = document.get(True, document.get("on")) if isinstance(document, dict) else None
     if not isinstance(events, dict):
         raise ValueError(f"{workflow.name}: missing workflow event mapping")
@@ -44,8 +64,8 @@ def _publisher_trigger_errors(root: Path) -> list[str]:
         path = root / ".github" / "workflows" / filename
         try:
             events = _events(path)
-        except (OSError, ValueError) as exc:
-            errors.append(str(exc))
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            errors.append(f"{filename}: {exc}")
             continue
         if "workflow_call" not in events:
             errors.append(f"{filename}: draft-first publishers require workflow_call")

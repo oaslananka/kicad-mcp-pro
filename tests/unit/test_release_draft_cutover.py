@@ -158,3 +158,26 @@ def test_invalid_workflow_fails_closed(tmp_path: Path) -> None:
 
 def test_safe_loader_exposes_github_on_keyword_as_bool() -> None:
     assert yaml.safe_load("on:\n  push:\n") == {True: {"push": None}}
+
+
+
+@pytest.mark.parametrize(
+    "event_map",
+    [
+        # A duplicate top-level on key must not hide an autonomous trigger.
+        "on:\n  push:\n    tags: ['v*']\non:\n  workflow_call:\n",
+        # A duplicate event nested in on must be rejected.
+        "on:\n  workflow_call:\n  push:\n    tags: ['v*']\n  push:\n",
+        # Quoted/unquoted on keys must not produce ambiguous triggers.
+        "on:\n  workflow_call:\n'on':\n  workflow_call:\n",
+    ],
+)
+def test_cutover_rejects_duplicate_workflow_event_keys(tmp_path: Path, event_map: str) -> None:
+    root = _fixture(tmp_path)
+    _draft(root)
+    filename = _PUBLISHERS[0]
+    (root / ".github" / "workflows" / filename).write_text(event_map, encoding="utf-8")
+    assert any(
+        error.startswith(f"{filename}:") and "duplicate" in error
+        for error in validate_cutover(root)
+    )
