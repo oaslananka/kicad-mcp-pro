@@ -37,6 +37,7 @@ def test_prepare_mode_is_allowed_only_on_main_with_approved_source() -> None:
     condition = build["if"]
     assert "inputs.source_commit != ''" in condition
     assert "github.ref == 'refs/heads/main'" in condition
+    assert "github.repository == 'oaslananka/kicad-mcp-pro'" in condition
     assert "startsWith(inputs.tag, 'mcp-server-v')" in condition
     assert "inputs.source_commit == ''" in condition
     assert "github.event_name == 'workflow_dispatch'" in condition

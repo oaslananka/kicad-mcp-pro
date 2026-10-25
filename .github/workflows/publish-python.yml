@@ -28,6 +28,7 @@ jobs:
     if: >-
       (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
       ((inputs.source_commit != '' && github.ref == 'refs/heads/main' &&
+        github.repository == 'oaslananka/kicad-mcp-pro' &&
         startsWith(inputs.tag, 'mcp-server-v')) ||
        (inputs.source_commit == '' &&
         ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
