@@ -47,9 +47,11 @@ jobs:
           CALLER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          [[ "$PREPARE_SOURCE" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$CALLER_SHA" == "$PREPARE_SOURCE" ]]
-          [[ "$(git rev-parse HEAD)" == "$PREPARE_SOURCE" ]]
+          # Explicit exits are required: BSD/macOS Bash 3.2 does not always
+          # propagate bare conditional failures through set -e as expected.
+          [[ "$PREPARE_SOURCE" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$CALLER_SHA" == "$PREPARE_SOURCE" ]] || exit 1
+          [[ "$(git rev-parse HEAD)" == "$PREPARE_SOURCE" ]] || exit 1
           case "$RELEASE_TAG" in
             protocol-schemas-v*) ;;
             *)
@@ -59,10 +61,10 @@ jobs:
           esac
           tag_sha="$(git rev-list -n1 "refs/tags/${RELEASE_TAG}")"
           head_sha="$(git rev-parse HEAD)"
-          test "$tag_sha" = "$head_sha"
+          test "$tag_sha" = "$head_sha" || exit 1
           version="${RELEASE_TAG#protocol-schemas-v}"
           package_version="$(python -c 'import json; print(json.load(open("packages/protocol-schemas/package.json"))["version"])')"
-          test "$version" = "$package_version"
+          test "$version" = "$package_version" || exit 1
           echo "sha=$head_sha" >> "$GITHUB_OUTPUT"
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:

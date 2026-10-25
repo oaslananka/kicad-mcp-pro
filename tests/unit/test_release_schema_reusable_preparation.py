@@ -57,11 +57,11 @@ def test_schema_source_verified_before_installs_and_preparation_is_artifact_only
     script = steps[verify]["run"]
     assert steps[verify]["env"]["PREPARE_SOURCE"] == "$" + "{{ inputs.source_commit }}"
     assert steps[verify]["env"]["CALLER_SHA"] == "$" + "{{ github.sha }}"
-    assert '[[ "$CALLER_SHA" == "$PREPARE_SOURCE" ]]' in script
-    assert '[[ "$(git rev-parse HEAD)" == "$PREPARE_SOURCE" ]]' in script
-    assert 'test "$tag_sha" = "$head_sha"' in script
+    assert '[[ "$CALLER_SHA" == "$PREPARE_SOURCE" ]] || exit 1' in script
+    assert '[[ "$(git rev-parse HEAD)" == "$PREPARE_SOURCE" ]] || exit 1' in script
+    assert 'test "$tag_sha" = "$head_sha" || exit 1' in script
     assert 'if [[ -z "$PREPARE_SOURCE" ]]' not in script
-    assert '[[ "$PREPARE_SOURCE" =~ ^[0-9a-f]{40}$ ]]' in script
+    assert '[[ "$PREPARE_SOURCE" =~ ^[0-9a-f]{40}$ ]] || exit 1' in script
     assert any(s.get("name") == "Attest tarball" for s in steps)
     assert any(s.get("name") == "Store release evidence" for s in steps)
 
