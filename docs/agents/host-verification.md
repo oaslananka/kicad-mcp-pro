@@ -91,8 +91,9 @@ was installed with `uv sync --locked --no-dev`, then OpenCode 1.18.31 ran
 `opencode mcp list --pure` against an explicit local stdio MCP configuration
 using `readonly/default` settings. The native CLI exited **0** and reported
 the isolated source-built `kicad` server as **Connected**. The installation,
-MCP configuration and stdout/stderr were removed afterward; host credentials
-and user projects were not used for this probe.
+MCP configuration and stdout/stderr were removed afterward. The retained
+record contains seven repository-relative project Skill paths and no raw
+credentials; it does not establish complete isolation from host-global sources.
 
 **Boundary:** this records *real native-host Skill discovery and native MCP
 connection health*, but **not** an OpenCode host-originated
