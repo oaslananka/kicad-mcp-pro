@@ -10,7 +10,8 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW = ROOT / ".github/workflows/publish-protocol-schemas.yml"
+WORKFLOW = ROOT / ".github/workflows/prepare-protocol-schemas.yml"
+LEGACY = ROOT / ".github/workflows/publish-protocol-schemas.yml"
 
 
 def _config() -> dict:
@@ -20,7 +21,7 @@ def _config() -> dict:
 
 
 def _steps() -> list[dict]:
-    return _config()["jobs"]["publish"]["steps"]
+    return _config()["jobs"]["prepare"]["steps"]
 
 
 def test_schema_prep_has_exact_inputs_and_preserves_legacy_events() -> None:
@@ -29,13 +30,18 @@ def test_schema_prep_has_exact_inputs_and_preserves_legacy_events() -> None:
     inputs = events["workflow_call"]["inputs"]
     assert set(inputs) == {"tag", "source_commit"}
     assert all(i["type"] == "string" and i["required"] is True for i in inputs.values())
-    assert events["release"]["types"] == ["published"]
-    assert "workflow_dispatch" in events
-    condition = config["jobs"]["publish"]["if"]
+    assert set(events) == {"workflow_call"}
+    legacy_events = yaml.safe_load(LEGACY.read_text(encoding="utf-8"))[True]
+    assert legacy_events["release"]["types"] == ["published"]
+    assert "workflow_dispatch" in legacy_events
+    assert "workflow_call" not in legacy_events
+    assert "environment" not in config["jobs"]["prepare"]
+    assert config["jobs"]["prepare"]["permissions"]["contents"] == "read"
+    condition = config["jobs"]["prepare"]["if"]
     assert "github.ref == 'refs/heads/main'" in condition
     assert "github.repository == 'oaslananka/kicad-mcp-pro'" in condition
     assert "inputs.source_commit != ''" in condition
-    assert "inputs.source_commit == ''" in condition
+    assert "inputs.source_commit == ''" not in condition
 
 
 def test_schema_source_verified_before_installs_and_preparation_is_artifact_only() -> None:
@@ -47,27 +53,22 @@ def test_schema_source_verified_before_installs_and_preparation_is_artifact_only
     setup = next(i for i, s in enumerate(steps) if "astral-sh/setup-uv@" in s.get("uses", ""))
     assert verify == checkout + 1
     assert verify < setup
-    assert "inputs.tag ||" in steps[checkout]["with"]["ref"]
+    assert steps[checkout]["with"]["ref"] == "$" + "{{ inputs.tag }}"
     script = steps[verify]["run"]
     assert steps[verify]["env"]["PREPARE_SOURCE"] == "$" + "{{ inputs.source_commit }}"
     assert steps[verify]["env"]["CALLER_SHA"] == "$" + "{{ github.sha }}"
     assert '[[ "$CALLER_SHA" == "$PREPARE_SOURCE" ]]' in script
     assert '[[ "$(git rev-parse HEAD)" == "$PREPARE_SOURCE" ]]' in script
     assert 'test "$tag_sha" = "$head_sha"' in script
-    assert 'if [[ -z "$PREPARE_SOURCE" ]]' in script
+    assert 'if [[ -z "$PREPARE_SOURCE" ]]' not in script
+    assert '[[ "$PREPARE_SOURCE" =~ ^[0-9a-f]{40}$ ]]' in script
     assert any(s.get("name") == "Attest tarball" for s in steps)
     assert any(s.get("name") == "Store release evidence" for s in steps)
 
-    for name in (
-        "Attach evidence to GitHub Release",
-        "Check if version already published",
-        "Verify published tarball",
-    ):
-        item = next(s for s in steps if s.get("name") == name)
-        assert item["if"] == "inputs.source_commit == ''"
-    publication = next(s for s in steps if s.get("name") == "Publish to npm")
-    assert publication["if"].startswith("inputs.source_commit == '' &&")
-    assert "npm publish" in publication["run"]
+    assert "gh release" not in WORKFLOW.read_text(encoding="utf-8")
+    assert "npm publish" not in WORKFLOW.read_text(encoding="utf-8")
+    assert "gh release upload" in LEGACY.read_text(encoding="utf-8")
+    assert "npm publish" in LEGACY.read_text(encoding="utf-8")
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX Bash fixture; workflow runs on Ubuntu")
@@ -75,7 +76,7 @@ def test_schema_source_verified_before_installs_and_preparation_is_artifact_only
     ("prepare", "match", "expect_ok", "expect_gh"),
     [
         (True, True, True, False),
-        (False, True, True, True),
+        (False, True, False, False),
         (True, False, False, False),
     ],
 )

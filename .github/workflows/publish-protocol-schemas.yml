@@ -1,17 +1,6 @@
 name: Publish Protocol Schemas
 
 on:
-  # Called by the eventual draft owner: prepare, hash, attest, and store only.
-  workflow_call:
-    inputs:
-      tag:
-        description: Protected protocol-schemas release tag for preparation.
-        required: true
-        type: string
-      source_commit:
-        description: Exact reviewed main SHA that the release tag must resolve to.
-        required: true
-        type: string
   release:
     types: [published]
   workflow_dispatch:
@@ -28,14 +17,10 @@ jobs:
   publish:
     if: >-
       (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
-      ((inputs.source_commit != '' && github.ref == 'refs/heads/main' &&
-        github.repository == 'oaslananka/kicad-mcp-pro' &&
-        startsWith(inputs.tag, 'protocol-schemas-v')) ||
-       (inputs.source_commit == '' &&
-        ((github.event_name == 'workflow_dispatch' &&
-          startsWith(inputs.release_tag, 'protocol-schemas-v')) ||
-         (github.event_name == 'release' &&
-          startsWith(github.event.release.tag_name, 'protocol-schemas-v')))))
+      ((github.event_name == 'workflow_dispatch' &&
+        startsWith(inputs.release_tag, 'protocol-schemas-v')) ||
+       (github.event_name == 'release' &&
+        startsWith(github.event.release.tag_name, 'protocol-schemas-v')))
     runs-on: ubuntu-24.04
     environment: npm
     permissions:
@@ -51,23 +36,16 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.tag || (github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag) }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
       - name: Verify immutable release source
         id: source
         working-directory: ${{ github.workspace }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.tag || (github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag) }}
-          PREPARE_SOURCE: ${{ inputs.source_commit }}
-          CALLER_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
         run: |
           set -euo pipefail
-          if [[ -n "$PREPARE_SOURCE" ]]; then
-            [[ "$PREPARE_SOURCE" =~ ^[0-9a-f]{40}$ ]]
-            [[ "$CALLER_SHA" == "$PREPARE_SOURCE" ]]
-            [[ "$(git rev-parse HEAD)" == "$PREPARE_SOURCE" ]]
-          fi
           case "$RELEASE_TAG" in
             protocol-schemas-v*) ;;
             *)
@@ -78,10 +56,7 @@ jobs:
           tag_sha="$(git rev-list -n1 "refs/tags/${RELEASE_TAG}")"
           head_sha="$(git rev-parse HEAD)"
           test "$tag_sha" = "$head_sha"
-          # The draft may not exist yet for prepare-only execution.
-          if [[ -z "$PREPARE_SOURCE" ]]; then
-            gh release view "$RELEASE_TAG" --json isDraft,tagName --jq 'select(.isDraft == false) | .tagName' | grep -Fx "$RELEASE_TAG"
-          fi
+          gh release view "$RELEASE_TAG" --json isDraft,tagName --jq 'select(.isDraft == false) | .tagName' | grep -Fx "$RELEASE_TAG"
           version="${RELEASE_TAG#protocol-schemas-v}"
           package_version="$(python -c 'import json; print(json.load(open("packages/protocol-schemas/package.json"))["version"])')"
           test "$version" = "$package_version"
@@ -121,6 +96,11 @@ jobs:
             exit 1
           fi
           echo "tarball=../../release-assets/protocol-schemas/$(basename "$tarball_path")" >> "$GITHUB_OUTPUT"
+      # SBOM and source build provenance use distinct signed predicate types.
+      - name: Attest Protocol Schemas SLSA build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-checksums: release-assets/protocol-schemas/SHA256SUMS.txt
       - name: Attest tarball
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
@@ -134,7 +114,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Attach evidence to GitHub Release
-        if: inputs.source_commit == ''
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
@@ -149,7 +128,6 @@ jobs:
       - name: Verify checksums before publish
         run: (cd ../../release-assets/protocol-schemas && sha256sum --check SHA256SUMS.txt)
       - name: Check if version already published
-        if: inputs.source_commit == ''
         id: check-published
         shell: bash
         run: |
@@ -164,12 +142,11 @@ jobs:
             echo "not found"
           fi
       - name: Publish to npm
-        if: inputs.source_commit == '' && steps.check-published.outputs.already_published != 'true'
+        if: steps.check-published.outputs.already_published != 'true'
         run: npm publish "${NPM_TARBALL}" --access public --provenance --ignore-scripts
         env:
           NPM_TARBALL: ${{ steps.pack-evidence.outputs.tarball }}
       - name: Verify published tarball
-        if: inputs.source_commit == ''
         shell: bash
         run: |
           set -euo pipefail

@@ -109,6 +109,13 @@
         "id-token"
       ]
     },
+    "prepare-protocol-schemas.yml": {
+      "prepare": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ]
+    },
     "publish-protocol-schemas.yml": {
       "publish": [
         "artifact-metadata",
