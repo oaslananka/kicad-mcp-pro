@@ -435,10 +435,12 @@ three independent checks, without mutating remote state: the pinned
 per-family role contract, the authenticated active publish-release.yml
 owner-run identity, and a live draft inventory downloaded from GitHub by
 each verified numeric asset ID into an isolated temporary directory.
-The shared staging reader now rejects the complete remote asset metadata
-snapshot before starting any download; unknown late entries cannot trigger
-partial downloads. The downloaded bytes, GitHub asset state, size and any GitHub SHA-256 digest
-are checked against the independently pinned manifest. It verifies the active
+The shared staging reader now validates the complete remote asset name and
+unique positive numeric-ID snapshot before starting any download; unknown
+names, duplicate names and duplicate/invalid IDs cause an early failure.
+GitHub asset state, size and any reported SHA-256 digest are checked
+**after download**, together with downloaded file bytes, against the
+independently pinned manifest by verify(...). It verifies the active
 owner run and matching draft/tag identity a second time after the downloads,
 so a detected mid-verification publication or owner change fails closed.
 
