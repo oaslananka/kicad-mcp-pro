@@ -58,7 +58,7 @@ def test_existing_publishing_and_backfill_paths_unchanged() -> None:
     )
     assert any(
         s.get("name") == "Attach Python evidence to GitHub Release"
-        and s["if"] == "github.event_name == 'push'"
+        and s["if"] == "inputs.source_commit == '' && github.event_name == 'push'"
         for s in steps
     )
     assert any(s.get("name") == "Attest Python distributions" for s in steps)
