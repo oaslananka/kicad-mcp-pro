@@ -15,6 +15,17 @@ ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / "integrations" / "common" / "agent-host-evidence.json"
 EXTENSION = ROOT / "integrations" / "gemini-cli" / "kicad-mcp-pro"
 
+# Each maintained host has a different native configuration container.
+_HOST_SERVER_KEYS = {
+    "claude-code": "mcpServers",
+    "codex": "mcp_servers",
+    "gemini-cli": "mcpServers",
+    "cursor": "mcpServers",
+    "vscode-copilot": "servers",
+    "opencode": "mcp",
+}
+_STDIO_ARGS = (["kicad-mcp-pro"], ["kicad-mcp-pro", "--transport", "stdio"])
+
 
 def _read_object(path: Path) -> dict[str, Any]:
     if not path.is_file() or path.is_symlink():
@@ -59,16 +70,47 @@ def _check_host_configuration(
         return
     try:
         config = _read_object(target)
-        servers = (
-            config.get("mcp_servers")
-            or config.get("mcpServers")
-            or config.get("servers")
-            or config.get("mcp")
-        )
-        if not isinstance(servers, dict) or not servers:
-            problems.append(f"No MCP servers defined for {name}")
     except ValueError as exc:
         problems.append(f"Invalid configuration for {name}: {exc}")
+        return
+
+    container = _HOST_SERVER_KEYS.get(name)
+    if container is None:
+        problems.append(f"Unreviewed agent host: {name}")
+        return
+    servers = config.get(container)
+    if not isinstance(servers, dict) or not servers:
+        problems.append(f"No MCP servers defined for {name}")
+        return
+    server = servers.get("kicad")
+    if not isinstance(server, dict):
+        problems.append(f"Missing kicad MCP server for {name}")
+        return
+
+    if name == "opencode":
+        known_local_command = (
+            server.get("type") == "local"
+            and server.get("command")
+            in (["uvx", "kicad-mcp-pro"], ["uvx", "kicad-mcp-pro", "--transport", "stdio"])
+            and server.get("enabled") is True
+        )
+        env = server.get("environment")
+    else:
+        known_local_command = (
+            server.get("type", "stdio") == "stdio"
+            and server.get("command") == "uvx"
+            and server.get("args") in _STDIO_ARGS
+        )
+        env = server.get("env")
+
+    if not known_local_command or any(key in server for key in ("url", "httpUrl", "trust")):
+        problems.append(f"Unsafe or unexpected kicad MCP launch for {name}")
+    if (
+        not isinstance(env, dict)
+        or env.get("KICAD_MCP_PROFILE") != "default"
+        or env.get("KICAD_MCP_OPERATING_MODE") != "readonly"
+    ):
+        problems.append(f"Unsafe kicad MCP profile/mode for {name}: expected readonly/default")
 
 
 def _check_host_row(root: Path, item: object, ids: set[str], problems: list[str]) -> None:
@@ -126,6 +168,8 @@ def check(root: Path = ROOT) -> list[str]:
     ids: set[str] = set()
     for item in hosts:
         _check_host_row(root, item, ids, problems)
+    if ids != set(_HOST_SERVER_KEYS):
+        problems.append("Missing or unreviewed agent host in catalog")
     _check_extension(root, problems)
     return problems
 

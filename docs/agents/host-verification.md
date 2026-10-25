@@ -18,6 +18,11 @@ The source catalog, `integrations/common/agent-host-evidence.json`, reports
 CI never silently downloads agent binaries, registers plugins, acquires auth
 tokens, enables shell permissions, or accesses private KiCad projects.
 
+The static host gate also fails closed if any of the six checked-in client
+examples changes its local `kicad` stdio command, arguments, or explicit
+`readonly/default` environment. This checks repository configuration, **not**
+a genuine host-originated tool call or agent Skill discovery.
+
 ## Manual smoke checklist (trusted sandbox only)
 
 1. Record host + version, OS, Python/uvx/KiCad versions, repository SHA and

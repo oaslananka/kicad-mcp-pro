@@ -204,3 +204,127 @@ def test_host_path_traversal_and_absolute_path_fail_closed(tmp_path: Path) -> No
     failures = verifier.check(repo)
     assert any("Invalid configuration path for claude-code" in msg for msg in failures)
     assert any("Invalid guide path for claude-code" in msg for msg in failures)
+
+
+# A model-free configuration gate must detect unsafe agent-host launch drift.
+_HOST_CONFIGS = (
+    ("claude-code", "mcpServers", "env"),
+    ("codex", "mcp_servers", "env"),
+    ("gemini-cli", "mcpServers", "env"),
+    ("cursor", "mcpServers", "env"),
+    ("vscode-copilot", "servers", "env"),
+    ("opencode", "mcp", "environment"),
+)
+
+
+def _alter_host_server(repo: Path, host: str, container: str, change) -> None:
+    catalog = json.loads((repo / "integrations/common/agent-host-evidence.json").read_text())
+    row = next(item for item in catalog["hosts"] if item["id"] == host)
+    path = repo / row["configuration"]
+    if path.suffix == ".toml":
+        text = path.read_text(encoding="utf-8")
+        replaced = change(text)
+        assert text != replaced
+        path.write_text(replaced, encoding="utf-8")
+    else:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        change(data[container]["kicad"])
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize(("host", "container", "env_key"), _HOST_CONFIGS)
+@pytest.mark.parametrize(
+    ("field", "unsafe"), [("KICAD_MCP_OPERATING_MODE", "write"), ("KICAD_MCP_PROFILE", "expert")]
+)
+def test_every_host_fails_closed_on_unsafe_mode_or_profile(
+    tmp_path: Path, host: str, container: str, env_key: str, field: str, unsafe: str
+) -> None:
+    repo = _temp_host_repo(tmp_path)
+    if host == "codex":
+        _alter_host_server(
+            repo,
+            host,
+            container,
+            lambda text: text.replace(
+                f'{field} = "{"readonly" if field.endswith("MODE") else "default"}"',
+                f'{field} = "{unsafe}"',
+            ),
+        )
+    else:
+        _alter_host_server(
+            repo,
+            host,
+            container,
+            lambda server: server[env_key].update({field: unsafe}),
+        )
+    assert any("readonly/default" in msg for msg in verifier.check(repo))
+
+
+@pytest.mark.parametrize(("host", "container", "_"), _HOST_CONFIGS)
+def test_every_host_rejects_unreviewed_launch_command(
+    tmp_path: Path, host: str, container: str, _: str
+) -> None:
+    repo = _temp_host_repo(tmp_path)
+    if host == "codex":
+        _alter_host_server(
+            repo,
+            host,
+            container,
+            lambda text: text.replace('command = "uvx"', 'command = "curl"'),
+        )
+    else:
+        _alter_host_server(repo, host, container, lambda server: server.update(command="curl"))
+    assert any("Unsafe or unexpected kicad MCP launch" in msg for msg in verifier.check(repo))
+
+
+@pytest.mark.parametrize(("host", "container", "_"), _HOST_CONFIGS)
+def test_every_host_rejects_unreviewed_launch_args(
+    tmp_path: Path, host: str, container: str, _: str
+) -> None:
+    repo = _temp_host_repo(tmp_path)
+    if host == "codex":
+        _alter_host_server(
+            repo,
+            host,
+            container,
+            lambda text: text.replace('"stdio"]', '"stdio", "--unsafe"]'),
+        )
+    else:
+        _alter_host_server(
+            repo,
+            host,
+            container,
+            lambda server: server.update(
+                **(
+                    {"command": ["uvx", "kicad-mcp-pro", "--unsafe"]}
+                    if host == "opencode"
+                    else {"args": ["kicad-mcp-pro", "--unsafe"]}
+                )
+            ),
+        )
+    assert any("Unsafe or unexpected kicad MCP launch" in msg for msg in verifier.check(repo))
+
+
+def test_host_catalog_cannot_substitute_an_unreviewed_host(tmp_path: Path) -> None:
+    repo = _temp_host_repo(tmp_path)
+    _update_json(
+        repo,
+        "integrations/common/agent-host-evidence.json",
+        lambda data: data["hosts"][0].update(id="unreviewed-host"),
+    )
+    assert any("Missing or unreviewed agent host" in msg for msg in verifier.check(repo))
+
+
+def test_opencode_disabled_server_is_not_approved(tmp_path: Path) -> None:
+    repo = _temp_host_repo(tmp_path)
+    _alter_host_server(repo, "opencode", "mcp", lambda server: server.update(enabled=False))
+    assert any("Unsafe or unexpected kicad MCP launch" in msg for msg in verifier.check(repo))
+
+
+def test_replacing_kicad_with_unrelated_server_is_rejected(tmp_path: Path) -> None:
+    repo = _temp_host_repo(tmp_path)
+    path = repo / "integrations/cursor/mcp.example.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["mcpServers"]["unrelated"] = data["mcpServers"].pop("kicad")
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert any("Missing kicad MCP server" in msg for msg in verifier.check(repo))
