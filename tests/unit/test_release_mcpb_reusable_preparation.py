@@ -6,6 +6,7 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -122,18 +123,30 @@ def _simulate_source_step(
     return result.returncode, invoked.exists()
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX Bash fixture; release workflow runs on Ubuntu",
+)
 def test_prepare_does_not_require_a_github_release(tmp_path: Path) -> None:
     code, invoked = _simulate_source_step(tmp_path, prepare=True)
     assert code == 0
     assert invoked is False
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX Bash fixture; release workflow runs on Ubuntu",
+)
 def test_legacy_release_target_lookup_remains_required(tmp_path: Path) -> None:
     code, invoked = _simulate_source_step(tmp_path, prepare=False)
     assert code == 0
     assert invoked is True
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX Bash fixture; release workflow runs on Ubuntu",
+)
 def test_prepare_rejects_tag_source_mismatch_before_gh_lookup(tmp_path: Path) -> None:
     code, invoked = _simulate_source_step(tmp_path, prepare=True, matching=False)
     assert code != 0
