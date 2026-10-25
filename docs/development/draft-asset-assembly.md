@@ -48,3 +48,37 @@ Only the mcp-server family is supported; GUI, npm and protocol-schemas need
 their own separately reviewed assembly/registry checks. Existing published-first
 behavior remains unchanged until the entire orchestrator is independently
 accepted and the atomic cutover policy permits the transition.
+
+## Read-only Actions ZIP identity check
+
+Before extracting each downloaded Actions ZIP, a future automation can query
+GitHub REST (via authenticated `gh api`) and verify its exact completed,
+successful `main` workflow run, `run_attempt`, same-repository ID,
+allowed publisher workflow, nonexpired archive ID/name, and the **GitHub
+artifact archive SHA-256** against the separately downloaded ZIP bytes:
+
+```bash
+python -m scripts.check_draft_producer_archive \
+  --repo oaslananka/kicad-mcp-pro \
+  --role mcpb-release-evidence \
+  --run-id "$APPROVED_PRODUCER_RUN_ID" \
+  --run-attempt "$APPROVED_PRODUCER_RUN_ATTEMPT" \
+  --artifact-id "$APPROVED_MCPB_ARTIFACT_ID" \
+  --head-sha "$REVIEWED_MAIN_SHA" \
+  --downloaded-zip "$DOWNLOADS/mcpb-release-evidence.zip"
+```
+
+Perform this check for **all four exact artifact names**, using an independently
+approved source SHA and producer IDs. A non-main or pull-request run, failed or
+still-running producer, changed repo ID, unrecognized workflow, missing digest,
+stale archive or substituted ZIP **fails closed**. Extracting the ZIP still
+requires safe zip-member path validation; the check itself never extracts.
+
+This gate is deliberately limited: a workflow run may contain many jobs, and
+archive metadata alone does **not** prove the exact producing job or
+cryptographic attestation. It accepts **completed separate producer
+workflow-dispatch runs only**; a future in-progress reusable-workflow owner
+must use separately reviewed per-job evidence instead of weakening this gate.
+The check never authorizes a publish or performs GitHub writes. It also
+does not independently authorize the input `--run-id`/`--artifact-id` values:
+the single owner must freeze them from a separately trusted plan.
