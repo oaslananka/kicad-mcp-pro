@@ -234,6 +234,23 @@ of v4.4.0 GUI: the matching macOS DMG was preserved and eight missing files
 were listed without any write; the actual published release was rejected.
 **No real draft lifecycle or repository immutability acceptance is claimed.**
 
+## Atomic cutover check (enabled in workflow policy)
+
+`scripts/check_release_draft_cutover.py` ensures the transition cannot be
+activated **partway through** a release. The current published-first mode remains
+unchanged. If any Release Please package switches to `draft: true`, the policy
+check requires draft and `force-tag-creation` for every release-producing package,
+owner-invoked `workflow_call` publishers instead of direct tag-push /
+`release: published` writers, and retirement of the existing published-release
+mutation allowlist. The check is enforced by the existing GitHub Actions policy
+job; it adds no new services, manual release steps, or runtime calls.
+
+These conditions are **necessary, not sufficient** to publish: source/tag
+identity, exclusive writer, registry receipts, attestations, and an actual
+verified draft lifecycle are still required before moving the live publisher.
+No draft creation, tag push, registry write, release publication or immutable
+setting change occurs through this check.
+
 ## Proposed draft-first orchestration (design only)
 
 The design below covers the remaining acceptance criteria of #1179. It is not
