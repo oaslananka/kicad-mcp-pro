@@ -1,17 +1,6 @@
 name: Publish KiCad PCM
 
 on:
-  # Only the future draft owner calls this prepare-only path.
-  workflow_call:
-    inputs:
-      tag:
-        description: Protected mcp-server release tag to prepare.
-        required: true
-        type: string
-      source_commit:
-        description: Exact reviewed main SHA that protected tag resolves to.
-        required: true
-        type: string
   release:
     types: [published]
   workflow_dispatch:
@@ -25,19 +14,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-kicad-pcm-${{ inputs.tag || github.event.release.tag_name }}
+  group: publish-kicad-pcm-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
   cancel-in-progress: false
 
 jobs:
   publish:
     if: >-
       (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
-      ((inputs.source_commit != '' && github.ref == 'refs/heads/main' &&
-        github.repository == 'oaslananka/kicad-mcp-pro' &&
-        startsWith(inputs.tag, 'mcp-server-v')) ||
-       (inputs.source_commit == '' &&
-        ((github.event_name == 'release' && startsWith(github.event.release.tag_name, 'mcp-server-v')) ||
-         (github.event_name == 'workflow_dispatch' && startsWith(inputs.tag, 'mcp-server-v')))))
+      ((github.event_name == 'release' && startsWith(github.event.release.tag_name, 'mcp-server-v')) ||
+       (github.event_name == 'workflow_dispatch' && startsWith(inputs.tag, 'mcp-server-v')))
     runs-on: ubuntu-24.04
     permissions:
       artifact-metadata: write
@@ -52,12 +37,9 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_EVENT_TAG: ${{ github.event.release.tag_name }}
           DISPATCH_TAG: ${{ inputs.tag }}
-          PREPARE_SOURCE: ${{ inputs.source_commit }}
         run: |
           set -euo pipefail
-          if [[ -n "$PREPARE_SOURCE" ]]; then
-            release_tag="$DISPATCH_TAG"
-          elif [[ "$EVENT_NAME" == "release" ]]; then
+          if [[ "$EVENT_NAME" == "release" ]]; then
             release_tag="$RELEASE_EVENT_TAG"
           else
             release_tag="$DISPATCH_TAG"
@@ -75,18 +57,6 @@ jobs:
           fetch-depth: 0
           ref: ${{ steps.release.outputs.tag }}
           persist-credentials: false
-      - name: Verify reusable preparation source identity
-        if: inputs.source_commit != ''
-        shell: bash
-        env:
-          EXPECTED_SOURCE: ${{ inputs.source_commit }}
-          CALLER_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          [[ "$EXPECTED_SOURCE" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$CALLER_SHA" == "$EXPECTED_SOURCE" ]]
-          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SOURCE" ]]
-
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           enable-cache: false
@@ -101,20 +71,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
-          PREPARE_SOURCE: ${{ inputs.source_commit }}
         run: |
           set -euo pipefail
           release_tag="$RELEASE_TAG"
           source_commit="$(git rev-parse HEAD)"
           tag_commit="$(git rev-list -n 1 "$release_tag")"
+          release_target="$(gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
           package_version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
           test "$source_commit" = "$tag_commit"
+          test "$release_target" = "$source_commit"
           test "$package_version" = "$VERSION"
-          # A preparation-only job may run before a draft Release exists.
-          if [[ -z "$PREPARE_SOURCE" ]]; then
-            release_target="$(gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
-            test "$release_target" = "$source_commit"
-          fi
 
       - name: Build and verify deterministic KiCad PCM package
         shell: bash
@@ -145,9 +111,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      # Preparation exposes only an attested workflow artifact.
       - name: Attach KiCad PCM package and evidence to GitHub Release
-        if: inputs.source_commit == ''
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -157,9 +121,7 @@ jobs:
           release_tag="$RELEASE_TAG"
           gh release upload "$release_tag" release-assets/kicad-pcm/* --clobber
 
-      # Preparation exposes only an attested workflow artifact.
       - name: Verify published PCM digest
-        if: inputs.source_commit == ''
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

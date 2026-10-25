@@ -73,6 +73,13 @@
         "security-events"
       ]
     },
+    "prepare-kicad-pcm.yml": {
+      "prepare": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ]
+    },
     "publish-kicad-pcm.yml": {
       "publish": [
         "artifact-metadata",

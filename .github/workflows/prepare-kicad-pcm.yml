@@ -1,0 +1,120 @@
+name: Prepare KiCad PCM (non-publishing)
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing protected server release tag to prepare.
+        required: true
+        type: string
+      source_commit:
+        description: Exact reviewed main commit for this tag.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prepare-kicad-pcm-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: >-
+      github.repository == 'oaslananka/kicad-mcp-pro' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.source_commit != '' &&
+      startsWith(inputs.tag, 'mcp-server-v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      artifact-metadata: write
+      attestations: write
+      id-token: write
+    steps:
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          release_tag="$DISPATCH_TAG"
+          if [[ ! "$release_tag" =~ ^mcp-server-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unsupported KiCad PCM release tag: $release_tag" >&2
+            exit 1
+          fi
+          version="${release_tag#mcp-server-v}"
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.release.outputs.tag }}
+          persist-credentials: false
+      - name: Verify reusable preparation source identity
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ inputs.source_commit }}
+          CALLER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SOURCE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CALLER_SHA" == "$EXPECTED_SOURCE" ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SOURCE" ]]
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - run: uv sync --all-extras --frozen
+      - name: Enforce live-model release readiness
+        run: uv run --all-extras python scripts/check_live_model_release_policy.py --require-ready release --ref HEAD
+
+      - name: Verify release source and package version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          PREPARE_SOURCE: ${{ inputs.source_commit }}
+        run: |
+          set -euo pipefail
+          release_tag="$RELEASE_TAG"
+          source_commit="$(git rev-parse HEAD)"
+          tag_commit="$(git rev-list -n 1 "$release_tag")"
+          package_version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          test "$source_commit" = "$tag_commit"
+          test "$package_version" = "$VERSION"
+          [[ "$PREPARE_SOURCE" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Build and verify deterministic KiCad PCM package
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 scripts/build_kicad_pcm.py \
+            --output-dir release-assets/kicad-pcm \
+            --verify
+          test -s "release-assets/kicad-pcm/kicad-mcp-pro-pcm-${VERSION}.zip"
+          (
+            cd release-assets/kicad-pcm
+            sha256sum --check kicad-mcp-pro-pcm-SHA256SUMS.txt
+          )
+
+      - name: Attest KiCad PCM package
+        id: attest-kicad-pcm
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-checksums: release-assets/kicad-pcm/kicad-mcp-pro-pcm-SHA256SUMS.txt
+
+      - name: Store KiCad PCM release evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: kicad-pcm-release-evidence
+          path: release-assets/kicad-pcm
+          if-no-files-found: error
+          retention-days: 14
+

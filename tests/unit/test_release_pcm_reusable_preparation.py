@@ -10,7 +10,8 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW = ROOT / ".github/workflows/publish-kicad-pcm.yml"
+WORKFLOW = ROOT / ".github/workflows/prepare-kicad-pcm.yml"
+LEGACY = ROOT / ".github/workflows/publish-kicad-pcm.yml"
 
 
 def _config() -> dict:
@@ -20,7 +21,7 @@ def _config() -> dict:
 
 
 def _steps() -> list[dict]:
-    return _config()["jobs"]["publish"]["steps"]
+    return _config()["jobs"]["prepare"]["steps"]
 
 
 def test_pcm_source_bound_reusable_inputs_with_legacy_triggers_retained() -> None:
@@ -30,24 +31,31 @@ def test_pcm_source_bound_reusable_inputs_with_legacy_triggers_retained() -> Non
     for item in events["workflow_call"]["inputs"].values():
         assert item["required"] is True
         assert item["type"] == "string"
-    assert events["release"]["types"] == ["published"]
-    assert "workflow_dispatch" in events
-    gate = data["jobs"]["publish"]["if"]
+    assert set(events) == {"workflow_call"}
+    legacy_events = yaml.safe_load(LEGACY.read_text(encoding="utf-8"))[True]
+    assert legacy_events["release"]["types"] == ["published"]
+    assert "workflow_dispatch" in legacy_events
+    assert "workflow_call" not in legacy_events
+    gate = data["jobs"]["prepare"]["if"]
+    permissions = data["jobs"]["prepare"]["permissions"]
+    assert permissions["contents"] == "read"
+    assert "environment" not in data["jobs"]["prepare"]
     assert "github.ref == 'refs/heads/main'" in gate
     assert "github.repository == 'oaslananka/kicad-mcp-pro'" in gate
     assert "inputs.source_commit != ''" in gate
-    assert "inputs.source_commit == ''" in gate
+    assert "inputs.source_commit == ''" not in gate
 
 
 def test_pcm_preparation_attests_but_never_reads_or_mutates_release() -> None:
     steps = _steps()
     source = next(x for x in steps if x.get("name") == "Verify release source and package version")
-    assert 'if [[ -z "$PREPARE_SOURCE" ]]' in source["run"]
+    assert 'if [[ -z "$PREPARE_SOURCE" ]]' not in source["run"]
+    assert '[[ "$PREPARE_SOURCE" =~ ^[0-9a-f]{40}$ ]]' in source["run"]
     assert source["env"]["PREPARE_SOURCE"] == "$" + "{{ inputs.source_commit }}"
     assert 'test "$source_commit" = "$tag_commit"' in source["run"]
     assert 'test "$package_version" = "$VERSION"' in source["run"]
     check = next(x for x in steps if x.get("name") == "Verify reusable preparation source identity")
-    assert check["if"] == "inputs.source_commit != ''"
+    assert "if" not in check
     assert '[[ "$CALLER_SHA" == "$EXPECTED_SOURCE" ]]' in check["run"]
     assert '[[ "$(git rev-parse HEAD)" == "$EXPECTED_SOURCE" ]]' in check["run"]
     identity_index = next(
@@ -65,14 +73,10 @@ def test_pcm_preparation_attests_but_never_reads_or_mutates_release() -> None:
     assert identity_index < setup_index
     assert any(x.get("name") == "Attest KiCad PCM package" for x in steps)
     assert any(x.get("name") == "Store KiCad PCM release evidence" for x in steps)
-    for name in (
-        "Attach KiCad PCM package and evidence to GitHub Release",
-        "Verify published PCM digest",
-    ):
-        step = next(x for x in steps if x.get("name") == name)
-        assert step["if"] == "inputs.source_commit == ''"
-    assert "gh release create" not in WORKFLOW.read_text(encoding="utf-8")
-    assert "gh release edit" not in WORKFLOW.read_text(encoding="utf-8")
+    assert "gh release" not in WORKFLOW.read_text(encoding="utf-8")
+    assert "npm publish" not in WORKFLOW.read_text(encoding="utf-8")
+    assert all("gh release" not in step.get("run", "") for step in steps)
+    assert "gh release upload" in LEGACY.read_text(encoding="utf-8")
 
 
 def _simulate_source_step(
@@ -128,10 +132,10 @@ def test_pcm_prepare_succeeds_without_release_lookup(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX Bash fixture; release workflow runs on Ubuntu")
-def test_pcm_legacy_release_target_check_unchanged(tmp_path: Path) -> None:
+def test_pcm_empty_source_is_rejected_without_release_lookup(tmp_path: Path) -> None:
     code, gh = _simulate_source_step(tmp_path, prepare=False)
-    assert code == 0
-    assert gh is True
+    assert code != 0
+    assert gh is False
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX Bash fixture; release workflow runs on Ubuntu")
