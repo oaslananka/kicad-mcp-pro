@@ -202,3 +202,11 @@ separately signed, checksum-bound SLSA provenance attestation in the existing
 Python build job **in addition to**, not instead of, the CycloneDX SBOM
 attestation. Recheck a real successfully completed producer workflow under
 the reviewed main ref before declaring any owner release readiness.
+
+The Python producer job acceptance now additionally requires **both**
+`Attest Python SLSA build provenance` and the existing
+`Attest Python distributions` (CycloneDX SBOM) step to succeed, in that
+order, before either Actions artifact upload. The additive SLSA workflow
+change is staged independently on
+`feature/1179-python-slsa-provenance-20261025`; the job acceptance cannot
+succeed for a legacy Python producer that has only an SBOM attestation.

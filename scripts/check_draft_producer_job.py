@@ -135,6 +135,12 @@ def verify_producer_job(
         len(uploaded) < 2 if role.startswith("python-") else len(uploaded) != 1
     ):
         raise ValueError("producer job lacks approved attest/upload step evidence")
+    if role.startswith("python-"):
+        # The existing Python attestation is CycloneDX SBOM, not provenance.
+        # Require the independent SLSA step from the reviewed Python producer.
+        provenance = _successful("Attest Python SLSA build provenance")
+        if len(provenance) != 1 or provenance[0] >= attest[0]:
+            raise ValueError("Python SLSA provenance must precede SBOM attestation")
     if min(uploaded) <= attest[0]:
         raise ValueError("producer artifact upload preceded its attestation")
 

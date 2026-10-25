@@ -49,6 +49,15 @@ class Fake:
             {"name": upload, "status": "completed", "conclusion": "success", "number": 6},
         ]
         if role.startswith("python-"):
+            steps.insert(
+                0,
+                {
+                    "name": "Attest Python SLSA build provenance",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "number": 4,
+                },
+            )
             steps.append(
                 {
                     "name": upload + "another",
@@ -143,6 +152,20 @@ def test_upload_before_attestation_is_rejected() -> None:
     fake = Fake("mcpb-release-evidence")
     fake.jobs["jobs"][0]["steps"][0]["number"] = 7
     with pytest.raises(ValueError, match="preceded"):
+        verify_producer_job(fake, **_params(fake.role))
+
+
+@pytest.mark.parametrize("bad", ["skipped", "missing", "too_late"])
+def test_python_requires_independent_slsa_attestation(bad: str) -> None:
+    fake = Fake("python-release-evidence")
+    steps = fake.jobs["jobs"][0]["steps"]
+    if bad == "skipped":
+        steps[0]["conclusion"] = "skipped"
+    elif bad == "missing":
+        steps.pop(0)
+    else:
+        steps[0]["number"] = 9
+    with pytest.raises(ValueError, match="SLSA|required producer step"):
         verify_producer_job(fake, **_params(fake.role))
 
 
