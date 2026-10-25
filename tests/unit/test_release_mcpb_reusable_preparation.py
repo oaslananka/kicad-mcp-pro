@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -70,3 +72,69 @@ def test_mcpb_tag_resolution_and_release_source_agree() -> None:
     )
     assert 'test "$source_commit" = "$tag_commit"' in source_verify["run"]
     assert 'test "$release_target" = "$source_commit"' in source_verify["run"]
+    assert 'if [[ -z "$PREPARE_SOURCE" ]]' in source_verify["run"]
+    assert source_verify["env"]["PREPARE_SOURCE"] == "$" + "{{ inputs.source_commit }}"
+
+
+def _simulate_source_step(
+    tmp_path: Path, *, prepare: bool, matching: bool = True
+) -> tuple[int, bool]:
+    """Run real bash control flow against offline git/node/gh stubs."""
+    source = next(
+        s for s in _steps() if s.get("name") == "Verify release source and manifest version"
+    )
+    sha = "a" * 40
+    tag_sha = sha if matching else "b" * 40
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "git").write_text(
+        '#!/bin/sh\ncase "$1 $2" in\n'
+        '  "rev-parse HEAD") echo ' + sha + ";;\n"
+        '  "rev-list -n") echo ' + tag_sha + ";;\n"
+        "  *) exit 91;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    (bin_dir / "node").write_text("#!/bin/sh\necho 4.5.0\n", encoding="utf-8")
+    invoked = tmp_path / "gh-invoked"
+    (bin_dir / "gh").write_text(
+        '#!/bin/sh\necho yes > "$GH_INVOKED"\necho ' + sha + "\n",
+        encoding="utf-8",
+    )
+    for executable in bin_dir.iterdir():
+        executable.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+        "GH_INVOKED": str(invoked),
+        "GITHUB_REPOSITORY": "oaslananka/kicad-mcp-pro",
+        "RELEASE_TAG": "mcp-server-v4.5.0",
+        "VERSION": "4.5.0",
+        "PREPARE_SOURCE": sha if prepare else "",
+    }
+    result = subprocess.run(
+        ["/bin/bash", "-euo", "pipefail", "-c", source["run"]],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode, invoked.exists()
+
+
+def test_prepare_does_not_require_a_github_release(tmp_path: Path) -> None:
+    code, invoked = _simulate_source_step(tmp_path, prepare=True)
+    assert code == 0
+    assert invoked is False
+
+
+def test_legacy_release_target_lookup_remains_required(tmp_path: Path) -> None:
+    code, invoked = _simulate_source_step(tmp_path, prepare=False)
+    assert code == 0
+    assert invoked is True
+
+
+def test_prepare_rejects_tag_source_mismatch_before_gh_lookup(tmp_path: Path) -> None:
+    code, invoked = _simulate_source_step(tmp_path, prepare=True, matching=False)
+    assert code != 0
+    assert invoked is False

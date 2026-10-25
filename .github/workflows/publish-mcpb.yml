@@ -93,6 +93,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
+          PREPARE_SOURCE: ${{ inputs.source_commit }}
         run: |
           set -euo pipefail
           release_tag="$RELEASE_TAG"
@@ -100,10 +101,14 @@ jobs:
           source_commit="$(git rev-parse HEAD)"
           tag_commit="$(git rev-list -n 1 "$release_tag")"
           manifest_version="$(node -e "console.log(require('./packaging/mcpb/manifest.json').version)")"
-          release_target="$(gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
           test "$source_commit" = "$tag_commit"
-          test "$release_target" = "$source_commit"
           test "$manifest_version" = "$version"
+          # A protected tag may exist before the draft Release. Do not require
+          # a GitHub Release in artifact-only preparation mode.
+          if [[ -z "$PREPARE_SOURCE" ]]; then
+            release_target="$(gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+            test "$release_target" = "$source_commit"
+          fi
 
       - name: Verify reusable preparation source identity
         if: inputs.source_commit != ''
