@@ -10,7 +10,8 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW = ROOT / ".github/workflows/publish-mcpb.yml"
+WORKFLOW = ROOT / ".github/workflows/prepare-mcpb.yml"
+LEGACY = ROOT / ".github/workflows/publish-mcpb.yml"
 
 
 def _config() -> dict:
@@ -20,7 +21,7 @@ def _config() -> dict:
 
 
 def _steps() -> list[dict]:
-    return _config()["jobs"]["publish"]["steps"]
+    return _config()["jobs"]["prepare"]["steps"]
 
 
 def test_mcpb_prepare_interface_is_source_bound_and_legacy_events_remain() -> None:
@@ -31,15 +32,20 @@ def test_mcpb_prepare_interface_is_source_bound_and_legacy_events_remain() -> No
     for definition in inputs.values():
         assert definition["required"] is True
         assert definition["type"] == "string"
-    assert events["release"]["types"] == ["published"]
-    assert "workflow_dispatch" in events
+    assert set(events) == {"workflow_call"}
+    previous = yaml.safe_load(LEGACY.read_text(encoding="utf-8"))[True]
+    assert previous["release"]["types"] == ["published"]
+    assert "workflow_dispatch" in previous
+    assert "workflow_call" not in previous
 
-    job = config["jobs"]["publish"]
+    job = config["jobs"]["prepare"]
     condition = job["if"]
     assert "inputs.source_commit != ''" in condition
     assert "github.ref == 'refs/heads/main'" in condition
     assert "github.repository == 'oaslananka/kicad-mcp-pro'" in condition
-    assert "inputs.source_commit == ''" in condition
+    assert "inputs.source_commit == ''" not in condition
+    assert job["permissions"]["contents"] == "read"
+    assert "environment" not in job
     assert "startsWith(inputs.tag, 'mcp-server-v')" in condition
 
 
@@ -48,7 +54,7 @@ def test_mcpb_prepare_attests_but_does_not_attach_to_release() -> None:
     source_check = next(
         s for s in steps if s.get("name") == "Verify reusable preparation source identity"
     )
-    assert source_check["if"] == "inputs.source_commit != ''"
+    assert "if" not in source_check
     assert '[ "$CALLER_SHA" == "$EXPECTED_SOURCE" ]' in source_check["run"].replace(
         "[[", "["
     ).replace("]]", "]")
@@ -68,26 +74,24 @@ def test_mcpb_prepare_attests_but_does_not_attach_to_release() -> None:
     assert source_index < setup_index
     assert any(s.get("name") == "Attest MCPB bundle" for s in steps)
     assert any(s.get("name") == "Store MCPB release evidence" for s in steps)
-    release_writes = [s for s in steps if "gh release upload" in s.get("run", "")]
-    assert len(release_writes) == 1
-    assert release_writes[0]["if"] == "inputs.source_commit == ''"
-    assert "gh release create" not in WORKFLOW.read_text(encoding="utf-8")
-    assert "gh release edit" not in WORKFLOW.read_text(encoding="utf-8")
+    assert "gh release" not in WORKFLOW.read_text(encoding="utf-8")
+    assert "npm publish" not in WORKFLOW.read_text(encoding="utf-8")
+    assert "gh release upload" in LEGACY.read_text(encoding="utf-8")
 
 
 def test_mcpb_tag_resolution_and_release_source_agree() -> None:
     steps = _steps()
     resolve = next(s for s in steps if s.get("name") == "Resolve release tag")
-    assert resolve["env"]["PREPARE_SOURCE"] == "$" + "{{ inputs.source_commit }}"
-    assert 'if [[ -n "$PREPARE_SOURCE" ]]' in resolve["run"]
+    assert "PREPARE_SOURCE" not in resolve["env"]
+    assert 'if [[ -n "$PREPARE_SOURCE" ]]' not in resolve["run"]
     assert 'release_tag="$DISPATCH_TAG"' in resolve["run"]
     assert "Unsupported MCPB release tag" in resolve["run"]
     source_verify = next(
         s for s in steps if s.get("name") == "Verify release source and manifest version"
     )
     assert 'test "$source_commit" = "$tag_commit"' in source_verify["run"]
-    assert 'test "$release_target" = "$source_commit"' in source_verify["run"]
-    assert 'if [[ -z "$PREPARE_SOURCE" ]]' in source_verify["run"]
+    assert 'test "$source_commit" = "$PREPARE_SOURCE" || exit 1' in source_verify["run"]
+    assert 'if [[ -z "$PREPARE_SOURCE" ]]' not in source_verify["run"]
     assert source_verify["env"]["PREPARE_SOURCE"] == "$" + "{{ inputs.source_commit }}"
 
 
@@ -151,10 +155,10 @@ def test_prepare_does_not_require_a_github_release(tmp_path: Path) -> None:
     os.name == "nt",
     reason="POSIX Bash fixture; release workflow runs on Ubuntu",
 )
-def test_legacy_release_target_lookup_remains_required(tmp_path: Path) -> None:
+def test_empty_source_is_rejected_without_release_lookup(tmp_path: Path) -> None:
     code, invoked = _simulate_source_step(tmp_path, prepare=False)
-    assert code == 0
-    assert invoked is True
+    assert code != 0
+    assert invoked is False
 
 
 @pytest.mark.skipif(
