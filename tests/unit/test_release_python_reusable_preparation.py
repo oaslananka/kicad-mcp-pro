@@ -64,7 +64,20 @@ def test_source_guard_runs_immediately_after_checkout_and_before_repo_code() -> 
         "CALLER_REF": "$" + "{{ github.ref }}",
     }
     script = guard["run"]
-    assert '[[ "$(git rev-parse HEAD)" == "$EXPECTED_SOURCE" ]]' in script
+    assert 'checked_out="$(git rev-parse HEAD)" || exit 1' in script
+    assert '[[ "$checked_out" == "$EXPECTED_SOURCE" ]] || exit 1' in script
+    for condition in (
+        '[[ "$EXPECTED_TAG" =~ ^mcp-server-v',
+        '[[ "$EXPECTED_SOURCE" =~ ^[0-9a-f]{40}$ ]]',
+        '[[ "$CALLER_REF" == "refs/heads/main" ]]',
+        '[[ "$CALLER_SHA" == "$EXPECTED_SOURCE" ]]',
+        '[[ "$tagged_source" == "$EXPECTED_SOURCE" ]]',
+        '[[ "$EXPECTED_TAG" == "mcp-server-v$expected_version" ]]',
+    ):
+        assert any(
+            line.strip().startswith(condition) and line.endswith("|| exit 1")
+            for line in script.splitlines()
+        )
     assert '[[ "$tagged_source" == "$EXPECTED_SOURCE" ]]' in script
     assert '[[ "$CALLER_SHA" == "$EXPECTED_SOURCE" ]]' in script
     assert '[[ "$CALLER_REF" == "refs/heads/main" ]]' in script
