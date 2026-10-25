@@ -36,8 +36,18 @@ class StubVerifier:
             }
         ]
 
-    def verify(self, *, path: Path, repo: str, sha: str, signer: str) -> list[dict[str, Any]]:
-        self.calls.append({"path": path, "repo": repo, "sha": sha, "signer": signer})
+    def verify(
+        self, *, path: Path, repo: str, sha: str, signer: str, source_ref: str
+    ) -> list[dict[str, Any]]:
+        self.calls.append(
+            {
+                "path": path,
+                "repo": repo,
+                "sha": sha,
+                "signer": signer,
+                "source_ref": source_ref,
+            }
+        )
         return self.output
 
 
@@ -68,6 +78,7 @@ def test_valid_verified_attestation_never_authorizes_release(
             "repo": "oaslananka/kicad-mcp-pro",
             "sha": SHA,
             "signer": _SIGNERS[kind],
+            "source_ref": "refs/heads/main",
         }
     ]
 
@@ -139,6 +150,7 @@ def test_real_cli_invocation_enforces_exact_source_and_signer(
         repo="oaslananka/kicad-mcp-pro",
         sha=SHA,
         signer=".github/workflows/publish-mcpb.yml",
+        source_ref="refs/heads/main",
     )
     assert result
     command = calls[0]
@@ -168,4 +180,37 @@ def test_cli_nonzero_status_must_not_be_accepted(
             repo="oaslananka/kicad-mcp-pro",
             sha=SHA,
             signer=".github/workflows/publish-mcpb.yml",
+            source_ref="refs/heads/main",
         )
+
+
+def test_exact_legacy_tag_ref_allowed(tmp_path: Path) -> None:
+    file = tmp_path / "kicad-mcp-pro-4.5.0.mcpb"
+    file.write_bytes(b"historical release")
+    verifier = StubVerifier(file)
+    accepted = verify_signed_asset(
+        verifier,
+        package=file,
+        tag=TAG,
+        source_commit=SHA,
+        kind="mcpb",
+        source_ref=f"refs/tags/{TAG}",
+    )
+    assert accepted["sourceRef"] == f"refs/tags/{TAG}"
+    assert verifier.calls[0]["source_ref"] == f"refs/tags/{TAG}"
+
+
+def test_mismatched_tag_ref_is_rejected_before_crypto_call(tmp_path: Path) -> None:
+    file = tmp_path / "kicad-mcp-pro-4.5.0.mcpb"
+    file.write_bytes(b"historical release")
+    verifier = StubVerifier(file)
+    with pytest.raises(ValueError, match="source ref"):
+        verify_signed_asset(
+            verifier,
+            package=file,
+            tag=TAG,
+            source_commit=SHA,
+            kind="mcpb",
+            source_ref="refs/tags/mcp-server-v4.4.0",
+        )
+    assert not verifier.calls

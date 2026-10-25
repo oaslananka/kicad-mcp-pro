@@ -168,3 +168,37 @@ binding, the exclusive writer lock, actual draft Release upload/read-back or
 authority to switch releases public. A single automatic owner must connect
 them and validate every independent result before the atomic draft-first
 cutover is reviewed. The current published-first flow remains untouched.
+
+## Real published v4.4.0 attestation acceptance — 2026-10-25
+
+Read-only GitHub Release downloads and online `gh attestation verify` were
+exercised against the existing `mcp-server-v4.4.0` tag
+(`285be423edd2d16c799f4cb20b60858a4a729010`). The checks did **not**
+write any tag, release, registry record or new attestation:
+
+- **MCPB** `kicad-mcp-pro-4.4.0.mcpb`: SHA-256
+  `7e429e76cac30f95cce7b11ce86dced32ef0f2f57bbe3446b0795c8f505da3f3`,
+  exact signer `publish-mcpb.yml`, exact tag source ref and source commit:
+  GitHub cryptographic **SLSA provenance SUCCESS**.
+- **KiCad PCM** `kicad-mcp-pro-pcm-4.4.0.zip`: SHA-256
+  `d22f630c40d019d997ecea8a17b7b8b66a90461c816641d2182ba5d5d4699a3d`,
+  exact signer `publish-kicad-pcm.yml`, tag ref and source commit:
+  GitHub cryptographic **SLSA provenance SUCCESS**.
+- **Python wheel and sdist**: `gh attestation verify` with the required
+  SLSA provenance predicate returned HTTP 404 — **SLSA FAIL / absent**, not
+  accepted. The same wheel's `https://cyclonedx.org/bom` **SBOM attestation
+  did verify** for both wheel and sdist subjects, with the expected signer,
+  tag ref and source commit. A signed SBOM is **not a substitute** for
+  signed SLSA provenance.
+
+The tagged-release source-ref acceptance mode requires explicit
+`--source-ref refs/tags/mcp-server-v4.4.0` and matches it to
+`--tag mcp-server-v4.4.0`. The default for future owner-invoked
+prepare-on-main builds is still `refs/heads/main`. An unrelated tag or
+branch cannot be supplied. All results keep `publicationAuthorized=false`.
+
+To close the Python gap **before** any new draft publication, add a
+separately signed, checksum-bound SLSA provenance attestation in the existing
+Python build job **in addition to**, not instead of, the CycloneDX SBOM
+attestation. Recheck a real successfully completed producer workflow under
+the reviewed main ref before declaring any owner release readiness.

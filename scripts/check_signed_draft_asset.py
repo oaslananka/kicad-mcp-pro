@@ -31,13 +31,17 @@ _SIGNERS = {
 
 
 class AttestationVerifier(Protocol):
-    def verify(self, *, path: Path, repo: str, sha: str, signer: str) -> list[dict[str, Any]]: ...
+    def verify(
+        self, *, path: Path, repo: str, sha: str, signer: str, source_ref: str
+    ) -> list[dict[str, Any]]: ...
 
 
 class GitHubAttestationCLI:
     """Only a read-only, cryptographic verification call to GitHub CLI."""
 
-    def verify(self, *, path: Path, repo: str, sha: str, signer: str) -> list[dict[str, Any]]:
+    def verify(
+        self, *, path: Path, repo: str, sha: str, signer: str, source_ref: str
+    ) -> list[dict[str, Any]]:
         executable = shutil.which("gh")
         if executable is None:
             raise ValueError("GitHub CLI unavailable for signed attestation check")
@@ -52,7 +56,7 @@ class GitHubAttestationCLI:
                 "--signer-workflow",
                 f"{repo}/{signer}",
                 "--source-ref",
-                "refs/heads/main",
+                source_ref,
                 "--source-digest",
                 sha,
                 "--predicate-type",
@@ -86,10 +90,13 @@ def verify_signed_asset(
     tag: str,
     source_commit: str,
     kind: str,
+    source_ref: str = "refs/heads/main",
 ) -> dict[str, object]:
     match = _VERSION.fullmatch(tag)
     if match is None or _SHA.fullmatch(source_commit) is None or kind not in _SIGNERS:
         raise ValueError("unapproved signed package identity")
+    if source_ref not in {"refs/heads/main", f"refs/tags/{tag}"}:
+        raise ValueError("signed package source ref must match main or the exact approved tag")
     version = match.group(1)
     allowed = _expected(version)["python_dist" if kind == "python" else kind]
     allowed_packages = {n for n in allowed if n.endswith((".whl", ".tar.gz", ".mcpb", ".zip"))}
@@ -99,7 +106,13 @@ def verify_signed_asset(
     if not path.is_file() or not path.stat().st_size:
         raise ValueError("missing or empty signed release package")
     artifact_digest = _sha256(path)
-    signed = verifier.verify(path=path, repo=REPOSITORY, sha=source_commit, signer=_SIGNERS[kind])
+    signed = verifier.verify(
+        path=path,
+        repo=REPOSITORY,
+        sha=source_commit,
+        signer=_SIGNERS[kind],
+        source_ref=source_ref,
+    )
     if not isinstance(signed, list) or not signed:
         raise ValueError("no cryptographically verified GitHub attestations")
     match_count = 0
@@ -138,6 +151,7 @@ def verify_signed_asset(
         "package": path.name,
         "sha256": artifact_digest,
         "signerWorkflow": _SIGNERS[kind],
+        "sourceRef": source_ref,
         "verifiedMatchingAttestationCount": match_count,
         "signedAttestationVerified": True,
         "producerJobBindingVerified": False,
@@ -152,6 +166,11 @@ def main() -> int:
     p.add_argument("--tag", required=True)
     p.add_argument("--source-commit", required=True)
     p.add_argument("--kind", required=True, choices=sorted(_SIGNERS))
+    p.add_argument(
+        "--source-ref",
+        default="refs/heads/main",
+        help="Signed source ref: refs/heads/main or refs/tags/<exact tag>",
+    )
     args = p.parse_args()
     try:
         result = verify_signed_asset(
@@ -160,6 +179,7 @@ def main() -> int:
             tag=args.tag,
             source_commit=args.source_commit,
             kind=args.kind,
+            source_ref=args.source_ref,
         )
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         p.exit(2, f"signed draft package attestation: FAIL: {exc}\n")
