@@ -328,3 +328,17 @@ def test_replacing_kicad_with_unrelated_server_is_rejected(tmp_path: Path) -> No
     data["mcpServers"]["unrelated"] = data["mcpServers"].pop("kicad")
     path.write_text(json.dumps(data), encoding="utf-8")
     assert any("Missing kicad MCP server" in msg for msg in verifier.check(repo))
+
+
+def test_catalog_cannot_relabel_another_hosts_valid_config(tmp_path: Path) -> None:
+    repo = _temp_host_repo(tmp_path)
+    relative = "integrations/common/agent-host-evidence.json"
+
+    def redirect(data: dict) -> None:
+        by_id = {row["id"]: row for row in data["hosts"]}
+        by_id["cursor"]["configuration"] = by_id["claude-code"]["configuration"]
+
+    _update_json(repo, relative, redirect)
+    assert any(
+        "Unexpected reviewed configuration path for cursor" in msg for msg in verifier.check(repo)
+    )

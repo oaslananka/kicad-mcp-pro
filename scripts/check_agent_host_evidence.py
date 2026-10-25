@@ -16,13 +16,13 @@ EVIDENCE = ROOT / "integrations" / "common" / "agent-host-evidence.json"
 EXTENSION = ROOT / "integrations" / "gemini-cli" / "kicad-mcp-pro"
 
 # Each maintained host has a different native configuration container.
-_HOST_SERVER_KEYS = {
-    "claude-code": "mcpServers",
-    "codex": "mcp_servers",
-    "gemini-cli": "mcpServers",
-    "cursor": "mcpServers",
-    "vscode-copilot": "servers",
-    "opencode": "mcp",
+_HOST_CONFIGS = {
+    "claude-code": ("integrations/claude-code/.mcp.json.example", "mcpServers"),
+    "codex": (".codex/config.example.toml", "mcp_servers"),
+    "gemini-cli": ("integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json", "mcpServers"),
+    "cursor": ("integrations/cursor/mcp.example.json", "mcpServers"),
+    "vscode-copilot": ("integrations/vscode/mcp.example.json", "servers"),
+    "opencode": ("integrations/opencode/opencode.example.json", "mcp"),
 }
 _STDIO_ARGS = (["kicad-mcp-pro"], ["kicad-mcp-pro", "--transport", "stdio"])
 
@@ -65,6 +65,15 @@ def _check_host_configuration(
     relative = item.get("configuration")
     if not _valid_host_path(relative):
         return
+    expected = _HOST_CONFIGS.get(name)
+    if expected is None:
+        problems.append(f"Unreviewed agent host: {name}")
+        return
+    expected_path, container = expected
+    if relative != expected_path:
+        problems.append(f"Unexpected reviewed configuration path for {name}")
+        return
+
     target = root / relative
     if not target.is_file():
         return
@@ -74,10 +83,6 @@ def _check_host_configuration(
         problems.append(f"Invalid configuration for {name}: {exc}")
         return
 
-    container = _HOST_SERVER_KEYS.get(name)
-    if container is None:
-        problems.append(f"Unreviewed agent host: {name}")
-        return
     servers = config.get(container)
     if not isinstance(servers, dict) or not servers:
         problems.append(f"No MCP servers defined for {name}")
@@ -168,7 +173,7 @@ def check(root: Path = ROOT) -> list[str]:
     ids: set[str] = set()
     for item in hosts:
         _check_host_row(root, item, ids, problems)
-    if ids != set(_HOST_SERVER_KEYS):
+    if ids != set(_HOST_CONFIGS):
         problems.append("Missing or unreviewed agent host in catalog")
     _check_extension(root, problems)
     return problems
