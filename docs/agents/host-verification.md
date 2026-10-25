@@ -67,6 +67,32 @@ execution log/digest, the source commit and environment before updating any
 published compatibility claim. Synthetic unit-test data cannot serve as evidence.
 The normal CI job does not install any agent host or generate passing evidence.
 
+## Model-free OpenCode native Skill discovery — 2026-10-25 (#1219)
+
+The actual **OpenCode 1.18.31** CLI on Windows ran
+`opencode debug skill --pure` in a temporary checkout of reviewed `main`
+revision `1afde5d027d15c309cae77827ff6d1d68adbf9fb` with temporary XDG
+config/data/cache/state paths. The command exited 0 without initiating an
+agent turn or calling a model. Its structured output contained all **seven**
+maintained KiCad skills; every reported source of those seven was inside the
+checkout's `.opencode/skills` or `.agents/skills` mirror. The native host also
+listed other skills; only the seven project-sourced results are recorded, not
+unrelated names or raw skill content.
+
+[Sanitized partial Skill discovery observation](
+../evidence/agent-host/2026-10-25-windows-opencode-skills-partial.json)
+records CLI version, date, source SHA, exact project skill paths and the
+ephemeral output's SHA-256. Raw output was deleted with the temporary checkout.
+The isolated XDG paths and `--pure` option do not independently establish
+complete isolation from every host-global discovery source.
+
+**Boundary:** this is *real native-host Skill discovery*, but it is **not**
+evidence of OpenCode's MCP server connection, host-originated
+`kicad_get_server_info` call, read-only mutation-tool absence or provider
+compatibility. No model inference was requested. The strict native smoke
+validator rejects the partial record; all catalog `smokeStatus` entries remain
+`not-run`. Keep #1219 open pending complete independently reviewed host proof.
+
 ## Isolated Windows host connectivity checkpoint — 2026-10-12 (#1219)
 
 A manual, model-free observation of the exact source revision

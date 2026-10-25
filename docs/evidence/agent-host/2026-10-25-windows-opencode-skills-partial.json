@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "agent-native-skill-discovery-partial.v1",
+  "observedOn": "2026-10-25",
+  "sourceRevision": "1afde5d027d15c309cae77827ff6d1d68adbf9fb",
+  "platform": "windows",
+  "host": {
+    "id": "opencode",
+    "version": "1.18.31",
+    "command": "opencode debug skill --pure",
+    "exitCode": 0
+  },
+  "environment": "temporary-source-checkout-and-XDG-config-roots",
+  "skillDiscovery": {
+    "hostReportedSkillCount": 36,
+    "expectedProjectSkills": {
+      "drc-check": ".opencode/skills/drc-check/SKILL.md",
+      "fabrication-output": ".opencode/skills/fabrication-output/SKILL.md",
+      "kicad-design-review": ".agents/skills/kicad-design-review/SKILL.md",
+      "pcb-design": ".opencode/skills/pcb-design/SKILL.md",
+      "schematic-review": ".opencode/skills/schematic-review/SKILL.md",
+      "visual-excellence": ".opencode/skills/visual-excellence/SKILL.md",
+      "wired-subcircuit-design": ".opencode/skills/wired-subcircuit-design/SKILL.md"
+    },
+    "allSevenDiscovered": true,
+    "allOriginsInsideSourceCheckout": true,
+    "stdoutSha256": "71ad8831a46832e7116e767c687dc59c153902cd882f2047f213d365230d7113",
+    "stderrBytes": 0,
+    "rawOutputRetained": false
+  },
+  "hostMcpServerDiscovery": "not-run",
+  "nativeHostMcpToolCall": "not-run",
+  "readonlyWriteToolAbsence": "not-run",
+  "modelInferenceExecuted": false,
+  "catalogPromotionAuthorized": false,
+  "fullNativeHostSmokeAttested": false
+}
