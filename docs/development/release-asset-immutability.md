@@ -145,7 +145,8 @@ Known limits: the checker parses shell text. Review these cases by hand:
 - GitHub CLI and curl payload options with attached values (for example
   `-ftag_name=v1`, `--field=tag_name=v1`, `-dtag_name=v1`, and
   `--data-raw=tag_name=v1`) are classified as write requests unless an
-  explicit read-only HTTP method is present. This is a bounded shell-argument
+  explicit read-only HTTP method or curl's `-G` / `--get` query mode is present.
+  This is a bounded shell-argument
   recognition rule, not a complete interpreter of arbitrary scripts.
 - Wrapper options that take a separate value (such as `xargs -I {}` or
   `env -u NAME`) are not understood, so the command after them is missed.

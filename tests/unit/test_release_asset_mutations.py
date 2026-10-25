@@ -376,6 +376,9 @@ def test_inlined_api_body_arguments_cannot_hide_published_release_write(
     [
         "gh api repos/org/repo/releases -XGET --input=payload.json",
         "curl https://api.github.com/repos/org/repo/releases -X GET --data-raw=payload",
+        "curl -G -dper_page=5 https://api.github.com/repos/org/repo/releases",
+        "curl --get --data-raw=per_page=5 https://api.github.com/repos/org/repo/releases",
+        "curl --get -Ffilter=open https://api.github.com/repos/org/repo/releases",
         "gh api repos/org/repo/issues --field=title=notice",
         "curl https://example.org/data --data-raw=payload",
     ],

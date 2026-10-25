@@ -299,6 +299,8 @@ def _classify_segment(segment: str) -> _Match | None:
             return _Match("upload_asset", False, None, segment)
         if any("/releases" in token for token in rest):
             method = _flag_value(rest, "-X", "--request")
+            if method is None and any(flag in {"-G", "--get"} for flag in rest):
+                method = "GET"
             if method is None and _has_payload_flag(rest, _CURL_BODY_FLAGS):
                 method = "POST"
             if method is not None and method.upper() in _WRITE_METHODS:
