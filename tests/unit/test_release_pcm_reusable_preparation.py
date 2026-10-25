@@ -49,6 +49,19 @@ def test_pcm_preparation_attests_but_never_reads_or_mutates_release() -> None:
     assert check["if"] == "inputs.source_commit != ''"
     assert '[[ "$CALLER_SHA" == "$EXPECTED_SOURCE" ]]' in check["run"]
     assert '[[ "$(git rev-parse HEAD)" == "$EXPECTED_SOURCE" ]]' in check["run"]
+    identity_index = next(
+        i
+        for i, item in enumerate(steps)
+        if item.get("name") == "Verify reusable preparation source identity"
+    )
+    checkout_index = next(
+        i for i, item in enumerate(steps) if "actions/checkout@" in item.get("uses", "")
+    )
+    setup_index = next(
+        i for i, item in enumerate(steps) if "astral-sh/setup-uv@" in item.get("uses", "")
+    )
+    assert identity_index == checkout_index + 1
+    assert identity_index < setup_index
     assert any(x.get("name") == "Attest KiCad PCM package" for x in steps)
     assert any(x.get("name") == "Store KiCad PCM release evidence" for x in steps)
     for name in (
