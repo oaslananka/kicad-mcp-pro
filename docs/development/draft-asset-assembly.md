@@ -247,3 +247,61 @@ order, before either Actions artifact upload. The additive SLSA workflow
 change is staged independently on
 `feature/1179-python-slsa-provenance-20261025`; the job acceptance cannot
 succeed for a legacy Python producer that has only an SBOM attestation.
+
+## Read-only whole-bundle signature/run consistency (staged, #1179)
+
+Instead of passing unrelated evidence JSONs to a future owner and trusting
+that their source IDs match, the **nonpublishing** command
+`scripts.check_signed_draft_producer_bundle` composes the exact four existing
+security gates for a **separately completed, successful main
+`workflow_dispatch` producer** into a single fail-closed operation:
+
+```bash
+python -m scripts.check_signed_draft_producer_bundle \
+  --repo oaslananka/kicad-mcp-pro \
+  --role mcpb-release-evidence \
+  --tag mcp-server-v4.5.0 \
+  --source-commit "$REVIEWED_MAIN_SHA" \
+  --run-id "$APPROVED_PRODUCER_RUN_ID" \
+  --run-attempt "$APPROVED_PRODUCER_RUN_ATTEMPT" \
+  --job-id "$APPROVED_PRODUCER_JOB_ID" \
+  --artifact-id "$APPROVED_MCPB_ARTIFACT_ID" \
+  --downloaded-zip "$DOWNLOADS/mcpb-release-evidence.zip"
+```
+
+It independently checks the **specific completed Actions producer job**,
+the approved ZIP artifact ID and GitHub-recorded archive SHA256, safe exact
+ZIP contents in an isolated temporary directory, then *every* signable
+package with GitHub CLI's cryptographic **SLSA** verification. The package
+signature's attested `invocationId` **and** signed certificate
+`runInvocationURI` must match the same separately approved producing
+run and attempt used by the job and ZIP gates. Signable roles are
+`python-dist` (both wheel and sdist), `mcpb-release-evidence` and
+`kicad-pcm-release-evidence`. The `python-release-evidence` artifact is
+**not** falsely treated as a signed package: validate its ZIP/job metadata
+with the separate existing tools before the 11-asset assembly.
+
+The command **never preserves the extracted files, uploads them, grants
+publication authorization, or changes a Release**. It reports the exact
+same run/job/artifact IDs, archive digest and per-package SLSA digest, but
+retains `artifactProducedByThisJobVerified=false`,
+`registryReceiptVerified=false`, `exclusiveWriterVerified=false` and
+`publicationAuthorized=false`.
+
+The approved run/job/artifact identifiers must be supplied from a separately
+reviewed, frozen owner plan, **never chosen from the package, ZIP or an
+untrusted pull request**. Although the signature now cryptographically
+binds the package to the run and attempt, it does **not** include a signed
+job ID; the GitHub archive API likewise does not cryptographically bind
+the ZIP to an individual job. Independent checks of that job's successful
+attestation/upload steps are metadata evidence, not an equivalent signature.
+
+**Current limitation:** the old ZIP/job verifiers demand a **fully completed
+main `workflow_dispatch` run**, and they deliberately reject release/tag
+events and active reusable-workflow runs. This new composition does not
+secretly broaden that contract. A genuine owner-orchestrated `workflow_call`
+must get a **separately reviewed job-scoped acceptance model** before its
+own run has completed. Historical live SLSA validation (v4.4.0 MCPB and
+PCM) demonstrates the underlying signed invocation fields, not this
+completed-main-workflow composition. No end-to-end owner publication
+acceptance is yet claimed.
