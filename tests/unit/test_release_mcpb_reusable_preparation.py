@@ -52,6 +52,19 @@ def test_mcpb_prepare_attests_but_does_not_attach_to_release() -> None:
         "[[", "["
     ).replace("]]", "]")
     assert "$(git rev-parse HEAD)" in source_check["run"]
+    source_index = next(
+        i
+        for i, step in enumerate(steps)
+        if step.get("name") == "Verify reusable preparation source identity"
+    )
+    checkout_index = next(
+        i for i, step in enumerate(steps) if "actions/checkout@" in step.get("uses", "")
+    )
+    setup_index = next(
+        i for i, step in enumerate(steps) if "astral-sh/setup-uv@" in step.get("uses", "")
+    )
+    assert source_index == checkout_index + 1
+    assert source_index < setup_index
     assert any(s.get("name") == "Attest MCPB bundle" for s in steps)
     assert any(s.get("name") == "Store MCPB release evidence" for s in steps)
     release_writes = [s for s in steps if "gh release upload" in s.get("run", "")]

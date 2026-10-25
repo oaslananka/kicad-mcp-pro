@@ -74,6 +74,18 @@ jobs:
           fetch-depth: 0
           ref: ${{ steps.release.outputs.tag }}
           persist-credentials: false
+      - name: Verify reusable preparation source identity
+        if: inputs.source_commit != ''
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ inputs.source_commit }}
+          CALLER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SOURCE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CALLER_SHA" == "$EXPECTED_SOURCE" ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SOURCE" ]]
+
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           enable-cache: false
@@ -109,18 +121,6 @@ jobs:
             release_target="$(gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
             test "$release_target" = "$source_commit"
           fi
-
-      - name: Verify reusable preparation source identity
-        if: inputs.source_commit != ''
-        shell: bash
-        env:
-          EXPECTED_SOURCE: ${{ inputs.source_commit }}
-          CALLER_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          [[ "$EXPECTED_SOURCE" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$CALLER_SHA" == "$EXPECTED_SOURCE" ]]
-          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SOURCE" ]]
 
       - name: Validate and pack MCPB bundle
         shell: bash
