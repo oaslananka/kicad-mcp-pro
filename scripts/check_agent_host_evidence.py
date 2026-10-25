@@ -92,6 +92,10 @@ def _check_host_configuration(
         problems.append(f"Missing kicad MCP server for {name}")
         return
 
+    _check_local_server(name, server, problems)
+
+
+def _check_local_server(name: str, server: dict[str, Any], problems: list[str]) -> None:
     if name == "opencode":
         known_local_command = (
             server.get("type") == "local"
