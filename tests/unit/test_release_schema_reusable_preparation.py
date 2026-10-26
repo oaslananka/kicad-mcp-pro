@@ -63,8 +63,21 @@ def test_schema_source_verified_before_installs_and_preparation_is_artifact_only
     assert "refs/tags/" + "$" + "{RELEASE_TAG}^{commit}" in script
     assert 'if [[ -z "$PREPARE_SOURCE" ]]' not in script
     assert '[[ "$PREPARE_SOURCE" =~ ^[0-9a-f]{40}$ ]] || exit 1' in script
-    assert any(s.get("name") == "Attest tarball" for s in steps)
-    assert any(s.get("name") == "Store release evidence" for s in steps)
+    slsa = next(
+        i
+        for i, s in enumerate(steps)
+        if s.get("name") == "Attest Protocol Schemas SLSA build provenance"
+    )
+    sbom = next(i for i, s in enumerate(steps) if s.get("name") == "Attest tarball")
+    upload = next(i for i, s in enumerate(steps) if s.get("name") == "Store release evidence")
+    assert slsa < sbom < upload
+    assert "actions/attest@" in steps[slsa]["uses"]
+    assert "actions/attest@" in steps[sbom]["uses"]
+    assert steps[slsa]["with"] == {
+        "subject-checksums": "release-assets/protocol-schemas/SHA256SUMS.txt"
+    }
+    assert steps[sbom]["with"]["subject-checksums"] == (steps[slsa]["with"]["subject-checksums"])
+    assert steps[sbom]["with"]["sbom-path"] == ("release-assets/protocol-schemas/sbom.cdx.json")
 
     assert "gh release" not in WORKFLOW.read_text(encoding="utf-8")
     assert "npm publish" not in WORKFLOW.read_text(encoding="utf-8")

@@ -22,6 +22,7 @@ from scripts.check_draft_producer_archive import REPOSITORY
 from scripts.runtime_path_safety import approved_runtime_path
 
 _SHA = re.compile(r"^[0-9a-f]{40}$")
+_SCHEMA_VERSION = re.compile(r"^protocol-schemas-v(\d+\.\d+\.\d+)$", re.ASCII)
 _MAIN_REF = "refs/heads/main"
 _PREDICATE = "https://slsa.dev/provenance/v1"
 _MIN_SAFE_GH_VERSION = (2, 102, 0)
@@ -39,6 +40,7 @@ _REUSABLE_SIGNERS = {
     "python": ".github/workflows/prepare-python.yml",
     "mcpb": ".github/workflows/prepare-mcpb.yml",
     "pcm": ".github/workflows/prepare-kicad-pcm.yml",
+    "schemas": ".github/workflows/prepare-protocol-schemas.yml",
 }
 
 
@@ -165,8 +167,13 @@ def _attestation_match_counts(
 
 def _approved_package_version(*, tag: str, source_commit: str, kind: str, source_ref: str) -> str:
     """Validate source and signer identity before any local package reads."""
-    match = _VERSION.fullmatch(tag)
-    if match is None or _SHA.fullmatch(source_commit) is None or kind not in _SIGNERS:
+    if _SHA.fullmatch(source_commit) is None:
+        raise ValueError("unapproved signed package identity")
+    if kind == "schemas":
+        match = _SCHEMA_VERSION.fullmatch(tag)
+    else:
+        match = _VERSION.fullmatch(tag)
+    if match is None or kind not in _REUSABLE_SIGNERS:
         raise ValueError("unapproved signed package identity")
     if source_ref not in {_MAIN_REF, f"refs/tags/{tag}"}:
         raise ValueError("signed package source ref must match main or the exact approved tag")
@@ -199,6 +206,8 @@ def _approved_signer(
 ) -> str:
     """Keep the legacy and called-workflow trust roots mutually exclusive."""
     if profile == "legacy":
+        if kind not in _SIGNERS:
+            raise ValueError("no approved legacy signer for package family")
         return _SIGNERS[kind]
     if profile != "reusable":
         raise ValueError("unapproved signed workflow profile")
@@ -226,8 +235,11 @@ def verify_signed_asset(
     )
     expected_invocation = _approved_run_invocation(producer_run_id, producer_run_attempt)
     signer = _approved_signer(kind, signer_profile, source_ref, expected_invocation)
-    allowed = _expected(version)["python_dist" if kind == "python" else kind]
-    allowed_packages = {n for n in allowed if n.endswith((".whl", ".tar.gz", ".mcpb", ".zip"))}
+    if kind == "schemas":
+        allowed_packages = {f"oaslananka-kicad-protocol-schemas-{version}.tgz"}
+    else:
+        allowed = _expected(version)["python_dist" if kind == "python" else kind]
+        allowed_packages = {n for n in allowed if n.endswith((".whl", ".tar.gz", ".mcpb", ".zip"))}
     if package.is_symlink() or package.name not in allowed_packages:
         raise ValueError("unapproved or linked signed package")
     path = approved_runtime_path(package)
@@ -287,7 +299,7 @@ def main() -> int:
     p.add_argument("--package", required=True, type=Path)
     p.add_argument("--tag", required=True)
     p.add_argument("--source-commit", required=True)
-    p.add_argument("--kind", required=True, choices=sorted(_SIGNERS))
+    p.add_argument("--kind", required=True, choices=sorted(_REUSABLE_SIGNERS))
     p.add_argument(
         "--signer-profile",
         default="legacy",
