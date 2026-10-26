@@ -102,6 +102,14 @@ def _invocation_matches(
     return statement_invocation == expected and certificate_invocation == expected
 
 
+def _subject_matches(subject: object, filename: str, sha256: str) -> bool:
+    """Only cryptographically reported matching subject name/digest pairs count."""
+    if not isinstance(subject, dict) or subject.get("name") != filename:
+        return False
+    digest = subject.get("digest")
+    return isinstance(digest, dict) and digest.get("sha256") == sha256
+
+
 def _attestation_match_counts(
     entry: object, *, filename: str, sha256: str, expected_invocation: str | None
 ) -> tuple[int, int]:
@@ -120,14 +128,7 @@ def _attestation_match_counts(
     subjects = statement.get("subject")
     if not isinstance(subjects, list):
         raise ValueError("signed provenance has no subjects")
-    count = sum(
-        1
-        for subject in subjects
-        if isinstance(subject, dict)
-        and subject.get("name") == filename
-        and isinstance(subject.get("digest"), dict)
-        and subject["digest"].get("sha256") == sha256
-    )
+    count = sum(_subject_matches(subject, filename, sha256) for subject in subjects)
     return count, count if run_matches else 0
 
 

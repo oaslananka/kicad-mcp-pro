@@ -92,7 +92,8 @@ class Fake:
 
     def workflow_jobs(self, repo: str, run_id: int, attempt: int) -> dict[str, Any]:
         assert repo == REPOSITORY
-        assert run_id == ID and attempt == ATTEMPT
+        assert run_id == ID
+        assert attempt == ATTEMPT
         self.calls += 1
         return deepcopy(self.jobs)
 

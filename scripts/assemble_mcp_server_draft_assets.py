@@ -118,6 +118,18 @@ def _check_source_evidence(
         )
 
 
+def _safe_output_parent(output: Path, inputs: list[Path]) -> Path:
+    """Never create a directory inside an already verified source inventory."""
+    if output.is_symlink() or output.exists():
+        raise ValueError("output must not exist: no overwrite of approved release inventory")
+    parent = approved_runtime_path(output.parent)
+    target = parent / output.name
+    if any(target.is_relative_to(path) for path in inputs):
+        raise ValueError("output directory must be outside source artifact directories")
+    parent.mkdir(parents=True, exist_ok=True)
+    return parent
+
+
 def assemble(
     *,
     tag: str,
@@ -147,14 +159,7 @@ def assemble(
     _check_source_evidence(source, version=version, tag=tag, source_commit=source_commit)
 
     output = Path(output).expanduser()
-    if output.is_symlink() or output.exists():
-        raise ValueError("output must not exist: no overwrite of approved release inventory")
-    parent = approved_runtime_path(output.parent)
-    # Reject nested output paths before creating directories inside validated inputs.
-    target = parent / output.name
-    if any(target.is_relative_to(p) for p in inputs):
-        raise ValueError("output directory must be outside source artifact directories")
-    parent.mkdir(parents=True, exist_ok=True)
+    parent = _safe_output_parent(output, inputs)
     with tempfile.TemporaryDirectory(prefix=".kicad-draft-assembly-", dir=parent) as temp:
         staged = Path(temp)
         assets = staged / "assets"

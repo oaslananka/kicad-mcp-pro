@@ -102,22 +102,30 @@ def _matching_approved_job(
     return steps
 
 
+def _successful_step_number(item: object, label: str, *, prefix: bool) -> int | None:
+    """Validate an individual job step and extract its number if it matches."""
+    if not isinstance(item, dict):
+        raise ValueError("invalid producer job step")
+    step_name = item.get("name")
+    if not isinstance(step_name, str):
+        raise ValueError("invalid producer job step name")
+    matched = step_name.startswith(label) if prefix else step_name == label
+    if not matched:
+        return None
+    if item.get("status") != "completed" or item.get("conclusion") != "success":
+        raise ValueError(f"required producer step failed or was skipped: {label}")
+    num = item.get("number")
+    if type(num) is not int or num <= 0:
+        raise ValueError("producer step lacks a valid number")
+    return num
+
+
 def _successful_step_numbers(steps: list[object], label: str, *, prefix: bool = False) -> list[int]:
-    result: list[int] = []
+    result = []
     for item in steps:
-        if not isinstance(item, dict):
-            raise ValueError("invalid producer job step")
-        step_name = item.get("name")
-        if not isinstance(step_name, str):
-            raise ValueError("invalid producer job step name")
-        matched = step_name.startswith(label) if prefix else step_name == label
-        if matched:
-            if item.get("status") != "completed" or item.get("conclusion") != "success":
-                raise ValueError(f"required producer step failed or was skipped: {label}")
-            num = item.get("number")
-            if type(num) is not int or num <= 0:
-                raise ValueError("producer step lacks a valid number")
-            result.append(num)
+        number = _successful_step_number(item, label, prefix=prefix)
+        if number is not None:
+            result.append(number)
     return result
 
 
