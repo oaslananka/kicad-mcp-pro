@@ -1,4 +1,4 @@
-# Renovate migration pilot — parked, not activated (24 October 2026)
+# Renovate migration pilot — parked, not activated (reviewed 26 October 2026)
 
 ## Ownership and safety
 
@@ -28,11 +28,29 @@ renovate-patch label, and separately OPERATOR-APPLIED
 renovate-pilot-approved label. The label is never automatically applied by
 the bot. No review bypass or CI bypass is allowed.
 
+## Dependency security checkpoint (26 October 2026)
+
+- A read-only GitHub Dependabot Alerts API query for **open** alerts returned
+  **0** on 26 October 2026. The previous **15** open pypdf, fastmcp/fastmcp-slim
+  and fast-uri alert records were a 24 October snapshot, **not** the current
+  queue; reviewed package updates were merged separately. Do not dismiss,
+  downgrade or suppress future alerts to keep this count at zero.
+- A separate read-only **Code Scanning** API query still returned **6 open**
+  OSV/RustSec entries representing **5 distinct Rust dependency issues**
+  (the glib unsoundness has two alias records). Track these under #1450;
+  zero Dependabot alerts must **not** be described as a clean Rust or full
+  repository vulnerability scan.
+- This is a **dated observation**, not a persisted health guarantee. Re-query
+  both alert channels and verify the default-branch dependency snapshot
+  immediately before any future Renovate activation decision. The
+  Dependabot vulnerability-alert channel stays enabled throughout.
+
 ## Separate, explicitly authorized activation sequence
 
-1. Resolve or triage the 15 currently open Dependabot alerts: 3 high pypdf,
-   4 medium fastmcp/fastmcp-slim and 8 fast-uri (4 medium, 4 low).
-   PR #1445 prepares the pypdf security fix.
+1. Reconfirm live Dependabot Alerts and Code Scanning findings against the
+   default-branch dependency graph; triage any newly open security warnings
+   independently. Preserve Dependabot Alerts even if version-update sources
+   are later switched.
 2. Validate configuration with renovate-config-validator --strict, GitHub
    PR CI and Mergify checks. Keep Renovate disabled at this stage.
 3. If desired, the owner installs Renovate's hosted GitHub App with the
