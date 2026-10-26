@@ -93,3 +93,16 @@ MCP client (agent)  --tool calls-->  KiCad MCP Pro
 ## Reporting
 
 Report vulnerabilities privately through GitHub Security Advisories.
+
+### Optional Cloud outbound authentication bootstrap (not active by default)
+
+The separately installable Cloud client is an explicit one-shot **WSS-only**
+outbound handshake, not a relay or an alternate KiCad transport. It requires
+an already enrolled device and an owner-controlled 0600 Ed25519 key on POSIX;
+Windows secure key storage is not implemented. It neither sends project files
+nor accepts native KiCad operations. Strict reply parsing, nonce/domain-bound
+signatures, verified server TLS and bounded timers protect the preliminary
+identity exchange. Live reverse-proxy, client consent, distributed rate limits
+and device/project permissions must be accepted before any remote execution
+feature may be designed or enabled. See
+[`docs/integration/cloud-outbound-connector.md`](../integration/cloud-outbound-connector.md).
