@@ -49,8 +49,9 @@ def test_malformed_skill_payload_rejected() -> None:
 
 
 def test_missing_skill_cannot_pass() -> None:
+    incomplete = {"data": [{"skills": _input_rows(ROOT)[:-1]}]}
     with pytest.raises(ValueError, match="incomplete"):
-        _repo_skills({"data": [{"skills": _input_rows(ROOT)[:-1]}]}, ROOT)
+        _repo_skills(incomplete, ROOT)
 
 
 def test_duplicate_skill_cannot_pass() -> None:
@@ -137,3 +138,38 @@ def test_mismatched_executable_sha_rejected_before_host_or_git(
     assert probe.main() == 2
     assert json.loads(capsys.readouterr().out)["status"] == "rejected"
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (
+            b'{"jsonrpc":"2.0","method":"notification"}\n{"id":3,"result":{"status":"ok"}}\n',
+            {"status": "ok"},
+        ),
+        (b'invalid-json\n{"id":3,"result":{"status":"ok"}}\n', {"status": "ok"}),
+        (b'42\n{"id":3,"result":{"status":"ok"}}\n', {"status": "ok"}),
+    ],
+)
+def test_native_rpc_skips_malformed_or_unrelated_frames(
+    raw: bytes, expected: dict[str, str]
+) -> None:
+    """Ignore notifications and irrelevant JSON until the matching response."""
+    rpc = object.__new__(probe._AppServer)
+    rpc.pending = raw
+    assert rpc._matching_response(3, "example") == expected
+    assert rpc.pending == b""
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b'{"id":3,"error":{"message":"unavailable"}}\n',
+        b'{"id":3,"result":"malformed"}\n',
+    ],
+)
+def test_native_rpc_rejects_error_and_invalid_matching_results(raw: bytes) -> None:
+    rpc = object.__new__(probe._AppServer)
+    rpc.pending = raw
+    with pytest.raises(RuntimeError, match="host RPC failed|unexpected host RPC"):
+        rpc._matching_response(3, "example")

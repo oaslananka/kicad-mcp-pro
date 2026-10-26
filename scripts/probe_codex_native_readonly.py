@@ -65,6 +65,25 @@ def _run(argv: list[str], *, cwd: Path, env: dict[str, str], timeout: int = 12) 
     return result.stdout.strip()
 
 
+def _verified_project_skill(row: object, root: Path) -> tuple[str, str] | None:
+    """Reject bad Skill entries and normalize only source-owned project Skills."""
+    if not isinstance(row, dict):
+        raise ValueError("invalid Skill entry")
+    name = row.get("name")
+    if not isinstance(name, str) or not name.startswith("kicad-pro:"):
+        return None
+    short = name.removeprefix("kicad-pro:")
+    if short not in EXPECTED_SKILLS:
+        return None
+    raw = row.get("path")
+    if not isinstance(raw, str):
+        raise ValueError("invalid project Skill path")
+    resolved = Path(raw).resolve()
+    if not resolved.is_relative_to(root) or not resolved.is_file():
+        raise ValueError("project Skill origin is outside the pinned checkout")
+    return short, resolved.relative_to(root).as_posix()
+
+
 def _repo_skills(payload: dict[str, Any], root: Path) -> dict[str, str]:
     """Accept only all seven Skills physically inside the pinned checkout."""
     groups = payload.get("data")
@@ -75,23 +94,13 @@ def _repo_skills(payload: dict[str, Any], root: Path) -> dict[str, str]:
         if not isinstance(group, dict) or not isinstance(group.get("skills"), list):
             raise ValueError("invalid Skill group")
         for row in group["skills"]:
-            if not isinstance(row, dict):
-                raise ValueError("invalid Skill entry")
-            name = row.get("name", "")
-            if not isinstance(name, str) or not name.startswith("kicad-pro:"):
+            verified = _verified_project_skill(row, root)
+            if verified is None:
                 continue
-            short = name.removeprefix("kicad-pro:")
-            if short not in EXPECTED_SKILLS:
-                continue
-            raw = row.get("path")
-            if not isinstance(raw, str):
-                raise ValueError("invalid project Skill path")
-            resolved = Path(raw).resolve()
-            if not resolved.is_relative_to(root) or not resolved.is_file():
-                raise ValueError("project Skill origin is outside the pinned checkout")
+            short, source_path = verified
             if short in found:
                 raise ValueError("duplicate project Skill identity")
-            found[short] = resolved.relative_to(root).as_posix()
+            found[short] = source_path
     if set(found) != EXPECTED_SKILLS:
         raise ValueError("incomplete project Skill discovery")
     return dict(sorted(found.items()))
@@ -110,36 +119,45 @@ class _AppServer:
         self.reader.register(self.stdout, selectors.EVENT_READ)
         self.pending = b""
 
+    def _matching_response(self, ident: int, method: str) -> dict[str, Any] | None:
+        """Drain framed host notifications until an exact matching reply arrives."""
+        while b"\n" in self.pending:
+            line, self.pending = self.pending.split(b"\n", 1)
+            try:
+                response = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(response, dict) or response.get("id") != ident:
+                continue
+            if "error" in response:
+                raise RuntimeError(f"{method}: host RPC failed")
+            result = response.get("result")
+            if not isinstance(result, dict):
+                raise RuntimeError(f"{method}: unexpected host RPC result")
+            return result
+        return None
+
+    def _read_fragment(self, method: str) -> None:
+        for _, _ in self.reader.select(timeout=0.25):
+            fragment = os.read(self.stdout.fileno(), 65_536)
+            if not fragment:
+                raise RuntimeError(f"{method}: host closed output")
+            self.pending += fragment
+            if len(self.pending) > 4_000_000:
+                raise RuntimeError("host RPC output exceeded limit")
+        if self.process.poll() is not None:
+            raise RuntimeError(f"{method}: host process ended")
+
     def request(self, ident: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
         msg = {"jsonrpc": "2.0", "id": ident, "method": method, "params": params}
         self.stdin.write((json.dumps(msg) + "\n").encode())
         self.stdin.flush()
         deadline = time.monotonic() + 35
         while time.monotonic() < deadline:
-            while b"\n" in self.pending:
-                line, self.pending = self.pending.split(b"\n", 1)
-                try:
-                    response = json.loads(line)
-                except (ValueError, UnicodeError):
-                    continue
-                if response.get("id") == ident:
-                    if not isinstance(response, dict):
-                        raise RuntimeError(f"{method}: malformed host RPC response")
-                    if "error" in response:
-                        raise RuntimeError(f"{method}: host RPC failed")
-                    result = response.get("result")
-                    if not isinstance(result, dict):
-                        raise RuntimeError(f"{method}: unexpected host RPC result")
-                    return result
-            for _, _ in self.reader.select(timeout=0.25):
-                fragment = os.read(self.stdout.fileno(), 65_536)
-                if not fragment:
-                    raise RuntimeError(f"{method}: host closed output")
-                self.pending += fragment
-                if len(self.pending) > 4_000_000:
-                    raise RuntimeError("host RPC output exceeded limit")
-            if self.process.poll() is not None:
-                raise RuntimeError(f"{method}: host process ended")
+            result = self._matching_response(ident, method)
+            if result is not None:
+                return result
+            self._read_fragment(method)
         raise TimeoutError(f"{method}: bounded timeout")
 
 
@@ -441,7 +459,6 @@ def main() -> int:
         KeyError,
         TypeError,
         AttributeError,
-        TimeoutError,
         subprocess.SubprocessError,
         RuntimeError,
     ):
