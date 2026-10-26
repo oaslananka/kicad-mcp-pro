@@ -1,0 +1,112 @@
+name: Draft producer preflight (non-publishing)
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_tag:
+        description: Existing protected mcp-server-vX.Y.Z tag on this exact main SHA.
+        required: true
+        type: string
+      schemas_tag:
+        description: Existing protected protocol-schemas-vX.Y.Z tag on this same main SHA.
+        required: true
+        type: string
+      source_commit:
+        description: Exact approved main SHA, equal to both tags.
+        required: true
+        type: string
+
+# Preflight concurrency is NOT a verified exclusive Release writer lock.
+concurrency:
+  group: draft-producer-preflight-${{ inputs.source_commit }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    if: >-
+      github.repository == 'oaslananka/kicad-mcp-pro' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.source_commit != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify protected main and exact tag source identity
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ inputs.source_commit }}
+          SERVER_TAG: ${{ inputs.server_tag }}
+          SCHEMAS_TAG: ${{ inputs.schemas_tag }}
+          CALLER_REF: ${{ github.ref }}
+          CALLER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$CALLER_REF" == "refs/heads/main" ]] || exit 1
+          [[ "$CALLER_SHA" == "$EXPECTED_SHA" ]] || exit 1
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]] || exit 1
+          [[ "$SERVER_TAG" =~ ^mcp-server-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          [[ "$SCHEMAS_TAG" =~ ^protocol-schemas-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          server_sha="$(git rev-list -n 1 "refs/tags/$SERVER_TAG^{commit}")" || exit 1
+          schemas_sha="$(git rev-list -n 1 "refs/tags/$SCHEMAS_TAG^{commit}")" || exit 1
+          [[ "$server_sha" == "$EXPECTED_SHA" ]] || exit 1
+          [[ "$schemas_sha" == "$EXPECTED_SHA" ]] || exit 1
+          server_version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')" || exit 1
+          schemas_version="$(python3 -c 'import json; print(json.load(open("packages/protocol-schemas/package.json"))["version"])')" || exit 1
+          [[ "$SERVER_TAG" == "mcp-server-v$server_version" ]] || exit 1
+          [[ "$SCHEMAS_TAG" == "protocol-schemas-v$schemas_version" ]] || exit 1
+
+  python:
+    needs: source
+    uses: ./.github/workflows/prepare-python.yml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    with:
+      tag: ${{ inputs.server_tag }}
+      source_commit: ${{ inputs.source_commit }}
+
+  mcpb:
+    needs: source
+    uses: ./.github/workflows/prepare-mcpb.yml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    with:
+      tag: ${{ inputs.server_tag }}
+      source_commit: ${{ inputs.source_commit }}
+
+  pcm:
+    needs: source
+    uses: ./.github/workflows/prepare-kicad-pcm.yml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    with:
+      tag: ${{ inputs.server_tag }}
+      source_commit: ${{ inputs.source_commit }}
+
+  schemas:
+    needs: source
+    uses: ./.github/workflows/prepare-protocol-schemas.yml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    with:
+      tag: ${{ inputs.schemas_tag }}
+      source_commit: ${{ inputs.source_commit }}

@@ -123,6 +123,28 @@
         "id-token"
       ]
     },
+    "draft-producer-preflight.yml": {
+      "python": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ],
+      "mcpb": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ],
+      "pcm": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ],
+      "schemas": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ]
+    },
     "prepare-protocol-schemas.yml": {
       "prepare": [
         "artifact-metadata",
