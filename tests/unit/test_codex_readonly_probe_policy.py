@@ -6,6 +6,7 @@ import json
 import signal
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -70,6 +71,7 @@ def test_outside_checkout_skill_cannot_pass(tmp_path: Path) -> None:
         _repo_skills({"data": [{"skills": rows}]}, ROOT)
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="native revision probe is Linux-only")
 def test_unknown_source_sha_rejected_before_host_start(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -119,6 +121,9 @@ def test_unknown_source_sha_rejected_before_host_start(
     assert not list(tmp_path.iterdir())
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="the native host digest preflight requires Linux"
+)
 def test_mismatched_executable_sha_rejected_before_host_or_git(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -191,6 +196,7 @@ def test_native_rpc_rejects_error_and_invalid_matching_results(raw: bytes) -> No
         rpc._matching_response(3, "example")
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="process-group signals require Linux")
 @pytest.mark.parametrize("first_wait_times_out", [False, True])
 def test_process_group_cleanup_kills_surviving_children(
     monkeypatch: pytest.MonkeyPatch, first_wait_times_out: bool
@@ -244,6 +250,7 @@ def test_evidence_success_writes_both_files(tmp_path: Path) -> None:
     assert second.read_bytes() == b"metadata"
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="the native host preflight requires Linux")
 def test_preexisting_output_rejected_before_native_host_start(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -283,3 +290,45 @@ def test_preexisting_output_rejected_before_native_host_start(
     assert probe.main() == 2
     assert json.loads(capsys.readouterr().out)["status"] == "rejected"
     assert (tmp_path / "codex-native-smoke.json").read_bytes() == b"existing"
+
+
+@pytest.mark.parametrize("unsupported_platform", ["darwin", "win32"])
+def test_unsupported_platform_rejected_without_starting_host(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    unsupported_platform: str,
+) -> None:
+    """On Windows and macOS, the Linux-only probe must fail closed."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "probe_codex_native_readonly.py",
+            "--python",
+            sys.executable,
+            "--expected-source-sha",
+            SOURCE,
+            "--expected-codex-sha256",
+            "b" * 64,
+            "--expected-python-sha256",
+            "c" * 64,
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+    monkeypatch.setattr(
+        probe.shutil,
+        "which",
+        lambda _name: pytest.fail("must reject before executable discovery"),
+    )
+    monkeypatch.setattr(
+        probe, "_execute", lambda *_args, **_kwargs: pytest.fail("host must not start")
+    )
+    with patch.object(probe.sys, "platform", unsupported_platform):
+        assert probe.main() == 2
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "rejected",
+        "reason": "probe_incomplete_or_unsafe",
+    }
+    assert not list(tmp_path.iterdir())
