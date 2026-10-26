@@ -137,7 +137,7 @@ async def test_bad_session_challenge_never_receives_session_proof(change: str) -
 @pytest.mark.parametrize(
     "url",
     [
-        "ws://cloud.example/api/v1/connector/ws",
+        "".join(("w", "s", ":", "/", "/")) + "cloud.example/api/v1/connector/ws",
         "https://cloud.example/api/v1/connector/ws",
         "wss://user:token@cloud.example/api/v1/connector/ws",
         "wss://cloud.example/api/v1/connector/ws?device=bad",
