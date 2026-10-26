@@ -8,7 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from scripts.check_agent_native_smoke_evidence import main, validate_sanitized_log
+from scripts.check_agent_native_smoke_evidence import (
+    _read_bounded_regular_file,
+    main,
+    validate_sanitized_log,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE = ROOT / "docs/evidence/agent-host"
@@ -138,3 +142,43 @@ def test_cli_rejects_missing_log_when_explicitly_requested(
     result = json.loads(capsys.readouterr().out)
     assert result["reason_codes"] == ["invalid_or_missing_log"]
     assert result["establishes_real_host_compatibility"] is False
+
+
+def test_bounded_reader_accepts_exact_limit_without_extra_bytes(tmp_path: Path) -> None:
+    file = tmp_path / "evidence.json"
+    file.write_bytes(b"x" * 1024)
+    assert _read_bounded_regular_file(file, 1024) == b"x" * 1024
+    with pytest.raises(ValueError, match="evidence"):
+        _read_bounded_regular_file(file, 1023)
+
+
+def test_bounded_reader_rejects_symlink_and_nonregular_file(tmp_path: Path) -> None:
+    target = tmp_path / "real-log.json"
+    target.write_bytes(b"{}")
+    link = tmp_path / "linked-log.json"
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are unavailable to this platform account")
+    with pytest.raises(ValueError, match="link"):
+        _read_bounded_regular_file(link, 32_768)
+    with pytest.raises(ValueError, match="invalid evidence"):
+        _read_bounded_regular_file(tmp_path, 32_768)
+
+
+def test_cli_rejects_oversized_log(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    oversized = tmp_path / "oversized.json"
+    oversized.write_bytes(b"x" * 32_769)
+    assert (
+        main(
+            [
+                "--report",
+                str(EVIDENCE / "2026-10-26-linux-codex-native-smoke.json"),
+                "--sanitized-log",
+                str(oversized),
+            ]
+        )
+        == 2
+    )
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason_codes"] == ["invalid_or_missing_log"]

@@ -10,7 +10,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
+import stat
 import sys
 from pathlib import Path
 
@@ -219,6 +221,39 @@ def validate_sanitized_log(report: object, raw_log: bytes) -> list[str]:
     return []
 
 
+def _read_bounded_regular_file(path: Path, limit: int) -> bytes:
+    """Read evidence from one descriptor, never through a symlink or past limit.
+
+    O_NOFOLLOW enforces this on supported systems. On Windows, keep the
+    symlink/junction checks and require the opened file identity to match
+    the preflight lstat. In all cases bound the read even if size changes.
+    """
+    if path.is_symlink() or (hasattr(path, "is_junction") and path.is_junction()):
+        raise ValueError("evidence link rejected")
+    before = path.lstat()
+    if not stat.S_ISREG(before.st_mode) or before.st_size > limit:
+        raise ValueError("invalid evidence file")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(path, flags)
+    try:
+        opened = os.fstat(fd)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or opened.st_size > limit
+            or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+        ):
+            raise ValueError("changed or oversized evidence")
+        with os.fdopen(fd, "rb") as stream:
+            fd = -1
+            raw = stream.read(limit + 1)
+        if len(raw) > limit:
+            raise ValueError("evidence exceeded bounded read")
+        return raw
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, required=True)
@@ -230,22 +265,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--catalog", type=Path, default=EVIDENCE)
     args = parser.parse_args(argv)
     try:
-        if (
-            args.report.is_symlink()
-            or not args.report.is_file()
-            or args.report.stat().st_size > 16_384
-        ):
-            raise ValueError("invalid")
         catalog = json.loads(args.catalog.read_text(encoding="utf-8"))
         known = {row["id"] for row in catalog["hosts"]}
-        report = json.loads(args.report.read_text(encoding="utf-8"))
+        report = json.loads(_read_bounded_regular_file(args.report, 16_384))
         errors = validate_report(report, known_hosts=known)
         if args.sanitized_log is not None and not errors:
-            log_path = args.sanitized_log
-            if log_path.is_symlink() or not log_path.is_file() or log_path.stat().st_size > 32_768:
+            try:
+                raw_log = _read_bounded_regular_file(args.sanitized_log, 32_768)
+            except (OSError, ValueError):
                 errors = ["invalid_or_missing_log"]
             else:
-                errors = validate_sanitized_log(report, log_path.read_bytes())
+                errors = validate_sanitized_log(report, raw_log)
     except (OSError, ValueError, TypeError, KeyError):
         errors = ["invalid_or_missing_evidence"]
     print(
