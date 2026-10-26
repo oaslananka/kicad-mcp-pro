@@ -140,6 +140,8 @@ def test_real_cli_invocation_enforces_exact_source_and_signer(
 
     def stub_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(command)
+        if command[1] == "version":
+            return subprocess.CompletedProcess(command, 0, "gh version 2.103.2 (2026-10-23)", "")
         return subprocess.CompletedProcess(
             command, 0, json.dumps([{"verificationResult": {"statement": {}}}]), ""
         )
@@ -156,7 +158,8 @@ def test_real_cli_invocation_enforces_exact_source_and_signer(
         source_ref="refs/heads/main",
     )
     assert result
-    command = calls[0]
+    assert calls[0] == ["/usr/local/bin/gh", "version"]
+    command = calls[1]
     assert command[:4] == ["/usr/local/bin/gh", "attestation", "verify", str(source)]
     for flag, value in (
         ("--repo", "oaslananka/kicad-mcp-pro"),
@@ -173,6 +176,8 @@ def test_cli_nonzero_status_must_not_be_accepted(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     def failing_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[1] == "version":
+            return subprocess.CompletedProcess(command, 0, "gh version 2.103.2 (2026-10-23)", "")
         raise subprocess.CalledProcessError(1, command, "signature rejected")
 
     monkeypatch.setattr("scripts.check_signed_draft_asset.shutil.which", lambda _: "/usr/bin/gh")
@@ -218,3 +223,48 @@ def test_mismatched_tag_ref_is_rejected_before_crypto_call(tmp_path: Path) -> No
             source_ref="refs/tags/mcp-server-v4.4.0",
         )
     assert not verifier.calls
+
+
+@pytest.mark.parametrize(
+    ("version", "should_accept"),
+    [
+        ("gh version 2.51.0 (2024-05-10)", False),
+        ("gh version 2.101.0 (2026-09-29)", False),
+        ("gh version 2.102.0 (2026-10-01)", True),
+        ("gh version 2.103.2 (2026-10-23)", True),
+        ("gh version 2.102.0-rc.1 (unknown)", False),
+        ("gh version invalid", False),
+        ("", False),
+    ],
+)
+def test_attestation_verifier_rejects_unpatched_or_unknown_gh_cli(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, version: str, should_accept: bool
+) -> None:
+    calls: list[list[str]] = []
+
+    def stub_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        if command[1] == "version":
+            return subprocess.CompletedProcess(command, 0, version, "")
+        return subprocess.CompletedProcess(
+            command, 0, json.dumps([{"verificationResult": {"statement": {}}}]), ""
+        )
+
+    monkeypatch.setattr("scripts.check_signed_draft_asset.shutil.which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr("scripts.check_signed_draft_asset.subprocess.run", stub_run)
+    args = {
+        "path": tmp_path / "artifact",
+        "repo": "oaslananka/kicad-mcp-pro",
+        "sha": SHA,
+        "signer": ".github/workflows/publish-mcpb.yml",
+        "source_ref": "refs/heads/main",
+    }
+    verifier = GitHubAttestationCLI()
+    if should_accept:
+        assert verifier.verify(**args)
+        assert len(calls) == 2
+        assert calls[1][1:3] == ["attestation", "verify"]
+    else:
+        with pytest.raises(ValueError, match="patched gh CLI"):
+            verifier.verify(**args)
+        assert calls == [["/usr/bin/gh", "version"]]
