@@ -93,6 +93,13 @@
         "id-token"
       ]
     },
+    "prepare-mcpb.yml": {
+      "prepare": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ]
+    },
     "publish-mcpb.yml": {
       "publish": [
         "artifact-metadata",
@@ -114,6 +121,13 @@
         "artifact-metadata",
         "attestations",
         "contents",
+        "id-token"
+      ]
+    },
+    "prepare-python.yml": {
+      "build": [
+        "artifact-metadata",
+        "attestations",
         "id-token"
       ]
     },
