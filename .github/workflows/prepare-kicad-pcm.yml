@@ -52,7 +52,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-          ref: ${{ steps.release.outputs.tag }}
+          ref: refs/tags/${{ steps.release.outputs.tag }}
           persist-credentials: false
       - name: Verify reusable preparation source identity
         shell: bash
@@ -61,9 +61,9 @@ jobs:
           CALLER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          [[ "$EXPECTED_SOURCE" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$CALLER_SHA" == "$EXPECTED_SOURCE" ]]
-          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SOURCE" ]]
+          [[ "$EXPECTED_SOURCE" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$CALLER_SHA" == "$EXPECTED_SOURCE" ]] || exit 1
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SOURCE" ]] || exit 1
 
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
@@ -83,11 +83,11 @@ jobs:
           set -euo pipefail
           release_tag="$RELEASE_TAG"
           source_commit="$(git rev-parse HEAD)"
-          tag_commit="$(git rev-list -n 1 "$release_tag")"
+          tag_commit="$(git rev-list -n 1 "refs/tags/${release_tag}^{commit}")"
           package_version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          test "$source_commit" = "$tag_commit"
-          test "$package_version" = "$VERSION"
-          [[ "$PREPARE_SOURCE" =~ ^[0-9a-f]{40}$ ]]
+          test "$source_commit" = "$tag_commit" || exit 1
+          test "$package_version" = "$VERSION" || exit 1
+          [[ "$PREPARE_SOURCE" =~ ^[0-9a-f]{40}$ ]] || exit 1
 
       - name: Build and verify deterministic KiCad PCM package
         shell: bash
