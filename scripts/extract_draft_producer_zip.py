@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -24,6 +25,7 @@ from scripts.check_draft_producer_archive import (
     ReadOnlyArtifactClient,
     verify_archive,
 )
+from scripts.check_signed_draft_asset import _SCHEMA_VERSION
 from scripts.runtime_path_safety import approved_runtime_path
 
 _MAX_TOTAL_BYTES = 512 * 1024 * 1024
@@ -34,6 +36,51 @@ _ROLE_GROUP = {
     "mcpb-release-evidence": "mcpb",
     "kicad-pcm-release-evidence": "pcm",
 }
+_SCHEMA_ROLE = "protocol-schemas-release-evidence"
+
+
+def _allowed_members(tag: str, role: str, producer_profile: str) -> set[str]:
+    """A caller must select one trust root, role, and tag namespace exactly."""
+    if producer_profile == "legacy":
+        roles = _ROLE_GROUP
+    elif producer_profile == "reusable":
+        roles = {**_ROLE_GROUP, _SCHEMA_ROLE: "schemas"}
+    else:
+        raise ValueError("unapproved producer profile")
+    if role not in roles:
+        raise ValueError("unapproved package family or producer role")
+    if role == _SCHEMA_ROLE:
+        match = _SCHEMA_VERSION.fullmatch(tag)
+        if match is None:
+            raise ValueError("unapproved protocol-schemas tag")
+        return {
+            f"oaslananka-kicad-protocol-schemas-{match.group(1)}.tgz",
+            "SHA256SUMS.txt",
+            "sbom.cdx.json",
+        }
+    match = _VERSION.fullmatch(tag)
+    if match is None:
+        raise ValueError("unapproved mcp-server tag")
+    return _expected(match.group(1))[_ROLE_GROUP[role]]
+
+
+def _check_schema_checksum(directory: Path, package: str) -> None:
+    """One exact tarball digest, never a partial/multi-target checksum list."""
+    checksums = directory / "SHA256SUMS.txt"
+    if checksums.stat().st_size > 256:
+        raise ValueError("invalid Protocol Schemas checksum inventory")
+    value = checksums.read_text(encoding="ascii").splitlines()
+    if len(value) != 1:
+        raise ValueError("invalid Protocol Schemas checksum inventory")
+    match = re.fullmatch(r"([0-9a-f]{64}) [ *]" + re.escape(package), value[0])
+    if match is None:
+        raise ValueError("unapproved Protocol Schemas checksum subject")
+    digest = hashlib.sha256()
+    with (directory / package).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    if digest.hexdigest() != match.group(1):
+        raise ValueError("Protocol Schemas tarball checksum differs from evidence")
 
 
 def _members(archive: zipfile.ZipFile, expected: set[str]) -> list[zipfile.ZipInfo]:
@@ -70,12 +117,10 @@ def verify_and_extract(
     head_sha: str,
     downloaded_zip: Path,
     output: Path,
+    producer_profile: str = "legacy",
 ) -> dict[str, object]:
-    """Verify exact GitHub ZIP metadata before atomically extracting approved files."""
-    parsed = _VERSION.fullmatch(tag)
-    if parsed is None or role not in _ROLE_GROUP:
-        raise ValueError("unapproved mcp-server tag or producer role")
-    expected_names = _expected(parsed.group(1))[_ROLE_GROUP[role]]
+    """Verify exact caller ZIP metadata before atomically extracting approved files."""
+    expected_names = _allowed_members(tag, role, producer_profile)
     verified = verify_archive(
         client,
         repo=repo,
@@ -85,6 +130,7 @@ def verify_and_extract(
         artifact_id=artifact_id,
         head_sha=head_sha,
         downloaded_zip=downloaded_zip,
+        producer_profile=producer_profile,
     )
     output = Path(output).expanduser()
     if output.is_symlink() or output.exists():
@@ -109,6 +155,9 @@ def verify_and_extract(
                         raise ValueError("incomplete extracted ZIP member")
         except (zipfile.BadZipFile, RuntimeError) as exc:
             raise ValueError("unreadable or corrupted producer ZIP") from exc
+        if role == _SCHEMA_ROLE:
+            schema_package = next(n for n in expected_names if n.endswith(".tgz"))
+            _check_schema_checksum(staging, schema_package)
         # Rehash ZIP after member extraction to reject substitutions during extraction.
         h = hashlib.sha256()
         with source.open("rb") as archive_input:
@@ -130,6 +179,7 @@ def verify_and_extract(
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--role", required=True)
+    p.add_argument("--producer-profile", choices=("legacy", "reusable"), default="legacy")
     p.add_argument("--tag", required=True)
     p.add_argument("--run-id", required=True, type=int)
     p.add_argument("--run-attempt", required=True, type=int)
@@ -150,6 +200,7 @@ def main() -> int:
             head_sha=args.head_sha,
             downloaded_zip=args.downloaded_zip,
             output=args.output,
+            producer_profile=args.producer_profile,
         )
     except (OSError, ValueError, zipfile.BadZipFile, subprocess.SubprocessError) as exc:
         p.exit(2, f"draft ZIP extraction: FAIL: {exc}\n")
