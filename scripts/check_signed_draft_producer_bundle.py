@@ -18,6 +18,7 @@ from scripts.assemble_mcp_server_draft_assets import _VERSION, _expected
 from scripts.check_draft_producer_archive import REPOSITORY
 from scripts.check_draft_producer_job import JobGitHubCLI, verify_producer_job
 from scripts.check_signed_draft_asset import (
+    _SCHEMA_VERSION,
     AttestationVerifier,
     GitHubAttestationCLI,
     verify_signed_asset,
@@ -39,6 +40,40 @@ _PACKAGE_ROLES = {
     "kicad-pcm-release-evidence": ("pcm", "pcm"),
 }
 
+_REUSABLE_PACKAGE_ROLES = {
+    **_PACKAGE_ROLES,
+    "protocol-schemas-release-evidence": ("schemas", "schemas"),
+}
+
+
+def _signable_packages(*, role: str, tag: str, profile: str) -> tuple[str, list[str]]:
+    """Select one exact namespace: a legacy published or reusable prepared artifact."""
+    if profile == "legacy":
+        roles = _PACKAGE_ROLES
+    elif profile == "reusable":
+        roles = _REUSABLE_PACKAGE_ROLES
+    else:
+        raise ValueError("unapproved signed producer profile")
+    if role not in roles:
+        raise ValueError("unapproved repository or signed-package role")
+    group, kind = roles[role]
+    if kind == "schemas":
+        match = _SCHEMA_VERSION.fullmatch(tag)
+        if match is None:
+            raise ValueError("invalid protocol-schemas release tag")
+        return kind, [f"oaslananka-kicad-protocol-schemas-{match.group(1)}.tgz"]
+    match = _VERSION.fullmatch(tag)
+    if match is None:
+        raise ValueError("invalid mcp-server release tag")
+    packages = sorted(
+        n
+        for n in _expected(match.group(1))[group]
+        if n.endswith((".whl", ".tar.gz", ".mcpb", ".zip"))
+    )
+    if not packages:
+        raise ValueError("producer does not provide signable release packages")
+    return kind, packages
+
 
 def verify_producer_bundle(
     client: ProducerClient,
@@ -53,22 +88,12 @@ def verify_producer_bundle(
     job_id: int,
     artifact_id: int,
     downloaded_zip: Path,
+    producer_profile: str = "legacy",
 ) -> dict[str, object]:
-    """Verify every package in one approved producer ZIP without preserving files."""
-    if repo != REPOSITORY or role not in _PACKAGE_ROLES:
+    """Verify every signed package against one immutable caller-run identity."""
+    if repo != REPOSITORY:
         raise ValueError("unapproved repository or signed-package role")
-    parsed = _VERSION.fullmatch(tag)
-    if parsed is None:
-        raise ValueError("invalid mcp-server release tag")
-
-    group, kind = _PACKAGE_ROLES[role]
-    expected_packages = sorted(
-        n
-        for n in _expected(parsed.group(1))[group]
-        if n.endswith((".whl", ".tar.gz", ".mcpb", ".zip"))
-    )
-    if not expected_packages:
-        raise ValueError("producer does not provide signable release packages")
+    kind, expected_packages = _signable_packages(role=role, tag=tag, profile=producer_profile)
 
     # The same caller-owned run identity is passed unchanged to each gate.
     job = verify_producer_job(
@@ -79,7 +104,10 @@ def verify_producer_bundle(
         run_attempt=run_attempt,
         job_id=job_id,
         source_commit=source_commit,
+        producer_profile=producer_profile,
     )
+    if job.get("producerProfile") != producer_profile:
+        raise ValueError("inconsistent producer job trust profile")
     with tempfile.TemporaryDirectory(prefix="kicad-producer-bundle-1179-") as temporary:
         extracted = Path(temporary) / "verified"
         archive = verify_and_extract(
@@ -93,7 +121,10 @@ def verify_producer_bundle(
             head_sha=source_commit,
             downloaded_zip=downloaded_zip,
             output=extracted,
+            producer_profile=producer_profile,
         )
+        if archive.get("producerProfile") != producer_profile:
+            raise ValueError("inconsistent producer archive trust profile")
         signatures: list[dict[str, object]] = []
         for package in expected_packages:
             signed = verify_signed_asset(
@@ -105,9 +136,11 @@ def verify_producer_bundle(
                 source_ref="refs/heads/main",
                 producer_run_id=run_id,
                 producer_run_attempt=run_attempt,
+                signer_profile=producer_profile,
             )
             if (
-                signed.get("signedAttestationVerified") is not True
+                signed.get("signerProfile") != producer_profile
+                or signed.get("signedAttestationVerified") is not True
                 or signed.get("producerRunInvocationVerified") is not True
                 or signed.get("publicationAuthorized") is not False
             ):
@@ -123,6 +156,7 @@ def verify_producer_bundle(
     return {
         "repository": repo,
         "role": role,
+        "producerProfile": producer_profile,
         "tag": tag,
         "sourceCommit": source_commit,
         "runId": run_id,
@@ -145,7 +179,12 @@ def verify_producer_bundle(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True)
-    parser.add_argument("--role", choices=sorted(_PACKAGE_ROLES), required=True)
+    parser.add_argument("--role", choices=sorted(_REUSABLE_PACKAGE_ROLES), required=True)
+    parser.add_argument(
+        "--producer-profile",
+        choices=("legacy", "reusable"),
+        default="legacy",
+    )
     parser.add_argument("--tag", required=True)
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--run-id", type=int, required=True)
@@ -167,6 +206,7 @@ def main() -> int:
             job_id=args.job_id,
             artifact_id=args.artifact_id,
             downloaded_zip=args.downloaded_zip,
+            producer_profile=args.producer_profile,
         )
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
         parser.exit(2, f"signed producer bundle: FAIL: {exc}\n")
