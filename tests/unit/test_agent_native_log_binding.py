@@ -67,6 +67,42 @@ def test_cli_reports_structure_without_claiming_attestation(
     }
 
 
+@pytest.mark.parametrize("platform", ["linux", "windows"])
+def test_undated_native_probe_pair_is_accepted(
+    platform: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report, log = observation(platform)
+    (tmp_path / "codex-native-smoke.json").write_text(json.dumps(report))
+    (tmp_path / "codex-native-sanitized-log.json").write_bytes(log)
+    assert (
+        main(
+            [
+                "--report",
+                str(tmp_path / "codex-native-smoke.json"),
+                "--verify-sanitized-log",
+            ]
+        )
+        == 0
+    )
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "structurally_complete_not_attested"
+    assert output["establishes_real_host_compatibility"] is False
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_duplicate_json_keys_fail_even_with_recomputed_digest(nested: bool) -> None:
+    report, raw = observation("linux")
+    duplicate = (
+        b'"notes": {"note": "Authorization: hidden", "note": "safe"},\n  '
+        if nested
+        else b'"note": "Authorization: hidden", "note": "safe",\n  '
+    )
+    modified = raw.replace(b'"host_id": "codex",', duplicate + b'"host_id": "codex",', 1)
+    assert modified != raw
+    report["sanitized_log_sha256"] = hashlib.sha256(modified).hexdigest()
+    assert validate_sanitized_log(report, modified) == ["invalid_sanitized_log"]
+
+
 def test_log_binding_refuses_tampering_without_digest_update() -> None:
     report, raw = observation("linux")
     assert validate_sanitized_log(report, raw.replace(b"readonly", b"readwrite", 1)) == [
@@ -176,6 +212,10 @@ def test_companion_log_name_accepts_only_expected_basenames(tmp_path: Path) -> N
     assert (
         _companion_sanitized_log_path(tmp_path / "2026-10-26-windows-codex-native-smoke.json")
         == tmp_path / "2026-10-26-windows-codex-native-sanitized-log.json"
+    )
+    assert (
+        _companion_sanitized_log_path(tmp_path / "codex-native-smoke.json")
+        == tmp_path / "codex-native-sanitized-log.json"
     )
     for name in (
         "report.json",

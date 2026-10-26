@@ -71,12 +71,12 @@ readonly tool inventory, native diagnostic and basic redaction constraints:
       --report docs/evidence/agent-host/2026-10-26-windows-codex-native-smoke.json \
       --verify-sanitized-log
 
-This check is offline and derives a fixed date/host-named sibling log from
-the selected report; it does not accept a second arbitrary file path. It
+This check is offline and derives a fixed companion log name from the selected
+report. Both native probe output and dated/host-prefixed archived reports are
+supported; it does not accept a second arbitrary file path. It
 fails closed if the companion is missing, altered, contradictory or
 unsanitized. Linux and Windows Codex observations use the same verifier,
-respecting the older Windows Codex
-protocol's missing runtimeStatus field. Report-only static validation remains
+respecting the older Windows Codex protocol's missing runtimeStatus field. Report-only static validation remains
 available for compatibility with existing evidence formats. **Neither check
 proves that a real host emitted the data, validates binary provenance, or
 establishes independent compatibility attestation.** A reviewer must still
@@ -144,7 +144,8 @@ python scripts/probe_codex_native_readonly.py \
   --expected-source-sha 57c0efb1f072f5fffbf1f527ee2348448705e32d \
   --output-dir /tmp/codex-mcp-native-review
 PYTHONPATH=. python scripts/check_agent_native_smoke_evidence.py \
-  --report /tmp/codex-mcp-native-review/codex-native-smoke.json
+  --report /tmp/codex-mcp-native-review/codex-native-smoke.json \
+  --verify-sanitized-log
 ```
 
 The two executable SHA-256 values must be obtained from a separate,

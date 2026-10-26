@@ -261,6 +261,16 @@ def _check_log_redaction(log: dict[str, object]) -> str | None:
     return None
 
 
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Fail closed on duplicate keys, including in nested JSON objects."""
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate evidence JSON key")
+        result[key] = value
+    return result
+
+
 def validate_sanitized_log(report: object, raw_log: bytes) -> list[str]:
     """Bind a Codex sanitized log to its report without trusting its assertions.
 
@@ -273,7 +283,7 @@ def validate_sanitized_log(report: object, raw_log: bytes) -> list[str]:
     if hashlib.sha256(raw_log).hexdigest() != report.get("sanitized_log_sha256"):
         return ["sanitized_log_digest_mismatch"]
     try:
-        log = json.loads(raw_log)
+        log = json.loads(raw_log, object_pairs_hook=_unique_json_object)
     except (ValueError, RecursionError):
         return ["invalid_sanitized_log"]
     if (
@@ -333,9 +343,11 @@ def _companion_sanitized_log_path(report: Path) -> Path | None:
         report.name,
         flags=re.ASCII,
     )
-    if match is None:
-        return None
-    return report.with_name(f"{match.group(1)}-sanitized-log.json")
+    if match is not None:
+        return report.with_name(f"{match.group(1)}-sanitized-log.json")
+    if report.name == "codex-native-smoke.json":
+        return report.with_name("codex-native-sanitized-log.json")
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
