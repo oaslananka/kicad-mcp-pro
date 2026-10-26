@@ -38,6 +38,19 @@ def validate_json_config(path: Path) -> list[str]:
     return errors
 
 
+def _valid_codex_env_var(entry: object) -> bool:
+    """Match the Codex 0.163.0 untagged String / {name, source} format."""
+    if isinstance(entry, str):
+        return True
+    if not isinstance(entry, dict):
+        return False
+    return (
+        set(entry) <= {"name", "source"}
+        and isinstance(entry.get("name"), str)
+        and ("source" not in entry or entry["source"] in ("local", "remote"))
+    )
+
+
 def validate_toml_config(path: Path) -> list[str]:
     """Validate a TOML MCP config file (Codex format)."""
     errors = []
@@ -72,6 +85,11 @@ def validate_toml_config(path: Path) -> list[str]:
             isinstance(key, str) and isinstance(value, str) for key, value in env.items()
         ):
             errors.append(f"mcp_servers.{name}: invalid env (expected string values)")
+        env_vars = server.get("env_vars", [])
+        if not isinstance(env_vars, list) or not all(
+            _valid_codex_env_var(entry) for entry in env_vars
+        ):
+            errors.append(f"mcp_servers.{name}: invalid env_vars (expected names or named records)")
     return errors
 
 

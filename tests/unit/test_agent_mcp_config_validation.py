@@ -160,3 +160,43 @@ def test_codex_accepts_stdio_command_and_args(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert _check("--path", str(path)).returncode == 0
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        "[42]",
+        "{name = 'API_KEY'}",
+        "[{name = 42}]",
+        "[{name = 'API_KEY', source = 'wrong'}]",
+        "[{name = 'API_KEY', extra = 'invalid'}]",
+    ],
+)
+def test_codex_stdio_rejects_invalid_env_vars(tmp_path: Path, values: str) -> None:
+    path = tmp_path / "config.toml.example"
+    path.write_text(
+        "[mcp_servers.kicad]\ncommand = 'uvx'\nenv_vars = " + values + "\n",
+        encoding="utf-8",
+    )
+    result = _check("--path", str(path))
+    assert result.returncode == 1
+    assert "invalid env_vars" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        "['API_KEY', 'OTHER']",
+        "[{name = 'API_KEY'}]",
+        "[{name = 'API_KEY', source = 'local'}]",
+        "[{name = 'API_KEY', source = 'remote'}]",
+    ],
+)
+def test_codex_stdio_accepts_supported_env_vars(tmp_path: Path, values: str) -> None:
+    path = tmp_path / "config.toml.example"
+    path.write_text(
+        "[mcp_servers.kicad]\ncommand = 'uvx'\nenv_vars = " + values + "\n",
+        encoding="utf-8",
+    )
+    result = _check("--path", str(path))
+    assert result.returncode == 0, result.stdout
