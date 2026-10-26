@@ -13,9 +13,9 @@ import subprocess
 from typing import Any, Protocol
 
 from scripts.check_draft_producer_archive import (
-    _ARTIFACT_WORKFLOWS,
     REPOSITORY,
     GitHubArtifactClient,
+    _approved_role_workflows,
     _verify_run,
 )
 
@@ -49,6 +49,51 @@ _JOB_NAMES: dict[str, tuple[str, str, str, str]] = {
 }
 
 
+# Exact expected GitHub caller/job presentation for the four reused workflows.
+# This is deliberately narrow and requires validation against real API data
+# before any live #1179 acceptance or deployment gate relies on it.
+_REUSABLE_JOB_NAMES: dict[str, tuple[str, str, str, str]] = {
+    "python-dist": (
+        "Draft producer preflight (non-publishing)",
+        "python / build",
+        "Attest Python distributions",
+        "Run actions/upload-artifact@",
+    ),
+    "python-release-evidence": (
+        "Draft producer preflight (non-publishing)",
+        "python / build",
+        "Attest Python distributions",
+        "Run actions/upload-artifact@",
+    ),
+    "mcpb-release-evidence": (
+        "Draft producer preflight (non-publishing)",
+        "mcpb / prepare",
+        "Attest MCPB bundle",
+        "Store MCPB release evidence",
+    ),
+    "kicad-pcm-release-evidence": (
+        "Draft producer preflight (non-publishing)",
+        "pcm / prepare",
+        "Attest KiCad PCM package",
+        "Store KiCad PCM release evidence",
+    ),
+    "protocol-schemas-release-evidence": (
+        "Draft producer preflight (non-publishing)",
+        "schemas / prepare",
+        "Attest tarball",
+        "Store release evidence",
+    ),
+}
+
+
+def _job_names(profile: str) -> dict[str, tuple[str, str, str, str]]:
+    if profile == "legacy":
+        return _JOB_NAMES
+    if profile == "reusable":
+        return _REUSABLE_JOB_NAMES
+    raise ValueError("unapproved producer profile")
+
+
 class JobClient(Protocol):
     def workflow_run(self, repo: str, run_id: int) -> dict[str, Any]: ...
 
@@ -69,6 +114,7 @@ def _matching_approved_job(
     run_attempt: int,
     job_id: int,
     source_commit: str,
+    producer_profile: str = "legacy",
 ) -> list[object]:
     """Match exactly one completed job from an untruncated GitHub job listing."""
     if not isinstance(collection, dict):
@@ -83,7 +129,7 @@ def _matching_approved_job(
     if len(matches) != 1:
         raise ValueError("requested producer job was not found uniquely")
     job = matches[0]
-    workflow_name, name, _, _ = _JOB_NAMES[role]
+    workflow_name, name, _, _ = _job_names(producer_profile)[role]
     required = {
         "workflow_name": workflow_name,
         "name": name,
@@ -129,8 +175,10 @@ def _successful_step_numbers(steps: list[object], label: str, *, prefix: bool = 
     return result
 
 
-def _check_required_job_steps(steps: list[object], role: str) -> None:
-    _, _, attest_step, store_step = _JOB_NAMES[role]
+def _check_required_job_steps(
+    steps: list[object], role: str, producer_profile: str = "legacy"
+) -> None:
+    _, _, attest_step, store_step = _job_names(producer_profile)[role]
     attest = _successful_step_numbers(steps, attest_step)
     uploaded = _successful_step_numbers(steps, store_step, prefix=role.startswith("python-"))
     if len(attest) != 1 or (
@@ -141,6 +189,12 @@ def _check_required_job_steps(steps: list[object], role: str) -> None:
         provenance = _successful_step_numbers(steps, "Attest Python SLSA build provenance")
         if len(provenance) != 1 or provenance[0] >= attest[0]:
             raise ValueError("Python SLSA provenance must precede SBOM attestation")
+    if producer_profile == "reusable" and role == "protocol-schemas-release-evidence":
+        provenance = _successful_step_numbers(
+            steps, "Attest Protocol Schemas SLSA build provenance"
+        )
+        if len(provenance) != 1 or provenance[0] >= attest[0]:
+            raise ValueError("schema SLSA provenance must precede SBOM attestation")
     if min(uploaded) <= attest[0]:
         raise ValueError("producer artifact upload preceded its attestation")
 
@@ -154,17 +208,25 @@ def verify_producer_job(
     run_attempt: int,
     job_id: int,
     source_commit: str,
+    producer_profile: str = "legacy",
 ) -> dict[str, object]:
+    roles = _approved_role_workflows(producer_profile)
     if (
         repo != REPOSITORY
-        or role not in _ARTIFACT_WORKFLOWS
+        or role not in roles
         or any(type(value) is not int or value <= 0 for value in (run_id, run_attempt, job_id))
         or _SHA.fullmatch(source_commit) is None
     ):
         raise ValueError("invalid approved producer job identity")
     run = client.workflow_run(repo, run_id)
     _verify_run(
-        run, repo=repo, run_id=run_id, attempt=run_attempt, head_sha=source_commit, role=role
+        run,
+        repo=repo,
+        run_id=run_id,
+        attempt=run_attempt,
+        head_sha=source_commit,
+        role=role,
+        producer_profile=producer_profile,
     )
 
     collection = client.workflow_jobs(repo, run_id, run_attempt)
@@ -176,12 +238,14 @@ def verify_producer_job(
         run_attempt=run_attempt,
         job_id=job_id,
         source_commit=source_commit,
+        producer_profile=producer_profile,
     )
-    _check_required_job_steps(steps, role)
+    _check_required_job_steps(steps, role, producer_profile)
 
     return {
         "repo": repo,
         "role": role,
+        "producerProfile": producer_profile,
         "runId": run_id,
         "runAttempt": run_attempt,
         "jobId": job_id,
@@ -199,6 +263,7 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--repo", required=True)
     p.add_argument("--role", required=True)
+    p.add_argument("--producer-profile", choices=("legacy", "reusable"), default="legacy")
     p.add_argument("--run-id", required=True, type=int)
     p.add_argument("--run-attempt", required=True, type=int)
     p.add_argument("--job-id", required=True, type=int)
@@ -213,6 +278,7 @@ def main() -> int:
             run_attempt=args.run_attempt,
             job_id=args.job_id,
             source_commit=args.source_commit,
+            producer_profile=args.producer_profile,
         )
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
         p.exit(2, f"draft producer job preflight: FAIL: {exc}\n")
