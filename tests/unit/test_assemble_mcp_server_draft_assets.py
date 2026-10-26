@@ -183,3 +183,19 @@ def test_source_evidence_race_cannot_accept_invalid_staged_evidence(
         assemble(**kwargs)
     assert corrupted
     assert not kwargs["output"].exists()
+
+
+@pytest.mark.parametrize("folder", ["python_dist", "python_evidence", "mcpb", "pcm"])
+def test_output_inside_input_does_not_create_new_directory(tmp_path: Path, folder: str) -> None:
+    kwargs = _fixture(tmp_path)
+    source = kwargs[folder]
+    nested = source / "unwanted-output-parent"
+    kwargs["output"] = nested / "release"
+    with pytest.raises(ValueError, match="outside source artifact directories"):
+        assemble(**kwargs)
+    # Even a rejected invocation must not poison future validated source inventories.
+    assert not nested.exists()
+    assert not kwargs["output"].exists()
+    kwargs["output"] = tmp_path / "out"
+    result = assemble(**kwargs)
+    assert result["publicationAuthorized"] is False

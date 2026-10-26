@@ -150,9 +150,11 @@ def assemble(
     if output.is_symlink() or output.exists():
         raise ValueError("output must not exist: no overwrite of approved release inventory")
     parent = approved_runtime_path(output.parent)
-    parent.mkdir(parents=True, exist_ok=True)
-    if any(output.resolve().is_relative_to(p) for p in inputs):
+    # Reject nested output paths before creating directories inside validated inputs.
+    target = parent / output.name
+    if any(target.is_relative_to(p) for p in inputs):
         raise ValueError("output directory must be outside source artifact directories")
+    parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".kicad-draft-assembly-", dir=parent) as temp:
         staged = Path(temp)
         assets = staged / "assets"
