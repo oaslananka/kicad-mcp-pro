@@ -42,16 +42,38 @@ def validate_toml_config(path: Path) -> list[str]:
     """Validate a TOML MCP config file (Codex format)."""
     errors = []
     try:
-        data = tomllib.loads(path.read_text())
-    except Exception as e:
-        return [f"Invalid TOML: {e}"]
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+        return [f"Invalid TOML: {exc}"]
 
-    for section, values in data.items():
-        if section.startswith("mcp_servers."):
-            if isinstance(values, dict):
-                if "command" not in values and "args" not in values:
-                    errors.append(f"{section}: missing command/args")
+    servers = data.get("mcp_servers")
+    if not isinstance(servers, dict) or not servers:
+        return ["missing mcp_servers table"]
+
+    for name, server in servers.items():
+        if not isinstance(server, dict):
+            errors.append(f"mcp_servers.{name}: expected server table")
+            continue
+        command = server.get("command")
+        url = server.get("url")
+        has_command = isinstance(command, str) and bool(command.strip())
+        has_url = isinstance(url, str) and bool(url.strip())
+        if not (has_command or has_url):
+            errors.append(f"mcp_servers.{name}: missing command/url")
+        args = server.get("args", [])
+        if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
+            errors.append(f"mcp_servers.{name}: invalid args (expected array of strings)")
+        env = server.get("env", {})
+        if not isinstance(env, dict) or not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in env.items()
+        ):
+            errors.append(f"mcp_servers.{name}: invalid env (expected string values)")
     return errors
+
+
+def _is_toml_config(path: Path) -> bool:
+    """Recognize Codex config.toml and the checked-in config.toml.example."""
+    return path.suffix == ".toml" or path.name.endswith(".toml.example")
 
 
 def validate_opencode_config(path: Path) -> list[str]:
@@ -104,7 +126,8 @@ def main() -> int:
         if not path.exists():
             print(f"File not found: {path}")
             return 1
-        errors = validate_json_config(path)
+        validator = validate_toml_config if _is_toml_config(path) else validate_json_config
+        errors = validator(path)
         config_checks[path.name] = (path, errors)
     elif args.agent:
         agent = args.agent.lower()
@@ -144,10 +167,8 @@ def main() -> int:
         for ex_path in example_dirs:
             full = Path.cwd() / ex_path
             if full.exists():
-                if full.suffix == ".toml":
-                    errors = validate_toml_config(full)
-                else:
-                    errors = validate_json_config(full)
+                validator = validate_toml_config if _is_toml_config(full) else validate_json_config
+                errors = validator(full)
                 config_checks[ex_path.name] = (full, errors)
 
     all_ok = True

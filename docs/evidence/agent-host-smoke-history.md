@@ -11,6 +11,18 @@ original product commit, host version, KiCad patch and environment.
 | Codex CLI `0.150.1` | Native MCP initialize/list and **actual read-only `kicad_get_version` tool call** after #813 fix | KiCad `10.0.5`, HTTP MCP, SHA `546227bcb13eb851913eaf6d6d8d95c9a5ae367c`, merged as `a197e7ff18a18c484531b9be8c4d02a3eb762ea7`, [source record](kicad-pcm/2026-08-29/linux-kicad-10.0.5.md) | Current Codex builds, Gemini extension, Agent Skill discovery, or other transport/version combinations |
 | Cursor | Project-scoped generated configuration preview/write/backup/restore preserved other entries | Disposable physical-host filesystem transaction, [source record](kicad-pcm/2026-08-29/linux-kicad-10.0.5.md) | Any actual Cursor binary connection, tool enumeration or call |
 
+## 26 October 2026 — Codex native host observation (#1219)
+
+Codex CLI/app-server 0.163.0 on AMD2700X Linux natively discovered all
+seven repository Skills, connected to the exact-source KiCad MCP stdio
+server at `main@57c0efb1`, enumerated 24 readonly-required tools and
+successfully invoked `kicad_get_server_info` without starting a model turn.
+The [structured evidence report](agent-host/2026-10-26-linux-codex-native-smoke.json)
+and [sanitized digest-bound log](agent-host/2026-10-26-linux-codex-native-sanitized-log.json)
+are retained for independent review. This is a **real native-host RPC
+observation**, but not independently attested; no compatibility catalog
+promotion, GUI acceptance or all-host CI acceptance is claimed.
+
 ## Current host verification process
 
 The separate [distribution readiness matrix](../status/distribution-readiness.md)

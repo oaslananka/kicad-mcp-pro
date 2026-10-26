@@ -67,6 +67,81 @@ execution log/digest, the source commit and environment before updating any
 published compatibility claim. Synthetic unit-test data cannot serve as evidence.
 The normal CI job does not install any agent host or generate passing evidence.
 
+## Native Codex 0.163.0 model-free readonly tool smoke — 2026-10-26 (#1219)
+
+A real **Codex app-server 0.163.0** on AMD2700X Linux was launched with
+temporary `CODEX_HOME`, `HOME`, XDG directories and a temporary MCP
+configuration. Its reviewed, source-bound KiCad MCP server was loaded from
+`main@57c0efb1f072f5fffbf1f527ee2348448705e32d` using an existing
+Python 3.13.17 environment; it used `stdio`, `readonly/default`, and
+an explicitly unbound temporary KiCad IPC socket. No live user project,
+GUI validation, external agent/model turn or provider inference was requested.
+
+- Native `initialize` and `skills/list` confirmed **7/7** maintained KiCad
+  Skills and checked their reported paths inside that exact source checkout.
+- Native `thread/start` created an ephemeral thread and
+  `mcpServerStatus/list` reported the real `kicad` connection as
+  **connected** with **24** discoverable tools. All 24 names were independently
+  checked against the *same source revision's* `tool_required_mode()`;
+  all require `readonly`, including the context-only project selector.
+- Native Codex `mcpServer/tool/call` invoked `kicad_get_server_info` with
+  empty arguments: the host returned content with `isError=false`.
+  This was **not** a direct generic MCP SDK call and did not invoke KiCad GUI.
+- The [sanitized native observation](../evidence/agent-host/2026-10-26-linux-codex-native-smoke.json)
+  points to a [bounded sanitized evidence log](../evidence/agent-host/2026-10-26-linux-codex-native-sanitized-log.json)
+  by SHA-256. The log intentionally contains no raw diagnostic response,
+  absolute machine paths, configuration secrets or unrelated Skill names.
+
+For a bounded independent replay, start from the recorded commit in a
+temporary **project-only checkout**, set a temporary `CODEX_HOME` and
+`HOME`, and configure `mcp_servers.kicad` to execute that checkout's
+source-built Python server over stdio with `readonly/default`. Set
+`KICAD_API_SOCKET` to a **fresh unbound socket in the temporary directory**
+to prevent accidental attachment to an ambient user GUI. Keep the host
+binary version pinned to 0.163.0 and do not copy global agent credentials.
+
+The Codex **app-server JSON-RPC** observation sequence was:
+`initialize`; `skills/list` with the checkout cwd and `forceReload=true`;
+`thread/start` with `ephemeral=true`; `mcpServerStatus/list` scoped
+to `serverName=kicad`, `detail=full` and the resulting thread ID;
+then `mcpServer/tool/call` for `kicad_get_server_info` with
+`arguments={}`. Validate Skill origins and discovered tool names against
+the *same source revision* before calling the diagnostic. Do not initiate
+a `turn/start` or any agent/model turn, and do not publish raw responses.
+Verify the IPC socket remained unbound; terminate the process group and
+delete temporary configuration after the probe. Repeat independently before
+promoting any catalog status.
+
+To reproduce this exact Linux/Codex observation, use a trusted source
+checkout at the stated commit, installed **Codex 0.163.0**, and an existing
+reviewed Python 3.13 environment that already contains the project runtime
+dependencies. The probe does **not** install packages, start a model/agent
+turn, use ambient GUI IPC, or change the project:
+
+```bash
+mkdir /tmp/codex-mcp-native-review
+python scripts/probe_codex_native_readonly.py \
+  --python /path/to/reviewed/python3.13 \
+  --expected-source-sha 57c0efb1f072f5fffbf1f527ee2348448705e32d \
+  --output-dir /tmp/codex-mcp-native-review
+PYTHONPATH=. python scripts/check_agent_native_smoke_evidence.py \
+  --report /tmp/codex-mcp-native-review/codex-native-smoke.json
+```
+
+The output directory must be pre-created and must not contain result files.
+The source `src/` tree must be clean. The probe rejects mismatched host
+versions, source SHA, missing Skills, non-readonly advertised tools and
+host diagnostics that fail. Keep raw host responses and credentials out of
+reports. Its optional output remains review material, not a production gate.
+
+The strict `scripts/check_agent_native_smoke_evidence.py` structural gate
+accepts this report as `structurally_complete_not_attested`. **This does not
+constitute independent host attestation or authorization to promote** the
+six-host static compatibility catalog: a separate reviewer must reproduce
+and inspect the source/host evidence. Isolated config and unbound IPC do not
+prove universal OS isolation, real KiCad GUI interoperability, or provider
+behavior. The other host/transport pairs remain unverified.
+
 ## Model-free OpenCode native Skill discovery — 2026-10-25 (#1219)
 
 The actual **OpenCode 1.18.31** CLI on Windows ran
