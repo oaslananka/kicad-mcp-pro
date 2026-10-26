@@ -63,17 +63,23 @@ uv run --all-extras --frozen python scripts/check_agent_native_smoke_evidence.py
 
 Passing returns `structurally_complete_not_attested` — **never** a release
 compatibility pass. For a retained Codex observation, use the optional
-`--verify-sanitized-log` flag to additionally check the **actual sibling log bytes**
-against the report and cross-check source, host, binary hashes, Skill paths,
-readonly tool inventory, native diagnostic and basic redaction constraints:
+`--verify-sanitized-log` flag to check the **actual sibling log bytes** against
+the report: its SHA-256 digest, host/source identity, Skill origins, source-pinned
+readonly tool inventory, native diagnostic and basic redaction constraints.
+Binary digests in the log are **format-checked only**; they are not compared
+with the real executables or any report fields. An unreviewed source revision
+is rejected until its readonly tool policy is separately reviewed and pinned:
 
-    PYTHONPATH=. python scripts/check_agent_native_smoke_evidence.py \
-      --report docs/evidence/agent-host/2026-10-26-windows-codex-native-smoke.json \
-      --verify-sanitized-log
+```sh
+PYTHONPATH=. python scripts/check_agent_native_smoke_evidence.py \
+  --report docs/evidence/agent-host/2026-10-26-windows-codex-native-smoke.json \
+  --verify-sanitized-log
+```
 
 This check is offline and derives a fixed companion log name from the selected
 report. Both native probe output and dated/host-prefixed archived reports are
-supported; it does not accept a second arbitrary file path. It
+supported; dated archive filenames must agree with the report's observed date
+and OS. It does not accept a second arbitrary file path. It
 fails closed if the companion is missing, altered, contradictory or
 unsanitized. Linux and Windows Codex observations use the same verifier,
 respecting the older Windows Codex protocol's missing runtimeStatus field. Report-only static validation remains

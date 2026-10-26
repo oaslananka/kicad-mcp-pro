@@ -336,15 +336,19 @@ def _read_bounded_regular_file(path: Path, limit: int) -> bytes:
             os.close(fd)
 
 
-def _companion_sanitized_log_path(report: Path) -> Path | None:
-    """Derive a fixed sibling filename; do not accept a second caller path."""
+def _companion_sanitized_log_path(report: Path, fields: dict[str, object]) -> Path | None:
+    """Bind a dated archive filename to verified report fields or native probe pair."""
     match = re.fullmatch(
-        r"(20\d{2}-\d{2}-\d{2}-(?:linux|windows|macos)-codex-native)-smoke[.]json",
+        r"(20\d{2}-\d{2}-\d{2})-(linux|windows|macos)-codex-native-smoke[.]json",
         report.name,
         flags=re.ASCII,
     )
     if match is not None:
-        return report.with_name(f"{match.group(1)}-sanitized-log.json")
+        if match.group(1) != fields.get("observed_on") or match.group(2) != fields.get("os"):
+            return None
+        return report.with_name(
+            f"{match.group(1)}-{match.group(2)}-codex-native-sanitized-log.json"
+        )
     if report.name == "codex-native-smoke.json":
         return report.with_name("codex-native-sanitized-log.json")
     return None
@@ -363,10 +367,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         catalog = json.loads(args.catalog.read_text(encoding="utf-8"))
         known = {row["id"] for row in catalog["hosts"]}
-        report = json.loads(_read_bounded_regular_file(args.report, 16_384))
+        report = json.loads(
+            _read_bounded_regular_file(args.report, 16_384),
+            object_pairs_hook=_unique_json_object,
+        )
         errors = validate_report(report, known_hosts=known)
         if args.verify_sanitized_log and not errors:
-            log_path = _companion_sanitized_log_path(args.report)
+            log_path = _companion_sanitized_log_path(args.report, report)
             if log_path is None:
                 errors = ["invalid_or_missing_log"]
             else:

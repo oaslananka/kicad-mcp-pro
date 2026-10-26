@@ -103,6 +103,31 @@ def test_duplicate_json_keys_fail_even_with_recomputed_digest(nested: bool) -> N
     assert validate_sanitized_log(report, modified) == ["invalid_sanitized_log"]
 
 
+@pytest.mark.parametrize("with_log", [False, True])
+def test_cli_rejects_shadowed_report_source_fields(
+    with_log: bool, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report, raw_log = observation("linux")
+    raw = json.dumps(report)
+    # json.loads normally lets the *last* duplicate key silently win.
+    duplicated = raw.replace(
+        '"source_revision": ',
+        '"source_revision": "0000000000000000000000000000000000000000", "source_revision": ',
+        1,
+    )
+    assert duplicated != raw
+    report_path = tmp_path / "codex-native-smoke.json"
+    report_path.write_text(duplicated, encoding="utf-8")
+    (tmp_path / "codex-native-sanitized-log.json").write_bytes(raw_log)
+    args = ["--report", str(report_path)]
+    if with_log:
+        args.append("--verify-sanitized-log")
+    assert main(args) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason_codes"] == ["invalid_or_missing_evidence"]
+    assert result["establishes_real_host_compatibility"] is False
+
+
 def test_log_binding_refuses_tampering_without_digest_update() -> None:
     report, raw = observation("linux")
     assert validate_sanitized_log(report, raw.replace(b"readonly", b"readwrite", 1)) == [
@@ -209,12 +234,15 @@ def test_cli_rejects_oversized_log(tmp_path: Path, capsys: pytest.CaptureFixture
 
 
 def test_companion_log_name_accepts_only_expected_basenames(tmp_path: Path) -> None:
+    fields = {"observed_on": "2026-10-26", "os": "windows"}
     assert (
-        _companion_sanitized_log_path(tmp_path / "2026-10-26-windows-codex-native-smoke.json")
+        _companion_sanitized_log_path(
+            tmp_path / "2026-10-26-windows-codex-native-smoke.json", fields
+        )
         == tmp_path / "2026-10-26-windows-codex-native-sanitized-log.json"
     )
     assert (
-        _companion_sanitized_log_path(tmp_path / "codex-native-smoke.json")
+        _companion_sanitized_log_path(tmp_path / "codex-native-smoke.json", fields)
         == tmp_path / "codex-native-sanitized-log.json"
     )
     for name in (
@@ -224,7 +252,7 @@ def test_companion_log_name_accepts_only_expected_basenames(tmp_path: Path) -> N
         "2026-10-26-windows-codex-native-smoke.json.bak",
         "2026-10-26-windows-codex-native-smoke.json/other",
     ):
-        assert _companion_sanitized_log_path(tmp_path / name) is None
+        assert _companion_sanitized_log_path(tmp_path / name, fields) is None
 
 
 def test_native_tool_policy_is_pinned_to_source_capabilities() -> None:
@@ -280,3 +308,26 @@ def test_legacy_windows_host_rejects_spoofed_status() -> None:
     report, raw = observation("windows")
     changed_report, changed = altered(report, raw, {"server_status": "connected"})
     assert validate_sanitized_log(changed_report, changed) == ["missing_native_server_inventory"]
+
+
+@pytest.mark.parametrize(
+    ("name", "platform", "date"),
+    [
+        ("2026-10-26-windows-codex-native-smoke.json", "linux", "2026-10-26"),
+        ("2026-10-27-linux-codex-native-smoke.json", "linux", "2026-10-26"),
+    ],
+)
+def test_dated_archive_filename_must_match_report_fields(
+    name: str, platform: str, date: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report, log = observation("linux")
+    assert report["os"] == platform
+    assert report["observed_on"] == date
+    renamed_report = tmp_path / name
+    renamed_report.write_text(json.dumps(report), encoding="utf-8")
+    companion_name = name.replace("-smoke.json", "-sanitized-log.json")
+    (tmp_path / companion_name).write_bytes(log)
+    assert main(["--report", str(renamed_report), "--verify-sanitized-log"]) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason_codes"] == ["invalid_or_missing_log"]
+    assert result["establishes_real_host_compatibility"] is False
