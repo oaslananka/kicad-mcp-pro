@@ -259,11 +259,12 @@ def test_attestation_verifier_rejects_unpatched_or_unknown_gh_cli(
         "signer": ".github/workflows/publish-mcpb.yml",
         "source_ref": "refs/heads/main",
     }
+    verifier = GitHubAttestationCLI()
     if should_accept:
-        assert GitHubAttestationCLI().verify(**args)
+        assert verifier.verify(**args)
         assert len(calls) == 2
         assert calls[1][1:3] == ["attestation", "verify"]
     else:
         with pytest.raises(ValueError, match="patched gh CLI"):
-            GitHubAttestationCLI().verify(**args)
+            verifier.verify(**args)
         assert calls == [["/usr/bin/gh", "version"]]

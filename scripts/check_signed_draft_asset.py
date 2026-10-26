@@ -25,7 +25,7 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 _MAIN_REF = "refs/heads/main"
 _PREDICATE = "https://slsa.dev/provenance/v1"
 _MIN_SAFE_GH_VERSION = (2, 102, 0)
-_GH_VERSION = re.compile(r"^gh version ([0-9]+)\.([0-9]+)\.([0-9]+)(?:\s|$)")
+_GH_VERSION = re.compile(r"^gh version (\d+)\.(\d+)\.(\d+)(?:\s|$)", re.ASCII)
 _SIGNERS = {
     "python": ".github/workflows/publish-python.yml",
     "mcpb": ".github/workflows/publish-mcpb.yml",
