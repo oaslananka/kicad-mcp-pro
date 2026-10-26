@@ -36,7 +36,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.tag }}
+          ref: refs/tags/${{ inputs.tag }}
       - name: Verify immutable release source
         id: source
         working-directory: ${{ github.workspace }}
@@ -59,7 +59,7 @@ jobs:
               exit 1
               ;;
           esac
-          tag_sha="$(git rev-list -n1 "refs/tags/${RELEASE_TAG}")"
+          tag_sha="$(git rev-list -n1 "refs/tags/${RELEASE_TAG}^{commit}")" || exit 1
           head_sha="$(git rev-parse HEAD)"
           test "$tag_sha" = "$head_sha" || exit 1
           version="${RELEASE_TAG#protocol-schemas-v}"

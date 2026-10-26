@@ -59,6 +59,8 @@ def test_mcpb_prepare_attests_but_does_not_attach_to_release() -> None:
         "[[", "["
     ).replace("]]", "]")
     assert "$(git rev-parse HEAD)" in source_check["run"]
+    checkout = next(s for s in steps if "actions/checkout@" in s.get("uses", ""))
+    assert checkout["with"]["ref"] == "refs/tags/" + "$" + "{{ steps.release.outputs.tag }}"
     source_index = next(
         i
         for i, step in enumerate(steps)
@@ -89,14 +91,15 @@ def test_mcpb_tag_resolution_and_release_source_agree() -> None:
     source_verify = next(
         s for s in steps if s.get("name") == "Verify release source and manifest version"
     )
-    assert 'test "$source_commit" = "$tag_commit"' in source_verify["run"]
+    assert 'test "$source_commit" = "$tag_commit" || exit 1' in source_verify["run"]
+    assert "refs/tags/" + "$" + "{release_tag}^{commit}" in source_verify["run"]
     assert 'test "$source_commit" = "$PREPARE_SOURCE" || exit 1' in source_verify["run"]
     assert 'if [[ -z "$PREPARE_SOURCE" ]]' not in source_verify["run"]
     assert source_verify["env"]["PREPARE_SOURCE"] == "$" + "{{ inputs.source_commit }}"
 
 
 def _simulate_source_step(
-    tmp_path: Path, *, prepare: bool, matching: bool = True
+    tmp_path: Path, *, prepare: bool, matching: bool = True, tag_exists: bool = True
 ) -> tuple[int, bool]:
     """Run real bash control flow against offline git/node/gh stubs."""
     source = next(
@@ -107,9 +110,10 @@ def _simulate_source_step(
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "git").write_text(
-        '#!/bin/sh\ncase "$1 $2" in\n'
+        '#!/bin/sh\ncase "$*" in\n'
         '  "rev-parse HEAD") echo ' + sha + ";;\n"
-        '  "rev-list -n") echo ' + tag_sha + ";;\n"
+        '  "rev-list -n 1 refs/tags/mcp-server-v4.5.0^{commit}") '
+        '[ "$TAG_PRESENT" = yes ] || exit 91; echo ' + tag_sha + ";;\n"
         "  *) exit 91;;\n"
         "esac\n",
         encoding="utf-8",
@@ -130,6 +134,7 @@ def _simulate_source_step(
         "RELEASE_TAG": "mcp-server-v4.5.0",
         "VERSION": "4.5.0",
         "PREPARE_SOURCE": sha if prepare else "",
+        "TAG_PRESENT": "yes" if tag_exists else "no",
     }
     result = subprocess.run(
         ["/bin/bash", "-euo", "pipefail", "-c", source["run"]],
@@ -167,5 +172,13 @@ def test_empty_source_is_rejected_without_release_lookup(tmp_path: Path) -> None
 )
 def test_prepare_rejects_tag_source_mismatch_before_gh_lookup(tmp_path: Path) -> None:
     code, invoked = _simulate_source_step(tmp_path, prepare=True, matching=False)
+    assert code != 0
+    assert invoked is False
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX Bash fixture; release workflow runs on Ubuntu")
+def test_mcpb_missing_tag_rejected_even_when_branch_has_same_name(tmp_path: Path) -> None:
+    # A local refs/heads/mcp-server-v4.5.0 does not substitute for refs/tags/...
+    code, invoked = _simulate_source_step(tmp_path, prepare=True, tag_exists=False)
     assert code != 0
     assert invoked is False

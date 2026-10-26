@@ -53,13 +53,14 @@ def test_schema_source_verified_before_installs_and_preparation_is_artifact_only
     setup = next(i for i, s in enumerate(steps) if "astral-sh/setup-uv@" in s.get("uses", ""))
     assert verify == checkout + 1
     assert verify < setup
-    assert steps[checkout]["with"]["ref"] == "$" + "{{ inputs.tag }}"
+    assert steps[checkout]["with"]["ref"] == "refs/tags/" + "$" + "{{ inputs.tag }}"
     script = steps[verify]["run"]
     assert steps[verify]["env"]["PREPARE_SOURCE"] == "$" + "{{ inputs.source_commit }}"
     assert steps[verify]["env"]["CALLER_SHA"] == "$" + "{{ github.sha }}"
     assert '[[ "$CALLER_SHA" == "$PREPARE_SOURCE" ]] || exit 1' in script
     assert '[[ "$(git rev-parse HEAD)" == "$PREPARE_SOURCE" ]] || exit 1' in script
     assert 'test "$tag_sha" = "$head_sha" || exit 1' in script
+    assert "refs/tags/" + "$" + "{RELEASE_TAG}^{commit}" in script
     assert 'if [[ -z "$PREPARE_SOURCE" ]]' not in script
     assert '[[ "$PREPARE_SOURCE" =~ ^[0-9a-f]{40}$ ]] || exit 1' in script
     assert any(s.get("name") == "Attest tarball" for s in steps)
@@ -73,15 +74,16 @@ def test_schema_source_verified_before_installs_and_preparation_is_artifact_only
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX Bash fixture; workflow runs on Ubuntu")
 @pytest.mark.parametrize(
-    ("prepare", "match", "expect_ok", "expect_gh"),
+    ("prepare", "match", "tag_exists", "expect_ok", "expect_gh"),
     [
-        (True, True, True, False),
-        (False, True, False, False),
-        (True, False, False, False),
+        (True, True, True, True, False),
+        (False, True, True, False, False),
+        (True, False, True, False, False),
+        (True, True, False, False, False),
     ],
 )
 def test_schema_source_verification_paths(
-    tmp_path: Path, prepare: bool, match: bool, expect_ok: bool, expect_gh: bool
+    tmp_path: Path, prepare: bool, match: bool, tag_exists: bool, expect_ok: bool, expect_gh: bool
 ) -> None:
     step = next(s for s in _steps() if s.get("name") == "Verify immutable release source")
     sha = "a" * 40
@@ -89,9 +91,10 @@ def test_schema_source_verification_paths(
     scripts = tmp_path / "bin"
     scripts.mkdir()
     (scripts / "git").write_text(
-        '#!/bin/sh\ncase "$1 $2" in\n'
+        '#!/bin/sh\ncase "$*" in\n'
         '  "rev-parse HEAD") echo ' + sha + ";;\n"
-        '  "rev-list -n1") echo ' + tag_sha + ";;\n"
+        '  "rev-list -n1 refs/tags/protocol-schemas-v4.5.0^{commit}") '
+        '[ "$TAG_PRESENT" = yes ] || exit 91; echo ' + tag_sha + ";;\n"
         "  *) exit 91;;\n"
         "esac\n",
         encoding="utf-8",
@@ -108,6 +111,7 @@ def test_schema_source_verification_paths(
         "PATH": str(scripts) + os.pathsep + os.environ["PATH"],
         "RELEASE_TAG": "protocol-schemas-v4.5.0",
         "PREPARE_SOURCE": sha if prepare else "",
+        "TAG_PRESENT": "yes" if tag_exists else "no",
         "CALLER_SHA": sha,
         "GH_MARKER": str(gh_marker),
         "GITHUB_OUTPUT": str(tmp_path / "output"),
