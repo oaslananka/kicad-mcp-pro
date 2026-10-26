@@ -132,6 +132,37 @@ def _attestation_match_counts(
     return count, count if run_matches else 0
 
 
+def _approved_package_version(*, tag: str, source_commit: str, kind: str, source_ref: str) -> str:
+    """Validate source and signer identity before any local package reads."""
+    match = _VERSION.fullmatch(tag)
+    if match is None or _SHA.fullmatch(source_commit) is None or kind not in _SIGNERS:
+        raise ValueError("unapproved signed package identity")
+    if source_ref not in {_MAIN_REF, f"refs/tags/{tag}"}:
+        raise ValueError("signed package source ref must match main or the exact approved tag")
+    return match.group(1)
+
+
+def _approved_run_invocation(
+    producer_run_id: int | None, producer_run_attempt: int | None
+) -> str | None:
+    """Reject partial or invalid run identity; never assume a matching invocation."""
+    if (producer_run_id is None) != (producer_run_attempt is None):
+        raise ValueError("producer run ID and attempt must be provided together")
+    if producer_run_id is not None and (
+        type(producer_run_id) is not int
+        or producer_run_id <= 0
+        or type(producer_run_attempt) is not int
+        or producer_run_attempt <= 0
+    ):
+        raise ValueError("invalid producer run ID or attempt")
+    if producer_run_id is None:
+        return None
+    return (
+        f"https://github.com/{REPOSITORY}/actions/runs/"
+        f"{producer_run_id}/attempts/{producer_run_attempt}"
+    )
+
+
 def verify_signed_asset(
     verifier: AttestationVerifier,
     *,
@@ -143,27 +174,10 @@ def verify_signed_asset(
     producer_run_id: int | None = None,
     producer_run_attempt: int | None = None,
 ) -> dict[str, object]:
-    match = _VERSION.fullmatch(tag)
-    if match is None or _SHA.fullmatch(source_commit) is None or kind not in _SIGNERS:
-        raise ValueError("unapproved signed package identity")
-    if source_ref not in {_MAIN_REF, f"refs/tags/{tag}"}:
-        raise ValueError("signed package source ref must match main or the exact approved tag")
-    if (producer_run_id is None) != (producer_run_attempt is None):
-        raise ValueError("producer run ID and attempt must be provided together")
-    if producer_run_id is not None and (
-        type(producer_run_id) is not int
-        or producer_run_id <= 0
-        or type(producer_run_attempt) is not int
-        or producer_run_attempt <= 0
-    ):
-        raise ValueError("invalid producer run ID or attempt")
-    expected_invocation = (
-        f"https://github.com/{REPOSITORY}/actions/runs/"
-        f"{producer_run_id}/attempts/{producer_run_attempt}"
-        if producer_run_id is not None
-        else None
+    version = _approved_package_version(
+        tag=tag, source_commit=source_commit, kind=kind, source_ref=source_ref
     )
-    version = match.group(1)
+    expected_invocation = _approved_run_invocation(producer_run_id, producer_run_attempt)
     allowed = _expected(version)["python_dist" if kind == "python" else kind]
     allowed_packages = {n for n in allowed if n.endswith((".whl", ".tar.gz", ".mcpb", ".zip"))}
     if package.is_symlink() or package.name not in allowed_packages:
