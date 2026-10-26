@@ -180,6 +180,7 @@ def test_companion_log_name_accepts_only_expected_basenames(tmp_path: Path) -> N
     for name in (
         "report.json",
         "../private.json",
+        "2026-١٠-26-windows-codex-native-smoke.json",
         "2026-10-26-windows-codex-native-smoke.json.bak",
         "2026-10-26-windows-codex-native-smoke.json/other",
     ):

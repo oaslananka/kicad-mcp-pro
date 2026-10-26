@@ -329,7 +329,7 @@ def _read_bounded_regular_file(path: Path, limit: int) -> bytes:
 def _companion_sanitized_log_path(report: Path) -> Path | None:
     """Derive a fixed sibling filename; do not accept a second caller path."""
     match = re.fullmatch(
-        r"(20[0-9]{2}-[0-9]{2}-[0-9]{2}-(?:linux|windows|macos)-codex-native)-smoke[.]json",
+        r"(20\d{2}-\d{2}-\d{2}-(?:linux|windows|macos)-codex-native)-smoke[.]json",
         report.name,
         flags=re.ASCII,
     )
