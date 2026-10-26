@@ -59,6 +59,14 @@ jobs:
             --checksums release-evidence/SHA256SUMS.txt \
             --artifacts dist
           (cd dist && sha256sum --check ../release-evidence/SHA256SUMS.txt)
+      # Subject checksums bind both wheel and sdist to their exact built bytes.
+      # Passing sbom-path produces CycloneDX predicate, not SLSA provenance;
+      # keep that attestation and add a separate default-provenance attestation.
+      - name: Attest Python SLSA build provenance
+        id: attest-python-slsa
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-checksums: release-evidence/SHA256SUMS.txt
       - name: Attest Python distributions
         id: attest-python
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6

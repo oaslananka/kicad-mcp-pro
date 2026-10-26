@@ -96,6 +96,11 @@ jobs:
             exit 1
           fi
           echo "tarball=../../release-assets/protocol-schemas/$(basename "$tarball_path")" >> "$GITHUB_OUTPUT"
+      # SBOM and source build provenance use distinct signed predicate types.
+      - name: Attest Protocol Schemas SLSA build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-checksums: release-assets/protocol-schemas/SHA256SUMS.txt
       - name: Attest tarball
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
