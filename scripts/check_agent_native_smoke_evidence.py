@@ -8,6 +8,7 @@ reviewing external native-host execution evidence may approve a host claim.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -105,9 +106,127 @@ def validate_report(report: object, *, known_hosts: set[str]) -> list[str]:
     return sorted(errors)
 
 
+def validate_sanitized_log(report: object, raw_log: bytes) -> list[str]:
+    """Bind a Codex sanitized log to its report without trusting its assertions.
+
+    This is deterministic evidence-consistency checking, NOT independent
+    observation, binary provenance or compatibility attestation. Error output
+    remains fixed codes; never echo untrusted log contents.
+    """
+    if not isinstance(report, dict) or len(raw_log) > 32_768 or not raw_log:
+        return ["invalid_or_missing_log"]
+    if hashlib.sha256(raw_log).hexdigest() != report.get("sanitized_log_sha256"):
+        return ["sanitized_log_digest_mismatch"]
+    try:
+        log = json.loads(raw_log)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return ["invalid_sanitized_log"]
+    if (
+        not isinstance(log, dict)
+        or log.get("schema_version") != "codex-native-host-sanitized-log.v1"
+    ):
+        return ["invalid_sanitized_log"]
+    if report.get("host_id") != "codex" or log.get("host_id") != "codex":
+        return ["unsupported_log_host"]
+    linked = (
+        ("host_version", "host_version"),
+        ("os", "os"),
+        ("source_revision", "source_revision"),
+        ("server_version", "server_version"),
+        ("transport", "transport"),
+        ("mode", "mode"),
+        ("observed_on", "observed_on"),
+        ("tool_called", "native_tool_called"),
+        ("tool_call_successful", "native_tool_call_successful"),
+        ("mcp_server_discovered", "host_initialized"),
+        ("write_tools_absent", "all_native_exposed_tools_readonly_per_source_policy"),
+    )
+    if any(log.get(log_key) != report.get(report_key) for report_key, log_key in linked):
+        return ["sanitized_log_report_mismatch"]
+    for key in (
+        "source_module_loaded_from_exact_checkout",
+        "host_initialized",
+        "ephemeral_thread_created",
+        "native_tool_call_successful",
+        "native_tool_call_content_present",
+        "all_native_exposed_tools_readonly_per_source_policy",
+        "explicit_unbound_ipc_configured",
+    ):
+        if log.get(key) is not True:
+            return ["unsafe_or_incomplete_native_observation"]
+    for key in (
+        "ipc_socket_materialized",
+        "model_or_agent_turn_started",
+        "raw_tool_response_retained",
+        "full_native_host_smoke_independently_attested",
+    ):
+        if log.get(key) is not False:
+            return ["unsafe_or_incomplete_native_observation"]
+    if log.get("native_tool_call_method") != "mcpServer/tool/call":
+        return ["invalid_native_call_method"]
+    for key in ("host_binary_sha256", "python_binary_sha256"):
+        if not _valid_text(log.get(key), _DIGEST):
+            return ["missing_reviewed_binary_digest"]
+    skills = log.get("project_skills_verified")
+    if (
+        not isinstance(skills, dict)
+        or set(skills) != set(report.get("skills_discovered", []))
+        or any(
+            type(name) is not str or path != f".agents/skills/{name}/SKILL.md"
+            for name, path in skills.items()
+        )
+    ):
+        return ["invalid_sanitized_skill_origins"]
+    names = log.get("native_host_tool_names")
+    if (
+        not isinstance(names, list)
+        or not names
+        or not all(_valid_text(name, _TOKEN) for name in names)
+        or len(names) != len(set(names))
+        or type(log.get("native_tool_count")) is not int
+        or len(names) != log["native_tool_count"]
+        or report.get("tool_called") not in names
+    ):
+        return ["invalid_sanitized_tool_inventory"]
+    # Codex 0.144.4 reports serverInfo without runtimeStatus; 0.163.0
+    # provides runtimeStatus. Do not manufacture connection fields.
+    if log.get("os") == "windows":
+        if log.get("native_inventory_server_info_present") is not True:
+            return ["missing_native_server_inventory"]
+    elif log.get("server_status") != "connected":
+        return ["missing_native_server_connection"]
+    # Use decoded JSON scalars: paths can be escaped in the original bytes.
+    forbidden = (
+        "/home/",
+        "/users/",
+        "c:\\users\\",
+        "sk-proj-",
+        "authorization:",
+        "access_token",
+        "api_key",
+    )
+    stack: list[object] = [log]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            stack.extend(value.keys())
+            stack.extend(value.values())
+        elif isinstance(value, list):
+            stack.extend(value)
+        elif isinstance(value, str):
+            if any(item in value.lower() for item in forbidden):
+                return ["unsanitized_native_log"]
+    return []
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument(
+        "--sanitized-log",
+        type=Path,
+        help="Optional bounded Codex log; verify SHA-256 and cross-file observations",
+    )
     parser.add_argument("--catalog", type=Path, default=EVIDENCE)
     args = parser.parse_args(argv)
     try:
@@ -119,9 +238,14 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("invalid")
         catalog = json.loads(args.catalog.read_text(encoding="utf-8"))
         known = {row["id"] for row in catalog["hosts"]}
-        errors = validate_report(
-            json.loads(args.report.read_text(encoding="utf-8")), known_hosts=known
-        )
+        report = json.loads(args.report.read_text(encoding="utf-8"))
+        errors = validate_report(report, known_hosts=known)
+        if args.sanitized_log is not None and not errors:
+            log_path = args.sanitized_log
+            if log_path.is_symlink() or not log_path.is_file() or log_path.stat().st_size > 32_768:
+                errors = ["invalid_or_missing_log"]
+            else:
+                errors = validate_sanitized_log(report, log_path.read_bytes())
     except (OSError, ValueError, TypeError, KeyError):
         errors = ["invalid_or_missing_evidence"]
     print(

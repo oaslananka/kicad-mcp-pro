@@ -62,9 +62,24 @@ uv run --all-extras --frozen python scripts/check_agent_native_smoke_evidence.py
 ```
 
 Passing returns `structurally_complete_not_attested` — **never** a release
-compatibility pass. A reviewer must independently inspect the pinned real-host
-execution log/digest, the source commit and environment before updating any
-published compatibility claim. Synthetic unit-test data cannot serve as evidence.
+compatibility pass. For a retained Codex observation, use the optional
+`--sanitized-log` flag to additionally check the **actual log bytes**
+against the report and cross-check source, host, binary hashes, Skill paths,
+readonly tool inventory, native diagnostic and basic redaction constraints:
+
+    PYTHONPATH=. python scripts/check_agent_native_smoke_evidence.py \
+      --report docs/evidence/agent-host/2026-10-26-windows-codex-native-smoke.json \
+      --sanitized-log docs/evidence/agent-host/2026-10-26-windows-codex-native-sanitized-log.json
+
+This check is offline and fails closed if an explicitly supplied log is
+missing, altered, contradictory or unsanitized. Linux and Windows Codex
+observations use the same verifier, respecting the older Windows Codex
+protocol's missing runtimeStatus field. Report-only static validation remains
+available for compatibility with existing evidence formats. **Neither check
+proves that a real host emitted the data, validates binary provenance, or
+establishes independent compatibility attestation.** A reviewer must still
+independently inspect the pinned source, environment and native execution
+before updating any published compatibility claim. Synthetic unit-test data cannot serve as evidence.
 The normal CI job does not install any agent host or generate passing evidence.
 
 ## Native Codex 0.163.0 model-free readonly tool smoke — 2026-10-26 (#1219)
