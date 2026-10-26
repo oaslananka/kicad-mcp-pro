@@ -52,7 +52,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-          ref: ${{ steps.release.outputs.tag }}
+          ref: refs/tags/${{ steps.release.outputs.tag }}
           persist-credentials: false
       - name: Verify reusable preparation source identity
         shell: bash
@@ -89,9 +89,9 @@ jobs:
           release_tag="$RELEASE_TAG"
           version="$VERSION"
           source_commit="$(git rev-parse HEAD)"
-          tag_commit="$(git rev-list -n 1 "$release_tag")"
+          tag_commit="$(git rev-list -n 1 "refs/tags/${release_tag}^{commit}")" || exit 1
           manifest_version="$(node -e "console.log(require('./packaging/mcpb/manifest.json').version)")"
-          test "$source_commit" = "$tag_commit"
+          test "$source_commit" = "$tag_commit" || exit 1
           test "$manifest_version" = "$version"
           [[ "$PREPARE_SOURCE" =~ ^[0-9a-f]{40}$ ]] || exit 1
           test "$source_commit" = "$PREPARE_SOURCE" || exit 1
