@@ -99,6 +99,11 @@ jobs:
           npm sbom --sbom-format cyclonedx --sbom-type application > "$evidence_dir/sbom.cdx.json"
           (cd "$evidence_dir" && sha256sum --check SHA256SUMS.txt)
           echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+      # SBOM and source build provenance use distinct signed predicate types.
+      - name: Attest npm SLSA build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-checksums: release-assets/mcp-npm/SHA256SUMS.txt
       - name: Attest npm launcher tarball
         id: attest-npm
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
