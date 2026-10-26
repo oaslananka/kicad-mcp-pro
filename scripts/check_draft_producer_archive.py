@@ -28,6 +28,26 @@ _ARTIFACT_WORKFLOWS: dict[str, set[str]] = {
     "kicad-pcm-release-evidence": {".github/workflows/publish-kicad-pcm.yml"},
 }
 
+# Only the single read-only dispatcher may be a reusable-producer run.
+# This is run/archive binding, not proof of the individual called job.
+_REUSABLE_CALLER_WORKFLOW = ".github/workflows/draft-producer-preflight.yml"
+_REUSABLE_ARTIFACT_WORKFLOWS: dict[str, set[str]] = {
+    "python-dist": {_REUSABLE_CALLER_WORKFLOW},
+    "python-release-evidence": {_REUSABLE_CALLER_WORKFLOW},
+    "mcpb-release-evidence": {_REUSABLE_CALLER_WORKFLOW},
+    "kicad-pcm-release-evidence": {_REUSABLE_CALLER_WORKFLOW},
+    "protocol-schemas-release-evidence": {_REUSABLE_CALLER_WORKFLOW},
+}
+
+
+def _approved_role_workflows(profile: str) -> dict[str, set[str]]:
+    """Never broaden legacy trust roots to the new caller implicitly."""
+    if profile == "legacy":
+        return _ARTIFACT_WORKFLOWS
+    if profile == "reusable":
+        return _REUSABLE_ARTIFACT_WORKFLOWS
+    raise ValueError("unapproved producer profile")
+
 
 class ReadOnlyArtifactClient(Protocol):
     def workflow_run(self, repo: str, run_id: int) -> dict[str, Any]: ...
@@ -62,8 +82,18 @@ class GitHubArtifactClient:
 
 
 def _verify_run(
-    run: object, *, repo: str, run_id: int, attempt: int, head_sha: str, role: str
+    run: object,
+    *,
+    repo: str,
+    run_id: int,
+    attempt: int,
+    head_sha: str,
+    role: str,
+    producer_profile: str = "legacy",
 ) -> int:
+    workflows = _approved_role_workflows(producer_profile)
+    if role not in workflows:
+        raise ValueError("unapproved producer profile or artifact role")
     if not isinstance(run, dict):
         raise ValueError("invalid GitHub workflow run")
     r = run.get("repository")
@@ -83,7 +113,7 @@ def _verify_run(
     ):
         raise ValueError("workflow run repository or ID mismatch")
     if (
-        run.get("path") not in _ARTIFACT_WORKFLOWS[role]
+        run.get("path") not in workflows[role]
         or run.get("event") != "workflow_dispatch"
         or run.get("head_branch") != "main"
         or run.get("head_sha") != head_sha
@@ -149,11 +179,13 @@ def verify_archive(
     artifact_id: int,
     head_sha: str,
     downloaded_zip: Path,
+    producer_profile: str = "legacy",
 ) -> dict[str, object]:
-    """A conservative metadata/digest preflight with no publication permissions."""
+    """Conservative run/archive identity only; no signed job or publish authority."""
+    workflows = _approved_role_workflows(producer_profile)
     if (
         repo != REPOSITORY
-        or role not in _ARTIFACT_WORKFLOWS
+        or role not in workflows
         or any(type(value) is not int or value <= 0 for value in (run_id, run_attempt, artifact_id))
         or _SHA.fullmatch(head_sha) is None
     ):
@@ -166,7 +198,13 @@ def verify_archive(
 
     run = client.workflow_run(repo, run_id)
     repo_id = _verify_run(
-        run, repo=repo, run_id=run_id, attempt=run_attempt, head_sha=head_sha, role=role
+        run,
+        repo=repo,
+        run_id=run_id,
+        attempt=run_attempt,
+        head_sha=head_sha,
+        role=role,
+        producer_profile=producer_profile,
     )
     artifact = client.artifact(repo, artifact_id)
     expected_digest = _verify_artifact(
@@ -191,12 +229,14 @@ def verify_archive(
     return {
         "repo": repo,
         "role": role,
+        "producerProfile": producer_profile,
         "runId": run_id,
         "runAttempt": run_attempt,
         "artifactId": artifact_id,
         "headSha": head_sha,
         "archiveSha256": expected_digest,
         "workflowRunIdentityVerified": True,
+        "reusableCallerWorkflowVerified": producer_profile == "reusable",
         "artifactArchiveDigestVerified": True,
         "producerJobIdentityVerified": False,
         "signedAttestationVerified": False,
@@ -209,6 +249,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True)
     parser.add_argument("--role", required=True)
+    parser.add_argument(
+        "--producer-profile",
+        default="legacy",
+        choices=("legacy", "reusable"),
+        help="Exact standalone publish or draft-producer caller workflow identity",
+    )
     parser.add_argument("--run-id", type=int, required=True)
     parser.add_argument("--run-attempt", type=int, required=True)
     parser.add_argument("--artifact-id", type=int, required=True)
@@ -225,6 +271,7 @@ def main() -> int:
             artifact_id=args.artifact_id,
             head_sha=args.head_sha,
             downloaded_zip=args.downloaded_zip,
+            producer_profile=args.producer_profile,
         )
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
         parser.exit(2, f"draft producer ZIP gate: FAIL: {exc}\n")
