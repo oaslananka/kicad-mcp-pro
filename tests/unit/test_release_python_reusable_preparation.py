@@ -10,7 +10,8 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW = ROOT / ".github/workflows/publish-python.yml"
+WORKFLOW = ROOT / ".github/workflows/prepare-python.yml"
+LEGACY = ROOT / ".github/workflows/publish-python.yml"
 TAG = "mcp-server-v4.4.0"
 SHA = "a" * 40
 
@@ -28,8 +29,11 @@ def test_exact_reusable_inputs_and_unchanged_legacy_events() -> None:
     for config in on["workflow_call"]["inputs"].values():
         assert config["type"] == "string"
         assert config["required"] is True
-    assert on["workflow_dispatch"] is None
-    assert on["push"]["tags"] == ["mcp-server-v*"]
+    assert set(on) == {"workflow_call"}
+    previous = yaml.safe_load(LEGACY.read_text(encoding="utf-8"))[True]
+    assert previous["workflow_dispatch"] is None
+    assert previous["push"]["tags"] == ["mcp-server-v*"]
+    assert "workflow_call" not in previous
 
 
 def test_prepare_mode_is_allowed_only_on_main_with_approved_source() -> None:
@@ -39,9 +43,10 @@ def test_prepare_mode_is_allowed_only_on_main_with_approved_source() -> None:
     assert "github.ref == 'refs/heads/main'" in condition
     assert "github.repository == 'oaslananka/kicad-mcp-pro'" in condition
     assert "startsWith(inputs.tag, 'mcp-server-v')" in condition
-    assert "inputs.source_commit == ''" in condition
-    assert "github.event_name == 'workflow_dispatch'" in condition
-    assert "github.event_name == 'push'" in condition
+    assert "inputs.source_commit == ''" not in condition
+    assert "github.event_name" not in condition
+    assert build["permissions"]["contents"] == "read"
+    assert "environment" not in build
 
 
 def test_source_guard_runs_immediately_after_checkout_and_before_repo_code() -> None:
@@ -56,7 +61,7 @@ def test_source_guard_runs_immediately_after_checkout_and_before_repo_code() -> 
     assert identity == checkout + 1
     assert identity < setup
     guard = steps[identity]
-    assert guard["if"] == "inputs.source_commit != ''"
+    assert "if" not in guard
     assert guard["env"] == {
         "EXPECTED_TAG": "$" + "{{ inputs.tag }}",
         "EXPECTED_SOURCE": "$" + "{{ inputs.source_commit }}",
@@ -87,16 +92,13 @@ def test_source_guard_runs_immediately_after_checkout_and_before_repo_code() -> 
 def test_no_registry_or_github_release_writes_in_prepare_mode() -> None:
     wf = _workflow()
     jobs = wf["jobs"]
-    assert "inputs.source_commit == ''" in jobs["publish-testpypi"]["if"]
-    assert "inputs.source_commit == ''" in jobs["publish-pypi"]["if"]
+    assert set(jobs) == {"build"}
+    assert "pypa/gh-action-pypi-publish" not in WORKFLOW.read_text(encoding="utf-8")
+    assert "gh release" not in WORKFLOW.read_text(encoding="utf-8")
+    assert "environment:" not in WORKFLOW.read_text(encoding="utf-8")
+    assert "pypa/gh-action-pypi-publish" in LEGACY.read_text(encoding="utf-8")
+    assert "gh release upload" in LEGACY.read_text(encoding="utf-8")
     build = jobs["build"]["steps"]
-    for label in (
-        "Enforce live-model release readiness",
-        "Verify release tag matches package version",
-        "Attach Python evidence to GitHub Release",
-    ):
-        step = next(s for s in build if s.get("name") == label)
-        assert "inputs.source_commit == ''" in step["if"]
     attest = [s for s in build if str(s.get("uses", "")).startswith("actions/attest@")]
     uploads = [s for s in build if str(s.get("uses", "")).startswith("actions/upload-artifact@")]
     assert len(attest) == 2
