@@ -56,6 +56,46 @@ _SHA = re.compile(r"[0-9a-f]{40}\Z")
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 
 
+# Reviewed source capability+operating-mode snapshots. The registry and
+# tool_required_mode implementations are unchanged between these two source
+# revisions. Explicitly opt in new revisions only after independent review;
+# never trust the sanitized log's own readonly=True assertion.
+_PINNED_SOURCE_REVISIONS = frozenset(
+    {
+        "57c0efb1f072f5fffbf1f527ee2348448705e32d",
+        "f9a21b4e7fad0267bc162b864faea7be1081acbe",
+    }
+)
+_PINNED_SOURCE_READONLY_TOOLS = frozenset(
+    {
+        "dfm_run_manufacturer_check",
+        "kicad_get_project_info",
+        "kicad_get_server_info",
+        "kicad_get_tools_in_category",
+        "kicad_get_version",
+        "kicad_list_tool_categories",
+        "kicad_set_project",
+        "lib_get_bom_with_pricing",
+        "lib_verify_component_contract",
+        "pcb_get_board_summary",
+        "pcb_get_design_rules",
+        "pcb_get_stackup",
+        "pcb_visual_qa",
+        "project_design_workflow",
+        "project_get_next_action",
+        "project_quality_gate",
+        "run_drc",
+        "run_erc",
+        "sch_get_bounding_boxes",
+        "sch_get_connectivity_graph",
+        "sch_get_symbols",
+        "sch_visual_qa",
+        "validate_design",
+        "validate_footprints_vs_schematic",
+    }
+)
+
+
 def _valid_text(value: object, regex: re.Pattern[str]) -> bool:
     return type(value) is str and bool(regex.fullmatch(value))
 
@@ -175,12 +215,23 @@ def _check_log_inventory(report: dict[str, object], log: dict[str, object]) -> s
         or report.get("tool_called") not in names
     ):
         return "invalid_sanitized_tool_inventory"
-    # Codex 0.144.4 reports serverInfo without runtimeStatus; 0.163.0
-    # provides runtimeStatus. Do not manufacture connection fields.
-    if log.get("os") == "windows":
-        if log.get("native_inventory_server_info_present") is not True:
+    if report.get("source_revision") not in _PINNED_SOURCE_REVISIONS:
+        return "unreviewed_source_capability_policy"
+    if set(names) != _PINNED_SOURCE_READONLY_TOOLS:
+        return "invalid_sanitized_tool_policy"
+    # Windows Codex 0.144.4 does not provide runtimeStatus; later versions
+    # and Linux must prove an actual connected status, not just inventory.
+    if log.get("os") == "windows" and log.get("host_version") == "0.144.4":
+        if (
+            log.get("native_inventory_server_info_present") is not True
+            or log.get("native_mcp_status_field_available") is not False
+            or "server_status" in log
+        ):
             return "missing_native_server_inventory"
-    elif log.get("server_status") != "connected":
+    elif (
+        log.get("server_status") != "connected"
+        or log.get("native_mcp_status_field_available") is False
+    ):
         return "missing_native_server_connection"
     return None
 

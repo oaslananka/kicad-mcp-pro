@@ -184,3 +184,58 @@ def test_companion_log_name_accepts_only_expected_basenames(tmp_path: Path) -> N
         "2026-10-26-windows-codex-native-smoke.json/other",
     ):
         assert _companion_sanitized_log_path(tmp_path / name) is None
+
+
+def test_native_tool_policy_is_pinned_to_source_capabilities() -> None:
+    from kicad_mcp.capabilities import get
+    from kicad_mcp.operating_modes import OperatingMode, tool_required_mode
+    from scripts.check_agent_native_smoke_evidence import _PINNED_SOURCE_READONLY_TOOLS
+
+    for name in _PINNED_SOURCE_READONLY_TOOLS:
+        assert get(name) is not None
+        assert tool_required_mode(name) is OperatingMode.READONLY
+
+
+def test_recomputed_hash_rejects_unknown_or_mutating_tool() -> None:
+    report, raw = observation("linux")
+    for tool in ("unknown_tool", "pcb_save"):
+        log = json.loads(raw)
+        log["native_host_tool_names"][0] = tool
+        changed_raw = (json.dumps(log, sort_keys=True) + "\n").encode()
+        updated = dict(report, sanitized_log_sha256=hashlib.sha256(changed_raw).hexdigest())
+        assert validate_sanitized_log(updated, changed_raw) == ["invalid_sanitized_tool_policy"]
+
+
+def test_recomputed_hash_rejects_unreviewed_source_revision() -> None:
+    report, raw = observation("linux")
+    updated, changed = altered(report, raw, {"source_revision": "a" * 40})
+    updated["source_revision"] = "a" * 40
+    assert validate_sanitized_log(updated, changed) == ["unreviewed_source_capability_policy"]
+
+
+def test_newer_windows_host_must_prove_connected_status() -> None:
+    report, raw = observation("windows")
+    changed_report, changed = altered(report, raw, {"host_version": "0.163.0"})
+    changed_report["host_version"] = "0.163.0"
+    assert validate_sanitized_log(changed_report, changed) == ["missing_native_server_connection"]
+    disconnected_report, disconnected = altered(
+        changed_report, changed, {"server_status": "disconnected"}
+    )
+    assert validate_sanitized_log(disconnected_report, disconnected) == [
+        "missing_native_server_connection"
+    ]
+    connected_report, connected = altered(
+        disconnected_report,
+        disconnected,
+        {
+            "server_status": "connected",
+            "native_mcp_status_field_available": True,
+        },
+    )
+    assert validate_sanitized_log(connected_report, connected) == []
+
+
+def test_legacy_windows_host_rejects_spoofed_status() -> None:
+    report, raw = observation("windows")
+    changed_report, changed = altered(report, raw, {"server_status": "connected"})
+    assert validate_sanitized_log(changed_report, changed) == ["missing_native_server_inventory"]
