@@ -20,19 +20,22 @@ from scripts.check_draft_producer_archive import (
 )
 
 _SHA = re.compile(r"^[0-9a-f]{40}$")
+_PYTHON_ATTEST_STEP = "Attest Python distributions"
+_PYTHON_UPLOAD_STEP = "Run actions/upload-artifact@"
+_REUSABLE_CALLER_NAME = "Draft producer preflight (non-publishing)"
 _JOB_NAMES: dict[str, tuple[str, str, str, str]] = {
     # workflow display name, expected job name, attestation step, upload step
     "python-dist": (
         "Publish Python",
         "build",
-        "Attest Python distributions",
-        "Run actions/upload-artifact@",
+        _PYTHON_ATTEST_STEP,
+        _PYTHON_UPLOAD_STEP,
     ),
     "python-release-evidence": (
         "Publish Python",
         "build",
-        "Attest Python distributions",
-        "Run actions/upload-artifact@",
+        _PYTHON_ATTEST_STEP,
+        _PYTHON_UPLOAD_STEP,
     ),
     "mcpb-release-evidence": (
         "Publish MCPB",
@@ -54,31 +57,31 @@ _JOB_NAMES: dict[str, tuple[str, str, str, str]] = {
 # before any live #1179 acceptance or deployment gate relies on it.
 _REUSABLE_JOB_NAMES: dict[str, tuple[str, str, str, str]] = {
     "python-dist": (
-        "Draft producer preflight (non-publishing)",
+        _REUSABLE_CALLER_NAME,
         "python / build",
-        "Attest Python distributions",
-        "Run actions/upload-artifact@",
+        _PYTHON_ATTEST_STEP,
+        _PYTHON_UPLOAD_STEP,
     ),
     "python-release-evidence": (
-        "Draft producer preflight (non-publishing)",
+        _REUSABLE_CALLER_NAME,
         "python / build",
-        "Attest Python distributions",
-        "Run actions/upload-artifact@",
+        _PYTHON_ATTEST_STEP,
+        _PYTHON_UPLOAD_STEP,
     ),
     "mcpb-release-evidence": (
-        "Draft producer preflight (non-publishing)",
+        _REUSABLE_CALLER_NAME,
         "mcpb / prepare",
         "Attest MCPB bundle",
         "Store MCPB release evidence",
     ),
     "kicad-pcm-release-evidence": (
-        "Draft producer preflight (non-publishing)",
+        _REUSABLE_CALLER_NAME,
         "pcm / prepare",
         "Attest KiCad PCM package",
         "Store KiCad PCM release evidence",
     ),
     "protocol-schemas-release-evidence": (
-        "Draft producer preflight (non-publishing)",
+        _REUSABLE_CALLER_NAME,
         "schemas / prepare",
         "Attest tarball",
         "Store release evidence",
