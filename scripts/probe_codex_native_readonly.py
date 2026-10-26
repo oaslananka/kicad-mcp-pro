@@ -54,7 +54,13 @@ def _run(argv: list[str], *, cwd: Path, env: dict[str, str], timeout: int = 12) 
     # Only fixed argv sequences: git read, hash-verified Codex/Python;
     # the opt-in probe never uses a shell or user-controlled command text.
     result = subprocess.run(  # nosec B603  # nosemgrep
-        argv, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout, check=True
+        argv,  # nosemgrep -- only pre-reviewed executable argv; never a shell.
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=True,
     )
     return result.stdout.strip()
 
@@ -149,7 +155,7 @@ def _check_source_policy(root: Path, python: Path, names: list[str], env: dict[s
     )
     # Explicit interpreter SHA-256 is validated before this argv-only call.
     checked = subprocess.run(  # nosec B603  # nosemgrep
-        [str(python), "-c", code],
+        [str(python), "-c", code],  # nosemgrep -- SHA-256-pinned Python, fixed -c body.
         input=json.dumps(names),
         cwd=root,
         env=env,
