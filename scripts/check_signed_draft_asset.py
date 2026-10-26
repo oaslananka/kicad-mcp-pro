@@ -24,6 +24,8 @@ from scripts.runtime_path_safety import approved_runtime_path
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _MAIN_REF = "refs/heads/main"
 _PREDICATE = "https://slsa.dev/provenance/v1"
+_MIN_SAFE_GH_VERSION = (2, 102, 0)
+_GH_VERSION = re.compile(r"^gh version ([0-9]+)\.([0-9]+)\.([0-9]+)(?:\s|$)")
 _SIGNERS = {
     "python": ".github/workflows/publish-python.yml",
     "mcpb": ".github/workflows/publish-mcpb.yml",
@@ -37,6 +39,25 @@ class AttestationVerifier(Protocol):
     ) -> list[dict[str, Any]]: ...
 
 
+def _require_patched_gh_attestation_verifier(executable: str) -> None:
+    """Fail closed against vulnerable signer-workflow prefix matching in gh CLI.
+
+    GHSA-wjmr-j3rp-mh2g: gh 2.51.0 through 2.101.0 accepted a
+    workflow name prefix instead of the exact signed workflow identity.
+    """
+    version = subprocess.run(
+        [executable, "version"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    line = version.stdout.splitlines()[0] if version.stdout else ""
+    match = _GH_VERSION.match(line)
+    if match is None or tuple(int(x) for x in match.groups()) < _MIN_SAFE_GH_VERSION:
+        raise ValueError("gh attestation verification requires patched gh CLI >= 2.102.0")
+
+
 class GitHubAttestationCLI:
     """Only a read-only, cryptographic verification call to GitHub CLI."""
 
@@ -46,6 +67,7 @@ class GitHubAttestationCLI:
         executable = shutil.which("gh")
         if executable is None:
             raise ValueError("GitHub CLI unavailable for signed attestation check")
+        _require_patched_gh_attestation_verifier(executable)
         result = subprocess.run(
             [
                 executable,
