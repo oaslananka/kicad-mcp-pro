@@ -22,6 +22,7 @@ from scripts.check_draft_producer_archive import REPOSITORY
 from scripts.runtime_path_safety import approved_runtime_path
 
 _SHA = re.compile(r"^[0-9a-f]{40}$")
+_MAIN_REF = "refs/heads/main"
 _PREDICATE = "https://slsa.dev/provenance/v1"
 _SIGNERS = {
     "python": ".github/workflows/publish-python.yml",
@@ -83,6 +84,53 @@ def _sha256(path: Path) -> str:
     return hasher.hexdigest()
 
 
+def _invocation_matches(
+    result: dict[str, Any], statement: dict[str, Any], expected: str | None
+) -> bool:
+    """Both signed SLSA invocation locations must agree with the approved run."""
+    if expected is None:
+        return False
+    predicate = statement.get("predicate")
+    run_details = predicate.get("runDetails") if isinstance(predicate, dict) else None
+    metadata = run_details.get("metadata") if isinstance(run_details, dict) else None
+    signature = result.get("signature")
+    certificate = signature.get("certificate") if isinstance(signature, dict) else None
+    statement_invocation = metadata.get("invocationId") if isinstance(metadata, dict) else None
+    certificate_invocation = (
+        certificate.get("runInvocationURI") if isinstance(certificate, dict) else None
+    )
+    return statement_invocation == expected and certificate_invocation == expected
+
+
+def _attestation_match_counts(
+    entry: object, *, filename: str, sha256: str, expected_invocation: str | None
+) -> tuple[int, int]:
+    """Require structurally valid attestation data even when no subject matches."""
+    if not isinstance(entry, dict):
+        raise ValueError("malformed verified attestation")
+    result = entry.get("verificationResult")
+    if not isinstance(result, dict):
+        raise ValueError("missing cryptographic verification result")
+    statement = result.get("statement")
+    if not isinstance(statement, dict):
+        raise ValueError("missing attestation statement")
+    if statement.get("predicateType") != _PREDICATE:
+        raise ValueError("unexpected signed provenance predicate")
+    run_matches = _invocation_matches(result, statement, expected_invocation)
+    subjects = statement.get("subject")
+    if not isinstance(subjects, list):
+        raise ValueError("signed provenance has no subjects")
+    count = sum(
+        1
+        for subject in subjects
+        if isinstance(subject, dict)
+        and subject.get("name") == filename
+        and isinstance(subject.get("digest"), dict)
+        and subject["digest"].get("sha256") == sha256
+    )
+    return count, count if run_matches else 0
+
+
 def verify_signed_asset(
     verifier: AttestationVerifier,
     *,
@@ -90,14 +138,14 @@ def verify_signed_asset(
     tag: str,
     source_commit: str,
     kind: str,
-    source_ref: str = "refs/heads/main",
+    source_ref: str = _MAIN_REF,
     producer_run_id: int | None = None,
     producer_run_attempt: int | None = None,
 ) -> dict[str, object]:
     match = _VERSION.fullmatch(tag)
     if match is None or _SHA.fullmatch(source_commit) is None or kind not in _SIGNERS:
         raise ValueError("unapproved signed package identity")
-    if source_ref not in {"refs/heads/main", f"refs/tags/{tag}"}:
+    if source_ref not in {_MAIN_REF, f"refs/tags/{tag}"}:
         raise ValueError("signed package source ref must match main or the exact approved tag")
     if (producer_run_id is None) != (producer_run_attempt is None):
         raise ValueError("producer run ID and attempt must be provided together")
@@ -135,47 +183,14 @@ def verify_signed_asset(
     match_count = 0
     run_binding_count = 0
     for entry in signed:
-        if not isinstance(entry, dict):
-            raise ValueError("malformed verified attestation")
-        result = entry.get("verificationResult")
-        if not isinstance(result, dict):
-            raise ValueError("missing cryptographic verification result")
-        statement = result.get("statement")
-        if not isinstance(statement, dict):
-            raise ValueError("missing attestation statement")
-        if statement.get("predicateType") != _PREDICATE:
-            raise ValueError("unexpected signed provenance predicate")
-        if expected_invocation is not None:
-            predicate = statement.get("predicate")
-            run_details = predicate.get("runDetails") if isinstance(predicate, dict) else None
-            metadata = run_details.get("metadata") if isinstance(run_details, dict) else None
-            signature = result.get("signature")
-            certificate = signature.get("certificate") if isinstance(signature, dict) else None
-            statement_invocation = (
-                metadata.get("invocationId") if isinstance(metadata, dict) else None
-            )
-            certificate_invocation = (
-                certificate.get("runInvocationURI") if isinstance(certificate, dict) else None
-            )
-            run_matches = (
-                statement_invocation == expected_invocation
-                and certificate_invocation == expected_invocation
-            )
-        else:
-            run_matches = False
-        subjects = statement.get("subject")
-        if not isinstance(subjects, list):
-            raise ValueError("signed provenance has no subjects")
-        for subject in subjects:
-            if (
-                isinstance(subject, dict)
-                and subject.get("name") == path.name
-                and isinstance(subject.get("digest"), dict)
-                and subject["digest"].get("sha256") == artifact_digest
-            ):
-                match_count += 1
-                if run_matches:
-                    run_binding_count += 1
+        package_matches, run_matches = _attestation_match_counts(
+            entry,
+            filename=path.name,
+            sha256=artifact_digest,
+            expected_invocation=expected_invocation,
+        )
+        match_count += package_matches
+        run_binding_count += run_matches
     if match_count == 0:
         raise ValueError("verified signatures do not cover the expected package digest")
     if expected_invocation is not None and run_binding_count == 0:
@@ -211,7 +226,7 @@ def main() -> int:
     p.add_argument("--kind", required=True, choices=sorted(_SIGNERS))
     p.add_argument(
         "--source-ref",
-        default="refs/heads/main",
+        default=_MAIN_REF,
         help="Signed source ref: refs/heads/main or refs/tags/<exact tag>",
     )
     p.add_argument("--producer-run-id", type=int)

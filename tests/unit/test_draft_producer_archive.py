@@ -62,11 +62,13 @@ class FakeClient:
         self.artifact_reads = 0
 
     def workflow_run(self, repo: str, run_id: int) -> dict[str, Any]:
-        assert repo == REPOSITORY and run_id == RUN_ID
+        assert repo == REPOSITORY
+        assert run_id == RUN_ID
         return deepcopy(self.run)
 
     def artifact(self, repo: str, artifact_id: int) -> dict[str, Any]:
-        assert repo == REPOSITORY and artifact_id == ARTIFACT_ID
+        assert repo == REPOSITORY
+        assert artifact_id == ARTIFACT_ID
         self.artifact_reads += 1
         result = deepcopy(self.art)
         if self.changed_after_first_artifact_read and self.artifact_reads > 1:

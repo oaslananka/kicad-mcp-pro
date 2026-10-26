@@ -70,7 +70,9 @@ class CompleteClient(FixtureClient):
         }
 
     def workflow_jobs(self, repo: str, run_id: int, attempt: int) -> dict[str, Any]:
-        assert repo == REPO and run_id == RUN_ID and attempt == ATTEMPT
+        assert repo == REPO
+        assert run_id == RUN_ID
+        assert attempt == ATTEMPT
         return self.jobs
 
 

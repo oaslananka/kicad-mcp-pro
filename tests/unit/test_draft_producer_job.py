@@ -85,12 +85,14 @@ class Fake:
         }
 
     def workflow_run(self, repo: str, run_id: int) -> dict[str, Any]:
-        assert repo == REPOSITORY and run_id == ID
+        assert repo == REPOSITORY
+        assert run_id == ID
         self.calls += 1
         return deepcopy(self.run)
 
     def workflow_jobs(self, repo: str, run_id: int, attempt: int) -> dict[str, Any]:
-        assert repo == REPOSITORY and run_id == ID and attempt == ATTEMPT
+        assert repo == REPOSITORY
+        assert run_id == ID and attempt == ATTEMPT
         self.calls += 1
         return deepcopy(self.jobs)
 
@@ -136,23 +138,26 @@ def test_exact_completed_job_and_required_steps_success(role: str) -> None:
 def test_forged_or_wrong_job_rejected(field: str, value: str | int) -> None:
     fake = Fake("mcpb-release-evidence")
     fake.jobs["jobs"][0][field] = value
+    kwargs = _params(fake.role)
     with pytest.raises(ValueError):
-        verify_producer_job(fake, **_params(fake.role))
+        verify_producer_job(fake, **kwargs)
 
 
 @pytest.mark.parametrize("conclusion", ["skipped", "failure", None])
 def test_skipped_or_failed_attestation_rejected(conclusion: str | None) -> None:
     fake = Fake("mcpb-release-evidence")
     fake.jobs["jobs"][0]["steps"][0]["conclusion"] = conclusion
+    kwargs = _params(fake.role)
     with pytest.raises(ValueError, match="required producer step"):
-        verify_producer_job(fake, **_params(fake.role))
+        verify_producer_job(fake, **kwargs)
 
 
 def test_upload_before_attestation_is_rejected() -> None:
     fake = Fake("mcpb-release-evidence")
     fake.jobs["jobs"][0]["steps"][0]["number"] = 7
+    kwargs = _params(fake.role)
     with pytest.raises(ValueError, match="preceded"):
-        verify_producer_job(fake, **_params(fake.role))
+        verify_producer_job(fake, **kwargs)
 
 
 @pytest.mark.parametrize("bad", ["skipped", "missing", "too_late"])
@@ -165,41 +170,47 @@ def test_python_requires_independent_slsa_attestation(bad: str) -> None:
         steps.pop(0)
     else:
         steps[0]["number"] = 9
+    kwargs = _params(fake.role)
     with pytest.raises(ValueError, match="SLSA|required producer step"):
-        verify_producer_job(fake, **_params(fake.role))
+        verify_producer_job(fake, **kwargs)
 
 
 def test_missing_second_python_artifact_upload_is_rejected() -> None:
     fake = Fake("python-release-evidence")
     fake.jobs["jobs"][0]["steps"].pop()
+    kwargs = _params(fake.role)
     with pytest.raises(ValueError, match="lacks approved"):
-        verify_producer_job(fake, **_params(fake.role))
+        verify_producer_job(fake, **kwargs)
 
 
 def test_partial_pagination_is_rejected() -> None:
     fake = Fake("mcpb-release-evidence")
     fake.jobs["total_count"] = 200
+    kwargs = _params(fake.role)
     with pytest.raises(ValueError, match="incomplete"):
-        verify_producer_job(fake, **_params(fake.role))
+        verify_producer_job(fake, **kwargs)
 
 
 def test_duplicate_job_id_is_rejected() -> None:
     fake = Fake("mcpb-release-evidence")
     fake.jobs["jobs"].append(deepcopy(fake.jobs["jobs"][0]))
     fake.jobs["total_count"] = 2
+    kwargs = _params(fake.role)
     with pytest.raises(ValueError, match="not found uniquely"):
-        verify_producer_job(fake, **_params(fake.role))
+        verify_producer_job(fake, **kwargs)
 
 
 def test_run_source_branch_mismatch_rejected() -> None:
     fake = Fake("mcpb-release-evidence")
     fake.run["head_branch"] = "untrusted"
+    kwargs = _params(fake.role)
     with pytest.raises(ValueError, match="approved completed main producer"):
-        verify_producer_job(fake, **_params(fake.role))
+        verify_producer_job(fake, **kwargs)
 
 
 def test_unapproved_or_invalid_identity_shortcircuits() -> None:
     fake = Fake("mcpb-release-evidence")
+    invalid_params = {**_params(fake.role), "job_id": True}
     with pytest.raises(ValueError, match="invalid approved"):
-        verify_producer_job(fake, **{**_params(fake.role), "job_id": True})
+        verify_producer_job(fake, **invalid_params)
     assert fake.calls == 0

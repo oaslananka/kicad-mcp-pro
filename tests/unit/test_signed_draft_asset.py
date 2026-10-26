@@ -177,8 +177,9 @@ def test_cli_nonzero_status_must_not_be_accepted(
 
     monkeypatch.setattr("scripts.check_signed_draft_asset.shutil.which", lambda _: "/usr/bin/gh")
     monkeypatch.setattr("scripts.check_signed_draft_asset.subprocess.run", failing_run)
+    verifier = GitHubAttestationCLI()
     with pytest.raises(subprocess.CalledProcessError):
-        GitHubAttestationCLI().verify(
+        verifier.verify(
             path=tmp_path / "sample",
             repo="oaslananka/kicad-mcp-pro",
             sha=SHA,

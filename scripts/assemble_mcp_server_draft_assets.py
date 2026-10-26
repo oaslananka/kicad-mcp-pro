@@ -22,6 +22,7 @@ from scripts.runtime_path_safety import approved_runtime_path
 
 _VERSION = re.compile(r"^mcp-server-v(\d+\.\d+\.\d+)$", re.ASCII)
 _SHA = re.compile(r"^[0-9a-f]{40}$")
+_PYTHON_SUMS = "SHA256SUMS.txt"
 
 
 def _expected(version: str) -> dict[str, set[str]]:
@@ -31,7 +32,7 @@ def _expected(version: str) -> dict[str, set[str]]:
             f"kicad_mcp_pro-{version}.tar.gz",
         },
         "python_evidence": {
-            "SHA256SUMS.txt",
+            _PYTHON_SUMS,
             "sbom.cdx.json",
             "release-evidence.json",
         },
@@ -102,6 +103,21 @@ def _check_evidence(
         raise ValueError("PCM evidence format mismatch")
 
 
+def _check_source_evidence(
+    source: dict[str, dict[str, Path]], *, version: str, tag: str, source_commit: str
+) -> None:
+    """Check all source family checksums and identity-bearing sidecars."""
+    _check_hashes(source["python_evidence"][_PYTHON_SUMS], source["python_dist"])
+    for kind in ("mcpb", "pcm"):
+        archive = next(p for p in source[kind].values() if p.suffix in (".mcpb", ".zip"))
+        checksums = source[kind][f"kicad-mcp-pro-{kind}-SHA256SUMS.txt"]
+        evidence = source[kind][f"kicad-mcp-pro-{kind}-release-evidence.json"]
+        _check_hashes(checksums, {archive.name: archive})
+        _check_evidence(
+            evidence, archive, version=version, tag=tag, source_commit=source_commit, kind=kind
+        )
+
+
 def assemble(
     *,
     tag: str,
@@ -128,15 +144,7 @@ def assemble(
     if len(set(inputs)) != len(inputs):
         raise ValueError("artifact source directories must be distinct")
 
-    _check_hashes(source["python_evidence"]["SHA256SUMS.txt"], source["python_dist"])
-    for kind in ("mcpb", "pcm"):
-        archive = next(p for p in source[kind].values() if p.suffix in (".mcpb", ".zip"))
-        checksums = source[kind][f"kicad-mcp-pro-{kind}-SHA256SUMS.txt"]
-        evidence = source[kind][f"kicad-mcp-pro-{kind}-release-evidence.json"]
-        _check_hashes(checksums, {archive.name: archive})
-        _check_evidence(
-            evidence, archive, version=version, tag=tag, source_commit=source_commit, kind=kind
-        )
+    _check_source_evidence(source, version=version, tag=tag, source_commit=source_commit)
 
     output = Path(output).expanduser()
     if output.is_symlink() or output.exists():
@@ -150,7 +158,7 @@ def assemble(
         assets = staged / "assets"
         assets.mkdir()
         rename = {
-            "SHA256SUMS.txt": "kicad-mcp-pro-python-SHA256SUMS.txt",
+            _PYTHON_SUMS: "kicad-mcp-pro-python-SHA256SUMS.txt",
             "sbom.cdx.json": "kicad-mcp-pro-python-sbom.cdx.json",
             "release-evidence.json": "kicad-mcp-pro-python-release-evidence.json",
         }
@@ -221,7 +229,7 @@ def main() -> int:
             pcm=args.pcm,
             output=args.output,
         )
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError) as exc:
         p.exit(2, f"draft mcp-server assembly: FAIL: {exc}\n")
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0

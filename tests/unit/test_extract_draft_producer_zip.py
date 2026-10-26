@@ -71,11 +71,13 @@ class FixtureClient:
         }
 
     def workflow_run(self, repo: str, run_id: int) -> dict[str, Any]:
-        assert repo == REPOSITORY and run_id == RUN_ID
+        assert repo == REPOSITORY
+        assert run_id == RUN_ID
         return self.run
 
     def artifact(self, repo: str, artifact_id: int) -> dict[str, Any]:
-        assert repo == REPOSITORY and artifact_id == ARTIFACT_ID
+        assert repo == REPOSITORY
+        assert artifact_id == ARTIFACT_ID
         return self.art
 
 
