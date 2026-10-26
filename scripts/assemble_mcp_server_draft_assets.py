@@ -172,6 +172,14 @@ def assemble(
                 assets / name for name in expected[kind] if name.endswith((".mcpb", ".zip"))
             )
             _check_hashes(assets / f"kicad-mcp-pro-{kind}-SHA256SUMS.txt", {archive.name: archive})
+            _check_evidence(
+                assets / f"kicad-mcp-pro-{kind}-release-evidence.json",
+                archive,
+                version=version,
+                tag=tag,
+                source_commit=source_commit,
+                kind=kind,
+            )
         manifest_path = staged / "manifest.json"
         manifest_path.write_text(
             json.dumps(manifest_for(assets, tag, source_commit), sort_keys=True, indent=2) + "\n",

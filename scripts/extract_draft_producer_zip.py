@@ -12,6 +12,7 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
@@ -150,7 +151,7 @@ def main() -> int:
             downloaded_zip=args.downloaded_zip,
             output=args.output,
         )
-    except (OSError, ValueError, zipfile.BadZipFile) as exc:
+    except (OSError, ValueError, zipfile.BadZipFile, subprocess.SubprocessError) as exc:
         p.exit(2, f"draft ZIP extraction: FAIL: {exc}\n")
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0

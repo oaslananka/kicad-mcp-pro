@@ -200,7 +200,10 @@ def test_symlink_zip_is_rejected(tmp_path: Path) -> None:
     other = tmp_path / "actual.zip"
     other.write_bytes(ZIP_BYTES)
     kwargs["downloaded_zip"].unlink()
-    kwargs["downloaded_zip"].symlink_to(other)
+    try:
+        kwargs["downloaded_zip"].symlink_to(other)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlink creation is unavailable on this platform")
     with pytest.raises(ValueError, match="symlink"):
         verify_archive(client, **kwargs)
 

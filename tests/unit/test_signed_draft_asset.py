@@ -122,7 +122,10 @@ def test_symlink_package_is_rejected(tmp_path: Path) -> None:
     real = tmp_path / "actual.mcpb"
     real.write_bytes(b"actual data")
     linked = tmp_path / "kicad-mcp-pro-4.5.0.mcpb"
-    linked.symlink_to(real)
+    try:
+        linked.symlink_to(real)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlink creation is unavailable on this platform")
     verifier = StubVerifier(real)
     with pytest.raises(ValueError, match="linked"):
         verify_signed_asset(verifier, package=linked, tag=TAG, source_commit=SHA, kind="mcpb")

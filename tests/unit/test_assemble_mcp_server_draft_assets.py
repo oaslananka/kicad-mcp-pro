@@ -158,3 +158,28 @@ def test_bad_or_duplicate_checksum_targets_are_rejected(tmp_path: Path) -> None:
     path.write_text(path.read_text() + path.read_text().splitlines()[0] + "\n")
     with pytest.raises(ValueError, match="duplicate checksum"):
         assemble(**kwargs)
+
+
+def test_source_evidence_race_cannot_accept_invalid_staged_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kwargs = _fixture(tmp_path)
+    import scripts.assemble_mcp_server_draft_assets as module
+
+    original_copy = module.shutil.copyfile
+    corrupted = False
+
+    def race_copy(source: Path, destination: Path, **options: object) -> str:
+        nonlocal corrupted
+        if source.name == "kicad-mcp-pro-mcpb-release-evidence.json" and not corrupted:
+            corrupted = True
+            value = json.loads(source.read_text())
+            value["sourceCommit"] = "b" * 40
+            source.write_text(json.dumps(value))
+        return str(original_copy(source, destination, **options))
+
+    monkeypatch.setattr(module.shutil, "copyfile", race_copy)
+    with pytest.raises(ValueError, match="evidence source identity mismatch"):
+        assemble(**kwargs)
+    assert corrupted
+    assert not kwargs["output"].exists()

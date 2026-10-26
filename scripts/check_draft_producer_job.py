@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 from typing import Any, Protocol
 
 from scripts.check_draft_producer_archive import (
@@ -179,7 +180,7 @@ def main() -> int:
             job_id=args.job_id,
             source_commit=args.source_commit,
         )
-    except (ValueError, OSError) as exc:
+    except (ValueError, OSError, subprocess.SubprocessError) as exc:
         p.exit(2, f"draft producer job preflight: FAIL: {exc}\n")
     print(json.dumps(result, sort_keys=True, indent=2))
     return 0
