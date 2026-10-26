@@ -3,6 +3,7 @@
   "ephemeral_thread_created": true,
   "explicit_unbound_ipc_configured": true,
   "full_native_host_smoke_independently_attested": false,
+  "host_binary_sha256": "399ff69c431c066e40de318fba45c2b07f45a76b19939d247ee4828fc70c4215",
   "host_id": "codex",
   "host_initialized": true,
   "host_version": "0.163.0",
@@ -52,6 +53,7 @@
     "visual-excellence": ".agents/skills/visual-excellence/SKILL.md",
     "wired-subcircuit-design": ".agents/skills/wired-subcircuit-design/SKILL.md"
   },
+  "python_binary_sha256": "06176065174ea24f24d109e55a374022ef5c4390234516c683d4726431be027d",
   "raw_tool_response_retained": false,
   "schema_version": "codex-native-host-sanitized-log.v1",
   "server_status": "connected",

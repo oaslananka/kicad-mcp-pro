@@ -2,29 +2,39 @@
 
 from __future__ import annotations
 
-import subprocess
+import io
+import runpy
 import sys
+from contextlib import redirect_stdout
+from dataclasses import dataclass
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 VALIDATOR = ROOT / "integrations/common/validate-mcp-config.py"
+VALIDATOR_MAIN = runpy.run_path(str(VALIDATOR))["main"]
 
 
-def _check(*arguments: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(VALIDATOR), *arguments],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+@dataclass(frozen=True)
+class _Result:
+    returncode: int
+    stdout: str
+    stderr: str = ""
+
+
+def _check(*arguments: str) -> _Result:
+    """Call the genuine CLI main under a captured stdout, no child process."""
+    output = io.StringIO()
+    with patch.object(sys, "argv", ["validate-mcp-config.py", *arguments]):
+        with redirect_stdout(output):
+            code = VALIDATOR_MAIN()
+    return _Result(returncode=code, stdout=output.getvalue())
 
 
 def test_all_checked_in_examples_validate_in_the_correct_format() -> None:
     result = _check()
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "✓ config.toml.example: valid" in result.stdout
+    assert "PASS config.toml.example: valid" in result.stdout
 
 
 def test_codex_example_with_toml_example_suffix_validates_via_path() -> None:
@@ -108,3 +118,11 @@ def test_toml_without_mcp_server_table_is_rejected(tmp_path: Path) -> None:
 def test_json_examples_remain_json_validated() -> None:
     result = _check("--path", "integrations/claude-code/.mcp.json.example")
     assert result.returncode == 0
+
+
+def test_validator_output_is_safe_for_windows_cp1252() -> None:
+    """The actual report must contain no non-CP1252 console symbols."""
+    result = _check()
+    assert result.returncode == 0
+    result.stdout.encode("cp1252", errors="strict")
+    assert result.stdout.startswith("PASS ")

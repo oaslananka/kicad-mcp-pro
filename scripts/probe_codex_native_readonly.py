@@ -17,7 +17,7 @@ import re
 import selectors
 import shutil
 import signal
-import subprocess
+import subprocess  # nosec B404 -- SHA-256-pinned local binaries; shell never used.
 import sys
 import tempfile
 import time
@@ -38,10 +38,22 @@ EXPECTED_SKILLS = frozenset(
 )
 EXPECTED_HOST = "0.163.0"
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
+BINARY_SHA_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def _sha256_executable(path: Path) -> str:
+    """Fingerprint the resolved local executable before starting the host."""
+    digest = hashlib.sha256()
+    with path.resolve(strict=True).open("rb") as binary:
+        for chunk in iter(lambda: binary.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _run(argv: list[str], *, cwd: Path, env: dict[str, str], timeout: int = 12) -> str:
-    result = subprocess.run(
+    # Only fixed argv sequences: git read, hash-verified Codex/Python;
+    # the opt-in probe never uses a shell or user-controlled command text.
+    result = subprocess.run(  # nosec B603  # nosemgrep
         argv, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout, check=True
     )
     return result.stdout.strip()
@@ -135,7 +147,8 @@ def _check_source_policy(root: Path, python: Path, names: list[str], env: dict[s
         "or tool_required_mode(n) != OperatingMode.READONLY]; "
         "print(json.dumps(bad))"
     )
-    checked = subprocess.run(
+    # Explicit interpreter SHA-256 is validated before this argv-only call.
+    checked = subprocess.run(  # nosec B603  # nosemgrep
         [str(python), "-c", code],
         input=json.dumps(names),
         cwd=root,
@@ -149,7 +162,15 @@ def _check_source_policy(root: Path, python: Path, names: list[str], env: dict[s
         raise RuntimeError("host exposes non-readonly tools")
 
 
-def _execute(root: Path, python: Path, codex: Path, revision: str) -> dict[str, Any]:
+def _execute(
+    root: Path,
+    python: Path,
+    codex: Path,
+    revision: str,
+    *,
+    codex_digest: str,
+    python_digest: str,
+) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="codex-kicad-readonly-smoke-") as temp:
         home = Path(temp)
         unbound = home / "not-attached-kicad-ipc.sock"
@@ -204,7 +225,9 @@ def _execute(root: Path, python: Path, codex: Path, revision: str) -> dict[str, 
             f"HOME = {toml_quote(temp)}\nXDG_RUNTIME_DIR = {toml_quote(temp)}\n",
             encoding="utf-8",
         )
-        process = subprocess.Popen(
+        # Running a reviewed native host is the purpose of this opt-in probe:
+        # verify executable digest, version and temporary HOME before start.
+        process = subprocess.Popen(  # nosec B603  # nosemgrep
             [str(codex), "app-server", "--stdio"],
             cwd=root,
             env=env,
@@ -261,6 +284,8 @@ def _execute(root: Path, python: Path, codex: Path, revision: str) -> dict[str, 
                 "observed_on": date.today().isoformat(),
                 "host_id": "codex",
                 "host_version": host_version,
+                "host_binary_sha256": codex_digest,
+                "python_binary_sha256": python_digest,
                 "os": "linux",
                 "source_revision": revision,
                 "source_module_loaded_from_exact_checkout": True,
@@ -301,13 +326,20 @@ def _execute(root: Path, python: Path, codex: Path, revision: str) -> dict[str, 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--python", type=Path, required=True)
+    parser.add_argument("--expected-codex-sha256", required=True)
+    parser.add_argument("--expected-python-sha256", required=True)
     parser.add_argument("--expected-source-sha", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     try:
-        if sys.platform != "linux" or not SHA_PATTERN.fullmatch(args.expected_source_sha):
-            raise RuntimeError("unsupported platform or source revision")
+        if (
+            sys.platform != "linux"
+            or not SHA_PATTERN.fullmatch(args.expected_source_sha)
+            or not BINARY_SHA_PATTERN.fullmatch(args.expected_codex_sha256)
+            or not BINARY_SHA_PATTERN.fullmatch(args.expected_python_sha256)
+        ):
+            raise RuntimeError("unsupported platform or invalid expected digest")
         # Preserve the venv executable path: resolving its symlink can discard
         # the installed Python environment and its pinned dependencies.
         python = args.python.absolute()
@@ -317,15 +349,47 @@ def main() -> int:
         if not codex_binary:
             raise RuntimeError("Codex CLI unavailable")
         codex = Path(codex_binary).resolve(strict=True)
-        revision = _run(["git", "rev-parse", "HEAD"], cwd=root, env=os.environ.copy())
-        if revision != args.expected_source_sha:
-            raise RuntimeError("source SHA mismatch")
+        codex_digest = _sha256_executable(codex)
+        python_digest = _sha256_executable(python)
+        if (
+            codex_digest != args.expected_codex_sha256
+            or python_digest != args.expected_python_sha256
+        ):
+            raise RuntimeError("reviewed executable SHA-256 mismatch")
+        current_head = _run(["git", "rev-parse", "HEAD"], cwd=root, env=os.environ.copy())
+        if current_head != args.expected_source_sha:
+            # Permit a test-only descendant with identical committed server source.
+            _run(
+                ["git", "merge-base", "--is-ancestor", args.expected_source_sha, current_head],
+                cwd=root,
+                env=os.environ.copy(),
+            )
+            expected_tree = _run(
+                ["git", "rev-parse", f"{args.expected_source_sha}:src"],
+                cwd=root,
+                env=os.environ.copy(),
+            )
+            current_tree = _run(
+                ["git", "rev-parse", "HEAD:src"],
+                cwd=root,
+                env=os.environ.copy(),
+            )
+            if expected_tree != current_tree:
+                raise RuntimeError("server source tree differs from pinned source")
+        revision = args.expected_source_sha
         source_diff = _run(
             ["git", "status", "--porcelain", "--", "src"], cwd=root, env=os.environ.copy()
         )
         if source_diff:
             raise RuntimeError("server source working tree is not clean")
-        log = _execute(root, python, codex, revision)
+        log = _execute(
+            root,
+            python,
+            codex,
+            revision,
+            codex_digest=codex_digest,
+            python_digest=python_digest,
+        )
         raw = (json.dumps(log, indent=2, sort_keys=True) + "\n").encode()
         report = {
             "schema_version": "native-agent-host-smoke.v1",

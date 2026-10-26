@@ -174,12 +174,12 @@ def main() -> int:
     all_ok = True
     for name, (path, errors) in config_checks.items():
         if errors:
-            print(f"✗ {name} ({path}):")
+            print(f"FAIL {name} ({path}):")
             for err in errors:
                 print(f"    - {err}")
             all_ok = False
         else:
-            print(f"✓ {name}: valid")
+            print(f"PASS {name}: valid")
 
     return 0 if all_ok else 1
 

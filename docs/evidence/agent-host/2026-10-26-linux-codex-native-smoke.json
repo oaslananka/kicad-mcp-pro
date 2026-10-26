@@ -5,7 +5,7 @@
   "mode": "readonly",
   "observed_on": "2026-10-26",
   "os": "linux",
-  "sanitized_log_sha256": "b4b11b8ff8c24a654b32e346f5ea4970dc04cc18c88f188ce7a6ab912b2d69d3",
+  "sanitized_log_sha256": "aca53ad5791c5d293411461d9c8e80f0143e89ab72184e54dfad5211bcf0a773",
   "schema_version": "native-agent-host-smoke.v1",
   "server_version": "4.4.0",
   "skills_discovered": [

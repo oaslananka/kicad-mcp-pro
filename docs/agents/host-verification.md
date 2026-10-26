@@ -122,14 +122,20 @@ turn, use ambient GUI IPC, or change the project:
 mkdir /tmp/codex-mcp-native-review
 python scripts/probe_codex_native_readonly.py \
   --python /path/to/reviewed/python3.13 \
+  --expected-codex-sha256 <independently-reviewed-codex-binary-sha256> \
+  --expected-python-sha256 <independently-reviewed-python-binary-sha256> \
   --expected-source-sha 57c0efb1f072f5fffbf1f527ee2348448705e32d \
   --output-dir /tmp/codex-mcp-native-review
 PYTHONPATH=. python scripts/check_agent_native_smoke_evidence.py \
   --report /tmp/codex-mcp-native-review/codex-native-smoke.json
 ```
 
+The two executable SHA-256 values must be obtained from a separate,
+trusted review of the *resolved executable artifacts* (not simply the
+host's self-reported version). The probe verifies both digests before
+running commands and records them in its sanitized log without local paths.
 The output directory must be pre-created and must not contain result files.
-The source `src/` tree must be clean. The probe rejects mismatched host
+The source tree must be clean; a descendant PR commit is permitted only if its committed src/ tree exactly matches the pinned source SHA. The probe rejects mismatched host
 versions, source SHA, missing Skills, non-readonly advertised tools and
 host diagnostics that fail. Keep raw host responses and credentials out of
 reports. Its optional output remains review material, not a production gate.

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
+from scripts import probe_codex_native_readonly as probe
 from scripts.probe_codex_native_readonly import _repo_skills
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -68,27 +68,72 @@ def test_outside_checkout_skill_cannot_pass(tmp_path: Path) -> None:
         _repo_skills({"data": [{"skills": rows}]}, ROOT)
 
 
-def test_invalid_source_sha_rejected_before_host_start(tmp_path: Path) -> None:
-    result = subprocess.run(
+def test_invalid_source_sha_rejected_before_host_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
         [
-            sys.executable,
-            str(PROBE),
+            "probe_codex_native_readonly.py",
             "--python",
             sys.executable,
             "--expected-source-sha",
             "a" * 40,
+            "--expected-codex-sha256",
+            "b" * 64,
+            "--expected-python-sha256",
+            "c" * 64,
             "--output-dir",
             str(tmp_path),
         ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=8,
     )
-    assert result.returncode == 2
-    assert json.loads(result.stdout) == {
+    monkeypatch.setattr(
+        probe,
+        "_execute",
+        lambda *_args: pytest.fail("host must not start after SHA mismatch"),
+    )
+    code = probe.main()
+    assert code == 2
+    assert json.loads(capsys.readouterr().out) == {
         "status": "rejected",
         "reason": "probe_incomplete_or_unsafe",
     }
+    assert not list(tmp_path.iterdir())
+
+
+def test_mismatched_executable_sha_rejected_before_host_or_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "probe_codex_native_readonly.py",
+            "--python",
+            sys.executable,
+            "--expected-codex-sha256",
+            "a" * 64,
+            "--expected-python-sha256",
+            "b" * 64,
+            "--expected-source-sha",
+            SOURCE,
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+    monkeypatch.setattr(probe.shutil, "which", lambda _name: sys.executable)
+    monkeypatch.setattr(probe, "_sha256_executable", lambda _path: "c" * 64)
+    monkeypatch.setattr(
+        probe,
+        "_run",
+        lambda *_args, **_kwargs: pytest.fail("git/host must not run"),
+    )
+    monkeypatch.setattr(
+        probe,
+        "_execute",
+        lambda *_args, **_kwargs: pytest.fail("host must not start"),
+    )
+    assert probe.main() == 2
+    assert json.loads(capsys.readouterr().out)["status"] == "rejected"
     assert not list(tmp_path.iterdir())
