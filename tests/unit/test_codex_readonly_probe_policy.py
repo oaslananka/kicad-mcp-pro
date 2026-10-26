@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import signal
 import sys
 from pathlib import Path
 
@@ -69,7 +70,7 @@ def test_outside_checkout_skill_cannot_pass(tmp_path: Path) -> None:
         _repo_skills({"data": [{"skills": rows}]}, ROOT)
 
 
-def test_invalid_source_sha_rejected_before_host_start(
+def test_unknown_source_sha_rejected_before_host_start(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(
@@ -89,17 +90,32 @@ def test_invalid_source_sha_rejected_before_host_start(
             str(tmp_path),
         ],
     )
+    monkeypatch.setattr(probe.shutil, "which", lambda _name: sys.executable)
+    fingerprints = iter(["b" * 64, "c" * 64])
+    monkeypatch.setattr(probe, "_sha256_executable", lambda _path: next(fingerprints))
+    calls: list[list[str]] = []
+
+    def fake_git(argv: list[str], **_kwargs: object) -> str:
+        calls.append(argv)
+        if argv == ["git", "rev-parse", "HEAD"]:
+            return "d" * 40
+        if argv[:3] == ["git", "merge-base", "--is-ancestor"]:
+            raise RuntimeError("unknown ancestor revision")
+        pytest.fail("unexpected Git command")
+
+    monkeypatch.setattr(probe, "_run", fake_git)
     monkeypatch.setattr(
-        probe,
-        "_execute",
-        lambda *_args: pytest.fail("host must not start after SHA mismatch"),
+        probe, "_execute", lambda *_args, **_kwargs: pytest.fail("host must not start")
     )
-    code = probe.main()
-    assert code == 2
+    assert probe.main() == 2
     assert json.loads(capsys.readouterr().out) == {
         "status": "rejected",
         "reason": "probe_incomplete_or_unsafe",
     }
+    assert calls == [
+        ["git", "rev-parse", "HEAD"],
+        ["git", "merge-base", "--is-ancestor", "a" * 40, "d" * 40],
+    ]
     assert not list(tmp_path.iterdir())
 
 
@@ -173,3 +189,97 @@ def test_native_rpc_rejects_error_and_invalid_matching_results(raw: bytes) -> No
     rpc.pending = raw
     with pytest.raises(RuntimeError, match="host RPC failed|unexpected host RPC"):
         rpc._matching_response(3, "example")
+
+
+@pytest.mark.parametrize("first_wait_times_out", [False, True])
+def test_process_group_cleanup_kills_surviving_children(
+    monkeypatch: pytest.MonkeyPatch, first_wait_times_out: bool
+) -> None:
+    signals: list[tuple[int, signal.Signals]] = []
+    waits: list[int] = []
+
+    class Process:
+        pid = 9467
+
+        def wait(self, *, timeout: int) -> int:
+            waits.append(timeout)
+            if first_wait_times_out and len(waits) == 1:
+                raise probe.subprocess.TimeoutExpired("codex", timeout)
+            return 0
+
+    monkeypatch.setattr(probe.os, "killpg", lambda pid, sig: signals.append((pid, sig)))
+    probe._stop_host_process_group(Process())
+    assert signals == [(9467, signal.SIGTERM), (9467, signal.SIGKILL)]
+    assert waits == [5, 5]
+
+
+def test_output_targets_reject_preexisting_artifacts(tmp_path: Path) -> None:
+    assert probe._output_targets(tmp_path) == (
+        tmp_path / "codex-native-sanitized-log.json",
+        tmp_path / "codex-native-smoke.json",
+    )
+    existing = tmp_path / "codex-native-smoke.json"
+    existing.write_bytes(b"previous observation")
+    with pytest.raises(RuntimeError, match="already exists"):
+        probe._output_targets(tmp_path)
+    assert existing.read_bytes() == b"previous observation"
+
+
+def test_evidence_partial_write_rollback_preserves_preexisting_target(tmp_path: Path) -> None:
+    first, second = (
+        tmp_path / "codex-native-sanitized-log.json",
+        tmp_path / "codex-native-smoke.json",
+    )
+    second.write_bytes(b"preexisting")
+    with pytest.raises(FileExistsError):
+        probe._write_evidence((first, second), (b"candidate", b"report"))
+    assert not first.exists()
+    assert second.read_bytes() == b"preexisting"
+
+
+def test_evidence_success_writes_both_files(tmp_path: Path) -> None:
+    first, second = probe._output_targets(tmp_path)
+    probe._write_evidence((first, second), (b"sanitized", b"metadata"))
+    assert first.read_bytes() == b"sanitized"
+    assert second.read_bytes() == b"metadata"
+
+
+def test_preexisting_output_rejected_before_native_host_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "codex-native-smoke.json").write_bytes(b"existing")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "probe_codex_native_readonly.py",
+            "--python",
+            sys.executable,
+            "--expected-source-sha",
+            SOURCE,
+            "--expected-codex-sha256",
+            "b" * 64,
+            "--expected-python-sha256",
+            "c" * 64,
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+    monkeypatch.setattr(probe.shutil, "which", lambda _name: sys.executable)
+    fingerprints = iter(["b" * 64, "c" * 64])
+    monkeypatch.setattr(probe, "_sha256_executable", lambda _path: next(fingerprints))
+
+    def fake_git(argv: list[str], **_kwargs: object) -> str:
+        if argv == ["git", "rev-parse", "HEAD"]:
+            return SOURCE
+        if argv == ["git", "status", "--porcelain", "--", "src"]:
+            return ""
+        pytest.fail("unexpected Git command")
+
+    monkeypatch.setattr(probe, "_run", fake_git)
+    monkeypatch.setattr(
+        probe, "_execute", lambda *_args, **_kwargs: pytest.fail("host must not start")
+    )
+    assert probe.main() == 2
+    assert json.loads(capsys.readouterr().out)["status"] == "rejected"
+    assert (tmp_path / "codex-native-smoke.json").read_bytes() == b"existing"

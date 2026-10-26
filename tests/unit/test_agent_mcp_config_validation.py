@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 VALIDATOR = ROOT / "integrations/common/validate-mcp-config.py"
 VALIDATOR_MAIN = runpy.run_path(str(VALIDATOR))["main"]
@@ -126,3 +128,35 @@ def test_validator_output_is_safe_for_windows_cp1252() -> None:
     assert result.returncode == 0
     result.stdout.encode("cp1252", errors="strict")
     assert result.stdout.startswith("PASS ")
+
+
+@pytest.mark.parametrize(
+    ("server_toml", "reason"),
+    [
+        ("command = 'uvx'\nurl = 'https://example.org/mcp'\n", "command and url"),
+        ("url = 'https://example.org/mcp'\nargs = []\n", "URL transport"),
+        (
+            "url = 'https://example.org/mcp'\n[ mcp_servers.kicad.env ]\nKEY = 'v'\n",
+            "URL transport",
+        ),
+        ("url = 'https://example.org/mcp'\nenv_vars = ['KEY']\n", "URL transport"),
+        ("url = 'https://example.org/mcp'\ncwd = '/tmp'\n", "URL transport"),
+    ],
+)
+def test_codex_rejects_mixed_transport_fields(
+    tmp_path: Path, server_toml: str, reason: str
+) -> None:
+    path = tmp_path / "config.toml.example"
+    path.write_text("[mcp_servers.kicad]\n" + server_toml, encoding="utf-8")
+    result = _check("--path", str(path))
+    assert result.returncode != 0
+    assert reason in result.stdout
+
+
+def test_codex_accepts_stdio_command_and_args(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml.example"
+    path.write_text(
+        "[mcp_servers.kicad]\ncommand = 'uvx'\nargs = ['kicad-mcp-pro']\n",
+        encoding="utf-8",
+    )
+    assert _check("--path", str(path)).returncode == 0

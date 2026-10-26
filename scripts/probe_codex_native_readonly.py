@@ -186,6 +186,48 @@ def _check_source_policy(root: Path, python: Path, names: list[str], env: dict[s
         raise RuntimeError("host exposes non-readonly tools")
 
 
+def _stop_host_process_group(process: subprocess.Popen[bytes]) -> None:
+    """Reap the parent and kill any surviving descendants in its isolated group."""
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+    # The parent may already be gone while a descendant ignores SIGTERM.
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGKILL)
+    process.wait(timeout=5)
+
+
+def _output_targets(output_dir: Path) -> tuple[Path, Path]:
+    """Reject existing paths before starting the native host; no overwrites."""
+    if not output_dir.is_dir() or output_dir.is_symlink():
+        raise RuntimeError("output directory must exist and not be a symlink")
+    targets = (
+        output_dir / "codex-native-sanitized-log.json",
+        output_dir / "codex-native-smoke.json",
+    )
+    if any(path.exists() or path.is_symlink() for path in targets):
+        raise RuntimeError("output target already exists")
+    return targets
+
+
+def _write_evidence(targets: tuple[Path, Path], payloads: tuple[bytes, bytes]) -> None:
+    """Roll back only output files created by this call when a later write fails."""
+    created: list[Path] = []
+    try:
+        for path, content in zip(targets, payloads, strict=True):
+            with path.open("xb") as output:
+                created.append(path)
+                output.write(content)
+    except OSError:
+        for path in created:
+            with contextlib.suppress(OSError):
+                path.unlink()
+        raise
+
+
 def _execute(
     root: Path,
     python: Path,
@@ -335,16 +377,7 @@ def _execute(
                 "full_native_host_smoke_independently_attested": False,
             }
         finally:
-            # The parent may have exited while its MCP subprocess survives.
-            # Always signal the isolated process group, not only the parent.
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(process.pid, signal.SIGTERM)
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(process.pid, signal.SIGKILL)
-                process.wait(timeout=5)
+            _stop_host_process_group(process)
 
 
 def main() -> int:
@@ -406,6 +439,7 @@ def main() -> int:
         )
         if source_diff:
             raise RuntimeError("server source working tree is not clean")
+        targets = _output_targets(args.output_dir)
         log = _execute(
             root,
             python,
@@ -432,17 +466,13 @@ def main() -> int:
             "observed_on": log["observed_on"],
             "sanitized_log_sha256": hashlib.sha256(raw).hexdigest(),
         }
-        if not args.output_dir.is_dir() or args.output_dir.is_symlink():
-            raise RuntimeError("output directory must exist and not be a symlink")
-        for basename, payload in (
-            ("codex-native-sanitized-log.json", raw),
+        _write_evidence(
+            targets,
             (
-                "codex-native-smoke.json",
+                raw,
                 (json.dumps(report, indent=2, sort_keys=True) + "\n").encode(),
             ),
-        ):
-            with (args.output_dir / basename).open("xb") as f:
-                f.write(payload)
+        )
         print(
             json.dumps(
                 {

@@ -60,6 +60,10 @@ def validate_toml_config(path: Path) -> list[str]:
         has_url = isinstance(url, str) and bool(url.strip())
         if not (has_command or has_url):
             errors.append(f"mcp_servers.{name}: missing command/url")
+        if "command" in server and "url" in server:
+            errors.append(f"mcp_servers.{name}: command and url cannot coexist")
+        if "url" in server and any(key in server for key in ("args", "env", "env_vars", "cwd")):
+            errors.append(f"mcp_servers.{name}: URL transport cannot specify stdio fields")
         args = server.get("args", [])
         if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
             errors.append(f"mcp_servers.{name}: invalid args (expected array of strings)")
