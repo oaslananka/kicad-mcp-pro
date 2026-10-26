@@ -275,13 +275,25 @@ def _read_bounded_regular_file(path: Path, limit: int) -> bytes:
             os.close(fd)
 
 
+def _companion_sanitized_log_path(report: Path) -> Path | None:
+    """Derive a fixed sibling filename; do not accept a second caller path."""
+    match = re.fullmatch(
+        r"(20[0-9]{2}-[0-9]{2}-[0-9]{2}-(?:linux|windows|macos)-codex-native)-smoke[.]json",
+        report.name,
+        flags=re.ASCII,
+    )
+    if match is None:
+        return None
+    return report.with_name(f"{match.group(1)}-sanitized-log.json")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument(
-        "--sanitized-log",
-        type=Path,
-        help="Optional bounded Codex log; verify SHA-256 and cross-file observations",
+        "--verify-sanitized-log",
+        action="store_true",
+        help="Validate the matching date/host log beside the selected report",
     )
     parser.add_argument("--catalog", type=Path, default=EVIDENCE)
     args = parser.parse_args(argv)
@@ -290,13 +302,17 @@ def main(argv: list[str] | None = None) -> int:
         known = {row["id"] for row in catalog["hosts"]}
         report = json.loads(_read_bounded_regular_file(args.report, 16_384))
         errors = validate_report(report, known_hosts=known)
-        if args.sanitized_log is not None and not errors:
-            try:
-                raw_log = _read_bounded_regular_file(args.sanitized_log, 32_768)
-            except (OSError, ValueError):
+        if args.verify_sanitized_log and not errors:
+            log_path = _companion_sanitized_log_path(args.report)
+            if log_path is None:
                 errors = ["invalid_or_missing_log"]
             else:
-                errors = validate_sanitized_log(report, raw_log)
+                try:
+                    raw_log = _read_bounded_regular_file(log_path, 32_768)
+                except (OSError, ValueError):
+                    errors = ["invalid_or_missing_log"]
+                else:
+                    errors = validate_sanitized_log(report, raw_log)
     except (OSError, ValueError, TypeError, KeyError):
         errors = ["invalid_or_missing_evidence"]
     print(

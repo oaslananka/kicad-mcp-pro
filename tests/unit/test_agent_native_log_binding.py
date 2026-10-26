@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from scripts.check_agent_native_smoke_evidence import (
+    _companion_sanitized_log_path,
     _read_bounded_regular_file,
     main,
     validate_sanitized_log,
@@ -52,8 +53,7 @@ def test_cli_reports_structure_without_claiming_attestation(
             [
                 "--report",
                 str(EVIDENCE / f"{stem}-smoke.json"),
-                "--sanitized-log",
-                str(EVIDENCE / f"{stem}-sanitized-log.json"),
+                "--verify-sanitized-log",
             ]
         )
         == 0
@@ -129,17 +129,10 @@ def test_windows_observation_does_not_require_new_linux_status_field() -> None:
 def test_cli_rejects_missing_log_when_explicitly_requested(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    assert (
-        main(
-            [
-                "--report",
-                str(EVIDENCE / "2026-10-26-windows-codex-native-smoke.json"),
-                "--sanitized-log",
-                str(tmp_path / "missing.json"),
-            ]
-        )
-        == 2
-    )
+    source = EVIDENCE / "2026-10-26-windows-codex-native-smoke.json"
+    report = tmp_path / source.name
+    report.write_bytes(source.read_bytes())
+    assert main(["--report", str(report), "--verify-sanitized-log"]) == 2
     result = json.loads(capsys.readouterr().out)
     assert result["reason_codes"] == ["invalid_or_missing_log"]
     assert result["establishes_real_host_compatibility"] is False
@@ -170,16 +163,24 @@ def test_bounded_reader_rejects_symlink_and_nonregular_file(tmp_path: Path) -> N
 def test_cli_rejects_oversized_log(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     oversized = tmp_path / "oversized.json"
     oversized.write_bytes(b"x" * 32_769)
-    assert (
-        main(
-            [
-                "--report",
-                str(EVIDENCE / "2026-10-26-linux-codex-native-smoke.json"),
-                "--sanitized-log",
-                str(oversized),
-            ]
-        )
-        == 2
-    )
+    source = EVIDENCE / "2026-10-26-linux-codex-native-smoke.json"
+    report = tmp_path / source.name
+    report.write_bytes(source.read_bytes())
+    oversized.rename(tmp_path / "2026-10-26-linux-codex-native-sanitized-log.json")
+    assert main(["--report", str(report), "--verify-sanitized-log"]) == 2
     result = json.loads(capsys.readouterr().out)
     assert result["reason_codes"] == ["invalid_or_missing_log"]
+
+
+def test_companion_log_name_accepts_only_expected_basenames(tmp_path: Path) -> None:
+    assert (
+        _companion_sanitized_log_path(tmp_path / "2026-10-26-windows-codex-native-smoke.json")
+        == tmp_path / "2026-10-26-windows-codex-native-sanitized-log.json"
+    )
+    for name in (
+        "report.json",
+        "../private.json",
+        "2026-10-26-windows-codex-native-smoke.json.bak",
+        "2026-10-26-windows-codex-native-smoke.json/other",
+    ):
+        assert _companion_sanitized_log_path(tmp_path / name) is None
