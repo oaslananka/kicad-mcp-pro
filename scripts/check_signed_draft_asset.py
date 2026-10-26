@@ -30,6 +30,15 @@ _SIGNERS = {
     "pcm": ".github/workflows/publish-kicad-pcm.yml",
 }
 
+# Signer workflow identity is the *called* workflow for attestations generated
+# inside a GitHub Actions reusable workflow. Never implicitly fall back to
+# the separate legacy workflow when that reusable identity is requested.
+_REUSABLE_SIGNERS = {
+    "python": ".github/workflows/prepare-python.yml",
+    "mcpb": ".github/workflows/prepare-mcpb.yml",
+    "pcm": ".github/workflows/prepare-kicad-pcm.yml",
+}
+
 
 class AttestationVerifier(Protocol):
     def verify(
@@ -163,6 +172,21 @@ def _approved_run_invocation(
     )
 
 
+def _approved_signer(
+    kind: str, profile: str, source_ref: str, expected_invocation: str | None
+) -> str:
+    """Keep the legacy and called-workflow trust roots mutually exclusive."""
+    if profile == "legacy":
+        return _SIGNERS[kind]
+    if profile != "reusable":
+        raise ValueError("unapproved signed workflow profile")
+    if source_ref != _MAIN_REF:
+        raise ValueError("reusable workflow requires signed refs/heads/main source")
+    if expected_invocation is None:
+        raise ValueError("reusable workflow requires exact producer run and attempt")
+    return _REUSABLE_SIGNERS[kind]
+
+
 def verify_signed_asset(
     verifier: AttestationVerifier,
     *,
@@ -173,11 +197,13 @@ def verify_signed_asset(
     source_ref: str = _MAIN_REF,
     producer_run_id: int | None = None,
     producer_run_attempt: int | None = None,
+    signer_profile: str = "legacy",
 ) -> dict[str, object]:
     version = _approved_package_version(
         tag=tag, source_commit=source_commit, kind=kind, source_ref=source_ref
     )
     expected_invocation = _approved_run_invocation(producer_run_id, producer_run_attempt)
+    signer = _approved_signer(kind, signer_profile, source_ref, expected_invocation)
     allowed = _expected(version)["python_dist" if kind == "python" else kind]
     allowed_packages = {n for n in allowed if n.endswith((".whl", ".tar.gz", ".mcpb", ".zip"))}
     if package.is_symlink() or package.name not in allowed_packages:
@@ -190,7 +216,7 @@ def verify_signed_asset(
         path=path,
         repo=REPOSITORY,
         sha=source_commit,
-        signer=_SIGNERS[kind],
+        signer=signer,
         source_ref=source_ref,
     )
     if not isinstance(signed, list) or not signed:
@@ -220,7 +246,8 @@ def verify_signed_asset(
         "sourceCommit": source_commit,
         "package": path.name,
         "sha256": artifact_digest,
-        "signerWorkflow": _SIGNERS[kind],
+        "signerWorkflow": signer,
+        "signerProfile": signer_profile,
         "sourceRef": source_ref,
         "verifiedMatchingAttestationCount": match_count,
         "signedAttestationVerified": True,
@@ -240,6 +267,12 @@ def main() -> int:
     p.add_argument("--source-commit", required=True)
     p.add_argument("--kind", required=True, choices=sorted(_SIGNERS))
     p.add_argument(
+        "--signer-profile",
+        default="legacy",
+        choices=("legacy", "reusable"),
+        help="Explicit legacy published or reusable prepare-workflow signer trust root",
+    )
+    p.add_argument(
         "--source-ref",
         default=_MAIN_REF,
         help="Signed source ref: refs/heads/main or refs/tags/<exact tag>",
@@ -257,6 +290,7 @@ def main() -> int:
             source_ref=args.source_ref,
             producer_run_id=args.producer_run_id,
             producer_run_attempt=args.producer_run_attempt,
+            signer_profile=args.signer_profile,
         )
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         p.exit(2, f"signed draft package attestation: FAIL: {exc}\n")
