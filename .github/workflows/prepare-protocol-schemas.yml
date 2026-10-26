@@ -1,0 +1,115 @@
+name: Prepare Protocol Schemas (non-publishing)
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing protected schemas tag to prepare.
+        required: true
+        type: string
+      source_commit:
+        description: Exact reviewed main commit for this tag.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: >-
+      github.repository == 'oaslananka/kicad-mcp-pro' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.source_commit != '' &&
+      startsWith(inputs.tag, 'protocol-schemas-v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      artifact-metadata: write
+      attestations: write
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages/protocol-schemas
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.tag }}
+      - name: Verify immutable release source
+        id: source
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          PREPARE_SOURCE: ${{ inputs.source_commit }}
+          CALLER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Explicit exits are required: BSD/macOS Bash 3.2 does not always
+          # propagate bare conditional failures through set -e as expected.
+          [[ "$PREPARE_SOURCE" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$CALLER_SHA" == "$PREPARE_SOURCE" ]] || exit 1
+          [[ "$(git rev-parse HEAD)" == "$PREPARE_SOURCE" ]] || exit 1
+          case "$RELEASE_TAG" in
+            protocol-schemas-v*) ;;
+            *)
+              echo "Unexpected protocol schema release tag: $RELEASE_TAG" >&2
+              exit 1
+              ;;
+          esac
+          tag_sha="$(git rev-list -n1 "refs/tags/${RELEASE_TAG}")"
+          head_sha="$(git rev-parse HEAD)"
+          test "$tag_sha" = "$head_sha" || exit 1
+          version="${RELEASE_TAG#protocol-schemas-v}"
+          package_version="$(python -c 'import json; print(json.load(open("packages/protocol-schemas/package.json"))["version"])')"
+          test "$version" = "$package_version" || exit 1
+          echo "sha=$head_sha" >> "$GITHUB_OUTPUT"
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - name: Install release-readiness dependencies
+        working-directory: ${{ github.workspace }}
+        run: uv sync --all-extras --frozen
+      - name: Enforce live-model release readiness
+        working-directory: ${{ github.workspace }}
+        run: uv run --all-extras python scripts/check_live_model_release_policy.py --require-ready release --ref HEAD
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .node-version
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: corepack enable
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm run build
+      - name: Pack and generate evidence
+        id: pack-evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack pnpm pack --pack-destination ../../release-assets/protocol-schemas
+          evidence_dir="../../release-assets/protocol-schemas"
+          mkdir -p "$evidence_dir"
+          (cd "$evidence_dir" && sha256sum -- *.tgz > SHA256SUMS.txt)
+          corepack pnpm sbom --sbom-format cyclonedx --sbom-type application > "$evidence_dir/sbom.cdx.json"
+          (cd "$evidence_dir" && sha256sum --check SHA256SUMS.txt)
+          tarball_path="$(find "$evidence_dir" -maxdepth 1 -type f -name '*.tgz' -print -quit)"
+          if [ -z "$tarball_path" ]; then
+            echo "No protocol schema tarball was produced." >&2
+            exit 1
+          fi
+          echo "tarball=../../release-assets/protocol-schemas/$(basename "$tarball_path")" >> "$GITHUB_OUTPUT"
+      - name: Attest tarball
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-checksums: release-assets/protocol-schemas/SHA256SUMS.txt
+          sbom-path: release-assets/protocol-schemas/sbom.cdx.json
+      - name: Store release evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: protocol-schemas-release-evidence
+          path: release-assets/protocol-schemas
+          if-no-files-found: error
+          retention-days: 14
