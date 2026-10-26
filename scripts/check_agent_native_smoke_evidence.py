@@ -108,28 +108,9 @@ def validate_report(report: object, *, known_hosts: set[str]) -> list[str]:
     return sorted(errors)
 
 
-def validate_sanitized_log(report: object, raw_log: bytes) -> list[str]:
-    """Bind a Codex sanitized log to its report without trusting its assertions.
-
-    This is deterministic evidence-consistency checking, NOT independent
-    observation, binary provenance or compatibility attestation. Error output
-    remains fixed codes; never echo untrusted log contents.
-    """
-    if not isinstance(report, dict) or len(raw_log) > 32_768 or not raw_log:
-        return ["invalid_or_missing_log"]
-    if hashlib.sha256(raw_log).hexdigest() != report.get("sanitized_log_sha256"):
-        return ["sanitized_log_digest_mismatch"]
-    try:
-        log = json.loads(raw_log)
-    except (UnicodeDecodeError, ValueError, RecursionError):
-        return ["invalid_sanitized_log"]
-    if (
-        not isinstance(log, dict)
-        or log.get("schema_version") != "codex-native-host-sanitized-log.v1"
-    ):
-        return ["invalid_sanitized_log"]
+def _check_log_identity(report: dict[str, object], log: dict[str, object]) -> str | None:
     if report.get("host_id") != "codex" or log.get("host_id") != "codex":
-        return ["unsupported_log_host"]
+        return "unsupported_log_host"
     linked = (
         ("host_version", "host_version"),
         ("os", "os"),
@@ -144,7 +125,7 @@ def validate_sanitized_log(report: object, raw_log: bytes) -> list[str]:
         ("write_tools_absent", "all_native_exposed_tools_readonly_per_source_policy"),
     )
     if any(log.get(log_key) != report.get(report_key) for report_key, log_key in linked):
-        return ["sanitized_log_report_mismatch"]
+        return "sanitized_log_report_mismatch"
     for key in (
         "source_module_loaded_from_exact_checkout",
         "host_initialized",
@@ -155,7 +136,7 @@ def validate_sanitized_log(report: object, raw_log: bytes) -> list[str]:
         "explicit_unbound_ipc_configured",
     ):
         if log.get(key) is not True:
-            return ["unsafe_or_incomplete_native_observation"]
+            return "unsafe_or_incomplete_native_observation"
     for key in (
         "ipc_socket_materialized",
         "model_or_agent_turn_started",
@@ -163,12 +144,16 @@ def validate_sanitized_log(report: object, raw_log: bytes) -> list[str]:
         "full_native_host_smoke_independently_attested",
     ):
         if log.get(key) is not False:
-            return ["unsafe_or_incomplete_native_observation"]
+            return "unsafe_or_incomplete_native_observation"
     if log.get("native_tool_call_method") != "mcpServer/tool/call":
-        return ["invalid_native_call_method"]
+        return "invalid_native_call_method"
     for key in ("host_binary_sha256", "python_binary_sha256"):
         if not _valid_text(log.get(key), _DIGEST):
-            return ["missing_reviewed_binary_digest"]
+            return "missing_reviewed_binary_digest"
+    return None
+
+
+def _check_log_inventory(report: dict[str, object], log: dict[str, object]) -> str | None:
     skills = log.get("project_skills_verified")
     if (
         not isinstance(skills, dict)
@@ -178,7 +163,7 @@ def validate_sanitized_log(report: object, raw_log: bytes) -> list[str]:
             for name, path in skills.items()
         )
     ):
-        return ["invalid_sanitized_skill_origins"]
+        return "invalid_sanitized_skill_origins"
     names = log.get("native_host_tool_names")
     if (
         not isinstance(names, list)
@@ -189,14 +174,18 @@ def validate_sanitized_log(report: object, raw_log: bytes) -> list[str]:
         or len(names) != log["native_tool_count"]
         or report.get("tool_called") not in names
     ):
-        return ["invalid_sanitized_tool_inventory"]
+        return "invalid_sanitized_tool_inventory"
     # Codex 0.144.4 reports serverInfo without runtimeStatus; 0.163.0
     # provides runtimeStatus. Do not manufacture connection fields.
     if log.get("os") == "windows":
         if log.get("native_inventory_server_info_present") is not True:
-            return ["missing_native_server_inventory"]
+            return "missing_native_server_inventory"
     elif log.get("server_status") != "connected":
-        return ["missing_native_server_connection"]
+        return "missing_native_server_connection"
+    return None
+
+
+def _check_log_redaction(log: dict[str, object]) -> str | None:
     # Use decoded JSON scalars: paths can be escaped in the original bytes.
     forbidden = (
         "/home/",
@@ -217,7 +206,39 @@ def validate_sanitized_log(report: object, raw_log: bytes) -> list[str]:
             stack.extend(value)
         elif isinstance(value, str):
             if any(item in value.lower() for item in forbidden):
-                return ["unsanitized_native_log"]
+                return "unsanitized_native_log"
+    return None
+
+
+def validate_sanitized_log(report: object, raw_log: bytes) -> list[str]:
+    """Bind a Codex sanitized log to its report without trusting its assertions.
+
+    This is deterministic evidence-consistency checking, NOT independent
+    observation, binary provenance or compatibility attestation. Error output
+    remains fixed codes; never echo untrusted log contents.
+    """
+    if not isinstance(report, dict) or len(raw_log) > 32_768 or not raw_log:
+        return ["invalid_or_missing_log"]
+    if hashlib.sha256(raw_log).hexdigest() != report.get("sanitized_log_sha256"):
+        return ["sanitized_log_digest_mismatch"]
+    try:
+        log = json.loads(raw_log)
+    except (ValueError, RecursionError):
+        return ["invalid_sanitized_log"]
+    if (
+        not isinstance(log, dict)
+        or log.get("schema_version") != "codex-native-host-sanitized-log.v1"
+    ):
+        return ["invalid_sanitized_log"]
+    reason = _check_log_identity(report, log)
+    if reason is not None:
+        return [reason]
+    reason = _check_log_inventory(report, log)
+    if reason is not None:
+        return [reason]
+    reason = _check_log_redaction(log)
+    if reason is not None:
+        return [reason]
     return []
 
 

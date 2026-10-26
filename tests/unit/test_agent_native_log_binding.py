@@ -114,7 +114,8 @@ def test_recomputed_digest_does_not_hide_unsafe_or_mismatched_log(
 def test_windows_observation_does_not_require_new_linux_status_field() -> None:
     report, raw = observation("windows")
     log = json.loads(raw)
-    assert "runtimeStatus" not in log and "server_status" not in log
+    assert "runtimeStatus" not in log
+    assert "server_status" not in log
     assert log["native_mcp_status_field_available"] is False
     assert validate_sanitized_log(report, raw) == []
     changed_report, changed_raw = altered(
