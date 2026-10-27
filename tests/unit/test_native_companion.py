@@ -62,6 +62,60 @@ def test_ipc_footprint_reference_field_is_used_for_selection(tmp_path: Path) -> 
     assert result.selected_reference == "LED1"
 
 
+def test_single_selected_footprint_inspector_reads_value_pads_and_net_names(tmp_path: Path) -> None:
+    selected = Mock(spec=["reference_field", "value_field", "definition"])
+    selected.reference_field.text.value = "R1"
+    selected.value_field.text.value = "1k"
+    selected.definition.id.library = "Resistor_SMD"
+    selected.definition.id.name = "R_0603_1608Metric"
+    pad1 = Mock()
+    pad1.net.name = "LED_A"
+    pad2 = Mock()
+    pad2.net.name = ""
+    selected.definition.pads = [pad1, pad2]
+    board = Mock()
+    board.name = "read-only.kicad_pcb"
+    board.get_project.return_value.name = "demo"
+    board.get_project.return_value.path = str(tmp_path / "demo")
+    board.get_footprints.return_value = [selected]
+    board.get_nets.return_value = [Mock()]
+    board.get_selection.return_value = [selected]
+    client = Mock()
+    client.get_board.return_value = board
+
+    result = board_summary(lambda: client)
+    assert result.selected_reference == "R1"
+    assert result.selected_value == "1k"
+    assert result.selected_footprint == "Resistor_SMD:R_0603_1608Metric"
+    assert result.selected_pad_count == 2
+    assert result.selected_nets == ("LED_A",)
+    assert result.selected_unconnected_pads == 1
+    board.get_selection.assert_called_once_with()
+
+
+def test_multiple_selection_does_not_show_first_footprint_as_sole_inspected_item(
+    tmp_path: Path,
+) -> None:
+    board = Mock()
+    board.name = "many.kicad_pcb"
+    board.get_project.return_value.name = "demo"
+    board.get_project.return_value.path = str(tmp_path / "demo")
+    board.get_footprints.return_value = [Mock(), Mock()]
+    board.get_nets.return_value = []
+    a = Mock()
+    b = Mock()
+    a.reference_field.text.value = "R1"
+    b.reference_field.text.value = "C1"
+    board.get_selection.return_value = [a, b]
+    client = Mock()
+    client.get_board.return_value = board
+    result = board_summary(lambda: client)
+    assert result.selected == 2
+    assert result.selected_reference == ""
+    assert result.selected_footprint == ""
+    assert result.selected_nets == ()
+
+
 def test_unavailable_kicad_reports_failure() -> None:
     def disconnected() -> None:
         raise OSError("IPC disconnected")

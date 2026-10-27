@@ -28,6 +28,11 @@ class BoardSummary:
     selected: int
     project_path: str = ""
     selected_reference: str = ""
+    selected_value: str = ""
+    selected_footprint: str = ""
+    selected_pad_count: int | None = None
+    selected_nets: tuple[str, ...] = ()
+    selected_unconnected_pads: int = 0
 
 
 def board_summary(kicad_factory: Callable[[], Any] | None = None) -> BoardSummary:
@@ -41,16 +46,45 @@ def board_summary(kicad_factory: Callable[[], Any] | None = None) -> BoardSummar
     project = board.get_project()
     selection = board.get_selection()
     selected_reference = ""
-    for item in selection:
+    selected_value = ""
+    selected_footprint = ""
+    selected_pad_count: int | None = None
+    selected_nets: tuple[str, ...] = ()
+    selected_unconnected_pads = 0
+    # A multi-selection must not falsely attribute the first footprint's
+    # value and nets to all selected items, or publish its reference as sole.
+    if len(selection) == 1:
+        item = selection[0]
         reference = getattr(item, "reference", None)
-        # Actual KiCad IPC FootprintInstance exposes the reference as a text
-        # field, not item.reference (which some other wrappers provide).
         if not isinstance(reference, str) or not reference:
             field = getattr(item, "reference_field", None)
             reference = getattr(getattr(field, "text", None), "value", None)
         if isinstance(reference, str) and reference:
             selected_reference = reference
-            break
+
+        definition = getattr(item, "definition", None)
+        if selected_reference and definition is not None:
+            value_field = getattr(item, "value_field", None)
+            value = getattr(getattr(value_field, "text", None), "value", None)
+            if isinstance(value, str):
+                selected_value = value
+            identifier = getattr(definition, "id", None)
+            library = getattr(identifier, "library", None)
+            name = getattr(identifier, "name", None)
+            if isinstance(library, str) and isinstance(name, str) and name:
+                selected_footprint = f"{library}:{name}" if library else name
+            pads = getattr(definition, "pads", None)
+            if isinstance(pads, (list, tuple)):
+                selected_pad_count = len(pads)
+                net_names: set[str] = set()
+                for pad in pads:
+                    net = getattr(pad, "net", None)
+                    net_name = getattr(net, "name", None)
+                    if isinstance(net_name, str) and net_name:
+                        net_names.add(net_name)
+                    else:
+                        selected_unconnected_pads += 1
+                selected_nets = tuple(sorted(net_names))
     return BoardSummary(
         name=str(board.name),
         project=str(project.name),
@@ -59,6 +93,11 @@ def board_summary(kicad_factory: Callable[[], Any] | None = None) -> BoardSummar
         selected=len(selection),
         project_path=str(getattr(project, "path", "")),
         selected_reference=selected_reference,
+        selected_value=selected_value,
+        selected_footprint=selected_footprint,
+        selected_pad_count=selected_pad_count,
+        selected_nets=selected_nets,
+        selected_unconnected_pads=selected_unconnected_pads,
     )
 
 

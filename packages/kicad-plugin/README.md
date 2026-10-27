@@ -36,7 +36,12 @@ selection count/reference, connection health and **one explicit context-sync
 action**. The active PCB and selected footprint reference are re-read when the
 Companion regains focus, and **Sync reads a fresh selection** in a worker before
 publishing; stale snapshots from when the panel opened are never sent. If KiCad
-cannot provide the current selection, Sync fails closed and publishes nothing. Refresh and the local Dashboard are secondary. The dependency-repair
+cannot provide the current selection, Sync fails closed and publishes nothing.
+When exactly one footprint is selected, a compact read-only inspector shows
+its KiCad value, library footprint name, pad count and assigned net names;
+this is not a DRC or connection-quality verdict. Mixed/multiple selection
+hides component-specific data rather than attributing it to the wrong item.
+Refresh and the local Dashboard are secondary. The dependency-repair
 button only appears when the IPC Python runtime actually needs it. Status and
 sync results are separate so a successful backend connection is not confused
 with a completed sync. The UI never edits PCB data. This is a focused IPC

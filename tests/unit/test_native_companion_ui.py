@@ -266,6 +266,50 @@ def test_repair_requires_confirmation_and_reports_completion(
     )
 
 
+def test_selected_footprint_card_shows_read_only_engineering_details(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    current = module.BoardSummary(
+        "board.kicad_pcb",
+        "demo",
+        3,
+        2,
+        1,
+        "",
+        "R1",
+        "1k",
+        "Resistor_SMD:R_0603_1608Metric",
+        2,
+        ("LED_A",),
+        1,
+    )
+    monkeypatch.setattr(module, "board_summary", lambda: current)
+    monkeypatch.setattr(module, "backend_status", lambda: (True, "Connected"))
+    frame = module.CompanionFrame()
+    frame.selected_panel.Show.assert_called()
+    frame.value_label.SetLabel.assert_called_with("Value: 1k  ·  2 pads")
+    frame.footprint_label.SetLabel.assert_called_with("Resistor_SMD:R_0603_1608Metric")
+    frame.net_label.SetLabel.assert_called_with("Nets: LED_A  ·  1 unassigned pad")
+
+
+def test_selected_footprint_card_hidden_after_selection_cleared(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    selected = module.BoardSummary(
+        "board.kicad_pcb", "demo", 3, 2, 1, "", "C1", "100n", "Cap:0603", 2
+    )
+    read = Mock(side_effect=[selected, module.BoardSummary("board.kicad_pcb", "demo", 3, 2, 0)])
+    monkeypatch.setattr(module, "board_summary", read)
+    monkeypatch.setattr(module, "backend_status", lambda: (True, "Connected"))
+    frame = module.CompanionFrame()
+    frame.selected_panel.Show.assert_called_once()
+    frame.refresh_board()
+    frame.selected_panel.Hide.assert_called()
+    frame.selection_label.SetLabel.assert_called_with("")
+
+
 def test_long_board_filenames_are_shortened_without_losing_tooltip(
     ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
 ) -> None:

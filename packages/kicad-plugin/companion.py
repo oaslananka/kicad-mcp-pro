@@ -81,10 +81,10 @@ class CompanionFrame(wx.Frame):
         super().__init__(
             None,
             title="MCP Pro — PCB Companion",
-            size=(390, 485),
+            size=(390, 565),
             style=wx.DEFAULT_FRAME_STYLE,
         )
-        self.SetMinSize((350, 440))
+        self.SetMinSize((350, 505))
         self.SetBackgroundColour(wx.Colour(BACKGROUND))
         self.board: BoardSummary | None = None
         self.last_synced_board: BoardSummary | None = None
@@ -114,7 +114,23 @@ class CompanionFrame(wx.Frame):
         board_content.Add(self.board_details, 0, wx.BOTTOM, 4)
         self.selection_label = _text(board_panel, "", size=9, color=SECONDARY)
         board_content.Add(self.selection_label, 0)
-        layout.Add(board_panel, 0, wx.EXPAND | wx.BOTTOM, 16)
+        layout.Add(board_panel, 0, wx.EXPAND | wx.BOTTOM, 12)
+
+        self.selected_panel, selection_content = _surface(panel)
+        selection_content.Add(
+            _text(self.selected_panel, "Selected footprint", size=10, color=ACCENT),
+            0,
+            wx.BOTTOM,
+            6,
+        )
+        self.value_label = _text(self.selected_panel, "", size=10, bold=True)
+        selection_content.Add(self.value_label, 0, wx.BOTTOM, 4)
+        self.footprint_label = _text(self.selected_panel, "", size=9, color=SECONDARY)
+        selection_content.Add(self.footprint_label, 0, wx.BOTTOM, 4)
+        self.net_label = _text(self.selected_panel, "", size=9, color=SECONDARY)
+        selection_content.Add(self.net_label, 0)
+        layout.Add(self.selected_panel, 0, wx.EXPAND | wx.BOTTOM, 12)
+        self.selected_panel.Hide()
 
         service_header = wx.BoxSizer(wx.HORIZONTAL)
         service_header.Add(_text(panel, "Engineering service", size=10, bold=True), 1)
@@ -199,6 +215,31 @@ class CompanionFrame(wx.Frame):
             f"Selected: {summary.selected_reference}" if summary.selected_reference else ""
         )
         self.board_label.SetForegroundColour(wx.Colour(FOREGROUND))
+        self._display_selection(summary)
+
+    def _display_selection(self, summary: BoardSummary) -> None:
+        """Only show concrete single-footprint data; never infer DRC or pad health."""
+        if summary.selected != 1 or summary.selected_pad_count is None:
+            self.selected_panel.Hide()
+            return
+        self.value_label.SetLabel(
+            f"Value: {summary.selected_value or '—'}  ·  {summary.selected_pad_count} pads"
+        )
+        self.footprint_label.SetLabel(
+            _display_board_name(summary.selected_footprint or "Unknown footprint", 42)
+        )
+        self.footprint_label.SetToolTip(summary.selected_footprint)
+        nets = ", ".join(summary.selected_nets[:2]) or "None"
+        if len(summary.selected_nets) > 2:
+            nets += f" +{len(summary.selected_nets) - 2} more"
+        unassigned = summary.selected_unconnected_pads
+        extra = (
+            f"  ·  {unassigned} unassigned pad{'s' if unassigned != 1 else ''}"
+            if unassigned
+            else ""
+        )
+        self.net_label.SetLabel(_display_board_name(f"Nets: {nets}{extra}", 47))
+        self.selected_panel.Show()
 
     def refresh_board(self) -> None:
         """Re-read PCB/selection on focus, without a potentially slow HTTP health check."""
@@ -208,6 +249,7 @@ class CompanionFrame(wx.Frame):
             summary = board_summary()
         except ModuleNotFoundError as exc:
             self.board = None
+            self.selected_panel.Hide()
             self.board_label.SetLabel("KiCad IPC needs setup")
             self.board_details.SetLabel(f"Missing Python module: {exc.name or 'unknown'}")
             self.selection_label.SetLabel("Choose Repair below to restore board access.")
@@ -215,6 +257,7 @@ class CompanionFrame(wx.Frame):
             self.board_label.SetForegroundColour(wx.Colour(WARNING))
         except Exception:
             self.board = None
+            self.selected_panel.Hide()
             self.repair_btn.Hide()
             self.board_label.SetLabel("No active PCB")
             self.board_details.SetLabel("Open a saved board and enable KiCad's IPC API.")
@@ -335,6 +378,7 @@ class CompanionFrame(wx.Frame):
             self._display_board(snapshot)
         else:
             self.board = None
+            self.selected_panel.Hide()
             self.board_label.SetLabel("No active PCB")
             self.board_details.SetLabel("Open a saved PCB and refresh to retry.")
             self.selection_label.SetLabel("")
