@@ -99,6 +99,24 @@ pinning is **not** independent attestation verification, an exact transitive
 lock, a native Gemini diagnostic call or a full compatibility smoke. No host
 catalog status is promoted by the artifact review.
 
+## Linux Gemini CLI 0.60.0 pinned-PyPI native connection — 2026-10-28 (#1219)
+
+The real Gemini CLI — **not an MCP SDK client** — reported a
+`kicad` **Connected** stdio server with the reviewed published-version
+launch (`uvx --from kicad-mcp-pro==4.4.0`), using a temporary
+`readonly/default` configuration and no provider credentials or KiCad IPC.
+An independent PyPI PEP 740 publisher-verification check passed for both
+4.4.0 artifacts. Two disposable uv cache copies matched the checked wheel's
+460 selected files each, excluding installer-generated `RECORD`.
+
+The [dated partial Gemini observation](../evidence/agent-host/2026-10-28-linux-gemini-pinned-stdio-partial.json)
+is **not** a full native-host smoke report: the settings were recreated from
+the reviewed extension, the raw logs were not retained, and no model-free
+Gemini-originated `kicad_get_server_info` / `tools/call`, readonly write-tool
+absence or independent running-process attestation was established. It does
+not pass the strict native smoke validator. This observation must **not**
+change the six-host `repository-static` / `not-run` catalog or close #1219.
+
 ## Native Codex 0.163.0 model-free readonly tool smoke — 2026-10-26 (#1219)
 
 A real **Codex app-server 0.163.0** on AMD2700X Linux was launched with

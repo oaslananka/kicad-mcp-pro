@@ -52,6 +52,51 @@ def test_checked_in_host_manifest_has_no_unverified_host_claims() -> None:
     assert {row["smokeStatus"] for row in manifest["hosts"]} == {"not-run"}
 
 
+def test_gemini_pinned_pypi_connection_remains_partial_not_host_acceptance() -> None:
+    observed = json.loads(
+        (
+            ROOT / "docs/evidence/agent-host/2026-10-28-linux-gemini-pinned-stdio-partial.json"
+        ).read_text(encoding="utf-8")
+    )
+    extension = json.loads(
+        (ROOT / "integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    catalog = json.loads(verifier.EVIDENCE.read_text(encoding="utf-8"))
+
+    assert observed["schemaVersion"] == "agent-native-host-partial.v1"
+    assert observed["host"]["id"] == "gemini-cli"
+    assert observed["host"]["version"] == "0.60.0"
+    assert observed["host"]["mcpServerStatus"] == "connected"
+    assert observed["serverLaunchArgs"] == extension["mcpServers"]["kicad"]["args"]
+    assert observed["serverVersion"] == extension["version"]
+    assert (
+        observed["serverOperatingMode"]
+        == extension["mcpServers"]["kicad"]["env"]["KICAD_MCP_OPERATING_MODE"]
+    )
+    assert observed["serverProfile"] == extension["mcpServers"]["kicad"]["env"]["KICAD_MCP_PROFILE"]
+    assert observed["publishedWheel"]["sha256"] == (
+        "3717a59c083925179d14fe2721b32c237702d8e5825786fb6310bcc2896c7240"
+    )
+    assert observed["publishedWheel"]["matchingUvCacheCopies"] == 2
+    assert observed["publishedWheel"]["matchingWheelMemberFilesPerCopy"] == 460
+    assert observed["publishedWheel"]["excludedMutableInstallMetadata"] == [
+        "kicad_mcp_pro-4.4.0.dist-info/RECORD"
+    ]
+    assert observed["publisherProvenance"]["independentPep740Verification"] == (
+        "passed-for-wheel-and-sdist"
+    )
+    assert observed["nativeToolCall"] == "not-run"
+    assert observed["hostSkillDiscoveryDuringThisProbe"] == "not-run"
+    assert observed["readonlyWriteToolAbsence"] == "not-run"
+    assert observed["sanitizedNativeHostLogSha256"] is None
+    assert observed["independentRunningProcessBinaryAttestation"] is False
+    assert observed["fullNativeHostSmokeAttested"] is False
+    assert observed["catalogPromotionAuthorized"] is False
+    assert next(h for h in catalog["hosts"] if h["id"] == "gemini-cli")["smokeStatus"] == "not-run"
+
+
 def test_missing_guide_or_config_is_detected(tmp_path: Path) -> None:
     repo = _temp_host_repo(tmp_path)
     (repo / "docs/agents/codex.md").unlink()
