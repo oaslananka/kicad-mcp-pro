@@ -215,19 +215,35 @@ def _validate_loopback_base_url(base_url: str) -> None:
 
 
 def _mcp_tool_error_message(payload: object) -> str | None:
-    """Return a user-facing MCP tool error message, or ``None`` for success."""
-    result = payload.get("result") if isinstance(payload, dict) else None
-    if not isinstance(result, dict) or result.get("isError") is not True:
+    """Fail closed for JSON-RPC, tool, and structured domain errors."""
+    if not isinstance(payload, dict):
+        return "MCP response is invalid."
+    if "error" in payload:
+        return "MCP request failed."
+    if "result" not in payload or payload["result"] is None:
+        return "MCP tool result missing."
+
+    result = payload["result"]
+    if not isinstance(result, dict):
         return None
-    content = result.get("content")
-    if isinstance(content, list):
-        for item in content:
-            if not isinstance(item, dict):
-                continue
-            text = item.get("text")
-            if isinstance(text, str) and text.strip():
-                return text.strip()
-    return "MCP tool call failed."
+    if result.get("isError") is True:
+        content = result.get("content")
+        if isinstance(content, list):
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    return text.strip()
+        return "MCP tool call failed."
+
+    structured = result.get("structuredContent")
+    if isinstance(structured, dict) and structured.get("ok") is False:
+        code = structured.get("code")
+        if isinstance(code, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code):
+            return f"MCP tool call failed: {code}"
+        return "MCP tool call failed."
+    return None
 
 
 class StudioContextClient:
