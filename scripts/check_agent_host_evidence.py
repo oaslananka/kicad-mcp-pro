@@ -27,6 +27,19 @@ _HOST_CONFIGS = {
 _STDIO_ARGS = (["kicad-mcp-pro"], ["kicad-mcp-pro", "--transport", "stdio"])
 
 
+def _gemini_stdio_args(version: object) -> list[str]:
+    """Return only the reviewed, package-version-bound extension argv."""
+    if not isinstance(version, str) or not version:
+        return []
+    return [
+        "--from",
+        f"kicad-mcp-pro=={version}",
+        "kicad-mcp-pro",
+        "--transport",
+        "stdio",
+    ]
+
+
 def _read_object(path: Path) -> dict[str, Any]:
     if not path.is_file() or path.is_symlink():
         raise ValueError(f"Missing or symlinked manifest: {path}")
@@ -92,10 +105,17 @@ def _check_host_configuration(
         problems.append(f"Missing kicad MCP server for {name}")
         return
 
-    _check_local_server(name, server, problems)
+    expected_version = (
+        _read_object(root / "packages/mcp-npm/package.json").get("version")
+        if name == "gemini-cli"
+        else None
+    )
+    _check_local_server(name, server, problems, expected_version)
 
 
-def _check_local_server(name: str, server: dict[str, Any], problems: list[str]) -> None:
+def _check_local_server(
+    name: str, server: dict[str, Any], problems: list[str], version: object = None
+) -> None:
     if name == "opencode":
         known_local_command = (
             server.get("type") == "local"
@@ -104,6 +124,13 @@ def _check_local_server(name: str, server: dict[str, Any], problems: list[str]) 
             and server.get("enabled") is True
         )
         env = server.get("environment")
+    elif name == "gemini-cli":
+        known_local_command = (
+            server.get("type", "stdio") == "stdio"
+            and server.get("command") == "uvx"
+            and server.get("args") == _gemini_stdio_args(version)
+        )
+        env = server.get("env")
     else:
         known_local_command = (
             server.get("type", "stdio") == "stdio"
@@ -141,6 +168,7 @@ def _check_host_row(root: Path, item: object, ids: set[str], problems: list[str]
 
 def _check_extension(root: Path, problems: list[str]) -> None:
     extension = _read_object(root / EXTENSION.relative_to(ROOT) / "gemini-extension.json")
+    expected_version = _read_object(root / "packages/mcp-npm/package.json").get("version")
     if extension.get("name") != "kicad-mcp-pro":
         problems.append("Gemini extension name does not match installed directory")
     servers = extension.get("mcpServers")
@@ -148,7 +176,7 @@ def _check_extension(root: Path, problems: list[str]) -> None:
     if (
         not isinstance(server, dict)
         or server.get("command") != "uvx"
-        or server.get("args") != ["kicad-mcp-pro", "--transport", "stdio"]
+        or server.get("args") != _gemini_stdio_args(expected_version)
     ):
         problems.append("Gemini extension must launch the known local stdio server")
     env = server.get("env", {}) if isinstance(server, dict) else {}
@@ -161,7 +189,6 @@ def _check_extension(root: Path, problems: list[str]) -> None:
     for unsafe in ("trust", "url", "httpUrl", "settings"):
         if unsafe in server:
             problems.append(f"Unreviewed Gemini server capability: {unsafe}")
-    expected_version = _read_object(root / "packages/mcp-npm/package.json").get("version")
     if extension.get("version") != expected_version:
         problems.append("Gemini extension and current package version have drifted")
 

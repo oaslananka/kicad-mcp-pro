@@ -78,8 +78,12 @@ gemini extensions list
 ```
 
 Gemini copies local extension packages, so installed copies do not update when
-this repository changes. The extension defaults to **readonly** mode; a
-pre-existing `settings.json` entry can override its MCP server definition.
+this repository changes. The extension defaults to **readonly** mode and requests the
+version-matched published PyPI package through `uvx --from` rather than a
+floating latest package.
+This is version pinning, **not** independently verified wheel provenance or a
+lock of every transitive dependency. A pre-existing `settings.json` entry can
+override its MCP server definition.
 Review that precedence before declaring the installation safe. A static
 manifest check is **not** real-host verification: follow
 [the host smoke checklist](host-verification.md) and log the actual outcome.

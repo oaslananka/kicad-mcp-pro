@@ -88,6 +88,17 @@ Unreviewed archives require an explicit source allowlist addition after review.
 The validator fails closed on missing, altered or unsanitized data, and does
 not independently attest any native host.
 
+## Gemini CLI PyPI 4.4.0 package identity review — 2026-10-28 (#1219)
+
+The Gemini pilot extension now pins its `uvx --from` package requirement to
+its own published version, with a fail-closed static check and metadata-sync
+coupling. The [dated PyPI artifact provenance review](../evidence/agent-host/2026-10-28-gemini-pypi-provenance-review.md)
+records the independently downloaded wheel/sdist SHA-256 matches, the
+published source-commit identity and the limits of that evidence. Version
+pinning is **not** independent attestation verification, an exact transitive
+lock, a native Gemini diagnostic call or a full compatibility smoke. No host
+catalog status is promoted by the artifact review.
+
 ## Native Codex 0.163.0 model-free readonly tool smoke — 2026-10-26 (#1219)
 
 A real **Codex app-server 0.163.0** on AMD2700X Linux was launched with

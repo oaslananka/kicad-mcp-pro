@@ -562,6 +562,15 @@ def _planned_updates() -> dict[Path, str]:
     npm_package = _updated_npm_wrapper_package(metadata, _load_json(NPM_WRAPPER_PACKAGE))
     gemini = _load_json(GEMINI_EXTENSION)
     gemini["version"] = metadata["version"]
+    # The extension must resolve its matching published PyPI release rather
+    # than floating to the newest available server at connection time.
+    gemini["mcpServers"]["kicad"]["args"] = [
+        "--from",
+        f"{metadata['package_name']}=={metadata['version']}",
+        metadata["package_name"],
+        "--transport",
+        "stdio",
+    ]
     return {
         GEMINI_EXTENSION: _dump_json(gemini),
         NPM_WRAPPER_README: _render_npm_wrapper_readme(metadata, compatibility, npm_package),
