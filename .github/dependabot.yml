@@ -197,6 +197,13 @@ updates:
 
   - package-ecosystem: "docker"
     directory: "/"
+    # The Python 3.15+ container migration is blocked (#1495): pinned four-stage
+    # release policy and unavailable locked grpcio Alpine wheels. Retain 3.14.x
+    # patch updates; remove this constraint only with a verified migration.
+    ignore:
+      - dependency-name: "python"
+        versions:
+          - ">= 3.15.0"
     schedule:
       interval: "weekly"
       day: "friday"

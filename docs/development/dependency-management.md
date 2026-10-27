@@ -70,6 +70,19 @@ retry failed checks automatically.
 Human-authored, release, major-version, runtime-sensitive, and otherwise non-routine
 dependency pull requests remain a maintainer decision.
 
+Docker **Python 3.15 and later** version updates are temporarily excluded by a
+single image-specific `ignore` rule in `.github/dependabot.yml`, following the
+incompatible [#1495](https://github.com/oaslananka/kicad-mcp-pro/pull/1495)
+upgrade. The four release Docker stages currently require Python 3.14.9, and
+the locked `grpcio` dependency could not build the 3.15 Alpine image without
+a compiler. Dependabot classifies `3.14 -> 3.15` as SemVer **minor**, so a
+`semver-major` exclusion would not work. The `>= 3.15.0` rule preserves
+Python 3.14 patch suggestions and other Docker dependencies. It also defers
+Python 3.15+ automated security version updates, so retain vulnerability
+monitoring and reassess this deliberate compatibility hold when the base
+images, locked wheels on both platforms, policy/regression tests and protected
+container CI are ready. Remove the ignore in the reviewed migration PR.
+
 ## Lockfile maintenance
 
 When a supported dependency update changes resolution, Dependabot updates the matching
