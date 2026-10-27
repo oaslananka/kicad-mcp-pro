@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import binascii
 import hashlib
 import json
 import os
@@ -372,23 +371,43 @@ for _name in _REVIEWED_ARCHIVE_NAMES:
     _REVIEWED_ARCHIVE_REPORTS[str(_fixed)] = _fixed
 
 
+def _check_envelope_name(envelope: object) -> str:
+    if not isinstance(envelope, dict) or set(envelope) != {
+        "name",
+        "report_b64",
+        "log_b64",
+    }:
+        raise ValueError("invalid envelope fields")
+    if not all(type(envelope[key]) is str for key in envelope):
+        raise ValueError("invalid envelope type")
+    name = envelope["name"]
+    if name != "codex-native-smoke.json" and not re.fullmatch(
+        r"20\\d{2}-\\d{2}-\\d{2}-(linux|windows|macos)-codex-native-smoke[.]json",
+        name,
+        re.ASCII,
+    ):
+        raise ValueError("unrecognized report name")
+    return name
+
+
+def _read_envelope_log(encoded_log: str, *, verify_log: bool) -> bytes | None:
+    if not verify_log:
+        if encoded_log:
+            raise ValueError("log was not requested")
+        return None
+    raw_log = base64.b64decode(encoded_log, validate=True)
+    if len(raw_log) > 32_768 or not raw_log:
+        raise ValueError("invalid log size")
+    return raw_log
+
+
 def _read_stdin_evidence(*, verify_log: bool) -> tuple[dict[str, object], bytes | None]:
     """Parse bounded stdin evidence; neither report name nor content opens paths."""
     envelope_raw = sys.stdin.buffer.read(67_585)
     if len(envelope_raw) > 67_584 or not envelope_raw:
         raise ValueError("invalid envelope size")
     envelope = json.loads(envelope_raw, object_pairs_hook=_unique_json_object)
-    if not isinstance(envelope, dict) or set(envelope) != {"name", "report_b64", "log_b64"}:
-        raise ValueError("invalid envelope fields")
-    if not all(type(envelope[k]) is str for k in envelope):
-        raise ValueError("invalid envelope type")
-    name = envelope["name"]
-    if name != "codex-native-smoke.json" and not re.fullmatch(
-        r"20\d{2}-\d{2}-\d{2}-(linux|windows|macos)-codex-native-smoke[.]json",
-        name,
-        re.ASCII,
-    ):
-        raise ValueError("unrecognized report name")
+    name = _check_envelope_name(envelope)
     report_bytes = base64.b64decode(envelope["report_b64"], validate=True)
     if len(report_bytes) > 16_384 or not report_bytes:
         raise ValueError("invalid report size")
@@ -397,14 +416,53 @@ def _read_stdin_evidence(*, verify_log: bool) -> tuple[dict[str, object], bytes 
         raise ValueError("invalid report")
     if _companion_sanitized_log_path(Path(name), report) is None:
         raise ValueError("mismatched report metadata")
-    raw_log = None
-    if verify_log:
-        raw_log = base64.b64decode(envelope["log_b64"], validate=True)
-        if len(raw_log) > 32_768 or not raw_log:
-            raise ValueError("invalid log size")
-    elif envelope["log_b64"]:
-        raise ValueError("log was not requested")
-    return report, raw_log
+    return report, _read_envelope_log(envelope["log_b64"], verify_log=verify_log)
+
+
+def _load_reviewed_archive(report_name: str) -> tuple[dict[str, object], Path]:
+    fixed_report = _REVIEWED_ARCHIVE_REPORTS.get(report_name)
+    if fixed_report is None:
+        raise ValueError("unreviewed archive path: use stdin evidence envelope")
+    report = json.loads(
+        _read_bounded_regular_file(fixed_report, 16_384),
+        object_pairs_hook=_unique_json_object,
+    )
+    if not isinstance(report, dict):
+        raise ValueError("invalid report")
+    if _companion_sanitized_log_path(fixed_report, report) is None:
+        raise ValueError("mismatched fixed archive metadata")
+    return report, fixed_report
+
+
+def _check_reviewed_archive_log(fixed_report: Path, report: dict[str, object]) -> list[str]:
+    log_path = _companion_sanitized_log_path(fixed_report, report)
+    if log_path is None:
+        return ["invalid_or_missing_log"]
+    try:
+        raw_log = _read_bounded_regular_file(log_path, 32_768)
+    except (OSError, ValueError):
+        return ["invalid_or_missing_log"]
+    return validate_sanitized_log(report, raw_log)
+
+
+def _check_selected_evidence(report_name: str, *, verify_log: bool) -> list[str]:
+    catalog = json.loads(EVIDENCE.read_text(encoding="utf-8"))
+    known = {row["id"] for row in catalog["hosts"]}
+    if report_name == "-":
+        report, raw_log = _read_stdin_evidence(verify_log=verify_log)
+        fixed_report = None
+    else:
+        report, fixed_report = _load_reviewed_archive(report_name)
+        raw_log = None
+
+    errors = validate_report(report, known_hosts=known)
+    if errors or not verify_log:
+        return errors
+    if fixed_report is not None:
+        return _check_reviewed_archive_log(fixed_report, report)
+    if raw_log is None:
+        return ["invalid_or_missing_log"]
+    return validate_sanitized_log(report, raw_log)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -421,43 +479,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        catalog = json.loads(EVIDENCE.read_text(encoding="utf-8"))
-        known = {row["id"] for row in catalog["hosts"]}
-        raw_log = None
-        if args.report == "-":
-            report, raw_log = _read_stdin_evidence(verify_log=args.verify_sanitized_log)
-        else:
-            fixed_report = _REVIEWED_ARCHIVE_REPORTS.get(args.report)
-            if fixed_report is None:
-                raise ValueError("unreviewed archive path: use stdin evidence envelope")
-            report = json.loads(
-                _read_bounded_regular_file(fixed_report, 16_384),
-                object_pairs_hook=_unique_json_object,
-            )
-            if (
-                not isinstance(report, dict)
-                or _companion_sanitized_log_path(fixed_report, report) is None
-            ):
-                raise ValueError("mismatched fixed archive metadata")
-        errors = validate_report(report, known_hosts=known)
-        if args.verify_sanitized_log and not errors:
-            if args.report == "-":
-                if raw_log is None:
-                    errors = ["invalid_or_missing_log"]
-                else:
-                    errors = validate_sanitized_log(report, raw_log)
-            else:
-                log_path = _companion_sanitized_log_path(fixed_report, report)
-                if log_path is None:
-                    errors = ["invalid_or_missing_log"]
-                else:
-                    try:
-                        raw_log = _read_bounded_regular_file(log_path, 32_768)
-                    except (OSError, ValueError):
-                        errors = ["invalid_or_missing_log"]
-                    else:
-                        errors = validate_sanitized_log(report, raw_log)
-    except (OSError, ValueError, TypeError, KeyError, RecursionError, binascii.Error):
+        errors = _check_selected_evidence(args.report, verify_log=args.verify_sanitized_log)
+    except (OSError, ValueError, TypeError, KeyError, RecursionError):
         errors = ["invalid_or_missing_evidence"]
     print(
         json.dumps(
