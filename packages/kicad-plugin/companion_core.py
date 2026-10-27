@@ -43,7 +43,12 @@ def board_summary(kicad_factory: Callable[[], Any] | None = None) -> BoardSummar
     selected_reference = ""
     for item in selection:
         reference = getattr(item, "reference", None)
-        if isinstance(reference, str):
+        # Actual KiCad IPC FootprintInstance exposes the reference as a text
+        # field, not item.reference (which some other wrappers provide).
+        if not isinstance(reference, str) or not reference:
+            field = getattr(item, "reference_field", None)
+            reference = getattr(getattr(field, "text", None), "value", None)
+        if isinstance(reference, str) and reference:
             selected_reference = reference
             break
     return BoardSummary(

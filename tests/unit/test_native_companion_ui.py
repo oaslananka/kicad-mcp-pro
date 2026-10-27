@@ -43,6 +43,7 @@ def ui(monkeypatch: pytest.MonkeyPatch) -> tuple[types.ModuleType, types.ModuleT
     wx.DEFAULT_FRAME_STYLE = 0
     wx.FONTWEIGHT_BOLD = 700
     wx.EVT_BUTTON = 100
+    wx.EVT_ACTIVATE = 101
     wx.YES = 1
     wx.NO = 0
     wx.YES_NO = 2
@@ -171,6 +172,68 @@ def test_context_sync_success_and_failure(
     sync.side_effect = OSError("backend disconnected")
     frame.sync_context(None)
     frame.feedback_label.SetLabel.assert_called_with("Context sync failed; check backend access.")
+
+
+def test_sync_reads_latest_selection_not_cached_board(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    frame = _ready(ui, monkeypatch)
+    stale = frame.board
+    current = module.BoardSummary("new-board.kicad_pcb", "new-board", 3, 4, 1, "", "U7")
+    monkeypatch.setattr(module, "board_summary", lambda: current)
+    monkeypatch.setattr(
+        module, "threading", types.SimpleNamespace(Thread=lambda **k: Mock(start=k["target"]))
+    )
+    sync = Mock()
+    monkeypatch.setattr(module, "sync_board_context", sync)
+    frame.sync_context(None)
+    assert frame.board == current
+    assert frame.last_synced_board == current
+    assert frame.board != stale
+    sync.assert_called_once_with(current)
+    frame.selection_label.SetLabel.assert_called_with("Selected: U7")
+    frame.feedback_label.SetLabel.assert_called_with("PCB context synced.")
+
+
+def test_sync_read_failure_never_calls_server(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    frame = _ready(ui, monkeypatch)
+    monkeypatch.setattr(module, "board_summary", Mock(side_effect=OSError("IPC closed")))
+    monkeypatch.setattr(
+        module, "threading", types.SimpleNamespace(Thread=lambda **k: Mock(start=k["target"]))
+    )
+    sync = Mock()
+    monkeypatch.setattr(module, "sync_board_context", sync)
+    frame.sync_context(None)
+    sync.assert_not_called()
+    assert frame.board is None
+    frame.sync_btn.Enable.assert_called_with(False)
+    frame.feedback_label.SetLabel.assert_called_with("Unable to read current PCB. Nothing sent.")
+
+
+def test_regaining_focus_refreshes_selected_reference_without_backend_request(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, wx = ui
+    frame = _ready(ui, monkeypatch)
+    frame.last_synced_board = frame.board
+    fresh = module.BoardSummary("test.kicad_pcb", "test", 7, 11, 1, "", "R4")
+    read = Mock(return_value=fresh)
+    status = Mock(return_value=(True, "Connected"))
+    monkeypatch.setattr(module, "board_summary", read)
+    monkeypatch.setattr(module, "backend_status", status)
+    event = Mock()
+    event.GetActive.return_value = True
+    frame.on_activate(event)
+    read.assert_called_once_with()
+    status.assert_not_called()
+    frame.selection_label.SetLabel.assert_called_with("Selected: R4")
+    frame.feedback_label.SetLabel.assert_called_with("PCB context changed. Sync to update MCP.")
+    event.Skip.assert_called_once_with()
+    assert wx.EVT_ACTIVATE == 101
 
 
 def test_repair_requires_confirmation_and_reports_completion(

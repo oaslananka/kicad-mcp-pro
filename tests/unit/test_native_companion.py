@@ -44,6 +44,24 @@ def test_ipc_summary_is_read_only(tmp_path: Path) -> None:
     board.get_selection.assert_called_once_with()
 
 
+def test_ipc_footprint_reference_field_is_used_for_selection(tmp_path: Path) -> None:
+    """Actual kicad-python FootprintInstance exposes reference_field.text.value."""
+    selected = Mock(spec=["reference_field"])
+    selected.reference_field.text.value = "LED1"
+    board = Mock()
+    board.name = "live.kicad_pcb"
+    board.get_project.return_value.name = "live"
+    board.get_project.return_value.path = str(tmp_path / "live.kicad_pro")
+    board.get_footprints.return_value = [selected]
+    board.get_nets.return_value = [object()]
+    board.get_selection.return_value = [selected]
+    client = Mock()
+    client.get_board.return_value = board
+    result = board_summary(lambda: client)
+    assert result.selected == 1
+    assert result.selected_reference == "LED1"
+
+
 def test_unavailable_kicad_reports_failure() -> None:
     def disconnected() -> None:
         raise OSError("IPC disconnected")

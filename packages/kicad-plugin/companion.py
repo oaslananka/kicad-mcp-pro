@@ -87,7 +87,9 @@ class CompanionFrame(wx.Frame):
         self.SetMinSize((350, 440))
         self.SetBackgroundColour(wx.Colour(BACKGROUND))
         self.board: BoardSummary | None = None
+        self.last_synced_board: BoardSummary | None = None
         self.ready = False
+        self._sync_busy = False
 
         panel = wx.Panel(self)
         panel.SetBackgroundColour(wx.Colour(BACKGROUND))
@@ -159,6 +161,7 @@ class CompanionFrame(wx.Frame):
         self.refresh_btn.Bind(wx.EVT_BUTTON, lambda _event: self.refresh())
         self.sync_btn.Bind(wx.EVT_BUTTON, self.sync_context)
         self.repair_btn.Bind(wx.EVT_BUTTON, self.repair_dependencies)
+        self.Bind(wx.EVT_ACTIVATE, self.on_activate)
         wx.CallAfter(self.refresh)
 
     def place_at_screen_edge(self) -> None:
@@ -183,7 +186,24 @@ class CompanionFrame(wx.Frame):
         y = bounds.GetTop() + 70
         self.SetPosition((x, y))
 
-    def refresh(self) -> None:
+    def _display_board(self, summary: BoardSummary) -> None:
+        self.board = summary
+        self.repair_btn.Hide()
+        self.board_label.SetLabel(_display_board_name(summary.name or "Untitled PCB"))
+        self.board_label.SetToolTip(summary.name or "Untitled PCB")
+        self.board_details.SetLabel(
+            f"{summary.footprints} footprints   ·   {summary.nets} nets   ·   "
+            f"{summary.selected} selected"
+        )
+        self.selection_label.SetLabel(
+            f"Selected: {summary.selected_reference}" if summary.selected_reference else ""
+        )
+        self.board_label.SetForegroundColour(wx.Colour(FOREGROUND))
+
+    def refresh_board(self) -> None:
+        """Re-read PCB/selection on focus, without a potentially slow HTTP health check."""
+        if self._sync_busy:
+            return
         try:
             summary = board_summary()
         except ModuleNotFoundError as exc:
@@ -201,32 +221,42 @@ class CompanionFrame(wx.Frame):
             self.selection_label.SetLabel("")
             self.board_label.SetForegroundColour(wx.Colour(SECONDARY))
         else:
-            self.board = summary
-            self.repair_btn.Hide()
-            self.board_label.SetLabel(_display_board_name(summary.name or "Untitled PCB"))
-            self.board_label.SetToolTip(summary.name or "Untitled PCB")
-            self.board_details.SetLabel(
-                f"{summary.footprints} footprints   ·   {summary.nets} nets   ·   "
-                f"{summary.selected} selected"
-            )
-            self.selection_label.SetLabel(
-                f"Selected: {summary.selected_reference}" if summary.selected_reference else ""
-            )
-            self.board_label.SetForegroundColour(wx.Colour(FOREGROUND))
+            self._display_board(summary)
+            if self.last_synced_board is not None and summary != self.last_synced_board:
+                self.feedback_label.SetLabel("PCB context changed. Sync to update MCP.")
+                self.feedback_label.SetForegroundColour(wx.Colour(WARNING))
 
+        self._update_connection_indicator()
+        self.Layout()
+
+    def _update_connection_indicator(self) -> None:
+        online = self.ready and self.board is not None
+        self.connection_label.SetLabel("● Connected" if online else "● Attention")
+        self.connection_label.SetForegroundColour(wx.Colour(CONNECTED if online else WARNING))
+        self.sync_btn.Enable(online and not self._sync_busy)
+
+    def on_activate(self, event: wx.ActivateEvent) -> None:
+        """Catch selections changed while the designer was working in PCB Editor."""
+        if event.GetActive() and not self._sync_busy:
+            self.refresh_board()
+        event.Skip()
+
+    def refresh(self) -> None:
+        self.refresh_board()
         self.ready, status = backend_status()
         self.service_label.SetLabel(status)
         self.service_label.Wrap(330)
         online = self.ready and self.board is not None
-        self.feedback_label.SetLabel(
-            "Ready to sync when you are." if online else "Open a board and check the connection."
-        )
-        self.feedback_label.SetForegroundColour(wx.Colour(SECONDARY))
-        self.connection_label.SetLabel("● Connected" if online else "● Attention")
-        self.connection_label.SetForegroundColour(wx.Colour(CONNECTED if online else WARNING))
+        if self.last_synced_board is None or self.board == self.last_synced_board:
+            self.feedback_label.SetLabel(
+                "Ready to sync when you are."
+                if online
+                else "Open a board and check the connection."
+            )
+            self.feedback_label.SetForegroundColour(wx.Colour(SECONDARY))
+        self._update_connection_indicator()
         self.service_label.SetForegroundColour(wx.Colour(SECONDARY))
         self.dashboard_btn.Enable(self.ready)
-        self.sync_btn.Enable(online)
         self.Layout()
 
     def open_dashboard(self) -> None:
@@ -271,26 +301,49 @@ class CompanionFrame(wx.Frame):
             self.refresh()
 
     def sync_context(self, _event: wx.CommandEvent) -> None:
-        if not self.ready or self.board is None:
+        if not self.ready or self.board is None or self._sync_busy:
             return
-        snapshot = self.board
+        self._sync_busy = True
         self.sync_btn.Enable(False)
-        self.feedback_label.SetLabel("Sending current PCB context…")
+        self.feedback_label.SetLabel("Reading the current PCB selection…")
+        self.feedback_label.SetForegroundColour(wx.Colour(SECONDARY))
 
         def worker() -> None:
             try:
+                # Never sync a snapshot captured when the window first opened.
+                # Users can change the board or selection while editing KiCad.
+                snapshot = board_summary()
+            except Exception:
+                wx.CallAfter(
+                    self._sync_done, "Unable to read current PCB. Nothing sent.", False, None
+                )
+                return
+            try:
                 sync_board_context(snapshot)
             except Exception:
-                wx.CallAfter(self._sync_done, "Context sync failed; check backend access.", False)
+                wx.CallAfter(
+                    self._sync_done, "Context sync failed; check backend access.", False, snapshot
+                )
             else:
-                wx.CallAfter(self._sync_done, "PCB context synced.", True)
+                wx.CallAfter(self._sync_done, "PCB context synced.", True, snapshot)
 
         threading.Thread(target=worker, daemon=True, name="kicad-mcp-context-sync").start()
 
-    def _sync_done(self, message: str, success: bool) -> None:
+    def _sync_done(self, message: str, success: bool, snapshot: BoardSummary | None) -> None:
+        self._sync_busy = False
+        if snapshot is not None:
+            self._display_board(snapshot)
+        else:
+            self.board = None
+            self.board_label.SetLabel("No active PCB")
+            self.board_details.SetLabel("Open a saved PCB and refresh to retry.")
+            self.selection_label.SetLabel("")
+        if success:
+            self.last_synced_board = snapshot
         self.feedback_label.SetLabel(message)
         self.feedback_label.SetForegroundColour(wx.Colour(CONNECTED if success else WARNING))
-        self.sync_btn.Enable(self.ready and self.board is not None)
+        self._update_connection_indicator()
+        self.Layout()
 
 
 def main() -> int:
