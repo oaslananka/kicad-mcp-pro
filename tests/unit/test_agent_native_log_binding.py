@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import io
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -17,6 +20,30 @@ from scripts.check_agent_native_smoke_evidence import (
 
 ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE = ROOT / "docs/evidence/agent-host"
+
+
+def run_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+    report_bytes: bytes,
+    log_bytes: bytes = b"",
+    *,
+    name: str = "codex-native-smoke.json",
+    verify_log: bool = False,
+) -> int:
+    payload = {
+        "name": name,
+        "report_b64": base64.b64encode(report_bytes).decode("ascii"),
+        "log_b64": base64.b64encode(log_bytes).decode("ascii"),
+    }
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode()), encoding="utf-8"),
+    )
+    args = ["--report", "-"]
+    if verify_log:
+        args.append("--verify-sanitized-log")
+    return main(args)
 
 
 def observation(platform: str) -> tuple[dict[str, object], bytes]:
@@ -69,21 +96,10 @@ def test_cli_reports_structure_without_claiming_attestation(
 
 @pytest.mark.parametrize("platform", ["linux", "windows"])
 def test_undated_native_probe_pair_is_accepted(
-    platform: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    platform: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     report, log = observation(platform)
-    (tmp_path / "codex-native-smoke.json").write_text(json.dumps(report))
-    (tmp_path / "codex-native-sanitized-log.json").write_bytes(log)
-    assert (
-        main(
-            [
-                "--report",
-                str(tmp_path / "codex-native-smoke.json"),
-                "--verify-sanitized-log",
-            ]
-        )
-        == 0
-    )
+    assert run_stdin(monkeypatch, json.dumps(report).encode(), log, verify_log=True) == 0
     output = json.loads(capsys.readouterr().out)
     assert output["status"] == "structurally_complete_not_attested"
     assert output["establishes_real_host_compatibility"] is False
@@ -105,24 +121,27 @@ def test_duplicate_json_keys_fail_even_with_recomputed_digest(nested: bool) -> N
 
 @pytest.mark.parametrize("with_log", [False, True])
 def test_cli_rejects_shadowed_report_source_fields(
-    with_log: bool, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    with_log: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     report, raw_log = observation("linux")
     raw = json.dumps(report)
-    # json.loads normally lets the *last* duplicate key silently win.
     duplicated = raw.replace(
         '"source_revision": ',
         '"source_revision": "0000000000000000000000000000000000000000", "source_revision": ',
         1,
     )
     assert duplicated != raw
-    report_path = tmp_path / "codex-native-smoke.json"
-    report_path.write_text(duplicated, encoding="utf-8")
-    (tmp_path / "codex-native-sanitized-log.json").write_bytes(raw_log)
-    args = ["--report", str(report_path)]
-    if with_log:
-        args.append("--verify-sanitized-log")
-    assert main(args) == 2
+    assert (
+        run_stdin(
+            monkeypatch,
+            duplicated.encode(),
+            raw_log if with_log else b"",
+            verify_log=with_log,
+        )
+        == 2
+    )
     result = json.loads(capsys.readouterr().out)
     assert result["reason_codes"] == ["invalid_or_missing_evidence"]
     assert result["establishes_real_host_compatibility"] is False
@@ -188,14 +207,12 @@ def test_windows_observation_does_not_require_new_linux_status_field() -> None:
 
 
 def test_cli_rejects_missing_log_when_explicitly_requested(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    source = EVIDENCE / "2026-10-26-windows-codex-native-smoke.json"
-    report = tmp_path / source.name
-    report.write_bytes(source.read_bytes())
-    assert main(["--report", str(report), "--verify-sanitized-log"]) == 2
+    report, _ = observation("windows")
+    assert run_stdin(monkeypatch, json.dumps(report).encode(), verify_log=True) == 2
     result = json.loads(capsys.readouterr().out)
-    assert result["reason_codes"] == ["invalid_or_missing_log"]
+    assert result["reason_codes"] == ["invalid_or_missing_evidence"]
     assert result["establishes_real_host_compatibility"] is False
 
 
@@ -221,16 +238,13 @@ def test_bounded_reader_rejects_symlink_and_nonregular_file(tmp_path: Path) -> N
         _read_bounded_regular_file(tmp_path, 32_768)
 
 
-def test_cli_rejects_oversized_log(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    oversized = tmp_path / "oversized.json"
-    oversized.write_bytes(b"x" * 32_769)
-    source = EVIDENCE / "2026-10-26-linux-codex-native-smoke.json"
-    report = tmp_path / source.name
-    report.write_bytes(source.read_bytes())
-    oversized.rename(tmp_path / "2026-10-26-linux-codex-native-sanitized-log.json")
-    assert main(["--report", str(report), "--verify-sanitized-log"]) == 2
+def test_cli_rejects_oversized_log(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report, _ = observation("linux")
+    assert run_stdin(monkeypatch, json.dumps(report).encode(), b"x" * 32_769, verify_log=True) == 2
     result = json.loads(capsys.readouterr().out)
-    assert result["reason_codes"] == ["invalid_or_missing_log"]
+    assert result["reason_codes"] == ["invalid_or_missing_evidence"]
 
 
 def test_companion_log_name_accepts_only_expected_basenames(tmp_path: Path) -> None:
@@ -318,16 +332,39 @@ def test_legacy_windows_host_rejects_spoofed_status() -> None:
     ],
 )
 def test_dated_archive_filename_must_match_report_fields(
-    name: str, platform: str, date: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    name: str,
+    platform: str,
+    date: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     report, log = observation("linux")
     assert report["os"] == platform
     assert report["observed_on"] == date
-    renamed_report = tmp_path / name
-    renamed_report.write_text(json.dumps(report), encoding="utf-8")
-    companion_name = name.replace("-smoke.json", "-sanitized-log.json")
-    (tmp_path / companion_name).write_bytes(log)
-    assert main(["--report", str(renamed_report), "--verify-sanitized-log"]) == 2
+    assert run_stdin(monkeypatch, json.dumps(report).encode(), log, name=name, verify_log=True) == 2
     result = json.loads(capsys.readouterr().out)
-    assert result["reason_codes"] == ["invalid_or_missing_log"]
+    assert result["reason_codes"] == ["invalid_or_missing_evidence"]
     assert result["establishes_real_host_compatibility"] is False
+
+
+def test_arbitrary_cli_path_rejected_without_opening(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    file = tmp_path / "codex-native-smoke.json"
+    file.write_text('{"not": "a fixture"}', encoding="utf-8")
+    assert main(["--report", str(file)]) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason_codes"] == ["invalid_or_missing_evidence"]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ("../../secret.json", "custom.json", "2026-10-26-../codex-native-smoke.json"),
+)
+def test_stdin_evidence_name_rejects_traversal(
+    name: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report, log = observation("linux")
+    assert run_stdin(monkeypatch, json.dumps(report).encode(), log, name=name, verify_log=True) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason_codes"] == ["invalid_or_missing_evidence"]

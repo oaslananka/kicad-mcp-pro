@@ -2,12 +2,29 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
 from scripts import check_agent_native_smoke_evidence as gate
+
+
+def run_report(monkeypatch: pytest.MonkeyPatch, report: dict) -> int:
+    data = {
+        "name": "codex-native-smoke.json",
+        "report_b64": base64.b64encode(json.dumps(report).encode()).decode("ascii"),
+        "log_b64": "",
+    }
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.TextIOWrapper(io.BytesIO(json.dumps(data).encode()), encoding="utf-8"),
+    )
+    return gate.main(["--report", "-"])
 
 
 def _sample() -> dict:
@@ -63,13 +80,11 @@ def test_additional_transcript_is_rejected() -> None:
 
 
 def test_cli_does_not_echo_untrusted_data(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    f = tmp_path / "native-evidence.json"
     sample = _sample()
     sample["host_id"] = "/private/user-token"
-    f.write_text(json.dumps(sample))
-    assert gate.main(["--report", str(f)]) == 2
+    assert run_report(monkeypatch, sample) == 2
     output = capsys.readouterr().out
     assert "rejected" in output
     assert "/private" not in output
@@ -77,11 +92,9 @@ def test_cli_does_not_echo_untrusted_data(
 
 
 def test_cli_structure_only_is_not_verified(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    f = tmp_path / "native-evidence.json"
-    f.write_text(json.dumps(_sample()))
-    assert gate.main(["--report", str(f)]) == 0
+    assert run_report(monkeypatch, _sample()) == 0
     output = json.loads(capsys.readouterr().out)
     assert output["status"] == "structurally_complete_not_attested"
     assert output["establishes_real_host_compatibility"] is False
@@ -111,3 +124,35 @@ def test_missing_or_symlinked_report_fails_closed(
 def test_unicode_digits_and_untrusted_skills_fail_closed(change: dict, expected: str) -> None:
     report = _sample() | change
     assert expected in gate.validate_report(report, known_hosts={"codex"})
+
+
+def test_deep_stdin_envelope_fails_closed_without_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Bounded input can still be deep enough to cause json RecursionError.
+    raw = b"[" * 2_000 + b"]" * 2_000
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(raw)))
+    assert gate.main(["--report", "-"]) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason_codes"] == ["invalid_or_missing_evidence"]
+    assert result["establishes_real_host_compatibility"] is False
+
+
+def test_fixed_archive_metadata_mismatch_rejected_even_without_log(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from scripts.check_agent_native_smoke_evidence import _read_bounded_regular_file
+
+    fixed_name = "2026-10-26-linux-codex-native-smoke.json"
+    archive = Path(__file__).resolve().parents[2] / "docs/evidence/agent-host" / fixed_name
+    original = json.loads(_read_bounded_regular_file(archive, 16_384))
+    altered = dict(original, os="windows")
+    monkeypatch.setattr(
+        gate,
+        "_read_bounded_regular_file",
+        lambda path, limit: json.dumps(altered).encode(),
+    )
+    assert gate.main(["--report", fixed_name]) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason_codes"] == ["invalid_or_missing_evidence"]
+    assert result["establishes_real_host_compatibility"] is False
