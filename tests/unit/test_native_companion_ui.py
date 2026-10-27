@@ -404,6 +404,7 @@ def test_drc_findings_open_read_only_modal_and_clear_on_failure(
     wx.TE_WORDWRAP = 16
     wx.EVT_LIST_ITEM_SELECTED = 102
     wx.ALIGN_RIGHT = 32
+    wx.ALIGN_CENTER_VERTICAL = 64
     wx.ID_OK = 1
     frame.show_drc_findings(None)
     wx.ListCtrl.assert_called_once()
@@ -421,6 +422,95 @@ def test_drc_findings_open_read_only_modal_and_clear_on_failure(
     frame.findings_btn.Hide.assert_called()
     frame.show_drc_findings(None)
     assert wx.Dialog.call_count == 1
+
+
+def test_copy_finding_requires_explicit_action_and_reports_clipboard_failure(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, wx = ui
+    frame = _ready(ui, monkeypatch)
+    finding = module.DrcFinding(
+        "error",
+        "solder_mask_bridge",
+        "Front solder mask bridge",
+        ("Track [LED_A] on F.Cu", "Pad 2 of R1"),
+        (10.0, 10.0),
+    )
+    other = module.DrcFinding(
+        "error",
+        "solder_mask_bridge",
+        "Other solder mask bridge",
+        ("Pad 2 of LED1",),
+        (15.0, 10.0),
+    )
+    frame._drc_done(
+        module.SavedDrcResult(2, 0, 0, 0, "10.0.7", (finding, other), "mm"),
+        (frame.board.name, frame.board.project_path),
+    )
+    wx.Dialog = Mock(return_value=Mock())
+    wx.ListCtrl = Mock(return_value=Mock())
+    wx.TextCtrl = Mock(return_value=Mock())
+    wx.LC_REPORT = 1
+    wx.LC_SINGLE_SEL = 2
+    wx.TE_MULTILINE = 4
+    wx.TE_READONLY = 8
+    wx.TE_WORDWRAP = 16
+    wx.EVT_LIST_ITEM_SELECTED = 102
+    wx.ALIGN_RIGHT = 32
+    wx.ALIGN_CENTER_VERTICAL = 64
+    wx.ID_OK = 1
+    clipboard = Mock()
+    clipboard.Open.return_value = True
+    clipboard.SetData.return_value = True
+    wx.TheClipboard = clipboard
+    wx.TextDataObject = Mock(side_effect=lambda value: value)
+    buttons: dict[str, Mock] = {}
+
+    def make_button(*_args: object, **kwargs: object) -> Mock:
+        btn = Mock()
+        buttons[kwargs["label"]] = btn
+        return btn
+
+    monkeypatch.setattr(wx, "Button", make_button)
+    frame.show_drc_findings(None)
+    clipboard.Open.assert_not_called()  # no clipboard side effects on opening
+    assert "Copy selected finding" in buttons
+    click_handler = buttons["Copy selected finding"].Bind.call_args.args[1]
+    click_handler(None)
+    clipboard.Open.assert_called_once_with()
+    clipboard.Close.assert_called_once_with()
+    copied = clipboard.SetData.call_args.args[0]
+    assert "10.000, 10.000 mm" in copied
+    assert "Track [LED_A] on F.Cu" in copied
+    assert "Pad 2 of R1" in copied
+    assert "not verified live-object targets" in copied
+    event = Mock()
+    event.GetIndex.return_value = 1
+    selection_handler = wx.ListCtrl.return_value.Bind.call_args.args[1]
+    selection_handler(event)
+    click_handler(None)
+    second_copy = clipboard.SetData.call_args.args[0]
+    assert "15.000, 10.000 mm" in second_copy
+    assert "Pad 2 of LED1" in second_copy
+    assert "Pad 2 of R1" not in second_copy
+    clipboard.Open.return_value = False
+    click_handler(None)
+    assert clipboard.SetData.call_count == 2
+
+
+def test_copy_finding_with_no_position_never_invents_coordinates(
+    ui: tuple[types.ModuleType, types.ModuleType],
+) -> None:
+    module, wx = ui
+    clipboard = Mock()
+    clipboard.Open.return_value = True
+    clipboard.SetData.return_value = True
+    wx.TheClipboard = clipboard
+    wx.TextDataObject = Mock(side_effect=lambda value: value)
+    finding = module.DrcFinding("warning", "footprint_warning", "warning without coordinates")
+    assert module._copy_finding_to_clipboard(finding, "mm")
+    assert "Not provided by KiCad" in clipboard.SetData.call_args.args[0]
+    assert "None, None" not in clipboard.SetData.call_args.args[0]
 
 
 def test_saved_drc_failure_never_displays_false_success(

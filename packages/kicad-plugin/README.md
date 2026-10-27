@@ -54,8 +54,13 @@ unsaved KiCad edits and schematic parity are NOT included. The report is a
 snapshot from the latest manual check, not a live DRC state. When KiCad provides
 individual findings, **View DRC findings** opens a read-only table of rule types,
 severity and reported X/Y coordinates, with the full KiCad item descriptions
-for the selected row. No unverified footprint matching or automatic GUI jump,
-selection, edit, or correction is performed; absent locations remain absent.
+for the selected row. **Copy selected finding** explicitly copies its rule, reported location and
+KiCad-provided affected-item descriptions to the OS clipboard. The editor
+itself is not moved or selected. No unverified footprint matching or automatic
+GUI jump, selection, edit, or correction is performed; absent locations remain
+absent. In particular, KiCad can generate different ephemeral object IDs when
+the saved file has no persistent UUIDs; text/coordinate similarity is NOT a
+safe live-object identity check.
 The KiCad CLI must be on the companion's PATH; missing/unusable CLI,
 unsupported reports or source file changes fail closed as **DRC unavailable**. Local temporary reports are
 deleted after parsing. This is deliberately independent of MCP backend health.

@@ -88,6 +88,17 @@ def _finding_detail(finding: DrcFinding, units: str) -> str:
     )
 
 
+def _copy_finding_to_clipboard(finding: DrcFinding, units: str) -> bool:
+    """Only copy on explicit user request; never change the editor or PCB."""
+    clipboard = wx.TheClipboard
+    if not clipboard.Open():
+        return False
+    try:
+        return bool(clipboard.SetData(wx.TextDataObject(_finding_detail(finding, units))))
+    finally:
+        clipboard.Close()
+
+
 def _surface(parent: wx.Panel) -> tuple[wx.Panel, wx.BoxSizer]:
     surface = wx.Panel(parent)
     surface.SetBackgroundColour(wx.Colour(SURFACE))
@@ -435,7 +446,7 @@ class CompanionFrame(wx.Frame):
             layout.Add(
                 _text(
                     panel,
-                    "Read-only results. Unsaved edits are not checked.",
+                    "Read-only saved-board results · no automatic KiCad object jump.",
                     size=9,
                     color=SECONDARY,
                 ),
@@ -466,17 +477,39 @@ class CompanionFrame(wx.Frame):
                 style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP,
                 size=(-1, 134),
             )
-            table.Bind(
-                wx.EVT_LIST_ITEM_SELECTED,
-                lambda event: details.SetValue(
-                    _finding_detail(result.findings[event.GetIndex()], result.coordinate_units)
-                ),
-            )
+            current = [0]
+
+            def update_details(event: wx.ListEvent) -> None:
+                index = event.GetIndex()
+                if 0 <= index < len(result.findings):
+                    current[0] = index
+                    details.SetValue(
+                        _finding_detail(result.findings[index], result.coordinate_units)
+                    )
+
+            table.Bind(wx.EVT_LIST_ITEM_SELECTED, update_details)
             table.Select(0)
-            layout.Add(details, 0, wx.EXPAND | wx.BOTTOM, 12)
+            layout.Add(details, 0, wx.EXPAND | wx.BOTTOM, 10)
+            controls = wx.BoxSizer(wx.HORIZONTAL)
+            copy_btn = wx.Button(panel, label="Copy selected finding")
+            clipboard_status = _text(panel, "", size=9, color=SECONDARY)
+
+            def copy_selected(_event: wx.CommandEvent) -> None:
+                try:
+                    copied = _copy_finding_to_clipboard(
+                        result.findings[current[0]], result.coordinate_units
+                    )
+                except Exception:
+                    copied = False
+                clipboard_status.SetLabel("Finding copied" if copied else "Clipboard unavailable")
+
+            copy_btn.Bind(wx.EVT_BUTTON, copy_selected)
+            controls.Add(copy_btn, 0, wx.RIGHT, 12)
+            controls.Add(clipboard_status, 1, wx.ALIGN_CENTER_VERTICAL)
             close = wx.Button(panel, label="Close")
             close.Bind(wx.EVT_BUTTON, lambda _event: dialog.EndModal(wx.ID_OK))
-            layout.Add(close, 0, wx.ALIGN_RIGHT)
+            controls.Add(close, 0)
+            layout.Add(controls, 0, wx.EXPAND)
             panel.SetSizer(layout)
             outer = wx.BoxSizer(wx.VERTICAL)
             outer.Add(panel, 1, wx.EXPAND | wx.ALL, 18)
