@@ -47,9 +47,16 @@ def test_pilot_has_single_nonoverlapping_update_producer() -> None:
     updates = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text(encoding="utf-8"))[
         "updates"
     ]
-    assert ("npm", "/integrations/chatgpt-app/apps-sdk") not in {
-        (entry["package-ecosystem"], entry["directory"]) for entry in updates
-    }
+    security_only = next(
+        entry
+        for entry in updates
+        if entry["package-ecosystem"] == "npm"
+        and entry["directory"] == "/integrations/chatgpt-app/apps-sdk"
+    )
+    assert security_only["open-pull-requests-limit"] == 0
+    security_group = security_only["groups"]["npm-chatgpt-app-security"]
+    assert security_group["applies-to"] == "security-updates"
+    assert security_group["patterns"] == ["*"]
     assert ("npm", "/") in {(entry["package-ecosystem"], entry["directory"]) for entry in updates}
     assert (ROOT / "integrations/chatgpt-app/apps-sdk/package-lock.json").is_file()
 

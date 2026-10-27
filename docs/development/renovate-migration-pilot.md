@@ -3,8 +3,9 @@
 ## Ownership and safety
 
 - On production main, Dependabot remains active for version and security
-  updates and Renovate is disabled. The draft activation PR changes only one
-  npm path while retiring its counterpart Dependabot version producer.
+  updates and Renovate is disabled. The activation PR changes only one npm
+  path: Dependabot's corresponding entry stays as security-only with
+  open-pull-requests-limit=0, while Renovate owns ordinary version updates.
 - Hosted App installation needs GitHub account-owner approval. Never presume
   its presence from a previous Renovate PR alone.
 - GitHub dependency graph and Dependabot Alerts remain enabled.
@@ -15,7 +16,10 @@
 
 This draft activation change enables Renovate for only the
 integrations/chatgpt-app/apps-sdk npm package and its own package-lock.json,
-paired with removal of the matching Dependabot version-update directory.
+paired with preserving that Dependabot npm directory at
+open-pull-requests-limit=0. GitHub documents this as allowing security updates
+without routine version PRs. Its existing npm-chatgpt-app-security group is
+retained to preserve Mergify's pre-existing security queue branch matching.
 Other npm, Python, Rust, Actions and container update producers are preserved.
 Renovate vulnerability-fix PR creation stays off for the pilot to avoid
 a second security PR producer. GitHub Dependabot Alerts and automated
@@ -55,8 +59,8 @@ Pre-activation checklist:
   and compare CI failures, time to merge and manual maintenance.
 - Keep #1449 open until live bot installation and patch PR acceptance pass.
 
-Rollback: restore enabled=false and the removed Dependabot version-update
-directory in a protected PR. Keep GitHub Alerts and security updates active.
+Rollback: restore enabled=false and Dependabot's former limit=2
+for that directory in a protected PR. Keep GitHub Alerts and security updates active.
 No release workflows or immutable GitHub Releases settings are changed.
 
 ## Prototype rules
@@ -106,8 +110,8 @@ the bot. No review bypass or CI bypass is allowed.
    distinct user-authorization step.
 4. Merge the distinct reviewed activation PR only after App installation has been
    independently verified; it switches Renovate on for the single npm path and
-   retires only the matching Dependabot version-update source, preserving
-   GitHub security alerts, security fixes and branch protection.
+   limits only the matching Dependabot version-update entry to zero PRs,
+   preserving its existing security group, alerts, fixes and branch protection.
 5. Pilot one patch update, review actual lockfile differences, apply the
    manual approval label, verify Mergify protected queue and check that
    Dependabot did not raise a duplicate PR.
