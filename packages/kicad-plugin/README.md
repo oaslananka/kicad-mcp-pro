@@ -19,6 +19,27 @@ the existing dashboard or explicitly publish board context to the existing
 MCP backend (using the versioned contract in context.py). No board mutations
 or security-gate bypasses occur here.
 
+### Sidecar UI and docking limitations
+
+KiCad 10's **IPC plugins run in separate processes**. Its supported plugin
+manifest allows toolbar actions, not docking a third-party widget as an editor
+pane. The Companion is consequently a **normal, non-always-on-top window**, not
+a native KiCad sidebar: it starts compact and, where display geometry allows,
+positions near the **right edge of the monitor where the toolbar was clicked**.
+It neither resizes/repositions the PCB Editor nor follows KiCad when the editor
+moves. You may move/resize it or use the operating system's window tiling to
+place it beside KiCad. Do not rely on OS-specific window embedding or the
+legacy in-process SWIG plugin API for an apparently docked appearance.
+
+For day-to-day PCB work, the compact Companion prioritizes the active board,
+selection count/reference, connection health and **one explicit context-sync
+action**. Refresh and the local Dashboard are secondary. The dependency-repair
+button only appears when the IPC Python runtime actually needs it. Status and
+sync results are separate so a successful backend connection is not confused
+with a completed sync. The UI never edits PCB data. This is a focused IPC
+companion, **not a full embedded KiCad engineering command panel**. A genuine
+KiCad-docked pane requires an upstream-supported embedded extension surface.
+
 Requirements: KiCad 10.x, IPC enabled, a graphical wxPython-enabled KiCad runtime,
 and the separately installed/running KiCad MCP Pro backend for dashboard or
 context-sync actions. The plugin supports Python 3.9+ because the official

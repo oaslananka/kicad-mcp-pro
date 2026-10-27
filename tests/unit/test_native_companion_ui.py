@@ -80,11 +80,9 @@ def test_window_shows_board_and_enables_read_only_actions(
     assert frame.board.footprints == 7
     assert frame.ready
     frame.board_label.SetLabel.assert_called_with("test.kicad_pcb")
-    frame.board_details.SetLabel.assert_called_with(
-        "test  ·  7 footprints  ·  11 nets  ·  2 selected"
-    )
+    frame.board_details.SetLabel.assert_called_with("7 footprints   ·   11 nets   ·   2 selected")
+    frame.connection_label.SetLabel.assert_called_with("● Connected")
     frame.dashboard_btn.Enable.assert_called_with(True)
-    frame.review_btn.Enable.assert_called_with(True)
     frame.sync_btn.Enable.assert_called_with(True)
     frame.repair_btn.Hide.assert_called()
 
@@ -102,7 +100,8 @@ def test_missing_board_disables_context_sync(
     frame = module.CompanionFrame()
     assert frame.board is None
     assert not frame.ready
-    frame.board_label.SetLabel.assert_called_with("KiCad PCB context unavailable")
+    frame.board_label.SetLabel.assert_called_with("No active PCB")
+    frame.connection_label.SetLabel.assert_called_with("● Attention")
     frame.dashboard_btn.Enable.assert_called_with(False)
     frame.sync_btn.Enable.assert_called_with(False)
 
@@ -118,12 +117,12 @@ def test_missing_ipc_dependency_offers_repair(
     monkeypatch.setattr(module, "board_summary", missing)
     monkeypatch.setattr(module, "backend_status", lambda: (False, "Not connected"))
     frame = module.CompanionFrame()
-    frame.board_label.SetLabel.assert_called_with("KiCad IPC dependencies incomplete")
+    frame.board_label.SetLabel.assert_called_with("KiCad IPC needs setup")
     frame.board_details.SetLabel.assert_called_with("Missing Python module: google")
     frame.repair_btn.Show.assert_called()
 
 
-def test_dashboard_and_review_actions_use_loopback_only(
+def test_dashboard_action_uses_loopback_only(
     ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module, _wx = ui
@@ -133,10 +132,7 @@ def test_dashboard_and_review_actions_use_loopback_only(
     monkeypatch.setattr(module.webbrowser, "open", browser)
     monkeypatch.setattr(module, "dashboard_url", urls)
     frame.open_dashboard()
-    frame.open_dashboard("#tools-catalog")
-    assert browser.call_count == 2
-    urls.assert_any_call("#tools-catalog")
-    browser.assert_any_call("http://127.0.0.1:3334/ui#tools-catalog")
+    browser.assert_called_once_with("http://127.0.0.1:3334/ui")
 
 
 def test_unsafe_dashboard_url_never_opens_browser(
@@ -149,7 +145,7 @@ def test_unsafe_dashboard_url_never_opens_browser(
     monkeypatch.setattr(module.webbrowser, "open", browser)
     frame.open_dashboard()
     browser.assert_not_called()
-    frame.service_label.SetLabel.assert_called_with("Dashboard URL must use loopback.")
+    frame.feedback_label.SetLabel.assert_called_with("Dashboard URL must use loopback.")
 
 
 def test_context_sync_success_and_failure(
@@ -170,11 +166,11 @@ def test_context_sync_success_and_failure(
     monkeypatch.setattr(module, "sync_board_context", sync)
     frame.sync_context(None)
     sync.assert_called_once_with(frame.board)
-    frame.service_label.SetLabel.assert_called_with("PCB context synced.")
+    frame.feedback_label.SetLabel.assert_called_with("PCB context synced.")
 
     sync.side_effect = OSError("backend disconnected")
     frame.sync_context(None)
-    frame.service_label.SetLabel.assert_called_with("Context sync failed; check backend access.")
+    frame.feedback_label.SetLabel.assert_called_with("Context sync failed; check backend access.")
 
 
 def test_repair_requires_confirmation_and_reports_completion(
@@ -202,9 +198,86 @@ def test_repair_requires_confirmation_and_reports_completion(
 
     repair.side_effect = RuntimeError("No connection")
     frame.repair_dependencies(None)
-    frame.service_label.SetLabel.assert_called_with(
+    frame.feedback_label.SetLabel.assert_called_with(
         "Repair failed; check network access and plugin logs."
     )
+
+
+def test_long_board_filenames_are_shortened_without_losing_tooltip(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    name = "rev-long-product-hardware-validation-fixture_very-long.kicad_pcb"
+    monkeypatch.setattr(
+        module, "board_summary", lambda: module.BoardSummary(name, "fixture", 3, 2, 0)
+    )
+    monkeypatch.setattr(module, "backend_status", lambda: (True, "Connected"))
+    frame = module.CompanionFrame()
+    display = module._display_board_name(name)
+    assert len(display) == 34
+    assert display.endswith(".kicad_pcb")
+    assert "…" in display
+    frame.board_label.SetLabel.assert_called_with(display)
+    frame.board_label.SetToolTip.assert_called_with(name)
+
+
+def test_selection_reference_is_visible_when_available(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    monkeypatch.setattr(
+        module,
+        "board_summary",
+        lambda: module.BoardSummary("board.kicad_pcb", "board", 4, 3, 1, "", "U3"),
+    )
+    monkeypatch.setattr(module, "backend_status", lambda: (True, "Backend ready"))
+    frame = module.CompanionFrame()
+    frame.selection_label.SetLabel.assert_called_with("Selected: U3")
+
+
+def test_sidecar_has_no_always_on_top_flag(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    frame = _ready(ui, monkeypatch)
+    frame.place_at_screen_edge()
+    # Fake wx does not expose monitor geometry; placement safely falls back
+    # rather than affecting a KiCad editor window.
+    frame.calls.Centre.assert_called_once()
+
+
+def test_sidecar_positions_on_active_display_without_resizing_editor(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, wx = ui
+    frame = _ready(ui, monkeypatch)
+
+    class Bounds:
+        def GetWidth(self) -> int:  # noqa: N802
+            return 1920
+
+        def GetRight(self) -> int:  # noqa: N802
+            return 1919
+
+        def GetTop(self) -> int:  # noqa: N802
+            return 0
+
+    class Display:
+        @staticmethod
+        def GetFromPoint(_point: object) -> int:  # noqa: N802
+            return 0
+
+        def __init__(self, _index: int) -> None:
+            pass
+
+        def GetClientArea(self) -> Bounds:  # noqa: N802
+            return Bounds()
+
+    wx.Display = Display
+    wx.NOT_FOUND = -1
+    wx.GetMousePosition = lambda: (1000, 250)
+    frame.calls.GetSize.return_value.GetWidth.return_value = 390
+    frame.place_at_screen_edge()
+    frame.calls.SetPosition.assert_called_once_with((1517, 70))
 
 
 def test_entrypoint_runs_wx_mainloop(

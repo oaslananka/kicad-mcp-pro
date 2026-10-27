@@ -1,7 +1,7 @@
-"""KiCad 10 IPC action: native wx companion for the active PCB Editor.
+"""Compact read-only sidecar for KiCad 10's out-of-process IPC plugin API.
 
-KiCad launches this file in its managed Python environment, which includes
-wxPython on the supported KiCad desktop runtime. No PCB mutations occur here.
+KiCad 10 cannot embed external IPC plugin windows as native docked panes.
+This normal (not always-on-top) tool window stays independent of the editor.
 """
 
 from __future__ import annotations
@@ -28,12 +28,14 @@ from companion_core import (
     sync_board_context,
 )
 
-BACKGROUND = "#101720"
-PANEL = "#192432"
-FOREGROUND = "#e9eff8"
-SECONDARY = "#9cb0c6"
-ACCENT = "#8ec5fc"
-CONNECTED = "#62ddb4"
+BACKGROUND = "#111923"
+SURFACE = "#1B2634"
+FOREGROUND = "#F0F4FA"
+SECONDARY = "#AFBECD"
+ACCENT = "#9CC6FB"
+CONNECTED = "#78DDB8"
+WARNING = "#F0C980"
+PRIMARY = "#3177BB"
 
 
 def _text(
@@ -44,37 +46,45 @@ def _text(
     color: str = FOREGROUND,
     bold: bool = False,
 ) -> wx.StaticText:
-    item = wx.StaticText(parent, label=value)
-    font = item.GetFont()
+    label = wx.StaticText(parent, label=value)
+    font = label.GetFont()
     font.SetPointSize(size)
     if bold:
         font.SetWeight(wx.FONTWEIGHT_BOLD)
-    item.SetFont(font)
-    item.SetForegroundColour(wx.Colour(color))
-    return item
+    label.SetFont(font)
+    label.SetForegroundColour(wx.Colour(color))
+    return label
 
 
-def _card(parent: wx.Panel, title: str) -> tuple[wx.Panel, wx.BoxSizer]:
-    outer = wx.Panel(parent)
-    outer.SetBackgroundColour(wx.Colour(PANEL))
+def _display_board_name(name: str, limit: int = 34) -> str:
+    """Keep long real-world filenames readable without widening the sidecar."""
+    if len(name) <= limit:
+        return name
+    left = (limit - 1) // 2
+    return f"{name[:left]}…{name[-(limit - left - 1) :]}"
+
+
+def _surface(parent: wx.Panel) -> tuple[wx.Panel, wx.BoxSizer]:
+    surface = wx.Panel(parent)
+    surface.SetBackgroundColour(wx.Colour(SURFACE))
     content = wx.BoxSizer(wx.VERTICAL)
-    heading = _text(outer, title, size=10, color=ACCENT, bold=True)
-    content.Add(heading, 0, wx.BOTTOM, 10)
-    outer.SetSizer(content)
-    return outer, content
+    padding = wx.BoxSizer(wx.VERTICAL)
+    padding.Add(content, 1, wx.EXPAND | wx.ALL, 12)
+    surface.SetSizer(padding)
+    return surface, content
 
 
 class CompanionFrame(wx.Frame):
-    """Portable modeless KiCad companion; intentionally read-only."""
+    """Non-modal, independent KiCad IPC companion; never mutates board data."""
 
     def __init__(self) -> None:
         super().__init__(
             None,
-            title="KiCad MCP Pro · Companion",
-            size=(585, 650),
+            title="MCP Pro — PCB Companion",
+            size=(390, 485),
             style=wx.DEFAULT_FRAME_STYLE,
         )
-        self.SetMinSize((520, 575))
+        self.SetMinSize((350, 440))
         self.SetBackgroundColour(wx.Colour(BACKGROUND))
         self.board: BoardSummary | None = None
         self.ready = False
@@ -83,118 +93,149 @@ class CompanionFrame(wx.Frame):
         panel.SetBackgroundColour(wx.Colour(BACKGROUND))
         layout = wx.BoxSizer(wx.VERTICAL)
 
-        layout.Add(_text(panel, "KiCad MCP Pro", size=20, bold=True), 0, wx.BOTTOM, 4)
-        layout.Add(
-            _text(panel, "PCB Editor companion  ·  read-only preview", color=SECONDARY),
-            0,
-            wx.BOTTOM,
-            21,
+        header = wx.BoxSizer(wx.HORIZONTAL)
+        brand = wx.BoxSizer(wx.VERTICAL)
+        brand.Add(_text(panel, "MCP Pro", size=17, bold=True), 0, wx.BOTTOM, 2)
+        brand.Add(_text(panel, "KiCad PCB Companion", size=9, color=SECONDARY), 0)
+        header.Add(brand, 1)
+        self.connection_label = _text(panel, "● Checking", size=10, color=SECONDARY)
+        header.Add(self.connection_label, 0, wx.TOP, 8)
+        layout.Add(header, 0, wx.EXPAND | wx.BOTTOM, 20)
+
+        board_panel, board_content = _surface(panel)
+        board_content.Add(
+            _text(board_panel, "Active board", size=10, color=ACCENT), 0, wx.BOTTOM, 7
         )
+        self.board_label = _text(board_panel, "Connecting to KiCad…", size=12, bold=True)
+        board_content.Add(self.board_label, 0, wx.BOTTOM, 7)
+        self.board_details = _text(board_panel, "Board data unavailable", size=9, color=SECONDARY)
+        board_content.Add(self.board_details, 0, wx.BOTTOM, 4)
+        self.selection_label = _text(board_panel, "", size=9, color=SECONDARY)
+        board_content.Add(self.selection_label, 0)
+        layout.Add(board_panel, 0, wx.EXPAND | wx.BOTTOM, 16)
 
-        board_panel, board_content = _card(panel, "ACTIVE PCB")
-        self.board_label = _text(board_panel, "Connecting to KiCad…", size=13, bold=True)
-        board_content.Add(self.board_label, 0, wx.BOTTOM, 8)
-        self.board_details = _text(
-            board_panel, "Footprints  ·  Nets  ·  Selection", color=SECONDARY
+        service_header = wx.BoxSizer(wx.HORIZONTAL)
+        service_header.Add(_text(panel, "Engineering service", size=10, bold=True), 1)
+        layout.Add(service_header, 0, wx.EXPAND | wx.BOTTOM, 6)
+        self.service_label = _text(
+            panel, "Checking the local MCP backend…", size=9, color=SECONDARY
         )
-        board_content.Add(self.board_details, 0)
-        layout.Add(board_panel, 0, wx.EXPAND | wx.BOTTOM, 14)
+        self.service_label.Wrap(320)
+        layout.Add(self.service_label, 0, wx.EXPAND | wx.BOTTOM, 16)
 
-        service_panel, service_content = _card(panel, "ENGINEERING SERVICE")
-        self.service_label = _text(service_panel, "Checking local backend…", color=SECONDARY)
-        service_content.Add(self.service_label, 0)
-        layout.Add(service_panel, 0, wx.EXPAND | wx.BOTTOM, 14)
-
-        tools_panel, tools_content = _card(panel, "WORKSPACE")
-        tools_content.Add(
-            _text(
-                tools_panel,
-                "Continue in the installed MCP Pro dashboard for engineering tools.",
-                color=SECONDARY,
-            ),
-            0,
-            wx.BOTTOM,
-            12,
-        )
-        actions = wx.BoxSizer(wx.HORIZONTAL)
-        self.dashboard_btn = wx.Button(tools_panel, label="Open dashboard")
-        self.review_btn = wx.Button(tools_panel, label="Review tools")
-        actions.Add(self.dashboard_btn, 0, wx.RIGHT, 10)
-        actions.Add(self.review_btn, 0)
-        tools_content.Add(actions, 0)
-        layout.Add(tools_panel, 0, wx.EXPAND | wx.BOTTOM, 14)
-
-        self.refresh_btn = wx.Button(panel, label="Refresh KiCad and backend status")
-        self.sync_btn = wx.Button(panel, label="Sync active PCB context to MCP Pro")
-        self.repair_btn = wx.Button(panel, label="Repair KiCad IPC dependencies")
-        layout.Add(self.refresh_btn, 0, wx.EXPAND | wx.BOTTOM, 10)
+        self.sync_btn = wx.Button(panel, label="Sync PCB context")
+        self.sync_btn.SetMinSize((-1, 40))
+        self.sync_btn.SetBackgroundColour(wx.Colour(PRIMARY))
+        self.sync_btn.SetForegroundColour(wx.Colour(FOREGROUND))
         layout.Add(self.sync_btn, 0, wx.EXPAND | wx.BOTTOM, 10)
-        layout.Add(self.repair_btn, 0, wx.EXPAND | wx.BOTTOM, 12)
+
+        self.feedback_label = _text(panel, "Ready to sync when you are.", size=9, color=SECONDARY)
+        self.feedback_label.Wrap(320)
+        layout.Add(self.feedback_label, 0, wx.EXPAND | wx.BOTTOM, 17)
+
+        secondary = wx.BoxSizer(wx.HORIZONTAL)
+        self.dashboard_btn = wx.Button(panel, label="Open dashboard")
+        self.refresh_btn = wx.Button(panel, label="Refresh")
+        secondary.Add(self.dashboard_btn, 1, wx.RIGHT, 8)
+        secondary.Add(self.refresh_btn, 0)
+        layout.Add(secondary, 0, wx.EXPAND | wx.BOTTOM, 9)
+
+        self.repair_btn = wx.Button(panel, label="Repair KiCad IPC dependencies…")
+        layout.Add(self.repair_btn, 0, wx.EXPAND | wx.BOTTOM, 8)
         self.repair_btn.Hide()
+
         layout.Add(
-            _text(
-                panel,
-                "Context sync is user-initiated. No changes are applied to the PCB.",
-                color=SECONDARY,
-            ),
+            _text(panel, "Read-only  ·  Nothing is changed on your PCB", size=9, color=SECONDARY),
             0,
             wx.TOP,
-            3,
+            7,
         )
-
         panel.SetSizer(layout)
         outer = wx.BoxSizer(wx.VERTICAL)
-        outer.Add(panel, 1, wx.EXPAND | wx.ALL, 23)
+        outer.Add(panel, 1, wx.EXPAND | wx.ALL, 18)
         self.SetSizer(outer)
 
         self.dashboard_btn.Bind(wx.EVT_BUTTON, lambda _event: self.open_dashboard())
-        self.review_btn.Bind(wx.EVT_BUTTON, lambda _event: self.open_dashboard("#tools-catalog"))
         self.refresh_btn.Bind(wx.EVT_BUTTON, lambda _event: self.refresh())
         self.sync_btn.Bind(wx.EVT_BUTTON, self.sync_context)
         self.repair_btn.Bind(wx.EVT_BUTTON, self.repair_dependencies)
-        self.Centre()
         wx.CallAfter(self.refresh)
+
+    def place_at_screen_edge(self) -> None:
+        """Place on the current display edge without owning or resizing KiCad.
+
+        This is sidecar positioning, NOT a native dock, and uses only wx APIs.
+        Moving KiCad later does not move the independent Companion window.
+        """
+        if not hasattr(wx, "Display") or not hasattr(wx, "GetMousePosition"):
+            self.Centre()
+            return
+        screen = wx.Display.GetFromPoint(wx.GetMousePosition())
+        if screen == wx.NOT_FOUND:
+            self.Centre()
+            return
+        bounds = wx.Display(screen).GetClientArea()
+        size = self.GetSize()
+        if bounds.GetWidth() < size.GetWidth() + 40:
+            self.Centre()
+            return
+        x = bounds.GetRight() - size.GetWidth() - 12
+        y = bounds.GetTop() + 70
+        self.SetPosition((x, y))
 
     def refresh(self) -> None:
         try:
             summary = board_summary()
         except ModuleNotFoundError as exc:
             self.board = None
-            self.board_label.SetLabel("KiCad IPC dependencies incomplete")
+            self.board_label.SetLabel("KiCad IPC needs setup")
             self.board_details.SetLabel(f"Missing Python module: {exc.name or 'unknown'}")
+            self.selection_label.SetLabel("Choose Repair below to restore board access.")
             self.repair_btn.Show()
-            self.board_label.SetForegroundColour(wx.Colour(SECONDARY))
+            self.board_label.SetForegroundColour(wx.Colour(WARNING))
         except Exception:
             self.board = None
             self.repair_btn.Hide()
-            self.board_label.SetLabel("KiCad PCB context unavailable")
-            self.board_details.SetLabel("Open a saved PCB and enable KiCad's IPC API.")
+            self.board_label.SetLabel("No active PCB")
+            self.board_details.SetLabel("Open a saved board and enable KiCad's IPC API.")
+            self.selection_label.SetLabel("")
             self.board_label.SetForegroundColour(wx.Colour(SECONDARY))
         else:
-            self.repair_btn.Hide()
             self.board = summary
-            self.board_label.SetLabel(summary.name or "Untitled PCB")
+            self.repair_btn.Hide()
+            self.board_label.SetLabel(_display_board_name(summary.name or "Untitled PCB"))
+            self.board_label.SetToolTip(summary.name or "Untitled PCB")
             self.board_details.SetLabel(
-                f"{summary.project}  ·  {summary.footprints} footprints  ·  "
-                f"{summary.nets} nets  ·  {summary.selected} selected"
+                f"{summary.footprints} footprints   ·   {summary.nets} nets   ·   "
+                f"{summary.selected} selected"
+            )
+            self.selection_label.SetLabel(
+                f"Selected: {summary.selected_reference}" if summary.selected_reference else ""
             )
             self.board_label.SetForegroundColour(wx.Colour(FOREGROUND))
 
         self.ready, status = backend_status()
         self.service_label.SetLabel(status)
-        self.service_label.SetForegroundColour(wx.Colour(CONNECTED if self.ready else SECONDARY))
+        self.service_label.Wrap(330)
+        online = self.ready and self.board is not None
+        self.feedback_label.SetLabel(
+            "Ready to sync when you are." if online else "Open a board and check the connection."
+        )
+        self.feedback_label.SetForegroundColour(wx.Colour(SECONDARY))
+        self.connection_label.SetLabel("● Connected" if online else "● Attention")
+        self.connection_label.SetForegroundColour(wx.Colour(CONNECTED if online else WARNING))
+        self.service_label.SetForegroundColour(wx.Colour(SECONDARY))
         self.dashboard_btn.Enable(self.ready)
-        self.review_btn.Enable(self.ready)
-        self.sync_btn.Enable(self.ready and self.board is not None)
+        self.sync_btn.Enable(online)
         self.Layout()
 
-    def open_dashboard(self, fragment: str = "") -> None:
+    def open_dashboard(self) -> None:
         if not self.ready:
             return
         try:
-            url = dashboard_url(fragment)
+            url = dashboard_url()
         except ValueError:
-            self.service_label.SetLabel("Dashboard URL must use loopback.")
+            self.feedback_label.SetLabel("Dashboard URL must use loopback.")
             return
         webbrowser.open(url)
 
@@ -209,16 +250,14 @@ class CompanionFrame(wx.Frame):
         if confirmation != wx.YES:
             return
         self.repair_btn.Enable(False)
-        self.service_label.SetLabel("Repairing KiCad IPC dependencies…")
+        self.feedback_label.SetLabel("Repairing KiCad IPC dependencies…")
 
         def worker() -> None:
             try:
                 repair_ipc_dependencies()
             except RuntimeError:
                 wx.CallAfter(
-                    self._repair_done,
-                    "Repair failed; check network access and plugin logs.",
-                    False,
+                    self._repair_done, "Repair failed; check network access and plugin logs.", False
                 )
             else:
                 wx.CallAfter(self._repair_done, "Dependencies installed.", True)
@@ -227,7 +266,7 @@ class CompanionFrame(wx.Frame):
 
     def _repair_done(self, message: str, success: bool) -> None:
         self.repair_btn.Enable(True)
-        self.service_label.SetLabel(message)
+        self.feedback_label.SetLabel(message)
         if success:
             self.refresh()
 
@@ -236,7 +275,7 @@ class CompanionFrame(wx.Frame):
             return
         snapshot = self.board
         self.sync_btn.Enable(False)
-        self.service_label.SetLabel("Syncing context…")
+        self.feedback_label.SetLabel("Sending current PCB context…")
 
         def worker() -> None:
             try:
@@ -249,8 +288,8 @@ class CompanionFrame(wx.Frame):
         threading.Thread(target=worker, daemon=True, name="kicad-mcp-context-sync").start()
 
     def _sync_done(self, message: str, success: bool) -> None:
-        self.service_label.SetLabel(message)
-        self.service_label.SetForegroundColour(wx.Colour(CONNECTED if success else SECONDARY))
+        self.feedback_label.SetLabel(message)
+        self.feedback_label.SetForegroundColour(wx.Colour(CONNECTED if success else WARNING))
         self.sync_btn.Enable(self.ready and self.board is not None)
 
 
@@ -258,6 +297,7 @@ def main() -> int:
     app = wx.App(redirect=False)
     frame = CompanionFrame()
     frame.Show()
+    frame.place_at_screen_edge()
     app.MainLoop()
     return 0
 
