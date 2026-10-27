@@ -360,6 +360,51 @@ def test_selected_footprint_card_hidden_after_selection_cleared(
     frame.selection_label.SetLabel.assert_called_with("")
 
 
+def test_saved_drc_is_opt_in_and_displays_saved_only_report(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    frame = _ready(ui, monkeypatch)
+    run = Mock(return_value=module.SavedDrcResult(14, 3, 4, 0, "10.0.7"))
+    monkeypatch.setattr(module, "run_saved_board_drc", run)
+    monkeypatch.setattr(
+        module, "threading", types.SimpleNamespace(Thread=lambda **kw: Mock(start=kw["target"]))
+    )
+    run.assert_not_called()
+    frame.check_saved_drc(None)
+    run.assert_called_once_with(frame.board)
+    frame.drc_label.SetLabel.assert_called_with("Saved PCB: 14 errors · 3 warnings · 4 unconnected")
+    assert "unsaved KiCad edits" in frame.drc_label.SetToolTip.call_args.args[0]
+    frame.drc_btn.Enable.assert_called_with(True)
+
+
+def test_saved_drc_failure_never_displays_false_success(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    frame = _ready(ui, monkeypatch)
+    monkeypatch.setattr(module, "run_saved_board_drc", Mock(side_effect=RuntimeError("failure")))
+    monkeypatch.setattr(
+        module, "threading", types.SimpleNamespace(Thread=lambda **kw: Mock(start=kw["target"]))
+    )
+    frame.check_saved_drc(None)
+    frame.drc_label.SetLabel.assert_called_with("DRC unavailable · saved file not checked")
+
+
+def test_saved_drc_disables_itself_when_no_board(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    monkeypatch.setattr(module, "board_summary", Mock(side_effect=OSError("closed")))
+    monkeypatch.setattr(module, "backend_status", lambda: (True, "Ready"))
+    frame = module.CompanionFrame()
+    run = Mock()
+    monkeypatch.setattr(module, "run_saved_board_drc", run)
+    frame.check_saved_drc(None)
+    run.assert_not_called()
+    frame.drc_btn.Enable.assert_called_with(False)
+
+
 def test_long_board_filenames_are_shortened_without_losing_tooltip(
     ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
 ) -> None:

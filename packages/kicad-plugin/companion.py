@@ -21,10 +21,12 @@ except ImportError:
 
 from companion_core import (
     BoardSummary,
+    SavedDrcResult,
     backend_status,
     board_summary,
     dashboard_url,
     repair_ipc_dependencies,
+    run_saved_board_drc,
     sync_board_context,
 )
 
@@ -81,15 +83,17 @@ class CompanionFrame(wx.Frame):
         super().__init__(
             None,
             title="MCP Pro — PCB Companion",
-            size=(390, 565),
+            size=(390, 640),
             style=wx.DEFAULT_FRAME_STYLE,
         )
-        self.SetMinSize((350, 505))
+        self.SetMinSize((350, 590))
         self.SetBackgroundColour(wx.Colour(BACKGROUND))
         self.board: BoardSummary | None = None
         self.last_synced_board: BoardSummary | None = None
         self.ready = False
         self._sync_busy = False
+        self._drc_busy = False
+        self._drc_board: tuple[str, str] | None = None
 
         panel = wx.Panel(self)
         panel.SetBackgroundColour(wx.Colour(BACKGROUND))
@@ -133,6 +137,21 @@ class CompanionFrame(wx.Frame):
         selection_content.Add(self.peer_label, 0, wx.TOP, 6)
         layout.Add(self.selected_panel, 0, wx.EXPAND | wx.BOTTOM, 12)
         self.selected_panel.Hide()
+
+        check_line = wx.BoxSizer(wx.HORIZONTAL)
+        check_line.Add(_text(panel, "Saved-board DRC", size=10, bold=True), 1, wx.TOP, 8)
+        self.drc_btn = wx.Button(panel, label="Check saved PCB")
+        check_line.Add(self.drc_btn, 0)
+        layout.Add(check_line, 0, wx.EXPAND | wx.BOTTOM, 5)
+        self.drc_label = _text(panel, "Not checked", size=9, color=SECONDARY)
+        self.drc_label.Wrap(320)
+        layout.Add(self.drc_label, 0, wx.EXPAND | wx.BOTTOM, 2)
+        layout.Add(
+            _text(panel, "Saved file only · unsaved edits excluded", size=9, color=SECONDARY),
+            0,
+            wx.EXPAND | wx.BOTTOM,
+            13,
+        )
 
         service_header = wx.BoxSizer(wx.HORIZONTAL)
         service_header.Add(_text(panel, "Engineering service", size=10, bold=True), 1)
@@ -178,6 +197,7 @@ class CompanionFrame(wx.Frame):
         self.dashboard_btn.Bind(wx.EVT_BUTTON, lambda _event: self.open_dashboard())
         self.refresh_btn.Bind(wx.EVT_BUTTON, lambda _event: self.refresh())
         self.sync_btn.Bind(wx.EVT_BUTTON, self.sync_context)
+        self.drc_btn.Bind(wx.EVT_BUTTON, self.check_saved_drc)
         self.repair_btn.Bind(wx.EVT_BUTTON, self.repair_dependencies)
         self.Bind(wx.EVT_ACTIVATE, self.on_activate)
         wx.CallAfter(self.refresh)
@@ -205,6 +225,11 @@ class CompanionFrame(wx.Frame):
         self.SetPosition((x, y))
 
     def _display_board(self, summary: BoardSummary) -> None:
+        identity = (summary.name, summary.project_path)
+        if self._drc_board is not None and identity != self._drc_board:
+            self._drc_board = None
+            self.drc_label.SetLabel("Board changed · check saved PCB again")
+            self.drc_label.SetForegroundColour(wx.Colour(SECONDARY))
         self.board = summary
         self.repair_btn.Hide()
         self.board_label.SetLabel(_display_board_name(summary.name or "Untitled PCB"))
@@ -290,11 +315,61 @@ class CompanionFrame(wx.Frame):
         self._update_connection_indicator()
         self.Layout()
 
+    def check_saved_drc(self, _event: wx.CommandEvent) -> None:
+        """Explicit snapshot DRC; never silently run, save, or refill editor PCB."""
+        if self._drc_busy or self.board is None:
+            return
+        self._drc_busy = True
+        self.drc_btn.Enable(False)
+        self.drc_label.SetLabel("Checking saved PCB copy…")
+        self.drc_label.SetForegroundColour(wx.Colour(SECONDARY))
+
+        def worker() -> None:
+            try:
+                current = board_summary()
+                result = run_saved_board_drc(current)
+            except Exception:
+                wx.CallAfter(self._drc_done, None, None)
+            else:
+                wx.CallAfter(self._drc_done, result, (current.name, current.project_path))
+
+        threading.Thread(target=worker, daemon=True, name="kicad-mcp-saved-drc").start()
+
+    def _drc_done(self, result: SavedDrcResult | None, identity: tuple[str, str] | None) -> None:
+        self._drc_busy = False
+        if result is None or identity is None:
+            self._drc_board = None
+            self.drc_label.SetLabel("DRC unavailable · saved file not checked")
+            self.drc_label.SetForegroundColour(wx.Colour(WARNING))
+        elif self.board is None or (self.board.name, self.board.project_path) != identity:
+            self._drc_board = None
+            self.drc_label.SetLabel("Board changed · discard old DRC result")
+            self.drc_label.SetForegroundColour(wx.Colour(WARNING))
+        else:
+            self._drc_board = identity
+            self.drc_label.SetLabel(
+                f"Saved PCB: {result.errors} errors · {result.warnings} warnings · "
+                f"{result.unconnected} unconnected"
+            )
+            self.drc_label.SetToolTip(
+                "Saved file only; excludes unsaved KiCad edits. Not a release approval."
+            )
+            self.drc_label.SetForegroundColour(
+                wx.Colour(
+                    WARNING
+                    if (result.errors or result.warnings or result.unconnected)
+                    else CONNECTED
+                )
+            )
+        self.drc_btn.Enable(self.board is not None)
+        self.Layout()
+
     def _update_connection_indicator(self) -> None:
         online = self.ready and self.board is not None
         self.connection_label.SetLabel("● Connected" if online else "● Attention")
         self.connection_label.SetForegroundColour(wx.Colour(CONNECTED if online else WARNING))
         self.sync_btn.Enable(online and not self._sync_busy)
+        self.drc_btn.Enable(self.board is not None and not self._drc_busy)
 
     def on_activate(self, event: wx.ActivateEvent) -> None:
         """Catch selections changed while the designer was working in PCB Editor."""

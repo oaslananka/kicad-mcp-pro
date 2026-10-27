@@ -44,6 +44,137 @@ def test_ipc_summary_is_read_only(tmp_path: Path) -> None:
     board.get_selection.assert_called_once_with()
 
 
+def test_saved_drc_uses_private_snapshot_no_cli_write_to_original(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+    from types import SimpleNamespace
+
+    import companion_core
+
+    board = tmp_path / "safe.kicad_pcb"
+    board.write_text("board-bytes", encoding="utf-8")
+    (tmp_path / "safe.kicad_pro").write_text("project-rules", encoding="utf-8")
+    (tmp_path / "safe.kicad_dru").write_text("custom-rules", encoding="utf-8")
+    source_files = {p.name: p.read_bytes() for p in tmp_path.iterdir()}
+    summary = companion_core.BoardSummary(
+        "safe.kicad_pcb", "safe", 1, 1, 0, str(tmp_path / "safe.kicad_pro")
+    )
+
+    def fake_cli(argv: list[str], **kwargs: object) -> SimpleNamespace:
+        assert argv[:6] == ["kicad-cli", "pcb", "drc", "--format", "json", "--output"]
+        copied = Path(argv[-1])
+        assert copied != board and copied.read_bytes() == b"board-bytes"
+        assert (copied.parent / "safe.kicad_pro").read_bytes() == b"project-rules"
+        assert (copied.parent / "safe.kicad_dru").read_bytes() == b"custom-rules"
+        assert "--save-board" not in argv and "--refill-zones" not in argv
+        report = {
+            "source": "safe.kicad_pcb",
+            "kicad_version": "10.0.7",
+            "violations": [
+                {"severity": "error"},
+                {"severity": "warning"},
+            ],
+            "unconnected_items": [{"severity": "error"}],
+        }
+        Path(argv[-2]).write_text(json.dumps(report), encoding="utf-8")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(companion_core.subprocess, "run", fake_cli)
+    result = companion_core.run_saved_board_drc(summary)
+    assert (result.errors, result.warnings, result.unconnected) == (1, 1, 1)
+    assert {p.name: p.read_bytes() for p in tmp_path.iterdir()} == source_files
+
+
+def test_saved_drc_rejects_outside_project_path_and_cli_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+    from types import SimpleNamespace
+
+    import companion_core
+
+    (tmp_path / "safe.kicad_pcb").write_text("board", encoding="utf-8")
+    summary = companion_core.BoardSummary("../other.kicad_pcb", "demo", 1, 1, 0, str(tmp_path))
+    with pytest.raises(RuntimeError, match="project directory"):
+        companion_core.run_saved_board_drc(summary)
+    summary = companion_core.BoardSummary("safe.kicad_pcb", "demo", 1, 1, 0, str(tmp_path))
+    monkeypatch.setattr(
+        companion_core.subprocess, "run", lambda *_a, **_kw: SimpleNamespace(returncode=1)
+    )
+    with pytest.raises(RuntimeError, match="complete DRC report"):
+        companion_core.run_saved_board_drc(summary)
+
+    def timeout(*_a: object, **_kw: object) -> None:
+        raise subprocess.TimeoutExpired("kicad-cli", 45)
+
+    monkeypatch.setattr(companion_core.subprocess, "run", timeout)
+    with pytest.raises(RuntimeError, match="could not finish"):
+        companion_core.run_saved_board_drc(summary)
+
+
+def test_saved_drc_disallows_invalid_or_mismatched_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+    from types import SimpleNamespace
+
+    import companion_core
+
+    (tmp_path / "safe.kicad_pcb").write_text("board", encoding="utf-8")
+    summary = companion_core.BoardSummary("safe.kicad_pcb", "demo", 1, 1, 0, str(tmp_path))
+
+    def wrong_source(argv: list[str], **_kw: object) -> SimpleNamespace:
+        Path(argv[-2]).write_text(
+            json.dumps(
+                {
+                    "source": "other.kicad_pcb",
+                    "kicad_version": "10.0.7",
+                    "violations": [],
+                    "unconnected_items": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(companion_core.subprocess, "run", wrong_source)
+    with pytest.raises(RuntimeError, match="mismatched"):
+        companion_core.run_saved_board_drc(summary)
+
+
+def test_saved_drc_rejects_concurrently_changed_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+    from types import SimpleNamespace
+
+    import companion_core
+
+    board = tmp_path / "safe.kicad_pcb"
+    board.write_text("original", encoding="utf-8")
+    summary = companion_core.BoardSummary("safe.kicad_pcb", "demo", 1, 1, 0, str(tmp_path))
+
+    def mutate_during_check(argv: list[str], **_kw: object) -> SimpleNamespace:
+        Path(argv[-2]).write_text(
+            json.dumps(
+                {
+                    "source": "safe.kicad_pcb",
+                    "kicad_version": "10.0.7",
+                    "violations": [],
+                    "unconnected_items": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        board.write_text("changed during CLI", encoding="utf-8")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(companion_core.subprocess, "run", mutate_during_check)
+    with pytest.raises(RuntimeError, match="changed during DRC"):
+        companion_core.run_saved_board_drc(summary)
+
+
 def test_ipc_footprint_reference_field_is_used_for_selection(tmp_path: Path) -> None:
     """Actual kicad-python FootprintInstance exposes reference_field.text.value."""
     selected = Mock(spec=["reference_field"])

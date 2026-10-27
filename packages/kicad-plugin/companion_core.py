@@ -5,12 +5,16 @@ No writes to the board, automatic shell commands or remote network calls.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import shutil
 
 # Safe, argv-only pip invocation (no shell), guarded by a KiCad-venv check
 # and an explicit confirmation in the wx Companion UI.
 import subprocess  # nosec B404
 import sys
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +39,98 @@ class BoardSummary:
     selected_unconnected_pads: int = 0
     # Logical pad net assignments, NOT verified copper connectivity.
     selected_net_peers: tuple[tuple[str, tuple[str, ...]], ...] = ()
+
+
+@dataclass(frozen=True)
+class SavedDrcResult:
+    errors: int
+    warnings: int
+    unconnected: int
+    excluded: int
+    kicad_version: str
+
+
+def _saved_board_file(summary: BoardSummary) -> Path:
+    """Resolve only the saved PCB in the active KiCad project directory."""
+    root = Path(summary.project_path).expanduser()
+    if root.suffix == ".kicad_pro":
+        root = root.parent
+    if not root.is_absolute() or not root.is_dir() or not summary.name:
+        raise RuntimeError("Save the active PCB in a project before checking DRC.")
+    original = Path(summary.name)
+    candidate = (original if original.is_absolute() else root / original).resolve()
+    if (
+        candidate.parent != root.resolve()
+        or candidate.suffix != ".kicad_pcb"
+        or not candidate.is_file()
+    ):
+        raise RuntimeError("The active PCB must be saved in its project directory.")
+    return candidate
+
+
+def run_saved_board_drc(
+    summary: BoardSummary, *, cli: str = "kicad-cli", timeout: int = 45
+) -> SavedDrcResult:
+    """User-triggered DRC on a private copy of the SAVED board, not editor state.
+
+    Only generated CLI output and local project-rule copies touch the temporary
+    directory. No refill, save-board, remote API request or manufacturing gate.
+    """
+    saved = _saved_board_file(summary)
+    before_hash = hashlib.sha256(saved.read_bytes()).digest()
+    with tempfile.TemporaryDirectory(prefix="kicad-companion-drc-") as scratch:
+        work = Path(scratch)
+        copied_board = work / saved.name
+        shutil.copyfile(saved, copied_board)
+        for extension in (".kicad_pro", ".kicad_dru"):
+            candidate = saved.with_suffix(extension)
+            if candidate.is_file() and not candidate.is_symlink():
+                shutil.copyfile(candidate, work / candidate.name)
+        report = work / "saved-board-drc.json"
+        try:
+            process = subprocess.run(  # nosec B603
+                [cli, "pcb", "drc", "--format", "json", "--output", str(report), str(copied_board)],
+                cwd=work,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError("KiCad CLI DRC could not finish.") from exc
+        if process.returncode != 0 or not report.is_file() or report.stat().st_size > 3_000_000:
+            raise RuntimeError("KiCad CLI did not produce a complete DRC report.")
+        try:
+            payload = json.loads(report.read_text(encoding="utf-8"))
+        except (ValueError, UnicodeError) as exc:
+            raise RuntimeError("KiCad CLI produced an invalid DRC report.") from exc
+    if hashlib.sha256(saved.read_bytes()).digest() != before_hash:
+        raise RuntimeError("Saved PCB changed during DRC; discard this report.")
+    if not isinstance(payload, dict):
+        raise RuntimeError("KiCad DRC report has an unexpected format.")
+    violations = payload.get("violations")
+    unconnected = payload.get("unconnected_items")
+    version = payload.get("kicad_version")
+    if (
+        not isinstance(violations, list)
+        or not isinstance(unconnected, list)
+        or not isinstance(version, str)
+        or not version
+        or payload.get("source") != saved.name
+    ):
+        raise RuntimeError("KiCad DRC report is incomplete or mismatched.")
+    if any(
+        not isinstance(v, dict) or v.get("severity") not in ("error", "warning", "exclusion")
+        for v in violations + unconnected
+    ):
+        raise RuntimeError("KiCad DRC report contains unknown severity.")
+    return SavedDrcResult(
+        errors=sum(v["severity"] == "error" for v in violations),
+        warnings=sum(v["severity"] == "warning" for v in violations),
+        unconnected=len(unconnected),
+        excluded=sum(v["severity"] == "exclusion" for v in violations),
+        kicad_version=version,
+    )
 
 
 def _footprint_ref(item: object) -> str:

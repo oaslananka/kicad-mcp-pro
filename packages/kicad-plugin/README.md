@@ -45,6 +45,16 @@ not proof of routed copper, connectivity, DRC or electrical correctness. Only
 references from the already-fetched board snapshot are read; no extra network
 service or board mutations are required. Multiple selection hides the
 per-footprint card rather than attributing details to the wrong item.
+An additional **Check saved PCB** button explicitly runs KiCad CLI DRC on a
+private temporary copy of the saved board with its local project/rule files.
+It never runs automatically, refills zones, saves the editor board or modifies
+production design data. The report displays separate violations (errors and
+warnings) and unconnected items and is **not** a release/manufacturing gate;
+unsaved KiCad edits and schematic parity are NOT included. The report is a
+snapshot from the latest manual check, not a live DRC state. The KiCad CLI must
+be on the companion's PATH; missing/unusable CLI, unsupported reports or source
+file changes fail closed as **DRC unavailable**. Local temporary reports are
+deleted after parsing. This is deliberately independent of MCP backend health.
 Refresh and the local Dashboard are secondary. The dependency-repair
 button only appears when the IPC Python runtime actually needs it. Status and
 sync results are separate so a successful backend connection is not confused
