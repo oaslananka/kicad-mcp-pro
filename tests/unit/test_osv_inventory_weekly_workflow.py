@@ -56,11 +56,11 @@ def test_osv_weekly_inventory_is_pinned_and_uploads_all_findings() -> None:
     assert "--new=results.json" in reporter["with"]["scan-args"]
     assert "--output=results.sarif" in reporter["with"]["scan-args"]
     artifact = steps["Store auditable OSV SARIF for 5 days"]
-    assert artifact["uses"] == ("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a")
+    assert artifact["uses"] == ("actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9")
     assert artifact["with"]["if-no-files-found"] == "error"
     upload = steps["Publish every finding in GitHub Code Scanning"]
     assert upload["uses"] == (
-        "github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63"
+        "github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370"
     )
     assert upload["with"]["sarif_file"] == "results.sarif"
     # Independent override must be empty, so the weekly inventory continues
