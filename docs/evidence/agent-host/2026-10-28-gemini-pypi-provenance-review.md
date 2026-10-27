@@ -51,3 +51,39 @@ actual source-bound runtime acceptance are still outstanding.
 Follow-up: verify the package's PyPI attestation signature with a reviewed
 verifier, reproduce a *source-bound* isolated runtime, and collect genuine
 host-native readonly diagnostics before changing compatibility claims.
+
+## Follow-up native host and signed publisher evidence (same date)
+
+The original first-pass review above did **not** cryptographically verify
+PyPI's publisher claim; a subsequent independent bounded verification did.
+An isolated `pypi-attestations==0.0.30` `verify pypi --repository
+https://github.com/oaslananka/kicad-mcp-pro` invocation returned **OK** for
+both the 4.4.0 wheel and sdist. This verifies PyPI's signed publisher
+provenance for those artifacts, not a source-reproducible build or the exact
+wheel executed by any host. The SHA-256 digests in the table above were
+separately verified by direct HTTPS downloads.
+
+The actual **Gemini CLI 0.60.0** `gemini mcp list` command later exited 0 and
+reported `kicad` **Connected** when configured in disposable Linux HOME/XDG
+settings using the extension's exact `uvx --from kicad-mcp-pro==4.4.0
+kicad-mcp-pro --transport stdio` launch arguments and `readonly/default`.
+The inherited environment was cleared; Python 3.13.15, a temporary uv cache,
+a deliberately unbound KiCad IPC socket and no provider/model turn or user
+KiCad project were used. The settings were manually assembled to match the
+reviewed extension manifest; this **was not a new native extension-install
+probe or proof of extension precedence**. A separate same-method native
+connection run established the same result.
+
+For the latter run, both disposable uv cache copies of the 4.4.0 distribution
+matched **460 of 460** selected package code/metadata files, byte-for-byte,
+with the independently SHA-256-checked published wheel. `dist-info/RECORD`
+was present but excluded because the installer legitimately rewrites it.
+The raw native host output and cache were deleted after the observation; **no
+host-log SHA-256 or live executable process identity can be inferred**.
+
+[Sanitized, explicitly partial native Gemini observation](
+2026-10-28-linux-gemini-pinned-stdio-partial.json) separates host connection,
+package-cache identity, publisher verification and all the missing native
+`tools/call` / readonly inventory work. Neither a model-free native
+tool invocation nor independent running-process attestation was obtained.
+The six host catalog entries remain static / `not-run`; #1219 is open.
