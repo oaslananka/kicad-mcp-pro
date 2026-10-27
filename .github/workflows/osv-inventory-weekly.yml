@@ -32,7 +32,7 @@ jobs:
 
       - name: Scan all repository lockfiles with pinned OSV-Scanner 2.7.0
         id: scan
-        uses: google/osv-scanner-action/osv-scanner-action@0a65f82af05cd58cf587827b0bb0489548c18346
+        uses: google/osv-scanner-action/osv-scanner-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347
         env:
           GOTOOLCHAIN: auto
         with:
