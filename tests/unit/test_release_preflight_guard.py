@@ -410,6 +410,25 @@ def test_dependabot_npm_updates_respect_package_manager_boundaries() -> None:
         assert security_group["patterns"] == ["*"]
 
 
+def test_dependabot_docker_defers_only_incompatible_python_runtime_line() -> None:
+    config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+    docker = next(
+        item
+        for item in config["updates"]
+        if item["package-ecosystem"] == "docker" and item["directory"] == "/"
+    )
+    # Python 3.14 -> 3.15 is a Python feature-line migration, but looks like
+    # SemVer minor to Dependabot. Exclude a version range rather than semver-major.
+    assert docker["ignore"] == [{"dependency-name": "python", "versions": [">= 3.15.0"]}]
+    from packaging.specifiers import SpecifierSet
+
+    ignored = SpecifierSet(docker["ignore"][0]["versions"][0])
+    assert "3.14.10" not in ignored  # Safe 3.14 patch upgrades are still eligible.
+    assert "3.15.0" in ignored
+    assert "3.16.0" in ignored
+    assert docker["groups"]["containers-patch"]["update-types"] == ["patch"]
+
+
 def test_dependabot_groups_routine_and_major_updates_separately() -> None:
     config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
     updates = {
