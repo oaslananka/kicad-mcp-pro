@@ -16,7 +16,6 @@
     "aquasecurity/trivy-action",
     "astral-sh/setup-uv",
     "codecov/codecov-action",
-    "CodSpeedHQ/action",
     "docker/build-push-action",
     "docker/login-action",
     "docker/metadata-action",
@@ -48,11 +47,6 @@
     "codeql.yml": {
       "analyze": [
         "security-events"
-      ]
-    },
-    "codspeed.yml": {
-      "benchmarks": [
-        "id-token"
       ]
     },
     "docs.yml": {

@@ -28,6 +28,32 @@ def _sonar_properties() -> dict[str, list[str]]:
     return properties
 
 
+def test_retired_benchmark_service_has_no_ci_or_dependency_hooks() -> None:
+    """Local performance benchmarks remain usable without a hosted service."""
+    import json
+    import tomllib
+
+    config = json.loads((ROOT / ".github/actions-policy.json").read_text(encoding="utf-8"))
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert not (ROOT / ".github/workflows/codspeed.yml").exists()
+    assert not any(
+        "codspeed" in action.casefold() for action in config["allowed_action_repositories"]
+    )
+    assert "codspeed.yml" not in config["workflow_write_permissions"]
+    assert not any(
+        "codspeed" in dep.casefold() for dep in project["project"]["optional-dependencies"]["dev"]
+    )
+    assert "pytest-codspeed" not in lock
+    assert "codspeed" not in readme.casefold()
+    assert (ROOT / "benchmarks/conftest.py").is_file()
+    assert any(
+        "pytest-benchmark" in dep for dep in project["project"]["optional-dependencies"]["dev"]
+    )
+
+
 def test_actionlint_is_a_locked_python_dev_tool() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     checker = (ROOT / "scripts" / "check_workflows.py").read_text(encoding="utf-8")

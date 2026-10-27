@@ -1,8 +1,8 @@
-"""Shared fixtures for the CodSpeed benchmark suite.
+"""Shared fixtures for optional local pytest-benchmark performance checks.
 
-These benchmarks are run with ``pytest benchmarks/ --codspeed`` and are kept
-separate from ``tests/`` so the regular test, coverage, and latency-budget
-gates are unaffected.
+Run with uv run --all-extras --frozen pytest benchmarks/ -p no:cacheprovider.
+Keep this suite separate from regular tests and required CI to avoid runner
+noise masquerading as reliable performance history.
 """
 
 from __future__ import annotations

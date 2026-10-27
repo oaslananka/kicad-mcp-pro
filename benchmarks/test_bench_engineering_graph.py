@@ -12,7 +12,7 @@ from kicad_mcp.ir.engineering_graph import engineering_graph_diff
 from kicad_mcp.ir.engineering_graph_from_ir import graph_from_circuit, update_graph_from_circuit
 from kicad_mcp.ir.lint import lint_circuit
 
-PROJECT_KEY = "codspeed-benchmark"
+PROJECT_KEY = "local-performance-benchmark"
 
 
 def _build_circuit(n_components: int) -> IRCircuit:
