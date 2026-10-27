@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import shutil
 
@@ -42,12 +43,62 @@ class BoardSummary:
 
 
 @dataclass(frozen=True)
+class DrcFinding:
+    severity: str
+    check_type: str
+    description: str
+    objects: tuple[str, ...] = ()
+    location: tuple[float, float] | None = None
+
+
+@dataclass(frozen=True)
 class SavedDrcResult:
     errors: int
     warnings: int
     unconnected: int
     excluded: int
     kicad_version: str
+    findings: tuple[DrcFinding, ...] = ()
+    coordinate_units: str = "mm"
+
+
+def _read_drc_finding(entry: dict[str, Any]) -> DrcFinding:
+    items = entry.get("items", [])
+    if not isinstance(items, list):
+        raise RuntimeError("KiCad DRC report has malformed affected items.")
+    affected: list[str] = []
+    location = None
+    for item in items[:8]:
+        if not isinstance(item, dict):
+            raise RuntimeError("KiCad DRC report has malformed affected items.")
+        descriptor = item.get("description")
+        if isinstance(descriptor, str) and descriptor:
+            affected.append(descriptor[:180].replace("\n", " "))
+        pos = item.get("pos")
+        if location is None and isinstance(pos, dict):
+            x, y = pos.get("x"), pos.get("y")
+            if (
+                isinstance(x, (int, float))
+                and not isinstance(x, bool)
+                and isinstance(y, (int, float))
+                and not isinstance(y, bool)
+                and math.isfinite(x)
+                and math.isfinite(y)
+            ):
+                location = (float(x), float(y))
+    check_type = entry.get("type")
+    description = entry.get("description")
+    if not isinstance(check_type, str):
+        check_type = "unknown_check"
+    if not isinstance(description, str):
+        description = "Description unavailable"
+    return DrcFinding(
+        severity=entry["severity"],
+        check_type=check_type[:80],
+        description=description[:300].replace("\n", " "),
+        objects=tuple(affected),
+        location=location,
+    )
 
 
 def _saved_board_file(summary: BoardSummary) -> Path:
@@ -124,12 +175,24 @@ def run_saved_board_drc(
         for v in violations + unconnected
     ):
         raise RuntimeError("KiCad DRC report contains unknown severity.")
+    units = payload.get("coordinate_units", "mm")
+    if units not in ("mm", "in", "mils"):
+        raise RuntimeError("KiCad DRC report uses unexpected coordinate units.")
+    ordered = (
+        [v for v in violations if v["severity"] == "error"]
+        + list(unconnected)
+        + [v for v in violations if v["severity"] == "warning"]
+        + [v for v in violations if v["severity"] == "exclusion"]
+    )
+    findings = tuple(_read_drc_finding(entry) for entry in ordered)
     return SavedDrcResult(
         errors=sum(v["severity"] == "error" for v in violations),
         warnings=sum(v["severity"] == "warning" for v in violations),
         unconnected=len(unconnected),
         excluded=sum(v["severity"] == "exclusion" for v in violations),
         kicad_version=version,
+        findings=findings,
+        coordinate_units=units,
     )
 
 

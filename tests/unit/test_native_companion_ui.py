@@ -378,6 +378,51 @@ def test_saved_drc_is_opt_in_and_displays_saved_only_report(
     frame.drc_btn.Enable.assert_called_with(True)
 
 
+def test_drc_findings_open_read_only_modal_and_clear_on_failure(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, wx = ui
+    frame = _ready(ui, monkeypatch)
+    finding = module.DrcFinding(
+        "error",
+        "shorting_items",
+        "Different nets shorted",
+        ("Pad 2 [GND] of R1",),
+        (11.5, 9.25),
+    )
+    result = module.SavedDrcResult(1, 0, 0, 0, "10.0.7", (finding,), "mm")
+    frame._drc_done(result, (frame.board.name, frame.board.project_path))
+    frame.findings_btn.SetLabel.assert_called_with("View 1 DRC findings")
+    frame.findings_btn.Show.assert_called_once_with()
+    wx.Dialog = Mock(return_value=Mock())
+    wx.ListCtrl = Mock(return_value=Mock())
+    wx.TextCtrl = Mock(return_value=Mock())
+    wx.LC_REPORT = 1
+    wx.LC_SINGLE_SEL = 2
+    wx.TE_MULTILINE = 4
+    wx.TE_READONLY = 8
+    wx.TE_WORDWRAP = 16
+    wx.EVT_LIST_ITEM_SELECTED = 102
+    wx.ALIGN_RIGHT = 32
+    wx.ID_OK = 1
+    frame.show_drc_findings(None)
+    wx.ListCtrl.assert_called_once()
+    assert any(
+        call.args[1:] == (1, "Shorting items")
+        for call in wx.ListCtrl.return_value.SetItem.call_args_list
+    )
+    wx.TextCtrl.assert_called_once()
+    assert wx.TextCtrl.call_args.kwargs["style"] & wx.TE_READONLY
+    assert "Pad 2 [GND] of R1" in wx.TextCtrl.call_args.kwargs["value"]
+    assert "11.500, 9.250 mm" in wx.TextCtrl.call_args.kwargs["value"]
+    wx.Dialog.return_value.ShowModal.assert_called_once_with()
+    wx.Dialog.return_value.Destroy.assert_called_once_with()
+    frame._drc_done(None, None)
+    frame.findings_btn.Hide.assert_called()
+    frame.show_drc_findings(None)
+    assert wx.Dialog.call_count == 1
+
+
 def test_saved_drc_failure_never_displays_false_success(
     ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -389,6 +434,22 @@ def test_saved_drc_failure_never_displays_false_success(
     )
     frame.check_saved_drc(None)
     frame.drc_label.SetLabel.assert_called_with("DRC unavailable · saved file not checked")
+
+
+def test_drc_snapshot_cleared_when_active_board_disappears(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    frame = _ready(ui, monkeypatch)
+    result = module.SavedDrcResult(
+        1, 0, 0, 0, "10.0.7", (module.DrcFinding("error", "shorting_items", "short"),)
+    )
+    frame._drc_done(result, (frame.board.name, frame.board.project_path))
+    monkeypatch.setattr(module, "board_summary", Mock(side_effect=OSError("board closed")))
+    frame.refresh_board()
+    assert frame._drc_result is None
+    frame.findings_btn.Hide.assert_called()
+    frame.drc_label.SetLabel.assert_called_with("DRC snapshot unavailable · no active board")
 
 
 def test_saved_drc_disables_itself_when_no_board(

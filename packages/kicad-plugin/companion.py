@@ -21,6 +21,7 @@ except ImportError:
 
 from companion_core import (
     BoardSummary,
+    DrcFinding,
     SavedDrcResult,
     backend_status,
     board_summary,
@@ -66,6 +67,27 @@ def _display_board_name(name: str, limit: int = 34) -> str:
     return f"{name[:left]}…{name[-(limit - left - 1) :]}"
 
 
+def _friendly_rule_name(code: str) -> str:
+    return code.replace("_", " ").strip().capitalize() or "Unknown check"
+
+
+def _finding_detail(finding: DrcFinding, units: str) -> str:
+    coords = (
+        f"{finding.location[0]:.3f}, {finding.location[1]:.3f} {units}"
+        if finding.location is not None
+        else "Not provided by KiCad"
+    )
+    objects = "\n".join(f"• {name}" for name in finding.objects) or "Not provided by KiCad"
+    return (
+        f"{finding.severity.upper()} · {_friendly_rule_name(finding.check_type)}\n"
+        f"{finding.description}\n\n"
+        f"Reported location: {coords}\n"
+        f"Affected items (as reported by KiCad):\n{objects}\n\n"
+        "Saved PCB snapshot only — unsaved edits excluded. "
+        "Reported item coordinates are not verified live-object targets."
+    )
+
+
 def _surface(parent: wx.Panel) -> tuple[wx.Panel, wx.BoxSizer]:
     surface = wx.Panel(parent)
     surface.SetBackgroundColour(wx.Colour(SURFACE))
@@ -94,6 +116,7 @@ class CompanionFrame(wx.Frame):
         self._sync_busy = False
         self._drc_busy = False
         self._drc_board: tuple[str, str] | None = None
+        self._drc_result: SavedDrcResult | None = None
 
         panel = wx.Panel(self)
         panel.SetBackgroundColour(wx.Colour(BACKGROUND))
@@ -146,6 +169,9 @@ class CompanionFrame(wx.Frame):
         self.drc_label = _text(panel, "Not checked", size=9, color=SECONDARY)
         self.drc_label.Wrap(320)
         layout.Add(self.drc_label, 0, wx.EXPAND | wx.BOTTOM, 2)
+        self.findings_btn = wx.Button(panel, label="View DRC findings")
+        layout.Add(self.findings_btn, 0, wx.EXPAND | wx.BOTTOM, 5)
+        self.findings_btn.Hide()
         layout.Add(
             _text(panel, "Saved file only · unsaved edits excluded", size=9, color=SECONDARY),
             0,
@@ -198,6 +224,7 @@ class CompanionFrame(wx.Frame):
         self.refresh_btn.Bind(wx.EVT_BUTTON, lambda _event: self.refresh())
         self.sync_btn.Bind(wx.EVT_BUTTON, self.sync_context)
         self.drc_btn.Bind(wx.EVT_BUTTON, self.check_saved_drc)
+        self.findings_btn.Bind(wx.EVT_BUTTON, self.show_drc_findings)
         self.repair_btn.Bind(wx.EVT_BUTTON, self.repair_dependencies)
         self.Bind(wx.EVT_ACTIVATE, self.on_activate)
         wx.CallAfter(self.refresh)
@@ -228,6 +255,8 @@ class CompanionFrame(wx.Frame):
         identity = (summary.name, summary.project_path)
         if self._drc_board is not None and identity != self._drc_board:
             self._drc_board = None
+            self._drc_result = None
+            self.findings_btn.Hide()
             self.drc_label.SetLabel("Board changed · check saved PCB again")
             self.drc_label.SetForegroundColour(wx.Colour(SECONDARY))
         self.board = summary
@@ -292,7 +321,12 @@ class CompanionFrame(wx.Frame):
             summary = board_summary()
         except ModuleNotFoundError as exc:
             self.board = None
+            self._drc_result = None
+            self._drc_board = None
+            self.findings_btn.Hide()
             self.selected_panel.Hide()
+            self.drc_label.SetLabel("DRC snapshot unavailable · no active board")
+            self.drc_label.SetForegroundColour(wx.Colour(SECONDARY))
             self.board_label.SetLabel("KiCad IPC needs setup")
             self.board_details.SetLabel(f"Missing Python module: {exc.name or 'unknown'}")
             self.selection_label.SetLabel("Choose Repair below to restore board access.")
@@ -300,8 +334,13 @@ class CompanionFrame(wx.Frame):
             self.board_label.SetForegroundColour(wx.Colour(WARNING))
         except Exception:
             self.board = None
+            self._drc_result = None
+            self._drc_board = None
+            self.findings_btn.Hide()
             self.selected_panel.Hide()
             self.repair_btn.Hide()
+            self.drc_label.SetLabel("DRC snapshot unavailable · no active board")
+            self.drc_label.SetForegroundColour(wx.Colour(SECONDARY))
             self.board_label.SetLabel("No active PCB")
             self.board_details.SetLabel("Open a saved board and enable KiCad's IPC API.")
             self.selection_label.SetLabel("")
@@ -320,6 +359,8 @@ class CompanionFrame(wx.Frame):
         if self._drc_busy or self.board is None:
             return
         self._drc_busy = True
+        self._drc_result = None
+        self.findings_btn.Hide()
         self.drc_btn.Enable(False)
         self.drc_label.SetLabel("Checking saved PCB copy…")
         self.drc_label.SetForegroundColour(wx.Colour(SECONDARY))
@@ -339,14 +380,24 @@ class CompanionFrame(wx.Frame):
         self._drc_busy = False
         if result is None or identity is None:
             self._drc_board = None
+            self._drc_result = None
+            self.findings_btn.Hide()
             self.drc_label.SetLabel("DRC unavailable · saved file not checked")
             self.drc_label.SetForegroundColour(wx.Colour(WARNING))
         elif self.board is None or (self.board.name, self.board.project_path) != identity:
             self._drc_board = None
+            self._drc_result = None
+            self.findings_btn.Hide()
             self.drc_label.SetLabel("Board changed · discard old DRC result")
             self.drc_label.SetForegroundColour(wx.Colour(WARNING))
         else:
             self._drc_board = identity
+            self._drc_result = result
+            if result.findings:
+                self.findings_btn.SetLabel(f"View {len(result.findings)} DRC findings")
+                self.findings_btn.Show()
+            else:
+                self.findings_btn.Hide()
             self.drc_label.SetLabel(
                 f"Saved PCB: {result.errors} errors · {result.warnings} warnings · "
                 f"{result.unconnected} unconnected"
@@ -363,6 +414,76 @@ class CompanionFrame(wx.Frame):
             )
         self.drc_btn.Enable(self.board is not None)
         self.Layout()
+
+    def show_drc_findings(self, _event: wx.CommandEvent) -> None:
+        """Read-only drilldown. Does NOT select/move objects in the KiCad editor."""
+        result = self._drc_result
+        if result is None or not result.findings or self._drc_board is None:
+            return
+        dialog = wx.Dialog(self, title="Saved-board DRC findings", size=(790, 540))
+        try:
+            dialog.SetMinSize((640, 440))
+            panel = wx.Panel(dialog)
+            panel.SetBackgroundColour(wx.Colour(BACKGROUND))
+            layout = wx.BoxSizer(wx.VERTICAL)
+            layout.Add(
+                _text(panel, "KiCad DRC · saved PCB snapshot", size=13, bold=True),
+                0,
+                wx.EXPAND | wx.BOTTOM,
+                7,
+            )
+            layout.Add(
+                _text(
+                    panel,
+                    "Read-only results. Unsaved edits are not checked.",
+                    size=9,
+                    color=SECONDARY,
+                ),
+                0,
+                wx.EXPAND | wx.BOTTOM,
+                12,
+            )
+            table = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.LC_SINGLE_SEL)
+            for index, (title, width) in enumerate(
+                (("Severity", 115), ("DRC check", 265), ("Reported location", 185))
+            ):
+                table.InsertColumn(index, title, width=width)
+            for index, finding in enumerate(result.findings):
+                row = table.InsertItem(index, finding.severity.upper())
+                table.SetItem(row, 1, _friendly_rule_name(finding.check_type))
+                if finding.location is not None:
+                    coordinates = (
+                        f"{finding.location[0]:.2f}, {finding.location[1]:.2f} "
+                        f"{result.coordinate_units}"
+                    )
+                else:
+                    coordinates = "Not reported"
+                table.SetItem(row, 2, coordinates)
+            layout.Add(table, 1, wx.EXPAND | wx.BOTTOM, 10)
+            details = wx.TextCtrl(
+                panel,
+                value=_finding_detail(result.findings[0], result.coordinate_units),
+                style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP,
+                size=(-1, 134),
+            )
+            table.Bind(
+                wx.EVT_LIST_ITEM_SELECTED,
+                lambda event: details.SetValue(
+                    _finding_detail(result.findings[event.GetIndex()], result.coordinate_units)
+                ),
+            )
+            table.Select(0)
+            layout.Add(details, 0, wx.EXPAND | wx.BOTTOM, 12)
+            close = wx.Button(panel, label="Close")
+            close.Bind(wx.EVT_BUTTON, lambda _event: dialog.EndModal(wx.ID_OK))
+            layout.Add(close, 0, wx.ALIGN_RIGHT)
+            panel.SetSizer(layout)
+            outer = wx.BoxSizer(wx.VERTICAL)
+            outer.Add(panel, 1, wx.EXPAND | wx.ALL, 18)
+            dialog.SetSizer(outer)
+            dialog.ShowModal()
+        finally:
+            dialog.Destroy()
 
     def _update_connection_indicator(self) -> None:
         online = self.ready and self.board is not None

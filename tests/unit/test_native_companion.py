@@ -143,6 +143,100 @@ def test_saved_drc_disallows_invalid_or_mismatched_json(
         companion_core.run_saved_board_drc(summary)
 
 
+def test_saved_drc_preserves_rule_item_coordinates_and_rejects_non_finite_positions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+    from types import SimpleNamespace
+
+    import companion_core
+
+    (tmp_path / "safe.kicad_pcb").write_text("board", encoding="utf-8")
+    summary = companion_core.BoardSummary("safe.kicad_pcb", "demo", 1, 1, 0, str(tmp_path))
+
+    def sample_cli(argv: list[str], **_kw: object) -> SimpleNamespace:
+        Path(argv[-2]).write_text(
+            json.dumps(
+                {
+                    "source": "safe.kicad_pcb",
+                    "kicad_version": "10.0.7",
+                    "coordinate_units": "mm",
+                    "violations": [
+                        {
+                            "severity": "warning",
+                            "type": "silk_over_copper",
+                            "description": "Silkscreen overlap",
+                            "items": [{"description": "Pad 1 of R1", "pos": {"x": "nan", "y": 2}}],
+                        },
+                        {
+                            "severity": "error",
+                            "type": "shorting_items",
+                            "description": "Different nets shorted",
+                            "items": [
+                                {"description": "Pad 2 [GND] of R1", "pos": {"x": 11.5, "y": 9.25}}
+                            ],
+                        },
+                    ],
+                    "unconnected_items": [
+                        {
+                            "severity": "error",
+                            "type": "unconnected_items",
+                            "description": "Missing connection",
+                            "items": [
+                                {"description": "Track [LED_A] F.Cu", "pos": {"x": 12, "y": 10}}
+                            ],
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(companion_core.subprocess, "run", sample_cli)
+    result = companion_core.run_saved_board_drc(summary)
+    assert len(result.findings) == 3
+    assert [finding.check_type for finding in result.findings] == [
+        "shorting_items",
+        "unconnected_items",
+        "silk_over_copper",
+    ]
+    assert result.findings[0].objects == ("Pad 2 [GND] of R1",)
+    assert result.findings[0].location == (11.5, 9.25)
+    assert result.findings[-1].location is None  # no invented coordinate
+    assert result.coordinate_units == "mm"
+
+
+def test_saved_drc_fails_closed_on_invalid_affected_item_structure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+    from types import SimpleNamespace
+
+    import companion_core
+
+    (tmp_path / "safe.kicad_pcb").write_text("board", encoding="utf-8")
+    summary = companion_core.BoardSummary("safe.kicad_pcb", "demo", 1, 1, 0, str(tmp_path))
+
+    def bad_cli(argv: list[str], **_kw: object) -> SimpleNamespace:
+        Path(argv[-2]).write_text(
+            json.dumps(
+                {
+                    "source": "safe.kicad_pcb",
+                    "kicad_version": "10.0.7",
+                    "violations": [{"severity": "error", "items": ["not-an-object"]}],
+                    "unconnected_items": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(companion_core.subprocess, "run", bad_cli)
+    with pytest.raises(RuntimeError, match="malformed affected items"):
+        companion_core.run_saved_board_drc(summary)
+
+
 def test_saved_drc_rejects_concurrently_changed_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

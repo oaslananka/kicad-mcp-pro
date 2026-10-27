@@ -51,9 +51,13 @@ It never runs automatically, refills zones, saves the editor board or modifies
 production design data. The report displays separate violations (errors and
 warnings) and unconnected items and is **not** a release/manufacturing gate;
 unsaved KiCad edits and schematic parity are NOT included. The report is a
-snapshot from the latest manual check, not a live DRC state. The KiCad CLI must
-be on the companion's PATH; missing/unusable CLI, unsupported reports or source
-file changes fail closed as **DRC unavailable**. Local temporary reports are
+snapshot from the latest manual check, not a live DRC state. When KiCad provides
+individual findings, **View DRC findings** opens a read-only table of rule types,
+severity and reported X/Y coordinates, with the full KiCad item descriptions
+for the selected row. No unverified footprint matching or automatic GUI jump,
+selection, edit, or correction is performed; absent locations remain absent.
+The KiCad CLI must be on the companion's PATH; missing/unusable CLI,
+unsupported reports or source file changes fail closed as **DRC unavailable**. Local temporary reports are
 deleted after parsing. This is deliberately independent of MCP backend health.
 Refresh and the local Dashboard are secondary. The dependency-repair
 button only appears when the IPC Python runtime actually needs it. Status and
