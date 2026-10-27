@@ -186,6 +186,29 @@ and inspect the source/host evidence. Isolated config and unbound IPC do not
 prove universal OS isolation, real KiCad GUI interoperability, or provider
 behavior. The other host/transport pairs remain unverified.
 
+## Second model-free Codex readonly replay — 2026-10-27 (#1219)
+
+An independently started Codex CLI **0.163.0** Linux/stdio/default/readonly
+app-server session repeated native Skill discovery (**7/7**), live MCP
+connection and source-checked readonly tool inventory (**24**), and a real
+`mcpServer/tool/call` invocation of `kicad_get_server_info`. The tested source
+was protected `main@d910e24ad864a1fcf92947fcdefbe0a60c099ff2`, whose
+committed `src` tree exactly matches the previous reviewed source
+`57c0efb1f072f5fffbf1f527ee2348448705e32d`. Both actual executable
+SHA-256 digests were verified before running. The pinned Python 3.13.17
+dependencies were prepared in a disposable worktree using cached **uv 0.13.5**
+with `--offline --frozen --no-dev`; no provider call, model turn, user design
+file, ambient KiCad IPC or persistent user-project modification occurred.
+
+The [2026-10-27 sanitized report](../evidence/agent-host/2026-10-27-linux-codex-native-smoke.json)
+links by SHA-256 to its [sanitized log](../evidence/agent-host/2026-10-27-linux-codex-native-sanitized-log.json).
+Both pass the same strict structural/log binding checker and a checked-in
+regression. This is a **repeat host-native observation on the same Linux
+platform**, not independent binary-source provenance attestation, complete GUI
+compatibility or a claim about any other host/OS/transport. The native checker
+still reports `structurally_complete_not_attested`; the six-host catalog
+remains `repository-static` / `not-run` pending independent acceptance.
+
 ## Model-free OpenCode native Skill discovery — 2026-10-25 (#1219)
 
 The actual **OpenCode 1.18.31** CLI on Windows ran

@@ -156,3 +156,22 @@ def test_fixed_archive_metadata_mismatch_rejected_even_without_log(
     result = json.loads(capsys.readouterr().out)
     assert result["reason_codes"] == ["invalid_or_missing_evidence"]
     assert result["establishes_real_host_compatibility"] is False
+
+
+def test_reviewed_codex_replay_archive_is_structural_not_attestation(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert (
+        gate.main(
+            [
+                "--report",
+                "2026-10-27-linux-codex-native-smoke.json",
+                "--verify-sanitized-log",
+            ]
+        )
+        == 0
+    )
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason_codes"] == []
+    assert result["status"] == "structurally_complete_not_attested"
+    assert result["establishes_real_host_compatibility"] is False

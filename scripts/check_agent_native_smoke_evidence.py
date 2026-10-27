@@ -361,6 +361,7 @@ def _companion_sanitized_log_path(report: Path, fields: dict[str, object]) -> Pa
 _REVIEWED_ARCHIVE_DIR = Path(__file__).resolve().parents[1] / "docs/evidence/agent-host"
 _REVIEWED_ARCHIVE_NAMES = (
     "2026-10-26-linux-codex-native-smoke.json",
+    "2026-10-27-linux-codex-native-smoke.json",
     "2026-10-26-windows-codex-native-smoke.json",
 )
 _REVIEWED_ARCHIVE_REPORTS: dict[str, Path] = {}
