@@ -93,6 +93,59 @@ def test_single_selected_footprint_inspector_reads_value_pads_and_net_names(tmp_
     board.get_selection.assert_called_once_with()
 
 
+def test_single_footprint_same_net_lists_other_references_without_routing_claims(
+    tmp_path: Path,
+) -> None:
+    def footprint(ref: str, *net_names: str) -> Mock:
+        item = Mock(spec=["reference_field", "definition"])
+        item.reference_field.text.value = ref
+        pads = []
+        for name in net_names:
+            pad = Mock()
+            pad.net.name = name
+            pads.append(pad)
+        item.definition.pads = pads
+        return item
+
+    r1 = footprint("R1", "LED_A", "LED_A", "")
+    led1 = footprint("LED1", "LED_A")
+    c1 = footprint("C1", "GND")
+    board = Mock()
+    board.name = "clean-led.kicad_pcb"
+    board.get_project.return_value.name = "clean-led"
+    board.get_project.return_value.path = str(tmp_path / "clean-led.kicad_pro")
+    board.get_footprints.return_value = [c1, led1, r1]
+    board.get_nets.return_value = [Mock(), Mock()]
+    board.get_selection.return_value = [r1]
+    client = Mock()
+    client.get_board.return_value = board
+
+    summary = board_summary(lambda: client)
+    assert summary.selected_reference == "R1"
+    assert summary.selected_nets == ("LED_A",)
+    assert summary.selected_net_peers == (("LED_A", ("LED1",)),)
+    board.get_footprints.assert_called_once()
+
+
+def test_same_net_peers_empty_for_unassigned_only_selection(tmp_path: Path) -> None:
+    selected = Mock(spec=["reference_field", "definition"])
+    selected.reference_field.text.value = "U1"
+    pad = Mock()
+    pad.net.name = ""
+    selected.definition.pads = [pad]
+    board = Mock()
+    board.name = "floating.kicad_pcb"
+    board.get_project.return_value.name = "floating"
+    board.get_project.return_value.path = str(tmp_path / "floating.kicad_pro")
+    board.get_footprints.return_value = [selected]
+    board.get_nets.return_value = []
+    board.get_selection.return_value = [selected]
+    client = Mock()
+    client.get_board.return_value = board
+
+    assert board_summary(lambda: client).selected_net_peers == ()
+
+
 def test_multiple_selection_does_not_show_first_footprint_as_sole_inspected_item(
     tmp_path: Path,
 ) -> None:
@@ -114,6 +167,7 @@ def test_multiple_selection_does_not_show_first_footprint_as_sole_inspected_item
     assert result.selected_reference == ""
     assert result.selected_footprint == ""
     assert result.selected_nets == ()
+    assert result.selected_net_peers == ()
 
 
 def test_unavailable_kicad_reports_failure() -> None:

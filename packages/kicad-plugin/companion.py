@@ -129,6 +129,8 @@ class CompanionFrame(wx.Frame):
         selection_content.Add(self.footprint_label, 0, wx.BOTTOM, 4)
         self.net_label = _text(self.selected_panel, "", size=9, color=SECONDARY)
         selection_content.Add(self.net_label, 0)
+        self.peer_label = _text(self.selected_panel, "", size=9, color=ACCENT)
+        selection_content.Add(self.peer_label, 0, wx.TOP, 6)
         layout.Add(self.selected_panel, 0, wx.EXPAND | wx.BOTTOM, 12)
         self.selected_panel.Hide()
 
@@ -239,6 +241,22 @@ class CompanionFrame(wx.Frame):
             else ""
         )
         self.net_label.SetLabel(_display_board_name(f"Nets: {nets}{extra}", 47))
+        if summary.selected_net_peers:
+            rows = []
+            for net, refs in summary.selected_net_peers[:2]:
+                view = ", ".join(refs[:2])
+                if len(refs) > 2:
+                    view += f" +{len(refs) - 2} more"
+                rows.append(f"{net}: {view}")
+            if len(summary.selected_net_peers) > 2:
+                rows.append(f"+{len(summary.selected_net_peers) - 2} other nets")
+            peer_info = "Also assigned: " + "; ".join(rows)
+        elif summary.selected_nets:
+            peer_info = "No other footprints share these net labels"
+        else:
+            peer_info = "No net labels to compare"
+        self.peer_label.SetLabel(_display_board_name(peer_info, 47))
+        self.peer_label.SetToolTip(peer_info + " — Shared net labels do not prove routed copper.")
         self.selected_panel.Show()
 
     def refresh_board(self) -> None:

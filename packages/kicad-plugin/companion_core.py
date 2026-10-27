@@ -33,6 +33,29 @@ class BoardSummary:
     selected_pad_count: int | None = None
     selected_nets: tuple[str, ...] = ()
     selected_unconnected_pads: int = 0
+    # Logical pad net assignments, NOT verified copper connectivity.
+    selected_net_peers: tuple[tuple[str, tuple[str, ...]], ...] = ()
+
+
+def _footprint_ref(item: object) -> str:
+    reference = getattr(item, "reference", None)
+    if not isinstance(reference, str) or not reference:
+        field = getattr(item, "reference_field", None)
+        reference = getattr(getattr(field, "text", None), "value", None)
+    return reference if isinstance(reference, str) else ""
+
+
+def _pad_net_names(item: object) -> set[str]:
+    definition = getattr(item, "definition", None)
+    pads = getattr(definition, "pads", None)
+    if not isinstance(pads, (list, tuple)):
+        return set()
+    names = set()
+    for pad in pads:
+        net_name = getattr(getattr(pad, "net", None), "name", None)
+        if isinstance(net_name, str) and net_name:
+            names.add(net_name)
+    return names
 
 
 def board_summary(kicad_factory: Callable[[], Any] | None = None) -> BoardSummary:
@@ -45,22 +68,19 @@ def board_summary(kicad_factory: Callable[[], Any] | None = None) -> BoardSummar
     board = client.get_board()
     project = board.get_project()
     selection = board.get_selection()
+    footprints = board.get_footprints()
     selected_reference = ""
     selected_value = ""
     selected_footprint = ""
     selected_pad_count: int | None = None
     selected_nets: tuple[str, ...] = ()
     selected_unconnected_pads = 0
+    selected_net_peers: tuple[tuple[str, tuple[str, ...]], ...] = ()
     # A multi-selection must not falsely attribute the first footprint's
     # value and nets to all selected items, or publish its reference as sole.
     if len(selection) == 1:
         item = selection[0]
-        reference = getattr(item, "reference", None)
-        if not isinstance(reference, str) or not reference:
-            field = getattr(item, "reference_field", None)
-            reference = getattr(getattr(field, "text", None), "value", None)
-        if isinstance(reference, str) and reference:
-            selected_reference = reference
+        selected_reference = _footprint_ref(item)
 
         definition = getattr(item, "definition", None)
         if selected_reference and definition is not None:
@@ -85,10 +105,25 @@ def board_summary(kicad_factory: Callable[[], Any] | None = None) -> BoardSummar
                     else:
                         selected_unconnected_pads += 1
                 selected_nets = tuple(sorted(net_names))
+
+        # Scan the already-fetched footprint collection once. A shared net
+        # label means logical assignment, never routed copper or DRC success.
+        if selected_reference and selected_nets:
+            selected_names = set(selected_nets)
+            net_peers: dict[str, set[str]] = {net: set() for net in selected_nets}
+            for other in footprints:
+                other_ref = _footprint_ref(other)
+                if not other_ref or other_ref == selected_reference:
+                    continue
+                for name in _pad_net_names(other) & selected_names:
+                    net_peers[name].add(other_ref)
+            selected_net_peers = tuple(
+                (net, tuple(sorted(refs))) for net, refs in sorted(net_peers.items()) if refs
+            )
     return BoardSummary(
         name=str(board.name),
         project=str(project.name),
-        footprints=len(board.get_footprints()),
+        footprints=len(footprints),
         nets=len(board.get_nets()),
         selected=len(selection),
         project_path=str(getattr(project, "path", "")),
@@ -98,6 +133,7 @@ def board_summary(kicad_factory: Callable[[], Any] | None = None) -> BoardSummar
         selected_pad_count=selected_pad_count,
         selected_nets=selected_nets,
         selected_unconnected_pads=selected_unconnected_pads,
+        selected_net_peers=selected_net_peers,
     )
 
 

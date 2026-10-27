@@ -293,6 +293,56 @@ def test_selected_footprint_card_shows_read_only_engineering_details(
     frame.net_label.SetLabel.assert_called_with("Nets: LED_A  ·  1 unassigned pad")
 
 
+def test_same_net_peers_are_inspected_without_claiming_copper_connection(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    current = module.BoardSummary(
+        "board.kicad_pcb",
+        "demo",
+        3,
+        2,
+        1,
+        "",
+        "R1",
+        "1k",
+        "Resistor:0603",
+        2,
+        ("LED_A",),
+        1,
+        (("LED_A", ("LED1",)),),
+    )
+    monkeypatch.setattr(module, "board_summary", lambda: current)
+    monkeypatch.setattr(module, "backend_status", lambda: (True, "Connected"))
+    frame = module.CompanionFrame()
+    frame.peer_label.SetLabel.assert_called_with("Also assigned: LED_A: LED1")
+    assert "do not prove routed copper" in frame.peer_label.SetToolTip.call_args.args[0]
+
+
+def test_no_shared_net_does_not_invent_neighbours(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    current = module.BoardSummary(
+        "board.kicad_pcb",
+        "demo",
+        2,
+        1,
+        1,
+        "",
+        "R1",
+        "1k",
+        "Resistor:0603",
+        2,
+        ("LED_A",),
+        1,
+    )
+    monkeypatch.setattr(module, "board_summary", lambda: current)
+    monkeypatch.setattr(module, "backend_status", lambda: (True, "Connected"))
+    frame = module.CompanionFrame()
+    frame.peer_label.SetLabel.assert_called_with("No other footprints share these net labels")
+
+
 def test_selected_footprint_card_hidden_after_selection_cleared(
     ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
 ) -> None:
