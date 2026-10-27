@@ -108,8 +108,58 @@ def test_version_sync_renders_extension_without_modifying_source_file() -> None:
         (ROOT / "integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json").read_text()
     )
     assert content["version"] == metadata_sync._project_metadata()["version"]
+    assert content["mcpServers"]["kicad"]["args"] == [
+        "--from",
+        "kicad-mcp-pro==" + content["version"],
+        "kicad-mcp-pro",
+        "--transport",
+        "stdio",
+    ]
     assert content["mcpServers"]["kicad"]["env"]["KICAD_MCP_OPERATING_MODE"] == "readonly"
     assert "GEMINI_EXTENSION" in metadata_sync._planned_updates.__code__.co_names
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["kicad-mcp-pro", "--transport", "stdio"],
+        ["--from", "kicad-mcp-pro==4.3.0", "kicad-mcp-pro", "--transport", "stdio"],
+        ["--from", "kicad-mcp-pro>=4.4.0", "kicad-mcp-pro", "--transport", "stdio"],
+        [
+            "--from",
+            "kicad-mcp-pro==4.4.0",
+            "kicad-mcp-pro",
+            "--transport",
+            "stdio",
+            "--unsafe",
+        ],
+    ],
+)
+def test_gemini_rejects_floating_wrong_or_unreviewed_package(
+    args: list[str], tmp_path: Path
+) -> None:
+    repo = _temp_host_repo(tmp_path)
+    relative = "integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json"
+    _update_json(repo, relative, lambda data: data["mcpServers"]["kicad"].update(args=args))
+    failures = verifier.check(repo)
+    assert any("Unsafe or unexpected kicad MCP launch" in msg for msg in failures)
+    assert any("Gemini extension must launch" in msg for msg in failures)
+
+
+def test_gemini_version_sync_updates_runtime_package_pin(monkeypatch: pytest.MonkeyPatch) -> None:
+    metadata = metadata_sync._project_metadata()
+    monkeypatch.setattr(
+        metadata_sync, "_project_metadata", lambda: {**metadata, "version": "9.8.7"}
+    )
+    planned = json.loads(metadata_sync._planned_updates()[metadata_sync.GEMINI_EXTENSION])
+    assert planned["version"] == "9.8.7"
+    assert planned["mcpServers"]["kicad"]["args"] == [
+        "--from",
+        "kicad-mcp-pro==9.8.7",
+        "kicad-mcp-pro",
+        "--transport",
+        "stdio",
+    ]
 
 
 def test_missing_catalog_fails_closed(tmp_path: Path) -> None:

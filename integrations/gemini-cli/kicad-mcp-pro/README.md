@@ -3,6 +3,18 @@
 This **local, opt-in** Gemini CLI extension bundles the versioned KiCad MCP
 server entry point and seven portable Agent Skills. It is **not** yet a verified
 public extension-gallery submission. It never installs KiCad, Python or `uv`.
+The MCP launcher resolves the **exact matching published PyPI version** via
+`uvx --from kicad-mcp-pro==VERSION kicad-mcp-pro --transport stdio`, where
+`VERSION` is filled from the extension's own package version, rather than
+floating to a newer server. The metadata synchronization task updates the
+pin alongside the extension version for subsequent releases. An unpublished
+matching release fails closed instead of silently running a different version.
+
+A pinned package *version* is not a wheel checksum, transitive dependency lock,
+or independent provenance attestation. For formal host acceptance, review the
+published artifact digest and provenance against its source commit and reproduce
+with a separate reviewed, source-locked runtime. Connecting via this extension
+alone does not prove that independent source binding or host-native tool calls.
 
 ## Prerequisites
 
