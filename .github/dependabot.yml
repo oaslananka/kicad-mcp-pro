@@ -67,39 +67,6 @@ updates:
           - "*"
 
   - package-ecosystem: "npm"
-    directory: "/integrations/chatgpt-app/apps-sdk"
-    schedule:
-      interval: "weekly"
-      day: "tuesday"
-      time: "04:00"
-      timezone: "Europe/Istanbul"
-    cooldown:
-      default-days: 5
-    labels:
-      - "dependencies"
-    open-pull-requests-limit: 2
-    commit-message:
-      prefix: "chore(deps)"
-    groups:
-      npm-chatgpt-app-minor-patch:
-        applies-to: "version-updates"
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
-      npm-chatgpt-app-major:
-        applies-to: "version-updates"
-        patterns:
-          - "*"
-        update-types:
-          - "major"
-      npm-chatgpt-app-security:
-        applies-to: "security-updates"
-        patterns:
-          - "*"
-
-  - package-ecosystem: "npm"
     directory: "/packages/kicad-fixtures"
     schedule:
       interval: "weekly"

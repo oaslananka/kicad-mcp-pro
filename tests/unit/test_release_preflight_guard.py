@@ -317,7 +317,8 @@ def test_dependabot_covers_repository_dependency_ecosystems_and_lockfiles() -> N
         entry.get("directory") for entry in updates if entry["package-ecosystem"] == "npm"
     }
     assert "/" in npm_directories
-    assert "/integrations/chatgpt-app/apps-sdk" in npm_directories
+    # This isolated npm directory is owned by Renovate in the scoped pilot.
+    assert "/integrations/chatgpt-app/apps-sdk" not in npm_directories
 
     policy = (ROOT / "docs" / "development" / "dependency-management.md").read_text(
         encoding="utf-8"
@@ -333,7 +334,6 @@ def test_dependabot_staggers_version_updates_and_bounds_automation_backlog() -> 
     expected_windows = {
         ("uv", "/"): ("monday", "04:00"),
         ("npm", "/"): ("monday", "12:00"),
-        ("npm", "/integrations/chatgpt-app/apps-sdk"): ("tuesday", "04:00"),
         ("npm", "/packages/kicad-fixtures"): ("tuesday", "12:00"),
         ("npm", "/packages/mcp-npm"): ("wednesday", "04:00"),
         ("cargo", "/src-tauri"): ("wednesday", "12:00"),
@@ -365,11 +365,6 @@ def test_dependabot_npm_updates_respect_package_manager_boundaries() -> None:
 
     expected_directories = {
         "/": ("npm-root-minor-patch", "npm-root-major", "npm-root-security"),
-        "/integrations/chatgpt-app/apps-sdk": (
-            "npm-chatgpt-app-minor-patch",
-            "npm-chatgpt-app-major",
-            "npm-chatgpt-app-security",
-        ),
         "/packages/kicad-fixtures": (
             "npm-fixtures-minor-patch",
             "npm-fixtures-major",

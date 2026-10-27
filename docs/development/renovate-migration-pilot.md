@@ -1,25 +1,73 @@
-# Renovate migration pilot — parked, not activated (reviewed 26 October 2026)
+# Renovate migration pilot — staged activation (27 October 2026)
 
 ## Ownership and safety
 
-- Dependabot remains active for version and security update PRs. Its existing
-  .github/dependabot.yml and Mergify safe-dependencies queue are unchanged.
-- renovate.json has enabled=false. No Renovate dependency PR, dashboard or
-  lockfile update should be produced in this parked state. A separate, reviewed
-  change is needed to activate the pilot; installing a GitHub App requires
-  the account owner's action.
+- On production main, Dependabot remains active for version and security
+  updates and Renovate is disabled. The draft activation PR changes only one
+  npm path while retiring its counterpart Dependabot version producer.
+- Hosted App installation needs GitHub account-owner approval. Never presume
+  its presence from a previous Renovate PR alone.
 - GitHub dependency graph and Dependabot Alerts remain enabled.
 - Renovate automerge and platformAutomerge are disabled. Mergify is the
   only merge authority.
+
+## Staged single-directory activation (27 October 2026)
+
+This draft activation change enables Renovate for only the
+integrations/chatgpt-app/apps-sdk npm package and its own package-lock.json,
+paired with removal of the matching Dependabot version-update directory.
+Other npm, Python, Rust, Actions and container update producers are preserved.
+Renovate vulnerability-fix PR creation stays off for the pilot to avoid
+a second security PR producer. GitHub Dependabot Alerts and automated
+security updates remain independently enabled.
+
+Do not merge this activation PR until the account owner verifies the
+Mend-hosted Renovate GitHub App is installed for exactly this repository.
+Draft state is a safety interlock, not proof of live bot integration.
+The main-branch enabled=false policy remains effective until protected merge.
+
+Validated on 27 October 2026 with Renovate 44.188.2:
+- Repo configuration: strict validator PASS (--strict --no-global).
+- Local read-only --platform=local --dry-run=extract: npm only, exactly one
+  package.json with 14 dependencies.
+- Local --dry-run=lookup: PASS, with patch candidates including hono and
+  ip-address (and major/minor candidates excluded from automatic approval).
+  Five-day minimum release age still applies at PR proposal time.
+- In-repo pytest tests: 32 relevant policy and release-preflight tests passed
+  under the pinned Python/uv toolchain.
+- The actual GitHub Dependabot Alerts API returned zero open alerts;
+  separate code-scanning Rust advisories remain tracked by #1450.
+- Existing GitHub-hosted bot status and deployment are not established by
+  local dry-run; install only via https://github.com/apps/renovate and select
+  only oaslananka/kicad-mcp-pro. Review requested permissions in GitHub.
+
+Pre-activation checklist:
+- Owner verifies App installation limited to oaslananka/kicad-mcp-pro.
+- Strict Renovate repo-config validation and local dry-run extract/lookup
+  show exactly the selected npm package. No actual PRs are created during
+  dry-run and no credentials are committed.
+- Verify GitHub Dependabot Alerts, automated security updates and independent
+  code scanning; existing Rust advisories remain tracked by #1450.
+- Preserve Mergify manual renovate-pilot-approved label, real Renovate bot
+  identity, protected checks, zero bot automerge and one concurrent pilot PR.
+- After protected activation, inspect the bot Dependency Dashboard, accept
+  exactly one low-risk patch candidate, verify zero Dependabot duplicates,
+  and compare CI failures, time to merge and manual maintenance.
+- Keep #1449 open until live bot installation and patch PR acceptance pass.
+
+Rollback: restore enabled=false and the removed Dependabot version-update
+directory in a protected PR. Keep GitHub Alerts and security updates active.
+No release workflows or immutable GitHub Releases settings are changed.
 
 ## Prototype rules
 
 The Renovate pep621 manager supports pyproject.toml and uv.lock (it is NOT
 called uv). Other managers cover npm, GitHub Actions, Dockerfile,
-Docker Compose, and Cargo. The proposed policy limits concurrent PRs to two,
+Docker Compose, and Cargo. The staged pilot limits concurrent PRs to one,
 new PRs to one per hour and ordinary release age to five days.
-GitHub vulnerability-alert remediation does not inherit the ordinary wait.
-Lockfile maintenance is separately disabled pending review of its release-age exception; the schedule is documented but not active.
+Renovate vulnerability-alert PR generation is deliberately disabled for this narrow npm pilot;
+Dependabot automated security updates stay on. Normal five-day release age still applies
+to routine updates. Lockfile maintenance is separately disabled pending review of its release-age exception; the schedule is documented but not active.
 Minor and patch updates are kept separate. Major upgrades require manual Dependency Dashboard approval.
 
 The new Mergify renovate-pilot-safe queue requires every existing
@@ -51,14 +99,15 @@ the bot. No review bypass or CI bypass is allowed.
    default-branch dependency graph; triage any newly open security warnings
    independently. Preserve Dependabot Alerts even if version-update sources
    are later switched.
-2. Validate configuration with renovate-config-validator --strict, GitHub
-   PR CI and Mergify checks. Keep Renovate disabled at this stage.
+2. Validate the draft as repository config with renovate-config-validator --strict --no-global,
+   GitHub PR CI and Mergify checks. Keep Renovate disabled on main at this stage.
 3. If desired, the owner installs Renovate's hosted GitHub App with the
    minimum necessary repository permissions. Connecting the app is a
    distinct user-authorization step.
-4. In a distinct reviewed activation PR, switch Renovate on for a narrow
-   subset while retiring ONLY overlapping Dependabot version update
-   sources, preserving GitHub vulnerability alerts and branch protection.
+4. Merge the distinct reviewed activation PR only after App installation has been
+   independently verified; it switches Renovate on for the single npm path and
+   retires only the matching Dependabot version-update source, preserving
+   GitHub security alerts, security fixes and branch protection.
 5. Pilot one patch update, review actual lockfile differences, apply the
    manual approval label, verify Mergify protected queue and check that
    Dependabot did not raise a duplicate PR.
