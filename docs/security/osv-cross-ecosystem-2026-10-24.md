@@ -66,3 +66,44 @@ Rust advisories, and GitHub dependency-review policies remain unchanged.
 
 No advisories were manually dismissed, no immutable Release setting was
 changed, and no desktop runtime feature was disabled.
+
+
+## Follow-up after GitHub alerts on 27 October 2026
+
+Current baseline: main@b421e9f9b1e8469c46ab631464017b5f57644397.
+The original 24 October summary remains archival, not the current Python inventory.
+
+- New High-severity Dependabot alert #73 (GHSA-45c3-73f7-pv4m) identified
+  dnspython 2.8.0, transitively required via
+  kicad-sch-api -> fastmcp -> pydantic[email] -> email-validator.
+  Regenerated uv.lock using the pinned uv resolver, upgrading dnspython to
+  first patched version 2.9.0; added a regression floor test.
+  Compatible patch refreshes for cryptography, joserfc, fastmcp and
+  fastmcp-slim are included.
+- Unsuppressed OSV-Scanner 2.7.0 inventory override at
+  .github/security/osv-full-inventory.toml recursively examined seven
+  lockfiles. Updated Python and npm lockfiles show no reported matches.
+  The scan still exits 1: the existing five upstream-blocked RustSec packages
+  remain plus block-buffer 0.10.4 (GHSA-qwgh-2vcv-g2f7; fixed >=0.12.1).
+  The glib RustSec/GHSA aliases describe one root vulnerability.
+- Newly confirmed block-buffer is indirect:
+  tauri 2.12.2 -> tauri-macros 2.7.1 -> tauri-codegen 2.7.1 ->
+  sha2 0.10.9 -> digest 0.10.7 -> block-buffer 0.10.4.
+  Cargo rejected a dry-run requirement for 0.12.1 due to digest ^0.10.
+  Forcing a new API version or moving the GUI to Tauri 3.x alpha would be
+  an unverified breaking change and was NOT performed.
+- Fresh Cargo solver checks reconfirm glib >=0.20 is incompatible with
+  gtk 0.18.2 through supported Tauri 2.12.2 and zbus >=6 is incompatible
+  with stable tauri-plugin-single-instance 2.5.4 requiring zbus ^5.9.
+  The informational unmaintained notices have no patched standalone crates.
+  Keep existing Rust warnings visible in weekly inventory and tracked
+  under issue #1450.
+- GitHub Scorecard code-scanning #53 cites BOTH dnspython and block-buffer.
+  Fixing #73 removes only one Scorecard root cause; do not manually close #53
+  or claim Scorecard clean without a newer main-branch scan.
+- Updated the stale pinned OSV action SHA test to match the previously merged
+  approved action bump (#1500). Workflow behavior was not modified.
+
+Acceptance: merging this change and default-branch rescanning can fix
+Dependabot alert #73. It does not resolve RustSec code scanning alerts or
+Scorecard #53. Do not dismiss warnings, hide advisories or relax policy.

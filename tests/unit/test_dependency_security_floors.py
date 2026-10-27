@@ -69,6 +69,15 @@ def test_opentelemetry_otlp_exporters_share_patched_runtime_floor() -> None:
         _assert_all_locked_versions_patched(uv_lock["package"], name, "1.45.1")
 
 
+def test_dnspython_security_floor_blocks_parser_cpu_regression() -> None:
+    """GHSA-45c3-73f7-pv4m is fixed in dnspython 2.9.0 or newer.
+
+    This transitive runtime dependency enters through email-validator.
+    """
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    _assert_all_locked_versions_patched(lock["package"], "dnspython", "2.9.0")
+
+
 def test_cryptography_security_floor_is_patched() -> None:
     uv_lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
 

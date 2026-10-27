@@ -34,7 +34,7 @@ def test_osv_weekly_inventory_is_pinned_and_uploads_all_findings() -> None:
 
     scan = steps["Scan all repository lockfiles with pinned OSV-Scanner 2.7.0"]
     assert scan["uses"] == (
-        "google/osv-scanner-action/osv-scanner-action@0a65f82af05cd58cf587827b0bb0489548c18346"
+        "google/osv-scanner-action/osv-scanner-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347"
     )
     assert scan["continue-on-error"] is True
     assert scan["with"]["scan-args"].strip().splitlines() == [
