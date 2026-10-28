@@ -172,6 +172,41 @@ def test_client_push_uses_generic_error_for_malformed_error_content() -> None:
         client.push({"file_type": "pcb"})
 
 
+@pytest.mark.parametrize(
+    ("response_body", "expected_error"),
+    [
+        (
+            {"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": "Backend failed"}},
+            "MCP request failed",
+        ),
+        ({}, "MCP tool result missing"),
+        ({"result": None}, "MCP tool result missing"),
+        (
+            {"result": {"structuredContent": {"ok": False, "code": "NO_ACTIVE_PROJECT"}}},
+            "NO_ACTIVE_PROJECT",
+        ),
+        (
+            {"result": {"structuredContent": {"ok": False, "code": "not_valid"}}},
+            "MCP tool call failed",
+        ),
+        ({"result": {"isError": True, "content": None}}, "MCP tool call failed"),
+    ],
+)
+def test_client_push_rejects_jsonrpc_and_semantic_failures(
+    response_body: dict[str, object], expected_error: str
+) -> None:
+    class FakeResponse:
+        def read(self) -> bytes:
+            return json.dumps(response_body).encode("utf-8")
+
+        def close(self) -> None:
+            pass
+
+    client = StudioContextClient(opener=lambda _request: FakeResponse())
+    with pytest.raises(RuntimeError, match=expected_error):
+        client.push({"file_type": "pcb", "active_file": "test.kicad_pcb"})
+
+
 def test_client_render_and_highlight_helpers_call_expected_tools() -> None:
     bodies: list[dict[str, object]] = []
 
