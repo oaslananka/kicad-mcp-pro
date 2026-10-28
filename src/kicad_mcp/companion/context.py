@@ -214,6 +214,27 @@ def _validate_loopback_base_url(base_url: str) -> None:
         raise ValueError("KiCad companion can only connect to a loopback http(s) MCP endpoint.")
 
 
+def _mcp_tool_content_error_message(content: object) -> str:
+    """Extract a useful tool error from the optional MCP content list."""
+    if isinstance(content, list):
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    return text.strip()
+    return "MCP tool call failed."
+
+
+def _mcp_structured_error_message(structured: object) -> str | None:
+    """Return a bounded domain error code without echoing arbitrary server text."""
+    if not isinstance(structured, dict) or structured.get("ok") is not False:
+        return None
+    code = structured.get("code")
+    if isinstance(code, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code):
+        return f"MCP tool call failed: {code}"
+    return "MCP tool call failed."
+
+
 def _mcp_tool_error_message(payload: object) -> str | None:
     """Fail closed for JSON-RPC, tool, and structured domain errors."""
     if not isinstance(payload, dict):
@@ -227,23 +248,8 @@ def _mcp_tool_error_message(payload: object) -> str | None:
     if not isinstance(result, dict):
         return None
     if result.get("isError") is True:
-        content = result.get("content")
-        if isinstance(content, list):
-            for item in content:
-                if not isinstance(item, dict):
-                    continue
-                text = item.get("text")
-                if isinstance(text, str) and text.strip():
-                    return text.strip()
-        return "MCP tool call failed."
-
-    structured = result.get("structuredContent")
-    if isinstance(structured, dict) and structured.get("ok") is False:
-        code = structured.get("code")
-        if isinstance(code, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code):
-            return f"MCP tool call failed: {code}"
-        return "MCP tool call failed."
-    return None
+        return _mcp_tool_content_error_message(result.get("content"))
+    return _mcp_structured_error_message(result.get("structuredContent"))
 
 
 class StudioContextClient:

@@ -180,10 +180,16 @@ def test_client_push_uses_generic_error_for_malformed_error_content() -> None:
             "MCP request failed",
         ),
         ({}, "MCP tool result missing"),
+        ({"result": None}, "MCP tool result missing"),
         (
             {"result": {"structuredContent": {"ok": False, "code": "NO_ACTIVE_PROJECT"}}},
             "NO_ACTIVE_PROJECT",
         ),
+        (
+            {"result": {"structuredContent": {"ok": False, "code": "not_valid"}}},
+            "MCP tool call failed",
+        ),
+        ({"result": {"isError": True, "content": None}}, "MCP tool call failed"),
     ],
 )
 def test_client_push_rejects_jsonrpc_and_semantic_failures(
