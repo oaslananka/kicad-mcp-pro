@@ -27,6 +27,14 @@ function fail(message) {
   throw new Error(message);
 }
 
+// Preserve the historical JS default sort order for the source-bound JSON
+// evidence, but provide an explicit comparator as required by Sonar S2871.
+function compareToolNames(a, b) {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 /**
  * Read one bounded, regular file using a handle opened without following the
  * final symlink. The additional lstat is necessary on platforms without
@@ -96,8 +104,7 @@ async function verifyManifest() {
   }
 }
 
-async function probe(entry) {
-  await verifyManifest();
+function validateMinimalEnvironment() {
   // Gemini's stdio transport may forward inherited environment variables.
   // Refuse all unexpected keys rather than relying on token redaction.
   const allowedEnvironment = new Set([
@@ -106,34 +113,43 @@ async function probe(entry) {
   ]);
   const inherited = Object.keys(process.env).filter((key) => !allowedEnvironment.has(key));
   if (inherited.length) fail('Refusing inherited provider credential or project environment');
+}
+
+async function loadPinnedGeminiCore(entry) {
+  const bundle = path.dirname(entry);
+  // A matching class name is insufficient: inspect regular files using
+  // symlink-resistant handles and pin the Gemini core SHA before any import.
+  const modules = (await readdir(bundle)).filter(
+    (v) => /^core-[A-Za-z0-9_-]+\.js$/.test(v)
+  );
+  if (modules.length < 1 || modules.length > 6) fail('Unexpected bundled Gemini core layout');
+  const eligible = [];
+  for (const filename of modules) {
+    // Filename is a single regex-validated basename, without path components.
+    const corePath = path.join(bundle, filename);
+    const bytes = await readVerifiedFile(corePath);
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    if (sha256 === PINNED_CORE_SHA256) eligible.push({corePath, sha256});
+  }
+  if (eligible.length !== 1) fail('Installed Gemini core exact SHA-256 mismatch');
+  const {corePath, sha256} = eligible[0];
+  // Unverified sibling core files are never imported; transitive imports
+  // remain outside this independent process-attestation boundary.
+  const core = await import(pathToFileURL(corePath));
+  if (typeof core.McpClient !== 'function') fail('Verified Gemini core does not export McpClient');
+  return {core, sha256};
+}
+
+async function probe(entry) {
+  await verifyManifest();
+  validateMinimalEnvironment();
   const temp = await mkdtemp(path.join(os.tmpdir(), 'gemini-core-readonly-'));
   const oldLog = console.log;
   let mcp;
   let result;
   try {
-    const bundle = path.dirname(entry);
-    // A matching class name is insufficient: inspect regular files using
-    // symlink-resistant handles and pin the Gemini core SHA before any import.
-    const modules = (await readdir(bundle)).filter(
-      (v) => /^core-[A-Za-z0-9_-]+\.js$/.test(v)
-    );
-    if (modules.length < 1 || modules.length > 6) fail('Unexpected bundled Gemini core layout');
-    const eligible = [];
-    for (const filename of modules) {
-      // filename is restricted to a single safe basename; no path components,
-      // traversal segments or directories are accepted from the file listing.
-      const corePath = path.join(bundle, filename);
-      const bytes = await readVerifiedFile(corePath);
-      const sha256 = createHash('sha256').update(bytes).digest('hex');
-      if (sha256 === PINNED_CORE_SHA256) eligible.push({corePath, sha256});
-    }
-    if (eligible.length !== 1) fail('Installed Gemini core exact SHA-256 mismatch');
-    const {corePath, sha256} = eligible[0];
-    // No unverified sibling core module is imported. Transitive imports are
-    // still an explicit residual limitation, not independent process attestation.
     console.log = () => {};
-    const core = await import(pathToFileURL(corePath));
-    if (typeof core.McpClient !== 'function') fail('Verified Gemini core does not export McpClient');
+    const {core, sha256} = await loadPinnedGeminiCore(entry);
     const workspace = {
       getDirectories: () => [temp],
       onDirectoriesChanged: () => () => {},
@@ -185,10 +201,10 @@ async function probe(entry) {
       operatingMode: 'readonly',
       profile: 'default',
       connected: true,
-      discoveredTools: [...names].sort(),
+      discoveredTools: [...names].sort(compareToolNames),
       missingReadOnlyAnnotations: tools
         .filter((t) => t.toolAnnotations?.readOnlyHint !== true)
-        .map((t) => t.serverToolName).sort(),
+        .map((t) => t.serverToolName).sort(compareToolNames),
       calledOnly: TOOL,
       responseError: false,
       responsePresent: true,

@@ -73,6 +73,9 @@ def test_gemini_probe_uses_verified_regular_file_handles_not_scanner_exemptions(
     assert "after.dev !== before.dev || after.ino !== before.ino" in script
     assert "after.size > MAX_FILE_BYTES" in script
     assert "const bytes = await readVerifiedFile(corePath)" in script
+    assert "discoveredTools: [...names].sort(compareToolNames)" in script
+    assert ".map((t) => t.serverToolName).sort(compareToolNames)" in script
+    assert "function compareToolNames(a, b)" in script
     assert script.index("const bytes = await readVerifiedFile(corePath)") < script.index(
         "const core = await import(pathToFileURL(corePath))"
     )
