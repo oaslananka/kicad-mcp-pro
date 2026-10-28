@@ -48,7 +48,11 @@ board's filename, verifies the same monitor and the desktop manager's resulting
 geometry, then puts KiCad on the left and Companion on the right. **Restore
 previous KiCad layout** explicitly requests the original maximized state.
 Closing Companion also attempts restoration on a best-effort basis, but
-window-manager close behavior varies: users should click **Restore** first. The command never runs during startup, never edits PCB data,
+window-manager close behavior varies. **More tools → Close Companion** is a
+reliable in-app exit path: it explicitly restores KiCad first, and **refuses to
+close if restoration fails**. External title-bar / remote window-close commands
+are not a verified method for restoring the editor; users should choose Restore
+or the in-app Close Companion action. The command never runs during startup, never edits PCB data,
 and never installs window-manager dependencies. Unmaximized editors,
 Windows/macOS, unsupported displays, and missing/multiple KiCad matches fail
 closed with a message; manual OS window tiling is the fallback. Desktop

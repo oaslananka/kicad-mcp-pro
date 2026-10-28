@@ -233,6 +233,45 @@ def test_arrange_never_changes_editor_before_explicit_confirmation(
     event.Skip.assert_called_once_with()
 
 
+def test_explicit_close_restores_before_exit_and_blocks_on_restore_error(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, wx = ui
+    frame = _ready(ui, monkeypatch)
+    wx.GetApp = Mock(return_value=Mock())
+    restore = Mock()
+    monkeypatch.setattr(module, "restore_editor", restore)
+    frame._tile_result = Mock(original=Mock())
+    frame.close_companion(None)
+    restore.assert_called_once()
+    frame.calls.Destroy.assert_called_once_with()
+    wx.GetApp.return_value.ExitMainLoop.assert_called_once_with()
+
+    blocked = _ready(ui, monkeypatch)
+    blocked._tile_result = Mock(original=Mock())
+    restore.side_effect = RuntimeError("editor changed")
+    app_exits_before = wx.GetApp.return_value.ExitMainLoop.call_count
+    blocked.close_companion(None)
+    blocked.calls.Destroy.assert_not_called()
+    assert wx.GetApp.return_value.ExitMainLoop.call_count == app_exits_before
+    assert blocked._tile_result is not None
+    blocked.feedback_label.SetLabel.assert_called()
+
+
+def test_explicit_close_without_tiling_does_not_touch_kicad(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, wx = ui
+    frame = _ready(ui, monkeypatch)
+    wx.GetApp = Mock(return_value=Mock())
+    restore = Mock()
+    monkeypatch.setattr(module, "restore_editor", restore)
+    frame.close_companion(None)
+    restore.assert_not_called()
+    frame.calls.Destroy.assert_called_once_with()
+    wx.GetApp.return_value.ExitMainLoop.assert_called_once_with()
+
+
 def test_unsupported_tiling_fails_closed_without_move(
     ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
 ) -> None:

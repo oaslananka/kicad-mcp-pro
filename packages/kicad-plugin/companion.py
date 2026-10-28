@@ -241,6 +241,8 @@ class CompanionFrame(wx.Frame):
         self.restore_tile_btn = wx.Button(self.tools_panel, label="Restore previous KiCad layout")
         tools_layout.Add(self.restore_tile_btn, 0, wx.EXPAND)
         self.restore_tile_btn.Hide()
+        self.exit_btn = wx.Button(self.tools_panel, label="Close Companion")
+        tools_layout.Add(self.exit_btn, 0, wx.EXPAND | wx.TOP, 8)
         if sys.platform != "linux":
             self.tile_btn.Enable(False)
             self.tile_btn.SetToolTip("Automatic tiling is supported only on Linux X11/XWayland.")
@@ -273,6 +275,7 @@ class CompanionFrame(wx.Frame):
         self.repair_btn.Bind(wx.EVT_BUTTON, self.repair_dependencies)
         self.tile_btn.Bind(wx.EVT_BUTTON, self.arrange_with_kicad)
         self.restore_tile_btn.Bind(wx.EVT_BUTTON, self.restore_kicad_layout)
+        self.exit_btn.Bind(wx.EVT_BUTTON, self.close_companion)
         self.Bind(wx.EVT_CLOSE, self.on_close)
         self.Bind(wx.EVT_ACTIVATE, self.on_activate)
         wx.CallAfter(self.refresh)
@@ -348,6 +351,18 @@ class CompanionFrame(wx.Frame):
         self.feedback_label.SetLabel("Previous KiCad window layout restored.")
         self.feedback_label.SetForegroundColour(wx.Colour(SECONDARY))
         self.Fit()
+
+    def close_companion(self, _event: wx.CommandEvent) -> None:
+        """An explicit, verifiable exit path; never abandon an un-restored layout."""
+        if self._tile_result is not None:
+            self.restore_kicad_layout(None)
+            if self._tile_result is not None:
+                # Keep the user in control when KiCad refuses restoration.
+                return
+        self.Destroy()
+        app = wx.GetApp()
+        if app is not None:
+            app.ExitMainLoop()
 
     def on_close(self, event: wx.CloseEvent) -> None:
         """Avoid leaving KiCad rearranged when the sidecar is normally closed."""
