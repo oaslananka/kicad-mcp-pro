@@ -149,9 +149,13 @@ def run_saved_board_drc(summary: BoardSummary, *, timeout: int = 45) -> SavedDrc
                 shutil.copyfile(candidate, work / candidate.name)
         report = work / "saved-board-drc.json"
         try:
-            process = subprocess.run(  # nosec B603
-                # The executable is fixed, never sourced from PCB/project input.
-                [  # noqa: S607 - fixed KiCad CLI executable name; OS PATH portability is intentional
+            # KiCad installations use OS-specific executable locations. The only
+            # PATH-resolved command is the fixed `kicad-cli` literal; it cannot
+            # come from the PCB/project. Fixed argv + shell=False avoid shell
+            # interpretation. B607 is an audited portability false-positive,
+            # not a permission to invoke user-selected commands.
+            process = subprocess.run(  # nosec B603, B607
+                [  # noqa: S607 - PATH-based KiCad executable is deliberate
                     "kicad-cli",
                     "pcb",
                     "drc",
