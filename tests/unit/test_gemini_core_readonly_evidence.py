@@ -165,9 +165,10 @@ export class McpClient {
     assert "Installed Gemini core exact SHA-256 mismatch" in result.stderr
     assert "mock diagnostic only" not in result.stdout
 
-    if sys.platform == "darwin":
-        # macOS injects a legitimate CoreFoundation marker by default.
-        # A forged nonnumeric value must still fail closed.
+    if sys.platform != "darwin":
+        # macOS CoreFoundation rewrites this process bootstrap marker on spawn,
+        # so a forged value cannot reliably be passed to a macOS child process.
+        # On Linux/Windows, reject it as unexpected inherited environment.
         forged = dict(env, __CF_USER_TEXT_ENCODING="forged-unsafe-value")
         invalid = subprocess.run(  # nosec B603  # nosemgrep
             command,
