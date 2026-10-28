@@ -181,8 +181,9 @@ def test_project_presence_rejects_hardlinked_files_outside_approved_directory(
     outside = tmp_path / "unapproved-source.kicad_pcb"
     outside.write_text("different owner's layout", encoding="utf-8")
     os.link(outside, board)
+    request = packet()
     with pytest.raises(LocalReadDeniedError):
-        invoke(packet(), approved)
+        invoke(request, approved)
     board.unlink()
     assert invoke(packet(), approved)["files"] == {
         "projectPresent": True,

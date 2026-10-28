@@ -131,8 +131,9 @@ def test_missing_root_and_group_writable_key_directory_deny(tmp_path: Path) -> N
 def test_legacy_cli_path_flags_rejected_by_both_commands() -> None:
     from kicad_mcp import cloud_once, cloud_pair
 
+    parser = cloud_once._parser()
     with pytest.raises(SystemExit) as read_error:
-        cloud_once._parser().parse_args(
+        parser.parse_args(
             [
                 "--cloud-origin",
                 ORIGIN,

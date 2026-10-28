@@ -45,6 +45,22 @@ def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return dict(pairs)
 
 
+def _valid_identity_selectors(owner_sub: str, origin: str, device_id: str, project_id: str) -> bool:
+    """Validate public identifier inputs before constructing any registry pathname."""
+    return (
+        isinstance(owner_sub, str)
+        and 1 <= len(owner_sub) <= 256
+        and isinstance(origin, str)
+        and origin.startswith("https://")
+        and 1 <= len(origin) <= 256
+        and origin.isascii()
+        and isinstance(device_id, str)
+        and _UUID.fullmatch(device_id) is not None
+        and isinstance(project_id, str)
+        and _UUID.fullmatch(project_id) is not None
+    )
+
+
 def resolve_registered_read(
     *,
     owner_sub: str,
@@ -60,18 +76,7 @@ def resolve_registered_read(
     An authenticated owner must eventually control creation of these records
     from outside the automation process; current CLI does not implement it.
     """
-    if (
-        not isinstance(owner_sub, str)
-        or not 1 <= len(owner_sub) <= 256
-        or not isinstance(origin, str)
-        or not origin.startswith("https://")
-        or not 1 <= len(origin) <= 256
-        or not origin.isascii()
-        or not isinstance(device_id, str)
-        or _UUID.fullmatch(device_id) is None
-        or not isinstance(project_id, str)
-        or _UUID.fullmatch(project_id) is None
-    ):
+    if not _valid_identity_selectors(owner_sub, origin, device_id, project_id):
         raise LocalApprovalDeniedError(_DENIED)
 
     root = default_registry_root() if registry_root is None else registry_root
@@ -142,7 +147,7 @@ def resolve_registered_read(
             project_directory=directory,
             filename_stem=document["filenameStem"],
         )
-    except (OSError, ValueError, TypeError, UnicodeError) as exc:
+    except (OSError, ValueError, TypeError) as exc:
         raise LocalApprovalDeniedError(_DENIED) from exc
     finally:
         if fd is not None:
