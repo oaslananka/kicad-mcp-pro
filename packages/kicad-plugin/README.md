@@ -31,12 +31,20 @@ moves. You may move/resize it or use the operating system's window tiling to
 place it beside KiCad. Do not rely on OS-specific window embedding or the
 legacy in-process SWIG plugin API for an apparently docked appearance.
 
-For day-to-day PCB work, the compact Companion prioritizes the active board,
-selection count/reference, connection health and **one explicit context-sync
-action**. The active PCB and selected footprint reference are re-read when the
-Companion regains focus, and **Sync reads a fresh selection** in a worker before
-publishing; stale snapshots from when the panel opened are never sent. If KiCad
-cannot provide the current selection, Sync fails closed and publishes nothing.
+For day-to-day PCB work, the Companion keeps **only the active PCB, selected
+footprint, connection indicator and Sync** on its default surface. KiCad DRC,
+dashboard, refresh and service details live in an opt-in **More tools** section
+inside the same window. The window fits its visible content: on the physical
+HDMI test display it was 330 × 352 without a selection and 330 × 497 with a
+selected footprint; expanding advanced tools grows it only as needed. Dependency
+repair is visible only when IPC setup genuinely fails. The separate DRC findings
+dialog is reduced to 720 × 490 and placed within the physical monitor that
+contains the Companion where supported. These changes reduce clutter but
+**do not create native docking or move/resize KiCad**. If the editor is
+maximized, the independent sidecar still overlaps it: the user must explicitly
+tile the OS windows. The active PCB and selected footprint are re-read when the
+Companion regains focus, and **Sync reads fresh selection** in a worker before
+publishing. If KiCad cannot provide the current selection, Sync fails closed.
 When exactly one footprint is selected, a compact read-only inspector shows
 its KiCad value, library footprint name, pad count and assigned net names.
 Where other board footprints share those net assignments, the inspector names

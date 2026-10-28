@@ -37,10 +37,13 @@ def ui(monkeypatch: pytest.MonkeyPatch) -> tuple[types.ModuleType, types.ModuleT
     wx.Colour = lambda value: value
     wx.App = Mock()
     wx.CallAfter = lambda callback, *args: callback(*args)
+    wx.CallLater = lambda _delay, callback, *args: callback(*args)
     wx.MessageBox = Mock()
     for name in ("VERTICAL", "HORIZONTAL", "EXPAND", "BOTTOM", "ALL", "TOP", "RIGHT"):
         setattr(wx, name, 0)
     wx.DEFAULT_FRAME_STYLE = 0
+    wx.DEFAULT_DIALOG_STYLE = 1024
+    wx.DIALOG_NO_PARENT = 32
     wx.FONTWEIGHT_BOLD = 700
     wx.EVT_BUTTON = 100
     wx.EVT_ACTIVATE = 101
@@ -86,6 +89,119 @@ def test_window_shows_board_and_enables_read_only_actions(
     frame.dashboard_btn.Enable.assert_called_with(True)
     frame.sync_btn.Enable.assert_called_with(True)
     frame.repair_btn.Hide.assert_called()
+
+
+def test_compact_primary_view_hides_secondary_tools_until_requested(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, wx = ui
+    frame = _ready(ui, monkeypatch)
+    assert frame._tools_open is False
+    frame.tools_panel.Hide.assert_called_once_with()
+    frame.calls.SetMinSize.assert_called_once_with((330, 340))
+    # Hiding tools must not cause a DRC or a browser action.
+    run = Mock()
+    monkeypatch.setattr(module, "run_saved_board_drc", run)
+    browse = Mock()
+    monkeypatch.setattr(module.webbrowser, "open", browse)
+    frame.toggle_tools(None)
+    assert frame._tools_open is True
+    frame.tools_panel.Show.assert_called_with(True)
+    frame.tools_btn.SetLabel.assert_called_with("Fewer tools ▾")
+    assert frame.calls.Fit.call_count >= 2
+    frame.toggle_tools(None)
+    assert frame._tools_open is False
+    frame.tools_panel.Show.assert_called_with(False)
+    frame.tools_btn.SetLabel.assert_called_with("More tools ▸")
+    assert frame.calls.Fit.call_count >= 3
+    run.assert_not_called()
+    browse.assert_not_called()
+    assert wx.EVT_BUTTON == 100
+
+
+def test_selection_card_resize_only_when_visibility_changes(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    frame = _ready(ui, monkeypatch)
+    initial_fits = frame.calls.Fit.call_count
+    board = module.BoardSummary(
+        "board.kicad_pcb",
+        "demo",
+        3,
+        2,
+        1,
+        "",
+        "R1",
+        "1k",
+        "Resistor_SMD:R_0603_1608Metric",
+        2,
+        ("LED_A",),
+        1,
+    )
+    frame._display_selection(board)
+    assert frame._selection_visible
+    assert frame.calls.Fit.call_count == initial_fits + 1
+    frame._display_selection(board)
+    assert frame.calls.Fit.call_count == initial_fits + 1
+    frame._display_selection(module.BoardSummary("board.kicad_pcb", "demo", 3, 2, 0))
+    assert not frame._selection_visible
+    assert frame.calls.Fit.call_count == initial_fits + 2
+
+
+def test_missing_board_resets_selection_card_sizing(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    frame = _ready(ui, monkeypatch)
+    selected = module.BoardSummary(
+        "board.kicad_pcb",
+        "demo",
+        3,
+        2,
+        1,
+        "",
+        "R1",
+        "1k",
+        "Resistor_SMD:R_0603",
+        2,
+        ("LED_A",),
+        1,
+    )
+    frame._display_selection(selected)
+    assert frame._selection_visible
+    monkeypatch.setattr(module, "board_summary", Mock(side_effect=OSError("board closed")))
+    frame.refresh_board()
+    assert not frame._selection_visible
+    frame.selected_panel.Hide.assert_called()
+    monkeypatch.setattr(module, "board_summary", lambda: selected)
+    frame.refresh_board()
+    assert frame._selection_visible
+    frame.selected_panel.Show.assert_called()
+
+
+def test_drc_window_fits_the_active_monitor_without_moving_editor(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, wx = ui
+    frame = _ready(ui, monkeypatch)
+    wx.NOT_FOUND = -1
+    display = Mock()
+    display.GetClientArea.return_value = Mock(
+        GetLeft=lambda: 0,
+        GetTop=lambda: 0,
+        GetRight=lambda: 1920,
+        GetBottom=lambda: 1080,
+        GetWidth=lambda: 1920,
+        GetHeight=lambda: 1080,
+    )
+    wx.Display = Mock(return_value=display)
+    wx.Display.GetFromWindow.return_value = 0
+    frame.calls.GetPosition.return_value = Mock(x=1517, y=139)
+    dialog = Mock()
+    dialog.GetSize.return_value = Mock(GetWidth=lambda: 720, GetHeight=lambda: 490)
+    frame._place_dialog_on_same_display(dialog)
+    dialog.SetPosition.assert_called_once_with((1188, 155))
 
 
 def test_missing_board_disables_context_sync(
@@ -407,6 +523,7 @@ def test_drc_findings_open_read_only_modal_and_clear_on_failure(
     wx.ALIGN_CENTER_VERTICAL = 64
     wx.ID_OK = 1
     frame.show_drc_findings(None)
+    assert wx.Dialog.call_args.kwargs["style"] & wx.DIALOG_NO_PARENT
     wx.ListCtrl.assert_called_once()
     assert any(
         call.args[1:] == (1, "Shorting items")

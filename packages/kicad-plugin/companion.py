@@ -119,10 +119,10 @@ class CompanionFrame(wx.Frame):
         super().__init__(
             None,
             title="MCP Pro — PCB Companion",
-            size=(390, 640),
+            size=(350, 440),
             style=wx.DEFAULT_FRAME_STYLE,
         )
-        self.SetMinSize((350, 590))
+        self.SetMinSize((330, 340))
         self.SetBackgroundColour(wx.Colour(BACKGROUND))
         self.board: BoardSummary | None = None
         self.last_synced_board: BoardSummary | None = None
@@ -131,6 +131,8 @@ class CompanionFrame(wx.Frame):
         self._drc_busy = False
         self._drc_board: tuple[str, str] | None = None
         self._drc_result: SavedDrcResult | None = None
+        self._tools_open = False
+        self._selection_visible = False
 
         panel = wx.Panel(self)
         panel.SetBackgroundColour(wx.Colour(BACKGROUND))
@@ -143,7 +145,7 @@ class CompanionFrame(wx.Frame):
         header.Add(brand, 1)
         self.connection_label = _text(panel, "● Checking", size=10, color=SECONDARY)
         header.Add(self.connection_label, 0, wx.TOP, 8)
-        layout.Add(header, 0, wx.EXPAND | wx.BOTTOM, 20)
+        layout.Add(header, 0, wx.EXPAND | wx.BOTTOM, 12)
 
         board_panel, board_content = _surface(panel)
         board_content.Add(
@@ -155,7 +157,7 @@ class CompanionFrame(wx.Frame):
         board_content.Add(self.board_details, 0, wx.BOTTOM, 4)
         self.selection_label = _text(board_panel, "", size=9, color=SECONDARY)
         board_content.Add(self.selection_label, 0)
-        layout.Add(board_panel, 0, wx.EXPAND | wx.BOTTOM, 12)
+        layout.Add(board_panel, 0, wx.EXPAND | wx.BOTTOM, 9)
 
         self.selected_panel, selection_content = _surface(panel)
         selection_content.Add(
@@ -172,52 +174,68 @@ class CompanionFrame(wx.Frame):
         selection_content.Add(self.net_label, 0)
         self.peer_label = _text(self.selected_panel, "", size=9, color=ACCENT)
         selection_content.Add(self.peer_label, 0, wx.TOP, 6)
-        layout.Add(self.selected_panel, 0, wx.EXPAND | wx.BOTTOM, 12)
+        layout.Add(self.selected_panel, 0, wx.EXPAND | wx.BOTTOM, 9)
         self.selected_panel.Hide()
 
-        check_line = wx.BoxSizer(wx.HORIZONTAL)
-        check_line.Add(_text(panel, "Saved-board DRC", size=10, bold=True), 1, wx.TOP, 8)
-        self.drc_btn = wx.Button(panel, label="Check saved PCB")
-        check_line.Add(self.drc_btn, 0)
-        layout.Add(check_line, 0, wx.EXPAND | wx.BOTTOM, 5)
-        self.drc_label = _text(panel, "Not checked", size=9, color=SECONDARY)
-        self.drc_label.Wrap(320)
-        layout.Add(self.drc_label, 0, wx.EXPAND | wx.BOTTOM, 2)
-        self.findings_btn = wx.Button(panel, label="View DRC findings")
-        layout.Add(self.findings_btn, 0, wx.EXPAND | wx.BOTTOM, 5)
-        self.findings_btn.Hide()
-        layout.Add(
-            _text(panel, "Saved file only · unsaved edits excluded", size=9, color=SECONDARY),
-            0,
-            wx.EXPAND | wx.BOTTOM,
-            13,
-        )
-
-        service_header = wx.BoxSizer(wx.HORIZONTAL)
-        service_header.Add(_text(panel, "Engineering service", size=10, bold=True), 1)
-        layout.Add(service_header, 0, wx.EXPAND | wx.BOTTOM, 6)
-        self.service_label = _text(
-            panel, "Checking the local MCP backend…", size=9, color=SECONDARY
-        )
-        self.service_label.Wrap(320)
-        layout.Add(self.service_label, 0, wx.EXPAND | wx.BOTTOM, 16)
-
+        # Keep the primary workspace focused on board / selection / Sync.
+        # DRC and service utilities stay in one opt-in, in-window section.
         self.sync_btn = wx.Button(panel, label="Sync PCB context")
         self.sync_btn.SetMinSize((-1, 40))
         self.sync_btn.SetBackgroundColour(wx.Colour(PRIMARY))
         self.sync_btn.SetForegroundColour(wx.Colour(FOREGROUND))
-        layout.Add(self.sync_btn, 0, wx.EXPAND | wx.BOTTOM, 10)
+        layout.Add(self.sync_btn, 0, wx.EXPAND | wx.BOTTOM, 7)
 
         self.feedback_label = _text(panel, "Ready to sync when you are.", size=9, color=SECONDARY)
-        self.feedback_label.Wrap(320)
-        layout.Add(self.feedback_label, 0, wx.EXPAND | wx.BOTTOM, 17)
+        self.feedback_label.Wrap(290)
+        layout.Add(self.feedback_label, 0, wx.EXPAND | wx.BOTTOM, 12)
 
+        self.tools_btn = wx.Button(panel, label="More tools ▸")
+        layout.Add(self.tools_btn, 0, wx.EXPAND | wx.BOTTOM, 7)
+        self.tools_panel = wx.Panel(panel)
+        self.tools_panel.SetBackgroundColour(wx.Colour(BACKGROUND))
+        tools_layout = wx.BoxSizer(wx.VERTICAL)
+        check_line = wx.BoxSizer(wx.HORIZONTAL)
+        check_line.Add(_text(self.tools_panel, "Saved-board DRC", size=10, bold=True), 1, wx.TOP, 8)
+        self.drc_btn = wx.Button(self.tools_panel, label="Check saved PCB")
+        check_line.Add(self.drc_btn, 0)
+        tools_layout.Add(check_line, 0, wx.EXPAND | wx.BOTTOM, 5)
+        self.drc_label = _text(self.tools_panel, "Not checked", size=9, color=SECONDARY)
+        self.drc_label.Wrap(290)
+        tools_layout.Add(self.drc_label, 0, wx.EXPAND | wx.BOTTOM, 2)
+        self.findings_btn = wx.Button(self.tools_panel, label="View DRC findings")
+        tools_layout.Add(self.findings_btn, 0, wx.EXPAND | wx.BOTTOM, 4)
+        self.findings_btn.Hide()
+        tools_layout.Add(
+            _text(
+                self.tools_panel,
+                "Saved file only · unsaved edits excluded",
+                size=9,
+                color=SECONDARY,
+            ),
+            0,
+            wx.EXPAND | wx.BOTTOM,
+            12,
+        )
+        tools_layout.Add(
+            _text(self.tools_panel, "Local engineering service", size=10, bold=True),
+            0,
+            wx.EXPAND | wx.BOTTOM,
+            5,
+        )
+        self.service_label = _text(
+            self.tools_panel, "Checking the local MCP backend…", size=9, color=SECONDARY
+        )
+        self.service_label.Wrap(290)
+        tools_layout.Add(self.service_label, 0, wx.EXPAND | wx.BOTTOM, 11)
         secondary = wx.BoxSizer(wx.HORIZONTAL)
-        self.dashboard_btn = wx.Button(panel, label="Open dashboard")
-        self.refresh_btn = wx.Button(panel, label="Refresh")
+        self.dashboard_btn = wx.Button(self.tools_panel, label="Open dashboard")
+        self.refresh_btn = wx.Button(self.tools_panel, label="Refresh")
         secondary.Add(self.dashboard_btn, 1, wx.RIGHT, 8)
         secondary.Add(self.refresh_btn, 0)
-        layout.Add(secondary, 0, wx.EXPAND | wx.BOTTOM, 9)
+        tools_layout.Add(secondary, 0, wx.EXPAND)
+        self.tools_panel.SetSizer(tools_layout)
+        layout.Add(self.tools_panel, 0, wx.EXPAND | wx.BOTTOM, 7)
+        self.tools_panel.Hide()
 
         self.repair_btn = wx.Button(panel, label="Repair KiCad IPC dependencies…")
         layout.Add(self.repair_btn, 0, wx.EXPAND | wx.BOTTOM, 8)
@@ -233,7 +251,9 @@ class CompanionFrame(wx.Frame):
         outer = wx.BoxSizer(wx.VERTICAL)
         outer.Add(panel, 1, wx.EXPAND | wx.ALL, 18)
         self.SetSizer(outer)
+        self.Fit()
 
+        self.tools_btn.Bind(wx.EVT_BUTTON, self.toggle_tools)
         self.dashboard_btn.Bind(wx.EVT_BUTTON, lambda _event: self.open_dashboard())
         self.refresh_btn.Bind(wx.EVT_BUTTON, lambda _event: self.refresh())
         self.sync_btn.Bind(wx.EVT_BUTTON, self.sync_context)
@@ -242,6 +262,14 @@ class CompanionFrame(wx.Frame):
         self.repair_btn.Bind(wx.EVT_BUTTON, self.repair_dependencies)
         self.Bind(wx.EVT_ACTIVATE, self.on_activate)
         wx.CallAfter(self.refresh)
+
+    def toggle_tools(self, _event: wx.CommandEvent) -> None:
+        """Show advanced tools in the same window; preserve functional actions."""
+        self._tools_open = not self._tools_open
+        self.tools_panel.Show(self._tools_open)
+        self.tools_btn.SetLabel("Fewer tools ▾" if self._tools_open else "More tools ▸")
+        self.Fit()
+        self.Layout()
 
     def place_at_screen_edge(self) -> None:
         """Place on the current display edge without owning or resizing KiCad.
@@ -291,6 +319,9 @@ class CompanionFrame(wx.Frame):
         """Only show concrete single-footprint data; never infer DRC or pad health."""
         if summary.selected != 1 or summary.selected_pad_count is None:
             self.selected_panel.Hide()
+            if self._selection_visible:
+                self._selection_visible = False
+                self.Fit()
             return
         self.value_label.SetLabel(
             f"Value: {summary.selected_value or '—'}  ·  {summary.selected_pad_count} pads"
@@ -326,6 +357,9 @@ class CompanionFrame(wx.Frame):
         self.peer_label.SetLabel(_display_board_name(peer_info, 47))
         self.peer_label.SetToolTip(peer_info + " — Shared net labels do not prove routed copper.")
         self.selected_panel.Show()
+        if not self._selection_visible:
+            self._selection_visible = True
+            self.Fit()
 
     def refresh_board(self) -> None:
         """Re-read PCB/selection on focus, without a potentially slow HTTP health check."""
@@ -339,6 +373,7 @@ class CompanionFrame(wx.Frame):
             self._drc_board = None
             self.findings_btn.Hide()
             self.selected_panel.Hide()
+            self._selection_visible = False
             self.drc_label.SetLabel("DRC snapshot unavailable · no active board")
             self.drc_label.SetForegroundColour(wx.Colour(SECONDARY))
             self.board_label.SetLabel("KiCad IPC needs setup")
@@ -352,6 +387,7 @@ class CompanionFrame(wx.Frame):
             self._drc_board = None
             self.findings_btn.Hide()
             self.selected_panel.Hide()
+            self._selection_visible = False
             self.repair_btn.Hide()
             self.drc_label.SetLabel("DRC snapshot unavailable · no active board")
             self.drc_label.SetForegroundColour(wx.Colour(SECONDARY))
@@ -366,6 +402,8 @@ class CompanionFrame(wx.Frame):
                 self.feedback_label.SetForegroundColour(wx.Colour(WARNING))
 
         self._update_connection_indicator()
+        if self.board is None:
+            self.Fit()
         self.Layout()
 
     def check_saved_drc(self, _event: wx.CommandEvent) -> None:
@@ -378,6 +416,7 @@ class CompanionFrame(wx.Frame):
         self.drc_btn.Enable(False)
         self.drc_label.SetLabel("Checking saved PCB copy…")
         self.drc_label.SetForegroundColour(wx.Colour(SECONDARY))
+        self.Fit()  # previous findings row may have disappeared
 
         def worker() -> None:
             try:
@@ -429,17 +468,41 @@ class CompanionFrame(wx.Frame):
                 )
             )
         self.drc_btn.Enable(self.board is not None)
+        self.Fit()  # the findings action may have appeared or disappeared
         self.Layout()
+
+    def _place_dialog_on_same_display(self, dialog: wx.Dialog) -> None:
+        """Keep DRC details within the monitor used by the Companion."""
+        if not hasattr(wx, "Display") or not hasattr(wx.Display, "GetFromWindow"):
+            return
+        display = wx.Display.GetFromWindow(self)
+        if display == wx.NOT_FOUND:
+            return
+        bounds = wx.Display(display).GetClientArea()
+        size = dialog.GetSize()
+        # Align near the edge-sidecar rather than obscuring the PCB center.
+        rightmost = bounds.GetRight() - size.GetWidth() - 12
+        bottommost = bounds.GetBottom() - size.GetHeight() - 12
+        x = max(bounds.GetLeft() + 8, min(rightmost, self.GetPosition().x - 180))
+        y = max(bounds.GetTop() + 8, min(bottommost, self.GetPosition().y + 16))
+        dialog.SetPosition((x, y))
 
     def show_drc_findings(self, _event: wx.CommandEvent) -> None:
         """Read-only drilldown. Does NOT select/move objects in the KiCad editor."""
         result = self._drc_result
         if result is None or not result.findings or self._drc_board is None:
             return
-        dialog = wx.Dialog(self, title="Saved-board DRC findings", size=(920, 550))
+        # Avoid GTK's implicit transient-for-parent attachment: that forces
+        # wide DRC dialogs to straddle a monitor when the sidecar is at its edge.
+        dialog = wx.Dialog(
+            None,
+            title="Saved-board DRC findings",
+            size=(720, 490),
+            style=wx.DEFAULT_DIALOG_STYLE | wx.DIALOG_NO_PARENT,
+        )
         dialog_alive = [True]
         try:
-            dialog.SetMinSize((790, 450))
+            dialog.SetMinSize((640, 440))
             panel = wx.Panel(dialog)
             panel.SetBackgroundColour(wx.Colour(BACKGROUND))
             layout = wx.BoxSizer(wx.VERTICAL)
@@ -462,7 +525,7 @@ class CompanionFrame(wx.Frame):
             )
             table = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.LC_SINGLE_SEL)
             for index, (title, width) in enumerate(
-                (("Severity", 115), ("DRC check", 265), ("Reported location", 185))
+                (("Severity", 95), ("DRC check", 205), ("Reported location", 175))
             ):
                 table.InsertColumn(index, title, width=width)
             for index, finding in enumerate(result.findings):
@@ -481,7 +544,7 @@ class CompanionFrame(wx.Frame):
                 panel,
                 value=_finding_detail(result.findings[0], result.coordinate_units),
                 style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP,
-                size=(-1, 134),
+                size=(-1, 112),
             )
             current = [0]
 
@@ -570,6 +633,12 @@ class CompanionFrame(wx.Frame):
             outer = wx.BoxSizer(wx.VERTICAL)
             outer.Add(panel, 1, wx.EXPAND | wx.ALL, 18)
             dialog.SetSizer(outer)
+            # GTK/GNOME may reposition a modal while realizing it. A short,
+            # one-shot GUI timer places it after that step, inside this monitor.
+            wx.CallLater(
+                180,
+                lambda: self._place_dialog_on_same_display(dialog) if dialog_alive[0] else None,
+            )
             dialog.ShowModal()
         finally:
             dialog_alive[0] = False
@@ -683,6 +752,8 @@ class CompanionFrame(wx.Frame):
         else:
             self.board = None
             self.selected_panel.Hide()
+            self._selection_visible = False
+            self.Fit()
             self.board_label.SetLabel("No active PCB")
             self.board_details.SetLabel("Open a saved PCB and refresh to retry.")
             self.selection_label.SetLabel("")
