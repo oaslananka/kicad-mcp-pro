@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import cast
 
+import pytest
 from kipy.board_types import Net
 from kipy.geometry import Vector2
 
@@ -56,7 +57,10 @@ def test_route_single_preserves_track_spec_and_response() -> None:
         "USB_D+",
     )
 
-    assert result == "Single track routed successfully."
+    assert result == (
+        "Track segment write submitted. Board persistence and electrical connectivity "
+        "UNVERIFIED; verify with DRC and project_quality_gate."
+    )
     assert writes == [
         (
             "route_single_track",
@@ -93,7 +97,9 @@ def test_route_pad_to_pad_preserves_orthogonal_geometry_and_response() -> None:
     result = service.route_pad_to_pad("R1", "1", "U2", "3", "F_Cu", 0.25)
 
     assert result == (
-        "Created an orthogonal two-segment route from R1:1 to U2:3. Run DRC to verify the path."
+        "Orthogonal two-segment track write submitted for R1:1 -> U2:3. "
+        "Board persistence and electrical connectivity UNVERIFIED; "
+        "verify with DRC and project_quality_gate."
     )
     assert writes == [
         (
@@ -113,3 +119,19 @@ def test_route_pad_to_pad_preserves_missing_pad_message_without_write() -> None:
 
     assert result == "One or both pads were not found on the active board."
     assert writes == []
+
+
+def test_live_write_failure_does_not_claim_route_success() -> None:
+    pads = [
+        _pad("R1", "1", 1.0, 2.0, "DATA"),
+        _pad("U2", "3", 5.0, 8.0, "DATA"),
+    ]
+
+    def failed_write(_operation: str, _specs: list[TrackSpec]) -> None:
+        raise RuntimeError("KiCad mutation was rejected")
+
+    service = RoutingManualTrackService(list_pads=lambda: pads, write_tracks=failed_write)
+    with pytest.raises(RuntimeError, match="KiCad mutation was rejected"):
+        service.route_single(1.0, 2.0, 5.0, 8.0)
+    with pytest.raises(RuntimeError, match="KiCad mutation was rejected"):
+        service.route_pad_to_pad("R1", "1", "U2", "3")
