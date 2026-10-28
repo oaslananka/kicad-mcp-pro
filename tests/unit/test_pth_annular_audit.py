@@ -100,3 +100,53 @@ def test_threshold_precision_does_not_print_apparent_equal_comparison() -> None:
     lines = audit_pth_annular_ring_lines(_board(_round("1", 0.7598, 0.4)), 0.18)
     assert any("0.1799000 mm < 0.1800000 mm" in line for line in lines)
     assert not any("0.180 mm < 0.180 mm" in line for line in lines)
+
+
+def test_offset_round_drill_reduces_nominal_minimum_ring_to_fail() -> None:
+    # 0.9/0.4 centered ring=0.250, but a 0.080-mm hole offset
+    # leaves 0.170 mm at the thinnest copper edge.
+    pad = (
+        '(pad "off" thru_hole circle (size 0.9 0.9) '
+        '(drill 0.4 (offset 0.08 0)) (layers "*.Cu" "*.Mask"))'
+    )
+    lines = audit_pth_annular_ring_lines(_board(pad), 0.18)
+    assert any(
+        line.startswith("- FAIL:") and "J1 pad off" in line and "0.170 mm" in line for line in lines
+    )
+    assert any("1 circular pads measured" in line and "0 unmeasured" in line for line in lines)
+
+
+@pytest.mark.parametrize("offset", ["0.07 0.07", "-0.07 0.07", "0.07 -0.07"])
+def test_diagonal_and_negative_round_drill_offset_use_vector_length(offset: str) -> None:
+    pad = (
+        '(pad "diag" thru_hole circle (size 0.9 0.9) '
+        f'(drill 0.4 (offset {offset})) (layers "*.Cu" "*.Mask"))'
+    )
+    lines = audit_pth_annular_ring_lines(_board(pad), 0.18)
+    assert any("J1 pad diag" in line and "nominal ring 0.151 mm" in line for line in lines)
+
+
+def test_centered_and_zero_offset_ring_are_equivalent() -> None:
+    shifted = (
+        '(pad "zero" thru_hole circle (size 0.9 0.9) '
+        '(drill 0.4 (offset 0 0)) (layers "*.Cu" "*.Mask"))'
+    )
+    lines = audit_pth_annular_ring_lines(_board(shifted), 0.18)
+    assert not any(line.startswith("- FAIL:") for line in lines)
+    assert any("1 circular pads measured" in line for line in lines)
+
+
+@pytest.mark.parametrize(
+    "drill",
+    [
+        "(drill 0.4 (offset 0.1))",
+        "(drill 0.4 (offset who 0))",
+        "(drill 0.4 (offset 0.1 0) (unknown feature))",
+        "(drill oval 0.4 0.6 (offset 0.1 0))",
+    ],
+)
+def test_unrecognized_round_hole_offsets_remain_unmeasured(drill: str) -> None:
+    pad = f'(pad "unknown" thru_hole circle (size 0.9 0.9) {drill})'
+    lines = audit_pth_annular_ring_lines(_board(pad), 0.18)
+    assert any("0 circular pads measured, 1 unmeasured" in line for line in lines)
+    assert not any(line.startswith("- PASS:") for line in lines)

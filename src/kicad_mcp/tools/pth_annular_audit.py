@@ -1,6 +1,6 @@
 """Read-only, intentionally partial inspection of nominal circular PTH lands.
 
-Nominal land geometry does not capture drill offset, plating, mask, copper weight,
+Nominal land geometry accounts for known round-drill offsets, but not plating, mask, copper weight,
 or the manufacturer's finished hole registration. This module never approves fab.
 """
 
@@ -14,11 +14,14 @@ from .board_file import _iter_blocks
 _PAD_HEADER = re.compile(r'^\(pad\s+(?:"([^"\\]*)"|(\S+))\s+thru_hole\s+(\w+)')
 _REF = re.compile(r'\(property\s+"Reference"\s+"([^"\\]+)"')
 _SIZE = re.compile(r"\(size\s+([\d.]+)\s+([\d.]+)\)")
-_DRILL = re.compile(r"\(drill\s+([\d.]+)\)")
+_DRILL = re.compile(
+    r"\(drill\s+([\d.]+)"
+    r"(?:\s+\(offset\s+(-?[\d.]+)\s+(-?[\d.]+)\))?\s*\)"
+)
 
 
 def _nominal_circular_ring_mm(pad: str, shape: str) -> float | None:
-    """Only centered circular copper with a single round drill is bounded."""
+    """Bound the narrowest nominal copper ring for a known round drill."""
     if shape != "circle":
         return None
     size = _SIZE.search(pad)
@@ -26,11 +29,13 @@ def _nominal_circular_ring_mm(pad: str, shape: str) -> float | None:
     if size is None or drill is None:
         return None
     x, y, hole = float(size.group(1)), float(size.group(2)), float(drill.group(1))
-    if not all(math.isfinite(value) and value > 0 for value in (x, y, hole)):
+    offset_x = float(drill.group(2) or 0)
+    offset_y = float(drill.group(3) or 0)
+    if not all(math.isfinite(value) for value in (x, y, hole, offset_x, offset_y)):
         return None
-    if not math.isclose(x, y, abs_tol=1e-7):
+    if min(x, y, hole) <= 0 or not math.isclose(x, y, abs_tol=1e-7):
         return None
-    return (min(x, y) - hole) / 2
+    return (min(x, y) - hole) / 2 - math.hypot(offset_x, offset_y)
 
 
 def _formatted_nominal_ring_comparison(ring: float, minimum_mm: float) -> str:
