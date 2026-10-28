@@ -103,6 +103,39 @@ def test_unmaximized_editor_is_not_rearranged(monkeypatch: pytest.MonkeyPatch) -
     window.set_maximized.assert_not_called()
 
 
+def test_restore_refuses_if_window_manager_ignores_maximize(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(tile.time, "sleep", lambda _: None)
+    window = Mock()
+    window.__enter__ = Mock(return_value=window)
+    window.__exit__ = Mock(return_value=None)
+    window.editor.return_value = 7
+    window.maximized.return_value = False
+    monkeypatch.setattr(tile, "_X11", lambda: window)
+    snapshot = tile.EditorPlacement(7, (66, 69, 1854, 1011), True, "board.kicad_pcb")
+    with pytest.raises(RuntimeError, match="did not confirm"):
+        tile.restore_editor(snapshot)
+    window.set_maximized.assert_called_once_with(7, True)
+
+
+def test_restore_waits_for_confirmed_maximized_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sleep = Mock()
+    monkeypatch.setattr(tile.time, "sleep", sleep)
+    window = Mock()
+    window.__enter__ = Mock(return_value=window)
+    window.__exit__ = Mock(return_value=None)
+    window.editor.return_value = 7
+    window.maximized.side_effect = [False, False, True]
+    monkeypatch.setattr(tile, "_X11", lambda: window)
+    snapshot = tile.EditorPlacement(7, (66, 69, 1854, 1011), True, "board.kicad_pcb")
+    tile.restore_editor(snapshot)
+    window.set_maximized.assert_called_once_with(7, True)
+    assert sleep.call_count == 3
+
+
 def test_tile_and_restore_verified_same_window(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tile.sys, "platform", "linux")
     monkeypatch.setenv("DISPLAY", ":0")

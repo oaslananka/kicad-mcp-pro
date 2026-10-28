@@ -353,3 +353,11 @@ def restore_editor(snapshot: EditorPlacement) -> None:
         if x.editor(snapshot.board_name) != snapshot.window:
             raise RuntimeError("KiCad window changed; cannot restore the old layout safely.")
         x.set_maximized(snapshot.window, True)
+        # XSendEvent confirms transport, not actual WM state. Never report a
+        # successful restore (or let the in-app Close exit) until KiCad itself
+        # is observed maximized. A bounded retry handles compositor latency.
+        for _attempt in range(6):
+            time.sleep(0.15)
+            if x.maximized(snapshot.window):
+                return
+        raise RuntimeError("Desktop did not confirm KiCad maximization; keep Companion open.")
