@@ -131,9 +131,7 @@ def _saved_board_file(summary: BoardSummary) -> Path:
     return candidate
 
 
-def run_saved_board_drc(
-    summary: BoardSummary, *, cli: str = "kicad-cli", timeout: int = 45
-) -> SavedDrcResult:
+def run_saved_board_drc(summary: BoardSummary, *, timeout: int = 45) -> SavedDrcResult:
     """User-triggered DRC on a private copy of the SAVED board, not editor state.
 
     Only generated CLI output and local project-rule copies touch the temporary
@@ -152,8 +150,19 @@ def run_saved_board_drc(
         report = work / "saved-board-drc.json"
         try:
             process = subprocess.run(  # nosec B603
-                [cli, "pcb", "drc", "--format", "json", "--output", str(report), str(copied_board)],
+                # The executable is fixed, never sourced from PCB/project input.
+                [  # noqa: S607 - fixed KiCad CLI executable name; OS PATH portability is intentional
+                    "kicad-cli",
+                    "pcb",
+                    "drc",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(report),
+                    str(copied_board),
+                ],
                 cwd=work,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=timeout,

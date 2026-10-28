@@ -263,6 +263,8 @@ def test_saved_drc_uses_private_snapshot_no_cli_write_to_original(
 
     def fake_cli(argv: list[str], **kwargs: object) -> SimpleNamespace:
         assert argv[:6] == ["kicad-cli", "pcb", "drc", "--format", "json", "--output"]
+        assert kwargs["shell"] is False
+        assert kwargs["timeout"] == 45
         copied = Path(argv[-1])
         assert copied != board and copied.read_bytes() == b"board-bytes"
         assert (copied.parent / "safe.kicad_pro").read_bytes() == b"project-rules"
@@ -289,7 +291,6 @@ def test_saved_drc_uses_private_snapshot_no_cli_write_to_original(
 def test_saved_drc_rejects_outside_project_path_and_cli_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import subprocess
     from types import SimpleNamespace
 
     import companion_core
@@ -306,7 +307,7 @@ def test_saved_drc_rejects_outside_project_path_and_cli_failure(
         companion_core.run_saved_board_drc(summary)
 
     def timeout(*_a: object, **_kw: object) -> None:
-        raise subprocess.TimeoutExpired("kicad-cli", 45)
+        raise companion_core.subprocess.TimeoutExpired("kicad-cli", 45)
 
     monkeypatch.setattr(companion_core.subprocess, "run", timeout)
     with pytest.raises(RuntimeError, match="could not finish"):
