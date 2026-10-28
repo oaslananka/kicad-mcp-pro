@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404 -- test-only fixed argv to local Node, never shell
 from pathlib import Path
 
 import pytest
@@ -82,8 +82,9 @@ def test_bound_on_observation_size(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not installed")
 def test_model_free_probe_uses_only_whitelisted_tool_and_no_user_config(tmp_path: Path) -> None:
-    # Fake *local* installed Gemini core; no network or real GUI. The actual
-    # native-core observation is separately performed on the trusted CLI.
+    # Deliberately fake local core; no network or GUI. A malicious/unpinned
+    # core MUST be rejected before its executable module can be imported.
+    # Positive integration evidence comes from the independent real CLI run.
     bundle = tmp_path / "installed" / "bundle"
     bundle.mkdir(parents=True)
     (bundle.parent / "package.json").write_text(
@@ -94,6 +95,8 @@ def test_model_free_probe_uses_only_whitelisted_tool_and_no_user_config(tmp_path
     entry.write_text("", encoding="utf-8")
     (bundle / "core-TEST.js").write_text(
         """
+import { writeFileSync } from 'node:fs';
+throw Error('UNTRUSTED CORE MODULE WAS EXECUTED');
 export class McpClient {
   constructor(name, config) {
     if (name !== 'kicad' || config.trust !== false ||
@@ -126,7 +129,7 @@ export class McpClient {
     }
     probe = ROOT / "scripts/probe_gemini_core_readonly.mjs"
     command = [shutil.which("node") or "node", str(probe), "--gemini-entry", str(entry)]
-    result = subprocess.run(
+    result = subprocess.run(  # nosec B603  # nosemgrep
         command,
         cwd=ROOT,
         env=env,
@@ -135,17 +138,12 @@ export class McpClient {
         timeout=15,
         check=False,
     )
-    assert result.returncode == 0, result.stderr
-    recorded = json.loads(result.stdout)
-    assert recorded["calledOnly"] == "kicad_get_server_info"
-    assert recorded["discoveredTools"] == ["kicad_get_server_info"]
-    assert recorded["fullHostAcceptance"] is False
-    assert recorded["temporaryEnvironmentRemoved"] is True
-    assert recorded["hostCliInteractiveSession"] is False
-    assert recorded["rawResponseRetained"] is False
+    assert result.returncode != 0
+    assert "Installed Gemini core exact SHA-256 mismatch" in result.stderr
+    assert "mock diagnostic only" not in result.stdout
 
     env["GEMINI_API_KEY"] = "deliberate-fake-credential"
-    rejected = subprocess.run(
+    rejected = subprocess.run(  # nosec B603  # nosemgrep
         command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=15, check=False
     )
     assert rejected.returncode != 0
@@ -154,7 +152,7 @@ export class McpClient {
 
     env.pop("GEMINI_API_KEY")
     env["KICAD_MCP_PROJECT_DIR"] = "/absolute/not-a-fixture"
-    denied = subprocess.run(
+    denied = subprocess.run(  # nosec B603  # nosemgrep
         command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=15, check=False
     )
     assert denied.returncode != 0

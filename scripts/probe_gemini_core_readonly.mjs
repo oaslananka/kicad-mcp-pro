@@ -12,6 +12,7 @@ import { pathToFileURL } from 'node:url';
 const SOURCE = path.resolve(import.meta.dirname, '..');
 const EVIDENCE_SCHEMA = 'gemini-core-readonly-diagnostic.v1';
 const HOST_VERSION = '0.60.0';
+const PINNED_CORE_SHA256 = '82bbf0bd5c3c0040b6b454d7977a0c03c4fee6ae7b8891f282c7e7c896567ab5';
 const TOOL = 'kicad_get_server_info';
 const MAX_DISCOVERY = 256;
 const REQUIRED_ARGS = [
@@ -26,11 +27,17 @@ function getEntry(args) {
   if (args.length !== 2 || args[0] !== '--gemini-entry' || !path.isAbsolute(args[1])) {
     fail('Usage: node scripts/probe_gemini_core_readonly.mjs --gemini-entry /absolute/trusted/gemini.js');
   }
+  // nosemgrep: javascript.pathtraversal -- absolute, operator-supplied installed CLI path;
+  // the resolved filename, package identity and an immutable bundled core SHA are checked.
   const entry = fs.realpathSync(args[1]);
   if (path.basename(entry) !== 'gemini.js' || path.basename(path.dirname(entry)) !== 'bundle') {
     fail('Gemini entry must resolve to a trusted @google/gemini-cli/bundle/gemini.js');
   }
-  const pkg = JSON.parse(fs.readFileSync(path.join(path.dirname(entry), '..', 'package.json'), 'utf8'));
+  const pkgFile = path.join(path.dirname(entry), '..', 'package.json');
+  if (fs.lstatSync(pkgFile).isSymbolicLink()) fail('Symlinked Gemini package metadata refused');
+  // nosemgrep: javascript.pathtraversal -- derives from verified resolved bundle entry,
+  // with package metadata symlink rejected and installed identity/version checked.
+  const pkg = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
   if (pkg.name !== '@google/gemini-cli' || pkg.version !== HOST_VERSION) {
     fail('Installed Gemini CLI identity/version mismatch');
   }
@@ -38,9 +45,9 @@ function getEntry(args) {
 }
 
 function verifyManifest() {
-  const manifest = JSON.parse(
-    fs.readFileSync(path.join(SOURCE, 'integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json'), 'utf8')
-  );
+  const manifestPath = path.join(SOURCE, 'integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json');
+  // nosemgrep: javascript.pathtraversal -- fixed reviewed repository-relative manifest.
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   const server = manifest.mcpServers?.kicad;
   if (manifest.version !== '4.4.0' || server?.command !== 'uvx' ||
       JSON.stringify(server.args) !== JSON.stringify(REQUIRED_ARGS) ||
@@ -68,16 +75,28 @@ async function probe(entry) {
   let result;
   try {
     const bundle = path.dirname(entry);
+    // A module with the expected class name is NOT enough: check immutable
+    // upstream module bytes before executing ANY imported Gemini core code.
+    // Refuse symlinks, unknown/hijacked bundle modules and digest drift.
+    // nosemgrep: javascript.pathtraversal -- bundle comes from an explicitly
+    // nominated installed entry and is never combined with untrusted tool names.
     const modules = fs.readdirSync(bundle).filter((v) => /^core-[A-Za-z0-9_-]+\.js$/.test(v));
     if (modules.length < 1 || modules.length > 6) fail('Unexpected bundled Gemini core layout');
-    // Module initialization prints only local implementation diagnostics; suppress them
-    // rather than interleaving them with the sanitized JSON-only result on stdout.
+    const eligible = [];
+    for (const filename of modules) {
+      const corePath = path.join(bundle, filename);
+      if (fs.lstatSync(corePath).isSymbolicLink()) fail('Symlinked Gemini core module refused');
+      // nosemgrep: javascript.pathtraversal -- basename allowlisted above;
+      // no module is executed until its bytes equal the pinned trusted digest.
+      const sha256 = createHash('sha256').update(fs.readFileSync(corePath)).digest('hex');
+      if (sha256 === PINNED_CORE_SHA256) eligible.push({corePath, sha256});
+    }
+    if (eligible.length !== 1) fail('Installed Gemini core exact SHA-256 mismatch');
+    const {corePath, sha256} = eligible[0];
+    // Avoid importing any untrusted, unverified sibling core-*.js files.
     console.log = () => {};
-    const coreModules = await Promise.all(modules.map((v) => import(pathToFileURL(path.join(bundle, v)))));
-    const core = coreModules.find((m) => typeof m.McpClient === 'function');
-    if (!core) fail('Installed Gemini core does not export McpClient');
-    const coreFile = modules[coreModules.indexOf(core)];
-    const sha256 = createHash('sha256').update(fs.readFileSync(path.join(bundle, coreFile))).digest('hex');
+    const core = await import(pathToFileURL(corePath));
+    if (typeof core.McpClient !== 'function') fail('Verified Gemini core does not export McpClient');
     const workspace = {
       getDirectories: () => [temp],
       onDirectoriesChanged: () => () => {},
@@ -119,6 +138,7 @@ async function probe(entry) {
     const invocation = diagnostic[0].createInvocation({}, undefined);
     const response = await invocation.execute({ abortSignal: new AbortController().signal });
     if (response?.error || !response?.returnDisplay) fail('Gemini core diagnostic failed');
+    // nosemgrep: javascript.pathtraversal -- internally constructed under unique temp.
     if (fs.existsSync(env.KICAD_API_SOCKET)) fail('Unexpected attachment to a KiCad IPC socket');
     result = {
       schemaVersion: EVIDENCE_SCHEMA,
@@ -151,6 +171,7 @@ async function probe(entry) {
       console.log = oldLog;
     }
   }
+  // nosemgrep: javascript.pathtraversal -- checked temp was generated by mkdtempSync.
   result.temporaryEnvironmentRemoved = !fs.existsSync(temp);
   if (!result.temporaryEnvironmentRemoved) fail('Temporary workspace cleanup failed');
   return result;

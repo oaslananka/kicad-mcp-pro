@@ -137,8 +137,14 @@ empty inherited provider-credential environment, unbound KiCad IPC socket and
   annotation/UX ambiguity and **not evidence that write tools were executed**.
 
 The [sanitized result](../evidence/agent-host/2026-10-28-linux-gemini-core-readonly.json)
-includes the installed core module SHA-256 and discovered tool names. Review
-it against the same-source operating-mode catalog with:
+includes the installed core module SHA-256 and discovered tool names. The
+probe verifies the pinned SHA-256 **before importing any Gemini core module**,
+refuses symlinked core files, and does not import unknown sibling core files.
+Path-related analyzer findings are restricted to an explicitly operator-supplied
+installed CLI path, a fixed source manifest, and freshly generated temporary
+paths; the test-only subprocesses use fixed argv, no shell and bounded timeouts.
+These narrowly reviewed operations do **not** attest every transitive bundled
+module. Review the evidence against the same-source operating-mode catalog with:
 
 ```bash
 PYTHONPATH=src python scripts/check_gemini_core_readonly_evidence.py
