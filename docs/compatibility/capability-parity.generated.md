@@ -66,7 +66,7 @@ Footprint place/move, track/via/zone/stackup/rules/groups/teardrops/fanout on .k
 | Capability | Channel | MCP tool | Status | KiCad | Notes |
 |---|---|---|---|---|---|
 | Place / move a footprint | `ipc` | `pcb_place_component` | `covered` | 10.0.x | pcb_move_footprint / pcb_move_component for relocation. |
-| Add a track / route a trace | `ipc` | `pcb_add_track` | `covered` | 10.0.x | pcb_route_trace, pcb_add_tracks_bulk for batches. |
+| Add a track / route a trace | `ipc` | `pcb_add_track` | `covered` | 10.0.x | pcb_add_track_segment is the explicit raw segment name; pcb_route_trace is a legacy single-segment alias, not autorouting; pcb_add_tracks_bulk creates batches. |
 | Add through / blind / micro vias | `ipc` | `pcb_add_via` | `covered` | 10.0.x | pcb_add_blind_via, pcb_add_microvia. |
 | Add and refill copper zones | `ipc` | `pcb_add_copper_zone` | `covered` | 10.0.x | pcb_add_zone, pcb_refill_zones. |
 | Read / set the layer stackup | `file` | `pcb_set_stackup` | `covered` | 10.0.x | pcb_get_stackup for inspection. |
