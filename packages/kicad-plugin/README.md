@@ -40,9 +40,19 @@ selected footprint; expanding advanced tools grows it only as needed. Dependency
 repair is visible only when IPC setup genuinely fails. The separate DRC findings
 dialog is reduced to 720 × 490 and placed within the physical monitor that
 contains the Companion where supported. These changes reduce clutter but
-**do not create native docking or move/resize KiCad**. If the editor is
-maximized, the independent sidecar still overlaps it: the user must explicitly
-tile the OS windows. The active PCB and selected footprint are re-read when the
+**do not create native docking or move/resize KiCad automatically**. If the editor is
+maximized, the sidecar initially overlaps it. **More tools → Arrange beside
+KiCad…** offers opt-in, confirmed desktop tiling on Linux X11/XWayland only.
+It requires an already maximized single local PCB Editor matching the active
+board's filename, verifies the same monitor and the desktop manager's resulting
+geometry, then puts KiCad on the left and Companion on the right. **Restore
+previous KiCad layout** explicitly requests the original maximized state.
+Closing Companion also attempts restoration on a best-effort basis, but
+window-manager close behavior varies: users should click **Restore** first. The command never runs during startup, never edits PCB data,
+and never installs window-manager dependencies. Unmaximized editors,
+Windows/macOS, unsupported displays, and missing/multiple KiCad matches fail
+closed with a message; manual OS window tiling is the fallback. Desktop
+compositor behavior can vary; this remains separate windows, not a KiCad dock. The active PCB and selected footprint are re-read when the
 Companion regains focus, and **Sync reads fresh selection** in a worker before
 publishing. If KiCad cannot provide the current selection, Sync fails closed.
 When exactly one footprint is selected, a compact read-only inspector shows

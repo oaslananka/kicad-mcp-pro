@@ -107,6 +107,7 @@ def _package_members(root: Path, version: str) -> dict[str, bytes]:
         "plugins/requirements.txt": (plugin_root / "requirements.txt").read_bytes(),
         "plugins/companion.py": (plugin_root / "companion.py").read_bytes(),
         "plugins/companion_core.py": (plugin_root / "companion_core.py").read_bytes(),
+        "plugins/companion_tiling.py": (plugin_root / "companion_tiling.py").read_bytes(),
         "plugins/icon.png": (plugin_root / "icon.png").read_bytes(),
         ICON_MEMBER: (root / "docs" / "assets" / "icon-64.png").read_bytes(),
     }
@@ -204,6 +205,7 @@ def verify_pcm(artifact: Path, checksums: Path) -> None:
                 "plugins/requirements.txt",
                 "plugins/companion.py",
                 "plugins/companion_core.py",
+                "plugins/companion_tiling.py",
                 "plugins/icon.png",
                 ICON_MEMBER,
             }

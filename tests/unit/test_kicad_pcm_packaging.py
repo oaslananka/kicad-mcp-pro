@@ -23,6 +23,7 @@ EXPECTED_MEMBERS = {
     "plugins/requirements.txt",
     "plugins/companion.py",
     "plugins/companion_core.py",
+    "plugins/companion_tiling.py",
     "plugins/icon.png",
     "resources/icon.png",
 }

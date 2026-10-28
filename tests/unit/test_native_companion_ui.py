@@ -39,6 +39,7 @@ def ui(monkeypatch: pytest.MonkeyPatch) -> tuple[types.ModuleType, types.ModuleT
     wx.CallAfter = lambda callback, *args: callback(*args)
     wx.CallLater = lambda _delay, callback, *args: callback(*args)
     wx.MessageBox = Mock()
+    wx.MessageDialog = Mock(return_value=Mock())
     for name in ("VERTICAL", "HORIZONTAL", "EXPAND", "BOTTOM", "ALL", "TOP", "RIGHT"):
         setattr(wx, name, 0)
     wx.DEFAULT_FRAME_STYLE = 0
@@ -47,7 +48,9 @@ def ui(monkeypatch: pytest.MonkeyPatch) -> tuple[types.ModuleType, types.ModuleT
     wx.FONTWEIGHT_BOLD = 700
     wx.EVT_BUTTON = 100
     wx.EVT_ACTIVATE = 101
+    wx.EVT_CLOSE = 103
     wx.YES = 1
+    wx.ID_YES = 5103
     wx.NO = 0
     wx.YES_NO = 2
     wx.ICON_QUESTION = 4
@@ -178,6 +181,81 @@ def test_missing_board_resets_selection_card_sizing(
     frame.refresh_board()
     assert frame._selection_visible
     frame.selected_panel.Show.assert_called()
+
+
+def test_arrange_never_changes_editor_before_explicit_confirmation(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, wx = ui
+    frame = _ready(ui, monkeypatch)
+    mock_tile = Mock()
+    mock_restore = Mock()
+    monkeypatch.setattr(module, "tile_editor", mock_tile)
+    monkeypatch.setattr(module, "restore_editor", mock_restore)
+    wx.Display = Mock()
+    wx.Display.GetFromWindow.return_value = 0
+    wx.NOT_FOUND = -1
+    area = Mock()
+    area.GetLeft.return_value = 66
+    area.GetTop.return_value = 32
+    area.GetRight.return_value = 1919
+    area.GetBottom.return_value = 1079
+    wx.Display.return_value.GetClientArea.return_value = area
+    frame.calls.GetPosition.return_value = Mock(x=1557, y=139)
+    frame.calls.GetSize.return_value.GetWidth.return_value = 330
+    mock_tile.assert_not_called()
+    wx.MessageDialog.return_value.GetSize.return_value.GetWidth.return_value = 600
+    wx.MessageDialog.return_value.GetSize.return_value.GetHeight.return_value = 200
+    wx.MessageDialog.return_value.ShowModal.return_value = wx.NO
+    frame.arrange_with_kicad(None)
+    assert wx.MessageDialog.call_args.kwargs["style"] & wx.DIALOG_NO_PARENT
+    wx.MessageDialog.return_value.Destroy.assert_called()
+    mock_tile.assert_not_called()
+    frame.calls.SetPosition.assert_not_called()
+
+    wx.MessageDialog.return_value.ShowModal.return_value = wx.ID_YES
+    snapshot = Mock()
+    mock_tile.return_value = Mock(original=snapshot, companion_position=(1577, 102))
+    frame.arrange_with_kicad(None)
+    mock_tile.assert_called_once_with("test.kicad_pcb", (66, 32, 1919, 1079), 330)
+    frame.calls.SetPosition.assert_called_with((1577, 102))
+    assert frame._tile_result is not None
+    frame.restore_tile_btn.Show.assert_called()
+    frame.restore_kicad_layout(None)
+    mock_restore.assert_called_once_with(snapshot)
+    frame.calls.SetPosition.assert_called_with((1557, 139))
+    assert frame._tile_result is None
+
+    frame.arrange_with_kicad(None)
+    event = Mock()
+    frame.on_close(event)
+    assert mock_restore.call_count == 2
+    event.Skip.assert_called_once_with()
+
+
+def test_unsupported_tiling_fails_closed_without_move(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, wx = ui
+    frame = _ready(ui, monkeypatch)
+    wx.Display = Mock()
+    wx.Display.GetFromWindow.return_value = 0
+    wx.NOT_FOUND = -1
+    wx.Display.return_value.GetClientArea.return_value = Mock(
+        GetLeft=lambda: 0,
+        GetTop=lambda: 0,
+        GetRight=lambda: 1920,
+        GetBottom=lambda: 1080,
+    )
+    wx.MessageDialog.return_value.GetSize.return_value.GetWidth.return_value = 600
+    wx.MessageDialog.return_value.GetSize.return_value.GetHeight.return_value = 200
+    frame.calls.GetPosition.return_value = Mock(x=1557, y=139)
+    wx.MessageDialog.return_value.ShowModal.return_value = wx.ID_YES
+    monkeypatch.setattr(module, "tile_editor", Mock(side_effect=RuntimeError("No X11")))
+    frame.arrange_with_kicad(None)
+    assert frame._tile_result is None
+    frame.calls.SetPosition.assert_not_called()
+    frame.feedback_label.SetLabel.assert_called_with("No X11")
 
 
 def test_drc_window_fits_the_active_monitor_without_moving_editor(

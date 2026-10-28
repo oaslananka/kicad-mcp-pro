@@ -33,6 +33,7 @@ from companion_core import (
     select_verified_saved_drc_items,
     sync_board_context,
 )
+from companion_tiling import TileResult, restore_editor, tile_editor
 
 BACKGROUND = "#111923"
 SURFACE = "#1B2634"
@@ -133,6 +134,8 @@ class CompanionFrame(wx.Frame):
         self._drc_result: SavedDrcResult | None = None
         self._tools_open = False
         self._selection_visible = False
+        self._tile_result: TileResult | None = None
+        self._pre_tile_position: tuple[int, int] | None = None
 
         panel = wx.Panel(self)
         panel.SetBackgroundColour(wx.Colour(BACKGROUND))
@@ -232,7 +235,15 @@ class CompanionFrame(wx.Frame):
         self.refresh_btn = wx.Button(self.tools_panel, label="Refresh")
         secondary.Add(self.dashboard_btn, 1, wx.RIGHT, 8)
         secondary.Add(self.refresh_btn, 0)
-        tools_layout.Add(secondary, 0, wx.EXPAND)
+        tools_layout.Add(secondary, 0, wx.EXPAND | wx.BOTTOM, 10)
+        self.tile_btn = wx.Button(self.tools_panel, label="Arrange beside KiCad…")
+        tools_layout.Add(self.tile_btn, 0, wx.EXPAND | wx.BOTTOM, 5)
+        self.restore_tile_btn = wx.Button(self.tools_panel, label="Restore previous KiCad layout")
+        tools_layout.Add(self.restore_tile_btn, 0, wx.EXPAND)
+        self.restore_tile_btn.Hide()
+        if sys.platform != "linux":
+            self.tile_btn.Enable(False)
+            self.tile_btn.SetToolTip("Automatic tiling is supported only on Linux X11/XWayland.")
         self.tools_panel.SetSizer(tools_layout)
         layout.Add(self.tools_panel, 0, wx.EXPAND | wx.BOTTOM, 7)
         self.tools_panel.Hide()
@@ -260,6 +271,9 @@ class CompanionFrame(wx.Frame):
         self.drc_btn.Bind(wx.EVT_BUTTON, self.check_saved_drc)
         self.findings_btn.Bind(wx.EVT_BUTTON, self.show_drc_findings)
         self.repair_btn.Bind(wx.EVT_BUTTON, self.repair_dependencies)
+        self.tile_btn.Bind(wx.EVT_BUTTON, self.arrange_with_kicad)
+        self.restore_tile_btn.Bind(wx.EVT_BUTTON, self.restore_kicad_layout)
+        self.Bind(wx.EVT_CLOSE, self.on_close)
         self.Bind(wx.EVT_ACTIVATE, self.on_activate)
         wx.CallAfter(self.refresh)
 
@@ -270,6 +284,79 @@ class CompanionFrame(wx.Frame):
         self.tools_btn.SetLabel("Fewer tools ▾" if self._tools_open else "More tools ▸")
         self.Fit()
         self.Layout()
+
+    def arrange_with_kicad(self, _event: wx.CommandEvent) -> None:
+        """Only a user-confirmed action may change the PCB editor geometry."""
+        if self._tile_result is not None or self.board is None:
+            return
+        if not hasattr(wx, "Display") or not hasattr(wx.Display, "GetFromWindow"):
+            self.feedback_label.SetLabel("Desktop window placement is unavailable.")
+            return
+        display = wx.Display.GetFromWindow(self)
+        if display == wx.NOT_FOUND:
+            self.feedback_label.SetLabel("Cannot identify Companion's physical monitor.")
+            return
+        confirmation = wx.MessageDialog(
+            None,
+            "Place KiCad on the left and Companion on the right?\n"
+            "Only window geometry changes; the PCB remains untouched.\n"
+            "Use Restore before closing. Linux X11/XWayland only.",
+            "Arrange KiCad windows",
+            style=wx.YES_NO | wx.ICON_QUESTION | wx.DIALOG_NO_PARENT,
+        )
+        try:
+            wx.CallLater(180, self._place_dialog_on_same_display, confirmation)
+            answer = confirmation.ShowModal()
+        finally:
+            confirmation.Destroy()
+        if answer != wx.ID_YES:
+            return
+        area = wx.Display(display).GetClientArea()
+        bounds = (area.GetLeft(), area.GetTop(), area.GetRight(), area.GetBottom())
+        previous = self.GetPosition()
+        try:
+            result = tile_editor(self.board.name, bounds, self.GetSize().GetWidth())
+        except (RuntimeError, OSError) as exc:
+            self.feedback_label.SetLabel(str(exc)[:85])
+            self.feedback_label.SetForegroundColour(wx.Colour(WARNING))
+            return
+        self._pre_tile_position = (previous.x, previous.y)
+        self._tile_result = result
+        self.SetPosition(result.companion_position)
+        self.tile_btn.Hide()
+        self.restore_tile_btn.Show()
+        self.feedback_label.SetLabel("Windows arranged · Restore under More tools")
+        self.feedback_label.SetForegroundColour(wx.Colour(CONNECTED))
+        self.Fit()
+
+    def restore_kicad_layout(self, _event: wx.CommandEvent) -> None:
+        """Restore only the layout saved by this Companion instance."""
+        if self._tile_result is None:
+            return
+        try:
+            restore_editor(self._tile_result.original)
+        except (RuntimeError, OSError) as exc:
+            self.feedback_label.SetLabel(f"Restore unavailable: {str(exc)[:62]}")
+            self.feedback_label.SetForegroundColour(wx.Colour(WARNING))
+            return
+        self._tile_result = None
+        if self._pre_tile_position is not None:
+            self.SetPosition(self._pre_tile_position)
+        self._pre_tile_position = None
+        self.tile_btn.Show()
+        self.restore_tile_btn.Hide()
+        self.feedback_label.SetLabel("Previous KiCad window layout restored.")
+        self.feedback_label.SetForegroundColour(wx.Colour(SECONDARY))
+        self.Fit()
+
+    def on_close(self, event: wx.CloseEvent) -> None:
+        """Avoid leaving KiCad rearranged when the sidecar is normally closed."""
+        if self._tile_result is not None:
+            try:
+                restore_editor(self._tile_result.original)
+            except Exception as exc:
+                print(f"Companion: could not restore KiCad window layout: {exc}", file=sys.stderr)
+        event.Skip()
 
     def place_at_screen_edge(self) -> None:
         """Place on the current display edge without owning or resizing KiCad.
