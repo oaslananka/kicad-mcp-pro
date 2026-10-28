@@ -2877,7 +2877,7 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
         width_mm: float = 0.25,
         net_name: str = "",
     ) -> str:
-        """Add a single track segment."""
+        """Add one caller-specified straight track segment; no path planning or DRC."""
         payload = AddTrackInput(
             x1_mm=x1_mm,
             y1_mm=y1_mm,
@@ -2905,6 +2905,30 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @requires_kicad_running
+    def pcb_add_track_segment(
+        x1_mm: float,
+        y1_mm: float,
+        x2_mm: float,
+        y2_mm: float,
+        layer: str = "F_Cu",
+        width_mm: float = 0.25,
+        net_name: str = "",
+    ) -> str:
+        """Add exactly one explicit straight segment; not an autorouter or path planner."""
+        return str(
+            pcb_add_track(
+                x1_mm=x1_mm,
+                y1_mm=y1_mm,
+                x2_mm=x2_mm,
+                y2_mm=y2_mm,
+                layer=layer,
+                width_mm=width_mm,
+                net_name=net_name,
+            )
+        )
+
+    @mcp.tool()
+    @requires_kicad_running
     def pcb_route_trace(
         x1_mm: float,
         y1_mm: float,
@@ -2914,7 +2938,7 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
         width_mm: float = 0.25,
         net_name: str = "",
     ) -> str:
-        """Route a trace segment through the KiCad IPC-backed track tool."""
+        """Legacy single straight segment alias; no routing, collision avoidance, or DRC."""
         return str(
             pcb_add_track(
                 x1_mm=x1_mm,

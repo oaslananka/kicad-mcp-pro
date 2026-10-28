@@ -243,6 +243,36 @@ async def test_pcb_add_track_creates_item(mock_board) -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("tool_name", ["pcb_add_track_segment", "pcb_route_trace"])
+async def test_explicit_and_legacy_segment_tools_create_only_one_track(
+    mock_board, tool_name: str
+) -> None:
+    server = build_server("pcb")
+    payload = {
+        "x1_mm": 2.0,
+        "y1_mm": 3.0,
+        "x2_mm": 7.0,
+        "y2_mm": 8.0,
+        "layer": "F_Cu",
+        "width_mm": 0.25,
+        "net_name": "NET1",
+    }
+    response = await call_tool_text(server, tool_name, payload)
+    # The MagicMock cannot establish a real live-board postcondition, so
+    # the write must fail closed even though one segment was attempted.
+    assert "TOOL_EXECUTION_FAILED" in response
+    assert "postcondition verification failed" in response
+    assert mock_board.create_items.call_count == 1
+    [[track]] = mock_board.create_items.call_args.args
+    assert track.start.x != track.end.x
+    assert track.start.y != track.end.y
+    assert "router" not in response.lower()
+    tool = next(tool for tool in server.list_tools_sync() if tool.name == tool_name)
+    assert "not " in tool.description.lower() or "no " in tool.description.lower()
+    assert "segment" in tool.description.lower()
+
+
+@pytest.mark.anyio
 async def test_pcb_add_text_uses_kicad_compatible_alignment(mock_board) -> None:
     server = build_server("pcb")
 

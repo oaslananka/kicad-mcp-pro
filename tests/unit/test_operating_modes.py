@@ -38,6 +38,9 @@ def test_operating_mode_policy_matches_required_risk_levels(monkeypatch) -> None
     assert tool_required_mode("studio_push_context") is OperatingMode.READONLY
     assert is_tool_allowed_in_mode("studio_push_context", OperatingMode.READONLY) is True
     assert tool_required_mode("pcb_add_track") is OperatingMode.WRITE
+    assert tool_required_mode("pcb_add_track_segment") is OperatingMode.WRITE
+    assert is_tool_allowed_in_mode("pcb_add_track_segment", OperatingMode.READONLY) is False
+    assert is_tool_allowed_in_mode("pcb_add_track_segment", OperatingMode.WRITE) is True
     assert is_tool_allowed_in_mode("pcb_add_track", OperatingMode.READONLY) is False
     assert tool_required_mode("pcb_place_component") is OperatingMode.WRITE
     assert is_tool_allowed_in_mode("pcb_place_component", OperatingMode.READONLY) is False

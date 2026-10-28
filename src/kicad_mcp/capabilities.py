@@ -280,6 +280,7 @@ _register_many(
         "pcb_move_component",
         "pcb_sync_from_schematic",
         "pcb_add_track",
+        "pcb_add_track_segment",
         "pcb_add_zone",
         "pcb_add_via",
         "pcb_set_design_rules",

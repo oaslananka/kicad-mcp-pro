@@ -207,6 +207,7 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
         "description": "Modify PCB geometry, sync initial footprints, and save board changes.",
         "tools": [
             "pcb_add_track",
+            "pcb_add_track_segment",
             "pcb_route_trace",
             "pcb_add_tracks_bulk",
             "pcb_add_via",

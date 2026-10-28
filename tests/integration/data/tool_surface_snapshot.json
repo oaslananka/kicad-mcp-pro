@@ -2909,6 +2909,27 @@
     "experimental": false,
     "headless": false,
     "idempotent": false,
+    "name": "pcb_add_track_segment",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "expert",
+      "full",
+      "high_speed",
+      "pcb",
+      "pcb_layout",
+      "pcb_only",
+      "power"
+    ],
+    "read_only": false,
+    "requires_kicad_running": true
+  },
+  {
+    "destructive": true,
+    "experimental": false,
+    "headless": false,
+    "idempotent": false,
     "name": "pcb_add_tracks_bulk",
     "open_world": false,
     "profiles": [

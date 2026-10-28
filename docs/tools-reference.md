@@ -159,7 +159,7 @@ Built-in prompt helpers for the critic/fixer loop:
 
 Machine-maintained catalog. Refresh with `pnpm run docs:tools`.
 
-Total public tools: 387.
+Total public tools: 388.
 
 | Tool | Profile(s) | Read-Only | Destructive | Open-World | Idempotent | Headless | Requires KiCad Running | Summary |
 |---|---|---:|---:|---:|---:|---:|---:|---|
@@ -298,7 +298,8 @@ Total public tools: 387.
 | `pcb_add_teardrops` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | no | yes | Create small copper helper zones at simple pad-to-track junctions. |
 | `pcb_add_test_point` | agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager | no | yes | no | no | yes | no | Register a test-point assignment for a net. |
 | `pcb_add_text` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | no | no | Add board text. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
-| `pcb_add_track` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | no | yes | Add a single track segment. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_add_track` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | no | yes | Add one caller-specified straight track segment; no path planning or DRC. |
+| `pcb_add_track_segment` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | no | yes | Add exactly one explicit straight segment; not an autorouter or path planner. |
 | `pcb_add_tracks_bulk` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | no | no | Add multiple tracks in a single operation. This KiCad MCP Pro tool supports production EDA automation workflows for M... |
 | `pcb_add_via` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | no | yes | Add a via. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
 | `pcb_add_zone` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | no | yes | Add a copper zone with an arbitrary polygon outline on one copper layer. |
@@ -355,7 +356,7 @@ Total public tools: 387.
 | `pcb_refill_zones` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | no | no | yes | no | no | Refill all copper zones. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
 | `pcb_revert` | agent_full, build, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | no | yes | Revert the board to the last saved state, discarding all unsaved changes. |
 | `pcb_route_corner_style_gate` | agent_full, analysis, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, pcb, pcb_layout, power, release_manager, schematic, schematic_authoring | no | yes | no | no | yes | no | Check whether routed tracks still contain non-professional 90-degree corners. |
-| `pcb_route_trace` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | no | yes | Route a trace segment through the KiCad IPC-backed track tool. |
+| `pcb_route_trace` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | no | no | yes | Legacy single straight segment alias; no routing, collision avoidance, or DRC. |
 | `pcb_save` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | no | no | yes | no | no | Save the active board. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
 | `pcb_score_placement` | agent_full, analysis, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, pcb, pcb_layout, power, release_manager, schematic, schematic_authoring | no | no | no | no | yes | no | Score PCB placement quality and explain both hard failures and softer warnings. |
 | `pcb_set_board_outline` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power | no | yes | no | yes | no | no | Draw a rectangular board outline on Edge.Cuts. This KiCad MCP Pro tool supports production EDA automation workflows f... |
@@ -689,6 +690,7 @@ Total public tools: 387.
 - `pcb_add_test_point`: profiles=agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `pcb_add_text`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `pcb_add_track`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_add_track_segment`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
 - `pcb_add_tracks_bulk`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=no.
 - `pcb_add_via`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
 - `pcb_add_zone`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
