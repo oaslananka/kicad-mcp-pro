@@ -104,6 +104,20 @@ async function verifyManifest() {
   }
 }
 
+function isAllowedPlatformBootstrap(key) {
+  // Replacement-env Node subprocesses still receive CoreFoundation's text
+  // encoding marker on macOS. Require its bounded numeric OS format.
+  if (process.platform === 'darwin' && key === '__CF_USER_TEXT_ENCODING') {
+    return /^0x[0-9a-fA-F]+:0x[0-9a-fA-F]+:0x[0-9a-fA-F]+$/.test(process.env[key]);
+  }
+  // Windows Node/V8 startup requires SystemRoot even when the caller sets a
+  // minimal environment. This is an OS directory, never a provider credential.
+  if (process.platform === 'win32' && key.toLowerCase() === 'systemroot') {
+    return path.win32.isAbsolute(process.env[key] ?? '');
+  }
+  return false;
+}
+
 function validateMinimalEnvironment() {
   // Gemini's stdio transport may forward inherited environment variables.
   // Refuse all unexpected keys rather than relying on token redaction.
@@ -111,7 +125,9 @@ function validateMinimalEnvironment() {
     'HOME', 'USER', 'LOGNAME', 'PATH', 'UV_PYTHON', 'LANG', 'LC_ALL',
     'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME', 'TMPDIR',
   ]);
-  const inherited = Object.keys(process.env).filter((key) => !allowedEnvironment.has(key));
+  const inherited = Object.keys(process.env).filter(
+    (key) => !allowedEnvironment.has(key) && !isAllowedPlatformBootstrap(key)
+  );
   if (inherited.length) fail('Refusing inherited provider credential or project environment');
 }
 
@@ -123,14 +139,16 @@ async function loadPinnedGeminiCore(entry) {
     (v) => /^core-[A-Za-z0-9_-]+\.js$/.test(v)
   );
   if (modules.length < 1 || modules.length > 6) fail('Unexpected bundled Gemini core layout');
-  const eligible = [];
-  for (const filename of modules) {
-    // Filename is a single regex-validated basename, without path components.
+  // Max six strict-basename candidates; bounded regular-file reads and hashes
+  // can be performed concurrently without serial await-in-loop, while never
+  // importing any candidate before the exact digest is confirmed.
+  const scanned = await Promise.all(modules.map(async (filename) => {
     const corePath = path.join(bundle, filename);
     const bytes = await readVerifiedFile(corePath);
     const sha256 = createHash('sha256').update(bytes).digest('hex');
-    if (sha256 === PINNED_CORE_SHA256) eligible.push({corePath, sha256});
-  }
+    return {corePath, sha256};
+  }));
+  const eligible = scanned.filter(({sha256}) => sha256 === PINNED_CORE_SHA256);
   if (eligible.length !== 1) fail('Installed Gemini core exact SHA-256 mismatch');
   const {corePath, sha256} = eligible[0];
   // Unverified sibling core files are never imported; transitive imports

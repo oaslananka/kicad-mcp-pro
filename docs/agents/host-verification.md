@@ -146,9 +146,15 @@ manifest path is fixed to this source checkout, and discovered core filenames
 must be single regex-validated basenames. All package, manifest and core reads
 use bounded regular-file handles with a symlink-resistant `O_NOFOLLOW` open
 where supported, plus pre-open file identity checks. The installed core module
-SHA-256 is verified **before it is imported**. Test-only subprocesses use
-fixed argv, no shell and bounded timeouts. These controls do **not** attest
-every transitive bundled module or eliminate every possible filesystem race. Review the evidence against the same-source operating-mode catalog with:
+SHA-256 is verified **before it is imported**. For portable test subprocesses
+with a replacement environment, the probe accepts only a numeric macOS
+CoreFoundation `__CF_USER_TEXT_ENCODING` marker on macOS or an absolute Windows
+`SystemRoot` directory on Windows; credential/project environment variables
+remain prohibited. The Windows test passes `SystemRoot` explicitly so Node/V8
+can start. Candidate core file checks run in a bounded group (at most six)
+without serial `await` in a loop. Test subprocesses use fixed argv, no shell
+and bounded timeouts. These controls do **not** attest every transitive bundled
+module or eliminate every possible filesystem race. Review the evidence against the same-source operating-mode catalog with:
 
 ```bash
 PYTHONPATH=src python scripts/check_gemini_core_readonly_evidence.py

@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess  # nosec B404 -- test-only fixed argv to local Node, never shell
+import sys
 from pathlib import Path
 
 import pytest
@@ -73,6 +74,9 @@ def test_gemini_probe_uses_verified_regular_file_handles_not_scanner_exemptions(
     assert "after.dev !== before.dev || after.ino !== before.ino" in script
     assert "after.size > MAX_FILE_BYTES" in script
     assert "const bytes = await readVerifiedFile(corePath)" in script
+    assert "Promise.all(modules.map(async (filename) => {" in script
+    assert "__CF_USER_TEXT_ENCODING" in script
+    assert "for (const filename of modules)" not in script
     assert "discoveredTools: [...names].sort(compareToolNames)" in script
     assert ".map((t) => t.serverToolName).sort(compareToolNames)" in script
     assert "function compareToolNames(a, b)" in script
@@ -142,6 +146,10 @@ export class McpClient {
         "HOME": str(tmp_path / "ephemeral-home"),
         "USER": "gemini-test",
     }
+    if sys.platform == "win32":
+        # Python's replacement environment must still carry the Windows
+        # system directory: Node 24/V8 aborts during startup without it.
+        env["SystemRoot"] = os.environ["SystemRoot"]
     probe = ROOT / "scripts/probe_gemini_core_readonly.mjs"
     command = [shutil.which("node") or "node", str(probe), "--gemini-entry", str(entry)]
     result = subprocess.run(  # nosec B603  # nosemgrep
@@ -156,6 +164,22 @@ export class McpClient {
     assert result.returncode != 0
     assert "Installed Gemini core exact SHA-256 mismatch" in result.stderr
     assert "mock diagnostic only" not in result.stdout
+
+    if sys.platform == "darwin":
+        # macOS injects a legitimate CoreFoundation marker by default.
+        # A forged nonnumeric value must still fail closed.
+        forged = dict(env, __CF_USER_TEXT_ENCODING="forged-unsafe-value")
+        invalid = subprocess.run(  # nosec B603  # nosemgrep
+            command,
+            cwd=ROOT,
+            env=forged,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        assert invalid.returncode != 0
+        assert "Refusing inherited provider credential or project" in invalid.stderr
 
     env["GEMINI_API_KEY"] = "deliberate-fake-credential"
     rejected = subprocess.run(  # nosec B603  # nosemgrep
