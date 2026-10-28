@@ -66,6 +66,17 @@ def test_tool_inventory_and_annotation_mismatch_rejected() -> None:
     assert checker.check(observed)
 
 
+def test_gemini_probe_has_only_narrowly_scoped_file_path_audit_annotations() -> None:
+    script = (ROOT / "scripts/probe_gemini_core_readonly.mjs").read_text(encoding="utf-8")
+    annotated_lines = [line for line in script.splitlines() if "nosemgrep" in line]
+    assert len(annotated_lines) == 9
+    assert all(
+        line.endswith("// nosemgrep: javascript.pathtraversal.rule-non-literal-fs-filename")
+        for line in annotated_lines
+    )
+    assert all("fs." in line for line in annotated_lines)
+
+
 def test_no_duplicate_json_keys_in_observation(tmp_path: Path) -> None:
     file = tmp_path / "bad.json"
     file.write_text('{"hostVersion":"0.60.0","hostVersion":"0.61.0"}', encoding="utf-8")

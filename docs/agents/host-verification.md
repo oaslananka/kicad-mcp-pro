@@ -142,9 +142,13 @@ probe verifies the pinned SHA-256 **before importing any Gemini core module**,
 refuses symlinked core files, and does not import unknown sibling core files.
 Path-related analyzer findings are restricted to an explicitly operator-supplied
 installed CLI path, a fixed source manifest, and freshly generated temporary
-paths; the test-only subprocesses use fixed argv, no shell and bounded timeouts.
-These narrowly reviewed operations do **not** attest every transitive bundled
-module. Review the evidence against the same-source operating-mode catalog with:
+paths. The nine deliberately reviewed filesystem operations each carry a
+**same-line, exact-rule** Semgrep annotation for
+`javascript.pathtraversal.rule-non-literal-fs-filename` (not a blanket tool or
+repository exemption); a regression test limits these annotations to those
+nine reviewed `fs.*` operations. Test-only subprocesses use fixed argv, no
+shell and bounded timeouts. The reviewed path operations do **not** attest
+every transitive bundled module. Review the evidence against the same-source operating-mode catalog with:
 
 ```bash
 PYTHONPATH=src python scripts/check_gemini_core_readonly_evidence.py
