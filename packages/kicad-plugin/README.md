@@ -60,7 +60,15 @@ itself is not moved or selected. No unverified footprint matching or automatic
 GUI jump, selection, edit, or correction is performed; absent locations remain
 absent. In particular, KiCad can generate different ephemeral object IDs when
 the saved file has no persistent UUIDs; text/coordinate similarity is NOT a
-safe live-object identity check.
+safe live-object identity check. For a saved PCB containing persistent UUIDs,
+**Select exact items in KiCad** is enabled only when the report identifies each
+item by a unique persisted UUID. On explicit click it rechecks the saved board
+hash and active KiCad project identity, then resolves every reported UUID to
+exactly one selectable live `BoardItem` before changing only the editor
+selection. If any ID is missing, ambiguous, unsupported (such as a text field),
+or the saved file changed, it selects nothing. This is **not** proof that the
+saved DRC issue remains valid in unsaved editor changes, and it never scrolls,
+zooms, modifies, or saves the PCB.
 The KiCad CLI must be on the companion's PATH; missing/unusable CLI,
 unsupported reports or source file changes fail closed as **DRC unavailable**. Local temporary reports are
 deleted after parsing. This is deliberately independent of MCP backend health.

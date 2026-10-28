@@ -513,6 +513,75 @@ def test_copy_finding_with_no_position_never_invents_coordinates(
     assert "None, None" not in clipboard.SetData.call_args.args[0]
 
 
+def test_exact_live_selection_needs_persisted_ids_and_explicit_click(
+    ui: tuple[types.ModuleType, types.ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module, wx = ui
+    frame = _ready(ui, monkeypatch)
+    uid = "71617dd7-0e7e-436f-af97-312daa1427d3"
+    finding = module.DrcFinding(
+        "error", "shorting_items", "bad copper", ("Track",), None, (uid,), 1
+    )
+    report = module.SavedDrcResult(
+        1,
+        0,
+        0,
+        0,
+        "10.0.7",
+        (finding,),
+        "mm",
+        str(tmp_path / "board.kicad_pcb"),
+        "a" * 64,
+        (uid,),
+    )
+    frame._drc_done(report, (frame.board.name, frame.board.project_path))
+    select = Mock(return_value=1)
+    monkeypatch.setattr(module, "select_verified_saved_drc_items", select)
+    monkeypatch.setattr(
+        module, "threading", types.SimpleNamespace(Thread=lambda **kw: Mock(start=kw["target"]))
+    )
+    wx.Dialog = Mock(return_value=Mock())
+    wx.ListCtrl = Mock(return_value=Mock())
+    wx.TextCtrl = Mock(return_value=Mock())
+    wx.LC_REPORT = 1
+    wx.LC_SINGLE_SEL = 2
+    wx.TE_MULTILINE = 4
+    wx.TE_READONLY = 8
+    wx.TE_WORDWRAP = 16
+    wx.EVT_LIST_ITEM_SELECTED = 102
+    wx.ALIGN_RIGHT = 32
+    wx.ALIGN_CENTER_VERTICAL = 64
+    wx.ID_OK = 1
+    buttons: dict[str, Mock] = {}
+    monkeypatch.setattr(
+        wx, "Button", lambda *_args, **kwargs: buttons.setdefault(kwargs["label"], Mock())
+    )
+
+    def simulate_owner_click() -> int:
+        assert select.call_count == 0  # opening UI must not select
+        btn = buttons["Select exact items in KiCad"]
+        btn.Enable.assert_called_with(True)
+        btn.Bind.call_args.args[1](None)
+        select.assert_called_once_with(report, finding)
+        return 1
+
+    wx.Dialog.return_value.ShowModal.side_effect = simulate_owner_click
+    frame.show_drc_findings(None)
+
+    # Same GUI but no persistent UUIDs: the selection button must be disabled.
+    frame._drc_done(
+        module.SavedDrcResult(1, 0, 0, 0, "10.0.7", (finding,)),
+        (frame.board.name, frame.board.project_path),
+    )
+    select.reset_mock()
+    wx.Dialog.return_value.ShowModal.side_effect = lambda: 1
+    frame.show_drc_findings(None)
+    buttons["Select exact items in KiCad"].Enable.assert_called_with(False)
+    select.assert_not_called()
+
+
 def test_saved_drc_failure_never_displays_false_success(
     ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
 ) -> None:

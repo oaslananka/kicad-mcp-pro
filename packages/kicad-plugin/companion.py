@@ -25,9 +25,11 @@ from companion_core import (
     SavedDrcResult,
     backend_status,
     board_summary,
+    can_select_saved_drc_finding,
     dashboard_url,
     repair_ipc_dependencies,
     run_saved_board_drc,
+    select_verified_saved_drc_items,
     sync_board_context,
 )
 
@@ -431,9 +433,10 @@ class CompanionFrame(wx.Frame):
         result = self._drc_result
         if result is None or not result.findings or self._drc_board is None:
             return
-        dialog = wx.Dialog(self, title="Saved-board DRC findings", size=(790, 540))
+        dialog = wx.Dialog(self, title="Saved-board DRC findings", size=(920, 550))
+        dialog_alive = [True]
         try:
-            dialog.SetMinSize((640, 440))
+            dialog.SetMinSize((790, 450))
             panel = wx.Panel(dialog)
             panel.SetBackgroundColour(wx.Colour(BACKGROUND))
             layout = wx.BoxSizer(wx.VERTICAL)
@@ -446,7 +449,7 @@ class CompanionFrame(wx.Frame):
             layout.Add(
                 _text(
                     panel,
-                    "Read-only saved-board results · no automatic KiCad object jump.",
+                    "Saved-board DRC · selecting exact IDs changes editor selection only.",
                     size=9,
                     color=SECONDARY,
                 ),
@@ -487,7 +490,6 @@ class CompanionFrame(wx.Frame):
                         _finding_detail(result.findings[index], result.coordinate_units)
                     )
 
-            table.Bind(wx.EVT_LIST_ITEM_SELECTED, update_details)
             table.Select(0)
             layout.Add(details, 0, wx.EXPAND | wx.BOTTOM, 10)
             controls = wx.BoxSizer(wx.HORIZONTAL)
@@ -504,8 +506,59 @@ class CompanionFrame(wx.Frame):
                 clipboard_status.SetLabel("Finding copied" if copied else "Clipboard unavailable")
 
             copy_btn.Bind(wx.EVT_BUTTON, copy_selected)
-            controls.Add(copy_btn, 0, wx.RIGHT, 12)
-            controls.Add(clipboard_status, 1, wx.ALIGN_CENTER_VERTICAL)
+            controls.Add(copy_btn, 0, wx.RIGHT, 9)
+            select_btn = wx.Button(panel, label="Select exact items in KiCad")
+            selection_status = _text(panel, "", size=9, color=SECONDARY)
+            selection_running = [False]
+
+            def update_select_availability() -> None:
+                permitted = can_select_saved_drc_finding(result, result.findings[current[0]])
+                select_btn.Enable(permitted and not selection_running[0])
+                if not permitted:
+                    selection_status.SetLabel("No persistent IDs; copy instead")
+                elif not selection_running[0]:
+                    selection_status.SetLabel("")
+
+            def select_exact(_event: wx.CommandEvent) -> None:
+                if selection_running[0] or not can_select_saved_drc_finding(
+                    result, result.findings[current[0]]
+                ):
+                    return
+                selection_running[0] = True
+                select_btn.Enable(False)
+                selection_status.SetLabel("Verifying live IDs…")
+                chosen = result.findings[current[0]]
+
+                def worker() -> None:
+                    try:
+                        count = select_verified_saved_drc_items(result, chosen)
+                    except Exception:
+                        count = 0
+                    wx.CallAfter(selection_done, count)
+
+                def selection_done(count: int) -> None:
+                    if not dialog_alive[0]:
+                        return
+                    selection_running[0] = False
+                    update_select_availability()
+                    selection_status.SetLabel(
+                        f"Selected {count} items · saved DRC only"
+                        if count
+                        else "No exact live match · nothing selected"
+                    )
+
+                threading.Thread(target=worker, daemon=True, name="kicad-mcp-drc-select").start()
+
+            def choose_row(event: wx.ListEvent) -> None:
+                update_details(event)
+                update_select_availability()
+
+            table.Bind(wx.EVT_LIST_ITEM_SELECTED, choose_row)
+            select_btn.Bind(wx.EVT_BUTTON, select_exact)
+            update_select_availability()
+            controls.Add(select_btn, 0, wx.RIGHT, 9)
+            controls.Add(clipboard_status, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
+            controls.Add(selection_status, 1, wx.ALIGN_CENTER_VERTICAL)
             close = wx.Button(panel, label="Close")
             close.Bind(wx.EVT_BUTTON, lambda _event: dialog.EndModal(wx.ID_OK))
             controls.Add(close, 0)
@@ -516,6 +569,7 @@ class CompanionFrame(wx.Frame):
             dialog.SetSizer(outer)
             dialog.ShowModal()
         finally:
+            dialog_alive[0] = False
             dialog.Destroy()
 
     def _update_connection_indicator(self) -> None:

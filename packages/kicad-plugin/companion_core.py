@@ -16,6 +16,7 @@ import shutil
 import subprocess  # nosec B404
 import sys
 import tempfile
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,6 +50,9 @@ class DrcFinding:
     description: str
     objects: tuple[str, ...] = ()
     location: tuple[float, float] | None = None
+    # Report IDs may be ephemeral for boards without persisted UUIDs.
+    item_ids: tuple[str, ...] = ()
+    reported_item_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -60,6 +64,9 @@ class SavedDrcResult:
     kicad_version: str
     findings: tuple[DrcFinding, ...] = ()
     coordinate_units: str = "mm"
+    saved_file: str = ""
+    board_sha256: str = ""
+    persisted_item_ids: tuple[str, ...] = ()
 
 
 def _read_drc_finding(entry: dict[str, Any]) -> DrcFinding:
@@ -67,10 +74,12 @@ def _read_drc_finding(entry: dict[str, Any]) -> DrcFinding:
     if not isinstance(items, list):
         raise RuntimeError("KiCad DRC report has malformed affected items.")
     affected: list[str] = []
+    item_ids: list[str] = []
     location = None
     for item in items[:8]:
         if not isinstance(item, dict):
             raise RuntimeError("KiCad DRC report has malformed affected items.")
+        item_ids.append(item.get("uuid") if isinstance(item.get("uuid"), str) else "")
         descriptor = item.get("description")
         if isinstance(descriptor, str) and descriptor:
             affected.append(descriptor[:180].replace("\n", " "))
@@ -98,6 +107,8 @@ def _read_drc_finding(entry: dict[str, Any]) -> DrcFinding:
         description=description[:300].replace("\n", " "),
         objects=tuple(affected),
         location=location,
+        item_ids=tuple(item_ids),
+        reported_item_count=len(items),
     )
 
 
@@ -185,6 +196,19 @@ def run_saved_board_drc(
         + [v for v in violations if v["severity"] == "exclusion"]
     )
     findings = tuple(_read_drc_finding(entry) for entry in ordered)
+    saved_content = saved.read_bytes()
+    persisted = tuple(
+        sorted(
+            {
+                key
+                for finding in findings
+                for key in finding.item_ids
+                if key and f'(uuid "{key}")'.encode() in saved_content
+            }
+        )
+    )
+    if hashlib.sha256(saved_content).digest() != before_hash:
+        raise RuntimeError("Saved PCB changed during DRC; discard this report.")
     return SavedDrcResult(
         errors=sum(v["severity"] == "error" for v in violations),
         warnings=sum(v["severity"] == "warning" for v in violations),
@@ -193,7 +217,94 @@ def run_saved_board_drc(
         kicad_version=version,
         findings=findings,
         coordinate_units=units,
+        saved_file=str(saved),
+        board_sha256=before_hash.hex(),
+        persisted_item_ids=persisted,
     )
+
+
+def can_select_saved_drc_finding(report: SavedDrcResult, finding: DrcFinding) -> bool:
+    ids = finding.item_ids
+    return (
+        0 < finding.reported_item_count <= 8
+        and len(ids) == finding.reported_item_count
+        and len(set(ids)) == len(ids)
+        and all(key in report.persisted_item_ids for key in ids)
+        and bool(report.saved_file and report.board_sha256)
+    )
+
+
+def select_verified_saved_drc_items(
+    report: SavedDrcResult,
+    finding: DrcFinding,
+    kicad_factory: Callable[[], Any] | None = None,
+) -> int:
+    """Explicitly select only exact persisted KiCad IDs. Never jump by proximity.
+
+    This changes editor *selection* only, not PCB data or DRC result validity.
+    Snapshot hash/path + every ID must be verified before altering selection.
+    An in-memory unsaved edit may still make the old DRC finding obsolete.
+    """
+    path = Path(report.saved_file)
+    if (
+        not path.is_absolute()
+        or path.suffix != ".kicad_pcb"
+        or len(report.board_sha256) != 64
+        or not path.is_file()
+    ):
+        raise RuntimeError("Saved DRC board identity is unavailable.")
+    if (
+        finding.reported_item_count < 1
+        or finding.reported_item_count > 8
+        or len(finding.item_ids) != finding.reported_item_count
+        or len(set(finding.item_ids)) != len(finding.item_ids)
+    ):
+        raise RuntimeError("DRC finding does not provide unique object UUIDs.")
+    for text in finding.item_ids:
+        try:
+            if str(uuid.UUID(text)) != text:
+                raise ValueError("Non-canonical UUID")
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise RuntimeError("DRC finding has an invalid object UUID.") from exc
+    content = path.read_bytes()
+    if hashlib.sha256(content).hexdigest() != report.board_sha256:
+        raise RuntimeError("Saved board changed after DRC; nothing selected.")
+    # Importantly the normalized saved file, not the CLI's temporary copy,
+    # must contain these persistent identifiers. Old fixture has none.
+    if any(f'(uuid "{key}")'.encode() not in content for key in finding.item_ids):
+        raise RuntimeError("DRC object lacks a persistent UUID on disk; nothing selected.")
+    if kicad_factory is None:
+        from kipy import KiCad
+
+        kicad_factory = KiCad
+    from kipy.board_types import BoardItem
+    from kipy.common_types import KIID
+
+    board = kicad_factory().get_board()
+    project = Path(str(board.get_project().path)).resolve()
+    if board.name != path.name or project != path.parent.resolve():
+        raise RuntimeError("Active KiCad board is not the saved DRC board.")
+    matched: list[BoardItem] = []
+    for key in finding.item_ids:
+        try:
+            items = board.get_items_by_id(KIID(value=key))
+        except Exception as exc:
+            raise RuntimeError(
+                "Could not verify a live KiCad object ID; nothing selected."
+            ) from exc
+        if (
+            len(items) != 1
+            or not isinstance(items[0], BoardItem)
+            or getattr(getattr(items[0], "id", None), "value", None) != key
+        ):
+            raise RuntimeError("A DRC object does not uniquely match a selectable KiCad item.")
+        matched.append(items[0])
+    if hashlib.sha256(path.read_bytes()).hexdigest() != report.board_sha256:
+        raise RuntimeError("Saved board changed during validation; nothing selected.")
+    # All preflight checks complete. Explicit user action now changes selection.
+    board.clear_selection()
+    board.add_to_selection(matched)
+    return len(matched)
 
 
 def _footprint_ref(item: object) -> str:

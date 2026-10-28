@@ -44,6 +44,120 @@ def test_ipc_summary_is_read_only(tmp_path: Path) -> None:
     board.get_selection.assert_called_once_with()
 
 
+def test_saved_drc_live_selection_verifies_exact_persistent_ids_before_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hashlib
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    import companion_core
+
+    ids = ("5a2b4282-959d-4648-89ef-3e8e655765a2", "71617dd7-0e7e-436f-af97-312daa1427d3")
+    board_path = tmp_path / "test.kicad_pcb"
+    board_path.write_text("\n".join(f'(uuid "{uid}")' for uid in ids))
+    sha = hashlib.sha256(board_path.read_bytes()).hexdigest()
+    finding = companion_core.DrcFinding(
+        "error", "shorting_items", "bad copper", ("Pad R1", "Track"), None, ids, 2
+    )
+    result = companion_core.SavedDrcResult(
+        1, 0, 0, 0, "10.0.7", (finding,), "mm", str(board_path), sha
+    )
+
+    class BoardItem:
+        def __init__(self, uid: str) -> None:
+            self.id = SimpleNamespace(value=uid)
+
+    items = {uid: BoardItem(uid) for uid in ids}
+    board = Mock()
+    board.name = board_path.name
+    board.get_project.return_value.path = str(tmp_path)
+    board.get_items_by_id.side_effect = lambda key: [items[key.value]]
+    client = Mock()
+    client.get_board.return_value = board
+    kiid = ModuleType("kipy.common_types")
+    kiid.KIID = lambda *, value: SimpleNamespace(value=value)
+    types_mod = ModuleType("kipy.board_types")
+    types_mod.BoardItem = BoardItem
+    monkeypatch.setitem(sys.modules, "kipy.common_types", kiid)
+    monkeypatch.setitem(sys.modules, "kipy.board_types", types_mod)
+    assert companion_core.select_verified_saved_drc_items(result, finding, lambda: client) == 2
+    board.clear_selection.assert_called_once_with()
+    board.add_to_selection.assert_called_once_with([items[ids[0]], items[ids[1]]])
+
+    board.clear_selection.reset_mock()
+    board.add_to_selection.reset_mock()
+    board.get_items_by_id.side_effect = lambda key: (
+        [items[key.value]] if key.value == ids[0] else []
+    )
+    with pytest.raises(RuntimeError, match="uniquely match"):
+        companion_core.select_verified_saved_drc_items(result, finding, lambda: client)
+    board.clear_selection.assert_not_called()
+    board.add_to_selection.assert_not_called()
+    board.get_items_by_id.side_effect = lambda key: [SimpleNamespace(id=SimpleNamespace(value=1))]
+    with pytest.raises(RuntimeError, match="selectable KiCad item"):
+        companion_core.select_verified_saved_drc_items(result, finding, lambda: client)
+    board.clear_selection.assert_not_called()
+    board.add_to_selection.assert_not_called()
+    board.get_items_by_id.side_effect = lambda key: [items[key.value]]
+
+    board_path.write_text("modified")
+    with pytest.raises(RuntimeError, match="changed"):
+        companion_core.select_verified_saved_drc_items(result, finding, lambda: client)
+    board.clear_selection.assert_not_called()
+
+
+def test_saved_drc_selection_rejects_ephemeral_ids_and_unmatched_editor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hashlib
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    import companion_core
+
+    uid = "71617dd7-0e7e-436f-af97-312daa1427d3"
+    path = tmp_path / "test.kicad_pcb"
+    path.write_text("KiCad fixture without persistent ids")
+    h = hashlib.sha256(path.read_bytes()).hexdigest()
+    finding = companion_core.DrcFinding(
+        "error", "unconnected_items", "broken", ("R1",), None, (uid,), 1
+    )
+    result = companion_core.SavedDrcResult(1, 0, 0, 0, "10.0.7", (finding,), "mm", str(path), h)
+    board = Mock()
+    board.name = path.name
+    board.get_project.return_value.path = str(tmp_path)
+    client = Mock()
+    client.get_board.return_value = board
+    kiid = ModuleType("kipy.common_types")
+    kiid.KIID = lambda *, value: SimpleNamespace(value=value)
+    types_mod = ModuleType("kipy.board_types")
+    types_mod.BoardItem = type("BoardItem", (), {})
+    monkeypatch.setitem(sys.modules, "kipy.common_types", kiid)
+    monkeypatch.setitem(sys.modules, "kipy.board_types", types_mod)
+    with pytest.raises(RuntimeError, match="persistent UUID"):
+        companion_core.select_verified_saved_drc_items(result, finding, lambda: client)
+    board.get_items_by_id.assert_not_called()
+    board.clear_selection.assert_not_called()
+
+    path.write_text(f'(uuid "{uid}")')
+    result = companion_core.SavedDrcResult(
+        1,
+        0,
+        0,
+        0,
+        "10.0.7",
+        (finding,),
+        "mm",
+        str(path),
+        hashlib.sha256(path.read_bytes()).hexdigest(),
+    )
+    board.get_project.return_value.path = str(tmp_path / "other-project")
+    with pytest.raises(RuntimeError, match="Active KiCad board"):
+        companion_core.select_verified_saved_drc_items(result, finding, lambda: client)
+    board.clear_selection.assert_not_called()
+
+
 def test_saved_drc_uses_private_snapshot_no_cli_write_to_original(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
